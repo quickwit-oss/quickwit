@@ -17,7 +17,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::Duration;
 
-use anyhow::{Context, bail};
+use anyhow::{Context, bail, ensure};
 use bytesize::ByteSize;
 use http::HeaderMap;
 use quickwit_common::fs::get_disk_size;
@@ -31,6 +31,7 @@ use tracing::{info, warn};
 use super::{GrpcConfig, HealthConfig, RestConfig};
 use crate::config_value::ConfigValue;
 use crate::qw_env_vars::*;
+use crate::serde_utils::HumanDuration;
 use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::templating::render_config;
@@ -457,6 +458,10 @@ struct RestConfigBuilder {
     pub extra_headers: HeaderMap,
     #[serde(default, rename = "tls")]
     pub tls_config: Option<TlsConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connection_age: Option<HumanDuration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connection_age_grace: Option<HumanDuration>,
 }
 
 impl RestConfigBuilder {
@@ -475,11 +480,17 @@ impl RestConfigBuilder {
         if let Some(tls_config) = &self.tls_config {
             tls_config.validate()?;
         }
+        ensure!(
+            !(self.max_connection_age_grace.is_some() && self.max_connection_age.is_none()),
+            "`rest.max_connection_age_grace` requires `rest.max_connection_age` to be set"
+        );
         let rest_config = RestConfig {
             listen_addr: SocketAddr::new(listen_ip, listen_port),
             cors_allow_origins: self.cors_allow_origins,
             extra_headers: self.extra_headers,
             tls_config: self.tls_config,
+            max_connection_age: self.max_connection_age,
+            max_connection_age_grace: self.max_connection_age_grace,
         };
         Ok(rest_config)
     }
@@ -550,6 +561,8 @@ pub fn node_config_for_tests_from_ports(
         cors_allow_origins: Vec::new(),
         extra_headers: HeaderMap::new(),
         tls_config: None,
+        max_connection_age: None,
+        max_connection_age_grace: None,
     };
     NodeConfig {
         cluster_id: default_cluster_id().unwrap(),
@@ -624,17 +637,54 @@ mod tests {
             config.rest_config.extra_headers.get("x-header-2").unwrap(),
             "header-value-2"
         );
+        let rest_tls_config = config.rest_config.tls_config.unwrap();
+        assert_eq!(
+            rest_tls_config,
+            TlsConfig {
+                cert_path: "/path/to/rest.crt".to_string(),
+                key_path: "/path/to/rest.key".to_string(),
+                ca_path: "/path/to/ca.crt".to_string(),
+                expected_name: None,
+                verify_client_cert: true,
+                cert_reload_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
+            }
+        );
+        assert_eq!(
+            config.rest_config.max_connection_age,
+            Some(HumanDuration::try_from("30m".to_string()).unwrap())
+        );
+        assert_eq!(
+            config.rest_config.max_connection_age_grace,
+            Some(HumanDuration::try_from("30s".to_string()).unwrap())
+        );
         assert_eq!(config.grpc_config.max_message_size, ByteSize::mb(10));
 
+        let grpc_tls_config = config.grpc_config.tls_config.unwrap();
         assert_eq!(
-            config
-                .health_config
-                .as_ref()
-                .expect("health config should be set")
-                .listen_addr,
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 4444)
+            grpc_tls_config,
+            TlsConfig {
+                cert_path: "/path/to/grpc.crt".to_string(),
+                key_path: "/path/to/grpc.key".to_string(),
+                ca_path: "/path/to/ca.crt".to_string(),
+                expected_name: Some("quickwit.local".to_string()),
+                verify_client_cert: true,
+                cert_reload_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
+            }
+        );
+        assert_eq!(
+            config.grpc_config.max_connection_age,
+            Some(HumanDuration::try_from("1h".to_string()).unwrap())
+        );
+        assert_eq!(
+            config.grpc_config.max_connection_age_grace,
+            Some(HumanDuration::try_from("10s".to_string()).unwrap())
         );
 
+        let health_config = config.health_config.unwrap();
+        assert_eq!(
+            health_config.listen_addr,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 4444)
+        );
         assert_eq!(
             config.gossip_listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 2222)

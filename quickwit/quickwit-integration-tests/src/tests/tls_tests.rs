@@ -15,7 +15,10 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use hyper_util::rt::TokioExecutor;
+use http_body_util::Empty;
+use hyper::body::Bytes;
+use hyper::client::conn::http2::SendRequest;
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{HumanDuration, TlsConfig};
@@ -278,6 +281,146 @@ async fn test_health_check_server_plaintext_with_mtls_rest() {
     reqwest::get(format!("http://{rest_addr}/health/livez"))
         .await
         .expect_err("plaintext request to the mTLS REST port should fail");
+
+    sandbox.shutdown().await.unwrap();
+}
+
+/// Opens a long-lived HTTP/2 connection to `addr` over TLS, trusting `ca_path`. Returns the DER of
+/// the leaf certificate the server presented, a `SendRequest` handle that must be kept alive to
+/// keep the connection open, and a handle to the driving task that resolves once the server closes
+/// the connection.
+async fn open_http2_connection(
+    addr: SocketAddr,
+    ca_path: &str,
+) -> (
+    Vec<u8>,
+    SendRequest<Empty<Bytes>>,
+    tokio::task::JoinHandle<()>,
+) {
+    let tls_config = TlsConfig {
+        ca_path: ca_path.to_string(),
+        ..fixture_tls_config()
+    };
+    let client_config = quickwit_transport::make_tls_client_config(&tls_config).unwrap();
+    let tls_connector = tokio_rustls::TlsConnector::from(client_config);
+    let tcp_stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let server_name = rustls::pki_types::ServerName::IpAddress(addr.ip().into());
+    let tls_stream = tls_connector
+        .connect(server_name, tcp_stream)
+        .await
+        .unwrap();
+
+    let leaf_cert_der = {
+        let (_tcp_stream, connection) = tls_stream.get_ref();
+        let peer_certs = connection
+            .peer_certificates()
+            .expect("the server must present a certificate");
+        peer_certs[0].as_ref().to_vec()
+    };
+
+    let (send_request, connection) = hyper::client::conn::http2::handshake::<_, _, Empty<Bytes>>(
+        TokioExecutor::new(),
+        TokioIo::new(tls_stream),
+    )
+    .await
+    .expect("HTTP/2 handshake should succeed");
+    // The connection future resolves when the server closes the connection (e.g. after the max
+    // connection age elapses), even though this client never initiates a disconnect.
+    let connection_handle = tokio::spawn(async move {
+        let _ = connection.await;
+    });
+    (leaf_cert_der, send_request, connection_handle)
+}
+
+#[tokio::test]
+async fn test_tls_rest_max_connection_age() {
+    quickwit_common::setup_logging_for_tests();
+    // The node reads its certificate from a temp directory we can mutate to simulate a rotation.
+    let temp_dir = tempfile::tempdir().unwrap();
+    let cert_path = temp_dir.path().join("server.crt");
+    let key_path = temp_dir.path().join("server.key");
+    std::fs::copy(format!("{TLS_FIXTURES_DIR}/server.crt"), &cert_path).unwrap();
+    std::fs::copy(format!("{TLS_FIXTURES_DIR}/server.key"), &key_path).unwrap();
+    let ca_path = format!("{TLS_FIXTURES_DIR}/ca.crt");
+
+    let mut sandbox_config = ClusterSandboxBuilder::default()
+        .add_node(QuickwitService::supported_services())
+        .build_config()
+        .await;
+    sandbox_config.node_configs[0].0.rest_config.tls_config = Some(TlsConfig {
+        cert_path: cert_path.to_str().unwrap().to_string(),
+        key_path: key_path.to_str().unwrap().to_string(),
+        ca_path: ca_path.clone(),
+        // Long interval: only `reload_tls_cert()` reloads the cert here, never the periodic poll.
+        cert_reload_interval: HumanDuration::try_from("1h".to_string()).unwrap(),
+        ..fixture_tls_config()
+    });
+    // Short max connection age: the server must send a GOAWAY and close a long-lived connection
+    // within this window, forcing the client to reconnect and re-handshake with the current cert.
+    sandbox_config.node_configs[0]
+        .0
+        .rest_config
+        .max_connection_age = Some(HumanDuration::try_from("2s".to_string()).unwrap());
+    let sandbox = sandbox_config.start().await;
+    let rest_addr = sandbox.node_configs[0].0.rest_config.listen_addr;
+
+    // Open a long-lived connection and record the certificate it negotiated.
+    let (served_before, _send_request, connection_handle) =
+        open_http2_connection(rest_addr, &ca_path).await;
+    let server1_der = leaf_cert_der(&format!("{TLS_FIXTURES_DIR}/server.crt"));
+    assert_eq!(served_before, server1_der);
+
+    // Rotate the certificate on disk and reload; the long-lived connection is still on the old one.
+    let server2_der = leaf_cert_der(&format!("{TLS_FIXTURES_DIR}/server2.crt"));
+    assert_ne!(server1_der, server2_der);
+    std::fs::copy(format!("{TLS_FIXTURES_DIR}/server2.crt"), &cert_path).unwrap();
+    std::fs::copy(format!("{TLS_FIXTURES_DIR}/server2.key"), &key_path).unwrap();
+    quickwit_serve::reload_tls_cert();
+
+    // The server closes the long-lived connection on its own once the max connection age elapses.
+    // An idle HTTP/2 connection without a max age would otherwise stay open indefinitely, so a
+    // bounded close demonstrates the feature.
+    tokio::time::timeout(Duration::from_secs(10), connection_handle)
+        .await
+        .expect("server should close the connection within the max connection age")
+        .expect("connection task should not panic");
+
+    // After reconnecting, the server presents the rotated certificate.
+    let (served_after, _send_request, _connection_handle) =
+        open_http2_connection(rest_addr, &ca_path).await;
+    assert_eq!(served_after, server2_der);
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_tls_grpc_max_connection_age() {
+    quickwit_common::setup_logging_for_tests();
+    let ca_path = format!("{TLS_FIXTURES_DIR}/ca.crt");
+
+    let mut sandbox_config = ClusterSandboxBuilder::default()
+        .add_node(QuickwitService::supported_services())
+        .build_config()
+        .await;
+    // One-way TLS (no client-cert verification) so the bare HTTP/2 probe below, which presents no
+    // client identity, can complete the handshake. The max connection age behavior is independent
+    // of mTLS.
+    sandbox_config.node_configs[0].0.grpc_config.tls_config = Some(fixture_tls_config());
+    sandbox_config.node_configs[0]
+        .0
+        .grpc_config
+        .max_connection_age = Some(HumanDuration::try_from("2s".to_string()).unwrap());
+    let sandbox = sandbox_config.start().await;
+    let grpc_addr = sandbox.node_configs[0].0.grpc_listen_addr;
+
+    // The gRPC server (tonic, `h2` only) must close a long-lived connection once the max connection
+    // age elapses.
+    let (_served, _send_request, connection_handle) =
+        open_http2_connection(grpc_addr, &ca_path).await;
+    tokio::time::timeout(Duration::from_secs(10), connection_handle)
+        .await
+        .expect("gRPC server should close the connection within the max connection age")
+        .expect("connection task should not panic");
 
     sandbox.shutdown().await.unwrap();
 }
