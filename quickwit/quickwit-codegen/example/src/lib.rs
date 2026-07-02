@@ -282,7 +282,8 @@ mod tests {
             "127.0.0.1:6666".parse().unwrap(),
             Endpoint::from_static("http://127.0.0.1:6666").connect_lazy(),
         );
-        let grpc_client = HelloClient::from_balance_channel(channel, MAX_GRPC_MESSAGE_SIZE, None);
+        let grpc_client =
+            HelloClient::from_balance_channel(channel, MAX_GRPC_MESSAGE_SIZE, None, []);
 
         assert_eq!(
             grpc_client
@@ -342,7 +343,7 @@ mod tests {
         // The connectivity check fails if there is no client behind the channel.
         let (balance_channel, _): (BalanceChannel<SocketAddr>, _) = BalanceChannel::new();
         let grpc_client =
-            HelloClient::from_balance_channel(balance_channel, MAX_GRPC_MESSAGE_SIZE, None);
+            HelloClient::from_balance_channel(balance_channel, MAX_GRPC_MESSAGE_SIZE, None, []);
         assert_eq!(
             grpc_client
                 .check_connectivity()
@@ -441,6 +442,7 @@ mod tests {
             channel,
             MAX_GRPC_MESSAGE_SIZE,
             Some(CompressionEncoding::Zstd),
+            [],
         );
 
         assert_eq!(
@@ -788,7 +790,7 @@ mod tests {
             "127.0.0.1:7777".parse().unwrap(),
             Endpoint::from_static("http://127.0.0.1:7777").connect_lazy(),
         );
-        HelloClient::from_balance_channel(balance_channed, MAX_GRPC_MESSAGE_SIZE, None);
+        HelloClient::from_balance_channel(balance_channed, MAX_GRPC_MESSAGE_SIZE, None, []);
     }
 
     #[tokio::test]
@@ -876,7 +878,7 @@ mod tests {
             .timeout(Duration::from_millis(100))
             .connect_lazy();
         let max_message_size = ByteSize::mib(1);
-        let grpc_client = HelloClient::from_channel(addr, channel, max_message_size, None);
+        let grpc_client = HelloClient::from_channel(addr, channel, max_message_size, None, []);
 
         let error = grpc_client
             .hello(HelloRequest {
@@ -955,7 +957,7 @@ mod tests {
             // this test hangs forever if we comment out the TimeoutLayer, which
             // shows that a request without explicit timeout might hang forever
             .stack_layer(TimeoutLayer::new(Duration::from_secs(3)))
-            .build_from_balance_channel(balance_channel, ByteSize::mib(1), None);
+            .build_from_balance_channel(balance_channel, ByteSize::mib(1), None, []);
 
         let response_fut = async move {
             grpc_client

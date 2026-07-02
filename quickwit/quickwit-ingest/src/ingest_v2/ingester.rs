@@ -2519,6 +2519,7 @@ mod tests {
             follower_channel,
             MAX_GRPC_MESSAGE_SIZE,
             None,
+            [],
         );
 
         let ingester_pool_entry = IngesterPoolEntry {

@@ -897,6 +897,7 @@ mod tests {
             otlp_traces_service_opt: None,
             metastore_client,
             metastore_server_opt: None,
+            metastore_read_replica_server_opt: None,
             node_config: Arc::new(node_config.clone()),
             search_service: Arc::new(MockSearchService::new()),
             jaeger_service_opt: None,

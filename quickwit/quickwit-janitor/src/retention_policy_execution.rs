@@ -117,11 +117,7 @@ pub async fn run_execute_parquet_retention_policy(
         ParquetSplitKind::Metrics
     };
     let expired_splits: Vec<ParquetSplitRecord> = ctx
-        .protect_future(list_parquet_splits_paginated(
-            metastore.clone(),
-            kind,
-            query,
-        ))
+        .protect_future(list_parquet_splits_paginated(&metastore, kind, query))
         .await?;
 
     if expired_splits.is_empty() {

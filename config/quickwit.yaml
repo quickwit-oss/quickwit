@@ -103,6 +103,11 @@ version: 0.8
 # metastore_uri: s3://your-bucket/indexes
 # metastore_uri: postgres://username:password@host:port/db
 #
+# Optional PostgreSQL read replica URI used by metastore nodes for gRPC requests
+# carrying the `qw-use-read-replica: true` metadata. Defaults to unset.
+#
+# metastore_read_replica_uri: postgres://username:password@read-replica-host:port/db
+#
 # When using a file-backed metastore, the state of the metastore will be cached forever.
 # If you are indexing and searching from different processes, it is possible to periodically
 # refresh the state of the metastore on the searcher using the `polling_interval` hashtag.

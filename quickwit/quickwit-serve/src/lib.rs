@@ -69,8 +69,8 @@ use quickwit_common::retry::RetryParams;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, CircuitBreakerEvaluator,
-    ConstantRate, EstimateRateLayer, EventListenerLayer, GrpcMetricsLayer, LoadShedLayer,
-    RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer,
+    ConstantRate, EstimateRateLayer, EventListenerLayer, GrpcInterceptor, GrpcMetricsLayer,
+    LoadShedLayer, RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer,
 };
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
@@ -104,8 +104,8 @@ use quickwit_proto::ingest::ingester::{
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::ingest::{IngestV2Error, RateLimitingCause};
 use quickwit_proto::metastore::{
-    EntityKind, ListIndexesMetadataRequest, MetastoreError, MetastoreService,
-    MetastoreServiceClient,
+    EntityKind, ListIndexesMetadataRequest, MetastoreError, MetastoreReadServiceClient,
+    MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::search::ReportSplitsRequest;
 use quickwit_proto::types::NodeId;
@@ -154,6 +154,44 @@ fn get_metastore_client_max_concurrency() -> usize {
     )
 }
 
+fn build_metastore_client_from_balance_channel(
+    balance_channel: BalanceChannel<SocketAddr>,
+    max_message_size: ByteSize,
+    grpc_compression_encoding_opt: Option<CompressionEncoding>,
+    interceptors: impl IntoIterator<Item = GrpcInterceptor>,
+) -> MetastoreServiceClient {
+    MetastoreServiceClient::tower()
+        .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
+        .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
+        .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
+        .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
+            get_metastore_client_max_concurrency(),
+        ))
+        .build_from_balance_channel(
+            balance_channel,
+            max_message_size,
+            grpc_compression_encoding_opt,
+            interceptors,
+        )
+}
+
+async fn metastore_balance_channel(
+    cluster: &Cluster,
+) -> anyhow::Result<BalanceChannel<SocketAddr>> {
+    info!("connecting to metastore");
+
+    let balance_channel = balance_channel_for_service(cluster, QuickwitService::Metastore).await;
+    if !balance_channel
+        .wait_for(Duration::from_secs(300), |connections| {
+            !connections.is_empty()
+        })
+        .await
+    {
+        bail!("could not find any metastore node in the cluster");
+    }
+    Ok(balance_channel)
+}
+
 static CP_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
     LazyLock::new(|| GrpcMetricsLayer::new("control_plane", "client"));
 static CP_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
@@ -182,6 +220,7 @@ struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
     pub cluster: Cluster,
     pub metastore_server_opt: Option<MetastoreServiceClient>,
+    pub metastore_read_replica_server_opt: Option<MetastoreServiceClient>,
     pub metastore_client: MetastoreServiceClient,
     pub control_plane_server_opt: Option<Mailbox<ControlPlane>>,
     pub control_plane_client: ControlPlaneServiceClient,
@@ -304,6 +343,7 @@ async fn start_ingest_client_if_needed(
             balance_channel,
             node_config.grpc_config.max_message_size,
             node_config.ingest_api_config.grpc_compression_encoding(),
+            [],
         );
         Ok(ingest_service)
     }
@@ -374,6 +414,7 @@ async fn start_control_plane_if_needed(
                 balance_channel,
                 node_config.grpc_config.max_message_size,
                 None,
+                [],
             );
         Ok((control_plane_server_opt, control_plane_client))
     }
@@ -460,71 +501,80 @@ pub async fn serve_quickwit(
     let grpc_config = node_config.grpc_config.clone();
 
     // Instantiate a metastore "server" if the `metastore` role is enabled on the node.
-    let metastore_server_opt: Option<MetastoreServiceClient> =
-        if node_config.is_service_enabled(QuickwitService::Metastore) {
-            let metastore: MetastoreServiceClient = metastore_resolver
-                .resolve(&node_config.metastore_uri)
-                .await
-                .with_context(|| {
-                    format!(
-                        "failed to resolve metastore uri `{}`",
-                        node_config.metastore_uri
-                    )
-                })?;
-            let max_in_flight_requests = if node_config.metastore_uri.protocol().is_database() {
-                node_config
-                    .metastore_configs
-                    .find_postgres()
-                    .map(|config| config.max_connections.get() * 2)
-                    .unwrap_or_default()
-                    .max(100)
+    let (metastore_server_opt, metastore_read_replica_server_opt): (
+        Option<MetastoreServiceClient>,
+        Option<MetastoreServiceClient>,
+    ) = if node_config.is_service_enabled(QuickwitService::Metastore) {
+        let metastore: MetastoreServiceClient = metastore_resolver
+            .resolve(&node_config.metastore_uri)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to resolve metastore uri `{}`",
+                    node_config.metastore_uri
+                )
+            })?;
+        let metastore_read_replica =
+            if let Some(metastore_read_replica_uri) = &node_config.metastore_read_replica_uri {
+                Some(
+                    metastore_resolver
+                        .resolve_read_only(metastore_read_replica_uri)
+                        .await
+                        .with_context(|| {
+                            format!(
+                                "failed to resolve metastore read replica uri \
+                                 `{metastore_read_replica_uri}`"
+                            )
+                        })?,
+                )
             } else {
-                100
+                None
             };
-            // These layers apply to all the RPCs of the metastore.
-            let shared_layer = ServiceBuilder::new()
-                .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
-                .layer(LoadShedLayer::new(max_in_flight_requests))
-                .into_inner();
+        let max_in_flight_requests = if node_config.metastore_uri.protocol().is_database() {
+            node_config
+                .metastore_configs
+                .find_postgres()
+                .map(|config| config.max_connections.get() * 2)
+                .unwrap_or_default()
+                .max(100)
+        } else {
+            100
+        };
+        // These layers apply to all the RPCs of the metastore.
+        let shared_layer = ServiceBuilder::new()
+            .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
+            .layer(LoadShedLayer::new(max_in_flight_requests))
+            .into_inner();
+        let build_metastore_server = |metastore| {
             let broker_layer = EventListenerLayer::new(event_broker.clone());
-            let metastore = MetastoreServiceClient::tower()
-                .stack_layer(shared_layer)
+            MetastoreServiceClient::tower()
+                .stack_layer(shared_layer.clone())
                 .stack_create_index_layer(broker_layer.clone())
                 .stack_delete_index_layer(broker_layer.clone())
                 .stack_add_source_layer(broker_layer.clone())
                 .stack_delete_source_layer(broker_layer.clone())
                 .stack_toggle_source_layer(broker_layer)
-                .build(metastore);
-            Some(metastore)
-        } else {
-            None
+                .build(metastore)
         };
+        (
+            Some(build_metastore_server(metastore)),
+            metastore_read_replica.map(build_metastore_server),
+        )
+    } else {
+        (None, None)
+    };
     // Instantiate a metastore client, either local if available or remote otherwise.
     let metastore_client: MetastoreServiceClient =
         if let Some(metastore_server) = &metastore_server_opt {
             metastore_server.clone()
         } else {
-            info!("connecting to metastore");
-
-            let balance_channel =
-                balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
-
-            if !balance_channel
-                .wait_for(Duration::from_secs(300), |connections| {
-                    !connections.is_empty()
-                })
-                .await
-            {
-                bail!("could not find any metastore node in the cluster");
-            }
-            MetastoreServiceClient::tower()
-                .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
-                .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
-                .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
-                .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
-                    get_metastore_client_max_concurrency(),
-                ))
-                .build_from_balance_channel(balance_channel, grpc_config.max_message_size, None)
+            let balance_channel = metastore_balance_channel(&cluster).await?;
+            build_metastore_client_from_balance_channel(
+                balance_channel,
+                grpc_config.max_message_size,
+                None,
+                [],
+            )
         };
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
     // Otherwise, instantiate a control plane client.
@@ -677,12 +727,32 @@ pub async fn serve_quickwit(
         ))
     };
 
+    let searcher_metastore_client: MetastoreReadServiceClient =
+        if let Some(metastore_read_replica_server) = &metastore_read_replica_server_opt {
+            Arc::new(metastore_read_replica_server.clone())
+        } else if node_config.metastore_read_replica_uri.is_some() {
+            let balance_channel = metastore_balance_channel(&cluster).await?;
+            // The read-replica header is honored at the metastore gRPC server boundary,
+            // so remote read-only callers must use a remote metastore client when a
+            // replica exists.
+            let metastore_read_only_client = build_metastore_client_from_balance_channel(
+                balance_channel,
+                grpc_config.max_message_size,
+                None,
+                [quickwit_proto::grpc_read_replica::read_replica_header_interceptor()],
+            );
+            Arc::new(MetastoreServiceClient::new(ControlPlaneMetastore::new(
+                control_plane_client.clone(),
+                metastore_read_only_client,
+            )))
+        } else {
+            Arc::new(metastore_through_control_plane.clone())
+        };
+
     let (search_job_placer, search_service, searcher_pool) = setup_searcher(
         &node_config,
         cluster.change_stream(),
-        // search remains available without a control plane because not all
-        // metastore RPCs are proxied
-        metastore_through_control_plane.clone(),
+        searcher_metastore_client.clone(),
         storage_resolver.clone(),
         searcher_context,
     )
@@ -699,7 +769,7 @@ pub async fn serve_quickwit(
     let datafusion_session_builder = datafusion_api::setup::build_datafusion_session_builder(
         &node_config,
         cluster.change_stream(),
-        metastore_through_control_plane.clone(),
+        searcher_metastore_client.clone(),
         storage_resolver.clone(),
     )?;
     // The search job placer owns a clone of this pool; the local binding is not
@@ -780,6 +850,7 @@ pub async fn serve_quickwit(
         node_config: Arc::new(node_config),
         cluster: cluster.clone(),
         metastore_server_opt,
+        metastore_read_replica_server_opt,
         metastore_client: metastore_through_control_plane.clone(),
         control_plane_server_opt,
         control_plane_client,
@@ -1180,13 +1251,14 @@ fn build_ingester_service(
             node.channel(),
             max_message_size,
             grpc_compression_encoding_opt,
+            [],
         )
 }
 
 async fn setup_searcher(
     node_config: &NodeConfig,
     cluster_change_stream: ClusterChangeStream,
-    metastore: MetastoreServiceClient,
+    metastore: MetastoreReadServiceClient,
     storage_resolver: StorageResolver,
     searcher_context: Arc<SearcherContext>,
 ) -> anyhow::Result<(SearchJobPlacer, Arc<dyn SearchService>, SearcherPool)> {
@@ -1416,6 +1488,7 @@ fn build_indexing_service(
             node.channel(),
             max_message_size,
             None,
+            [],
         )
 }
 
@@ -1872,7 +1945,7 @@ mod tests {
         let (search_job_placer, _searcher_service, _searcher_pool) = setup_searcher(
             &node_config,
             change_stream,
-            metastore,
+            Arc::new(metastore),
             storage_resolver,
             searcher_context,
         )

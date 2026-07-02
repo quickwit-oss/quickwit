@@ -1241,17 +1241,33 @@ impl MetastoreServiceClient {
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize)
     }
+    pub fn as_grpc_service_with_read_replica(
+        &self,
+        read_replica: Option<Self>,
+        max_message_size: bytesize::ByteSize,
+    ) -> crate::grpc_read_replica::ReadReplicaGrpcService<
+        metastore_service_grpc_server::MetastoreServiceGrpcServer<
+            MetastoreServiceGrpcServerAdapter,
+        >,
+    > {
+        let primary = self.as_grpc_service(max_message_size);
+        let read_replica = read_replica
+            .map(|client| client.as_grpc_service(max_message_size));
+        crate::grpc_read_replica::ReadReplicaGrpcService::new(primary, read_replica)
+    }
     pub fn from_channel(
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
         compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+        interceptors: impl IntoIterator<Item = quickwit_common::tower::GrpcInterceptor>,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
             std::collections::HashSet::from_iter([addr]),
         );
-        let mut client = metastore_service_grpc_client::MetastoreServiceGrpcClient::new(
+        let mut client = metastore_service_grpc_client::MetastoreServiceGrpcClient::with_interceptor(
                 channel,
+                quickwit_common::tower::GrpcInterceptors::new(interceptors),
             )
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize);
@@ -1270,10 +1286,12 @@ impl MetastoreServiceClient {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
         compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+        interceptors: impl IntoIterator<Item = quickwit_common::tower::GrpcInterceptor>,
     ) -> MetastoreServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let mut client = metastore_service_grpc_client::MetastoreServiceGrpcClient::new(
+        let mut client = metastore_service_grpc_client::MetastoreServiceGrpcClient::with_interceptor(
                 balance_channel,
+                quickwit_common::tower::GrpcInterceptors::new(interceptors),
             )
             .max_decoding_message_size(max_message_size.0 as usize)
             .max_encoding_message_size(max_message_size.0 as usize);
@@ -5648,12 +5666,14 @@ impl MetastoreServiceTowerLayerStack {
         channel: tonic::transport::Channel,
         max_message_size: bytesize::ByteSize,
         compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+        interceptors: impl IntoIterator<Item = quickwit_common::tower::GrpcInterceptor>,
     ) -> MetastoreServiceClient {
         let client = MetastoreServiceClient::from_channel(
             addr,
             channel,
             max_message_size,
             compression_encoding_opt,
+            interceptors,
         );
         let inner_client = client.inner;
         self.build_from_inner_client(inner_client)
@@ -5663,11 +5683,13 @@ impl MetastoreServiceTowerLayerStack {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
         max_message_size: bytesize::ByteSize,
         compression_encoding_opt: Option<tonic::codec::CompressionEncoding>,
+        interceptors: impl IntoIterator<Item = quickwit_common::tower::GrpcInterceptor>,
     ) -> MetastoreServiceClient {
         let client = MetastoreServiceClient::from_balance_channel(
             balance_channel,
             max_message_size,
             compression_encoding_opt,
+            interceptors,
         );
         let inner_client = client.inner;
         self.build_from_inner_client(inner_client)

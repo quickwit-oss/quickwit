@@ -22,7 +22,9 @@ use quickwit_proto::metastore::MetastoreServiceClient;
 use tokio::sync::Mutex;
 use tracing::debug;
 
-use crate::{MetastoreFactory, MetastoreResolverError, PostgresqlMetastore};
+use crate::{
+    MetastoreFactory, MetastoreFactoryOptions, MetastoreResolverError, PostgresqlMetastore,
+};
 
 #[derive(Clone, Default)]
 pub struct PostgresqlMetastoreFactory {
@@ -31,13 +33,17 @@ pub struct PostgresqlMetastoreFactory {
     // In contrast to the file-backed metastore, we use a strong pointer here, so that the
     // `Metastore` doesn't get dropped. This is done in order to keep the underlying connection
     // pool to Postgres alive.
-    cache: Arc<Mutex<HashMap<Uri, MetastoreServiceClient>>>,
+    cache: Arc<Mutex<HashMap<(Uri, MetastoreFactoryOptions), MetastoreServiceClient>>>,
 }
 
 impl PostgresqlMetastoreFactory {
-    async fn get_from_cache(&self, uri: &Uri) -> Option<MetastoreServiceClient> {
+    async fn get_from_cache(
+        &self,
+        uri: &Uri,
+        options: MetastoreFactoryOptions,
+    ) -> Option<MetastoreServiceClient> {
         let cache_lock = self.cache.lock().await;
-        cache_lock.get(uri).cloned()
+        cache_lock.get(&(uri.clone(), options)).cloned()
     }
 
     /// If there is a valid entry in the cache to begin with, we trash the new
@@ -48,13 +54,15 @@ impl PostgresqlMetastoreFactory {
     async fn cache_metastore(
         &self,
         uri: Uri,
+        options: MetastoreFactoryOptions,
         metastore: MetastoreServiceClient,
     ) -> MetastoreServiceClient {
         let mut cache_lock = self.cache.lock().await;
-        if let Some(metastore) = cache_lock.get(&uri) {
+        let cache_key = (uri, options);
+        if let Some(metastore) = cache_lock.get(&cache_key) {
             return metastore.clone();
         }
-        cache_lock.insert(uri, metastore.clone());
+        cache_lock.insert(cache_key, metastore.clone());
         metastore
     }
 }
@@ -69,8 +77,9 @@ impl MetastoreFactory for PostgresqlMetastoreFactory {
         &self,
         metastore_config: &MetastoreConfig,
         uri: &Uri,
+        options: MetastoreFactoryOptions,
     ) -> Result<MetastoreServiceClient, MetastoreResolverError> {
-        if let Some(metastore) = self.get_from_cache(uri).await {
+        if let Some(metastore) = self.get_from_cache(uri, options).await {
             debug!("using metastore from cache");
             return Ok(metastore);
         }
@@ -82,12 +91,15 @@ impl MetastoreFactory for PostgresqlMetastoreFactory {
             );
             MetastoreResolverError::InvalidConfig(message)
         })?;
-        let postgresql_metastore = PostgresqlMetastore::new(postgresql_metastore_config, uri)
-            .await
-            .map(MetastoreServiceClient::new)
-            .map_err(MetastoreResolverError::Initialization)?;
+        let postgresql_metastore = if options.read_only {
+            PostgresqlMetastore::new_read_only(postgresql_metastore_config, uri).await
+        } else {
+            PostgresqlMetastore::new(postgresql_metastore_config, uri).await
+        }
+        .map(MetastoreServiceClient::new)
+        .map_err(MetastoreResolverError::Initialization)?;
         let unique_metastore_for_uri = self
-            .cache_metastore(uri.clone(), postgresql_metastore)
+            .cache_metastore(uri.clone(), options, postgresql_metastore)
             .await;
         Ok(unique_metastore_for_uri)
     }
