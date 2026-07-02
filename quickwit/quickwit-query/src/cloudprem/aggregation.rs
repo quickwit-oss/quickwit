@@ -2281,13 +2281,14 @@ mod tests {
         let tantivy_aggs = to_tantivy_aggregation(agg.clone(), 0).unwrap();
         let searcher = test_searcher();
         let collector = tantivy::aggregation::DistributedAggregationCollector::from_aggs(
-            tantivy_aggs,
+            tantivy_aggs.clone(),
             Default::default(),
         );
         let intermediate = searcher.search(&AllQuery, &collector).unwrap();
 
         let results =
-            super::intermediate_aggregation_result_to_proto(intermediate, &agg, 78).unwrap();
+            super::intermediate_aggregation_result_to_proto(intermediate, &agg, &tantivy_aggs, 78)
+                .unwrap();
 
         // test_searcher has 12 hosts × 1 value each (host_N has value N, N docs)
         // each (host_N, N) pair appears as one composite bucket
@@ -2341,13 +2342,14 @@ mod tests {
         let tantivy_aggs = to_tantivy_aggregation(agg.clone(), 0).unwrap();
         let searcher = test_searcher();
         let collector = tantivy::aggregation::DistributedAggregationCollector::from_aggs(
-            tantivy_aggs,
+            tantivy_aggs.clone(),
             Default::default(),
         );
         let intermediate = searcher.search(&AllQuery, &collector).unwrap();
 
         let results =
-            super::intermediate_aggregation_result_to_proto(intermediate, &agg, 78).unwrap();
+            super::intermediate_aggregation_result_to_proto(intermediate, &agg, &tantivy_aggs, 78)
+                .unwrap();
 
         // 12 composite buckets + 1 __TOTAL__ row
         assert_eq!(results.len(), 13, "expected 12 buckets + 1 total row");

@@ -118,6 +118,10 @@ fn quantize_timestamp_ranges(ast: &mut QueryAst) {
 /// Returns true if adding documents without `field` to the result set would not
 /// change this aggregation's output. Only checks the top-level agg type —
 /// sub-aggregations are shielded by their parent bucket.
+///
+/// An aggregation with a `missing` default value explicitly opts into processing
+/// documents that lack the field, so stripping `field_presence` would change the
+/// result even though the field name matches.
 fn agg_unaffected_by_missing_field(agg: &AggregationVariants, field: &str) -> bool {
     // If `missing` is set, docs without a value for the field are substituted with it and
     // counted, so adding more such docs *does* change the result — only safe to strip when
@@ -141,16 +145,14 @@ fn agg_unaffected_by_missing_field(agg: &AggregationVariants, field: &str) -> bo
         // we should check that each source targets the field, unfortunately
         // sources struct does not expose its field. Conservative: never strip.
         AggregationVariants::Composite(_) => false,
+        // top_hits returns docs — extra docs change the result
+        AggregationVariants::TopHits(_) => false,
+        // multi_terms: a term entry with `missing` set means docs without that field
+        // are included in the combo using the default value — stripping is not safe
         AggregationVariants::MultiTerms(mt) => mt
             .terms
             .iter()
             .any(|t| t.field == field && t.missing.is_none()),
-        // top_hits returns docs — extra docs change the result
-        AggregationVariants::TopHits(_) => false,
-        // multi_terms groups by multiple fields simultaneously; check if all target the field
-        AggregationVariants::MultiTerms(mt) => {
-            mt.terms.iter().any(|t| t.field == field)
-        }
     }
 }
 
