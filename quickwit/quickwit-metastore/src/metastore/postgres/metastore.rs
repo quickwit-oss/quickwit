@@ -61,6 +61,7 @@ use time::OffsetDateTime;
 use tracing::{debug, info, instrument, warn};
 use uuid::Uuid;
 
+use super::QW_POSTGRES_READ_ONLY_ENV_KEY;
 use super::error::convert_sqlx_err;
 use super::migrator::Migrations;
 use super::model::{PgDeleteTask, PgIndex, PgIndexTemplate, PgShard, PgSplit, Splits};
@@ -68,7 +69,6 @@ use super::parquet_model::{InsertableParquetSplit, ParquetSplitRecord, PgParquet
 use super::pool::TrackedPool;
 use super::split_stream::SplitStream;
 use super::utils::{append_query_filters_and_order_by, establish_connection};
-use super::QW_POSTGRES_READ_ONLY_ENV_KEY;
 use crate::checkpoint::{
     IndexCheckpointDelta, PartitionId, SourceCheckpoint, SourceCheckpointDelta,
 };
