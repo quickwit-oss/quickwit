@@ -32,8 +32,8 @@ use super::{
 // ignore deferred migrations. The locks are implemented using Postgres advisory locks.
 //
 // Advisory locks are Postgres locks on custom defined resources, represented by a key of two ints.
-// These two ints are arbitrary magic (but stable) numbers that make up the lock for running deferred
-// migrations.
+// These two ints are arbitrary magic (but stable) numbers that make up the key for the deferred
+// migrations lock.
 const DEFERRED_MIGRATIONS_LOCK_KEY_1: i32 = 424242;
 const DEFERRED_MIGRATIONS_LOCK_KEY_2: i32 = 1;
 
@@ -51,8 +51,6 @@ enum DeferredOutcome {
     Failed,
 }
 
-/// Runs the PostgreSQL metastore migrations: the required ones synchronously (gating readiness)
-/// and, unless disabled, the deferred ones in a detached background task.
 pub(super) struct Migrations {
     connection_pool: TrackedPool<Postgres>,
     skip_migrations: bool,
@@ -70,8 +68,7 @@ impl Migrations {
         }
     }
 
-    /// Runs the required migrations, then spawns the deferred migrations unless disabled. Deferred
-    /// election relies on advisory locks, so it is skipped whenever migration locking is.
+    /// Runs the required migrations, and tries to also run the deferred migrations.
     pub(super) async fn run(&self) -> MetastoreResult<()> {
         self.run_required(get_migrations()).await?;
 
@@ -81,6 +78,7 @@ impl Migrations {
         Ok(())
     }
 
+    /// Required migrations are lightweight and critical to the system, and must be applied.
     async fn run_required(&self, mut migrator: Migrator) -> MetastoreResult<()> {
         let mut conn = self.connection_pool.acquire().await?;
 
@@ -93,15 +91,16 @@ impl Migrations {
         do_migrations(migrator, &mut conn).await
     }
 
-    /// Spawns the one-shot, detached deferred-migration attempt. Fire-and-forget: it self-terminates
-    /// after one attempt or when the process exits. A failed attempt is logged and counted (see
-    /// run_deferred); it is not retried until the next restart.
+    /// Spawns the task to apply deferred migrations. A failure in applying these migrations is not
+    /// fatal.
     fn spawn_deferred(&self) {
         let connection_pool = self.connection_pool.clone();
         quickwit_common::spawn_named_task(
             async move {
                 match Self::run_deferred(&connection_pool, get_deferred_migrations()).await {
-                    DeferredOutcome::Applied => info!("deferred PostgreSQL migrations applied successfully"),
+                    DeferredOutcome::Applied => {
+                        info!("deferred PostgreSQL migrations applied successfully")
+                    }
                     DeferredOutcome::LockNotAcquired => {
                         info!("deferred PostgreSQL migrations handled by another node")
                     }
@@ -112,6 +111,9 @@ impl Migrations {
         );
     }
 
+    /// Apply the deferred migrations. We try to get the lock; if we do, we're the migration leader
+    /// and attempt to apply it. If we didn't, that means another pod did, and we can go about our
+    /// day.
     async fn run_deferred(pool: &TrackedPool<Postgres>, mut migrator: Migrator) -> DeferredOutcome {
         let mut conn: PgConnection = match pool.acquire().await {
             Ok(connection) => connection.detach(),
@@ -143,7 +145,8 @@ impl Migrations {
         migrator.set_locking(false);
         match do_migrations(migrator, &mut conn).await {
             Ok(()) => DeferredOutcome::Applied,
-            Err(_) => {
+            Err(error) => {
+                error!(%error, "failed to apply deferred migrations");
                 DEFERRED_MIGRATIONS_APPLY_ERRORS.inc();
                 DeferredOutcome::Failed
             }
@@ -158,10 +161,9 @@ fn internal_error(message: &'static str, cause: impl std::fmt::Display) -> Metas
     }
 }
 
-/// Runs a migrator's pending up-migrations on `conn`. Shared by the required and deferred tracks.
-///
-/// `ignore_missing` tolerates applied rows absent from this migrator's set: rows from the other
-/// track, or migrations from a newer image after a rollback.
+/// Runs a migrator's pending up-migrations on `conn`.
+/// `ignore_missing` is how we are able to ensure forwards/backwards compatibility - we don't error
+/// in the case a migration in the db is not present in our migration set.
 async fn do_migrations(mut migrator: Migrator, conn: &mut PgConnection) -> MetastoreResult<()> {
     migrator.set_ignore_missing(true);
     // run_direct takes a Migrate connection directly, sidestepping run()'s Acquire bound that our
@@ -184,10 +186,13 @@ async fn check_migrations(migrator: &Migrator, conn: &mut PgConnection) -> Metas
             format!("migration {dirty} is dirty"),
         ));
     }
-    let applied_migrations = conn.list_applied_migrations().await.map_err(|migrate_error| {
-        error!(error=%migrate_error, "failed to validate PostgreSQL migrations");
-        internal_error("failed to validate PostgreSQL migrations", migrate_error)
-    })?;
+    let applied_migrations = conn
+        .list_applied_migrations()
+        .await
+        .map_err(|migrate_error| {
+            error!(error=%migrate_error, "failed to validate PostgreSQL migrations");
+            internal_error("failed to validate PostgreSQL migrations", migrate_error)
+        })?;
     let applied_by_version: BTreeMap<_, _> = applied_migrations
         .iter()
         .map(|applied_migration| (applied_migration.version, applied_migration))
@@ -240,9 +245,17 @@ mod tests {
     }
 
     async fn test_pool(read_only: bool) -> TrackedPool<Postgres> {
-        establish_connection(&test_uri(), 1, 5, Duration::from_secs(2), None, None, read_only)
-            .await
-            .unwrap()
+        establish_connection(
+            &test_uri(),
+            1,
+            5,
+            Duration::from_secs(2),
+            None,
+            None,
+            read_only,
+        )
+        .await
+        .unwrap()
     }
 
     fn migrations(connection_pool: &TrackedPool<Postgres>, skip_migrations: bool) -> Migrations {
@@ -287,7 +300,6 @@ mod tests {
         }
     }
 
-    // Pre-clean so run_required has to (re)apply the test migration from scratch.
     async fn reset_test_migration(connection_pool: &TrackedPool<Postgres>) {
         sqlx::query("DROP TABLE IF EXISTS qw_test_migration_marker")
             .execute(connection_pool)
@@ -466,8 +478,14 @@ mod tests {
             .iter()
             .filter(|outcome| matches!(outcome, DeferredOutcome::LockNotAcquired))
             .count();
-        assert_eq!(applied, 1, "exactly one runner should win the lock and apply");
-        assert_eq!(not_acquired, 1, "the other runner should not acquire the lock");
+        assert_eq!(
+            applied, 1,
+            "exactly one runner should win the lock and apply"
+        );
+        assert_eq!(
+            not_acquired, 1,
+            "the other runner should not acquire the lock"
+        );
 
         // the winning runner actually applied the migration: its marker table now exists
         sqlx::query("SELECT 1 FROM qw_test_deferred_marker LIMIT 1")
