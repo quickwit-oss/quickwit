@@ -145,22 +145,22 @@ pub struct TlsConfig {
     pub verify_client_cert: bool,
     // How often the certificate and key files are polled for changes and hot-reloaded (e.g.
     // `"5m"`). An immediate reload can also be triggered out-of-band with `SIGHUP`.
-    #[serde(default = "default_cert_reload_interval")]
-    pub cert_reload_interval: HumanDuration,
+    #[serde(default = "default_cert_poll_interval")]
+    pub cert_poll_interval: HumanDuration,
 }
 
 impl TlsConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
         ensure!(
-            !self.cert_reload_interval.is_zero(),
-            "`tls.cert_reload_interval` must be greater than zero, got `{}`",
-            self.cert_reload_interval
+            !self.cert_poll_interval.is_zero(),
+            "`tls.cert_poll_interval` must be greater than zero, got `{}`",
+            self.cert_poll_interval
         );
         Ok(())
     }
 }
 
-fn default_cert_reload_interval() -> HumanDuration {
+fn default_cert_poll_interval() -> HumanDuration {
     HumanDuration::try_from("5m".to_string()).expect("`5m`should be a valid human duration")
 }
 
@@ -1078,14 +1078,14 @@ mod tests {
         assert!(grpc_config.validate().is_err());
     }
 
-    fn tls_config(reload_interval: &str) -> TlsConfig {
+    fn tls_config(poll_interval: &str) -> TlsConfig {
         TlsConfig {
             cert_path: "/path/to/server.crt".to_string(),
             key_path: "/path/to/server.key".to_string(),
             ca_path: String::new(),
             expected_name: None,
             verify_client_cert: false,
-            cert_reload_interval: HumanDuration::try_from(reload_interval.to_string()).unwrap(),
+            cert_poll_interval: HumanDuration::try_from(poll_interval.to_string()).unwrap(),
         }
     }
 
@@ -1101,7 +1101,7 @@ mod tests {
     }
 
     #[test]
-    fn test_grpc_config_validate_rejects_zero_tls_reload_interval() {
+    fn test_grpc_config_validate_rejects_zero_tls_poll_interval() {
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::mib(20),
             tls_config: Some(tls_config("0s")),
