@@ -147,6 +147,10 @@ fn agg_unaffected_by_missing_field(agg: &AggregationVariants, field: &str) -> bo
             .any(|t| t.field == field && t.missing.is_none()),
         // top_hits returns docs — extra docs change the result
         AggregationVariants::TopHits(_) => false,
+        // multi_terms groups by multiple fields simultaneously; check if all target the field
+        AggregationVariants::MultiTerms(mt) => {
+            mt.terms.iter().any(|t| t.field == field)
+        }
     }
 }
 

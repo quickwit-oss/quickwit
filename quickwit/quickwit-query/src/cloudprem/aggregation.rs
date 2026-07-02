@@ -12,7 +12,9 @@ use quickwit_proto::cloudprem::{
 use tantivy::aggregation::agg_req::{
     Aggregation as TantivyAggregation, AggregationVariants, Aggregations as TantivyAggregations,
 };
-use tantivy::aggregation::bucket::{CustomOrder, IncludeExcludeParam, Order, OrderTarget};
+use tantivy::aggregation::bucket::{
+    CustomOrder, IncludeExcludeParam, MultiTermsAggregation, MultiTermsField, Order, OrderTarget,
+};
 use tantivy::aggregation::intermediate_agg_result::{IntermediateAggregationResults, PruneMode};
 use tantivy::aggregation::{bucket, metric};
 
@@ -70,8 +72,12 @@ pub fn sanitize_metric_id_aggregations(aggregation: &mut EvpAggregation) {
         AggregationNode::MetricCompute(metric_compute) => {
             sanitize_metric_id(&mut metric_compute.id);
         }
-        AggregationNode::FlatFieldsGroupBy(_)
-        | AggregationNode::ListCompute(_)
+        AggregationNode::FlatFieldsGroupBy(flat_fields_group_by) => {
+            if let Some(child) = flat_fields_group_by.child.as_mut() {
+                sanitize_metric_id_aggregations(&mut *child);
+            }
+        }
+        AggregationNode::ListCompute(_)
         | AggregationNode::AnyCompute(_)
         | AggregationNode::HistogramGroupBy(_) => {}
     };
@@ -158,8 +164,9 @@ impl AggregationMapper {
             AggregationNode::HistogramGroupBy(_) => {
                 return Err(unsupported_query_error("histogram group by"));
             }
-            AggregationNode::FlatFieldsGroupBy(_) => {
-                return Err(unsupported_query_error("flat fields group by"));
+            AggregationNode::FlatFieldsGroupBy(flat_fields_group_by) => {
+                tantivy_aggregations_per_key
+                    .extend(self.handle_flat_fields_group_by(*flat_fields_group_by)?);
             }
             AggregationNode::Computes(computes) => {
                 for agg in computes.aggregation {
@@ -263,6 +270,57 @@ impl AggregationMapper {
 
         // TODO i'm still searching if there is a proper "output" field somewhere we should be
         // using, there really ought to be
+        Ok(named_aggregations)
+    }
+
+    fn handle_flat_fields_group_by(
+        &self,
+        flat: quickwit_proto::cloudprem::FlatFieldsGroupBy,
+    ) -> Result<Vec<(String, TantivyAggregation)>, InvalidQuery> {
+        let tantivy_fields: Vec<MultiTermsField> = flat
+            .fields
+            .iter()
+            .map(|f| {
+                let field = extract_field_name(f.expression.as_ref())?;
+                let missing = f
+                    .missing
+                    .as_ref()
+                    .map(|m| tantivy::aggregation::Key::Str(m.clone()));
+                Ok(MultiTermsField { field, missing })
+            })
+            .collect::<Result<_, InvalidQuery>>()?;
+
+        let agg_name = tantivy_fields
+            .iter()
+            .map(|f| f.field.as_str())
+            .collect::<Vec<_>>()
+            .join("|");
+
+        let Some(child) = flat.child else {
+            return Err(missing_required("flat_fields_group_by.child"));
+        };
+        let mut sub_aggregation = self.handle_generic_aggregation(*child)?;
+
+        let mut named_aggregations = Vec::new();
+        if flat.total.is_some() {
+            for (sub_agg_name, sub_agg) in &sub_aggregation {
+                let sibling = total_subaggregation_sibling_names(&agg_name, sub_agg_name);
+                named_aggregations.push((sibling, sub_agg.clone()));
+            }
+        }
+
+        let order = build_group_by_sort_order(&flat.sort, &mut sub_aggregation)?;
+        let multi_terms_agg = MultiTermsAggregation {
+            terms: tantivy_fields,
+            size: Some(flat.limit),
+            order,
+            ..Default::default()
+        };
+        let tantivy_agg = TantivyAggregation {
+            agg: AggregationVariants::MultiTerms(multi_terms_agg),
+            sub_aggregation,
+        };
+        named_aggregations.push((agg_name, tantivy_agg));
         Ok(named_aggregations)
     }
 
@@ -586,8 +644,8 @@ impl IntermediateResultMapper {
             AggregationNode::HistogramGroupBy(_) => {
                 return Err(unsupported_query_error("histogram group by").into());
             }
-            AggregationNode::FlatFieldsGroupBy(_) => {
-                return Err(unsupported_query_error("flat fields group by").into());
+            AggregationNode::FlatFieldsGroupBy(flat_fields_group_by) => {
+                self.handle_flat_fields_group_by(agg_result, state, flat_fields_group_by)?;
             }
             AggregationNode::Computes(computes) => {
                 for agg in &computes.aggregation {
@@ -670,6 +728,76 @@ impl IntermediateResultMapper {
             }
             _ => return Err(internal_error("result content missmatch").into()),
         }
+        Ok(())
+    }
+
+    fn handle_flat_fields_group_by(
+        &mut self,
+        agg_result: &mut IntermediateAggregationResults,
+        state: &mut EvpAggregationResult,
+        flat: &quickwit_proto::cloudprem::FlatFieldsGroupBy,
+    ) -> Result<(), CloudPremError> {
+        use tantivy::aggregation::intermediate_agg_result::{
+            IntermediateAggregationResult as TantivyIntermediateAggResult, IntermediateBucketResult,
+        };
+
+        let field_names: Vec<String> = flat
+            .fields
+            .iter()
+            .map(|f| extract_field_name(f.expression.as_ref()).map_err(CloudPremError::from))
+            .collect::<Result<_, _>>()?;
+        let key = field_names.join("|");
+
+        let Some(agg) = agg_result.remove(&key) else {
+            return Ok(());
+        };
+
+        let TantivyIntermediateAggResult::Bucket(IntermediateBucketResult::MultiTerms { buckets }) =
+            agg
+        else {
+            return Err(internal_error("result content missmatch").into());
+        };
+
+        let child_agg_def = flat
+            .child
+            .as_ref()
+            .ok_or_else(|| missing_required("flat_fields_group_by.child"))?
+            .aggregation
+            .as_ref()
+            .ok_or_else(|| missing_required("flat_fields_group_by.child.aggregation"))?;
+
+        let state_key_len = state.key.len();
+        debug_assert!(state.value.is_empty());
+
+        let mut total_in_buckets = 0u64;
+
+        for (composite_key, entry) in buckets.entries().iter() {
+            let doc_count = entry.doc_count;
+            total_in_buckets += doc_count;
+            for k in composite_key {
+                state.key.push(k.to_string());
+            }
+            let mut sub_agg = entry.sub_aggregation.clone();
+            self.consume_agg_aux(&mut sub_agg, state, child_agg_def, doc_count)?;
+            if !state.value.is_empty() {
+                self.results.push(state.clone());
+                state.value.clear();
+            }
+            state.key.truncate(state_key_len);
+        }
+
+        if let Some(total_field) = flat.total.as_ref() {
+            let total_count = total_in_buckets + buckets.sum_other_doc_count();
+            let mut total_agg = extract_intermediate_total_siblings(agg_result, &key);
+            state.key.push(total_field.to_string());
+            self.consume_agg_aux(&mut total_agg, state, child_agg_def, total_count)?;
+            if !state.value.is_empty() {
+                self.results.push(state.clone());
+                state.value.clear();
+            }
+            state.key.truncate(state_key_len);
+        }
+
         Ok(())
     }
 
@@ -2069,6 +2197,172 @@ mod tests {
         let bucket_1 = find_result_by_key(&evp_agg_results, "1970-01-01T01:00:00Z");
         let count_1 = bucket_1.value[0].value.as_ref().unwrap();
         assert_eq!(count_1, &agg_value::Value::Uint64Value(2));
+    }
+
+    #[test]
+    fn test_flat_fields_group_by_request() {
+        use quickwit_proto::cloudprem::aggregation::Aggregation as AggEnum;
+        use quickwit_proto::cloudprem::{Field, FlatFieldsGroupBy};
+
+        let evp_agg = Aggregation {
+            aggregation: Some(AggEnum::FlatFieldsGroupBy(Box::new(FlatFieldsGroupBy {
+                fields: vec![
+                    Field {
+                        expression: Some(host_expr()),
+                        missing: None,
+                    },
+                    Field {
+                        expression: Some(field_expr("value")),
+                        missing: None,
+                    },
+                ],
+                outputs: vec!["host".to_string(), "value".to_string()],
+                limit: 20,
+                sort: None,
+                total: None,
+                child: Some(Box::new(Aggregation {
+                    aggregation: Some(AggEnum::Computes(Computes {
+                        aggregation: vec![Aggregation {
+                            aggregation: Some(count_metric()),
+                        }],
+                        time_grouping: vec![],
+                    })),
+                })),
+            }))),
+        };
+
+        let res = to_tantivy_aggregation(evp_agg, 0).unwrap();
+
+        assert_eq!(res.len(), 1);
+        let tantivy_agg = &res["host|value"];
+        match &tantivy_agg.agg {
+            AggregationVariants::MultiTerms(mt) => {
+                assert_eq!(mt.terms.len(), 2);
+                assert_eq!(mt.terms[0].field, "host");
+                assert_eq!(mt.terms[1].field, "value");
+                assert_eq!(mt.size, Some(20));
+            }
+            other => panic!("expected MultiTerms, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_intermediate_flat_fields_group_by() {
+        use quickwit_proto::cloudprem::aggregation::Aggregation as AggEnum;
+        use quickwit_proto::cloudprem::{Field, FlatFieldsGroupBy};
+
+        let agg = Aggregation {
+            aggregation: Some(AggEnum::FlatFieldsGroupBy(Box::new(FlatFieldsGroupBy {
+                fields: vec![
+                    Field {
+                        expression: Some(host_expr()),
+                        missing: None,
+                    },
+                    Field {
+                        expression: Some(field_expr("value")),
+                        missing: None,
+                    },
+                ],
+                outputs: vec!["host".to_string(), "value".to_string()],
+                limit: 100,
+                sort: None,
+                total: None,
+                child: Some(Box::new(Aggregation {
+                    aggregation: Some(AggEnum::Computes(Computes {
+                        aggregation: vec![Aggregation {
+                            aggregation: Some(count_metric()),
+                        }],
+                        time_grouping: vec![],
+                    })),
+                })),
+            }))),
+        };
+
+        let tantivy_aggs = to_tantivy_aggregation(agg.clone(), 0).unwrap();
+        let searcher = test_searcher();
+        let collector = tantivy::aggregation::DistributedAggregationCollector::from_aggs(
+            tantivy_aggs,
+            Default::default(),
+        );
+        let intermediate = searcher.search(&AllQuery, &collector).unwrap();
+
+        let results =
+            super::intermediate_aggregation_result_to_proto(intermediate, &agg, 78).unwrap();
+
+        // test_searcher has 12 hosts × 1 value each (host_N has value N, N docs)
+        // each (host_N, N) pair appears as one composite bucket
+        assert_eq!(results.len(), 12, "expected 12 composite buckets");
+
+        for result in &results {
+            // Each result must have exactly 2 key components: host and value
+            assert_eq!(
+                result.key.len(),
+                2,
+                "expected 2 key components, got {:?}",
+                result.key
+            );
+            // Single count metric → exactly 1 value
+            assert_eq!(result.value.len(), 1);
+        }
+    }
+
+    #[test]
+    fn test_intermediate_flat_fields_group_by_with_total() {
+        use quickwit_proto::cloudprem::aggregation::Aggregation as AggEnum;
+        use quickwit_proto::cloudprem::{Field, FlatFieldsGroupBy};
+
+        let agg = Aggregation {
+            aggregation: Some(AggEnum::FlatFieldsGroupBy(Box::new(FlatFieldsGroupBy {
+                fields: vec![
+                    Field {
+                        expression: Some(host_expr()),
+                        missing: None,
+                    },
+                    Field {
+                        expression: Some(field_expr("value")),
+                        missing: None,
+                    },
+                ],
+                outputs: vec!["host".to_string(), "value".to_string()],
+                limit: 2,
+                sort: None,
+                total: Some("__TOTAL__".to_string()),
+                child: Some(Box::new(Aggregation {
+                    aggregation: Some(AggEnum::Computes(Computes {
+                        aggregation: vec![Aggregation {
+                            aggregation: Some(count_metric()),
+                        }],
+                        time_grouping: vec![],
+                    })),
+                })),
+            }))),
+        };
+
+        let tantivy_aggs = to_tantivy_aggregation(agg.clone(), 0).unwrap();
+        let searcher = test_searcher();
+        let collector = tantivy::aggregation::DistributedAggregationCollector::from_aggs(
+            tantivy_aggs,
+            Default::default(),
+        );
+        let intermediate = searcher.search(&AllQuery, &collector).unwrap();
+
+        let results =
+            super::intermediate_aggregation_result_to_proto(intermediate, &agg, 78).unwrap();
+
+        // 12 composite buckets + 1 __TOTAL__ row
+        assert_eq!(results.len(), 13, "expected 12 buckets + 1 total row");
+
+        let total = results
+            .iter()
+            .find(|r| r.key.first().map(String::as_str) == Some("__TOTAL__"))
+            .expect("missing __TOTAL__ row");
+        assert_eq!(total.key.len(), 1);
+        // total count = sum of 1..=12 = 78
+        let total_count = match total.value[0].value.as_ref().unwrap() {
+            agg_value::Value::Uint64Value(n) => *n,
+            other => panic!("expected Uint64Value for total, got {other:?}"),
+        };
+        assert_eq!(total_count, 78);
     }
 
     #[test]
