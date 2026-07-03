@@ -34,7 +34,7 @@ fn fixture_tls_config() -> TlsConfig {
         ca_path: format!("{TLS_FIXTURES_DIR}/ca.crt"),
         expected_name: None,
         verify_client_cert: false,
-        cert_reload_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
+        cert_poll_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
     }
 }
 
@@ -303,7 +303,7 @@ async fn test_tls_rest_cert_hot_reload() {
         ca_path: ca_path.clone(),
         // Long interval: the only reload trigger exercised here is `reload_tls_cert()`, so the
         // assertion below cannot be satisfied by the periodic poll instead.
-        cert_reload_interval: HumanDuration::try_from("1h".to_string()).unwrap(),
+        cert_poll_interval: HumanDuration::try_from("1h".to_string()).unwrap(),
         ..fixture_tls_config()
     });
     let sandbox = sandbox_config.start().await;
