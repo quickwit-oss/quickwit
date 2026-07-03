@@ -158,7 +158,7 @@ mod tests {
     use tantivy::collector::Count;
     use tantivy::query::Query as TantivyQuery;
     use tantivy::schema::{
-        JsonObjectOptions, Schema as TantivySchema, TextFieldIndexing, TextOptions,
+        JsonObjectOptions, Schema as TantivySchema, TEXT, TextFieldIndexing, TextOptions,
     };
     use tantivy::{Index, doc};
 
@@ -242,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn test_single_token_prefix_matches_all_terms_despite_low_cap() {
+    fn test_single_token_prefix_matches_all_terms_despite_low_max_expansions() {
         let mut schema_builder = TantivySchema::builder();
         let url_field = schema_builder.add_text_field("url", raw_text_options());
         let schema = schema_builder.build();
@@ -264,6 +264,50 @@ mod tests {
         // single-token prefix lifts the cap and must match all 3 "/fantasy/" documents.
         let query = phrase_prefix_query("url", "/fantasy/", 1);
         assert_eq!(count_matches(&query, &index), 3);
+    }
+
+    #[test]
+    fn test_single_token_prefix_max_expansions() {
+        let mut schema_builder = TantivySchema::builder();
+        let url_field = schema_builder.add_text_field("url", raw_text_options());
+        let schema = schema_builder.build();
+
+        let index = tantivy::IndexBuilder::new()
+            .schema(schema)
+            .create_in_ram()
+            .unwrap();
+        let mut index_writer = index.writer_with_num_threads(1, 20_000_000).unwrap();
+        for url in ["/fantasy/some1", "/fantasy/some2", "/fantasy/some3"] {
+            index_writer.add_document(doc!(url_field => url)).unwrap();
+        }
+        index_writer
+            .add_document(doc!(url_field => "/news/latest"))
+            .unwrap();
+        index_writer.commit().unwrap();
+        let query = phrase_prefix_query("url", "/fantasy/some", 1);
+        assert_eq!(count_matches(&query, &index), 3);
+    }
+
+    #[test]
+    fn test_multi_token_prefix_max_expansions() {
+        let mut schema_builder = TantivySchema::builder();
+        let url_field = schema_builder.add_text_field("url", TEXT);
+        let schema = schema_builder.build();
+
+        let index = tantivy::IndexBuilder::new()
+            .schema(schema)
+            .create_in_ram()
+            .unwrap();
+        let mut index_writer = index.writer_with_num_threads(1, 20_000_000).unwrap();
+        for url in ["/fantasy/some1", "/fantasy/some2", "/fantasy/some3"] {
+            index_writer.add_document(doc!(url_field => url)).unwrap();
+        }
+        index_writer
+            .add_document(doc!(url_field => "/news/latest"))
+            .unwrap();
+        index_writer.commit().unwrap();
+        let query = phrase_prefix_query("url", "/fantasy/some", 1);
+        assert_eq!(count_matches(&query, &index), 1);
     }
 
     #[test]
