@@ -1958,9 +1958,9 @@ dependencies = [
 
 [[package]]
 name = "chitchat"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec9d05384b0f3f305c5a379b1ec8e716cae107a66eae27e46b120f0a91b7f5ef"
+checksum = "9e1cfd5d16c6fc43487006ab5b5c910f295cc53cf07d90491fb36c8dc479c754"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1972,6 +1972,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "tracing-subscriber",
  "zstd",
 ]
 
@@ -9234,7 +9235,6 @@ dependencies = [
  "proptest",
  "quickwit-common",
  "quickwit-datetime",
- "quickwit-proto",
  "regex",
  "rustc-hash",
  "serde",
@@ -9468,6 +9468,7 @@ dependencies = [
  "quickwit-metrics",
  "serde_json",
  "time",
+ "tokio",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
@@ -10069,7 +10070,6 @@ checksum = "62e0021ea2c22aed41653bc7e1419abb2c97e038ff2c33d0e1309e49a97deec0"
 dependencies = [
  "base64 0.22.1",
  "bytes",
- "futures-channel",
  "futures-core",
  "futures-util",
  "http 1.4.0",

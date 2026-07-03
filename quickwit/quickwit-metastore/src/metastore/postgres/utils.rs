@@ -198,7 +198,10 @@ pub(super) fn append_query_filters_and_order_by(
                 Expr::col(Splits::IndexUid).into(),
                 Expr::col(Splits::SplitId).into(),
             ])
-            .gt(Expr::tuple([Expr::value(index_uid), Expr::value(split_id)])),
+            .gt(Expr::tuple([
+                Expr::value(index_uid),
+                Expr::value(split_id.as_str()),
+            ])),
         );
     }
 

@@ -232,9 +232,9 @@ impl FileBackedIndex {
             .map(|delete_task| delete_task.opstamp)
             .max()
             .unwrap_or(0) as usize;
-        let splits = splits
+        let splits: HashMap<SplitId, Split> = splits
             .into_iter()
-            .map(|split| (split.split_id().to_string(), split))
+            .map(|split| (split.split_id().clone(), split))
             .collect();
         let metrics_splits = metrics_splits
             .into_iter()
@@ -330,7 +330,7 @@ impl FileBackedIndex {
             publish_timestamp: None,
             split_metadata,
         };
-        self.splits.insert(split.split_id().to_string(), split);
+        self.splits.insert(split.split_id().clone(), split);
         Ok(())
     }
 
@@ -1331,7 +1331,7 @@ mod tests {
         [
             Split {
                 split_metadata: SplitMetadata {
-                    split_id: "split-1".to_string(),
+                    split_id: "split-1".into(),
                     delete_opstamp: 9,
                     time_range: Some(32..=40),
                     tags: BTreeSet::from(["tag-1".to_string()]),
@@ -1345,7 +1345,7 @@ mod tests {
             },
             Split {
                 split_metadata: SplitMetadata {
-                    split_id: "split-2".to_string(),
+                    split_id: "split-2".into(),
                     delete_opstamp: 4,
                     time_range: None,
                     tags: BTreeSet::from(["tag-2".to_string(), "tag-3".to_string()]),
@@ -1359,7 +1359,7 @@ mod tests {
             },
             Split {
                 split_metadata: SplitMetadata {
-                    split_id: "split-3".to_string(),
+                    split_id: "split-3".into(),
                     delete_opstamp: 0,
                     time_range: Some(0..=90),
                     tags: BTreeSet::from(["tag-2".to_string(), "tag-4".to_string()]),

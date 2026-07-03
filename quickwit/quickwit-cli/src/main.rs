@@ -147,9 +147,7 @@ async fn main_impl() -> anyhow::Result<()> {
     } else {
         0
     };
-
-    telemetry_handle.shutdown()?;
-
+    telemetry_handle.shutdown().await?;
     std::process::exit(return_code)
 }
 

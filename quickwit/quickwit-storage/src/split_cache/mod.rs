@@ -28,9 +28,9 @@ use quickwit_common::split_file;
 use quickwit_common::uri::Uri;
 use quickwit_config::SplitCacheLimits;
 use quickwit_proto::search::ReportSplit;
+use quickwit_proto::types::SplitId;
 use tantivy::directory::OwnedBytes;
 use tracing::{error, info, instrument, warn};
-use ulid::Ulid;
 
 use crate::file_descriptor_cache::{FileDescriptorCache, SplitFile};
 use crate::split_cache::download_task::spawn_download_task;
@@ -59,7 +59,7 @@ impl SplitCache {
         limits: SplitCacheLimits,
     ) -> io::Result<Arc<SplitCache>> {
         std::fs::create_dir_all(&root_path)?;
-        let mut existing_splits: BTreeMap<Ulid, u64> = Default::default();
+        let mut existing_splits: BTreeMap<SplitId, u64> = Default::default();
         for dir_entry_res in std::fs::read_dir(&root_path)? {
             let dir_entry = dir_entry_res?;
             let path = dir_entry.path();
@@ -80,10 +80,10 @@ impl SplitCache {
                     }
                 }
                 "split" => {
-                    if let Some(split_ulid) = split_id_from_path(&path) {
-                        existing_splits.insert(split_ulid, meta.len());
+                    if let Some(split_id) = split_id_from_path(&path) {
+                        existing_splits.insert(split_id, meta.len());
                     } else {
-                        warn!(path=%path.display(), ".split file with invalid ulid in split cache directory, ignoring");
+                        warn!(path=%path.display(), ".split file with invalid name in split cache directory, ignoring");
                     }
                 }
                 _ => {
@@ -120,7 +120,7 @@ impl SplitCache {
 
     /// Remove splits from both the fd cache and the split cache.
     /// This method does NOT update the split table.
-    pub(crate) fn evict(&self, splits_to_evict: &[Ulid]) {
+    pub(crate) fn evict(&self, splits_to_evict: &[SplitId]) {
         self.fd_cache.evict_split_files(splits_to_evict);
         delete_evicted_splits(&self.root_path, splits_to_evict);
     }
@@ -138,28 +138,26 @@ impl SplitCache {
     pub fn report_splits(&self, report_splits: Vec<ReportSplit>) {
         let mut split_table = self.split_table.lock().unwrap();
         for report_split in report_splits {
-            let Ok(split_ulid) = Ulid::from_str(&report_split.split_id) else {
-                error!(split_id=%report_split.split_id, "received invalid split ulid: ignoring");
-                continue;
-            };
+            // Split ids are opaque: any non-empty string is accepted (no ULID validation).
+            let split_id = SplitId::from(report_split.split_id);
             let Ok(storage_uri) = Uri::from_str(&report_split.storage_uri) else {
                 error!(storage_uri=%report_split.storage_uri, "received invalid storage uri: ignoring");
                 continue;
             };
-            split_table.report(split_ulid, storage_uri);
+            split_table.report(split_id, storage_uri);
         }
     }
 
     // Returns a split guard object. As long as it is not dropped, the
     // split won't be evinced from the cache.
-    async fn get_split_file(&self, split_id: Ulid, storage_uri: &Uri) -> Option<SplitFile> {
+    async fn get_split_file(&self, split_id: SplitId, storage_uri: &Uri) -> Option<SplitFile> {
         // We touch before even checking the fd cache in order to update the file's last access time
         // for the file cache.
         let num_bytes_opt: Option<u64> = self
             .split_table
             .lock()
             .unwrap()
-            .touch(split_id, storage_uri);
+            .touch(split_id.clone(), storage_uri);
 
         let num_bytes = num_bytes_opt?;
         self.fd_cache
@@ -175,8 +173,8 @@ impl SplitCache {
 /// At this point, the disk space is already accounted as released,
 /// so the error could result in a "disk space leak".
 #[instrument]
-fn delete_evicted_splits(root_path: &Path, splits_to_delete: &[Ulid]) {
-    for &split_to_delete in splits_to_delete {
+fn delete_evicted_splits(root_path: &Path, splits_to_delete: &[SplitId]) {
+    for split_to_delete in splits_to_delete {
         let split_file_path = root_path.join(split_file(split_to_delete));
         if let Err(_io_err) = std::fs::remove_file(&split_file_path) {
             // This is an pretty critical error. The split size is not tracked anymore at this
@@ -186,10 +184,12 @@ fn delete_evicted_splits(root_path: &Path, splits_to_delete: &[Ulid]) {
     }
 }
 
-fn split_id_from_path(split_path: &Path) -> Option<Ulid> {
+fn split_id_from_path(split_path: &Path) -> Option<SplitId> {
     let split_filename = split_path.file_name()?.to_str()?;
     let split_id_str = split_filename.strip_suffix(".split")?;
-    Ulid::from_str(split_id_str).ok()
+    // The split id is opaque: we take the whole file stem (a random prefix, if any, is part of
+    // the id) rather than parsing it as a ULID.
+    Some(SplitId::from(split_id_str))
 }
 
 struct SplitCacheBackingStorage {
