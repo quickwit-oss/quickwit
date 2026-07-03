@@ -106,9 +106,7 @@ impl Handler<SplitsUpdate> for Publisher {
             .sum();
         info!(
             num_splits = new_splits.len(),
-            num_docs,
-            split_size = %bytesize::ByteSize(split_size_bytes),
-            "publish-new-splits"
+            num_docs, split_size_bytes, "publish-new-splits"
         );
         suggest_truncate(ctx, &self.source_mailbox_opt, checkpoint_delta_opt).await;
 
