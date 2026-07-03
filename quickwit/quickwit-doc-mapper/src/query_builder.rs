@@ -367,15 +367,20 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
         &mut self,
         phrase_prefix: &'a PhrasePrefixQuery,
     ) -> Result<(), Self::Err> {
-        let terms = match phrase_prefix.get_terms(self.schema, self.tokenizer_manager) {
-            Ok((_, terms)) => terms,
+        let phrase_prefix_terms = match phrase_prefix.get_terms(self.schema, self.tokenizer_manager)
+        {
+            Ok(terms) => terms,
             Err(InvalidQuery::SchemaError(_)) | Err(InvalidQuery::FieldDoesNotExist { .. }) => {
                 return Ok(());
             } /* the query will be nullified when casting to a tantivy ast */
             Err(e) => return Err(e),
         };
-        if let Some((_, term)) = terms.last() {
-            self.add_prefix_term(term.clone(), phrase_prefix.max_expansions, terms.len() > 1);
+        if let Some((_, term)) = phrase_prefix_terms.term_positions.last() {
+            self.add_prefix_term(
+                term.clone(),
+                phrase_prefix_terms.max_expansions,
+                phrase_prefix_terms.term_positions.len() > 1,
+            );
         }
         Ok(())
     }
@@ -945,6 +950,20 @@ mod test {
 
         let field = tantivy::schema::Field::from_field_id(1);
         let mut expected_inner = std::collections::HashMap::new();
+        // The single-token phrase prefix ("short") is executed as an uncapped prefix
+        // range query, so its whole term range must be warmed up (limit u32::MAX) and it
+        // needs no positions.
+        expected_inner.insert(
+            TermRange {
+                start: Bound::Included(Term::from_field_text(field, "short")),
+                end: Bound::Excluded(Term::from_field_text(field, "shoru")),
+                limit: Some(u32::MAX as u64),
+            },
+            false,
+        );
+        // The multi-token phrase prefix ("not so short") still runs as a capped phrase
+        // prefix query on its last token, so it warms up at most `max_expansions` terms
+        // and needs positions.
         expected_inner.insert(
             TermRange {
                 start: Bound::Included(Term::from_field_text(field, "short")),
