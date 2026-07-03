@@ -531,7 +531,7 @@ impl Source for IngestSource {
             .collect();
 
         assert!(!added_shard_ids.is_empty());
-        debug!(added_shards=?added_shard_ids, "adding shards assignment");
+        info!(added_shards=?added_shard_ids, "adding shards assignment");
 
         let acquire_shards_request = AcquireShardsRequest {
             index_uid: Some(self.client_id.source_uid.index_uid.clone()),
