@@ -133,7 +133,7 @@ impl IndexerState {
             index_builder,
             io_controls,
         )?;
-        quickwit_common::rate_limited_info!(
+        debug!(
             limit_per_min = 1,
             split_id=%indexed_split.split_id(),
             partition_id=%partition_id,
