@@ -134,7 +134,6 @@ impl IndexerState {
             io_controls,
         )?;
         debug!(
-            limit_per_min = 1,
             split_id=%indexed_split.split_id(),
             partition_id=%partition_id,
             "new-split"

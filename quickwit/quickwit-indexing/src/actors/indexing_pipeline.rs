@@ -500,7 +500,6 @@ impl Handler<AssignShards> for IndexingPipeline {
         // If it is not, it will be respawned soon, and the shards will be assigned afterward.
         if let Some(handles) = &self.handles_opt {
             info!(
-                limit_per_min = 1,
                 shard_ids=?assign_shards_message.0.shard_ids,
                 "assigning shards to indexing pipeline"
             );
