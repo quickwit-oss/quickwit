@@ -22,7 +22,7 @@ use arrow::array::{
     AsArray, BooleanArray, Float64Array, Int64Array, StringArray, UInt32Array, UInt64Array,
 };
 use arrow::datatypes::{DataType, Field, Int32Type, Schema, UInt64Type};
-use pomsky_arrow::{DocSelection, read_segment_columns, tantivy_schema_to_arrow};
+use pomsky_arrow::{DocSelection, read_segment_columns};
 use tantivy::schema::{FAST, SchemaBuilder, TEXT};
 use tantivy::{Index, IndexWriter, TantivyDocument};
 
@@ -188,7 +188,20 @@ fn all_selection_reads_every_alive_doc() {
     let searcher = reader.searcher();
     let segment_reader = &searcher.segment_readers()[0];
 
-    let projected_schema = tantivy_schema_to_arrow(&index.schema());
+    // Project every type, plus the synthetic _doc_id / _segment_ord columns.
+    let projected_schema = Arc::new(Schema::new(vec![
+        Field::new("_doc_id", DataType::UInt32, false),
+        Field::new("_segment_ord", DataType::UInt32, false),
+        Field::new("id", DataType::UInt64, true),
+        Field::new("score", DataType::Int64, true),
+        Field::new("price", DataType::Float64, true),
+        Field::new("active", DataType::Boolean, true),
+        Field::new(
+            "name",
+            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+            true,
+        ),
+    ]));
 
     let batch = read_segment_columns(
         segment_reader,
