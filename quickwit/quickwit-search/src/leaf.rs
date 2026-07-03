@@ -1777,8 +1777,7 @@ async fn run_offloaded_search_tasks(
             Err(err) => {
                 // Transport-level failure: the Lambda invocation itself failed.
                 // Mark all splits in this batch as failed.
-                quickwit_common::rate_limited_error!(
-                    limit_per_min = 1,
+                error!(
                     error = %err,
                     num_splits = batch_split_ids.len(),
                     "lambda invocation failed for batch"
