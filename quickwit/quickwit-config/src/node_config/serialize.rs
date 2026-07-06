@@ -766,6 +766,7 @@ mod tests {
                 predicate_cache: CacheConfig::default_with_capacity(ByteSize::mb(256)),
                 max_num_concurrent_split_searches: 150,
                 max_splits_per_search: None,
+                max_cost_per_searcher: None,
                 _max_num_concurrent_split_streams: Some(serde::de::IgnoredAny),
                 split_cache: None,
                 request_timeout_secs: NonZeroU64::new(30).unwrap(),
