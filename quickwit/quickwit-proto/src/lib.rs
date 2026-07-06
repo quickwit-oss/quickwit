@@ -131,7 +131,7 @@ impl search::SortOrder {
         }
     }
 
-    pub fn compare<T: Ord>(&self, this: &T, other: &T) -> Ordering {
+    pub fn compare<T: Ord + ?Sized>(&self, this: &T, other: &T) -> Ordering {
         if self == &search::SortOrder::Desc {
             this.cmp(other)
         } else {

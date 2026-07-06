@@ -330,7 +330,7 @@ impl CompactorSupervisor {
                         task_id: update.task_id.clone(),
                         index_uid: Some(update.index_uid.clone()),
                         source_id: update.source_id.clone(),
-                        split_ids: update.split_ids.iter().cloned().collect(),
+                        split_ids: update.split_ids.iter().map(|id| id.to_string()).collect(),
                     });
                 }
                 PipelineStatus::Completed => {
@@ -459,7 +459,7 @@ mod tests {
         CompactionPlannerServiceClient, MockCompactionPlannerService,
     };
     use quickwit_proto::metastore::{MetastoreServiceClient, MockMetastoreService};
-    use quickwit_proto::types::NodeId;
+    use quickwit_proto::types::{NodeId, SplitId};
     use quickwit_storage::StorageResolver;
 
     use super::*;
@@ -513,12 +513,12 @@ mod tests {
         assert_eq!(statuses[0].task_id, "task-1");
         assert_eq!(
             statuses[0].split_ids,
-            HashSet::from(["split-a".to_string(), "split-b".to_string()])
+            HashSet::from([SplitId::from("split-a"), SplitId::from("split-b")])
         );
         assert_eq!(statuses[1].task_id, "task-2");
         assert_eq!(
             statuses[1].split_ids,
-            HashSet::from(["split-c".to_string()])
+            HashSet::from([SplitId::from("split-c")])
         );
         universe.assert_quit().await;
     }
@@ -572,7 +572,7 @@ mod tests {
         let config = &index_metadata.index_config;
         let splits: Vec<SplitMetadata> = split_ids
             .iter()
-            .map(|id| SplitMetadata::for_test(id.to_string()))
+            .map(|id| SplitMetadata::for_test(SplitId::from(*id)))
             .collect();
         MergeTaskAssignment {
             task_id: task_id.to_string(),
@@ -750,21 +750,21 @@ mod tests {
                 task_id: "task-1".to_string(),
                 index_uid: quickwit_proto::types::IndexUid::for_test("test-index", 0),
                 source_id: "src".to_string(),
-                split_ids: HashSet::from(["s1".to_string(), "s2".to_string()]),
+                split_ids: HashSet::from([SplitId::from("s1"), SplitId::from("s2")]),
                 status: PipelineStatus::InProgress,
             },
             PipelineStatusUpdate {
                 task_id: "task-2".to_string(),
                 index_uid: quickwit_proto::types::IndexUid::for_test("test-index", 0),
                 source_id: "src".to_string(),
-                split_ids: HashSet::from(["s3".to_string()]),
+                split_ids: HashSet::from([SplitId::from("s3")]),
                 status: PipelineStatus::Completed,
             },
             PipelineStatusUpdate {
                 task_id: "task-3".to_string(),
                 index_uid: quickwit_proto::types::IndexUid::for_test("test-index", 0),
                 source_id: "src".to_string(),
-                split_ids: HashSet::from(["s4".to_string()]),
+                split_ids: HashSet::from([SplitId::from("s4")]),
                 status: PipelineStatus::Failed {
                     error: "boom".to_string(),
                 },

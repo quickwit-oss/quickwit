@@ -195,7 +195,10 @@ pub(super) fn append_query_filters_and_order_by(sql: &mut SelectStatement, query
                 Expr::col(Splits::IndexUid).into(),
                 Expr::col(Splits::SplitId).into(),
             ])
-            .gt(Expr::tuple([Expr::value(index_uid), Expr::value(split_id)])),
+            .gt(Expr::tuple([
+                Expr::value(index_uid),
+                Expr::value(split_id.as_str()),
+            ])),
         );
     }
 
@@ -207,7 +210,7 @@ pub(super) fn append_query_filters_and_order_by(sql: &mut SelectStatement, query
         let excluded_split_ids: Vec<Value> = query
             .excluded_split_ids
             .into_iter()
-            .map(|split_id| Value::String(Some(Box::new(split_id))))
+            .map(|split_id| Value::String(Some(Box::new(split_id.to_string()))))
             .collect();
         let excluded_array = Value::Array(ArrayType::String, Some(Box::new(excluded_split_ids)));
         sql.cond_where(Expr::cust_with_values(

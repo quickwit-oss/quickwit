@@ -172,7 +172,10 @@ impl CompactionPlanner {
 
     async fn ingest_splits(&mut self, splits: Vec<Split>) {
         for split in splits {
-            if self.state.is_split_tracked(&split.split_metadata.split_id) {
+            if self
+                .state
+                .is_split_tracked(split.split_metadata.split_id.as_str())
+            {
                 continue;
             }
             let Ok(index_entry) = self
@@ -324,7 +327,7 @@ mod tests {
     use quickwit_proto::metastore::{
         IndexMetadataResponse, ListSplitsResponse, MetastoreError, MockMetastoreService,
     };
-    use quickwit_proto::types::IndexUid;
+    use quickwit_proto::types::{IndexUid, SplitId};
     use time::OffsetDateTime;
 
     use super::*;
@@ -335,7 +338,7 @@ mod tests {
             update_timestamp,
             publish_timestamp: Some(update_timestamp),
             split_metadata: SplitMetadata {
-                split_id: split_id.to_string(),
+                split_id: SplitId::from(split_id),
                 index_uid: index_uid.clone(),
                 source_id: "test-source".to_string(),
                 node_id: "test-node".to_string(),
@@ -438,7 +441,7 @@ mod tests {
             let query = req.deserialize_list_splits_query().unwrap();
             assert_eq!(
                 query.excluded_split_ids,
-                HashSet::from(["in-flight".to_string(), "tracked".to_string()])
+                HashSet::from([SplitId::from("in-flight"), SplitId::from("tracked")])
             );
 
             let response = ListSplitsResponse::try_from_splits(Vec::new()).unwrap();
@@ -450,7 +453,7 @@ mod tests {
             test_cluster().await,
         );
         planner.state.track_split(SplitMetadata {
-            split_id: "tracked".to_string(),
+            split_id: SplitId::from("tracked"),
             index_uid: index_uid.clone(),
             ..Default::default()
         });
@@ -484,7 +487,7 @@ mod tests {
 
         // Pre-populate: "in-flight" is already being compacted.
         planner.state.track_split(SplitMetadata {
-            split_id: "in-flight".to_string(),
+            split_id: SplitId::from("in-flight"),
             index_uid: index_uid.clone(),
             ..Default::default()
         });

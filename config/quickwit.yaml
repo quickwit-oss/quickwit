@@ -48,7 +48,7 @@ version: 0.8
 #     verify_client_cert: true
 #     # How often cert_path/key_path are polled for changes and hot-reloaded; an
 #     # immediate reload can also be triggered with SIGHUP. Defaults to 5m.
-#     cert_reload_interval: 5m
+#     cert_poll_interval: 5m
 #
 # Optional plaintext health-check server. Disabled unless `listen_port` is set (or the
 # `QW_HEALTH_LISTEN_PORT` environment variable). It serves only `/health/livez` and
@@ -74,7 +74,7 @@ version: 0.8
 #     expected_name: quickwit.local
 #     # How often cert_path/key_path are polled for changes and hot-reloaded; an
 #     # immediate reload can also be triggered with SIGHUP. Defaults to 5m.
-#     cert_reload_interval: 5m
+#     cert_poll_interval: 5m
 #
 # IP address advertised by the node, i.e. the IP address that peer nodes should use to connect to the node for RPCs.
 # The environment variable `QW_ADVERTISE_ADDRESS` can also be used to override this value.

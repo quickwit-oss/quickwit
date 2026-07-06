@@ -516,7 +516,7 @@ mod tests {
 
         // We have 2 delete tasks. Each one will trigger a leaf request for each
         // of the 3 splits. This makes 6 requests.
-        let split_id_with_doc_to_delete = split_metas[2].split_id.clone();
+        let split_id_with_doc_to_delete = split_metas[2].split_id.to_string();
         mock_search_service.expect_leaf_search().times(6).returning(
             move |request: LeafSearchRequest| {
                 // Search on body:delete should return one hit only on the last split

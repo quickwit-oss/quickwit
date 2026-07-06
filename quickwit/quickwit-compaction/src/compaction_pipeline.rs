@@ -387,7 +387,7 @@ pub(crate) mod tests {
     use quickwit_metastore::SplitMetadata;
     use quickwit_proto::indexing::MergePipelineId;
     use quickwit_proto::metastore::{MetastoreServiceClient, MockMetastoreService};
-    use quickwit_proto::types::{IndexUid, NodeId};
+    use quickwit_proto::types::{IndexUid, NodeId, SplitId};
     use quickwit_storage::RamStorage;
     use tokio::sync::Semaphore;
 
@@ -399,7 +399,7 @@ pub(crate) mod tests {
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
         let splits: Vec<SplitMetadata> = split_ids
             .iter()
-            .map(|id| SplitMetadata::for_test(id.to_string()))
+            .map(|id| SplitMetadata::for_test(SplitId::from(*id)))
             .collect();
         let merge_operation = MergeOperation::new_merge_operation(splits);
         let pipeline_id = MergePipelineId {
@@ -440,7 +440,7 @@ pub(crate) mod tests {
         let update = pipeline.pipeline_status_update();
         assert_eq!(update.status, PipelineStatus::InProgress);
         assert_eq!(update.task_id, "task-1");
-        assert_eq!(update.split_ids, HashSet::from([String::from("split-1")]));
+        assert_eq!(update.split_ids, HashSet::from([SplitId::from("split-1")]));
         assert_eq!(update.source_id, "test-source");
         assert_eq!(update.index_uid, IndexUid::for_test("test-index", 0));
     }

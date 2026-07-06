@@ -625,7 +625,7 @@ impl MetastoreService for PostgresqlMetastore {
 
             let tags: Vec<String> = split_metadata.tags.into_iter().collect();
             tags_list.push(sqlx::types::Json(tags));
-            split_ids.push(split_metadata.split_id);
+            split_ids.push(split_metadata.split_id.to_string());
             delete_opstamps.push(split_metadata.delete_opstamp as i64);
             node_ids.push(split_metadata.node_id);
         }
@@ -3105,7 +3105,7 @@ mod tests {
     use quickwit_doc_mapper::tag_pruning::TagFilterAst;
     use quickwit_proto::ingest::Shard;
     use quickwit_proto::metastore::MetastoreService;
-    use quickwit_proto::types::{IndexUid, SourceId};
+    use quickwit_proto::types::{IndexUid, SourceId, SplitId};
     use sea_query::{Asterisk, PostgresQueryBuilder, Query};
     use time::OffsetDateTime;
 
@@ -3377,7 +3377,7 @@ mod tests {
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).after_split(&crate::SplitMetadata {
                 index_uid: index_uid.clone(),
-                split_id: "my_split".to_string(),
+                split_id: "my_split".into(),
                 ..Default::default()
             });
         append_query_filters_and_order_by(sql, query);
@@ -3497,7 +3497,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_all_indexes()
-            .with_excluded_split_ids(HashSet::from(["s1".to_string(), "s2".to_string()]));
+            .with_excluded_split_ids(HashSet::from([SplitId::from("s1"), SplitId::from("s2")]));
         append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),

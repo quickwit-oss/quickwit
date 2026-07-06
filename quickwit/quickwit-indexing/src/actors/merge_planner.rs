@@ -20,7 +20,7 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::{SplitMaturity, SplitMetadata};
 use quickwit_proto::indexing::MergePipelineId;
-use quickwit_proto::types::DocMappingUid;
+use quickwit_proto::types::{DocMappingUid, SplitId};
 use tantivy::Inventory;
 use time::OffsetDateTime;
 use tracing::{info, warn};
@@ -70,7 +70,7 @@ pub struct MergePlanner {
     ///
     /// We incrementally build this set, by adding new splits to it.
     /// When it becomes too large, we entirely rebuild it.
-    known_split_ids: HashSet<String>,
+    known_split_ids: HashSet<SplitId>,
     known_split_ids_recompute_attempt_id: usize,
 
     merge_policy: Arc<dyn MergePolicy>,
@@ -207,19 +207,19 @@ impl MergePlanner {
         merge_planner
     }
 
-    fn rebuild_known_split_ids(&self) -> HashSet<String> {
-        let mut known_split_ids: HashSet<String> = HashSet::default();
+    fn rebuild_known_split_ids(&self) -> HashSet<SplitId> {
+        let mut known_split_ids: HashSet<SplitId> = HashSet::default();
         // Add splits that in `partitioned_young_splits`.
         for young_split_partition in self.partitioned_young_splits.values() {
             for split in young_split_partition {
-                known_split_ids.insert(split.split_id().to_string());
+                known_split_ids.insert(split.split_id().clone());
             }
         }
         let ongoing_merge_operations = self.ongoing_merge_operations_inventory.list();
         // Add splits that are known as in merge.
         for merge_op in ongoing_merge_operations {
             for split in &merge_op.splits {
-                known_split_ids.insert(split.split_id().to_string());
+                known_split_ids.insert(split.split_id().clone());
             }
         }
         if known_split_ids.len() * 2 >= self.known_split_ids.len() {
@@ -235,11 +235,11 @@ impl MergePlanner {
 
     /// Updates `known_split_ids` and return true if the split was not
     /// previously known and should be recorded.
-    fn acknownledge_split(&mut self, split_id: &str) -> bool {
+    fn acknownledge_split(&mut self, split_id: &SplitId) -> bool {
         if self.known_split_ids.contains(split_id) {
             return false;
         }
-        self.known_split_ids.insert(split_id.to_string());
+        self.known_split_ids.insert(split_id.clone());
         true
     }
 
@@ -389,7 +389,7 @@ mod tests {
         num_merge_ops: usize,
     ) -> SplitMetadata {
         SplitMetadata {
-            split_id: split_id.to_string(),
+            split_id: split_id.into(),
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),

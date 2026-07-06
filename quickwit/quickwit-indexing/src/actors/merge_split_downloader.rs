@@ -111,7 +111,11 @@ impl MergeSplitDownloader {
             let io_controls = io_controls.clone();
             async move {
                 self.split_store
-                    .fetch_and_open_split(split.split_id(), download_directory, &io_controls)
+                    .fetch_and_open_split(
+                        split.split_id().clone(),
+                        download_directory,
+                        &io_controls,
+                    )
                     .await
                     .with_context(|| format!("failed to download split `{}`", split.split_id()))
             }
@@ -128,17 +132,17 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_common::split_file;
+    use quickwit_proto::types::SplitId;
     use quickwit_storage::{PutPayload, RamStorageBuilder, SplitPayloadBuilder};
 
     use super::*;
     use crate::merge_policy::{MergeOperation, MergeTask};
-    use crate::new_split_id;
 
     #[tokio::test]
     async fn test_merge_split_downloader() -> anyhow::Result<()> {
         let scratch_directory = TempDirectory::for_test();
         let splits_to_merge: Vec<SplitMetadata> = iter::repeat_with(|| {
-            let split_id = new_split_id();
+            let split_id = SplitId::new();
             SplitMetadata {
                 split_id,
                 ..Default::default()

@@ -282,7 +282,7 @@ pub fn merge_split_attrs(
     let num_docs = sum_num_docs(splits);
     let replaced_split_ids: Vec<SplitId> = splits
         .iter()
-        .map(|split| split.split_id().to_string())
+        .map(|split| split.split_id().clone())
         .collect();
     let delete_opstamp = splits
         .iter()
@@ -461,7 +461,7 @@ impl MergeExecutor {
                 );
                 let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest::new(
                     split.index_uid.clone(),
-                    vec![split.split_id.clone()],
+                    [split.split_id.clone()],
                 );
                 self.metastore
                     .mark_splits_for_deletion(mark_splits_for_deletion_request)
@@ -621,7 +621,7 @@ mod tests {
 
     use super::*;
     use crate::merge_policy::{MergeOperation, MergeSource, MergeTask};
-    use crate::{TestSandbox, get_tantivy_directory_from_split_bundle, new_split_id};
+    use crate::{TestSandbox, get_tantivy_directory_from_split_bundle};
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {
@@ -783,7 +783,7 @@ mod tests {
 
         // We want to test a delete on a split with num_merge_ops > 0.
         let mut new_split_metadata = splits[0].split_metadata.clone();
-        new_split_metadata.split_id = new_split_id();
+        new_split_metadata.split_id = SplitId::new();
         new_split_metadata.num_merge_ops = 1;
         let stage_splits_request =
             StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &new_split_metadata)

@@ -1639,7 +1639,7 @@ mod tests {
     fn test_list_splits_query_excluded_split_ids_backward_compatible_serde() {
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let query = ListSplitsQuery::for_index(index_uid)
-            .with_excluded_split_ids(HashSet::from(["split-1".to_string()]));
+            .with_excluded_split_ids(HashSet::from([SplitId::new()]));
 
         let mut query_value: serde_json::Value =
             serde_json::from_str(&serde_utils::to_json_str(&query).unwrap()).unwrap();

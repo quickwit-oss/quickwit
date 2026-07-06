@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeMap;
-use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::time::{Duration, SystemTime};
 
 use anyhow::Context;
@@ -25,6 +23,7 @@ use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::split_file;
 use quickwit_config::IndexerConfig;
 use quickwit_directories::BundleDirectory;
+use quickwit_proto::types::SplitId;
 use quickwit_storage::StorageResult;
 use tantivy::Directory;
 use tantivy::directory::{Advice, MmapDirectory};
@@ -71,40 +70,71 @@ async fn num_bytes_in_folder(directory_path: &Path) -> io::Result<ByteSize> {
     Ok(ByteSize(total_bytes))
 }
 
+/// Recovers the creation time of a split from its id.
+///
+/// TEMPORARY: the indexing split store is slated for removal once the compactor service lands.
+///
+/// Split IDs are either a plain 26-char ULID or the prefixed form produced when
+/// `QW_RANDOM_SPLIT_PREFIX` is enabled: `<4 random chars>_<22 body chars>` (27 chars).
+/// In the prefixed form the original ULID is reconstructed as `body + prefix` before parsing.
+/// IDs that do not parse as a valid ULID fall back to now, treating them as freshly created.
+fn split_creation_time(split_id: &SplitId) -> SystemTime {
+    let s = split_id.as_str();
+    // Detect the prefixed format by checking for `_` at byte position 4.
+    let ulid_str: std::borrow::Cow<str> = if s.len() == 27 && s.as_bytes()[4] == b'_' {
+        let prefix = &s[..4]; // chars 22-25 of the original ULID
+        let body = &s[5..]; // chars 0-21 of the original ULID
+        format!("{body}{prefix}").into()
+    } else {
+        s.into()
+    };
+    if let Ok(ulid) = Ulid::from_string(&ulid_str) {
+        ulid.datetime()
+    } else {
+        SystemTime::now()
+    }
+}
+
 /// The local split store is a cache for freshly indexed splits.
 ///
 /// In order to save the cost of an extra write, we store splits in the form
 /// of a directory and the split bundles are built upon upload.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct SplitFolder {
-    split_id: Ulid,
+    created_at: SystemTime,
+    split_id: SplitId,
     num_bytes: ByteSize,
+}
+
+/// Orders `SplitFolder`s for eviction: oldest `created_at` first, ties broken by
+/// insertion order (`insertion_seq`) rather than by `split_id`.
+#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
+struct SplitFolderOrderKey {
+    created_at: SystemTime,
+    insertion_seq: u64,
 }
 
 impl SplitFolder {
     /// Creates a new `SplitFolder`.
     ///
     /// There are no specific constraints on `path`.
-    pub async fn create(split_id: &str, path: &Path) -> io::Result<Self> {
-        let split_id = Ulid::from_str(split_id).map_err(|_err| {
-            let error_msg = format!("split Id should be an ulid: got `{split_id}`");
-            io::Error::new(io::ErrorKind::InvalidInput, error_msg)
-        })?;
+    pub async fn create(split_id: SplitId, path: &Path) -> io::Result<Self> {
         let num_bytes = num_bytes_in_folder(path).await?;
+        let created_at = split_creation_time(&split_id);
         Ok(SplitFolder {
+            created_at,
             split_id,
             num_bytes,
         })
     }
-
-    /// Returns the creation time as encoded in the split id ULID.
-    fn creation_time(&self) -> SystemTime {
-        self.split_id.datetime()
-    }
 }
 
-fn split_id_from_split_folder(dir_path: &Path) -> Option<&str> {
-    dir_path.file_name()?.to_str()?.strip_suffix(".split")
+fn split_id_from_split_folder(dir_path: &Path) -> Option<SplitId> {
+    dir_path
+        .file_name()?
+        .to_str()?
+        .strip_suffix(".split")
+        .map(SplitId::from)
 }
 
 /// The [`IndexingSplitCache`] is a local cache used to improve the performance of indexing nodes.
@@ -150,13 +180,17 @@ struct InnerSplitCache {
 struct SplitFolderRegistry {
     /// Splits owned by the local split store, which reside in the split_store_folder.
     ///
-    /// Splits ids are generated using ULID, so that they are sorted
-    /// according to their creation date.
-    ///
-    /// We evict the oldest split first. Note this is not an LRU strategy
-    /// because we do not care about the last access time, but we only
-    /// consider the creation time.
-    split_folders: BTreeMap<Ulid, ByteSize>,
+    /// Entries are ordered by `SplitFolderOrderKey` (see its `Ord` impl), so iteration order
+    /// matches creation order and the oldest split is the set's first element. We evict the oldest
+    /// split first. Note this is not an LRU strategy because we do not care about the last access
+    /// time, but we only consider the creation time.
+    split_folders: BTreeMap<SplitFolderOrderKey, SplitFolder>,
+    /// Index from `split_id` to the key used in `split_folders`, so that a split can be
+    /// removed by id without recomputing `created_at` (which is not deterministic for split ids
+    /// that do not parse as a ULID).
+    key_by_split_id: HashMap<SplitId, SplitFolderOrderKey>,
+    /// Monotonically increasing counter used as the tiebreaker component of `SplitFolderOrderKey`.
+    next_insertion_seq: u64,
     /// The split store quota shared among all indexing split stores.
     split_store_quota: SplitStoreQuota,
 }
@@ -165,52 +199,61 @@ impl SplitFolderRegistry {
     pub fn with_quota(split_store_quota: SplitStoreQuota) -> SplitFolderRegistry {
         SplitFolderRegistry {
             split_folders: BTreeMap::default(),
+            key_by_split_id: HashMap::default(),
+            next_insertion_seq: 0,
             split_store_quota,
         }
     }
 
-    /// Returns an iterator over the split folders sorted by ULID.
+    /// Returns an iterator over the split folders sorted by creation time.
     #[cfg(any(test, feature = "testsuite"))]
     fn iter(&self) -> impl Iterator<Item = SplitFolder> + '_ {
-        self.split_folders
-            .iter()
-            .map(|(&split_id, &num_bytes)| SplitFolder {
-                split_id,
-                num_bytes,
-            })
+        self.split_folders.values().cloned()
     }
 
     /// Returns whether the element was inserted or was already present
     fn insert(&mut self, split_folder: SplitFolder) -> bool {
-        if let Entry::Vacant(entry) = self.split_folders.entry(split_folder.split_id) {
-            entry.insert(split_folder.num_bytes);
-            self.split_store_quota.add_split(split_folder.num_bytes);
-            true
-        } else {
-            false
+        if self.key_by_split_id.contains_key(&split_folder.split_id) {
+            return false;
         }
+        let split_folder_key = SplitFolderOrderKey {
+            created_at: split_folder.created_at,
+            insertion_seq: self.next_insertion_seq,
+        };
+        self.next_insertion_seq = self.next_insertion_seq.wrapping_add(1);
+        self.key_by_split_id
+            .insert(split_folder.split_id.clone(), split_folder_key.clone());
+        self.split_store_quota.add_split(split_folder.num_bytes);
+        self.split_folders.insert(split_folder_key, split_folder);
+        true
     }
 
-    /// Returns true if the split was indeed present in the registry
-    fn remove(&mut self, split_id: Ulid) -> Option<SplitFolder> {
-        let num_bytes = self.split_folders.remove(&split_id)?;
-        self.split_store_quota.remove_split(num_bytes);
-        Some(SplitFolder {
-            num_bytes,
-            split_id,
-        })
+    /// Returns the split folder if it was indeed present in the registry.
+    fn remove(&mut self, split_id: &SplitId) -> Option<SplitFolder> {
+        let split_folder_key = self.key_by_split_id.remove(split_id)?;
+        let split_folder = self
+            .split_folders
+            .remove(&split_folder_key)
+            .expect("key_by_split_id and split_folders must stay in sync");
+        self.split_store_quota.remove_split(split_folder.num_bytes);
+        Some(split_folder)
     }
 
-    /// Returns the oldest split (oldest in the sense of the ULID = creation time).
-    fn oldest_split(&self) -> Option<Ulid> {
-        let (split_id, _) = self.split_folders.first_key_value()?;
-        Some(*split_id)
+    /// Returns the creation time of the oldest split in the registry.
+    fn oldest_split_folder_key(&self) -> Option<SplitFolderOrderKey> {
+        self.split_folders.keys().next().cloned()
     }
 
     /// Removes the oldest split.
     fn pop_oldest(&mut self) -> Option<SplitFolder> {
-        let oldest_split_id = self.oldest_split()?;
-        self.remove(oldest_split_id)
+        let oldest_key = self.oldest_split_folder_key()?;
+        let split_folder = self
+            .split_folders
+            .remove(&oldest_key)
+            .expect("key was just read from split_folders");
+        self.key_by_split_id.remove(&split_folder.split_id);
+        self.split_store_quota.remove_split(split_folder.num_bytes);
+        Some(split_folder)
     }
 
     fn quota(&self) -> &SplitStoreQuota {
@@ -224,7 +267,7 @@ impl InnerSplitCache {
     /// Returns `None` if the split is not available in the cache.
     async fn move_out(
         &mut self,
-        split_id: Ulid,
+        split_id: &SplitId,
         to_folder: &Path,
     ) -> StorageResult<Option<PathBuf>> {
         let Some(split_folder) = self.split_registry.remove(split_id) else {
@@ -269,7 +312,7 @@ impl InnerSplitCache {
     }
 
     /// Returns the directory filepath of a split in cache.
-    fn split_path(&self, split_id: Ulid) -> PathBuf {
+    fn split_path(&self, split_id: &SplitId) -> PathBuf {
         let split_file = split_file(split_id);
         self.split_store_folder.join(split_file)
     }
@@ -279,11 +322,11 @@ impl InnerSplitCache {
     /// # Panics
     /// Panics if there are no remaining splits.
     async fn evict_one_split(&mut self) -> io::Result<()> {
-        let evicted_split = self
+        let evicted_split: SplitFolder = self
             .split_registry
             .pop_oldest()
             .expect("split cache should not be empty");
-        let result = tokio::fs::remove_dir_all(&self.split_path(evicted_split.split_id)).await;
+        let result = tokio::fs::remove_dir_all(&self.split_path(&evicted_split.split_id)).await;
         if let Err(io_err) = result {
             if io_err.kind() == io::ErrorKind::NotFound {
                 // This could happen if some files have been manually deleted
@@ -304,17 +347,17 @@ impl InnerSplitCache {
     /// If the cache capacity does not allow it returns Ok(false).
     ///
     /// Ok(true) means the file was effectively accepted.
-    async fn move_into_cache(&mut self, split_id_str: &str, split_path: &Path) -> io::Result<bool> {
-        let split_folder = SplitFolder::create(split_id_str, split_path).await?;
-        let split_id = split_folder.split_id;
+    async fn move_into_cache(&mut self, split_id: SplitId, split_path: &Path) -> io::Result<bool> {
+        let split_folder = SplitFolder::create(split_id, split_path).await?;
+        let split_id = split_folder.split_id.clone();
         let should_move_split = self.make_room_and_record_split(split_folder).await?;
         if !should_move_split {
             return Ok(false);
         }
-        let to_full_path = self.split_path(split_id);
+        let to_full_path = self.split_path(&split_id);
         if let Err(io_err) = tokio::fs::rename(split_path, &to_full_path).await {
             // keep the registry stats accurate
-            self.split_registry.remove(split_id);
+            self.split_registry.remove(&split_id);
             return Err(io_err);
         }
         Ok(true)
@@ -322,8 +365,8 @@ impl InnerSplitCache {
 
     /// Removes all splits that have a creation date older than `limit`.
     async fn remove_splits_older_than_limit(&mut self, limit: SystemTime) -> io::Result<()> {
-        while let Some(split_id) = self.split_registry.oldest_split() {
-            if split_id.datetime() >= limit {
+        while let Some(oldest_split_folder_key) = self.split_registry.oldest_split_folder_key() {
+            if oldest_split_folder_key.created_at >= limit {
                 break;
             }
             self.evict_one_split().await?;
@@ -348,7 +391,7 @@ impl InnerSplitCache {
             self.evict_one_split().await?;
         }
 
-        if let Some(creation_time_limit) = split_folder.creation_time().checked_sub(SPLIT_MAX_AGE) {
+        if let Some(creation_time_limit) = split_folder.created_at.checked_sub(SPLIT_MAX_AGE) {
             self.remove_splits_older_than_limit(creation_time_limit)
                 .await?;
         };
@@ -433,16 +476,16 @@ impl IndexingSplitCache {
             split_registry: SplitFolderRegistry::with_quota(space_quota),
         };
 
-        split_folders.sort_by_key(SplitFolder::creation_time);
+        split_folders.sort_by_key(|split_folder| split_folder.created_at);
 
         // We record all `split_folder`, sorted by `creation_time`.
         for split_folder in split_folders {
-            let split_id = split_folder.split_id;
+            let split_id = split_folder.split_id.clone();
             if !inner_local_split_store
                 .make_room_and_record_split(split_folder)
                 .await?
             {
-                let split_dir = inner_local_split_store.split_path(split_id);
+                let split_dir = inner_local_split_store.split_path(&split_id);
                 tokio::fs::remove_dir_all(&split_dir).await?;
             }
         }
@@ -453,13 +496,13 @@ impl IndexingSplitCache {
     }
 
     #[cfg(any(test, feature = "testsuite"))]
-    pub async fn inspect_registry(&self) -> std::collections::HashMap<String, ByteSize> {
+    pub async fn inspect_registry(&self) -> std::collections::HashMap<SplitId, ByteSize> {
         self.inner
             .lock()
             .await
             .split_registry
             .iter()
-            .map(|split_folder| (split_folder.split_id.to_string(), split_folder.num_bytes))
+            .map(|split_folder| (split_folder.split_id.clone(), split_folder.num_bytes))
             .collect()
     }
 
@@ -483,20 +526,14 @@ impl IndexingSplitCache {
     /// storage.
     pub(super) async fn get_cached_split(
         &self,
-        split_id: &str,
+        split_id: &SplitId,
         output_dir_path: &Path,
     ) -> StorageResult<Option<PathBuf>> {
         let mut split_store_lock = self.inner.lock().await;
-        let split_ulid = if let Ok(split_ulid) = Ulid::from_str(split_id) {
-            split_ulid
-        } else {
-            return Ok(None);
-        };
-        let split_file_opt: Option<PathBuf> = split_store_lock
-            .move_out(split_ulid, output_dir_path)
-            .await?;
+        let split_file_opt: Option<PathBuf> =
+            split_store_lock.move_out(split_id, output_dir_path).await?;
         if split_file_opt.is_none() {
-            debug!(split_id, "split folder not in cache");
+            debug!(split_id=%split_id, "split folder not in cache");
         }
         Ok(split_file_opt)
     }
@@ -511,7 +548,7 @@ impl IndexingSplitCache {
     /// Ok(true) means the file was effectively accepted.
     pub(super) async fn move_into_cache(
         &self,
-        split_id: &str,
+        split_id: SplitId,
         split_path: &Path,
     ) -> io::Result<bool> {
         assert!(split_path.is_dir());
@@ -526,7 +563,7 @@ mod tests {
     use std::io;
     use std::io::Write;
     use std::path::Path;
-    use std::time::Duration;
+    use std::time::{Duration, SystemTime};
 
     use bytesize::ByteSize;
     use quickwit_config::IndexerConfig;
@@ -538,8 +575,30 @@ mod tests {
     use tokio::fs;
     use ulid::Ulid;
 
-    use super::SPLIT_MAX_AGE;
+    use super::{SPLIT_MAX_AGE, SplitId, split_creation_time};
     use crate::split_store::{IndexingSplitCache, SplitStoreQuota};
+
+    #[test]
+    fn test_split_creation_time() {
+        let ulid_str = "01GF5449X7DA53TK9F9W2ZJST2";
+        let ulid = Ulid::from_string(ulid_str).unwrap();
+        let expected = ulid.datetime();
+
+        // A bare ULID split id (no prefix) resolves to that ULID's creation time.
+        assert_eq!(split_creation_time(&SplitId::from(ulid_str)), expected);
+
+        // A prefixed split id (QW_RANDOM_SPLIT_PREFIX format) resolves to the same creation time.
+        let prefixed_split_id = SplitId::from_ulid(ulid, true);
+        assert_eq!(split_creation_time(&prefixed_split_id), expected);
+
+        // An id that does not parse as a valid ULID falls back to ~now, so a malformed split is
+        // treated as freshly created rather than as the first eviction candidate.
+        let now = SystemTime::now();
+        let date_from_invalid = split_creation_time(&SplitId::from("this-is-not-a-valid-ulid!!"));
+        let date_from_short = split_creation_time(&SplitId::from("short"));
+        assert!(date_from_invalid >= now);
+        assert!(date_from_short >= now);
+    }
 
     async fn create_fake_split(
         split_cache_path: &Path,
@@ -663,7 +722,10 @@ mod tests {
             .await
             .unwrap();
         local_split_store
-            .move_into_cache("01GFCZJBMBMEPMAQSFD09VTST2", extra_split.path())
+            .move_into_cache(
+                SplitId::from("01GFCZJBMBMEPMAQSFD09VTST2"),
+                extra_split.path(),
+            )
             .await
             .unwrap();
         assert_eq!(local_split_store.inspect_registry().await.len(), 1);
@@ -708,7 +770,10 @@ mod tests {
             let extra_split = tempdir().unwrap();
             local_split_store
                 // 2022-10-15T4:48:49.803Z
-                .move_into_cache("01GFCZJBMBMEPMAQSFD09VTST2", extra_split.path())
+                .move_into_cache(
+                    SplitId::from("01GFCZJBMBMEPMAQSFD09VTST2"),
+                    extra_split.path(),
+                )
                 .await
                 .unwrap();
             let cache_content = local_split_store.inspect_registry().await;
@@ -721,7 +786,10 @@ mod tests {
             let extra_split = tempdir().unwrap();
             let was_accepted = local_split_store
                 // 2025-01-13T14:28:17.364Z
-                .move_into_cache("01JHG11FAM8F2XPWHY24R3HF6M", extra_split.path())
+                .move_into_cache(
+                    SplitId::from("01JHG11FAM8F2XPWHY24R3HF6M"),
+                    extra_split.path(),
+                )
                 .await
                 .unwrap();
             assert!(was_accepted);
@@ -758,7 +826,7 @@ mod tests {
     #[tokio::test]
     async fn test_store_and_fetch() {
         let temp_dir_in = tempfile::tempdir().unwrap();
-        let split_id = Ulid::default().to_string();
+        let split_id: SplitId = Ulid::default().to_string().into();
         let cache_dir = tempfile::tempdir().unwrap();
         let quota = SplitStoreQuota::default();
         let local_store = IndexingSplitCache::open(cache_dir.path().to_path_buf(), quota)
@@ -769,7 +837,7 @@ mod tests {
             tokio::fs::create_dir(&split_dir).await.unwrap();
             assert!(
                 local_store
-                    .move_into_cache(&split_id, &split_dir)
+                    .move_into_cache(split_id.clone(), &split_dir)
                     .await
                     .unwrap()
             );
@@ -823,7 +891,10 @@ mod tests {
 
         let target_dir = tempdir().unwrap();
         let path_opt = local_split_store
-            .get_cached_split("01GF5215TMV48JT7GZ543BV193", target_dir.path())
+            .get_cached_split(
+                &SplitId::from("01GF5215TMV48JT7GZ543BV193"),
+                target_dir.path(),
+            )
             .await
             .unwrap();
         assert_eq!(path_opt, None);
@@ -851,7 +922,10 @@ mod tests {
         let extra_split = tempdir().unwrap();
         let was_accepted = local_split_store
             // 2022-10-12T02:14:54.347Z
-            .move_into_cache("01GF4ZJBMBMEPMAQSFD09VTST2", extra_split.path())
+            .move_into_cache(
+                SplitId::from("01GF4ZJBMBMEPMAQSFD09VTST2"),
+                extra_split.path(),
+            )
             .await
             .unwrap();
         assert!(was_accepted);
@@ -879,11 +953,43 @@ mod tests {
         extra_split_file.write_all(&[0u8; 15]).unwrap();
 
         let was_accepted = split_store
-            .move_into_cache(split_id, extra_split.path())
+            .move_into_cache(split_id.into(), extra_split.path())
             .await
             .unwrap();
         assert!(!was_accepted);
         let quota = split_store.inspect_quota().await;
         assert_eq!(quota.used_num_bytes(), ByteSize(15));
+    }
+
+    #[tokio::test]
+    async fn test_store_and_fetch_non_ulid_split_id() {
+        // `split_creation_time` falls back to `SystemTime::now()` for split ids that do not
+        // parse as a ULID. Before the fix, the registry recomputed the key at removal time by
+        // calling `split_creation_time` again, so a split whose id does not parse as a ULID could
+        // never be found again: the two `SystemTime::now()` calls (at insertion and at removal)
+        // essentially never return the same value.
+        let temp_dir_in = tempfile::tempdir().unwrap();
+        let split_id: SplitId = SplitId::from("this-is-not-a-valid-ulid!!");
+        let cache_dir = tempfile::tempdir().unwrap();
+        let quota = SplitStoreQuota::default();
+        let local_store = IndexingSplitCache::open(cache_dir.path().to_path_buf(), quota)
+            .await
+            .unwrap();
+
+        let split_dir = temp_dir_in.path().join("scratch");
+        tokio::fs::create_dir(&split_dir).await.unwrap();
+        assert!(
+            local_store
+                .move_into_cache(split_id.clone(), &split_dir)
+                .await
+                .unwrap()
+        );
+
+        let split_path = local_store
+            .get_cached_split(&split_id, temp_dir_in.path())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(split_path.try_exists().unwrap());
     }
 }

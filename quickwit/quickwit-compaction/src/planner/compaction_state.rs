@@ -165,13 +165,14 @@ impl CompactionState {
                 // workers report tasks the planner doesn't know about yet
                 // (e.g. after planner start).
                 for split_id in &task.split_ids {
-                    self.in_flight_split_ids.insert(split_id.clone());
-                    self.needs_compaction_split_ids.remove(split_id);
+                    self.in_flight_split_ids
+                        .insert(SplitId::from(split_id.clone()));
+                    self.needs_compaction_split_ids.remove(split_id.as_str());
                 }
                 self.in_flight.insert(
                     task.task_id.clone(),
                     InFlightCompaction {
-                        split_ids: HashSet::from_iter(task.split_ids.iter().cloned()),
+                        split_ids: task.split_ids.iter().cloned().map(SplitId::from).collect(),
                         node_id: node_id.clone(),
                         last_heartbeat: Instant::now(),
                     },
@@ -282,7 +283,7 @@ mod tests {
 
     fn test_split(split_id: &str, index_uid: &IndexUid) -> SplitMetadata {
         SplitMetadata {
-            split_id: split_id.to_string(),
+            split_id: SplitId::from(split_id),
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
@@ -348,17 +349,17 @@ mod tests {
         let mut state = CompactionState::default();
 
         let mut split_ids = HashSet::new();
-        split_ids.insert("s1".to_string());
-        split_ids.insert("s2".to_string());
+        split_ids.insert(SplitId::from("s1"));
+        split_ids.insert(SplitId::from("s2"));
         // Simulate what plan_partition + record_assignment does:
         // split IDs go into in_flight_split_ids, then into InFlightCompaction.
-        state.in_flight_split_ids.insert("s1".to_string());
-        state.in_flight_split_ids.insert("s2".to_string());
+        state.in_flight_split_ids.insert(SplitId::from("s1"));
+        state.in_flight_split_ids.insert(SplitId::from("s2"));
         state.record_assignment("task-1".to_string(), split_ids, node_id.clone());
 
         let mut split_ids_2 = HashSet::new();
-        split_ids_2.insert("s3".to_string());
-        state.in_flight_split_ids.insert("s3".to_string());
+        split_ids_2.insert(SplitId::from("s3"));
+        state.in_flight_split_ids.insert(SplitId::from("s3"));
         state.record_assignment("task-2".to_string(), split_ids_2, node_id);
 
         assert!(state.is_split_tracked("s1"));
@@ -419,7 +420,7 @@ mod tests {
         assert_eq!(pending.len(), 1);
 
         let operation = &pending[0].operation;
-        let split_ids: HashSet<String> = operation
+        let split_ids: HashSet<SplitId> = operation
             .splits
             .iter()
             .map(|split_metadata| split_metadata.split_id.clone())
@@ -433,7 +434,7 @@ mod tests {
         );
 
         for split_id in &split_ids {
-            assert!(state.is_split_tracked(split_id));
+            assert!(state.is_split_tracked(split_id.as_str()));
         }
     }
 

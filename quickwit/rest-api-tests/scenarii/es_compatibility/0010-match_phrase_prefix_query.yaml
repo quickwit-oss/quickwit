@@ -51,7 +51,30 @@ expected:
             commits:
               - message: "automated commit"
 ---
+# "fix" tokenizes to a single token, so quickwit runs it as an uncapped prefix range
+# query and `max_expansions` no longer limits the term expansion (see CLOUDPREM-775).
+# The prefix matches the terms "fix", "fixed" and "fixes" across 7 documents.
+# We only apply it to quickwit because Elasticsearch still honours max_expansions here.
 method: [GET]
+engines:
+  - quickwit
+json:
+  query:
+    match_phrase_prefix:
+      payload.commits.message:
+        query: "fix"
+        max_expansions: 2
+expected:
+  hits:
+    total:
+      value: 7
+      relation: "eq"
+---
+# Same query on Elasticsearch, which still honours max_expansions: 2 -> only the terms
+# "fix" and "fixed" are expanded, matching 6 documents.
+method: [GET]
+engines:
+  - elasticsearch
 json:
   query:
     match_phrase_prefix:

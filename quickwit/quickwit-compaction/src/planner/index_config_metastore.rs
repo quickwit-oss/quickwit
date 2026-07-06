@@ -159,6 +159,7 @@ impl IndexConfigMetastore {
 mod tests {
     use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt};
     use quickwit_proto::metastore::{IndexMetadataResponse, MetastoreError, MockMetastoreService};
+    use quickwit_proto::types::SplitId;
 
     use super::*;
 
@@ -256,7 +257,7 @@ mod tests {
 
         let mut store = IndexConfigMetastore::new(MetastoreServiceClient::from_mock(mock));
         let split = SplitMetadata {
-            split_id: "split-1".to_string(),
+            split_id: SplitId::from("split-1"),
             index_uid: index_uid.clone(),
             ..Default::default()
         };

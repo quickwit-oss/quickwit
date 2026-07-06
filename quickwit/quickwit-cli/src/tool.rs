@@ -367,9 +367,10 @@ impl ToolCliCommand {
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
-        let split_id = matches
+        let split_id: SplitId = matches
             .remove_one::<String>("split")
-            .expect("`split` should be a required arg.");
+            .expect("`split` should be a required arg.")
+            .into();
         let config_uri = matches
             .remove_one::<String>("config")
             .map(|uri_str| Uri::from_str(&uri_str))
