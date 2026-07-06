@@ -388,15 +388,12 @@ fn validate_metastore_read_replica(node_config: &NodeConfig) -> anyhow::Result<(
              any other service"
         );
     }
-    match &node_config.metastore_read_replica_uri {
-        Some(_) => Ok(()),
-        None => {
-            bail!(
-                "the `metastore_read_replica` service requires `metastore_read_replica_uri` to be \
-                 set"
-            )
-        }
+    if node_config.metastore_read_replica_uri.is_none() {
+        bail!(
+            "the `metastore_read_replica` service requires `metastore_read_replica_uri` to be set"
+        );
     }
+    Ok(())
 }
 
 /// A list of all the known disk budgets
