@@ -1707,25 +1707,10 @@ mod tests {
         readiness_rx: watch::Receiver<bool>,
         uri: &'static str,
     ) -> MetastoreServiceClient {
-        metastore_readiness_client_with_failures(readiness_rx, uri, None)
-    }
-
-    fn metastore_readiness_client_with_failures(
-        readiness_rx: watch::Receiver<bool>,
-        uri: &'static str,
-        failures_to_inject_opt: Option<Arc<Mutex<usize>>>,
-    ) -> MetastoreServiceClient {
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_check_connectivity()
             .returning(move || {
-                if let Some(failures_to_inject) = &failures_to_inject_opt {
-                    let mut failures_to_inject = failures_to_inject.lock().unwrap();
-                    if *failures_to_inject > 0 {
-                        *failures_to_inject -= 1;
-                        bail!("metastore `{uri}` transiently not ready");
-                    }
-                }
                 if *readiness_rx.borrow() {
                     Ok(())
                 } else {
@@ -1772,11 +1757,28 @@ mod tests {
             .unwrap();
         let (metastore_readiness_tx, metastore_readiness_rx) = watch::channel(false);
         let metastore_failures_to_inject = Arc::new(Mutex::new(0usize));
-        let mock_metastore = metastore_readiness_client_with_failures(
-            metastore_readiness_rx,
-            "ram:///metastore",
-            Some(metastore_failures_to_inject.clone()),
-        );
+        let metastore_failures_to_inject_clone = metastore_failures_to_inject.clone();
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_check_connectivity()
+            .returning(move || {
+                let mut failures_to_inject = metastore_failures_to_inject_clone.lock().unwrap();
+                if *failures_to_inject > 0 {
+                    *failures_to_inject -= 1;
+                    bail!("metastore `ram:///metastore` transiently not ready");
+                }
+                drop(failures_to_inject);
+
+                if *metastore_readiness_rx.borrow() {
+                    Ok(())
+                } else {
+                    bail!("metastore `ram:///metastore` not ready")
+                }
+            });
+        mock_metastore
+            .expect_endpoints()
+            .return_const(vec![Uri::for_test("ram:///metastore")]);
+        let mock_metastore = MetastoreServiceClient::from_mock(mock_metastore);
         let (ingester_status_tx, ingester_status_rx) = watch::channel(IngesterStatus::Initializing);
         let mut mock_ingester = MockIngesterService::new();
         mock_ingester
