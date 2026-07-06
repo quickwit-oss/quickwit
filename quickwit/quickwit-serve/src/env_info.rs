@@ -17,13 +17,13 @@ use std::sync::LazyLock;
 
 use serde::Serialize;
 
-/// Explicit allow list of environment variables exposed by [`EnvInfo`].
+const ENV_VAR_NOT_IN_ALLOW_LIST: &str = "env var not in allow list";
+
+/// Explicit allow list of environment variables whose values are exposed by [`EnvInfo`].
 ///
-/// This is the authoritative gate: only variables listed here are ever
-/// captured. Every entry must start with `CP_`, `DD_`, or `QW_`.
-///
-/// [`DENIED_ENV_VARS`] is a redundant belt-and-suspenders check on top of this
-/// list.
+/// Variables listed here are captured with their real value. Other variables
+/// with a `CP_`, `DD_`, or `QW_` prefix are reported by name only with the
+/// `"env var not in allow list"` placeholder.
 static ALLOWED_ENV_VARS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     HashSet::from([
         // CloudPrem (CP_*).
@@ -85,7 +85,6 @@ static ALLOWED_ENV_VARS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
         "QW_MAX_LOG_PAST_AGE_HOURS",
         "QW_MAX_SPLIT_DELETION_RATE_PER_SEC",
         "QW_METASTORE_CLIENT_MAX_CONCURRENCY",
-        "QW_METASTORE_URI",
         "QW_METRICS_MAX_BYTES",
         "QW_METRICS_MAX_ROWS",
         "QW_MINIMUM_COMPRESSION_SIZE",
@@ -105,19 +104,19 @@ static ALLOWED_ENV_VARS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     ])
 });
 
-/// Belt-and-suspenders deny list of credential-bearing variables.
+/// Deny list of credential-bearing variables whose values must not be exposed.
 ///
-/// **This list is technically redundant.** [`ALLOWED_ENV_VARS`] is already the
-/// only source of truth for what gets captured, so a sensitive variable simply
-/// being absent from the allow list is sufficient to keep it out of
-/// [`EnvInfo`]. We keep this deny list anyway because:
+/// Variables in this list are reported by name only with the
+/// `"env var not in allow list"` placeholder. This keeps the diagnostic signal
+/// that the variable is set while ensuring the value is never exposed, even if
+/// the variable is accidentally added to [`ALLOWED_ENV_VARS`].
 ///
 /// - The cost of being wrong (leaking a secret via logs, status endpoints, or support bundles) is
 ///   much higher than the cost of maintaining a few extra lines.
 /// - It documents which variables are known to carry secrets, so future maintainers think twice
 ///   before allow-listing them.
-/// - The disjointness check (see test) turns an accidental allow-list addition of a known-sensitive
-///   variable into a compile-time-ish failure instead of a silent leak.
+/// - `test_env_var_lists_are_pairwise_disjoint` turns an accidental allow-list addition of a denied
+///   variable into a test failure instead of a silent leak.
 ///
 /// Entries must start with `CP_`, `DD_`, or `QW_`.
 static DENIED_ENV_VARS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
@@ -143,21 +142,36 @@ pub struct EnvInfo {
 }
 
 impl EnvInfo {
-    /// Returns the environment variables matching the allow list that are set
-    /// in the process environment.
+    /// Returns diagnostic environment information for the process.
+    ///
+    /// Allowed variables are returned with their values. Denied variables and
+    /// other `CP_`, `DD_`, or `QW_` variables are returned by name with a
+    /// placeholder value. Other variables are omitted.
     pub fn get() -> &'static Self {
         static INSTANCE: LazyLock<EnvInfo> = LazyLock::new(EnvInfo::from_current_env);
         &INSTANCE
     }
 
     fn from_current_env() -> Self {
+        EnvInfo::from_env_iter(std::env::vars())
+    }
+
+    fn from_env_iter<I, K, V>(vars: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<str>,
+        V: Into<String>,
+    {
         let mut env_vars = BTreeMap::new();
 
-        for (key, value) in std::env::vars() {
-            if ALLOWED_ENV_VARS.contains(key.as_str()) {
-                env_vars.insert(key, value);
-            } else if !DENIED_ENV_VARS.contains(key.as_str()) && is_allowed_prefix(&key) {
-                env_vars.insert(key, "env var not in allow list".to_string());
+        for (key, value) in vars {
+            let key = key.as_ref();
+            if DENIED_ENV_VARS.contains(key) {
+                env_vars.insert(key.to_string(), ENV_VAR_NOT_IN_ALLOW_LIST.to_string());
+            } else if ALLOWED_ENV_VARS.contains(key) {
+                env_vars.insert(key.to_string(), value.into());
+            } else if is_allowed_prefix(key) {
+                env_vars.insert(key.to_string(), ENV_VAR_NOT_IN_ALLOW_LIST.to_string());
             }
         }
         EnvInfo { env_vars }
@@ -171,5 +185,58 @@ mod tests {
     #[test]
     fn test_env_info() {
         EnvInfo::get();
+    }
+
+    #[test]
+    fn test_env_var_lists_are_pairwise_disjoint() {
+        let allowed_denied_overlap: Vec<&str> = ALLOWED_ENV_VARS
+            .intersection(&DENIED_ENV_VARS)
+            .copied()
+            .collect();
+        assert!(
+            allowed_denied_overlap.is_empty(),
+            "env vars cannot be both allowed and denied: {allowed_denied_overlap:?}"
+        );
+    }
+
+    #[test]
+    fn test_denied_allowed_and_unlisted_env_vars() {
+        assert!(!ALLOWED_ENV_VARS.contains("QW_METASTORE_URI"));
+        assert!(DENIED_ENV_VARS.contains("QW_METASTORE_URI"));
+
+        let env_info = EnvInfo::from_env_iter([
+            (
+                "QW_METASTORE_URI",
+                "postgres://user:password@db:5432/cloudprem",
+            ),
+            ("DD_API_KEY", "secret-api-key"),
+            ("QW_CLUSTER_ID", "cluster-a"),
+            ("QW_NOT_IN_ALLOW_LIST_FOR_TEST", "visible-value"),
+            ("PATH", "/bin"),
+        ]);
+
+        assert_eq!(
+            env_info
+                .env_vars
+                .get("QW_METASTORE_URI")
+                .map(String::as_str),
+            Some(ENV_VAR_NOT_IN_ALLOW_LIST)
+        );
+        assert_eq!(
+            env_info.env_vars.get("DD_API_KEY").map(String::as_str),
+            Some(ENV_VAR_NOT_IN_ALLOW_LIST)
+        );
+        assert_eq!(
+            env_info.env_vars.get("QW_CLUSTER_ID").map(String::as_str),
+            Some("cluster-a")
+        );
+        assert_eq!(
+            env_info
+                .env_vars
+                .get("QW_NOT_IN_ALLOW_LIST_FOR_TEST")
+                .map(String::as_str),
+            Some(ENV_VAR_NOT_IN_ALLOW_LIST)
+        );
+        assert!(!env_info.env_vars.contains_key("PATH"));
     }
 }
