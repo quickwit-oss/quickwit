@@ -20,7 +20,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metrics::GaugeGuard;
 use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::types::{DocMappingUid, IndexUid, PublishToken};
+use quickwit_proto::types::{DocMappingUid, IndexUid, PublishToken, SplitId};
 use tantivy::IndexBuilder;
 use tantivy::directory::MmapDirectory;
 use tracing::{Span, instrument};
@@ -28,7 +28,6 @@ use tracing::{Span, instrument};
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeTask;
 use crate::models::{PublishLock, SplitAttrs};
-use crate::new_split_id;
 
 pub struct IndexedSplitBuilder {
     pub split_attrs: SplitAttrs,
@@ -45,7 +44,7 @@ pub struct IndexedSplit {
 }
 
 impl IndexedSplit {
-    pub fn split_id(&self) -> &str {
+    pub fn split_id(&self) -> &SplitId {
         &self.split_attrs.split_id
     }
 }
@@ -85,7 +84,7 @@ impl IndexedSplitBuilder {
         // We avoid intermediary merge, and instead merge all segments in the packager.
         // The benefit is that we don't have to wait for potentially existing merges,
         // and avoid possible race conditions.
-        let split_id = new_split_id();
+        let split_id = SplitId::new();
         let split_scratch_directory_prefix = format!("split-{split_id}-");
         let split_scratch_directory =
             scratch_directory.named_temp_child(&split_scratch_directory_prefix)?;
@@ -145,7 +144,7 @@ impl IndexedSplitBuilder {
         self.split_scratch_directory.path()
     }
 
-    pub fn split_id(&self) -> &str {
+    pub fn split_id(&self) -> &SplitId {
         &self.split_attrs.split_id
     }
 }

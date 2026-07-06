@@ -865,7 +865,7 @@ async fn test_garbage_collect_index_cli() {
             index_uid: Some(index_uid.clone()),
             split_ids: splits_metadata
                 .into_iter()
-                .map(|split_metadata| split_metadata.split_id)
+                .map(|split_metadata| split_metadata.split_id.to_string())
                 .collect(),
         })
         .await

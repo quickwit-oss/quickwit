@@ -164,7 +164,7 @@ impl std::str::FromStr for GlobalDocAddress {
 
 fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAndFooterOffsets {
     SplitIdAndFooterOffsets {
-        split_id: split_metadata.split_id.clone(),
+        split_id: split_metadata.split_id.to_string(),
         split_footer_start: split_metadata.footer_offsets.start,
         split_footer_end: split_metadata.footer_offsets.end,
         timestamp_start: split_metadata
