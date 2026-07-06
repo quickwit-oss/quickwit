@@ -544,6 +544,7 @@ impl Indexer {
             compression_level: Some(indexing_settings.docstore_compression_level),
         });
         let index_settings = IndexSettings {
+            sort_by_field: None,
             docstore_blocksize: indexing_settings.docstore_blocksize,
             docstore_compression,
             docstore_compress_dedicated_thread: true,
