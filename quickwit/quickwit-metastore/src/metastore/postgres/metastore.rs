@@ -681,7 +681,7 @@ impl MetastoreService for PostgresqlMetastore {
 
             let tags: Vec<String> = split_metadata.tags.into_iter().collect();
             tags_list.push(sqlx::types::Json(tags));
-            split_ids.push(split_metadata.split_id);
+            split_ids.push(split_metadata.split_id.to_string());
             delete_opstamps.push(split_metadata.delete_opstamp as i64);
             node_ids.push(split_metadata.node_id);
         }
@@ -3431,7 +3431,7 @@ mod tests {
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).after_split(&crate::SplitMetadata {
                 index_uid: index_uid.clone(),
-                split_id: "my_split".to_string(),
+                split_id: "my_split".into(),
                 ..Default::default()
             });
         append_query_filters_and_order_by(sql, &query);

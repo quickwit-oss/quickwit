@@ -1186,7 +1186,7 @@ mod test {
         time_range: RangeInclusive<i64>,
         size: u64,
     ) -> SplitMetadata {
-        let mut split_metadata = SplitMetadata::for_test(split_id.to_string());
+        let mut split_metadata = SplitMetadata::for_test(split_id.into());
         split_metadata.num_docs = num_docs;
         split_metadata.time_range = Some(time_range);
         split_metadata.footer_offsets = (size - 10)..size;

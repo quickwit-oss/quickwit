@@ -128,9 +128,9 @@ When the REST API is behind mTLS, simple HTTP health probes can no longer reach 
 | `ca_path` | Path to a PEM file holding the trusted CA certificate(s). Used by the server to validate client certificates when `verify_client_cert` is enabled, and by the gRPC client to validate peer certificates. Multiple CA certificates may be concatenated in the same file: all of them are trusted (see [CA rotation](#ca-rotation)). | |
 | `verify_client_cert` | If `true`, require clients (REST) or peers (gRPC) to present a certificate signed by `ca_path`, i.e. enforce mutual TLS. | `false` |
 | `expected_name` | gRPC only. The hostname the gRPC client checks against the peer certificate's Subject Alternative Name (SAN). Defaults to the peer's address. | |
-| `cert_reload_interval` | How often `cert_path` and `key_path` are polled for on-disk changes and hot-reloaded, without restarting the process. An immediate reload can also be triggered by sending `SIGHUP` to the process. | `5m` |
+| `cert_poll_interval` | How often `cert_path` and `key_path` are polled for on-disk changes and hot-reloaded, without restarting the process. An immediate reload can also be triggered by sending `SIGHUP` to the process. | `5m` |
 
-Certificates are hot-reloaded: when `cert_path`/`key_path` change on disk, new connections pick up the new certificate within `cert_reload_interval` (or immediately on `SIGHUP`), while in-flight connections keep the certificate they negotiated. A new certificate is only applied if it parses and matches its key; otherwise the previous certificate is kept. Note that the CA trust roots (`ca_path`) are **not** hot-reloaded — rotating them still requires a restart.
+Certificates are hot-reloaded: when `cert_path`/`key_path` change on disk, new connections pick up the new certificate within `cert_poll_interval` (or immediately on `SIGHUP`), while in-flight connections keep the certificate they negotiated. A new certificate is only applied if it parses and matches its key; otherwise the previous certificate is kept. Note that the CA trust roots (`ca_path`) are **not** hot-reloaded — rotating them still requires a restart.
 
 ### CA rotation
 
@@ -153,7 +153,7 @@ rest:
     key_path: /path/to/server.key
     ca_path: /path/to/ca.crt
     verify_client_cert: true
-    cert_reload_interval: 5m
+    cert_poll_interval: 5m
 ```
 
 Example of a gRPC configuration with mTLS:
@@ -166,7 +166,7 @@ grpc:
     ca_path: /path/to/ca.crt
     expected_name: quickwit.local
     verify_client_cert: true
-    cert_reload_interval: 5m
+    cert_poll_interval: 5m
 ```
 
 ## Storage configuration

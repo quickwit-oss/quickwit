@@ -474,7 +474,7 @@ pub async fn delete_splits_from_storage_and_metastore(
     let splits_to_delete: Vec<SplitToDelete> = split_infos
         .values()
         .map(|info| SplitToDelete {
-            split_id: info.split_id.clone(),
+            split_id: info.split_id.to_string(),
             path: info.file_name.clone(),
             size_bytes: info.file_size_bytes.as_u64(),
         })
@@ -508,7 +508,7 @@ pub async fn delete_splits_from_storage_and_metastore(
     }
 
     if !successes.is_empty() {
-        let split_ids: Vec<SplitId> = successes
+        let split_ids: Vec<String> = successes
             .iter()
             .map(|split_info| split_info.split_id.to_string())
             .collect();
@@ -597,7 +597,7 @@ mod tests {
 
         let split_id = "test-run-gc--split";
         let split_metadata = SplitMetadata {
-            split_id: split_id.to_string(),
+            split_id: split_id.into(),
             index_uid: index_uid.clone(),
             ..Default::default()
         };
@@ -697,7 +697,7 @@ mod tests {
 
         let split_id = "test-run-gc--split";
         let split_metadata = SplitMetadata {
-            split_id: split_id.to_string(),
+            split_id: split_id.into(),
             index_uid: index_uid.clone(),
             ..Default::default()
         };
@@ -827,7 +827,7 @@ mod tests {
 
         let split_id = "test-delete-splits-happy--split";
         let split_metadata = SplitMetadata {
-            split_id: split_id.to_string(),
+            split_id: split_id.into(),
             index_uid: IndexUid::new_with_random_ulid(index_id),
             ..Default::default()
         };
@@ -932,13 +932,13 @@ mod tests {
 
         let split_id_0 = "test-delete-splits-storage-error--split-0";
         let split_metadata_0 = SplitMetadata {
-            split_id: split_id_0.to_string(),
+            split_id: split_id_0.into(),
             index_uid: index_uid.clone(),
             ..Default::default()
         };
         let split_id_1 = "test-delete-splits-storage-error--split-1";
         let split_metadata_1 = SplitMetadata {
-            split_id: split_id_1.to_string(),
+            split_id: split_id_1.into(),
             index_uid: index_uid.clone(),
             ..Default::default()
         };
@@ -1020,13 +1020,13 @@ mod tests {
 
         let split_id_0 = "test-delete-splits-storage-error--split-0";
         let split_metadata_0 = SplitMetadata {
-            split_id: split_id_0.to_string(),
+            split_id: split_id_0.into(),
             index_uid: index_uid.clone(),
             ..Default::default()
         };
         let split_id_1 = "test-delete-splits-storage-error--split-1";
         let split_metadata_1 = SplitMetadata {
-            split_id: split_id_1.to_string(),
+            split_id: split_id_1.into(),
             index_uid: index_uid.clone(),
             ..Default::default()
         };
