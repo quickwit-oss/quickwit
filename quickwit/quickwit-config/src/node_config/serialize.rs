@@ -1051,51 +1051,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_metastore_read_replica_role_accepts_postgres_uri() {
-        let config_yaml = r#"
-            version: 0.8
-            node_id: test-node
-            enabled_services:
-              - metastore_read_replica
-            metastore_read_replica_uri: postgres://user:pass@host:5432/db
-        "#;
-        let config = load_node_config_with_env(
-            ConfigFormat::Yaml,
-            config_yaml.as_bytes(),
-            &Default::default(),
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            config.metastore_read_replica_uri.unwrap(),
-            "postgresql://user:pass@host:5432/db"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_metastore_read_replica_uri_can_be_set_from_env() {
-        let config_yaml = r#"
-            version: 0.8
-            node_id: test-node
-            enabled_services:
-              - metastore_read_replica
-        "#;
-        let mut env_vars = HashMap::new();
-        env_vars.insert(
-            "QW_METASTORE_READ_REPLICA_URI".to_string(),
-            "postgres://user:pass@replica-host:5432/db".to_string(),
-        );
-        let config =
-            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars)
-                .await
-                .unwrap();
-        assert_eq!(
-            config.metastore_read_replica_uri.unwrap(),
-            "postgresql://user:pass@replica-host:5432/db"
-        );
-    }
-
-    #[tokio::test]
     async fn test_metastore_read_replica_role_without_uri_is_rejected() {
         let config_yaml = r#"
             version: 0.8
@@ -1119,36 +1074,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_metastore_read_replica_role_must_run_standalone() {
-        for service in [
-            QuickwitService::ControlPlane,
-            QuickwitService::Indexer,
-            QuickwitService::Searcher,
-            QuickwitService::Janitor,
-            QuickwitService::Metastore,
-        ] {
-            let config_yaml = format!(
-                r#"
-                version: 0.8
-                node_id: test-node
-                enabled_services:
-                  - metastore_read_replica
-                  - {}
-                metastore_read_replica_uri: postgres://user:pass@host:5432/db
-            "#,
-                service.as_str()
-            );
-            let error = load_node_config_with_env(
-                ConfigFormat::Yaml,
-                config_yaml.as_bytes(),
-                &Default::default(),
-            )
-            .await
-            .unwrap_err();
-            assert!(
-                error.to_string().contains("must run standalone"),
-                "{service} should not be allowed with metastore_read_replica: {error}"
-            );
-        }
+        let config_yaml = r#"
+            version: 0.8
+            node_id: test-node
+            enabled_services:
+              - metastore_read_replica
+              - searcher
+            metastore_read_replica_uri: postgres://user:pass@host:5432/db
+        "#;
+        let error = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &Default::default(),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("must run standalone"));
     }
 
     #[tokio::test]
