@@ -62,15 +62,15 @@ use tracing::{debug, info, instrument, warn};
 use uuid::Uuid;
 
 use super::error::convert_sqlx_err;
-use super::migrator::run_migrations;
+use super::migrator::Migrations;
 use super::model::{PgDeleteTask, PgIndex, PgIndexTemplate, PgShard, PgSplit, Splits};
 use super::parquet_model::{InsertableParquetSplit, ParquetSplitRecord, PgParquetSplit};
 use super::pool::TrackedPool;
 use super::split_stream::SplitStream;
 use super::utils::{append_query_filters_and_order_by, establish_connection};
 use super::{
-    QW_POSTGRES_READ_ONLY_ENV_KEY, QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY,
-    QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY,
+    QW_POSTGRES_READ_ONLY_ENV_KEY, QW_POSTGRES_SKIP_DEFERRED_MIGRATIONS_ENV_KEY,
+    QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY, QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY,
 };
 use crate::checkpoint::{
     IndexCheckpointDelta, PartitionId, SourceCheckpoint, SourceCheckpointDelta,
@@ -110,6 +110,7 @@ struct PostgresqlMetastoreOptions {
     read_only: bool,
     skip_migrations: bool,
     skip_locking: bool,
+    skip_deferred: bool,
 }
 
 impl PostgresqlMetastoreOptions {
@@ -119,6 +120,7 @@ impl PostgresqlMetastoreOptions {
             read_only: get_bool_from_env(QW_POSTGRES_READ_ONLY_ENV_KEY, false),
             skip_migrations: get_bool_from_env(QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY, false),
             skip_locking: get_bool_from_env(QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY, false),
+            skip_deferred: get_bool_from_env(QW_POSTGRES_SKIP_DEFERRED_MIGRATIONS_ENV_KEY, false),
         }
     }
 
@@ -129,6 +131,7 @@ impl PostgresqlMetastoreOptions {
             read_only: true,
             skip_migrations: true,
             skip_locking: false,
+            skip_deferred: true,
         }
     }
 }
@@ -188,11 +191,13 @@ impl PostgresqlMetastore {
         )
         .await?;
 
-        run_migrations(
-            &connection_pool,
+        Migrations::new(
+            connection_pool.clone(),
             options.skip_migrations,
             options.skip_locking,
+            options.skip_deferred,
         )
+        .run()
         .await?;
 
         let metastore = PostgresqlMetastore {
