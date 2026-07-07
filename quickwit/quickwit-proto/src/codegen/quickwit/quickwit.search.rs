@@ -473,6 +473,10 @@ pub struct LeafRequestRef {
     /// This ids are resolved from the index_uri defined in the search_request.
     #[prost(message, repeated, tag = "3")]
     pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
+    /// Unix timestamp in seconds. When set, only documents with a timestamp >=
+    /// this value are considered.
+    #[prost(int64, optional, tag = "4")]
+    pub retention_timestamp_cutoff: ::core::option::Option<i64>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

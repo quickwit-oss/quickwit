@@ -517,6 +517,10 @@ message LeafRequestRef {
   // Index split ids to apply the query on.
   // This ids are resolved from the index_uri defined in the search_request.
   repeated SplitIdAndFooterOffsets split_offsets = 3;
+
+  // Unix timestamp in seconds. When set, only documents with a timestamp >=
+  // this value are considered.
+  optional int64 retention_timestamp_cutoff = 4;
 }
 
 message SplitIdAndFooterOffsets {
