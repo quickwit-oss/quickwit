@@ -17,8 +17,6 @@ use std::sync::LazyLock;
 
 use serde::Serialize;
 
-const ENV_VAR_NOT_IN_ALLOW_LIST: &str = "env var not in allow list";
-
 /// Explicit allow list of environment variables whose values are exposed by [`EnvInfo`].
 ///
 /// Variables listed here are captured with their real value. Other variables
@@ -107,7 +105,7 @@ static ALLOWED_ENV_VARS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
 /// Deny list of credential-bearing variables whose values must not be exposed.
 ///
 /// Variables in this list are reported by name only with the
-/// `"env var not in allow list"` placeholder. This keeps the diagnostic signal
+/// `"***redacted***"` placeholder. This keeps the diagnostic signal
 /// that the variable is set while ensuring the value is never exposed, even if
 /// the variable is accidentally added to [`ALLOWED_ENV_VARS`].
 ///
@@ -167,11 +165,11 @@ impl EnvInfo {
         for (key, value) in vars {
             let key = key.as_ref();
             if DENIED_ENV_VARS.contains(key) {
-                env_vars.insert(key.to_string(), ENV_VAR_NOT_IN_ALLOW_LIST.to_string());
+                env_vars.insert(key.to_string(), "***redacted***".to_string());
             } else if ALLOWED_ENV_VARS.contains(key) {
                 env_vars.insert(key.to_string(), value.into());
             } else if is_allowed_prefix(key) {
-                env_vars.insert(key.to_string(), ENV_VAR_NOT_IN_ALLOW_LIST.to_string());
+                env_vars.insert(key.to_string(), "env var not in allow list".to_string());
             }
         }
         EnvInfo { env_vars }
@@ -220,11 +218,11 @@ mod tests {
                 .env_vars
                 .get("QW_METASTORE_URI")
                 .map(String::as_str),
-            Some(ENV_VAR_NOT_IN_ALLOW_LIST)
+            Some("***redacted***")
         );
         assert_eq!(
             env_info.env_vars.get("DD_API_KEY").map(String::as_str),
-            Some(ENV_VAR_NOT_IN_ALLOW_LIST)
+            Some("***redacted***")
         );
         assert_eq!(
             env_info.env_vars.get("QW_CLUSTER_ID").map(String::as_str),
@@ -235,7 +233,7 @@ mod tests {
                 .env_vars
                 .get("QW_NOT_IN_ALLOW_LIST_FOR_TEST")
                 .map(String::as_str),
-            Some(ENV_VAR_NOT_IN_ALLOW_LIST)
+            Some("env var not in allow list")
         );
         assert!(!env_info.env_vars.contains_key("PATH"));
     }
