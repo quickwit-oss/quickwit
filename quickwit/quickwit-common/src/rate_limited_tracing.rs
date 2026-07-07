@@ -89,7 +89,7 @@ pub fn should_log<F: Fn() -> Instant>(
     let current_time = Duration::from_ticks(now().as_ticks());
     let last_reset = Duration::from_ticks(last_reset_atomic.load(Ordering::Acquire));
 
-    let should_reset = current_time.abs_diff(last_reset) >= Duration::from_secs(60);
+    let should_reset = current_time.abs_diff(last_reset) >= Duration::from_mins(1);
 
     if !should_reset {
         // we are over-limit and not far enough in time to reset: don't log

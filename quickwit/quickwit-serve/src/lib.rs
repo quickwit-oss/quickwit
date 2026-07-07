@@ -359,7 +359,7 @@ async fn start_control_plane_if_needed(
             info!("connecting to control plane");
 
             if !balance_channel
-                .wait_for(Duration::from_secs(300), |connections| {
+                .wait_for(Duration::from_mins(5), |connections| {
                     !connections.is_empty()
                 })
                 .await
@@ -389,7 +389,7 @@ fn start_shard_positions_service(
     // the `ShardPositionsService`. If we don't, all the events we emit too early will be dismissed.
     tokio::spawn(async move {
         if let Some(ingester) = &ingester_opt
-            && wait_for_ingester_status(ingester, IngesterStatus::Ready, Duration::from_secs(300))
+            && wait_for_ingester_status(ingester, IngesterStatus::Ready, Duration::from_mins(5))
                 .await
                 .is_err()
         {
@@ -417,7 +417,7 @@ async fn shutdown_signal_handler(
     // We must decommission the ingester first before terminating the indexing pipelines that
     // may consume from it. We also need to keep the gRPC server running while doing so.
     if let Some(ingester) = &ingester_opt
-        && let Err(error) = wait_for_ingester_decommission(ingester, Duration::from_secs(300)).await
+        && let Err(error) = wait_for_ingester_decommission(ingester, Duration::from_mins(5)).await
     {
         error!("failed to decommission ingester gracefully: {:?}", error);
     }
@@ -510,7 +510,7 @@ pub async fn serve_quickwit(
                 balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
 
             if !balance_channel
-                .wait_for(Duration::from_secs(300), |connections| {
+                .wait_for(Duration::from_mins(5), |connections| {
                     !connections.is_empty()
                 })
                 .await
@@ -1292,7 +1292,7 @@ async fn setup_control_plane(
         .forever();
 
     tokio::time::timeout(
-        Duration::from_secs(300),
+        Duration::from_mins(5),
         readiness_rx.wait_for(|readiness| *readiness),
     )
     .await

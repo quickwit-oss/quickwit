@@ -32,15 +32,15 @@ use crate::metrics::{CLOSED_SHARDS, INDEX_ID_LABEL_NAMES, OPEN_SHARDS};
 /// Limits the number of scale up operations that can happen to a source to 5 per minute.
 const SCALING_UP_RATE_LIMITER_SETTINGS: RateLimiterSettings = RateLimiterSettings {
     burst_limit: 5,
-    rate_limit: ConstantRate::new(5, Duration::from_secs(60)),
+    rate_limit: ConstantRate::new(5, Duration::from_mins(1)),
     refill_period: Duration::from_secs(12),
 };
 
 /// Limits the number of shards that can be closed for scaling down a source to 1 per minute.
 const SCALING_DOWN_RATE_LIMITER_SETTINGS: RateLimiterSettings = RateLimiterSettings {
     burst_limit: 1,
-    rate_limit: ConstantRate::new(1, Duration::from_secs(60)),
-    refill_period: Duration::from_secs(60),
+    rate_limit: ConstantRate::new(1, Duration::from_mins(1)),
+    refill_period: Duration::from_mins(1),
 };
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]

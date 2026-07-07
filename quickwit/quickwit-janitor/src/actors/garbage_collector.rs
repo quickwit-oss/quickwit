@@ -34,7 +34,7 @@ use tracing::{debug, error, info};
 
 use crate::metrics::{GC_DELETED_BYTES, GC_DELETED_SPLITS, GC_RUNS, GC_SECONDS_TOTAL};
 
-const RUN_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
+const RUN_INTERVAL: Duration = Duration::from_mins(10);
 
 /// Result of a GC run (tantivy or parquet).
 struct GcRunResult {
@@ -77,7 +77,7 @@ fn gc_metrics(split_type: &'static str) -> GcMetrics {
 /// Staged files needs to be deleted if there was a failure.
 /// TODO ideally we want clean up all staged splits every time we restart the indexing pipeline, but
 /// the grace period strategy should do the job for the moment.
-const STAGED_GRACE_PERIOD: Duration = Duration::from_secs(60 * 60 * 24); // 24 hours
+const STAGED_GRACE_PERIOD: Duration = Duration::from_hours(24);
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct GarbageCollectorCounters {

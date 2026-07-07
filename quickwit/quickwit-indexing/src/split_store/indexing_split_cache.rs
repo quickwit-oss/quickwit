@@ -32,7 +32,7 @@ use ulid::Ulid;
 use super::SplitStoreQuota;
 
 // TODO Make this configurable.
-const SPLIT_MAX_AGE: Duration = Duration::from_secs(2 * 24 * 3_600); // 2 days
+const SPLIT_MAX_AGE: Duration = Duration::from_hours(48); // 2 days
 
 pub fn get_tantivy_directory_from_split_bundle(
     split_file: &Path,
@@ -727,7 +727,7 @@ mod tests {
         // adding a split with a large time gap only keeps splits younger than SPLIT_MAX_AGE
         assert_eq!(
             SPLIT_MAX_AGE,
-            Duration::from_secs(2 * 24 * 3_600),
+            Duration::from_hours(48),
             "update this test if SPLIT_MAX_AGE changes"
         );
         {

@@ -21,8 +21,8 @@ use tracing::warn;
 /// Field name reserved for storing the dynamically indexed fields.
 pub const FIELD_PRESENCE_FIELD_NAME: &str = "_field_presence";
 
-pub const MINIMUM_DELETION_GRACE_PERIOD: Duration = Duration::from_secs(5 * 60); // 5mn
-const MAXIMUM_DELETION_GRACE_PERIOD: Duration = Duration::from_secs(2 * 24 * 3600); // 2 days
+pub const MINIMUM_DELETION_GRACE_PERIOD: Duration = Duration::from_mins(5);
+const MAXIMUM_DELETION_GRACE_PERIOD: Duration = Duration::from_hours(48); // 2 days
 
 /// We cannot safely delete splits right away as a:
 /// - in-flight queries could actually have selected this split,
@@ -33,7 +33,7 @@ const MAXIMUM_DELETION_GRACE_PERIOD: Duration = Duration::from_secs(2 * 24 * 360
 /// that all queries involving this split have terminated, we effectively delete the split.
 /// This duration is controlled by `DELETION_GRACE_PERIOD`.
 pub fn split_deletion_grace_period() -> Duration {
-    const DEFAULT_DELETION_GRACE_PERIOD: Duration = Duration::from_secs(60 * 32); // 32 min
+    const DEFAULT_DELETION_GRACE_PERIOD: Duration = Duration::from_mins(32);
 
     static SPLIT_DELETION_GRACE_PERIOD_SECS_LOCK: LazyLock<Duration> = LazyLock::new(|| {
         let deletion_grace_period_secs: u64 = crate::get_from_env(

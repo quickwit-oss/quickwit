@@ -73,7 +73,7 @@ use crate::{FollowerId, estimate_size};
 const MIN_RESET_SHARDS_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::ZERO
 } else {
-    Duration::from_secs(60)
+    Duration::from_mins(1)
 };
 
 /// Duration after which persist requests time out with

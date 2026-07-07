@@ -47,7 +47,7 @@ use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
 
 /// Default commit timeout for ParquetIndexer (60 seconds).
 // TODO: read from index config commit_timeout_secs.
-const DEFAULT_COMMIT_TIMEOUT: Duration = Duration::from_secs(60);
+const DEFAULT_COMMIT_TIMEOUT: Duration = Duration::from_mins(1);
 
 /// Message to trigger a commit after timeout.
 #[derive(Debug)]

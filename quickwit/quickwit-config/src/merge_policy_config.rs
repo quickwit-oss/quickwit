@@ -105,7 +105,7 @@ fn default_min_level_num_docs() -> usize {
 }
 
 fn default_maturation_period() -> Duration {
-    Duration::from_secs(48 * 3600)
+    Duration::from_hours(48)
 }
 
 impl Default for StableLogMergePolicyConfig {

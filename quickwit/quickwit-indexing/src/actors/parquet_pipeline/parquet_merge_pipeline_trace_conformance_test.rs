@@ -481,7 +481,7 @@ fn merge_policy(
             max_merge_factor: merge_factor,
             max_merge_ops,
             target_split_size_bytes: 256 * 1024 * 1024,
-            maturation_period: Duration::from_secs(3600),
+            maturation_period: Duration::from_hours(1),
             max_finalize_merge_operations: 3,
         },
     ))
@@ -643,7 +643,7 @@ async fn test_trace_conformance_normal_path() {
             let count = tracker.publish_call_count.load(Ordering::SeqCst);
             async move { count >= 3 }
         },
-        Duration::from_secs(60),
+        Duration::from_mins(1),
         Duration::from_millis(100),
     )
     .await
@@ -765,7 +765,7 @@ async fn test_trace_conformance_crash_mid_cascade() {
             let done = publish_done.clone();
             async move { done.load(Ordering::SeqCst) }
         },
-        Duration::from_secs(60),
+        Duration::from_mins(1),
         Duration::from_millis(100),
     )
     .await

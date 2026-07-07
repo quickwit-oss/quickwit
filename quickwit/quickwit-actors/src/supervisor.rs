@@ -446,7 +446,7 @@ mod tests {
         assert_eq!(obs.state.state_opt, Some(0));
         let _ = mailbox.ask(Ping).await;
         assert_eq!(mailbox.ask(Observe).await.unwrap(), 1);
-        universe.sleep(Duration::from_secs(60)).await;
+        universe.sleep(Duration::from_mins(1)).await;
         let obs = handler.observe().await;
         assert_eq!(obs.state.state_opt, Some(1));
         handler.quit().await;

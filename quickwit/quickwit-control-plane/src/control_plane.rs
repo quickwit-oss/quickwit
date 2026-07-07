@@ -72,7 +72,7 @@ pub(crate) const CONTROL_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, featur
 };
 
 /// Minimum period between two identical shard pruning operations.
-const PRUNE_SHARDS_DEFAULT_COOLDOWN_PERIOD: Duration = Duration::from_secs(120);
+const PRUNE_SHARDS_DEFAULT_COOLDOWN_PERIOD: Duration = Duration::from_mins(2);
 
 /// Minimum period between two rebuild plan operations.
 const REBUILD_PLAN_COOLDOWN_PERIOD: Duration = Duration::from_secs(2);

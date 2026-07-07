@@ -71,7 +71,7 @@ impl Default for ParquetMergePolicyConfig {
             max_merge_factor: 12,
             max_merge_ops: 4,
             target_split_size_bytes: 256 * 1024 * 1024, // 256 MiB
-            maturation_period: Duration::from_secs(48 * 3600), // 48 hours
+            maturation_period: Duration::from_hours(48),
             max_finalize_merge_operations: 3,
         }
     }
@@ -356,7 +356,7 @@ mod tests {
             max_merge_factor: 5,
             max_merge_ops: 3,
             target_split_size_bytes: 256 * 1024 * 1024, // 256 MiB
-            maturation_period: Duration::from_secs(3600),
+            maturation_period: Duration::from_hours(1),
             max_finalize_merge_operations: 3,
         };
         ConstWriteAmplificationParquetMergePolicy::new(config)
@@ -564,7 +564,7 @@ mod tests {
             max_merge_factor: 12,
             max_merge_ops: 4,
             target_split_size_bytes: 100 * 1024 * 1024, // 100 MiB
-            maturation_period: Duration::from_secs(48 * 3600),
+            maturation_period: Duration::from_hours(48),
             max_finalize_merge_operations: 0,
         };
         let policy = ConstWriteAmplificationParquetMergePolicy::new(config);
@@ -622,7 +622,7 @@ mod tests {
         assert_eq!(
             policy.split_maturity(1_000_000, 0),
             ParquetSplitMaturity::Immature {
-                maturation_period: Duration::from_secs(3600)
+                maturation_period: Duration::from_hours(1)
             },
         );
     }

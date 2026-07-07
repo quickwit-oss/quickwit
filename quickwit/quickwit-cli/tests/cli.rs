@@ -709,7 +709,7 @@ async fn test_garbage_collect_cli_no_grace() {
     let create_gc_args = |dry_run| GarbageCollectIndexArgs {
         config_uri: test_env.resource_files.config.clone(),
         index_id: index_id.clone(),
-        grace_period: Duration::from_secs(3600),
+        grace_period: Duration::from_hours(1),
         dry_run,
     };
 

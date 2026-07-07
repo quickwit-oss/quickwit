@@ -32,7 +32,7 @@ use crate::retention_policy_execution::{
     run_execute_parquet_retention_policy, run_execute_retention_policy,
 };
 
-const RUN_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hours
+const RUN_INTERVAL: Duration = Duration::from_hours(1);
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct RetentionPolicyExecutorCounters {

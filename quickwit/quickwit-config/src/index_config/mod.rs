@@ -791,7 +791,7 @@ mod tests {
             MergePolicyConfig::StableLog(crate::StableLogMergePolicyConfig {
                 merge_factor: 9,
                 max_merge_factor: 11,
-                maturation_period: Duration::from_secs(48 * 3600),
+                maturation_period: Duration::from_hours(48),
                 ..Default::default()
             })
         );
@@ -1001,7 +1001,7 @@ mod tests {
             };
             assert_eq!(
                 retention_policy.retention_period().unwrap(),
-                Duration::from_secs(3600)
+                Duration::from_hours(1)
             );
             {
                 let retention_policy = RetentionPolicy {

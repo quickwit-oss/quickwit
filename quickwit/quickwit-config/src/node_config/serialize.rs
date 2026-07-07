@@ -694,11 +694,11 @@ mod tests {
         );
         assert_eq!(
             postgres_config.idle_connection_timeout_opt().unwrap(),
-            Some(Duration::from_secs(1800))
+            Some(Duration::from_mins(30))
         );
         assert_eq!(
             postgres_config.max_connection_lifetime_opt().unwrap(),
-            Some(Duration::from_secs(3600))
+            Some(Duration::from_hours(1))
         );
 
         assert_eq!(

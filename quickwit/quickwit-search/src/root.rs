@@ -71,7 +71,7 @@ fn max_scroll_ttl() -> Duration {
              should not happen."
         );
         // We remove an extra margin of 2minutes from the split deletion grace period.
-        split_deletion_grace_period - Duration::from_secs(60 * 2)
+        split_deletion_grace_period - Duration::from_mins(2)
     });
     *MAX_SCROLL_TTL_LOCK
 }

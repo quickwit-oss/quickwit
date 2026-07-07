@@ -270,7 +270,7 @@ async fn test_scheduler_scheduling_no_indexer() {
 
     // There is no indexer, we should observe no
     // scheduling.
-    universe.sleep(Duration::from_secs(60)).await;
+    universe.sleep(Duration::from_mins(1)).await;
     let scheduler_state = control_plane_mailbox
         .ask(Observe)
         .await

@@ -43,7 +43,7 @@ use crate::metrics::SingleCacheMetrics;
 /// On the other hand, for very large queries involving enough data to saturate the cache,
 /// we are facing a scanning pattern. If variations of this  query is repeated over and over
 /// a regular LRU eviction policy would yield a hit rate of 0.
-pub(crate) const LRU_MIN_TIME_SINCE_LAST_ACCESS: Duration = Duration::from_secs(60);
+pub(crate) const LRU_MIN_TIME_SINCE_LAST_ACCESS: Duration = Duration::from_mins(1);
 
 // A fake entry inside a cache, which the cache believe to be of the given size
 #[derive(Clone)]

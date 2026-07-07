@@ -291,7 +291,7 @@ mod tests {
         let test_actor = PingReceiverActor::default();
         let universe = Universe::with_accelerated_time();
         let (_mailbox, _handle) = universe.spawn_builder().spawn(test_actor);
-        let obs = universe.observe(Duration::from_millis(1000)).await;
+        let obs = universe.observe(Duration::from_secs(1)).await;
         assert_eq!(obs.len(), 1);
         universe.assert_quit().await;
     }

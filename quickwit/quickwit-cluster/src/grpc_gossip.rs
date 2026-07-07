@@ -45,7 +45,7 @@ pub(crate) async fn spawn_catchup_callback_task(
     channel_factory: ChannelFactory,
 ) {
     let catchup_callback_future = async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        let mut interval = tokio::time::interval(Duration::from_mins(1));
         interval.tick().await;
 
         loop {

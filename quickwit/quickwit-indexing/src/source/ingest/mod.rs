@@ -67,7 +67,7 @@ impl TypedSourceFactory for IngestSourceFactory {
         let retry_params = RetryParams {
             max_attempts: usize::MAX,
             base_delay: Duration::from_secs(5),
-            max_delay: Duration::from_secs(10 * 60), // 10 minutes
+            max_delay: Duration::from_mins(10),
         };
         IngestSource::try_new(source_runtime, retry_params).await
     }

@@ -78,7 +78,7 @@ impl Transport {
             reqwest_client_builder = reqwest_client_builder.identity(identity);
         }
         let retry_policy = ExponentialBackoff::builder()
-            .retry_bounds(Duration::from_secs(1), Duration::from_secs(60))
+            .retry_bounds(Duration::from_secs(1), Duration::from_mins(1))
             .build_with_max_retries(num_retries);
         let retry_transient_middleware = RetryTransientMiddleware::new_with_policy(retry_policy);
         let reqwest_client = reqwest_client_builder

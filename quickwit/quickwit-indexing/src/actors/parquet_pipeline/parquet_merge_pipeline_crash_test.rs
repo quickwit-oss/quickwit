@@ -80,7 +80,7 @@ fn make_merge_policy(
             max_merge_factor: merge_factor,
             max_merge_ops: 5,
             target_split_size_bytes: 256 * 1024 * 1024,
-            maturation_period: Duration::from_secs(3600),
+            maturation_period: Duration::from_hours(1),
             max_finalize_merge_operations: 3,
         },
     ))
@@ -218,7 +218,7 @@ async fn test_merge_pipeline_crash_and_restart() {
             let done = final_publish_done.clone();
             async move { done.load(Ordering::SeqCst) }
         },
-        Duration::from_secs(60),
+        Duration::from_mins(1),
         Duration::from_millis(200),
     )
     .await
@@ -344,7 +344,7 @@ async fn test_merge_pipeline_multi_round() {
             let staged = staged_metadata.clone();
             async move { staged.lock().unwrap().iter().any(|s| s.num_merge_ops >= 2) }
         },
-        Duration::from_secs(60),
+        Duration::from_mins(1),
         Duration::from_millis(200),
     )
     .await

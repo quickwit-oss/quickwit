@@ -726,7 +726,7 @@ mod tests {
                 grace_period,
                 dry_run: false,
                 ..
-            })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(60 * 60)
+            })) if &index_id == "wikipedia" && grace_period == Duration::from_hours(1)
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -750,7 +750,7 @@ mod tests {
                 grace_period,
                 config_uri,
                 dry_run: true,
-            })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(5 * 60) && config_uri == expected_config_uri
+            })) if &index_id == "wikipedia" && grace_period == Duration::from_mins(5) && config_uri == expected_config_uri
         ));
         Ok(())
     }

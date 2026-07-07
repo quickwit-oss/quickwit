@@ -50,7 +50,7 @@ const OBSERVE_PIPELINE_INTERVAL: Duration = if cfg!(any(test, feature = "testsui
 } else {
     // 1 minute.
     // This is only for observation purpose, not supervision.
-    Duration::from_secs(60)
+    Duration::from_mins(1)
 };
 
 struct DeletePipelineHandle {

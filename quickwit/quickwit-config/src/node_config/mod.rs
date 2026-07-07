@@ -756,7 +756,7 @@ pub struct JaegerConfig {
 
 impl JaegerConfig {
     pub fn lookback_period(&self) -> Duration {
-        Duration::from_secs(self.lookback_period_hours.get() * 3600)
+        Duration::from_hours(self.lookback_period_hours.get())
     }
 
     pub fn max_trace_duration(&self) -> Duration {

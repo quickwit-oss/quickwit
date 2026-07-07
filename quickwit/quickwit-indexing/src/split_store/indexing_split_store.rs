@@ -239,7 +239,7 @@ mod tests {
             split_id: split_id.clone(),
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
             maturity: SplitMaturity::Immature {
-                maturation_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_hours(1),
             },
             ..Default::default()
         }

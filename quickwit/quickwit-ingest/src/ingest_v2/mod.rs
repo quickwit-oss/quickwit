@@ -106,7 +106,7 @@ pub type OpenShardCounts = Vec<(IndexUid, SourceId, usize)>;
 
 const IDLE_SHARD_TIMEOUT_ENV_KEY: &str = "QW_IDLE_SHARD_TIMEOUT_SECS";
 
-const DEFAULT_IDLE_SHARD_TIMEOUT: Duration = Duration::from_secs(15 * 60); // 15 minutes
+const DEFAULT_IDLE_SHARD_TIMEOUT: Duration = Duration::from_mins(15);
 
 pub fn get_idle_shard_timeout() -> Duration {
     env::var(IDLE_SHARD_TIMEOUT_ENV_KEY)
