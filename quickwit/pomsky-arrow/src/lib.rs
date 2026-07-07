@@ -41,7 +41,7 @@ pub mod fast_field_reader;
 pub mod warmup;
 
 use arrow::datatypes::Field;
-pub use error::{ArrowError, Result};
+pub use error::{PomskyArrowError, Result};
 pub use fast_field_reader::{DictCache, DocSelection, read_segment_columns};
 pub use warmup::warm_up_fast_fields;
 

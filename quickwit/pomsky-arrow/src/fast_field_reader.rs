@@ -36,7 +36,7 @@ use arrow::datatypes::{DataType, Field, Int32Type, SchemaRef, TimeUnit};
 use arrow::record_batch::RecordBatch;
 use tantivy::index::SegmentReader;
 
-use crate::error::{ArrowError, Result};
+use crate::error::{PomskyArrowError, Result};
 
 /// Selects which documents of a segment to materialize.
 ///
@@ -84,10 +84,10 @@ impl DictCache {
             let mut streamer = str_col
                 .dictionary()
                 .stream()
-                .map_err(|e| ArrowError::Internal(format!("stream dict '{name}': {e}")))?;
+                .map_err(|e| PomskyArrowError::Internal(format!("stream dict '{name}': {e}")))?;
             while streamer.advance() {
                 let s = std::str::from_utf8(streamer.key())
-                    .map_err(|e| ArrowError::Internal(format!("dict utf8 '{name}': {e}")))?;
+                    .map_err(|e| PomskyArrowError::Internal(format!("dict utf8 '{name}': {e}")))?;
                 builder.append_value(s);
             }
             entries.insert(name.to_string(), Arc::new(builder.finish()));
@@ -210,7 +210,7 @@ fn build_fast_field_array(
         dt @ DataType::List(inner) => {
             build_list_array(inner, dt, read_name, fast_fields, docs, num_docs)
         }
-        other => Err(ArrowError::UnsupportedType(other.clone())),
+        other => Err(PomskyArrowError::UnsupportedType(other.clone())),
     }
 }
 
@@ -373,7 +373,7 @@ fn build_utf8_array(
                 buf.clear();
                 str_col
                     .ord_to_str(ord, &mut buf)
-                    .map_err(|e| ArrowError::Internal(format!("ord_to_str '{name}': {e}")))?;
+                    .map_err(|e| PomskyArrowError::Internal(format!("ord_to_str '{name}': {e}")))?;
                 builder.append_value(&buf);
             } else {
                 builder.append_null();
@@ -419,7 +419,7 @@ fn build_binary_array(
             buf.clear();
             bytes_col
                 .ord_to_bytes(ord, &mut buf)
-                .map_err(|e| ArrowError::Internal(format!("ord_to_bytes '{name}': {e}")))?;
+                .map_err(|e| PomskyArrowError::Internal(format!("ord_to_bytes '{name}': {e}")))?;
             builder.append_value(&buf);
         } else {
             builder.append_null();
@@ -513,7 +513,7 @@ fn build_list_array(
         DataType::Binary => {
             build_binary_list_array(fast_fields, list_data_type, name, docs, num_docs)
         }
-        other => Err(ArrowError::Internal(format!(
+        other => Err(PomskyArrowError::Internal(format!(
             "unsupported inner type for list fast field '{name}': {other:?}"
         ))),
     }
@@ -534,7 +534,7 @@ fn build_utf8_list_array(
                 buf.clear();
                 str_col
                     .ord_to_str(ord, &mut buf)
-                    .map_err(|e| ArrowError::Internal(format!("ord_to_str '{name}': {e}")))?;
+                    .map_err(|e| PomskyArrowError::Internal(format!("ord_to_str '{name}': {e}")))?;
                 builder.values().append_value(&buf);
             }
             builder.append(true);
@@ -576,7 +576,7 @@ fn build_binary_list_array(
             buf.clear();
             bytes_col
                 .ord_to_bytes(ord, &mut buf)
-                .map_err(|e| ArrowError::Internal(format!("ord_to_bytes '{name}': {e}")))?;
+                .map_err(|e| PomskyArrowError::Internal(format!("ord_to_bytes '{name}': {e}")))?;
             builder.values().append_value(&buf);
         }
         builder.append(true);
@@ -613,7 +613,7 @@ fn build_compact_dict_array(
         buf.clear();
         str_col
             .ord_to_str(ord, &mut buf)
-            .map_err(|e| ArrowError::Internal(format!("dict build '{name}': {e}")))?;
+            .map_err(|e| PomskyArrowError::Internal(format!("dict build '{name}': {e}")))?;
         dict_builder.append_value(&buf);
     }
     let dict_values: ArrayRef = Arc::new(dict_builder.finish());
@@ -623,7 +623,7 @@ fn build_compact_dict_array(
         match raw {
             Some(ord) => {
                 let compact_idx = seen_ords.binary_search(ord).map_err(|_| {
-                    ArrowError::Internal(format!(
+                    PomskyArrowError::Internal(format!(
                         "dictionary ordinal {ord} missing from compact dictionary for '{name}'"
                     ))
                 })?;
@@ -639,7 +639,7 @@ fn build_compact_dict_array(
 
 fn checked_i32_key(value: impl TryInto<i32>, name: &str) -> Result<i32> {
     value.try_into().map_err(|_| {
-        ArrowError::Internal(format!(
+        PomskyArrowError::Internal(format!(
             "dictionary key for fast field '{name}' exceeds Int32 capacity"
         ))
     })

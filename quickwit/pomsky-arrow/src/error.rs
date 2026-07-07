@@ -21,7 +21,7 @@ use arrow::datatypes::DataType;
 /// `DataFusionError`, and re-pointing them at this crate is a matter of adding
 /// an `impl From<ArrowError> for DataFusionError` on the consumer side.
 #[derive(thiserror::Error, Debug)]
-pub enum ArrowError {
+pub enum PomskyArrowError {
     /// An error surfaced by the Arrow library (e.g. building a `RecordBatch`).
     #[error("arrow error: {0}")]
     Arrow(#[from] arrow::error::ArrowError),
@@ -40,4 +40,4 @@ pub enum ArrowError {
 }
 
 /// Result type used throughout `pomsky-arrow`.
-pub type Result<T> = std::result::Result<T, ArrowError>;
+pub type Result<T> = std::result::Result<T, PomskyArrowError>;

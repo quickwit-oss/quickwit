@@ -30,7 +30,7 @@ use std::collections::BTreeSet;
 use arrow::datatypes::SchemaRef;
 use tantivy::Searcher;
 
-use crate::error::{ArrowError, Result};
+use crate::error::{PomskyArrowError, Result};
 
 /// Pre-fetches the byte ranges of every fast-field column referenced by
 /// `projected_schema`, across all segments of `searcher`.
@@ -60,7 +60,7 @@ pub async fn warm_up_fast_fields(searcher: &Searcher, projected_schema: &SchemaR
                     .read_bytes_async()
                     .await
                     .map_err(|error| {
-                        ArrowError::Internal(format!(
+                        PomskyArrowError::Internal(format!(
                             "warmup: failed to pre-load fast field '{name}': {error}"
                         ))
                     })?;
