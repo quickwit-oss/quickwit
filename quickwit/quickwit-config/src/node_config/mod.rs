@@ -145,7 +145,7 @@ pub struct TlsConfig {
     pub verify_client_cert: bool,
     // How often the certificate and key files are polled for changes and hot-reloaded (e.g.
     // `"5m"`). An immediate reload can also be triggered out-of-band with `SIGHUP`.
-    #[serde(default = "default_cert_poll_interval")]
+    #[serde(alias = "cert_reload_interval", default = "default_cert_poll_interval")]
     pub cert_poll_interval: HumanDuration,
 }
 
