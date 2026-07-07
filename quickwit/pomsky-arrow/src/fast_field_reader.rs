@@ -72,7 +72,7 @@ impl DictCache {
             if !matches!(field.data_type(), DataType::Dictionary(_, _)) {
                 continue;
             }
-            let name = field.name();
+            let arrow_field_name = field.name();
             let read_name = crate::fast_field_read_name(field);
             let Ok(Some(str_col)) = fast_fields.str(read_name) else {
                 // Missing field: null padding handles it.
@@ -81,16 +81,16 @@ impl DictCache {
 
             let num_terms = str_col.num_terms();
             let mut builder = StringBuilder::with_capacity(num_terms, num_terms * 16);
-            let mut streamer = str_col
-                .dictionary()
-                .stream()
-                .map_err(|e| PomskyArrowError::Internal(format!("stream dict '{name}': {e}")))?;
+            let mut streamer = str_col.dictionary().stream().map_err(|e| {
+                PomskyArrowError::Internal(format!("stream dict '{arrow_field_name}': {e}"))
+            })?;
             while streamer.advance() {
-                let s = std::str::from_utf8(streamer.key())
-                    .map_err(|e| PomskyArrowError::Internal(format!("dict utf8 '{name}': {e}")))?;
+                let s = std::str::from_utf8(streamer.key()).map_err(|e| {
+                    PomskyArrowError::Internal(format!("dict utf8 '{arrow_field_name}': {e}"))
+                })?;
                 builder.append_value(s);
             }
-            entries.insert(name.to_string(), Arc::new(builder.finish()));
+            entries.insert(arrow_field_name.to_string(), Arc::new(builder.finish()));
         }
 
         Ok(Self { entries })
@@ -183,7 +183,7 @@ fn build_fast_field_array(
     num_docs: usize,
     dict_cache: Option<&DictCache>,
 ) -> Result<ArrayRef> {
-    let name = field.name();
+    let arrow_field_name = field.name();
     let read_name = crate::fast_field_read_name(field);
     match field.data_type() {
         DataType::UInt64 => Ok(build_u64_array(fast_fields, read_name, num_docs, docs)),
@@ -199,7 +199,7 @@ fn build_fast_field_array(
         DataType::Dictionary(_, _) => build_dictionary_array(
             fast_fields,
             field,
-            name,
+            arrow_field_name,
             read_name,
             num_docs,
             docs,

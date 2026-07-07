@@ -32,6 +32,9 @@ use tantivy::Searcher;
 
 use crate::error::{PomskyArrowError, Result};
 
+const DOC_ID_FIELD_NAME: &str = "_doc_id";
+const SEGMENT_ORD_FIELD_NAME: &str = "_segment_ord";
+
 /// Pre-fetches the byte ranges of every fast-field column referenced by
 /// `projected_schema`, across all segments of `searcher`.
 ///
@@ -77,7 +80,7 @@ fn fast_field_read_names(projected_schema: &SchemaRef) -> Vec<&str> {
     let mut names: BTreeSet<&str> = BTreeSet::new();
     for field in projected_schema.fields() {
         let name = field.name().as_str();
-        if name == "_doc_id" || name == "_segment_ord" {
+        if name == DOC_ID_FIELD_NAME || name == SEGMENT_ORD_FIELD_NAME {
             continue;
         }
         names.insert(crate::fast_field_read_name(field));
@@ -116,7 +119,7 @@ mod tests {
         let searcher = index.reader().unwrap().searcher();
 
         let projected = Arc::new(Schema::new(vec![
-            Field::new("_doc_id", DataType::UInt32, false),
+            Field::new(DOC_ID_FIELD_NAME, DataType::UInt32, false),
             Field::new("id", DataType::UInt64, true),
             Field::new("missing", DataType::Float64, true),
         ]));
@@ -131,7 +134,7 @@ mod tests {
         let searcher = index.reader().unwrap().searcher();
 
         let projected = Arc::new(Schema::new(vec![Field::new(
-            "_doc_id",
+            DOC_ID_FIELD_NAME,
             DataType::UInt32,
             false,
         )]));
@@ -155,8 +158,8 @@ mod tests {
         .with_metadata(metadata);
 
         let projected = Arc::new(Schema::new(vec![
-            Field::new("_doc_id", DataType::UInt32, false),
-            Field::new("_segment_ord", DataType::UInt32, false),
+            Field::new(DOC_ID_FIELD_NAME, DataType::UInt32, false),
+            Field::new(SEGMENT_ORD_FIELD_NAME, DataType::UInt32, false),
             as_u64,
             as_str,
             Field::new("service", DataType::Utf8, true),
