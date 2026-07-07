@@ -112,11 +112,6 @@ impl SearchJobPlacer {
     pub fn new(searcher_pool: SearcherPool) -> Self {
         Self { searcher_pool }
     }
-
-    /// Returns the number of searchers in the pool.
-    pub fn num_searchers(&self) -> usize {
-        self.searcher_pool.len()
-    }
 }
 
 struct SocketAddrAndClient {
