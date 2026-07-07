@@ -61,17 +61,14 @@ use time::OffsetDateTime;
 use tracing::{debug, info, instrument, warn};
 use uuid::Uuid;
 
+use super::QW_POSTGRES_READ_ONLY_ENV_KEY;
 use super::error::convert_sqlx_err;
-use super::migrator::run_migrations;
+use super::migrator::Migrations;
 use super::model::{PgDeleteTask, PgIndex, PgIndexTemplate, PgShard, PgSplit, Splits};
 use super::parquet_model::{InsertableParquetSplit, ParquetSplitRecord, PgParquetSplit};
 use super::pool::TrackedPool;
 use super::split_stream::SplitStream;
 use super::utils::{append_query_filters_and_order_by, establish_connection};
-use super::{
-    QW_POSTGRES_READ_ONLY_ENV_KEY, QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY,
-    QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY,
-};
 use crate::checkpoint::{
     IndexCheckpointDelta, PartitionId, SourceCheckpoint, SourceCheckpointDelta,
 };
@@ -123,8 +120,6 @@ impl PostgresqlMetastore {
             .expect("PostgreSQL metastore config should have been validated");
 
         let read_only = get_bool_from_env(QW_POSTGRES_READ_ONLY_ENV_KEY, false);
-        let skip_migrations = get_bool_from_env(QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY, false);
-        let skip_locking = get_bool_from_env(QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY, false);
 
         let connection_pool = establish_connection(
             connection_uri,
@@ -137,7 +132,7 @@ impl PostgresqlMetastore {
         )
         .await?;
 
-        run_migrations(&connection_pool, skip_migrations, skip_locking).await?;
+        Migrations::from_env(connection_pool.clone()).run().await?;
 
         let metastore = PostgresqlMetastore {
             uri: connection_uri.clone(),
