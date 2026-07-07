@@ -21,7 +21,8 @@ use quickwit_common::rate_limited_warn;
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
-use quickwit_metastore::{MetastoreReadService, SplitMetadata};
+use quickwit_metastore::SplitMetadata;
+use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{
     LeafListFieldsRequest, ListFieldsEntry, ListFieldsRequest, ListFieldsResponse,
 };
@@ -53,7 +54,7 @@ struct IndexMetasForLeafSearch {
 pub async fn root_list_fields(
     list_fields_req: ListFieldsRequest,
     cluster_client: &ClusterClient,
-    metastore: &dyn MetastoreReadService,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<ListFieldsResponse> {
     let indexes_metadata =
         resolve_index_patterns(&list_fields_req.index_id_patterns[..], metastore).await?;

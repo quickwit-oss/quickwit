@@ -18,7 +18,6 @@ pub(crate) mod index_metadata;
 pub mod postgres;
 
 pub mod control_plane_metastore;
-pub mod read_service;
 
 use std::cmp::Ordering;
 use std::ops::{Bound, RangeInclusive};
@@ -49,7 +48,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{MetastoreReadService, Split, SplitMetadata, SplitState};
+use crate::{Split, SplitMetadata, SplitState};
 
 /// Query parameters for listing parquet splits (metrics or sketches).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -973,7 +972,7 @@ pub struct ParquetSplitsPage {
 
 /// Lists one parquet splits page and advances `query.after_split_id`.
 pub async fn list_parquet_splits_page(
-    metastore: &dyn MetastoreReadService,
+    metastore: &MetastoreServiceClient,
     kind: ParquetSplitKind,
     query: &mut ListParquetSplitsQuery,
 ) -> MetastoreResult<ParquetSplitsPage> {
@@ -1012,7 +1011,7 @@ pub async fn list_parquet_splits_page(
 /// `page_size`; `after_split_id` is used as the starting cursor when already
 /// set and is advanced internally after each full page.
 pub async fn list_parquet_splits_paginated(
-    metastore: &dyn MetastoreReadService,
+    metastore: &MetastoreServiceClient,
     kind: ParquetSplitKind,
     mut query: ListParquetSplitsQuery,
 ) -> MetastoreResult<Vec<ParquetSplitRecord>> {

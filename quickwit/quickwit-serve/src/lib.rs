@@ -92,8 +92,7 @@ use quickwit_ingest::{
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
 use quickwit_metastore::{
-    ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreReadServiceClient,
-    MetastoreResolver,
+    ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
@@ -758,11 +757,9 @@ pub async fn serve_quickwit(
         ))
     };
 
-    let metastore_read_client: MetastoreReadServiceClient = Arc::new(
-        read_only_metastore_through_control_plane_opt
-            .clone()
-            .unwrap_or_else(|| primary_metastore_through_control_plane.clone()),
-    );
+    let metastore_read_client = read_only_metastore_through_control_plane_opt
+        .clone()
+        .unwrap_or_else(|| primary_metastore_through_control_plane.clone());
 
     let (search_job_placer, search_service, searcher_pool) = setup_searcher(
         &node_config,
@@ -1285,7 +1282,7 @@ fn build_ingester_service(
 async fn setup_searcher(
     node_config: &NodeConfig,
     cluster_change_stream: ClusterChangeStream,
-    metastore: MetastoreReadServiceClient,
+    metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     searcher_context: Arc<SearcherContext>,
 ) -> anyhow::Result<(SearchJobPlacer, Arc<dyn SearchService>, SearcherPool)> {
@@ -2046,7 +2043,7 @@ mod tests {
         let (search_job_placer, _searcher_service, _searcher_pool) = setup_searcher(
             &node_config,
             change_stream,
-            Arc::new(metastore),
+            metastore,
             storage_resolver,
             searcher_context,
         )

@@ -65,9 +65,9 @@ use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_metastore::{
     IndexMetadata, ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt,
-    MetastoreReadService, MetastoreReadServiceClient, MetastoreServiceStreamSplitsExt,
-    SplitMetadata, SplitState,
+    MetastoreServiceStreamSplitsExt, SplitMetadata, SplitState,
 };
+use quickwit_proto::metastore::MetastoreService;
 use quickwit_proto::search::{
     LeafResourceStats, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
     SplitResourceStats,
@@ -183,7 +183,7 @@ fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAn
 /// Get all splits of given index ids
 pub async fn list_all_splits(
     index_uids: Vec<IndexUid>,
-    metastore: &dyn MetastoreReadService,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<Vec<SplitMetadata>> {
     list_relevant_splits(index_uids, None, None, None, metastore).await
 }
@@ -194,7 +194,7 @@ pub async fn list_relevant_splits(
     start_timestamp: Option<i64>,
     end_timestamp: Option<i64>,
     tags_filter_opt: Option<TagFilterAst>,
-    metastore: &dyn MetastoreReadService,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<Vec<SplitMetadata>> {
     let Some(mut query) = ListSplitsQuery::try_from_index_uids(index_uids) else {
         return Ok(Vec::new());
@@ -223,7 +223,7 @@ pub async fn list_relevant_splits(
 /// Patterns follow the elastic search patterns.
 pub async fn resolve_index_patterns(
     index_id_patterns: &[String],
-    metastore: &dyn MetastoreReadService,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<Vec<IndexMetadata>> {
     let list_indexes_metadata_request = if index_id_patterns.is_empty() {
         ListIndexesMetadataRequest::all()
@@ -261,7 +261,7 @@ fn convert_document_to_json_string(
 
 /// Starts a search node, aka a `searcher`.
 pub async fn start_searcher_service(
-    metastore: MetastoreReadServiceClient,
+    metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     search_job_placer: SearchJobPlacer,
     searcher_context: Arc<SearcherContext>,
@@ -283,7 +283,6 @@ pub async fn single_node_search(
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
 ) -> crate::Result<SearchResponse> {
-    let metastore: MetastoreReadServiceClient = Arc::new(metastore);
     let socket_addr = SocketAddr::new(Ipv4Addr::new(127, 0, 0, 1).into(), 7280u16);
     let searcher_pool = SearcherPool::default();
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
@@ -302,7 +301,7 @@ pub async fn single_node_search(
     root_search(
         &searcher_context,
         search_request,
-        metastore.as_ref(),
+        &metastore,
         &cluster_client,
     )
     .await

@@ -106,7 +106,7 @@ async fn test_null_columns_for_missing_parquet_fields() {
     );
     publish_split(&metastore, &index_uid, data_dir.path(), "wide", &batch_b).await;
 
-    let source = Arc::new(MetricsDataSource::new(Arc::new(metastore)));
+    let source = Arc::new(MetricsDataSource::new(metastore));
     let schema_source = Arc::clone(&source);
     let registry = Arc::new(QuickwitObjectStoreRegistry::new(
         sandbox.storage_resolver.clone(),

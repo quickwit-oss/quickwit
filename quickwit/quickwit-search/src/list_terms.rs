@@ -21,11 +21,9 @@ use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use quickwit_common::pretty::PrettySample;
 use quickwit_config::build_doc_mapper;
-use quickwit_metastore::{
-    ListSplitsRequestExt, MetastoreReadService, MetastoreServiceStreamSplitsExt, SplitMetadata,
-};
+use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata};
 use quickwit_metrics::HistogramTimer;
-use quickwit_proto::metastore::ListSplitsRequest;
+use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::search::{
     LeafListTermsRequest, LeafListTermsResponse, ListTermsRequest, ListTermsResponse,
     SplitIdAndFooterOffsets, SplitSearchError,
@@ -50,7 +48,7 @@ use crate::{ClusterClient, SearchError, SearchJob, SearcherContext, resolve_inde
 #[instrument(skip(list_terms_request, cluster_client, metastore))]
 pub async fn root_list_terms(
     list_terms_request: &ListTermsRequest,
-    metastore: &dyn MetastoreReadService,
+    metastore: &MetastoreServiceClient,
     cluster_client: &ClusterClient,
 ) -> crate::Result<ListTermsResponse> {
     let start_instant = tokio::time::Instant::now();

@@ -25,11 +25,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::error::Result as DFResult;
 use quickwit_common::uri::Uri;
-use quickwit_metastore::{
-    IndexMetadataResponseExt, ListIndexesMetadataResponseExt, MetastoreReadServiceClient,
-};
+use quickwit_metastore::{IndexMetadataResponseExt, ListIndexesMetadataResponseExt};
 use quickwit_parquet_engine::split::ParquetSplitKind;
-use quickwit_proto::metastore::{IndexMetadataRequest, ListIndexesMetadataRequest};
+use quickwit_proto::metastore::{
+    IndexMetadataRequest, ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
+};
 use tracing::debug;
 
 use super::metastore_provider::MetastoreSplitProvider;
@@ -59,11 +59,11 @@ pub trait MetricsIndexResolver: Send + Sync + std::fmt::Debug {
 /// storage lazily on first read.
 #[derive(Clone)]
 pub struct MetastoreIndexResolver {
-    metastore: MetastoreReadServiceClient,
+    metastore: MetastoreServiceClient,
 }
 
 impl MetastoreIndexResolver {
-    pub fn new(metastore: MetastoreReadServiceClient) -> Self {
+    pub fn new(metastore: MetastoreServiceClient) -> Self {
         Self { metastore }
     }
 }

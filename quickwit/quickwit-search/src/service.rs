@@ -20,7 +20,7 @@ use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::MetastoreReadServiceClient;
+use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{
     FetchDocsRequest, FetchDocsResponse, GetKvRequest, Hit, LeafListFieldsRequest,
     LeafListTermsRequest, LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse,
@@ -47,7 +47,7 @@ use crate::{ClusterClient, SearchError, fetch_docs, root_search, search_plan};
 #[derive(Clone)]
 /// The search service implementation.
 pub struct SearchServiceImpl {
-    metastore: MetastoreReadServiceClient,
+    metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     cluster_client: ClusterClient,
     searcher_context: Arc<SearcherContext>,
@@ -141,7 +141,7 @@ pub trait SearchService: 'static + Send + Sync {
 impl SearchServiceImpl {
     /// Creates a new search service.
     pub fn new(
-        metastore: MetastoreReadServiceClient,
+        metastore: MetastoreServiceClient,
         storage_resolver: StorageResolver,
         cluster_client: ClusterClient,
         searcher_context: Arc<SearcherContext>,
@@ -170,7 +170,7 @@ impl SearchService for SearchServiceImpl {
         let search_result = root_search(
             &self.searcher_context,
             search_request,
-            self.metastore.as_ref(),
+            &self.metastore,
             &self.cluster_client,
         )
         .await?;
@@ -231,12 +231,8 @@ impl SearchService for SearchServiceImpl {
         &self,
         list_terms_request: ListTermsRequest,
     ) -> crate::Result<ListTermsResponse> {
-        let search_result = root_list_terms(
-            &list_terms_request,
-            self.metastore.as_ref(),
-            &self.cluster_client,
-        )
-        .await?;
+        let search_result =
+            root_list_terms(&list_terms_request, &self.metastore, &self.cluster_client).await?;
 
         Ok(search_result)
     }
@@ -290,12 +286,7 @@ impl SearchService for SearchServiceImpl {
         &self,
         list_fields_req: ListFieldsRequest,
     ) -> crate::Result<ListFieldsResponse> {
-        root_list_fields(
-            list_fields_req,
-            &self.cluster_client,
-            self.metastore.as_ref(),
-        )
-        .await
+        root_list_fields(list_fields_req, &self.cluster_client, &self.metastore).await
     }
 
     async fn leaf_list_fields(
@@ -320,7 +311,7 @@ impl SearchService for SearchServiceImpl {
         &self,
         search_request: SearchRequest,
     ) -> crate::Result<SearchPlanResponse> {
-        let search_plan = search_plan(search_request, self.metastore.as_ref()).await?;
+        let search_plan = search_plan(search_request, &self.metastore).await?;
         Ok(search_plan)
     }
 

@@ -27,10 +27,10 @@ use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
 use quickwit_doc_mapper::DYNAMIC_FIELD_NAME;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
-use quickwit_metastore::{
-    IndexMetadata, ListIndexesMetadataResponseExt, MetastoreReadService, SplitMetadata,
+use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt, SplitMetadata};
+use quickwit_proto::metastore::{
+    ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
-use quickwit_proto::metastore::ListIndexesMetadataRequest;
 use quickwit_proto::search::{
     FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafRequestRef, LeafResourceStats,
     LeafSearchRequest, LeafSearchResponse, PartialHit, RootResourceStats, SearchPlanResponse,
@@ -1208,7 +1208,7 @@ pub fn ensure_all_indexes_found(
 }
 
 async fn refine_and_list_matches(
-    metastore: &dyn MetastoreReadService,
+    metastore: &MetastoreServiceClient,
     search_request: &mut SearchRequest,
     indexes_metadata: Vec<IndexMetadata>,
     query_ast_resolved: QueryAst,
@@ -1251,7 +1251,7 @@ async fn refine_and_list_matches(
 /// Fetches the list of splits and their metadata from the metastore
 async fn plan_splits_for_root_search(
     search_request: &mut SearchRequest,
-    metastore: &dyn MetastoreReadService,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<(Vec<SplitMetadata>, IndexesMetasForLeafSearch)> {
     let list_indexes_metadatas_request = ListIndexesMetadataRequest {
         index_id_patterns: search_request.index_id_patterns.clone(),
@@ -1295,7 +1295,7 @@ async fn plan_splits_for_root_search(
 pub async fn root_search(
     searcher_context: &SearcherContext,
     mut search_request: SearchRequest,
-    metastore: &dyn MetastoreReadService,
+    metastore: &MetastoreServiceClient,
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
     let start_instant = Instant::now();
@@ -1364,7 +1364,7 @@ pub async fn root_search(
 /// Returns details on how a query would be executed
 pub async fn search_plan(
     mut search_request: SearchRequest,
-    metastore: &dyn MetastoreReadService,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<SearchPlanResponse> {
     let list_indexes_metadatas_request = ListIndexesMetadataRequest {
         index_id_patterns: search_request.index_id_patterns.clone(),
