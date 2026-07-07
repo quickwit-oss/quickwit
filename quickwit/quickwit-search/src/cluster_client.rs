@@ -635,11 +635,7 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer);
         cluster_client
-            .put_kv(
-                &b"my_key"[..],
-                &b"my_payload"[..],
-                Duration::from_secs(10 * 60),
-            )
+            .put_kv(&b"my_key"[..], &b"my_payload"[..], Duration::from_mins(10))
             .await;
         let result = cluster_client.get_kv(&b"my_key"[..]).await;
         assert_eq!(result, Some(b"my_payload".to_vec()))
@@ -688,11 +684,7 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer);
         cluster_client
-            .put_kv(
-                &b"my_key"[..],
-                &b"my_payload"[..],
-                Duration::from_secs(10 * 60),
-            )
+            .put_kv(&b"my_key"[..], &b"my_payload"[..], Duration::from_mins(10))
             .await;
         let result = cluster_client.get_kv(&b"my_key"[..]).await;
         assert_eq!(result, Some(b"my_payload".to_vec()))

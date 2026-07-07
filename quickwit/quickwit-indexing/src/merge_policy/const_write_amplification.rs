@@ -81,7 +81,7 @@ impl ConstWriteAmplificationMergePolicy {
             max_merge_ops: 3,
             merge_factor: 3,
             max_merge_factor: 5,
-            maturation_period: Duration::from_secs(3600),
+            maturation_period: Duration::from_hours(1),
             max_finalize_merge_operations: 0,
             max_finalize_split_num_docs: None,
         };
@@ -291,7 +291,7 @@ mod tests {
         assert_eq!(
             merge_policy.split_maturity(split.num_docs, split.num_merge_ops),
             SplitMaturity::Immature {
-                maturation_period: Duration::from_secs(3600)
+                maturation_period: Duration::from_hours(1)
             }
         );
         // Split with docs > split_num_docs_target is mature.

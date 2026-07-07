@@ -50,7 +50,7 @@ use crate::{ClusterChangeStream, ClusterNode};
 const MARKED_FOR_DELETION_GRACE_PERIOD: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(2_500) // 2.5 secs
 } else {
-    Duration::from_secs(3_600 * 2) // 2 hours.
+    Duration::from_hours(2)
 };
 
 // An indexing task key is formatted as
