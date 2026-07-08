@@ -25,6 +25,7 @@ mini-moka = { workspace = true }
 tokio = { workspace = true }
 
 quickwit-common = { workspace = true }
+quickwit-metrics = { workspace = true }
 
 [features]
 kinesis = ["aws-sdk-kinesis"]

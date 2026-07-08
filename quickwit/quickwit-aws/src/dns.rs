@@ -31,6 +31,8 @@ use std::time::Duration;
 use aws_smithy_runtime_api::client::dns::{DnsFuture, ResolveDns, ResolveDnsError};
 use mini_moka::sync::Cache;
 
+use crate::metrics::NEW_HTTP_CONNECTIONS_TOTAL;
+
 /// TTL applied to cached lookups.
 const DNS_CACHE_TTL: Duration = Duration::from_mins(1);
 
@@ -57,6 +59,7 @@ impl Default for CachingDnsResolver {
 
 impl ResolveDns for CachingDnsResolver {
     fn resolve_dns<'a>(&'a self, name: &'a str) -> DnsFuture<'a> {
+        NEW_HTTP_CONNECTIONS_TOTAL.inc();
         let cache = self.cache.clone();
         let host = name.to_string();
         DnsFuture::new(async move {

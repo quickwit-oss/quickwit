@@ -26,6 +26,7 @@ use crate::dns::CachingDnsResolver;
 
 pub mod dns;
 pub mod error;
+pub mod metrics;
 pub mod retry;
 
 pub const DEFAULT_AWS_REGION: Region = Region::from_static("us-east-1");

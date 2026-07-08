@@ -8394,6 +8394,7 @@ dependencies = [
  "futures",
  "mini-moka",
  "quickwit-common",
+ "quickwit-metrics",
  "tokio",
 ]
 

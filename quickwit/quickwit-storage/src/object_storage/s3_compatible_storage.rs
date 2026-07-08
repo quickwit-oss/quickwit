@@ -833,11 +833,73 @@ impl S3CompatibleObjectStorage {
     }
 }
 
+/// Records the terminal outcome of a body download, for connection-churn attribution.
+///
+/// Hidden contract: if this guard is dropped before [`DownloadOutcomeGuard::record`] has been
+/// called, the download future was cancelled (dropped mid-`collect`). In that case the response
+/// body is abandoned before EOF, which forces the underlying HTTP connection to be closed instead
+/// of being returned to the pool — a source of connection churn we want to measure.
+struct DownloadOutcomeGuard {
+    outcome: Option<&'static str>,
+}
+
+impl DownloadOutcomeGuard {
+    fn new() -> DownloadOutcomeGuard {
+        DownloadOutcomeGuard { outcome: None }
+    }
+
+    fn record(&mut self, outcome: &'static str) {
+        self.outcome = Some(outcome);
+    }
+}
+
+impl Drop for DownloadOutcomeGuard {
+    fn drop(&mut self) {
+        let outcome = self.outcome.unwrap_or("cancelled");
+        counter!(
+            parent: crate::metrics::OBJECT_STORAGE_DOWNLOAD_OUTCOME_TOTAL,
+            "outcome" => outcome,
+        )
+        .inc();
+    }
+}
+
+/// Classifies a `ByteStream::collect` failure into a metrics `outcome` label.
+///
+/// StalledStreamProtection aborts surface as a "minimum throughput" error somewhere in the source
+/// chain. We match on the rendered error text rather than downcasting to the aws-smithy-runtime
+/// error type, to avoid depending on that crate's internal error path (not part of its stable
+/// public surface). Stalled detection takes priority over io, which takes priority over other.
+fn classify_byte_stream_error(error: &aws_sdk_s3::primitives::ByteStreamError) -> &'static str {
+    let mut is_io = false;
+    let mut source_opt: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    while let Some(source) = source_opt {
+        let rendered = source.to_string();
+        if rendered.contains("minimum throughput") || rendered.contains("stalled") {
+            return "error_stalled";
+        }
+        if source.downcast_ref::<io::Error>().is_some() {
+            is_io = true;
+        }
+        source_opt = source.source();
+    }
+    if is_io { "error_io" } else { "error_other" }
+}
+
 async fn download_all(byte_stream: ByteStream) -> StorageResult<Bytes> {
-    let aggregated: AggregatedBytes = byte_stream
-        .collect()
-        .await
-        .map_err(byte_stream_to_storage_error)?;
+    // The guard records `cancelled` if this future is dropped before `collect` reaches a terminal
+    // state (see `DownloadOutcomeGuard`).
+    let mut outcome_guard = DownloadOutcomeGuard::new();
+    let aggregated: AggregatedBytes = match byte_stream.collect().await {
+        Ok(aggregated) => {
+            outcome_guard.record("success");
+            aggregated
+        }
+        Err(error) => {
+            outcome_guard.record(classify_byte_stream_error(&error));
+            return Err(byte_stream_to_storage_error(error));
+        }
+    };
     // `AggregatedBytes::into_bytes` returns the underlying `Bytes` without copying when the body
     // was received as a single segment, and concatenates into a fresh `Bytes` otherwise.
     let bytes = aggregated.into_bytes();
@@ -1043,6 +1105,43 @@ mod tests {
         let md5 = compute_md5(data.as_slice()).await?;
         assert_eq!(md5, md5::compute(data));
         Ok(())
+    }
+
+    fn download_outcome_count(outcome: &'static str) -> u64 {
+        counter!(
+            parent: crate::metrics::OBJECT_STORAGE_DOWNLOAD_OUTCOME_TOTAL,
+            "outcome" => outcome,
+        )
+        .get()
+    }
+
+    #[test]
+    fn test_download_outcome_guard_records_cancelled_when_dropped_without_record() {
+        let before = download_outcome_count("cancelled");
+        {
+            let _guard = DownloadOutcomeGuard::new();
+            // guard dropped here without `record` -> counts as cancelled
+        }
+        assert_eq!(download_outcome_count("cancelled"), before + 1);
+    }
+
+    #[test]
+    fn test_download_outcome_guard_records_registered_outcome() {
+        let before = download_outcome_count("success");
+        {
+            let mut guard = DownloadOutcomeGuard::new();
+            guard.record("success");
+        }
+        assert_eq!(download_outcome_count("success"), before + 1);
+    }
+
+    #[tokio::test]
+    async fn test_download_all_records_success() {
+        let before = download_outcome_count("success");
+        let byte_stream = ByteStream::from_static(b"hello quickwit");
+        let bytes = download_all(byte_stream).await.unwrap();
+        assert_eq!(&bytes[..], b"hello quickwit");
+        assert_eq!(download_outcome_count("success"), before + 1);
     }
 
     #[test]

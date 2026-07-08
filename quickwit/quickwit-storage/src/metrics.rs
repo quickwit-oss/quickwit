@@ -112,6 +112,17 @@ pub(crate) static OBJECT_STORAGE_GET_ATTEMPT_ERRORS_TOTAL: LazyCounter = lazy_co
         subsystem: "storage",
 );
 
+pub(crate) static OBJECT_STORAGE_DOWNLOAD_OUTCOME_TOTAL: LazyCounter = lazy_counter!(
+        name: "object_storage_download_outcome_total",
+        description: "Terminal outcome of a GetObject body download, labeled by outcome \
+                      (success, cancelled, error_stalled, error_io, error_other). \
+                      outcome=\"cancelled\" means the download future was dropped before the body \
+                      was fully drained (upstream/client cancellation); error_* means the body \
+                      stream failed. Both abandon the body mid-stream and force the underlying HTTP \
+                      connection to be closed, so this attributes connection churn.",
+        subsystem: "storage",
+);
+
 pub(crate) static OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT: LazyGauge = lazy_gauge!(
         name: "object_storage_get_slice_in_flight_count",
         description: "Number of GetObject for which the memory was allocated but the download is still in progress.",
