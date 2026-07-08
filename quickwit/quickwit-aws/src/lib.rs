@@ -16,13 +16,13 @@ use aws_config::retry::RetryConfig;
 use aws_config::stalled_stream_protection::StalledStreamProtectionConfig;
 use aws_config::{BehaviorVersion, Region};
 pub use aws_smithy_async::rt::sleep::TokioSleep;
+use aws_smithy_http_client::proxy::ProxyConfig;
 use aws_smithy_http_client::tls::rustls_provider::CryptoMode;
-use aws_smithy_http_client::{Builder as HttpClientBuilder, tls};
+use aws_smithy_http_client::{Builder as HttpClientBuilder, Connector, tls};
 use aws_smithy_runtime_api::client::http::SharedHttpClient;
 use tokio::sync::OnceCell;
-use tracing::warn;
 
-use crate::dns::HickoryDnsResolver;
+use crate::dns::CachingDnsResolver;
 
 pub mod dns;
 pub mod error;
@@ -32,22 +32,21 @@ pub const DEFAULT_AWS_REGION: Region = Region::from_static("us-east-1");
 
 /// Builds the HTTP client used by all AWS SDK clients.
 ///
-/// This mirrors the SDK default (Rustls + aws-lc-rs crypto) but swaps the
-/// default `getaddrinfo`-based DNS resolver for a caching Hickory resolver, see
-/// [`HickoryDnsResolver`]. If the system DNS configuration cannot be read we log
-/// a warning and fall back to the SDK's default resolver rather than failing.
+/// This mirrors `aws-smithy-runtime`'s `default_https_client()` (Rustls +
+/// aws-lc-rs crypto, proxy settings read from the environment,
+/// but wraps the default `getaddrinfo`-based DNS resolver with a cache, see [`CachingDnsResolver`].
 fn build_http_client() -> SharedHttpClient {
-    let builder = HttpClientBuilder::new().tls_provider(tls::Provider::Rustls(CryptoMode::AwsLc));
-    match HickoryDnsResolver::from_system_conf() {
-        Ok(resolver) => builder.build_with_resolver(resolver),
-        Err(error) => {
-            warn!(
-                %error,
-                "failed to initialize caching DNS resolver, falling back to the default resolver"
-            );
-            builder.build_https()
+    HttpClientBuilder::new().build_with_connector_fn(move |settings, runtime_components| {
+        let mut conn_builder =
+            Connector::builder().tls_provider(tls::Provider::Rustls(CryptoMode::AwsLc));
+        conn_builder.set_connector_settings(settings.cloned());
+        if let Some(components) = runtime_components {
+            conn_builder.set_sleep_impl(components.sleep_impl());
         }
-    }
+        // Handling `HTTP_PROXY`/`HTTPS_PROXY`/ `NO_PROXY`
+        conn_builder.set_proxy_config(Some(ProxyConfig::from_env()));
+        conn_builder.build_with_resolver(CachingDnsResolver::default())
+    })
 }
 
 /// Initialises and returns the AWS config.

@@ -17,98 +17,70 @@
 //! The AWS SDK's default HTTP client performs a blocking `getaddrinfo`
 //! lookup on every new connection without any caching.
 //!
-//! [`HickoryDnsResolver`] wraps a Hickory resolver, which keeps an in-memory
-//! cache keyed by hostname and honors record TTLs.
+//! [`CachingDnsResolver`] resolves names the same way (via
+//! [`tokio::net::lookup_host`], which goes through `getaddrinfo` and
+//! therefore honors every NSS source configured on the host: DNS,
+//! `/etc/hosts`, mDNS, LDAP, etc), but keeps an in-memory cache of the
+//! results so repeated lookups for the same host don't each pay for a
+//! blocking `getaddrinfo` call.
 
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context as _;
 use aws_smithy_runtime_api::client::dns::{DnsFuture, ResolveDns, ResolveDnsError};
-use hickory_resolver::TokioResolver;
-use quickwit_common::rate_limited_warn;
+use mini_moka::sync::Cache;
 
-/// Minimum TTL enforced on positive DNS responses.
-///
-/// S3 endpoints advertise TTLs of only a few seconds. Without a floor, the
-/// Hickory cache would expire almost immediately and provide little benefit.
-const DNS_CACHE_MIN_TTL: Duration = Duration::from_mins(1);
+/// TTL applied to cached lookups.
+const DNS_CACHE_TTL: Duration = Duration::from_mins(1);
 
-/// Maximum number of cached records.
+/// Maximum number of cached hostnames.
 const DNS_CACHE_SIZE: u64 = 1_024;
 
-/// A [`ResolveDns`] implementation backed by a caching Hickory resolver.
+/// A [`ResolveDns`] implementation that caches `getaddrinfo` lookups.
 #[derive(Debug, Clone)]
-pub struct HickoryDnsResolver {
-    // `TokioResolver` is internally reference-counted and cheap to clone,
-    // but the `Arc` makes the shared-cache contract explicit: every clone of
-    // this resolver hits the same DNS cache.
-    resolver: Arc<TokioResolver>,
+pub struct CachingDnsResolver {
+    cache: Arc<Cache<String, Vec<IpAddr>>>,
 }
 
-impl HickoryDnsResolver {
-    /// Builds a resolver from the host's DNS configuration (`/etc/resolv.conf`
-    /// on Unix), overriding the cache options so short-TTL records are still
-    /// cached for at least `DNS_CACHE_MIN_TTL`.
-    pub fn from_system_conf() -> anyhow::Result<Self> {
-        let mut builder =
-            TokioResolver::builder_tokio().context("failed to read system DNS configuration")?;
-        let options = builder.options_mut();
-        options.positive_min_ttl = Some(DNS_CACHE_MIN_TTL);
-        options.cache_size = DNS_CACHE_SIZE;
-        let resolver = builder.build().context("failed to build DNS resolver")?;
-        Ok(HickoryDnsResolver {
-            resolver: Arc::new(resolver),
-        })
+impl Default for CachingDnsResolver {
+    fn default() -> Self {
+        let cache = Cache::builder()
+            .max_capacity(DNS_CACHE_SIZE)
+            .time_to_live(DNS_CACHE_TTL)
+            .build();
+        CachingDnsResolver {
+            cache: Arc::new(cache),
+        }
     }
 }
 
-impl ResolveDns for HickoryDnsResolver {
+impl ResolveDns for CachingDnsResolver {
     fn resolve_dns<'a>(&'a self, name: &'a str) -> DnsFuture<'a> {
-        let resolver = self.resolver.clone();
-        // The lookup takes ownership of the host name so the returned future is
-        // `'static` and does not borrow from `name` (the trait allows `'a`, but
-        // owning is simpler and side-steps lifetime coupling).
+        let cache = self.cache.clone();
         let host = name.to_string();
         DnsFuture::new(async move {
-            if let Ok(lookup) = resolver.lookup_ip(host.clone()).await {
-                let ip_addresses: Vec<IpAddr> = lookup.iter().collect();
-                if !ip_addresses.is_empty() {
-                    return Ok(ip_addresses);
-                }
+            if let Some(ip_addresses) = cache.get(&host) {
+                return Ok(ip_addresses);
             }
-            // Hickory only speaks the DNS protocol (plus `/etc/hosts`), so it
-            // misses hostnames resolved through other NSS sources (mDNS, LDAP,
-            // custom `nsswitch.conf` plugins, etc). Fall back to the OS
-            // resolver (`getaddrinfo`) for those.
-            rate_limited_warn!(
-                limit_per_min = 1,
-                "hickory dns resolver could not resolve {host}, falling back to the os resolver"
-            );
             let socket_addrs = tokio::net::lookup_host((host.as_str(), 0))
                 .await
                 .map_err(ResolveDnsError::new)?;
-            Ok(socket_addrs.map(|socket_addr| socket_addr.ip()).collect())
+            let ip_addresses: Vec<IpAddr> =
+                socket_addrs.map(|socket_addr| socket_addr.ip()).collect();
+            cache.insert(host, ip_addresses.clone());
+            Ok(ip_addresses)
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::net::Ipv4Addr;
-
-    use hickory_resolver::config::{NameServerConfig, ResolveHosts, ResolverConfig};
-    use hickory_resolver::net::runtime::TokioRuntimeProvider;
-
     use super::*;
 
     #[tokio::test]
-    async fn test_hickory_dns_resolver_resolves_localhost() {
-        // `localhost` resolves from `/etc/hosts` (Hickory reads it by default),
-        // so this test does not depend on any network name server.
-        let resolver = HickoryDnsResolver::from_system_conf()
-            .expect("resolver should build from system configuration");
+    async fn test_caching_dns_resolver_resolves_localhost() {
+        let resolver = CachingDnsResolver::default();
         let ip_addresses = resolver
             .resolve_dns("localhost")
             .await
@@ -122,40 +94,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_hickory_dns_resolver_falls_back_to_os_resolver() {
-        // Points the Hickory resolver at a non-routable name server and disables its
-        // `/etc/hosts` lookup, so it can never resolve anything itself. `localhost`
-        // must still resolve through the OS resolver fallback.
-        let mut builder = TokioResolver::builder_with_config(
-            ResolverConfig::from_parts(
-                None,
-                vec![],
-                vec![NameServerConfig::udp(IpAddr::V4(Ipv4Addr::new(
-                    203, 0, 113, 1,
-                )))],
-            ),
-            TokioRuntimeProvider::default(),
-        );
-        let options = builder.options_mut();
-        options.timeout = Duration::from_millis(200);
-        options.attempts = 1;
-        options.use_hosts_file = ResolveHosts::Never;
-        let resolver = HickoryDnsResolver {
-            resolver: Arc::new(
-                builder
-                    .build()
-                    .expect("resolver should build from explicit configuration"),
-            ),
-        };
-        let ip_addresses = resolver
+    async fn test_caching_dns_resolver_caches_lookups() {
+        let resolver = CachingDnsResolver::default();
+        let first = resolver
             .resolve_dns("localhost")
             .await
-            .expect("localhost should resolve via the os resolver fallback");
-        assert!(
-            ip_addresses
-                .iter()
-                .any(|ip_address| ip_address.is_loopback()),
-            "expected a loopback address, got {ip_addresses:?}"
-        );
+            .expect("localhost should resolve");
+        assert!(resolver.cache.get(&"localhost".to_string()).is_some());
+        let second = resolver
+            .resolve_dns("localhost")
+            .await
+            .expect("localhost should resolve from cache");
+        assert_eq!(first, second);
     }
 }

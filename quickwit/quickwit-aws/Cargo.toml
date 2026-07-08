@@ -11,7 +11,6 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow = { workspace = true }
 aws-config = { workspace = true }
 aws-runtime = { workspace = true }
 aws-sdk-kinesis = { workspace = true, optional = true }
@@ -22,9 +21,8 @@ aws-smithy-http-client = { workspace = true }
 aws-smithy-runtime-api = { workspace = true }
 aws-smithy-types = { workspace = true }
 futures = { workspace = true }
-hickory-resolver = { workspace = true }
+mini-moka = { workspace = true }
 tokio = { workspace = true }
-tracing = { workspace = true }
 
 quickwit-common = { workspace = true }
 
