@@ -28,64 +28,15 @@ use std::sync::Arc;
 
 use arrow::array::{
     ArrayBuilder, ArrayRef, BinaryBuilder, BooleanBuilder, DictionaryArray, Float64Builder,
-    Int32Builder, Int64Builder, ListBuilder, StringArray, StringBuilder,
-    TimestampMicrosecondBuilder, UInt32Array, UInt64Builder,
+    Int64Builder, ListBuilder, StringArray, StringBuilder, TimestampMicrosecondBuilder,
+    UInt32Array, UInt64Builder,
 };
-use arrow::datatypes::{DataType, Field, Int32Type, SchemaRef, TimeUnit};
+use arrow::datatypes::{DataType, Field, SchemaRef, TimeUnit, UInt32Type};
 use arrow::record_batch::RecordBatch;
 use tantivy::index::SegmentReader;
 
+use crate::dictionary_builder::DictionaryBuilders;
 use crate::error::{PomskyArrowError, Result};
-
-/// Pre-built Arrow dictionary values for string fast fields.
-///
-/// Built once per segment, shared (via `Arc`) across all chunks.  The
-/// dictionary is streamed in ordinal order so tantivy ordinals map directly
-/// to Arrow dictionary indices.
-pub struct DictCache {
-    entries: HashMap<String, Arc<StringArray>>,
-}
-
-impl DictCache {
-    /// Build the cache for every `Dictionary`-typed field in `projected_schema`.
-    pub fn build(segment_reader: &SegmentReader, projected_schema: &SchemaRef) -> Result<Self> {
-        let fast_fields = segment_reader.fast_fields();
-        let mut entries = HashMap::new();
-
-        for field in projected_schema.fields() {
-            if !matches!(field.data_type(), DataType::Dictionary(_, _)) {
-                continue;
-            }
-            let arrow_field_name = field.name();
-            let read_name = crate::fast_field_read_name(field);
-            let Ok(Some(str_col)) = fast_fields.str(read_name) else {
-                // Missing field: null padding handles it.
-                continue;
-            };
-
-            let num_terms = str_col.num_terms();
-            let mut builder = StringBuilder::with_capacity(num_terms, num_terms * 16);
-            let mut streamer = str_col.dictionary().stream().map_err(|e| {
-                PomskyArrowError::Internal(format!("stream dict '{arrow_field_name}': {e}"))
-            })?;
-            while streamer.advance() {
-                let s = std::str::from_utf8(streamer.key()).map_err(|e| {
-                    PomskyArrowError::Internal(format!("dict utf8 '{arrow_field_name}': {e}"))
-                })?;
-                builder.append_value(s);
-            }
-            entries.insert(arrow_field_name.to_string(), Arc::new(builder.finish()));
-        }
-
-        Ok(Self { entries })
-    }
-
-    /// Get the pre-built dictionary values for a field.
-    #[must_use]
-    pub fn get(&self, name: &str) -> Option<&Arc<StringArray>> {
-        self.entries.get(name)
-    }
-}
 
 /// Reads the projected fast-field columns of a single segment into an Arrow
 /// `RecordBatch`.
@@ -100,7 +51,7 @@ pub fn read_segment_columns(
     projected_schema: &SchemaRef,
     docs: &[u32],
     segment_ord: u32,
-    dict_cache: Option<&DictCache>,
+    dictionary_builders: &mut DictionaryBuilders,
 ) -> Result<RecordBatch> {
     let fast_fields = segment_reader.fast_fields();
     let mut columns: Vec<ArrayRef> = Vec::with_capacity(projected_schema.fields().len());
@@ -110,7 +61,8 @@ pub fn read_segment_columns(
             columns.push(array);
             continue;
         }
-        let array = build_fast_field_array(field, fast_fields, docs, dict_cache)?;
+        let array =
+            build_fast_field_array(field, fast_fields, docs, segment_ord, dictionary_builders)?;
         columns.push(array);
     }
 
@@ -132,9 +84,9 @@ fn build_fast_field_array(
     field: &Arc<Field>,
     fast_fields: &tantivy::fastfield::FastFieldReaders,
     docs: &[u32],
-    dict_cache: Option<&DictCache>,
+    segment_ord: u32,
+    dictionary_builders: &mut DictionaryBuilders,
 ) -> Result<ArrayRef> {
-    let arrow_field_name = field.name();
     let read_name = crate::fast_field_read_name(field);
     match field.data_type() {
         DataType::UInt64 => Ok(build_u64_array(fast_fields, read_name, docs)),
@@ -144,15 +96,20 @@ fn build_fast_field_array(
         DataType::Timestamp(TimeUnit::Microsecond, None) => {
             Ok(build_timestamp_array(fast_fields, read_name, docs))
         }
-        DataType::Dictionary(_, _) => build_dictionary_array(
-            fast_fields,
-            field,
-            arrow_field_name,
-            read_name,
-            docs,
-            dict_cache,
-        ),
         DataType::Utf8 => build_utf8_array(fast_fields, field, read_name, docs),
+        DataType::Dictionary(key_type, _) if key_type.as_ref() == &DataType::UInt32 => {
+            build_dictionary_array(
+                fast_fields,
+                field,
+                read_name,
+                docs,
+                segment_ord,
+                dictionary_builders,
+            )
+        }
+        DataType::Dictionary(_, _) => {
+            Err(PomskyArrowError::UnsupportedType(field.data_type().clone()))
+        }
         DataType::Binary => build_binary_array(fast_fields, field, read_name, docs),
         dt @ DataType::List(inner) => build_list_array(inner, dt, read_name, fast_fields, docs),
         other => Err(PomskyArrowError::UnsupportedType(other.clone())),
@@ -262,40 +219,6 @@ fn build_timestamp_array(
     }
 }
 
-fn build_dictionary_array(
-    fast_fields: &tantivy::fastfield::FastFieldReaders,
-    field: &Arc<Field>,
-    alias_name: &str,
-    read_name: &str,
-    docs: &[u32],
-    dict_cache: Option<&DictCache>,
-) -> Result<ArrayRef> {
-    let str_col = match fast_fields.str(read_name) {
-        Ok(Some(col)) => col,
-        _ => return Ok(arrow::array::new_null_array(field.data_type(), docs.len())),
-    };
-
-    if let Some(values) = dict_cache.and_then(|cache| cache.get(alias_name)) {
-        let ords_col = str_col.ords();
-        let mut ord_buf: Vec<Option<u64>> = vec![None; docs.len()];
-        ords_col.first_vals(docs, &mut ord_buf);
-
-        let mut keys_builder = Int32Builder::with_capacity(docs.len());
-        for ord in &ord_buf {
-            match ord {
-                Some(o) => keys_builder.append_value(checked_i32_key(*o, alias_name)?),
-                None => keys_builder.append_null(),
-            }
-        }
-
-        let dict_values: ArrayRef = Arc::clone(values) as ArrayRef;
-        let dict_array = DictionaryArray::<Int32Type>::try_new(keys_builder.finish(), dict_values)?;
-        return Ok(Arc::new(dict_array));
-    }
-
-    build_compact_dict_array(&str_col, docs, read_name)
-}
-
 fn build_utf8_array(
     fast_fields: &tantivy::fastfield::FastFieldReaders,
     field: &Arc<Field>,
@@ -336,6 +259,32 @@ fn build_utf8_array(
     } else {
         Ok(arrow::array::new_null_array(field.data_type(), docs.len()))
     }
+}
+
+fn build_dictionary_array(
+    fast_fields: &tantivy::fastfield::FastFieldReaders,
+    field: &Arc<Field>,
+    read_name: &str,
+    docs: &[u32],
+    segment_ord: u32,
+    dictionary_builders: &mut DictionaryBuilders,
+) -> Result<ArrayRef> {
+    let str_col = match fast_fields.str(read_name) {
+        Ok(Some(col)) => col,
+        _ => return Ok(arrow::array::new_null_array(field.data_type(), docs.len())),
+    };
+
+    let mut ord_buf: Vec<Option<u64>> = vec![None; docs.len()];
+    str_col.ords().first_vals(docs, &mut ord_buf);
+
+    let dictionary_builder = dictionary_builders.get(read_name, field.data_type());
+    let indices_array = dictionary_builder.encode(segment_ord, &ord_buf, str_col.dictionary())?;
+    let dict_array = DictionaryArray::<UInt32Type>::try_new(
+        indices_array,
+        dictionary_builder.build_values_array(),
+    )?;
+
+    Ok(Arc::new(dict_array))
 }
 
 fn build_binary_array(
@@ -514,64 +463,4 @@ fn build_binary_list_array(
         builder.append(true);
     }
     Ok(Arc::new(builder.finish()))
-}
-
-/// Build a compact `DictionaryArray` from only the ordinals referenced in
-/// `docs`.  This is the original per-chunk path, used when no `DictCache` is
-/// available.
-fn build_compact_dict_array(
-    str_col: &tantivy::columnar::StrColumn,
-    docs: &[u32],
-    name: &str,
-) -> Result<ArrayRef> {
-    let mut raw_ords: Vec<Option<u64>> = Vec::with_capacity(docs.len());
-    let mut seen_ords: Vec<u64> = Vec::new();
-    for &doc_id in docs {
-        match str_col.term_ords(doc_id).next() {
-            Some(ord) => {
-                raw_ords.push(Some(ord));
-                if let Err(pos) = seen_ords.binary_search(&ord) {
-                    seen_ords.insert(pos, ord);
-                }
-            }
-            None => raw_ords.push(None),
-        }
-    }
-
-    let mut dict_builder = StringBuilder::with_capacity(seen_ords.len(), seen_ords.len() * 16);
-    let mut buf = String::new();
-    for &ord in &seen_ords {
-        buf.clear();
-        str_col
-            .ord_to_str(ord, &mut buf)
-            .map_err(|e| PomskyArrowError::Internal(format!("dict build '{name}': {e}")))?;
-        dict_builder.append_value(&buf);
-    }
-    let dict_values: ArrayRef = Arc::new(dict_builder.finish());
-
-    let mut keys_builder = Int32Builder::with_capacity(docs.len());
-    for raw in &raw_ords {
-        match raw {
-            Some(ord) => {
-                let compact_idx = seen_ords.binary_search(ord).map_err(|_| {
-                    PomskyArrowError::Internal(format!(
-                        "dictionary ordinal {ord} missing from compact dictionary for '{name}'"
-                    ))
-                })?;
-                keys_builder.append_value(checked_i32_key(compact_idx, name)?);
-            }
-            None => keys_builder.append_null(),
-        }
-    }
-
-    let dict_array = DictionaryArray::<Int32Type>::try_new(keys_builder.finish(), dict_values)?;
-    Ok(Arc::new(dict_array))
-}
-
-fn checked_i32_key(value: impl TryInto<i32>, name: &str) -> Result<i32> {
-    value.try_into().map_err(|_| {
-        PomskyArrowError::Internal(format!(
-            "dictionary key for fast field '{name}' exceeds Int32 capacity"
-        ))
-    })
 }

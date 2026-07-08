@@ -21,7 +21,8 @@ use std::sync::Arc;
 use arrow::array::{
     AsArray, BooleanArray, Float64Array, Int64Array, StringArray, UInt32Array, UInt64Array,
 };
-use arrow::datatypes::{DataType, Field, Int32Type, Schema, UInt64Type};
+use arrow::datatypes::{DataType, Field, Schema, UInt32Type, UInt64Type};
+use pomsky_arrow::dictionary_builder::DictionaryBuilders;
 use pomsky_arrow::read_segment_columns;
 use tantivy::schema::{FAST, SchemaBuilder, TEXT};
 use tantivy::{Index, IndexWriter, TantivyDocument};
@@ -75,14 +76,21 @@ fn reads_projection_for_explicit_doc_ids() {
         Field::new("active", DataType::Boolean, true),
         Field::new(
             "name",
-            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+            DataType::Dictionary(Box::new(DataType::UInt32), Box::new(DataType::Utf8)),
             true,
         ),
     ]));
 
     // Read docs 0 and 2 (skip 1), in that order.
     let doc_ids = [0u32, 2u32];
-    let batch = read_segment_columns(segment_reader, &projected_schema, &doc_ids, 7, None).unwrap();
+    let batch = read_segment_columns(
+        segment_reader,
+        &projected_schema,
+        &doc_ids,
+        7,
+        &mut DictionaryBuilders::default(),
+    )
+    .unwrap();
 
     assert_eq!(batch.num_rows(), 2);
     assert_eq!(batch.schema(), projected_schema);
@@ -131,7 +139,7 @@ fn reads_projection_for_explicit_doc_ids() {
     assert!(active_col.value(1));
 
     // Dictionary-encoded string column: both rows are "alpha".
-    let name_col = batch.column(6).as_dictionary::<Int32Type>();
+    let name_col = batch.column(6).as_dictionary::<UInt32Type>();
     let values = name_col
         .values()
         .as_any()
@@ -156,7 +164,14 @@ fn missing_column_is_all_null_not_an_error() {
     ]));
 
     let doc_ids = [0u32, 1u32, 2u32];
-    let batch = read_segment_columns(segment_reader, &projected_schema, &doc_ids, 0, None).unwrap();
+    let batch = read_segment_columns(
+        segment_reader,
+        &projected_schema,
+        &doc_ids,
+        0,
+        &mut DictionaryBuilders::default(),
+    )
+    .unwrap();
 
     assert_eq!(batch.num_rows(), 3);
     let id_col = batch.column(0).as_primitive::<UInt64Type>();
@@ -184,20 +199,32 @@ fn all_selection_reads_every_alive_doc() {
         Field::new("active", DataType::Boolean, true),
         Field::new(
             "name",
-            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+            DataType::Dictionary(Box::new(DataType::UInt32), Box::new(DataType::Utf8)),
             true,
         ),
     ]));
 
     let all_docs = [0u32, 1u32, 2u32];
-    let batch =
-        read_segment_columns(segment_reader, &projected_schema, &all_docs, 0, None).unwrap();
+    let batch = read_segment_columns(
+        segment_reader,
+        &projected_schema,
+        &all_docs,
+        0,
+        &mut DictionaryBuilders::default(),
+    )
+    .unwrap();
     assert_eq!(batch.num_rows(), 3);
 
     // A shorter doc slice reads only those docs.
     let first_two = [0u32, 1u32];
-    let limited =
-        read_segment_columns(segment_reader, &projected_schema, &first_two, 0, None).unwrap();
+    let limited = read_segment_columns(
+        segment_reader,
+        &projected_schema,
+        &first_two,
+        0,
+        &mut DictionaryBuilders::default(),
+    )
+    .unwrap();
     assert_eq!(limited.num_rows(), 2);
 }
 
@@ -214,7 +241,14 @@ fn range_selection_reads_requested_window() {
     ]));
 
     let window = [1u32, 2u32];
-    let batch = read_segment_columns(segment_reader, &projected_schema, &window, 0, None).unwrap();
+    let batch = read_segment_columns(
+        segment_reader,
+        &projected_schema,
+        &window,
+        0,
+        &mut DictionaryBuilders::default(),
+    )
+    .unwrap();
 
     assert_eq!(batch.num_rows(), 2);
     let doc_id_col = batch

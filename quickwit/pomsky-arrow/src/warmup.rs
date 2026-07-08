@@ -152,7 +152,7 @@ mod tests {
             Field::new("status__u64", DataType::UInt64, true).with_metadata(metadata.clone());
         let as_str = Field::new(
             "status__str",
-            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+            DataType::Dictionary(Box::new(DataType::UInt32), Box::new(DataType::Utf8)),
             true,
         )
         .with_metadata(metadata);

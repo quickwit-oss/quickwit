@@ -36,13 +36,14 @@
 //! `thiserror`), signal-agnostic (metrics / traces / logs), and independently
 //! testable.
 
+pub mod dictionary_builder;
 pub mod error;
 pub mod fast_field_reader;
 pub mod warmup;
 
 use arrow::datatypes::Field;
 pub use error::{PomskyArrowError, Result};
-pub use fast_field_reader::{DictCache, read_segment_columns};
+pub use fast_field_reader::read_segment_columns;
 pub use warmup::warm_up_fast_fields;
 
 /// Arrow field metadata key used when a projected column should read from a
