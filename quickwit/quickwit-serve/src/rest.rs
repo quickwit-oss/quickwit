@@ -16,25 +16,29 @@ use std::fmt::Formatter;
 use std::io;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::{Stream, StreamExt};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
+use hyper_util::server::graceful::GracefulConnection;
 use hyper_util::service::TowerToHyperService;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_metrics::{counter, histogram, labels};
 use quickwit_search::SearchService;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinSet;
 use tokio_rustls::TlsAcceptor;
 use tokio_rustls::server::TlsStream;
 use tokio_util::either::Either;
+use tokio_util::sync::CancellationToken;
 use tower::ServiceBuilder;
 use tower_http::compression::CompressionLayer;
 use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use warp::filters::log::Info;
 use warp::hyper::http::HeaderValue;
 use warp::hyper::{Method, StatusCode, http};
@@ -232,16 +236,27 @@ pub(crate) async fn start_rest_server(
     } else {
         None
     };
+    let rest_config = &quickwit_services.node_config.rest_config;
+    // `max_connection_age_grace` without `max_connection_age` is rejected at config validation, so
+    // the grace is only carried when an age is present.
+    let max_connection_age_opt =
+        rest_config
+            .max_connection_age
+            .as_ref()
+            .map(|max_connection_age| MaxConnectionAge {
+                age: **max_connection_age,
+                grace: rest_config
+                    .max_connection_age_grace
+                    .as_ref()
+                    .map(|max_connection_age_grace| **max_connection_age_grace),
+            });
     serve_warp_routes(
         "REST",
         tcp_listener,
         rest_routes,
-        quickwit_services
-            .node_config
-            .rest_config
-            .cors_allow_origins
-            .clone(),
+        rest_config.cors_allow_origins.clone(),
         tls_acceptor_opt,
+        max_connection_age_opt,
         readiness_trigger,
         shutdown_signal,
     )
@@ -274,20 +289,36 @@ pub(crate) async fn start_health_check_server(
         health_check_routes,
         Vec::new(),
         None,
+        None,
         readiness_trigger,
         shutdown_signal,
     )
     .await
 }
 
+/// Bounds the lifetime of an accepted connection so a hot-reloaded TLS certificate eventually
+/// reaches long-lived clients, which only pick up a new certificate when they reconnect. `grace`
+/// is how long the connection may keep draining after the GOAWAY before it is forcefully closed;
+/// `None` waits indefinitely. Grouping the two fields makes a grace-without-age combination
+/// unrepresentable.
+#[derive(Clone, Copy)]
+struct MaxConnectionAge {
+    age: Duration,
+    grace: Option<Duration>,
+}
+
 /// Serves a set of warp `routes` over `tcp_listener` until `shutdown_signal` resolves, optionally
 /// terminating TLS. Shared by the main REST server and the health-check server.
+// `serve_warp_routes` wires together several independent concerns (routing, CORS, TLS, connection
+// lifetime, readiness, shutdown); bundling them further would not aid readability.
+#[allow(clippy::too_many_arguments)]
 async fn serve_warp_routes<F>(
     server_name: &str,
     tcp_listener: TcpListener,
     routes: F,
     cors_allow_origins: Vec<String>,
     tls_acceptor_opt: Option<TlsAcceptor>,
+    max_connection_age_opt: Option<MaxConnectionAge>,
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<()>
@@ -324,7 +355,15 @@ where
     let service = TowerToHyperService::new(service);
 
     let server = Builder::new(TokioExecutor::new());
-    let graceful = hyper_util::server::graceful::GracefulShutdown::new();
+    // Triggers a graceful shutdown (HTTP/2 GOAWAY) on every live connection. Fired once on server
+    // shutdown; each connection also drains on its own when `max_connection_age` elapses.
+    let cancellation_token = CancellationToken::new();
+    // Tracks in-flight connection tasks so we can wait for them to drain on shutdown. We do not use
+    // `hyper_util`'s `GracefulShutdown` helper because it takes ownership of each connection, which
+    // would prevent us from also triggering a per-connection `graceful_shutdown` when the
+    // connection's max age elapses (the `GracefulConnection` trait is sealed, so we cannot wrap
+    // it).
+    let mut connection_tasks: JoinSet<()> = JoinSet::new();
     let mut shutdown_signal = std::pin::pin!(shutdown_signal);
     readiness_trigger.await;
 
@@ -352,14 +391,18 @@ where
                     }
                 };
                 let serve_connection_fut = server
-                    .serve_connection_with_upgrades(TokioIo::new(connection), service.clone());
-                let serve_with_shutdown_fut = graceful.watch(serve_connection_fut.into_owned());
-                tokio::spawn(async move {
-                    if let Err(serve_error) = serve_with_shutdown_fut.await {
-                        error!("failed to serve connection: {serve_error:#}");
-                    }
-                });
+                    .serve_connection_with_upgrades(TokioIo::new(connection), service.clone())
+                    .into_owned();
+                let cancellation_token = cancellation_token.clone();
+                connection_tasks.spawn(serve_connection(
+                    serve_connection_fut,
+                    cancellation_token,
+                    max_connection_age_opt,
+                ));
             },
+            // Reap finished connection tasks so the set does not grow without bound on a
+            // long-running server. Disabled while empty so the branch does not busy-loop.
+            _ = connection_tasks.join_next(), if !connection_tasks.is_empty() => {},
             _ = &mut shutdown_signal => {
                 info!("{server_name} server shutdown signal received");
                 break;
@@ -367,10 +410,71 @@ where
         }
     }
     info!("shutting down {server_name} server");
-    graceful.shutdown().await;
+    // Ask every live connection to drain, then wait for the tasks to finish.
+    cancellation_token.cancel();
+    while connection_tasks.join_next().await.is_some() {}
     info!("{server_name} server successfully shut down");
 
     Ok(())
+}
+
+/// Drives a single accepted connection to completion, sending an HTTP/2 GOAWAY and then waiting for
+/// it to drain when either the connection's max age (`max_connection_age_opt`) elapses or a global
+/// drain is requested via `cancellation_token`. When a grace period is configured, the connection
+/// is forcefully closed (dropped) if it has not finished draining within that period.
+///
+/// Bounding the connection lifetime is what lets a hot-reloaded TLS certificate eventually reach
+/// long-lived clients: the new certificate is only presented on a fresh handshake, so the client
+/// must reconnect to pick it up.
+async fn serve_connection<C>(
+    connection: C,
+    cancellation_token: CancellationToken,
+    max_connection_age_opt: Option<MaxConnectionAge>,
+) where
+    C: GracefulConnection,
+    C::Error: std::fmt::Display,
+{
+    let mut connection = std::pin::pin!(connection);
+
+    let max_age_sleep = match max_connection_age_opt {
+        Some(max_connection_age) => Either::Left(tokio::time::sleep(max_connection_age.age)),
+        None => Either::Right(std::future::pending::<()>()),
+    };
+    // Phase 1: serve until the connection ends on its own, its max age elapses, or a global drain
+    // is requested.
+    let max_age_exceeded = tokio::select! {
+        connection_res = connection.as_mut() => {
+            if let Err(serve_error) = connection_res {
+                error!("failed to serve connection: {serve_error:#}");
+            }
+            return;
+        }
+        _ = max_age_sleep => true,
+        _ = cancellation_token.cancelled() => false,
+    };
+    // Phase 2: we asked the peer to reconnect; send GOAWAY and let in-flight requests drain.
+    connection.as_mut().graceful_shutdown();
+
+    let max_connection_age_grace_opt = match max_connection_age_opt {
+        Some(max_connection_age) if max_age_exceeded => max_connection_age.grace,
+        _ => None,
+    };
+    let max_connection_age_grace_sleep = match max_connection_age_grace_opt {
+        Some(max_connection_age_grace) => {
+            Either::Left(tokio::time::sleep(max_connection_age_grace))
+        }
+        None => Either::Right(std::future::pending::<()>()),
+    };
+    tokio::select! {
+        connection_res = connection.as_mut() => {
+            if let Err(serve_error) = connection_res {
+                error!("failed to serve connection: {serve_error:#}");
+            }
+        }
+        _ = max_connection_age_grace_sleep => {
+            warn!("connection did not drain within the grace period; closing it forcefully");
+        }
+    }
 }
 
 fn search_routes(
@@ -884,6 +988,7 @@ mod tests {
             _report_splits_subscription_handle_opt: None,
             _local_shards_update_listener_handle_opt: None,
             cluster,
+            compaction_service_client_opt: None,
             control_plane_server_opt: None,
             control_plane_client,
             indexing_service_opt: None,
@@ -900,6 +1005,7 @@ mod tests {
             node_config: Arc::new(node_config.clone()),
             search_service: Arc::new(MockSearchService::new()),
             jaeger_service_opt: None,
+            _compactor_supervisor_opt: None,
             env_filter_reload_fn: crate::do_nothing_env_filter_reload_fn(),
             #[cfg(feature = "datafusion")]
             datafusion_session_builder: None,
