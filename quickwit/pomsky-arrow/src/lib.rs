@@ -41,22 +41,6 @@ pub mod error;
 pub mod fast_field_reader;
 pub mod warmup;
 
-use arrow::datatypes::Field;
 pub use error::{PomskyArrowError, Result};
 pub use fast_field_reader::read_segment_columns;
 pub use warmup::warm_up_fast_fields;
-
-/// Arrow field metadata key used when a projected column should read from a
-/// different physical tantivy fast-field name than its logical Arrow name.
-pub const FAST_FIELD_READ_NAME_METADATA_KEY: &str = "pomsky_arrow.read_name";
-
-/// Returns the physical tantivy fast-field name to read for `field`.
-///
-/// Defaults to the field's own name, unless overridden via the
-/// [`FAST_FIELD_READ_NAME_METADATA_KEY`] metadata entry.
-pub fn fast_field_read_name(field: &Field) -> &str {
-    match field.metadata().get(FAST_FIELD_READ_NAME_METADATA_KEY) {
-        Some(read_name) => read_name.as_str(),
-        None => field.name().as_str(),
-    }
-}

@@ -38,24 +38,24 @@ const SEGMENT_ORD_FIELD_NAME: &str = "_segment_ord";
 /// Pre-fetches the byte ranges of every fast-field column referenced by
 /// `projected_schema`, across all segments of `searcher`.
 ///
-/// Warming by physical column name covers every coercion candidate at once:
-/// several projected fields that share a `read_name` (e.g. one path read as
-/// `u64`, `i64`, and `str`) collapse to a single fetch, and that fetch warms
-/// all physical columns registered under the path regardless of type.
+/// Warming by fast-field name covers every coercion candidate at once:
+/// several projected fields with the same name (e.g. one path read as `u64`,
+/// `i64`, and `str`) collapse to a single fetch, and that fetch warms all
+/// physical columns registered under the path regardless of type.
 ///
 /// A projected column absent from a segment resolves to an empty handle list
 /// and is skipped — consistent with `read_segment_columns` returning an
 /// all-null array for a missing column. A genuine listing or read error
 /// surfaces as an error rather than being swallowed.
 pub async fn warm_up_fast_fields(searcher: &Searcher, projected_schema: &SchemaRef) -> Result<()> {
-    let read_names = fast_field_read_names(projected_schema);
-    if read_names.is_empty() {
+    let field_names = fast_field_names(projected_schema);
+    if field_names.is_empty() {
         return Ok(());
     }
 
     for segment_reader in searcher.segment_readers() {
         let fast_fields = segment_reader.fast_fields();
-        for &name in &read_names {
+        for &name in &field_names {
             let column_handles = fast_fields.list_dynamic_column_handles(name).await?;
             for handle in column_handles {
                 handle
@@ -73,24 +73,23 @@ pub async fn warm_up_fast_fields(searcher: &Searcher, projected_schema: &SchemaR
     Ok(())
 }
 
-/// The distinct physical fast-field column names a projection reads, excluding
-/// the synthetic `_doc_id` / `_segment_ord` columns. Coercion candidates that
-/// share a `read_name` collapse to one entry so each column is warmed once.
-fn fast_field_read_names(projected_schema: &SchemaRef) -> Vec<&str> {
+/// The distinct fast-field names a projection reads, excluding the synthetic
+/// `_doc_id` / `_segment_ord` columns. Duplicate field names collapse to one
+/// entry so each column is warmed once.
+fn fast_field_names(projected_schema: &SchemaRef) -> Vec<&str> {
     let mut names: BTreeSet<&str> = BTreeSet::new();
     for field in projected_schema.fields() {
         let name = field.name().as_str();
         if name == DOC_ID_FIELD_NAME || name == SEGMENT_ORD_FIELD_NAME {
             continue;
         }
-        names.insert(crate::fast_field_read_name(field));
+        names.insert(name);
     }
     names.into_iter().collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use std::sync::Arc;
 
     use arrow::datatypes::{DataType, Field, Schema};
@@ -142,30 +141,20 @@ mod tests {
     }
 
     #[test]
-    fn read_names_skip_internal_and_dedup_by_read_name() {
-        let metadata = HashMap::from([(
-            crate::FAST_FIELD_READ_NAME_METADATA_KEY.to_string(),
-            "status".to_string(),
-        )]);
-        // Two coercion candidates for the same physical column "status".
-        let as_u64 =
-            Field::new("status__u64", DataType::UInt64, true).with_metadata(metadata.clone());
-        let as_str = Field::new(
-            "status__str",
-            DataType::Dictionary(Box::new(DataType::UInt32), Box::new(DataType::Utf8)),
-            true,
-        )
-        .with_metadata(metadata);
-
+    fn field_names_skip_internal_and_dedup_by_field_name() {
         let projected = Arc::new(Schema::new(vec![
             Field::new(DOC_ID_FIELD_NAME, DataType::UInt32, false),
             Field::new(SEGMENT_ORD_FIELD_NAME, DataType::UInt32, false),
-            as_u64,
-            as_str,
+            Field::new("status", DataType::UInt64, true),
+            Field::new(
+                "status",
+                DataType::Dictionary(Box::new(DataType::UInt32), Box::new(DataType::Utf8)),
+                true,
+            ),
             Field::new("service", DataType::Utf8, true),
         ]));
 
-        let names = fast_field_read_names(&projected);
+        let names = fast_field_names(&projected);
         assert_eq!(names, vec!["service", "status"]);
     }
 }

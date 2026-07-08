@@ -23,13 +23,12 @@
 //! becomes an all-null array of the requested type — a single missing column
 //! never fails the whole batch.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use arrow::array::{
     ArrayBuilder, ArrayRef, BinaryBuilder, BooleanBuilder, DictionaryArray, Float64Builder,
-    Int64Builder, ListBuilder, StringArray, StringBuilder, TimestampMicrosecondBuilder,
-    UInt32Array, UInt64Builder,
+    Int64Builder, ListBuilder, StringBuilder, TimestampMicrosecondBuilder, UInt32Array,
+    UInt64Builder,
 };
 use arrow::datatypes::{DataType, Field, SchemaRef, TimeUnit, UInt32Type};
 use arrow::record_batch::RecordBatch;
@@ -87,21 +86,21 @@ fn build_fast_field_array(
     segment_ord: u32,
     dictionary_builders: &mut DictionaryBuilders,
 ) -> Result<ArrayRef> {
-    let read_name = crate::fast_field_read_name(field);
+    let field_name = field.name();
     match field.data_type() {
-        DataType::UInt64 => Ok(build_u64_array(fast_fields, read_name, docs)),
-        DataType::Int64 => Ok(build_i64_array(fast_fields, read_name, docs)),
-        DataType::Float64 => Ok(build_f64_array(fast_fields, read_name, docs)),
-        DataType::Boolean => Ok(build_bool_array(fast_fields, read_name, docs)),
+        DataType::UInt64 => Ok(build_u64_array(fast_fields, field_name, docs)),
+        DataType::Int64 => Ok(build_i64_array(fast_fields, field_name, docs)),
+        DataType::Float64 => Ok(build_f64_array(fast_fields, field_name, docs)),
+        DataType::Boolean => Ok(build_bool_array(fast_fields, field_name, docs)),
         DataType::Timestamp(TimeUnit::Microsecond, None) => {
-            Ok(build_timestamp_array(fast_fields, read_name, docs))
+            Ok(build_timestamp_array(fast_fields, field_name, docs))
         }
-        DataType::Utf8 => build_utf8_array(fast_fields, field, read_name, docs),
+        DataType::Utf8 => build_utf8_array(fast_fields, field, field_name, docs),
         DataType::Dictionary(key_type, _) if key_type.as_ref() == &DataType::UInt32 => {
             build_dictionary_array(
                 fast_fields,
                 field,
-                read_name,
+                field_name,
                 docs,
                 segment_ord,
                 dictionary_builders,
@@ -110,8 +109,8 @@ fn build_fast_field_array(
         DataType::Dictionary(_, _) => {
             Err(PomskyArrowError::UnsupportedType(field.data_type().clone()))
         }
-        DataType::Binary => build_binary_array(fast_fields, field, read_name, docs),
-        dt @ DataType::List(inner) => build_list_array(inner, dt, read_name, fast_fields, docs),
+        DataType::Binary => build_binary_array(fast_fields, field, field_name, docs),
+        dt @ DataType::List(inner) => build_list_array(inner, dt, field_name, fast_fields, docs),
         other => Err(PomskyArrowError::UnsupportedType(other.clone())),
     }
 }
