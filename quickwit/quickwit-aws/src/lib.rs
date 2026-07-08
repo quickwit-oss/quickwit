@@ -42,7 +42,7 @@ fn build_http_client() -> SharedHttpClient {
         Ok(resolver) => builder.build_with_resolver(resolver),
         Err(error) => {
             warn!(
-                error=%error,
+                %error,
                 "failed to initialize caching DNS resolver, falling back to the default resolver"
             );
             builder.build_https()

@@ -28,11 +28,11 @@ use anyhow::Context as _;
 use aws_smithy_runtime_api::client::dns::{DnsFuture, ResolveDns, ResolveDnsError};
 use hickory_resolver::TokioResolver;
 
-/// Minimum TTL enforced on positive DNS responses, in seconds.
+/// Minimum TTL enforced on positive DNS responses.
 ///
 /// S3 endpoints advertise TTLs of only a few seconds. Without a floor, the
 /// Hickory cache would expire almost immediately and provide little benefit.
-const DNS_CACHE_MIN_TTL: Duration = Duration::from_secs(60);
+const DNS_CACHE_MIN_TTL: Duration = Duration::from_mins(1);
 
 /// Maximum number of cached records.
 const DNS_CACHE_SIZE: u64 = 1_024;
