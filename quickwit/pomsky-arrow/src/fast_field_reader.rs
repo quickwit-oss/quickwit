@@ -28,7 +28,7 @@ use std::sync::Arc;
 use arrow::array::{
     ArrayBuilder, ArrayRef, BinaryBuilder, BooleanBuilder, DictionaryArray, Float64Builder,
     Int64Builder, ListBuilder, StringBuilder, TimestampMicrosecondBuilder, UInt32Array,
-    UInt64Builder,
+    UInt64Builder, new_null_array,
 };
 use arrow::datatypes::{DataType, Field, SchemaRef, TimeUnit, UInt32Type};
 use arrow::record_batch::RecordBatch;
@@ -95,21 +95,14 @@ fn build_fast_field_array(
         DataType::Timestamp(TimeUnit::Microsecond, None) => {
             Ok(build_timestamp_array(fast_fields, field_name, docs))
         }
-        DataType::Utf8 => build_utf8_array(fast_fields, field, field_name, docs),
+        DataType::Utf8 => build_utf8_array(fast_fields, field, docs),
         DataType::Dictionary(key_type, _) if key_type.as_ref() == &DataType::UInt32 => {
-            build_dictionary_array(
-                fast_fields,
-                field,
-                field_name,
-                docs,
-                segment_ord,
-                dictionary_builders,
-            )
+            build_dictionary_array(fast_fields, field, docs, segment_ord, dictionary_builders)
         }
         DataType::Dictionary(_, _) => {
             Err(PomskyArrowError::UnsupportedType(field.data_type().clone()))
         }
-        DataType::Binary => build_binary_array(fast_fields, field, field_name, docs),
+        DataType::Binary => build_binary_array(fast_fields, field, docs),
         dt @ DataType::List(inner) => build_list_array(inner, dt, field_name, fast_fields, docs),
         other => Err(PomskyArrowError::UnsupportedType(other.clone())),
     }
@@ -120,19 +113,16 @@ fn build_u64_array(
     name: &str,
     docs: &[u32],
 ) -> ArrayRef {
-    match fast_fields.u64(name) {
-        Ok(col) => {
-            let mut builder = UInt64Builder::with_capacity(docs.len());
-            for &doc_id in docs {
-                match col.first(doc_id) {
-                    Some(v) => builder.append_value(v),
-                    None => builder.append_null(),
-                }
-            }
-            Arc::new(builder.finish())
-        }
-        Err(_) => arrow::array::new_null_array(&DataType::UInt64, docs.len()),
-    }
+    let Ok(col) = fast_fields.u64(name) else {
+        return new_null_array(&DataType::UInt64, docs.len());
+    };
+
+    let mut values = vec![None; docs.len()];
+    col.first_vals(docs, &mut values);
+
+    let mut builder = UInt64Builder::with_capacity(docs.len());
+    builder.extend_from_iter_option(values);
+    Arc::new(builder.finish())
 }
 
 fn build_i64_array(
@@ -140,19 +130,16 @@ fn build_i64_array(
     name: &str,
     docs: &[u32],
 ) -> ArrayRef {
-    match fast_fields.i64(name) {
-        Ok(col) => {
-            let mut builder = Int64Builder::with_capacity(docs.len());
-            for &doc_id in docs {
-                match col.first(doc_id) {
-                    Some(v) => builder.append_value(v),
-                    None => builder.append_null(),
-                }
-            }
-            Arc::new(builder.finish())
-        }
-        Err(_) => arrow::array::new_null_array(&DataType::Int64, docs.len()),
-    }
+    let Ok(col) = fast_fields.i64(name) else {
+        return new_null_array(&DataType::Int64, docs.len());
+    };
+
+    let mut values = vec![None; docs.len()];
+    col.first_vals(docs, &mut values);
+
+    let mut builder = Int64Builder::with_capacity(docs.len());
+    builder.extend_from_iter_option(values);
+    Arc::new(builder.finish())
 }
 
 fn build_f64_array(
@@ -160,19 +147,16 @@ fn build_f64_array(
     name: &str,
     docs: &[u32],
 ) -> ArrayRef {
-    match fast_fields.f64(name) {
-        Ok(col) => {
-            let mut builder = Float64Builder::with_capacity(docs.len());
-            for &doc_id in docs {
-                match col.first(doc_id) {
-                    Some(v) => builder.append_value(v),
-                    None => builder.append_null(),
-                }
-            }
-            Arc::new(builder.finish())
-        }
-        Err(_) => arrow::array::new_null_array(&DataType::Float64, docs.len()),
-    }
+    let Ok(col) = fast_fields.f64(name) else {
+        return new_null_array(&DataType::Float64, docs.len());
+    };
+
+    let mut values = vec![None; docs.len()];
+    col.first_vals(docs, &mut values);
+
+    let mut builder = Float64Builder::with_capacity(docs.len());
+    builder.extend_from_iter_option(values);
+    Arc::new(builder.finish())
 }
 
 fn build_bool_array(
@@ -180,19 +164,18 @@ fn build_bool_array(
     name: &str,
     docs: &[u32],
 ) -> ArrayRef {
-    match fast_fields.bool(name) {
-        Ok(col) => {
-            let mut builder = BooleanBuilder::with_capacity(docs.len());
-            for &doc_id in docs {
-                match col.first(doc_id) {
-                    Some(v) => builder.append_value(v),
-                    None => builder.append_null(),
-                }
-            }
-            Arc::new(builder.finish())
-        }
-        Err(_) => arrow::array::new_null_array(&DataType::Boolean, docs.len()),
+    let Ok(col) = fast_fields.bool(name) else {
+        return new_null_array(&DataType::Boolean, docs.len());
+    };
+
+    let mut values = vec![None; docs.len()];
+    col.first_vals(docs, &mut values);
+
+    let mut builder = BooleanBuilder::with_capacity(docs.len());
+    for value in values {
+        builder.append_option(value);
     }
+    Arc::new(builder.finish())
 }
 
 fn build_timestamp_array(
@@ -200,30 +183,31 @@ fn build_timestamp_array(
     name: &str,
     docs: &[u32],
 ) -> ArrayRef {
-    match fast_fields.date(name) {
-        Ok(col) => {
-            let mut builder = TimestampMicrosecondBuilder::with_capacity(docs.len());
-            for &doc_id in docs {
-                match col.first(doc_id) {
-                    Some(dt) => builder.append_value(dt.into_timestamp_micros()),
-                    None => builder.append_null(),
-                }
-            }
-            Arc::new(builder.finish())
-        }
-        Err(_) => arrow::array::new_null_array(
+    let Ok(col) = fast_fields.date(name) else {
+        return new_null_array(
             &DataType::Timestamp(TimeUnit::Microsecond, None),
             docs.len(),
-        ),
-    }
+        );
+    };
+
+    let mut values = vec![None; docs.len()];
+    col.first_vals(docs, &mut values);
+
+    let mut builder = TimestampMicrosecondBuilder::with_capacity(docs.len());
+    builder.extend_from_iter_option(
+        values
+            .into_iter()
+            .map(|value| value.map(|dt| dt.into_timestamp_micros())),
+    );
+    Arc::new(builder.finish())
 }
 
 fn build_utf8_array(
     fast_fields: &tantivy::fastfield::FastFieldReaders,
     field: &Arc<Field>,
-    name: &str,
     docs: &[u32],
 ) -> Result<ArrayRef> {
+    let name = field.name();
     if let Ok(Some(str_col)) = fast_fields.str(name) {
         let mut builder = StringBuilder::with_capacity(docs.len(), docs.len() * 16);
         let mut buf = String::new();
@@ -256,21 +240,21 @@ fn build_utf8_array(
         }
         Ok(Arc::new(builder.finish()))
     } else {
-        Ok(arrow::array::new_null_array(field.data_type(), docs.len()))
+        Ok(new_null_array(field.data_type(), docs.len()))
     }
 }
 
 fn build_dictionary_array(
     fast_fields: &tantivy::fastfield::FastFieldReaders,
     field: &Arc<Field>,
-    read_name: &str,
     docs: &[u32],
     segment_ord: u32,
     dictionary_builders: &mut DictionaryBuilders,
 ) -> Result<ArrayRef> {
+    let read_name = field.name();
     let str_col = match fast_fields.str(read_name) {
         Ok(Some(col)) => col,
-        _ => return Ok(arrow::array::new_null_array(field.data_type(), docs.len())),
+        _ => return Ok(new_null_array(field.data_type(), docs.len())),
     };
 
     let mut ord_buf: Vec<Option<u64>> = vec![None; docs.len()];
@@ -289,12 +273,12 @@ fn build_dictionary_array(
 fn build_binary_array(
     fast_fields: &tantivy::fastfield::FastFieldReaders,
     field: &Arc<Field>,
-    name: &str,
     docs: &[u32],
 ) -> Result<ArrayRef> {
+    let name = field.name();
     let bytes_col = match fast_fields.bytes(name) {
         Ok(Some(col)) => col,
-        _ => return Ok(arrow::array::new_null_array(field.data_type(), docs.len())),
+        _ => return Ok(new_null_array(field.data_type(), docs.len())),
     };
     let mut builder = BinaryBuilder::with_capacity(docs.len(), docs.len() * 64);
     let mut buf = Vec::new();
@@ -311,10 +295,6 @@ fn build_binary_array(
         }
     }
     Ok(Arc::new(builder.finish()))
-}
-
-fn null_list_array(list_data_type: &DataType, num_docs: usize) -> ArrayRef {
-    arrow::array::new_null_array(list_data_type, num_docs)
 }
 
 fn build_list_from_values<ValueBuilder, Values, Value>(
@@ -349,7 +329,10 @@ fn build_list_array(
 ) -> Result<ArrayRef> {
     match inner_field.data_type() {
         DataType::UInt64 => match fast_fields.u64(name) {
-            Err(_) => Ok(null_list_array(list_data_type, docs.len())),
+            Err(_) => Ok({
+                let num_docs = docs.len();
+                new_null_array(list_data_type, num_docs)
+            }),
             Ok(col) => Ok(build_list_from_values(
                 ListBuilder::new(UInt64Builder::new()),
                 docs,
@@ -358,7 +341,10 @@ fn build_list_array(
             )),
         },
         DataType::Int64 => match fast_fields.i64(name) {
-            Err(_) => Ok(null_list_array(list_data_type, docs.len())),
+            Err(_) => Ok({
+                let num_docs = docs.len();
+                new_null_array(list_data_type, num_docs)
+            }),
             Ok(col) => Ok(build_list_from_values(
                 ListBuilder::new(Int64Builder::new()),
                 docs,
@@ -367,7 +353,10 @@ fn build_list_array(
             )),
         },
         DataType::Float64 => match fast_fields.f64(name) {
-            Err(_) => Ok(null_list_array(list_data_type, docs.len())),
+            Err(_) => Ok({
+                let num_docs = docs.len();
+                new_null_array(list_data_type, num_docs)
+            }),
             Ok(col) => Ok(build_list_from_values(
                 ListBuilder::new(Float64Builder::new()),
                 docs,
@@ -376,7 +365,10 @@ fn build_list_array(
             )),
         },
         DataType::Boolean => match fast_fields.bool(name) {
-            Err(_) => Ok(null_list_array(list_data_type, docs.len())),
+            Err(_) => Ok({
+                let num_docs = docs.len();
+                new_null_array(list_data_type, num_docs)
+            }),
             Ok(col) => Ok(build_list_from_values(
                 ListBuilder::new(BooleanBuilder::new()),
                 docs,
@@ -385,7 +377,10 @@ fn build_list_array(
             )),
         },
         DataType::Timestamp(TimeUnit::Microsecond, None) => match fast_fields.date(name) {
-            Err(_) => Ok(null_list_array(list_data_type, docs.len())),
+            Err(_) => Ok({
+                let num_docs = docs.len();
+                new_null_array(list_data_type, num_docs)
+            }),
             Ok(col) => Ok(build_list_from_values(
                 ListBuilder::new(TimestampMicrosecondBuilder::new()),
                 docs,
@@ -393,8 +388,8 @@ fn build_list_array(
                 |builder, val| builder.append_value(val.into_timestamp_micros()),
             )),
         },
-        DataType::Utf8 => build_utf8_list_array(fast_fields, list_data_type, name, docs),
-        DataType::Binary => build_binary_list_array(fast_fields, list_data_type, name, docs),
+        DataType::Utf8 => build_utf8_list_array(fast_fields, name, list_data_type, docs),
+        DataType::Binary => build_binary_list_array(fast_fields, name, list_data_type, docs),
         other => Err(PomskyArrowError::Internal(format!(
             "unsupported inner type for list fast field '{name}': {other:?}"
         ))),
@@ -403,8 +398,8 @@ fn build_list_array(
 
 fn build_utf8_list_array(
     fast_fields: &tantivy::fastfield::FastFieldReaders,
-    list_data_type: &DataType,
     name: &str,
+    list_data_type: &DataType,
     docs: &[u32],
 ) -> Result<ArrayRef> {
     if let Ok(Some(str_col)) = fast_fields.str(name) {
@@ -435,18 +430,24 @@ fn build_utf8_list_array(
             },
         ))
     } else {
-        Ok(null_list_array(list_data_type, docs.len()))
+        Ok({
+            let num_docs = docs.len();
+            new_null_array(list_data_type, num_docs)
+        })
     }
 }
 
 fn build_binary_list_array(
     fast_fields: &tantivy::fastfield::FastFieldReaders,
-    list_data_type: &DataType,
     name: &str,
+    list_data_type: &DataType,
     docs: &[u32],
 ) -> Result<ArrayRef> {
     let Ok(Some(bytes_col)) = fast_fields.bytes(name) else {
-        return Ok(null_list_array(list_data_type, docs.len()));
+        return Ok({
+            let num_docs = docs.len();
+            new_null_array(list_data_type, num_docs)
+        });
     };
 
     let mut builder = ListBuilder::new(BinaryBuilder::new());
