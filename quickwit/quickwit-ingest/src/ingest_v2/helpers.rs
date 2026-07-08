@@ -76,8 +76,8 @@ pub async fn wait_for_ingester_status(
     .await
     .with_context(|| {
         format!(
-            "timed out waiting for ingester to transition to status {status} after {} seconds",
-            timeout_after.as_secs(),
+            "timed out waiting for ingester to transition to status {status} after {}",
+            timeout_after.pretty_display(),
         )
     })?
 }
@@ -108,36 +108,32 @@ async fn wait_for_ingester_status_inner(
     }
 }
 
-/// Initiates decommission of an ingester and waits for it to complete.
-///
-/// This function sends a decommission request to the ingester and then waits
-/// for it to reach the `Decommissioned` status.
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - The decommission request fails
-/// - The observation stream fails to open
-/// - The stream ends without producing a message
-/// - The stream ends after returning an error
-/// - The timeout is exceeded
-pub async fn wait_for_ingester_decommission(
-    ingester: &impl IngesterService,
-    timeout_after: Duration,
+/// Initiates decommission of an ingester, if one is present. Returns an error if the decommission
+/// request fails.
+pub async fn notify_ingester_decommission(
+    ingester_opt: Option<&impl IngesterService>,
 ) -> anyhow::Result<()> {
-    let now = Instant::now();
-
+    let Some(ingester) = ingester_opt else {
+        return Ok(());
+    };
     ingester
         .decommission(DecommissionRequest {})
         .await
         .context("failed to initiate ingester decommission")?;
+    Ok(())
+}
 
-    wait_for_ingester_status(
-        ingester,
-        IngesterStatus::Decommissioned,
-        timeout_after.saturating_sub(now.elapsed()),
-    )
-    .await?;
+/// Waits for an ingester to reach the `Decommissioned` status, if one is present.
+pub async fn wait_for_ingester_decommission(
+    ingester_opt: Option<&impl IngesterService>,
+    timeout_after: Duration,
+) -> anyhow::Result<()> {
+    let Some(ingester) = ingester_opt else {
+        return Ok(());
+    };
+    let now = Instant::now();
+
+    wait_for_ingester_status(ingester, IngesterStatus::Decommissioned, timeout_after).await?;
 
     info!(
         "successfully decommissioned ingester in {}",
@@ -229,7 +225,8 @@ mod tests {
             .once()
             .returning(|_| Ok(DecommissionResponse {}));
         let ingester = IngesterServiceClient::from_mock(mock_ingester);
-        wait_for_ingester_decommission(&ingester, Duration::from_secs(1))
+        notify_ingester_decommission(Some(&ingester)).await.unwrap();
+        wait_for_ingester_decommission(Some(&ingester), Duration::from_secs(1))
             .await
             .unwrap();
     }
@@ -266,7 +263,8 @@ mod tests {
             .once()
             .returning(|_| Ok(DecommissionResponse {}));
         let ingester = IngesterServiceClient::from_mock(mock_ingester);
-        wait_for_ingester_decommission(&ingester, Duration::from_secs(1))
+        notify_ingester_decommission(Some(&ingester)).await.unwrap();
+        wait_for_ingester_decommission(Some(&ingester), Duration::from_secs(1))
             .await
             .unwrap();
     }

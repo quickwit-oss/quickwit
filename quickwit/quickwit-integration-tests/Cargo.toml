@@ -50,6 +50,7 @@ quickwit-parquet-engine = { workspace = true, optional = true }
 anyhow = { workspace = true }
 aws-sdk-sqs = { workspace = true }
 futures-util = { workspace = true }
+http-body-util = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true }
 itertools = { workspace = true }

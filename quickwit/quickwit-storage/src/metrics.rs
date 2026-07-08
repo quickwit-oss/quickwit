@@ -26,6 +26,9 @@ use quickwit_metrics::{
 
 const ACTION_DELETE_OBJECT: Labels<1> = labels!("action" => "delete_object");
 const ACTION_DELETE_OBJECTS: Labels<1> = labels!("action" => "delete_objects");
+const ACTION_GET_OBJECT: Labels<1> = labels!("action" => "get_object");
+const ACTION_PUT_OBJECT: Labels<1> = labels!("action" => "put_object");
+const ACTION_UPLOAD_PART: Labels<1> = labels!("action" => "upload_part");
 const OUTCOME_NAME: LabelNames<1> = label_names!("outcome");
 const COMPONENT_NAME: LabelNames<1> = label_names!("component_name");
 const COMPONENT_CAPACITY_POLICY: LabelNames<3> =
@@ -81,6 +84,15 @@ pub(crate) static OBJECT_STORAGE_DELETE_REQUEST_DURATION: LazyHistogram =
 
 pub(crate) static OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION: LazyHistogram =
     lazy_histogram!(parent: OBJECT_STORAGE_REQUEST_DURATION, labels: [ACTION_DELETE_OBJECTS]);
+
+pub(crate) static OBJECT_STORAGE_GET_OBJECT_DURATION: LazyHistogram =
+    lazy_histogram!(parent: OBJECT_STORAGE_REQUEST_DURATION, labels: [ACTION_GET_OBJECT]);
+
+pub(crate) static OBJECT_STORAGE_PUT_OBJECT_DURATION: LazyHistogram =
+    lazy_histogram!(parent: OBJECT_STORAGE_REQUEST_DURATION, labels: [ACTION_PUT_OBJECT]);
+
+pub(crate) static OBJECT_STORAGE_UPLOAD_PART_DURATION: LazyHistogram =
+    lazy_histogram!(parent: OBJECT_STORAGE_REQUEST_DURATION, labels: [ACTION_UPLOAD_PART]);
 
 pub(crate) static OBJECT_STORAGE_GET_TOTAL: LazyCounter = lazy_counter!(
         name: "object_storage_gets_total",

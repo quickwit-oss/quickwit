@@ -40,7 +40,7 @@ use crate::{Storage, StorageCache, wrap_storage_with_cache};
 /// On disk Cache of splits for searchers.
 ///
 /// The search acts receives reports of splits.
-pub struct SplitCache {
+pub struct SearchSplitCache {
     // Directory containing the cached split files.
     // Split ids are universally unique, so we all put them in the same directory.
     root_path: PathBuf,
@@ -50,14 +50,14 @@ pub struct SplitCache {
     fd_cache: FileDescriptorCache,
 }
 
-impl SplitCache {
+impl SearchSplitCache {
     /// Creates a new SplitCache and spawns the task that will continuously search for
     /// download opportunities.
     pub fn with_root_path(
         root_path: PathBuf,
         storage_resolver: crate::StorageResolver,
         limits: SplitCacheLimits,
-    ) -> io::Result<Arc<SplitCache>> {
+    ) -> io::Result<Arc<SearchSplitCache>> {
         std::fs::create_dir_all(&root_path)?;
         let mut existing_splits: BTreeMap<SplitId, u64> = Default::default();
         for dir_entry_res in std::fs::read_dir(&root_path)? {
@@ -103,7 +103,7 @@ impl SplitCache {
             delete_evicted_splits(&root_path, &splits_to_remove[..]);
         }
         let fd_cache = FileDescriptorCache::with_fd_cache_capacity(limits.max_file_descriptors);
-        let split_cache = Arc::new(SplitCache {
+        let split_cache = Arc::new(SearchSplitCache {
             root_path,
             split_table: Mutex::new(split_table),
             fd_cache,
@@ -193,7 +193,7 @@ fn split_id_from_path(split_path: &Path) -> Option<SplitId> {
 }
 
 struct SplitCacheBackingStorage {
-    split_cache: Arc<SplitCache>,
+    split_cache: Arc<SearchSplitCache>,
     storage_root_uri: Uri,
 }
 

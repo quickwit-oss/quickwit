@@ -58,6 +58,7 @@ qw_env_vars!(
     QW_DATA_DIR,
     QW_METASTORE_URI,
     QW_DEFAULT_INDEX_ROOT_URI,
+    QW_ENABLE_STANDALONE_COMPACTORS,
     CP_CREATE_DD_LOGS_INDEX,
     CP_CREATE_DD_METRICS_INDEX,
     CP_CREATE_DD_SKETCHES_INDEX,
@@ -73,10 +74,10 @@ mod tests {
     fn test_qw_env_vars_expansion() {
         assert_eq!(QW_NONE, 0);
 
-        assert_eq!(QW_CLUSTER_ID, 1);
+        assert_eq!(QW_CLUSTER_ID, 3);
         assert_eq!(QW_ENV_VARS.get(&QW_CLUSTER_ID).unwrap(), &"QW_CLUSTER_ID");
 
         assert_eq!(QW_ENV_VARS.get(&QW_NODE_ID).unwrap(), &"QW_NODE_ID");
-        assert_eq!(QW_NODE_ID, 2);
+        assert_eq!(QW_NODE_ID, 14);
     }
 }

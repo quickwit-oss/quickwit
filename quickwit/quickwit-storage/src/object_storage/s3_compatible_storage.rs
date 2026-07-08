@@ -388,6 +388,7 @@ impl S3CompatibleObjectStorage {
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(len);
         crate::metrics::DD_OBJECT_STORAGE_PUT_REQUESTS_BYTES.inc_by(len);
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_PUT_OBJECT_DURATION);
 
         self.s3_client
             .put_object()
@@ -533,6 +534,7 @@ impl S3CompatibleObjectStorage {
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(part.len());
         crate::metrics::DD_OBJECT_STORAGE_PUT_REQUESTS_BYTES.inc_by(part.len());
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_UPLOAD_PART_DURATION);
 
         let content_md5 = part.md5.map(|digest| BASE64_STANDARD.encode(digest.0));
         let upload_part_output = self
@@ -661,6 +663,7 @@ impl S3CompatibleObjectStorage {
 
         crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
         crate::metrics::DD_OBJECT_STORAGE_GET_REQUESTS.inc();
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
 
         let get_object_output = self
             .s3_client

@@ -14,4 +14,5 @@
 
 fn main() {
     println!("cargo:rerun-if-changed=migrations/postgresql");
+    println!("cargo:rerun-if-changed=migrations/postgresql_deferred");
 }
