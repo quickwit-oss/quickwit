@@ -60,7 +60,7 @@ pub struct SplitAttrs {
 
     pub time_range: Option<RangeInclusive<DateTime>>,
 
-    pub replaced_split_ids: Vec<String>,
+    pub replaced_split_ids: Vec<SplitId>,
 
     /// Delete opstamp.
     pub delete_opstamp: u64,

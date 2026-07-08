@@ -33,7 +33,6 @@ use tantivy::TrackedObject;
 use tracing::{Span, info_span};
 
 use crate::actors::MergePermit;
-use crate::new_split_id;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum MergeOperationType {
@@ -89,7 +88,7 @@ pub struct MergeOperation {
 
 impl MergeOperation {
     pub fn new_merge_operation(splits: Vec<SplitMetadata>) -> Self {
-        let merge_split_id = new_split_id();
+        let merge_split_id = SplitId::new();
         let split_ids = splits.iter().map(|split| split.split_id()).collect_vec();
         let merge_parent_span = info_span!("merge", merge_split_id=%merge_split_id, split_ids=?split_ids, typ=%MergeOperationType::Merge);
         Self {
@@ -108,7 +107,7 @@ impl MergeOperation {
     }
 
     pub fn new_delete_and_merge_operation(split: SplitMetadata) -> Self {
-        let merge_split_id = new_split_id();
+        let merge_split_id = SplitId::new();
         let merge_parent_span = info_span!("delete", merge_split_id=%merge_split_id, split_ids=?split.split_id(), typ=%MergeOperationType::DeleteAndMerge);
         Self {
             merge_parent_span,
@@ -237,7 +236,7 @@ pub mod tests {
 
     use std::collections::hash_map::DefaultHasher;
     use std::collections::{BTreeSet, HashMap};
-    use std::hash::Hasher;
+    use std::hash::{Hash as _, Hasher};
     use std::ops::RangeInclusive;
 
     use proptest::prelude::*;
@@ -274,11 +273,10 @@ pub mod tests {
     prop_compose! {
       fn split_strategy()
         (num_merge_ops in 0usize..5usize, start_timestamp in 1_664_000_000i64..1_665_000_000i64, average_time_delta in 100i64..120i64, delta_creation_date in 0u64..100_000u64, num_docs in num_docs_strategy()) -> SplitMetadata {
-        let split_id = crate::new_split_id();
         let end_timestamp = start_timestamp + average_time_delta * pow_of_10(num_merge_ops) as i64;
         let create_timestamp: i64 = (end_timestamp as u64 + delta_creation_date) as i64;
         SplitMetadata {
-            split_id,
+            split_id: SplitId::new(),
             time_range: Some(start_timestamp..=end_timestamp),
             num_docs,
             create_timestamp,
@@ -312,7 +310,7 @@ pub mod tests {
                 let create_timestamp = OffsetDateTime::now_utc().unix_timestamp();
                 let time_to_maturity = merge_policy.split_maturity(num_docs, 0);
                 SplitMetadata {
-                    split_id: format!("split_{split_ord:02}"),
+                    split_id: format!("split_{split_ord:02}").into(),
                     num_docs,
                     time_range: Some(time_range),
                     create_timestamp,
@@ -330,7 +328,7 @@ pub mod tests {
         let mut checksum = 0u64;
         for split in op.splits_as_slice() {
             let mut hasher = DefaultHasher::default();
-            hasher.write(split.split_id.as_bytes());
+            split.split_id.hash(&mut hasher);
             checksum ^= hasher.finish();
         }
         checksum
@@ -404,7 +402,7 @@ pub mod tests {
 
     fn fake_merge(merge_policy: &Arc<dyn MergePolicy>, splits: &[SplitMetadata]) -> SplitMetadata {
         assert!(!splits.is_empty(), "Split list should not be empty.");
-        let merged_split_id = new_split_id();
+        let merged_split_id = SplitId::new();
         let tags = merge_tags(splits);
         let pipeline_id = MergePipelineId {
             node_id: NodeId::from_str("test_node"),
@@ -421,7 +419,7 @@ pub mod tests {
         merge_op: &MergeOperation,
     ) -> SplitMetadata {
         for split in merge_op.splits_as_slice() {
-            assert!(split_index.remove(split.split_id()).is_some());
+            assert!(split_index.remove(split.split_id().as_str()).is_some());
         }
         let merged_split = fake_merge(merge_policy, merge_op.splits_as_slice());
         split_index.insert(merged_split.split_id().to_string(), merged_split.clone());
@@ -505,7 +503,7 @@ pub mod tests {
         maturity: SplitMaturity,
     ) -> SplitMetadata {
         SplitMetadata {
-            split_id: crate::new_split_id(),
+            split_id: SplitId::new(),
             partition_id: 3u64,
             num_docs: num_docs as usize,
             uncompressed_docs_size_in_bytes: 256u64 * num_docs,

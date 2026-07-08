@@ -28,6 +28,7 @@ migrations-lint:
 	@echo "Linting Postgres migrations with diesel-guard"
 	@(command -v diesel-guard >/dev/null || (echo "diesel-guard is not installed. Please install using 'cargo install diesel-guard'." && exit 1))
 	@diesel-guard check quickwit-metastore/migrations/postgresql/
+	@diesel-guard check quickwit-metastore/migrations/postgresql_deferred/
 
 unused-deps:
 	@echo "Checking for unused dependencies"

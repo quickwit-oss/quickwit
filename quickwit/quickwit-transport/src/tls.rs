@@ -21,7 +21,7 @@
 //! the certificate they negotiated with.
 //!
 //! A background task re-reads the certificate files and swaps in a new certificate when it changes
-//! on disk. It is driven by two triggers: a periodic poll (`cert_reload_interval`) and an
+//! on disk. It is driven by two triggers: a periodic poll (`cert_poll_interval`) and an
 //! out-of-band [`reload_tls_cert`] (wired to `SIGHUP`) for an immediate reload. The CA used to
 //! validate peer certificates (mTLS) is *not* hot-reloaded — rotating trust roots still requires a
 //! restart.
@@ -212,7 +212,7 @@ pub fn make_tls_server_config(
         .map(|protocol| protocol.to_vec())
         .collect();
 
-    spawn_cert_reload_task(resolver, *tls_config.cert_reload_interval);
+    spawn_cert_reload_task(resolver, *tls_config.cert_poll_interval);
     Ok(Arc::new(server_config))
 }
 
@@ -225,7 +225,7 @@ pub fn make_tls_client_config(tls_config: &TlsConfig) -> anyhow::Result<Arc<Clie
     let builder = ClientConfig::builder().with_root_certificates(roots);
     let mut client_config = if tls_config.verify_client_cert {
         let resolver = ReloadableCertResolver::load(&tls_config.cert_path, &tls_config.key_path)?;
-        spawn_cert_reload_task(resolver.clone(), *tls_config.cert_reload_interval);
+        spawn_cert_reload_task(resolver.clone(), *tls_config.cert_poll_interval);
         builder.with_client_cert_resolver(resolver)
     } else {
         builder.with_no_client_auth()
@@ -255,18 +255,18 @@ fn load_root_cert_store(ca_path: &str) -> anyhow::Result<RootCertStore> {
 }
 
 /// Spawns a background task that reloads `resolver`'s certificate, driven by both a periodic poll
-/// (`cert_reload_interval`) and the process-wide [`CERT_RELOAD_TX`] trigger (e.g. `SIGHUP`).
+/// (`cert_poll_interval`) and the process-wide [`CERT_RELOAD_TX`] trigger (e.g. `SIGHUP`).
 ///
 /// The task only holds a `Weak` reference, plus a transient strong reference while reloading. Once
 /// the owner drops the config (the sole strong owner) the next `upgrade` fails and the task
 /// returns.
-fn spawn_cert_reload_task(resolver: Arc<ReloadableCertResolver>, cert_reload_interval: Duration) {
+fn spawn_cert_reload_task(resolver: Arc<ReloadableCertResolver>, cert_poll_interval: Duration) {
     let weak_resolver = Arc::downgrade(&resolver);
     drop(resolver);
     let mut cert_reload_rx = CERT_RELOAD_TX.subscribe();
 
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(cert_reload_interval);
+        let mut interval = tokio::time::interval(cert_poll_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         // The first tick completes immediately; skip it so we don't reload the certificate we just
@@ -369,7 +369,7 @@ mod tests {
             ca_path: ca_path.to_string(),
             expected_name: None,
             verify_client_cert: true,
-            cert_reload_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
+            cert_poll_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
         }
     }
 

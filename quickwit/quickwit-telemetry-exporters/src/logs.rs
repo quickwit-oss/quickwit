@@ -15,7 +15,9 @@
 use std::fmt;
 
 use quickwit_common::get_from_env_opt;
+use serde_json::{Map, Value};
 use time::format_description::BorrowedFormatItem;
+use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::field::RecordFields;
 use tracing_subscriber::fmt::FmtContext;
@@ -89,12 +91,97 @@ where
     }
 }
 
-/// Outputs JSON with `timestamp`, `level`, `service`, `source`, and `message` fields.
-/// The `message` is formatted using the regular text formatter (level, target, spans, fields).
+/// Reserved top-level keys in the DDG output. Event fields whose name collides
+/// with one of these are dropped from the structured attributes (their value is
+/// still rendered inside `message`) to avoid overwriting the reserved value.
+const RESERVED_KEYS: [&str; 5] = ["timestamp", "level", "service", "ddsource", "message"];
+
+/// Records an event's structured fields directly into the output JSON object so
+/// they are emitted as top-level attributes (faceted in Datadog), mirroring the
+/// structured fields the JSON formatter exposes.
+///
+/// A visitor is required because `tracing` exposes field *values* only through
+/// the [`Visit`] callbacks (`Event::fields` yields names, not values). The
+/// implicit `message` field is excluded (it is reserved and already rendered
+/// into the human-readable `message`), as is any field colliding with a reserved
+/// key. Typed values (numbers, booleans, strings) preserve their JSON type;
+/// everything else falls back to its `Debug` representation as a string.
+struct FieldCollector<'a> {
+    output: &'a mut Map<String, Value>,
+}
+
+impl FieldCollector<'_> {
+    fn insert(&mut self, field: &Field, value: Value) {
+        let name = field.name();
+        if RESERVED_KEYS.contains(&name) {
+            return;
+        }
+        self.output.insert(name.to_string(), value);
+    }
+}
+
+/// Returns the parsed JSON when `value` is a serialized array or object, else
+/// `None`. Only containers are promoted.
+fn as_json_container(value: &str) -> Option<Value> {
+    if !value.trim_start().starts_with(['[', '{']) {
+        return None;
+    }
+    match serde_json::from_str(value) {
+        Ok(json @ (Value::Array(_) | Value::Object(_))) => Some(json),
+        _ => None,
+    }
+}
+
+impl Visit for FieldCollector<'_> {
+    fn record_f64(&mut self, field: &Field, value: f64) {
+        self.insert(field, value.into());
+    }
+
+    fn record_i64(&mut self, field: &Field, value: i64) {
+        self.insert(field, value.into());
+    }
+
+    fn record_u64(&mut self, field: &Field, value: u64) {
+        self.insert(field, value.into());
+    }
+
+    fn record_bool(&mut self, field: &Field, value: bool) {
+        self.insert(field, value.into());
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        // A genuine string field is kept verbatim — we do not reinterpret string
+        // values as JSON.
+        self.insert(field, value.into());
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+        // A `Debug`-rendered field is the only place structured data gets
+        // flattened into a string (a `Vec`/struct logged via `?`, since `tracing`
+        // cannot carry nested values). When that rendering happens to be a valid
+        // JSON array/object (e.g. `["a", "b"]` from a `Vec<String>`), embed it as
+        // nested JSON. Non-JSON Debug output (ranges, structs, ...) stays a plain
+        // string, so this is never worse than the raw Debug rendering.
+        let rendered = format!("{value:?}");
+        match as_json_container(&rendered) {
+            Some(json) => self.insert(field, json),
+            None => self.insert(field, rendered.into()),
+        }
+    }
+}
+
+/// Outputs JSON with `timestamp`, `level`, `service`, `ddsource`, and `message`
+/// fields. The `message` is formatted using the regular text formatter (level,
+/// target, spans, fields).
+///
+/// The event's own structured fields are additionally emitted as top-level
+/// attributes (the same key/values the JSON formatter exposes), excluding any
+/// field whose name collides with a reserved key (see [`RESERVED_KEYS`]). Span
+/// fields are not promoted; they remain rendered inside `message`.
 ///
 /// Example output:
 /// ```json
-/// {"timestamp":"2025-03-23T14:30:45Z","level":"INFO","service":"quickwit","ddsource":"quickwit","message":"INFO quickwit_search: hello"}
+/// {"timestamp":"2025-03-23T14:30:45Z","level":"INFO","service":"quickwit","ddsource":"quickwit","message":"INFO quickwit_search: hello","key":"value","count":42}
 /// ```
 pub(crate) struct DdgFormat {
     text_format: Format<Full, ()>,
@@ -134,12 +221,21 @@ where
 
         let level = event.metadata().level().as_str();
 
-        // Write JSON with properly escaped message
-        let escaped_message = serde_json::to_string(message).map_err(|_| fmt::Error)?;
-        writeln!(
-            writer,
-            r#"{{"timestamp":"{timestamp}","level":"{level}","service":"quickwit","ddsource":"quickwit","message":{escaped_message}}}"#
-        )
+        // Build the output object. Reserved keys are inserted first; the
+        // collector then records the event's structured fields directly, skipping
+        // any field that would collide with a reserved key.
+        let mut output = Map::with_capacity(RESERVED_KEYS.len());
+        output.insert("timestamp".to_string(), timestamp.into());
+        output.insert("level".to_string(), level.into());
+        output.insert("service".to_string(), "quickwit".into());
+        output.insert("ddsource".to_string(), "quickwit".into());
+        output.insert("message".to_string(), message.into());
+        event.record(&mut FieldCollector {
+            output: &mut output,
+        });
+
+        let line = serde_json::to_string(&output).map_err(|_| fmt::Error)?;
+        writeln!(writer, "{line}")
     }
 }
 
@@ -245,6 +341,81 @@ mod tests {
         assert_eq!(
             json["message"].as_str().unwrap(),
             format!("INFO {TARGET}: processing request key=\"value\" count=42")
+        );
+        // Structured fields are also emitted as top-level attributes.
+        assert_eq!(json["key"], "value");
+        assert_eq!(json["count"], 42);
+    }
+
+    #[test]
+    fn test_ddg_format_promotes_typed_fields() {
+        let json = capture_ddg_log(|| {
+            tracing::info!(
+                text = "hi",
+                count = 42_i64,
+                ratio = 0.5_f64,
+                enabled = true,
+                "typed",
+            );
+        });
+        let obj = json.as_object().unwrap();
+        // 5 reserved keys + 4 promoted fields.
+        assert_eq!(obj.len(), 9, "{obj:?}");
+        assert_eq!(json["text"], Value::from("hi"));
+        assert_eq!(json["count"], Value::from(42));
+        assert!(json["count"].is_i64());
+        assert_eq!(json["ratio"], Value::from(0.5));
+        assert!(json["ratio"].is_f64());
+        assert_eq!(json["enabled"], Value::Bool(true));
+    }
+
+    #[test]
+    fn test_ddg_format_message_field_not_duplicated() {
+        // The implicit `message` field must not appear twice or overwrite the
+        // rendered message.
+        let json = capture_ddg_log(|| tracing::info!("hello"));
+        let obj = json.as_object().unwrap();
+        assert_eq!(obj.len(), 5, "{obj:?}");
+        assert_eq!(
+            json["message"].as_str().unwrap(),
+            format!("INFO {TARGET}: hello")
+        );
+    }
+
+    #[test]
+    fn test_ddg_format_reserved_key_collision_is_protected() {
+        // A user field named like a reserved key must not overwrite the reserved
+        // value; it is still visible inside the rendered message.
+        let json = capture_ddg_log(|| {
+            tracing::info!(level = "custom", service = "other", "collision");
+        });
+        let obj = json.as_object().unwrap();
+        assert_eq!(obj.len(), 5, "{obj:?}");
+        assert_eq!(json["level"], "INFO");
+        assert_eq!(json["service"], "quickwit");
+        assert_eq!(
+            json["message"].as_str().unwrap(),
+            format!("INFO {TARGET}: collision level=\"custom\" service=\"other\"")
+        );
+    }
+
+    #[test]
+    fn test_ddg_format_span_fields_not_promoted() {
+        // Span fields stay inside the rendered message; only the event's own
+        // fields become top-level attributes.
+        let json = capture_ddg_log(|| {
+            let span = tracing::info_span!("my_span", span_field = 123);
+            let _guard = span.enter();
+            tracing::info!(event_field = "value", "inside span");
+        });
+        let obj = json.as_object().unwrap();
+        // 5 reserved keys + 1 event field. The span field is not promoted.
+        assert_eq!(obj.len(), 6, "{obj:?}");
+        assert_eq!(json["event_field"], "value");
+        assert!(!obj.contains_key("span_field"));
+        assert_eq!(
+            json["message"].as_str().unwrap(),
+            format!("INFO my_span{{span_field=123}}: {TARGET}: inside span event_field=\"value\"")
         );
     }
 
@@ -366,6 +537,153 @@ mod tests {
             json["message"].as_str().unwrap(),
             format!("INFO {TARGET}: status check enabled=true ratio=0.75")
         );
+    }
+
+    #[test]
+    fn test_ddg_format_str_fields_kept_verbatim() {
+        // Genuine string fields are never reinterpreted as JSON, even when their
+        // contents would parse as a JSON array or object. Only the Debug path
+        // (where a `Vec`/struct was flattened to a string) attempts promotion.
+        let json = capture_ddg_log(|| {
+            tracing::info!(
+                members = r#"["10215528..15153955", "15779969..16133624"]"#,
+                fields = r#"{"host": "quickwit", "count": 4}"#,
+                merged = "10215528..18151721",
+                version = "1.2",
+                "compaction",
+            );
+        });
+        assert_eq!(
+            json["members"],
+            Value::from(r#"["10215528..15153955", "15779969..16133624"]"#)
+        );
+        assert!(json["members"].is_string());
+        assert_eq!(
+            json["fields"],
+            Value::from(r#"{"host": "quickwit", "count": 4}"#)
+        );
+        assert!(json["fields"].is_string());
+        assert_eq!(json["merged"], Value::from("10215528..18151721"));
+        assert_eq!(json["version"], Value::from("1.2"));
+    }
+
+    /// Captures output from the built-in `Json` formatter (the `QW_LOG_FORMAT=json`
+    /// path), the same way production wires it up in `EventFormat`.
+    fn capture_json_log<F: FnOnce()>(f: F) -> serde_json::Value {
+        let writer = TestMakeWriter::default();
+        let subscriber = tracing_subscriber::registry().with(
+            tracing_subscriber::fmt::layer()
+                .event_format(tracing_subscriber::fmt::format().json())
+                .fmt_fields(JsonFields::new())
+                .with_ansi(false)
+                .with_writer(writer.clone()),
+        );
+        tracing::subscriber::with_default(subscriber, f);
+        let output = writer.get_string();
+        serde_json::from_str(&output).expect("output should be valid JSON")
+    }
+
+    #[test]
+    fn test_json_format_has_same_nested_field_limitation() {
+        // The built-in Json formatter is subject to the exact same constraint as
+        // DdgFormat: `tracing` cannot carry a nested value, so a Vec must be
+        // stringified at the call site before any formatter sees it.
+
+        // Logged via Debug (`?`): the Json formatter emits an escaped JSON STRING,
+        // not a nested array — identical to the DDG bug being reported.
+        let json = capture_json_log(|| {
+            let members = vec![
+                "10215528..15153955".to_string(),
+                "15779969..16133624".to_string(),
+            ];
+            tracing::info!(members = ?members, "probe");
+        });
+        let fields = &json["fields"];
+        assert_eq!(
+            fields["members"],
+            Value::from(r#"["10215528..15153955", "15779969..16133624"]"#),
+            "Json formatter also renders a Debug-logged Vec as an escaped string, not an array: \
+             {json}"
+        );
+        assert!(
+            fields["members"].is_string(),
+            "value is a string, not a nested array: {json}"
+        );
+
+        // Logged as a serde JSON string field: the Json formatter ALSO keeps it a
+        // string (it does not re-parse), so the escaping is still there.
+        let json2 = capture_json_log(|| {
+            let members = vec!["a".to_string(), "b".to_string()];
+            let serialized = serde_json::to_string(&members).unwrap();
+            tracing::info!(members = serialized.as_str(), "probe");
+        });
+        assert_eq!(json2["fields"]["members"], Value::from(r#"["a","b"]"#));
+        assert!(json2["fields"]["members"].is_string());
+    }
+
+    #[test]
+    fn test_ddg_format_promotes_debug_logged_string_vec() {
+        // The reported case: a `Vec<String>` logged via `?`. Rust's Debug output
+        // is valid JSON, so it is promoted to a nested array.
+        let json = capture_ddg_log(|| {
+            let members = vec![
+                "10215528..15153955".to_string(),
+                "15779969..16133624".to_string(),
+            ];
+            let components = vec![
+                "fastfield:host".to_string(),
+                "fastfield:service".to_string(),
+            ];
+            tracing::info!(members = ?members, components = ?components, "coalesced");
+        });
+        assert_eq!(
+            json["members"],
+            serde_json::json!(["10215528..15153955", "15779969..16133624"])
+        );
+        assert!(json["members"].is_array());
+        assert_eq!(
+            json["components"],
+            serde_json::json!(["fastfield:host", "fastfield:service"])
+        );
+    }
+
+    #[test]
+    fn test_ddg_format_promotes_debug_logged_numeric_vec() {
+        // A `Vec` of numbers also Debug-renders as valid JSON.
+        let json = capture_ddg_log(|| {
+            let sizes = vec![1u64, 2, 3];
+            tracing::info!(sizes = ?sizes, "sizes");
+        });
+        assert_eq!(json["sizes"], serde_json::json!([1, 2, 3]));
+        assert!(json["sizes"].is_array());
+    }
+
+    #[test]
+    fn test_ddg_format_debug_non_json_stays_string() {
+        // The boundary of the best-effort approach: Debug output that is NOT valid
+        // JSON stays a plain string. A `Vec<Range>` Debug-renders as `[a..b]`,
+        // which is not JSON, so it is left untouched (never worse than before).
+        let json = capture_ddg_log(|| {
+            let ranges = vec![10usize..15, 20..25];
+            tracing::info!(ranges = ?ranges, "ranges");
+        });
+        assert_eq!(json["ranges"], Value::from("[10..15, 20..25]"));
+        assert!(json["ranges"].is_string());
+    }
+
+    #[test]
+    fn test_ddg_format_debug_struct_stays_string() {
+        // A struct's Debug output (`Foo { .. }`) is not JSON, so it stays a string.
+        #[derive(Debug)]
+        #[allow(dead_code)]
+        struct Foo {
+            a: u32,
+        }
+        let json = capture_ddg_log(|| {
+            tracing::info!(foo = ?Foo { a: 1 }, "struct");
+        });
+        assert_eq!(json["foo"], Value::from("Foo { a: 1 }"));
+        assert!(json["foo"].is_string());
     }
 
     #[test]
