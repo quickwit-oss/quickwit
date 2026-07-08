@@ -39,8 +39,6 @@
 pub mod dictionary_builder;
 pub mod error;
 pub mod fast_field_reader;
-pub mod warmup;
 
 pub use error::{PomskyArrowError, Result};
 pub use fast_field_reader::read_segment_columns;
-pub use warmup::warm_up_fast_fields;
