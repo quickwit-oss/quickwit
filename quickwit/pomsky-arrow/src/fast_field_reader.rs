@@ -119,12 +119,8 @@ pub fn read_segment_columns(
     let fast_fields = segment_reader.fast_fields();
     let docs: Cow<'_, [u32]> = match selection {
         DocSelection::Ids(ids) => Cow::Borrowed(ids),
-        DocSelection::Range(range) => Cow::Owned(collect_docs(segment_reader, range, None)),
-        DocSelection::All { limit } => Cow::Owned(collect_docs(
-            segment_reader,
-            0..segment_reader.max_doc(),
-            limit,
-        )),
+        DocSelection::Range(range) => Cow::Owned(collect_docs(range, None)),
+        DocSelection::All { limit } => Cow::Owned(collect_docs(0..segment_reader.max_doc(), limit)),
     };
 
     let num_docs = docs.len();
@@ -143,21 +139,11 @@ pub fn read_segment_columns(
     Ok(batch)
 }
 
-/// Materializes the alive-filtered doc list for [`DocSelection::Range`] and
-/// [`DocSelection::All`].
-fn collect_docs(
-    segment_reader: &SegmentReader,
-    range: std::ops::Range<u32>,
-    limit: Option<usize>,
-) -> Vec<u32> {
-    let alive_bitset = segment_reader.alive_bitset();
-    let iter = range.filter(|&doc_id| match alive_bitset {
-        Some(bitset) => bitset.is_alive(doc_id),
-        None => true,
-    });
+/// Materializes the doc list for [`DocSelection::Range`] and [`DocSelection::All`].
+fn collect_docs(range: std::ops::Range<u32>, limit: Option<usize>) -> Vec<u32> {
     match limit {
-        Some(lim) => iter.take(lim).collect(),
-        None => iter.collect(),
+        Some(lim) => range.take(lim).collect(),
+        None => range.collect(),
     }
 }
 
