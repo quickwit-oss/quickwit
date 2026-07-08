@@ -148,6 +148,10 @@ google-cloud-pubsub = { version = "0.30", default-features = false, features = [
 governor = "0.10.4"
 heck = "0.5"
 hex = "0.4"
+hickory-resolver = { version = "0.26", default-features = false, features = [
+  "system-config",
+  "tokio",
+] }
 home = "0.5"
 hostname = "0.4"
 http = "1.4"
@@ -362,8 +366,12 @@ aws-sdk-lambda = "1"
 aws-sdk-sqs = "1.98"
 aws-smithy-async = "1.2"
 aws-smithy-mocks = "0.2"
-aws-smithy-http-client = { version = "1.1", features = ["default-client"] }
+aws-smithy-http-client = { version = "1.1", features = [
+  "default-client",
+  "rustls-aws-lc",
+] }
 aws-smithy-runtime = "1.11"
+aws-smithy-runtime-api = "1.8"
 aws-smithy-types = { version = "1.4", features = [
   "byte-stream-poll-next",
   "http-body-1-x",
