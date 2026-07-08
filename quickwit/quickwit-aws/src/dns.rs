@@ -27,6 +27,7 @@ use std::time::Duration;
 use anyhow::Context as _;
 use aws_smithy_runtime_api::client::dns::{DnsFuture, ResolveDns, ResolveDnsError};
 use hickory_resolver::TokioResolver;
+use quickwit_common::rate_limited_warn;
 
 /// Minimum TTL enforced on positive DNS responses.
 ///
@@ -49,7 +50,7 @@ pub struct HickoryDnsResolver {
 impl HickoryDnsResolver {
     /// Builds a resolver from the host's DNS configuration (`/etc/resolv.conf`
     /// on Unix), overriding the cache options so short-TTL records are still
-    /// cached for at least `DNS_CACHE_MIN_TTL` seconds.
+    /// cached for at least `DNS_CACHE_MIN_TTL`.
     pub fn from_system_conf() -> anyhow::Result<Self> {
         let mut builder =
             TokioResolver::builder_tokio().context("failed to read system DNS configuration")?;
@@ -71,18 +72,35 @@ impl ResolveDns for HickoryDnsResolver {
         // owning is simpler and side-steps lifetime coupling).
         let host = name.to_string();
         DnsFuture::new(async move {
-            let lookup = resolver
-                .lookup_ip(host)
+            if let Ok(lookup) = resolver.lookup_ip(host.clone()).await {
+                let ip_addresses: Vec<IpAddr> = lookup.iter().collect();
+                if !ip_addresses.is_empty() {
+                    return Ok(ip_addresses);
+                }
+            }
+            // Hickory only speaks the DNS protocol (plus `/etc/hosts`), so it
+            // misses hostnames resolved through other NSS sources (mDNS, LDAP,
+            // custom `nsswitch.conf` plugins, etc). Fall back to the OS
+            // resolver (`getaddrinfo`) for those.
+            rate_limited_warn!(
+                limit_per_min = 1,
+                "hickory dns resolver could not resolve {host}, falling back to the os resolver"
+            );
+            let socket_addrs = tokio::net::lookup_host((host.as_str(), 0))
                 .await
                 .map_err(ResolveDnsError::new)?;
-            let ip_addresses: Vec<IpAddr> = lookup.iter().collect();
-            Ok(ip_addresses)
+            Ok(socket_addrs.map(|socket_addr| socket_addr.ip()).collect())
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::net::Ipv4Addr;
+
+    use hickory_resolver::config::{NameServerConfig, ResolveHosts, ResolverConfig};
+    use hickory_resolver::net::runtime::TokioRuntimeProvider;
+
     use super::*;
 
     #[tokio::test]
@@ -95,6 +113,44 @@ mod tests {
             .resolve_dns("localhost")
             .await
             .expect("localhost should resolve");
+        assert!(
+            ip_addresses
+                .iter()
+                .any(|ip_address| ip_address.is_loopback()),
+            "expected a loopback address, got {ip_addresses:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_hickory_dns_resolver_falls_back_to_os_resolver() {
+        // Points the Hickory resolver at a non-routable name server and disables its
+        // `/etc/hosts` lookup, so it can never resolve anything itself. `localhost`
+        // must still resolve through the OS resolver fallback.
+        let mut builder = TokioResolver::builder_with_config(
+            ResolverConfig::from_parts(
+                None,
+                vec![],
+                vec![NameServerConfig::udp(IpAddr::V4(Ipv4Addr::new(
+                    203, 0, 113, 1,
+                )))],
+            ),
+            TokioRuntimeProvider::default(),
+        );
+        let options = builder.options_mut();
+        options.timeout = Duration::from_millis(200);
+        options.attempts = 1;
+        options.use_hosts_file = ResolveHosts::Never;
+        let resolver = HickoryDnsResolver {
+            resolver: Arc::new(
+                builder
+                    .build()
+                    .expect("resolver should build from explicit configuration"),
+            ),
+        };
+        let ip_addresses = resolver
+            .resolve_dns("localhost")
+            .await
+            .expect("localhost should resolve via the os resolver fallback");
         assert!(
             ip_addresses
                 .iter()
