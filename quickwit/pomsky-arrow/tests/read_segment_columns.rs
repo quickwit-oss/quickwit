@@ -22,7 +22,7 @@ use arrow::array::{
     AsArray, BooleanArray, Float64Array, Int64Array, StringArray, UInt32Array, UInt64Array,
 };
 use arrow::datatypes::{DataType, Field, Int32Type, Schema, UInt64Type};
-use pomsky_arrow::{DocSelection, read_segment_columns};
+use pomsky_arrow::read_segment_columns;
 use tantivy::schema::{FAST, SchemaBuilder, TEXT};
 use tantivy::{Index, IndexWriter, TantivyDocument};
 
@@ -82,14 +82,7 @@ fn reads_projection_for_explicit_doc_ids() {
 
     // Read docs 0 and 2 (skip 1), in that order.
     let doc_ids = [0u32, 2u32];
-    let batch = read_segment_columns(
-        segment_reader,
-        &projected_schema,
-        DocSelection::Ids(&doc_ids),
-        7,
-        None,
-    )
-    .unwrap();
+    let batch = read_segment_columns(segment_reader, &projected_schema, &doc_ids, 7, None).unwrap();
 
     assert_eq!(batch.num_rows(), 2);
     assert_eq!(batch.schema(), projected_schema);
@@ -163,14 +156,7 @@ fn missing_column_is_all_null_not_an_error() {
     ]));
 
     let doc_ids = [0u32, 1u32, 2u32];
-    let batch = read_segment_columns(
-        segment_reader,
-        &projected_schema,
-        DocSelection::Ids(&doc_ids),
-        0,
-        None,
-    )
-    .unwrap();
+    let batch = read_segment_columns(segment_reader, &projected_schema, &doc_ids, 0, None).unwrap();
 
     assert_eq!(batch.num_rows(), 3);
     let id_col = batch.column(0).as_primitive::<UInt64Type>();
@@ -203,25 +189,15 @@ fn all_selection_reads_every_alive_doc() {
         ),
     ]));
 
-    let batch = read_segment_columns(
-        segment_reader,
-        &projected_schema,
-        DocSelection::All { limit: None },
-        0,
-        None,
-    )
-    .unwrap();
+    let all_docs = [0u32, 1u32, 2u32];
+    let batch =
+        read_segment_columns(segment_reader, &projected_schema, &all_docs, 0, None).unwrap();
     assert_eq!(batch.num_rows(), 3);
 
-    // With a limit, only the first alive docs are returned.
-    let limited = read_segment_columns(
-        segment_reader,
-        &projected_schema,
-        DocSelection::All { limit: Some(2) },
-        0,
-        None,
-    )
-    .unwrap();
+    // A shorter doc slice reads only those docs.
+    let first_two = [0u32, 1u32];
+    let limited =
+        read_segment_columns(segment_reader, &projected_schema, &first_two, 0, None).unwrap();
     assert_eq!(limited.num_rows(), 2);
 }
 
@@ -237,14 +213,8 @@ fn range_selection_reads_requested_window() {
         Field::new("id", DataType::UInt64, true),
     ]));
 
-    let batch = read_segment_columns(
-        segment_reader,
-        &projected_schema,
-        DocSelection::Range(1..3),
-        0,
-        None,
-    )
-    .unwrap();
+    let window = [1u32, 2u32];
+    let batch = read_segment_columns(segment_reader, &projected_schema, &window, 0, None).unwrap();
 
     assert_eq!(batch.num_rows(), 2);
     let doc_id_col = batch

@@ -16,14 +16,13 @@
 //! Arrow `RecordBatch`.
 //!
 //! This is the core primitive of `pomsky-arrow`: given an already-opened
-//! segment, a projected Arrow schema, and a [`DocSelection`], it reads *only*
+//! segment, a projected Arrow schema, and a slice of doc-ids, it reads *only*
 //! the projected columns for *only* the selected docs. Reads are exact-type:
 //! each projected column is read at the Arrow type matching its physical
 //! tantivy `ColumnType`. A requested column with no matching physical column
 //! becomes an all-null array of the requested type — a single missing column
 //! never fails the whole batch.
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -37,21 +36,6 @@ use arrow::record_batch::RecordBatch;
 use tantivy::index::SegmentReader;
 
 use crate::error::{PomskyArrowError, Result};
-
-/// Selects which documents of a segment to materialize.
-///
-/// The primary row filter is *not* this crate's job: the caller's query engine
-/// decides which docs match and passes them in as [`DocSelection::Ids`].
-/// [`DocSelection::Range`] and [`DocSelection::All`] cover unfiltered scans and
-/// both honor the segment's alive-bitset (deleted docs are skipped).
-pub enum DocSelection<'a> {
-    /// Explicit doc-ids produced by the caller's filter, read in the given order.
-    Ids(&'a [u32]),
-    /// All alive docs in `[start, end)`.
-    Range(std::ops::Range<u32>),
-    /// All alive docs, optionally capped at `limit`.
-    All { limit: Option<usize> },
-}
 
 /// Pre-built Arrow dictionary values for string fast fields.
 ///
@@ -106,45 +90,33 @@ impl DictCache {
 /// Reads the projected fast-field columns of a single segment into an Arrow
 /// `RecordBatch`.
 ///
-/// Only `projected_schema`'s columns are read, and only for the docs selected
-/// by `selection`. The synthetic columns `_doc_id` and `_segment_ord` are
-/// recognized and filled from the doc list and `segment_ord` respectively.
+/// Only `projected_schema`'s columns are read, and only for the docs in
+/// `docs`, in the given order. The caller's query engine is responsible for
+/// producing the doc-id set (including any alive-bitset filtering, range
+/// selection, or limiting). The synthetic columns `_doc_id` and `_segment_ord`
+/// are recognized and filled from the doc list and `segment_ord` respectively.
 pub fn read_segment_columns(
     segment_reader: &SegmentReader,
     projected_schema: &SchemaRef,
-    selection: DocSelection<'_>,
+    docs: &[u32],
     segment_ord: u32,
     dict_cache: Option<&DictCache>,
 ) -> Result<RecordBatch> {
     let fast_fields = segment_reader.fast_fields();
-    let docs: Cow<'_, [u32]> = match selection {
-        DocSelection::Ids(ids) => Cow::Borrowed(ids),
-        DocSelection::Range(range) => Cow::Owned(collect_docs(range, None)),
-        DocSelection::All { limit } => Cow::Owned(collect_docs(0..segment_reader.max_doc(), limit)),
-    };
-
     let num_docs = docs.len();
     let mut columns: Vec<ArrayRef> = Vec::with_capacity(projected_schema.fields().len());
 
     for field in projected_schema.fields() {
-        if let Some(array) = build_internal_column(field.name(), &docs, segment_ord, num_docs) {
+        if let Some(array) = build_internal_column(field.name(), docs, segment_ord, num_docs) {
             columns.push(array);
             continue;
         }
-        let array = build_fast_field_array(field, fast_fields, &docs, num_docs, dict_cache)?;
+        let array = build_fast_field_array(field, fast_fields, docs, num_docs, dict_cache)?;
         columns.push(array);
     }
 
     let batch = RecordBatch::try_new(projected_schema.clone(), columns)?;
     Ok(batch)
-}
-
-/// Materializes the doc list for [`DocSelection::Range`] and [`DocSelection::All`].
-fn collect_docs(range: std::ops::Range<u32>, limit: Option<usize>) -> Vec<u32> {
-    match limit {
-        Some(lim) => range.take(lim).collect(),
-        None => range.collect(),
-    }
 }
 
 fn build_internal_column(

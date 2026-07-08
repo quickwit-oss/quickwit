@@ -23,7 +23,7 @@
 //! # What this crate owns
 //!
 //! - **Column reading** — given an already-opened `SegmentReader`, a projected Arrow schema, and a
-//!   [`DocSelection`], read *only* those columns for *only* those docs into a `RecordBatch`
+//!   slice of doc-ids, read *only* those columns for *only* those docs into a `RecordBatch`
 //!   ([`read_segment_columns`]).
 //!
 //! # What this crate does NOT own (the caller's job)
@@ -42,7 +42,7 @@ pub mod warmup;
 
 use arrow::datatypes::Field;
 pub use error::{PomskyArrowError, Result};
-pub use fast_field_reader::{DictCache, DocSelection, read_segment_columns};
+pub use fast_field_reader::{DictCache, read_segment_columns};
 pub use warmup::warm_up_fast_fields;
 
 /// Arrow field metadata key used when a projected column should read from a
