@@ -59,6 +59,13 @@ pub(crate) async fn start_grpc_server(
     // no way to reload it without restarting the process.
     let mut server = Server::builder();
 
+    if let Some(max_connection_age) = &grpc_config.max_connection_age {
+        server = server.max_connection_age(**max_connection_age);
+
+        if let Some(max_connection_age_grace) = &grpc_config.max_connection_age_grace {
+            server = server.max_connection_age_grace(**max_connection_age_grace);
+        }
+    }
     let cluster_grpc_service = cluster_grpc_server(services.cluster.clone());
     file_descriptor_sets.push(quickwit_proto::cluster::CLUSTER_PLANE_FILE_DESCRIPTOR_SET);
 
