@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::Duration;
@@ -36,8 +36,8 @@ use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::templating::render_config;
 use crate::{
-    ConfigFormat, IndexerConfig, IngestApiConfig, JaegerConfig, MetastoreConfigs, NodeConfig,
-    SearcherConfig, TlsConfig, validate_identifier, validate_node_id,
+    CompactorConfig, ConfigFormat, IndexerConfig, IngestApiConfig, JaegerConfig, MetastoreConfigs,
+    NodeConfig, SearcherConfig, TlsConfig, validate_identifier, validate_node_id,
 };
 
 pub const DEFAULT_CLUSTER_ID: &str = "quickwit-default-cluster";
@@ -88,9 +88,12 @@ impl FromStr for List {
 }
 
 fn default_enabled_services() -> ConfigValue<List, QW_ENABLED_SERVICES> {
+    // The compactor is excluded by default — it only runs in standalone mode,
+    // which an operator must explicitly opt into via `enable_standalone_compactors`.
     ConfigValue::with_default(List(
         QuickwitService::supported_services()
             .into_iter()
+            .filter(|service| *service != QuickwitService::Compactor)
             .map(|service| service.to_string())
             .collect(),
     ))
@@ -193,6 +196,8 @@ struct NodeConfigBuilder {
     data_dir_uri: ConfigValue<Uri, QW_DATA_DIR>,
     metastore_uri: ConfigValue<Uri, QW_METASTORE_URI>,
     default_index_root_uri: ConfigValue<Uri, QW_DEFAULT_INDEX_ROOT_URI>,
+    #[serde(default)]
+    enable_standalone_compactors: ConfigValue<bool, QW_ENABLE_STANDALONE_COMPACTORS>,
     #[serde(rename = "rest")]
     #[serde(default)]
     rest_config_builder: RestConfigBuilder,
@@ -220,6 +225,9 @@ struct NodeConfigBuilder {
     #[serde(rename = "jaeger")]
     #[serde(default)]
     jaeger_config: JaegerConfig,
+    #[serde(rename = "compactor")]
+    #[serde(default)]
+    compactor_config: CompactorConfig,
 }
 
 impl NodeConfigBuilder {
@@ -233,7 +241,9 @@ impl NodeConfigBuilder {
             .map(|node_id_str| NodeId::from_str(&node_id_str))?;
         let availability_zone = self.availability_zone.resolve_optional(env_vars)?;
 
-        let enabled_services = self
+        let enable_standalone_compactors = self.enable_standalone_compactors.resolve(env_vars)?;
+
+        let enabled_services: HashSet<QuickwitService> = self
             .enabled_services
             .resolve(env_vars)?
             .0
@@ -341,6 +351,8 @@ impl NodeConfigBuilder {
             searcher_config: self.searcher_config,
             ingest_api_config: self.ingest_api_config,
             jaeger_config: self.jaeger_config,
+            compactor_config: self.compactor_config,
+            enable_standalone_compactors,
         };
 
         validate(&node_config)?;
@@ -357,6 +369,15 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
     }
     if node_config.peer_seeds.is_empty() {
         warn!("peer seeds are empty");
+    }
+    if node_config.is_service_enabled(QuickwitService::Compactor)
+        && !node_config.enable_standalone_compactors
+    {
+        bail!(
+            "the `compactor` service can only be enabled when `enable_standalone_compactors` is \
+             true (or `QW_ENABLE_STANDALONE_COMPACTORS=true`). With the default indexer-local \
+             merge pipeline, the compactor service must not be enabled."
+        );
     }
     validate_disk_usage(node_config);
     Ok(())
@@ -431,6 +452,7 @@ impl Default for NodeConfigBuilder {
             data_dir_uri: default_data_dir_uri(),
             metastore_uri: ConfigValue::none(),
             default_index_root_uri: ConfigValue::none(),
+            enable_standalone_compactors: Default::default(),
             rest_config_builder: RestConfigBuilder::default(),
             health_config_builder: HealthConfigBuilder::default(),
             grpc_config: GrpcConfig::default(),
@@ -440,6 +462,7 @@ impl Default for NodeConfigBuilder {
             searcher_config: SearcherConfig::default(),
             ingest_api_config: IngestApiConfig::default(),
             jaeger_config: JaegerConfig::default(),
+            compactor_config: CompactorConfig::default(),
         }
     }
 }
@@ -587,6 +610,8 @@ pub fn node_config_for_tests_from_ports(
         searcher_config: SearcherConfig::default(),
         ingest_api_config: IngestApiConfig::default(),
         jaeger_config: JaegerConfig::default(),
+        compactor_config: CompactorConfig::default(),
+        enable_standalone_compactors: false,
     }
 }
 
@@ -873,6 +898,9 @@ mod tests {
         assert_eq!(
             config.enabled_services,
             QuickwitService::supported_services()
+                .into_iter()
+                .filter(|service| *service != QuickwitService::Compactor)
+                .collect::<HashSet<_>>(),
         );
         assert_eq!(
             config.rest_config.listen_addr,
@@ -929,6 +957,10 @@ mod tests {
             "test-peer-seed-0,test-peer-seed-1".to_string(),
         );
         env_vars.insert("QW_DATA_DIR".to_string(), "test-data-dir".to_string());
+        env_vars.insert(
+            "QW_ENABLE_STANDALONE_COMPACTORS".to_string(),
+            "true".to_string(),
+        );
         env_vars.insert(
             "QW_METASTORE_URI".to_string(),
             "postgresql://test-user:test-password@test-host:4321/test-db".to_string(),
@@ -1058,6 +1090,49 @@ mod tests {
         load_node_config_with_env(ConfigFormat::Toml, file_content.as_bytes(), &env_vars)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_compactor_service_requires_standalone_flag() {
+        // Compactor service enabled while `enable_standalone_compactors` is off is an
+        // invalid combination: the default indexer-local merge pipeline is in use, so a
+        // dedicated compactor must not run.
+        let error = NodeConfigBuilder {
+            enabled_services: ConfigValue::for_test(List(vec![
+                "indexer".to_string(),
+                "compactor".to_string(),
+            ])),
+            ..Default::default()
+        }
+        .build_and_validate(&HashMap::new())
+        .await
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("enable_standalone_compactors"),
+            "expected error to mention `enable_standalone_compactors`, got: {error}",
+        );
+    }
+
+    #[tokio::test]
+    async fn test_compactor_service_with_standalone_flag_validates() {
+        // All services enabled, including the compactor, with the standalone flag on
+        // is a valid configuration.
+        let node_config = NodeConfigBuilder {
+            enabled_services: ConfigValue::for_test(List(vec![
+                "control_plane".to_string(),
+                "indexer".to_string(),
+                "searcher".to_string(),
+                "janitor".to_string(),
+                "metastore".to_string(),
+                "compactor".to_string(),
+            ])),
+            enable_standalone_compactors: ConfigValue::for_test(true),
+            ..Default::default()
+        }
+        .build_and_validate(&HashMap::new())
+        .await
+        .unwrap();
+        assert!(node_config.is_service_enabled(QuickwitService::Compactor));
     }
 
     #[tokio::test]
@@ -1469,5 +1544,49 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(error_message.contains("replication factor"));
+    }
+
+    #[tokio::test]
+    async fn test_standalone_compactors_prevents_implicit_compactor() {
+        let config_yaml = r#"
+            version: 0.8
+            enabled_services: [indexer]
+        "#;
+        let env_vars = HashMap::from([(
+            "QW_ENABLE_STANDALONE_COMPACTORS".to_string(),
+            "true".to_string(),
+        )]);
+        let config =
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars)
+                .await
+                .unwrap();
+        assert!(config.enabled_services.contains(&QuickwitService::Indexer));
+        assert!(
+            !config
+                .enabled_services
+                .contains(&QuickwitService::Compactor)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_standalone_compactors_env_var_override() {
+        let env_vars = HashMap::from([(
+            "QW_ENABLE_STANDALONE_COMPACTORS".to_string(),
+            "true".to_string(),
+        )]);
+        let config_yaml = r#"
+            version: 0.8
+            enabled_services: [indexer]
+        "#;
+        let config =
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars)
+                .await
+                .unwrap();
+        assert!(config.enabled_services.contains(&QuickwitService::Indexer));
+        assert!(
+            !config
+                .enabled_services
+                .contains(&QuickwitService::Compactor)
+        );
     }
 }

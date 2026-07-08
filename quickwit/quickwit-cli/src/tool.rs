@@ -17,6 +17,7 @@ use std::io::{IsTerminal, Stdout, Write, stdout};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
@@ -35,11 +36,11 @@ use quickwit_config::{
     TransformConfig, VecSourceParams,
 };
 use quickwit_index_management::{IndexService, clear_cache_directory};
-use quickwit_indexing::BoxedPipelineHandle;
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergeSchedulerService};
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
+use quickwit_indexing::{BoxedPipelineHandle, IndexingSplitCache};
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::CpuCapacity;
@@ -54,12 +55,12 @@ use quickwit_serve::{
 use quickwit_storage::{BundleStorage, Storage};
 use quickwit_transport::ChannelFactory;
 use thousands::Separable;
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::checklist::{GREEN_COLOR, RED_COLOR};
 use crate::{
-    THROUGHPUT_WINDOW_SIZE, config_cli_arg, get_resolvers, load_node_config, run_index_checklist,
-    start_actor_runtimes,
+    THROUGHPUT_WINDOW_SIZE, config_cli_arg, get_resolvers, info, load_node_config,
+    run_index_checklist, start_actor_runtimes,
 };
 
 pub fn build_tool_command() -> Command {
@@ -220,8 +221,8 @@ pub enum ToolCliCommand {
     GarbageCollect(GarbageCollectIndexArgs),
     LocalIngest(LocalIngestDocsArgs),
     LocalSearch(LocalSearchArgs),
-    Merge(MergeArgs),
     ExtractSplit(ExtractSplitArgs),
+    Merge(MergeArgs),
 }
 
 impl ToolCliCommand {
@@ -448,6 +449,8 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     )?;
     let universe = Universe::new();
     let merge_scheduler_service_mailbox = universe.get_or_spawn_one();
+    let split_cache =
+        Arc::new(IndexingSplitCache::from_config(&indexer_config, &config.data_dir_path).await?);
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
@@ -456,10 +459,11 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         cluster,
         metastore,
         None,
-        merge_scheduler_service_mailbox,
+        Some(merge_scheduler_service_mailbox),
         IngesterPool::default(),
         storage_resolver,
         EventBroker::default(),
+        split_cache,
     )
     .await?;
     let (indexing_server_mailbox, indexing_server_handle) =
@@ -493,11 +497,13 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     let statistics =
         start_statistics_reporting_loop(indexing_pipeline_handle, args.input_path_opt.is_none())
             .await?;
+
     merge_pipeline_handle
         .mailbox()
         .ask(quickwit_indexing::FinishPendingMergesAndShutdownPipeline)
         .await?;
     merge_pipeline_handle.join().await;
+
     // Shutdown the indexing server.
     universe
         .send_exit_with_success(&indexing_server_mailbox)
@@ -593,10 +599,11 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         cluster,
         metastore,
         None,
-        merge_scheduler_service,
+        Some(merge_scheduler_service),
         IngesterPool::default(),
         storage_resolver,
         EventBroker::default(),
+        Arc::new(IndexingSplitCache::no_caching()),
     )
     .await?;
     let (indexing_service_mailbox, indexing_service_handle) =
@@ -1006,6 +1013,7 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         indexing_cpu_capacity: CpuCapacity::zero(),
         ingester_status: IngesterStatus::default(),
         availability_zone: None,
+        enable_standalone_compactors: false,
     };
     let channel_factory = ChannelFactory::for_grpc(&config.grpc_config)?;
     let cluster = Cluster::join(

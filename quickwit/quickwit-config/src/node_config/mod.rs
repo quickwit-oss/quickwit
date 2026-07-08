@@ -297,6 +297,61 @@ impl Default for IndexerConfig {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompactorConfig {
+    /// Maximum number of concurrent merges, which hold the CPU for
+    /// a long time. Defaults to `num_cpus - 1`.
+    #[serde(default = "CompactorConfig::default_max_concurrent_merge_executions")]
+    pub max_concurrent_merge_executions: NonZeroUsize,
+    /// Number of pipelines to run per merge executions. Scalar. Since merges perform a lot
+    /// of IO, multiple concurrent merges can be interleaved.
+    #[serde(default = "CompactorConfig::default_pipeline_slots_per_merge_execution")]
+    pub pipeline_slots_per_merge_execution: NonZeroUsize,
+    /// Maximum number of concurrent split uploads across all pipelines.
+    #[serde(default = "CompactorConfig::default_max_concurrent_split_uploads")]
+    pub max_concurrent_split_uploads: NonZeroUsize,
+    /// Limits the IO throughput of the split downloader and the merge executor.
+    #[serde(default)]
+    pub max_merge_write_throughput: Option<ByteSize>,
+}
+
+impl CompactorConfig {
+    fn default_max_concurrent_merge_executions() -> NonZeroUsize {
+        let cpus = quickwit_common::num_cpus().saturating_sub(1);
+        NonZeroUsize::new(cpus).unwrap_or(NonZeroUsize::MIN)
+    }
+
+    fn default_pipeline_slots_per_merge_execution() -> NonZeroUsize {
+        NonZeroUsize::new(2).unwrap()
+    }
+
+    fn default_max_concurrent_split_uploads() -> NonZeroUsize {
+        NonZeroUsize::new(12).unwrap()
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test() -> Self {
+        CompactorConfig {
+            max_concurrent_merge_executions: NonZeroUsize::new(2).unwrap(),
+            pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
+            max_concurrent_split_uploads: NonZeroUsize::new(4).unwrap(),
+            max_merge_write_throughput: None,
+        }
+    }
+}
+
+impl Default for CompactorConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent_merge_executions: Self::default_max_concurrent_merge_executions(),
+            pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
+            max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
+            max_merge_write_throughput: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SplitCacheLimits {
@@ -844,6 +899,9 @@ pub struct NodeConfig {
     pub searcher_config: SearcherConfig,
     pub ingest_api_config: IngestApiConfig,
     pub jaeger_config: JaegerConfig,
+    pub compactor_config: CompactorConfig,
+    #[serde(skip_serializing)]
+    pub enable_standalone_compactors: bool,
 }
 
 impl NodeConfig {
@@ -908,6 +966,14 @@ impl NodeConfig {
     pub fn for_test_from_ports(rest_listen_port: u16, grpc_listen_port: u16) -> Self {
         serialize::node_config_for_tests_from_ports(rest_listen_port, grpc_listen_port)
     }
+
+    /// Test config with `enable_standalone_compactors = true`.
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test_with_standalone_compactors() -> Self {
+        let mut node_config = Self::for_test();
+        node_config.enable_standalone_compactors = true;
+        node_config
+    }
 }
 
 #[cfg(test)]
@@ -940,23 +1006,6 @@ mod tests {
                     .as_str()
                     .unwrap(),
                 "1500m"
-            );
-        }
-        {
-            let indexer_config: IndexerConfig =
-                serde_yaml::from_str(r#"merge_concurrency: 5"#).unwrap();
-            assert_eq!(
-                indexer_config.merge_concurrency,
-                NonZeroUsize::new(5).unwrap()
-            );
-            let indexer_config_json = serde_json::to_value(&indexer_config).unwrap();
-            assert_eq!(
-                indexer_config_json
-                    .get("merge_concurrency")
-                    .unwrap()
-                    .as_u64()
-                    .unwrap(),
-                5
             );
         }
         {

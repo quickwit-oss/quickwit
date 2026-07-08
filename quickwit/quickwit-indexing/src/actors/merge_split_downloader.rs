@@ -14,6 +14,7 @@
 
 use std::path::Path;
 
+use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::io::IoControls;
@@ -23,7 +24,7 @@ use tantivy::Directory;
 use tracing::{debug, info, instrument};
 
 use super::MergeExecutor;
-use crate::merge_policy::MergeTask;
+use crate::merge_policy::MergeSource;
 use crate::models::MergeScratch;
 use crate::split_store::IndexingSplitStore;
 
@@ -49,17 +50,17 @@ impl Actor for MergeSplitDownloader {
 }
 
 #[async_trait]
-impl Handler<MergeTask> for MergeSplitDownloader {
+impl Handler<MergeSource> for MergeSplitDownloader {
     type Reply = ();
 
     #[instrument(
         name = "merge_split_downloader",
-        parent = merge_task.merge_parent_span.id(),
+        parent = merge_source.as_operation().merge_parent_span.id(),
         skip_all,
     )]
     async fn handle(
         &mut self,
-        merge_task: MergeTask,
+        merge_source: MergeSource,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         let merge_scratch_directory = temp_dir::Builder::default()
@@ -73,13 +74,13 @@ impl Handler<MergeTask> for MergeSplitDownloader {
             .map_err(|error| anyhow::anyhow!(error))?;
         let tantivy_dirs = self
             .download_splits(
-                merge_task.splits_as_slice(),
+                merge_source.as_operation().splits.as_slice(),
                 downloaded_splits_directory.path(),
                 ctx,
             )
             .await?;
         let msg = MergeScratch {
-            merge_task,
+            merge_source,
             merge_scratch_directory,
             downloaded_splits_directory,
             tantivy_dirs,
@@ -96,32 +97,30 @@ impl MergeSplitDownloader {
         download_directory: &Path,
         ctx: &ActorContext<Self>,
     ) -> Result<Vec<Box<dyn Directory>>, quickwit_actors::ActorExitStatus> {
-        // we download all of the split files in the scratch directory.
-        let mut tantivy_dirs = Vec::new();
-        for split in splits {
-            if ctx.kill_switch().is_dead() {
-                debug!(
-                    split_id = %split.split_id(),
-                    "Kill switch was activated. Cancelling download."
-                );
-                return Err(ActorExitStatus::Killed);
-            }
-            let io_controls = self
-                .io_controls
-                .clone()
-                .set_progress(ctx.progress().clone())
-                .set_kill_switch(ctx.kill_switch().clone());
-            let _protect_guard = ctx.protect_zone();
-            let tantivy_dir = self
-                .split_store
-                .fetch_and_open_split(split.split_id().clone(), download_directory, &io_controls)
-                .await
-                .map_err(|error| {
-                    let split_id = split.split_id();
-                    anyhow::anyhow!(error).context(format!("failed to download split `{split_id}`"))
-                })?;
-            tantivy_dirs.push(tantivy_dir);
+        if ctx.kill_switch().is_dead() {
+            debug!("kill switch was activated, cancelling download");
+            return Err(ActorExitStatus::Killed);
         }
+        let io_controls = self
+            .io_controls
+            .clone()
+            .set_progress(ctx.progress().clone())
+            .set_kill_switch(ctx.kill_switch().clone());
+        let _protect_guard = ctx.protect_zone();
+        let download_futures = splits.iter().map(|split| {
+            let io_controls = io_controls.clone();
+            async move {
+                self.split_store
+                    .fetch_and_open_split(
+                        split.split_id().clone(),
+                        download_directory,
+                        &io_controls,
+                    )
+                    .await
+                    .with_context(|| format!("failed to download split `{}`", split.split_id()))
+            }
+        });
+        let tantivy_dirs = futures::future::try_join_all(download_futures).await?;
         Ok(tantivy_dirs)
     }
 }
@@ -137,7 +136,7 @@ mod tests {
     use quickwit_storage::{PutPayload, RamStorageBuilder, SplitPayloadBuilder};
 
     use super::*;
-    use crate::merge_policy::MergeOperation;
+    use crate::merge_policy::{MergeOperation, MergeTask};
 
     #[tokio::test]
     async fn test_merge_split_downloader() -> anyhow::Result<()> {
@@ -177,7 +176,7 @@ mod tests {
         let merge_operation: MergeOperation = MergeOperation::new_merge_operation(splits_to_merge);
         let merge_task = MergeTask::from_merge_operation_for_test(merge_operation);
         merge_split_downloader_mailbox
-            .send_message(merge_task)
+            .send_message(MergeSource::Task(merge_task))
             .await?;
         merge_split_downloader_handler
             .process_pending_and_observe()
@@ -190,8 +189,8 @@ mod tests {
             .unwrap()
             .downcast::<MergeScratch>()
             .unwrap();
-        assert_eq!(merge_scratch.merge_task.splits_as_slice().len(), 10);
-        for split in merge_scratch.merge_task.splits_as_slice() {
+        assert_eq!(merge_scratch.merge_source.as_operation().splits.len(), 10);
+        for split in &merge_scratch.merge_source.as_operation().splits {
             let split_filename = split_file(split.split_id());
             let split_filepath = merge_scratch
                 .downloaded_splits_directory

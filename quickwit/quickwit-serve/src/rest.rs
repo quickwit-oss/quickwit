@@ -988,6 +988,7 @@ mod tests {
             _report_splits_subscription_handle_opt: None,
             _local_shards_update_listener_handle_opt: None,
             cluster,
+            compaction_service_client_opt: None,
             control_plane_server_opt: None,
             control_plane_client,
             indexing_service_opt: None,
@@ -1004,6 +1005,7 @@ mod tests {
             node_config: Arc::new(node_config.clone()),
             search_service: Arc::new(MockSearchService::new()),
             jaeger_service_opt: None,
+            _compactor_supervisor_opt: None,
             env_filter_reload_fn: crate::do_nothing_env_filter_reload_fn(),
             #[cfg(feature = "datafusion")]
             datafusion_session_builder: None,
