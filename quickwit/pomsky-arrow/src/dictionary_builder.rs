@@ -47,13 +47,7 @@ impl DeltaDictionaryBuilder {
         column_ordinals: &[Option<u64>],
         tantivy_dict: &Dictionary,
     ) -> Result<UInt32Array> {
-        let mut unseen_ordinals: Vec<u64> = if self.last_segment_ord != segment_ord {
-            // The segment changed, so we have to clear our ordinal to index map and can consider
-            // all ordinals as unseen
-            self.ordinal_index_lookup.clear();
-            self.last_segment_ord = segment_ord;
-            column_ordinals.iter().flatten().copied().collect()
-        } else {
+        let mut unseen_ordinals: Vec<u64> = if self.last_segment_ord == segment_ord {
             // The segment is the same, so we can filter out any ordinals we've already seen to
             // avoid having to read them from the dictionary
             column_ordinals
@@ -62,6 +56,12 @@ impl DeltaDictionaryBuilder {
                 .filter(|column_ordinal| !self.ordinal_index_lookup.contains_key(column_ordinal))
                 .copied()
                 .collect()
+        } else {
+            // The segment changed, so we have to clear our ordinal to index map and can consider
+            // all ordinals as unseen
+            self.ordinal_index_lookup.clear();
+            self.last_segment_ord = segment_ord;
+            column_ordinals.iter().flatten().copied().collect()
         };
 
         // Remove any duplicates and sort the ordinals so we can efficiently read them from the
@@ -169,5 +169,159 @@ impl DeltaDictionaryBuilder {
         let new_array = Arc::new(self.arrow_values_builder.finish_cloned());
         self.cached_values_array = Some(new_array.clone());
         new_array
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use arrow::array::{Array, UInt32Array};
+    use arrow::datatypes::DataType;
+    use tantivy::columnar::StrColumn;
+    use tantivy::schema::{FAST, SchemaBuilder, TEXT};
+    use tantivy::{Index, IndexWriter, TantivyDocument};
+
+    use super::DictionaryBuilders;
+
+    fn build_str_column(values: &[&str]) -> StrColumn {
+        let mut schema_builder = SchemaBuilder::new();
+        let field = schema_builder.add_text_field("field", FAST | TEXT);
+        let index = Index::create_in_ram(schema_builder.build());
+        let mut writer: IndexWriter = index.writer_with_num_threads(1, 15_000_000).unwrap();
+        for value in values {
+            let mut doc = TantivyDocument::default();
+            doc.add_text(field, value);
+            writer.add_document(doc).unwrap();
+        }
+        writer.commit().unwrap();
+
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+        let segment_reader = &searcher.segment_readers()[0];
+        segment_reader.fast_fields().str("field").unwrap().unwrap()
+    }
+
+    fn ordinals(str_column: &StrColumn, doc_ids: &[u32]) -> Vec<Option<u64>> {
+        let mut ordinals = vec![None; doc_ids.len()];
+        str_column.ords().first_vals(doc_ids, &mut ordinals);
+        ordinals
+    }
+
+    fn assert_decoded_values(
+        indices: &UInt32Array,
+        values: &arrow::array::StringArray,
+        expected: &[Option<&str>],
+    ) {
+        assert_eq!(indices.len(), expected.len());
+        for (row_ord, expected_value) in expected.iter().enumerate() {
+            match expected_value {
+                Some(expected_value) => {
+                    assert!(!indices.is_null(row_ord));
+                    let value_index = indices.value(row_ord) as usize;
+                    assert_eq!(values.value(value_index), *expected_value);
+                }
+                None => assert!(indices.is_null(row_ord)),
+            }
+        }
+    }
+
+    fn dictionary_values(values: &arrow::array::StringArray) -> Vec<&str> {
+        (0..values.len())
+            .map(|row_ord| values.value(row_ord))
+            .collect()
+    }
+
+    #[test]
+    fn only_encodes_used_values_in_dictionary() {
+        let str_column = build_str_column(&["alpha", "beta", "gamma"]);
+        let input_ordinals = ordinals(&str_column, &[0, 2]);
+
+        let mut dictionary_builders = DictionaryBuilders::default();
+        let dictionary_builder = dictionary_builders.get("field", &DataType::Utf8);
+        let indices = dictionary_builder
+            .encode(0, &input_ordinals, str_column.dictionary())
+            .unwrap();
+        let values = dictionary_builder.build_values_array();
+
+        assert_decoded_values(&indices, &values, &[Some("alpha"), Some("gamma")]);
+        assert_eq!(dictionary_values(&values), ["alpha", "gamma"]);
+    }
+
+    #[test]
+    fn reuses_dictionary_entries_for_repeated_ordinals_in_same_segment() {
+        let str_column = build_str_column(&["alpha", "beta", "gamma"]);
+        let first_input_ordinals = ordinals(&str_column, &[0, 1]);
+        let second_input_ordinals = ordinals(&str_column, &[2, 1]);
+
+        let mut dictionary_builders = DictionaryBuilders::default();
+        let dictionary_builder = dictionary_builders.get("field", &DataType::Utf8);
+        let first_indices = dictionary_builder
+            .encode(0, &first_input_ordinals, str_column.dictionary())
+            .unwrap();
+        let values = dictionary_builder.build_values_array();
+        assert_eq!(dictionary_values(&values), ["alpha", "beta"]);
+
+        let second_indices = dictionary_builder
+            .encode(0, &second_input_ordinals, str_column.dictionary())
+            .unwrap();
+        let values = dictionary_builder.build_values_array();
+
+        assert_decoded_values(&first_indices, &values, &[Some("alpha"), Some("beta")]);
+        assert_decoded_values(&second_indices, &values, &[Some("gamma"), Some("beta")]);
+        assert_eq!(first_indices.value(1), second_indices.value(1));
+        assert_eq!(dictionary_values(&values), ["alpha", "beta", "gamma"]);
+    }
+
+    #[test]
+    fn compare_entries_by_value_from_different_segments() {
+        let first_str_column = build_str_column(&["alpha", "gamma", "epsilon"]);
+        let second_str_column = build_str_column(&["alpha", "beta", "pi"]);
+        let first_input_ordinals = ordinals(&first_str_column, &[0, 2]);
+        let second_input_ordinals = ordinals(&second_str_column, &[0, 2]);
+
+        let mut dictionary_builders = DictionaryBuilders::default();
+        let dictionary_builder = dictionary_builders.get("field", &DataType::Utf8);
+        let first_indices = dictionary_builder
+            .encode(0, &first_input_ordinals, first_str_column.dictionary())
+            .unwrap();
+        let values = dictionary_builder.build_values_array();
+        assert_eq!(dictionary_values(&values), ["alpha", "epsilon"]);
+
+        let second_indices = dictionary_builder
+            .encode(1, &second_input_ordinals, second_str_column.dictionary())
+            .unwrap();
+        let values = dictionary_builder.build_values_array();
+
+        assert_decoded_values(&first_indices, &values, &[Some("alpha"), Some("epsilon")]);
+        assert_decoded_values(&second_indices, &values, &[Some("alpha"), Some("pi")]);
+        assert_eq!(first_indices.value(0), second_indices.value(0));
+        assert_eq!(dictionary_values(&values), ["alpha", "epsilon", "pi"]);
+    }
+
+    #[test]
+    fn reuse_existing_constructed_dictionary_where_possible() {
+        let first_str_column = build_str_column(&["alpha", "beta"]);
+        let second_str_column = build_str_column(&["beta", "alpha"]);
+        let first_input_ordinals = ordinals(&first_str_column, &[0, 1]);
+        let second_input_ordinals = ordinals(&second_str_column, &[0, 1]);
+
+        let mut dictionary_builders = DictionaryBuilders::default();
+        let dictionary_builder = dictionary_builders.get("field", &DataType::Utf8);
+        dictionary_builder
+            .encode(0, &first_input_ordinals, first_str_column.dictionary())
+            .unwrap();
+        let first_values = dictionary_builder.build_values_array();
+        let second_indices = dictionary_builder
+            .encode(1, &second_input_ordinals, second_str_column.dictionary())
+            .unwrap();
+        let second_values = dictionary_builder.build_values_array();
+
+        assert_decoded_values(
+            &second_indices,
+            &second_values,
+            &[Some("beta"), Some("alpha")],
+        );
+        assert!(Arc::ptr_eq(&first_values, &second_values));
     }
 }
