@@ -53,3 +53,13 @@ You can then use the following commands to apply/revert your postgresql migratio
 sqlx migrate run  --database-url postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev --source migrations/postgresql
 sqlx migrate revert  --database-url postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev --source migrations/postgresql
 ```
+
+## Deferred migrations
+
+`migrations/postgresql_deferred` holds long-running, degrade-gracefully migrations (e.g. `CREATE INDEX CONCURRENTLY`).
+They run in a background task after readiness, elected across pods by a Postgres advisory lock, and share the
+`_sqlx_migrations` table with the required track, so version numbers must be globally unique across both dirs and each
+migration must be idempotent. See `migrations/postgresql_deferred/README.md` for authoring rules.
+```
+sqlx migrate run  --database-url postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev --source migrations/postgresql_deferred
+```

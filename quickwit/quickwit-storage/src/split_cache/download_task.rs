@@ -21,7 +21,7 @@ use quickwit_common::split_file;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::split_cache::split_table::{CandidateSplit, DownloadOpportunity};
-use crate::{SplitCache, StorageResolver};
+use crate::{SearchSplitCache, StorageResolver};
 
 async fn download_split(
     root_path: &Path,
@@ -44,7 +44,7 @@ async fn download_split(
 
 async fn perform_eviction_and_download(
     download_opportunity: DownloadOpportunity,
-    split_cache: Arc<SplitCache>,
+    split_cache: Arc<SearchSplitCache>,
     storage_resolver: StorageResolver,
     _download_permit: OwnedSemaphorePermit,
 ) -> anyhow::Result<()> {
@@ -67,7 +67,7 @@ async fn perform_eviction_and_download(
 }
 
 pub(crate) fn spawn_download_task(
-    split_cache: Arc<SplitCache>,
+    split_cache: Arc<SearchSplitCache>,
     storage_resolver: StorageResolver,
     num_concurrent_downloads: NonZeroU32,
 ) {

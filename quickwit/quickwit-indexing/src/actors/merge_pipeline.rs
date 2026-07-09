@@ -316,6 +316,7 @@ impl MergePipeline {
             self.params.doc_mapper.clone(),
             merge_executor_io_controls,
             merge_packager_mailbox,
+            None,
         );
         let (merge_executor_mailbox, merge_executor_handle) = ctx
             .spawn_actor()

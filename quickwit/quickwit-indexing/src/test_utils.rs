@@ -40,6 +40,7 @@ use serde_json::Value as JsonValue;
 
 use crate::actors::IndexingService;
 use crate::models::{DetachIndexingPipeline, IndexingStatistics, SpawnPipeline};
+use crate::split_store::IndexingSplitCache;
 
 /// Creates a Test environment.
 ///
@@ -123,10 +124,11 @@ impl TestSandbox {
             cluster,
             metastore.clone(),
             Some(ingest_api_service),
-            merge_scheduler_mailbox,
+            Some(merge_scheduler_mailbox),
             IngesterPool::default(),
             storage_resolver.clone(),
             EventBroker::default(),
+            Arc::new(IndexingSplitCache::no_caching()),
         )
         .await?;
         let (indexing_service, _indexing_service_handle) =

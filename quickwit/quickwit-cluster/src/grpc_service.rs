@@ -123,7 +123,9 @@ impl ClusterService for Cluster {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::member::{ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY, READINESS_KEY};
+    use crate::member::{
+        ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY, READINESS_KEY, STANDALONE_COMPACTORS_KEY,
+    };
     use crate::{ChitchatTransport, create_cluster_for_test};
 
     #[tokio::test]
@@ -161,7 +163,7 @@ mod tests {
             .key_values
             .sort_unstable_by(|left, right| left.key.cmp(&right.key));
 
-        assert_eq!(node_state.key_values.len(), 4);
+        assert_eq!(node_state.key_values.len(), 5);
         assert_eq!(node_state.key_values[0].key, ENABLED_SERVICES_KEY);
         assert_eq!(node_state.key_values[0].value, "indexer");
 
@@ -172,5 +174,8 @@ mod tests {
 
         assert_eq!(node_state.key_values[3].key, READINESS_KEY);
         assert_eq!(node_state.key_values[3].value, "READY");
+
+        assert_eq!(node_state.key_values[4].key, STANDALONE_COMPACTORS_KEY);
+        assert_eq!(node_state.key_values[4].value, "false");
     }
 }
