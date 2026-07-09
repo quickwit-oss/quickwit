@@ -23,6 +23,7 @@ aws-smithy-types = { workspace = true }
 futures = { workspace = true }
 mini-moka = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
 
 quickwit-common = { workspace = true }
 
