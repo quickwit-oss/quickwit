@@ -397,8 +397,8 @@ impl IndexingScheduler {
             last_applied_plan.indexing_tasks_per_indexer(),
         );
         if !indexing_plans_diff.has_same_nodes() {
-            // Scheduling a new plan supersedes any pending reapply loop, so reset the counter.
-            self.state.num_consecutive_reapplies = 0;
+            // `rebuild_plan` installs a new plan, which resets the reapply counter in
+            // `apply_physical_indexing_plan`.
             info!(plans_diff=?indexing_plans_diff, "running plan and last applied plan node IDs differ: schedule an indexing plan");
             self.rebuild_plan(model);
         } else if !indexing_plans_diff.has_same_tasks() {
@@ -457,6 +457,15 @@ impl IndexingScheduler {
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
         APPLY_PLAN_TOTAL.inc();
+        // Installing a genuinely new plan (rebuild, rebalance, startup) resets the reapply counter,
+        // regardless of which path scheduled it. A reapply of the identical plan (from
+        // `control_running_plan`) leaves the counter untouched so it keeps growing while the
+        // cluster fails to converge.
+        let reapplies_same_plan =
+            self.state.last_applied_physical_plan.as_ref() == Some(&new_physical_plan);
+        if !reapplies_same_plan {
+            self.state.num_consecutive_reapplies = 0;
+        }
         // Retiring and decommissioning indexers still receive the plan so they can gracefully shut
         // down dropped pipelines; other states (initializing, decommissioned, failed) are skipped.
         for indexer in self.indexer_pool.values().into_iter().filter(|indexer| {
@@ -1522,6 +1531,37 @@ mod tests {
         indexer_pool.insert(converged_indexer.node_id.clone(), converged_indexer);
         scheduler.state.last_applied_plan_timestamp = None;
         scheduler.control_running_plan(&model);
+        assert_eq!(scheduler.state.num_consecutive_reapplies, 0);
+    }
+
+    // The reapply counter must be reset whenever a genuinely new plan is installed, no matter which
+    // path scheduled it (control loop, `RebuildPlan` handler, rebalance). Installing a different
+    // plan resets it; reapplying the identical plan does not. An empty pool keeps
+    // `apply_physical_indexing_plan` from issuing RPCs.
+    #[tokio::test]
+    async fn test_apply_physical_indexing_plan_resets_reapplies_for_new_plan_only() {
+        let indexer_pool = IndexerPool::default();
+        let mut scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool,
+        );
+
+        let plan_a = PhysicalIndexingPlan::with_indexer_ids(&["indexer-1".to_string()]);
+        scheduler.apply_physical_indexing_plan(plan_a.clone(), None);
+        // Simulate a loop that has been stuck reapplying `plan_a` for a while.
+        scheduler.state.num_consecutive_reapplies = 7;
+
+        // Reapplying the identical plan must not reset the counter.
+        scheduler.apply_physical_indexing_plan(plan_a, None);
+        assert_eq!(scheduler.state.num_consecutive_reapplies, 7);
+
+        // Installing a different plan (as rebuild/rebalance would) resets the counter.
+        let plan_b = PhysicalIndexingPlan::with_indexer_ids(&[
+            "indexer-1".to_string(),
+            "indexer-2".to_string(),
+        ]);
+        scheduler.apply_physical_indexing_plan(plan_b, None);
         assert_eq!(scheduler.state.num_consecutive_reapplies, 0);
     }
 
