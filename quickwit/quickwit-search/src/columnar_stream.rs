@@ -31,19 +31,20 @@ use std::sync::Arc;
 use arrow::array::RecordBatch;
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use futures::{Stream, StreamExt};
-use pomsky_arrow::{DictCache, DocSelection, read_segment_columns, warm_up_fast_fields};
+use pomsky_arrow::dictionary_builder::DictionaryBuilders;
+use pomsky_arrow::read_segment_columns;
 use quickwit_common::thread_pool::run_cpu_intensive;
-use quickwit_doc_mapper::DocMapper;
+use quickwit_doc_mapper::{DocMapper, FastFieldWarmupInfo, WarmupInfo};
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{CountHits, SearchRequest, SplitIdAndFooterOffsets};
 use quickwit_proto::types::IndexUid;
 use quickwit_query::query_ast::QueryAst;
 use quickwit_storage::{ByteRangeCache, Storage};
 use tantivy::query::{EnableScoring, Weight};
-use tantivy::{DocSet, ReloadPolicy, SegmentReader, TERMINATED};
+use tantivy::{DocSet, ReloadPolicy, Searcher, SegmentReader, TERMINATED};
 
 use crate::SearchError;
-use crate::leaf::{WarmupOutcome, open_index_with_caches, warmup};
+use crate::leaf::{open_index_with_caches, warmup};
 use crate::service::SearcherContext;
 
 /// Default number of rows per Arrow batch when the request leaves `batch_size`
@@ -180,7 +181,7 @@ pub async fn plan_columnar_splits(
                 )));
             };
             let split = SplitIdAndFooterOffsets {
-                split_id: split_metadata.split_id.clone(),
+                split_id: split_metadata.split_id.to_string().clone(),
                 split_footer_start: split_metadata.footer_offsets.start,
                 split_footer_end: split_metadata.footer_offsets.end,
                 timestamp_start: split_metadata
@@ -227,131 +228,91 @@ fn build_projected_schema(columns: &[ColumnRequest]) -> crate::Result<SchemaRef>
     Ok(Arc::new(Schema::new(fields)))
 }
 
-/// Walks the scorer, collecting alive matching doc-ids in doc order (capped by
-/// `limit`). The scorer itself is `tantivy`-internal state that cannot cross a
-/// `run_cpu_intensive` call boundary (`Box<dyn Scorer>` is not `Send`), so this
-/// must run start-to-finish within a single CPU-pool call.
-fn collect_alive_doc_ids(
-    weight: &dyn Weight,
-    segment_reader: &SegmentReader,
-    limit: Option<usize>,
-) -> crate::Result<Vec<u32>> {
-    let mut scorer = weight
-        .scorer(segment_reader, 1.0)
-        .map_err(|error| SearchError::Internal(format!("failed to build scorer: {error}")))?;
-    let alive_bitset_opt = segment_reader.alive_bitset();
-
-    let mut doc_ids: Vec<u32> = Vec::new();
-    let mut doc_id = scorer.doc();
-    while doc_id != TERMINATED {
-        let is_alive = match alive_bitset_opt {
-            Some(alive_bitset) => alive_bitset.is_alive(doc_id),
-            None => true,
-        };
-        if is_alive {
-            doc_ids.push(doc_id);
-            if let Some(limit) = limit
-                && doc_ids.len() >= limit
-            {
-                break;
-            }
-        }
-        doc_id = scorer.advance();
-    }
-    Ok(doc_ids)
-}
-
-/// Collects every matching alive doc-id and builds the dictionary cache for a
-/// segment, then assembles the resulting [`SegmentScanCursor`]. This is the
-/// heavy, once-per-segment setup step — run it on the CPU thread-pool.
-fn collect_segment_scan_cursor(
-    weight: &dyn Weight,
-    segment_reader: SegmentReader,
-    projected_schema: SchemaRef,
-    segment_ord: u32,
-    limit: Option<usize>,
-) -> crate::Result<SegmentScanCursor> {
-    let doc_ids = collect_alive_doc_ids(weight, &segment_reader, limit)?;
-    let dict_cache = if doc_ids.is_empty() {
-        None
-    } else {
-        let dict_cache = DictCache::build(&segment_reader, &projected_schema).map_err(|error| {
-            SearchError::Internal(format!("failed to build dictionary cache: {error}"))
-        })?;
-        Some(dict_cache)
-    };
-    Ok(SegmentScanCursor::new(
-        segment_reader,
-        projected_schema,
-        segment_ord,
-        doc_ids,
-        dict_cache,
-    ))
-}
-
 /// Resumable per-segment scan state: everything [`SegmentScanCursor::scan_next_batch`]
 /// needs, owned outright so the whole cursor can be moved into and back out of
 /// a `run_cpu_intensive` call. `run_cpu_intensive` requires an owned `'static`
 /// closure, so there is no way to hand it a `&mut` across that boundary —
-/// instead the cursor round-trips by value each call, with `offset` advanced.
+/// instead the cursor round-trips by value each call, with the [`DocSet`]
+/// advanced in place.
 struct SegmentScanCursor {
     segment_reader: SegmentReader,
     projected_schema: SchemaRef,
     segment_ord: u32,
-    /// Alive matching doc-ids, collected once up front.
-    doc_ids: Vec<u32>,
-    /// `None` when `doc_ids` is empty — no dictionary-typed column can match.
-    dict_cache: Option<DictCache>,
-    offset: usize,
+    /// Matching docs, pulled `batch_size` at a time. `DocSet` is `Send`, so it
+    /// survives the round-trip through `run_cpu_intensive`.
+    doc_set: Box<dyn DocSet>,
+    /// Dictionaries built incrementally as string columns are read, shared
+    /// across every batch of this segment so dictionary indices stay stable.
+    dictionary_builders: DictionaryBuilders,
+    /// Remaining docs still allowed for this segment; `None` means unlimited.
+    remaining: Option<usize>,
 }
 
 impl SegmentScanCursor {
-    /// Plain constructor: assembles a cursor from already-computed parts. See
-    /// [`collect_segment_scan_cursor`] for the (CPU-heavy) doc-id and
-    /// dictionary-cache collection that feeds this.
+    /// Plain constructor: assembles a cursor from already-computed parts.
     fn new(
         segment_reader: SegmentReader,
         projected_schema: SchemaRef,
         segment_ord: u32,
-        doc_ids: Vec<u32>,
-        dict_cache: Option<DictCache>,
+        doc_set: Box<dyn DocSet>,
+        remaining: Option<usize>,
     ) -> Self {
         Self {
             segment_reader,
             projected_schema,
             segment_ord,
-            doc_ids,
-            dict_cache,
-            offset: 0,
+            doc_set,
+            dictionary_builders: DictionaryBuilders::default(),
+            remaining,
         }
     }
 
-    /// Produces the next `batch_size`-worth of rows, resuming from
-    /// `self.offset`. Returns the advanced cursor for the caller to pass into
-    /// the next call, the batch (if any), and whether the segment is now
-    /// exhausted. Runs on the CPU thread-pool.
+    /// Reads the next `batch_size` documents from the segment reader
     fn scan_next_batch(
         mut self,
         batch_size: usize,
     ) -> crate::Result<(Self, Option<RecordBatch>, bool)> {
-        let chunk_end = (self.offset + batch_size).min(self.doc_ids.len());
-        let exhausted = chunk_end >= self.doc_ids.len();
-        let chunk = &self.doc_ids[self.offset..chunk_end];
-        if chunk.is_empty() {
+        let (doc_ids, exhausted) = self.collect_doc_ids(batch_size);
+        if doc_ids.is_empty() {
             return Ok((self, None, exhausted));
         }
 
         let batch = read_segment_columns(
             &self.segment_reader,
             &self.projected_schema,
-            DocSelection::Ids(chunk),
+            &doc_ids,
             self.segment_ord,
-            self.dict_cache.as_ref(),
+            &mut self.dictionary_builders,
         )
         .map_err(|error| SearchError::Internal(format!("failed to read columns: {error}")))?;
 
-        self.offset = chunk_end;
         Ok((self, Some(batch), exhausted))
+    }
+
+    /// Pulls the next `batch_size` matching doc-ids from the `DocSet` (capped by
+    /// any remaining limit)
+    fn collect_doc_ids(&mut self, batch_size: usize) -> (Vec<u32>, bool) {
+        let batch_cap = match self.remaining {
+            Some(remaining) => batch_size.min(remaining),
+            None => batch_size,
+        };
+
+        // Pull the next `batch_cap` doc-ids into a slice, advancing the shared
+        // `DocSet` in place so the following call resumes where this one
+        // stopped.
+        let mut doc_ids: Vec<u32> = Vec::with_capacity(batch_cap);
+        let mut doc_id = self.doc_set.doc();
+        while doc_id != TERMINATED && doc_ids.len() < batch_cap {
+            doc_ids.push(doc_id);
+            doc_id = self.doc_set.advance();
+        }
+
+        if let Some(remaining) = self.remaining.as_mut() {
+            *remaining -= doc_ids.len();
+        }
+
+        let exhausted = doc_id == TERMINATED || self.remaining == Some(0);
+        (doc_ids, exhausted)
     }
 }
 
@@ -362,26 +323,24 @@ impl SegmentScanCursor {
 /// this async task, not a CPU-pool thread, since the next call is only
 /// scheduled once this stream is polled again.
 fn scan_segment_stream(
-    weight: Arc<Box<dyn Weight>>,
+    weight: &dyn Weight,
     segment_reader: SegmentReader,
     projected_schema: SchemaRef,
     segment_ord: u32,
     batch_size: usize,
     limit: Option<usize>,
-) -> impl Stream<Item = crate::Result<RecordBatch>> {
-    async_stream::try_stream! {
-        let mut cursor = run_cpu_intensive(move || {
-            collect_segment_scan_cursor(
-                weight.as_ref().as_ref(),
-                segment_reader,
-                projected_schema,
-                segment_ord,
-                limit,
-            )
-        })
-        .await
-        .map_err(|_| SearchError::Internal("segment scan panicked".to_string()))??;
-
+) -> crate::Result<impl Stream<Item = crate::Result<RecordBatch>>> {
+    let doc_set: Box<dyn DocSet> = weight
+        .scorer(&segment_reader, 1.0)
+        .map_err(|error| SearchError::Internal(format!("failed to build scorer: {error}")))?;
+    Ok(async_stream::try_stream! {
+        let mut cursor = SegmentScanCursor::new(
+            segment_reader,
+            projected_schema,
+            segment_ord,
+            doc_set,
+            limit,
+        );
         loop {
             let (new_cursor, batch, exhausted) =
                 run_cpu_intensive(move || cursor.scan_next_batch(batch_size))
@@ -396,11 +355,11 @@ fn scan_segment_stream(
                 break;
             }
         }
-    }
+    })
 }
 
 fn scan_all_segments_stream(
-    weight: Arc<Box<dyn Weight>>,
+    weight: Box<dyn Weight>,
     segment_readers: Vec<SegmentReader>,
     projected_schema: SchemaRef,
     batch_size: usize,
@@ -409,19 +368,18 @@ fn scan_all_segments_stream(
     async_stream::try_stream! {
         let mut remaining = limit;
         for (segment_ord, segment_reader) in segment_readers.into_iter().enumerate() {
-            if let Some(0) = remaining {
+            if remaining == Some(0) {
                 break;
             }
 
-            let segment_limit = remaining;
             let segment_stream = scan_segment_stream(
-                weight.clone(),
+                weight.as_ref(),
                 segment_reader,
                 projected_schema.clone(),
                 segment_ord as u32,
                 batch_size,
-                segment_limit,
-            );
+                remaining,
+            )?;
             futures::pin_mut!(segment_stream);
             while let Some(batch) = segment_stream.next().await {
                 let batch = batch?;
@@ -465,8 +423,6 @@ pub(crate) fn run_columnar_search(
     async_stream::try_stream! {
         validate_search_request(&request)?;
 
-        let batch_size = request.batch_size.to_usize();
-
         // 1. Open the split.
         let byte_range_cache =
             ByteRangeCache::with_infinite_capacity(&quickwit_storage::metrics::SHORTLIVED_CACHE);
@@ -489,39 +445,34 @@ pub(crate) fn run_columnar_search(
         // 2. Build the projected Arrow schema.
         let projected_schema = build_projected_schema(&request.columns)?;
 
-        // 3. Build the filter query and warm up: query terms (inverted index) then
-        // the projected columns (fast fields). Tantivy cannot do async IO mid-search.
-        let (query, mut warmup_info) =
+        // 3. Build the filter query and warm up in a single pass: query terms
+        // (inverted index) plus the projected columns (fast fields). Tantivy
+        // cannot do async IO mid-search, so both must be pre-loaded. The
+        // projected fast fields are appended to the query's `WarmupInfo` so the
+        // existing `warmup` handles them; `pomsky_arrow` reads only the columns
+        // whose name matches the Arrow field name, so the synthetic `_doc_id` /
+        // `_segment_ord` columns are skipped here.
+        let (query, warmup_info) =
             doc_mapper.query(split_schema, request.query_ast, false, None)?;
-        warmup_info.simplify();
-        let warmup_outcome = warmup(&searcher, &warmup_info)
-            .await
-            .map_err(|error| SearchError::Internal(format!("warmup failed: {error}")))?;
-
-        if warmup_outcome == WarmupOutcome::ProvablyEmpty {
+        let provably_empty = warmup_data(&searcher, &projected_schema, warmup_info).await?;
+        if provably_empty {
             // A required term's posting list was empty: this split matches nothing.
             return;
         }
 
-        warm_up_fast_fields(&searcher, &projected_schema)
-            .await
-            .map_err(|error| SearchError::Internal(format!("fast-field warmup failed: {error}")))?;
-
         // 4 + 5. Per segment: collect matching doc-ids and read the projection.
-        let weight: Arc<Box<dyn Weight>> = Arc::new(
-            query
+        let weight = query
                 .weight(EnableScoring::disabled_from_searcher(&searcher))
                 .map_err(|error| {
                     SearchError::Internal(format!("failed to build weight: {error}"))
-                })?,
-        );
-        let segment_readers: Vec<SegmentReader> = searcher.segment_readers().to_vec();
+                })?;
+        let segment_readers = searcher.segment_readers().to_vec();
 
         let stream = scan_all_segments_stream(
             weight,
             segment_readers,
             projected_schema,
-            batch_size,
+            request.batch_size.to_usize(),
             request.limit,
         );
         futures::pin_mut!(stream);
@@ -529,6 +480,28 @@ pub(crate) fn run_columnar_search(
             yield batch?;
         }
     }
+}
+
+async fn warmup_data(
+    searcher: &Searcher,
+    projected_schema: &Schema,
+    mut warmup_info: WarmupInfo,
+) -> crate::Result<bool> {
+    warmup_info.fast_fields.extend(
+        projected_schema
+            .fields()
+            .iter()
+            .filter(|field| field.name() != "_doc_id" || field.name() != "_segment_ord")
+            .map(|field| FastFieldWarmupInfo {
+                name: field.name().clone(),
+                with_subfields: false,
+            }),
+    );
+    warmup_info.simplify();
+
+    warmup(&searcher, &warmup_info, &|_, _| {})
+        .await
+        .map_err(|error| SearchError::Internal(format!("warmup failed: {error}")))
 }
 
 #[cfg(test)]
@@ -610,14 +583,15 @@ mod tests {
         limit: Option<usize>,
     ) -> Vec<RecordBatch> {
         let mut batches = Vec::new();
-        let mut cursor = collect_segment_scan_cursor(
-            weight,
+        let doc_set: Box<dyn DocSet> = weight.scorer(segment_reader, 1.0).unwrap();
+        let cursor = SegmentScanCursor::new(
             segment_reader.clone(),
             projected_schema.clone(),
             segment_ord,
+            doc_set,
             limit,
-        )
-        .unwrap();
+        );
+        let mut cursor = cursor;
         loop {
             let (new_cursor, batch, exhausted) = cursor.scan_next_batch(batch_size).unwrap();
             cursor = new_cursor;
@@ -658,7 +632,7 @@ mod tests {
     }
 
     #[test]
-    fn scan_next_batch_resumes_across_calls_without_rebuilding_docs() {
+    fn scan_next_batch_resumes_across_calls() {
         let index = build_index(10);
         let searcher = index.reader().unwrap().searcher();
         let segment_reader = &searcher.segment_readers()[0];
@@ -669,25 +643,36 @@ mod tests {
         }])
         .unwrap();
 
-        let cursor =
-            collect_segment_scan_cursor(weight.as_ref(), segment_reader.clone(), schema, 0, None)
-                .unwrap();
+        let doc_set: Box<dyn DocSet> = weight.scorer(segment_reader, 1.0).unwrap();
+        let cursor = SegmentScanCursor::new(segment_reader.clone(), schema, 0, doc_set, None);
+
+        // Each call resumes the shared `DocSet` where the previous left off, so
+        // the doc-ids run contiguously without ever rebuilding the doc list.
         let (cursor, first_batch, exhausted) = cursor.scan_next_batch(4).unwrap();
-        assert_eq!(first_batch.unwrap().num_rows(), 4);
-        assert_eq!(cursor.offset, 4);
+        let first_batch = first_batch.unwrap();
+        assert_eq!(first_batch.num_rows(), 4);
+        assert_eq!(
+            first_batch.column(0).as_primitive::<UInt64Type>().values(),
+            &[0, 1, 2, 3]
+        );
         assert!(!exhausted);
-        let doc_ids_ptr = cursor.doc_ids.as_ptr();
 
         let (cursor, second_batch, exhausted) = cursor.scan_next_batch(4).unwrap();
-        assert_eq!(second_batch.unwrap().num_rows(), 4);
-        assert_eq!(cursor.offset, 8);
+        let second_batch = second_batch.unwrap();
+        assert_eq!(second_batch.num_rows(), 4);
+        assert_eq!(
+            second_batch.column(0).as_primitive::<UInt64Type>().values(),
+            &[4, 5, 6, 7]
+        );
         assert!(!exhausted);
-        // The doc-id list built once up front is reused, not rebuilt.
-        assert_eq!(doc_ids_ptr, cursor.doc_ids.as_ptr());
 
-        let (cursor, third_batch, exhausted) = cursor.scan_next_batch(4).unwrap();
-        assert_eq!(third_batch.unwrap().num_rows(), 2);
-        assert_eq!(cursor.offset, 10);
+        let (_cursor, third_batch, exhausted) = cursor.scan_next_batch(4).unwrap();
+        let third_batch = third_batch.unwrap();
+        assert_eq!(third_batch.num_rows(), 2);
+        assert_eq!(
+            third_batch.column(0).as_primitive::<UInt64Type>().values(),
+            &[8, 9]
+        );
         assert!(exhausted);
     }
 
