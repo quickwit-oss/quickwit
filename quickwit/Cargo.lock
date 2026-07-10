@@ -8395,7 +8395,6 @@ dependencies = [
  "mini-moka",
  "quickwit-common",
  "tokio",
- "tracing",
 ]
 
 [[package]]

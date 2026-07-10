@@ -49,14 +49,14 @@ const DNS_REFRESH_COOLDOWN: Duration = Duration::from_secs(5);
 const DNS_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Maximum number of cached hostnames.
-/// In practise this cache should only a few entries to connect to s3's endpoints.
+/// In practise this cache should only contain a few entries to connect to s3's endpoints.
 const DNS_CACHE_SIZE: u64 = 1_024;
 
 // An instant expressed as duration elapsed from a reference time, expressed in millisecs.
 type IInstant = u64;
 
 fn now() -> IInstant {
-    static REFERENCE_TIME: LazyLock<Instant> = LazyLock::new(|| Instant::now());
+    static REFERENCE_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
     Instant::now().duration_since(*REFERENCE_TIME).as_millis() as u64
 }
 
