@@ -772,7 +772,7 @@ mod tests {
             "postgresql://username:password@host:port/db"
         );
         assert_eq!(
-            config.metastore_read_replica_uri.as_ref().unwrap().as_str(),
+            config.metastore_read_replica_uri.unwrap(),
             "postgresql://username:replica-password@replica-host:port/db"
         );
         assert_eq!(config.default_index_root_uri, "s3://quickwit-indexes");
