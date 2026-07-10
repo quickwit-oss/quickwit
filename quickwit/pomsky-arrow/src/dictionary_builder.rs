@@ -43,13 +43,10 @@ impl DeltaDictionaryBuilder {
     }
 
     pub fn build_values_array(&mut self) -> Arc<StringArray> {
-        match &self.cached_values_array {
-            Some(cached_values_array)
-                if self.arrow_values_builder.len() == cached_values_array.len() =>
-            {
-                return cached_values_array.clone();
-            }
-            _ => {}
+        if let Some(cached_values_array) = &self.cached_values_array
+            && cached_values_array.len() == self.arrow_values_builder.len()
+        {
+            return cached_values_array.clone();
         }
 
         let new_array = Arc::new(self.arrow_values_builder.finish_cloned());
