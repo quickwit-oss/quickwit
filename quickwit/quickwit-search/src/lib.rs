@@ -188,6 +188,7 @@ pub async fn list_all_splits(
 }
 
 /// Extract the list of relevant splits for a given request.
+#[tracing::instrument(skip_all, fields(num_indexes = index_uids.len()))]
 pub async fn list_relevant_splits(
     index_uids: Vec<IndexUid>,
     start_timestamp: Option<i64>,

@@ -28,7 +28,7 @@ use tantivy::schema::document::CompactDocValue;
 use tantivy::schema::{Document as DocumentTrait, Field, TantivyDocument, Value};
 use tantivy::snippet::SnippetGenerator;
 use tantivy::{ReloadPolicy, Score, Searcher, Term};
-use tracing::{Instrument, error};
+use tracing::{Instrument, error, instrument};
 
 use crate::leaf::open_index_with_caches;
 use crate::service::SearcherContext;
@@ -153,6 +153,7 @@ struct Document {
 }
 
 /// Fetching docs from a specific split.
+#[instrument(skip_all, fields(split_id = split.split_id, num_docs = global_doc_addrs.len()))]
 async fn fetch_docs_in_split(
     searcher_context: Arc<SearcherContext>,
     mut global_doc_addrs: Vec<GlobalDocAddress>,

@@ -80,16 +80,6 @@ pub fn extract_context(metadata: &MetadataMap) -> Context {
     global::get_text_map_propagator(|propagator| propagator.extract(&extractor))
 }
 
-/// Extracts a W3C trace context from incoming gRPC request metadata and
-/// installs it as the parent of the currently-active tracing span. Use this
-/// at the entry of a gRPC handler that is itself wrapped in a
-/// `#[tracing::instrument]` so the handler's span is stitched into the
-/// caller's trace.
-pub fn set_current_span_parent_from_metadata(metadata: &MetadataMap) {
-    let parent_context = extract_context(metadata);
-    let _ = Span::current().set_parent(parent_context);
-}
-
 /// Tonic interceptor that injects the active span's W3C trace context into
 /// the outgoing gRPC metadata. Drop-in replacement for the legacy
 /// `quickwit_proto::SpanContextInterceptor`.

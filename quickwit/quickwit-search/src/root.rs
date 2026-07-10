@@ -789,7 +789,7 @@ fn compute_root_resource_stats(
 
 /// If this method fails for some splits, a partial search response is returned, with the list of
 /// faulty splits in the failed_splits field.
-#[instrument(level = "debug", skip_all)]
+#[instrument(skip_all)]
 pub(crate) async fn search_partial_hits_phase(
     searcher_context: &SearcherContext,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
@@ -1249,6 +1249,7 @@ async fn refine_and_list_matches(
 }
 
 /// Fetches the list of splits and their metadata from the metastore
+#[instrument(skip_all)]
 async fn plan_splits_for_root_search(
     search_request: &mut SearchRequest,
     metastore: &mut MetastoreServiceClient,
