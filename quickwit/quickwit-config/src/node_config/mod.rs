@@ -30,6 +30,7 @@ use quickwit_common::shared_consts::{
 };
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
+use quickwit_proto::ingest::DocCompression;
 use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -714,6 +715,16 @@ pub struct IngestApiConfig {
     pub shard_scale_up_factor: f32,
     #[serde(default)]
     pub grpc_compression_algorithm: Option<CompressionAlgorithm>,
+    /// Compresses each ingested document individually in the router and keeps it compressed all
+    /// the way through the WAL to the indexer (decompressed only at index time). This reduces
+    /// router-to-ingester and ingester-to-indexer network traffic and packs more documents into
+    /// the WAL. Only `zstd` is supported. Defaults to no compression.
+    ///
+    /// Enabling this is a one-way step within a rollback window: once a binary writes compressed
+    /// records, only binaries able to decode them may read that WAL. Roll out the new binary
+    /// everywhere before enabling.
+    #[serde(default)]
+    pub records_compression_algorithm: Option<CompressionAlgorithm>,
 }
 
 impl Default for IngestApiConfig {
@@ -727,6 +738,7 @@ impl Default for IngestApiConfig {
             shard_burst_limit: DEFAULT_SHARD_BURST_LIMIT,
             shard_scale_up_factor: DEFAULT_SHARD_SCALE_UP_FACTOR,
             grpc_compression_algorithm: None,
+            records_compression_algorithm: None,
         }
     }
 }
@@ -762,6 +774,15 @@ impl IngestApiConfig {
                 CompressionAlgorithm::Gzip => CompressionEncoding::Gzip,
                 CompressionAlgorithm::Zstd => CompressionEncoding::Zstd,
             })
+    }
+
+    /// Codec applied to each document by the router. Only zstd is supported; `validate` rejects
+    /// any other value, so an unsupported algorithm never reaches this getter.
+    pub fn records_compression(&self) -> DocCompression {
+        match self.records_compression_algorithm {
+            Some(CompressionAlgorithm::Zstd) => DocCompression::Zstd,
+            _ => DocCompression::None,
+        }
     }
 
     fn validate(&self) -> anyhow::Result<()> {
@@ -801,6 +822,12 @@ impl IngestApiConfig {
             "shard_scale_up_factor ({}) must be greater than 1",
             self.shard_scale_up_factor,
         );
+        if let Some(algorithm) = &self.records_compression_algorithm {
+            ensure!(
+                matches!(algorithm, CompressionAlgorithm::Zstd),
+                "records_compression_algorithm only supports zstd, got `{algorithm:?}`"
+            );
+        }
         Ok(())
     }
 }
@@ -1032,6 +1059,32 @@ mod tests {
         let ingest_api_config: IngestApiConfig = serde_yaml::from_str("").unwrap();
         assert!(ingest_api_config.validate().is_ok());
         assert_eq!(ingest_api_config, IngestApiConfig::default());
+        assert_eq!(ingest_api_config.records_compression_algorithm, None);
+        assert_eq!(
+            ingest_api_config.records_compression(),
+            DocCompression::None
+        );
+    }
+
+    #[test]
+    fn test_validate_ingest_api_records_compression() {
+        {
+            let ingest_api_config: IngestApiConfig =
+                serde_yaml::from_str("records_compression_algorithm: zstd").unwrap();
+            assert!(ingest_api_config.validate().is_ok());
+            assert_eq!(
+                ingest_api_config.records_compression(),
+                DocCompression::Zstd
+            );
+        }
+        {
+            let ingest_api_config: IngestApiConfig =
+                serde_yaml::from_str("records_compression_algorithm: gzip").unwrap();
+            assert_eq!(
+                ingest_api_config.validate().unwrap_err().to_string(),
+                "records_compression_algorithm only supports zstd, got `Gzip`"
+            );
+        }
     }
 
     #[test]

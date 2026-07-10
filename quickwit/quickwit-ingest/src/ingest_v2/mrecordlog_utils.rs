@@ -13,16 +13,16 @@
 // limitations under the License.
 
 use std::io;
-use std::iter::once;
 
 use bytesize::ByteSize;
 #[cfg(feature = "failpoints")]
 use fail::fail_point;
 use mrecordlog::error::AppendError;
-use quickwit_proto::ingest::DocBatchV2;
+use quickwit_proto::ingest::{DocBatchV2, DocCompression};
 use quickwit_proto::types::{Position, QueueId};
 use tracing::instrument;
 
+use super::mrecord::encode_compressed_doc_v1;
 use crate::MRecord;
 use crate::mrecordlog_async::MultiRecordLogAsync;
 
@@ -55,35 +55,41 @@ pub(super) async fn append_non_empty_doc_batch(
     doc_batch: DocBatchV2,
     force_commit: bool,
 ) -> Result<Position, AppendDocBatchError> {
-    let append_result = if force_commit {
-        let encoded_mrecords = doc_batch
-            .into_docs()
-            .map(|(_doc_uid, doc)| MRecord::Doc(doc).encode())
-            .chain(once(MRecord::Commit.encode()));
+    #[cfg(feature = "failpoints")]
+    fail_point!("ingester:append_records", |_| {
+        let io_error = io::Error::from(io::ErrorKind::PermissionDenied);
+        Err(AppendDocBatchError::Io(io_error))
+    });
 
-        #[cfg(feature = "failpoints")]
-        fail_point!("ingester:append_records", |_| {
-            let io_error = io::Error::from(io::ErrorKind::PermissionDenied);
-            Err(AppendDocBatchError::Io(io_error))
-        });
-
-        mrecordlog
-            .append_records(queue_id, None, encoded_mrecords)
-            .await
-    } else {
-        let encoded_mrecords = doc_batch
-            .into_docs()
-            .map(|(_doc_uid, doc)| MRecord::Doc(doc).encode());
-
-        #[cfg(feature = "failpoints")]
-        fail_point!("ingester:append_records", |_| {
-            let io_error = io::Error::from(io::ErrorKind::PermissionDenied);
-            Err(AppendDocBatchError::Io(io_error))
-        });
-
-        mrecordlog
-            .append_records(queue_id, None, encoded_mrecords)
-            .await
+    // The document compression is uniform across the batch (stamped by the router). Each document
+    // becomes exactly one WAL record and an optional commit record follows, so the per-document
+    // positions assigned downstream are the same whether or not the documents are compressed.
+    let append_result = match doc_batch.doc_compression() {
+        DocCompression::None => {
+            // Zero-copy legacy V0 framing. Kept identical to the pre-compression path so that
+            // compression stays a zero-cost feature when it is disabled.
+            let commit_mrecord = force_commit.then(|| MRecord::Commit.encode());
+            let encoded_mrecords = doc_batch
+                .into_docs()
+                .map(|(_doc_uid, doc)| MRecord::Doc(doc).encode())
+                .chain(commit_mrecord);
+            mrecordlog
+                .append_records(queue_id, None, encoded_mrecords)
+                .await
+        }
+        compression => {
+            // The documents are already compressed by the router; frame each in the extensible V1
+            // format carrying the codec marker so the reader knows to decompress. The commit is
+            // emitted as V1 too to keep the iterator item type uniform (its decoding is unchanged).
+            let commit_mrecord = force_commit.then(|| MRecord::Commit.encode_v1());
+            let encoded_mrecords = doc_batch
+                .into_docs()
+                .map(move |(_doc_uid, doc)| encode_compressed_doc_v1(doc, compression))
+                .chain(commit_mrecord);
+            mrecordlog
+                .append_records(queue_id, None, encoded_mrecords)
+                .await
+        }
     };
     match append_result {
         Ok(Some(offset)) => Ok(Position::offset(offset)),
@@ -185,6 +191,43 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(position, Position::offset(2u64));
+    }
+
+    #[cfg(not(feature = "failpoints"))]
+    #[tokio::test]
+    async fn test_append_compressed_doc_batch() {
+        use super::super::mrecord::compress_doc_batch;
+
+        let tempdir = tempfile::tempdir().unwrap();
+        let mut mrecordlog = MultiRecordLogAsync::open(tempdir.path()).await.unwrap();
+
+        let queue_id = "test-queue".to_string();
+        mrecordlog.create_queue(&queue_id).await.unwrap();
+
+        let doc_batch = compress_doc_batch(DocBatchV2::for_test(["test-doc-foo", "test-doc-bar"]));
+        assert_eq!(doc_batch.doc_compression(), DocCompression::Zstd);
+
+        // Compression keeps one WAL record per document, so the per-document positions are the same
+        // as in the uncompressed case: two docs at offsets 0 and 1, then the commit at offset 2.
+        let position = append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch, true)
+            .await
+            .unwrap();
+        assert_eq!(position, Position::offset(2u64));
+
+        // Reading the WAL back and decoding transparently decompresses each document.
+        let decoded_mrecords: Vec<MRecord> = mrecordlog
+            .range(&queue_id, ..)
+            .unwrap()
+            .filter_map(|record| MRecord::decode(&*record.payload))
+            .collect();
+        assert_eq!(
+            decoded_mrecords,
+            vec![
+                MRecord::new_doc("test-doc-foo"),
+                MRecord::new_doc("test-doc-bar"),
+                MRecord::Commit,
+            ]
+        );
     }
 
     // This test should be run manually and independently of other tests with the `failpoints`

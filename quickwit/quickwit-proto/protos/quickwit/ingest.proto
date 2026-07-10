@@ -56,12 +56,27 @@ enum DocFormat {
   DOC_FORMAT_ARROW_IPC = 1;
 }
 
+// Compression codec applied to each document individually. When set on a
+// `DocBatchV2`, every document in `doc_buffer` (split by `doc_lengths`) is
+// compressed with this codec. When set on a `DocMRecord`, the single document
+// it carries is compressed with this codec.
+enum DocCompression {
+  // No compression, the document bytes are stored verbatim (default for
+  // backward compatibility).
+  DOC_COMPRESSION_NONE = 0;
+  // Each document is compressed individually with zstd.
+  DOC_COMPRESSION_ZSTD = 1;
+}
+
 message DocBatchV2 {
   bytes doc_buffer = 1;
   repeated uint32 doc_lengths = 2;
   repeated quickwit.common.DocUid doc_uids = 3;
   // Format of the documents in doc_buffer. Defaults to JSON for backward compatibility.
   DocFormat doc_format = 4;
+  // Compression applied to each document in doc_buffer. Defaults to none for
+  // backward compatibility.
+  DocCompression doc_compression = 5;
 }
 
 message MRecordBatch {
@@ -90,6 +105,9 @@ message MRecordV1 {
 
 message DocMRecord {
   bytes doc = 1;
+  // Compression applied to the document. Defaults to none for backward
+  // compatibility with records written before this field existed.
+  DocCompression compression = 2;
 }
 
 message CommitMRecord {}

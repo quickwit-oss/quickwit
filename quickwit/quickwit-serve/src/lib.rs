@@ -1184,6 +1184,7 @@ async fn setup_ingest_v2(
         replication_factor,
         event_broker.clone(),
         node_config.availability_zone.clone(),
+        node_config.ingest_api_config.records_compression(),
     );
     ingest_router.subscribe();
     setup_ingester_capacity_update_listener(cluster.clone(), event_broker.clone())

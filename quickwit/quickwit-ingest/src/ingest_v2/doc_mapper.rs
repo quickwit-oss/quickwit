@@ -16,6 +16,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Weak};
 
+use bytes::{BufMut, BytesMut};
 use quickwit_common::rate_limited_error;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_config::{DocMapping, SearchSettings, build_doc_mapper};
@@ -27,7 +28,7 @@ use quickwit_proto::types::{DocMappingUid, DocUid};
 use serde_json_borrow::Value as JsonValue;
 use tracing::{info, instrument};
 
-use crate::DocBatchV2Builder;
+use super::mrecord::decompress_doc;
 
 /// Attempts to get the doc mapper identified by the given doc mapping UID `doc_mapping_uid` from
 /// the `doc_mappers` cache. If it is not found, it is built from the specified JSON doc mapping
@@ -111,15 +112,33 @@ async fn validate_doc_batch_cpu_intensive(
 
 /// Validates a batch of docs.
 ///
+/// Documents may be compressed by the router (see `DocBatchV2::doc_compression`). Validation parses
+/// the decompressed bytes, but the returned batch keeps the documents in their original (possibly
+/// compressed) form so they stay compressed in the WAL and on the fetch stream.
+///
 /// Returns a batch of valid docs and the list of errors.
 fn validate_doc_batch_impl(
     doc_batch: DocBatchV2,
     doc_mapper: &DocMapper,
 ) -> (DocBatchV2, Vec<ParseFailure>) {
+    let compression = doc_batch.doc_compression();
     let mut parse_failures: Vec<ParseFailure> = Vec::new();
     let mut invalid_doc_ids: HashSet<DocUid> = HashSet::default();
     for (doc_uid, doc_bytes) in doc_batch.docs() {
-        if let Err((reason, message)) = validate_document(doc_mapper, &doc_bytes) {
+        let decompressed_doc = match decompress_doc(doc_bytes, compression) {
+            Some(decompressed_doc) => decompressed_doc,
+            None => {
+                let parse_failure = ParseFailure {
+                    doc_uid: Some(doc_uid),
+                    reason: ParseFailureReason::InvalidJson as i32,
+                    message: "failed to decompress document".to_string(),
+                };
+                invalid_doc_ids.insert(doc_uid);
+                parse_failures.push(parse_failure);
+                continue;
+            }
+        };
+        if let Err((reason, message)) = validate_document(doc_mapper, &decompressed_doc) {
             let parse_failure = ParseFailure {
                 doc_uid: Some(doc_uid),
                 reason: reason as i32,
@@ -133,13 +152,26 @@ fn validate_doc_batch_impl(
         // All docs are valid! We don't need to build a valid doc batch.
         return (doc_batch, parse_failures);
     }
-    let mut valid_doc_batch_builder = DocBatchV2Builder::default();
+    // Rebuild the batch keeping only the valid documents. The document bytes are copied verbatim
+    // (still compressed when the batch was compressed) and the compression marker is preserved.
+    let mut doc_uids: Vec<DocUid> = Vec::new();
+    let mut doc_lengths: Vec<u32> = Vec::new();
+    let mut doc_buffer = BytesMut::new();
     for (doc_uid, doc_bytes) in doc_batch.docs() {
-        if !invalid_doc_ids.contains(&doc_uid) {
-            valid_doc_batch_builder.add_doc(doc_uid, &doc_bytes);
+        if invalid_doc_ids.contains(&doc_uid) {
+            continue;
         }
+        doc_uids.push(doc_uid);
+        doc_lengths.push(doc_bytes.len() as u32);
+        doc_buffer.put_slice(&doc_bytes);
     }
-    let valid_doc_batch: DocBatchV2 = valid_doc_batch_builder.build().unwrap_or_default();
+    let valid_doc_batch = DocBatchV2 {
+        doc_buffer: doc_buffer.freeze(),
+        doc_lengths,
+        doc_uids,
+        doc_format: doc_batch.doc_format,
+        doc_compression: doc_batch.doc_compression,
+    };
     assert_eq!(
         valid_doc_batch.num_docs() + parse_failures.len(),
         doc_batch.num_docs()
@@ -301,5 +333,43 @@ mod tests {
         let (valid_doc_uid, valid_doc_bytes) = doc_batch.docs().next().unwrap();
         assert_eq!(valid_doc_uid, DocUid::for_test(3));
         assert_eq!(&valid_doc_bytes, r#"{"doc": "test-doc-000"}"#.as_bytes());
+    }
+
+    #[test]
+    fn test_validate_compressed_doc_batch() {
+        use quickwit_proto::ingest::DocCompression;
+
+        use super::super::mrecord::{compress_doc_batch, decompress_doc};
+
+        let doc_mapping_json = r#"{
+            "mode": "strict",
+            "field_mappings": [
+                {
+                    "name": "doc",
+                    "type": "text"
+                }
+            ]
+        }"#;
+        let doc_mapper = try_build_doc_mapper(doc_mapping_json).unwrap();
+
+        // A compressed batch with one valid and one invalid (wrong schema) document. Validation
+        // must decompress to parse, drop the invalid document, and keep the valid one compressed.
+        let doc_batch = compress_doc_batch(DocBatchV2::for_test([
+            r#"{"doc": "test-doc-000"}"#,
+            r#"{"foo": "bar"}"#,
+        ]));
+        assert_eq!(doc_batch.doc_compression(), DocCompression::Zstd);
+
+        let (valid_doc_batch, parse_failures) = validate_doc_batch_impl(doc_batch, &doc_mapper);
+        assert_eq!(parse_failures.len(), 1);
+        assert_eq!(parse_failures[0].doc_uid(), DocUid::for_test(1));
+
+        // The surviving document is still compressed and decompresses to the original.
+        assert_eq!(valid_doc_batch.num_docs(), 1);
+        assert_eq!(valid_doc_batch.doc_compression(), DocCompression::Zstd);
+        let (valid_doc_uid, valid_doc_bytes) = valid_doc_batch.docs().next().unwrap();
+        assert_eq!(valid_doc_uid, DocUid::for_test(0));
+        let decompressed = decompress_doc(valid_doc_bytes, DocCompression::Zstd).unwrap();
+        assert_eq!(&decompressed, r#"{"doc": "test-doc-000"}"#.as_bytes());
     }
 }

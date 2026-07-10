@@ -174,6 +174,18 @@ pub(crate) static WAL_BYTES_WRITTEN_APPEND: LazyCounter =
 pub(crate) static WAL_BYTES_WRITTEN_TRUNCATE: LazyCounter =
     lazy_counter!(parent: WAL_BYTES_WRITTEN_TOTAL, "operation" => "truncate");
 
+pub(super) static RECORDS_UNCOMPRESSED_BYTES_TOTAL: LazyCounter = lazy_counter!(
+    name: "records_uncompressed_bytes_total",
+    description: "Total number of document bytes seen by the router before record compression.",
+    subsystem: "ingest",
+);
+
+pub(super) static RECORDS_COMPRESSED_BYTES_TOTAL: LazyCounter = lazy_counter!(
+    name: "records_compressed_bytes_total",
+    description: "Total number of document bytes produced by the router after record compression.",
+    subsystem: "ingest",
+);
+
 pub(super) fn report_wal_usage(wal_usage: ResourceUsage) {
     WAL_DISK_USED_BYTES.set(wal_usage.disk_used_bytes as f64);
     IN_FLIGHT_WAL.set(wal_usage.memory_allocated_bytes as f64);

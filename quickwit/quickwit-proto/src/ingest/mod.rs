@@ -190,6 +190,7 @@ impl DocBatchV2 {
             doc_buffer: Bytes::from(doc_buffer),
             doc_lengths,
             doc_format: DocFormat::Json as i32,
+            doc_compression: DocCompression::None as i32,
         }
     }
 }

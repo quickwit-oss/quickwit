@@ -32,7 +32,7 @@ use arrow::ipc::reader::StreamReader;
 use arrow::ipc::writer::StreamWriter;
 use quickwit_parquet_engine::timeseries_id::compute_timeseries_id;
 use quickwit_proto::bytes::Bytes;
-use quickwit_proto::ingest::{DocBatchV2, DocFormat};
+use quickwit_proto::ingest::{DocBatchV2, DocCompression, DocFormat};
 use quickwit_proto::types::DocUid;
 
 use super::otel_metrics::{MetricDataPoint, MetricType};
@@ -378,6 +378,7 @@ impl ArrowDocBatchV2Builder {
             doc_buffer: Bytes::from(self.ipc_buffer),
             doc_lengths: vec![buffer_len],
             doc_format: DocFormat::ArrowIpc as i32,
+            doc_compression: DocCompression::None as i32,
         }
     }
 

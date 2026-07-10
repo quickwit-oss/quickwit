@@ -22,6 +22,7 @@ use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt};
 use quickwit_common::metrics::IN_FLIGHT_INGEST_ROUTER;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
+use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::{rate_limited_error, rate_limited_warn};
 use quickwit_metrics::{GaugeGuard, counter};
 use quickwit_proto::control_plane::{
@@ -32,9 +33,11 @@ use quickwit_proto::ingest::ingester::{
     IngesterService, PersistFailureReason, PersistRequest, PersistResponse, PersistSubrequest,
 };
 use quickwit_proto::ingest::router::{
-    IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
+    IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService, IngestSubrequest,
 };
-use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, RateLimitingCause};
+use quickwit_proto::ingest::{
+    CommitTypeV2, DocCompression, IngestV2Error, IngestV2Result, RateLimitingCause,
+};
 use quickwit_proto::types::{NodeId, SubrequestId};
 use serde_json::{Value as JsonValue, json};
 use tokio::sync::{Mutex, Semaphore};
@@ -46,6 +49,7 @@ use super::debouncing::{
     DebouncedGetOrCreateOpenShardsRequest, GetOrCreateOpenShardsRequestDebouncer,
 };
 use super::ingester::PERSIST_REQUEST_TIMEOUT;
+use super::mrecord::compress_doc_batch;
 use super::routing_table::RoutingTable;
 use super::workbench::IngestWorkbench;
 use super::{IngesterPool, pending_subrequests};
@@ -103,6 +107,9 @@ pub struct IngestRouter {
     // Limits the number of ingest requests in-flight to some capacity in bytes.
     ingest_semaphore: Arc<Semaphore>,
     event_broker: EventBroker,
+    // Codec applied to each document before it is sent to the ingester. `DocCompression::None`
+    // disables record compression (the default).
+    records_compression: DocCompression,
 }
 
 struct RouterState {
@@ -129,6 +136,7 @@ impl IngestRouter {
         replication_factor: usize,
         event_broker: EventBroker,
         self_availability_zone: Option<String>,
+        records_compression: DocCompression,
     ) -> Self {
         let state = Arc::new(Mutex::new(RouterState {
             debouncer: GetOrCreateOpenShardsRequestDebouncer::default(),
@@ -145,6 +153,7 @@ impl IngestRouter {
             replication_factor,
             ingest_semaphore,
             event_broker,
+            records_compression,
         }
     }
 
@@ -467,6 +476,36 @@ impl IngestRouter {
         workbench.into_ingest_result().await
     }
 
+    /// Compresses each subrequest's document batch in place when record compression is enabled.
+    /// The compressed documents then travel to the ingester, into the WAL, and on to the indexer,
+    /// which decompresses them at index time. Compression runs on the CPU-intensive thread pool to
+    /// avoid blocking the async runtime. It is a no-op when compression is disabled or when a batch
+    /// is empty or already compressed.
+    async fn compress_subrequests(
+        &self,
+        subrequests: &mut [IngestSubrequest],
+    ) -> IngestV2Result<()> {
+        if self.records_compression == DocCompression::None {
+            return Ok(());
+        }
+        for subrequest in subrequests.iter_mut() {
+            let Some(doc_batch) = subrequest.doc_batch.take() else {
+                continue;
+            };
+            if doc_batch.is_empty() || doc_batch.doc_compression() != DocCompression::None {
+                subrequest.doc_batch = Some(doc_batch);
+                continue;
+            }
+            let compressed_doc_batch = run_cpu_intensive(move || compress_doc_batch(doc_batch))
+                .await
+                .map_err(|error| {
+                    IngestV2Error::Internal(format!("failed to compress documents: {error}"))
+                })?;
+            subrequest.doc_batch = Some(compressed_doc_batch);
+        }
+        Ok(())
+    }
+
     async fn ingest_timeout(
         &self,
         ingest_request: IngestRequestV2,
@@ -567,7 +606,10 @@ fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_s
 
 #[async_trait]
 impl IngestRouterService for IngestRouter {
-    async fn ingest(&self, ingest_request: IngestRequestV2) -> IngestV2Result<IngestResponseV2> {
+    async fn ingest(
+        &self,
+        mut ingest_request: IngestRequestV2,
+    ) -> IngestV2Result<IngestResponseV2> {
         let request_size_bytes = ingest_request.num_bytes();
 
         let _gauge_guard = GaugeGuard::new(&IN_FLIGHT_INGEST_ROUTER, request_size_bytes as f64);
@@ -578,6 +620,9 @@ impl IngestRouterService for IngestRouter {
             .clone()
             .try_acquire_many_owned(request_size_bytes as u32)
             .map_err(|_| IngestV2Error::TooManyRequests(RateLimitingCause::RouterLoadShedding))?;
+
+        self.compress_subrequests(&mut ingest_request.subrequests)
+            .await?;
 
         let ingest_res = if ingest_request.commit_type() == CommitTypeV2::Auto {
             self.ingest_timeout(ingest_request, ingest_request_timeout())
@@ -652,6 +697,7 @@ mod tests {
             replication_factor,
             EventBroker::default(),
             Some("test-az".to_string()),
+            DocCompression::None,
         );
         let mut workbench = IngestWorkbench::default();
         let (get_or_create_open_shard_request_opt, rendezvous) = router
@@ -877,6 +923,7 @@ mod tests {
             replication_factor,
             EventBroker::default(),
             Some("test-az".to_string()),
+            DocCompression::None,
         );
         let ingest_subrequests = vec![
             IngestSubrequest {
@@ -976,6 +1023,7 @@ mod tests {
             replication_factor,
             EventBroker::default(),
             Some("test-az".to_string()),
+            DocCompression::None,
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1036,6 +1084,7 @@ mod tests {
             replication_factor,
             EventBroker::default(),
             Some("test-az".to_string()),
+            DocCompression::None,
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1067,6 +1116,7 @@ mod tests {
             replication_factor,
             EventBroker::default(),
             Some("test-az".to_string()),
+            DocCompression::None,
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1125,6 +1175,7 @@ mod tests {
             replication_factor,
             EventBroker::default(),
             Some("test-az".to_string()),
+            DocCompression::None,
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1192,6 +1243,7 @@ mod tests {
             replication_factor,
             EventBroker::default(),
             Some("test-az".to_string()),
+            DocCompression::None,
         );
         let ingest_subrequests = vec![
             IngestSubrequest {
@@ -1276,6 +1328,7 @@ mod tests {
             1,
             EventBroker::default(),
             Some("test-az".to_string()),
+            DocCompression::None,
         );
 
         let index_uid_0: IndexUid = IndexUid::for_test("test-index-0", 0);
@@ -1427,6 +1480,7 @@ mod tests {
             1,
             EventBroker::default(),
             Some("test-az".to_string()),
+            DocCompression::None,
         );
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
         {
@@ -1535,6 +1589,7 @@ mod tests {
             replication_factor,
             EventBroker::default(),
             Some("test-az".to_string()),
+            DocCompression::None,
         );
         let index_uid_0: IndexUid = IndexUid::for_test("test-index-0", 0);
         let index_uid_1: IndexUid = IndexUid::for_test("test-index-1", 0);
@@ -1592,6 +1647,7 @@ mod tests {
             replication_factor,
             EventBroker::default(),
             Some("test-az".to_string()),
+            DocCompression::None,
         );
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
         {
@@ -1684,6 +1740,7 @@ mod tests {
             1,
             event_broker.clone(),
             Some("test-az".to_string()),
+            DocCompression::None,
         );
         router.subscribe();
 
@@ -1720,6 +1777,7 @@ mod tests {
             1,
             EventBroker::default(),
             Some("test-az".to_string()),
+            DocCompression::None,
         );
         let ingest_subrequests = vec![
             IngestSubrequest {
@@ -1814,6 +1872,7 @@ mod tests {
             1,
             EventBroker::default(),
             Some("test-az".to_string()),
+            DocCompression::None,
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1859,5 +1918,59 @@ mod tests {
             .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
             .unwrap();
         assert_eq!(node.node_id, NodeId::from_str("test-ingester-0"));
+    }
+
+    #[tokio::test]
+    async fn test_router_compress_subrequests() {
+        let make_router = |records_compression| {
+            IngestRouter::new(
+                NodeId::from_str("test-router"),
+                ControlPlaneServiceClient::from_mock(MockControlPlaneService::new()),
+                IngesterPool::default(),
+                1,
+                EventBroker::default(),
+                Some("test-az".to_string()),
+                records_compression,
+            )
+        };
+        let make_subrequests = || {
+            vec![
+                IngestSubrequest {
+                    subrequest_id: 0,
+                    index_id: "test-index".to_string(),
+                    source_id: "test-source".to_string(),
+                    doc_batch: Some(DocBatchV2::for_test([
+                        "a repetitive document a repetitive document a repetitive document",
+                        "a repetitive document a repetitive document a repetitive document",
+                    ])),
+                },
+                // A subrequest without a doc batch must be left untouched.
+                IngestSubrequest {
+                    subrequest_id: 1,
+                    index_id: "test-index".to_string(),
+                    source_id: "test-source".to_string(),
+                    doc_batch: None,
+                },
+            ]
+        };
+
+        // Compression disabled: the batch is forwarded verbatim.
+        let router = make_router(DocCompression::None);
+        let mut subrequests = make_subrequests();
+        router.compress_subrequests(&mut subrequests).await.unwrap();
+        let doc_batch = subrequests[0].doc_batch.as_ref().unwrap();
+        assert_eq!(doc_batch.doc_compression(), DocCompression::None);
+        assert_eq!(subrequests[1].doc_batch, None);
+
+        // Compression enabled: each document is compressed and the batch is marked accordingly.
+        let router = make_router(DocCompression::Zstd);
+        let mut subrequests = make_subrequests();
+        let uncompressed_len = subrequests[0].doc_batch.as_ref().unwrap().doc_buffer.len();
+        router.compress_subrequests(&mut subrequests).await.unwrap();
+        let doc_batch = subrequests[0].doc_batch.as_ref().unwrap();
+        assert_eq!(doc_batch.doc_compression(), DocCompression::Zstd);
+        assert_eq!(doc_batch.num_docs(), 2);
+        assert!(doc_batch.doc_buffer.len() < uncompressed_len);
+        assert_eq!(subrequests[1].doc_batch, None);
     }
 }

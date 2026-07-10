@@ -14,12 +14,102 @@
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use prost::Message as _;
-use quickwit_proto::ingest::{CommitMRecord, DocMRecord, MRecordBatch, MRecordV1, m_record_v1};
+use quickwit_proto::ingest::{
+    CommitMRecord, DocBatchV2, DocCompression, DocMRecord, MRecordBatch, MRecordV1, m_record_v1,
+};
 
 use super::metrics::{
-    SKIPPED_MRECORDS_MALFORMED, SKIPPED_MRECORDS_UNKNOWN_HEADER_VERSION,
-    SKIPPED_MRECORDS_UNKNOWN_RECORD_TYPE,
+    RECORDS_COMPRESSED_BYTES_TOTAL, RECORDS_UNCOMPRESSED_BYTES_TOTAL, SKIPPED_MRECORDS_MALFORMED,
+    SKIPPED_MRECORDS_UNKNOWN_HEADER_VERSION, SKIPPED_MRECORDS_UNKNOWN_RECORD_TYPE,
 };
+
+/// zstd compression level used for per-document record compression. Level 0 selects zstd's default
+/// level, matching the metastore's compressed JSON blobs.
+const ZSTD_COMPRESSION_LEVEL: i32 = 0;
+
+/// Compresses each document of `doc_batch` individually with zstd, rebuilding `doc_buffer` and
+/// `doc_lengths` and stamping `doc_compression`. The document count, order, `doc_uids` and
+/// `doc_format` are preserved, so the per-document WAL positions assigned downstream are unchanged.
+///
+/// zstd compression of an in-memory buffer does not fail in practice; should it ever fail, the
+/// document batch is returned uncompressed (with a warning) rather than dropping documents.
+pub(super) fn compress_doc_batch(doc_batch: DocBatchV2) -> DocBatchV2 {
+    match try_compress_doc_batch(&doc_batch) {
+        Some(compressed_doc_batch) => compressed_doc_batch,
+        None => doc_batch,
+    }
+}
+
+/// Attempts to compress every document of `doc_batch`. Returns `None` (leaving the caller to fall
+/// back to the uncompressed batch) if any document fails to compress. Borrows `doc_batch` so the
+/// caller keeps ownership of the original for that fallback.
+fn try_compress_doc_batch(doc_batch: &DocBatchV2) -> Option<DocBatchV2> {
+    let num_docs = doc_batch.num_docs();
+    let uncompressed_len = doc_batch.doc_buffer.len();
+    let mut doc_uids = Vec::with_capacity(num_docs);
+    let mut doc_lengths = Vec::with_capacity(num_docs);
+    // Compressed output is usually smaller than the input; reserve the uncompressed size as a hint.
+    let mut doc_buffer = BytesMut::with_capacity(uncompressed_len);
+    for (doc_uid, doc) in doc_batch.docs() {
+        let compressed_doc = match zstd::encode_all(&doc[..], ZSTD_COMPRESSION_LEVEL) {
+            Ok(compressed_doc) => compressed_doc,
+            Err(error) => {
+                quickwit_common::rate_limited_warn!(
+                    limit_per_min = 6,
+                    "failed to compress document, sending the batch uncompressed: {error}"
+                );
+                return None;
+            }
+        };
+        doc_lengths.push(compressed_doc.len() as u32);
+        doc_buffer.put_slice(&compressed_doc);
+        doc_uids.push(doc_uid);
+    }
+    RECORDS_UNCOMPRESSED_BYTES_TOTAL.inc_by(uncompressed_len as u64);
+    RECORDS_COMPRESSED_BYTES_TOTAL.inc_by(doc_buffer.len() as u64);
+    Some(DocBatchV2 {
+        doc_buffer: doc_buffer.freeze(),
+        doc_lengths,
+        doc_uids,
+        doc_format: doc_batch.doc_format,
+        doc_compression: DocCompression::Zstd as i32,
+    })
+}
+
+/// Decompresses a document previously compressed with `compression`. Returns `None` when decoding
+/// fails so the caller can skip the record instead of panicking.
+pub(super) fn decompress_doc(doc: Bytes, compression: DocCompression) -> Option<Bytes> {
+    match compression {
+        DocCompression::None => Some(doc),
+        DocCompression::Zstd => match zstd::decode_all(&doc[..]) {
+            Ok(decompressed) => Some(Bytes::from(decompressed)),
+            Err(_) => None,
+        },
+    }
+}
+
+/// Encodes an already-compressed document as a [`HeaderVersion::V1`] `DocMRecord` carrying the
+/// codec marker. The document bytes are stored verbatim (they are already compressed); this only
+/// frames them so the reader knows to decompress with `compression`.
+pub(super) fn encode_compressed_doc_v1(
+    compressed_doc: Bytes,
+    compression: DocCompression,
+) -> Bytes {
+    let mrecord_v1 = MRecordV1 {
+        mrecord: Some(m_record_v1::Mrecord::Doc(DocMRecord {
+            doc: compressed_doc,
+            compression: compression as i32,
+        })),
+    };
+    let mut buf = BytesMut::with_capacity(1 + mrecord_v1.encoded_len());
+    buf.put_u8(HeaderVersion::V1 as u8);
+    // Encoding a prost message into a `BytesMut` cannot fail: it only errors on insufficient
+    // capacity, and `BytesMut` grows on demand.
+    mrecord_v1
+        .encode(&mut buf)
+        .expect("encoding an mrecord into a `BytesMut` should never fail");
+    buf.freeze()
+}
 
 /// The first byte of an encoded [`MRecord`] is the version of the record header. It selects how the
 /// remaining bytes are interpreted, which makes the on-disk format forward and backward compatible:
@@ -88,7 +178,10 @@ impl MRecord {
     /// `MRecordV1` payload). Not yet used by the write path; see [`Self::encode`].
     pub fn encode_v1(&self) -> Bytes {
         let mrecord = match self {
-            Self::Doc(doc) => m_record_v1::Mrecord::Doc(DocMRecord { doc: doc.clone() }),
+            Self::Doc(doc) => m_record_v1::Mrecord::Doc(DocMRecord {
+                doc: doc.clone(),
+                compression: DocCompression::None as i32,
+            }),
             Self::Commit => m_record_v1::Mrecord::Commit(CommitMRecord {}),
         };
         let mrecord_v1 = MRecordV1 {
@@ -146,8 +239,17 @@ impl MRecord {
             Err(_) => return DecodeOutcome::Skipped(SkipReason::Malformed),
         };
         match mrecord_v1.mrecord {
-            Some(m_record_v1::Mrecord::Doc(DocMRecord { doc })) => {
-                DecodeOutcome::Decoded(Self::Doc(doc))
+            Some(m_record_v1::Mrecord::Doc(doc_mrecord)) => {
+                // `compression` may hold a codec minted by a newer binary; treat an unknown value
+                // as an unknown record type rather than misreading the bytes as uncompressed.
+                let compression = match DocCompression::try_from(doc_mrecord.compression) {
+                    Ok(compression) => compression,
+                    Err(_) => return DecodeOutcome::Skipped(SkipReason::UnknownRecordType),
+                };
+                match decompress_doc(doc_mrecord.doc, compression) {
+                    Some(doc) => DecodeOutcome::Decoded(Self::Doc(doc)),
+                    None => DecodeOutcome::Skipped(SkipReason::Malformed),
+                }
             }
             Some(m_record_v1::Mrecord::Commit(CommitMRecord {})) => {
                 DecodeOutcome::Decoded(Self::Commit)
@@ -268,11 +370,12 @@ mod tests {
 
     #[test]
     fn test_mrecord_v1_forward_compatible_unknown_field() {
-        // A `DocMRecord` written by a newer binary carrying an extra, unknown field (here field 2,
-        // a varint — e.g. a future arrival timestamp). An older binary must still recover the doc.
+        // A `DocMRecord` written by a newer binary carrying an extra, unknown field (here field 3,
+        // a varint — e.g. a future arrival timestamp; field 2 is `compression`). An older binary
+        // must still recover the doc.
         let doc_mrecord_with_unknown_field: &[u8] = &[
             0x0A, 0x05, b'h', b'e', b'l', b'l', b'o', // field 1 (doc): len-delimited "hello"
-            0x10, 0x2A, // field 2 (unknown): varint 42
+            0x18, 0x2A, // field 3 (unknown): varint 42
         ];
         let mut mrecord_v1 = vec![HeaderVersion::V1 as u8];
         // Wrap it in the `MRecordV1` oneof as field 1 (doc), len-delimited.
@@ -306,6 +409,56 @@ mod tests {
         assert_eq!(
             MRecord::decode_inner(mrecord_v1),
             DecodeOutcome::Skipped(SkipReason::Malformed)
+        );
+    }
+
+    #[test]
+    fn test_compress_doc_batch_roundtrip() {
+        let doc_batch = DocBatchV2::for_test([
+            "hello world hello world hello world",
+            "another document with some repetition repetition",
+        ]);
+        let compressed_doc_batch = compress_doc_batch(doc_batch.clone());
+        assert_eq!(compressed_doc_batch.doc_compression(), DocCompression::Zstd);
+        assert_eq!(compressed_doc_batch.num_docs(), doc_batch.num_docs());
+        assert_eq!(compressed_doc_batch.doc_uids, doc_batch.doc_uids);
+
+        // Each compressed document, framed as a v1 mrecord, decodes back to the original.
+        let original_docs: Vec<Bytes> = doc_batch.docs().map(|(_doc_uid, doc)| doc).collect();
+        for ((_doc_uid, compressed_doc), original_doc) in
+            compressed_doc_batch.docs().zip(original_docs)
+        {
+            let encoded_mrecord = encode_compressed_doc_v1(compressed_doc, DocCompression::Zstd);
+            assert_eq!(encoded_mrecord[0], HeaderVersion::V1 as u8);
+            let decoded_mrecord = MRecord::decode(encoded_mrecord).unwrap();
+            assert_eq!(decoded_mrecord, MRecord::Doc(original_doc));
+        }
+    }
+
+    #[test]
+    fn test_decode_v1_malformed_compressed_doc_is_skipped() {
+        // The record claims zstd compression but the payload is not valid zstd.
+        let encoded_mrecord =
+            encode_compressed_doc_v1(Bytes::from_static(b"not zstd"), DocCompression::Zstd);
+        assert_eq!(
+            MRecord::decode_inner(encoded_mrecord),
+            DecodeOutcome::Skipped(SkipReason::Malformed)
+        );
+    }
+
+    #[test]
+    fn test_decode_v1_unknown_compression_is_skipped() {
+        // A `DocMRecord` whose `compression` field (2) holds a codec (99) minted by a newer binary.
+        // An older binary must skip it rather than misread the bytes as uncompressed.
+        let doc_mrecord: &[u8] = &[
+            0x0A, 0x03, b'a', b'b', b'c', // field 1 (doc): len-delimited "abc"
+            0x10, 0x63, // field 2 (compression): varint 99
+        ];
+        let mut mrecord_v1 = vec![HeaderVersion::V1 as u8, 0x0A, doc_mrecord.len() as u8];
+        mrecord_v1.extend_from_slice(doc_mrecord);
+        assert_eq!(
+            MRecord::decode_inner(&mrecord_v1[..]),
+            DecodeOutcome::Skipped(SkipReason::UnknownRecordType)
         );
     }
 }

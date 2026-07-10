@@ -35,6 +35,7 @@ tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
+zstd = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
@@ -52,6 +53,9 @@ rand = { workspace = true }
 rand_distr = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"]}
+# `zdict_builder` (off in the workspace default) is needed by the dictionary benchmark to train a
+# zstd dictionary. This only affects test/bench builds, not the production library.
+zstd = { workspace = true, features = ["zdict_builder"] }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }

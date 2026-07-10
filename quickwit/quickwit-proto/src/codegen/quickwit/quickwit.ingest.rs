@@ -22,6 +22,10 @@ pub struct DocBatchV2 {
     /// Format of the documents in doc_buffer. Defaults to JSON for backward compatibility.
     #[prost(enumeration = "DocFormat", tag = "4")]
     pub doc_format: i32,
+    /// Compression applied to each document in doc_buffer. Defaults to none for
+    /// backward compatibility.
+    #[prost(enumeration = "DocCompression", tag = "5")]
+    pub doc_compression: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -66,6 +70,10 @@ pub mod m_record_v1 {
 pub struct DocMRecord {
     #[prost(bytes = "bytes", tag = "1")]
     pub doc: ::prost::bytes::Bytes,
+    /// Compression applied to the document. Defaults to none for backward
+    /// compatibility with records written before this field existed.
+    #[prost(enumeration = "DocCompression", tag = "2")]
+    pub compression: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -208,6 +216,41 @@ impl DocFormat {
         match value {
             "DOC_FORMAT_JSON" => Some(Self::Json),
             "DOC_FORMAT_ARROW_IPC" => Some(Self::ArrowIpc),
+            _ => None,
+        }
+    }
+}
+/// Compression codec applied to each document individually. When set on a
+/// `DocBatchV2`, every document in `doc_buffer` (split by `doc_lengths`) is
+/// compressed with this codec. When set on a `DocMRecord`, the single document
+/// it carries is compressed with this codec.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum DocCompression {
+    /// No compression, the document bytes are stored verbatim (default for
+    /// backward compatibility).
+    None = 0,
+    /// Each document is compressed individually with zstd.
+    Zstd = 1,
+}
+impl DocCompression {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::None => "DOC_COMPRESSION_NONE",
+            Self::Zstd => "DOC_COMPRESSION_ZSTD",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "DOC_COMPRESSION_NONE" => Some(Self::None),
+            "DOC_COMPRESSION_ZSTD" => Some(Self::Zstd),
             _ => None,
         }
     }

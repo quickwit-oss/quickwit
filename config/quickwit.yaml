@@ -175,6 +175,10 @@ indexer:
 #   max_queue_memory_usage: 2GiB
 #   max_queue_disk_usage: 4GiB
 #   content_length_limit: 10MiB
+#   # Compresses each ingested document (zstd) from the router all the way to the indexer,
+#   # reducing inter-node traffic and packing more documents into the WAL. Only enable once every
+#   # node in the cluster runs a version that can decode compressed records.
+#   records_compression_algorithm: zstd
 #
 # -------------------------------- Searcher settings --------------------------------
 # https://quickwit.io/docs/configuration/node-config#searcher-configuration

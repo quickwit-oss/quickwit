@@ -17,8 +17,8 @@ use std::time::Duration;
 use futures_util::FutureExt;
 use itertools::Itertools;
 use quickwit_common::test_utils::wait_until_predicate;
-use quickwit_config::ConfigFormat;
 use quickwit_config::service::QuickwitService;
+use quickwit_config::{CompressionAlgorithm, ConfigFormat};
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_metastore::SplitState;
 use quickwit_proto::ingest::ParseFailureReason;
@@ -318,6 +318,87 @@ async fn test_ingest_v2_happy_path() {
         .unwrap();
 
     sandbox.assert_hit_count(index_id, "*", 1).await;
+
+    // Delete the index to avoid potential hanging on shutdown #5068
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .delete(index_id, false)
+        .await
+        .unwrap();
+
+    sandbox.shutdown().await.unwrap();
+}
+
+/// Exercises router-side record compression end to end: the router compresses each document, the
+/// ingester decompresses only to validate but keeps the documents compressed in the WAL, the fetch
+/// stream ships them compressed, and the indexer decompresses them at index time. A term query only
+/// matches if the documents were correctly decompressed and indexed, so a successful search proves
+/// the whole compressed path.
+#[tokio::test]
+async fn test_ingest_v2_records_compression() {
+    let mut resolved_config = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Indexer, QuickwitService::Janitor])
+        .add_node([QuickwitService::Indexer, QuickwitService::Janitor])
+        .add_node([
+            QuickwitService::ControlPlane,
+            QuickwitService::Metastore,
+            QuickwitService::Searcher,
+        ])
+        .build_config()
+        .await;
+    for (node_config, _) in &mut resolved_config.node_configs {
+        node_config.ingest_api_config.records_compression_algorithm =
+            Some(CompressionAlgorithm::Zstd);
+    }
+    let sandbox = resolved_config.start().await;
+
+    let index_id = "test_records_compression";
+    let index_config = format!(
+        r#"
+        version: 0.8
+        index_id: {index_id}
+        doc_mapping:
+            field_mappings:
+            - name: body
+              type: text
+        indexing_settings:
+            commit_timeout_secs: 1
+        "#
+    );
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .create(index_config, ConfigFormat::Yaml, false)
+        .await
+        .unwrap();
+
+    let ingest_resp = ingest(
+        &sandbox.rest_client(QuickwitService::Indexer),
+        index_id,
+        IngestSource::Str(
+            "{\"body\":\"compressed apple\"}\n{\"body\":\"compressed \
+             banana\"}\n{\"body\":\"compressed cherry\"}"
+                .to_string(),
+        ),
+        CommitType::Auto,
+    )
+    .await
+    .unwrap();
+    assert_eq!(ingest_resp.num_docs_for_processing, 3);
+    assert_eq!(ingest_resp.num_ingested_docs, Some(3));
+
+    sandbox
+        .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
+        .await
+        .unwrap();
+
+    // All three documents are searchable, and a term query matches the exact decompressed content.
+    sandbox.assert_hit_count(index_id, "*", 3).await;
+    sandbox.assert_hit_count(index_id, "body:banana", 1).await;
+    sandbox
+        .assert_hit_count(index_id, "body:compressed", 3)
+        .await;
 
     // Delete the index to avoid potential hanging on shutdown #5068
     sandbox
