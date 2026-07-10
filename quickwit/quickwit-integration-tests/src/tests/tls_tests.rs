@@ -344,7 +344,7 @@ async fn test_tls_rest_max_connection_age() {
     let ca_path = format!("{TLS_FIXTURES_DIR}/ca.crt");
 
     let mut sandbox_config = ClusterSandboxBuilder::default()
-        .add_node(QuickwitService::supported_services())
+        .add_node(QuickwitService::default_services())
         .build_config()
         .await;
     sandbox_config.node_configs[0].0.rest_config.tls_config = Some(TlsConfig {
@@ -410,7 +410,7 @@ async fn test_tls_grpc_max_connection_age() {
     let ca_path = format!("{TLS_FIXTURES_DIR}/ca.crt");
 
     let mut sandbox_config = ClusterSandboxBuilder::default()
-        .add_node(QuickwitService::supported_services())
+        .add_node(QuickwitService::default_services())
         .build_config()
         .await;
     // One-way TLS (no client-cert verification) so the bare HTTP/2 probe below, which presents no
