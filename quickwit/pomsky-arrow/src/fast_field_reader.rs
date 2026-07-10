@@ -261,7 +261,8 @@ fn build_dictionary_array(
     str_col.ords().first_vals(docs, &mut ord_buf);
 
     let dictionary_builder = dictionary_builders.get(read_name, field.data_type());
-    let indices_array = dictionary_builder.encode(segment_ord, &ord_buf, str_col.dictionary())?;
+    let indices_array =
+        dictionary_builder.translate_dictionary(segment_ord, &ord_buf, str_col.dictionary())?;
     let dict_array = DictionaryArray::<UInt32Type>::try_new(
         indices_array,
         dictionary_builder.build_values_array(),
