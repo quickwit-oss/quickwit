@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use arrow::array::{Array, ArrayBuilder, StringArray, StringBuilder, UInt32Array, UInt32Builder};
 use arrow::datatypes::DataType;
+use hashbrown::hash_map::EntryRef;
 use tantivy::columnar::Dictionary;
 
 use crate::{PomskyArrowError, Result};
@@ -24,8 +25,9 @@ impl DictionaryBuilders {
 // Maintains a mutable arrow dictionary for a single field
 pub struct DeltaDictionaryBuilder {
     arrow_values_builder: StringBuilder,
-    value_index_lookup: HashMap<String, u32>,
-    ordinal_index_lookup: HashMap<u64, u32>,
+    // We use a hashbrown hashmap here for the entry_ref method
+    value_index_lookup: hashbrown::HashMap<String, u32>,
+    ordinal_index_lookup: hashbrown::HashMap<u64, u32>,
     last_segment_ord: u32,
     cached_values_array: Option<Arc<StringArray>>,
 }
@@ -34,8 +36,8 @@ impl DeltaDictionaryBuilder {
     fn new() -> Self {
         Self {
             arrow_values_builder: StringBuilder::new(),
-            value_index_lookup: HashMap::new(),
-            ordinal_index_lookup: HashMap::new(),
+            value_index_lookup: hashbrown::HashMap::new(),
+            ordinal_index_lookup: hashbrown::HashMap::new(),
             last_segment_ord: u32::MAX,
             cached_values_array: None,
         }
@@ -53,7 +55,7 @@ impl DeltaDictionaryBuilder {
             column_ordinals
                 .iter()
                 .flatten()
-                .filter(|column_ordinal| !self.ordinal_index_lookup.contains_key(column_ordinal))
+                .filter(|column_ordinal| !self.ordinal_index_lookup.contains_key(*column_ordinal))
                 .copied()
                 .collect()
         } else {
@@ -98,9 +100,9 @@ impl DeltaDictionaryBuilder {
 
                 // Look up the string value in the overall dict lookup to check if we saw that value
                 // earlier in a different segment
-                let index = match values_to_index.entry(term_str.to_string()) {
-                    Entry::Occupied(occupied_entry) => *occupied_entry.get(),
-                    Entry::Vacant(vacant_entry) => {
+                let index = match values_to_index.entry_ref(term_str) {
+                    EntryRef::Occupied(occupied_entry) => *occupied_entry.get(),
+                    EntryRef::Vacant(vacant_entry) => {
                         let index = match u32::try_from(values.len()) {
                             Ok(index) => index,
                             Err(_) => {

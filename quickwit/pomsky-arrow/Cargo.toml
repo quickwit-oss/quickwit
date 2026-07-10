@@ -17,6 +17,7 @@ license.workspace = true
 tantivy = { workspace = true }
 arrow = { workspace = true }
 thiserror = { workspace = true }
+hashbrown = { version = "0.17.1", registry = "datadog" }
 
 [dev-dependencies]
 # Only to drive the async `warm_up_fast_fields` from `#[tokio::test]`; the

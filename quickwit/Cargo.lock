@@ -147,6 +147,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "allocator-api2"
+version = "0.2.21"
+source = "sparse+https://depot-read-api-rust.us1.ddbuild.io/datadog/rust/"
+checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -369,7 +375,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "half",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-complex",
  "num-integer",
  "num-traits",
@@ -4555,6 +4561,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
+name = "equivalent"
+version = "1.0.2"
+source = "sparse+https://depot-read-api-rust.us1.ddbuild.io/datadog/rust/"
+checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
+
+[[package]]
 name = "erased-serde"
 version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4855,6 +4867,12 @@ checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 name = "foldhash"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
+
+[[package]]
+name = "foldhash"
+version = "0.2.0"
+source = "sparse+https://depot-read-api-rust.us1.ddbuild.io/datadog/rust/"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
@@ -5451,7 +5469,7 @@ version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 dependencies = [
- "allocator-api2",
+ "allocator-api2 0.2.21 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -5460,8 +5478,8 @@ version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
- "allocator-api2",
- "equivalent",
+ "allocator-api2 0.2.21 (registry+https://github.com/rust-lang/crates.io-index)",
+ "equivalent 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "foldhash 0.1.5",
 ]
 
@@ -5471,9 +5489,9 @@ version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
 dependencies = [
- "allocator-api2",
- "equivalent",
- "foldhash 0.2.0",
+ "allocator-api2 0.2.21 (registry+https://github.com/rust-lang/crates.io-index)",
+ "equivalent 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "foldhash 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -5482,9 +5500,20 @@ version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 dependencies = [
- "allocator-api2",
- "equivalent",
- "foldhash 0.2.0",
+ "allocator-api2 0.2.21 (registry+https://github.com/rust-lang/crates.io-index)",
+ "equivalent 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "foldhash 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "hashbrown"
+version = "0.17.1"
+source = "sparse+https://depot-read-api-rust.us1.ddbuild.io/datadog/rust/"
+checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+dependencies = [
+ "allocator-api2 0.2.21 (sparse+https://depot-read-api-rust.us1.ddbuild.io/datadog/rust/)",
+ "equivalent 1.0.2 (sparse+https://depot-read-api-rust.us1.ddbuild.io/datadog/rust/)",
+ "foldhash 0.2.0 (sparse+https://depot-read-api-rust.us1.ddbuild.io/datadog/rust/)",
 ]
 
 [[package]]
@@ -6171,8 +6200,8 @@ version = "2.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
 dependencies = [
- "equivalent",
- "hashbrown 0.17.1",
+ "equivalent 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hashbrown 0.17.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_core",
 ]
@@ -6948,7 +6977,7 @@ version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e0b564323a0fb6d54b864f625ae139de9612e27edb944dda37c109f05aac531"
 dependencies = [
- "hashbrown 0.17.1",
+ "hashbrown 0.17.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -6957,7 +6986,7 @@ version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a860605968fce16869fd239cf4237a82f3ac470723415db603b0e8b6c8d4fb9"
 dependencies = [
- "hashbrown 0.17.1",
+ "hashbrown 0.17.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -7347,7 +7376,7 @@ dependencies = [
  "crossbeam-channel",
  "crossbeam-epoch",
  "crossbeam-utils",
- "equivalent",
+ "equivalent 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "event-listener 5.4.1",
  "futures-util",
  "parking_lot",
@@ -8409,7 +8438,7 @@ version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "997ee03cd38c01469a7046643714f0ad28880bcb9e6679ff0666e24817ca19b7"
 dependencies = [
- "equivalent",
+ "equivalent 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "seize",
 ]
 
@@ -8475,7 +8504,7 @@ dependencies = [
  "flate2",
  "futures 0.3.32",
  "half",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "lz4_flex 0.13.1",
  "num-bigint",
  "num-integer",
@@ -9050,6 +9079,7 @@ name = "pomsky-arrow"
 version = "0.1.30-dev"
 dependencies = [
  "arrow",
+ "hashbrown 0.17.1 (sparse+https://depot-read-api-rust.us1.ddbuild.io/datadog/rust/)",
  "tantivy",
  "thiserror 2.0.18",
  "tokio",
@@ -9833,7 +9863,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a70b1b8b47e31d0498ecbc3c5470bb931399a8bfed1fd79d1717a61ce7f96e3"
 dependencies = [
  "ahash 0.8.12",
- "equivalent",
+ "equivalent 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "hashbrown 0.16.1",
  "parking_lot",
 ]
