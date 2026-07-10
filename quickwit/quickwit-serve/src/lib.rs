@@ -732,14 +732,6 @@ pub async fn serve_quickwit(
             control_plane_client.clone(),
             primary_metastore_client.clone(),
         ));
-    let read_only_metastore_through_control_plane_opt = read_only_metastore_client_opt
-        .as_ref()
-        .map(|read_only_metastore_client| {
-            MetastoreServiceClient::new(ControlPlaneMetastore::new(
-                control_plane_client.clone(),
-                read_only_metastore_client.clone(),
-            ))
-        });
 
     // Setup ingest service v1.
     let ingest_service = start_ingest_client_if_needed(&node_config, &universe, &cluster)
@@ -895,7 +887,7 @@ pub async fn serve_quickwit(
         ))
     };
 
-    let metastore_read_client = read_only_metastore_through_control_plane_opt
+    let metastore_read_client = read_only_metastore_client_opt
         .clone()
         .unwrap_or_else(|| primary_metastore_through_control_plane.clone());
 
@@ -1140,7 +1132,7 @@ pub async fn serve_quickwit(
     // node either serves a local read replica or routes search reads to remote read-replica nodes.
     let mut metastore_readiness_clients = Vec::with_capacity(2);
     metastore_readiness_clients.push(primary_metastore_through_control_plane.clone());
-    if let Some(read_only_metastore_client) = &read_only_metastore_through_control_plane_opt {
+    if let Some(read_only_metastore_client) = &read_only_metastore_client_opt {
         metastore_readiness_clients.push(read_only_metastore_client.clone());
     }
 
