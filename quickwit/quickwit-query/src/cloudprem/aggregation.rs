@@ -13,7 +13,7 @@ use tantivy::aggregation::agg_req::{
     Aggregation as TantivyAggregation, AggregationVariants, Aggregations as TantivyAggregations,
 };
 use tantivy::aggregation::bucket::{CustomOrder, IncludeExcludeParam, Order, OrderTarget};
-use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
+use tantivy::aggregation::intermediate_agg_result::{IntermediateAggregationResults, PruneMode};
 use tantivy::aggregation::{bucket, metric};
 
 use super::{internal_error, missing_required, unsupported_query_error};
@@ -518,11 +518,20 @@ fn timezone_and_ts_to_offset(timezone: &str, ts_secs: i64) -> Result<i32, Invali
 
 /// Convert intermediate aggregation results to CloudPrem proto format.
 /// Returns raw sum/count for AVG (for proper weighted-average merging across query steps).
+///
+/// Prunes bucket results to match what the tantivy finalizer would normally apply
+/// (size limit, min_doc_count).
 pub fn intermediate_aggregation_result_to_proto(
-    intermediate_results: IntermediateAggregationResults,
+    mut intermediate_results: IntermediateAggregationResults,
     aggregations_def: &quickwit_proto::cloudprem::Aggregation,
+    tantivy_aggregations: &TantivyAggregations,
     parent_count: u64,
 ) -> Result<Vec<EvpAggregationResult>, CloudPremError> {
+    intermediate_results
+        .prune_intermediate_results(tantivy_aggregations, PruneMode::Final)
+        .map_err(|err| {
+            CloudPremError::Internal(format!("failed to prune intermediate results: {err}"))
+        })?;
     let mut mapper = IntermediateResultMapper {
         results: Vec::new(),
     };
@@ -1369,13 +1378,6 @@ mod tests {
         assert_eq!(offset.unwrap(), "0s");
     }
 
-    // --- Intermediate aggregation result tests ---
-    // These mirror the finalized result tests above but use DistributedAggregationCollector
-    // to produce IntermediateAggregationResults and call intermediate_aggregation_result_to_proto.
-    // Key differences vs finalized:
-    //   - AVG returns raw {sum, count} instead of {computed_avg, 1}
-    //   - Terms buckets are NOT sorted or limited (all buckets returned, order is unspecified)
-
     fn find_result_by_key<'a>(
         results: &'a [AggregationResult],
         key: &str,
@@ -1400,8 +1402,13 @@ mod tests {
         let intermediate =
             tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults::default(
             );
-        let res =
-            super::intermediate_aggregation_result_to_proto(intermediate, &agg_def, 2).unwrap();
+        let res = super::intermediate_aggregation_result_to_proto(
+            intermediate,
+            &agg_def,
+            &Default::default(),
+            2,
+        )
+        .unwrap();
         assert_eq!(res, expected);
     }
 
@@ -1444,27 +1451,26 @@ mod tests {
         let searcher = test_searcher();
         let distributed_collector =
             tantivy::aggregation::DistributedAggregationCollector::from_aggs(
-                tantivy_aggs_ast,
+                tantivy_aggs_ast.clone(),
                 Default::default(),
             );
         let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
 
-        let evp_agg_results =
-            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 10)
-                .unwrap();
+        let evp_agg_results = super::intermediate_aggregation_result_to_proto(
+            intermediate_results,
+            &agg,
+            &tantivy_aggs_ast,
+            10,
+        )
+        .unwrap();
 
-        // Intermediate results include all 12 host buckets + 1 __TOTAL__ row
-        assert_eq!(evp_agg_results.len(), 13);
+        // limit=2: top 2 buckets (host_12, host_11) + 1 __TOTAL__ row
+        assert_eq!(evp_agg_results.len(), 3);
 
         // Verify host_12 bucket (12 docs)
         let host_12 = find_result_by_key(&evp_agg_results, "host_12");
         let val = host_12.value[0].value.as_ref().unwrap();
         assert_eq!(val, &agg_value::Value::Uint64Value(12));
-
-        // Verify host_1 bucket (1 doc)
-        let host_1 = find_result_by_key(&evp_agg_results, "host_1");
-        let val = host_1.value[0].value.as_ref().unwrap();
-        assert_eq!(val, &agg_value::Value::Uint64Value(1));
 
         let total = find_result_by_key(&evp_agg_results, "__TOTAL__");
         let total_val = total.value[0].value.as_ref().unwrap();
@@ -1529,17 +1535,21 @@ mod tests {
         let searcher = test_searcher();
         let distributed_collector =
             tantivy::aggregation::DistributedAggregationCollector::from_aggs(
-                tantivy_aggs_ast,
+                tantivy_aggs_ast.clone(),
                 Default::default(),
             );
         let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
 
-        let evp_agg_results =
-            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 10)
-                .unwrap();
+        let evp_agg_results = super::intermediate_aggregation_result_to_proto(
+            intermediate_results,
+            &agg,
+            &tantivy_aggs_ast,
+            10,
+        )
+        .unwrap();
 
-        // All 12 host buckets returned (limit not applied to intermediate results)
-        assert_eq!(evp_agg_results.len(), 12);
+        // limit=2: top 2 host buckets by count (host_12 and host_11)
+        assert_eq!(evp_agg_results.len(), 2);
 
         let host_12 = find_result_by_key(&evp_agg_results, "host_12");
         let count = host_12.value[0].value.as_ref().unwrap();
@@ -1553,16 +1563,6 @@ mod tests {
                 sum: 144.0,
                 count: 12
             })
-        );
-
-        // Also verify a smaller bucket: host_3 has 3 docs with value=3
-        let host_3 = find_result_by_key(&evp_agg_results, "host_3");
-        let count = host_3.value[0].value.as_ref().unwrap();
-        assert_eq!(count, &agg_value::Value::Uint64Value(3));
-        let avg_value = host_3.value[1].value.as_ref().unwrap();
-        assert_eq!(
-            avg_value,
-            &agg_value::Value::AvgValue(Avg { sum: 9.0, count: 3 })
         );
     }
 
@@ -1610,17 +1610,21 @@ mod tests {
         let searcher = test_searcher();
         let distributed_collector =
             tantivy::aggregation::DistributedAggregationCollector::from_aggs(
-                tantivy_aggs_ast,
+                tantivy_aggs_ast.clone(),
                 Default::default(),
             );
         let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
 
-        let evp_agg_results =
-            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 10)
-                .unwrap();
+        let evp_agg_results = super::intermediate_aggregation_result_to_proto(
+            intermediate_results,
+            &agg,
+            &tantivy_aggs_ast,
+            10,
+        )
+        .unwrap();
 
-        // 12 host buckets + 1 __TOTAL__ row
-        assert_eq!(evp_agg_results.len(), 13);
+        // limit=2: top 2 host buckets + 1 __TOTAL__ row
+        assert_eq!(evp_agg_results.len(), 3);
 
         let host_12 = find_result_by_key(&evp_agg_results, "host_12");
         let count = host_12.value[0].value.as_ref().unwrap();
@@ -1686,14 +1690,18 @@ mod tests {
         let searcher = test_searcher();
         let distributed_collector =
             tantivy::aggregation::DistributedAggregationCollector::from_aggs(
-                tantivy_aggs_ast,
+                tantivy_aggs_ast.clone(),
                 Default::default(),
             );
         let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
 
-        let evp_agg_results =
-            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 78)
-                .unwrap();
+        let evp_agg_results = super::intermediate_aggregation_result_to_proto(
+            intermediate_results,
+            &agg,
+            &tantivy_aggs_ast,
+            78,
+        )
+        .unwrap();
 
         assert_eq!(evp_agg_results.len(), 1);
         assert_eq!(evp_agg_results[0].key, Vec::<String>::new());
@@ -1744,14 +1752,18 @@ mod tests {
         let searcher = test_searcher();
         let distributed_collector =
             tantivy::aggregation::DistributedAggregationCollector::from_aggs(
-                tantivy_aggs_ast,
+                tantivy_aggs_ast.clone(),
                 Default::default(),
             );
         let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
 
-        let evp_agg_results =
-            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 78)
-                .unwrap();
+        let evp_agg_results = super::intermediate_aggregation_result_to_proto(
+            intermediate_results,
+            &agg,
+            &tantivy_aggs_ast,
+            78,
+        )
+        .unwrap();
 
         assert_eq!(evp_agg_results.len(), 12);
 
@@ -1821,14 +1833,18 @@ mod tests {
         let searcher = test_searcher_with_timestamp();
         let distributed_collector =
             tantivy::aggregation::DistributedAggregationCollector::from_aggs(
-                tantivy_aggs_ast,
+                tantivy_aggs_ast.clone(),
                 Default::default(),
             );
         let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
 
-        let evp_agg_results =
-            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 10)
-                .unwrap();
+        let evp_agg_results = super::intermediate_aggregation_result_to_proto(
+            intermediate_results,
+            &agg,
+            &tantivy_aggs_ast,
+            10,
+        )
+        .unwrap();
 
         // host_a × 2 time buckets = 2 rows
         assert_eq!(evp_agg_results.len(), 2);
@@ -1893,14 +1909,18 @@ mod tests {
         let searcher = test_searcher();
         let distributed_collector =
             tantivy::aggregation::DistributedAggregationCollector::from_aggs(
-                tantivy_aggs_ast,
+                tantivy_aggs_ast.clone(),
                 Default::default(),
             );
         let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
 
-        let evp_agg_results =
-            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 78)
-                .unwrap();
+        let evp_agg_results = super::intermediate_aggregation_result_to_proto(
+            intermediate_results,
+            &agg,
+            &tantivy_aggs_ast,
+            78,
+        )
+        .unwrap();
 
         assert_eq!(evp_agg_results.len(), 1);
         // Intermediate percentile returns DDSketch binary bytes
@@ -1965,14 +1985,18 @@ mod tests {
         let searcher = test_searcher();
         let distributed_collector =
             tantivy::aggregation::DistributedAggregationCollector::from_aggs(
-                tantivy_aggs_ast,
+                tantivy_aggs_ast.clone(),
                 Default::default(),
             );
         let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
 
-        let evp_agg_results =
-            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 78)
-                .unwrap();
+        let evp_agg_results = super::intermediate_aggregation_result_to_proto(
+            intermediate_results,
+            &agg,
+            &tantivy_aggs_ast,
+            78,
+        )
+        .unwrap();
 
         // All 12 host buckets
         assert_eq!(evp_agg_results.len(), 12);
@@ -2023,13 +2047,18 @@ mod tests {
         let searcher = test_searcher_with_timestamp();
         let distributed_collector =
             tantivy::aggregation::DistributedAggregationCollector::from_aggs(
-                tantivy_aggs_ast,
+                tantivy_aggs_ast.clone(),
                 Default::default(),
             );
         let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
 
-        let evp_agg_results =
-            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 5).unwrap();
+        let evp_agg_results = super::intermediate_aggregation_result_to_proto(
+            intermediate_results,
+            &agg,
+            &tantivy_aggs_ast,
+            5,
+        )
+        .unwrap();
 
         assert_eq!(evp_agg_results.len(), 2);
 
@@ -2080,16 +2109,21 @@ mod tests {
         let searcher = test_searcher();
         let distributed_collector =
             tantivy::aggregation::DistributedAggregationCollector::from_aggs(
-                tantivy_aggs_ast,
+                tantivy_aggs_ast.clone(),
                 Default::default(),
             );
         let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
 
-        let evp_agg_results =
-            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 10)
-                .unwrap();
+        let evp_agg_results = super::intermediate_aggregation_result_to_proto(
+            intermediate_results,
+            &agg,
+            &tantivy_aggs_ast,
+            10,
+        )
+        .unwrap();
 
         // The sort-by-key aggregation must not appear in the output values.
+        assert_eq!(evp_agg_results.len(), 2);
         assert_eq!(evp_agg_results[0].value.len(), 1);
     }
 
@@ -2136,16 +2170,21 @@ mod tests {
         let searcher = test_searcher();
         let distributed_collector =
             tantivy::aggregation::DistributedAggregationCollector::from_aggs(
-                tantivy_aggs_ast,
+                tantivy_aggs_ast.clone(),
                 Default::default(),
             );
         let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
 
-        let evp_agg_results =
-            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 10)
-                .unwrap();
+        let evp_agg_results = super::intermediate_aggregation_result_to_proto(
+            intermediate_results,
+            &agg,
+            &tantivy_aggs_ast,
+            10,
+        )
+        .unwrap();
 
         // Count + cardinality — both must appear exactly once per bucket.
+        assert_eq!(evp_agg_results.len(), 2);
         assert_eq!(evp_agg_results[0].value.len(), 2);
 
         // Intermediate CARDINALITY_SKETCH returns an HLL sketch, not a scalar.
