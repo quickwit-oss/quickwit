@@ -53,30 +53,28 @@ pub fn read_segment_columns(
     dictionary_builders: &mut DictionaryBuilders,
 ) -> Result<RecordBatch> {
     let fast_fields = segment_reader.fast_fields();
-    let mut columns: Vec<ArrayRef> = Vec::with_capacity(projected_schema.fields().len());
-
-    for field in projected_schema.fields() {
-        if let Some(array) = build_internal_column(field.name(), docs, segment_ord) {
-            columns.push(array);
-            continue;
-        }
-        let array =
-            build_fast_field_array(field, fast_fields, docs, segment_ord, dictionary_builders)?;
-        columns.push(array);
-    }
+    let columns: Vec<ArrayRef> = projected_schema
+        .fields()
+        .iter()
+        .map(|field| build_arrow_array(field, fast_fields, docs, segment_ord, dictionary_builders))
+        .collect::<Result<Vec<_>>>()?;
 
     let batch = RecordBatch::try_new(projected_schema.clone(), columns)?;
     Ok(batch)
 }
 
-fn build_internal_column(name: &str, docs: &[u32], segment_ord: u32) -> Option<ArrayRef> {
-    match name {
-        "_doc_id" => Some(Arc::new(UInt32Array::from_iter_values(
-            docs.iter().copied(),
-        ))),
-        "_segment_ord" => Some(Arc::new(UInt32Array::from(vec![segment_ord; docs.len()]))),
-        _ => None,
-    }
+fn build_arrow_array(
+    field: &Arc<Field>,
+    fast_fields: &tantivy::fastfield::FastFieldReaders,
+    docs: &[u32],
+    segment_ord: u32,
+    dictionary_builders: &mut DictionaryBuilders,
+) -> Result<ArrayRef> {
+    Ok(match field.name().as_ref() {
+        "_doc_id" => Arc::new(UInt32Array::from_iter_values(docs.iter().copied())),
+        "_segment_ord" => Arc::new(UInt32Array::from_value(segment_ord, docs.len())),
+        _ => build_fast_field_array(field, fast_fields, docs, segment_ord, dictionary_builders)?,
+    })
 }
 
 fn build_fast_field_array(
