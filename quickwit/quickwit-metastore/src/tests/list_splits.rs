@@ -33,7 +33,7 @@ use crate::metastore::MetastoreServiceStreamSplitsExt;
 use crate::tests::{cleanup_index, collect_split_ids};
 use crate::{
     CreateIndexRequestExt, ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt,
-    MetastoreServiceExt, SplitMaturity, SplitMetadata, SplitState, StageSplitsRequestExt,
+    MetastoreServiceExt, Split, SplitMaturity, SplitMetadata, SplitState, StageSplitsRequestExt,
 };
 
 pub async fn test_metastore_list_all_splits<
@@ -48,37 +48,37 @@ pub async fn test_metastore_list_all_splits<
 
     let split_id_1 = format!("{index_id}--split-1");
     let split_metadata_1 = SplitMetadata {
-        split_id: split_id_1.clone(),
+        split_id: split_id_1.clone().into(),
         index_uid: index_uid.clone(),
         ..Default::default()
     };
     let split_id_2 = format!("{index_id}--split-2");
     let split_metadata_2 = SplitMetadata {
-        split_id: split_id_2.clone(),
+        split_id: split_id_2.clone().into(),
         index_uid: index_uid.clone(),
         ..Default::default()
     };
     let split_id_3 = format!("{index_id}--split-3");
     let split_metadata_3 = SplitMetadata {
-        split_id: split_id_3.clone(),
+        split_id: split_id_3.clone().into(),
         index_uid: index_uid.clone(),
         ..Default::default()
     };
     let split_id_4 = format!("{index_id}--split-4");
     let split_metadata_4 = SplitMetadata {
-        split_id: split_id_4.clone(),
+        split_id: split_id_4.clone().into(),
         index_uid: index_uid.clone(),
         ..Default::default()
     };
     let split_id_5 = format!("{index_id}--split-5");
     let split_metadata_5 = SplitMetadata {
-        split_id: split_id_5.clone(),
+        split_id: split_id_5.clone().into(),
         index_uid: index_uid.clone(),
         ..Default::default()
     };
     let split_id_6 = format!("{index_id}--split-6");
     let split_metadata_6 = SplitMetadata {
-        split_id: split_id_6.clone(),
+        split_id: split_id_6.clone().into(),
         index_uid: index_uid.clone(),
         ..Default::default()
     };
@@ -180,16 +180,16 @@ pub async fn test_metastore_stream_splits<MetastoreToTest: MetastoreServiceExt +
     for split_idx in 1..1001 {
         let split_id = format!("{index_id}--split-{split_idx:0>4}");
         let split_metadata = SplitMetadata {
-            split_id: split_id.clone(),
+            split_id: split_id.clone().into(),
             index_uid: index_uid.clone(),
             ..Default::default()
         };
         split_metadatas_to_create.push(split_metadata);
 
         if split_idx > 0 && split_idx % 100 == 0 {
-            let staged_split_ids: Vec<SplitId> = split_metadatas_to_create
+            let staged_split_ids: Vec<String> = split_metadatas_to_create
                 .iter()
-                .map(|split_metadata| split_metadata.split_id.clone())
+                .map(|split_metadata| split_metadata.split_id.to_string())
                 .collect();
             let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
                 index_uid.clone(),
@@ -226,10 +226,13 @@ pub async fn test_metastore_stream_splits<MetastoreToTest: MetastoreServiceExt +
         all_splits.append(&mut splits);
     }
     all_splits.sort_by_key(|split| split.split_id().to_string());
-    assert_eq!(all_splits[0].split_id(), format!("{index_id}--split-0001"));
     assert_eq!(
-        all_splits[all_splits.len() - 1].split_id(),
-        format!("{index_id}--split-1000")
+        all_splits[0].split_id().as_str(),
+        &format!("{index_id}--split-0001")
+    );
+    assert_eq!(
+        all_splits[all_splits.len() - 1].split_id().as_str(),
+        &format!("{index_id}--split-1000")
     );
 }
 
@@ -245,7 +248,7 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
 
     let split_id_1 = format!("{index_id}--split-1");
     let split_metadata_1 = SplitMetadata {
-        split_id: split_id_1.clone(),
+        split_id: split_id_1.clone().into(),
         index_uid: index_uid.clone(),
         time_range: Some(0..=99),
         create_timestamp: current_timestamp,
@@ -259,7 +262,7 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
 
     let split_id_2 = format!("{index_id}--split-2");
     let split_metadata_2 = SplitMetadata {
-        split_id: split_id_2.clone(),
+        split_id: split_id_2.clone().into(),
         index_uid: index_uid.clone(),
         time_range: Some(100..=199),
         create_timestamp: current_timestamp,
@@ -273,7 +276,7 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
 
     let split_id_3 = format!("{index_id}--split-3");
     let split_metadata_3 = SplitMetadata {
-        split_id: split_id_3.clone(),
+        split_id: split_id_3.clone().into(),
         index_uid: index_uid.clone(),
         time_range: Some(200..=299),
         create_timestamp: current_timestamp,
@@ -287,7 +290,7 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
 
     let split_id_4 = format!("{index_id}--split-4");
     let split_metadata_4 = SplitMetadata {
-        split_id: split_id_4.clone(),
+        split_id: split_id_4.clone().into(),
         index_uid: index_uid.clone(),
         time_range: Some(300..=399),
         tags: to_btree_set(&["tag!", "tag:foo", "$tag!"]),
@@ -297,7 +300,7 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
 
     let split_id_5 = format!("{index_id}--split-5");
     let split_metadata_5 = SplitMetadata {
-        split_id: split_id_5.clone(),
+        split_id: split_id_5.clone().into(),
         index_uid: index_uid.clone(),
         time_range: None,
         create_timestamp: current_timestamp,
@@ -383,7 +386,7 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
             .unwrap();
         let split_ids: Vec<&str> = splits
             .iter()
-            .map(|split| split.split_id())
+            .map(|split| split.split_id().as_str())
             .sorted()
             .collect();
         assert_eq!(split_ids, &[&split_id_1, &split_id_5]);
@@ -726,7 +729,7 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         // add a split without tag
         let split_id_6 = format!("{index_id}--split-6");
         let split_metadata_6 = SplitMetadata {
-            split_id: split_id_6.clone(),
+            split_id: split_id_6.clone().into(),
             index_uid: index_uid.clone(),
             time_range: None,
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
@@ -818,7 +821,7 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
             .collect_splits()
             .await
             .unwrap();
-        let split_ids: Vec<&String> = splits
+        let split_ids: Vec<&SplitId> = splits
             .iter()
             .map(|split| &split.split_metadata.split_id)
             .sorted()
@@ -914,7 +917,7 @@ pub async fn test_metastore_list_splits_by_node_id<
 
     let split_id_1 = format!("{index_id}--split-1");
     let split_metadata_1 = SplitMetadata {
-        split_id: split_id_1.clone(),
+        split_id: split_id_1.clone().into(),
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         delete_opstamp: 20,
@@ -923,7 +926,7 @@ pub async fn test_metastore_list_splits_by_node_id<
     };
     let split_id_2 = format!("{index_id}--split-2");
     let split_metadata_2 = SplitMetadata {
-        split_id: split_id_2.clone(),
+        split_id: split_id_2.clone().into(),
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         delete_opstamp: 10,
@@ -968,7 +971,7 @@ pub async fn test_metastore_list_stale_splits<
 
     let split_id_1 = format!("{index_id}--split-1");
     let split_metadata_1 = SplitMetadata {
-        split_id: split_id_1.clone(),
+        split_id: split_id_1.clone().into(),
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         delete_opstamp: 20,
@@ -976,7 +979,7 @@ pub async fn test_metastore_list_stale_splits<
     };
     let split_id_2 = format!("{index_id}--split-2");
     let split_metadata_2 = SplitMetadata {
-        split_id: split_id_2.clone(),
+        split_id: split_id_2.clone().into(),
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         delete_opstamp: 10,
@@ -984,7 +987,7 @@ pub async fn test_metastore_list_stale_splits<
     };
     let split_id_3 = format!("{index_id}--split-3");
     let split_metadata_3 = SplitMetadata {
-        split_id: split_id_3.clone(),
+        split_id: split_id_3.clone().into(),
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         delete_opstamp: 0,
@@ -992,7 +995,7 @@ pub async fn test_metastore_list_stale_splits<
     };
     let split_id_4 = format!("{index_id}--split-4");
     let split_metadata_4 = SplitMetadata {
-        split_id: split_id_4.clone(),
+        split_id: split_id_4.clone().into(),
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         delete_opstamp: 20,
@@ -1001,7 +1004,7 @@ pub async fn test_metastore_list_stale_splits<
     // immature split
     let split_id_5 = format!("{index_id}--split-5");
     let split_metadata_5 = SplitMetadata {
-        split_id: split_id_5.clone(),
+        split_id: split_id_5.clone().into(),
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         maturity: SplitMaturity::Immature {
@@ -1100,7 +1103,7 @@ pub async fn test_metastore_list_stale_splits<
             delete_opstamp: 100,
             num_splits: 4,
         };
-        let splits = metastore
+        let splits: Vec<Split> = metastore
             .list_stale_splits(list_stale_splits_request)
             .await
             .unwrap()
@@ -1169,42 +1172,42 @@ pub async fn test_metastore_list_sorted_splits<
 
     let split_id_1 = format!("{split_id}--split-1");
     let split_metadata_1 = SplitMetadata {
-        split_id: split_id_1.clone(),
+        split_id: split_id_1.clone().into(),
         index_uid: index_uid_1.clone(),
         delete_opstamp: 5,
         ..Default::default()
     };
     let split_id_2 = format!("{split_id}--split-2");
     let split_metadata_2 = SplitMetadata {
-        split_id: split_id_2.clone(),
+        split_id: split_id_2.clone().into(),
         index_uid: index_uid_2.clone(),
         delete_opstamp: 3,
         ..Default::default()
     };
     let split_id_3 = format!("{split_id}--split-3");
     let split_metadata_3 = SplitMetadata {
-        split_id: split_id_3.clone(),
+        split_id: split_id_3.clone().into(),
         index_uid: index_uid_1.clone(),
         delete_opstamp: 1,
         ..Default::default()
     };
     let split_id_4 = format!("{split_id}--split-4");
     let split_metadata_4 = SplitMetadata {
-        split_id: split_id_4.clone(),
+        split_id: split_id_4.clone().into(),
         index_uid: index_uid_2.clone(),
         delete_opstamp: 0,
         ..Default::default()
     };
     let split_id_5 = format!("{split_id}--split-5");
     let split_metadata_5 = SplitMetadata {
-        split_id: split_id_5.clone(),
+        split_id: split_id_5.clone().into(),
         index_uid: index_uid_1.clone(),
         delete_opstamp: 2,
         ..Default::default()
     };
     let split_id_6 = format!("{split_id}--split-6");
     let split_metadata_6 = SplitMetadata {
-        split_id: split_id_6.clone(),
+        split_id: split_id_6.clone().into(),
         index_uid: index_uid_2.clone(),
         delete_opstamp: 4,
         ..Default::default()
@@ -1287,9 +1290,9 @@ pub async fn test_metastore_list_sorted_splits<
         .await
         .unwrap();
     // we don't use collect_split_ids because it sorts splits internally
-    let split_ids = splits
+    let split_ids: Vec<&str> = splits
         .iter()
-        .map(|split| split.split_id())
+        .map(|split| split.split_id().as_str())
         .collect::<Vec<_>>();
     assert_eq!(
         split_ids,
@@ -1315,9 +1318,9 @@ pub async fn test_metastore_list_sorted_splits<
         .await
         .unwrap();
     // we don't use collect_split_ids because it sorts splits internally
-    let split_ids = splits
+    let split_ids: Vec<&str> = splits
         .iter()
-        .map(|split| split.split_id())
+        .map(|split| split.split_id().as_str())
         .collect::<Vec<_>>();
     assert_eq!(
         split_ids,
@@ -1366,37 +1369,37 @@ pub async fn test_metastore_list_after_split<
 
     let split_id_1 = format!("{split_id}--split-1");
     let split_metadata_1 = SplitMetadata {
-        split_id: split_id_1.clone(),
+        split_id: split_id_1.clone().into(),
         index_uid: index_uid_1.clone(),
         ..Default::default()
     };
     let split_id_2 = format!("{split_id}--split-2");
     let split_metadata_2 = SplitMetadata {
-        split_id: split_id_2.clone(),
+        split_id: split_id_2.clone().into(),
         index_uid: index_uid_2.clone(),
         ..Default::default()
     };
     let split_id_3 = format!("{split_id}--split-3");
     let split_metadata_3 = SplitMetadata {
-        split_id: split_id_3.clone(),
+        split_id: split_id_3.clone().into(),
         index_uid: index_uid_1.clone(),
         ..Default::default()
     };
     let split_id_4 = format!("{split_id}--split-4");
     let split_metadata_4 = SplitMetadata {
-        split_id: split_id_4.clone(),
+        split_id: split_id_4.clone().into(),
         index_uid: index_uid_2.clone(),
         ..Default::default()
     };
     let split_id_5 = format!("{split_id}--split-5");
     let split_metadata_5 = SplitMetadata {
-        split_id: split_id_5.clone(),
+        split_id: split_id_5.clone().into(),
         index_uid: index_uid_1.clone(),
         ..Default::default()
     };
     let split_id_6 = format!("{split_id}--split-6");
     let split_metadata_6 = SplitMetadata {
-        split_id: split_id_6.clone(),
+        split_id: split_id_6.clone().into(),
         index_uid: index_uid_2.clone(),
         ..Default::default()
     };
@@ -1535,37 +1538,37 @@ pub async fn test_metastore_list_splits_from_all_indexes<
 
     let split_id_1 = format!("{split_id}--split-1");
     let split_metadata_1 = SplitMetadata {
-        split_id: split_id_1.clone(),
+        split_id: split_id_1.clone().into(),
         index_uid: index_uid_1.clone(),
         ..Default::default()
     };
     let split_id_2 = format!("{split_id}--split-2");
     let split_metadata_2 = SplitMetadata {
-        split_id: split_id_2.clone(),
+        split_id: split_id_2.clone().into(),
         index_uid: index_uid_2.clone(),
         ..Default::default()
     };
     let split_id_3 = format!("{split_id}--split-3");
     let split_metadata_3 = SplitMetadata {
-        split_id: split_id_3.clone(),
+        split_id: split_id_3.clone().into(),
         index_uid: index_uid_1.clone(),
         ..Default::default()
     };
     let split_id_4 = format!("{split_id}--split-4");
     let split_metadata_4 = SplitMetadata {
-        split_id: split_id_4.clone(),
+        split_id: split_id_4.clone().into(),
         index_uid: index_uid_2.clone(),
         ..Default::default()
     };
     let split_id_5 = format!("{split_id}--split-5");
     let split_metadata_5 = SplitMetadata {
-        split_id: split_id_5.clone(),
+        split_id: split_id_5.clone().into(),
         index_uid: index_uid_1.clone(),
         ..Default::default()
     };
     let split_id_6 = format!("{split_id}--split-6");
     let split_metadata_6 = SplitMetadata {
-        split_id: split_id_6.clone(),
+        split_id: split_id_6.clone().into(),
         index_uid: index_uid_2.clone(),
         ..Default::default()
     };

@@ -65,7 +65,7 @@ use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
 use crate::ingest_v2::metrics::{RESET_SHARDS_OPERATIONS_TOTAL, STATUS, report_wal_usage};
 use crate::ingest_v2::models::IngesterShardType;
-use crate::metrics::{DOCS_BYTES_TOTAL, DOCS_TOTAL, VALIDITY};
+use crate::metrics::{DD_INGEST_BYTES_TOTAL, DOCS_BYTES_TOTAL, DOCS_TOTAL, VALIDITY};
 use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::{FollowerId, estimate_size};
 
@@ -576,6 +576,11 @@ impl Ingester {
                         labels: [label_values!(VALIDITY => "invalid")],
                     )
                     .inc_by(original_batch_num_bytes);
+                    counter!(
+                        parent: DD_INGEST_BYTES_TOTAL,
+                        labels: [label_values!(VALIDITY => "invalid")],
+                    )
+                    .inc_by(original_batch_num_bytes);
                     let persist_success = PersistSuccess {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
@@ -599,6 +604,11 @@ impl Ingester {
                     labels: [label_values!(VALIDITY => "valid")],
                 )
                 .inc_by(valid_doc_batch.num_bytes() as u64);
+                counter!(
+                    parent: DD_INGEST_BYTES_TOTAL,
+                    labels: [label_values!(VALIDITY => "valid")],
+                )
+                .inc_by(valid_doc_batch.num_bytes() as u64);
                 if !parse_failures.is_empty() {
                     counter!(
                         parent: DOCS_TOTAL,
@@ -607,6 +617,11 @@ impl Ingester {
                     .inc_by(parse_failures.len() as u64);
                     counter!(
                         parent: DOCS_BYTES_TOTAL,
+                        labels: [label_values!(VALIDITY => "invalid")],
+                    )
+                    .inc_by(original_batch_num_bytes - valid_doc_batch.num_bytes() as u64);
+                    counter!(
+                        parent: DD_INGEST_BYTES_TOTAL,
                         labels: [label_values!(VALIDITY => "invalid")],
                     )
                     .inc_by(original_batch_num_bytes - valid_doc_batch.num_bytes() as u64);

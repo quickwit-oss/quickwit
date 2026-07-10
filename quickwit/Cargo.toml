@@ -8,6 +8,7 @@ members = [
   "quickwit-codegen",
   "quickwit-codegen/example",
   "quickwit-common",
+  "quickwit-compaction",
   "quickwit-config",
   "quickwit-control-plane",
   "quickwit-datadog-log-router",
@@ -27,9 +28,9 @@ members = [
   "quickwit-lambda-server",
   "quickwit-macros",
   "quickwit-metastore",
+  "quickwit-metrics-inventory",
   "quickwit-metrics",
   "quickwit-telemetry-exporters",
-  "quickwit-metrics-inventory",
 
   # Disabling metastore-utils from the quickwit projects to ease build/deps.
   # We can reenable it when we need it.
@@ -65,6 +66,7 @@ default-members = [
   "quickwit-codegen",
   "quickwit-codegen/example",
   "quickwit-common",
+  "quickwit-compaction",
   "quickwit-config",
   "quickwit-control-plane",
   "quickwit-datadog-log-router",
@@ -81,10 +83,9 @@ default-members = [
   "quickwit-lambda-server",
   "quickwit-macros",
   "quickwit-metastore",
-  "quickwit-metrics",
-  "quickwit-telemetry-exporters",
   "quickwit-metrics-inventory",
   "pomsky-arrow",
+  "quickwit-metrics",
   "quickwit-opentelemetry",
   "quickwit-parquet-engine",
   "quickwit-processing",
@@ -94,11 +95,12 @@ default-members = [
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
+  "quickwit-telemetry-exporters",
   "quickwit-transport",
 ]
 
 [workspace.package]
-version = "0.1.30-dev"
+version = "0.1.32-dev"
 edition = "2024"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
@@ -124,7 +126,12 @@ bitpacking = "0.9.3"
 bytes = { version = "1", features = ["serde"] }
 bytesize = { version = "2.3.1", features = ["serde"] }
 bytestring = "1.5"
-chitchat = "0.11.0"
+# WORKAROUND: chitchat 0.11.1 was published to crates.io on 2026-07-02 and is
+# still inside Datadog Depot's 2-day dependency cooldown, so it cannot be
+# resolved from the internal registry yet. Point at the git rev that bumped the
+# version to 0.11.1 (quickwit-oss/chitchat#195) until the cooldown lapses and
+# the crate is ingested, at which point this should revert to `chitchat = "0.11.1"`.
+chitchat = { git = "https://github.com/quickwit-oss/chitchat.git", rev = "c2b98cbea3162a4353c1fc1ffa7fd1e5985aee3a", version = "0.11.1" }
 chrono = { version = "0.4", default-features = false, features = [
   "clock",
   "std",
@@ -270,6 +277,7 @@ rustls = "0.23"
 rustls-pemfile = "2.2"
 sea-query = { version = "0.32" }
 sea-query-binder = { version = "0.7", features = [
+  "postgres-array",
   "runtime-tokio-rustls",
   "sqlx-postgres",
 ] }
@@ -406,6 +414,7 @@ quickwit-cluster = { path = "quickwit-cluster" }
 quickwit-codegen = { path = "quickwit-codegen" }
 quickwit-codegen-example = { path = "quickwit-codegen/example" }
 quickwit-common = { path = "quickwit-common" }
+quickwit-compaction = { path = "quickwit-compaction" }
 quickwit-config = { path = "quickwit-config" }
 quickwit-control-plane = { path = "quickwit-control-plane" }
 quickwit-datadog-log-router = { path = "quickwit-datadog-log-router" }
@@ -426,7 +435,6 @@ quickwit-lambda-server = { path = "quickwit-lambda-server" }
 quickwit-macros = { path = "quickwit-macros" }
 quickwit-metastore = { path = "quickwit-metastore" }
 quickwit-metrics = { path = "quickwit-metrics" }
-quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-metrics-inventory = { path = "quickwit-metrics-inventory" }
 quickwit-opentelemetry = { path = "quickwit-opentelemetry" }
 quickwit-parquet-engine = { path = "quickwit-parquet-engine" }
@@ -436,9 +444,10 @@ quickwit-rest-client = { path = "quickwit-rest-client" }
 quickwit-search = { path = "quickwit-search" }
 quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
+quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-transport = { path = "quickwit-transport" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "1e859fd", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "6b8bd7b", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",

@@ -25,12 +25,13 @@ use quickwit_metrics::{
 use tower::{Layer, Service};
 
 use crate::metrics::DEFAULT_BUCKETS;
+use crate::tower::RpcName;
 
-const STATUS_LABEL_NAMES: LabelNames<1> = label_names!("status");
+const METASTORE_REQUEST_LABEL_NAMES: LabelNames<2> = label_names!("rpc", "status");
 
 static METASTORE_REQUESTS_TOTAL: LazyCounter = lazy_counter!(
     name: "metastore_requests.count",
-    description: "Number of metastore gRPC requests by status for legacy Datadog dashboards.",
+    description: "Number of metastore gRPC requests by RPC and status for legacy Datadog dashboards.",
     system: "cloudprem",
     subsystem: "",
     separator: ".",
@@ -38,7 +39,7 @@ static METASTORE_REQUESTS_TOTAL: LazyCounter = lazy_counter!(
 
 static METASTORE_REQUEST_DURATION_SECONDS: LazyHistogram = lazy_histogram!(
     name: "metastore_requests.duration_seconds",
-    description: "Duration of metastore gRPC requests in seconds by status for legacy Datadog dashboards.",
+    description: "Duration of metastore gRPC requests in seconds by RPC and status for legacy Datadog dashboards.",
     system: "cloudprem",
     subsystem: "",
     separator: ".",
@@ -51,7 +52,9 @@ pub struct DDGrpcMetrics<S> {
 }
 
 impl<S, R> Service<R> for DDGrpcMetrics<S>
-where S: Service<R>
+where
+    S: Service<R>,
+    R: RpcName,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -63,11 +66,13 @@ where S: Service<R>
 
     fn call(&mut self, request: R) -> Self::Future {
         let start = Instant::now();
+        let rpc_name = R::rpc_name();
         let inner = self.inner.call(request);
 
         ResponseFuture {
             inner,
             start,
+            rpc_name,
             status: "cancelled",
         }
     }
@@ -90,12 +95,13 @@ impl<S> Layer<S> for DDGrpcMetricsLayer {
     }
 }
 
-/// Response future for [`PrometheusMetrics`].
+/// Response future for [`DDGrpcMetrics`].
 #[pin_project(PinnedDrop)]
 pub struct ResponseFuture<F> {
     #[pin]
     inner: F,
     start: Instant,
+    rpc_name: &'static str,
     status: &'static str,
 }
 
@@ -103,7 +109,7 @@ pub struct ResponseFuture<F> {
 impl<F> PinnedDrop for ResponseFuture<F> {
     fn drop(self: Pin<&mut Self>) {
         let elapsed = self.start.elapsed().as_secs_f64();
-        let labels = label_values!(STATUS_LABEL_NAMES => self.status);
+        let labels = label_values!(METASTORE_REQUEST_LABEL_NAMES => self.rpc_name, self.status);
         counter!(parent: METASTORE_REQUESTS_TOTAL, labels: [labels]).inc();
         histogram!(parent: METASTORE_REQUEST_DURATION_SECONDS, labels: [labels]).observe(elapsed);
     }

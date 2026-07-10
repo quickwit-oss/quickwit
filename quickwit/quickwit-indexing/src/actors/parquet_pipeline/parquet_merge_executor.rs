@@ -56,7 +56,7 @@ use quickwit_parquet_engine::merge::{
     MergeConfig, MergeOutputFile, execute_merge_operation, merge_sorted_parquet_files,
 };
 use quickwit_parquet_engine::storage::{ParquetWriterConfig, RemoteByteSource};
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexUid, SplitId};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt};
 use tracing::{info, instrument, warn};
 
@@ -309,9 +309,9 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
             .context("invalid index_uid in merge input")
             .map_err(|e| ActorExitStatus::from(anyhow::anyhow!(e)))?;
 
-        let replaced_split_ids: Vec<String> = input_splits
+        let replaced_split_ids: Vec<SplitId> = input_splits
             .iter()
-            .map(|s| s.split_id.as_str().to_string())
+            .map(|s| SplitId::from(s.split_id.as_str()))
             .collect();
 
         // Verify pre-merge invariants on the inputs the planner gave us.

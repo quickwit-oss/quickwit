@@ -14,8 +14,9 @@
 
 #![deny(clippy::disallowed_methods)]
 
-use quickwit_actors::{Mailbox, Universe};
+use quickwit_actors::{ActorHandle, Mailbox, Universe};
 use quickwit_common::pubsub::EventBroker;
+use quickwit_compaction::planner::CompactionPlanner;
 use quickwit_config::NodeConfig;
 use quickwit_indexing::actors::MergeSchedulerService;
 use quickwit_metastore::SplitInfo;
@@ -41,6 +42,7 @@ use crate::index_metrics::start_index_metrics_loop;
 /// Schema used for the OpenAPI generation which are apart of this crate.
 pub struct JanitorApiSchemas;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn start_janitor_service(
     universe: &Universe,
     config: &NodeConfig,
@@ -49,6 +51,7 @@ pub async fn start_janitor_service(
     storage_resolver: StorageResolver,
     event_broker: EventBroker,
     run_delete_task_service: bool,
+    compaction_planner_handle: Option<ActorHandle<CompactionPlanner>>,
 ) -> anyhow::Result<Mailbox<JanitorService>> {
     info!("starting janitor service");
     let garbage_collector = GarbageCollector::new(metastore.clone(), storage_resolver.clone());
@@ -79,6 +82,7 @@ pub async fn start_janitor_service(
         delete_task_service_handle,
         garbage_collector_handle,
         retention_policy_executor_handle,
+        compaction_planner_handle,
     );
 
     start_index_metrics_loop(metastore);

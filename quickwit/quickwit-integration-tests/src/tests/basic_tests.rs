@@ -231,6 +231,7 @@ async fn test_metrics() {
         "cloudprem.cpu.usage.gauge",
         "cloudprem.indexed_events_bytes.count",
         "cloudprem.indexed_events.count",
+        "cloudprem.ingest_bytes.count",
         "cloudprem.metastore_requests.count",
         "cloudprem.metastore_requests.duration_seconds",
         "cloudprem.search_requests.count",

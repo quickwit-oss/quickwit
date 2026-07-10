@@ -20,7 +20,7 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::{SplitMaturity, SplitMetadata};
 use quickwit_proto::indexing::MergePipelineId;
-use quickwit_proto::types::DocMappingUid;
+use quickwit_proto::types::{DocMappingUid, SplitId};
 use tantivy::Inventory;
 use time::OffsetDateTime;
 use tracing::{info, warn};
@@ -70,7 +70,7 @@ pub struct MergePlanner {
     ///
     /// We incrementally build this set, by adding new splits to it.
     /// When it becomes too large, we entirely rebuild it.
-    known_split_ids: HashSet<String>,
+    known_split_ids: HashSet<SplitId>,
     known_split_ids_recompute_attempt_id: usize,
 
     merge_policy: Arc<dyn MergePolicy>,
@@ -207,19 +207,19 @@ impl MergePlanner {
         merge_planner
     }
 
-    fn rebuild_known_split_ids(&self) -> HashSet<String> {
-        let mut known_split_ids: HashSet<String> = HashSet::default();
+    fn rebuild_known_split_ids(&self) -> HashSet<SplitId> {
+        let mut known_split_ids: HashSet<SplitId> = HashSet::default();
         // Add splits that in `partitioned_young_splits`.
         for young_split_partition in self.partitioned_young_splits.values() {
             for split in young_split_partition {
-                known_split_ids.insert(split.split_id().to_string());
+                known_split_ids.insert(split.split_id().clone());
             }
         }
         let ongoing_merge_operations = self.ongoing_merge_operations_inventory.list();
         // Add splits that are known as in merge.
         for merge_op in ongoing_merge_operations {
             for split in &merge_op.splits {
-                known_split_ids.insert(split.split_id().to_string());
+                known_split_ids.insert(split.split_id().clone());
             }
         }
         if known_split_ids.len() * 2 >= self.known_split_ids.len() {
@@ -235,11 +235,11 @@ impl MergePlanner {
 
     /// Updates `known_split_ids` and return true if the split was not
     /// previously known and should be recorded.
-    fn acknownledge_split(&mut self, split_id: &str) -> bool {
+    fn acknownledge_split(&mut self, split_id: &SplitId) -> bool {
         if self.known_split_ids.contains(split_id) {
             return false;
         }
-        self.known_split_ids.insert(split_id.to_string());
+        self.known_split_ids.insert(split_id.clone());
         true
     }
 
@@ -376,7 +376,7 @@ mod tests {
 
     use crate::actors::MergePlanner;
     use crate::merge_policy::{
-        MergePolicy, MergeTask, StableLogMergePolicy, merge_policy_from_settings,
+        MergePolicy, MergeSource, StableLogMergePolicy, merge_policy_from_settings,
     };
     use crate::models::NewSplits;
 
@@ -389,7 +389,7 @@ mod tests {
         num_merge_ops: usize,
     ) -> SplitMetadata {
         SplitMetadata {
-            split_id: split_id.to_string(),
+            split_id: split_id.into(),
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
@@ -481,16 +481,18 @@ mod tests {
             };
             merge_planner_mailbox.send_message(message).await?;
             merge_planner_handle.process_pending_and_observe().await;
-            let operations = merge_split_downloader_inbox.drain_for_test_typed::<MergeTask>();
+            let operations = merge_split_downloader_inbox.drain_for_test_typed::<MergeSource>();
             assert_eq!(operations.len(), 3);
-            let mut merge_operations = operations
-                .into_iter()
-                .sorted_by_key(|op| (op.splits[0].partition_id, op.splits[0].doc_mapping_uid));
+            let mut merge_operations = operations.into_iter().sorted_by_key(|op| {
+                let op = op.as_operation();
+                (op.splits[0].partition_id, op.splits[0].doc_mapping_uid)
+            });
 
             let first_merge_operation = merge_operations.next().unwrap();
-            assert_eq!(first_merge_operation.splits.len(), 4);
+            assert_eq!(first_merge_operation.as_operation().splits.len(), 4);
             assert!(
                 first_merge_operation
+                    .as_operation()
                     .splits
                     .iter()
                     .all(|split| split.partition_id == 1
@@ -498,9 +500,10 @@ mod tests {
             );
 
             let second_merge_operation = merge_operations.next().unwrap();
-            assert_eq!(second_merge_operation.splits.len(), 3);
+            assert_eq!(second_merge_operation.as_operation().splits.len(), 3);
             assert!(
                 second_merge_operation
+                    .as_operation()
                     .splits
                     .iter()
                     .all(|split| split.partition_id == 1
@@ -508,9 +511,10 @@ mod tests {
             );
 
             let third_merge_operation = merge_operations.next().unwrap();
-            assert_eq!(third_merge_operation.splits.len(), 3);
+            assert_eq!(third_merge_operation.as_operation().splits.len(), 3);
             assert!(
                 third_merge_operation
+                    .as_operation()
                     .splits
                     .iter()
                     .all(|split| split.partition_id == 2
@@ -580,7 +584,7 @@ mod tests {
         // We wait for the first merge ops. If we sent the Quit message right away, it would have
         // been queue before first `PlanMerge` message.
         let merge_task_res = merge_split_downloader_inbox
-            .recv_typed_message::<MergeTask>()
+            .recv_typed_message::<MergeSource>()
             .await;
         assert!(merge_task_res.is_ok());
 
@@ -594,7 +598,7 @@ mod tests {
 
         let _ = merge_planner_handle.process_pending_and_observe().await;
 
-        let merge_ops = merge_split_downloader_inbox.drain_for_test_typed::<MergeTask>();
+        let merge_ops = merge_split_downloader_inbox.drain_for_test_typed::<MergeSource>();
 
         assert!(merge_ops.is_empty());
 
@@ -602,7 +606,7 @@ mod tests {
 
         let (exit_status, _last_state) = merge_planner_handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Quit));
-        let merge_ops = merge_split_downloader_inbox.drain_for_test_typed::<MergeTask>();
+        let merge_ops = merge_split_downloader_inbox.drain_for_test_typed::<MergeSource>();
         assert!(merge_ops.is_empty());
         universe.assert_quit().await;
         Ok(())
@@ -672,7 +676,7 @@ mod tests {
         merge_planner_mailbox.send_message(Command::Quit).await?;
         let (exit_status, _last_state) = merge_planner_handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Quit));
-        let merge_tasks = merge_split_downloader_inbox.drain_for_test_typed::<MergeTask>();
+        let merge_tasks = merge_split_downloader_inbox.drain_for_test_typed::<MergeSource>();
 
         assert!(merge_tasks.is_empty());
         universe.assert_quit().await;
@@ -750,7 +754,7 @@ mod tests {
 
         // Instead, we wait for the first merge ops.
         let merge_task_res = merge_split_downloader_inbox
-            .recv_typed_message::<MergeTask>()
+            .recv_typed_message::<MergeSource>()
             .await;
         assert!(merge_task_res.is_ok());
 
@@ -759,7 +763,7 @@ mod tests {
         let (exit_status, _last_state) = merge_planner_handle.join().await;
 
         assert!(matches!(exit_status, ActorExitStatus::Quit));
-        let merge_tasks = merge_split_downloader_inbox.drain_for_test_typed::<MergeTask>();
+        let merge_tasks = merge_split_downloader_inbox.drain_for_test_typed::<MergeSource>();
         assert!(merge_tasks.is_empty());
 
         universe.assert_quit().await;

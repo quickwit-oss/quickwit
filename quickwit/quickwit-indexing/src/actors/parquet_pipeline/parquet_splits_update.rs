@@ -19,7 +19,7 @@ use std::fmt;
 use itertools::Itertools;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_parquet_engine::split::ParquetSplitMetadata;
-use quickwit_proto::types::{IndexUid, PublishToken};
+use quickwit_proto::types::{IndexUid, PublishToken, SplitId};
 use tracing::Span;
 
 use super::parquet_merge_messages::ParquetMergeTask;
@@ -35,7 +35,7 @@ pub struct ParquetSplitsUpdate {
     /// The staged and uploaded splits (metrics or sketches).
     pub new_splits: Vec<ParquetSplitMetadata>,
     /// Split IDs being replaced (for merges, typically empty for ingest).
-    pub replaced_split_ids: Vec<String>,
+    pub replaced_split_ids: Vec<SplitId>,
     /// Checkpoint delta covering the data in these splits.
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     /// Publish lock for coordination.

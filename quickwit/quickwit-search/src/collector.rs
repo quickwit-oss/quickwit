@@ -490,7 +490,7 @@ pub(crate) struct SegmentPartialHit {
 impl SegmentPartialHit {
     pub fn into_partial_hit(
         self,
-        split_id: SplitId,
+        split_id: &SplitId,
         segment_ord: SegmentOrdinal,
         first: &SortingFieldExtractorComponent,
         second: &Option<SortingFieldExtractorComponent>,
@@ -514,7 +514,7 @@ impl SegmentPartialHit {
                     sort_value: Some(sort_value),
                 }),
             doc_id: self.doc_id,
-            split_id,
+            split_id: split_id.to_string(),
             segment_ord,
         }
     }
@@ -670,7 +670,7 @@ impl QuickwitIncrementalAggregations {
                             sort_value: Some(SortValue::I64(timestamp)),
                         }),
                         sort_value2: None,
-                        split_id: SplitId::new(),
+                        split_id: String::new(),
                         segment_ord: 0,
                         doc_id: 0,
                     });
@@ -1069,7 +1069,7 @@ pub(crate) fn make_merge_collector(
     };
     let sort_by = sort_by_from_request(search_request);
     Ok(QuickwitCollector {
-        split_id: SplitId::default(),
+        split_id: SplitId::from(""),
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
         sort_by,
@@ -1320,6 +1320,7 @@ mod tests {
         LeafResourceStats, LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortField,
         SortOrder, SortValue, SplitResourceStats, SplitSearchError,
     };
+    use quickwit_proto::types::SplitId;
     use tantivy::TantivyDocument;
     use tantivy::aggregation::agg_req::Aggregations;
     use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
@@ -1594,7 +1595,7 @@ mod tests {
             // Check increasing slice sizes of the dataset
             for slice_len in 0..dataset.len() {
                 let collector = super::make_collector_for_split(
-                    "fake_split_id".to_string(),
+                    SplitId::from("fake_split_id"),
                     &make_request(slice_len as u64, sort_str),
                     Default::default(),
                 )
@@ -1690,7 +1691,7 @@ mod tests {
                 ..SearchRequest::default()
             };
             let collector = super::make_collector_for_split(
-                "fake_split_id".to_string(),
+                SplitId::from("fake_split_id"),
                 &request,
                 Default::default(),
             )
@@ -1728,7 +1729,7 @@ mod tests {
             };
 
             let collector = super::make_collector_for_split(
-                "fake_split_id1".to_string(),
+                SplitId::from("fake_split_id1"),
                 &request,
                 Default::default(),
             )
@@ -1742,7 +1743,7 @@ mod tests {
             assert_eq!(res.partial_hits.len(), dataset.len());
 
             let collector = super::make_collector_for_split(
-                "fake_split_id2".to_string(),
+                SplitId::from("fake_split_id2"),
                 &request,
                 Default::default(),
             )
@@ -1755,7 +1756,7 @@ mod tests {
             assert_eq!(res.partial_hits.len(), 5);
 
             let collector = super::make_collector_for_split(
-                "fake_split_id3".to_string(),
+                SplitId::from("fake_split_id3"),
                 &request,
                 Default::default(),
             )

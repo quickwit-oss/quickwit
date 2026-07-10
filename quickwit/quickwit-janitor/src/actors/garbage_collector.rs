@@ -377,7 +377,7 @@ mod tests {
             .iter()
             .map(|split_id| Split {
                 split_metadata: SplitMetadata {
-                    split_id: split_id.to_string(),
+                    split_id: (*split_id).into(),
                     index_uid: IndexUid::for_test(index_id, 0),
                     footer_offsets: 5..20,
                     ..Default::default()

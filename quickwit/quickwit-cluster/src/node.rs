@@ -109,6 +109,10 @@ impl ClusterNode {
     pub fn availability_zone(&self) -> Option<&str> {
         self.inner.member.availability_zone.as_deref()
     }
+
+    pub fn enable_standalone_compactors(&self) -> bool {
+        self.inner.member.enable_standalone_compactors
+    }
 }
 
 impl std::ops::Deref for ClusterNode {

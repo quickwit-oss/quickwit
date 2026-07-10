@@ -19,7 +19,7 @@ use std::str::FromStr;
 
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask, MetastoreError, MetastoreResult};
-use quickwit_proto::types::{DocMappingUid, IndexId, IndexUid, ShardId, SourceId, SplitId};
+use quickwit_proto::types::{DocMappingUid, IndexId, IndexUid, ShardId, SourceId};
 use sea_query::{Iden, Write};
 use tracing::error;
 
@@ -101,8 +101,9 @@ impl Iden for ToTimestampFunc {
 /// A model structure for handling split metadata in a database.
 #[derive(sqlx::FromRow)]
 pub(super) struct PgSplit {
-    /// Split ID.
-    pub split_id: SplitId,
+    /// It is only used for logging here (the authoritative split id lives in
+    /// `split_metadata_json`).
+    pub split_id: String,
     /// The state of the split. With `update_timestamp`, this is the only mutable attribute of the
     /// split.
     pub split_state: String,

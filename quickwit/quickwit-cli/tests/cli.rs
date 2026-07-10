@@ -730,7 +730,7 @@ async fn test_garbage_collect_cli_no_grace() {
     let index_path = test_env.indexes_dir_path.join(&test_env.index_id);
     assert_eq!(index_path.try_exists().unwrap(), true);
 
-    let split_ids = vec![splits_metadata[0].split_id().to_string()];
+    let split_ids = vec![splits_metadata[0].split_id.clone()];
     let metastore = refresh_metastore(metastore).await.unwrap();
     let mark_for_deletion_request =
         MarkSplitsForDeletionRequest::new(index_uid.clone(), split_ids.clone());
@@ -865,7 +865,7 @@ async fn test_garbage_collect_index_cli() {
             index_uid: Some(index_uid.clone()),
             split_ids: splits_metadata
                 .into_iter()
-                .map(|split_metadata| split_metadata.split_id)
+                .map(|split_metadata| split_metadata.split_id.to_string())
                 .collect(),
         })
         .await

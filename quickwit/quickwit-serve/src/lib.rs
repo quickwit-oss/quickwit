@@ -69,7 +69,7 @@ pub(crate) use decompression::Body;
 pub use format::BodyFormat;
 use futures::StreamExt;
 use itertools::Itertools;
-use quickwit_actors::{ActorExitStatus, Mailbox, SpawnContext, Universe};
+use quickwit_actors::{ActorExitStatus, ActorHandle, Mailbox, SpawnContext, Universe};
 use quickwit_cluster::{
     Cluster, ClusterChange, ClusterChangeStream, ClusterNode, ListenerHandle, start_cluster_service,
 };
@@ -84,17 +84,22 @@ use quickwit_common::tower::{
 };
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
+use quickwit_compaction::planner::CompactionPlanner;
+use quickwit_compaction::{
+    CompactorSupervisor, notify_compactor_decommission, start_compactor_service,
+    wait_for_compactor_decommission,
+};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IngestApiConfig, IngestSettings, NodeConfig};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
-use quickwit_indexing::actors::IndexingService;
+use quickwit_indexing::actors::{IndexingService, MergeSchedulerService};
 use quickwit_indexing::models::ShardPositionsService;
-use quickwit_indexing::start_indexing_service;
+use quickwit_indexing::{IndexingSplitCache, start_indexing_service};
 use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
-    IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout,
+    IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout, notify_ingester_decommission,
     setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
     start_ingest_api_service, try_get_ingester_status, wait_for_ingester_decommission,
     wait_for_ingester_status,
@@ -105,6 +110,7 @@ use quickwit_metastore::{
     ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
+use quickwit_proto::compaction::CompactionPlannerServiceClient;
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
 use quickwit_proto::ingest::ingester::{
@@ -123,7 +129,7 @@ use quickwit_search::{
     SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext, SearcherPool,
     create_search_client_from_channel, start_searcher_service,
 };
-use quickwit_storage::{SplitCache, StorageResolver};
+use quickwit_storage::{SearchSplitCache, StorageResolver};
 pub use quickwit_telemetry_exporters::{EnvFilterReloadFn, do_nothing_env_filter_reload_fn};
 pub use quickwit_transport::reload_tls_cert;
 use tcp_listener::TcpListenerResolver;
@@ -151,6 +157,13 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
     Duration::from_millis(25)
 } else {
     Duration::from_secs(10)
+};
+const READINESS_FAILURE_THRESHOLD: usize = 3;
+
+const COMPACTION_SERVICE_DISCOVERY_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(100)
+} else {
+    Duration::from_secs(300)
 };
 
 const METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY: &str = "QW_METASTORE_CLIENT_MAX_CONCURRENCY";
@@ -208,6 +221,8 @@ struct QuickwitServices {
     pub ingest_router_service: IngestRouterServiceClient,
     ingester_opt: Option<Ingester>,
 
+    pub compaction_service_client_opt: Option<CompactionPlannerServiceClient>,
+    pub _compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
     pub janitor_service_opt: Option<Mailbox<JanitorService>>,
     pub jaeger_service_opt: Option<JaegerService>,
     pub otlp_logs_service_opt: Option<OtlpGrpcLogsService>,
@@ -279,6 +294,93 @@ async fn balance_channel_for_service(
         })
     });
     BalanceChannel::from_stream(service_change_stream)
+}
+
+/// Builds a `CompactionPlannerServiceClient` if standalone compactors are enabled
+/// and the node runs the janitor or compactor.
+///
+/// On janitor nodes, spawns a `CompactionPlanner` actor and builds the client from
+/// its mailbox. On compactor-only nodes, connects to a remote janitor via gRPC.
+///
+/// The second tuple element is the local planner's `ActorHandle`, returned only
+/// on janitor nodes so the caller can attach it to the janitor liveness probe.
+async fn get_compaction_planner_client_if_needed(
+    node_config: &NodeConfig,
+    cluster: &Cluster,
+    universe: &Universe,
+    metastore_client: &MetastoreServiceClient,
+) -> anyhow::Result<(
+    Option<CompactionPlannerServiceClient>,
+    Option<ActorHandle<CompactionPlanner>>,
+)> {
+    if !node_config.enable_standalone_compactors {
+        return Ok((None, None));
+    }
+    let is_janitor = node_config.is_service_enabled(QuickwitService::Janitor);
+    let is_compactor = node_config.is_service_enabled(QuickwitService::Compactor);
+    if !is_janitor && !is_compactor {
+        return Ok((None, None));
+    }
+    if is_janitor {
+        let planner = CompactionPlanner::new(metastore_client.clone(), cluster.clone());
+        let (mailbox, handle) = universe.spawn_builder().spawn(planner);
+        info!("compaction planner actor started on janitor node");
+        return Ok((
+            Some(CompactionPlannerServiceClient::from_mailbox(mailbox)),
+            Some(handle),
+        ));
+    }
+    // Compactor-only node: connect to the planner on a remote janitor.
+    let balance_channel = balance_channel_for_service(cluster, QuickwitService::Janitor).await;
+    let found = balance_channel
+        .wait_for(COMPACTION_SERVICE_DISCOVERY_TIMEOUT, |connections| {
+            !connections.is_empty()
+        })
+        .await;
+    if !found {
+        bail!("compactor is enabled but no janitor node was found in the cluster")
+    }
+    info!("remote compaction planner detected on janitor node");
+    Ok((
+        Some(CompactionPlannerServiceClient::from_balance_channel(
+            balance_channel,
+            node_config.grpc_config.max_message_size,
+            None,
+        )),
+        None,
+    ))
+}
+
+fn spawn_merge_scheduler_service(
+    universe: &Universe,
+    node_config: &NodeConfig,
+) -> Mailbox<MergeSchedulerService> {
+    let (mailbox, _) = universe.spawn_builder().spawn(MergeSchedulerService::new(
+        node_config.indexer_config.merge_concurrency.get(),
+    ));
+    mailbox
+}
+
+/// The split cache is used when a node both indexes and merges its own splits. Split compactors
+/// never do; indexers only do if split compaction is disabled. The third case is a node running
+/// both services, in which case the two services share it.
+async fn indexing_split_cache_for_config(
+    node_config: &NodeConfig,
+) -> anyhow::Result<Arc<IndexingSplitCache>> {
+    let runs_indexer = node_config.is_service_enabled(QuickwitService::Indexer);
+    let runs_local_compactor = node_config.is_service_enabled(QuickwitService::Compactor);
+    let merges_own_splits =
+        runs_indexer && (!node_config.enable_standalone_compactors || runs_local_compactor);
+    if merges_own_splits {
+        let cache = IndexingSplitCache::from_config(
+            &node_config.indexer_config,
+            &node_config.data_dir_path,
+        )
+        .await?;
+        Ok(Arc::new(cache))
+    } else {
+        Ok(Arc::new(IndexingSplitCache::no_caching()))
+    }
 }
 
 async fn start_ingest_client_if_needed(
@@ -424,18 +526,31 @@ async fn shutdown_signal_handler(
     universe: Universe,
     ingester_opt: Option<Ingester>,
     cloudprem_shutdown_trigger_tx: oneshot::Sender<()>,
+    compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
     grpc_shutdown_trigger_tx: oneshot::Sender<()>,
     rest_shutdown_trigger_tx: oneshot::Sender<()>,
     health_shutdown_trigger_tx_opt: Option<oneshot::Sender<()>>,
     cluster: Cluster,
 ) -> HashMap<String, ActorExitStatus> {
     shutdown_signal.await;
-    // We must decommission the ingester first before terminating the indexing pipelines that
-    // may consume from it. We also need to keep the gRPC server running while doing so.
-    if let Some(ingester) = &ingester_opt
-        && let Err(error) = wait_for_ingester_decommission(ingester, Duration::from_secs(300)).await
-    {
+    if let Err(error) = notify_ingester_decommission(ingester_opt.as_ref()).await {
+        error!("failed to initiate ingester decommission: {:?}", error);
+    }
+    let compactor_status_rx_opt = notify_compactor_decommission(compactor_supervisor_opt.as_ref())
+        .await
+        .unwrap_or_else(|error| {
+            error!("failed to initiate compactor decommission: {:?}", error);
+            None
+        });
+    let (ingester_result, compactor_result) = tokio::join!(
+        wait_for_ingester_decommission(ingester_opt.as_ref(), Duration::from_secs(300)),
+        wait_for_compactor_decommission(compactor_status_rx_opt, Duration::from_secs(300)),
+    );
+    if let Err(error) = ingester_result {
         error!("failed to decommission ingester gracefully: {:?}", error);
+    }
+    if let Err(error) = compactor_result {
+        error!("failed to decommission compactor gracefully: {:?}", error);
     }
     let actor_exit_statuses = universe.quit().await;
 
@@ -563,7 +678,7 @@ pub async fn serve_quickwit(
     // Set up the "control plane proxy" for the metastore.
     let metastore_through_control_plane = MetastoreServiceClient::new(ControlPlaneMetastore::new(
         control_plane_client.clone(),
-        metastore_client,
+        metastore_client.clone(),
     ));
 
     // Setup ingest service v1.
@@ -571,7 +686,28 @@ pub async fn serve_quickwit(
         .await
         .context("failed to start ingest v1 service")?;
 
+    let (compaction_service_client_opt, compaction_planner_handle_opt) =
+        get_compaction_planner_client_if_needed(
+            &node_config,
+            &cluster,
+            &universe,
+            &metastore_client,
+        )
+        .await
+        .context("failed to initialize compaction service client")?;
+
+    let indexing_split_cache = indexing_split_cache_for_config(&node_config).await?;
+
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
+        // if standalone compactors is enabled, indexing pipelines don't perform any merges.
+        // if standalone compactors is disabled, indexing pipelines perform all merges as before.
+        let merge_scheduler_mailbox_opt = if !node_config.enable_standalone_compactors {
+            Some(spawn_merge_scheduler_service(&universe, &node_config))
+        } else {
+            None
+        };
+
+        let split_cache = indexing_split_cache.clone();
         let indexing_service = start_indexing_service(
             &universe,
             &node_config,
@@ -581,6 +717,8 @@ pub async fn serve_quickwit(
             ingester_pool.clone(),
             storage_resolver.clone(),
             event_broker.clone(),
+            merge_scheduler_mailbox_opt,
+            split_cache,
         )
         .await
         .context("failed to start indexing service")?;
@@ -630,15 +768,15 @@ pub async fn serve_quickwit(
         create_managed_indexes(&node_config, index_manager.clone()).await?;
     }
 
-    let split_cache_opt: Option<Arc<SplitCache>> =
+    let search_split_cache_opt: Option<Arc<SearchSplitCache>> =
         if let Some(split_cache_limits) = node_config.searcher_config.split_cache {
-            let split_cache = SplitCache::with_root_path(
+            let search_split_cache = SearchSplitCache::with_root_path(
                 node_config.data_dir_path.join("searcher-split-cache"),
                 storage_resolver.clone(),
                 split_cache_limits,
             )
             .context("failed to load searcher split cache")?;
-            Some(split_cache)
+            Some(search_split_cache)
         } else {
             None
         };
@@ -654,7 +792,7 @@ pub async fn serve_quickwit(
                     quickwit_lambda_client::try_get_or_deploy_invoker(lambda_config).await?;
                 Arc::new(SearcherContext::new(
                     node_config.searcher_config.clone(),
-                    split_cache_opt,
+                    search_split_cache_opt,
                     Some(invoker),
                 ))
             }
@@ -666,13 +804,13 @@ pub async fn serve_quickwit(
         } else {
             Arc::new(SearcherContext::new_without_invoker(
                 node_config.searcher_config.clone(),
-                split_cache_opt,
+                search_split_cache_opt,
             ))
         }
     } else {
         Arc::new(SearcherContext::new_without_invoker(
             node_config.searcher_config.clone(),
-            split_cache_opt,
+            search_split_cache_opt,
         ))
     };
 
@@ -734,10 +872,41 @@ pub async fn serve_quickwit(
             storage_resolver.clone(),
             event_broker.clone(),
             !get_bool_from_env(DISABLE_DELETE_TASK_SERVICE_ENV_KEY, false),
+            compaction_planner_handle_opt,
         )
         .await
         .context("failed to start janitor service")?;
         Some(janitor_service)
+    } else {
+        None
+    };
+
+    let compactor_supervisor_opt = if node_config.is_service_enabled(QuickwitService::Compactor)
+        && node_config.enable_standalone_compactors
+    {
+        let compaction_dir = node_config.data_dir_path.join("compaction");
+        fs::create_dir_all(&compaction_dir)?;
+        let compaction_root_directory = quickwit_common::temp_dir::Builder::default()
+            .tempdir_in(&compaction_dir)
+            .context("failed to create compaction temp directory")?;
+        let compaction_client = compaction_service_client_opt
+            .clone()
+            .expect("compactor service enabled but no compaction client available");
+        let split_cache = indexing_split_cache.clone();
+        let compactor_mailbox = start_compactor_service(
+            &universe,
+            cluster.self_node_id(),
+            compaction_client,
+            &node_config.compactor_config,
+            metastore_client.clone(),
+            storage_resolver.clone(),
+            split_cache,
+            event_broker.clone(),
+            compaction_root_directory,
+        )
+        .await
+        .context("failed to start compactor service")?;
+        Some(compactor_mailbox)
     } else {
         None
     };
@@ -791,6 +960,8 @@ pub async fn serve_quickwit(
         ingest_router_service,
         ingest_service,
         ingester_opt: ingester_opt.clone(),
+        compaction_service_client_opt,
+        _compactor_supervisor_opt: compactor_supervisor_opt.clone(),
         janitor_service_opt,
         jaeger_service_opt,
         otlp_logs_service_opt,
@@ -917,6 +1088,7 @@ pub async fn serve_quickwit(
         universe,
         ingester_opt,
         cloudprem_shutdown_trigger_tx,
+        compactor_supervisor_opt,
         grpc_shutdown_trigger_tx,
         rest_shutdown_trigger_tx,
         health_shutdown_trigger_tx_opt,
@@ -1500,7 +1672,7 @@ async fn node_readiness_reporting_task(
     info!("REST server is ready");
 
     let mut interval = tokio::time::interval(READINESS_REPORTING_INTERVAL);
-
+    let mut consecutive_readiness_failures = 0usize;
     loop {
         interval.tick().await;
 
@@ -1529,7 +1701,16 @@ async fn node_readiness_reporting_task(
         } else {
             true
         };
-        let new_node_ready = metastore_is_available && ingester_is_available;
+        let is_ready = metastore_is_available && ingester_is_available;
+        let new_node_ready = if is_ready {
+            consecutive_readiness_failures = 0;
+            true
+        } else {
+            consecutive_readiness_failures += 1;
+            // Only dampen READY -> NOT_READY transitions: a NOT_READY node must observe a
+            // successful readiness sample before becoming READY.
+            node_ready && consecutive_readiness_failures < READINESS_FAILURE_THRESHOLD
+        };
 
         if new_node_ready != node_ready {
             node_ready = new_node_ready;
@@ -1764,6 +1945,9 @@ fn patch_ingest_settings(ingest_settings: &mut IngestSettings) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use anyhow::bail;
     use quickwit_cluster::{ChitchatTransport, ClusterNode, create_cluster_for_test};
     use quickwit_common::uri::Uri;
     use quickwit_common::{ServiceStream, assert_eventually};
@@ -1815,14 +1999,23 @@ mod tests {
             .await
             .unwrap();
         let (metastore_readiness_tx, metastore_readiness_rx) = watch::channel(false);
+        let metastore_failures_to_inject = Arc::new(Mutex::new(0usize));
+        let metastore_failures_to_inject_clone = metastore_failures_to_inject.clone();
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_check_connectivity()
             .returning(move || {
+                let mut failures_to_inject = metastore_failures_to_inject_clone.lock().unwrap();
+                if *failures_to_inject > 0 {
+                    *failures_to_inject -= 1;
+                    bail!("metastore transiently not ready");
+                }
+                drop(failures_to_inject);
+
                 if *metastore_readiness_rx.borrow() {
                     Ok(())
                 } else {
-                    Err(anyhow::anyhow!("Metastore not ready"))
+                    bail!("metastore not ready")
                 }
             });
         let (ingester_status_tx, ingester_status_rx) = watch::channel(IngesterStatus::Initializing);
@@ -1892,6 +2085,12 @@ mod tests {
         let request = tonic::Request::new(HealthCheckRequest::default());
         let response = health_client.check(request).await.unwrap().into_inner();
         assert_eq!(response.status(), ServingStatus::Serving.into());
+
+        // Inject fewer failures than the threshold while the steady-state metastore readiness
+        // remains healthy. The node should stay ready through this short outage.
+        *metastore_failures_to_inject.lock().unwrap() = READINESS_FAILURE_THRESHOLD - 1;
+        tokio::time::sleep(READINESS_REPORTING_INTERVAL * READINESS_FAILURE_THRESHOLD as u32).await;
+        assert!(cluster.is_self_node_ready().await);
 
         metastore_readiness_tx.send(false).unwrap();
         assert_eventually!(!cluster.is_self_node_ready().await);
@@ -2207,5 +2406,117 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(1)).await;
 
         assert!(ingester_pool.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_compaction_service_on_janitor_node() {
+        let transport = ChitchatTransport::default();
+        let cluster =
+            create_cluster_for_test(Vec::new(), &["janitor", "indexer"], &transport, true)
+                .await
+                .unwrap();
+        let universe = Universe::new();
+        let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
+
+        // Janitor + indexer with standalone compactors enabled: planner client is returned.
+        let mut node_config = NodeConfig::for_test_with_standalone_compactors();
+        node_config.enabled_services =
+            HashSet::from([QuickwitService::Janitor, QuickwitService::Indexer]);
+        let (client_opt, handle_opt) =
+            get_compaction_planner_client_if_needed(&node_config, &cluster, &universe, &metastore)
+                .await
+                .unwrap();
+        assert!(client_opt.is_some());
+        assert!(handle_opt.is_some());
+
+        // With compactor + janitor enabled, planner client is also returned.
+        node_config.enabled_services = HashSet::from([
+            QuickwitService::Janitor,
+            QuickwitService::Indexer,
+            QuickwitService::Compactor,
+        ]);
+        let (client_opt, handle_opt) =
+            get_compaction_planner_client_if_needed(&node_config, &cluster, &universe, &metastore)
+                .await
+                .unwrap();
+        assert!(client_opt.is_some());
+        assert!(handle_opt.is_some());
+
+        // Neither janitor nor compactor: no client, no handle.
+        node_config.enabled_services = HashSet::from([QuickwitService::Indexer]);
+        let (client_opt, handle_opt) =
+            get_compaction_planner_client_if_needed(&node_config, &cluster, &universe, &metastore)
+                .await
+                .unwrap();
+        assert!(client_opt.is_none());
+        assert!(handle_opt.is_none());
+
+        // Standalone compactors disabled: short-circuit returns (None, None) regardless of
+        // which services are enabled.
+        node_config.enable_standalone_compactors = false;
+        node_config.enabled_services =
+            HashSet::from([QuickwitService::Janitor, QuickwitService::Indexer]);
+        let (client_opt, handle_opt) =
+            get_compaction_planner_client_if_needed(&node_config, &cluster, &universe, &metastore)
+                .await
+                .unwrap();
+        assert!(client_opt.is_none());
+        assert!(handle_opt.is_none());
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_indexing_split_cache_for_config() {
+        async fn cache_created(services: &[QuickwitService], standalone_compactors: bool) -> bool {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let mut node_config = NodeConfig::for_test();
+            node_config.data_dir_path = temp_dir.path().to_path_buf();
+            node_config.enabled_services = services.iter().copied().collect();
+            node_config.enable_standalone_compactors = standalone_compactors;
+            indexing_split_cache_for_config(&node_config).await.unwrap();
+            temp_dir
+                .path()
+                .join("indexer-split-cache")
+                .join("splits")
+                .is_dir()
+        }
+
+        // Indexer merging its own splits in-pipeline → real cache.
+        assert!(cache_created(&[QuickwitService::Indexer], false).await);
+        // Indexer co-located with a compactor → shared real cache.
+        assert!(
+            cache_created(
+                &[QuickwitService::Indexer, QuickwitService::Compactor],
+                true
+            )
+            .await
+        );
+        // Indexer offloading merges to remote compactors → no cache.
+        assert!(!cache_created(&[QuickwitService::Indexer], true).await);
+        // Standalone compactor → no cache by default.
+        assert!(!cache_created(&[QuickwitService::Compactor], true).await);
+        // Node that neither produces nor merges splits → no cache.
+        assert!(!cache_created(&[QuickwitService::Searcher], false).await);
+    }
+
+    #[tokio::test]
+    async fn test_compaction_service_returns_error_when_no_janitor() {
+        let transport = ChitchatTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, false)
+            .await
+            .unwrap();
+        let universe = Universe::new();
+        let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
+
+        let mut node_config = NodeConfig::for_test_with_standalone_compactors();
+        node_config.enabled_services =
+            HashSet::from([QuickwitService::Indexer, QuickwitService::Compactor]);
+        let result =
+            get_compaction_planner_client_if_needed(&node_config, &cluster, &universe, &metastore)
+                .await;
+        assert!(result.is_err());
+
+        universe.assert_quit().await;
     }
 }

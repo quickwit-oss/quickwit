@@ -19,8 +19,8 @@ DO_PUSH=false
 DO_SIGN=false
 METADATA_FILE=""
 CARGO_PROFILE="release"
-INCLUDE_POMSKY_INTAKE=true
-INCLUDE_QUICKWIT_METRICS=true
+INCLUDE_POMSKY_INTAKE=false
+INCLUDE_QUICKWIT_METRICS=false
 
 usage() {
     echo "Usage: $0 [options]"
@@ -31,8 +31,8 @@ usage() {
     echo "  --target-env <env>             Target environment (default: $DEFAULT_TARGET_ENV)"
     echo "  --platform <platform>          Build platform (default: $DEFAULT_PLATFORM)"
     echo "  --metadata-file <file>         Path to save metadata file (optional)"
-    echo "  --no-pomsky-intake             Exclude the pomsky-intake binary from the image"
-    echo "  --no-quickwit-metrics          Exclude the quickwit-metrics binary from the image"
+    echo "  --include-pomsky-intake        Include the pomsky-intake binary in the image"
+    echo "  --include-quickwit-metrics     Include the quickwit-metrics binary in the image"
     echo "  --debug                        Compile binaries in debug mode (CARGO_PROFILE=dev)"
     echo "  --build                        Build the image"
     echo "  --push                         Build and push the image"
@@ -99,10 +99,20 @@ while [[ $# -gt 0 ]]; do
                 usage
             fi
             ;;
+        --include-pomsky-intake)
+            INCLUDE_POMSKY_INTAKE=true
+            shift
+            ;;
+        --include-quickwit-metrics)
+            INCLUDE_QUICKWIT_METRICS=true
+            shift
+            ;;
+        # Kept for backward compatibility — no-op since false is the default.
         --no-pomsky-intake)
             INCLUDE_POMSKY_INTAKE=false
             shift
             ;;
+        # Kept for backward compatibility — no-op since false is the default.
         --no-quickwit-metrics)
             INCLUDE_QUICKWIT_METRICS=false
             shift
