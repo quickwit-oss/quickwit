@@ -246,7 +246,13 @@ mod tests {
     async fn test_metastore_resolver_resolve_read_only_postgres() {
         use std::env;
 
-        use quickwit_proto::metastore::{ListIndexesMetadataRequest, MetastoreService};
+        use quickwit_common::rand::append_random_suffix;
+        use quickwit_config::IndexConfig;
+        use quickwit_proto::metastore::{
+            CreateIndexRequest, ListIndexesMetadataRequest, MetastoreError, MetastoreService,
+        };
+
+        use crate::CreateIndexRequestExt;
 
         let metastore_resolver = MetastoreResolver::unconfigured();
         let test_database_url = env::var("QW_TEST_DATABASE_URL").unwrap_or_else(|_| {
@@ -266,5 +272,16 @@ mod tests {
             .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await
             .unwrap();
+
+        let index_id = append_random_suffix("test-read-only-postgres");
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+        let error = read_only_metastore
+            .create_index(create_index_request)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, MetastoreError::Forbidden { .. }));
     }
 }
