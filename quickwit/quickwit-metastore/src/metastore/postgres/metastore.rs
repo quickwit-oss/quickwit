@@ -3560,9 +3560,14 @@ mod tests {
         let query = ListSplitsQuery::for_all_indexes()
             .with_excluded_split_ids(HashSet::from([SplitId::from("s1"), SplitId::from("s2")]));
         append_query_filters_and_order_by(sql, query);
-        assert_eq!(
-            sql.to_string(PostgresQueryBuilder),
-            r#"SELECT * FROM "splits" WHERE split_id <> ALL(ARRAY ['s1','s2']::text[])"#
+        let sql = sql.to_string(PostgresQueryBuilder);
+        assert!(
+            matches!(
+                sql.as_str(),
+                r#"SELECT * FROM "splits" WHERE split_id <> ALL(ARRAY ['s1','s2']::text[])"#
+                    | r#"SELECT * FROM "splits" WHERE split_id <> ALL(ARRAY ['s2','s1']::text[])"#
+            ),
+            "unexpected SQL query: {sql}"
         );
     }
 

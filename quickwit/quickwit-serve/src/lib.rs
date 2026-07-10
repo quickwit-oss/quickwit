@@ -1127,21 +1127,23 @@ pub async fn serve_quickwit(
             )
         };
 
-    // The primary metastore is checked for every node because the REST layer exposes write-capable
-    // index-management APIs on every node. The read-only metastore is checked in addition when this
-    // node either serves a local read replica or routes search reads to remote read-replica nodes.
-    let mut metastore_readiness_clients = Vec::with_capacity(2);
-    metastore_readiness_clients.push(primary_metastore_through_control_plane.clone());
-    if let Some(read_only_metastore_client) = &read_only_metastore_client_opt {
-        metastore_readiness_clients.push(read_only_metastore_client.clone());
-    }
+    let metastore_readiness_client =
+        if let Some(read_only_metastore_client) = &read_only_metastore_client_opt {
+            // When a read replica metastore is configured, node readiness follows the replica only.
+            // This keeps search/read traffic available if the primary metastore is down.
+            // Write-capable index-management APIs are still routed to the primary metastore and
+            // may fail while this node remains ready.
+            read_only_metastore_client.clone()
+        } else {
+            primary_metastore_through_control_plane.clone()
+        };
 
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.
     spawn_named_task(
         node_readiness_reporting_task(
             cluster.clone(),
-            metastore_readiness_clients,
+            metastore_readiness_client,
             ingester_opt.clone(),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
@@ -1698,32 +1700,10 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
     warp::any().map(move || arg.clone())
 }
 
-async fn metastores_are_available(metastores: &[MetastoreServiceClient]) -> bool {
-    if metastores.is_empty() {
-        warn!("no metastore configured for readiness checks");
-        return false;
-    }
-    futures::future::join_all(metastores.iter().map(|metastore| async move {
-        match metastore.check_connectivity().await {
-            Ok(()) => {
-                debug!(metastore_endpoints=?metastore.endpoints(), "metastore service is available");
-                true
-            }
-            Err(error) => {
-                warn!(metastore_endpoints=?metastore.endpoints(), error=?error, "metastore service is unavailable");
-                false
-            }
-        }
-    }))
-    .await
-    .into_iter()
-    .all(|metastore_is_available| metastore_is_available)
-}
-
 /// Reports node readiness to chitchat cluster every 10 seconds (25 ms for tests).
 async fn node_readiness_reporting_task(
     cluster: Cluster,
-    metastores: Vec<MetastoreServiceClient>,
+    metastore: MetastoreServiceClient,
     ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
@@ -1754,7 +1734,16 @@ async fn node_readiness_reporting_task(
     loop {
         interval.tick().await;
 
-        let metastore_is_available = metastores_are_available(&metastores).await;
+        let metastore_available = match metastore.check_connectivity().await {
+            Ok(()) => {
+                debug!(metastore_endpoints=?metastore.endpoints(), "metastore service is available");
+                true
+            }
+            Err(error) => {
+                warn!(metastore_endpoints=?metastore.endpoints(), error=?error, "metastore service is unavailable");
+                false
+            }
+        };
         let ingester_is_available = if let Some(ingester) = &ingester_opt {
             match try_get_ingester_status(ingester).await {
                 Ok(status) => {
@@ -1770,7 +1759,7 @@ async fn node_readiness_reporting_task(
         } else {
             true
         };
-        let is_ready = metastore_is_available && ingester_is_available;
+        let is_ready = metastore_available && ingester_is_available;
         let new_node_ready = if is_ready {
             consecutive_readiness_failures = 0;
             true
@@ -1978,7 +1967,7 @@ mod tests {
 
         tokio::spawn(node_readiness_reporting_task(
             cluster.clone(),
-            vec![mock_metastore],
+            mock_metastore,
             Some(mock_ingester),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
@@ -2017,15 +2006,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_readiness_requires_all_metastores() {
+    async fn test_readiness_uses_read_replica_without_requiring_primary() {
         let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
             .unwrap();
-        let (primary_readiness_tx, primary_readiness_rx) = watch::channel(false);
         let (replica_readiness_tx, replica_readiness_rx) = watch::channel(false);
-        let primary_metastore =
-            metastore_readiness_client(primary_readiness_rx, "ram:///primary-metastore");
         let replica_metastore =
             metastore_readiness_client(replica_readiness_rx, "ram:///replica-metastore");
         let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel();
@@ -2034,7 +2020,7 @@ mod tests {
 
         tokio::spawn(node_readiness_reporting_task(
             cluster.clone(),
-            vec![primary_metastore, replica_metastore],
+            replica_metastore,
             None::<MockIngesterService>,
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
@@ -2043,14 +2029,13 @@ mod tests {
         grpc_readiness_trigger_tx.send(()).unwrap();
         rest_readiness_trigger_tx.send(()).unwrap();
 
-        primary_readiness_tx.send(true).unwrap();
         tokio::time::sleep(READINESS_REPORTING_INTERVAL * 3).await;
         assert!(!cluster.is_self_node_ready().await);
 
         replica_readiness_tx.send(true).unwrap();
         assert_eventually!(cluster.is_self_node_ready().await);
 
-        primary_readiness_tx.send(false).unwrap();
+        replica_readiness_tx.send(false).unwrap();
         assert_eventually!(!cluster.is_self_node_ready().await);
     }
 
