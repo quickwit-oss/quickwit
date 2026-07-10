@@ -245,46 +245,187 @@ impl QuickwitServices {
     }
 }
 
-/// Computes the max number of in-flight requests for a metastore gRPC server, based on whether the
-/// backing connection is a database (PostgreSQL) and its configured connection pool size.
-fn metastore_max_in_flight_requests(node_config: &NodeConfig, uri: &Uri) -> usize {
-    if uri.protocol().is_database() {
-        node_config
-            .metastore_configs
-            .find_postgres()
-            .map(|config| config.max_connections.get() * 2)
-            .unwrap_or_default()
-            .max(100)
-    } else {
-        100
+/// The metastore gRPC server this node serves locally — or `NotServed` if it serves none.
+///
+/// A node serves *either* a writable primary metastore (`metastore` role) *or* a read-only
+/// replica (`metastore_read_replica` role), never both: the two roles are mutually exclusive, as
+/// enforced by `validate_metastore_read_replica` at config load.
+enum LocalMetastoreServer {
+    /// Writable primary metastore.
+    Primary(MetastoreServiceClient),
+    /// Read-only metastore replica.
+    ReadReplica(MetastoreServiceClient),
+    /// This node does not serve a metastore locally (it may still be a client of a remote one).
+    NotServed,
+}
+
+impl LocalMetastoreServer {
+    /// The locally served gRPC metastore client, if this node serves one.
+    fn client(&self) -> Option<&MetastoreServiceClient> {
+        match self {
+            LocalMetastoreServer::Primary(client) | LocalMetastoreServer::ReadReplica(client) => {
+                Some(client)
+            }
+            LocalMetastoreServer::NotServed => None,
+        }
+    }
+
+    /// Resolves the primary (writable) metastore client for this node.
+    async fn resolve_primary_client(
+        &self,
+        cluster: &Cluster,
+        node_config: &NodeConfig,
+    ) -> anyhow::Result<MetastoreServiceClient> {
+        match self {
+            LocalMetastoreServer::Primary(metastore_server) => Ok(metastore_server.clone()),
+            LocalMetastoreServer::ReadReplica(_) | LocalMetastoreServer::NotServed => {
+                Self::build_metastore_client(
+                    cluster,
+                    QuickwitService::Metastore,
+                    node_config.grpc_config.max_message_size,
+                )
+                .await
+            }
+        }
+    }
+
+    /// Resolves the read-only metastore client for this node.
+    async fn resolve_read_only_client(
+        &self,
+        cluster: &Cluster,
+        node_config: &NodeConfig,
+    ) -> anyhow::Result<Option<MetastoreServiceClient>> {
+        let should_use_remote_read_replica = node_config
+            .is_service_enabled(QuickwitService::Searcher)
+            && node_config.searcher_config.use_metastore_read_replica;
+
+        match self {
+            LocalMetastoreServer::ReadReplica(metastore_server) => {
+                Ok(Some(metastore_server.clone()))
+            }
+            LocalMetastoreServer::Primary(_) | LocalMetastoreServer::NotServed
+                if should_use_remote_read_replica =>
+            {
+                let read_replica_client = Self::build_metastore_client(
+                    cluster,
+                    QuickwitService::MetastoreReadReplica,
+                    node_config.grpc_config.max_message_size,
+                )
+                .await?;
+                Ok(Some(read_replica_client))
+            }
+            LocalMetastoreServer::Primary(_) | LocalMetastoreServer::NotServed => Ok(None),
+        }
+    }
+
+    async fn build_metastore_client(
+        cluster: &Cluster,
+        service: QuickwitService,
+        max_message_size: ByteSize,
+    ) -> anyhow::Result<MetastoreServiceClient> {
+        info!(%service, "connecting to {service} service");
+
+        let balance_channel = balance_channel_for_service(cluster, service).await;
+
+        ensure!(
+            balance_channel
+                .wait_for(Duration::from_secs(300), |connections| {
+                    !connections.is_empty()
+                })
+                .await,
+            "could not find any `{service}` node in the cluster"
+        );
+        Ok(MetastoreServiceClient::tower()
+            .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
+            .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
+            .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
+            .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
+                get_metastore_client_max_concurrency(),
+            ))
+            .build_from_balance_channel(balance_channel, max_message_size, None))
+    }
+
+    fn metastore_max_in_flight_requests(node_config: &NodeConfig, uri: &Uri) -> usize {
+        if uri.protocol().is_database() {
+            node_config
+                .metastore_configs
+                .find_postgres()
+                .map(|config| config.max_connections.get() * 2)
+                .unwrap_or_default()
+                .max(100)
+        } else {
+            100
+        }
     }
 }
 
-async fn build_metastore_client(
-    cluster: &Cluster,
-    service: QuickwitService,
-    max_message_size: ByteSize,
-) -> anyhow::Result<MetastoreServiceClient> {
-    info!(%service, "connecting to {service} service");
-
-    let balance_channel = balance_channel_for_service(cluster, service).await;
-
-    ensure!(
-        balance_channel
-            .wait_for(Duration::from_secs(300), |connections| {
-                !connections.is_empty()
-            })
-            .await,
-        "could not find any `{service}` node in the cluster"
-    );
-    Ok(MetastoreServiceClient::tower()
-        .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
-        .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
-        .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
-        .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
-            get_metastore_client_max_concurrency(),
-        ))
-        .build_from_balance_channel(balance_channel, max_message_size, None))
+async fn start_metastore_service_if_needed(
+    node_config: &NodeConfig,
+    metastore_resolver: &MetastoreResolver,
+    event_broker: &EventBroker,
+) -> anyhow::Result<LocalMetastoreServer> {
+    // Instantiate a primary metastore server if the `metastore` role is enabled on the node.
+    if node_config.is_service_enabled(QuickwitService::Metastore) {
+        let metastore: MetastoreServiceClient = metastore_resolver
+            .resolve(&node_config.metastore_uri)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to resolve metastore uri `{}`",
+                    node_config.metastore_uri
+                )
+            })?;
+        // These layers apply to all the RPCs of the metastore.
+        let shared_layer = ServiceBuilder::new()
+            .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
+            .layer(LoadShedLayer::new(
+                LocalMetastoreServer::metastore_max_in_flight_requests(
+                    node_config,
+                    &node_config.metastore_uri,
+                ),
+            ))
+            .into_inner();
+        let broker_layer = EventListenerLayer::new(event_broker.clone());
+        let metastore = MetastoreServiceClient::tower()
+            .stack_layer(shared_layer)
+            .stack_create_index_layer(broker_layer.clone())
+            .stack_delete_index_layer(broker_layer.clone())
+            .stack_add_source_layer(broker_layer.clone())
+            .stack_delete_source_layer(broker_layer.clone())
+            .stack_toggle_source_layer(broker_layer)
+            .build(metastore);
+        return Ok(LocalMetastoreServer::Primary(metastore));
+    }
+    // Instantiate a read-only metastore replica server if the `metastore_read_replica` role is
+    // enabled on the node.
+    if node_config.is_service_enabled(QuickwitService::MetastoreReadReplica) {
+        let Some(read_replica_uri) = &node_config.metastore_read_replica_uri else {
+            bail!(
+                "`metastore_read_replica_uri` must be set when the `metastore_read_replica` role \
+                 is enabled"
+            );
+        };
+        let metastore: MetastoreServiceClient = metastore_resolver
+            .resolve_read_only(read_replica_uri)
+            .await
+            .with_context(|| {
+                format!("failed to resolve metastore read replica uri `{read_replica_uri}`")
+            })?;
+        let shared_layer = ServiceBuilder::new()
+            .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
+            .layer(LoadShedLayer::new(
+                LocalMetastoreServer::metastore_max_in_flight_requests(
+                    node_config,
+                    read_replica_uri,
+                ),
+            ))
+            .into_inner();
+        let metastore = MetastoreServiceClient::tower()
+            .stack_layer(shared_layer)
+            .build(metastore);
+        return Ok(LocalMetastoreServer::ReadReplica(metastore));
+    }
+    Ok(LocalMetastoreServer::NotServed)
 }
 
 async fn balance_channel_for_service(
@@ -620,97 +761,17 @@ pub async fn serve_quickwit(
     let universe = Universe::new();
     let grpc_config = node_config.grpc_config.clone();
 
-    // Instantiate a primary metastore server if the `metastore` role is enabled on the node.
-    let primary_metastore_server_opt: Option<MetastoreServiceClient> =
-        if node_config.is_service_enabled(QuickwitService::Metastore) {
-            let metastore: MetastoreServiceClient = metastore_resolver
-                .resolve(&node_config.metastore_uri)
-                .await
-                .with_context(|| {
-                    format!(
-                        "failed to resolve metastore uri `{}`",
-                        node_config.metastore_uri
-                    )
-                })?;
-            // These layers apply to all the RPCs of the metastore.
-            let shared_layer = ServiceBuilder::new()
-                .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
-                .layer(LoadShedLayer::new(metastore_max_in_flight_requests(
-                    &node_config,
-                    &node_config.metastore_uri,
-                )))
-                .into_inner();
-            let broker_layer = EventListenerLayer::new(event_broker.clone());
-            let metastore = MetastoreServiceClient::tower()
-                .stack_layer(shared_layer)
-                .stack_create_index_layer(broker_layer.clone())
-                .stack_delete_index_layer(broker_layer.clone())
-                .stack_add_source_layer(broker_layer.clone())
-                .stack_delete_source_layer(broker_layer.clone())
-                .stack_toggle_source_layer(broker_layer)
-                .build(metastore);
-            Some(metastore)
-        } else {
-            None
-        };
+    // Instantiate the local metastore gRPC server for this node (the primary metastore, a
+    // read-only replica, or none; the `metastore` and `metastore_read_replica` roles are mutually
+    // exclusive).
+    let local_metastore_server =
+        start_metastore_service_if_needed(&node_config, &metastore_resolver, &event_broker)
+            .await
+            .context("failed to start metastore service")?;
 
-    // Instantiate a read-only metastore replica server if the `metastore_read_replica` role is
-    // enabled on the node.
-    let read_only_metastore_server_opt: Option<MetastoreServiceClient> =
-        if node_config.is_service_enabled(QuickwitService::MetastoreReadReplica) {
-            let read_replica_uri = node_config.metastore_read_replica_uri.as_ref().expect(
-                "`metastore_read_replica_uri` should be set when the `metastore_read_replica` \
-                 role is enabled (validated at config load)",
-            );
-            let metastore: MetastoreServiceClient = metastore_resolver
-                .resolve_read_only(read_replica_uri)
-                .await
-                .with_context(|| {
-                    format!("failed to resolve metastore read replica uri `{read_replica_uri}`")
-                })?;
-            let shared_layer = ServiceBuilder::new()
-                .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
-                .layer(LoadShedLayer::new(metastore_max_in_flight_requests(
-                    &node_config,
-                    read_replica_uri,
-                )))
-                .into_inner();
-            let metastore = MetastoreServiceClient::tower()
-                .stack_layer(shared_layer)
-                .build(metastore);
-            Some(metastore)
-        } else {
-            None
-        };
-
-    let primary_metastore_client: MetastoreServiceClient =
-        if let Some(metastore_server) = &primary_metastore_server_opt {
-            metastore_server.clone()
-        } else {
-            build_metastore_client(
-                &cluster,
-                QuickwitService::Metastore,
-                grpc_config.max_message_size,
-            )
-            .await?
-        };
-    let read_only_metastore_client_opt: Option<MetastoreServiceClient> =
-        if let Some(metastore_read_replica_server) = &read_only_metastore_server_opt {
-            Some(metastore_read_replica_server.clone())
-        } else if node_config.is_service_enabled(QuickwitService::Searcher)
-            && node_config.searcher_config.use_metastore_read_replica
-        {
-            Some(
-                build_metastore_client(
-                    &cluster,
-                    QuickwitService::MetastoreReadReplica,
-                    grpc_config.max_message_size,
-                )
-                .await?,
-            )
-        } else {
-            None
-        };
+    let primary_metastore_client = local_metastore_server
+        .resolve_primary_client(&cluster, &node_config)
+        .await?;
 
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
     // Otherwise, instantiate a control plane client.
@@ -887,6 +948,10 @@ pub async fn serve_quickwit(
         ))
     };
 
+    let read_only_metastore_client_opt = local_metastore_server
+        .resolve_read_only_client(&cluster, &node_config)
+        .await?;
+
     let metastore_read_client = read_only_metastore_client_opt
         .clone()
         .unwrap_or_else(|| primary_metastore_through_control_plane.clone());
@@ -1024,10 +1089,7 @@ pub async fn serve_quickwit(
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
         node_config: Arc::new(node_config),
         cluster: cluster.clone(),
-        metastore_server_opt: primary_metastore_server_opt
-            .as_ref()
-            .or(read_only_metastore_server_opt.as_ref())
-            .cloned(),
+        metastore_server_opt: local_metastore_server.client().cloned(),
         metastore_client: primary_metastore_through_control_plane.clone(),
         control_plane_server_opt,
         control_plane_client,
@@ -1127,16 +1189,11 @@ pub async fn serve_quickwit(
             )
         };
 
-    let metastore_readiness_client =
-        if let Some(read_only_metastore_client) = &read_only_metastore_client_opt {
-            // When a read replica metastore is configured, node readiness follows the replica only.
-            // This keeps search/read traffic available if the primary metastore is down.
-            // Write-capable index-management APIs are still routed to the primary metastore and
-            // may fail while this node remains ready.
-            read_only_metastore_client.clone()
-        } else {
-            primary_metastore_through_control_plane.clone()
-        };
+    // When a read replica metastore is configured, node readiness follows the replica only.
+    // This keeps search/read traffic available if the primary metastore is down. Write-capable
+    // index-management APIs are still routed to the primary metastore and may fail while this node
+    // remains ready.
+    let metastore_readiness_client = metastore_read_client.clone();
 
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.
