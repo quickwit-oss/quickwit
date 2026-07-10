@@ -392,24 +392,33 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Validates the configuration of the [`QuickwitService::MetastoreReadReplica`] role.
+/// Validates the configuration of the [`QuickwitService::MetastoreReadReplica`] role and searcher
+/// read-replica routing.
 ///
 /// The [`QuickwitService::MetastoreReadReplica`] role serves the same gRPC service as a read-only
 /// metastore, so it must run standalone and requires `metastore_read_replica_uri` to connect to.
 fn validate_metastore_read_replica(node_config: &NodeConfig) -> anyhow::Result<()> {
     let read_replica_enabled =
         node_config.is_service_enabled(QuickwitService::MetastoreReadReplica);
-    if !read_replica_enabled {
-        return Ok(());
+    if read_replica_enabled {
+        ensure!(
+            node_config.enabled_services.len() == 1,
+            "the `metastore_read_replica` service must run standalone and cannot be combined with \
+             any other service"
+        );
+        ensure!(
+            node_config.metastore_read_replica_uri.is_some(),
+            "the `metastore_read_replica` service requires `metastore_read_replica_uri` to be set"
+        );
     }
+    let searcher_uses_read_replica = node_config.is_service_enabled(QuickwitService::Searcher)
+        && node_config.searcher_config.use_metastore_read_replica;
+    // Avoid a deadlock where the searcher waits for a READY read replica, while the read
+    // replica waits for this primary metastore to become READY.
     ensure!(
-        node_config.enabled_services.len() == 1,
-        "the `metastore_read_replica` service must run standalone and cannot be combined with any \
-         other service"
-    );
-    ensure!(
-        node_config.metastore_read_replica_uri.is_some(),
-        "the `metastore_read_replica` service requires `metastore_read_replica_uri` to be set"
+        !(searcher_uses_read_replica && node_config.is_service_enabled(QuickwitService::Metastore)),
+        "`searcher.use_metastore_read_replica` cannot be enabled on a node running the \
+         `metastore` service"
     );
     Ok(())
 }
@@ -1165,6 +1174,45 @@ mod tests {
         .await
         .unwrap_err();
         assert!(error.to_string().contains("must run standalone"));
+    }
+
+    #[tokio::test]
+    async fn test_searcher_read_replica_cannot_run_with_metastore() {
+        let error = NodeConfigBuilder {
+            enabled_services: ConfigValue::for_test(List(vec![
+                "metastore".to_string(),
+                "searcher".to_string(),
+            ])),
+            searcher_config: SearcherConfig {
+                use_metastore_read_replica: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+        .build_and_validate(&HashMap::new())
+        .await
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("cannot be enabled on a node running the `metastore` service")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_searcher_read_replica_is_allowed_on_dedicated_searcher() {
+        let node_config = NodeConfigBuilder {
+            enabled_services: ConfigValue::for_test(List(vec!["searcher".to_string()])),
+            searcher_config: SearcherConfig {
+                use_metastore_read_replica: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+        .build_and_validate(&HashMap::new())
+        .await
+        .unwrap();
+        assert!(node_config.searcher_config.use_metastore_read_replica);
     }
 
     #[tokio::test]
