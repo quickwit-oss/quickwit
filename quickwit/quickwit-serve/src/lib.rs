@@ -265,7 +265,7 @@ async fn build_metastore_client(
     service: QuickwitService,
     max_message_size: ByteSize,
 ) -> anyhow::Result<MetastoreServiceClient> {
-    info!(%service, "connecting to metastore service");
+    info!(%service, "connecting to {service} service");
 
     let balance_channel = balance_channel_for_service(cluster, service).await;
 
