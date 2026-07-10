@@ -288,7 +288,7 @@ impl IndexingPipeline {
         let index_id = &self.params.pipeline_id.index_uid.index_id;
         let source_id = &self.params.pipeline_id.source_id;
 
-        debug!(
+        info!(
             index_id,
             source_id,
             pipeline_uid=%self.params.pipeline_id.pipeline_uid,

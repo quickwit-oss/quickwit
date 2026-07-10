@@ -430,7 +430,7 @@ impl IngestSource {
             });
             return Ok(());
         }
-        debug!(
+        info!(
             index_uid=%self.client_id.source_uid.index_uid,
             pipeline_uid=%self.client_id.pipeline_uid,
             "resetting indexing pipeline"
