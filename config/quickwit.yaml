@@ -49,6 +49,12 @@ version: 0.8
 #     # How often cert_path/key_path are polled for changes and hot-reloaded; an
 #     # immediate reload can also be triggered with SIGHUP. Defaults to 5m.
 #     cert_poll_interval: 5m
+#     # Maximum lifetime of a connection before the server sends an HTTP/2 GOAWAY and the
+#     # client reconnects. Disabled when unset.
+#     max_connection_age: 30m
+#     # Grace period after the GOAWAY before a still-draining connection is forcefully
+#     # closed. Requires `max_connection_age` to be set.
+#     max_connection_age_grace: 30s
 #
 # Optional plaintext health-check server. Disabled unless `listen_port` is set (or the
 # `QW_HEALTH_LISTEN_PORT` environment variable). It serves only `/health/livez` and
@@ -75,6 +81,12 @@ version: 0.8
 #     # How often cert_path/key_path are polled for changes and hot-reloaded; an
 #     # immediate reload can also be triggered with SIGHUP. Defaults to 5m.
 #     cert_poll_interval: 5m
+#     # Maximum lifetime of an inbound connection before the server sends an HTTP/2 GOAWAY
+#     # and the peer reconnects. Disabled when unset.
+#     max_connection_age: 30m
+#     # Grace period after the GOAWAY before a still-draining connection is forcefully
+#     # closed. Requires `max_connection_age` to be set.
+#     max_connection_age_grace: 30s
 #
 # IP address advertised by the node, i.e. the IP address that peer nodes should use to connect to the node for RPCs.
 # The environment variable `QW_ADVERTISE_ADDRESS` can also be used to override this value.

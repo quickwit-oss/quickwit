@@ -52,6 +52,13 @@ pub struct RestConfig {
     pub extra_headers: HeaderMap,
     #[serde(default, rename = "tls")]
     pub tls_config: Option<TlsConfig>,
+    // See `GrpcConfig::max_connection_age`. Closes long-lived keep-alive connections so an updated
+    // TLS certificate is eventually presented.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connection_age: Option<HumanDuration>,
+    // See `GrpcConfig::max_connection_age_grace`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connection_age_grace: Option<HumanDuration>,
 }
 
 /// Configuration for the optional plaintext health-check HTTP server.
@@ -77,6 +84,14 @@ pub struct GrpcConfig {
     // keep alive ping request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keep_alive: Option<KeepAliveConfig>,
+    // Maximum lifetime of an inbound connection before the server sends an HTTP/2 GOAWAY and the
+    // peer reconnects. Disabled when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connection_age: Option<HumanDuration>,
+    // Grace period after the GOAWAY before a still-draining connection is forcefully closed.
+    // Requires `max_connection_age` to be set. Waits indefinitely when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connection_age_grace: Option<HumanDuration>,
 }
 
 fn default_http2_keep_alive_interval() -> HumanDuration {
@@ -116,6 +131,10 @@ impl GrpcConfig {
         if let Some(tls_config) = &self.tls_config {
             tls_config.validate()?;
         }
+        ensure!(
+            !(self.max_connection_age_grace.is_some() && self.max_connection_age.is_none()),
+            "`grpc.max_connection_age_grace` requires `grpc.max_connection_age` to be set"
+        );
         Ok(())
     }
 }
@@ -126,6 +145,8 @@ impl Default for GrpcConfig {
             max_message_size: Self::default_max_message_size(),
             tls_config: None,
             keep_alive: None,
+            max_connection_age: None,
+            max_connection_age_grace: None,
         }
     }
 }
@@ -272,6 +293,61 @@ impl Default for IndexerConfig {
             merge_concurrency: Self::default_merge_concurrency(),
             max_merge_write_throughput: None,
             parquet_merge_use_streaming_engine: Self::default_parquet_merge_use_streaming_engine(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompactorConfig {
+    /// Maximum number of concurrent merges, which hold the CPU for
+    /// a long time. Defaults to `num_cpus - 1`.
+    #[serde(default = "CompactorConfig::default_max_concurrent_merge_executions")]
+    pub max_concurrent_merge_executions: NonZeroUsize,
+    /// Number of pipelines to run per merge executions. Scalar. Since merges perform a lot
+    /// of IO, multiple concurrent merges can be interleaved.
+    #[serde(default = "CompactorConfig::default_pipeline_slots_per_merge_execution")]
+    pub pipeline_slots_per_merge_execution: NonZeroUsize,
+    /// Maximum number of concurrent split uploads across all pipelines.
+    #[serde(default = "CompactorConfig::default_max_concurrent_split_uploads")]
+    pub max_concurrent_split_uploads: NonZeroUsize,
+    /// Limits the IO throughput of the split downloader and the merge executor.
+    #[serde(default)]
+    pub max_merge_write_throughput: Option<ByteSize>,
+}
+
+impl CompactorConfig {
+    fn default_max_concurrent_merge_executions() -> NonZeroUsize {
+        let cpus = quickwit_common::num_cpus().saturating_sub(1);
+        NonZeroUsize::new(cpus).unwrap_or(NonZeroUsize::MIN)
+    }
+
+    fn default_pipeline_slots_per_merge_execution() -> NonZeroUsize {
+        NonZeroUsize::new(2).unwrap()
+    }
+
+    fn default_max_concurrent_split_uploads() -> NonZeroUsize {
+        NonZeroUsize::new(12).unwrap()
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test() -> Self {
+        CompactorConfig {
+            max_concurrent_merge_executions: NonZeroUsize::new(2).unwrap(),
+            pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
+            max_concurrent_split_uploads: NonZeroUsize::new(4).unwrap(),
+            max_merge_write_throughput: None,
+        }
+    }
+}
+
+impl Default for CompactorConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent_merge_executions: Self::default_max_concurrent_merge_executions(),
+            pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
+            max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
+            max_merge_write_throughput: None,
         }
     }
 }
@@ -831,6 +907,9 @@ pub struct NodeConfig {
     pub searcher_config: SearcherConfig,
     pub ingest_api_config: IngestApiConfig,
     pub jaeger_config: JaegerConfig,
+    pub compactor_config: CompactorConfig,
+    #[serde(skip_serializing)]
+    pub enable_standalone_compactors: bool,
 }
 
 impl NodeConfig {
@@ -898,6 +977,14 @@ impl NodeConfig {
     pub fn for_test_from_ports(rest_listen_port: u16, grpc_listen_port: u16) -> Self {
         serialize::node_config_for_tests_from_ports(rest_listen_port, grpc_listen_port)
     }
+
+    /// Test config with `enable_standalone_compactors = true`.
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test_with_standalone_compactors() -> Self {
+        let mut node_config = Self::for_test();
+        node_config.enable_standalone_compactors = true;
+        node_config
+    }
 }
 
 #[cfg(test)]
@@ -950,23 +1037,6 @@ mod tests {
                     .as_str()
                     .unwrap(),
                 "1500m"
-            );
-        }
-        {
-            let indexer_config: IndexerConfig =
-                serde_yaml::from_str(r#"merge_concurrency: 5"#).unwrap();
-            assert_eq!(
-                indexer_config.merge_concurrency,
-                NonZeroUsize::new(5).unwrap()
-            );
-            let indexer_config_json = serde_json::to_value(&indexer_config).unwrap();
-            assert_eq!(
-                indexer_config_json
-                    .get("merge_concurrency")
-                    .unwrap()
-                    .as_u64()
-                    .unwrap(),
-                5
             );
         }
         {
@@ -1096,17 +1166,35 @@ mod tests {
     fn test_grpc_config_validate() {
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::mb(1),
-            tls_config: None,
-            keep_alive: None,
+            ..Default::default()
         };
         assert!(grpc_config.validate().is_ok());
 
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::kb(1),
-            tls_config: None,
-            keep_alive: None,
+            ..Default::default()
         };
         assert!(grpc_config.validate().is_err());
+    }
+
+    #[test]
+    fn test_grpc_config_validate_rejects_connection_age_grace_without_age() {
+        let grpc_config = GrpcConfig {
+            max_connection_age_grace: Some(HumanDuration::try_from("10s".to_string()).unwrap()),
+            ..Default::default()
+        };
+        let error = grpc_config.validate().unwrap_err().to_string();
+        assert!(
+            error.contains("requires `grpc.max_connection_age`"),
+            "unexpected error: {error}"
+        );
+
+        let grpc_config = GrpcConfig {
+            max_connection_age: Some(HumanDuration::try_from("1h".to_string()).unwrap()),
+            max_connection_age_grace: Some(HumanDuration::try_from("10s".to_string()).unwrap()),
+            ..Default::default()
+        };
+        assert!(grpc_config.validate().is_ok());
     }
 
     fn tls_config(poll_interval: &str) -> TlsConfig {
@@ -1136,7 +1224,7 @@ mod tests {
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::mib(20),
             tls_config: Some(tls_config("0s")),
-            keep_alive: None,
+            ..Default::default()
         };
         assert!(grpc_config.validate().is_err());
     }

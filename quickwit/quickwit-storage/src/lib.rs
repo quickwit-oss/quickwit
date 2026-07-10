@@ -56,7 +56,7 @@ mod storage_resolver;
 mod versioned_component;
 
 use quickwit_common::uri::Uri;
-pub use split_cache::SplitCache;
+pub use split_cache::SearchSplitCache;
 pub use tantivy::directory::OwnedBytes;
 pub use versioned_component::VersionedComponent;
 

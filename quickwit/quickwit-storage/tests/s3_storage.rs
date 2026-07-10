@@ -72,10 +72,10 @@ pub mod s3_storage_test_suite {
             .unwrap();
 
         object_storage.set_policy(MultiPartPolicy {
-            target_part_num_bytes: 5 * 1_024 * 1_024, //< the minimum on S3 is 5MB.
+            target_part_num_bytes: bytesize::ByteSize::mib(5), //< the minimum on S3 is 5MB.
             max_num_parts: 10_000,
-            multipart_threshold_num_bytes: 10_000_000,
-            max_object_num_bytes: 5_000_000_000_000,
+            multipart_threshold_num_bytes: bytesize::ByteSize::mb(10),
+            max_object_num_bytes: bytesize::ByteSize::tb(5),
             max_concurrent_uploads: 100,
         });
 

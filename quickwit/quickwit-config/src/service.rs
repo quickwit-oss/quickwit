@@ -24,15 +24,16 @@ use serde::Serialize;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Sequence)]
 #[serde(into = "&'static str")]
 pub enum QuickwitService {
+    Compactor,
     ControlPlane,
     Indexer,
-    Searcher,
     Janitor,
     Metastore,
     /// A read-only metastore node backed by a PostgreSQL read replica. It serves the same gRPC
     /// metastore service as [`QuickwitService::Metastore`] but over a read-only connection, and is
     /// discovered separately so that read-only callers (e.g. searchers) can route reads to it.
     MetastoreReadReplica,
+    Searcher,
 }
 
 #[allow(clippy::from_over_into)]
@@ -45,12 +46,13 @@ impl Into<&'static str> for QuickwitService {
 impl QuickwitService {
     pub fn as_str(&self) -> &'static str {
         match self {
-            QuickwitService::ControlPlane => "control_plane",
+            QuickwitService::Compactor => "compactor",
+            QuickwitService::ControlPlane => "control-plane",
             QuickwitService::Indexer => "indexer",
-            QuickwitService::Searcher => "searcher",
             QuickwitService::Janitor => "janitor",
             QuickwitService::Metastore => "metastore",
             QuickwitService::MetastoreReadReplica => "metastore_read_replica",
+            QuickwitService::Searcher => "searcher",
         }
     }
 
@@ -61,12 +63,19 @@ impl QuickwitService {
 
     /// Returns the services enabled on a node when none are explicitly configured.
     ///
-    /// This is every supported service except [`QuickwitService::MetastoreReadReplica`], which is
-    /// opt-in: it requires a dedicated read replica URI and is meant to be deployed as its own set
-    /// of nodes, so it must never be enabled implicitly by an all-in-one node.
+    /// This is every supported service except the opt-in standalone services.
+    ///
+    /// [`QuickwitService::MetastoreReadReplica`] requires a dedicated read replica URI and is meant
+    /// to be deployed as its own set of nodes. [`QuickwitService::Compactor`] requires an explicit
+    /// standalone compactor opt-in.
     pub fn default_services() -> HashSet<QuickwitService> {
         all::<QuickwitService>()
-            .filter(|service| *service != QuickwitService::MetastoreReadReplica)
+            .filter(|service| {
+                !matches!(
+                    *service,
+                    QuickwitService::Compactor | QuickwitService::MetastoreReadReplica
+                )
+            })
             .collect()
     }
 }
@@ -82,14 +91,15 @@ impl FromStr for QuickwitService {
 
     fn from_str(service_str: &str) -> Result<Self, Self::Err> {
         match service_str {
+            "compactor" => Ok(QuickwitService::Compactor),
             "control-plane" | "control_plane" => Ok(QuickwitService::ControlPlane),
             "indexer" => Ok(QuickwitService::Indexer),
-            "searcher" => Ok(QuickwitService::Searcher),
             "janitor" => Ok(QuickwitService::Janitor),
             "metastore" => Ok(QuickwitService::Metastore),
             "metastore-read-replica" | "metastore_read_replica" => {
                 Ok(QuickwitService::MetastoreReadReplica)
             }
+            "searcher" => Ok(QuickwitService::Searcher),
             _ => {
                 bail!(
                     "failed to parse service `{service_str}`. supported services are: `{}`",

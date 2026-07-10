@@ -1967,7 +1967,7 @@ dependencies = [
  "bytes",
  "itertools 0.14.0",
  "lru 0.17.0",
- "rand 0.10.1",
+ "rand 0.10.2",
  "serde",
  "tokio",
  "tokio-stream",
@@ -8091,7 +8091,7 @@ version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
- "heck 0.5.0",
+ "heck 0.4.1",
  "itertools 0.14.0",
  "log",
  "multimap",
@@ -8111,7 +8111,7 @@ version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
- "heck 0.5.0",
+ "heck 0.4.1",
  "itertools 0.14.0",
  "log",
  "multimap",
@@ -8369,7 +8369,7 @@ dependencies = [
  "futures",
  "quickwit-common",
  "quickwit-metrics",
- "rand 0.10.1",
+ "rand 0.10.2",
  "serde",
  "serde_json",
  "sync_wrapper",
@@ -8388,8 +8388,11 @@ dependencies = [
  "aws-sdk-s3",
  "aws-sdk-sqs",
  "aws-smithy-async",
+ "aws-smithy-http-client",
+ "aws-smithy-runtime-api",
  "aws-smithy-types",
  "futures",
+ "mini-moka",
  "quickwit-common",
  "tokio",
 ]
@@ -8462,7 +8465,7 @@ dependencies = [
  "quickwit-metrics",
  "quickwit-proto",
  "quickwit-transport",
- "rand 0.10.1",
+ "rand 0.10.2",
  "serde",
  "serde_json",
  "time",
@@ -8546,7 +8549,7 @@ dependencies = [
  "prometheus",
  "proptest",
  "quickwit-metrics",
- "rand 0.10.1",
+ "rand 0.10.2",
  "rayon",
  "regex",
  "serde",
@@ -8564,6 +8567,30 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "tracing-opentelemetry",
+]
+
+[[package]]
+name = "quickwit-compaction"
+version = "0.8.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "itertools 0.14.0",
+ "quickwit-actors",
+ "quickwit-cluster",
+ "quickwit-common",
+ "quickwit-config",
+ "quickwit-doc-mapper",
+ "quickwit-indexing",
+ "quickwit-metastore",
+ "quickwit-metrics",
+ "quickwit-proto",
+ "quickwit-storage",
+ "serde_json",
+ "time",
+ "tokio",
+ "tracing",
+ "ulid",
 ]
 
 [[package]]
@@ -8620,7 +8647,7 @@ dependencies = [
  "quickwit-metastore",
  "quickwit-metrics",
  "quickwit-proto",
- "rand 0.10.1",
+ "rand 0.10.2",
  "serde",
  "serde_json",
  "smallvec",
@@ -8829,7 +8856,7 @@ dependencies = [
  "quickwit-proto",
  "quickwit-query",
  "quickwit-storage",
- "rand 0.10.1",
+ "rand 0.10.2",
  "rdkafka",
  "regex",
  "reqwest 0.12.28",
@@ -8872,7 +8899,7 @@ dependencies = [
  "quickwit-doc-mapper",
  "quickwit-metrics",
  "quickwit-proto",
- "rand 0.10.1",
+ "rand 0.10.2",
  "rand_distr",
  "serde",
  "serde_json",
@@ -8899,6 +8926,7 @@ dependencies = [
  "bytesize",
  "datafusion",
  "futures-util",
+ "http-body-util",
  "hyper 1.9.0",
  "hyper-util",
  "itertools 0.14.0",
@@ -8919,7 +8947,7 @@ dependencies = [
  "quickwit-serve",
  "quickwit-storage",
  "quickwit-transport",
- "rand 0.10.1",
+ "rand 0.10.2",
  "reqwest 0.12.28",
  "rustls 0.23.40",
  "rustls-pemfile",
@@ -8976,6 +9004,7 @@ dependencies = [
  "mockall",
  "quickwit-actors",
  "quickwit-common",
+ "quickwit-compaction",
  "quickwit-config",
  "quickwit-doc-mapper",
  "quickwit-index-management",
@@ -9082,7 +9111,7 @@ dependencies = [
  "quickwit-proto",
  "quickwit-query",
  "quickwit-storage",
- "rand 0.10.1",
+ "rand 0.10.2",
  "regex",
  "regex-syntax",
  "sea-query",
@@ -9170,7 +9199,7 @@ dependencies = [
  "quickwit-dst",
  "quickwit-metrics",
  "quickwit-proto",
- "rand 0.10.1",
+ "rand 0.10.2",
  "regex",
  "serde",
  "serde_json",
@@ -9303,7 +9332,7 @@ dependencies = [
  "quickwit-proto",
  "quickwit-query",
  "quickwit-storage",
- "rand 0.10.1",
+ "rand 0.10.2",
  "serde",
  "serde_json",
  "tantivy",
@@ -9351,6 +9380,7 @@ dependencies = [
  "quickwit-actors",
  "quickwit-cluster",
  "quickwit-common",
+ "quickwit-compaction",
  "quickwit-config",
  "quickwit-control-plane",
  "quickwit-datafusion",
@@ -9623,9 +9653,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.10.1"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2e8e8bcc7961af1fdac401278c6a831614941f6164ee3bf4ce61b7edb162207"
+checksum = "c7f5fa3a058cd35567ef9bfa5e75732bee0f9e4c55fa90477bef2dfcdbc4be80"
 dependencies = [
  "chacha20 0.10.0",
  "getrandom 0.4.2",
@@ -9702,7 +9732,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4d431c2703ccf129de4d45253c03f49ebb22b97d6ad79ee3ecfc7e3f4862c1d8"
 dependencies = [
  "num-traits",
- "rand 0.10.1",
+ "rand 0.10.2",
 ]
 
 [[package]]
@@ -10142,7 +10172,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc05fbf560421a0357a750cbe78c7ca19d4923918490daabba313d5dbc871e47"
 dependencies = [
- "rand 0.10.1",
+ "rand 0.10.2",
 ]
 
 [[package]]
@@ -11233,7 +11263,7 @@ version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1c97747dbf44bb1ca44a561ece23508e99cb592e862f22222dcf42f51d1e451"
 dependencies = [
- "heck 0.5.0",
+ "heck 0.4.1",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -11955,7 +11985,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand 2.4.1",
- "getrandom 0.4.2",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -12996,7 +13026,7 @@ checksum = "ddd74a9687298c6858e9b88ec8935ec45d22e8fd5e6394fa1bd4e99a87789c76"
 dependencies = [
  "getrandom 0.4.2",
  "js-sys",
- "rand 0.10.1",
+ "rand 0.10.2",
  "serde_core",
  "wasm-bindgen",
 ]

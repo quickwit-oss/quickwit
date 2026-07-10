@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod basic_tests;
+mod compactor_tests;
 mod ingest_v1_tests;
 mod ingest_v2_tests;
 #[cfg(feature = "datafusion")]

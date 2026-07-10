@@ -48,7 +48,7 @@ pub use metastore::{
     ListParquetSplitsQuery, ListParquetSplitsRequestExt, ListParquetSplitsResponseExt,
     ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, MetastoreServiceExt,
     MetastoreServiceStreamSplitsExt, PARQUET_SPLITS_PAGE_SIZE, ParquetSplitRecord,
-    ParquetSplitsPage, PublishParquetSplitsRequestExt, PublishSplitsRequestExt,
+    ParquetSplitsPage, PublishParquetSplitsRequestExt, PublishSplitsRequestExt, SortBy,
     StageParquetSplitsRequestExt, StageSplitsRequestExt, UpdateIndexRequestExt,
     UpdateSourceRequestExt, file_backed, list_parquet_splits_page, list_parquet_splits_paginated,
 };

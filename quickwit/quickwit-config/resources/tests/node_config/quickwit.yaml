@@ -23,12 +23,27 @@ rest:
   extra_headers:
     x-header-1: header-value-1
     x-header-2: header-value-2
+  tls:
+    cert_path: /path/to/rest.crt
+    key_path: /path/to/rest.key
+    ca_path: /path/to/ca.crt
+    verify_client_cert: true
+  max_connection_age: 30m
+  max_connection_age_grace: 30s
 
 health:
   listen_port: 4444
 
 grpc:
   max_message_size: 10 MB
+  tls:
+    cert_path: /path/to/grpc.crt
+    key_path: /path/to/grpc.key
+    ca_path: /path/to/ca.crt
+    verify_client_cert: true
+    expected_name: quickwit.local
+  max_connection_age: 1h
+  max_connection_age_grace: 10s
 
 storage:
   azure:
