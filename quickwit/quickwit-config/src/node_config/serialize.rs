@@ -402,17 +402,15 @@ fn validate_metastore_read_replica(node_config: &NodeConfig) -> anyhow::Result<(
     if !read_replica_enabled {
         return Ok(());
     }
-    if node_config.enabled_services.len() != 1 {
-        bail!(
-            "the `metastore_read_replica` service must run standalone and cannot be combined with \
-             any other service"
-        );
-    }
-    if node_config.metastore_read_replica_uri.is_none() {
-        bail!(
-            "the `metastore_read_replica` service requires `metastore_read_replica_uri` to be set"
-        );
-    }
+    ensure!(
+        node_config.enabled_services.len() == 1,
+        "the `metastore_read_replica` service must run standalone and cannot be combined with any \
+         other service"
+    );
+    ensure!(
+        node_config.metastore_read_replica_uri.is_some(),
+        "the `metastore_read_replica` service requires `metastore_read_replica_uri` to be set"
+    );
     Ok(())
 }
 

@@ -53,7 +53,7 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
-use anyhow::{Context, bail};
+use anyhow::{Context, bail, ensure};
 use bytesize::ByteSize;
 pub(crate) use decompression::Body;
 pub use format::BodyFormat;
@@ -269,14 +269,14 @@ async fn build_metastore_client(
 
     let balance_channel = balance_channel_for_service(cluster, service).await;
 
-    if !balance_channel
-        .wait_for(Duration::from_secs(300), |connections| {
-            !connections.is_empty()
-        })
-        .await
-    {
-        bail!("could not find any `{service}` node in the cluster");
-    }
+    ensure!(
+        balance_channel
+            .wait_for(Duration::from_secs(300), |connections| {
+                !connections.is_empty()
+            })
+            .await,
+        "could not find any `{service}` node in the cluster"
+    );
     Ok(MetastoreServiceClient::tower()
         .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
         .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
@@ -1853,7 +1853,7 @@ async fn check_cluster_configuration(
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use anyhow::bail;
+    use anyhow::{bail, ensure};
     use quickwit_cluster::{ChitchatTransport, ClusterNode, create_cluster_for_test};
     use quickwit_common::uri::Uri;
     use quickwit_common::{ServiceStream, assert_eventually};
@@ -1880,11 +1880,8 @@ mod tests {
         mock_metastore
             .expect_check_connectivity()
             .returning(move || {
-                if *readiness_rx.borrow() {
-                    Ok(())
-                } else {
-                    bail!("metastore `{uri}` not ready")
-                }
+                ensure!(*readiness_rx.borrow(), "metastore `{uri}` not ready");
+                Ok(())
             });
         mock_metastore
             .expect_endpoints()
@@ -1938,11 +1935,11 @@ mod tests {
                 }
                 drop(failures_to_inject);
 
-                if *metastore_readiness_rx.borrow() {
-                    Ok(())
-                } else {
-                    bail!("metastore `ram:///metastore` not ready")
-                }
+                ensure!(
+                    *metastore_readiness_rx.borrow(),
+                    "metastore `ram:///metastore` not ready"
+                );
+                Ok(())
             });
         mock_metastore
             .expect_endpoints()
