@@ -60,6 +60,7 @@ impl MetastoreResolver {
             Protocol::File => MetastoreBackend::File,
             Protocol::Ram => MetastoreBackend::File,
             Protocol::S3 => MetastoreBackend::File,
+            Protocol::Ipfs => MetastoreBackend::File,
             Protocol::PostgreSQL => MetastoreBackend::PostgreSQL,
             _ => {
                 return Err(MetastoreResolverError::UnsupportedBackend(

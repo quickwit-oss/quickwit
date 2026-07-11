@@ -41,6 +41,8 @@ pub use self::storage::Storage;
 mod bundle_storage;
 mod error;
 
+#[cfg(feature = "ipfs")]
+mod ipfs_storage;
 mod local_file_storage;
 mod object_storage;
 #[cfg(feature = "gcs")]
@@ -67,6 +69,8 @@ pub use self::cache::{
     ByteRangeCache, MemorySizedCache, QuickwitCache, StorageCache, wrap_storage_with_cache,
 };
 pub use self::counting_storage::{CountingStorage, DownloadCounters};
+#[cfg(feature = "ipfs")]
+pub use self::ipfs_storage::{IpfsStorage, IpfsStorageFactory};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 #[cfg(feature = "azure")]
 pub use self::object_storage::{AzureBlobStorage, AzureBlobStorageFactory};

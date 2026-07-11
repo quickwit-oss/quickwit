@@ -224,10 +224,33 @@ services:
       - all
       - gcp-pubsub
 
+  kubo:
+    image: ipfs/kubo:${KUBO_VERSION:-v0.32.1}
+    container_name: kubo
+    # Offline, local-only node for development and tests: the `test` profile
+    # strips the public bootstrap peers and `--offline` prevents any outbound
+    # network activity. Remove both to join the public IPFS network.
+    command: ["daemon", "--migrate=true", "--offline"]
+    environment:
+      IPFS_PROFILE: test
+    ports:
+      - "${MAP_HOST_KUBO:-127.0.0.1}:5001:5001" # RPC API
+      - "${MAP_HOST_KUBO:-127.0.0.1}:8082:8080" # Gateway
+    profiles:
+      - ipfs
+    volumes:
+      - kubo_data:/data/ipfs
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 1s
+      timeout: 5s
+      retries: 100
+
 volumes:
   azurite_data:
   fake_gcs_server_data:
   grafana_conf:
   grafana_data:
+  kubo_data:
   localstack_data:
   postgres_data:
