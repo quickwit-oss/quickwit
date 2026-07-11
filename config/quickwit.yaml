@@ -152,8 +152,6 @@ version: 0.8
 #
 # metastore:
 #   postgres:
-#     # Applies per node running the `metastore` service. Make sure the cluster-wide
-#     # total stays below your PostgreSQL or RDS connection limit.
 #     min_connections: 0
 #     max_connections: 10
 #     acquire_connection_timeout: 10s

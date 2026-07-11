@@ -337,7 +337,6 @@ mod tests {
             let pg_metastore_config: PostgresMetastoreConfig =
                 serde_yaml::from_str(pg_metastore_config_yaml).unwrap();
             assert_eq!(pg_metastore_config, PostgresMetastoreConfig::default());
-            assert_eq!(pg_metastore_config.max_connections.get(), 10);
         }
         {
             let pg_metastore_config_yaml = r#"

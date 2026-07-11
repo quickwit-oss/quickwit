@@ -45,32 +45,9 @@ Likewise, if you upgrade Quickwit to a version that includes some changes in the
 
 ## PostgreSQL connection pool
 
-Each Quickwit node running the `metastore` service maintains a PostgreSQL connection pool. Nodes that do not run the `metastore` service use gRPC to reach those metastore nodes and do not open their own PostgreSQL pool.
+Each Quickwit node running the `metastore` service maintains its own PostgreSQL connection pool. Database-backed metastore nodes admit at most `2 * metastore.postgres.max_connections` in-flight requests, so the default is `20`.
 
-You can configure the pool in the `metastore.postgres` section of the [node configuration file](./node-config.md):
-
-```yaml
-metastore:
-  postgres:
-    min_connections: 0
-    max_connections: 10
-    acquire_connection_timeout: 10s
-    idle_connection_timeout: 10min
-    max_connection_lifetime: 30min
-```
-
-The default `max_connections` is `10` per metastore node. Database-backed metastore nodes admit at most `2 * max_connections` in-flight metastore requests, so the default is `20` in-flight requests per metastore node. For production deployments backed by PostgreSQL or Amazon RDS, size this value together with the database connection limit:
-
-```text
-metastore_nodes * metastore.postgres.max_connections
-```
-
-Keep that total below the PostgreSQL or RDS connection limit with headroom for migrations, administration, monitoring, and other applications sharing the database. If Quickwit logs errors such as `pool timed out while waiting for an open connection`, the local PostgreSQL pool on a metastore node was exhausted for at least `acquire_connection_timeout`. In that case:
-
-- Check `quickwit_metastore_active_connections`, `quickwit_metastore_idle_connections`, and `quickwit_metastore_acquire_connections`.
-- If active connections stay close to `max_connections` and the database has spare capacity, increase `metastore.postgres.max_connections`.
-- If active connections are high and PostgreSQL or RDS is already saturated, investigate slow metastore queries, locks, database CPU or I/O pressure, and RDS `DatabaseConnections` before increasing the pool.
-- Increase `acquire_connection_timeout` only to tolerate short bursts. It does not add database capacity.
+When sizing the pool, keep `metastore_nodes * metastore.postgres.max_connections` below the PostgreSQL connection limit with operational headroom. If Quickwit logs `pool timed out while waiting for an open connection`, check `quickwit_metastore_active_connections`, `quickwit_metastore_idle_connections`, and `quickwit_metastore_acquire_connections`.
 
 # File-backed metastore
 

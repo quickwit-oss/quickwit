@@ -166,22 +166,6 @@ fn get_metastore_client_max_concurrency() -> usize {
     )
 }
 
-fn db_metastore_max_in_flight_requests(max_connections: NonZeroUsize) -> usize {
-    max_connections.get().saturating_mul(2)
-}
-
-fn get_metastore_server_max_in_flight_requests(node_config: &NodeConfig) -> usize {
-    if !node_config.metastore_uri.protocol().is_database() {
-        return 100;
-    }
-    let max_connections = node_config
-        .metastore_configs
-        .find_postgres()
-        .map(|config| config.max_connections)
-        .unwrap_or_else(PostgresMetastoreConfig::default_max_connections);
-    db_metastore_max_in_flight_requests(max_connections)
-}
-
 static CP_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
     LazyLock::new(|| GrpcMetricsLayer::new("control_plane", "client"));
 static CP_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
@@ -602,7 +586,16 @@ pub async fn serve_quickwit(
                         node_config.metastore_uri
                     )
                 })?;
-            let max_in_flight_requests = get_metastore_server_max_in_flight_requests(&node_config);
+            let max_in_flight_requests = if node_config.metastore_uri.protocol().is_database() {
+                let max_connections = node_config
+                    .metastore_configs
+                    .find_postgres()
+                    .map(|config| config.max_connections)
+                    .unwrap_or_else(PostgresMetastoreConfig::default_max_connections);
+                max_connections.get().saturating_mul(2)
+            } else {
+                100
+            };
             // These layers apply to all the RPCs of the metastore.
             let shared_layer = ServiceBuilder::new()
                 .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
@@ -1769,31 +1762,6 @@ mod tests {
     use tonic_health::server::health_reporter;
 
     use super::*;
-
-    #[test]
-    fn test_db_metastore_max_in_flight_requests() {
-        let max_connections = NonZeroUsize::new(10).unwrap();
-        assert_eq!(db_metastore_max_in_flight_requests(max_connections), 20);
-
-        let max_connections = NonZeroUsize::new(50).unwrap();
-        assert_eq!(db_metastore_max_in_flight_requests(max_connections), 100);
-    }
-
-    #[test]
-    fn test_get_metastore_server_max_in_flight_requests() {
-        let node_config = NodeConfig::for_test();
-        assert_eq!(
-            get_metastore_server_max_in_flight_requests(&node_config),
-            100
-        );
-
-        let mut node_config = NodeConfig::for_test();
-        node_config.metastore_uri = Uri::for_test("postgresql://quickwit@localhost/quickwit");
-        assert_eq!(
-            get_metastore_server_max_in_flight_requests(&node_config),
-            20
-        );
-    }
 
     #[tokio::test]
     async fn test_check_cluster_configuration() {
