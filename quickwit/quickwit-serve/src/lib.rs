@@ -80,7 +80,7 @@ use quickwit_compaction::{
     wait_for_compactor_decommission,
 };
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig};
+use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig, PostgresMetastoreConfig};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
@@ -575,45 +575,41 @@ pub async fn serve_quickwit(
     let grpc_config = node_config.grpc_config.clone();
 
     // Instantiate a metastore "server" if the `metastore` role is enabled on the node.
-    let metastore_server_opt: Option<MetastoreServiceClient> =
-        if node_config.is_service_enabled(QuickwitService::Metastore) {
-            let metastore: MetastoreServiceClient = metastore_resolver
-                .resolve(&node_config.metastore_uri)
-                .await
-                .with_context(|| {
-                    format!(
-                        "failed to resolve metastore uri `{}`",
-                        node_config.metastore_uri
-                    )
-                })?;
-            let max_in_flight_requests = if node_config.metastore_uri.protocol().is_database() {
-                node_config
-                    .metastore_configs
-                    .find_postgres()
-                    .map(|config| config.max_connections.get() * 2)
-                    .unwrap_or_default()
-                    .max(100)
-            } else {
-                100
-            };
-            // These layers apply to all the RPCs of the metastore.
-            let shared_layer = ServiceBuilder::new()
-                .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
-                .layer(LoadShedLayer::new(max_in_flight_requests))
-                .into_inner();
-            let broker_layer = EventListenerLayer::new(event_broker.clone());
-            let metastore = MetastoreServiceClient::tower()
-                .stack_layer(shared_layer)
-                .stack_create_index_layer(broker_layer.clone())
-                .stack_delete_index_layer(broker_layer.clone())
-                .stack_add_source_layer(broker_layer.clone())
-                .stack_delete_source_layer(broker_layer.clone())
-                .stack_toggle_source_layer(broker_layer)
-                .build(metastore);
-            Some(metastore)
+    let metastore_server_opt: Option<MetastoreServiceClient> = if node_config
+        .is_service_enabled(QuickwitService::Metastore)
+    {
+        let metastore: MetastoreServiceClient = metastore_resolver
+            .resolve(&node_config.metastore_uri)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to resolve metastore uri `{}`",
+                    node_config.metastore_uri
+                )
+            })?;
+        let max_in_flight_requests = if node_config.metastore_uri.protocol().is_database() {
+            postgres_metastore_max_in_flight_requests(node_config.metastore_configs.find_postgres())
         } else {
-            None
+            100
         };
+        // These layers apply to all the RPCs of the metastore.
+        let shared_layer = ServiceBuilder::new()
+            .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
+            .layer(LoadShedLayer::new_shared(max_in_flight_requests))
+            .into_inner();
+        let broker_layer = EventListenerLayer::new(event_broker.clone());
+        let metastore = MetastoreServiceClient::tower()
+            .stack_layer(shared_layer)
+            .stack_create_index_layer(broker_layer.clone())
+            .stack_delete_index_layer(broker_layer.clone())
+            .stack_add_source_layer(broker_layer.clone())
+            .stack_delete_source_layer(broker_layer.clone())
+            .stack_toggle_source_layer(broker_layer)
+            .build(metastore);
+        Some(metastore)
+    } else {
+        None
+    };
     // Instantiate a metastore client, either local if available or remote otherwise.
     let metastore_client: MetastoreServiceClient =
         if let Some(metastore_server) = &metastore_server_opt {
@@ -1108,6 +1104,25 @@ pub async fn serve_quickwit(
         .await
         .context("failed to gracefully shutdown services")?;
     Ok(actor_exit_statuses)
+}
+
+/// Limits PostgreSQL-backed metastore RPCs to fewer than the number of database connections
+/// available to execute them. Admitting more requests would only move the overload into SQLx's
+/// acquisition queue, where requests can hold server capacity until the pool acquisition timeout
+/// expires.
+///
+/// When the pool contains at least two connections, one slot is left as headroom for operations
+/// such as `check_connectivity`. This is not a hard reservation: streaming RPCs release their
+/// admission permit when they return the stream, and direct pool users bypass this layer entirely.
+fn postgres_metastore_max_in_flight_requests(
+    postgres_config_opt: Option<&PostgresMetastoreConfig>,
+) -> usize {
+    let max_connections = postgres_config_opt
+        .cloned()
+        .unwrap_or_default()
+        .max_connections
+        .get();
+    max_connections.saturating_sub(1).max(1)
 }
 
 #[derive(Clone, Copy)]
@@ -1742,6 +1757,7 @@ async fn check_cluster_configuration(
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
     use std::sync::{Arc, Mutex};
 
     use anyhow::bail;
@@ -1752,16 +1768,98 @@ mod tests {
     use quickwit_metastore::{IndexMetadata, metastore_for_test};
     use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::ingest::ingester::{MockIngesterService, ObservationMessage};
-    use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
+    use quickwit_proto::metastore::{
+        IndexMetadataRequest, IndexMetadataResponse, ListIndexesMetadataResponse,
+        MockMetastoreService,
+    };
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_search::Job;
-    use tokio::sync::watch;
+    use tokio::sync::{Notify, watch};
     use tonic::transport::{Channel, Server};
     use tonic_health::pb::HealthCheckRequest;
     use tonic_health::pb::health_client::HealthClient;
     use tonic_health::server::health_reporter;
 
     use super::*;
+
+    #[test]
+    fn test_postgres_metastore_admission_matches_connection_pool_capacity() {
+        for (max_connections, expected_admission) in [(1, 1), (2, 1), (10, 9), (128, 127)] {
+            let postgres_config = PostgresMetastoreConfig {
+                max_connections: NonZeroUsize::new(max_connections).unwrap(),
+                ..Default::default()
+            };
+
+            assert_eq!(
+                postgres_metastore_max_in_flight_requests(Some(&postgres_config)),
+                expected_admission
+            );
+        }
+
+        let default_max_connections = PostgresMetastoreConfig::default().max_connections.get();
+        assert_eq!(
+            postgres_metastore_max_in_flight_requests(None),
+            default_max_connections.saturating_sub(1).max(1)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_metastore_admission_is_shared_across_rpc_methods() {
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .once()
+            .return_once(|_| Ok(ListIndexesMetadataResponse::default()));
+
+        let request_started = Arc::new(Notify::new());
+        let release_request = Arc::new(Notify::new());
+        let request_started_clone = request_started.clone();
+        let release_request_clone = release_request.clone();
+        let index_metadata_layer = tower::layer::layer_fn(move |_| {
+            let request_started = request_started_clone.clone();
+            let release_request = release_request_clone.clone();
+            tower::service_fn(move |_: IndexMetadataRequest| {
+                let request_started = request_started.clone();
+                let release_request = release_request.clone();
+                async move {
+                    request_started.notify_one();
+                    // Hold the first RPC's load-shed permit while the test invokes another method.
+                    release_request.notified().await;
+                    Ok::<_, MetastoreError>(IndexMetadataResponse::default())
+                }
+            })
+        });
+        let inner_metastore = MetastoreServiceClient::tower()
+            .stack_index_metadata_layer(index_metadata_layer)
+            .build_from_mock(mock_metastore);
+        let metastore = MetastoreServiceClient::tower()
+            .stack_layer(LoadShedLayer::new_shared(1))
+            .build(inner_metastore);
+        let first_metastore = metastore.clone();
+        let first_request_handle = tokio::spawn(async move {
+            first_metastore
+                .index_metadata(IndexMetadataRequest::default())
+                .await
+        });
+        request_started.notified().await;
+
+        let second_result = metastore
+            .list_indexes_metadata(ListIndexesMetadataRequest::default())
+            .await;
+        // Always release the first request before asserting so a failure cannot strand its task.
+        release_request.notify_one();
+        first_request_handle.await.unwrap().unwrap();
+
+        assert!(
+            matches!(second_result, Err(MetastoreError::TooManyRequests)),
+            "a different RPC method should be shed by the aggregate metastore limit: \
+             {second_result:?}"
+        );
+        metastore
+            .list_indexes_metadata(ListIndexesMetadataRequest::default())
+            .await
+            .expect("the second RPC method should succeed after the shared permit is released");
+    }
 
     #[tokio::test]
     async fn test_check_cluster_configuration() {

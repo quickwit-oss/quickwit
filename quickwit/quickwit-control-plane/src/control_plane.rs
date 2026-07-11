@@ -17,6 +17,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fmt::Formatter;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -78,12 +80,16 @@ const PRUNE_SHARDS_DEFAULT_COOLDOWN_PERIOD: Duration = Duration::from_secs(120);
 const REBUILD_PLAN_COOLDOWN_PERIOD: Duration = Duration::from_secs(2);
 
 #[derive(Debug)]
-struct ControlPlanLoop;
+struct ControlPlanLoop {
+    actor_generation: u64,
+}
 
 #[derive(Debug, Default, Clone, Copy)]
 struct RebuildPlan;
 
 pub struct ControlPlane {
+    actor_generation: u64,
+    actor_generation_shutdown_tx: watch::Sender<()>,
     cluster_config: ClusterConfig,
     cluster_change_stream_opt: Option<ClusterChangeStream>,
     // The control plane state is split into to independent functions, that we naturally isolated
@@ -155,8 +161,11 @@ impl ControlPlane {
         info!("starting control plane");
 
         let (readiness_tx, readiness_rx) = watch::channel(false);
+        let next_actor_generation = Arc::new(AtomicU64::new(0));
         let (control_plane_mailbox, control_plane_handle) =
             universe.spawn_builder().supervise_fn(move || {
+                let actor_generation = next_actor_generation.fetch_add(1, Ordering::Relaxed);
+                let (actor_generation_shutdown_tx, _) = watch::channel(());
                 let cluster_id = cluster_config.cluster_id.clone();
                 let replication_factor = cluster_config.replication_factor;
                 let shard_throughput_limit_mib: f32 = cluster_config.shard_throughput_limit.as_u64()
@@ -176,6 +185,8 @@ impl ControlPlane {
                 let _ = readiness_tx.send(false);
 
                 ControlPlane {
+                    actor_generation,
+                    actor_generation_shutdown_tx,
                     cluster_config: cluster_config.clone(),
                     cluster_change_stream_opt: Some(cluster_change_stream_factory.create()),
                     indexing_scheduler,
@@ -231,20 +242,56 @@ impl Actor for ControlPlane {
 
         self.ingest_controller.sync_with_all_ingesters(&self.model);
 
-        ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop);
+        self.schedule_control_plan_loop(ctx);
 
         let weak_mailbox = ctx.mailbox().downgrade();
         let cluster_change_stream = self
             .cluster_change_stream_opt
             .take()
             .expect("`initialize` should be called only once");
-        spawn_watch_indexers_task(weak_mailbox, cluster_change_stream);
+        spawn_watch_indexers_task(
+            weak_mailbox,
+            cluster_change_stream,
+            self.actor_generation,
+            self.actor_generation_shutdown_tx.subscribe(),
+        );
         let _ = self.readiness_tx.send(true);
+        Ok(())
+    }
+
+    async fn finalize(
+        &mut self,
+        _exit_status: &ActorExitStatus,
+        _ctx: &ActorContext<Self>,
+    ) -> anyhow::Result<()> {
+        // The supervisor may take up to one heartbeat to create the successor generation. Stop
+        // advertising this generation as ready as soon as it exits.
+        let _ = self.readiness_tx.send(false);
+        // Explicitly wake generation-owned tasks instead of relying on this sender being dropped
+        // after finalization.
+        let _ = self.actor_generation_shutdown_tx.send(());
         Ok(())
     }
 }
 
 impl ControlPlane {
+    fn schedule_control_plan_loop(&self, ctx: &ActorContext<Self>) {
+        let actor_generation = self.actor_generation;
+        let actor_generation_shutdown_rx = self.actor_generation_shutdown_tx.subscribe();
+        let self_mailbox = ctx.mailbox().clone();
+        let callback = move || {
+            // A supervised actor keeps the same mailbox across respawns. Do not let a timer owned
+            // by an exited generation enqueue work for its successor.
+            if !matches!(actor_generation_shutdown_rx.has_changed(), Ok(false)) {
+                return;
+            }
+            let _ =
+                self_mailbox.send_message_with_high_priority(ControlPlanLoop { actor_generation });
+        };
+        ctx.spawn_ctx()
+            .schedule_event(callback, CONTROL_PLAN_LOOP_INTERVAL);
+    }
+
     async fn auto_create_indexes(
         &mut self,
         subrequests: &[GetOrCreateOpenShardsSubrequest],
@@ -525,21 +572,38 @@ impl Handler<ControlPlanLoop> for ControlPlane {
 
     async fn handle(
         &mut self,
-        _message: ControlPlanLoop,
+        message: ControlPlanLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        // A timer may have enqueued its message just before its actor generation exited. Since the
+        // supervisor reuses the inbox, reject such messages in the successor generation.
+        if message.actor_generation != self.actor_generation {
+            return Ok(());
+        }
         if self.disable_control_loop {
             return Ok(());
         }
         if let Err(metastore_error) = self
             .ingest_controller
-            .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
+            .rebalance_shards(
+                &mut self.model,
+                ctx.mailbox(),
+                ctx.progress(),
+                self.actor_generation,
+                self.actor_generation_shutdown_tx.subscribe(),
+            )
             .await
         {
-            return convert_metastore_error::<()>(metastore_error).map(|_| ());
+            let actor_result = convert_metastore_error::<()>(metastore_error).map(|_| ());
+            if actor_result.is_ok() {
+                // Recoverable errors keep this actor generation alive, so it remains responsible
+                // for scheduling the next control tick.
+                self.schedule_control_plan_loop(ctx);
+            }
+            return actor_result;
         }
         self.indexing_scheduler.control_running_plan(&self.model);
-        ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop);
+        self.schedule_control_plan_loop(ctx);
         Ok(())
     }
 }
@@ -1060,7 +1124,9 @@ fn apply_index_template_match(
 }
 
 #[derive(Debug)]
-struct RebalanceShards;
+struct RebalanceShards {
+    actor_generation: u64,
+}
 
 #[async_trait]
 impl Handler<RebalanceShards> for ControlPlane {
@@ -1068,12 +1134,23 @@ impl Handler<RebalanceShards> for ControlPlane {
 
     async fn handle(
         &mut self,
-        _message: RebalanceShards,
+        message: RebalanceShards,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
+        // Cluster watchers are generation-scoped, but an event may already be queued when its
+        // generation exits. The shared supervised inbox must not deliver it to the successor.
+        if message.actor_generation != self.actor_generation {
+            return Ok(());
+        }
         if let Err(error) = self
             .ingest_controller
-            .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
+            .rebalance_shards(
+                &mut self.model,
+                ctx.mailbox(),
+                ctx.progress(),
+                self.actor_generation,
+                self.actor_generation_shutdown_tx.subscribe(),
+            )
             .await
         {
             return convert_metastore_error::<()>(error).map(|_| ());
@@ -1092,6 +1169,12 @@ impl Handler<RebalanceShardsCallback> for ControlPlane {
         message: RebalanceShardsCallback,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
+        // The delayed close may have completed just before its generation shut down and queued this
+        // callback in the mailbox shared with the successor. Never apply that stale result to the
+        // successor's freshly loaded model.
+        if message.actor_generation != self.actor_generation {
+            return Ok(());
+        }
         let num_closed_shards = message.closed_shards.len();
         debug!("closing {num_closed_shards} shards after rebalance");
 
@@ -1113,15 +1196,53 @@ impl Handler<RebalanceShardsCallback> for ControlPlane {
 fn spawn_watch_indexers_task(
     weak_mailbox: WeakMailbox<ControlPlane>,
     cluster_change_stream: ClusterChangeStream,
+    actor_generation: u64,
+    actor_generation_shutdown_rx: watch::Receiver<()>,
 ) {
-    tokio::spawn(watcher_indexers(weak_mailbox, cluster_change_stream));
+    tokio::spawn(watcher_indexers(
+        weak_mailbox,
+        cluster_change_stream,
+        actor_generation,
+        actor_generation_shutdown_rx,
+    ));
 }
 
 async fn watcher_indexers(
     weak_mailbox: WeakMailbox<ControlPlane>,
-    mut cluster_change_stream: ClusterChangeStream,
+    cluster_change_stream: ClusterChangeStream,
+    actor_generation: u64,
+    actor_generation_shutdown_rx: watch::Receiver<()>,
 ) {
-    while let Some(cluster_change) = cluster_change_stream.next().await {
+    watcher_indexers_with_before_send_hook(
+        weak_mailbox,
+        cluster_change_stream,
+        actor_generation,
+        actor_generation_shutdown_rx,
+        || {},
+    )
+    .await;
+}
+
+async fn watcher_indexers_with_before_send_hook<F>(
+    weak_mailbox: WeakMailbox<ControlPlane>,
+    mut cluster_change_stream: ClusterChangeStream,
+    actor_generation: u64,
+    mut actor_generation_shutdown_rx: watch::Receiver<()>,
+    before_send_hook: F,
+) where
+    F: Fn() + Send,
+{
+    loop {
+        let cluster_change_opt = tokio::select! {
+            biased;
+            _ = actor_generation_shutdown_rx.changed() => {
+                return;
+            }
+            cluster_change_opt = cluster_change_stream.next() => cluster_change_opt,
+        };
+        let Some(cluster_change) = cluster_change_opt else {
+            return;
+        };
         let Some(mailbox) = weak_mailbox.upgrade() else {
             return;
         };
@@ -1165,8 +1286,20 @@ async fn watcher_indexers(
             }
             _ => {}
         }
-        if trigger_rebalance && mailbox.send_message(RebalanceShards).await.is_err() {
-            return;
+        if trigger_rebalance {
+            before_send_hook();
+            let send_rebalance_fut = mailbox.send_message(RebalanceShards { actor_generation });
+            tokio::select! {
+                biased;
+                _ = actor_generation_shutdown_rx.changed() => {
+                    return;
+                }
+                send_result = send_rebalance_fut => {
+                    if send_result.is_err() {
+                        return;
+                    }
+                }
+            }
         }
     }
 }
@@ -1174,10 +1307,10 @@ async fn watcher_indexers(
 #[cfg(test)]
 mod tests {
     use std::num::NonZero;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex as StdMutex};
 
     use mockall::Sequence;
-    use quickwit_actors::{AskError, Observe, SupervisorMetrics};
+    use quickwit_actors::{AskError, Observe, QueueCapacity, SupervisorMetrics};
     use quickwit_cluster::{ClusterChangeStreamFactoryForTest, ClusterNode};
     use quickwit_config::{
         CLI_SOURCE_ID, INGEST_V2_SOURCE_ID, IndexConfig, KafkaSourceParams, SourceParams,
@@ -1206,10 +1339,60 @@ mod tests {
         OpenShardSubresponse, OpenShardsResponse, SourceType,
     };
     use quickwit_proto::types::{DocMappingUid, Position};
-    use tokio::sync::Mutex;
+    use tokio::sync::{Mutex, mpsc, oneshot};
 
     use super::*;
     use crate::IndexerNodeInfo;
+
+    /// Unlike `ClusterChangeStreamFactoryForTest`, this factory broadcasts an event to every
+    /// stream it has created. It mirrors the production cluster's subscriber behavior and makes a
+    /// leaked watcher observable after a supervised actor respawn.
+    #[derive(Clone, Default)]
+    struct BroadcastClusterChangeStreamFactory {
+        change_stream_txs: Arc<StdMutex<Vec<mpsc::UnboundedSender<ClusterChange>>>>,
+    }
+
+    impl BroadcastClusterChangeStreamFactory {
+        fn broadcast(&self, cluster_change: ClusterChange) {
+            self.change_stream_txs
+                .lock()
+                .unwrap()
+                .retain(|change_stream_tx| change_stream_tx.send(cluster_change.clone()).is_ok());
+        }
+
+        fn num_subscribers(&self) -> usize {
+            self.change_stream_txs.lock().unwrap().len()
+        }
+    }
+
+    impl ClusterChangeStreamFactory for BroadcastClusterChangeStreamFactory {
+        fn create(&self) -> ClusterChangeStream {
+            let (cluster_change_stream, cluster_change_stream_tx) =
+                ClusterChangeStream::new_unbounded();
+            self.change_stream_txs
+                .lock()
+                .unwrap()
+                .push(cluster_change_stream_tx);
+            cluster_change_stream
+        }
+    }
+
+    #[derive(Debug)]
+    struct EnableControlLoopForTest;
+
+    #[async_trait]
+    impl Handler<EnableControlLoopForTest> for ControlPlane {
+        type Reply = ();
+
+        async fn handle(
+            &mut self,
+            _message: EnableControlLoopForTest,
+            _ctx: &ActorContext<Self>,
+        ) -> Result<Self::Reply, ActorExitStatus> {
+            self.disable_control_loop = false;
+            Ok(())
+        }
+    }
 
     #[tokio::test]
     async fn test_control_plane_create_index() {
@@ -1812,6 +1995,355 @@ mod tests {
                 num_errors: 1,
                 num_kills: 0
             }
+        );
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_control_plane_respawns_do_not_multiply_generation_owned_work() {
+        let universe = Universe::default();
+        let node_id = NodeId::from_str("test-control-plane");
+        let indexer_pool = IndexerPool::default();
+        let ingester_pool = IngesterPool::default();
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .times(3) // Initial generation plus two supervised respawns.
+            .returning(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
+        mock_metastore
+            .expect_create_index()
+            .times(2)
+            .returning(|_| {
+                Err(MetastoreError::Connection {
+                    message: "connection lost after request".to_string(),
+                })
+            });
+
+        let cluster_change_stream_factory = BroadcastClusterChangeStreamFactory::default();
+        let disable_control_loop = true;
+        let (control_plane_mailbox, control_plane_handle, mut readiness_rx) =
+            ControlPlane::spawn_inner(
+                &universe,
+                ClusterConfig::for_test(),
+                node_id,
+                cluster_change_stream_factory.clone(),
+                indexer_pool,
+                ingester_pool,
+                MetastoreServiceClient::from_mock(mock_metastore),
+                disable_control_loop,
+            );
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            readiness_rx.wait_for(|readiness| *readiness),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        let index_config = IndexConfig::for_test("test-index", "ram:///test-index");
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+        for expected_num_errors in 1..=2 {
+            let create_index_error: AskError<ControlPlaneError> = control_plane_mailbox
+                .ask_for_res(create_index_request.clone())
+                .await
+                .unwrap_err();
+            assert!(matches!(create_index_error, AskError::ProcessMessageError));
+
+            // The supervisor reuses this mailbox. Waiting for Observe proves that the successor
+            // generation has completed initialization and is serving messages.
+            let control_plane_state = control_plane_mailbox.ask(Observe).await.unwrap();
+            assert!(control_plane_state.readiness);
+            assert_eq!(
+                control_plane_handle
+                    .process_pending_and_observe()
+                    .await
+                    .metrics
+                    .num_errors,
+                expected_num_errors
+            );
+        }
+
+        let indexer_node = ClusterNode::for_test(
+            "test-indexer",
+            1515,
+            false,
+            &["indexer"],
+            &[],
+            IngesterStatus::Ready,
+        )
+        .await;
+        cluster_change_stream_factory.broadcast(ClusterChange::Add(indexer_node));
+        let control_plane_state = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let state = control_plane_mailbox.ask(Observe).await.unwrap();
+                if state.ingest_controller.num_rebalance_shards_ops == 1 {
+                    break state;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("current generation should process the cluster event");
+        assert_eq!(
+            control_plane_state
+                .ingest_controller
+                .num_rebalance_shards_ops,
+            1,
+            "one cluster event must be handled by only the current generation's watcher"
+        );
+
+        // A non-indexer event gives the production-style broadcaster an opportunity to prune
+        // receivers dropped by the two exited generations.
+        let metastore_node = ClusterNode::for_test(
+            "test-metastore",
+            1516,
+            false,
+            &["metastore"],
+            &[],
+            IngesterStatus::Unspecified,
+        )
+        .await;
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while cluster_change_stream_factory.num_subscribers() != 1 {
+                cluster_change_stream_factory.broadcast(ClusterChange::Add(metastore_node.clone()));
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("exited generations should drop their cluster subscriptions");
+
+        // These are the exact messages that timers from the first two generations could have
+        // queued immediately before exiting. They must not run, or start new periodic chains, in
+        // the third generation.
+        control_plane_mailbox
+            .ask(EnableControlLoopForTest)
+            .await
+            .unwrap();
+        control_plane_mailbox
+            .ask(ControlPlanLoop {
+                actor_generation: 0,
+            })
+            .await
+            .unwrap();
+        control_plane_mailbox
+            .ask(ControlPlanLoop {
+                actor_generation: 1,
+            })
+            .await
+            .unwrap();
+        let control_plane_state = control_plane_mailbox.ask(Observe).await.unwrap();
+        assert_eq!(
+            control_plane_state
+                .ingest_controller
+                .num_rebalance_shards_ops,
+            1,
+            "stale control-loop messages must not execute in a successor generation"
+        );
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_control_plane_failure_clears_readiness_before_supervisor_respawn() {
+        let universe = Universe::default();
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
+        mock_metastore.expect_create_index().return_once(|_| {
+            Err(MetastoreError::Connection {
+                message: "connection lost after request".to_string(),
+            })
+        });
+
+        let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
+        let (control_plane_mailbox, control_plane_handle, mut readiness_rx) =
+            ControlPlane::spawn_inner(
+                &universe,
+                ClusterConfig::for_test(),
+                NodeId::from_str("test-control-plane"),
+                cluster_change_stream_factory,
+                IndexerPool::default(),
+                IngesterPool::default(),
+                MetastoreServiceClient::from_mock(mock_metastore),
+                true,
+            );
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            readiness_rx.wait_for(|readiness| *readiness),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        let index_config = IndexConfig::for_test("test-index", "ram:///test-index");
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+        let create_index_error: AskError<ControlPlaneError> = control_plane_mailbox
+            .ask_for_res(create_index_request)
+            .await
+            .unwrap_err();
+        assert!(matches!(create_index_error, AskError::ProcessMessageError));
+
+        tokio::time::timeout(
+            Duration::from_millis(100),
+            readiness_rx.wait_for(|readiness| !*readiness),
+        )
+        .await
+        .expect("failed control-plane generation should immediately clear readiness")
+        .unwrap();
+        assert_eq!(
+            control_plane_handle.observe().await.metrics,
+            SupervisorMetrics::default(),
+            "readiness should clear before the supervisor heartbeat respawns the actor"
+        );
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_control_plan_loop_continues_after_too_many_requests() {
+        let universe = Universe::default();
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let retiring_ingester_id = NodeId::from_str("retiring-ingester");
+        let ready_ingester_id = NodeId::from_str("ready-ingester");
+
+        let mut index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        index_metadata
+            .add_source(SourceConfig::ingest_v2())
+            .unwrap();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .return_once(move |_| {
+                Ok(ListIndexesMetadataResponse::for_test(vec![
+                    index_metadata.clone(),
+                ]))
+            });
+        let index_uid_clone = index_uid.clone();
+        let retiring_ingester_id_clone = retiring_ingester_id.clone();
+        mock_metastore.expect_list_shards().return_once(move |_| {
+            Ok(ListShardsResponse {
+                subresponses: vec![ListShardsSubresponse {
+                    index_uid: Some(index_uid_clone.clone()),
+                    source_id: INGEST_V2_SOURCE_ID.to_string(),
+                    shards: vec![Shard {
+                        index_uid: Some(index_uid_clone.clone()),
+                        source_id: INGEST_V2_SOURCE_ID.to_string(),
+                        shard_id: Some(ShardId::from(1)),
+                        shard_state: ShardState::Open as i32,
+                        leader_id: retiring_ingester_id_clone.to_string(),
+                        ..Default::default()
+                    }],
+                }],
+            })
+        });
+        let mut open_shards_sequence = Sequence::new();
+        mock_metastore
+            .expect_open_shards()
+            .times(1)
+            .in_sequence(&mut open_shards_sequence)
+            .return_once(|_| Err(MetastoreError::TooManyRequests));
+        mock_metastore
+            .expect_open_shards()
+            .times(1)
+            .in_sequence(&mut open_shards_sequence)
+            .return_once(|request| {
+                let subrequest = &request.subrequests[0];
+                Ok(OpenShardsResponse {
+                    subresponses: vec![OpenShardSubresponse {
+                        subrequest_id: subrequest.subrequest_id,
+                        open_shard: Some(Shard {
+                            index_uid: subrequest.index_uid.clone(),
+                            source_id: subrequest.source_id.clone(),
+                            shard_id: subrequest.shard_id.clone(),
+                            leader_id: subrequest.leader_id.clone(),
+                            follower_id: subrequest.follower_id.clone(),
+                            shard_state: ShardState::Open as i32,
+                            ..Default::default()
+                        }),
+                    }],
+                })
+            });
+
+        let mut mock_retiring_ingester = MockIngesterService::new();
+        mock_retiring_ingester
+            .expect_retain_shards()
+            .return_once(|_| Ok(RetainShardsResponse {}));
+        let mut mock_ready_ingester = MockIngesterService::new();
+        mock_ready_ingester
+            .expect_retain_shards()
+            .return_once(|_| Ok(RetainShardsResponse {}));
+        mock_ready_ingester
+            .expect_init_shards()
+            .times(2)
+            .returning(|request| {
+                let shard = request.subrequests[0].shard().clone();
+                Ok(InitShardsResponse {
+                    successes: vec![InitShardSuccess {
+                        subrequest_id: 0,
+                        shard: Some(shard),
+                    }],
+                    failures: Vec::new(),
+                })
+            });
+
+        let ingester_pool = IngesterPool::default();
+        ingester_pool.insert(
+            retiring_ingester_id,
+            IngesterPoolEntry {
+                client: IngesterServiceClient::from_mock(mock_retiring_ingester),
+                status: IngesterStatus::Retiring,
+                availability_zone: None,
+            },
+        );
+        ingester_pool.insert(
+            ready_ingester_id,
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(
+                mock_ready_ingester,
+            )),
+        );
+
+        let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
+        let (control_plane_mailbox, control_plane_handle, mut readiness_rx) = ControlPlane::spawn(
+            &universe,
+            ClusterConfig::for_test(),
+            NodeId::from_str("test-control-plane"),
+            cluster_change_stream_factory,
+            IndexerPool::default(),
+            ingester_pool,
+            MetastoreServiceClient::from_mock(mock_metastore),
+        );
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            readiness_rx.wait_for(|readiness| *readiness),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let state = control_plane_mailbox.ask(Observe).await.unwrap();
+                if state.ingest_controller.num_rebalance_shards_ops >= 2 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("control loop should retry after a recoverable metastore error");
+
+        assert_eq!(
+            control_plane_handle
+                .process_pending_and_observe()
+                .await
+                .metrics,
+            SupervisorMetrics::default(),
+            "TooManyRequests must not respawn the control plane"
         );
 
         universe.assert_quit().await;
@@ -2458,7 +2990,13 @@ mod tests {
 
         let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
         let cluster_change_stream = cluster_change_stream_factory.create();
-        spawn_watch_indexers_task(weak_control_plane_mailbox, cluster_change_stream);
+        let (_actor_generation_shutdown_tx, actor_generation_shutdown_rx) = watch::channel(());
+        spawn_watch_indexers_task(
+            weak_control_plane_mailbox,
+            cluster_change_stream,
+            0,
+            actor_generation_shutdown_rx,
+        );
 
         let cluster_change_stream_tx = cluster_change_stream_factory.change_stream_tx();
 
@@ -2516,14 +3054,14 @@ mod tests {
         cluster_change_stream_tx.send(cluster_change).unwrap();
 
         tokio::time::sleep(Duration::from_millis(1)).await;
-        let RebalanceShards = control_plane_inbox.recv_typed_message().await.unwrap();
+        let RebalanceShards { .. } = control_plane_inbox.recv_typed_message().await.unwrap();
 
         // removing an indexer node triggers a shard rebalancing.
         let cluster_change = ClusterChange::Remove(indexer_node.clone());
         cluster_change_stream_tx.send(cluster_change).unwrap();
 
         tokio::time::sleep(Duration::from_millis(1)).await;
-        let RebalanceShards = control_plane_inbox.recv_typed_message().await.unwrap();
+        let RebalanceShards { .. } = control_plane_inbox.recv_typed_message().await.unwrap();
 
         // a change in IngesterStatus readiness triggers a shard rebalancing.
         let node_ready = ClusterNode::for_test(
@@ -2551,7 +3089,67 @@ mod tests {
         cluster_change_stream_tx.send(cluster_change).unwrap();
 
         tokio::time::sleep(Duration::from_millis(1)).await;
-        let RebalanceShards = control_plane_inbox.recv_typed_message().await.unwrap();
+        let RebalanceShards { .. } = control_plane_inbox.recv_typed_message().await.unwrap();
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_watch_indexers_cancels_while_rebalance_send_is_backpressured() {
+        let universe = Universe::default();
+        let (control_plane_mailbox, _control_plane_inbox) =
+            universe.create_mailbox("backpressured-control-plane", QueueCapacity::Bounded(1));
+        control_plane_mailbox
+            .try_send_message(RebalanceShards {
+                actor_generation: 0,
+            })
+            .unwrap();
+
+        let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
+        let cluster_change_stream = cluster_change_stream_factory.create();
+        let cluster_change_stream_tx = cluster_change_stream_factory.change_stream_tx();
+        let (actor_generation_shutdown_tx, actor_generation_shutdown_rx) = watch::channel(());
+        let (before_send_tx, before_send_rx) = oneshot::channel();
+        let before_send_tx_opt = Arc::new(StdMutex::new(Some(before_send_tx)));
+        let before_send_tx_opt_clone = before_send_tx_opt.clone();
+        let watcher_handle = tokio::spawn(watcher_indexers_with_before_send_hook(
+            control_plane_mailbox.downgrade(),
+            cluster_change_stream,
+            0,
+            actor_generation_shutdown_rx,
+            move || {
+                if let Some(before_send_tx) = before_send_tx_opt_clone.lock().unwrap().take() {
+                    let _ = before_send_tx.send(());
+                }
+            },
+        ));
+
+        let indexer_node = ClusterNode::for_test(
+            "test-indexer",
+            1515,
+            false,
+            &["indexer"],
+            &[],
+            IngesterStatus::Ready,
+        )
+        .await;
+        cluster_change_stream_tx
+            .send(ClusterChange::Add(indexer_node))
+            .unwrap();
+        tokio::time::timeout(Duration::from_millis(100), before_send_rx)
+            .await
+            .expect("watcher should consume the cluster event")
+            .unwrap();
+        assert!(
+            !watcher_handle.is_finished(),
+            "watcher should be waiting for mailbox capacity"
+        );
+
+        drop(actor_generation_shutdown_tx);
+        tokio::time::timeout(Duration::from_millis(100), watcher_handle)
+            .await
+            .expect("generation shutdown should cancel a backpressured watcher")
+            .unwrap();
 
         universe.assert_quit().await;
     }
@@ -2625,7 +3223,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_control_plane_handles_rebalance_shards_callback() {
+    async fn test_control_plane_handles_current_and_ignores_stale_rebalance_shards_callback() {
         let universe = Universe::with_accelerated_time();
 
         let cluster_config = ClusterConfig::for_test();
@@ -2747,12 +3345,26 @@ mod tests {
             },
         ];
         let rebalance_lock = Arc::new(Mutex::new(()));
-        let rebalance_guard = rebalance_lock.clone().lock_owned().await;
-        let callback = RebalanceShardsCallback {
-            closed_shards,
-            rebalance_guard,
+        let stale_rebalance_guard = rebalance_lock.clone().lock_owned().await;
+        let stale_callback = RebalanceShardsCallback {
+            actor_generation: 1,
+            closed_shards: closed_shards.clone(),
+            rebalance_guard: stale_rebalance_guard,
         };
-        control_plane_mailbox.ask(callback).await.unwrap();
+        control_plane_mailbox.ask(stale_callback).await.unwrap();
+
+        let control_plane_debug_info = control_plane_mailbox.ask(GetDebugInfo).await.unwrap();
+        let shard = &control_plane_debug_info["shard_table"]
+            ["test-index:00000000000000000000000000"]["test-ingester"][0];
+        assert_eq!(shard["shard_state"], "open");
+
+        let current_rebalance_guard = rebalance_lock.clone().lock_owned().await;
+        let current_callback = RebalanceShardsCallback {
+            actor_generation: 0,
+            closed_shards,
+            rebalance_guard: current_rebalance_guard,
+        };
+        control_plane_mailbox.ask(current_callback).await.unwrap();
 
         let control_plane_debug_info = control_plane_mailbox.ask(GetDebugInfo).await.unwrap();
         let shard = &control_plane_debug_info["shard_table"]

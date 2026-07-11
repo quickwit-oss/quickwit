@@ -97,11 +97,17 @@ where F: Future<Output = Result<T, E>>
     }
 }
 
+#[derive(Debug, Clone)]
+enum PermitSource {
+    PerService(usize),
+    Shared(Arc<Semaphore>),
+}
+
 /// Allows at most `max_in_flight_requests` in-flight requests before rejecting new incoming
 /// requests.
 #[derive(Debug, Clone)]
 pub struct LoadShedLayer {
-    max_in_flight_requests: usize,
+    permit_source: PermitSource,
 }
 
 impl LoadShedLayer {
@@ -109,7 +115,18 @@ impl LoadShedLayer {
     /// before rejecting new incoming requests.
     pub fn new(max_in_flight_requests: usize) -> Self {
         Self {
-            max_in_flight_requests,
+            permit_source: PermitSource::PerService(max_in_flight_requests),
+        }
+    }
+
+    /// Creates a new `LoadShedLayer` whose limit is shared by every service built from this layer
+    /// or one of its clones.
+    ///
+    /// This is useful for generated service clients that clone a common layer into one service
+    /// stack per RPC method and need one aggregate in-flight request limit across all methods.
+    pub fn new_shared(max_in_flight_requests: usize) -> Self {
+        Self {
+            permit_source: PermitSource::Shared(Arc::new(Semaphore::new(max_in_flight_requests))),
         }
     }
 }
@@ -118,9 +135,15 @@ impl<S> Layer<S> for LoadShedLayer {
     type Service = LoadShed<S>;
 
     fn layer(&self, service: S) -> Self::Service {
+        let permits = match &self.permit_source {
+            PermitSource::PerService(max_in_flight_requests) => {
+                Arc::new(Semaphore::new(*max_in_flight_requests))
+            }
+            PermitSource::Shared(permits) => permits.clone(),
+        };
         LoadShed {
             inner: service,
-            permits: Arc::new(Semaphore::new(self.max_in_flight_requests)),
+            permits,
             permit_opt: None,
         }
     }
@@ -151,5 +174,37 @@ mod tests {
 
         drop(in_fight_fut);
         service.ready().await.unwrap().call(()).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_shared_load_shed_across_services() {
+        #[derive(Debug)]
+        struct MyError;
+
+        impl MakeLoadShedError for MyError {
+            fn make_load_shed_error() -> Self {
+                MyError
+            }
+        }
+
+        let shared_layer = LoadShedLayer::new_shared(1);
+        let mut first_service = ServiceBuilder::new()
+            .layer(shared_layer.clone())
+            .service_fn(|_| async { Ok::<_, MyError>(()) });
+        let mut second_service = ServiceBuilder::new()
+            .layer(shared_layer)
+            .service_fn(|_| async { Ok::<_, MyError>(()) });
+
+        let in_flight_fut = first_service.ready().await.unwrap().call(());
+        second_service.ready().await.unwrap_err();
+
+        drop(in_flight_fut);
+        second_service
+            .ready()
+            .await
+            .unwrap()
+            .call(())
+            .await
+            .unwrap();
     }
 }

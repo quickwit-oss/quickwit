@@ -51,7 +51,7 @@ use rand::rngs::ThreadRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, RngExt, rng};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Mutex, OwnedMutexGuard};
+use tokio::sync::{Mutex, OwnedMutexGuard, watch};
 use tracing::{Level, debug, enabled, error, info, instrument, warn};
 use ulid::Ulid;
 
@@ -1033,6 +1033,8 @@ impl IngestController {
         model: &mut ControlPlaneModel,
         mailbox: &Mailbox<ControlPlane>,
         progress: &Progress,
+        actor_generation: u64,
+        actor_generation_shutdown_rx: watch::Receiver<()>,
     ) -> MetastoreResult<usize> {
         let Ok(rebalance_guard) = self.rebalance_lock.clone().try_lock_owned() else {
             debug!("skipping rebalance: another rebalance is already in progress");
@@ -1095,24 +1097,13 @@ impl IngestController {
         }
         let close_shards_fut = self.close_shards(shards_to_close);
         let mailbox_clone = mailbox.clone();
-
-        let close_shards_and_send_callback_fut = async move {
-            // We wait for a few seconds before closing the shards to give the ingesters some time
-            // to learn about the ones we just opened via gossip.
-            tokio::time::sleep(CLOSE_SHARDS_UPON_REBALANCE_DELAY).await;
-
-            let closed_shards = close_shards_fut.await;
-
-            if closed_shards.is_empty() {
-                return;
-            }
-            let callback = RebalanceShardsCallback {
-                closed_shards,
-                rebalance_guard,
-            };
-            let _ = mailbox_clone.send_message(callback).await;
-        };
-        tokio::spawn(close_shards_and_send_callback_fut);
+        let _delayed_close_handle = spawn_delayed_rebalance_close_task(
+            mailbox_clone,
+            close_shards_fut,
+            rebalance_guard,
+            actor_generation,
+            actor_generation_shutdown_rx,
+        );
 
         if num_opened_shards > 0 {
             info!("rebalance opened {num_opened_shards} new shards");
@@ -1271,6 +1262,53 @@ impl IngestController {
     }
 }
 
+fn spawn_delayed_rebalance_close_task<F>(
+    mailbox: Mailbox<ControlPlane>,
+    close_shards_fut: F,
+    rebalance_guard: OwnedMutexGuard<()>,
+    actor_generation: u64,
+    mut actor_generation_shutdown_rx: watch::Receiver<()>,
+) -> tokio::task::JoinHandle<()>
+where
+    F: Future<Output = Vec<ShardPKey>> + Send + 'static,
+{
+    tokio::spawn(async move {
+        // Give ingesters time to learn about newly opened shards via gossip before closing the old
+        // ones. If the owning control-plane generation exits, its successor will reconcile from
+        // the metastore and decide which shards to close.
+        tokio::select! {
+            biased;
+            _ = actor_generation_shutdown_rx.changed() => {
+                return;
+            }
+            _ = tokio::time::sleep(CLOSE_SHARDS_UPON_REBALANCE_DELAY) => {}
+        }
+
+        let closed_shards = tokio::select! {
+            biased;
+            _ = actor_generation_shutdown_rx.changed() => {
+                return;
+            }
+            closed_shards = close_shards_fut => closed_shards,
+        };
+
+        if closed_shards.is_empty() {
+            return;
+        }
+        let callback = RebalanceShardsCallback {
+            actor_generation,
+            closed_shards,
+            rebalance_guard,
+        };
+        let send_callback_fut = mailbox.send_message(callback);
+        tokio::select! {
+            biased;
+            _ = actor_generation_shutdown_rx.changed() => {}
+            _ = send_callback_fut => {}
+        }
+    })
+}
+
 fn summarize_shard_ids(shard_ids: &[ShardIds]) -> Vec<&str> {
     shard_ids
         .iter()
@@ -1288,6 +1326,8 @@ fn summarize_shard_ids(shard_ids: &[ShardIds]) -> Vec<&str> {
 /// requests to complete, we use a callback to handle the results of those close shards requests.
 #[derive(Debug)]
 pub(crate) struct RebalanceShardsCallback {
+    /// Generation that opened the replacement shards and started the delayed close operation.
+    pub actor_generation: u64,
     pub closed_shards: Vec<ShardPKey>,
     pub rebalance_guard: OwnedMutexGuard<()>,
 }
@@ -1355,6 +1395,45 @@ mod tests {
 
     const TEST_SHARD_THROUGHPUT_LIMIT_MIB: f32 =
         DEFAULT_SHARD_THROUGHPUT_LIMIT.as_u64() as f32 / quickwit_common::shared_consts::MIB as f32;
+
+    #[tokio::test]
+    async fn test_delayed_rebalance_close_is_cancelled_on_generation_shutdown() {
+        let universe = Universe::default();
+        let (control_plane_mailbox, control_plane_inbox) = universe.create_test_mailbox();
+        let rebalance_lock = Arc::new(Mutex::new(()));
+        let rebalance_guard = rebalance_lock.clone().lock_owned().await;
+        let close_shards_poll_count = Arc::new(AtomicUsize::new(0));
+        let close_shards_poll_count_clone = close_shards_poll_count.clone();
+        let close_shards_fut = async move {
+            close_shards_poll_count_clone.fetch_add(1, Ordering::Relaxed);
+            Vec::new()
+        };
+        let (actor_generation_shutdown_tx, actor_generation_shutdown_rx) = watch::channel(());
+        actor_generation_shutdown_tx.send(()).unwrap();
+
+        let delayed_close_handle = spawn_delayed_rebalance_close_task(
+            control_plane_mailbox,
+            close_shards_fut,
+            rebalance_guard,
+            7,
+            actor_generation_shutdown_rx,
+        );
+        delayed_close_handle.await.unwrap();
+
+        assert_eq!(close_shards_poll_count.load(Ordering::Relaxed), 0);
+        assert!(
+            control_plane_inbox
+                .drain_for_test_typed::<RebalanceShardsCallback>()
+                .is_empty()
+        );
+        // Cancellation must release the guard so the successor generation can rebalance.
+        let _successor_rebalance_guard =
+            tokio::time::timeout(Duration::from_millis(10), rebalance_lock.lock())
+                .await
+                .unwrap();
+
+        universe.assert_quit().await;
+    }
 
     #[tokio::test]
     async fn test_ingest_controller_get_or_create_open_shards() {
@@ -3386,9 +3465,16 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (control_plane_mailbox, control_plane_inbox) = universe.create_test_mailbox();
         let progress = Progress::default();
+        let (actor_generation_shutdown_tx, _) = watch::channel(());
 
         let num_opened_shards = controller
-            .rebalance_shards(&mut model, &control_plane_mailbox, &progress)
+            .rebalance_shards(
+                &mut model,
+                &control_plane_mailbox,
+                &progress,
+                0,
+                actor_generation_shutdown_tx.subscribe(),
+            )
             .await
             .unwrap();
         assert_eq!(num_opened_shards, 0);
@@ -3516,7 +3602,13 @@ mod tests {
         ingester_pool.insert(ingester_id_1.clone(), ingester_1);
 
         let num_opened_shards = controller
-            .rebalance_shards(&mut model, &control_plane_mailbox, &progress)
+            .rebalance_shards(
+                &mut model,
+                &control_plane_mailbox,
+                &progress,
+                0,
+                actor_generation_shutdown_tx.subscribe(),
+            )
             .await
             .unwrap();
         assert_eq!(num_opened_shards, 1);
@@ -3528,6 +3620,7 @@ mod tests {
         .await
         .unwrap()
         .unwrap();
+        assert_eq!(callback.actor_generation, 0);
         assert_eq!(callback.closed_shards.len(), 1);
     }
 

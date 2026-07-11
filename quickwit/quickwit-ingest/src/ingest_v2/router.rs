@@ -35,11 +35,11 @@ use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
 };
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, RateLimitingCause};
-use quickwit_proto::types::{NodeId, SubrequestId};
+use quickwit_proto::types::{IndexUid, NodeId, SourceId, SubrequestId};
 use serde_json::{Value as JsonValue, json};
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::error::Elapsed;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use super::broadcast::IngesterCapacityScoreUpdate;
 use super::debouncing::{
@@ -163,34 +163,55 @@ impl IngestRouter {
         ingester_pool: &IngesterPool,
     ) -> DebouncedGetOrCreateOpenShardsRequest {
         let mut debounced_request = DebouncedGetOrCreateOpenShardsRequest::default();
-        // `unavailable_leaders` is populated by the calls to `has_any_routing_candidate` below as
-        // we look for nodes with open shards to route the subrequests to. They are then
-        // reported to the control plane so it can create shards on other nodes.
-        let unavailable_leaders: &mut HashSet<NodeId> = &mut workbench.unavailable_leaders;
+        let pending_sources: Vec<(SubrequestId, String, SourceId)> =
+            pending_subrequests(&workbench.subworkbenches)
+                .map(|subrequest| {
+                    (
+                        subrequest.subrequest_id,
+                        subrequest.index_id.clone(),
+                        subrequest.source_id.clone(),
+                    )
+                })
+                .collect();
+        let mut acquired_subrequests = Vec::new();
 
         let mut state_guard = self.state.lock().await;
 
-        for subrequest in pending_subrequests(&workbench.subworkbenches) {
-            if !state_guard.routing_table.has_any_routing_candidate(
-                &subrequest.index_id,
-                &subrequest.source_id,
+        for (subrequest_id, index_id, source_id) in pending_sources {
+            let source_unavailable_leaders = state_guard
+                .routing_table
+                .source_unavailable_leaders(&index_id, &source_id);
+            let mut unavailable_leaders = workbench.unavailable_leaders.clone();
+            unavailable_leaders.extend(source_unavailable_leaders.iter().cloned());
+
+            let has_routing_candidate = state_guard.routing_table.has_any_routing_candidate(
+                &index_id,
+                &source_id,
                 ingester_pool,
-                unavailable_leaders,
-            ) {
+                &mut unavailable_leaders,
+            );
+            // `has_any_routing_candidate` adds node-wide failures (zero capacity, missing pool
+            // entry, non-ready status) to its mutable set. Keep those failures across attempts,
+            // but do not promote the source-specific exclusions with which the scan was seeded.
+            workbench.unavailable_leaders.extend(
+                unavailable_leaders
+                    .difference(&source_unavailable_leaders)
+                    .cloned(),
+            );
+
+            if !has_routing_candidate {
                 // No known nodes with open shards for this source. Ask the control
                 // plane to create shards so we have somewhere to route to.
-                let acquire_result = state_guard
-                    .debouncer
-                    .acquire(&subrequest.index_id, &subrequest.source_id);
+                let acquire_result = state_guard.debouncer.acquire(&index_id, &source_id);
 
                 match acquire_result {
                     Ok(permit) => {
                         let subrequest = GetOrCreateOpenShardsSubrequest {
-                            subrequest_id: subrequest.subrequest_id,
-                            index_id: subrequest.index_id.clone(),
-                            source_id: subrequest.source_id.clone(),
+                            subrequest_id,
+                            index_id,
+                            source_id,
                         };
-                        debounced_request.push_subrequest(subrequest, permit);
+                        acquired_subrequests.push((subrequest, permit, source_unavailable_leaders));
                     }
                     Err(barrier) => {
                         debounced_request.push_barrier(barrier);
@@ -200,20 +221,28 @@ impl IngestRouter {
         }
         drop(state_guard);
 
+        let global_unavailable_leaders = workbench.unavailable_leaders.clone();
+        for (subrequest, permit, source_unavailable_leaders) in acquired_subrequests {
+            let mut unavailable_leaders = global_unavailable_leaders.clone();
+            unavailable_leaders.extend(source_unavailable_leaders);
+            debounced_request.push_subrequest(
+                subrequest,
+                permit,
+                unavailable_leaders
+                    .into_iter()
+                    .map(|leader_id| leader_id.to_string())
+                    .collect(),
+            );
+        }
+
         if !debounced_request.is_empty() && !workbench.closed_shards.is_empty() {
             info!(closed_shards=?workbench.closed_shards, "reporting closed shard(s) to control plane");
             debounced_request
                 .closed_shards
                 .append(&mut workbench.closed_shards);
         }
-        if !debounced_request.is_empty() && !unavailable_leaders.is_empty() {
-            info!(unavailable_leaders=?unavailable_leaders, "reporting unavailable leader(s) to control plane");
-
-            for unavailable_leader in unavailable_leaders.iter() {
-                debounced_request
-                    .unavailable_leaders
-                    .push(unavailable_leader.to_string());
-            }
+        if !debounced_request.is_empty() && !global_unavailable_leaders.is_empty() {
+            info!(unavailable_leaders=?global_unavailable_leaders, "reporting unavailable leader(s) to control plane");
         }
         debounced_request
     }
@@ -223,9 +252,9 @@ impl IngestRouter {
         workbench: &mut IngestWorkbench,
         debounced_request: DebouncedGetOrCreateOpenShardsRequest,
     ) {
-        let (request_opt, rendezvous) = debounced_request.take();
+        let (requests, rendezvous) = debounced_request.take();
 
-        if let Some(request) = request_opt {
+        for request in requests {
             self.populate_routing_table(workbench, request).await;
         }
         rendezvous.wait().await;
@@ -285,7 +314,18 @@ impl IngestRouter {
         while let Some((persist_summary, persist_result)) = persist_futures.next().await {
             match persist_result {
                 Ok(persist_response) => {
-                    let leader_id = NodeId::from_str(&persist_response.leader_id);
+                    // Route bookkeeping must be attributed to the node we called, not to an
+                    // untrusted/malformed leader ID echoed by the response.
+                    let leader_id = persist_summary.leader_id.clone();
+                    let response_leader_id = NodeId::from_str(&persist_response.leader_id);
+                    if response_leader_id != leader_id {
+                        warn!(
+                            expected_leader_id = %leader_id,
+                            actual_leader_id = %response_leader_id,
+                            "persist response leader ID does not match request leader ID"
+                        );
+                    }
+                    let mut no_shards_entries: Vec<(IndexUid, SourceId)> = Vec::new();
 
                     for persist_success in persist_response.successes {
                         workbench.record_persist_success(persist_success);
@@ -295,9 +335,14 @@ impl IngestRouter {
 
                         match persist_failure.reason() {
                             PersistFailureReason::NoShardsAvailable => {
-                                // For non-critical failures, we don't mark the nodes unavailable;
-                                // a routing update is piggybacked on PersistResponses, so shard
-                                // counts and capacity scores will be fresh on the next try.
+                                // The ingester has no reachable shard for this source. A
+                                // piggybacked routing update only contains sources that still
+                                // exist, so an omitted source would
+                                // otherwise leave this stale entry
+                                // routable forever.
+                                let index_uid = persist_failure.index_uid().clone();
+                                let source_id = persist_failure.source_id.clone();
+                                no_shards_entries.push((index_uid, source_id));
                             }
                             PersistFailureReason::NodeUnavailable
                             | PersistFailureReason::WalFull
@@ -308,22 +353,33 @@ impl IngestRouter {
                         }
                     }
 
-                    if let Some(routing_update) = persist_response.routing_update {
+                    if !no_shards_entries.is_empty() || persist_response.routing_update.is_some() {
                         // Since we just talked to the node, we take advantage and use the
                         // opportunity to get a fresh routing update.
                         let mut state_guard = self.state.lock().await;
-                        for shard_update in routing_update.source_shard_updates {
-                            state_guard.routing_table.apply_capacity_update(
-                                leader_id.clone(),
-                                shard_update.index_uid().clone(),
-                                shard_update.source_id,
-                                routing_update.capacity_score as usize,
-                                shard_update.open_shard_count as usize,
-                            );
-                        }
-                        drop(state_guard);
 
-                        workbench.closed_shards.extend(routing_update.closed_shards);
+                        // Clear stale entries first. A fresh update for the same source, when
+                        // present, is applied below and deliberately takes precedence.
+                        for (index_uid, source_id) in no_shards_entries {
+                            state_guard
+                                .routing_table
+                                .mark_source_unavailable(&leader_id, &index_uid, &source_id);
+                        }
+
+                        if let Some(routing_update) = persist_response.routing_update {
+                            for shard_update in routing_update.source_shard_updates {
+                                let index_uid = shard_update.index_uid().clone();
+                                let source_id = shard_update.source_id;
+                                state_guard.routing_table.apply_capacity_update(
+                                    leader_id.clone(),
+                                    index_uid,
+                                    source_id,
+                                    routing_update.capacity_score as usize,
+                                    shard_update.open_shard_count as usize,
+                                );
+                            }
+                            workbench.closed_shards.extend(routing_update.closed_shards);
+                        }
                     }
                 }
                 Err(persist_error) => {
@@ -356,7 +412,6 @@ impl IngestRouter {
         self.populate_routing_table_debounced(workbench, debounced_request)
             .await;
 
-        let unavailable_leaders = &workbench.unavailable_leaders;
         let mut no_shards_available_subrequest_ids: Vec<SubrequestId> = Vec::new();
         let mut per_leader_persist_subrequests: HashMap<&NodeId, Vec<PersistSubrequest>> =
             HashMap::new();
@@ -368,7 +423,7 @@ impl IngestRouter {
                 &subrequest.index_id,
                 &subrequest.source_id,
                 &self.ingester_pool,
-                unavailable_leaders,
+                &workbench.unavailable_leaders,
             );
 
             let ingester_node = match ingester_node {
@@ -621,7 +676,7 @@ pub(super) struct PersistRequestSummary {
 #[cfg(test)]
 mod tests {
     use quickwit_proto::control_plane::{
-        GetOrCreateOpenShardsFailure, GetOrCreateOpenShardsFailureReason,
+        ControlPlaneError, GetOrCreateOpenShardsFailure, GetOrCreateOpenShardsFailureReason,
         GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSuccess, MockControlPlaneService,
     };
     use quickwit_proto::ingest::ingester::{
@@ -630,7 +685,7 @@ mod tests {
     };
     use quickwit_proto::ingest::router::IngestSubrequest;
     use quickwit_proto::ingest::{
-        CommitTypeV2, DocBatchV2, ParseFailure, ParseFailureReason, Shard, ShardState,
+        CommitTypeV2, DocBatchV2, ParseFailure, ParseFailureReason, Shard, ShardIds, ShardState,
     };
     use quickwit_proto::types::{DocUid, IndexUid, Position, ShardId, SourceUid};
 
@@ -654,11 +709,11 @@ mod tests {
             Some("test-az".to_string()),
         );
         let mut workbench = IngestWorkbench::default();
-        let (get_or_create_open_shard_request_opt, rendezvous) = router
+        let (get_or_create_open_shard_requests, rendezvous) = router
             .make_get_or_create_open_shard_request(&mut workbench, &ingester_pool)
             .await
             .take();
-        assert!(get_or_create_open_shard_request_opt.is_none());
+        assert!(get_or_create_open_shard_requests.is_empty());
         assert!(rendezvous.is_empty());
 
         {
@@ -692,12 +747,13 @@ mod tests {
             },
         ];
         let mut workbench = IngestWorkbench::new(ingest_subrequests.clone(), 3);
-        let (get_or_create_open_shard_request_opt, rendezvous_1) = router
+        let (get_or_create_open_shard_requests, rendezvous_1) = router
             .make_get_or_create_open_shard_request(&mut workbench, &ingester_pool)
             .await
             .take();
 
-        let get_or_create_open_shard_request = get_or_create_open_shard_request_opt.unwrap();
+        assert_eq!(get_or_create_open_shard_requests.len(), 1);
+        let get_or_create_open_shard_request = &get_or_create_open_shard_requests[0];
         assert_eq!(get_or_create_open_shard_request.subrequests.len(), 2);
 
         assert_eq!(rendezvous_1.num_permits(), 2);
@@ -724,12 +780,12 @@ mod tests {
 
         workbench.unavailable_leaders.clear();
 
-        let (get_or_create_open_shard_request_opt, rendezvous_2) = router
+        let (get_or_create_open_shard_requests, rendezvous_2) = router
             .make_get_or_create_open_shard_request(&mut workbench, &ingester_pool)
             .await
             .take();
 
-        assert!(get_or_create_open_shard_request_opt.is_none());
+        assert!(get_or_create_open_shard_requests.is_empty());
 
         assert_eq!(rendezvous_2.num_permits(), 0);
         assert_eq!(rendezvous_2.num_barriers(), 2);
@@ -748,11 +804,12 @@ mod tests {
             workbench
                 .unavailable_leaders
                 .insert(NodeId::from_str("test-ingester-0"));
-            let (get_or_create_open_shard_request_opt, _rendezvous) = router
+            let (get_or_create_open_shard_requests, _rendezvous) = router
                 .make_get_or_create_open_shard_request(&mut workbench, &ingester_pool)
                 .await
                 .take();
-            let get_or_create_open_shard_request = get_or_create_open_shard_request_opt.unwrap();
+            assert_eq!(get_or_create_open_shard_requests.len(), 1);
+            let get_or_create_open_shard_request = &get_or_create_open_shard_requests[0];
             assert_eq!(get_or_create_open_shard_request.subrequests.len(), 2);
             assert_eq!(
                 get_or_create_open_shard_request.unavailable_leaders.len(),
@@ -763,11 +820,12 @@ mod tests {
             // Fresh workbench: ingester-0 is in pool, in table, and NOT unavailable.
             // has_any_routing_candidate returns true for index-0 → only index-1 triggers request.
             let mut workbench = IngestWorkbench::new(ingest_subrequests, 3);
-            let (get_or_create_open_shard_request_opt, _rendezvous) = router
+            let (get_or_create_open_shard_requests, _rendezvous) = router
                 .make_get_or_create_open_shard_request(&mut workbench, &ingester_pool)
                 .await
                 .take();
-            let get_or_create_open_shard_request = get_or_create_open_shard_request_opt.unwrap();
+            assert_eq!(get_or_create_open_shard_requests.len(), 1);
+            let get_or_create_open_shard_request = &get_or_create_open_shard_requests[0];
             assert_eq!(get_or_create_open_shard_request.subrequests.len(), 1);
 
             let subrequest = &get_or_create_open_shard_request.subrequests[0];
@@ -780,6 +838,161 @@ mod tests {
                     .is_empty()
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_router_populate_routing_table_debounced_splits_source_exclusions() {
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let captured_requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        let mut mock_control_plane = MockControlPlaneService::new();
+        let captured_requests_clone = captured_requests.clone();
+        let index_uid_clone = index_uid.clone();
+        mock_control_plane
+            .expect_get_or_create_open_shards()
+            .times(3)
+            .returning(move |request| {
+                assert_eq!(request.subrequests.len(), 1);
+                let subrequest = &request.subrequests[0];
+                let subrequest_id = subrequest.subrequest_id;
+                let source_id = subrequest.source_id.clone();
+                captured_requests_clone.lock().unwrap().push(request);
+
+                // The requests are ordered by their unavailable-leader set. Failing the middle
+                // group must not prevent the router from processing the final group.
+                if source_id == "source-b" {
+                    return Err(ControlPlaneError::Unavailable(
+                        "control plane unavailable for source-b".to_string(),
+                    ));
+                }
+                let replacement_leader_id = format!("replacement-{source_id}");
+                Ok(GetOrCreateOpenShardsResponse {
+                    successes: vec![GetOrCreateOpenShardsSuccess {
+                        subrequest_id,
+                        index_uid: Some(index_uid_clone.clone()),
+                        source_id: source_id.clone(),
+                        open_shards: vec![Shard {
+                            index_uid: Some(index_uid_clone.clone()),
+                            source_id,
+                            shard_id: Some(ShardId::from(u64::from(subrequest_id) + 1)),
+                            shard_state: ShardState::Open as i32,
+                            leader_id: replacement_leader_id,
+                            ..Default::default()
+                        }],
+                    }],
+                    ..Default::default()
+                })
+            });
+
+        let ingester_pool = IngesterPool::default();
+        for leader_id in ["replacement-source-a", "replacement-source-c"] {
+            ingester_pool.insert(
+                NodeId::from_str(leader_id),
+                IngesterPoolEntry::mocked_ingester(),
+            );
+        }
+        let router = IngestRouter::new(
+            NodeId::from_str("test-router"),
+            ControlPlaneServiceClient::from_mock(mock_control_plane),
+            ingester_pool.clone(),
+            1,
+            EventBroker::default(),
+            Some("test-az".to_string()),
+        );
+        {
+            let mut state_guard = router.state.lock().await;
+            for (source_id, leader_id) in [
+                ("source-a", "leader-a"),
+                ("source-b", "leader-b"),
+                ("source-c", "leader-c"),
+            ] {
+                state_guard.routing_table.mark_source_unavailable(
+                    &NodeId::from_str(leader_id),
+                    &index_uid,
+                    source_id,
+                );
+            }
+        }
+
+        let ingest_subrequests = ["source-a", "source-b", "source-c"]
+            .into_iter()
+            .enumerate()
+            .map(|(subrequest_id, source_id)| IngestSubrequest {
+                subrequest_id: subrequest_id as SubrequestId,
+                index_id: "test-index".to_string(),
+                source_id: source_id.to_string(),
+                ..Default::default()
+            })
+            .collect();
+        let closed_shards = ShardIds {
+            index_uid: Some(index_uid.clone()),
+            source_id: "source-a".to_string(),
+            shard_ids: vec![ShardId::from(42)],
+        };
+        let mut workbench = IngestWorkbench::new(ingest_subrequests, 3);
+        workbench.closed_shards.push(closed_shards.clone());
+
+        let debounced_request = router
+            .make_get_or_create_open_shard_request(&mut workbench, &ingester_pool)
+            .await;
+        assert!(workbench.closed_shards.is_empty());
+        router
+            .populate_routing_table_debounced(&mut workbench, debounced_request)
+            .await;
+
+        {
+            let captured_requests = captured_requests.lock().unwrap();
+            assert_eq!(captured_requests.len(), 3);
+            for (request, (source_id, unavailable_leader)) in captured_requests.iter().zip([
+                ("source-a", "leader-a"),
+                ("source-b", "leader-b"),
+                ("source-c", "leader-c"),
+            ]) {
+                assert_eq!(request.subrequests[0].source_id, source_id);
+                assert_eq!(request.unavailable_leaders, [unavailable_leader]);
+            }
+            assert_eq!(captured_requests[0].closed_shards, [closed_shards]);
+            assert!(captured_requests[1].closed_shards.is_empty());
+            assert!(captured_requests[2].closed_shards.is_empty());
+        }
+
+        let state_guard = router.state.lock().await;
+        let unavailable_leaders = HashSet::new();
+        assert_eq!(
+            state_guard
+                .routing_table
+                .pick_node(
+                    "test-index",
+                    "source-a",
+                    &ingester_pool,
+                    &unavailable_leaders,
+                )
+                .unwrap()
+                .node_id,
+            NodeId::from_str("replacement-source-a")
+        );
+        assert!(
+            !state_guard.routing_table.has_any_routing_candidate(
+                "test-index",
+                "source-b",
+                &ingester_pool,
+                &mut HashSet::new(),
+            ),
+            "the failed source group should remain unresolved"
+        );
+        assert_eq!(
+            state_guard
+                .routing_table
+                .pick_node(
+                    "test-index",
+                    "source-c",
+                    &ingester_pool,
+                    &unavailable_leaders,
+                )
+                .unwrap()
+                .node_id,
+            NodeId::from_str("replacement-source-c")
+        );
     }
 
     #[tokio::test]
@@ -1859,5 +2072,356 @@ mod tests {
             .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
             .unwrap();
         assert_eq!(node.node_id, NodeId::from_str("test-ingester-0"));
+    }
+
+    #[tokio::test]
+    async fn test_no_shards_available_uses_request_leader_and_clears_omitted_stale_entry() {
+        let ingester_pool = IngesterPool::default();
+        let router = IngestRouter::new(
+            NodeId::from_str("test-router"),
+            ControlPlaneServiceClient::from_mock(MockControlPlaneService::new()),
+            ingester_pool.clone(),
+            1,
+            EventBroker::default(),
+            Some("test-az".to_string()),
+        );
+        let index_uid = IndexUid::for_test("test-index", 0);
+        {
+            let mut state_guard = router.state.lock().await;
+            state_guard.routing_table.merge_from_shards(
+                index_uid.clone(),
+                "test-source".to_string(),
+                vec![Shard {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: "test-source".to_string(),
+                    shard_id: Some(ShardId::from(1)),
+                    shard_state: ShardState::Open as i32,
+                    leader_id: "test-ingester-0".to_string(),
+                    ..Default::default()
+                }],
+            );
+            state_guard.routing_table.merge_from_shards(
+                index_uid.clone(),
+                "healthy-source".to_string(),
+                vec![Shard {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: "healthy-source".to_string(),
+                    shard_id: Some(ShardId::from(2)),
+                    shard_state: ShardState::Open as i32,
+                    leader_id: "test-ingester-0".to_string(),
+                    ..Default::default()
+                }],
+            );
+        }
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-0"),
+            IngesterPoolEntry::mocked_ingester(),
+        );
+
+        let mut workbench = IngestWorkbench::new(
+            vec![IngestSubrequest {
+                subrequest_id: 0,
+                index_id: "test-index".to_string(),
+                source_id: "test-source".to_string(),
+                ..Default::default()
+            }],
+            2,
+        );
+        let persist_futures = FuturesUnordered::new();
+        let index_uid_clone = index_uid.clone();
+        persist_futures.push(async move {
+            let summary = PersistRequestSummary {
+                leader_id: NodeId::from_str("test-ingester-0"),
+                subrequest_ids: vec![0],
+            };
+            let result = Ok::<_, IngestV2Error>(PersistResponse {
+                // The response's echoed leader ID is not authoritative. Routing state must be
+                // updated for the actual RPC target recorded in `PersistRequestSummary`.
+                leader_id: "incorrect-response-leader".to_string(),
+                successes: Vec::new(),
+                failures: vec![PersistFailure {
+                    subrequest_id: 0,
+                    index_uid: Some(index_uid_clone),
+                    source_id: "test-source".to_string(),
+                    reason: PersistFailureReason::NoShardsAvailable as i32,
+                }],
+                // The source is omitted because the ingester no longer has it.
+                routing_update: Some(RoutingUpdate {
+                    capacity_score: 6,
+                    source_shard_updates: Vec::new(),
+                    ..Default::default()
+                }),
+            });
+            (summary, result)
+        });
+
+        router
+            .process_persist_results(&mut workbench, persist_futures)
+            .await;
+
+        let state_guard = router.state.lock().await;
+        let mut unavailable_leaders = HashSet::new();
+        assert_eq!(
+            state_guard
+                .routing_table
+                .source_unavailable_leaders("test-index", "test-source"),
+            HashSet::from([NodeId::from_str("test-ingester-0")])
+        );
+        assert!(
+            !state_guard.routing_table.has_any_routing_candidate(
+                "test-index",
+                "test-source",
+                &ingester_pool,
+                &mut unavailable_leaders,
+            ),
+            "NoShardsAvailable must invalidate an omitted stale routing entry"
+        );
+        assert!(
+            unavailable_leaders.is_empty(),
+            "a source-specific failure must not mark the leader unavailable"
+        );
+        assert!(
+            state_guard
+                .routing_table
+                .pick_node(
+                    "test-index",
+                    "healthy-source",
+                    &ingester_pool,
+                    &unavailable_leaders,
+                )
+                .is_some(),
+            "another source on the same leader must remain routable"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_no_shards_available_recovers_via_source_scoped_leader_exclusion() {
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let stale_leader_id = NodeId::from_str("test-ingester-0");
+        let replacement_leader_id = NodeId::from_str("test-ingester-1");
+
+        let mut mock_control_plane = MockControlPlaneService::new();
+        let index_uid_clone = index_uid.clone();
+        let stale_leader_id_clone = stale_leader_id.clone();
+        let replacement_leader_id_clone = replacement_leader_id.clone();
+        mock_control_plane
+            .expect_get_or_create_open_shards()
+            .once()
+            .return_once(move |request| {
+                assert_eq!(request.subrequests.len(), 1);
+                assert_eq!(request.subrequests[0].subrequest_id, 0);
+                assert_eq!(request.subrequests[0].source_id, "stale-source");
+                assert_eq!(
+                    request.unavailable_leaders,
+                    [stale_leader_id_clone.to_string()],
+                    "the stale leader must be excluded only from this source's CP request"
+                );
+                Ok(GetOrCreateOpenShardsResponse {
+                    successes: vec![GetOrCreateOpenShardsSuccess {
+                        subrequest_id: 0,
+                        index_uid: Some(index_uid_clone.clone()),
+                        source_id: "stale-source".to_string(),
+                        // Include the stale shard to simulate an eventually-consistent CP snapshot.
+                        // The router tombstone must survive this merge and select the replacement.
+                        open_shards: vec![
+                            Shard {
+                                index_uid: Some(index_uid_clone.clone()),
+                                source_id: "stale-source".to_string(),
+                                shard_id: Some(ShardId::from(1)),
+                                shard_state: ShardState::Open as i32,
+                                leader_id: stale_leader_id_clone.to_string(),
+                                ..Default::default()
+                            },
+                            Shard {
+                                index_uid: Some(index_uid_clone.clone()),
+                                source_id: "stale-source".to_string(),
+                                shard_id: Some(ShardId::from(3)),
+                                shard_state: ShardState::Open as i32,
+                                leader_id: replacement_leader_id_clone.to_string(),
+                                ..Default::default()
+                            },
+                        ],
+                    }],
+                    ..Default::default()
+                })
+            });
+
+        let ingester_pool = IngesterPool::default();
+        let mut mock_stale_ingester = MockIngesterService::new();
+        let index_uid_clone = index_uid.clone();
+        mock_stale_ingester
+            .expect_persist()
+            .once()
+            .return_once(move |request| {
+                assert_eq!(request.subrequests.len(), 2);
+                Ok(PersistResponse {
+                    leader_id: request.leader_id,
+                    successes: vec![PersistSuccess {
+                        subrequest_id: 1,
+                        index_uid: Some(index_uid_clone.clone()),
+                        source_id: "healthy-source".to_string(),
+                        shard_id: Some(ShardId::from(2)),
+                        replication_position_inclusive: Some(Position::offset(0u64)),
+                        num_persisted_docs: 1,
+                        parse_failures: Vec::new(),
+                    }],
+                    failures: vec![PersistFailure {
+                        subrequest_id: 0,
+                        index_uid: Some(index_uid_clone.clone()),
+                        source_id: "stale-source".to_string(),
+                        reason: PersistFailureReason::NoShardsAvailable as i32,
+                    }],
+                    routing_update: Some(RoutingUpdate {
+                        capacity_score: 6,
+                        // The failed source is omitted, while the unrelated source remains healthy.
+                        source_shard_updates: vec![SourceShardUpdate {
+                            index_uid: Some(index_uid_clone),
+                            source_id: "healthy-source".to_string(),
+                            open_shard_count: 1,
+                        }],
+                        ..Default::default()
+                    }),
+                })
+            });
+        ingester_pool.insert(
+            stale_leader_id.clone(),
+            IngesterPoolEntry {
+                client: IngesterServiceClient::from_mock(mock_stale_ingester),
+                status: IngesterStatus::Ready,
+                availability_zone: None,
+            },
+        );
+
+        let mut mock_replacement_ingester = MockIngesterService::new();
+        let index_uid_clone = index_uid.clone();
+        mock_replacement_ingester
+            .expect_persist()
+            .times(2)
+            .returning(move |request| {
+                assert_eq!(request.subrequests.len(), 1);
+                let subrequest = &request.subrequests[0];
+                assert_eq!(subrequest.source_id, "stale-source");
+                Ok(PersistResponse {
+                    leader_id: request.leader_id,
+                    successes: vec![PersistSuccess {
+                        subrequest_id: subrequest.subrequest_id,
+                        index_uid: Some(index_uid_clone.clone()),
+                        source_id: subrequest.source_id.clone(),
+                        shard_id: Some(ShardId::from(3)),
+                        replication_position_inclusive: Some(Position::offset(0u64)),
+                        num_persisted_docs: 1,
+                        parse_failures: Vec::new(),
+                    }],
+                    failures: Vec::new(),
+                    routing_update: Some(RoutingUpdate {
+                        capacity_score: 6,
+                        source_shard_updates: vec![SourceShardUpdate {
+                            index_uid: Some(index_uid_clone.clone()),
+                            source_id: "stale-source".to_string(),
+                            open_shard_count: 1,
+                        }],
+                        ..Default::default()
+                    }),
+                })
+            });
+        ingester_pool.insert(
+            replacement_leader_id,
+            IngesterPoolEntry {
+                client: IngesterServiceClient::from_mock(mock_replacement_ingester),
+                status: IngesterStatus::Ready,
+                availability_zone: None,
+            },
+        );
+
+        let router = IngestRouter::new(
+            NodeId::from_str("test-router"),
+            ControlPlaneServiceClient::from_mock(mock_control_plane),
+            ingester_pool.clone(),
+            1,
+            EventBroker::default(),
+            None,
+        );
+        {
+            let mut state_guard = router.state.lock().await;
+            state_guard.routing_table.merge_from_shards(
+                index_uid.clone(),
+                "stale-source".to_string(),
+                vec![Shard {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: "stale-source".to_string(),
+                    shard_id: Some(ShardId::from(1)),
+                    shard_state: ShardState::Open as i32,
+                    leader_id: stale_leader_id.to_string(),
+                    ..Default::default()
+                }],
+            );
+            state_guard.routing_table.merge_from_shards(
+                index_uid,
+                "healthy-source".to_string(),
+                vec![Shard {
+                    index_uid: Some(IndexUid::for_test("test-index", 0)),
+                    source_id: "healthy-source".to_string(),
+                    shard_id: Some(ShardId::from(2)),
+                    shard_state: ShardState::Open as i32,
+                    leader_id: stale_leader_id.to_string(),
+                    ..Default::default()
+                }],
+            );
+            // Make the stale leader strictly preferable to the replacement returned by the CP.
+            // If the source tombstone is accidentally lost, power-of-two routing will therefore
+            // deterministically choose the stale node and violate its `.once()` expectation.
+            state_guard.routing_table.apply_capacity_update(
+                stale_leader_id.clone(),
+                IndexUid::for_test("test-index", 0),
+                "stale-source".to_string(),
+                10,
+                1,
+            );
+        }
+
+        let response = router
+            .retry_batch_persist(
+                IngestRequestV2 {
+                    subrequests: vec![
+                        IngestSubrequest {
+                            subrequest_id: 0,
+                            index_id: "test-index".to_string(),
+                            source_id: "stale-source".to_string(),
+                            doc_batch: Some(DocBatchV2::for_test(["stale"])),
+                        },
+                        IngestSubrequest {
+                            subrequest_id: 1,
+                            index_id: "test-index".to_string(),
+                            source_id: "healthy-source".to_string(),
+                            doc_batch: Some(DocBatchV2::for_test(["healthy"])),
+                        },
+                    ],
+                    commit_type: CommitTypeV2::Auto as i32,
+                },
+                3,
+            )
+            .await;
+        assert_eq!(response.successes.len(), 2);
+        assert!(response.failures.is_empty());
+
+        // The tombstone is routing-table state, not request-local state. A fresh workbench must go
+        // directly to the replacement rather than paying the stale-leader failure/CP round trip
+        // again.
+        let response = router
+            .retry_batch_persist(
+                IngestRequestV2 {
+                    subrequests: vec![IngestSubrequest {
+                        subrequest_id: 2,
+                        index_id: "test-index".to_string(),
+                        source_id: "stale-source".to_string(),
+                        doc_batch: Some(DocBatchV2::for_test(["next-request"])),
+                    }],
+                    commit_type: CommitTypeV2::Auto as i32,
+                },
+                2,
+            )
+            .await;
+        assert_eq!(response.successes.len(), 1);
+        assert!(response.failures.is_empty());
     }
 }

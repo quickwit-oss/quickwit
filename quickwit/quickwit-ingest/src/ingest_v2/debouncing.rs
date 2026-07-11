@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use quickwit_proto::control_plane::{
@@ -68,35 +68,46 @@ impl GetOrCreateOpenShardsRequestDebouncer {
 
 #[derive(Default)]
 pub(super) struct DebouncedGetOrCreateOpenShardsRequest {
-    subrequests: Vec<GetOrCreateOpenShardsSubrequest>,
+    subrequests_by_unavailable_leaders: BTreeMap<Vec<String>, Vec<GetOrCreateOpenShardsSubrequest>>,
     pub closed_shards: Vec<ShardIds>,
-    pub unavailable_leaders: Vec<String>,
     rendezvous: Rendezvous,
 }
 
 impl DebouncedGetOrCreateOpenShardsRequest {
     pub fn is_empty(&self) -> bool {
-        self.subrequests.is_empty()
+        self.subrequests_by_unavailable_leaders.is_empty()
     }
 
-    pub fn take(self) -> (Option<GetOrCreateOpenShardsRequest>, Rendezvous) {
-        if self.is_empty() {
-            return (None, self.rendezvous);
-        }
-        let request = GetOrCreateOpenShardsRequest {
-            subrequests: self.subrequests,
-            closed_shards: self.closed_shards,
-            unavailable_leaders: self.unavailable_leaders,
-        };
-        (Some(request), self.rendezvous)
+    pub fn take(self) -> (Vec<GetOrCreateOpenShardsRequest>, Rendezvous) {
+        let mut closed_shards_opt = Some(self.closed_shards);
+        let requests = self
+            .subrequests_by_unavailable_leaders
+            .into_iter()
+            .map(
+                |(unavailable_leaders, subrequests)| GetOrCreateOpenShardsRequest {
+                    subrequests,
+                    // Closed-shard feedback is request-wide. Send it once even when source-specific
+                    // exclusions require splitting the control-plane request.
+                    closed_shards: closed_shards_opt.take().unwrap_or_default(),
+                    unavailable_leaders,
+                },
+            )
+            .collect();
+        (requests, self.rendezvous)
     }
 
     pub fn push_subrequest(
         &mut self,
         subrequest: GetOrCreateOpenShardsSubrequest,
         permit: PermitGuard,
+        mut unavailable_leaders: Vec<String>,
     ) {
-        self.subrequests.push(subrequest);
+        unavailable_leaders.sort_unstable();
+        unavailable_leaders.dedup();
+        self.subrequests_by_unavailable_leaders
+            .entry(unavailable_leaders)
+            .or_default()
+            .push(subrequest);
         self.rendezvous.permits.push(permit);
     }
 
@@ -191,8 +202,8 @@ mod tests {
         let debounced_request = DebouncedGetOrCreateOpenShardsRequest::default();
         assert!(debounced_request.is_empty());
 
-        let (request_opt, rendezvous) = debounced_request.take();
-        assert!(request_opt.is_none());
+        let (requests, rendezvous) = debounced_request.take();
+        assert!(requests.is_empty());
         assert!(rendezvous.is_empty());
 
         let mut debouncer = GetOrCreateOpenShardsRequestDebouncer::default();
@@ -206,6 +217,28 @@ mod tests {
                 ..Default::default()
             },
             permit,
+            Vec::new(),
+        );
+
+        let permit = debouncer.acquire("test-index", "test-source-bar").unwrap();
+        debounced_request.push_subrequest(
+            GetOrCreateOpenShardsSubrequest {
+                index_id: "test-index".to_string(),
+                source_id: "test-source-bar".to_string(),
+                ..Default::default()
+            },
+            permit,
+            vec!["test-node".to_string()],
+        );
+        let permit = debouncer.acquire("test-index", "test-source-baz").unwrap();
+        debounced_request.push_subrequest(
+            GetOrCreateOpenShardsSubrequest {
+                index_id: "test-index".to_string(),
+                source_id: "test-source-baz".to_string(),
+                ..Default::default()
+            },
+            permit,
+            vec!["test-node".to_string(), "test-node".to_string()],
         );
 
         let barrier = debouncer
@@ -213,11 +246,14 @@ mod tests {
             .unwrap_err();
         debounced_request.push_barrier(barrier);
 
-        let (request_opt, rendezvous) = debounced_request.take();
-        let request = request_opt.unwrap();
+        let (requests, rendezvous) = debounced_request.take();
 
-        assert_eq!(request.subrequests.len(), 1);
-        assert_eq!(rendezvous.num_permits(), 1);
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].subrequests.len(), 1);
+        assert!(requests[0].unavailable_leaders.is_empty());
+        assert_eq!(requests[1].subrequests.len(), 2);
+        assert_eq!(requests[1].unavailable_leaders, ["test-node"]);
+        assert_eq!(rendezvous.num_permits(), 3);
         assert_eq!(rendezvous.num_barriers(), 1);
     }
 }

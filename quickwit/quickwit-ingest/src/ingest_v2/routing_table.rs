@@ -43,10 +43,20 @@ impl IngesterNode {
         ingester_pool: &IngesterPool,
         unavailable_leaders: &mut HashSet<NodeId>,
     ) -> bool {
-        if self.capacity_score == 0 || self.open_shard_count == 0 {
+        if unavailable_leaders.contains(&self.node_id) {
             return false;
         }
-        if unavailable_leaders.contains(&self.node_id) {
+        // A zero capacity score is a node-wide signal: the ingester cannot accept writes for any
+        // source. Report it to the control plane so it can exclude the leader and open replacement
+        // shards elsewhere. If we merely return `false`, the control plane can return the same
+        // nominally-open shards and the router makes no progress.
+        if self.capacity_score == 0 {
+            unavailable_leaders.insert(self.node_id.clone());
+            return false;
+        }
+        // Unlike capacity, the open-shard count is source-specific. It is not sufficient evidence
+        // to mark the entire ingester unavailable.
+        if self.open_shard_count == 0 {
             return false;
         }
         let is_ready = ingester_pool
@@ -65,6 +75,10 @@ impl IngesterNode {
 pub(super) struct RoutingEntry {
     pub index_uid: IndexUid,
     pub nodes: HashMap<NodeId, IngesterNode>,
+    /// Leaders that authoritatively reported `NoShardsAvailable` for this source. Control-plane
+    /// shard snapshots are eventually consistent and must not make these leaders routable again;
+    /// only a positive update from the ingester or a new index incarnation clears the tombstone.
+    source_unavailable_leaders: HashSet<NodeId>,
     /// Whether this entry has been seeded from a control plane response. During a rolling
     /// deployment, Chitchat broadcasts from already-upgraded nodes may populate the table
     /// before the router ever asks the CP, causing it to miss old-version nodes. This flag
@@ -77,6 +91,7 @@ impl RoutingEntry {
         Self {
             index_uid,
             nodes: HashMap::new(),
+            source_unavailable_leaders: HashSet::new(),
             seeded_from_cp: false,
         }
     }
@@ -125,6 +140,7 @@ impl RoutingEntry {
                         .map(|entry| entry.status.is_ready())
                         .unwrap_or(false)
                     && !unavailable_leaders.contains(&node.node_id)
+                    && !self.source_unavailable_leaders.contains(&node.node_id)
             })
             .partition(|node| {
                 let node_az = ingester_pool
@@ -201,6 +217,7 @@ impl RoutingTable {
                         "node_id": node_id,
                         "capacity_score": node.capacity_score,
                         "open_shard_count": node.open_shard_count,
+                        "source_unavailable": entry.source_unavailable_leaders.contains(node_id),
                         "availability_zone": az,
                     }));
             }
@@ -232,6 +249,9 @@ impl RoutingTable {
         let mut has_any_candidate = false;
 
         for node in entry.nodes.values() {
+            if entry.source_unavailable_leaders.contains(&node.node_id) {
+                continue;
+            }
             has_any_candidate |= node.is_routing_candidate(ingester_pool, unavailable_leaders);
         }
         has_any_candidate
@@ -258,6 +278,7 @@ impl RoutingTable {
             Ordering::Less => {
                 entry.index_uid = index_uid.clone();
                 entry.nodes.clear();
+                entry.source_unavailable_leaders.clear();
                 entry.seeded_from_cp = false;
             }
             // If we receive an update for a previous incarnation of the index, then we ignore it.
@@ -270,7 +291,47 @@ impl RoutingTable {
             capacity_score,
             open_shard_count,
         };
+        if open_shard_count > 0 {
+            entry.source_unavailable_leaders.remove(&node_id);
+        }
         entry.nodes.insert(node_id, ingester_node);
+    }
+
+    pub fn source_unavailable_leaders(&self, index_id: &str, source_id: &str) -> HashSet<NodeId> {
+        self.table
+            .get(&(index_id.to_string(), source_id.to_string()))
+            .map(|entry| entry.source_unavailable_leaders.clone())
+            .unwrap_or_default()
+    }
+
+    /// Marks one node as having no open shard for a specific source while preserving its
+    /// node-wide capacity score. `NoShardsAvailable` is source-specific and must not make the
+    /// ingester unavailable to other sources in the same request.
+    pub fn mark_source_unavailable(
+        &mut self,
+        node_id: &NodeId,
+        index_uid: &IndexUid,
+        source_id: &str,
+    ) {
+        let key = (index_uid.index_id.to_string(), source_id.to_string());
+        let entry = self
+            .table
+            .entry(key)
+            .or_insert_with(|| RoutingEntry::new(index_uid.clone()));
+        match entry.index_uid.cmp(index_uid) {
+            Ordering::Less => {
+                entry.index_uid = index_uid.clone();
+                entry.nodes.clear();
+                entry.source_unavailable_leaders.clear();
+                entry.seeded_from_cp = false;
+            }
+            Ordering::Greater => return,
+            Ordering::Equal => {}
+        }
+        entry.source_unavailable_leaders.insert(node_id.clone());
+        if let Some(node) = entry.nodes.get_mut(node_id) {
+            node.open_shard_count = 0;
+        }
     }
 
     /// Merges routing updates from a GetOrCreateOpenShards control plane response into the
@@ -293,6 +354,7 @@ impl RoutingTable {
             Ordering::Less => {
                 entry.index_uid = index_uid.clone();
                 entry.nodes.clear();
+                entry.source_unavailable_leaders.clear();
             }
             // If we receive an update for a previous incarnation of the index, then we ignore it.
             Ordering::Greater => return,
@@ -360,11 +422,20 @@ mod tests {
         let pool = IngesterPool::default();
         pool.insert(NodeId::from_str("node-1"), mocked_ingester(None));
 
-        // No capacity or no open shards: not a routing candidate, not reported as unavailable.
+        // No capacity: not a routing candidate and reported as unavailable so the control plane
+        // does not return the same exhausted leader.
         let mut unavailable_leaders = HashSet::new();
         assert!(
             !ingester_node("node-1", 0, 3).is_routing_candidate(&pool, &mut unavailable_leaders)
         );
+        assert_eq!(
+            unavailable_leaders,
+            HashSet::from([NodeId::from_str("node-1")])
+        );
+
+        // No open shards is source-specific: it is not a routing candidate, but does not make the
+        // entire ingester unavailable.
+        unavailable_leaders.clear();
         assert!(
             !ingester_node("node-1", 5, 0).is_routing_candidate(&pool, &mut unavailable_leaders)
         );
@@ -530,7 +601,8 @@ mod tests {
             &mut unavailable_leaders
         ));
 
-        // Node with capacity_score=0 is not eligible and is not reported as unavailable.
+        // Node with capacity_score=0 is not eligible and is reported as unavailable, otherwise the
+        // control plane can return the same exhausted leader forever.
         table.apply_capacity_update(
             NodeId::from_str("node-2"),
             index_uid.clone(),
@@ -547,7 +619,7 @@ mod tests {
         ));
         assert_eq!(
             unavailable_leaders,
-            HashSet::from([NodeId::from_str("node-1")])
+            HashSet::from([NodeId::from_str("node-1"), NodeId::from_str("node-2")])
         );
     }
 
@@ -761,6 +833,56 @@ mod tests {
         assert!(entry.nodes.contains_key("node-2"));
         assert!(entry.nodes.contains_key("node-3"));
         assert!(entry.nodes.contains_key("node-4"));
+    }
+
+    #[test]
+    fn test_source_unavailable_tombstone_survives_stale_cp_merge() {
+        let mut table = RoutingTable::default();
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let node_id = NodeId::from_str("node-1");
+        let shard = Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: "test-source".to_string(),
+            shard_id: Some(ShardId::from(1)),
+            shard_state: ShardState::Open as i32,
+            leader_id: node_id.to_string(),
+            ..Default::default()
+        };
+        table.merge_from_shards(
+            index_uid.clone(),
+            "test-source".to_string(),
+            vec![shard.clone()],
+        );
+        let pool = IngesterPool::default();
+        pool.insert(node_id.clone(), mocked_ingester(None));
+
+        table.mark_source_unavailable(&node_id, &index_uid, "test-source");
+        assert!(
+            table
+                .pick_node("test-index", "test-source", &pool, &HashSet::new())
+                .is_none()
+        );
+
+        // The control plane can lag the ingester and return the same nominally-open shard. This is
+        // not authoritative enough to make the failed leader routable again.
+        table.merge_from_shards(index_uid.clone(), "test-source".to_string(), vec![shard]);
+        assert!(
+            table
+                .pick_node("test-index", "test-source", &pool, &HashSet::new())
+                .is_none()
+        );
+        assert_eq!(
+            table.source_unavailable_leaders("test-index", "test-source"),
+            HashSet::from([node_id.clone()])
+        );
+
+        // A positive update from the ingester is authoritative and clears the tombstone.
+        table.apply_capacity_update(node_id, index_uid, "test-source".to_string(), 5, 1);
+        assert!(
+            table
+                .pick_node("test-index", "test-source", &pool, &HashSet::new())
+                .is_some()
+        );
     }
 
     #[test]
