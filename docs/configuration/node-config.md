@@ -216,16 +216,18 @@ File-backed metastore doesn't have any node level configuration. You can configu
 | `idle_connection_timeout` | Maximum idle duration before closing individual connections. | `10min` |
 | `max_connection_lifetime` | Maximum lifetime of individual connections. | `30min` |
 
+`max_connections` applies per Quickwit node running the `metastore` service. When using PostgreSQL or Amazon RDS, keep `metastore_nodes * max_connections` below the database connection limit with operational headroom.
+
 Example of a metastore configuration for PostgreSQL in YAML format:
 
 ```yaml
 metastore:
   postgres:
-    min_connections: 10
-    max_connections: 50
-    acquire_connection_timeout: 30s
-    idle_connection_timeout: 1h
-    max_connection_lifetime: 1d
+    min_connections: 0
+    max_connections: 10
+    acquire_connection_timeout: 10s
+    idle_connection_timeout: 10min
+    max_connection_lifetime: 30min
 ```
 
 ## Indexer configuration
