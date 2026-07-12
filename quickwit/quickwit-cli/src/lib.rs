@@ -230,14 +230,25 @@ pub fn start_actor_runtimes(
 }
 
 /// Loads a node config located at `config_uri` with the default storage configuration.
-async fn load_node_config(config_uri: &Uri) -> anyhow::Result<NodeConfig> {
+///
+/// When `service_override` is provided, it is applied before config validation so that
+/// service-dependent validation (e.g. the disk-usage check) reflects the actual runtime service
+/// set (e.g. `--service searcher`).
+async fn load_node_config(
+    config_uri: &Uri,
+    service_override: Option<&HashSet<QuickwitService>>,
+) -> anyhow::Result<NodeConfig> {
     let config_content = load_file(&StorageResolver::unconfigured(), config_uri)
         .await
         .context("failed to load node config")?;
     let config_format = ConfigFormat::sniff_from_uri(config_uri)?;
-    let config = NodeConfig::load(config_format, config_content.as_slice())
-        .await
-        .with_context(|| format!("failed to parse node config `{config_uri}`"))?;
+    let config = NodeConfig::load_with_service_override(
+        config_format,
+        config_content.as_slice(),
+        service_override,
+    )
+    .await
+    .with_context(|| format!("failed to parse node config `{config_uri}`"))?;
     info!(config_uri=%config_uri, config=?config, "loaded node config");
     Ok(config)
 }

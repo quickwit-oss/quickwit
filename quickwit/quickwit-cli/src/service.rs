@@ -117,15 +117,13 @@ impl RunCliCommand {
         debug!(args = ?self, "run-service");
         let version_text = BuildInfo::get_version_text();
         info!("quickwit version: {version_text}");
-        let mut node_config = load_node_config(&self.config_uri).await?;
+        let node_config = load_node_config(&self.config_uri, self.services.as_ref()).await?;
+        if let Some(services) = &self.services {
+            info!(services = %services.iter().join(", "), "services set from CLI override");
+        }
         let (storage_resolver, metastore_resolver) =
             get_resolvers(&node_config.storage_configs, &node_config.metastore_configs);
         crate::busy_detector::set_enabled(true);
-
-        if let Some(services) = &self.services {
-            info!(services = %services.iter().join(", "), "setting services from override");
-            node_config.enabled_services.clone_from(services);
-        }
         // TODO move in serve quickwit?
         let runtimes_config = RuntimesConfig::default();
         start_actor_runtimes(runtimes_config, &node_config.enabled_services)?;
