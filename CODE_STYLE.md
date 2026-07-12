@@ -113,12 +113,12 @@ These assert will not be part of the release binary and won't hurt the execution
 
 Error and log messages follow the same format. They should be concise, lowercase (except proper names), and without trailing punctuation.
 
-As a loose rule, where it does not hurt readability, log messages should rely on `tracing` 
-structured logging instead of templating. 
+As a loose rule, where it does not hurt readability, log messages should rely on `tracing`
+structured logging instead of templating.
 
 In other words, prefer:
 `warn!(remaining=remaining_attempts, "trubulizor rpc plane retry failed")`
-to 
+to
 `warn!("trubulizor rpc plane retry failed ({remaining_attempts} attempts remaining)")`
 
 ### Error Examples
@@ -126,7 +126,7 @@ to
 - "cannot join PostgreSQL URI {} with path {:?}"
 - "could not find split metadata in Metastore {}"
 - "unknown output format {:?}"
- 
+
 ### Log examples
 
 

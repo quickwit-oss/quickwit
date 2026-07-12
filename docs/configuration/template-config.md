@@ -93,7 +93,7 @@ An optional string that describes what the index template is used for.
 The `index_root_uri` defines where the index files (also called splits) should be stored.
 This parameter expects a [storage uri](storage-config#storage-uris).
 
-The actual URI of the index is the path concatenation of the `index_root_uri` with the index id. 
+The actual URI of the index is the path concatenation of the `index_root_uri` with the index id.
 
 If `index_root_uri` is not defined, the `default_index_root_uri` from [Quickwit's node config](node-config) will be used.
 

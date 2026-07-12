@@ -61,7 +61,7 @@ IAM policies to indexers.
 
 ## Running the example stack
 
-We provide an example of self contained deployment with an ad-hoc VPC. 
+We provide an example of self contained deployment with an ad-hoc VPC.
 
 > [!IMPORTANT]
 > This stack costs ~$200/month to run (Fargate tasks, NAT Gateways

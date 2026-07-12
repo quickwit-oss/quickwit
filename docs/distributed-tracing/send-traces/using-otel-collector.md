@@ -78,7 +78,7 @@ service:
 ## Test your OTEL configuration
 
 1. [Install](../../get-started/installation.md) and start a Quickwit server:
-   
+
 ```bash
 ./quickwit run
 ```
