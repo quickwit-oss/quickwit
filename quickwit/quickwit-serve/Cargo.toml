@@ -13,7 +13,8 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
-arrow = { workspace = true, optional = true }
+arrow = { workspace = true }
+async-stream = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
@@ -139,7 +140,7 @@ quickwit-doc-mapper = { workspace = true }
 
 [features]
 metrics = ["quickwit-indexing/metrics"]
-datafusion = ["dep:arrow", "dep:datafusion", "dep:datafusion-sql", "dep:quickwit-datafusion"]
+datafusion = ["dep:datafusion", "dep:datafusion-sql", "dep:quickwit-datafusion"]
 pprof = [
   "dep:pprof"
 ]

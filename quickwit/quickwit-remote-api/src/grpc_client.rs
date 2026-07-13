@@ -174,6 +174,14 @@ impl SearchService for CloudPremRootSearchService {
     ) -> quickwit_search::Result<SearchPlanResponse> {
         unimplemented(request)
     }
+    async fn search_split_columnar(
+        &self,
+        request: quickwit_search::SearchSplitColumnarRequest,
+    ) -> quickwit_search::Result<
+        quickwit_common::ServiceStream<quickwit_search::Result<arrow::array::RecordBatch>>,
+    > {
+        unimplemented(request)
+    }
     async fn get_load(&self) -> usize {
         0
     }

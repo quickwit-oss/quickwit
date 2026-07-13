@@ -25,7 +25,7 @@ use tracing::warn;
 
 use crate::tower::RpcName;
 
-pub type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send + Unpin + 'static>>;
+pub type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send + 'static>>;
 
 /// A stream impl for code-generated services with streaming endpoints.
 pub struct ServiceStream<T> {

@@ -138,4 +138,11 @@ impl SearchService for BatchingSearchService {
     async fn get_load(&self) -> usize {
         self.inner.get_load().await
     }
+    async fn search_split_columnar(
+        &self,
+        request: crate::columnar_stream::SearchSplitColumnarRequest,
+    ) -> crate::Result<quickwit_common::ServiceStream<crate::Result<arrow::array::RecordBatch>>>
+    {
+        self.inner.search_split_columnar(request).await
+    }
 }

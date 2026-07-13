@@ -904,6 +904,183 @@ pub struct CloudpremSubstraitResponse {
     #[prost(bytes = "vec", tag = "1")]
     pub arrow_ipc_bytes: ::prost::alloc::vec::Vec<u8>,
 }
+/// Phase 1 — enumerate the splits matching a query.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListSplitsRequest {
+    /// The row filter applied by both phases: a logs-backend QueryNode (same as
+    /// List/FetchOne/Aggregate), normalized to a single internal `QueryAst`
+    /// before reaching the engine.
+    ///
+    /// There is no separate time-range field: like `List`/`FetchOne`/`Aggregate`,
+    /// a time window is expressed as a range query over the timestamp field
+    /// within the query itself.
+    #[prost(message, optional, tag = "1")]
+    pub query_node: ::core::option::Option<::prost_types::Any>,
+    /// Quickwit index ID patterns to search. If empty, defaults to "datadog\*".
+    #[prost(string, repeated, tag = "2")]
+    pub index_id_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// org_id is used for routing in cloudprem-bridge (which shares this api), ignored in pomsky.
+    #[prost(int64, tag = "998")]
+    pub org_id: i64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListSplitsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub splits: ::prost::alloc::vec::Vec<SplitDescriptor>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SplitDescriptor {
+    /// Opaque, self-sufficient handle. Pass back verbatim in SearchSplitRequest.
+    /// Internally a serialized `SplitToken`. Opaque so we can evolve it;
+    /// self-sufficient so phase 2 needs NO metastore round-trip and is robust to
+    /// concurrent compaction.
+    #[prost(bytes = "vec", tag = "1")]
+    pub split_token: ::prost::alloc::vec::Vec<u8>,
+    /// Planner-visible metadata (do NOT parse split_token to get these).
+    #[prost(string, tag = "2")]
+    pub split_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "4")]
+    pub num_docs: u64,
+    #[prost(uint64, tag = "5")]
+    pub size_bytes: u64,
+    #[prost(int64, optional, tag = "6")]
+    pub time_range_start_ms: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "7")]
+    pub time_range_end_ms: ::core::option::Option<i64>,
+    /// Advisory cache-affinity hint (rendezvous hash). Any searcher can serve any
+    /// split; this just helps the client prefer a node likely to have it warm.
+    #[prost(string, repeated, tag = "8")]
+    pub preferred_node_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+/// Internal, self-sufficient bundle serialized into `SplitDescriptor.split_token`.
+/// Never sent on its own RPC; only encoded/decoded as opaque bytes.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SplitToken {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub index_uri: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "3")]
+    pub split: ::core::option::Option<super::quickwit::search::SplitIdAndFooterOffsets>,
+    /// JSON-serialized doc mapper, so phase 2 needs no metastore round-trip.
+    #[prost(string, tag = "4")]
+    pub doc_mapper_str: ::prost::alloc::string::String,
+}
+/// Phase 2 — read a column projection from ONE split, streamed as Arrow.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchSplitRequest {
+    /// from a SplitDescriptor
+    #[prost(bytes = "vec", tag = "1")]
+    pub split_token: ::prost::alloc::vec::Vec<u8>,
+    /// row filter applied within the split (see ListSplitsRequest.query_node)
+    #[prost(message, optional, tag = "2")]
+    pub query_node: ::core::option::Option<::prost_types::Any>,
+    /// the projection (explicit names + types)
+    #[prost(message, repeated, tag = "3")]
+    pub columns: ::prost::alloc::vec::Vec<ColumnProjection>,
+    /// rows per Arrow batch (0 -> server default)
+    #[prost(uint32, tag = "4")]
+    pub batch_size: u32,
+    /// optional per-split cap (0 -> unlimited)
+    #[prost(uint64, tag = "6")]
+    pub limit: u64,
+    /// org_id is used for routing in cloudprem-bridge (which shares this api), ignored in pomsky.
+    #[prost(int64, tag = "998")]
+    pub org_id: i64,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ColumnProjection {
+    /// logical column / dotted json path, e.g. "service" or "http.status_code"
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    /// the type the caller wants the column returned as
+    #[prost(message, optional, tag = "2")]
+    pub r#type: ::core::option::Option<ColumnType>,
+}
+/// The type of a requested column. A oneof so that a future `Array` variant
+/// can wrap a `ScalarType` element type; nested arrays are intentionally not
+/// representable (the array element type is a `ScalarType`, not a `ColumnType`).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ColumnType {
+    #[prost(oneof = "column_type::Kind", tags = "1")]
+    pub kind: ::core::option::Option<column_type::Kind>,
+}
+/// Nested message and enum types in `ColumnType`.
+pub mod column_type {
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Kind {
+        #[prost(enumeration = "super::ScalarType", tag = "1")]
+        Scalar(i32),
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SearchSplitResponse {
+    /// One Arrow IPC stream chunk: an encapsulated IPC message (schema,
+    /// record batch, or dictionary batch) or the trailing EOS marker.
+    /// Arrow IPC messages are self-describing (each has its own FlatBuffers
+    /// header identifying its type), so callers should concatenate these
+    /// chunks, in order, into a single byte stream and hand it to an Arrow
+    /// IPC stream reader rather than branching on message kind here.
+    #[prost(bytes = "vec", tag = "1")]
+    pub arrow_ipc_message: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ScalarType {
+    Unspecified = 0,
+    /// -> Arrow Utf8
+    String = 1,
+    /// -> Arrow Int64
+    Int64 = 2,
+    /// -> Arrow UInt64
+    Uint64 = 3,
+    /// -> Arrow Float64
+    Float64 = 4,
+    /// -> Arrow Boolean
+    Bool = 5,
+    /// -> Arrow Timestamp (P0 emits microsecond precision)
+    TimestampNanos = 6,
+    /// -> Arrow Binary
+    Bytes = 7,
+    /// -> Arrow Utf8
+    Ip = 8,
+}
+impl ScalarType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "SCALAR_TYPE_UNSPECIFIED",
+            Self::String => "SCALAR_TYPE_STRING",
+            Self::Int64 => "SCALAR_TYPE_INT64",
+            Self::Uint64 => "SCALAR_TYPE_UINT64",
+            Self::Float64 => "SCALAR_TYPE_FLOAT64",
+            Self::Bool => "SCALAR_TYPE_BOOL",
+            Self::TimestampNanos => "SCALAR_TYPE_TIMESTAMP_NANOS",
+            Self::Bytes => "SCALAR_TYPE_BYTES",
+            Self::Ip => "SCALAR_TYPE_IP",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SCALAR_TYPE_UNSPECIFIED" => Some(Self::Unspecified),
+            "SCALAR_TYPE_STRING" => Some(Self::String),
+            "SCALAR_TYPE_INT64" => Some(Self::Int64),
+            "SCALAR_TYPE_UINT64" => Some(Self::Uint64),
+            "SCALAR_TYPE_FLOAT64" => Some(Self::Float64),
+            "SCALAR_TYPE_BOOL" => Some(Self::Bool),
+            "SCALAR_TYPE_TIMESTAMP_NANOS" => Some(Self::TimestampNanos),
+            "SCALAR_TYPE_BYTES" => Some(Self::Bytes),
+            "SCALAR_TYPE_IP" => Some(Self::Ip),
+            _ => None,
+        }
+    }
+}
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -992,6 +1169,16 @@ impl RpcName for EsHttpRequest {
 impl RpcName for CloudpremSubstraitRequest {
     fn rpc_name() -> &'static str {
         "substrait_search"
+    }
+}
+impl RpcName for ListSplitsRequest {
+    fn rpc_name() -> &'static str {
+        "list_splits"
+    }
+}
+impl RpcName for SearchSplitRequest {
+    fn rpc_name() -> &'static str {
+        "search_split"
     }
 }
 impl RpcName for SetLogLevelRequest {
@@ -1090,6 +1277,19 @@ pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: CloudpremSubstraitRequest,
     ) -> crate::cloudprem::CloudPremResult<CloudpremSubstraitResponse>;
+    ///Columnar two-phase read API (for Trino and other columnar consumers).
+    ///
+    ///Phase 1 — enumerate the splits a query touches so a client can fan out.
+    async fn list_splits(
+        &self,
+        request: ListSplitsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListSplitsResponse>;
+    ///Phase 2 — read a column projection from ONE split, streamed as Arrow.
+    ///Reads columnar fast fields only; never the row-oriented doc store.
+    async fn search_split(
+        &self,
+        request: SearchSplitRequest,
+    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SearchSplitResponse>>;
     ///Dynamically sets the log level.
     async fn set_log_level(
         &self,
@@ -1327,6 +1527,20 @@ impl CloudPremService for CloudPremServiceClient {
     ) -> crate::cloudprem::CloudPremResult<CloudpremSubstraitResponse> {
         self.inner.0.substrait_search(request).await
     }
+    #[tracing::instrument(skip_all, name = "cloudprem.list_splits")]
+    async fn list_splits(
+        &self,
+        request: ListSplitsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListSplitsResponse> {
+        self.inner.0.list_splits(request).await
+    }
+    #[tracing::instrument(skip_all, name = "cloudprem.search_split")]
+    async fn search_split(
+        &self,
+        request: SearchSplitRequest,
+    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SearchSplitResponse>> {
+        self.inner.0.search_split(request).await
+    }
     #[tracing::instrument(skip_all, name = "cloudprem.set_log_level")]
     async fn set_log_level(
         &self,
@@ -1458,6 +1672,20 @@ pub mod mock_cloud_prem_service {
             request: super::CloudpremSubstraitRequest,
         ) -> crate::cloudprem::CloudPremResult<super::CloudpremSubstraitResponse> {
             self.inner.lock().await.substrait_search(request).await
+        }
+        async fn list_splits(
+            &self,
+            request: super::ListSplitsRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::ListSplitsResponse> {
+            self.inner.lock().await.list_splits(request).await
+        }
+        async fn search_split(
+            &self,
+            request: super::SearchSplitRequest,
+        ) -> crate::cloudprem::CloudPremResult<
+            CloudPremServiceStream<super::SearchSplitResponse>,
+        > {
+            self.inner.lock().await.search_split(request).await
         }
         async fn set_log_level(
             &self,
@@ -1759,6 +1987,38 @@ impl tower::Service<CloudpremSubstraitRequest> for InnerCloudPremServiceClient {
         Box::pin(fut)
     }
 }
+impl tower::Service<ListSplitsRequest> for InnerCloudPremServiceClient {
+    type Response = ListSplitsResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: ListSplitsRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.list_splits(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<SearchSplitRequest> for InnerCloudPremServiceClient {
+    type Response = CloudPremServiceStream<SearchSplitResponse>;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: SearchSplitRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.search_split(request).await };
+        Box::pin(fut)
+    }
+}
 impl tower::Service<SetLogLevelRequest> for InnerCloudPremServiceClient {
     type Response = SetLogLevelResponse;
     type Error = crate::cloudprem::CloudPremError;
@@ -1885,6 +2145,16 @@ struct CloudPremServiceTowerServiceStack {
         CloudpremSubstraitResponse,
         crate::cloudprem::CloudPremError,
     >,
+    list_splits_svc: quickwit_common::tower::BoxService<
+        ListSplitsRequest,
+        ListSplitsResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    search_split_svc: quickwit_common::tower::BoxService<
+        SearchSplitRequest,
+        CloudPremServiceStream<SearchSplitResponse>,
+        crate::cloudprem::CloudPremError,
+    >,
     set_log_level_svc: quickwit_common::tower::BoxService<
         SetLogLevelRequest,
         SetLogLevelResponse,
@@ -1999,6 +2269,18 @@ impl CloudPremService for CloudPremServiceTowerServiceStack {
         request: CloudpremSubstraitRequest,
     ) -> crate::cloudprem::CloudPremResult<CloudpremSubstraitResponse> {
         self.substrait_search_svc.clone().ready().await?.call(request).await
+    }
+    async fn list_splits(
+        &self,
+        request: ListSplitsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListSplitsResponse> {
+        self.list_splits_svc.clone().ready().await?.call(request).await
+    }
+    async fn search_split(
+        &self,
+        request: SearchSplitRequest,
+    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SearchSplitResponse>> {
+        self.search_split_svc.clone().ready().await?.call(request).await
     }
     async fn set_log_level(
         &self,
@@ -2183,6 +2465,26 @@ type SubstraitSearchLayer = quickwit_common::tower::BoxLayer<
     CloudpremSubstraitResponse,
     crate::cloudprem::CloudPremError,
 >;
+type ListSplitsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        ListSplitsRequest,
+        ListSplitsResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    ListSplitsRequest,
+    ListSplitsResponse,
+    crate::cloudprem::CloudPremError,
+>;
+type SearchSplitLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        SearchSplitRequest,
+        CloudPremServiceStream<SearchSplitResponse>,
+        crate::cloudprem::CloudPremError,
+    >,
+    SearchSplitRequest,
+    CloudPremServiceStream<SearchSplitResponse>,
+    crate::cloudprem::CloudPremError,
+>;
 type SetLogLevelLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         SetLogLevelRequest,
@@ -2222,6 +2524,8 @@ pub struct CloudPremServiceTowerLayerStack {
     get_cluster_diagnostics_layers: Vec<GetClusterDiagnosticsLayer>,
     es_query_layers: Vec<EsQueryLayer>,
     substrait_search_layers: Vec<SubstraitSearchLayer>,
+    list_splits_layers: Vec<ListSplitsLayer>,
+    search_split_layers: Vec<SearchSplitLayer>,
     set_log_level_layers: Vec<SetLogLevelLayer>,
     inverted_request_stream_layers: Vec<InvertedRequestStreamLayer>,
 }
@@ -2671,6 +2975,56 @@ impl CloudPremServiceTowerLayerStack {
         >>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
+                    ListSplitsRequest,
+                    ListSplitsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListSplitsRequest,
+                ListSplitsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                ListSplitsRequest,
+                Response = ListSplitsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                ListSplitsRequest,
+                ListSplitsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<ListSplitsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    SearchSplitRequest,
+                    CloudPremServiceStream<SearchSplitResponse>,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                SearchSplitRequest,
+                CloudPremServiceStream<SearchSplitResponse>,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                SearchSplitRequest,
+                Response = CloudPremServiceStream<SearchSplitResponse>,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                SearchSplitRequest,
+                CloudPremServiceStream<SearchSplitResponse>,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<SearchSplitRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
                     SetLogLevelRequest,
                     SetLogLevelResponse,
                     crate::cloudprem::CloudPremError,
@@ -2750,6 +3104,10 @@ impl CloudPremServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.es_query_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.substrait_search_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.list_splits_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.search_split_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.set_log_level_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -3100,6 +3458,44 @@ impl CloudPremServiceTowerLayerStack {
         self.substrait_search_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
+    pub fn stack_list_splits_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    ListSplitsRequest,
+                    ListSplitsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                ListSplitsRequest,
+                Response = ListSplitsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<ListSplitsRequest>>::Future: Send + 'static,
+    {
+        self.list_splits_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_search_split_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    SearchSplitRequest,
+                    CloudPremServiceStream<SearchSplitResponse>,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                SearchSplitRequest,
+                Response = CloudPremServiceStream<SearchSplitResponse>,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<SearchSplitRequest>>::Future: Send + 'static,
+    {
+        self.search_split_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
     pub fn stack_set_log_level_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<
@@ -3337,6 +3733,22 @@ impl CloudPremServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let list_splits_svc = self
+            .list_splits_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let search_split_svc = self
+            .search_split_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let set_log_level_svc = self
             .set_log_level_layers
             .into_iter()
@@ -3372,6 +3784,8 @@ impl CloudPremServiceTowerLayerStack {
             get_cluster_diagnostics_svc,
             es_query_svc,
             substrait_search_svc,
+            list_splits_svc,
+            search_split_svc,
             set_log_level_svc,
             inverted_request_stream_svc,
         };
@@ -3577,6 +3991,21 @@ where
             >,
         >
         + tower::Service<
+            ListSplitsRequest,
+            Response = ListSplitsResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<ListSplitsResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            SearchSplitRequest,
+            Response = CloudPremServiceStream<SearchSplitResponse>,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<
+                CloudPremServiceStream<SearchSplitResponse>,
+                crate::cloudprem::CloudPremError,
+            >,
+        >
+        + tower::Service<
             SetLogLevelRequest,
             Response = SetLogLevelResponse,
             Error = crate::cloudprem::CloudPremError,
@@ -3692,6 +4121,18 @@ where
         &self,
         request: CloudpremSubstraitRequest,
     ) -> crate::cloudprem::CloudPremResult<CloudpremSubstraitResponse> {
+        self.clone().call(request).await
+    }
+    async fn list_splits(
+        &self,
+        request: ListSplitsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListSplitsResponse> {
+        self.clone().call(request).await
+    }
+    async fn search_split(
+        &self,
+        request: SearchSplitRequest,
+    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SearchSplitResponse>> {
         self.clone().call(request).await
     }
     async fn set_log_level(
@@ -4045,6 +4486,50 @@ where
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
                 CloudpremSubstraitRequest::rpc_name(),
+            ))
+    }
+    async fn list_splits(
+        &self,
+        request: ListSplitsRequest,
+    ) -> crate::cloudprem::CloudPremResult<ListSplitsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
+        self.inner
+            .clone()
+            .list_splits(tonic_request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                ListSplitsRequest::rpc_name(),
+            ))
+    }
+    async fn search_split(
+        &self,
+        request: SearchSplitRequest,
+    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SearchSplitResponse>> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
+        self.inner
+            .clone()
+            .search_split(tonic_request)
+            .await
+            .map(|response| {
+                let streaming: tonic::Streaming<_> = response.into_inner();
+                let stream = quickwit_common::ServiceStream::from(streaming);
+                stream
+                    .map_err(|status| crate::error::grpc_status_to_service_error(
+                        status,
+                        SearchSplitRequest::rpc_name(),
+                    ))
+            })
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                SearchSplitRequest::rpc_name(),
             ))
     }
     async fn set_log_level(
@@ -4505,6 +4990,57 @@ for CloudPremServiceGrpcServerAdapter {
                 .substrait_search(request)
                 .await
                 .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
+    }
+    async fn list_splits(
+        &self,
+        tonic_request: tonic::Request<ListSplitsRequest>,
+    ) -> Result<tonic::Response<ListSplitsResponse>, tonic::Status> {
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.list_splits");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .list_splits(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
+    }
+    type SearchSplitStream = quickwit_common::ServiceStream<
+        tonic::Result<SearchSplitResponse>,
+    >;
+    async fn search_split(
+        &self,
+        tonic_request: tonic::Request<SearchSplitRequest>,
+    ) -> Result<tonic::Response<Self::SearchSplitStream>, tonic::Status> {
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("cloudprem.search_split");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .search_split(request)
+                .await
+                .map(|stream| tonic::Response::new(
+                    stream.map_err(crate::error::grpc_error_to_grpc_status),
+                ))
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
         <_ as tracing::Instrument>::instrument(fut, span).await
@@ -5083,6 +5619,59 @@ pub mod cloud_prem_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Columnar two-phase read API (for Trino and other columnar consumers).
+        ///
+        /// Phase 1 — enumerate the splits a query touches so a client can fan out.
+        pub async fn list_splits(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListSplitsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListSplitsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/cloudprem.CloudPremService/ListSplits",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("cloudprem.CloudPremService", "ListSplits"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Phase 2 — read a column projection from ONE split, streamed as Arrow.
+        /// Reads columnar fast fields only; never the row-oriented doc store.
+        pub async fn search_split(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SearchSplitRequest>,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::SearchSplitResponse>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/cloudprem.CloudPremService/SearchSplit",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("cloudprem.CloudPremService", "SearchSplit"));
+            self.inner.server_streaming(req, path, codec).await
+        }
         /// Dynamically sets the log level.
         pub async fn set_log_level(
             &mut self,
@@ -5273,6 +5862,31 @@ pub mod cloud_prem_service_grpc_server {
             request: tonic::Request<super::CloudpremSubstraitRequest>,
         ) -> std::result::Result<
             tonic::Response<super::CloudpremSubstraitResponse>,
+            tonic::Status,
+        >;
+        /// Columnar two-phase read API (for Trino and other columnar consumers).
+        ///
+        /// Phase 1 — enumerate the splits a query touches so a client can fan out.
+        async fn list_splits(
+            &self,
+            request: tonic::Request<super::ListSplitsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListSplitsResponse>,
+            tonic::Status,
+        >;
+        /// Server streaming response type for the SearchSplit method.
+        type SearchSplitStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::SearchSplitResponse, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        /// Phase 2 — read a column projection from ONE split, streamed as Arrow.
+        /// Reads columnar fast fields only; never the row-oriented doc store.
+        async fn search_split(
+            &self,
+            request: tonic::Request<super::SearchSplitRequest>,
+        ) -> std::result::Result<
+            tonic::Response<Self::SearchSplitStream>,
             tonic::Status,
         >;
         /// Dynamically sets the log level.
@@ -6178,6 +6792,99 @@ pub mod cloud_prem_service_grpc_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/cloudprem.CloudPremService/ListSplits" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListSplitsSvc<T: CloudPremServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: CloudPremServiceGrpc,
+                    > tonic::server::UnaryService<super::ListSplitsRequest>
+                    for ListSplitsSvc<T> {
+                        type Response = super::ListSplitsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListSplitsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as CloudPremServiceGrpc>::list_splits(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListSplitsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/cloudprem.CloudPremService/SearchSplit" => {
+                    #[allow(non_camel_case_types)]
+                    struct SearchSplitSvc<T: CloudPremServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: CloudPremServiceGrpc,
+                    > tonic::server::ServerStreamingService<super::SearchSplitRequest>
+                    for SearchSplitSvc<T> {
+                        type Response = super::SearchSplitResponse;
+                        type ResponseStream = T::SearchSplitStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SearchSplitRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as CloudPremServiceGrpc>::search_split(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SearchSplitSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

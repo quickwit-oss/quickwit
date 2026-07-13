@@ -16,6 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+arrow = { workspace = true }
 async-trait = { workspace = true }
 bytesize = { workspace = true }
 clap = { workspace = true , features = ["derive"]}
@@ -27,6 +28,7 @@ tracing-subscriber = { workspace = true }
 urlencoding = { workspace = true }
 warp = { workspace = true }
 
+quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-jaeger = { workspace = true }
 quickwit-proto = { workspace = true }
