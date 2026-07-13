@@ -84,7 +84,7 @@ pub use crate::client::{
 };
 pub use crate::cluster_client::ClusterClient;
 pub use crate::columnar_stream::{
-    BatchSize, ColumnRequest, ColumnarSplitDescriptor, ColumnarSplitPlanRequest,
+    BatchSize, ColumnRequest, ColumnarSplitBatch, ColumnarSplitPlanRequest,
     SearchSplitColumnarRequest, plan_columnar_splits,
 };
 pub use crate::error::{SearchError, parse_grpc_error};

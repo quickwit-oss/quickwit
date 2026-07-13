@@ -38,7 +38,7 @@ use quickwit_proto::cloudprem::{
     ListSplitsRequest, NodeDiagnostics, NodeMetrics, PingRequest, PingResponse,
     PullClusterMetricsResponse, ScalarType, SearchSplitRequest, SearchSplitResponse,
     SetIndexRoutingTableRequest, SetIndexRoutingTableResponse, SetLogLevelRequest,
-    SetLogLevelResponse, SplitDescriptor, SplitToken, Statistics, UpdateIndexRequest,
+    SetLogLevelResponse, SplitBatch, SplitToken, Statistics, UpdateIndexRequest,
     UpdateIndexResponse, column_type,
 };
 use quickwit_proto::developer::{
@@ -344,7 +344,7 @@ impl CloudPremService for CloudPremServiceImpl {
     async fn list_splits(
         &self,
         request: ListSplitsRequest,
-    ) -> CloudPremResult<CloudPremServiceStream<SplitDescriptor>> {
+    ) -> CloudPremResult<CloudPremServiceStream<SplitBatch>> {
         info!("received ListSplits request");
         let plan_request = ColumnarSplitPlanRequest {
             index_id_patterns: resolve_index_patterns(&request.index_id_patterns),

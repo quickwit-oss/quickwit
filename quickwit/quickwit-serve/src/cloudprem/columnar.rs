@@ -27,11 +27,12 @@ use futures::Stream;
 use prost::Message as _;
 use quickwit_common::ServiceStream;
 use quickwit_proto::cloudprem::{
-    CloudPremError, CloudPremResult, SearchSplitResponse, SplitDescriptor, SplitToken,
+    CloudPremError, CloudPremResult, SearchSplitResponse, SplitBatch, SplitBatchDetails,
 };
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_search::{
-    ColumnarSplitPlanRequest, SearchService, SearchSplitColumnarRequest, plan_columnar_splits,
+    ColumnarSplitBatch, ColumnarSplitPlanRequest, SearchService, SearchSplitColumnarRequest,
+    plan_columnar_splits,
 };
 use tokio_stream::StreamExt as _;
 use tracing::warn;
@@ -40,30 +41,29 @@ use tracing::warn;
 pub(crate) async fn list_splits(
     metastore: &MetastoreServiceClient,
     plan_request: ColumnarSplitPlanRequest,
-) -> CloudPremResult<impl Stream<Item = CloudPremResult<SplitDescriptor>> + use<>> {
-    let descriptors = plan_columnar_splits(plan_request, metastore)
+) -> CloudPremResult<impl Stream<Item = CloudPremResult<SplitBatch>> + use<>> {
+    let batches = plan_columnar_splits(plan_request, metastore)
         .await
         .inspect_err(|error| warn!("list_splits planning failed: {error}"))?;
 
-    Ok(descriptors.map(|descriptor_result| {
-        let descriptor = descriptor_result.map_err(CloudPremError::from)?;
-        let token = SplitToken {
-            index_uid: descriptor.index_uid.to_string(),
-            index_uri: descriptor.index_uri,
-            split: Some(descriptor.split.clone()),
-            doc_mapper_str: descriptor.doc_mapper_str,
-        };
-        Ok(SplitDescriptor {
-            split_token: token.encode_to_vec(),
-            split_id: descriptor.split.split_id,
-            index_uid: descriptor.index_uid.to_string(),
-            num_docs: descriptor.split.num_docs,
-            size_bytes: descriptor.size_bytes,
-            time_range_start_ms: descriptor.split.timestamp_start.map(secs_to_ms),
-            time_range_end_ms: descriptor.split.timestamp_end.map(secs_to_ms),
-            preferred_node_ids: Vec::new(),
-        })
+    Ok(batches.map(|batch_result| {
+        let batch = batch_result.map_err(CloudPremError::from)?;
+        encode_split_batch(batch)
     }))
+}
+
+fn encode_split_batch(batch: ColumnarSplitBatch) -> CloudPremResult<SplitBatch> {
+    let details = SplitBatchDetails {
+        index_uid: batch.index_uid.to_string(),
+        index_uri: batch.index_uri,
+        doc_mapper_str: batch.doc_mapper_str,
+        splits: batch.splits,
+    };
+    Ok(SplitBatch {
+        split_batch_details: details.encode_to_vec(),
+        total_num_docs: batch.total_num_docs,
+        total_size_bytes: batch.total_size_bytes,
+    })
 }
 
 /// Phase 2 — read a column projection from one split, streamed as Arrow.
@@ -149,12 +149,9 @@ fn ipc_error(error: arrow::error::ArrowError) -> CloudPremError {
     CloudPremError::Internal(format!("arrow ipc error: {error}"))
 }
 
-fn secs_to_ms(timestamp_secs: i64) -> i64 {
-    timestamp_secs.saturating_mul(1000)
-}
-
 #[cfg(test)]
 mod tests {
+    use quickwit_proto::cloudprem::SplitToken;
     use quickwit_proto::search::SplitIdAndFooterOffsets;
 
     use super::*;
@@ -180,7 +177,39 @@ mod tests {
     }
 
     #[test]
-    fn secs_to_ms_scales_up() {
-        assert_eq!(secs_to_ms(3), 3_000);
+    fn split_batch_exposes_only_aggregate_estimates() {
+        let batch = ColumnarSplitBatch {
+            index_uid: quickwit_proto::types::IndexUid::for_test("my-index", 1),
+            index_uri: "s3://bucket/my-index".to_string(),
+            doc_mapper_str: "{}".to_string(),
+            total_num_docs: 100,
+            total_size_bytes: 70,
+            splits: vec![
+                SplitIdAndFooterOffsets {
+                    split_id: "split-1".to_string(),
+                    split_footer_start: 10,
+                    split_footer_end: 20,
+                    timestamp_start: Some(100),
+                    timestamp_end: Some(200),
+                    num_docs: 42,
+                },
+                SplitIdAndFooterOffsets {
+                    split_id: "split-2".to_string(),
+                    split_footer_start: 20,
+                    split_footer_end: 50,
+                    timestamp_start: Some(201),
+                    timestamp_end: Some(300),
+                    num_docs: 58,
+                },
+            ],
+        };
+
+        let response = encode_split_batch(batch).unwrap();
+        assert_eq!(response.total_num_docs, 100);
+        assert_eq!(response.total_size_bytes, 70);
+        let details = SplitBatchDetails::decode(response.split_batch_details.as_slice()).unwrap();
+        assert_eq!(details.index_uri, "s3://bucket/my-index");
+        assert_eq!(details.doc_mapper_str, "{}");
+        assert_eq!(details.splits.len(), 2);
     }
 }

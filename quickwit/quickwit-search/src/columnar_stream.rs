@@ -16,7 +16,7 @@
 //! `SearchSplit` endpoints.
 //!
 //! Phase 1 ([`plan_columnar_splits`]) enumerates the splits a query touches,
-//! returning a self-sufficient descriptor per split. Phase 2
+//! returning bounded batches with shared index metadata deduplicated. Phase 2
 //! (`run_columnar_search`) opens exactly one split, runs the filter as a
 //! doc-collecting tantivy query, and hands the matched doc-ids to
 //! [`pomsky_arrow`] to produce Arrow [`RecordBatch`](arrow::array::RecordBatch)es — never touching
@@ -25,7 +25,7 @@
 //! Arrow-IPC framing, split-token encode/decode and the gRPC transport are the
 //! caller's job (the cloudprem endpoint), not this module's.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use arrow::array::RecordBatch;
@@ -35,6 +35,7 @@ use pomsky_arrow::dictionary_builder::DictionaryBuilders;
 use pomsky_arrow::read_segment_columns;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_doc_mapper::{DocMapper, FastFieldWarmupInfo, WarmupInfo};
+use quickwit_metastore::SplitMetadata;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{CountHits, SearchRequest, SplitIdAndFooterOffsets};
 use quickwit_proto::types::IndexUid;
@@ -45,26 +46,33 @@ use tantivy::{DocSet, ReloadPolicy, Searcher, SegmentReader, TERMINATED};
 
 use crate::SearchError;
 use crate::leaf::{open_index_with_caches, warmup};
+use crate::root::IndexMetasForLeafSearch;
 use crate::service::SearcherContext;
 
 /// Default number of rows per Arrow batch when the request leaves `batch_size`
 /// unset (0).
 const DEFAULT_BATCH_SIZE: usize = 8192;
 
-/// A single split a columnar query touches, with everything phase 2 needs to
-/// open and read it directly from object storage — no metastore round-trip.
+/// Maximum number of splits returned in one phase-1 batch. Bounding batches
+/// avoids oversized gRPC messages while substantially reducing phase-2 calls.
+/// Number is fairly arbitrary for now, can always be changed later.
+const MAX_SPLITS_PER_BATCH: usize = 128;
+
+/// A bounded batch of splits sharing the index-level information phase 2 needs.
 #[derive(Debug, Clone)]
-pub struct ColumnarSplitDescriptor {
-    /// Split id and footer offsets needed to open the split directly.
-    pub split: SplitIdAndFooterOffsets,
-    /// Index the split belongs to.
+pub struct ColumnarSplitBatch {
+    /// Index the splits belong to.
     pub index_uid: IndexUid,
-    /// Storage URI of the index, used to resolve the split's object storage.
+    /// Storage URI of the index, used to resolve the splits' object storage.
     pub index_uri: String,
-    /// JSON-serialized doc mapper.
+    /// JSON-serialized doc mapper shared by every split in the batch.
     pub doc_mapper_str: String,
-    /// Approximate on-disk size of the split, for client-side cost estimation.
-    pub size_bytes: u64,
+    /// Total number of documents in the splits.
+    pub total_num_docs: u64,
+    /// Total on-disk size of the splits, in bytes.
+    pub total_size_bytes: u64,
+    /// Split ids and footer offsets to read using the shared index-level information.
+    pub splits: Vec<SplitIdAndFooterOffsets>,
 }
 
 /// One requested output column: which logical fast-field to read (`name`) and
@@ -135,15 +143,16 @@ pub struct ColumnarSplitPlanRequest {
     pub query_ast: QueryAst,
 }
 
-/// Phase 1 — enumerate the splits a query touches.
+/// Phase 1 — enumerate batches of splits a query touches.
 ///
 /// Thin wrapper over the existing root-search split planning: parse → derive
-/// time range + tag filter → list relevant splits. Returns a self-sufficient
-/// descriptor per split.
+/// time range + tag filter → list relevant splits. Splits are grouped by index
+/// so index URI and doc mapper are encoded once, then divided into bounded
+/// batches.
 pub async fn plan_columnar_splits(
     request: ColumnarSplitPlanRequest,
     metastore: &MetastoreServiceClient,
-) -> crate::Result<impl Stream<Item = crate::Result<ColumnarSplitDescriptor>> + use<>> {
+) -> crate::Result<impl Stream<Item = crate::Result<ColumnarSplitBatch>> + use<>> {
     let query_ast_json = serde_json::to_string(&request.query_ast)
         .map_err(|error| SearchError::Internal(error.to_string()))?;
     let mut search_request = SearchRequest {
@@ -169,39 +178,108 @@ pub async fn plan_columnar_splits(
     let (split_metadatas, indexes_meta) =
         crate::root::plan_splits_for_root_search(&mut search_request, &mut metastore).await?;
 
-    Ok(futures::stream::iter(split_metadatas.into_iter().map(
-        move |split_metadata| {
-            let Some(index_meta) = indexes_meta.get(&split_metadata.index_uid) else {
-                // Every listed split belongs to one of the planned indexes; a miss
-                // here is a real bug, not a skippable absence.
-                return Err(SearchError::Internal(format!(
-                    "missing index metadata for split `{}`",
-                    split_metadata.split_id
-                )));
-            };
-            let split = SplitIdAndFooterOffsets {
-                split_id: split_metadata.split_id.to_string(),
-                split_footer_start: split_metadata.footer_offsets.start,
-                split_footer_end: split_metadata.footer_offsets.end,
-                timestamp_start: split_metadata
-                    .time_range
-                    .as_ref()
-                    .map(|time_range| *time_range.start()),
-                timestamp_end: split_metadata
-                    .time_range
-                    .as_ref()
-                    .map(|time_range| *time_range.end()),
-                num_docs: split_metadata.num_docs as u64,
-            };
-            Ok(ColumnarSplitDescriptor {
-                split,
-                index_uid: split_metadata.index_uid,
-                index_uri: index_meta.index_uri.to_string(),
-                doc_mapper_str: index_meta.doc_mapper_str.clone(),
-                size_bytes: split_metadata.footer_offsets.end,
-            })
-        },
-    )))
+    Ok(stream_split_batches(split_metadatas, indexes_meta))
+}
+
+/// Groups split metadata by index and yields a batch whenever an index reaches
+/// the maximum batch size. Partial batches are yielded after all splits have
+/// been processed.
+/// In the future this could also consider preferred node to allow for optimal
+/// routing during searching, but we'll start simple for now.
+fn stream_split_batches(
+    split_metadatas: Vec<SplitMetadata>,
+    indexes_meta: HashMap<IndexUid, IndexMetasForLeafSearch>,
+) -> impl Stream<Item = crate::Result<ColumnarSplitBatch>> {
+    async_stream::stream! {
+        let mut batches = HashMap::<IndexUid, Vec<SplitMetadata>>::new();
+        for split_metadata in split_metadatas {
+            let index_uid = split_metadata.index_uid.clone();
+
+            // Add split to batch for that index
+            let current_batch = batches
+                .entry(index_uid.clone())
+                .or_default();
+            current_batch.push(split_metadata);
+            if current_batch.len() < MAX_SPLITS_PER_BATCH {
+                continue;
+            }
+
+            // Yield batches that are large enough
+            let split_metadata_batch = std::mem::take(current_batch);
+            yield build_columnar_split_batch_from_index_uid(
+                index_uid,
+                &indexes_meta,
+                split_metadata_batch,
+            );
+        }
+
+        // Yield all incomplete batches
+        for (index_uid, split_metadata_batch) in batches {
+            if split_metadata_batch.is_empty() {
+                continue;
+            }
+            yield build_columnar_split_batch_from_index_uid(
+                index_uid,
+                &indexes_meta,
+                split_metadata_batch,
+            );
+        }
+    }
+}
+
+fn build_columnar_split_batch_from_index_uid(
+    index_uid: IndexUid,
+    indexes_meta: &HashMap<IndexUid, IndexMetasForLeafSearch>,
+    split_metadatas: Vec<SplitMetadata>,
+) -> crate::Result<ColumnarSplitBatch> {
+    let Some(index_meta) = indexes_meta.get(&index_uid) else {
+        return Err(SearchError::Internal(format!(
+            "missing index metadata for split batch `{index_uid}`"
+        )));
+    };
+    build_columnar_split_batch(index_uid, index_meta, split_metadatas)
+}
+
+fn build_columnar_split_batch(
+    index_uid: IndexUid,
+    index_meta: &IndexMetasForLeafSearch,
+    split_metadatas: Vec<SplitMetadata>,
+) -> crate::Result<ColumnarSplitBatch> {
+    let mut total_num_docs = 0u64;
+    let mut total_size_bytes = 0u64;
+    let mut splits = Vec::with_capacity(split_metadatas.len());
+    for split_metadata in split_metadatas {
+        let num_docs = split_metadata.num_docs as u64;
+        total_num_docs = total_num_docs.checked_add(num_docs).ok_or_else(|| {
+            SearchError::Internal("split batch document count overflow".to_string())
+        })?;
+        total_size_bytes = total_size_bytes
+            .checked_add(split_metadata.footer_offsets.end)
+            .ok_or_else(|| SearchError::Internal("split batch byte size overflow".to_string()))?;
+
+        splits.push(SplitIdAndFooterOffsets {
+            split_id: split_metadata.split_id.to_string(),
+            split_footer_start: split_metadata.footer_offsets.start,
+            split_footer_end: split_metadata.footer_offsets.end,
+            timestamp_start: split_metadata
+                .time_range
+                .as_ref()
+                .map(|time_range| *time_range.start()),
+            timestamp_end: split_metadata
+                .time_range
+                .as_ref()
+                .map(|time_range| *time_range.end()),
+            num_docs,
+        });
+    }
+    Ok(ColumnarSplitBatch {
+        index_uid,
+        index_uri: index_meta.index_uri.to_string(),
+        doc_mapper_str: index_meta.doc_mapper_str.clone(),
+        total_num_docs,
+        total_size_bytes,
+        splits,
+    })
 }
 
 /// Builds the projected Arrow schema for the requested columns.
@@ -504,6 +582,8 @@ async fn warmup_data(
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use arrow::array::AsArray;
     use arrow::datatypes::UInt64Type;
     use tantivy::query::{AllQuery, EnableScoring, Query};
@@ -532,6 +612,80 @@ mod tests {
         AllQuery
             .weight(EnableScoring::disabled_from_searcher(searcher))
             .unwrap()
+    }
+
+    fn split_metadata(index_uid: &IndexUid, split_id: usize) -> SplitMetadata {
+        SplitMetadata {
+            split_id: format!("split-{split_id}").into(),
+            index_uid: index_uid.clone(),
+            num_docs: 1,
+            footer_offsets: 10..20,
+            ..Default::default()
+        }
+    }
+
+    fn index_meta(index_uri: &str, doc_mapper_str: &str) -> IndexMetasForLeafSearch {
+        IndexMetasForLeafSearch {
+            index_uri: quickwit_common::uri::Uri::from_str(index_uri).unwrap(),
+            doc_mapper_str: doc_mapper_str.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn split_batches_deduplicate_index_fields_and_bound_batch_size() {
+        let index_uid_a = IndexUid::for_test("index-a", 1);
+        let index_uid_b = IndexUid::for_test("index-b", 1);
+        let mut split_metadatas = Vec::new();
+        for split_id in 0..MAX_SPLITS_PER_BATCH {
+            split_metadatas.push(split_metadata(&index_uid_a, split_id));
+        }
+        split_metadatas.push(split_metadata(&index_uid_b, MAX_SPLITS_PER_BATCH));
+        split_metadatas.push(split_metadata(&index_uid_a, MAX_SPLITS_PER_BATCH + 1));
+
+        let indexes_meta = HashMap::from([
+            (
+                index_uid_a.clone(),
+                index_meta("s3://indexes/a", "mapper-a"),
+            ),
+            (
+                index_uid_b.clone(),
+                index_meta("s3://indexes/b", "mapper-b"),
+            ),
+        ]);
+        let batches = stream_split_batches(split_metadatas, indexes_meta);
+        futures::pin_mut!(batches);
+        let first_batch = batches.next().await.unwrap().unwrap();
+        let remaining_batches = batches.collect::<Vec<_>>().await;
+        let mut all_batches = vec![first_batch];
+        all_batches.extend(remaining_batches.into_iter().map(Result::unwrap));
+
+        assert_eq!(all_batches.len(), 3);
+        let full_batch = all_batches
+            .iter()
+            .find(|batch| {
+                batch.index_uid == index_uid_a && batch.splits.len() == MAX_SPLITS_PER_BATCH
+            })
+            .unwrap();
+        assert_eq!(full_batch.total_num_docs, MAX_SPLITS_PER_BATCH as u64);
+        assert_eq!(
+            full_batch.total_size_bytes,
+            (MAX_SPLITS_PER_BATCH * 20) as u64
+        );
+        assert_eq!(full_batch.doc_mapper_str, "mapper-a");
+
+        let partial_a = all_batches
+            .iter()
+            .find(|batch| batch.index_uid == index_uid_a && batch.splits.len() == 1)
+            .unwrap();
+        assert_eq!(partial_a.total_num_docs, 1);
+        assert_eq!(partial_a.total_size_bytes, 20);
+
+        let partial_b = all_batches
+            .iter()
+            .find(|batch| batch.index_uid == index_uid_b)
+            .unwrap();
+        assert_eq!(partial_b.splits.len(), 1);
+        assert_eq!(partial_b.doc_mapper_str, "mapper-b");
     }
 
     #[test]

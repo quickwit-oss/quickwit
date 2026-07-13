@@ -60,10 +60,11 @@ service CloudPremService {
 
   // Columnar two-phase read API (for Trino and other columnar consumers).
   //
-  // Phase 1 — enumerate the splits a query touches so a client can fan out.
-  rpc ListSplits(ListSplitsRequest) returns (stream SplitDescriptor);
+  // Phase 1 — enumerate batches of splits a query touches so a client can fan out.
+  rpc ListSplits(ListSplitsRequest) returns (stream SplitBatch);
 
   // Phase 2 — read a column projection from ONE split, streamed as Arrow.
+  // TODO: Replace this transitional single-split RPC with a batched request matching SplitBatch.
   // Reads columnar fast fields only; never the row-oriented doc store.
   rpc SearchSplit(SearchSplitRequest) returns (stream SearchSplitResponse);
 
@@ -660,28 +661,28 @@ message ListSplitsRequest {
   int64 org_id = 998;
 }
 
-message SplitDescriptor {
-  // Opaque, self-sufficient handle. Pass back verbatim in SearchSplitRequest.
-  // Internally a serialized `SplitToken`. Opaque so we can evolve it;
-  // self-sufficient so phase 2 needs NO metastore round-trip and is robust to
-  // concurrent compaction.
-  bytes split_token = 1;
-
-  // Planner-visible metadata (do NOT parse split_token to get these).
-  string split_id = 2;
-  string index_uid = 3;
-  uint64 num_docs = 4;
-  uint64 size_bytes = 5;
-  optional int64 time_range_start_ms = 6;
-  optional int64 time_range_end_ms = 7;
-
-  // Advisory cache-affinity hint (rendezvous hash). Any searcher can serve any
-  // split; this just helps the client prefer a node likely to have it warm.
-  repeated string preferred_node_ids = 8;
+// A bounded batch of splits. Callers use the aggregate fields for planning and
+// forward split_batch_details unchanged when requesting the batch's data.
+message SplitBatch {
+  // Opaque, self-sufficient encoded SplitBatchDetails.
+  bytes split_batch_details = 1;
+  uint64 total_num_docs = 2;
+  uint64 total_size_bytes = 3;
 }
 
-// Internal, self-sufficient bundle serialized into `SplitDescriptor.split_token`.
-// Never sent on its own RPC; only encoded/decoded as opaque bytes.
+// Internal by convention. This message is encoded into
+// `SplitBatch.split_batch_details`; callers should forward those bytes without
+// decoding them.
+message SplitBatchDetails {
+  string index_uid = 1;
+  string index_uri = 2;
+  // JSON-serialized doc mapper shared by every split in the batch.
+  string doc_mapper_str = 3;
+  repeated quickwit.search.SplitIdAndFooterOffsets splits = 4;
+}
+
+// TODO: Remove this transitional single-split token when SearchSplit accepts batches.
+// Internal bundle serialized into `SearchSplitRequest.split_token`.
 message SplitToken {
   string index_uid = 1;
   string index_uri = 2;
@@ -691,8 +692,9 @@ message SplitToken {
 }
 
 // Phase 2 — read a column projection from ONE split, streamed as Arrow.
+// TODO: Replace this transitional request with one that accepts encoded SplitBatchDetails.
 message SearchSplitRequest {
-  bytes split_token = 1; // from a SplitDescriptor
+  bytes split_token = 1; // serialized SplitToken
   google.protobuf.Any query_node = 2; // row filter applied within the split (see ListSplitsRequest.query_node)
   repeated ColumnProjection columns = 3; // the projection (explicit names + types)
   uint32 batch_size = 4; // rows per Arrow batch (0 -> server default)

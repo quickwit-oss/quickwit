@@ -923,34 +923,37 @@ pub struct ListSplitsRequest {
     #[prost(int64, tag = "998")]
     pub org_id: i64,
 }
+/// A bounded batch of splits. Callers use the aggregate fields for planning and
+/// forward split_batch_details unchanged when requesting the batch's data.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SplitDescriptor {
-    /// Opaque, self-sufficient handle. Pass back verbatim in SearchSplitRequest.
-    /// Internally a serialized `SplitToken`. Opaque so we can evolve it;
-    /// self-sufficient so phase 2 needs NO metastore round-trip and is robust to
-    /// concurrent compaction.
+pub struct SplitBatch {
+    /// Opaque, self-sufficient encoded SplitBatchDetails.
     #[prost(bytes = "vec", tag = "1")]
-    pub split_token: ::prost::alloc::vec::Vec<u8>,
-    /// Planner-visible metadata (do NOT parse split_token to get these).
-    #[prost(string, tag = "2")]
-    pub split_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub index_uid: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "4")]
-    pub num_docs: u64,
-    #[prost(uint64, tag = "5")]
-    pub size_bytes: u64,
-    #[prost(int64, optional, tag = "6")]
-    pub time_range_start_ms: ::core::option::Option<i64>,
-    #[prost(int64, optional, tag = "7")]
-    pub time_range_end_ms: ::core::option::Option<i64>,
-    /// Advisory cache-affinity hint (rendezvous hash). Any searcher can serve any
-    /// split; this just helps the client prefer a node likely to have it warm.
-    #[prost(string, repeated, tag = "8")]
-    pub preferred_node_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    pub split_batch_details: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint64, tag = "2")]
+    pub total_num_docs: u64,
+    #[prost(uint64, tag = "3")]
+    pub total_size_bytes: u64,
 }
-/// Internal, self-sufficient bundle serialized into `SplitDescriptor.split_token`.
-/// Never sent on its own RPC; only encoded/decoded as opaque bytes.
+/// Internal by convention. This message is encoded into
+/// `SplitBatch.split_batch_details`; callers should forward those bytes without
+/// decoding them.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SplitBatchDetails {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub index_uri: ::prost::alloc::string::String,
+    /// JSON-serialized doc mapper shared by every split in the batch.
+    #[prost(string, tag = "3")]
+    pub doc_mapper_str: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "4")]
+    pub splits: ::prost::alloc::vec::Vec<
+        super::quickwit::search::SplitIdAndFooterOffsets,
+    >,
+}
+/// TODO: Remove this transitional single-split token when SearchSplit accepts batches.
+/// Internal bundle serialized into `SearchSplitRequest.split_token`.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SplitToken {
     #[prost(string, tag = "1")]
@@ -964,9 +967,10 @@ pub struct SplitToken {
     pub doc_mapper_str: ::prost::alloc::string::String,
 }
 /// Phase 2 — read a column projection from ONE split, streamed as Arrow.
+/// TODO: Replace this transitional request with one that accepts encoded SplitBatchDetails.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchSplitRequest {
-    /// from a SplitDescriptor
+    /// serialized SplitToken
     #[prost(bytes = "vec", tag = "1")]
     pub split_token: ::prost::alloc::vec::Vec<u8>,
     /// row filter applied within the split (see ListSplitsRequest.query_node)
@@ -1274,12 +1278,13 @@ pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
     ) -> crate::cloudprem::CloudPremResult<CloudpremSubstraitResponse>;
     ///Columnar two-phase read API (for Trino and other columnar consumers).
     ///
-    ///Phase 1 — enumerate the splits a query touches so a client can fan out.
+    ///Phase 1 — enumerate batches of splits a query touches so a client can fan out.
     async fn list_splits(
         &self,
         request: ListSplitsRequest,
-    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SplitDescriptor>>;
+    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SplitBatch>>;
     ///Phase 2 — read a column projection from ONE split, streamed as Arrow.
+    ///TODO: Replace this transitional single-split RPC with a batched request matching SplitBatch.
     ///Reads columnar fast fields only; never the row-oriented doc store.
     async fn search_split(
         &self,
@@ -1526,7 +1531,7 @@ impl CloudPremService for CloudPremServiceClient {
     async fn list_splits(
         &self,
         request: ListSplitsRequest,
-    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SplitDescriptor>> {
+    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SplitBatch>> {
         self.inner.0.list_splits(request).await
     }
     #[tracing::instrument(skip_all, name = "cloudprem.search_split")]
@@ -1672,7 +1677,7 @@ pub mod mock_cloud_prem_service {
             &self,
             request: super::ListSplitsRequest,
         ) -> crate::cloudprem::CloudPremResult<
-            CloudPremServiceStream<super::SplitDescriptor>,
+            CloudPremServiceStream<super::SplitBatch>,
         > {
             self.inner.lock().await.list_splits(request).await
         }
@@ -1985,7 +1990,7 @@ impl tower::Service<CloudpremSubstraitRequest> for InnerCloudPremServiceClient {
     }
 }
 impl tower::Service<ListSplitsRequest> for InnerCloudPremServiceClient {
-    type Response = CloudPremServiceStream<SplitDescriptor>;
+    type Response = CloudPremServiceStream<SplitBatch>;
     type Error = crate::cloudprem::CloudPremError;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
@@ -2144,7 +2149,7 @@ struct CloudPremServiceTowerServiceStack {
     >,
     list_splits_svc: quickwit_common::tower::BoxService<
         ListSplitsRequest,
-        CloudPremServiceStream<SplitDescriptor>,
+        CloudPremServiceStream<SplitBatch>,
         crate::cloudprem::CloudPremError,
     >,
     search_split_svc: quickwit_common::tower::BoxService<
@@ -2270,7 +2275,7 @@ impl CloudPremService for CloudPremServiceTowerServiceStack {
     async fn list_splits(
         &self,
         request: ListSplitsRequest,
-    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SplitDescriptor>> {
+    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SplitBatch>> {
         self.list_splits_svc.clone().ready().await?.call(request).await
     }
     async fn search_split(
@@ -2465,11 +2470,11 @@ type SubstraitSearchLayer = quickwit_common::tower::BoxLayer<
 type ListSplitsLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         ListSplitsRequest,
-        CloudPremServiceStream<SplitDescriptor>,
+        CloudPremServiceStream<SplitBatch>,
         crate::cloudprem::CloudPremError,
     >,
     ListSplitsRequest,
-    CloudPremServiceStream<SplitDescriptor>,
+    CloudPremServiceStream<SplitBatch>,
     crate::cloudprem::CloudPremError,
 >;
 type SearchSplitLayer = quickwit_common::tower::BoxLayer<
@@ -2973,25 +2978,25 @@ impl CloudPremServiceTowerLayerStack {
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     ListSplitsRequest,
-                    CloudPremServiceStream<SplitDescriptor>,
+                    CloudPremServiceStream<SplitBatch>,
                     crate::cloudprem::CloudPremError,
                 >,
             > + Clone + Send + Sync + 'static,
         <L as tower::Layer<
             quickwit_common::tower::BoxService<
                 ListSplitsRequest,
-                CloudPremServiceStream<SplitDescriptor>,
+                CloudPremServiceStream<SplitBatch>,
                 crate::cloudprem::CloudPremError,
             >,
         >>::Service: tower::Service<
                 ListSplitsRequest,
-                Response = CloudPremServiceStream<SplitDescriptor>,
+                Response = CloudPremServiceStream<SplitBatch>,
                 Error = crate::cloudprem::CloudPremError,
             > + Clone + Send + Sync + 'static,
         <<L as tower::Layer<
             quickwit_common::tower::BoxService<
                 ListSplitsRequest,
-                CloudPremServiceStream<SplitDescriptor>,
+                CloudPremServiceStream<SplitBatch>,
                 crate::cloudprem::CloudPremError,
             >,
         >>::Service as tower::Service<ListSplitsRequest>>::Future: Send + 'static,
@@ -3460,13 +3465,13 @@ impl CloudPremServiceTowerLayerStack {
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     ListSplitsRequest,
-                    CloudPremServiceStream<SplitDescriptor>,
+                    CloudPremServiceStream<SplitBatch>,
                     crate::cloudprem::CloudPremError,
                 >,
             > + Send + Sync + 'static,
         L::Service: tower::Service<
                 ListSplitsRequest,
-                Response = CloudPremServiceStream<SplitDescriptor>,
+                Response = CloudPremServiceStream<SplitBatch>,
                 Error = crate::cloudprem::CloudPremError,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<ListSplitsRequest>>::Future: Send + 'static,
@@ -3989,10 +3994,10 @@ where
         >
         + tower::Service<
             ListSplitsRequest,
-            Response = CloudPremServiceStream<SplitDescriptor>,
+            Response = CloudPremServiceStream<SplitBatch>,
             Error = crate::cloudprem::CloudPremError,
             Future = BoxFuture<
-                CloudPremServiceStream<SplitDescriptor>,
+                CloudPremServiceStream<SplitBatch>,
                 crate::cloudprem::CloudPremError,
             >,
         >
@@ -4126,7 +4131,7 @@ where
     async fn list_splits(
         &self,
         request: ListSplitsRequest,
-    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SplitDescriptor>> {
+    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SplitBatch>> {
         self.clone().call(request).await
     }
     async fn search_split(
@@ -4491,7 +4496,7 @@ where
     async fn list_splits(
         &self,
         request: ListSplitsRequest,
-    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SplitDescriptor>> {
+    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SplitBatch>> {
         let mut tonic_request = tonic::Request::new(request);
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
@@ -5002,9 +5007,7 @@ for CloudPremServiceGrpcServerAdapter {
         };
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
-    type ListSplitsStream = quickwit_common::ServiceStream<
-        tonic::Result<SplitDescriptor>,
-    >;
+    type ListSplitsStream = quickwit_common::ServiceStream<tonic::Result<SplitBatch>>;
     async fn list_splits(
         &self,
         tonic_request: tonic::Request<ListSplitsRequest>,
@@ -5634,12 +5637,12 @@ pub mod cloud_prem_service_grpc_client {
         }
         /// Columnar two-phase read API (for Trino and other columnar consumers).
         ///
-        /// Phase 1 — enumerate the splits a query touches so a client can fan out.
+        /// Phase 1 — enumerate batches of splits a query touches so a client can fan out.
         pub async fn list_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::ListSplitsRequest>,
         ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::SplitDescriptor>>,
+            tonic::Response<tonic::codec::Streaming<super::SplitBatch>>,
             tonic::Status,
         > {
             self.inner
@@ -5660,6 +5663,7 @@ pub mod cloud_prem_service_grpc_client {
             self.inner.server_streaming(req, path, codec).await
         }
         /// Phase 2 — read a column projection from ONE split, streamed as Arrow.
+        /// TODO: Replace this transitional single-split RPC with a batched request matching SplitBatch.
         /// Reads columnar fast fields only; never the row-oriented doc store.
         pub async fn search_split(
             &mut self,
@@ -5879,13 +5883,13 @@ pub mod cloud_prem_service_grpc_server {
         >;
         /// Server streaming response type for the ListSplits method.
         type ListSplitsStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<super::SplitDescriptor, tonic::Status>,
+                Item = std::result::Result<super::SplitBatch, tonic::Status>,
             >
             + std::marker::Send
             + 'static;
         /// Columnar two-phase read API (for Trino and other columnar consumers).
         ///
-        /// Phase 1 — enumerate the splits a query touches so a client can fan out.
+        /// Phase 1 — enumerate batches of splits a query touches so a client can fan out.
         async fn list_splits(
             &self,
             request: tonic::Request<super::ListSplitsRequest>,
@@ -5897,6 +5901,7 @@ pub mod cloud_prem_service_grpc_server {
             + std::marker::Send
             + 'static;
         /// Phase 2 — read a column projection from ONE split, streamed as Arrow.
+        /// TODO: Replace this transitional single-split RPC with a batched request matching SplitBatch.
         /// Reads columnar fast fields only; never the row-oriented doc store.
         async fn search_split(
             &self,
@@ -6819,7 +6824,7 @@ pub mod cloud_prem_service_grpc_server {
                         T: CloudPremServiceGrpc,
                     > tonic::server::ServerStreamingService<super::ListSplitsRequest>
                     for ListSplitsSvc<T> {
-                        type Response = super::SplitDescriptor;
+                        type Response = super::SplitBatch;
                         type ResponseStream = T::ListSplitsStream;
                         type Future = BoxFuture<
                             tonic::Response<Self::ResponseStream>,
