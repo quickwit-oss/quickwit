@@ -61,7 +61,7 @@ service CloudPremService {
   // Columnar two-phase read API (for Trino and other columnar consumers).
   //
   // Phase 1 — enumerate the splits a query touches so a client can fan out.
-  rpc ListSplits(ListSplitsRequest) returns (ListSplitsResponse);
+  rpc ListSplits(ListSplitsRequest) returns (stream SplitDescriptor);
 
   // Phase 2 — read a column projection from ONE split, streamed as Arrow.
   // Reads columnar fast fields only; never the row-oriented doc store.
@@ -658,10 +658,6 @@ message ListSplitsRequest {
   reserved 3;
   // org_id is used for routing in cloudprem-bridge (which shares this api), ignored in pomsky.
   int64 org_id = 998;
-}
-
-message ListSplitsResponse {
-  repeated SplitDescriptor splits = 1;
 }
 
 message SplitDescriptor {

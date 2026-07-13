@@ -27,8 +27,7 @@ use futures::Stream;
 use prost::Message as _;
 use quickwit_common::ServiceStream;
 use quickwit_proto::cloudprem::{
-    CloudPremError, CloudPremResult, ListSplitsResponse, SearchSplitResponse, SplitDescriptor,
-    SplitToken,
+    CloudPremError, CloudPremResult, SearchSplitResponse, SplitDescriptor, SplitToken,
 };
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_search::{
@@ -41,33 +40,30 @@ use tracing::warn;
 pub(crate) async fn list_splits(
     metastore: &MetastoreServiceClient,
     plan_request: ColumnarSplitPlanRequest,
-) -> CloudPremResult<ListSplitsResponse> {
+) -> CloudPremResult<impl Stream<Item = CloudPremResult<SplitDescriptor>> + use<>> {
     let descriptors = plan_columnar_splits(plan_request, metastore)
         .await
         .inspect_err(|error| warn!("list_splits planning failed: {error}"))?;
 
-    let splits = descriptors
-        .into_iter()
-        .map(|descriptor| {
-            let token = SplitToken {
-                index_uid: descriptor.index_uid.to_string(),
-                index_uri: descriptor.index_uri,
-                split: Some(descriptor.split.clone()),
-                doc_mapper_str: descriptor.doc_mapper_str,
-            };
-            SplitDescriptor {
-                split_token: token.encode_to_vec(),
-                split_id: descriptor.split.split_id,
-                index_uid: descriptor.index_uid.to_string(),
-                num_docs: descriptor.split.num_docs,
-                size_bytes: descriptor.size_bytes,
-                time_range_start_ms: descriptor.split.timestamp_start.map(secs_to_ms),
-                time_range_end_ms: descriptor.split.timestamp_end.map(secs_to_ms),
-                preferred_node_ids: Vec::new(),
-            }
+    Ok(descriptors.map(|descriptor_result| {
+        let descriptor = descriptor_result.map_err(CloudPremError::from)?;
+        let token = SplitToken {
+            index_uid: descriptor.index_uid.to_string(),
+            index_uri: descriptor.index_uri,
+            split: Some(descriptor.split.clone()),
+            doc_mapper_str: descriptor.doc_mapper_str,
+        };
+        Ok(SplitDescriptor {
+            split_token: token.encode_to_vec(),
+            split_id: descriptor.split.split_id,
+            index_uid: descriptor.index_uid.to_string(),
+            num_docs: descriptor.split.num_docs,
+            size_bytes: descriptor.size_bytes,
+            time_range_start_ms: descriptor.split.timestamp_start.map(secs_to_ms),
+            time_range_end_ms: descriptor.split.timestamp_end.map(secs_to_ms),
+            preferred_node_ids: Vec::new(),
         })
-        .collect();
-    Ok(ListSplitsResponse { splits })
+    }))
 }
 
 /// Phase 2 — read a column projection from one split, streamed as Arrow.

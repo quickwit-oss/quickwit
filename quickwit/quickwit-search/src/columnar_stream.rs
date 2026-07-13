@@ -143,7 +143,7 @@ pub struct ColumnarSplitPlanRequest {
 pub async fn plan_columnar_splits(
     request: ColumnarSplitPlanRequest,
     metastore: &MetastoreServiceClient,
-) -> crate::Result<Vec<ColumnarSplitDescriptor>> {
+) -> crate::Result<impl Stream<Item = crate::Result<ColumnarSplitDescriptor>> + use<>> {
     let query_ast_json = serde_json::to_string(&request.query_ast)
         .map_err(|error| SearchError::Internal(error.to_string()))?;
     let mut search_request = SearchRequest {
@@ -169,9 +169,8 @@ pub async fn plan_columnar_splits(
     let (split_metadatas, indexes_meta) =
         crate::root::plan_splits_for_root_search(&mut search_request, &mut metastore).await?;
 
-    let descriptors = split_metadatas
-        .iter()
-        .map(|split_metadata| {
+    Ok(futures::stream::iter(split_metadatas.into_iter().map(
+        move |split_metadata| {
             let Some(index_meta) = indexes_meta.get(&split_metadata.index_uid) else {
                 // Every listed split belongs to one of the planned indexes; a miss
                 // here is a real bug, not a skippable absence.
@@ -181,7 +180,7 @@ pub async fn plan_columnar_splits(
                 )));
             };
             let split = SplitIdAndFooterOffsets {
-                split_id: split_metadata.split_id.to_string().clone(),
+                split_id: split_metadata.split_id.to_string(),
                 split_footer_start: split_metadata.footer_offsets.start,
                 split_footer_end: split_metadata.footer_offsets.end,
                 timestamp_start: split_metadata
@@ -196,14 +195,13 @@ pub async fn plan_columnar_splits(
             };
             Ok(ColumnarSplitDescriptor {
                 split,
-                index_uid: split_metadata.index_uid.clone(),
+                index_uid: split_metadata.index_uid,
                 index_uri: index_meta.index_uri.to_string(),
                 doc_mapper_str: index_meta.doc_mapper_str.clone(),
                 size_bytes: split_metadata.footer_offsets.end,
             })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(descriptors)
+        },
+    )))
 }
 
 /// Builds the projected Arrow schema for the requested columns.

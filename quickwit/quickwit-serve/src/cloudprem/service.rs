@@ -35,11 +35,11 @@ use quickwit_proto::cloudprem::{
     EsHttpRequest, EsHttpResponse, Event, EventTracker, FetchOneRequest, FetchOneResponse,
     GetClusterDiagnosticsRequest, GetClusterDiagnosticsResponse, GetIndexRoutingTableRequest,
     GetIndexRoutingTableResponse, GetIndexesRequest, GetIndexesResponse, ListRequest, ListResponse,
-    ListSplitsRequest, ListSplitsResponse, NodeDiagnostics, NodeMetrics, PingRequest, PingResponse,
+    ListSplitsRequest, NodeDiagnostics, NodeMetrics, PingRequest, PingResponse,
     PullClusterMetricsResponse, ScalarType, SearchSplitRequest, SearchSplitResponse,
     SetIndexRoutingTableRequest, SetIndexRoutingTableResponse, SetLogLevelRequest,
-    SetLogLevelResponse, SplitToken, Statistics, UpdateIndexRequest, UpdateIndexResponse,
-    column_type,
+    SetLogLevelResponse, SplitDescriptor, SplitToken, Statistics, UpdateIndexRequest,
+    UpdateIndexResponse, column_type,
 };
 use quickwit_proto::developer::{
     DeveloperService as _, DeveloperServiceClient, GetNodeDiagnosticsRequest, PullMetricsRequest,
@@ -119,25 +119,25 @@ const PULL_METRICS_TIMEOUT: Duration = Duration::from_secs(1);
 const GET_NODE_DIAGNOSTICS_TIMEOUT: Duration = Duration::from_secs(5);
 const SET_NODE_LOG_LEVEL_TIMEOUT: Duration = Duration::from_secs(1);
 
-/// Capacity of the bounded channel buffering already-encoded `SearchSplit`
-/// responses ahead of the gRPC transport.
+/// Capacity of the bounded channel buffering columnar API responses ahead of
+/// the gRPC transport.
 ///
 /// This is the one point in the columnar read path where we decide how much
-/// output to hold in memory while waiting on a slow network consumer: the
-/// scan (`quickwit-search`) and the Arrow-IPC framing (`columnar.rs`) are
-/// both plain, unbuffered streams, so nothing runs ahead of the consumer
-/// until it reaches this buffer.
-const SEARCH_SPLIT_RESPONSE_BUFFER_CAPACITY: usize = 4;
+/// output to hold in memory while waiting on a slow network consumer. The
+/// lower layers return plain, unbuffered streams, so nothing runs ahead of the
+/// consumer until it reaches this buffer.
+const COLUMNAR_RESPONSE_BUFFER_CAPACITY: usize = 4;
 
 /// Buffers a lazily-produced response stream into a `ServiceStream` backed
 /// by a bounded channel. The channel decouples the network consumer from
 /// the scan/encode pipeline feeding it and applies backpressure once full;
 /// if the consumer drops the stream, sends fail and the producer task stops
 /// — no `JoinHandle::abort`, no `tokio::sync::Mutex`.
-fn buffer_response_stream(
-    response_stream: impl Stream<Item = CloudPremResult<SearchSplitResponse>> + Send + 'static,
-) -> CloudPremServiceStream<SearchSplitResponse> {
-    let (sender, stream) = ServiceStream::new_bounded(SEARCH_SPLIT_RESPONSE_BUFFER_CAPACITY);
+fn buffer_response_stream<T>(
+    response_stream: impl Stream<Item = CloudPremResult<T>> + Send + 'static,
+) -> CloudPremServiceStream<T>
+where T: Send + 'static {
+    let (sender, stream) = ServiceStream::new_bounded(COLUMNAR_RESPONSE_BUFFER_CAPACITY);
     tokio::spawn(async move {
         let mut response_stream = Box::pin(response_stream);
         while let Some(item) = response_stream.next().await {
@@ -341,13 +341,18 @@ impl CloudPremService for CloudPremServiceImpl {
         })
     }
 
-    async fn list_splits(&self, request: ListSplitsRequest) -> CloudPremResult<ListSplitsResponse> {
+    async fn list_splits(
+        &self,
+        request: ListSplitsRequest,
+    ) -> CloudPremResult<CloudPremServiceStream<SplitDescriptor>> {
         info!("received ListSplits request");
         let plan_request = ColumnarSplitPlanRequest {
             index_id_patterns: resolve_index_patterns(&request.index_id_patterns),
             query_ast: query_node_to_query_ast(request.query_node)?,
         };
-        super::columnar::list_splits(&self.metastore_client, plan_request).await
+        let response_stream =
+            super::columnar::list_splits(&self.metastore_client, plan_request).await?;
+        Ok(buffer_response_stream(response_stream))
     }
 
     async fn search_split(
