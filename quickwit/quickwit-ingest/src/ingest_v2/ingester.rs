@@ -1258,27 +1258,56 @@ impl IngesterService for Ingester {
 impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
     #[instrument(name = "ingester.shard_positions_gossip", skip_all)]
     async fn handle_event(&mut self, shard_positions_update: ShardPositionsUpdate) {
+        // Truncating/deleting shards holds the full ingester lock, which `persist` and
+        // `init_shards` also need. Doing the whole update under a single lock can stall ingestion
+        // on this node for the entire pass (many shards, or a slow WAL). Process it in small
+        // batches, releasing the lock between them so writers can interleave. Safe to re-acquire
+        // mid-update: `truncate_shard` re-looks up the shard and only advances the truncation
+        // position, and `delete_shard` treats a missing WAL queue as already deleted.
+        const GOSSIP_TRUNCATE_BATCH_SIZE: usize = 8;
+
         let Some(state) = self.upgrade() else {
             warn!("ingester state update failed");
             return;
         };
+
+        let index_uid = shard_positions_update.source_uid.index_uid;
+        let source_id = shard_positions_update.source_uid.source_id;
+
+        let mut updated_shard_positions =
+            shard_positions_update.updated_shard_positions.into_iter();
+        loop {
+            let batch: Vec<(ShardId, Position)> = updated_shard_positions
+                .by_ref()
+                .take(GOSSIP_TRUNCATE_BATCH_SIZE)
+                .collect();
+            if batch.is_empty() {
+                break;
+            }
+            let Ok(mut state_guard) = state.lock_fully("truncate_shards_gossip").await else {
+                error!("failed to lock the ingester state");
+                return;
+            };
+            for (shard_id, shard_position) in batch {
+                let queue_id = queue_id(&index_uid, &source_id, &shard_id);
+                if shard_position.is_eof() {
+                    state_guard.delete_shard(&queue_id, "indexer gossip").await;
+                } else if !shard_position.is_beginning() {
+                    state_guard
+                        .truncate_shard(&queue_id, shard_position, "indexer gossip")
+                        .await;
+                }
+            }
+            // Release the lock before yielding so a queued persist/init_shards task can acquire
+            // it while this handler is parked, then re-acquire for the next batch.
+            drop(state_guard);
+            tokio::task::yield_now().await;
+        }
+
         let Ok(mut state_guard) = state.lock_fully("truncate_shards_gossip").await else {
             error!("failed to lock the ingester state");
             return;
         };
-        let index_uid = shard_positions_update.source_uid.index_uid;
-        let source_id = shard_positions_update.source_uid.source_id;
-
-        for (shard_id, shard_position) in shard_positions_update.updated_shard_positions {
-            let queue_id = queue_id(&index_uid, &source_id, &shard_id);
-            if shard_position.is_eof() {
-                state_guard.delete_shard(&queue_id, "indexer gossip").await;
-            } else if !shard_position.is_beginning() {
-                state_guard
-                    .truncate_shard(&queue_id, shard_position, "indexer gossip")
-                    .await;
-            }
-        }
         state_guard.check_decommissioning_status().await;
     }
 }
@@ -3947,6 +3976,121 @@ mod tests {
 
         assert!(!state_guard.shards.contains_key(&queue_id_02));
         assert!(!state_guard.mrecordlog.queue_exists(&queue_id_02));
+    }
+
+    #[tokio::test]
+    async fn test_ingester_truncate_on_shard_positions_update_spans_multiple_batches() {
+        // The gossip handler processes updates in batches of `GOSSIP_TRUNCATE_BATCH_SIZE`,
+        // releasing the ingester lock between batches. This test drives more shards than a
+        // single batch to ensure every shard is still truncated/deleted across the multiple
+        // lock acquisitions.
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
+        let event_broker = EventBroker::default();
+        ingester.subscribe(&event_broker);
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+
+        let doc_mapping_uid = DocMappingUid::random();
+        let doc_mapping_json = format!(
+            r#"{{
+                "doc_mapping_uid": "{doc_mapping_uid}"
+            }}"#
+        );
+
+        // Require several batches at the current `GOSSIP_TRUNCATE_BATCH_SIZE`.
+        const NUM_SHARDS: u64 = 20;
+
+        // Make the update hit both handler paths: every DELETE_EVERY-th shard is deleted (via an
+        // EOF position), the rest are truncated. `num_deleted` is how many shards should disappear,
+        // used below as the "processing finished" condition (final shard count).
+        const DELETE_EVERY: u64 = 5;
+        let num_deleted = (1..=NUM_SHARDS).filter(|id| id % DELETE_EVERY == 0).count();
+
+        let now = Instant::now();
+        let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
+        for shard_id in 1..=NUM_SHARDS {
+            let shard = Shard {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(shard_id)),
+                shard_state: ShardState::Open as i32,
+                doc_mapping_uid: Some(doc_mapping_uid),
+                ..Default::default()
+            };
+            ingester
+                .init_primary_shard(
+                    &mut state_guard.inner,
+                    &mut state_guard.mrecordlog,
+                    shard,
+                    &doc_mapping_json,
+                    now,
+                    true,
+                )
+                .await
+                .unwrap();
+            let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(shard_id));
+            let records = [
+                MRecord::new_doc("test-doc-foo").encode(),
+                MRecord::new_doc("test-doc-bar").encode(),
+            ]
+            .into_iter();
+            state_guard
+                .mrecordlog
+                .append_records(&queue_id, None, records)
+                .await
+                .unwrap();
+        }
+        drop(state_guard);
+
+        let updated_shard_positions = (1..=NUM_SHARDS)
+            .map(|shard_id| {
+                let position = if shard_id % DELETE_EVERY == 0 {
+                    Position::eof(1u64)
+                } else {
+                    Position::offset(0u64)
+                };
+                (ShardId::from(shard_id), position)
+            })
+            .collect();
+        event_broker.publish(ShardPositionsUpdate {
+            source_uid: SourceUid {
+                index_uid: index_uid.clone(),
+                source_id: source_id.clone(),
+            },
+            updated_shard_positions,
+        });
+
+        // The handler acquires the lock once per batch, so poll until it has processed every batch.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                {
+                    let state_guard = ingester.state.lock_fully("test").await.unwrap();
+                    if state_guard.shards.len() == NUM_SHARDS as usize - num_deleted {
+                        break;
+                    }
+                }
+                yield_now().await;
+            }
+        })
+        .await
+        .expect("all gossip updates should be processed across batches");
+
+        let state_guard = ingester.state.lock_fully("test").await.unwrap();
+        for shard_id in 1..=NUM_SHARDS {
+            let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(shard_id));
+            if shard_id % DELETE_EVERY == 0 {
+                assert!(!state_guard.shards.contains_key(&queue_id));
+                assert!(!state_guard.mrecordlog.queue_exists(&queue_id));
+            } else {
+                assert!(state_guard.shards.contains_key(&queue_id));
+                state_guard.mrecordlog.assert_records_eq(
+                    &queue_id,
+                    ..,
+                    &[(1, [0, 0], "test-doc-bar")],
+                );
+            }
+        }
     }
 
     #[tokio::test]
