@@ -9046,6 +9046,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pomsky-arrow"
+version = "0.1.32-dev"
+dependencies = [
+ "arrow",
+ "hashbrown 0.17.1",
+ "tantivy",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "pomsky-intake"
 version = "0.1.32-dev"
 dependencies = [
@@ -10054,7 +10065,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-compaction"
-version = "0.1.30-dev"
+version = "0.1.32-dev"
 dependencies = [
  "anyhow",
  "async-trait",

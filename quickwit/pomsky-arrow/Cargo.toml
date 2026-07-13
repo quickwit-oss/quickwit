@@ -1,0 +1,25 @@
+[package]
+name = "pomsky-arrow"
+description = "Turns Pomsky's columnar storage (tantivy fast fields) into Arrow RecordBatches. DataFusion-free."
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+# The crate handles SegmentReader / FastFieldReaders / Column / ColumnType, so
+# it MUST build against the exact tantivy revision Pomsky uses (the workspace
+# pin), not the rev the originating tantivy-datafusion crate pins.
+tantivy = { workspace = true }
+arrow = { workspace = true }
+thiserror = { workspace = true }
+hashbrown = { version = "0.17.1" }
+
+[dev-dependencies]
+# Only to drive the async `warm_up_fast_fields` from `#[tokio::test]`; the
+# library itself takes no runtime dependency (it just exposes `async fn`).
+tokio = { workspace = true }
