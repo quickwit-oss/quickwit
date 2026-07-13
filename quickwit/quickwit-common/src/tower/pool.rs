@@ -21,6 +21,7 @@ use std::hash::Hash;
 use std::sync::{Arc, RwLock};
 
 use futures::{Stream, StreamExt};
+use tokio::sync::watch;
 
 use super::Change;
 
@@ -28,6 +29,10 @@ use super::Change;
 /// `add/remove` methods or by listening to a stream of changes.
 pub struct Pool<K, V> {
     pool: Arc<RwLock<HashMap<K, V>>>,
+    /// Publishes the pool generation after each mutation.
+    pub generation_tx: watch::Sender<u64>,
+    /// Receives pool generation changes.
+    pub generation_rx: watch::Receiver<u64>,
 }
 
 impl<K, V> fmt::Debug for Pool<K, V>
@@ -44,6 +49,8 @@ impl<K, V> Clone for Pool<K, V> {
     fn clone(&self) -> Self {
         Self {
             pool: self.pool.clone(),
+            generation_tx: self.generation_tx.clone(),
+            generation_rx: self.generation_rx.clone(),
         }
     }
 }
@@ -52,8 +59,11 @@ impl<K, V> Default for Pool<K, V>
 where K: Eq + PartialEq + Hash
 {
     fn default() -> Self {
+        let (generation_tx, generation_rx) = watch::channel(1);
         Self {
             pool: Arc::new(RwLock::new(HashMap::default())),
+            generation_tx,
+            generation_rx,
         }
     }
 }
@@ -84,6 +94,19 @@ where
                 .await;
         };
         tokio::spawn(future);
+    }
+
+    /// Returns the current pool generation.
+    pub fn generation(&self) -> u64 {
+        *self.generation_rx.borrow()
+    }
+
+    fn increment_generation(&self) {
+        self.generation_tx.send_modify(|generation| {
+            *generation = generation
+                .checked_add(1)
+                .expect("pool generation should not overflow")
+        });
     }
 
     /// Returns whether the pool is empty.
@@ -165,12 +188,12 @@ where
     }
 
     /// Finds a key in the pool that satisfies the given predicate.
-    pub fn find(&self, func: impl Fn(&K, &V) -> bool) -> Option<(K, V)> {
+    pub fn find(&self, predicate_fn: impl Fn(&K, &V) -> bool) -> Option<(K, V)> {
         self.pool
             .read()
             .expect("lock should not be poisoned")
             .iter()
-            .find(|(key, value)| func(key, value))
+            .find(|(key, value)| predicate_fn(key, value))
             .map(|(key, value)| (key.clone(), value.clone()))
     }
 
@@ -180,14 +203,19 @@ where
             .write()
             .expect("lock should not be poisoned")
             .insert(key, service);
+        self.increment_generation();
     }
 
     /// Removes a value from the pool.
     fn remove(&self, key: &K) {
-        self.pool
+        let removed = self
+            .pool
             .write()
             .expect("lock should not be poisoned")
             .remove(key);
+        if removed.is_some() {
+            self.increment_generation();
+        }
     }
 }
 
@@ -196,8 +224,11 @@ where K: Eq + PartialEq + Hash
 {
     fn from_iter<I>(iter: I) -> Self
     where I: IntoIterator<Item = (K, V)> {
+        let (generation_tx, generation_rx) = watch::channel(0);
         Self {
             pool: Arc::new(RwLock::new(HashMap::from_iter(iter))),
+            generation_tx,
+            generation_rx,
         }
     }
 }
@@ -209,6 +240,32 @@ mod tests {
     use tokio_stream::wrappers::ReceiverStream;
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_pool_generation() {
+        let pool = Pool::default();
+        let mut generation_rx = pool.generation_rx.clone();
+
+        assert_eq!(pool.generation(), 1);
+
+        pool.insert(1, 11);
+        generation_rx.changed().await.unwrap();
+        assert_eq!(*generation_rx.borrow_and_update(), 2);
+        assert_eq!(pool.get(&1), Some(11));
+
+        pool.insert(1, 12);
+        generation_rx.changed().await.unwrap();
+        assert_eq!(*generation_rx.borrow_and_update(), 3);
+        assert_eq!(pool.get(&1), Some(12));
+
+        pool.remove(&2);
+        assert_eq!(pool.generation(), 3);
+
+        pool.remove(&1);
+        generation_rx.changed().await.unwrap();
+        assert_eq!(*generation_rx.borrow_and_update(), 4);
+        assert!(!pool.contains_key(&1));
+    }
 
     #[tokio::test]
     async fn test_pool() {

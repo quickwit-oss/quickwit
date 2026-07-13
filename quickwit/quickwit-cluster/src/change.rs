@@ -328,7 +328,6 @@ async fn try_new_node(
 #[cfg(any(test, feature = "testsuite"))]
 pub mod for_test {
     use quickwit_config::GrpcConfig;
-    use tokio::sync::mpsc;
 
     use super::*;
 
@@ -336,21 +335,6 @@ pub mod for_test {
     pub fn channel_factory_for_test() -> ChannelFactory {
         ChannelFactory::for_grpc(&GrpcConfig::default())
             .expect("plaintext channel factory should build")
-    }
-
-    pub struct ClusterChangeStreamForTest {
-        pub cluster_change_rx: ClusterChangeStream,
-        pub cluster_change_tx: mpsc::UnboundedSender<ClusterChange>,
-    }
-
-    impl Default for ClusterChangeStreamForTest {
-        fn default() -> Self {
-            let (cluster_change_rx, cluster_change_tx) = ClusterChangeStream::new_unbounded();
-            Self {
-                cluster_change_rx,
-                cluster_change_tx,
-            }
-        }
     }
 }
 
