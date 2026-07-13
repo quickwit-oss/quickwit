@@ -136,7 +136,7 @@ impl ResolveDns for CachingDnsResolver {
         let dns_entry_opt: Option<Arc<DnsEntry>> = cache.get(&host);
         // First insertion CAN trigger several DNS call, but this is not a problem.
         let dns_entry: Arc<DnsEntry> = if let Some(dns_entry) = dns_entry_opt {
-            dns_entry.clone()
+            dns_entry
         } else {
             let dns_entry = Arc::new(DnsEntry::new());
             cache.insert(host.clone(), dns_entry.clone());
