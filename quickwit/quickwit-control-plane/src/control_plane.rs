@@ -150,7 +150,7 @@ impl ControlPlane {
         info!("starting control plane");
 
         let (readiness_tx, readiness_rx) = watch::channel(false);
-        let ingester_pool_generation_rx = ingester_pool.generation_rx.clone();
+        let ingester_pool_changes_rx = ingester_pool.changes_rx.clone();
         let (control_plane_mailbox, control_plane_handle) =
             universe.spawn_builder().supervise_fn(move || {
                 let cluster_id = cluster_config.cluster_id.clone();
@@ -183,10 +183,7 @@ impl ControlPlane {
                     disable_control_loop,
                 }
             });
-        spawn_watch_ingester_pool(
-            control_plane_mailbox.downgrade(),
-            ingester_pool_generation_rx,
-        );
+        spawn_watch_ingester_pool(control_plane_mailbox.downgrade(), ingester_pool_changes_rx);
         (control_plane_mailbox, control_plane_handle, readiness_rx)
     }
 }
@@ -1074,29 +1071,13 @@ impl Handler<IngesterPoolHasChanged> for ControlPlane {
         _message: IngesterPoolHasChanged,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        let observed_pool_generation = self.ingest_controller.ingester_pool.generation();
-        if observed_pool_generation
-            <= self
-                .ingest_controller
-                .last_rebalanced_ingester_pool_generation
-        {
-            debug!(
-                pool_generation = observed_pool_generation,
-                "skipping rebalance: ingester pool is unchanged"
-            );
-            return Ok(());
-        }
-        let rebalance_performed = match self
+        if let Err(error) = self
             .ingest_controller
-            .rebalance_shards_inner(&mut self.model, ctx.mailbox(), ctx.progress())
+            .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
             .await
         {
-            Ok(num_opened_shards_opt) => num_opened_shards_opt.is_some(),
-            Err(error) => return convert_metastore_error::<()>(error).map(|_| ()),
+            return convert_metastore_error::<()>(error).map(|_| ());
         };
-        if !rebalance_performed {
-            return Ok(());
-        }
         self.indexing_scheduler.rebuild_plan(&self.model);
         Ok(())
     }
@@ -1131,10 +1112,10 @@ impl Handler<RebalanceShardsCallback> for ControlPlane {
 
 fn spawn_watch_ingester_pool(
     weak_mailbox: WeakMailbox<ControlPlane>,
-    mut ingester_pool_generation_rx: watch::Receiver<u64>,
+    mut ingester_pool_changes_rx: watch::Receiver<()>,
 ) {
     tokio::spawn(async move {
-        while ingester_pool_generation_rx.changed().await.is_ok() {
+        while ingester_pool_changes_rx.changed().await.is_ok() {
             let Some(mailbox) = weak_mailbox.upgrade() else {
                 return;
             };
@@ -1152,6 +1133,7 @@ mod tests {
 
     use mockall::Sequence;
     use quickwit_actors::{AskError, Observe, SupervisorMetrics};
+    use quickwit_common::tower::Change;
     use quickwit_config::{
         CLI_SOURCE_ID, INGEST_V2_SOURCE_ID, IndexConfig, KafkaSourceParams, SourceParams,
     };
@@ -2555,10 +2537,7 @@ mod tests {
         let weak_control_plane_mailbox = control_plane_mailbox.downgrade();
         let ingester_pool = IngesterPool::default();
 
-        spawn_watch_ingester_pool(
-            weak_control_plane_mailbox,
-            ingester_pool.generation_rx.clone(),
-        );
+        spawn_watch_ingester_pool(weak_control_plane_mailbox, ingester_pool.changes_rx.clone());
 
         ingester_pool.insert(
             NodeId::from_str("test-ingester"),
@@ -2570,7 +2549,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_control_plane_debounces_ingester_pool_changes() {
+    async fn test_control_plane_rebuilds_plan_on_indexer_joins_or_leaves_the_cluster() {
         let universe = Universe::with_accelerated_time();
 
         let cluster_config = ClusterConfig::for_test();
@@ -2578,13 +2557,16 @@ mod tests {
 
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
+        let (ingester_pool_change_tx, ingester_pool_change_rx) =
+            futures::channel::mpsc::unbounded();
+        ingester_pool.listen_for_changes(ingester_pool_change_rx);
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_list_indexes_metadata()
             .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
         let metastore = MetastoreServiceClient::from_mock(mock_metastore);
         let disable_control_loop = true;
-        let (control_plane_mailbox, control_plane_handle, _readiness_rx) =
+        let (_control_plane_mailbox, control_plane_handle, _readiness_rx) =
             ControlPlane::spawn_inner(
                 &universe,
                 cluster_config,
@@ -2595,21 +2577,12 @@ mod tests {
                 disable_control_loop,
             );
 
-        ingester_pool.insert(
-            NodeId::from_str("test-ingester-0"),
-            IngesterPoolEntry::mocked_ingester(),
-        );
-        ingester_pool.insert(
-            NodeId::from_str("test-ingester-1"),
-            IngesterPoolEntry::mocked_ingester(),
-        );
-        control_plane_mailbox
-            .send_message(IngesterPoolHasChanged)
-            .await
-            .unwrap();
-        control_plane_mailbox
-            .send_message(IngesterPoolHasChanged)
-            .await
+        let indexer_id = NodeId::from_str("test-indexer");
+        ingester_pool_change_tx
+            .unbounded_send(Change::Insert(
+                indexer_id.clone(),
+                IngesterPoolEntry::mocked_ingester(),
+            ))
             .unwrap();
 
         universe.sleep(Duration::from_secs(10)).await;
@@ -2623,10 +2596,9 @@ mod tests {
             .ingest_controller;
         assert_eq!(ingest_controller_stats.num_rebalance_shards_ops, 1);
 
-        ingester_pool.insert(
-            NodeId::from_str("test-ingester-1"),
-            IngesterPoolEntry::mocked_ingester(),
-        );
+        ingester_pool_change_tx
+            .unbounded_send(Change::Remove(indexer_id))
+            .unwrap();
 
         universe.sleep(Duration::from_secs(10)).await;
 

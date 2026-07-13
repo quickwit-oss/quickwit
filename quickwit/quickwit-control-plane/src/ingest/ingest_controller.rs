@@ -204,7 +204,6 @@ pub struct IngestControllerStats {
 pub struct IngestController {
     pub(crate) ingester_pool: IngesterPool,
     pub(crate) stats: IngestControllerStats,
-    pub(crate) last_rebalanced_ingester_pool_generation: u64,
     metastore: MetastoreServiceClient,
     replication_factor: usize,
     // This lock ensures that only one rebalance operation is performed at a time.
@@ -310,7 +309,6 @@ impl IngestController {
             replication_factor,
             rebalance_lock: Arc::new(Mutex::new(())),
             stats: IngestControllerStats::default(),
-            last_rebalanced_ingester_pool_generation: 0,
             scaling_arbiter: ScalingArbiter::with_max_shard_ingestion_throughput_mib_per_sec(
                 max_shard_ingestion_throughput_mib_per_sec,
                 shard_scale_up_factor,
@@ -1036,23 +1034,10 @@ impl IngestController {
         mailbox: &Mailbox<ControlPlane>,
         progress: &Progress,
     ) -> MetastoreResult<usize> {
-        Ok(self
-            .rebalance_shards_inner(model, mailbox, progress)
-            .await?
-            .unwrap_or_default())
-    }
-
-    pub(crate) async fn rebalance_shards_inner(
-        &mut self,
-        model: &mut ControlPlaneModel,
-        mailbox: &Mailbox<ControlPlane>,
-        progress: &Progress,
-    ) -> MetastoreResult<Option<usize>> {
         let Ok(rebalance_guard) = self.rebalance_lock.clone().try_lock_owned() else {
             debug!("skipping rebalance: another rebalance is already in progress");
-            return Ok(None);
+            return Ok(0);
         };
-        let ingester_pool_generation = self.ingester_pool.generation();
         self.stats.num_rebalance_shards_ops += 1;
 
         let shards_to_rebalance: Vec<Shard> = self.compute_shards_to_rebalance(model);
@@ -1061,8 +1046,7 @@ impl IngestController {
 
         if shards_to_rebalance.is_empty() {
             debug!("skipping rebalance: no shards to rebalance");
-            self.last_rebalanced_ingester_pool_generation = ingester_pool_generation;
-            return Ok(Some(0));
+            return Ok(0);
         }
         let mut per_source_num_shards_to_open: HashMap<SourceUid, usize> = HashMap::new();
 
@@ -1133,8 +1117,7 @@ impl IngestController {
         if num_opened_shards > 0 {
             info!("rebalance opened {num_opened_shards} new shards");
         }
-        self.last_rebalanced_ingester_pool_generation = ingester_pool_generation;
-        Ok(Some(num_opened_shards))
+        Ok(num_opened_shards)
     }
 
     /// Computes shards that need to be rebalanced.
