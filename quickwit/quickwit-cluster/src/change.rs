@@ -65,11 +65,6 @@ impl Stream for ClusterChangeStream {
     }
 }
 
-/// A factory for creating cluster change streams.
-pub trait ClusterChangeStreamFactory: Clone + Send + 'static {
-    fn create(&self) -> ClusterChangeStream;
-}
-
 /// Compares the digests of the previous and new set of lives nodes, identifies the changes that
 /// occurred in the cluster, and emits the corresponding events, focusing on ready nodes only.
 pub(crate) async fn compute_cluster_change_events(
@@ -332,8 +327,6 @@ async fn try_new_node(
 
 #[cfg(any(test, feature = "testsuite"))]
 pub mod for_test {
-    use std::sync::{Arc, Mutex};
-
     use quickwit_config::GrpcConfig;
     use tokio::sync::mpsc;
 
@@ -345,22 +338,18 @@ pub mod for_test {
             .expect("plaintext channel factory should build")
     }
 
-    #[derive(Clone, Default)]
-    pub struct ClusterChangeStreamFactoryForTest {
-        inner: Arc<Mutex<Option<mpsc::UnboundedSender<ClusterChange>>>>,
+    pub struct ClusterChangeStreamForTest {
+        pub cluster_change_rx: ClusterChangeStream,
+        pub cluster_change_tx: mpsc::UnboundedSender<ClusterChange>,
     }
 
-    impl ClusterChangeStreamFactoryForTest {
-        pub fn change_stream_tx(&self) -> mpsc::UnboundedSender<ClusterChange> {
-            self.inner.lock().unwrap().take().unwrap()
-        }
-    }
-
-    impl ClusterChangeStreamFactory for ClusterChangeStreamFactoryForTest {
-        fn create(&self) -> ClusterChangeStream {
-            let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
-            *self.inner.lock().unwrap() = Some(change_stream_tx);
-            change_stream
+    impl Default for ClusterChangeStreamForTest {
+        fn default() -> Self {
+            let (cluster_change_rx, cluster_change_tx) = ClusterChangeStream::new_unbounded();
+            Self {
+                cluster_change_rx,
+                cluster_change_tx,
+            }
         }
     }
 }
