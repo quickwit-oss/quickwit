@@ -67,6 +67,20 @@ pub(crate) const APPLY_INDEXING_PLAN_TIMEOUT: Duration = if cfg!(any(test, featu
 /// its freshly applied tasks, while surfacing a persistently stuck loop.
 const REAPPLY_LOOP_WARN_THRESHOLD: usize = 5;
 
+/// Number of consecutive reapplies of the identical plan after which the scheduler stops re-sending
+/// it and instead rebuilds a fresh plan from the current model.
+///
+/// Re-sending helps only when an indexer transiently lagged behind. If the plan itself is
+/// un-runnable (e.g. it assigns a shard that no longer exists on the indexer after a
+/// crash/restart), re-sending can never converge. After this threshold the plan is recomputed from
+/// the model so a corrected model produces a runnable plan.
+///
+/// Set above `REAPPLY_LOOP_WARN_THRESHOLD` so the non-convergence warning fires before the behavior
+/// changes. A rebuild is attempted only once every `REAPPLY_LOOP_RESCHEDULE_THRESHOLD` cycles (see
+/// `control_running_plan`) to avoid rebuilding every cycle while the model still describes an
+/// unreachable state.
+const REAPPLY_LOOP_RESCHEDULE_THRESHOLD: usize = 10;
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct IndexingSchedulerState {
     pub num_applied_physical_indexing_plan: usize,
@@ -404,21 +418,38 @@ impl IndexingScheduler {
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
             self.state.num_consecutive_reapplies += 1;
-            // A single reapply is the normal transient case (an indexer has not reported its
-            // freshly applied tasks yet). Escalation to `warn` happens only once the loop persists,
-            // since a plan that never converges indicates a stuck cluster rather than propagation
-            // lag.
-            if self.state.num_consecutive_reapplies >= REAPPLY_LOOP_WARN_THRESHOLD {
+            let num_consecutive_reapplies = self.state.num_consecutive_reapplies;
+            // Once the identical plan has failed to converge for many cycles it is almost
+            // certainly un-runnable; re-sending it again cannot help. Rebuild a fresh plan from the
+            // current model instead, so that, if the model has since been corrected, the new plan
+            // becomes runnable and the loop converges. Throttled to once every
+            // `REAPPLY_LOOP_RESCHEDULE_THRESHOLD` cycles so a still-unreachable model does not
+            // trigger a rebuild every cycle.
+            if num_consecutive_reapplies >= REAPPLY_LOOP_RESCHEDULE_THRESHOLD
+                && num_consecutive_reapplies.is_multiple_of(REAPPLY_LOOP_RESCHEDULE_THRESHOLD)
+            {
                 warn!(
-                    num_consecutive_reapplies = self.state.num_consecutive_reapplies,
+                    num_consecutive_reapplies,
+                    plans_diff=?indexing_plans_diff,
+                    "reapplying the last plan is not converging: rebuilding the plan from the model"
+                );
+                self.rebuild_plan(model);
+            } else if num_consecutive_reapplies >= REAPPLY_LOOP_WARN_THRESHOLD {
+                // A single reapply is the normal transient case (an indexer has not reported its
+                // freshly applied tasks yet). Escalation to `warn` happens only once the loop
+                // persists, since a plan that never converges indicates a stuck cluster rather
+                // than propagation lag.
+                warn!(
+                    num_consecutive_reapplies,
                     plans_diff=?indexing_plans_diff,
                     "running tasks still differ from last applied plan after repeated reapplies: \
                      cluster is not converging"
                 );
+                self.apply_physical_indexing_plan(last_applied_plan.clone(), None);
             } else {
                 info!(plans_diff=?indexing_plans_diff, "running tasks and last applied tasks differ: reapply last plan");
+                self.apply_physical_indexing_plan(last_applied_plan.clone(), None);
             }
-            self.apply_physical_indexing_plan(last_applied_plan.clone(), None);
         } else {
             // Running plan matches the last applied plan: the cluster has converged.
             self.state.num_consecutive_reapplies = 0;
@@ -1563,6 +1594,76 @@ mod tests {
         ]);
         scheduler.apply_physical_indexing_plan(plan_b, None);
         assert_eq!(scheduler.state.num_consecutive_reapplies, 0);
+    }
+
+    // Reapplying the identical plan can never converge when the plan is un-runnable (here, it
+    // assigns a task the indexer never reports running while the model has no source to back it).
+    // After `REAPPLY_LOOP_RESCHEDULE_THRESHOLD` cycles the control loop must stop reapplying and
+    // rebuild from the model, which drops the un-runnable task and lets the cluster converge.
+    #[tokio::test]
+    async fn test_control_running_plan_rebuilds_after_persistent_reapplies() {
+        let index_uid = IndexUid::from_str("index-1:11111111111111111111111111").unwrap();
+        let task = IndexingTask {
+            pipeline_uid: Some(PipelineUid::for_test(1u128)),
+            index_uid: Some(index_uid),
+            source_id: "source-1".to_string(),
+            shard_ids: Vec::new(),
+            params_fingerprint: 0,
+        };
+
+        // The indexer runs no task, but the last applied plan expects one, so the control loop hits
+        // the "reapply last plan" branch every cycle.
+        let indexer_pool = IndexerPool::default();
+        let indexer = accepting_indexer_node_info("indexer-1", IngesterStatus::Ready, Vec::new());
+        indexer_pool.insert(indexer.node_id.clone(), indexer);
+
+        let mut scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool,
+        );
+        let mut physical_plan = PhysicalIndexingPlan::with_indexer_ids(&["indexer-1".to_string()]);
+        physical_plan.add_indexing_task("indexer-1", task);
+        scheduler.state.last_applied_physical_plan = Some(physical_plan);
+
+        // The model has no sources, so a rebuild produces a plan with no tasks for indexer-1,
+        // different from the stuck plan, which is what breaks the loop.
+        let model = ControlPlaneModel::default();
+
+        // Cycles below the reschedule threshold keep reapplying the identical (un-runnable) plan:
+        // the counter grows and the stuck task stays in the applied plan.
+        for expected in 1..REAPPLY_LOOP_RESCHEDULE_THRESHOLD {
+            scheduler.state.last_applied_plan_timestamp = None;
+            scheduler.control_running_plan(&model);
+            assert_eq!(scheduler.state.num_consecutive_reapplies, expected);
+            assert_eq!(
+                scheduler
+                    .state
+                    .last_applied_physical_plan
+                    .as_ref()
+                    .unwrap()
+                    .indexing_tasks_per_indexer()["indexer-1"]
+                    .len(),
+                1,
+                "the un-runnable task should still be planned before the reschedule threshold"
+            );
+        }
+
+        // On the threshold cycle the loop rebuilds from the model instead of reapplying: the
+        // rebuilt plan drops the un-runnable task and installing it resets the counter.
+        scheduler.state.last_applied_plan_timestamp = None;
+        scheduler.control_running_plan(&model);
+        assert_eq!(scheduler.state.num_consecutive_reapplies, 0);
+        assert!(
+            scheduler
+                .state
+                .last_applied_physical_plan
+                .as_ref()
+                .unwrap()
+                .indexing_tasks_per_indexer()["indexer-1"]
+                .is_empty(),
+            "the rebuild should have dropped the un-runnable task"
+        );
     }
 
     fn kafka_source_params_for_test() -> SourceParams {
