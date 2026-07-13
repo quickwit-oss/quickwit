@@ -536,13 +536,16 @@ impl Handler<ControlPlanLoop> for ControlPlane {
             .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
             .await
         {
-            let actor_result = convert_metastore_error::<()>(metastore_error).map(|_| ());
-            if actor_result.is_ok() {
-                // Errors that do not require an actor restart leave it responsible for scheduling
-                // the next control tick.
-                ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop);
+            if let Err(actor_exit_status) = convert_metastore_error::<()>(metastore_error) {
+                // See convert_metastore_error's spec. If it returns an error, it
+                // means we do not know if all metastore tx were aborted or not.
+                //
+                // We need to restart the actor to resync.
+                //
+                // If this is a "clean" metastore error however, we can keep the control
+                // plane alive. Logging happened in `convert_metastore_error`.
+                return Err(actor_exit_status);
             }
-            return actor_result;
         }
         self.indexing_scheduler.control_running_plan(&self.model);
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop);
