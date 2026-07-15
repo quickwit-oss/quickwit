@@ -523,6 +523,7 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
 impl Handler<ControlPlanLoop> for ControlPlane {
     type Reply = ();
 
+    #[allow(clippy::collapsible_if, clippy::question_mark)]
     async fn handle(
         &mut self,
         _message: ControlPlanLoop,
@@ -536,7 +537,16 @@ impl Handler<ControlPlanLoop> for ControlPlane {
             .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
             .await
         {
-            return convert_metastore_error::<()>(metastore_error).map(|_| ());
+            if let Err(actor_exit_status) = convert_metastore_error::<()>(metastore_error) {
+                // See convert_metastore_error's spec. If it returns an error, it
+                // means we do not know if all metastore tx were aborted or not.
+                //
+                // We need to restart the actor to resync.
+                //
+                // If this is a "clean" metastore error however, we can keep the control
+                // plane alive. Logging happened in `convert_metastore_error`.
+                return Err(actor_exit_status);
+            }
         }
         self.indexing_scheduler.control_running_plan(&self.model);
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop);
@@ -1195,8 +1205,8 @@ mod tests {
         MockIndexingService,
     };
     use quickwit_proto::ingest::ingester::{
-        IngesterServiceClient, IngesterStatus, InitShardSuccess, InitShardsResponse,
-        MockIngesterService, RetainShardsResponse,
+        CloseShardsResponse, IngesterServiceClient, IngesterStatus, InitShardSuccess,
+        InitShardsResponse, MockIngesterService, RetainShardsResponse,
     };
     use quickwit_proto::ingest::{Shard, ShardPKey, ShardState};
     use quickwit_proto::metastore::{
@@ -1812,6 +1822,159 @@ mod tests {
                 num_errors: 1,
                 num_kills: 0
             }
+        );
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_control_plan_loop_continues_after_too_many_requests() {
+        let universe = Universe::default();
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let retiring_ingester_id = NodeId::from_str("retiring-ingester");
+        let ready_ingester_id = NodeId::from_str("ready-ingester");
+
+        let mut index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        index_metadata
+            .add_source(SourceConfig::ingest_v2())
+            .unwrap();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .return_once(move |_| {
+                Ok(ListIndexesMetadataResponse::for_test(vec![
+                    index_metadata.clone(),
+                ]))
+            });
+        let index_uid_clone = index_uid.clone();
+        let retiring_ingester_id_clone = retiring_ingester_id.clone();
+        mock_metastore.expect_list_shards().return_once(move |_| {
+            Ok(ListShardsResponse {
+                subresponses: vec![ListShardsSubresponse {
+                    index_uid: Some(index_uid_clone.clone()),
+                    source_id: INGEST_V2_SOURCE_ID.to_string(),
+                    shards: vec![Shard {
+                        index_uid: Some(index_uid_clone.clone()),
+                        source_id: INGEST_V2_SOURCE_ID.to_string(),
+                        shard_id: Some(ShardId::from(1)),
+                        shard_state: ShardState::Open as i32,
+                        leader_id: retiring_ingester_id_clone.to_string(),
+                        ..Default::default()
+                    }],
+                }],
+            })
+        });
+        let mut open_shards_sequence = Sequence::new();
+        mock_metastore
+            .expect_open_shards()
+            .times(1)
+            .in_sequence(&mut open_shards_sequence)
+            .return_once(|_| Err(MetastoreError::TooManyRequests));
+        mock_metastore
+            .expect_open_shards()
+            .times(1)
+            .in_sequence(&mut open_shards_sequence)
+            .return_once(|request| {
+                let subrequest = &request.subrequests[0];
+                Ok(OpenShardsResponse {
+                    subresponses: vec![OpenShardSubresponse {
+                        subrequest_id: subrequest.subrequest_id,
+                        open_shard: Some(Shard {
+                            index_uid: subrequest.index_uid.clone(),
+                            source_id: subrequest.source_id.clone(),
+                            shard_id: subrequest.shard_id.clone(),
+                            leader_id: subrequest.leader_id.clone(),
+                            follower_id: subrequest.follower_id.clone(),
+                            shard_state: ShardState::Open as i32,
+                            ..Default::default()
+                        }),
+                    }],
+                })
+            });
+
+        let mut mock_retiring_ingester = MockIngesterService::new();
+        mock_retiring_ingester
+            .expect_retain_shards()
+            .return_once(|_| Ok(RetainShardsResponse {}));
+        mock_retiring_ingester
+            .expect_close_shards()
+            .return_once(|request| {
+                Ok(CloseShardsResponse {
+                    successes: request.shard_pkeys,
+                })
+            });
+        let mut mock_ready_ingester = MockIngesterService::new();
+        mock_ready_ingester
+            .expect_retain_shards()
+            .return_once(|_| Ok(RetainShardsResponse {}));
+        mock_ready_ingester
+            .expect_init_shards()
+            .times(2)
+            .returning(|request| {
+                let shard = request.subrequests[0].shard().clone();
+                Ok(InitShardsResponse {
+                    successes: vec![InitShardSuccess {
+                        subrequest_id: 0,
+                        shard: Some(shard),
+                    }],
+                    failures: Vec::new(),
+                })
+            });
+
+        let ingester_pool = IngesterPool::default();
+        ingester_pool.insert(
+            retiring_ingester_id,
+            IngesterPoolEntry {
+                client: IngesterServiceClient::from_mock(mock_retiring_ingester),
+                status: IngesterStatus::Retiring,
+                availability_zone: None,
+            },
+        );
+        ingester_pool.insert(
+            ready_ingester_id,
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(
+                mock_ready_ingester,
+            )),
+        );
+
+        let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
+        let (control_plane_mailbox, control_plane_handle, mut readiness_rx) = ControlPlane::spawn(
+            &universe,
+            ClusterConfig::for_test(),
+            NodeId::from_str("test-control-plane"),
+            cluster_change_stream_factory,
+            IndexerPool::default(),
+            ingester_pool,
+            MetastoreServiceClient::from_mock(mock_metastore),
+        );
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            readiness_rx.wait_for(|readiness| *readiness),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let state = control_plane_mailbox.ask(Observe).await.unwrap();
+                if state.ingest_controller.num_rebalance_shards_ops >= 2 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("control loop should retry after a recoverable metastore error");
+
+        assert_eq!(
+            control_plane_handle
+                .process_pending_and_observe()
+                .await
+                .metrics,
+            SupervisorMetrics::default(),
+            "TooManyRequests must not respawn the control plane"
         );
 
         universe.assert_quit().await;

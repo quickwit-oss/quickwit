@@ -80,7 +80,7 @@ use quickwit_compaction::{
     wait_for_compactor_decommission,
 };
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig};
+use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig, disable_ingest_v1};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
@@ -359,6 +359,16 @@ async fn start_ingest_client_if_needed(
     universe: &Universe,
     cluster: &Cluster,
 ) -> anyhow::Result<IngestServiceClient> {
+    if disable_ingest_v1() {
+        debug!("returning no-op ingest service because ingest v1 is disabled");
+        let (balance_channel, _change_tx) = BalanceChannel::new();
+        let ingest_service = IngestServiceClient::from_balance_channel(
+            balance_channel,
+            node_config.grpc_config.max_message_size,
+            node_config.ingest_api_config.grpc_compression_encoding(),
+        );
+        return Ok(ingest_service);
+    }
     if node_config.is_service_enabled(QuickwitService::Indexer) {
         let ingest_api_service = start_ingest_api_service(
             universe,
@@ -1202,6 +1212,14 @@ fn setup_ingester_pool(
         Box::pin(async move {
             match cluster_change {
                 ClusterChange::Add(node) if node.is_indexer() => {
+                    let chitchat_id = node.chitchat_id();
+                    info!(
+                        node_id = %chitchat_id.node_id,
+                        generation_id = chitchat_id.generation_id,
+                        "adding node `{}` with ingester status `{}` to ingester pool",
+                        chitchat_id.node_id,
+                        node.ingester_status,
+                    );
                     let change = build_ingester_insert_change(
                         &node,
                         ingester_opt_clone,
@@ -1241,14 +1259,6 @@ fn build_ingester_insert_change(
     grpc_max_message_size: ByteSize,
     grpc_compression_encoding_opt: Option<CompressionEncoding>,
 ) -> Change<NodeId, IngesterPoolEntry> {
-    let chitchat_id = node.chitchat_id();
-    info!(
-        node_id = %chitchat_id.node_id,
-        generation_id = chitchat_id.generation_id,
-        "adding/updating node `{}` with ingester status `{}` to ingester pool",
-        chitchat_id.node_id,
-        node.ingester_status,
-    );
     let node_id: NodeId = node.node_id.clone();
     let ingester_service = build_ingester_service(
         node,
@@ -1435,6 +1445,14 @@ fn setup_indexer_pool(
         Box::pin(async move {
             match cluster_change {
                 ClusterChange::Add(node) if node.is_indexer() => {
+                    let chitchat_id = node.chitchat_id();
+                    info!(
+                        node_id = %chitchat_id.node_id,
+                        generation_id = chitchat_id.generation_id,
+                        "adding node `{}` with ingester status `{}` to indexer pool",
+                        chitchat_id.node_id,
+                        node.ingester_status
+                    );
                     let change = build_indexer_insert_change(
                         &node,
                         indexing_service_clone_opt,
@@ -1476,13 +1494,6 @@ fn build_indexer_insert_change(
     grpc_max_message_size: ByteSize,
 ) -> Change<NodeId, IndexerNodeInfo> {
     let chitchat_id = node.chitchat_id();
-    info!(
-        node_id = %chitchat_id.node_id,
-        generation_id = chitchat_id.generation_id,
-        "adding node `{}` with ingester status `{}` to indexer pool",
-        chitchat_id.node_id,
-        node.ingester_status
-    );
     let node_id: NodeId = node.node_id.clone();
     let client = build_indexing_service(node, indexing_service_opt, grpc_max_message_size);
     Change::Insert(

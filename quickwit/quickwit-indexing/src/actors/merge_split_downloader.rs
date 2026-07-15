@@ -21,7 +21,7 @@ use quickwit_common::io::IoControls;
 use quickwit_common::temp_dir::{self, TempDirectory};
 use quickwit_metastore::SplitMetadata;
 use tantivy::Directory;
-use tracing::{debug, info, instrument};
+use tracing::{debug, instrument};
 
 use super::MergeExecutor;
 use crate::merge_policy::MergeSource;
@@ -67,7 +67,7 @@ impl Handler<MergeSource> for MergeSplitDownloader {
             .join("merge")
             .tempdir_in(self.scratch_directory.path())
             .map_err(|error| anyhow::anyhow!(error))?;
-        info!(dir=%merge_scratch_directory.path().display(), "download-merge-splits");
+        debug!(dir=%merge_scratch_directory.path().display(), "download-merge-splits");
         let downloaded_splits_directory = temp_dir::Builder::default()
             .join("downloaded-splits")
             .tempdir_in(merge_scratch_directory.path())

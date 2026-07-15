@@ -23,7 +23,9 @@ use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::uri::Uri;
-use quickwit_common::{ServiceStream, get_bool_from_env, rate_limited_error};
+use quickwit_common::{
+    ServiceStream, get_bool_from_env, get_bool_from_env_cached, rate_limited_error,
+};
 use quickwit_config::{
     IndexTemplate, IndexTemplateId, PostgresMetastoreConfig, validate_index_id_pattern,
 };
@@ -117,7 +119,10 @@ impl PostgresqlMetastoreOptions {
     /// Default options, with the read-only and migration flags read from the environment.
     fn from_env() -> Self {
         Self {
-            read_only: get_bool_from_env(QW_POSTGRES_READ_ONLY_ENV_KEY, false),
+            // This environment variable is process-global and doesn't change over a process's
+            // lifetime, so it's read (and logged) once rather than on every metastore
+            // construction, which can recur frequently.
+            read_only: get_bool_from_env_cached!(QW_POSTGRES_READ_ONLY_ENV_KEY, false),
             skip_migrations: get_bool_from_env(QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY, false),
             skip_locking: get_bool_from_env(QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY, false),
             skip_deferred: get_bool_from_env(QW_POSTGRES_SKIP_DEFERRED_MIGRATIONS_ENV_KEY, false),
