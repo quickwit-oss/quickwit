@@ -1460,7 +1460,6 @@ async fn setup_control_plane(
         universe,
         cluster_config,
         self_node_id,
-        cluster.clone(),
         indexer_pool,
         ingester_pool,
         metastore,

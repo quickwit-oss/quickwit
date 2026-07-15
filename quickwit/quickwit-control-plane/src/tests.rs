@@ -144,7 +144,6 @@ async fn start_control_plane(
         universe,
         cluster_config,
         self_node_id,
-        cluster,
         indexer_pool,
         ingester_pool,
         MetastoreServiceClient::from_mock(mock_metastore),

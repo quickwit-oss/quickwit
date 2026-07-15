@@ -37,7 +37,7 @@ use tokio::time::timeout;
 use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
-use crate::change::{ClusterChange, ClusterChangeStreamFactory, compute_cluster_change_events};
+use crate::change::{ClusterChange, compute_cluster_change_events};
 use crate::grpc_gossip::spawn_catchup_callback_task;
 use crate::member::{
     AVAILABILITY_ZONE_KEY, ClusterMember, ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY,
@@ -513,12 +513,6 @@ impl Cluster {
             .await
             .chitchat_handle
             .termination_watcher()
-    }
-}
-
-impl ClusterChangeStreamFactory for Cluster {
-    fn create(&self) -> ClusterChangeStream {
-        self.change_stream()
     }
 }
 
