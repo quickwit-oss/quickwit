@@ -49,7 +49,7 @@ pub(super) fn convert_sqlx_err(index_id: &str, sqlx_error: sqlx::Error) -> Metas
                     }
                 }
                 (Some(pg_error_codes::READ_ONLY_SQL_TRANSACTION), _) => MetastoreError::Forbidden {
-                    message: format!("postgresql metastore is read-only: {boxed_db_error}"),
+                    message: format!(""cannot issue write request on a read-only replica": {boxed_db_error}"),
                 },
                 _ => {
                     error!(error=?boxed_db_error, "postgresql-error");

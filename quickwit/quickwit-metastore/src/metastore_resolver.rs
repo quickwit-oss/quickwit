@@ -87,7 +87,7 @@ impl MetastoreResolver {
         };
         if options.read_only && backend != MetastoreBackend::PostgreSQL {
             return Err(MetastoreResolverError::UnsupportedBackend(
-                "read-only metastore connections are only supported for PostgreSQL".to_string(),
+                "read-only option is only supported for the PostgreSQL backend".to_string(),
             ));
         }
         let (metastore_factory, metastore_config) = self
