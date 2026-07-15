@@ -171,6 +171,10 @@ pub(super) async fn start_metastore_service_if_needed(
 ) -> anyhow::Result<LocalMetastoreServer> {
     // Instantiate a primary metastore server if the `metastore` role is enabled on the node.
     if node_config.is_service_enabled(QuickwitService::Metastore) {
+        info!(
+            metastore_kind = "primary",
+            "starting local metastore service"
+        );
         let metastore: MetastoreServiceClient = metastore_resolver
             .resolve(&node_config.metastore_uri)
             .await
@@ -204,6 +208,10 @@ pub(super) async fn start_metastore_service_if_needed(
     // Instantiate a read-only metastore replica server if the `metastore_read_replica` role is
     // enabled on the node.
     if node_config.is_service_enabled(QuickwitService::MetastoreReadReplica) {
+        info!(
+            metastore_kind = "read_replica",
+            "starting local metastore service"
+        );
         let Some(read_replica_uri) = &node_config.metastore_read_replica_uri else {
             bail!(
                 "`metastore_read_replica_uri` must be set when the `metastore_read_replica` role \

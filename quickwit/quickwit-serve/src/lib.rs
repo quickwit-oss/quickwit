@@ -765,9 +765,18 @@ pub async fn serve_quickwit(
         .await?;
 
     // Search uses the read replica when configured, and the primary otherwise.
+    let search_metastore_kind = if read_replica_metastore_client_opt.is_some() {
+        "read_replica"
+    } else {
+        "primary"
+    };
     let search_metastore_client = read_replica_metastore_client_opt
         .clone()
         .unwrap_or_else(|| primary_metastore_through_control_plane.clone());
+    info!(
+        metastore_kind = search_metastore_kind,
+        "configured search metastore client"
+    );
 
     let (search_job_placer, search_service, searcher_pool) = setup_searcher(
         &node_config,
@@ -1580,7 +1589,11 @@ async fn node_readiness_reporting_task(
     // This keeps search/read traffic available if the primary metastore is down. Write-capable
     // index-management APIs are still routed to the primary metastore and may fail while this node
     // remains ready.
-    let metastore = read_replica_metastore_opt.unwrap_or(primary_metastore);
+    let (metastore, metastore_kind) = match read_replica_metastore_opt {
+        Some(read_replica_metastore) => (read_replica_metastore, "read_replica"),
+        None => (primary_metastore, "primary"),
+    };
+    info!(metastore_kind, "configured metastore readiness dependency");
 
     let mut node_ready = false;
     cluster.set_self_node_readiness(node_ready).await;
@@ -1613,7 +1626,7 @@ async fn node_readiness_reporting_task(
                 true
             }
             Err(error) => {
-                warn!(metastore_endpoints=?metastore.endpoints(), error=?error, "metastore service is unavailable");
+                debug!(metastore_endpoints=?metastore.endpoints(), error=?error, "metastore service is unavailable");
                 false
             }
         };
@@ -1645,6 +1658,13 @@ async fn node_readiness_reporting_task(
 
         if new_node_ready != node_ready {
             node_ready = new_node_ready;
+            if !node_ready && !metastore_available {
+                warn!(
+                    metastore_kind,
+                    metastore_endpoints = ?metastore.endpoints(),
+                    "metastore unavailability caused node readiness to decrease"
+                );
+            }
             cluster.set_self_node_readiness(node_ready).await;
 
             let serving_status = if node_ready {
