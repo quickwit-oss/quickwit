@@ -30,7 +30,7 @@ use super::Change;
 pub struct Pool<K, V> {
     pool: Arc<RwLock<HashMap<K, V>>>,
     /// Publishes a notification after each mutation.
-    pub changes_tx: watch::Sender<()>,
+    changes_tx: watch::Sender<()>,
     /// Receives pool change notifications.
     pub changes_rx: watch::Receiver<()>,
 }
@@ -40,7 +40,7 @@ where
     K: 'static,
     V: 'static,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Pool<{:?}, {:?}>", TypeId::of::<K>(), TypeId::of::<V>())
     }
 }
