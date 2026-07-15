@@ -417,6 +417,7 @@ impl ControlPlane {
     ///
     /// This method returns a future that can be awaited to ensure that the relevant rebuild plan
     /// operation has been executed.
+    /// Regardless of whether that future is awaited for or not, the future will be scheduled.
     fn rebuild_plan_debounced(
         &mut self,
         ctx: &ActorContext<Self>,
@@ -1071,6 +1072,7 @@ impl Handler<IngesterPoolHasChanged> for ControlPlane {
         _message: IngesterPoolHasChanged,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
+        info!("triggering rebalance shards and rebuild plan due to a change in the ingester pool");
         if let Err(error) = self
             .ingest_controller
             .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
@@ -1078,7 +1080,7 @@ impl Handler<IngesterPoolHasChanged> for ControlPlane {
         {
             return convert_metastore_error::<()>(error).map(|_| ());
         };
-        self.indexing_scheduler.rebuild_plan(&self.model);
+        let _ = self.rebuild_plan_debounced(ctx);
         Ok(())
     }
 }
