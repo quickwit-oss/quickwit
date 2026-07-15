@@ -760,11 +760,12 @@ pub async fn serve_quickwit(
         ))
     };
 
-    let read_only_metastore_client_opt = local_metastore_server
+    let read_replica_metastore_client_opt = local_metastore_server
         .resolve_read_only_client(&cluster, &node_config)
         .await?;
 
-    let metastore_read_client = read_only_metastore_client_opt
+    // Search uses the read replica when configured, and the primary otherwise.
+    let search_metastore_client = read_replica_metastore_client_opt
         .clone()
         .unwrap_or_else(|| primary_metastore_through_control_plane.clone());
 
@@ -773,7 +774,7 @@ pub async fn serve_quickwit(
         cluster.change_stream(),
         // search remains available without a control plane because not all
         // metastore RPCs are proxied
-        metastore_read_client.clone(),
+        search_metastore_client.clone(),
         storage_resolver.clone(),
         searcher_context,
     )
@@ -790,7 +791,7 @@ pub async fn serve_quickwit(
     let datafusion_session_builder = datafusion_api::setup::build_datafusion_session_builder(
         &node_config,
         cluster.change_stream(),
-        metastore_read_client.clone(),
+        search_metastore_client,
         storage_resolver.clone(),
     )?;
     // The search job placer owns a clone of this pool; the local binding is not
@@ -1001,18 +1002,13 @@ pub async fn serve_quickwit(
             )
         };
 
-    // When a read replica metastore is configured, node readiness follows the replica only.
-    // This keeps search/read traffic available if the primary metastore is down. Write-capable
-    // index-management APIs are still routed to the primary metastore and may fail while this node
-    // remains ready.
-    let metastore_readiness_client = metastore_read_client.clone();
-
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.
     spawn_named_task(
         node_readiness_reporting_task(
             cluster.clone(),
-            metastore_readiness_client,
+            primary_metastore_through_control_plane,
+            read_replica_metastore_client_opt,
             ingester_opt.clone(),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
@@ -1573,12 +1569,19 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 /// Reports node readiness to chitchat cluster every 10 seconds (25 ms for tests).
 async fn node_readiness_reporting_task(
     cluster: Cluster,
-    metastore: MetastoreServiceClient,
+    primary_metastore: MetastoreServiceClient,
+    read_replica_metastore_opt: Option<MetastoreServiceClient>,
     ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
     health_reporter: HealthReporter,
 ) {
+    // When a read replica metastore is configured, node readiness follows the replica only.
+    // This keeps search/read traffic available if the primary metastore is down. Write-capable
+    // index-management APIs are still routed to the primary metastore and may fail while this node
+    // remains ready.
+    let metastore = read_replica_metastore_opt.unwrap_or(primary_metastore);
+
     let mut node_ready = false;
     cluster.set_self_node_readiness(node_ready).await;
     // Set the initial health status to `NotServing` with "" meaning all services, as per
@@ -1838,6 +1841,7 @@ mod tests {
         tokio::spawn(node_readiness_reporting_task(
             cluster.clone(),
             mock_metastore,
+            None,
             Some(mock_ingester),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
@@ -1882,6 +1886,9 @@ mod tests {
             .await
             .unwrap();
         let (replica_readiness_tx, replica_readiness_rx) = watch::channel(false);
+        let mut primary_metastore = MockMetastoreService::new();
+        primary_metastore.expect_check_connectivity().times(0);
+        let primary_metastore = MetastoreServiceClient::from_mock(primary_metastore);
         let replica_metastore =
             metastore_readiness_client(replica_readiness_rx, "ram:///replica-metastore");
         let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel();
@@ -1890,7 +1897,8 @@ mod tests {
 
         tokio::spawn(node_readiness_reporting_task(
             cluster.clone(),
-            replica_metastore,
+            primary_metastore,
+            Some(replica_metastore),
             None::<MockIngesterService>,
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
