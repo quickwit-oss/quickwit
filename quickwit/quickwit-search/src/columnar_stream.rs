@@ -588,7 +588,12 @@ pub(crate) fn run_columnar_batch_search(
         let projected_schema = build_projected_schema(&request.columns)?;
         let batch_size = request.batch_size.to_usize();
 
+        let mut remaining = request.limit;
         for split in request.splits {
+            if remaining == Some(0) {
+                break;
+            }
+
             let split_stream = run_columnar_search(
                 searcher_context.clone(),
                 index_storage.clone(),
@@ -597,11 +602,15 @@ pub(crate) fn run_columnar_batch_search(
                 request.query_ast.clone(),
                 projected_schema.clone(),
                 batch_size,
-                request.limit,
+                remaining,
             );
             futures::pin_mut!(split_stream);
             while let Some(batch_result) = split_stream.next().await {
-                yield batch_result?;
+                let batch = batch_result?;
+                if let Some(remaining) = remaining.as_mut() {
+                    *remaining = remaining.saturating_sub(batch.num_rows());
+                }
+                yield batch;
             }
         }
     }
