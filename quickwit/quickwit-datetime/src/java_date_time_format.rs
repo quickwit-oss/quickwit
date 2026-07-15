@@ -18,8 +18,8 @@ use std::sync::LazyLock;
 
 use time::error::{Format, TryFromParsed};
 use time::format_description::modifier::{
-    Day, Hour, Minute, Month as MonthModifier, Padding, Second, Subsecond, SubsecondDigits,
-    WeekNumber, WeekNumberRepr, Weekday, WeekdayRepr, Year, YearRepr,
+    CalendarYearFullExtendedRange, Day, Hour24, Minute, MonthNumerical, Padding, Second, Subsecond,
+    SubsecondDigits, WeekNumberMonday, WeekdayMonday,
 };
 use time::format_description::{Component, OwnedFormatItem};
 use time::parsing::Parsed;
@@ -63,10 +63,8 @@ const JAVA_DATE_FORMAT_TOKENS: &[&str] = &[
     "e",
 ];
 
-fn literal(s: &[u8]) -> OwnedFormatItem {
-    // builds a boxed slice from a slice
-    let boxed_slice: Box<[u8]> = s.to_vec().into_boxed_slice();
-    OwnedFormatItem::Literal(boxed_slice)
+fn literal(s: &str) -> OwnedFormatItem {
+    OwnedFormatItem::StringLiteral(Box::from(s))
 }
 
 #[inline]
@@ -80,12 +78,12 @@ fn get_padding(ptn: &str) -> Padding {
 
 fn build_zone_offset(_: &str) -> Option<OwnedFormatItem> {
     // 'Z' literal to represent UTC offset
-    let z_literal = OwnedFormatItem::Literal(Box::from(b"Z".as_ref()));
+    let z_literal = OwnedFormatItem::StringLiteral(Box::from("Z"));
 
     // Offset in '+/-HH:MM' format
     let offset_with_delimiter_items: Box<[OwnedFormatItem]> = vec![
         OwnedFormatItem::Component(Component::OffsetHour(Default::default())),
-        OwnedFormatItem::Literal(Box::from(b":".as_ref())),
+        OwnedFormatItem::StringLiteral(Box::from(":")),
         OwnedFormatItem::Component(Component::OffsetMinute(Default::default())),
     ]
     .into_boxed_slice();
@@ -104,64 +102,56 @@ fn build_zone_offset(_: &str) -> Option<OwnedFormatItem> {
     ))
 }
 
-// There is a `YearRepr::LastTwo` representation in the time crate, but the parser is unreliable, so
-// we only support `YearRepr::Full` for now. See also https://github.com/time-rs/time/issues/649.
+// The time crate offers other year representations (e.g. last-two-digits), but their parser is
+// unreliable, so we only support the full calendar year for now. See also
+// https://github.com/time-rs/time/issues/649.
 const fn year_item() -> Option<OwnedFormatItem> {
-    let mut year_component = Year::default();
-    year_component.repr = YearRepr::Full;
-    Some(OwnedFormatItem::Component(Component::Year(year_component)))
+    Some(OwnedFormatItem::Component(
+        Component::CalendarYearFullExtendedRange(CalendarYearFullExtendedRange::default()),
+    ))
 }
 
 fn build_month_item(ptn: &str) -> Option<OwnedFormatItem> {
-    let mut month: MonthModifier = Default::default();
-    month.padding = get_padding(ptn);
-    Some(OwnedFormatItem::Component(Component::Month(month)))
+    let month = MonthNumerical::default().with_padding(get_padding(ptn));
+    Some(OwnedFormatItem::Component(Component::MonthNumerical(month)))
 }
 
 fn build_day_item(ptn: &str) -> Option<OwnedFormatItem> {
-    let mut day = Day::default();
-    day.padding = get_padding(ptn);
+    let day = Day::default().with_padding(get_padding(ptn));
     Some(OwnedFormatItem::Component(Component::Day(day)))
 }
 
 fn build_day_of_week_item(_: &str) -> Option<OwnedFormatItem> {
-    let mut weekday = Weekday::default();
-    weekday.repr = WeekdayRepr::Monday;
-    weekday.one_indexed = false;
-    Some(OwnedFormatItem::Component(Component::Weekday(weekday)))
+    let weekday = WeekdayMonday::default().with_one_indexed(false);
+    Some(OwnedFormatItem::Component(Component::WeekdayMonday(
+        weekday,
+    )))
 }
 
 fn build_week_of_year_item(ptn: &str) -> Option<OwnedFormatItem> {
-    let mut week_number = WeekNumber::default();
-    week_number.repr = WeekNumberRepr::Monday;
-    week_number.padding = get_padding(ptn);
-    Some(OwnedFormatItem::Component(Component::WeekNumber(
+    let week_number = WeekNumberMonday::default().with_padding(get_padding(ptn));
+    Some(OwnedFormatItem::Component(Component::WeekNumberMonday(
         week_number,
     )))
 }
 
 fn build_hour_item(ptn: &str) -> Option<OwnedFormatItem> {
-    let mut hour = Hour::default();
-    hour.padding = get_padding(ptn);
-    hour.is_12_hour_clock = false;
-    Some(OwnedFormatItem::Component(Component::Hour(hour)))
+    let hour = Hour24::default().with_padding(get_padding(ptn));
+    Some(OwnedFormatItem::Component(Component::Hour24(hour)))
 }
 
 fn build_minute_item(ptn: &str) -> Option<OwnedFormatItem> {
-    let mut minute: Minute = Default::default();
-    minute.padding = get_padding(ptn);
+    let minute = Minute::default().with_padding(get_padding(ptn));
     Some(OwnedFormatItem::Component(Component::Minute(minute)))
 }
 
 fn build_second_item(ptn: &str) -> Option<OwnedFormatItem> {
-    let mut second: Second = Default::default();
-    second.padding = get_padding(ptn);
+    let second = Second::default().with_padding(get_padding(ptn));
     Some(OwnedFormatItem::Component(Component::Second(second)))
 }
 
 fn build_fraction_of_second_item(_ptn: &str) -> Option<OwnedFormatItem> {
-    let mut subsecond: Subsecond = Default::default();
-    subsecond.digits = SubsecondDigits::OneOrMore;
+    let subsecond = Subsecond::default().with_digits(SubsecondDigits::OneOrMore);
     Some(OwnedFormatItem::Component(Component::Subsecond(subsecond)))
 }
 
@@ -195,14 +185,15 @@ fn parse_java_datetime_format_items_recursive(
                         chars.next();
                     }
                 }
-                items.push(literal(literal_str.as_bytes()));
+                items.push(OwnedFormatItem::StringLiteral(literal_str.into_boxed_str()));
             }
             _ => {
                 if let Some(format_item) = match_java_date_format_token(chars)? {
                     items.push(format_item);
                 } else {
                     // Treat as a literal character
-                    items.push(literal(c.to_string().as_bytes()));
+                    let mut char_buffer = [0u8; 4];
+                    items.push(literal(c.encode_utf8(&mut char_buffer)));
                     chars.next();
                 }
             }
@@ -210,6 +201,18 @@ fn parse_java_datetime_format_items_recursive(
     }
 
     Ok(items)
+}
+
+// Returns `true` if the upcoming characters in `chars` match `prefix`, without consuming any of
+// them.
+fn chars_start_with(chars: &std::iter::Peekable<std::str::Chars>, prefix: &str) -> bool {
+    let mut lookahead = chars.clone();
+    for expected_char in prefix.chars() {
+        if lookahead.next() != Some(expected_char) {
+            return false;
+        }
+    }
+    true
 }
 
 // Elasticsearch/OpenSearch uses a set of preconfigured formats, more information could be found
@@ -221,11 +224,9 @@ fn match_java_date_format_token(
         return Ok(None);
     }
 
-    let remaining: String = chars.clone().collect();
-
     // Try to match the longest possible token
     for token in JAVA_DATE_FORMAT_TOKENS {
-        if remaining.starts_with(token) {
+        if chars_start_with(chars, token) {
             for _ in 0..token.len() {
                 chars.next();
             }
@@ -724,21 +725,19 @@ mod tests {
 
         // Verify each token
         match &result[0] {
-            OwnedFormatItem::Component(Component::Year(year)) => {
-                assert_eq!(year.repr, YearRepr::Full);
-            }
+            OwnedFormatItem::Component(Component::CalendarYearFullExtendedRange(_)) => {}
             unexpected => panic!("expected Year, but found: {unexpected:?}",),
         }
         match &result[1] {
-            OwnedFormatItem::Literal(lit) => assert_eq!(lit.as_ref(), b"W"),
+            OwnedFormatItem::StringLiteral(lit) => assert_eq!(lit.as_ref(), "W"),
             unexpected => panic!("expected literal 'W', but found: {unexpected:?}"),
         }
         match &result[2] {
-            OwnedFormatItem::Component(Component::WeekNumber(_)) => {}
+            OwnedFormatItem::Component(Component::WeekNumberMonday(_)) => {}
             unexpected => panic!("expected WeekNumber component, but found: {unexpected:?}"),
         }
         match &result[3] {
-            OwnedFormatItem::Component(Component::Weekday(_)) => {}
+            OwnedFormatItem::Component(Component::WeekdayMonday(_)) => {}
             unexpected => panic!("expected Weekday component, but found: {unexpected:?}"),
         }
     }

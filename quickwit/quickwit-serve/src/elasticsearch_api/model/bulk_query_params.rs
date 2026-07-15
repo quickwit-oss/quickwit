@@ -14,7 +14,8 @@
 
 use quickwit_ingest::CommitType;
 use quickwit_proto::ingest::CommitTypeV2;
-use serde::Deserialize;
+use serde::de::{self, Visitor};
+use serde::{Deserialize, Deserializer};
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
 pub struct ElasticBulkOptions {
@@ -30,22 +31,57 @@ pub struct ElasticBulkOptions {
 /// - Absence of ?refresh parameter or ?refresh=false means no refresh
 /// - Presence of ?refresh parameter without any values or ?refresh=true means force refresh
 /// - ?refresh=wait_for means wait for refresh
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, utoipa::ToSchema)]
-#[serde(rename_all(deserialize = "snake_case"))]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, utoipa::ToSchema)]
+#[schema(rename_all = "snake_case")]
 pub enum ElasticRefresh {
     // if the refresh parameter is not present it is false
     #[default]
     /// The request doesn't wait for commit
     False,
-    // but if it is present without a value like this: ?refresh, it should be the same as
-    // ?refresh=true
-    #[serde(alias = "")]
     /// The request forces an immediate commit after the last document in the batch and waits for
     /// it to finish.
+    ///
+    /// This is also what an empty string, i.e. a bare `?refresh` with no value, evaluates to.
     True,
     /// The request will wait for the next scheduled commit to finish.
     WaitFor,
+}
+
+const ELASTIC_REFRESH_VARIANTS: &[&str] = &["false", "", "true", "wait_for"];
+
+// Custom `Deserialize` impl because the `?refresh` parameter without a value (e.g. `?refresh`,
+// as opposed to `?refresh=`) must be treated as `true`. Depending on the query string
+// deserializer, a valueless parameter is presented either as an empty string or as a unit value,
+// so both must be handled here.
+impl<'de> Deserialize<'de> for ElasticRefresh {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        struct ElasticRefreshVisitor;
+
+        impl Visitor<'_> for ElasticRefreshVisitor {
+            type Value = ElasticRefresh;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a refresh value (`false`, ``, `true`, or `wait_for`)")
+            }
+
+            fn visit_unit<E>(self) -> Result<Self::Value, E>
+            where E: de::Error {
+                Ok(ElasticRefresh::True)
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where E: de::Error {
+                match value {
+                    "false" => Ok(ElasticRefresh::False),
+                    "" | "true" => Ok(ElasticRefresh::True),
+                    "wait_for" => Ok(ElasticRefresh::WaitFor),
+                    other => Err(de::Error::unknown_variant(other, ELASTIC_REFRESH_VARIANTS)),
+                }
+            }
+        }
+        deserializer.deserialize_any(ElasticRefreshVisitor)
+    }
 }
 
 impl From<ElasticRefresh> for CommitType {
