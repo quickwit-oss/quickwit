@@ -25,7 +25,9 @@ use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
 use quickwit_common::is_parquet_pipeline_index;
 use quickwit_common::pretty::PrettySample;
-use quickwit_config::{FileSourceParams, SourceParams, indexing_pipeline_params_fingerprint};
+use quickwit_config::{
+    FileSourceParams, SourceParams, disable_ingest_v1, indexing_pipeline_params_fingerprint,
+};
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
     PIPELINE_THROUGHPUT,
@@ -198,7 +200,13 @@ fn get_default_load_per_shard() -> NonZeroU32 {
     NonZeroU32::new(default_load_per_shard).unwrap()
 }
 
-fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
+fn get_sources_to_schedule(
+    model: &ControlPlaneModel,
+    disable_ingest_v1: bool,
+) -> Vec<SourceToSchedule> {
+    if disable_ingest_v1 {
+        debug!("skipping scheduling of ingest API sources because ingest v1 is disabled");
+    }
     let mut sources = Vec::new();
 
     for (source_uid, source_config) in model.source_configs() {
@@ -220,6 +228,9 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
             }
 
             SourceParams::IngestApi => {
+                if disable_ingest_v1 {
+                    continue;
+                }
                 // Metrics indexes should use IngestV2 only, not IngestV1.
                 // The ParquetSourceLoader doesn't support IngestV1.
                 if is_parquet_pipeline_index(&source_uid.index_uid.index_id) {
@@ -304,7 +315,7 @@ impl IndexingScheduler {
 
         let notify_on_drop = self.next_rebuild_tracker.start_rebuild();
 
-        let sources = get_sources_to_schedule(model);
+        let sources = get_sources_to_schedule(model, disable_ingest_v1());
 
         let indexers: Vec<IndexerNodeInfo> = self.select_available_indexers_for_scheduling();
 
@@ -1018,8 +1029,19 @@ mod tests {
             ..Default::default()
         };
         model.insert_shards(&index_uid, &"ingest_v2".to_string(), vec![shard]);
-        let shards: Vec<SourceToSchedule> = get_sources_to_schedule(&model);
-        assert_eq!(shards.len(), 3);
+
+        let disable_ingest_v1 = false;
+        let sources: Vec<SourceToSchedule> = get_sources_to_schedule(&model, disable_ingest_v1);
+        assert_eq!(sources.len(), 3);
+
+        let disable_ingest_v1 = true;
+        let sources: Vec<SourceToSchedule> = get_sources_to_schedule(&model, disable_ingest_v1);
+        assert_eq!(sources.len(), 2);
+
+        let contains_any_ingest_v1_source = sources
+            .iter()
+            .any(|source| matches!(source.source_type, SourceToScheduleType::IngestV1));
+        assert!(!contains_any_ingest_v1_source);
     }
 
     #[test]
@@ -1124,7 +1146,7 @@ mod tests {
                 model.add_source(index_uid, source_config.clone()).unwrap();
             }
 
-            let sources: Vec<SourceToSchedule> = get_sources_to_schedule(&model);
+            let sources: Vec<SourceToSchedule> = get_sources_to_schedule(&model, false);
             let mut indexer_max_loads = FnvHashMap::default();
             for i in 0..num_indexers {
                 let indexer_id = format!("indexer-{i}");
