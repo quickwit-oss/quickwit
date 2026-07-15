@@ -952,28 +952,13 @@ pub struct SplitBatchDetails {
         super::quickwit::search::SplitIdAndFooterOffsets,
     >,
 }
-/// TODO: Remove this transitional single-split token when SearchSplit accepts batches.
-/// Internal bundle serialized into `SearchSplitRequest.split_token`.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SplitToken {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub index_uri: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "3")]
-    pub split: ::core::option::Option<super::quickwit::search::SplitIdAndFooterOffsets>,
-    /// JSON-serialized doc mapper, so phase 2 needs no metastore round-trip.
-    #[prost(string, tag = "4")]
-    pub doc_mapper_str: ::prost::alloc::string::String,
-}
-/// Phase 2 — read a column projection from ONE split, streamed as Arrow.
-/// TODO: Replace this transitional request with one that accepts encoded SplitBatchDetails.
+/// Phase 2 — read a column projection from a batch of splits, streamed as Arrow.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SearchSplitRequest {
-    /// serialized SplitToken
-    #[prost(bytes = "vec", tag = "1")]
-    pub split_token: ::prost::alloc::vec::Vec<u8>,
-    /// row filter applied within the split (see ListSplitsRequest.query_node)
+pub struct SearchSplitBatchRequest {
+    /// the batch returned by ListSplits
+    #[prost(message, optional, tag = "1")]
+    pub split_batch: ::core::option::Option<SplitBatch>,
+    /// row filter applied within each split (see ListSplitsRequest.query_node)
     #[prost(message, optional, tag = "2")]
     pub query_node: ::core::option::Option<::prost_types::Any>,
     /// the projection (explicit names + types)
@@ -1015,7 +1000,7 @@ pub mod column_type {
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SearchSplitResponse {
+pub struct SearchSplitBatchResponse {
     /// One Arrow IPC stream chunk: an encapsulated IPC message (schema,
     /// record batch, or dictionary batch) or the trailing EOS marker.
     /// Arrow IPC messages are self-describing (each has its own FlatBuffers
@@ -1175,9 +1160,9 @@ impl RpcName for ListSplitsRequest {
         "list_splits"
     }
 }
-impl RpcName for SearchSplitRequest {
+impl RpcName for SearchSplitBatchRequest {
     fn rpc_name() -> &'static str {
-        "search_split"
+        "search_split_batch"
     }
 }
 impl RpcName for SetLogLevelRequest {
@@ -1283,13 +1268,14 @@ pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: ListSplitsRequest,
     ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SplitBatch>>;
-    ///Phase 2 — read a column projection from ONE split, streamed as Arrow.
-    ///TODO: Replace this transitional single-split RPC with a batched request matching SplitBatch.
+    ///Phase 2 — read a column projection from a batch of splits, streamed as Arrow.
     ///Reads columnar fast fields only; never the row-oriented doc store.
-    async fn search_split(
+    async fn search_split_batch(
         &self,
-        request: SearchSplitRequest,
-    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SearchSplitResponse>>;
+        request: SearchSplitBatchRequest,
+    ) -> crate::cloudprem::CloudPremResult<
+        CloudPremServiceStream<SearchSplitBatchResponse>,
+    >;
     ///Dynamically sets the log level.
     async fn set_log_level(
         &self,
@@ -1534,12 +1520,14 @@ impl CloudPremService for CloudPremServiceClient {
     ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SplitBatch>> {
         self.inner.0.list_splits(request).await
     }
-    #[tracing::instrument(skip_all, name = "cloudprem.search_split")]
-    async fn search_split(
+    #[tracing::instrument(skip_all, name = "cloudprem.search_split_batch")]
+    async fn search_split_batch(
         &self,
-        request: SearchSplitRequest,
-    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SearchSplitResponse>> {
-        self.inner.0.search_split(request).await
+        request: SearchSplitBatchRequest,
+    ) -> crate::cloudprem::CloudPremResult<
+        CloudPremServiceStream<SearchSplitBatchResponse>,
+    > {
+        self.inner.0.search_split_batch(request).await
     }
     #[tracing::instrument(skip_all, name = "cloudprem.set_log_level")]
     async fn set_log_level(
@@ -1681,13 +1669,13 @@ pub mod mock_cloud_prem_service {
         > {
             self.inner.lock().await.list_splits(request).await
         }
-        async fn search_split(
+        async fn search_split_batch(
             &self,
-            request: super::SearchSplitRequest,
+            request: super::SearchSplitBatchRequest,
         ) -> crate::cloudprem::CloudPremResult<
-            CloudPremServiceStream<super::SearchSplitResponse>,
+            CloudPremServiceStream<super::SearchSplitBatchResponse>,
         > {
-            self.inner.lock().await.search_split(request).await
+            self.inner.lock().await.search_split_batch(request).await
         }
         async fn set_log_level(
             &self,
@@ -2005,8 +1993,8 @@ impl tower::Service<ListSplitsRequest> for InnerCloudPremServiceClient {
         Box::pin(fut)
     }
 }
-impl tower::Service<SearchSplitRequest> for InnerCloudPremServiceClient {
-    type Response = CloudPremServiceStream<SearchSplitResponse>;
+impl tower::Service<SearchSplitBatchRequest> for InnerCloudPremServiceClient {
+    type Response = CloudPremServiceStream<SearchSplitBatchResponse>;
     type Error = crate::cloudprem::CloudPremError;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
@@ -2015,9 +2003,9 @@ impl tower::Service<SearchSplitRequest> for InnerCloudPremServiceClient {
     ) -> std::task::Poll<Result<(), Self::Error>> {
         std::task::Poll::Ready(Ok(()))
     }
-    fn call(&mut self, request: SearchSplitRequest) -> Self::Future {
+    fn call(&mut self, request: SearchSplitBatchRequest) -> Self::Future {
         let svc = self.clone();
-        let fut = async move { svc.0.search_split(request).await };
+        let fut = async move { svc.0.search_split_batch(request).await };
         Box::pin(fut)
     }
 }
@@ -2152,9 +2140,9 @@ struct CloudPremServiceTowerServiceStack {
         CloudPremServiceStream<SplitBatch>,
         crate::cloudprem::CloudPremError,
     >,
-    search_split_svc: quickwit_common::tower::BoxService<
-        SearchSplitRequest,
-        CloudPremServiceStream<SearchSplitResponse>,
+    search_split_batch_svc: quickwit_common::tower::BoxService<
+        SearchSplitBatchRequest,
+        CloudPremServiceStream<SearchSplitBatchResponse>,
         crate::cloudprem::CloudPremError,
     >,
     set_log_level_svc: quickwit_common::tower::BoxService<
@@ -2278,11 +2266,13 @@ impl CloudPremService for CloudPremServiceTowerServiceStack {
     ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SplitBatch>> {
         self.list_splits_svc.clone().ready().await?.call(request).await
     }
-    async fn search_split(
+    async fn search_split_batch(
         &self,
-        request: SearchSplitRequest,
-    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SearchSplitResponse>> {
-        self.search_split_svc.clone().ready().await?.call(request).await
+        request: SearchSplitBatchRequest,
+    ) -> crate::cloudprem::CloudPremResult<
+        CloudPremServiceStream<SearchSplitBatchResponse>,
+    > {
+        self.search_split_batch_svc.clone().ready().await?.call(request).await
     }
     async fn set_log_level(
         &self,
@@ -2477,14 +2467,14 @@ type ListSplitsLayer = quickwit_common::tower::BoxLayer<
     CloudPremServiceStream<SplitBatch>,
     crate::cloudprem::CloudPremError,
 >;
-type SearchSplitLayer = quickwit_common::tower::BoxLayer<
+type SearchSplitBatchLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
-        SearchSplitRequest,
-        CloudPremServiceStream<SearchSplitResponse>,
+        SearchSplitBatchRequest,
+        CloudPremServiceStream<SearchSplitBatchResponse>,
         crate::cloudprem::CloudPremError,
     >,
-    SearchSplitRequest,
-    CloudPremServiceStream<SearchSplitResponse>,
+    SearchSplitBatchRequest,
+    CloudPremServiceStream<SearchSplitBatchResponse>,
     crate::cloudprem::CloudPremError,
 >;
 type SetLogLevelLayer = quickwit_common::tower::BoxLayer<
@@ -2527,7 +2517,7 @@ pub struct CloudPremServiceTowerLayerStack {
     es_query_layers: Vec<EsQueryLayer>,
     substrait_search_layers: Vec<SubstraitSearchLayer>,
     list_splits_layers: Vec<ListSplitsLayer>,
-    search_split_layers: Vec<SearchSplitLayer>,
+    search_split_batch_layers: Vec<SearchSplitBatchLayer>,
     set_log_level_layers: Vec<SetLogLevelLayer>,
     inverted_request_stream_layers: Vec<InvertedRequestStreamLayer>,
 }
@@ -3002,29 +2992,29 @@ impl CloudPremServiceTowerLayerStack {
         >>::Service as tower::Service<ListSplitsRequest>>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
-                    SearchSplitRequest,
-                    CloudPremServiceStream<SearchSplitResponse>,
+                    SearchSplitBatchRequest,
+                    CloudPremServiceStream<SearchSplitBatchResponse>,
                     crate::cloudprem::CloudPremError,
                 >,
             > + Clone + Send + Sync + 'static,
         <L as tower::Layer<
             quickwit_common::tower::BoxService<
-                SearchSplitRequest,
-                CloudPremServiceStream<SearchSplitResponse>,
+                SearchSplitBatchRequest,
+                CloudPremServiceStream<SearchSplitBatchResponse>,
                 crate::cloudprem::CloudPremError,
             >,
         >>::Service: tower::Service<
-                SearchSplitRequest,
-                Response = CloudPremServiceStream<SearchSplitResponse>,
+                SearchSplitBatchRequest,
+                Response = CloudPremServiceStream<SearchSplitBatchResponse>,
                 Error = crate::cloudprem::CloudPremError,
             > + Clone + Send + Sync + 'static,
         <<L as tower::Layer<
             quickwit_common::tower::BoxService<
-                SearchSplitRequest,
-                CloudPremServiceStream<SearchSplitResponse>,
+                SearchSplitBatchRequest,
+                CloudPremServiceStream<SearchSplitBatchResponse>,
                 crate::cloudprem::CloudPremError,
             >,
-        >>::Service as tower::Service<SearchSplitRequest>>::Future: Send + 'static,
+        >>::Service as tower::Service<SearchSplitBatchRequest>>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     SetLogLevelRequest,
@@ -3109,7 +3099,7 @@ impl CloudPremServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.list_splits_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
-        self.search_split_layers
+        self.search_split_batch_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.set_log_level_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -3479,23 +3469,24 @@ impl CloudPremServiceTowerLayerStack {
         self.list_splits_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn stack_search_split_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_search_split_batch_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
-                    SearchSplitRequest,
-                    CloudPremServiceStream<SearchSplitResponse>,
+                    SearchSplitBatchRequest,
+                    CloudPremServiceStream<SearchSplitBatchResponse>,
                     crate::cloudprem::CloudPremError,
                 >,
             > + Send + Sync + 'static,
         L::Service: tower::Service<
-                SearchSplitRequest,
-                Response = CloudPremServiceStream<SearchSplitResponse>,
+                SearchSplitBatchRequest,
+                Response = CloudPremServiceStream<SearchSplitBatchResponse>,
                 Error = crate::cloudprem::CloudPremError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<SearchSplitRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<SearchSplitBatchRequest>>::Future: Send + 'static,
     {
-        self.search_split_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self.search_split_batch_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn stack_set_log_level_layer<L>(mut self, layer: L) -> Self
@@ -3743,8 +3734,8 @@ impl CloudPremServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
-        let search_split_svc = self
-            .search_split_layers
+        let search_split_batch_svc = self
+            .search_split_batch_layers
             .into_iter()
             .rev()
             .fold(
@@ -3787,7 +3778,7 @@ impl CloudPremServiceTowerLayerStack {
             es_query_svc,
             substrait_search_svc,
             list_splits_svc,
-            search_split_svc,
+            search_split_batch_svc,
             set_log_level_svc,
             inverted_request_stream_svc,
         };
@@ -4002,11 +3993,11 @@ where
             >,
         >
         + tower::Service<
-            SearchSplitRequest,
-            Response = CloudPremServiceStream<SearchSplitResponse>,
+            SearchSplitBatchRequest,
+            Response = CloudPremServiceStream<SearchSplitBatchResponse>,
             Error = crate::cloudprem::CloudPremError,
             Future = BoxFuture<
-                CloudPremServiceStream<SearchSplitResponse>,
+                CloudPremServiceStream<SearchSplitBatchResponse>,
                 crate::cloudprem::CloudPremError,
             >,
         >
@@ -4134,10 +4125,12 @@ where
     ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SplitBatch>> {
         self.clone().call(request).await
     }
-    async fn search_split(
+    async fn search_split_batch(
         &self,
-        request: SearchSplitRequest,
-    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SearchSplitResponse>> {
+        request: SearchSplitBatchRequest,
+    ) -> crate::cloudprem::CloudPremResult<
+        CloudPremServiceStream<SearchSplitBatchResponse>,
+    > {
         self.clone().call(request).await
     }
     async fn set_log_level(
@@ -4519,17 +4512,19 @@ where
                 ListSplitsRequest::rpc_name(),
             ))
     }
-    async fn search_split(
+    async fn search_split_batch(
         &self,
-        request: SearchSplitRequest,
-    ) -> crate::cloudprem::CloudPremResult<CloudPremServiceStream<SearchSplitResponse>> {
+        request: SearchSplitBatchRequest,
+    ) -> crate::cloudprem::CloudPremResult<
+        CloudPremServiceStream<SearchSplitBatchResponse>,
+    > {
         let mut tonic_request = tonic::Request::new(request);
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
         self.inner
             .clone()
-            .search_split(tonic_request)
+            .search_split_batch(tonic_request)
             .await
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
@@ -4537,12 +4532,12 @@ where
                 stream
                     .map_err(|status| crate::error::grpc_status_to_service_error(
                         status,
-                        SearchSplitRequest::rpc_name(),
+                        SearchSplitBatchRequest::rpc_name(),
                     ))
             })
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                SearchSplitRequest::rpc_name(),
+                SearchSplitBatchRequest::rpc_name(),
             ))
     }
     async fn set_log_level(
@@ -5033,18 +5028,18 @@ for CloudPremServiceGrpcServerAdapter {
         };
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
-    type SearchSplitStream = quickwit_common::ServiceStream<
-        tonic::Result<SearchSplitResponse>,
+    type SearchSplitBatchStream = quickwit_common::ServiceStream<
+        tonic::Result<SearchSplitBatchResponse>,
     >;
-    async fn search_split(
+    async fn search_split_batch(
         &self,
-        tonic_request: tonic::Request<SearchSplitRequest>,
-    ) -> Result<tonic::Response<Self::SearchSplitStream>, tonic::Status> {
+        tonic_request: tonic::Request<SearchSplitBatchRequest>,
+    ) -> Result<tonic::Response<Self::SearchSplitBatchStream>, tonic::Status> {
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
         let request = tonic_request.into_inner();
-        let span = tracing::info_span!("cloudprem.search_split");
+        let span = tracing::info_span!("cloudprem.search_split_batch");
         let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
             &span,
             parent_context,
@@ -5052,7 +5047,7 @@ for CloudPremServiceGrpcServerAdapter {
         let fut = async move {
             self.inner
                 .0
-                .search_split(request)
+                .search_split_batch(request)
                 .await
                 .map(|stream| tonic::Response::new(
                     stream.map_err(crate::error::grpc_error_to_grpc_status),
@@ -5662,14 +5657,13 @@ pub mod cloud_prem_service_grpc_client {
                 .insert(GrpcMethod::new("cloudprem.CloudPremService", "ListSplits"));
             self.inner.server_streaming(req, path, codec).await
         }
-        /// Phase 2 — read a column projection from ONE split, streamed as Arrow.
-        /// TODO: Replace this transitional single-split RPC with a batched request matching SplitBatch.
+        /// Phase 2 — read a column projection from a batch of splits, streamed as Arrow.
         /// Reads columnar fast fields only; never the row-oriented doc store.
-        pub async fn search_split(
+        pub async fn search_split_batch(
             &mut self,
-            request: impl tonic::IntoRequest<super::SearchSplitRequest>,
+            request: impl tonic::IntoRequest<super::SearchSplitBatchRequest>,
         ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::SearchSplitResponse>>,
+            tonic::Response<tonic::codec::Streaming<super::SearchSplitBatchResponse>>,
             tonic::Status,
         > {
             self.inner
@@ -5682,11 +5676,13 @@ pub mod cloud_prem_service_grpc_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/cloudprem.CloudPremService/SearchSplit",
+                "/cloudprem.CloudPremService/SearchSplitBatch",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("cloudprem.CloudPremService", "SearchSplit"));
+                .insert(
+                    GrpcMethod::new("cloudprem.CloudPremService", "SearchSplitBatch"),
+                );
             self.inner.server_streaming(req, path, codec).await
         }
         /// Dynamically sets the log level.
@@ -5894,20 +5890,22 @@ pub mod cloud_prem_service_grpc_server {
             &self,
             request: tonic::Request<super::ListSplitsRequest>,
         ) -> std::result::Result<tonic::Response<Self::ListSplitsStream>, tonic::Status>;
-        /// Server streaming response type for the SearchSplit method.
-        type SearchSplitStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<super::SearchSplitResponse, tonic::Status>,
+        /// Server streaming response type for the SearchSplitBatch method.
+        type SearchSplitBatchStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<
+                    super::SearchSplitBatchResponse,
+                    tonic::Status,
+                >,
             >
             + std::marker::Send
             + 'static;
-        /// Phase 2 — read a column projection from ONE split, streamed as Arrow.
-        /// TODO: Replace this transitional single-split RPC with a batched request matching SplitBatch.
+        /// Phase 2 — read a column projection from a batch of splits, streamed as Arrow.
         /// Reads columnar fast fields only; never the row-oriented doc store.
-        async fn search_split(
+        async fn search_split_batch(
             &self,
-            request: tonic::Request<super::SearchSplitRequest>,
+            request: tonic::Request<super::SearchSplitBatchRequest>,
         ) -> std::result::Result<
-            tonic::Response<Self::SearchSplitStream>,
+            tonic::Response<Self::SearchSplitBatchStream>,
             tonic::Status,
         >;
         /// Dynamically sets the log level.
@@ -6864,26 +6862,30 @@ pub mod cloud_prem_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/cloudprem.CloudPremService/SearchSplit" => {
+                "/cloudprem.CloudPremService/SearchSplitBatch" => {
                     #[allow(non_camel_case_types)]
-                    struct SearchSplitSvc<T: CloudPremServiceGrpc>(pub Arc<T>);
+                    struct SearchSplitBatchSvc<T: CloudPremServiceGrpc>(pub Arc<T>);
                     impl<
                         T: CloudPremServiceGrpc,
-                    > tonic::server::ServerStreamingService<super::SearchSplitRequest>
-                    for SearchSplitSvc<T> {
-                        type Response = super::SearchSplitResponse;
-                        type ResponseStream = T::SearchSplitStream;
+                    > tonic::server::ServerStreamingService<
+                        super::SearchSplitBatchRequest,
+                    > for SearchSplitBatchSvc<T> {
+                        type Response = super::SearchSplitBatchResponse;
+                        type ResponseStream = T::SearchSplitBatchStream;
                         type Future = BoxFuture<
                             tonic::Response<Self::ResponseStream>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::SearchSplitRequest>,
+                            request: tonic::Request<super::SearchSplitBatchRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as CloudPremServiceGrpc>::search_split(&inner, request)
+                                <T as CloudPremServiceGrpc>::search_split_batch(
+                                        &inner,
+                                        request,
+                                    )
                                     .await
                             };
                             Box::pin(fut)
@@ -6895,7 +6897,7 @@ pub mod cloud_prem_service_grpc_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = SearchSplitSvc(inner);
+                        let method = SearchSplitBatchSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

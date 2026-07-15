@@ -36,9 +36,9 @@ use quickwit_proto::cloudprem::{
     GetClusterDiagnosticsRequest, GetClusterDiagnosticsResponse, GetIndexRoutingTableRequest,
     GetIndexRoutingTableResponse, GetIndexesRequest, GetIndexesResponse, ListRequest, ListResponse,
     ListSplitsRequest, NodeDiagnostics, NodeMetrics, PingRequest, PingResponse,
-    PullClusterMetricsResponse, ScalarType, SearchSplitRequest, SearchSplitResponse,
+    PullClusterMetricsResponse, ScalarType, SearchSplitBatchRequest, SearchSplitBatchResponse,
     SetIndexRoutingTableRequest, SetIndexRoutingTableResponse, SetLogLevelRequest,
-    SetLogLevelResponse, SplitBatch, SplitToken, Statistics, UpdateIndexRequest,
+    SetLogLevelResponse, SplitBatch, SplitBatchDetails, Statistics, UpdateIndexRequest,
     UpdateIndexResponse, column_type,
 };
 use quickwit_proto::developer::{
@@ -63,7 +63,7 @@ use quickwit_query::query_ast::{
 };
 use quickwit_search::{
     BatchSize, ColumnRequest, ColumnarSplitPlanRequest, SearchError, SearchService,
-    SearchSplitColumnarRequest,
+    SearchSplitBatchColumnarRequest,
 };
 use serde_json::Value as JsonValue;
 use tokio::time::timeout;
@@ -355,25 +355,29 @@ impl CloudPremService for CloudPremServiceImpl {
         Ok(buffer_response_stream(response_stream))
     }
 
-    async fn search_split(
+    async fn search_split_batch(
         &self,
-        request: SearchSplitRequest,
-    ) -> CloudPremResult<CloudPremServiceStream<SearchSplitResponse>> {
-        info!("received SearchSplit request");
-        let token = SplitToken::decode(request.split_token.as_slice()).map_err(|error| {
-            CloudPremError::InvalidQuery(format!("invalid split token: {error}"))
-        })?;
-        let Some(split) = token.split else {
+        request: SearchSplitBatchRequest,
+    ) -> CloudPremResult<CloudPremServiceStream<SearchSplitBatchResponse>> {
+        info!("received SearchSplitBatch request");
+        let Some(split_batch) = request.split_batch else {
             return Err(CloudPremError::InvalidQuery(
-                "split token is missing split offsets".to_string(),
+                "search split batch request is missing its split batch".to_string(),
             ));
         };
-        // Any timestamp window is expected to already be encoded as a range query
-        // over the timestamp field within the filter's AST. Phase 1 only coarsely
-        // prunes whole splits by it; `run_columnar_search` re-narrows it against
-        // this split's own on-disk range and applies it as a per-document filter.
-        let query_ast = query_node_to_query_ast(request.query_node)?;
+        let batch_details = SplitBatchDetails::decode(split_batch.split_batch_details.as_slice())
+            .map_err(|error| {
+            CloudPremError::InvalidQuery(format!("invalid split batch details: {error}"))
+        })?;
+        if batch_details.splits.is_empty() {
+            return Err(CloudPremError::InvalidQuery(
+                "split batch contains no splits".to_string(),
+            ));
+        }
 
+        // Phase 1 only coarsely prunes whole splits using the query's timestamp
+        // range. Each per-split scan applies the complete query to its documents.
+        let query_ast = query_node_to_query_ast(request.query_node)?;
         let mut columns = Vec::with_capacity(request.columns.len());
         for projection in request.columns {
             let scalar_type = match projection.r#type.and_then(|column_type| column_type.kind) {
@@ -393,22 +397,28 @@ impl CloudPremService for CloudPremServiceImpl {
                 data_type,
             });
         }
-
-        let columnar_request = SearchSplitColumnarRequest {
-            index_uri: token.index_uri,
-            doc_mapper_str: token.doc_mapper_str,
-            split,
+        let limit = if request.limit == 0 {
+            None
+        } else {
+            Some(usize::try_from(request.limit).map_err(|_| {
+                CloudPremError::InvalidQuery("limit exceeds the platform maximum".to_string())
+            })?)
+        };
+        let columnar_request = SearchSplitBatchColumnarRequest {
+            index_uri: batch_details.index_uri,
+            doc_mapper_str: batch_details.doc_mapper_str,
+            splits: batch_details.splits,
             query_ast,
             columns,
             batch_size: match request.batch_size {
                 0 => BatchSize::Default,
                 batch_size => BatchSize::Value(batch_size),
             },
-            limit: (request.limit != 0).then_some(request.limit as usize),
+            limit,
         };
 
         let response_stream =
-            super::columnar::search_split(&self.search_service, columnar_request).await?;
+            super::columnar::search_split_batch(&self.search_service, columnar_request).await?;
         Ok(buffer_response_stream(response_stream))
     }
 

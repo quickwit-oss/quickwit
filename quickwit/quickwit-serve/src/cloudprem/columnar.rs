@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Adapter for the columnar two-phase read API (`ListSplits` / `SearchSplit`).
+//! Adapter for the columnar two-phase read API (`ListSplits` / `SearchSplitBatch`).
 //!
 //! This is the thin transport layer over the `quickwit-search`
 //! `columnar_stream` primitive: it plans and scans from already-normalized
@@ -27,11 +27,11 @@ use futures::Stream;
 use prost::Message as _;
 use quickwit_common::ServiceStream;
 use quickwit_proto::cloudprem::{
-    CloudPremError, CloudPremResult, SearchSplitResponse, SplitBatch, SplitBatchDetails,
+    CloudPremError, CloudPremResult, SearchSplitBatchResponse, SplitBatch, SplitBatchDetails,
 };
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_search::{
-    ColumnarSplitBatch, ColumnarSplitPlanRequest, SearchService, SearchSplitColumnarRequest,
+    ColumnarSplitBatch, ColumnarSplitPlanRequest, SearchService, SearchSplitBatchColumnarRequest,
     plan_columnar_splits,
 };
 use tokio_stream::StreamExt as _;
@@ -66,17 +66,16 @@ fn encode_split_batch(batch: ColumnarSplitBatch) -> CloudPremResult<SplitBatch> 
     })
 }
 
-/// Phase 2 — read a column projection from one split, streamed as Arrow.
+/// Phase 2 — read a column projection from a batch of splits, streamed as Arrow.
 ///
 /// Returns a plain, unbuffered stream: nothing runs until it's polled, and
-/// dropping it cooperatively cancels the underlying scan. Whether to buffer
-/// responses ahead of a slow gRPC consumer is decided once, by the caller, at
-/// the gRPC boundary (`CloudPremServiceImpl::search_split`).
-pub(crate) async fn search_split(
+/// dropping it cooperatively cancels the underlying scan. The native record
+/// batches from every split are framed together as one Arrow IPC stream.
+pub(crate) async fn search_split_batch(
     search_service: &Arc<dyn SearchService>,
-    request: SearchSplitColumnarRequest,
-) -> CloudPremResult<impl Stream<Item = CloudPremResult<SearchSplitResponse>> + use<>> {
-    let inner_stream = search_service.search_split_columnar(request).await?;
+    request: SearchSplitBatchColumnarRequest,
+) -> CloudPremResult<impl Stream<Item = CloudPremResult<SearchSplitBatchResponse>> + use<>> {
+    let inner_stream = search_service.search_split_batch_columnar(request).await?;
     Ok(frame_arrow_stream(inner_stream))
 }
 
@@ -94,7 +93,7 @@ pub(crate) async fn search_split(
 /// only as the returned stream is polled.
 fn frame_arrow_stream(
     mut inner: ServiceStream<quickwit_search::Result<RecordBatch>>,
-) -> impl Stream<Item = CloudPremResult<SearchSplitResponse>> {
+) -> impl Stream<Item = CloudPremResult<SearchSplitBatchResponse>> {
     async_stream::stream! {
         let mut writer: Option<StreamWriter<Vec<u8>>> = None;
         while let Some(item) = inner.next().await {
@@ -141,8 +140,8 @@ fn frame_arrow_stream(
     }
 }
 
-fn ipc_response(arrow_ipc_message: Vec<u8>) -> SearchSplitResponse {
-    SearchSplitResponse { arrow_ipc_message }
+fn ipc_response(arrow_ipc_message: Vec<u8>) -> SearchSplitBatchResponse {
+    SearchSplitBatchResponse { arrow_ipc_message }
 }
 
 fn ipc_error(error: arrow::error::ArrowError) -> CloudPremError {
@@ -151,29 +150,45 @@ fn ipc_error(error: arrow::error::ArrowError) -> CloudPremError {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_proto::cloudprem::SplitToken;
+    use std::io::Cursor;
+
+    use arrow::array::Int64Array;
+    use arrow::datatypes::{DataType, Field, Schema};
+    use arrow::ipc::reader::StreamReader;
+    use futures::stream;
     use quickwit_proto::search::SplitIdAndFooterOffsets;
 
     use super::*;
 
-    #[test]
-    fn split_token_round_trips() {
-        let token = SplitToken {
-            index_uid: "my-index:01H".to_string(),
-            index_uri: "s3://bucket/my-index".to_string(),
-            split: Some(SplitIdAndFooterOffsets {
-                split_id: "split-1".to_string(),
-                split_footer_start: 10,
-                split_footer_end: 20,
-                timestamp_start: Some(100),
-                timestamp_end: Some(200),
-                num_docs: 42,
-            }),
-            doc_mapper_str: "{}".to_string(),
-        };
-        let bytes = token.encode_to_vec();
-        let decoded = SplitToken::decode(bytes.as_slice()).unwrap();
-        assert_eq!(decoded, token);
+    #[tokio::test]
+    async fn multiple_record_batches_are_framed_as_one_arrow_stream() {
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "value",
+            DataType::Int64,
+            false,
+        )]));
+        let first_batch =
+            RecordBatch::try_new(schema.clone(), vec![Arc::new(Int64Array::from(vec![1, 2]))])
+                .unwrap();
+        let second_batch =
+            RecordBatch::try_new(schema, vec![Arc::new(Int64Array::from(vec![3, 4]))]).unwrap();
+        let native_stream = ServiceStream::new(Box::pin(stream::iter(vec![
+            Ok(first_batch),
+            Ok(second_batch),
+        ])));
+
+        let mut ipc_bytes = Vec::new();
+        let response_stream = frame_arrow_stream(native_stream);
+        futures::pin_mut!(response_stream);
+        while let Some(response_result) = response_stream.next().await {
+            ipc_bytes.extend(response_result.unwrap().arrow_ipc_message);
+        }
+
+        let reader = StreamReader::try_new(Cursor::new(ipc_bytes), None).unwrap();
+        let decoded_row_counts: Vec<usize> = reader
+            .map(|batch_result| batch_result.unwrap().num_rows())
+            .collect();
+        assert_eq!(decoded_row_counts, vec![2, 2]);
     }
 
     #[test]

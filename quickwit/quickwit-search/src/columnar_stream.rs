@@ -13,11 +13,12 @@
 // limitations under the License.
 
 //! Columnar two-phase read primitive backing the Trino `ListSplits` /
-//! `SearchSplit` endpoints.
+//! `SearchSplitBatch` endpoints.
 //!
 //! Phase 1 ([`plan_columnar_splits`]) enumerates the splits a query touches,
 //! returning bounded batches with shared index metadata deduplicated. Phase 2
-//! (`run_columnar_search`) opens exactly one split, runs the filter as a
+//! (`run_columnar_batch_search`) scans those splits sequentially using
+//! `run_columnar_search`, which opens one split, runs the filter as a
 //! doc-collecting tantivy query, and hands the matched doc-ids to
 //! [`pomsky_arrow`] to produce Arrow [`RecordBatch`](arrow::array::RecordBatch)es — never touching
 //! the row-oriented doc store.
@@ -104,19 +105,17 @@ impl BatchSize {
     }
 }
 
-/// Phase-2 request, after the opaque split token has been decoded by the
-/// endpoint into its native parts.
-#[derive(Debug, Clone)]
-pub struct SearchSplitColumnarRequest {
-    /// Storage URI of the index the split belongs to.
+/// Phase-2 request for a batch of splits after its opaque details have been
+/// decoded by the endpoint.
+#[derive(Debug)]
+pub struct SearchSplitBatchColumnarRequest {
+    /// Storage URI of the index the splits belong to.
     pub index_uri: String,
-    /// JSON-serialized doc mapper, carried in the split token.
+    /// JSON-serialized doc mapper shared by all splits.
     pub doc_mapper_str: String,
-    /// Split id and footer offsets to open the split.
-    pub split: SplitIdAndFooterOffsets,
-    /// Row filter applied within the split. A time window, if any, is
-    /// expected to be encoded as a range query over the timestamp field
-    /// within the AST itself.
+    /// Split ids and footer offsets to scan sequentially.
+    pub splits: Vec<SplitIdAndFooterOffsets>,
+    /// Row filter applied independently within each split.
     pub query_ast: QueryAst,
     /// Columns to project, with their requested Arrow types.
     pub columns: Vec<ColumnRequest>,
@@ -468,7 +467,7 @@ fn scan_all_segments_stream(
     }
 }
 
-fn validate_search_request(request: &SearchSplitColumnarRequest) -> crate::Result<()> {
+fn validate_batch_search_request(request: &SearchSplitBatchColumnarRequest) -> crate::Result<()> {
     if let BatchSize::Value(0) = request.batch_size {
         return Err(SearchError::InvalidArgument(
             "batch_size must be greater than 0".to_string(),
@@ -483,29 +482,27 @@ fn validate_search_request(request: &SearchSplitColumnarRequest) -> crate::Resul
 }
 
 /// Runs the phase-2 scan of a single split and returns it as a lazy stream of
-/// 0..N Arrow record batches. Nothing runs until the stream is polled, and
-/// polling stops scanning as soon as the caller stops driving it — no channel,
-/// no sink.
-///
-/// Callers already know the projected schema: it's derived entirely from the
-/// `columns` they requested (see [`build_projected_schema`]), so it isn't
-/// echoed back on the stream. A split with no matches yields zero batches.
-pub(crate) fn run_columnar_search(
+/// 0..N Arrow record batches. A split with no matches yields zero batches.
+// Keeping these per-split inputs explicit is clearer than recreating a request bundle.
+#[allow(clippy::too_many_arguments)]
+fn run_columnar_search(
     searcher_context: Arc<SearcherContext>,
     index_storage: Arc<dyn Storage>,
-    request: SearchSplitColumnarRequest,
     doc_mapper: Arc<DocMapper>,
+    split: SplitIdAndFooterOffsets,
+    query_ast: QueryAst,
+    projected_schema: SchemaRef,
+    batch_size: usize,
+    limit: Option<usize>,
 ) -> impl Stream<Item = crate::Result<RecordBatch>> {
     async_stream::try_stream! {
-        validate_search_request(&request)?;
-
-        // 1. Open the split.
+        // 1. Open the split. Use an indepenent byte range cache per split
         let byte_range_cache =
             ByteRangeCache::with_infinite_capacity(&quickwit_storage::metrics::SHORTLIVED_CACHE);
         let (index, _hot_directory) = open_index_with_caches(
             &searcher_context,
             index_storage,
-            &request.split,
+            &split,
             Some(doc_mapper.tokenizer_manager()),
             Some(byte_range_cache),
         )
@@ -518,10 +515,7 @@ pub(crate) fn run_columnar_search(
             .searcher();
         let split_schema = index.schema();
 
-        // 2. Build the projected Arrow schema.
-        let projected_schema = build_projected_schema(&request.columns)?;
-
-        // 3. Build the filter query and warm up in a single pass: query terms
+        // 2. Build the filter query and warm up in a single pass: query terms
         // (inverted index) plus the projected columns (fast fields). Tantivy
         // cannot do async IO mid-search, so both must be pre-loaded. The
         // projected fast fields are appended to the query's `WarmupInfo` so the
@@ -529,14 +523,14 @@ pub(crate) fn run_columnar_search(
         // whose name matches the Arrow field name, so the synthetic `_doc_id` /
         // `_segment_ord` columns are skipped here.
         let (query, warmup_info) =
-            doc_mapper.query(split_schema, request.query_ast, false, None)?;
-        let provably_empty = warmup_data(&searcher, &projected_schema, warmup_info).await?;
+            doc_mapper.query(split_schema, query_ast, false, None)?;
+        let provably_empty = warmup_columns(&searcher, &projected_schema, warmup_info).await?;
         if provably_empty {
             // A required term's posting list was empty: this split matches nothing.
             return;
         }
 
-        // 4 + 5. Per segment: collect matching doc-ids and read the projection.
+        // 3 + 4. Per segment: collect matching doc-ids and read the projection.
         let weight = query
                 .weight(EnableScoring::disabled_from_searcher(&searcher))
                 .map_err(|error| {
@@ -548,8 +542,8 @@ pub(crate) fn run_columnar_search(
             weight,
             segment_readers,
             projected_schema,
-            request.batch_size.to_usize(),
-            request.limit,
+            batch_size,
+            limit,
         );
         futures::pin_mut!(stream);
         while let Some(batch) = stream.next().await {
@@ -558,7 +552,7 @@ pub(crate) fn run_columnar_search(
     }
 }
 
-async fn warmup_data(
+async fn warmup_columns(
     searcher: &Searcher,
     projected_schema: &Schema,
     mut warmup_info: WarmupInfo,
@@ -575,9 +569,42 @@ async fn warmup_data(
     );
     warmup_info.simplify();
 
-    warmup(&searcher, &warmup_info, &|_, _| {})
+    warmup(searcher, &warmup_info, &|_, _| {})
         .await
         .map_err(|error| SearchError::Internal(format!("warmup failed: {error}")))
+}
+
+/// Scans each split sequentially and concatenates their record-batch streams.
+/// Nothing runs until the stream is polled, and dropping it stops the current
+/// split without opening any remaining splits.
+pub(crate) fn run_columnar_batch_search(
+    searcher_context: Arc<SearcherContext>,
+    index_storage: Arc<dyn Storage>,
+    request: SearchSplitBatchColumnarRequest,
+    doc_mapper: Arc<DocMapper>,
+) -> impl Stream<Item = crate::Result<RecordBatch>> {
+    async_stream::try_stream! {
+        validate_batch_search_request(&request)?;
+        let projected_schema = build_projected_schema(&request.columns)?;
+        let batch_size = request.batch_size.to_usize();
+
+        for split in request.splits {
+            let split_stream = run_columnar_search(
+                searcher_context.clone(),
+                index_storage.clone(),
+                doc_mapper.clone(),
+                split,
+                request.query_ast.clone(),
+                projected_schema.clone(),
+                batch_size,
+                request.limit,
+            );
+            futures::pin_mut!(split_stream);
+            while let Some(batch_result) = split_stream.next().await {
+                yield batch_result?;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -829,19 +856,12 @@ mod tests {
     }
 
     #[test]
-    fn run_columnar_search_rejects_zero_batch_size_and_limit() {
+    fn run_columnar_batch_search_rejects_zero_batch_size_and_limit() {
         assert!(matches!(
-            validate_search_request(&SearchSplitColumnarRequest {
+            validate_batch_search_request(&SearchSplitBatchColumnarRequest {
                 index_uri: String::new(),
                 doc_mapper_str: String::new(),
-                split: SplitIdAndFooterOffsets {
-                    split_id: String::new(),
-                    split_footer_start: 0,
-                    split_footer_end: 0,
-                    timestamp_start: None,
-                    timestamp_end: None,
-                    num_docs: 0,
-                },
+                splits: Vec::new(),
                 query_ast: QueryAst::MatchAll,
                 columns: Vec::new(),
                 batch_size: BatchSize::Value(0),
@@ -850,17 +870,10 @@ mod tests {
             Err(SearchError::InvalidArgument(message)) if message == "batch_size must be greater than 0"
         ));
         assert!(matches!(
-            validate_search_request(&SearchSplitColumnarRequest {
+            validate_batch_search_request(&SearchSplitBatchColumnarRequest {
                 index_uri: String::new(),
                 doc_mapper_str: String::new(),
-                split: SplitIdAndFooterOffsets {
-                    split_id: String::new(),
-                    split_footer_start: 0,
-                    split_footer_end: 0,
-                    timestamp_start: None,
-                    timestamp_end: None,
-                    num_docs: 0,
-                },
+                splits: Vec::new(),
                 query_ast: QueryAst::MatchAll,
                 columns: Vec::new(),
                 batch_size: BatchSize::Default,

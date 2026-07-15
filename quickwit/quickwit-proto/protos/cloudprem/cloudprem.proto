@@ -63,10 +63,9 @@ service CloudPremService {
   // Phase 1 — enumerate batches of splits a query touches so a client can fan out.
   rpc ListSplits(ListSplitsRequest) returns (stream SplitBatch);
 
-  // Phase 2 — read a column projection from ONE split, streamed as Arrow.
-  // TODO: Replace this transitional single-split RPC with a batched request matching SplitBatch.
+  // Phase 2 — read a column projection from a batch of splits, streamed as Arrow.
   // Reads columnar fast fields only; never the row-oriented doc store.
-  rpc SearchSplit(SearchSplitRequest) returns (stream SearchSplitResponse);
+  rpc SearchSplitBatch(SearchSplitBatchRequest) returns (stream SearchSplitBatchResponse);
 
   // Dynamically sets the log level.
   rpc SetLogLevel(SetLogLevelRequest) returns (SetLogLevelResponse);
@@ -681,21 +680,10 @@ message SplitBatchDetails {
   repeated quickwit.search.SplitIdAndFooterOffsets splits = 4;
 }
 
-// TODO: Remove this transitional single-split token when SearchSplit accepts batches.
-// Internal bundle serialized into `SearchSplitRequest.split_token`.
-message SplitToken {
-  string index_uid = 1;
-  string index_uri = 2;
-  quickwit.search.SplitIdAndFooterOffsets split = 3;
-  // JSON-serialized doc mapper, so phase 2 needs no metastore round-trip.
-  string doc_mapper_str = 4;
-}
-
-// Phase 2 — read a column projection from ONE split, streamed as Arrow.
-// TODO: Replace this transitional request with one that accepts encoded SplitBatchDetails.
-message SearchSplitRequest {
-  bytes split_token = 1; // serialized SplitToken
-  google.protobuf.Any query_node = 2; // row filter applied within the split (see ListSplitsRequest.query_node)
+// Phase 2 — read a column projection from a batch of splits, streamed as Arrow.
+message SearchSplitBatchRequest {
+  SplitBatch split_batch = 1; // the batch returned by ListSplits
+  google.protobuf.Any query_node = 2; // row filter applied within each split (see ListSplitsRequest.query_node)
   repeated ColumnProjection columns = 3; // the projection (explicit names + types)
   uint32 batch_size = 4; // rows per Arrow batch (0 -> server default)
   uint64 limit = 6; // optional per-split cap (0 -> unlimited)
@@ -729,7 +717,7 @@ enum ScalarType {
   SCALAR_TYPE_IP = 8; // -> Arrow Utf8
 }
 
-message SearchSplitResponse {
+message SearchSplitBatchResponse {
   // One Arrow IPC stream chunk: an encapsulated IPC message (schema,
   // record batch, or dictionary batch) or the trailing EOS marker.
   // Arrow IPC messages are self-describing (each has its own FlatBuffers
