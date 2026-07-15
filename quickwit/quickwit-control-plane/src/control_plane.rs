@@ -77,7 +77,7 @@ const PRUNE_SHARDS_DEFAULT_COOLDOWN_PERIOD: Duration = Duration::from_secs(120);
 const REBUILD_PLAN_COOLDOWN_PERIOD: Duration = Duration::from_secs(2);
 
 #[derive(Debug)]
-struct ControlPlanLoop;
+struct ControlPlaneLoop;
 
 #[derive(Debug, Default, Clone, Copy)]
 struct RebuildPlan;
@@ -98,8 +98,6 @@ pub struct ControlPlane {
     prune_shard_cooldown: CooldownMap<(IndexId, SourceId)>,
     rebuild_plan_debouncer: Debouncer,
     readiness_tx: watch::Sender<bool>,
-    // Disables the control loop. This is useful for unit testing.
-    disable_control_loop: bool,
 }
 
 impl fmt::Debug for ControlPlane {
@@ -121,36 +119,8 @@ impl ControlPlane {
         ActorHandle<Supervisor<Self>>,
         watch::Receiver<bool>,
     ) {
-        let disable_control_loop = false;
-        Self::spawn_inner(
-            universe,
-            cluster_config,
-            self_node_id,
-            indexer_pool,
-            ingester_pool,
-            metastore,
-            disable_control_loop,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn spawn_inner(
-        universe: &Universe,
-        cluster_config: ClusterConfig,
-        self_node_id: NodeId,
-        indexer_pool: IndexerPool,
-        ingester_pool: IngesterPool,
-        metastore: MetastoreServiceClient,
-        disable_control_loop: bool,
-    ) -> (
-        Mailbox<Self>,
-        ActorHandle<Supervisor<Self>>,
-        watch::Receiver<bool>,
-    ) {
         info!("starting control plane");
-
         let (readiness_tx, readiness_rx) = watch::channel(false);
-        let ingester_pool_changes_rx = ingester_pool.changes_rx.clone();
         let (control_plane_mailbox, control_plane_handle) =
             universe.spawn_builder().supervise_fn(move || {
                 let cluster_id = cluster_config.cluster_id.clone();
@@ -180,10 +150,8 @@ impl ControlPlane {
                     prune_shard_cooldown: CooldownMap::new(NonZeroUsize::new(1024).unwrap()),
                     rebuild_plan_debouncer: Debouncer::new(REBUILD_PLAN_COOLDOWN_PERIOD),
                     readiness_tx,
-                    disable_control_loop,
                 }
             });
-        spawn_watch_ingester_pool(control_plane_mailbox.downgrade(), ingester_pool_changes_rx);
         (control_plane_mailbox, control_plane_handle, readiness_rx)
     }
 }
@@ -227,7 +195,7 @@ impl Actor for ControlPlane {
 
         self.ingest_controller.sync_with_all_ingesters(&self.model);
 
-        ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop);
+        ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlaneLoop);
 
         let _ = self.readiness_tx.send(true);
         Ok(())
@@ -511,18 +479,15 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
 }
 
 #[async_trait]
-impl Handler<ControlPlanLoop> for ControlPlane {
+impl Handler<ControlPlaneLoop> for ControlPlane {
     type Reply = ();
 
     #[allow(clippy::collapsible_if, clippy::question_mark)]
     async fn handle(
         &mut self,
-        _message: ControlPlanLoop,
+        _message: ControlPlaneLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if self.disable_control_loop {
-            return Ok(());
-        }
         if let Err(metastore_error) = self
             .ingest_controller
             .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
@@ -540,7 +505,7 @@ impl Handler<ControlPlanLoop> for ControlPlane {
             }
         }
         self.indexing_scheduler.control_running_plan(&self.model);
-        ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop);
+        ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlaneLoop);
         Ok(())
     }
 }
@@ -1060,31 +1025,6 @@ fn apply_index_template_match(
     Ok(index_config)
 }
 
-#[derive(Debug)]
-struct IngesterPoolHasChanged;
-
-#[async_trait]
-impl Handler<IngesterPoolHasChanged> for ControlPlane {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        _message: IngesterPoolHasChanged,
-        ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        info!("triggering rebalance shards and rebuild plan due to a change in the ingester pool");
-        if let Err(error) = self
-            .ingest_controller
-            .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
-            .await
-        {
-            return convert_metastore_error::<()>(error).map(|_| ());
-        };
-        let _ = self.rebuild_plan_debounced(ctx);
-        Ok(())
-    }
-}
-
 #[async_trait]
 impl Handler<RebalanceShardsCallback> for ControlPlane {
     type Reply = ();
@@ -1110,22 +1050,6 @@ impl Handler<RebalanceShardsCallback> for ControlPlane {
         drop(message.rebalance_guard);
         Ok(())
     }
-}
-
-fn spawn_watch_ingester_pool(
-    weak_mailbox: WeakMailbox<ControlPlane>,
-    mut ingester_pool_changes_rx: watch::Receiver<()>,
-) {
-    tokio::spawn(async move {
-        while ingester_pool_changes_rx.changed().await.is_ok() {
-            let Some(mailbox) = weak_mailbox.upgrade() else {
-                return;
-            };
-            if mailbox.send_message(IngesterPoolHasChanged).await.is_err() {
-                return;
-            }
-        }
-    });
 }
 
 #[cfg(test)]
@@ -1760,7 +1684,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_control_plan_loop_continues_after_too_many_requests() {
-        let universe = Universe::default();
+        let universe = Universe::with_accelerated_time();
         let index_uid = IndexUid::for_test("test-index", 0);
         let retiring_ingester_id = NodeId::from_str("retiring-ingester");
         let ready_ingester_id = NodeId::from_str("ready-ingester");
@@ -1869,12 +1793,10 @@ mod tests {
             )),
         );
 
-        let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
         let (control_plane_mailbox, control_plane_handle, mut readiness_rx) = ControlPlane::spawn(
             &universe,
             ClusterConfig::for_test(),
             NodeId::from_str("test-control-plane"),
-            cluster_change_stream_factory,
             IndexerPool::default(),
             ingester_pool,
             MetastoreServiceClient::from_mock(mock_metastore),
@@ -2533,24 +2455,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_watch_ingester_pool() {
-        let universe = Universe::with_accelerated_time();
-        let (control_plane_mailbox, control_plane_inbox) = universe.create_test_mailbox();
-        let weak_control_plane_mailbox = control_plane_mailbox.downgrade();
-        let ingester_pool = IngesterPool::default();
-
-        spawn_watch_ingester_pool(weak_control_plane_mailbox, ingester_pool.changes_rx.clone());
-
-        ingester_pool.insert(
-            NodeId::from_str("test-ingester"),
-            IngesterPoolEntry::mocked_ingester(),
-        );
-        let IngesterPoolHasChanged = control_plane_inbox.recv_typed_message().await.unwrap();
-
-        universe.assert_quit().await;
-    }
-
-    #[tokio::test]
     async fn test_control_plane_rebuilds_plan_on_indexer_joins_or_leaves_the_cluster() {
         let universe = Universe::with_accelerated_time();
 
@@ -2565,25 +2469,39 @@ mod tests {
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_list_indexes_metadata()
-            .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
+            .returning(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
         let metastore = MetastoreServiceClient::from_mock(mock_metastore);
-        let disable_control_loop = true;
-        let (_control_plane_mailbox, control_plane_handle, _readiness_rx) =
-            ControlPlane::spawn_inner(
-                &universe,
-                cluster_config,
-                node_id,
-                indexer_pool.clone(),
-                ingester_pool.clone(),
-                metastore,
-                disable_control_loop,
-            );
+        let (_control_plane_mailbox, control_plane_handle, _readiness_rx) = ControlPlane::spawn(
+            &universe,
+            cluster_config,
+            node_id,
+            indexer_pool.clone(),
+            ingester_pool.clone(),
+            metastore,
+        );
 
+        let mut mock_ingester = MockIngesterService::new();
+        mock_ingester
+            .expect_retain_shards()
+            .returning(|_| Ok(RetainShardsResponse {}));
+        mock_ingester.expect_init_shards().return_once(|request| {
+            let shard = request.subrequests[0].shard().clone();
+            let response = InitShardsResponse {
+                successes: vec![InitShardSuccess {
+                    subrequest_id: 0,
+                    shard: Some(shard),
+                }],
+                failures: Vec::new(),
+            };
+            Ok(response)
+        });
         let indexer_id = NodeId::from_str("test-indexer");
         ingester_pool_change_tx
             .unbounded_send(Change::Insert(
                 indexer_id.clone(),
-                IngesterPoolEntry::mocked_ingester(),
+                IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(
+                    mock_ingester,
+                )),
             ))
             .unwrap();
 
@@ -2596,7 +2514,8 @@ mod tests {
             .as_ref()
             .unwrap()
             .ingest_controller;
-        assert_eq!(ingest_controller_stats.num_rebalance_shards_ops, 1);
+        let num_rebalance_1 = ingest_controller_stats.num_rebalance_shards_ops;
+        assert!(num_rebalance_1 >= 1);
 
         ingester_pool_change_tx
             .unbounded_send(Change::Remove(indexer_id))
@@ -2611,7 +2530,9 @@ mod tests {
             .as_ref()
             .unwrap()
             .ingest_controller;
-        assert_eq!(ingest_controller_stats.num_rebalance_shards_ops, 2);
+
+        let num_rebalance_2 = ingest_controller_stats.num_rebalance_shards_ops;
+        assert!(num_rebalance_2 > num_rebalance_1);
 
         universe.assert_quit().await;
     }

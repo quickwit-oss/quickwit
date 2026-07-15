@@ -21,7 +21,6 @@ use std::hash::Hash;
 use std::sync::{Arc, RwLock};
 
 use futures::{Stream, StreamExt};
-use tokio::sync::watch;
 
 use super::Change;
 
@@ -29,10 +28,6 @@ use super::Change;
 /// `add/remove` methods or by listening to a stream of changes.
 pub struct Pool<K, V> {
     pool: Arc<RwLock<HashMap<K, V>>>,
-    /// Publishes a notification after each mutation.
-    changes_tx: watch::Sender<()>,
-    /// Receives pool change notifications.
-    pub changes_rx: watch::Receiver<()>,
 }
 
 impl<K, V> fmt::Debug for Pool<K, V>
@@ -49,8 +44,6 @@ impl<K, V> Clone for Pool<K, V> {
     fn clone(&self) -> Self {
         Self {
             pool: self.pool.clone(),
-            changes_tx: self.changes_tx.clone(),
-            changes_rx: self.changes_rx.clone(),
         }
     }
 }
@@ -59,11 +52,8 @@ impl<K, V> Default for Pool<K, V>
 where K: Eq + PartialEq + Hash
 {
     fn default() -> Self {
-        let (changes_tx, changes_rx) = watch::channel(());
         Self {
             pool: Arc::new(RwLock::new(HashMap::default())),
-            changes_tx,
-            changes_rx,
         }
     }
 }
@@ -94,10 +84,6 @@ where
                 .await;
         };
         tokio::spawn(future);
-    }
-
-    fn notify_change(&self) {
-        self.changes_tx.send_replace(());
     }
 
     /// Returns whether the pool is empty.
@@ -194,19 +180,14 @@ where
             .write()
             .expect("lock should not be poisoned")
             .insert(key, service);
-        self.notify_change();
     }
 
     /// Removes a value from the pool.
     fn remove(&self, key: &K) {
-        let removed = self
-            .pool
+        self.pool
             .write()
             .expect("lock should not be poisoned")
             .remove(key);
-        if removed.is_some() {
-            self.notify_change();
-        }
     }
 }
 
@@ -215,11 +196,8 @@ where K: Eq + PartialEq + Hash
 {
     fn from_iter<I>(iter: I) -> Self
     where I: IntoIterator<Item = (K, V)> {
-        let (changes_tx, changes_rx) = watch::channel(());
         Self {
             pool: Arc::new(RwLock::new(HashMap::from_iter(iter))),
-            changes_tx,
-            changes_rx,
         }
     }
 }
@@ -231,26 +209,6 @@ mod tests {
     use tokio_stream::wrappers::ReceiverStream;
 
     use super::*;
-
-    #[tokio::test]
-    async fn test_pool_change_notifications() {
-        let pool = Pool::default();
-        let mut changes_rx = pool.changes_rx.clone();
-
-        pool.insert(1, 11);
-        changes_rx.changed().await.unwrap();
-        assert_eq!(pool.get(&1), Some(11));
-
-        pool.insert(1, 12);
-        changes_rx.changed().await.unwrap();
-        assert_eq!(pool.get(&1), Some(12));
-
-        pool.remove(&2);
-
-        pool.remove(&1);
-        changes_rx.changed().await.unwrap();
-        assert!(!pool.contains_key(&1));
-    }
 
     #[tokio::test]
     async fn test_pool() {
