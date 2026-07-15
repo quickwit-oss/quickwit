@@ -207,8 +207,9 @@ pub(super) fn append_query_filters_and_order_by(sql: &mut SelectStatement, query
         // ceiling and keeps parse-time O(1) in the exclude size. The `$1` is
         // postgres' placeholder; sea-query substitutes it with the next bind
         // slot at build time.
-        let excluded_split_ids: Vec<Value> = query
-            .excluded_split_ids
+        let mut excluded_split_ids: Vec<_> = query.excluded_split_ids.into_iter().collect();
+        excluded_split_ids.sort_unstable();
+        let excluded_split_ids: Vec<Value> = excluded_split_ids
             .into_iter()
             .map(|split_id| Value::String(Some(Box::new(split_id.to_string()))))
             .collect();
