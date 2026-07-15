@@ -121,10 +121,7 @@ impl PostgresqlMetastoreOptions {
             // lifetime, so they're read (and logged) once rather than on every metastore
             // construction, which can recur frequently.
             read_only: get_bool_from_env_cached!(QW_POSTGRES_READ_ONLY_ENV_KEY, false),
-            skip_migrations: get_bool_from_env_cached!(
-                QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY,
-                false
-            ),
+            skip_migrations: get_bool_from_env_cached!(QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY, false),
             skip_locking: get_bool_from_env_cached!(
                 QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY,
                 false
