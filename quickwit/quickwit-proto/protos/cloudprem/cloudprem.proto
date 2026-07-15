@@ -712,7 +712,7 @@ enum ScalarType {
   SCALAR_TYPE_UINT64 = 3; // -> Arrow UInt64
   SCALAR_TYPE_FLOAT64 = 4; // -> Arrow Float64
   SCALAR_TYPE_BOOL = 5; // -> Arrow Boolean
-  SCALAR_TYPE_TIMESTAMP_NANOS = 6; // -> Arrow Timestamp (P0 emits microsecond precision)
+  SCALAR_TYPE_TIMESTAMP_NANOS = 6; // -> Arrow Timestamp(Nanosecond)
   SCALAR_TYPE_BYTES = 7; // -> Arrow Binary
   SCALAR_TYPE_IP = 8; // -> Arrow Utf8
 }

@@ -107,7 +107,7 @@ fn scalar_type_to_arrow(scalar_type: ScalarType) -> Option<arrow::datatypes::Dat
         ScalarType::Float64 => Some(arrow::datatypes::DataType::Float64),
         ScalarType::Bool => Some(arrow::datatypes::DataType::Boolean),
         ScalarType::TimestampNanos => Some(arrow::datatypes::DataType::Timestamp(
-            TimeUnit::Microsecond,
+            TimeUnit::Nanosecond,
             None,
         )),
         ScalarType::Bytes => Some(arrow::datatypes::DataType::Binary),
@@ -1427,7 +1427,7 @@ mod tests {
         assert_eq!(
             scalar_type_to_arrow(ScalarType::TimestampNanos),
             Some(arrow::datatypes::DataType::Timestamp(
-                TimeUnit::Microsecond,
+                TimeUnit::Nanosecond,
                 None
             ))
         );

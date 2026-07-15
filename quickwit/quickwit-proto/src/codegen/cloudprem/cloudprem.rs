@@ -1024,7 +1024,7 @@ pub enum ScalarType {
     Float64 = 4,
     /// -> Arrow Boolean
     Bool = 5,
-    /// -> Arrow Timestamp (P0 emits microsecond precision)
+    /// -> Arrow Timestamp(Nanosecond)
     TimestampNanos = 6,
     /// -> Arrow Binary
     Bytes = 7,

@@ -27,7 +27,7 @@ use std::sync::Arc;
 
 use arrow::array::{
     ArrayBuilder, ArrayRef, BinaryBuilder, BooleanBuilder, DictionaryArray, Float64Builder,
-    Int64Builder, ListBuilder, StringBuilder, TimestampMicrosecondBuilder, UInt32Array,
+    Int64Builder, ListBuilder, StringBuilder, TimestampNanosecondBuilder, UInt32Array,
     UInt64Builder, new_null_array,
 };
 use arrow::datatypes::{DataType, Field, SchemaRef, TimeUnit, UInt32Type};
@@ -90,7 +90,7 @@ fn build_fast_field_array(
         DataType::Int64 => Ok(build_i64_array(fast_fields, field_name, docs)),
         DataType::Float64 => Ok(build_f64_array(fast_fields, field_name, docs)),
         DataType::Boolean => Ok(build_bool_array(fast_fields, field_name, docs)),
-        DataType::Timestamp(TimeUnit::Microsecond, None) => {
+        DataType::Timestamp(TimeUnit::Nanosecond, None) => {
             Ok(build_timestamp_array(fast_fields, field_name, docs))
         }
         DataType::Utf8 => build_utf8_array(fast_fields, field, docs),
@@ -182,20 +182,17 @@ fn build_timestamp_array(
     docs: &[u32],
 ) -> ArrayRef {
     let Ok(col) = fast_fields.date(name) else {
-        return new_null_array(
-            &DataType::Timestamp(TimeUnit::Microsecond, None),
-            docs.len(),
-        );
+        return new_null_array(&DataType::Timestamp(TimeUnit::Nanosecond, None), docs.len());
     };
 
     let mut values = vec![None; docs.len()];
     col.first_vals(docs, &mut values);
 
-    let mut builder = TimestampMicrosecondBuilder::with_capacity(docs.len());
+    let mut builder = TimestampNanosecondBuilder::with_capacity(docs.len());
     builder.extend_from_iter_option(
         values
             .into_iter()
-            .map(|value| value.map(|dt| dt.into_timestamp_micros())),
+            .map(|value| value.map(|dt| dt.into_timestamp_nanos())),
     );
     Arc::new(builder.finish())
 }
@@ -375,16 +372,16 @@ fn build_list_array(
                 BooleanBuilder::append_value,
             )),
         },
-        DataType::Timestamp(TimeUnit::Microsecond, None) => match fast_fields.date(name) {
+        DataType::Timestamp(TimeUnit::Nanosecond, None) => match fast_fields.date(name) {
             Err(_) => Ok({
                 let num_docs = docs.len();
                 new_null_array(list_data_type, num_docs)
             }),
             Ok(col) => Ok(build_list_from_values(
-                ListBuilder::new(TimestampMicrosecondBuilder::new()),
+                ListBuilder::new(TimestampNanosecondBuilder::new()),
                 docs,
                 |doc_id| col.values_for_doc(doc_id),
-                |builder, val| builder.append_value(val.into_timestamp_micros()),
+                |builder, val| builder.append_value(val.into_timestamp_nanos()),
             )),
         },
         DataType::Utf8 => build_utf8_list_array(fast_fields, name, list_data_type, docs),
