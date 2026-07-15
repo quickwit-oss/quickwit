@@ -220,7 +220,7 @@ mod tests {
         assert!(matches!(
             error,
             MetastoreResolverError::UnsupportedBackend(message)
-                if message == "read-only metastore connections are only supported for PostgreSQL"
+                if message == "read-only option is only supported for the PostgreSQL backend"
         ));
     }
 
