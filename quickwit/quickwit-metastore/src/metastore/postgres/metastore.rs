@@ -23,7 +23,7 @@ use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::uri::Uri;
-use quickwit_common::{ServiceStream, get_bool_from_env, rate_limited_error};
+use quickwit_common::{ServiceStream, get_bool_from_env_cached, rate_limited_error};
 use quickwit_config::{
     IndexTemplate, IndexTemplateId, PostgresMetastoreConfig, validate_index_id_pattern,
 };
@@ -119,7 +119,10 @@ impl PostgresqlMetastore {
             .max_connection_lifetime_opt()
             .expect("PostgreSQL metastore config should have been validated");
 
-        let read_only = get_bool_from_env(QW_POSTGRES_READ_ONLY_ENV_KEY, false);
+        // This environment variable is process-global and doesn't change over a process's
+        // lifetime, so it's read (and logged) once rather than on every metastore
+        // construction, which can recur frequently.
+        let read_only = get_bool_from_env_cached!(QW_POSTGRES_READ_ONLY_ENV_KEY, false);
 
         let connection_pool = establish_connection(
             connection_uri,

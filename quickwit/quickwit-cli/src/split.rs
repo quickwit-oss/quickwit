@@ -419,7 +419,7 @@ fn make_split_table(splits: &[Split], title: &str) -> Table {
 }
 
 fn parse_date(date_arg: &str, option_name: &str) -> anyhow::Result<OffsetDateTime> {
-    let description = format_description::parse("[year]-[month]-[day]")?;
+    let description = format_description::parse_borrowed::<2>("[year]-[month]-[day]")?;
     if let Ok(date) = Date::parse(date_arg, &description) {
         return Ok(date.with_hms(0, 0, 0)?.assume_utc());
     }
@@ -430,7 +430,7 @@ fn parse_date(date_arg: &str, option_name: &str) -> anyhow::Result<OffsetDateTim
         "[year]-[month]-[day]T[hour]:[minute]",
         "[year]-[month]-[day]T[hour]:[minute]:[second]",
     ] {
-        let description = format_description::parse(datetime_format)?;
+        let description = format_description::parse_borrowed::<2>(datetime_format)?;
         if let Ok(datetime) = PrimitiveDateTime::parse(date_arg, &description) {
             return Ok(datetime.assume_utc());
         }
