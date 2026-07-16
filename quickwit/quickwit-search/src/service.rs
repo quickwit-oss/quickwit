@@ -16,7 +16,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use arrow::array::RecordBatch;
 use async_trait::async_trait;
+use quickwit_common::ServiceStream;
 use quickwit_common::uri::Uri;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DocMapper;
@@ -33,6 +35,7 @@ use quickwit_storage::{
 };
 use tantivy::aggregation::AggregationLimitsGuard;
 
+use crate::columnar_stream::{SearchSplitBatchColumnarRequest, run_columnar_batch_search};
 use crate::invoker::LambdaLeafSearchInvoker;
 use crate::leaf::multi_index_leaf_search;
 use crate::leaf_cache::{LeafSearchCache, PredicateCacheImpl};
@@ -136,6 +139,18 @@ pub trait SearchService: 'static + Send + Sync {
     /// Returns the current load of this searcher node, expressed as the sum of job costs
     /// across all queued and active tasks in the SearchPermitProvider.
     async fn get_load(&self) -> usize;
+
+    /// Phase 2 of the columnar read API: opens a batch of splits sequentially
+    /// and streams their projected fast-field columns as Arrow record batches.
+    ///
+    /// Reads columnar fast fields only; never the row-oriented doc store. The
+    /// returned stream yields 0..N batches; splits with no matches yield none.
+    /// Callers already know the projected schema from the `columns` they
+    /// requested, so it isn't echoed back on the stream.
+    async fn search_split_batch_columnar(
+        &self,
+        request: SearchSplitBatchColumnarRequest,
+    ) -> crate::Result<ServiceStream<crate::Result<RecordBatch>>>;
 }
 
 impl SearchServiceImpl {
@@ -326,6 +341,23 @@ impl SearchService for SearchServiceImpl {
 
     async fn get_load(&self) -> usize {
         self.searcher_context.search_permit_provider.get_load()
+    }
+
+    async fn search_split_batch_columnar(
+        &self,
+        request: SearchSplitBatchColumnarRequest,
+    ) -> crate::Result<ServiceStream<crate::Result<RecordBatch>>> {
+        let index_uri = Uri::from_str(&request.index_uri)?;
+        let index_storage = self.storage_resolver.resolve(&index_uri).await?;
+        let doc_mapper = deserialize_doc_mapper(&request.doc_mapper_str)?;
+        let searcher_context = self.searcher_context.clone();
+
+        // A plain, unbuffered stream: nothing runs until the caller polls it,
+        // and dropping the caller's stream drops this one, cooperatively
+        // cancelling the scan. Whether to buffer results ahead of a slow
+        // consumer is a transport concern, decided once at the gRPC boundary.
+        let items = run_columnar_batch_search(searcher_context, index_storage, request, doc_mapper);
+        Ok(ServiceStream::new(Box::pin(items)))
     }
 }
 

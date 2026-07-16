@@ -10837,10 +10837,12 @@ name = "quickwit-remote-api"
 version = "0.1.32-dev"
 dependencies = [
  "anyhow",
+ "arrow",
  "async-trait",
  "bytesize",
  "clap",
  "hyper-util",
+ "quickwit-common",
  "quickwit-config",
  "quickwit-jaeger",
  "quickwit-proto",
@@ -10885,7 +10887,9 @@ name = "quickwit-search"
 version = "0.1.32-dev"
 dependencies = [
  "anyhow",
+ "arrow",
  "assert-json-diff",
+ "async-stream",
  "async-trait",
  "base64 0.22.1",
  "bytes 1.11.1",
@@ -10896,6 +10900,7 @@ dependencies = [
  "itertools 0.14.0",
  "mockall",
  "pin-project",
+ "pomsky-arrow",
  "postcard",
  "proptest",
  "prost 0.14.3",
@@ -10933,6 +10938,7 @@ dependencies = [
  "arc-swap",
  "arrow",
  "assert-json-diff",
+ "async-stream",
  "async-trait",
  "base64 0.22.1",
  "binggan",

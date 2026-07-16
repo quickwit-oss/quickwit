@@ -1377,7 +1377,7 @@ async fn refine_and_list_matches(
 }
 
 /// Fetches the list of splits and their metadata from the metastore
-async fn plan_splits_for_root_search(
+pub(crate) async fn plan_splits_for_root_search(
     search_request: &mut SearchRequest,
     metastore: &mut MetastoreServiceClient,
 ) -> crate::Result<(Vec<SplitMetadata>, IndexesMetasForLeafSearch)> {

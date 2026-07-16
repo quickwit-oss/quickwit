@@ -1,4 +1,5 @@
 mod auth;
+mod columnar;
 mod es_mapping;
 mod es_query;
 mod metrics;

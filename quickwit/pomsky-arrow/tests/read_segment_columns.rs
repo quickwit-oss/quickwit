@@ -19,13 +19,14 @@
 use std::sync::Arc;
 
 use arrow::array::{
-    AsArray, BooleanArray, Float64Array, Int64Array, StringArray, UInt32Array, UInt64Array,
+    AsArray, BooleanArray, Float64Array, Int64Array, ListArray, StringArray,
+    TimestampNanosecondArray, UInt32Array, UInt64Array,
 };
-use arrow::datatypes::{DataType, Field, Schema, UInt32Type, UInt64Type};
+use arrow::datatypes::{DataType, Field, Schema, TimeUnit, UInt32Type, UInt64Type};
 use pomsky_arrow::dictionary_builder::DictionaryBuilders;
 use pomsky_arrow::read_segment_columns;
-use tantivy::schema::{FAST, SchemaBuilder, TEXT};
-use tantivy::{Index, IndexWriter, TantivyDocument};
+use tantivy::schema::{DateOptions, DateTimePrecision, FAST, SchemaBuilder, TEXT};
+use tantivy::{DateTime, Index, IndexWriter, TantivyDocument};
 
 /// Builds a 3-document in-memory index with one column of each common type and
 /// returns the index so the caller can open a searcher.
@@ -149,6 +150,111 @@ fn reads_projection_for_explicit_doc_ids() {
     let key1 = name_col.keys().value(1) as usize;
     assert_eq!(values.value(key0), "alpha");
     assert_eq!(values.value(key1), "alpha");
+}
+
+#[test]
+fn reads_empty_projection_with_selected_row_count() {
+    let index = build_index();
+    let reader = index.reader().unwrap();
+    let searcher = reader.searcher();
+    let segment_reader = &searcher.segment_readers()[0];
+    let projected_schema = Arc::new(Schema::new(Vec::<Field>::new()));
+
+    let batch = read_segment_columns(
+        segment_reader,
+        &projected_schema,
+        &[0, 2],
+        0,
+        &mut DictionaryBuilders::default(),
+    )
+    .unwrap();
+
+    assert_eq!(batch.num_rows(), 2);
+    assert!(batch.columns().is_empty());
+    assert_eq!(batch.schema(), projected_schema);
+}
+
+#[test]
+fn reads_nanosecond_timestamp_columns() {
+    let mut schema_builder = SchemaBuilder::new();
+    let date_options = DateOptions::from(FAST).set_precision(DateTimePrecision::Nanoseconds);
+    let timestamp_field = schema_builder.add_date_field("timestamp", date_options.clone());
+    let timestamps_field = schema_builder.add_date_field("timestamps", date_options);
+    let schema = schema_builder.build();
+
+    let index = Index::create_in_ram(schema);
+    let mut writer: IndexWriter = index.writer_with_num_threads(1, 15_000_000).unwrap();
+    let mut first_doc = TantivyDocument::default();
+    first_doc.add_date(
+        timestamp_field,
+        DateTime::from_timestamp_nanos(1_000_000_001),
+    );
+    first_doc.add_date(
+        timestamps_field,
+        DateTime::from_timestamp_nanos(2_000_000_002),
+    );
+    first_doc.add_date(
+        timestamps_field,
+        DateTime::from_timestamp_nanos(3_000_000_003),
+    );
+    writer.add_document(first_doc).unwrap();
+
+    let mut second_doc = TantivyDocument::default();
+    second_doc.add_date(
+        timestamp_field,
+        DateTime::from_timestamp_nanos(4_000_000_004),
+    );
+    second_doc.add_date(
+        timestamps_field,
+        DateTime::from_timestamp_nanos(5_000_000_005),
+    );
+    writer.add_document(second_doc).unwrap();
+    writer.commit().unwrap();
+
+    let reader = index.reader().unwrap();
+    let searcher = reader.searcher();
+    let segment_reader = &searcher.segment_readers()[0];
+    let timestamp_data_type = DataType::Timestamp(TimeUnit::Nanosecond, None);
+    let projected_schema = Arc::new(Schema::new(vec![
+        Field::new("timestamp", timestamp_data_type.clone(), true),
+        Field::new(
+            "timestamps",
+            DataType::List(Arc::new(Field::new("item", timestamp_data_type, true))),
+            true,
+        ),
+    ]));
+
+    let batch = read_segment_columns(
+        segment_reader,
+        &projected_schema,
+        &[0, 1],
+        0,
+        &mut DictionaryBuilders::default(),
+    )
+    .unwrap();
+
+    let timestamp_col = batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<TimestampNanosecondArray>()
+        .unwrap();
+    assert_eq!(timestamp_col.values(), &[1_000_000_001, 4_000_000_004]);
+
+    let timestamps_col = batch
+        .column(1)
+        .as_any()
+        .downcast_ref::<ListArray>()
+        .unwrap();
+    assert_eq!(timestamps_col.value_offsets(), &[0, 2, 3]);
+    let timestamp_values = timestamps_col
+        .values()
+        .as_any()
+        .downcast_ref::<TimestampNanosecondArray>()
+        .unwrap();
+    assert_eq!(
+        timestamp_values.values(),
+        &[2_000_000_002, 3_000_000_003, 5_000_000_005]
+    );
 }
 
 #[test]

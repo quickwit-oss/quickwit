@@ -21,6 +21,8 @@ pub mod batch;
 mod client;
 mod cluster_client;
 mod collector;
+/// Columnar two-phase read primitive for the Trino endpoints.
+pub mod columnar_stream;
 mod error;
 mod fetch_docs;
 mod find_trace_ids_collector;
@@ -81,6 +83,10 @@ pub use crate::client::{
     SearchServiceClient, create_search_client_from_channel, create_search_client_from_grpc_addr,
 };
 pub use crate::cluster_client::ClusterClient;
+pub use crate::columnar_stream::{
+    BatchSize, ColumnRequest, ColumnarSplitBatch, ColumnarSplitPlanRequest,
+    SearchSplitBatchColumnarRequest, plan_columnar_splits,
+};
 pub use crate::error::{SearchError, parse_grpc_error};
 use crate::fetch_docs::fetch_docs;
 pub use crate::invoker::LambdaLeafSearchInvoker;
