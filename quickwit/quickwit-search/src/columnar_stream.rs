@@ -34,7 +34,6 @@ use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use futures::{Stream, StreamExt};
 use pomsky_arrow::dictionary_builder::DictionaryBuilders;
 use pomsky_arrow::read_segment_columns;
-use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_doc_mapper::{DocMapper, FastFieldWarmupInfo, WarmupInfo};
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::metastore::MetastoreServiceClient;
@@ -447,7 +446,8 @@ fn scan_segment_stream(
         );
         loop {
             let (new_cursor, batch, exhausted) =
-                run_cpu_intensive(move || cursor.scan_next_batch(batch_size))
+                crate::search_thread_pool()
+                    .run_cpu_intensive(move || cursor.scan_next_batch(batch_size))
                     .await
                     .map_err(|_| SearchError::Internal("segment scan panicked".to_string()))??;
 
