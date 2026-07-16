@@ -158,6 +158,7 @@ pub async fn plan_columnar_splits(
     let mut search_request = SearchRequest {
         index_id_patterns: request.index_id_patterns,
         query_ast: query_ast_json,
+        // Split planning extracts timestamp bounds from the query AST.
         start_timestamp: None,
         end_timestamp: None,
         max_hits: 0,
