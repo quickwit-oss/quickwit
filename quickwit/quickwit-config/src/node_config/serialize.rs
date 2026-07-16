@@ -145,12 +145,15 @@ pub async fn load_node_config_with_env(
     config_format: ConfigFormat,
     config_content: &[u8],
     env_vars: &HashMap<String, String>,
+    enabled_services: Option<&HashSet<QuickwitService>>,
 ) -> anyhow::Result<NodeConfig> {
     let rendered_config_content = render_config(config_content)?;
     let versioned_node_config: VersionedNodeConfig =
         config_format.parse(rendered_config_content.as_bytes())?;
     let node_config_builder: NodeConfigBuilder = versioned_node_config.into();
-    let config = node_config_builder.build_and_validate(env_vars).await?;
+    let config = node_config_builder
+        .build_and_validate(env_vars, enabled_services)
+        .await?;
     Ok(config)
 }
 
@@ -238,6 +241,7 @@ impl NodeConfigBuilder {
     pub async fn build_and_validate(
         mut self,
         env_vars: &HashMap<String, String>,
+        enabled_services: Option<&HashSet<QuickwitService>>,
     ) -> anyhow::Result<NodeConfig> {
         let node_id = self
             .node_id
@@ -247,13 +251,17 @@ impl NodeConfigBuilder {
 
         let enable_standalone_compactors = self.enable_standalone_compactors.resolve(env_vars)?;
 
-        let enabled_services: HashSet<QuickwitService> = self
-            .enabled_services
-            .resolve(env_vars)?
-            .0
-            .into_iter()
-            .map(|service| service.parse())
-            .collect::<Result<_, _>>()?;
+        let resolved_enabled_services: HashSet<QuickwitService> =
+            if let Some(enabled_services) = enabled_services {
+                enabled_services.clone()
+            } else {
+                self.enabled_services
+                    .resolve(env_vars)?
+                    .0
+                    .into_iter()
+                    .map(|service| service.parse())
+                    .collect::<Result<_, _>>()?
+            };
 
         let listen_address = self.listen_address.resolve(env_vars)?;
         let listen_host = listen_address.parse::<Host>()?;
@@ -339,7 +347,7 @@ impl NodeConfigBuilder {
             cluster_id: self.cluster_id.resolve(env_vars)?,
             node_id,
             availability_zone,
-            enabled_services,
+            enabled_services: resolved_enabled_services,
             gossip_listen_addr,
             grpc_listen_addr,
             gossip_advertise_addr,
@@ -684,7 +692,8 @@ mod tests {
             get_config_filepath(&format!("quickwit.{config_format:?}").to_lowercase());
         let file = std::fs::read_to_string(&config_filepath).unwrap();
         let env_vars = HashMap::default();
-        let config = load_node_config_with_env(config_format, file.as_bytes(), &env_vars).await?;
+        let config =
+            load_node_config_with_env(config_format, file.as_bytes(), &env_vars, None).await?;
         assert_eq!(config.cluster_id, "quickwit-cluster");
         assert_eq!(config.enabled_services.len(), 2);
 
@@ -920,6 +929,7 @@ mod tests {
             ConfigFormat::Yaml,
             config_str.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .unwrap_err();
@@ -936,6 +946,7 @@ mod tests {
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .unwrap();
@@ -1012,7 +1023,7 @@ mod tests {
             "s3://quickwit-indexes/prod".to_string(),
         );
         let config =
-            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars)
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
                 .await
                 .unwrap();
         assert_eq!(config.cluster_id, "test-cluster");
@@ -1083,6 +1094,7 @@ mod tests {
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .unwrap();
@@ -1105,6 +1117,7 @@ mod tests {
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .unwrap();
@@ -1129,7 +1142,7 @@ mod tests {
             "QW_DATA_DIR".to_string(),
             data_dir_path.to_string_lossy().to_string(),
         );
-        load_node_config_with_env(ConfigFormat::Toml, file_content.as_bytes(), &env_vars)
+        load_node_config_with_env(ConfigFormat::Toml, file_content.as_bytes(), &env_vars, None)
             .await
             .unwrap();
     }
@@ -1146,6 +1159,7 @@ mod tests {
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .unwrap_err();
@@ -1170,6 +1184,7 @@ mod tests {
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .unwrap_err();
@@ -1189,7 +1204,7 @@ mod tests {
             },
             ..Default::default()
         }
-        .build_and_validate(&HashMap::new())
+        .build_and_validate(&HashMap::new(), None)
         .await
         .unwrap_err();
         assert!(
@@ -1209,10 +1224,31 @@ mod tests {
             },
             ..Default::default()
         }
-        .build_and_validate(&HashMap::new())
+        .build_and_validate(&HashMap::new(), None)
         .await
         .unwrap();
         assert!(node_config.searcher_config.use_metastore_read_replica);
+    }
+
+    #[tokio::test]
+    async fn test_enabled_services_validates_metastore_read_replica_uri() {
+        let config_yaml = "version: 0.8";
+        let enabled_services = HashSet::from([QuickwitService::MetastoreReadReplica]);
+
+        let error = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &HashMap::new(),
+            Some(&enabled_services),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("requires `metastore_read_replica_uri`")
+        );
     }
 
     #[tokio::test]
@@ -1227,7 +1263,7 @@ mod tests {
             ])),
             ..Default::default()
         }
-        .build_and_validate(&HashMap::new())
+        .build_and_validate(&HashMap::new(), None)
         .await
         .unwrap_err();
         assert!(
@@ -1252,7 +1288,7 @@ mod tests {
             enable_standalone_compactors: ConfigValue::for_test(true),
             ..Default::default()
         }
-        .build_and_validate(&HashMap::new())
+        .build_and_validate(&HashMap::new(), None)
         .await
         .unwrap();
         assert!(node_config.is_service_enabled(QuickwitService::Compactor));
@@ -1264,7 +1300,7 @@ mod tests {
             let node_config = NodeConfigBuilder {
                 ..Default::default()
             }
-            .build_and_validate(&HashMap::new())
+            .build_and_validate(&HashMap::new(), None)
             .await
             .unwrap();
             assert!(node_config.peer_seed_addrs().await.unwrap().is_empty());
@@ -1284,7 +1320,7 @@ mod tests {
                 ])),
                 ..Default::default()
             }
-            .build_and_validate(&HashMap::new())
+            .build_and_validate(&HashMap::new(), None)
             .await
             .unwrap();
             assert_eq!(
@@ -1307,7 +1343,7 @@ mod tests {
                 listen_address: default_listen_address(),
                 ..Default::default()
             }
-            .build_and_validate(&HashMap::new())
+            .build_and_validate(&HashMap::new(), None)
             .await
             .unwrap();
             assert_eq!(
@@ -1326,7 +1362,7 @@ mod tests {
                 },
                 ..Default::default()
             }
-            .build_and_validate(&HashMap::new())
+            .build_and_validate(&HashMap::new(), None)
             .await
             .unwrap();
             assert_eq!(
@@ -1347,7 +1383,7 @@ mod tests {
                 },
                 ..Default::default()
             }
-            .build_and_validate(&HashMap::new())
+            .build_and_validate(&HashMap::new(), None)
             .await
             .unwrap();
             assert_eq!(
@@ -1371,7 +1407,7 @@ mod tests {
             },
             ..Default::default()
         }
-        .build_and_validate(&HashMap::new())
+        .build_and_validate(&HashMap::new(), None)
         .await
         .unwrap();
         assert_eq!(
@@ -1404,7 +1440,8 @@ mod tests {
                 load_node_config_with_env(
                     ConfigFormat::Yaml,
                     config_yaml.as_bytes(),
-                    &Default::default()
+                    &Default::default(),
+                    None,
                 )
                 .await
                 .is_err()
@@ -1421,7 +1458,8 @@ mod tests {
                 load_node_config_with_env(
                     ConfigFormat::Yaml,
                     config_yaml.as_bytes(),
-                    &Default::default()
+                    &Default::default(),
+                    None,
                 )
                 .await
                 .is_err()
@@ -1440,6 +1478,7 @@ mod tests {
                 ConfigFormat::Yaml,
                 config_yaml.as_bytes(),
                 &HashMap::default(),
+                None,
             )
             .await
             .unwrap();
@@ -1454,6 +1493,7 @@ mod tests {
                 ConfigFormat::Yaml,
                 config_yaml.as_bytes(),
                 &HashMap::default(),
+                None,
             )
             .await
             .unwrap();
@@ -1468,6 +1508,7 @@ mod tests {
                 ConfigFormat::Yaml,
                 config_yaml.as_bytes(),
                 &HashMap::default(),
+                None,
             )
             .await
             .unwrap_err();
@@ -1487,6 +1528,7 @@ mod tests {
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
             &HashMap::default(),
+            None,
         )
         .await
         .unwrap_err();
@@ -1523,6 +1565,7 @@ mod tests {
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .expect("Deserialize rest config");
@@ -1541,6 +1584,7 @@ mod tests {
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .expect("Deserialize rest config");
@@ -1558,6 +1602,7 @@ mod tests {
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .expect("Deserialize rest config");
@@ -1579,6 +1624,7 @@ mod tests {
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .expect("Deserialize rest config");
@@ -1598,6 +1644,7 @@ mod tests {
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .expect("Deserialize rest config");
@@ -1618,6 +1665,7 @@ mod tests {
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .expect_err("Config should not allow empty origins.");
@@ -1632,6 +1680,7 @@ mod tests {
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .expect_err("Config should not allow empty origins.");
@@ -1662,6 +1711,7 @@ mod tests {
             ConfigFormat::Yaml,
             node_config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .unwrap_err()
@@ -1680,7 +1730,7 @@ mod tests {
             "true".to_string(),
         )]);
         let config =
-            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars)
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
                 .await
                 .unwrap();
         assert!(config.enabled_services.contains(&QuickwitService::Indexer));
@@ -1702,7 +1752,7 @@ mod tests {
             enabled_services: [indexer]
         "#;
         let config =
-            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars)
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
                 .await
                 .unwrap();
         assert!(config.enabled_services.contains(&QuickwitService::Indexer));

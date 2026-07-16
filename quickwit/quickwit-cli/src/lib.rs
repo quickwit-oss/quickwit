@@ -230,14 +230,21 @@ pub fn start_actor_runtimes(
 }
 
 /// Loads a node config located at `config_uri` with the default storage configuration.
-async fn load_node_config(config_uri: &Uri) -> anyhow::Result<NodeConfig> {
+async fn load_node_config(
+    config_uri: &Uri,
+    enabled_services: Option<&HashSet<QuickwitService>>,
+) -> anyhow::Result<NodeConfig> {
     let config_content = load_file(&StorageResolver::unconfigured(), config_uri)
         .await
         .context("failed to load node config")?;
     let config_format = ConfigFormat::sniff_from_uri(config_uri)?;
-    let config = NodeConfig::load(config_format, config_content.as_slice())
-        .await
-        .with_context(|| format!("failed to parse node config `{config_uri}`"))?;
+    let config = NodeConfig::load_with_enabled_services(
+        config_format,
+        config_content.as_slice(),
+        enabled_services,
+    )
+    .await
+    .with_context(|| format!("failed to parse node config `{config_uri}`"))?;
     info!(config_uri=%config_uri, config=?config, "loaded node config");
     Ok(config)
 }

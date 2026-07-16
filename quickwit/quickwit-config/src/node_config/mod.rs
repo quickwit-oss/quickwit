@@ -920,8 +920,22 @@ impl NodeConfig {
 
     /// Parses and validates a [`NodeConfig`] from a given URI and config content.
     pub async fn load(config_format: ConfigFormat, config_content: &[u8]) -> anyhow::Result<Self> {
+        Self::load_with_enabled_services(config_format, config_content, None).await
+    }
+
+    /// Parses and validates a [`NodeConfig`] after overriding its enabled services.
+    ///
+    /// The override takes precedence over both the config file and `QW_ENABLED_SERVICES` and is
+    /// applied before service-dependent validation.
+    pub async fn load_with_enabled_services(
+        config_format: ConfigFormat,
+        config_content: &[u8],
+        enabled_services: Option<&HashSet<QuickwitService>>,
+    ) -> anyhow::Result<Self> {
         let env_vars = env::vars().collect::<HashMap<_, _>>();
-        let config = load_node_config_with_env(config_format, config_content, &env_vars).await?;
+        let config =
+            load_node_config_with_env(config_format, config_content, &env_vars, enabled_services)
+                .await?;
         if !config.data_dir_path.try_exists()? {
             bail!(
                 "data dir `{}` does not exist",
