@@ -25,7 +25,7 @@ use arrow::array::{
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit, UInt32Type, UInt64Type};
 use pomsky_arrow::dictionary_builder::DictionaryBuilders;
 use pomsky_arrow::read_segment_columns;
-use tantivy::schema::{DateOptions, DateTimePrecision, FAST, SchemaBuilder, TEXT};
+use tantivy::schema::{DateOptions, DateTimePrecision, SchemaBuilder, FAST, TEXT};
 use tantivy::{DateTime, Index, IndexWriter, TantivyDocument};
 
 /// Builds a 3-document in-memory index with one column of each common type and
@@ -150,6 +150,28 @@ fn reads_projection_for_explicit_doc_ids() {
     let key1 = name_col.keys().value(1) as usize;
     assert_eq!(values.value(key0), "alpha");
     assert_eq!(values.value(key1), "alpha");
+}
+
+#[test]
+fn reads_empty_projection_with_selected_row_count() {
+    let index = build_index();
+    let reader = index.reader().unwrap();
+    let searcher = reader.searcher();
+    let segment_reader = &searcher.segment_readers()[0];
+    let projected_schema = Arc::new(Schema::new(Vec::<Field>::new()));
+
+    let batch = read_segment_columns(
+        segment_reader,
+        &projected_schema,
+        &[0, 2],
+        0,
+        &mut DictionaryBuilders::default(),
+    )
+    .unwrap();
+
+    assert_eq!(batch.num_rows(), 2);
+    assert!(batch.columns().is_empty());
+    assert_eq!(batch.schema(), projected_schema);
 }
 
 #[test]

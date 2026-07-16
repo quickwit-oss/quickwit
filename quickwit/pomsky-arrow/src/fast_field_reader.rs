@@ -26,9 +26,9 @@
 use std::sync::Arc;
 
 use arrow::array::{
-    ArrayBuilder, ArrayRef, BinaryBuilder, BooleanBuilder, DictionaryArray, Float64Builder,
-    Int64Builder, ListBuilder, StringBuilder, TimestampNanosecondBuilder, UInt32Array,
-    UInt64Builder, new_null_array,
+    new_null_array, ArrayBuilder, ArrayRef, BinaryBuilder, BooleanBuilder, DictionaryArray,
+    Float64Builder, Int64Builder, ListBuilder, RecordBatchOptions, StringBuilder,
+    TimestampNanosecondBuilder, UInt32Array, UInt64Builder,
 };
 use arrow::datatypes::{DataType, Field, SchemaRef, TimeUnit, UInt32Type};
 use arrow::record_batch::RecordBatch;
@@ -59,7 +59,8 @@ pub fn read_segment_columns(
         .map(|field| build_arrow_array(field, fast_fields, docs, segment_ord, dictionary_builders))
         .collect::<Result<Vec<_>>>()?;
 
-    let batch = RecordBatch::try_new(projected_schema.clone(), columns)?;
+    let options = RecordBatchOptions::new().with_row_count(Some(docs.len()));
+    let batch = RecordBatch::try_new_with_options(projected_schema.clone(), columns, &options)?;
     Ok(batch)
 }
 
