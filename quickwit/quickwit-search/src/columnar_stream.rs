@@ -373,11 +373,7 @@ impl SegmentScanCursor {
             Some(remaining) => batch_size.min(remaining),
             None => batch_size,
         };
-        // In tantivy, there are never any deleted docs, so this count reflects the actual number of
-        // docs in the set.
-        let doc_count = doc_count.min(self.doc_set.count_including_deleted() as usize);
-
-        // Pull batches of doc ids from the set into a vec
+        // Pull at most the requested number of doc ids from the set into a vec
         let mut doc_ids = vec![0u32; doc_count];
         let mut doc_ids_written = 0;
         while doc_ids.len() - doc_ids_written >= COLLECT_BLOCK_BUFFER_LEN {
@@ -407,8 +403,7 @@ impl SegmentScanCursor {
             doc_ids_written += 1;
             doc_id = self.doc_set.advance();
         }
-        // This shouldn't ever actually change the size of the doc_ids as we performed enough checks
-        // above, but it is included as a safety mechanism
+        // Just in case we didn't match enough rows to fill an entire batch
         doc_ids.truncate(doc_ids_written);
 
         if let Some(remaining) = self.remaining.as_mut() {
