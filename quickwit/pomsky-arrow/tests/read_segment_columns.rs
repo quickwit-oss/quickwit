@@ -25,7 +25,7 @@ use arrow::array::{
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit, UInt32Type, UInt64Type};
 use pomsky_arrow::dictionary_builder::DictionaryBuilders;
 use pomsky_arrow::read_segment_columns;
-use tantivy::schema::{DateOptions, DateTimePrecision, SchemaBuilder, FAST, TEXT};
+use tantivy::schema::{DateOptions, DateTimePrecision, FAST, SchemaBuilder, TEXT};
 use tantivy::{DateTime, Index, IndexWriter, TantivyDocument};
 
 /// Builds a 3-document in-memory index with one column of each common type and

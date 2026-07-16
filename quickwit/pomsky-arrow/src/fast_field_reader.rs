@@ -26,9 +26,9 @@
 use std::sync::Arc;
 
 use arrow::array::{
-    new_null_array, ArrayBuilder, ArrayRef, BinaryBuilder, BooleanBuilder, DictionaryArray,
-    Float64Builder, Int64Builder, ListBuilder, RecordBatchOptions, StringBuilder,
-    TimestampNanosecondBuilder, UInt32Array, UInt64Builder,
+    ArrayBuilder, ArrayRef, BinaryBuilder, BooleanBuilder, DictionaryArray, Float64Builder,
+    Int64Builder, ListBuilder, RecordBatchOptions, StringBuilder, TimestampNanosecondBuilder,
+    UInt32Array, UInt64Builder, new_null_array,
 };
 use arrow::datatypes::{DataType, Field, SchemaRef, TimeUnit, UInt32Type};
 use arrow::record_batch::RecordBatch;
