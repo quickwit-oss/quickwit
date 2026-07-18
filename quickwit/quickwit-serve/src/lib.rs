@@ -80,7 +80,9 @@ use quickwit_compaction::{
     wait_for_compactor_decommission,
 };
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig, PostgresMetastoreConfig, disable_ingest_v1};
+use quickwit_config::{
+    ClusterConfig, IngestApiConfig, NodeConfig, PostgresMetastoreConfig, disable_ingest_v1,
+};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
