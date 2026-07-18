@@ -408,7 +408,7 @@ The `index_filter` parameter allows you to filter which indices contribute to th
 Like Elasticsearch, this is a **best-effort** approach: Quickwit may return field capabilities from indices that do not actually contain any matching documents. In Quickwit, the filtering is limited to the existing split-pruning based on metadata:
 
 - **Time pruning**: Range queries on the timestamp field can eliminate splits whose time range does not overlap with the filter.
-- **Tag pruning**: Term queries on [tag fields](../configuration/index-config.md#tag-fields) can eliminate splits that do not contain the requested tag value.
+- **Tag pruning**: Term queries on [tag fields](../overview/concepts/querying#tag-pruning) can eliminate splits that do not contain the requested tag value.
 
 Other filter types (e.g. full-text queries or term queries on non-tag fields) are accepted but will not prune any splits — all indices will be returned as if no filter was specified. In particular, Quickwit does not check whether terms are present in the term dictionary.
 
