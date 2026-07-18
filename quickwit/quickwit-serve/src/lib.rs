@@ -80,7 +80,9 @@ use quickwit_compaction::{
     wait_for_compactor_decommission,
 };
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig, disable_ingest_v1};
+use quickwit_config::{
+    ClusterConfig, IngestApiConfig, NodeConfig, PostgresMetastoreConfig, disable_ingest_v1,
+};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
@@ -597,12 +599,12 @@ pub async fn serve_quickwit(
                     )
                 })?;
             let max_in_flight_requests = if node_config.metastore_uri.protocol().is_database() {
-                node_config
+                let max_connections = node_config
                     .metastore_configs
                     .find_postgres()
-                    .map(|config| config.max_connections.get() * 2)
-                    .unwrap_or_default()
-                    .max(100)
+                    .map(|config| config.max_connections)
+                    .unwrap_or_else(PostgresMetastoreConfig::default_max_connections);
+                max_connections.get().saturating_mul(2)
             } else {
                 100
             };
