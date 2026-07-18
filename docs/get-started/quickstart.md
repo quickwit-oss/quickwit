@@ -6,7 +6,7 @@ sidebar_position: 1
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-In this quick start guide, we will install Quickwit, create an index, add documents and finally execute search queries. All the Quickwit commands used in this guide are documented [in the CLI reference documentation](/docs/reference/cli.md).
+In this quick start guide, we will install Quickwit, create an index, add documents and finally execute search queries. All the Quickwit commands used in this guide are documented [in the CLI reference documentation](../reference/cli.md).
 
 ## Install Quickwit using Quickwit installer
 
@@ -72,7 +72,7 @@ curl http://localhost:7280/api/v1/version
 
 ## Create your first index
 
-Before adding documents to Quickwit, you need to create an index configured with a YAML config file. This config file notably lets you define how to map your input documents to your index fields and whether these fields should be stored and indexed. See the [index config documentation](/docs/configuration/index-config.md).
+Before adding documents to Quickwit, you need to create an index configured with a YAML config file. This config file notably lets you define how to map your input documents to your index fields and whether these fields should be stored and indexed. See the [index config documentation](../configuration/index-config.md).
 
 Let's create an index configured to receive Stackoverflow posts (questions and answers).
 
@@ -81,7 +81,7 @@ Let's create an index configured to receive Stackoverflow posts (questions and a
 curl -o stackoverflow-index-config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/stackoverflow/index-config.yaml
 ```
 
-The index config defines three fields: `title`, `body` and `creationDate`. `title` and `body` are [indexed and tokenized](../configuration/index-config.md#text-type), and they are also used as default search fields, which means they will be used for search if you do not target a specific field in your query. `creationDate` serves as the timestamp for each record. There are no more explicit field definitions as we can use the default dynamic [mode](/docs/configuration/index-config.md#mode): the undeclared fields will still be indexed, by default fast fields are enabled to enable aggregation queries. and the `raw` tokenizer is used for text. 
+The index config defines three fields: `title`, `body` and `creationDate`. `title` and `body` are [indexed and tokenized](../configuration/index-config.md#text-type), and they are also used as default search fields, which means they will be used for search if you do not target a specific field in your query. `creationDate` serves as the timestamp for each record. There are no more explicit field definitions as we can use the default dynamic [mode](../configuration/index-config.md#mode): the undeclared fields will still be indexed, by default fast fields are enabled to enable aggregation queries. and the `raw` tokenizer is used for text.
 
 And here is the complete config:
 
@@ -89,7 +89,7 @@ And here is the complete config:
 #
 # Index config file for stackoverflow dataset.
 #
-version: 0.7
+version: 0.8
 
 index_id: stackoverflow
 
@@ -117,7 +117,7 @@ search_settings:
   default_search_fields: [title, body]
 
 indexing_settings:
-  commit_timeout_secs: 30
+  commit_timeout_secs: 10
 ```
 
 Now we can create the index with the command:
@@ -148,7 +148,7 @@ You're now ready to fill the index.
 
 ## Let's add some documents
 
-Quickwit can index data from many [sources](/docs/configuration/source-config.md). We will use a new line delimited json [ndjson](http://ndjson.org/) datasets as our data source.
+Quickwit can index data from many [sources](../configuration/source-config.md). We will use a new line delimited json [ndjson](http://ndjson.org/) datasets as our data source.
 Let's download [a bunch of stackoverflow posts (10 000)](https://quickwit-datasets-public.s3.amazonaws.com/stackoverflow.posts.transformed-10000.json) in [ndjson](http://ndjson.org/) format and index it.
 
 ```bash
