@@ -12,12 +12,14 @@ ARG PBC_URL="https://github.com/protocolbuffers/protobuf/releases/download/v21.5
 # `rdkafka/gssapi-vendored` feature when there is a release including:
 # https://github.com/MaterializeInc/rust-sasl/pull/48
 
+# librdkafka 2.12.1 includes curl/curl.h even when OIDC support is disabled.
 RUN dpkg --add-architecture arm64 && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
         binutils-aarch64-linux-gnu \
         g++-10-aarch64-linux-gnu \
         gcc-10-aarch64-linux-gnu \
+        libcurl4-openssl-dev:arm64 \
         libsasl2-dev:arm64 \
         unzip && \
     rm -rf /var/lib/apt/lists/*
