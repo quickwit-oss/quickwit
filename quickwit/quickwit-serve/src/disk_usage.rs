@@ -22,6 +22,9 @@ use tracing::warn;
 ///
 /// External and unbounded disk usage, e.g. the indexing workbench (`indexing/`) and the delete
 /// task workbench (`delete_task_service/`), are not included.
+///
+/// The budgets are aggregated because enabled services share the data-dir volume. Checking each
+/// service independently could miss a combined overcommit even when every individual budget fits.
 #[derive(Default, Debug, Eq, PartialEq)]
 struct ExpectedDiskUsage {
     // indexer / ingester
