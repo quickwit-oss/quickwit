@@ -11,6 +11,7 @@ FROM rustembedded/cross:aarch64-unknown-linux-musl@sha256:22627e0ba533781062127b
 # ALSO UPDATE hooks/build!
 ARG OPENSSL_VERSION=1.1.1i
 ARG ZLIB_VERSION=1.2.11
+ARG ZLIB_SHA256=629380c90a77b964d896ed37163f5c3a34f6e6d897311f1df2a7016355c45eff
 
 RUN echo "Building OpenSSL" && \
     cd /tmp && \
@@ -26,7 +27,9 @@ RUN echo "Building OpenSSL" && \
 
 RUN echo "Building zlib" && \
     cd /tmp && \
-    curl -fLO "https://zlib.net/fossils/zlib-$ZLIB_VERSION.tar.gz" && \
+    curl -fL --retry 3 -o "zlib-$ZLIB_VERSION.tar.gz" \
+        "https://github.com/madler/zlib/archive/refs/tags/v$ZLIB_VERSION.tar.gz" && \
+    echo "$ZLIB_SHA256  zlib-$ZLIB_VERSION.tar.gz" | sha256sum --check - && \
     tar xzf "zlib-$ZLIB_VERSION.tar.gz" && cd "zlib-$ZLIB_VERSION" && \
     AR=aarch64-linux-musl-ar CC=aarch64-linux-musl-gcc ./configure --static --prefix=/usr/local/aarch64-linux-musl && \
     make && make install && \
