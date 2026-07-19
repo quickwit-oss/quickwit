@@ -7,10 +7,12 @@ FROM ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main@sha256:2431cbfcf2499f8a00570
 
 ARG PBC_URL="https://github.com/protocolbuffers/protobuf/releases/download/v21.5/protoc-21.5-linux-x86_64.zip"
 
+# librdkafka 2.12.1 includes curl/curl.h even when OIDC support is disabled.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         g++-10 \
         gcc-10 \
+        libcurl4-openssl-dev \
         libsasl2-dev \
         unzip && \
     rm -rf /var/lib/apt/lists/*
