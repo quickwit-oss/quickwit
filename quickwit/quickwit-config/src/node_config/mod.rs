@@ -915,9 +915,8 @@ impl NodeConfig {
     }
 
     /// Parses and validates a [`NodeConfig`], applying `service_override` before validation so
-    /// service-dependent validation (e.g. the disk-usage check) uses the actual runtime service
-    /// set rather than the pre-override default (e.g. when `--service searcher` is passed via the
-    /// CLI).
+    /// service-dependent validation uses the actual runtime service set rather than the
+    /// pre-override default (e.g. when `--service searcher` is passed via the CLI).
     pub async fn load_with_service_override(
         config_format: ConfigFormat,
         config_content: &[u8],

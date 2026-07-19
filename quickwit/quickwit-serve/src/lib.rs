@@ -21,6 +21,7 @@ mod datafusion_api;
 mod decompression;
 mod delete_task_api;
 mod developer_api;
+mod disk_usage;
 mod elasticsearch_api;
 mod format;
 mod grpc;
@@ -564,6 +565,8 @@ pub async fn serve_quickwit(
     shutdown_signal: BoxFutureInfaillible<()>,
     env_filter_reload_fn: EnvFilterReloadFn,
 ) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
+    disk_usage::check_data_dir_disk_usage(&node_config);
+
     let cluster = start_cluster_service(&node_config)
         .await
         .context("failed to start cluster service")?;

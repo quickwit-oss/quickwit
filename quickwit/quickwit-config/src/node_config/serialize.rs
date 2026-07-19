@@ -18,9 +18,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use anyhow::{Context, bail, ensure};
-use bytesize::ByteSize;
 use http::HeaderMap;
-use quickwit_common::fs::get_disk_size;
 use quickwit_common::net::{Host, find_private_ip, get_short_hostname};
 use quickwit_common::new_coolid;
 use quickwit_common::uri::Uri;
@@ -394,59 +392,7 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
              merge pipeline, the compactor service must not be enabled."
         );
     }
-    validate_disk_usage(node_config);
     Ok(())
-}
-
-/// A list of all the known disk budgets
-///
-/// External disk usage and unbounded disk usages, e.g the indexing workbench
-/// (indexing/) and the delete task workbench (delete_task_service/) are not included.
-#[derive(Default, Debug)]
-struct ExpectedDiskUsage {
-    // indexer / ingester
-    split_store_max_num_bytes: Option<ByteSize>,
-    max_queue_disk_usage: Option<ByteSize>,
-    // searcher
-    split_cache: Option<ByteSize>,
-}
-
-impl ExpectedDiskUsage {
-    fn from_config(node_config: &NodeConfig) -> Self {
-        let mut expected = Self::default();
-        if node_config.is_service_enabled(QuickwitService::Indexer) {
-            expected.max_queue_disk_usage =
-                Some(node_config.ingest_api_config.max_queue_disk_usage);
-            expected.split_store_max_num_bytes =
-                Some(node_config.indexer_config.split_store_max_num_bytes);
-        }
-        if node_config.is_service_enabled(QuickwitService::Searcher) {
-            expected.split_cache = node_config
-                .searcher_config
-                .split_cache
-                .map(|limits| limits.max_num_bytes);
-        }
-        expected
-    }
-
-    fn total(&self) -> ByteSize {
-        self.split_store_max_num_bytes.unwrap_or_default()
-            + self.max_queue_disk_usage.unwrap_or_default()
-            + self.split_cache.unwrap_or_default()
-    }
-}
-
-fn validate_disk_usage(node_config: &NodeConfig) {
-    if let Some(volume_size) = get_disk_size(&node_config.data_dir_path) {
-        let expected_disk_usage = ExpectedDiskUsage::from_config(node_config);
-        if expected_disk_usage.total() > volume_size {
-            warn!(
-                ?volume_size,
-                ?expected_disk_usage,
-                "data dir volume too small"
-            );
-        }
-    }
 }
 
 #[cfg(test)]
@@ -1626,9 +1572,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_service_override_applied_before_validation() {
-        // A searcher started with `--service searcher` must not warn about indexer split-store or
-        // ingest queue disk budgets. The service override has to be applied before validation so
-        // the disk-usage check runs against the real runtime service set, not the default set.
+        // The config's compactor service is invalid without `enable_standalone_compactors`. A CLI
+        // searcher override must replace it before service-dependent validation runs.
         let data_dir = env::temp_dir().join(new_coolid("node-config"));
         std::fs::create_dir_all(&data_dir).unwrap();
         let config_yaml = format!(
@@ -1636,12 +1581,7 @@ mod tests {
             version: 0.8
             data_dir: "{}"
             enabled_services:
-              - indexer
-              - searcher
-            indexer:
-              split_store_max_num_bytes: 100GiB
-            ingest_api:
-              max_queue_disk_usage: 24GiB
+              - compactor
         "#,
             data_dir.display()
         );
@@ -1655,11 +1595,6 @@ mod tests {
         .unwrap();
 
         assert_eq!(config.enabled_services, services_override);
-
-        // With only the searcher enabled and no split_cache configured, the expected disk usage
-        // must be zero: no indexer/ingest budgets are counted.
-        let expected_disk_usage = ExpectedDiskUsage::from_config(&config);
-        assert_eq!(expected_disk_usage.total(), ByteSize::default());
         std::fs::remove_dir_all(data_dir).unwrap();
     }
 }

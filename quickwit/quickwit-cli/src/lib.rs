@@ -232,8 +232,8 @@ pub fn start_actor_runtimes(
 /// Loads a node config located at `config_uri` with the default storage configuration.
 ///
 /// When `service_override` is provided, it is applied before config validation so that
-/// service-dependent validation (e.g. the disk-usage check) reflects the actual runtime service
-/// set (e.g. `--service searcher`).
+/// service-dependent validation reflects the actual runtime service set (e.g. `--service
+/// searcher`).
 async fn load_node_config(
     config_uri: &Uri,
     service_override: Option<&HashSet<QuickwitService>>,

@@ -36,9 +36,20 @@ pub fn get_cache_directory_path(data_dir_path: &Path) -> PathBuf {
     data_dir_path.join("indexer-split-cache").join("splits")
 }
 
-/// Get the total size of the disk containing the given directory, or `None` if
-/// it couldn't be determined.
-pub fn get_disk_size(dir_path: &Path) -> Option<ByteSize> {
+/// Information about the disk containing a directory.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DiskInfo {
+    /// Name reported by the operating system for the backing device.
+    pub device_name: String,
+    /// Canonical mount point of the backing device.
+    pub mount_point: PathBuf,
+    /// Total capacity of the backing device.
+    pub total_space: ByteSize,
+}
+
+/// Returns information about the disk containing the given directory, or `None` if it couldn't be
+/// determined.
+pub fn get_disk_info(dir_path: &Path) -> Option<DiskInfo> {
     let disks = sysinfo::Disks::new_with_refreshed_list_specifics(
         DiskRefreshKind::nothing().with_storage(),
     );
@@ -65,7 +76,11 @@ pub fn get_disk_size(dir_path: &Path) -> Option<ByteSize> {
             return None;
         }
     }
-    best_match.map(|(disk, _)| ByteSize::b(disk.total_space()))
+    best_match.map(|(disk, mount_point)| DiskInfo {
+        device_name: disk.name().to_string_lossy().into_owned(),
+        mount_point,
+        total_space: ByteSize::b(disk.total_space()),
+    })
 }
 
 #[cfg(test)]
