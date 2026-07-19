@@ -22,6 +22,7 @@ use futures::future::select;
 use itertools::Itertools;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
+use quickwit_config::NodeConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_serve::tcp_listener::DefaultTcpListenerResolver;
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn, reload_tls_cert, serve_quickwit};
@@ -92,6 +93,10 @@ async fn listen_sighup() {
 }
 
 impl RunCliCommand {
+    async fn load_node_config(&self) -> anyhow::Result<NodeConfig> {
+        load_node_config(&self.config_uri, self.services.as_ref()).await
+    }
+
     pub fn parse_cli_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
             .remove_one::<String>("config")
@@ -117,15 +122,13 @@ impl RunCliCommand {
         debug!(args = ?self, "run-service");
         let version_text = BuildInfo::get_version_text();
         info!("quickwit version: {version_text}");
-        let mut node_config = load_node_config(&self.config_uri).await?;
+        let node_config = self.load_node_config().await?;
+        if let Some(services) = &self.services {
+            info!(services = %services.iter().join(", "), "services set from CLI override");
+        }
         let (storage_resolver, metastore_resolver) =
             get_resolvers(&node_config.storage_configs, &node_config.metastore_configs);
         crate::busy_detector::set_enabled(true);
-
-        if let Some(services) = &self.services {
-            info!(services = %services.iter().join(", "), "setting services from override");
-            node_config.enabled_services.clone_from(services);
-        }
         // TODO move in serve quickwit?
         let runtimes_config = RuntimesConfig::default();
         start_actor_runtimes(runtimes_config, &node_config.enabled_services)?;
@@ -152,8 +155,38 @@ impl RunCliCommand {
 #[cfg(test)]
 mod tests {
 
+    use tempfile::tempdir;
+
     use super::*;
     use crate::cli::{CliCommand, build_cli};
+
+    #[tokio::test]
+    async fn test_run_command_forwards_service_override_before_validation() -> anyhow::Result<()> {
+        let temp_dir = tempdir()?;
+        let config_path = temp_dir.path().join("quickwit.yaml");
+        let config = format!(
+            r#"
+            version: 0.8
+            data_dir: "{}"
+            enabled_services:
+              - compactor
+            "#,
+            temp_dir.path().display()
+        );
+        std::fs::write(&config_path, config)?;
+        let run_command = RunCliCommand {
+            config_uri: Uri::from_str(&format!("file://{}", config_path.display()))?,
+            services: Some(HashSet::from([QuickwitService::Searcher])),
+        };
+
+        let node_config = run_command.load_node_config().await?;
+
+        assert_eq!(
+            node_config.enabled_services,
+            HashSet::from([QuickwitService::Searcher])
+        );
+        Ok(())
+    }
 
     #[test]
     fn test_parse_service_run_args_all_services() -> anyhow::Result<()> {

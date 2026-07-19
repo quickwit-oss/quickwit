@@ -911,8 +911,21 @@ impl NodeConfig {
 
     /// Parses and validates a [`NodeConfig`] from a given URI and config content.
     pub async fn load(config_format: ConfigFormat, config_content: &[u8]) -> anyhow::Result<Self> {
+        Self::load_with_service_override(config_format, config_content, None).await
+    }
+
+    /// Parses and validates a [`NodeConfig`], applying `service_override` before validation so
+    /// service-dependent validation uses the actual runtime service set rather than the
+    /// pre-override default (e.g. when `--service searcher` is passed via the CLI).
+    pub async fn load_with_service_override(
+        config_format: ConfigFormat,
+        config_content: &[u8],
+        service_override: Option<&HashSet<QuickwitService>>,
+    ) -> anyhow::Result<Self> {
         let env_vars = env::vars().collect::<HashMap<_, _>>();
-        let config = load_node_config_with_env(config_format, config_content, &env_vars).await?;
+        let config =
+            load_node_config_with_env(config_format, config_content, service_override, &env_vars)
+                .await?;
         if !config.data_dir_path.try_exists()? {
             bail!(
                 "data dir `{}` does not exist",

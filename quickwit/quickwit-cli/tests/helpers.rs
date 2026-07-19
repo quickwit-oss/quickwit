@@ -24,7 +24,6 @@ use quickwit_cli::service::RunCliCommand;
 use quickwit_common::net::find_available_tcp_port;
 use quickwit_common::test_utils::wait_for_server_ready;
 use quickwit_common::uri::Uri;
-use quickwit_config::service::QuickwitService;
 use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, MetastoreResolver};
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::IndexId;
@@ -155,9 +154,12 @@ impl TestEnv {
     }
 
     pub async fn start_server(&self) -> anyhow::Result<()> {
+        // Use the default all-in-one service set, which excludes the standalone compactor.
+        // `QuickwitService::supported_services()` includes the compactor and would make this
+        // config invalid unless `enable_standalone_compactors` was explicitly enabled.
         let run_command = RunCliCommand {
             config_uri: self.resource_files.config.clone(),
-            services: Some(QuickwitService::supported_services()),
+            services: None,
         };
         let server_handle = tokio::spawn(async move {
             if let Err(error) = run_command
