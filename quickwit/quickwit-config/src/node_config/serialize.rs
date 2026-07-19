@@ -1597,4 +1597,29 @@ mod tests {
         assert_eq!(config.enabled_services, services_override);
         std::fs::remove_dir_all(data_dir).unwrap();
     }
+
+    #[tokio::test]
+    async fn test_service_override_takes_precedence_over_env() {
+        let config_yaml = r#"
+            version: 0.8
+            enabled_services:
+              - indexer
+        "#;
+        let env_vars = HashMap::from([(
+            "QW_ENABLED_SERVICES".to_string(),
+            "not-a-service".to_string(),
+        )]);
+        let services_override = HashSet::from([QuickwitService::Searcher]);
+
+        let config = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            Some(&services_override),
+            &env_vars,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(config.enabled_services, services_override);
+    }
 }
