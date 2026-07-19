@@ -36,12 +36,6 @@ runs:
         echo "QW_COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
         echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
       shell: bash
-    # sasl2-sys omits libresolv when HOST != TARGET, but its vendored Kerberos
-    # archive still references resolver symbols when cross-compiling for Linux.
-    - name: Configure ARM64 Linux linker flags
-      if: inputs.target == 'aarch64-unknown-linux-gnu'
-      run: echo "RUSTFLAGS=-C link-arg=-lresolv" >> $GITHUB_ENV
-      shell: bash
     - name: Build Quickwit
       run: cross build --release --features release-feature-vendored-set --target ${{ inputs.target }} --bin quickwit
       shell: bash
