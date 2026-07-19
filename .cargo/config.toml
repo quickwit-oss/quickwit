@@ -13,5 +13,13 @@ rustflags = ["-C", "target-cpu=x86-64-v3", "--cfg", "tokio_unstable"]
 # Targeting neoverse-n1 covers AWS Graviton2+ and GCP T2A (Ampere Altra).
 # Key gains over generic ARMv8-A: LSE atomics (better concurrency), dot
 # product instructions, and ARMv8.2 crypto extensions.
-rustflags = ["-C", "target-cpu=neoverse-n1", "--cfg", "tokio_unstable"]
-
+# sasl2-sys omits libresolv when HOST != TARGET, but its vendored Kerberos
+# archive still references resolver symbols when cross-compiling for Linux.
+rustflags = [
+  "-C",
+  "target-cpu=neoverse-n1",
+  "-C",
+  "link-arg=-lresolv",
+  "--cfg",
+  "tokio_unstable",
+]
