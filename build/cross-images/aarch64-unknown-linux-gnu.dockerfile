@@ -16,9 +16,18 @@ RUN dpkg --add-architecture arm64 && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
         binutils-aarch64-linux-gnu \
+        g++-10-aarch64-linux-gnu \
+        gcc-10-aarch64-linux-gnu \
         libsasl2-dev:arm64 \
         unzip && \
     rm -rf /var/lib/apt/lists/*
+
+# GCC 9.4 is affected by https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95189.
+# aws-lc cannot execute its compiler probe while cross-compiling, so select the
+# verified GCC 10.5 toolchain explicitly for both compilation and linking.
+ENV CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc-10 \
+    CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++-10 \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc-10
 
 RUN curl -fLO $PBC_URL && \
     unzip protoc-21.5-linux-x86_64.zip -d ./protobuf && \

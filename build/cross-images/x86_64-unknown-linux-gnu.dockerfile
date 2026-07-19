@@ -9,9 +9,17 @@ ARG PBC_URL="https://github.com/protocolbuffers/protobuf/releases/download/v21.5
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+        g++-10 \
+        gcc-10 \
         libsasl2-dev \
         unzip && \
     rm -rf /var/lib/apt/lists/*
+
+# GCC 9.4 is affected by https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95189,
+# which aws-lc correctly rejects because it can miscompile memcmp at -O3.
+ENV CC_x86_64_unknown_linux_gnu=gcc-10 \
+    CXX_x86_64_unknown_linux_gnu=g++-10 \
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=gcc-10
 
 RUN curl -fLO $PBC_URL && \
     unzip protoc-21.5-linux-x86_64.zip -d ./protobuf && \
