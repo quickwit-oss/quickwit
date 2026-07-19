@@ -848,7 +848,7 @@ pub async fn serve_quickwit(
     #[cfg(feature = "datafusion")]
     let datafusion_session_builder = datafusion_api::setup::build_datafusion_session_builder(
         &node_config,
-        cluster.change_stream(),
+        &cluster,
         metastore_through_control_plane.clone(),
         storage_resolver.clone(),
     )?;

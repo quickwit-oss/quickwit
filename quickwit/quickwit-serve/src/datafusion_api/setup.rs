@@ -26,7 +26,7 @@ use std::time::Duration;
 use anyhow::Context;
 use bytesize::ByteSize;
 use futures::{StreamExt, stream};
-use quickwit_cluster::{ClusterChange, ClusterChangeStream, ClusterNode};
+use quickwit_cluster::{Cluster, ClusterChange, ClusterChangeStream, ClusterNode};
 use quickwit_common::tower::Change;
 use quickwit_config::NodeConfig;
 use quickwit_config::service::QuickwitService;
@@ -65,7 +65,7 @@ use crate::QuickwitServices;
 /// per-query registry refresh.
 pub(crate) fn build_datafusion_session_builder(
     node_config: &NodeConfig,
-    cluster_change_stream: ClusterChangeStream,
+    cluster: &Cluster,
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
 ) -> anyhow::Result<Option<Arc<DataFusionSessionBuilder>>> {
@@ -76,6 +76,7 @@ pub(crate) fn build_datafusion_session_builder(
         return Ok(None);
     }
 
+    let cluster_change_stream = cluster.change_stream();
     let metrics_source = Arc::new(MetricsDataSource::new(metastore));
     let schema_source = Arc::clone(&metrics_source);
     let datafusion_worker_pool = setup_datafusion_worker_pool(

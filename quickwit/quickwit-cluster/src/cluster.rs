@@ -300,18 +300,7 @@ impl Cluster {
         let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
         let inner = self.inner.clone();
         // We spawn a task so the signature of this function is sync.
-        let future = async move {
-            let mut inner = inner.write().await;
-            for node in inner.live_nodes.values() {
-                if node.is_ready {
-                    change_stream_tx
-                        .send(ClusterChange::Add(node.clone()))
-                        .expect("receiver end of the channel should be open");
-                }
-            }
-            inner.change_stream_subscribers.push(change_stream_tx);
-        };
-        tokio::spawn(future);
+        tokio::spawn(register_change_stream_subscriber(inner, change_stream_tx));
         change_stream
     }
 
@@ -514,6 +503,23 @@ impl Cluster {
             .chitchat_handle
             .termination_watcher()
     }
+}
+
+async fn register_change_stream_subscriber(
+    inner: Arc<RwLock<InnerCluster>>,
+    change_stream_tx: mpsc::UnboundedSender<ClusterChange>,
+) {
+    let mut inner = inner.write().await;
+    for node in inner.live_nodes.values() {
+        if node.is_ready
+            && change_stream_tx
+                .send(ClusterChange::Add(node.clone()))
+                .is_err()
+        {
+            return;
+        }
+    }
+    inner.change_stream_subscribers.push(change_stream_tx);
 }
 
 /// Parses indexing tasks from the chitchat node state.
@@ -876,6 +882,32 @@ mod tests {
             self_node_state.get(READINESS_KEY).unwrap(),
             READINESS_VALUE_NOT_READY
         );
+        node.leave().await;
+    }
+
+    #[tokio::test]
+    async fn test_register_change_stream_subscriber_with_dropped_receiver() {
+        let transport = ChitchatTransport::default();
+        let node = create_cluster_for_test(Vec::new(), &[], &transport, true)
+            .await
+            .unwrap();
+        let node_clone = node.clone();
+        wait_until_predicate(
+            move || {
+                let node_clone = node_clone.clone();
+                async move { node_clone.ready_nodes().await.len() == 1 }
+            },
+            Duration::from_secs(5),
+            Duration::from_millis(10),
+        )
+        .await
+        .unwrap();
+
+        let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
+        drop(change_stream);
+        register_change_stream_subscriber(node.inner.clone(), change_stream_tx).await;
+
+        assert!(node.inner.read().await.change_stream_subscribers.is_empty());
         node.leave().await;
     }
 
