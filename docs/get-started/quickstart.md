@@ -31,13 +31,7 @@ You can also pull and run the Quickwit binary in an isolated Docker container.
 ```bash
 # Create first the data directory.
 mkdir qwdata
-docker run --rm quickwit/quickwit --version
-```
-
-If you are using Apple silicon based macOS system you might need to specify the platform. You can also safely ignore jemalloc warnings.
-
-```bash
-docker run --rm --platform linux/amd64 quickwit/quickwit --version
+docker run --rm quickwit/quickwit:0.9.0 --version
 ```
 
 ## Start Quickwit server
@@ -55,7 +49,7 @@ docker run --rm --platform linux/amd64 quickwit/quickwit --version
 <TabItem value="docker" label="Docker">
 
 ```bash
-docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata -p 127.0.0.1:7280:7280 quickwit/quickwit run
+docker run --rm -v $(pwd)/qwdata:/quickwit/qwdata -p 127.0.0.1:7280:7280 quickwit/quickwit:0.9.0 run
 ```
 
 </TabItem>
@@ -78,7 +72,7 @@ Let's create an index configured to receive Stackoverflow posts (questions and a
 
 ```bash
 # First, download the stackoverflow dataset config from Quickwit repository.
-curl -o stackoverflow-index-config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/stackoverflow/index-config.yaml
+curl -o stackoverflow-index-config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/v0.9.0/config/tutorials/stackoverflow/index-config.yaml
 ```
 
 The index config defines three fields: `title`, `body` and `creationDate`. `title` and `body` are [indexed and tokenized](../configuration/index-config.md#text-type), and they are also used as default search fields, which means they will be used for search if you do not target a specific field in your query. `creationDate` serves as the timestamp for each record. There are no more explicit field definitions as we can use the default dynamic [mode](../configuration/index-config.md#mode): the undeclared fields will still be indexed, by default fast fields are enabled to enable aggregation queries. and the `raw` tokenizer is used for text.
@@ -276,7 +270,7 @@ Congrats! You can level up with the following tutorials to discover all Quickwit
 Run the following command from within Quickwit's installation directory.
 
 ```bash
-curl -o stackoverflow-index-config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/stackoverflow/index-config.yaml
+curl -o stackoverflow-index-config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/v0.9.0/config/tutorials/stackoverflow/index-config.yaml
 ./quickwit index create --index-config ./stackoverflow-index-config.yaml
 curl -O https://quickwit-datasets-public.s3.amazonaws.com/stackoverflow.posts.transformed-10000.json
 ./quickwit index ingest --index stackoverflow --input-path ./stackoverflow.posts.transformed-10000.json --force
