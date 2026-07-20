@@ -24,8 +24,8 @@ use quickwit_common::tower::{
     EventListenerLayer, GrpcMetricsLayer, LoadShedLayer, RetryLayer, RetryPolicy, TimeoutLayer,
 };
 use quickwit_common::uri::Uri;
-use quickwit_config::NodeConfig;
 use quickwit_config::service::QuickwitService;
+use quickwit_config::{NodeConfig, PostgresMetastoreConfig};
 use quickwit_metastore::MetastoreResolver;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use tower::ServiceBuilder;
@@ -152,12 +152,12 @@ impl LocalMetastoreServer {
 
     fn metastore_max_in_flight_requests(node_config: &NodeConfig, uri: &Uri) -> usize {
         if uri.protocol().is_database() {
-            node_config
+            let max_connections = node_config
                 .metastore_configs
                 .find_postgres()
-                .map(|config| config.max_connections.get() * 2)
-                .unwrap_or_default()
-                .max(100)
+                .map(|config| config.max_connections)
+                .unwrap_or_else(PostgresMetastoreConfig::default_max_connections);
+            max_connections.get().saturating_mul(2)
         } else {
             100
         }
