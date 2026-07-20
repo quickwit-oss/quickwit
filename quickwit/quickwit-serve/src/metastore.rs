@@ -27,6 +27,7 @@ use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{NodeConfig, PostgresMetastoreConfig};
 use quickwit_metastore::MetastoreResolver;
+use quickwit_metrics::labels;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use tower::ServiceBuilder;
 use tracing::info;
@@ -37,10 +38,38 @@ const METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY: &str = "QW_METASTORE_CLIENT_MAX_
 const DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY: usize = 6;
 const GRPC_METASTORE_SERVICE_TIMEOUT: Duration = Duration::from_secs(10);
 
-static METASTORE_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
-    LazyLock::new(|| GrpcMetricsLayer::new("metastore", "client"));
-static METASTORE_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
-    LazyLock::new(|| GrpcMetricsLayer::new("metastore", "server"));
+static PRIMARY_METASTORE_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| {
+        GrpcMetricsLayer::new_with_labels(
+            "metastore",
+            "client",
+            labels!("metastore_kind" => "primary"),
+        )
+    });
+static READ_REPLICA_METASTORE_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| {
+        GrpcMetricsLayer::new_with_labels(
+            "metastore",
+            "client",
+            labels!("metastore_kind" => "read_replica"),
+        )
+    });
+static PRIMARY_METASTORE_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| {
+        GrpcMetricsLayer::new_with_labels(
+            "metastore",
+            "server",
+            labels!("metastore_kind" => "primary"),
+        )
+    });
+static READ_REPLICA_METASTORE_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| {
+        GrpcMetricsLayer::new_with_labels(
+            "metastore",
+            "server",
+            labels!("metastore_kind" => "read_replica"),
+        )
+    });
 
 fn get_metastore_client_max_concurrency() -> usize {
     quickwit_common::get_from_env(
@@ -140,10 +169,17 @@ impl LocalMetastoreServer {
                 .await,
             "could not find any `{service}` node in the cluster"
         );
+        let metrics_layer = match service {
+            QuickwitService::Metastore => PRIMARY_METASTORE_GRPC_CLIENT_METRICS_LAYER.clone(),
+            QuickwitService::MetastoreReadReplica => {
+                READ_REPLICA_METASTORE_GRPC_CLIENT_METRICS_LAYER.clone()
+            }
+            _ => unreachable!("unexpected metastore service `{service}`"),
+        };
         Ok(MetastoreServiceClient::tower()
             .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
             .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
-            .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
+            .stack_layer(metrics_layer)
             .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
                 get_metastore_client_max_concurrency(),
             ))
@@ -186,7 +222,7 @@ pub(super) async fn start_metastore_service_if_needed(
             })?;
         // These layers apply to all the RPCs of the metastore.
         let shared_layer = ServiceBuilder::new()
-            .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
+            .layer(PRIMARY_METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
             .layer(LoadShedLayer::new(
                 LocalMetastoreServer::metastore_max_in_flight_requests(
                     node_config,
@@ -225,7 +261,7 @@ pub(super) async fn start_metastore_service_if_needed(
                 format!("failed to resolve metastore read replica uri `{read_replica_uri}`")
             })?;
         let shared_layer = ServiceBuilder::new()
-            .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
+            .layer(READ_REPLICA_METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
             .layer(LoadShedLayer::new(
                 LocalMetastoreServer::metastore_max_in_flight_requests(
                     node_config,

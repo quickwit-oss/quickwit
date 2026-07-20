@@ -14,7 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use quickwit_metrics::{counter, labels};
+use quickwit_metrics::counter;
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
 use sqlx::migrate::{Migrate, Migrator};
 use sqlx::{Acquire, PgConnection, Postgres};
@@ -138,14 +138,12 @@ impl Migrations {
         match run_migrations(migrator, &mut conn).await {
             Ok(()) => {
                 info!("deferred PostgreSQL migrations applied successfully");
-                counter!(parent: DEFERRED_MIGRATIONS_APPLY, labels: [labels!("result" => "success")])
-                    .inc();
+                counter!(parent: DEFERRED_MIGRATIONS_APPLY, "result" => "success").inc();
                 DeferredOutcome::Success
             }
             Err(error) => {
                 error!(%error, "failed to apply deferred migrations");
-                counter!(parent: DEFERRED_MIGRATIONS_APPLY, labels: [labels!("result" => "failure")])
-                    .inc();
+                counter!(parent: DEFERRED_MIGRATIONS_APPLY, "result" => "failure").inc();
                 DeferredOutcome::Failure
             }
         }
@@ -241,7 +239,8 @@ mod tests {
     use sqlx::{Acquire, Postgres};
 
     use super::{DeferredOutcome, Migrations, TrackedPool};
-    use crate::metastore::postgres::utils::establish_connection;
+    use crate::metastore::postgres::metrics::MetastoreKind;
+    use crate::metastore::postgres::utils::{PostgresqlConnectionOptions, establish_connection};
 
     fn test_uri() -> Uri {
         dotenvy::dotenv().ok();
@@ -252,15 +251,21 @@ mod tests {
     }
 
     async fn test_pool(read_only: bool) -> TrackedPool<Postgres> {
-        establish_connection(
-            &test_uri(),
-            1,
-            5,
-            Duration::from_secs(2),
-            None,
-            None,
+        let connection_uri = test_uri();
+        establish_connection(PostgresqlConnectionOptions {
+            connection_uri: &connection_uri,
+            min_connections: 1,
+            max_connections: 5,
+            acquire_timeout: Duration::from_secs(2),
+            idle_timeout_opt: None,
+            max_lifetime_opt: None,
             read_only,
-        )
+            metastore_kind: if read_only {
+                MetastoreKind::ReadReplica
+            } else {
+                MetastoreKind::Primary
+            },
+        })
         .await
         .unwrap()
     }
@@ -439,10 +444,19 @@ mod tests {
     #[serial_test::file_serial]
     async fn test_deferred_migrations_elect_single_runner() {
         let _ = tracing_subscriber::fmt::try_init();
-        let connection_pool =
-            establish_connection(&test_uri(), 2, 5, Duration::from_secs(5), None, None, false)
-                .await
-                .unwrap();
+        let connection_uri = test_uri();
+        let connection_pool = establish_connection(PostgresqlConnectionOptions {
+            connection_uri: &connection_uri,
+            min_connections: 2,
+            max_connections: 5,
+            acquire_timeout: Duration::from_secs(5),
+            idle_timeout_opt: None,
+            max_lifetime_opt: None,
+            read_only: false,
+            metastore_kind: MetastoreKind::Primary,
+        })
+        .await
+        .unwrap();
 
         // in case a previous attempt left state behind
         sqlx::query("DROP TABLE IF EXISTS qw_test_deferred_marker")

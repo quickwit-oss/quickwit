@@ -14,21 +14,45 @@
 
 use futures::future::BoxFuture;
 use futures::stream::BoxStream;
-use quickwit_metrics::GaugeGuard;
+use quickwit_metrics::{Gauge, GaugeGuard, gauge, labels};
 use sqlx::pool::PoolConnection;
 use sqlx::pool::maybe::MaybePoolConnection;
 use sqlx::{
     Acquire, Database, Describe, Either, Error, Execute, Executor, Pool, Postgres, Transaction,
 };
 
+use super::metrics::{ACQUIRE_CONNECTIONS, ACTIVE_CONNECTIONS, IDLE_CONNECTIONS, MetastoreKind};
+
+#[derive(Clone, Debug)]
+struct TrackedPoolMetrics {
+    acquire_connections: Gauge,
+    active_connections: Gauge,
+    idle_connections: Gauge,
+}
+
+impl TrackedPoolMetrics {
+    fn new(kind: MetastoreKind) -> Self {
+        let kind_label = labels!("metastore_kind" => kind.as_str());
+        Self {
+            acquire_connections: gauge!(parent: ACQUIRE_CONNECTIONS, labels: [kind_label]),
+            active_connections: gauge!(parent: ACTIVE_CONNECTIONS, labels: [kind_label]),
+            idle_connections: gauge!(parent: IDLE_CONNECTIONS, labels: [kind_label]),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct TrackedPool<DB: Database> {
     inner_pool: Pool<DB>,
+    metrics: TrackedPoolMetrics,
 }
 
 impl TrackedPool<Postgres> {
-    pub fn new(inner_pool: Pool<Postgres>) -> Self {
-        Self { inner_pool }
+    pub fn new(inner_pool: Pool<Postgres>, kind: MetastoreKind) -> Self {
+        Self {
+            inner_pool,
+            metrics: TrackedPoolMetrics::new(kind),
+        }
     }
 }
 
@@ -36,6 +60,7 @@ impl<DB: Database> Clone for TrackedPool<DB> {
     fn clone(&self) -> Self {
         Self {
             inner_pool: self.inner_pool.clone(),
+            metrics: self.metrics.clone(),
         }
     }
 }
@@ -48,11 +73,16 @@ impl<'a, DB: Database> Acquire<'a> for &TrackedPool<DB> {
     fn acquire(self) -> BoxFuture<'static, Result<Self::Connection, Error>> {
         let acquire_conn_fut = self.inner_pool.acquire();
 
-        super::metrics::ACTIVE_CONNECTIONS.set(self.inner_pool.size() as f64);
-        super::metrics::IDLE_CONNECTIONS.set(self.inner_pool.num_idle() as f64);
+        self.metrics
+            .active_connections
+            .set(self.inner_pool.size() as f64);
+        self.metrics
+            .idle_connections
+            .set(self.inner_pool.num_idle() as f64);
+        let acquire_connections = self.metrics.acquire_connections.clone();
 
         Box::pin(async move {
-            let _gauge_guard = GaugeGuard::new(&super::metrics::ACQUIRE_CONNECTIONS, 1.0);
+            let _gauge_guard = GaugeGuard::new(&acquire_connections, 1.0);
 
             let conn = acquire_conn_fut.await?;
             Ok(conn)
