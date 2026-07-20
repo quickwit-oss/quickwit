@@ -34,10 +34,10 @@ const QW_ENABLE_TOKIO_CONSOLE_ENV_KEY: &str = "QW_ENABLE_TOKIO_CONSOLE";
 /// The main tokio runtime takes num_cores / 3 threads by default, and can be overridden by the
 /// QW_RUNTIME_NUM_THREADS environment variable.
 fn get_main_runtime_num_threads() -> usize {
-    let default_num_runtime_threads: usize = quickwit_common::num_cpus().div_ceil(3);
-    quickwit_common::get_from_env(
+    quickwit_common::get_from_env_cached!(
+        usize,
         "QW_TOKIO_RUNTIME_NUM_THREADS",
-        default_num_runtime_threads,
+        quickwit_common::num_cpus().div_ceil(3),
         false,
     )
 }
@@ -92,7 +92,7 @@ fn init_telemetry(
 )> {
     #[cfg(feature = "tokio-console")]
     {
-        if quickwit_common::get_bool_from_env(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY, false) {
+        if quickwit_common::get_bool_from_env_cached!(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY, false) {
             let telemetry_handle =
                 quickwit_telemetry_exporters::init_meter_provider_only(service_version)?;
             console_subscriber::init();

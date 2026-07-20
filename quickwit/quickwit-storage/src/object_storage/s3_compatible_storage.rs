@@ -66,7 +66,7 @@ use crate::{
 /// (R2, SeaweedFs...) return errors when too many concurrent requests are emitted.
 static REQUEST_SEMAPHORE: LazyLock<Semaphore> = LazyLock::new(|| {
     let num_permits: usize =
-        quickwit_common::get_from_env("QW_S3_MAX_CONCURRENCY", 10_000usize, false);
+        quickwit_common::get_from_env_cached!(usize, "QW_S3_MAX_CONCURRENCY", 10_000usize, false);
     Semaphore::new(num_permits)
 });
 

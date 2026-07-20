@@ -17,7 +17,7 @@ use std::str::FromStr;
 use anyhow::Context;
 use opentelemetry::KeyValue;
 use opentelemetry_sdk::Resource;
-use quickwit_common::{get_bool_from_env, get_from_env, get_from_env_opt};
+use quickwit_common::get_from_env_opt;
 
 pub const QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY: &str =
     "QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER";
@@ -66,8 +66,12 @@ pub(crate) struct OtlpExporterConfig {
 impl OtlpExporterConfig {
     pub(crate) fn load_from_env() -> Self {
         OtlpExporterConfig {
-            enabled: get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false),
-            default_protocol: get_from_env(
+            enabled: quickwit_common::get_bool_from_env_cached!(
+                QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY,
+                false
+            ),
+            default_protocol: quickwit_common::get_from_env_cached!(
+                String,
                 OTEL_EXPORTER_OTLP_PROTOCOL_ENV_KEY,
                 "grpc".to_string(),
                 false,

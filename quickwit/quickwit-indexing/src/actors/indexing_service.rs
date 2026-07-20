@@ -743,7 +743,7 @@ impl IndexingService {
             merge_scheduler_service,
             max_concurrent_split_uploads: self.max_concurrent_split_uploads,
             event_broker: self.event_broker.clone(),
-            skip_initial_seed: quickwit_common::get_bool_from_env(
+            skip_initial_seed: quickwit_common::get_bool_from_env_cached!(
                 super::parquet_pipeline::PARQUET_MERGE_SKIP_INITIAL_SEED_ENV_KEY,
                 false,
             ),

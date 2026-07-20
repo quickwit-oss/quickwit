@@ -36,7 +36,8 @@ pub fn split_deletion_grace_period() -> Duration {
     const DEFAULT_DELETION_GRACE_PERIOD: Duration = Duration::from_secs(60 * 32); // 32 min
 
     static SPLIT_DELETION_GRACE_PERIOD_SECS_LOCK: LazyLock<Duration> = LazyLock::new(|| {
-        let deletion_grace_period_secs: u64 = crate::get_from_env(
+        let deletion_grace_period_secs: u64 = crate::get_from_env_cached!(
+            u64,
             "QW_SPLIT_DELETION_GRACE_PERIOD_SECS",
             DEFAULT_DELETION_GRACE_PERIOD.as_secs(),
             false,

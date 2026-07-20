@@ -14,7 +14,6 @@
 
 use std::collections::BTreeMap;
 
-use quickwit_common::get_bool_from_env;
 use quickwit_metrics::{counter, labels};
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
 use sqlx::migrate::{Migrate, Migrator};
@@ -63,9 +62,18 @@ impl Migrations {
     pub(super) fn from_env(connection_pool: TrackedPool<Postgres>) -> Self {
         Self {
             connection_pool,
-            skip_migrations: get_bool_from_env(QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY, false),
-            skip_locking: get_bool_from_env(QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY, false),
-            skip_deferred: get_bool_from_env(QW_POSTGRES_SKIP_DEFERRED_MIGRATIONS_ENV_KEY, false),
+            skip_migrations: quickwit_common::get_bool_from_env_cached!(
+                QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY,
+                false
+            ),
+            skip_locking: quickwit_common::get_bool_from_env_cached!(
+                QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY,
+                false
+            ),
+            skip_deferred: quickwit_common::get_bool_from_env_cached!(
+                QW_POSTGRES_SKIP_DEFERRED_MIGRATIONS_ENV_KEY,
+                false
+            ),
         }
     }
 
