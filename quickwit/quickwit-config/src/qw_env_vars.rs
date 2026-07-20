@@ -57,6 +57,7 @@ qw_env_vars!(
     QW_PEER_SEEDS,
     QW_DATA_DIR,
     QW_METASTORE_URI,
+    QW_METASTORE_READ_REPLICA_URI,
     QW_DEFAULT_INDEX_ROOT_URI,
     QW_ENABLE_STANDALONE_COMPACTORS,
     CP_CREATE_DD_LOGS_INDEX,
@@ -76,6 +77,12 @@ mod tests {
 
         assert_eq!(QW_CLUSTER_ID, 1);
         assert_eq!(QW_ENV_VARS.get(&QW_CLUSTER_ID).unwrap(), &"QW_CLUSTER_ID");
+
+        assert_eq!(
+            QW_ENV_VARS.get(&QW_METASTORE_READ_REPLICA_URI).unwrap(),
+            &"QW_METASTORE_READ_REPLICA_URI"
+        );
+        assert_eq!(QW_METASTORE_READ_REPLICA_URI, 16);
 
         assert_eq!(QW_ENV_VARS.get(&QW_NODE_ID).unwrap(), &"QW_NODE_ID");
         assert_eq!(QW_NODE_ID, 2);

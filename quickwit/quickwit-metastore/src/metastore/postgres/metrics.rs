@@ -14,7 +14,21 @@
 
 use quickwit_metrics::{LazyCounter, LazyGauge, lazy_counter, lazy_gauge};
 
-// Counts deferred-migration apply attempts, labeled by `result` ("success"/"failure").
+#[derive(Clone, Copy, Debug)]
+pub(super) enum MetastoreKind {
+    Primary,
+    ReadReplica,
+}
+
+impl MetastoreKind {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            MetastoreKind::Primary => "primary",
+            MetastoreKind::ReadReplica => "read_replica",
+        }
+    }
+}
+
 pub(super) static DEFERRED_MIGRATIONS_APPLY: LazyCounter = lazy_counter!(
         name: "deferred_migrations_apply_total",
         description: "Number of deferred PostgreSQL migration attempts, by result.",

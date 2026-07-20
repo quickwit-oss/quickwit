@@ -177,7 +177,7 @@ async fn list_parquet_splits(
     let kind = parquet_split_kind_for_index(index_uid);
     protect_future(
         progress_opt,
-        list_parquet_splits_paginated(metastore.clone(), kind, query),
+        list_parquet_splits_paginated(metastore, kind, query),
     )
     .await
     .context("failed to list parquet splits")
