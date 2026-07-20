@@ -1012,7 +1012,7 @@ pub async fn list_parquet_splits_page(
 /// `page_size`; `after_split_id` is used as the starting cursor when already
 /// set and is advanced internally after each full page.
 pub async fn list_parquet_splits_paginated(
-    metastore: MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
     kind: ParquetSplitKind,
     mut query: ListParquetSplitsQuery,
 ) -> MetastoreResult<Vec<ParquetSplitRecord>> {
@@ -1020,7 +1020,7 @@ pub async fn list_parquet_splits_paginated(
     let mut splits = Vec::new();
 
     loop {
-        let mut page = list_parquet_splits_page(&metastore, kind, &mut query).await?;
+        let mut page = list_parquet_splits_page(metastore, kind, &mut query).await?;
         splits.append(&mut page.splits);
         if !page.has_next_page {
             break;

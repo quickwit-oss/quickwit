@@ -419,6 +419,10 @@ pub struct SearcherConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
+    /// Routes read-only metastore requests from searchers, including DataFusion when enabled, to
+    /// nodes running the `metastore_read_replica` service.
+    #[serde(default)]
+    pub use_metastore_read_replica: bool,
     pub warmup_memory_budget: ByteSize,
     pub warmup_single_split_initial_allocation: ByteSize,
     /// Lambda configuration for serverless leaf search execution.
@@ -642,6 +646,7 @@ impl Default for SearcherConfig {
             request_timeout_secs: Self::default_request_timeout_secs(),
             leaf_request_timeout_secs: Self::default_request_timeout_secs(),
             storage_timeout_policy: None,
+            use_metastore_read_replica: false,
             warmup_memory_budget: ByteSize::gb(100),
             warmup_single_split_initial_allocation: ByteSize::mb(300),
             lambda: None,
@@ -888,6 +893,10 @@ pub struct NodeConfig {
     pub peer_seeds: Vec<String>,
     pub data_dir_path: PathBuf,
     pub metastore_uri: Uri,
+    /// Optional PostgreSQL read replica URI. It is used as the connection URI by nodes running the
+    /// [`QuickwitService::MetastoreReadReplica`] role.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metastore_read_replica_uri: Option<Uri>,
     pub default_index_root_uri: Uri,
     pub rest_config: RestConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -911,8 +920,22 @@ impl NodeConfig {
 
     /// Parses and validates a [`NodeConfig`] from a given URI and config content.
     pub async fn load(config_format: ConfigFormat, config_content: &[u8]) -> anyhow::Result<Self> {
+        Self::load_with_enabled_services(config_format, config_content, None).await
+    }
+
+    /// Parses and validates a [`NodeConfig`] after overriding its enabled services.
+    ///
+    /// The override takes precedence over both the config file and `QW_ENABLED_SERVICES` and is
+    /// applied before service-dependent validation.
+    pub async fn load_with_enabled_services(
+        config_format: ConfigFormat,
+        config_content: &[u8],
+        enabled_services: Option<&HashSet<QuickwitService>>,
+    ) -> anyhow::Result<Self> {
         let env_vars = env::vars().collect::<HashMap<_, _>>();
-        let config = load_node_config_with_env(config_format, config_content, &env_vars).await?;
+        let config =
+            load_node_config_with_env(config_format, config_content, &env_vars, enabled_services)
+                .await?;
         if !config.data_dir_path.try_exists()? {
             bail!(
                 "data dir `{}` does not exist",
@@ -951,6 +974,9 @@ impl NodeConfig {
     pub fn redact(&mut self) {
         self.metastore_configs.redact();
         self.metastore_uri.redact();
+        if let Some(metastore_read_replica_uri) = &mut self.metastore_read_replica_uri {
+            metastore_read_replica_uri.redact();
+        }
         self.storage_configs.redact();
     }
 
@@ -982,6 +1008,26 @@ mod tests {
 
     use super::*;
     use crate::IndexerConfig;
+
+    #[test]
+    fn test_node_config_redact_metastore_uris() {
+        let mut config = NodeConfig::for_test();
+        config.metastore_uri = Uri::for_test("postgresql://username:password@host:5432/db");
+        config.metastore_read_replica_uri = Some(Uri::for_test(
+            "postgresql://replica-user:replica-password@replica-host:5432/db",
+        ));
+
+        config.redact();
+
+        assert_eq!(
+            config.metastore_uri,
+            "postgresql://username:***redacted***@host:5432/db"
+        );
+        assert_eq!(
+            config.metastore_read_replica_uri.unwrap(),
+            "postgresql://replica-user:***redacted***@replica-host:5432/db"
+        );
+    }
 
     #[test]
     fn test_indexer_config_serialization() {

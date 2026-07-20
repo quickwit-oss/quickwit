@@ -17,5 +17,5 @@ Long, degrade-gracefully-only migrations (e.g. `CREATE INDEX CONCURRENTLY`) run 
   DROP INDEX CONCURRENTLY IF EXISTS foo_idx;
   ```
 - If any migrations failed, they'll need to be manually cleaned up before attempting to retry as failed index creation leaves a broken index, without adding an entry into the migrations table.
-- We tried to clean up invalid indexes inside the migration SQL, but because it's two separate statements, Postgres implicitly runs them inside a transaction block, overriding `-- no-transaction`, which can't work with `concurrently`. 
+- We tried to clean up invalid indexes inside the migration SQL, but because it's two separate statements, Postgres implicitly runs them inside a transaction block, overriding `-- no-transaction`, which can't work with `concurrently`.
 - Never depend on an unshipped required migration; required migrations must never depend on a deferred one.

@@ -55,6 +55,7 @@ qw_env_vars!(
     QW_HEALTH_LISTEN_PORT,
     QW_LISTEN_ADDRESS,
     QW_METASTORE_URI,
+    QW_METASTORE_READ_REPLICA_URI,
     QW_NODE_ID,
     QW_PEER_SEEDS,
     QW_REST_LISTEN_PORT
@@ -72,7 +73,13 @@ mod tests {
         assert_eq!(QW_CLUSTER_ID, 3);
         assert_eq!(QW_ENV_VARS.get(&QW_CLUSTER_ID).unwrap(), &"QW_CLUSTER_ID");
 
+        assert_eq!(
+            QW_ENV_VARS.get(&QW_METASTORE_READ_REPLICA_URI).unwrap(),
+            &"QW_METASTORE_READ_REPLICA_URI"
+        );
+        assert_eq!(QW_METASTORE_READ_REPLICA_URI, 14);
+
         assert_eq!(QW_ENV_VARS.get(&QW_NODE_ID).unwrap(), &"QW_NODE_ID");
-        assert_eq!(QW_NODE_ID, 14);
+        assert_eq!(QW_NODE_ID, 15);
     }
 }

@@ -30,6 +30,7 @@ mod indexing_api;
 mod ingest_api;
 mod jaeger_api;
 mod load_shield;
+mod metastore;
 mod metrics;
 mod metrics_api;
 mod node_info_handler;
@@ -65,12 +66,11 @@ use quickwit_cluster::{
 };
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::rate_limiter::RateLimiterSettings;
-use quickwit_common::retry::RetryParams;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, CircuitBreakerEvaluator,
-    ConstantRate, EstimateRateLayer, EventListenerLayer, GrpcMetricsLayer, LoadShedLayer,
-    RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer,
+    ConstantRate, EstimateRateLayer, GrpcMetricsLayer, LoadShedLayer, RateLimitLayer,
+    SmaRateEstimator, TimeoutLayer,
 };
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
@@ -80,9 +80,7 @@ use quickwit_compaction::{
     wait_for_compactor_decommission,
 };
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{
-    ClusterConfig, IngestApiConfig, NodeConfig, PostgresMetastoreConfig, disable_ingest_v1,
-};
+use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig, disable_ingest_v1};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
@@ -137,6 +135,7 @@ use warp::{Filter, Rejection};
 pub use crate::build_info::{BuildInfo, RuntimeInfo};
 pub use crate::index_api::{ListSplitsQueryParams, ListSplitsResponse};
 pub use crate::ingest_api::{RestIngestResponse, RestParseFailure};
+use crate::metastore::start_metastore_service_if_needed;
 use crate::metrics::CIRCUIT_BREAK_TOTAL;
 use crate::rate_modulator::RateModulator;
 #[cfg(test)]
@@ -156,17 +155,7 @@ const COMPACTION_SERVICE_DISCOVERY_TIMEOUT: Duration = if cfg!(any(test, feature
     Duration::from_secs(300)
 };
 
-const METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY: &str = "QW_METASTORE_CLIENT_MAX_CONCURRENCY";
-const DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY: usize = 6;
 const DISABLE_DELETE_TASK_SERVICE_ENV_KEY: &str = "QW_DISABLE_DELETE_TASK_SERVICE";
-
-fn get_metastore_client_max_concurrency() -> usize {
-    quickwit_common::get_from_env(
-        METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY,
-        DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY,
-        false,
-    )
-}
 
 static CP_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
     LazyLock::new(|| GrpcMetricsLayer::new("control_plane", "client"));
@@ -183,18 +172,13 @@ static INGEST_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
 static INGEST_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
     LazyLock::new(|| GrpcMetricsLayer::new("ingest", "server"));
 
-static METASTORE_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
-    LazyLock::new(|| GrpcMetricsLayer::new("metastore", "client"));
-static METASTORE_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
-    LazyLock::new(|| GrpcMetricsLayer::new("metastore", "server"));
-
 static GRPC_INGESTER_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
 static GRPC_INDEXING_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
-static GRPC_METASTORE_SERVICE_TIMEOUT: Duration = Duration::from_secs(10);
 
 struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
     pub cluster: Cluster,
+    /// Locally served metastore gRPC service, either the primary metastore or a read-only replica.
     pub metastore_server_opt: Option<MetastoreServiceClient>,
     pub metastore_client: MetastoreServiceClient,
     pub control_plane_server_opt: Option<Mailbox<ControlPlane>>,
@@ -426,7 +410,7 @@ async fn start_control_plane_if_needed(
     node_config: &NodeConfig,
     cluster: &Cluster,
     event_broker: &EventBroker,
-    metastore_client: &MetastoreServiceClient,
+    primary_metastore_client: &MetastoreServiceClient,
     universe: &Universe,
     indexer_pool: &IndexerPool,
     ingester_pool: &IngesterPool,
@@ -435,7 +419,7 @@ async fn start_control_plane_if_needed(
         check_cluster_configuration(
             &node_config.enabled_services,
             &node_config.peer_seeds,
-            metastore_client.clone(),
+            primary_metastore_client.clone(),
         )
         .await?;
 
@@ -448,7 +432,7 @@ async fn start_control_plane_if_needed(
             cluster.clone(),
             indexer_pool.clone(),
             ingester_pool.clone(),
-            metastore_client.clone(),
+            primary_metastore_client.clone(),
             node_config.default_index_root_uri.clone(),
             &node_config.ingest_api_config,
         )
@@ -465,8 +449,11 @@ async fn start_control_plane_if_needed(
             balance_channel_for_service(cluster, QuickwitService::ControlPlane).await;
 
         // If the node is a metastore, we skip this check in order to avoid a deadlock.
+        // A read-replica metastore node is skipped for the same reason: it only serves read-only
+        // metastore traffic and does not need the control plane.
         // If the node is a searcher, we skip this check because the searcher does not need to.
         if !node_config.is_service_enabled(QuickwitService::Metastore)
+            && !node_config.is_service_enabled(QuickwitService::MetastoreReadReplica)
             && node_config.enabled_services != HashSet::from([QuickwitService::Searcher])
         {
             info!("connecting to control plane");
@@ -586,80 +573,25 @@ pub async fn serve_quickwit(
     let universe = Universe::new();
     let grpc_config = node_config.grpc_config.clone();
 
-    // Instantiate a metastore "server" if the `metastore` role is enabled on the node.
-    let metastore_server_opt: Option<MetastoreServiceClient> =
-        if node_config.is_service_enabled(QuickwitService::Metastore) {
-            let metastore: MetastoreServiceClient = metastore_resolver
-                .resolve(&node_config.metastore_uri)
-                .await
-                .with_context(|| {
-                    format!(
-                        "failed to resolve metastore uri `{}`",
-                        node_config.metastore_uri
-                    )
-                })?;
-            let max_in_flight_requests = if node_config.metastore_uri.protocol().is_database() {
-                let max_connections = node_config
-                    .metastore_configs
-                    .find_postgres()
-                    .map(|config| config.max_connections)
-                    .unwrap_or_else(PostgresMetastoreConfig::default_max_connections);
-                max_connections.get().saturating_mul(2)
-            } else {
-                100
-            };
-            // These layers apply to all the RPCs of the metastore.
-            let shared_layer = ServiceBuilder::new()
-                .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
-                .layer(LoadShedLayer::new(max_in_flight_requests))
-                .into_inner();
-            let broker_layer = EventListenerLayer::new(event_broker.clone());
-            let metastore = MetastoreServiceClient::tower()
-                .stack_layer(shared_layer)
-                .stack_create_index_layer(broker_layer.clone())
-                .stack_delete_index_layer(broker_layer.clone())
-                .stack_add_source_layer(broker_layer.clone())
-                .stack_delete_source_layer(broker_layer.clone())
-                .stack_toggle_source_layer(broker_layer)
-                .build(metastore);
-            Some(metastore)
-        } else {
-            None
-        };
-    // Instantiate a metastore client, either local if available or remote otherwise.
-    let metastore_client: MetastoreServiceClient =
-        if let Some(metastore_server) = &metastore_server_opt {
-            metastore_server.clone()
-        } else {
-            info!("connecting to metastore");
+    // Instantiate the local metastore gRPC server for this node (the primary metastore, a
+    // read-only replica, or none; the `metastore` and `metastore_read_replica` roles are mutually
+    // exclusive).
+    let local_metastore_server =
+        start_metastore_service_if_needed(&node_config, &metastore_resolver, &event_broker)
+            .await
+            .context("failed to start metastore service")?;
 
-            let balance_channel =
-                balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
+    let primary_metastore_client = local_metastore_server
+        .resolve_primary_client(&cluster, &node_config)
+        .await?;
 
-            if !balance_channel
-                .wait_for(Duration::from_secs(300), |connections| {
-                    !connections.is_empty()
-                })
-                .await
-            {
-                bail!("could not find any metastore node in the cluster");
-            }
-            MetastoreServiceClient::tower()
-                .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
-                .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
-                .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
-                .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
-                    get_metastore_client_max_concurrency(),
-                ))
-                .build_from_balance_channel(balance_channel, grpc_config.max_message_size, None)
-        };
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
     // Otherwise, instantiate a control plane client.
     let (control_plane_server_opt, control_plane_client) = start_control_plane_if_needed(
         &node_config,
         &cluster,
         &event_broker,
-        &metastore_client,
+        &primary_metastore_client,
         &universe,
         &indexer_pool,
         &ingester_pool,
@@ -667,11 +599,12 @@ pub async fn serve_quickwit(
     .await
     .context("failed to start control plane service")?;
 
-    // Set up the "control plane proxy" for the metastore.
-    let metastore_through_control_plane = MetastoreServiceClient::new(ControlPlaneMetastore::new(
-        control_plane_client.clone(),
-        metastore_client.clone(),
-    ));
+    // Set up the "control plane proxy" for the primary metastore.
+    let primary_metastore_through_control_plane =
+        MetastoreServiceClient::new(ControlPlaneMetastore::new(
+            control_plane_client.clone(),
+            primary_metastore_client.clone(),
+        ));
 
     // Setup ingest service v1.
     let ingest_service = start_ingest_client_if_needed(&node_config, &universe, &cluster)
@@ -683,7 +616,7 @@ pub async fn serve_quickwit(
             &node_config,
             &cluster,
             &universe,
-            &metastore_client,
+            &primary_metastore_client,
         )
         .await
         .context("failed to initialize compaction service client")?;
@@ -705,7 +638,7 @@ pub async fn serve_quickwit(
             &node_config,
             runtimes_config.num_threads_blocking,
             cluster.clone(),
-            metastore_through_control_plane.clone(),
+            primary_metastore_through_control_plane.clone(),
             ingester_pool.clone(),
             storage_resolver.clone(),
             event_broker.clone(),
@@ -752,7 +685,7 @@ pub async fn serve_quickwit(
     // Any node can serve index management requests (create/update/delete index, add/remove source,
     // etc.), so we always instantiate an index manager.
     let mut index_manager = IndexManager::new(
-        metastore_through_control_plane.clone(),
+        primary_metastore_through_control_plane.clone(),
         storage_resolver.clone(),
     );
 
@@ -827,12 +760,30 @@ pub async fn serve_quickwit(
         ))
     };
 
+    let read_replica_metastore_client_opt = local_metastore_server
+        .resolve_read_only_client(&cluster, &node_config)
+        .await?;
+
+    // Search uses the read replica when configured, and the primary otherwise.
+    let search_metastore_kind = if read_replica_metastore_client_opt.is_some() {
+        "read_replica"
+    } else {
+        "primary"
+    };
+    let search_metastore_client = read_replica_metastore_client_opt
+        .clone()
+        .unwrap_or_else(|| primary_metastore_through_control_plane.clone());
+    info!(
+        metastore_kind = search_metastore_kind,
+        "configured search metastore client"
+    );
+
     let (search_job_placer, search_service, searcher_pool) = setup_searcher(
         &node_config,
         cluster.change_stream(),
         // search remains available without a control plane because not all
         // metastore RPCs are proxied
-        metastore_through_control_plane.clone(),
+        search_metastore_client.clone(),
         storage_resolver.clone(),
         searcher_context,
     )
@@ -849,7 +800,7 @@ pub async fn serve_quickwit(
     let datafusion_session_builder = datafusion_api::setup::build_datafusion_session_builder(
         &node_config,
         cluster.change_stream(),
-        metastore_through_control_plane.clone(),
+        search_metastore_client,
         storage_resolver.clone(),
     )?;
     // The search job placer owns a clone of this pool; the local binding is not
@@ -880,7 +831,7 @@ pub async fn serve_quickwit(
         let janitor_service = start_janitor_service(
             &universe,
             &node_config,
-            metastore_through_control_plane.clone(),
+            primary_metastore_through_control_plane.clone(),
             search_job_placer,
             storage_resolver.clone(),
             event_broker.clone(),
@@ -911,7 +862,7 @@ pub async fn serve_quickwit(
             cluster.self_node_id(),
             compaction_client,
             &node_config.compactor_config,
-            metastore_client.clone(),
+            primary_metastore_client.clone(),
             storage_resolver.clone(),
             split_cache,
             event_broker.clone(),
@@ -960,8 +911,8 @@ pub async fn serve_quickwit(
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
         node_config: Arc::new(node_config),
         cluster: cluster.clone(),
-        metastore_server_opt,
-        metastore_client: metastore_through_control_plane.clone(),
+        metastore_server_opt: local_metastore_server.client().cloned(),
+        metastore_client: primary_metastore_through_control_plane.clone(),
         control_plane_server_opt,
         control_plane_client,
         _local_shards_update_listener_handle_opt: local_shards_update_listener_handle_opt,
@@ -1065,7 +1016,8 @@ pub async fn serve_quickwit(
     spawn_named_task(
         node_readiness_reporting_task(
             cluster.clone(),
-            metastore_through_control_plane,
+            primary_metastore_through_control_plane,
+            read_replica_metastore_client_opt,
             ingester_opt.clone(),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
@@ -1625,12 +1577,23 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 /// Reports node readiness to chitchat cluster every 10 seconds (25 ms for tests).
 async fn node_readiness_reporting_task(
     cluster: Cluster,
-    metastore: MetastoreServiceClient,
+    primary_metastore: MetastoreServiceClient,
+    read_replica_metastore_opt: Option<MetastoreServiceClient>,
     ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
     health_reporter: HealthReporter,
 ) {
+    // When a read replica metastore is configured, node readiness follows the replica only.
+    // This keeps search/read traffic available if the primary metastore is down. Write-capable
+    // index-management APIs are still routed to the primary metastore and may fail while this node
+    // remains ready.
+    let (metastore, metastore_kind) = match read_replica_metastore_opt {
+        Some(read_replica_metastore) => (read_replica_metastore, "read_replica"),
+        None => (primary_metastore, "primary"),
+    };
+    info!(metastore_kind, "configured metastore readiness dependency");
+
     let mut node_ready = false;
     cluster.set_self_node_readiness(node_ready).await;
     // Set the initial health status to `NotServing` with "" meaning all services, as per
@@ -1656,13 +1619,13 @@ async fn node_readiness_reporting_task(
     loop {
         interval.tick().await;
 
-        let metastore_is_available = match metastore.check_connectivity().await {
+        let metastore_available = match metastore.check_connectivity().await {
             Ok(()) => {
                 debug!(metastore_endpoints=?metastore.endpoints(), "metastore service is available");
                 true
             }
             Err(error) => {
-                warn!(metastore_endpoints=?metastore.endpoints(), error=?error, "metastore service is unavailable");
+                debug!(metastore_endpoints=?metastore.endpoints(), error=?error, "metastore service is unavailable");
                 false
             }
         };
@@ -1681,7 +1644,7 @@ async fn node_readiness_reporting_task(
         } else {
             true
         };
-        let is_ready = metastore_is_available && ingester_is_available;
+        let is_ready = metastore_available && ingester_is_available;
         let new_node_ready = if is_ready {
             consecutive_readiness_failures = 0;
             true
@@ -1694,6 +1657,13 @@ async fn node_readiness_reporting_task(
 
         if new_node_ready != node_ready {
             node_ready = new_node_ready;
+            if !node_ready && !metastore_available {
+                warn!(
+                    metastore_kind,
+                    metastore_endpoints = ?metastore.endpoints(),
+                    "metastore unavailability caused node readiness to decrease"
+                );
+            }
             cluster.set_self_node_readiness(node_ready).await;
 
             let serving_status = if node_ready {
@@ -1756,7 +1726,7 @@ async fn check_cluster_configuration(
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use anyhow::bail;
+    use anyhow::{bail, ensure};
     use quickwit_cluster::{ChitchatTransport, ClusterNode, create_cluster_for_test};
     use quickwit_common::uri::Uri;
     use quickwit_common::{ServiceStream, assert_eventually};
@@ -1774,6 +1744,23 @@ mod tests {
     use tonic_health::server::health_reporter;
 
     use super::*;
+
+    fn metastore_readiness_client(
+        readiness_rx: watch::Receiver<bool>,
+        uri: &'static str,
+    ) -> MetastoreServiceClient {
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_check_connectivity()
+            .returning(move || {
+                ensure!(*readiness_rx.borrow(), "metastore `{uri}` not ready");
+                Ok(())
+            });
+        mock_metastore
+            .expect_endpoints()
+            .return_const(vec![Uri::for_test(uri)]);
+        MetastoreServiceClient::from_mock(mock_metastore)
+    }
 
     #[tokio::test]
     async fn test_check_cluster_configuration() {
@@ -1817,16 +1804,20 @@ mod tests {
                 let mut failures_to_inject = metastore_failures_to_inject_clone.lock().unwrap();
                 if *failures_to_inject > 0 {
                     *failures_to_inject -= 1;
-                    bail!("metastore transiently not ready");
+                    bail!("metastore `ram:///metastore` transiently not ready");
                 }
                 drop(failures_to_inject);
 
-                if *metastore_readiness_rx.borrow() {
-                    Ok(())
-                } else {
-                    bail!("metastore not ready")
-                }
+                ensure!(
+                    *metastore_readiness_rx.borrow(),
+                    "metastore `ram:///metastore` not ready"
+                );
+                Ok(())
             });
+        mock_metastore
+            .expect_endpoints()
+            .return_const(vec![Uri::for_test("ram:///metastore")]);
+        let mock_metastore = MetastoreServiceClient::from_mock(mock_metastore);
         let (ingester_status_tx, ingester_status_rx) = watch::channel(IngesterStatus::Initializing);
         let mut mock_ingester = MockIngesterService::new();
         mock_ingester
@@ -1868,7 +1859,8 @@ mod tests {
 
         tokio::spawn(node_readiness_reporting_task(
             cluster.clone(),
-            MetastoreServiceClient::from_mock(mock_metastore),
+            mock_metastore,
+            None,
             Some(mock_ingester),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
@@ -1904,6 +1896,44 @@ mod tests {
         let request = tonic::Request::new(HealthCheckRequest::default());
         let response = health_client.check(request).await.unwrap().into_inner();
         assert_eq!(response.status(), ServingStatus::NotServing.into());
+    }
+
+    #[tokio::test]
+    async fn test_readiness_uses_read_replica_without_requiring_primary() {
+        let transport = ChitchatTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+            .await
+            .unwrap();
+        let (replica_readiness_tx, replica_readiness_rx) = watch::channel(false);
+        let mut primary_metastore = MockMetastoreService::new();
+        primary_metastore.expect_check_connectivity().times(0);
+        let primary_metastore = MetastoreServiceClient::from_mock(primary_metastore);
+        let replica_metastore =
+            metastore_readiness_client(replica_readiness_rx, "ram:///replica-metastore");
+        let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel();
+        let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel();
+        let (health_reporter, _health_service) = health_reporter();
+
+        tokio::spawn(node_readiness_reporting_task(
+            cluster.clone(),
+            primary_metastore,
+            Some(replica_metastore),
+            None::<MockIngesterService>,
+            grpc_readiness_signal_rx,
+            rest_readiness_signal_rx,
+            health_reporter,
+        ));
+        grpc_readiness_trigger_tx.send(()).unwrap();
+        rest_readiness_trigger_tx.send(()).unwrap();
+
+        tokio::time::sleep(READINESS_REPORTING_INTERVAL * 3).await;
+        assert!(!cluster.is_self_node_ready().await);
+
+        replica_readiness_tx.send(true).unwrap();
+        assert_eventually!(cluster.is_self_node_ready().await);
+
+        replica_readiness_tx.send(false).unwrap();
+        assert_eventually!(!cluster.is_self_node_ready().await);
     }
 
     #[tokio::test]

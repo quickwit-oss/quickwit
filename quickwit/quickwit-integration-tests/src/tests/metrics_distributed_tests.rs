@@ -201,7 +201,7 @@ async fn test_distributed_tasks_not_shuffles() {
     quickwit_common::setup_logging_for_tests();
 
     let sandbox = ClusterSandboxBuilder::default()
-        .add_node(QuickwitService::supported_services())
+        .add_node(QuickwitService::default_services())
         .add_node([QuickwitService::Searcher])
         .build_and_start()
         .await;

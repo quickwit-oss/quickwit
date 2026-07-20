@@ -29,6 +29,10 @@ pub enum QuickwitService {
     Indexer,
     Janitor,
     Metastore,
+    /// A read-only metastore node backed by a PostgreSQL read replica. It serves the same gRPC
+    /// metastore service as [`QuickwitService::Metastore`] but over a read-only connection, and is
+    /// discovered separately so that read-only callers (e.g. searchers) can route reads to it.
+    MetastoreReadReplica,
     Searcher,
 }
 
@@ -47,12 +51,32 @@ impl QuickwitService {
             QuickwitService::Indexer => "indexer",
             QuickwitService::Janitor => "janitor",
             QuickwitService::Metastore => "metastore",
+            QuickwitService::MetastoreReadReplica => "metastore_read_replica",
             QuickwitService::Searcher => "searcher",
         }
     }
 
+    /// Returns every service the binary knows how to run.
     pub fn supported_services() -> HashSet<QuickwitService> {
         all::<QuickwitService>().collect()
+    }
+
+    /// Returns the services enabled on a node when none are explicitly configured.
+    ///
+    /// This is every supported service except the opt-in standalone services.
+    ///
+    /// [`QuickwitService::MetastoreReadReplica`] requires a dedicated read replica URI and is meant
+    /// to be deployed as its own set of nodes. [`QuickwitService::Compactor`] requires an explicit
+    /// standalone compactor opt-in.
+    pub fn default_services() -> HashSet<QuickwitService> {
+        all::<QuickwitService>()
+            .filter(|service| {
+                !matches!(
+                    *service,
+                    QuickwitService::Compactor | QuickwitService::MetastoreReadReplica
+                )
+            })
+            .collect()
     }
 }
 
@@ -72,6 +96,9 @@ impl FromStr for QuickwitService {
             "indexer" => Ok(QuickwitService::Indexer),
             "janitor" => Ok(QuickwitService::Janitor),
             "metastore" => Ok(QuickwitService::Metastore),
+            "metastore-read-replica" | "metastore_read_replica" => {
+                Ok(QuickwitService::MetastoreReadReplica)
+            }
             "searcher" => Ok(QuickwitService::Searcher),
             _ => {
                 bail!(

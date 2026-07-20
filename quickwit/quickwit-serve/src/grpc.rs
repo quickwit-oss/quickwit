@@ -69,7 +69,8 @@ pub(crate) async fn start_grpc_server(
     let cluster_grpc_service = cluster_grpc_server(services.cluster.clone());
     file_descriptor_sets.push(quickwit_proto::cluster::CLUSTER_PLANE_FILE_DESCRIPTOR_SET);
 
-    // Mount gRPC metastore service if `QuickwitService::Metastore` is enabled on node.
+    // Mount gRPC metastore service if this node serves either the primary metastore or a
+    // read-only metastore replica.
     let metastore_grpc_service = if let Some(metastore_server) = &services.metastore_server_opt {
         enabled_grpc_services.insert("metastore");
         file_descriptor_sets.push(quickwit_proto::metastore::METASTORE_FILE_DESCRIPTOR_SET);

@@ -48,12 +48,12 @@ use crate::{ClusterClient, SearchError, SearchJob, SearcherContext, resolve_inde
 #[instrument(skip(list_terms_request, cluster_client, metastore))]
 pub async fn root_list_terms(
     list_terms_request: &ListTermsRequest,
-    mut metastore: MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
     cluster_client: &ClusterClient,
 ) -> crate::Result<ListTermsResponse> {
     let start_instant = tokio::time::Instant::now();
     let indexes_metadata =
-        resolve_index_patterns(&list_terms_request.index_id_patterns, &mut metastore).await?;
+        resolve_index_patterns(&list_terms_request.index_id_patterns, metastore).await?;
     // The request contains a wildcard, but couldn't find any index.
     if indexes_metadata.is_empty() {
         return Ok(ListTermsResponse {
@@ -113,7 +113,6 @@ pub async fn root_list_terms(
         .collect();
     let list_splits_request = ListSplitsRequest::try_from_list_splits_query(&query)?;
     let split_metadatas: Vec<SplitMetadata> = metastore
-        .clone()
         .list_splits(list_splits_request)
         .await?
         .collect_splits_metadata()
