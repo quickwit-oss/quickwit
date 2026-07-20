@@ -297,7 +297,7 @@ impl NodeConfigBuilder {
         self.grpc_config.validate()?;
 
         self.cloudprem_config.resolve(env_vars)?;
-        self.cloudprem_config.validate(&enabled_services)?;
+        self.cloudprem_config.validate(&resolved_enabled_services)?;
 
         let gossip_listen_port = self
             .gossip_listen_port
@@ -1764,6 +1764,7 @@ mod tests {
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
             &HashMap::default(),
+            None,
         )
         .await
         .unwrap();
@@ -1790,7 +1791,7 @@ mod tests {
                     create_dd_traces_index: false,
                 },
                 ..NodeConfigBuilder::default()
-                    .build_and_validate(&HashMap::new())
+                    .build_and_validate(&HashMap::new(), None)
                     .await
                     .unwrap()
             }
@@ -1807,6 +1808,7 @@ mod tests {
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
             &HashMap::default(),
+            None,
         )
         .await
         .unwrap_err();

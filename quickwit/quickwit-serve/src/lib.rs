@@ -2114,6 +2114,7 @@ mod tests {
         let replica_metastore =
             metastore_readiness_client(replica_readiness_rx, "ram:///replica-metastore");
         let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel();
+        let (cloudprem_readiness_trigger_tx, cloudprem_readiness_signal_rx) = oneshot::channel();
         let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel();
         let (health_reporter, _health_service) = health_reporter();
 
@@ -2123,10 +2124,12 @@ mod tests {
             Some(replica_metastore),
             None::<MockIngesterService>,
             grpc_readiness_signal_rx,
+            cloudprem_readiness_signal_rx,
             rest_readiness_signal_rx,
             health_reporter,
         ));
         grpc_readiness_trigger_tx.send(()).unwrap();
+        cloudprem_readiness_trigger_tx.send(()).unwrap();
         rest_readiness_trigger_tx.send(()).unwrap();
 
         tokio::time::sleep(READINESS_REPORTING_INTERVAL * 3).await;
