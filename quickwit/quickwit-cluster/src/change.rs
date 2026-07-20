@@ -65,11 +65,6 @@ impl Stream for ClusterChangeStream {
     }
 }
 
-/// A factory for creating cluster change streams.
-pub trait ClusterChangeStreamFactory: Clone + Send + 'static {
-    fn create(&self) -> ClusterChangeStream;
-}
-
 /// A trait for publishing key-value pairs to the cluster via Chitchat.
 #[async_trait::async_trait]
 pub trait ClusterKvPublisher: Send + Sync + 'static {
@@ -339,10 +334,7 @@ async fn try_new_node(
 
 #[cfg(any(test, feature = "testsuite"))]
 pub mod for_test {
-    use std::sync::{Arc, Mutex};
-
     use quickwit_config::GrpcConfig;
-    use tokio::sync::mpsc;
 
     use super::*;
 
@@ -352,27 +344,12 @@ pub mod for_test {
             .expect("plaintext channel factory should build")
     }
 
+    /// A no-op [`ClusterKvPublisher`] for tests that don't assert on Chitchat broadcasts.
     #[derive(Clone, Default)]
-    pub struct ClusterChangeStreamFactoryForTest {
-        inner: Arc<Mutex<Option<mpsc::UnboundedSender<ClusterChange>>>>,
-    }
-
-    impl ClusterChangeStreamFactoryForTest {
-        pub fn change_stream_tx(&self) -> mpsc::UnboundedSender<ClusterChange> {
-            self.inner.lock().unwrap().take().unwrap()
-        }
-    }
-
-    impl ClusterChangeStreamFactory for ClusterChangeStreamFactoryForTest {
-        fn create(&self) -> ClusterChangeStream {
-            let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
-            *self.inner.lock().unwrap() = Some(change_stream_tx);
-            change_stream
-        }
-    }
+    pub struct ClusterKvPublisherForTest;
 
     #[async_trait::async_trait]
-    impl ClusterKvPublisher for ClusterChangeStreamFactoryForTest {
+    impl ClusterKvPublisher for ClusterKvPublisherForTest {
         async fn set_self_key_value(&self, _key: String, _value: String) {
             // No-op for tests
         }

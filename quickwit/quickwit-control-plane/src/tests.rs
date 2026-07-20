@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 use std::time::Duration;
 
 use fnv::FnvHashMap;
@@ -144,7 +145,7 @@ async fn start_control_plane(
         universe,
         cluster_config,
         self_node_id,
-        cluster,
+        Arc::new(cluster.clone()),
         indexer_pool,
         ingester_pool,
         MetastoreServiceClient::from_mock(mock_metastore),

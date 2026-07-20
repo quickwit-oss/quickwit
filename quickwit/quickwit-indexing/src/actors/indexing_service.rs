@@ -29,8 +29,8 @@ use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::{io, temp_dir};
 use quickwit_config::{
-    INGEST_API_SOURCE_ID, IndexConfig, IndexerConfig, SourceConfig, build_doc_mapper,
-    indexing_pipeline_params_fingerprint,
+    INGEST_API_SOURCE_ID, IndexConfig, IndexerConfig, SourceConfig, SourceParams, build_doc_mapper,
+    disable_ingest_v1, indexing_pipeline_params_fingerprint,
 };
 use quickwit_ingest::{
     DropQueueRequest, GetPartitionId, IngestApiService, IngesterPool, ListQueuesRequest,
@@ -885,6 +885,16 @@ impl IndexingService {
                 per_index_uid_indexes_metadata.get(task_to_spawn.index_uid())
             {
                 if let Some(source_config) = index_metadata.sources.get(&task_to_spawn.source_id) {
+                    if disable_ingest_v1()
+                        && matches!(source_config.source_params, SourceParams::IngestApi)
+                    {
+                        debug!(
+                            "skipping spawn of ingest API pipeline for index `{}` because ingest \
+                             v1 is disabled",
+                            id_to_spawn.index_uid.index_id
+                        );
+                        continue;
+                    }
                     let merge_pipeline_id = id_to_spawn.merge_pipeline_id();
                     let immature_splits_opt =
                         per_merge_pipeline_immature_splits.remove(&merge_pipeline_id);

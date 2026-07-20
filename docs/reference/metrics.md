@@ -60,6 +60,14 @@ All metastore methods are monitored by the 3 metrics:
 
 Examples of operation names: `create_index`, `index_metadata`, `delete_index`, `stage_splits`, `publish_splits`, `list_splits`, `add_source`, ...
 
+PostgreSQL-backed metastores also expose connection pool gauges:
+
+| Namespace | Metric Name | Description | Type |
+| --------- | ----------- | ----------- | ---- |
+| `quickwit_metastore` | `active_connections` | Number of active PostgreSQL pool connections, including used and idle connections | `gauge` |
+| `quickwit_metastore` | `idle_connections` | Number of idle PostgreSQL pool connections | `gauge` |
+| `quickwit_metastore` | `acquire_connections` | Number of requests currently waiting to acquire a PostgreSQL pool connection | `gauge` |
+
 ## Rest API Metrics
 
 | Namespace | Metric Name | Description | Type |

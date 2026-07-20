@@ -19,6 +19,5 @@
 -- CONCURRENTLY avoids taking a SHARE lock on splits, which would block all
 -- writes for the duration of the build. CONCURRENTLY cannot run inside a
 -- transaction block, hence the `-- no-transaction` directive above.
-DROP INDEX CONCURRENTLY IF EXISTS splits_maturity_timestamp_idx;
 CREATE INDEX CONCURRENTLY IF NOT EXISTS splits_maturity_timestamp_idx
     ON splits (maturity_timestamp, split_id);
