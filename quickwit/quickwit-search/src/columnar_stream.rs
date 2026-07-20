@@ -173,11 +173,8 @@ pub async fn plan_columnar_splits(
         skip_aggregation_finalization: false,
         enable_request_batching: false,
     };
-    // plan_splits_for_root_search requires a mut client for unknown reasons; refactoring
-    // that requirement is out of scope for this PR.
-    let mut metastore = metastore.clone();
     let (split_metadatas, indexes_meta) =
-        crate::root::plan_splits_for_root_search(&mut search_request, &mut metastore).await?;
+        crate::root::plan_splits_for_root_search(&mut search_request, metastore).await?;
 
     Ok(stream_split_batches(split_metadatas, indexes_meta))
 }

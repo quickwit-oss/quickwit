@@ -11,6 +11,7 @@ grpc_listen_port = 3333
 peer_seeds = [ "quickwit-searcher-0.local", "quickwit-searcher-1.local" ]
 data_dir = "/opt/quickwit/data"
 metastore_uri = "postgres://username:password@host:port/db"
+metastore_read_replica_uri = "postgres://username:replica-password@replica-host:port/db"
 default_index_root_uri = "s3://quickwit-indexes"
 
 [rest]
@@ -71,6 +72,7 @@ parquet_merge_use_streaming_engine = true
 replication_factor = 2
 
 [searcher]
+use_metastore_read_replica = true
 aggregation_memory_limit = "1G"
 aggregation_bucket_limit = 500_000
 fast_field_cache_capacity = "10G"
