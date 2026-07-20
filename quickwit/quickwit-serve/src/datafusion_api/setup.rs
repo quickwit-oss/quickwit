@@ -72,7 +72,7 @@ pub(crate) fn build_datafusion_session_builder(
     if !node_config.is_service_enabled(QuickwitService::Searcher) {
         return Ok(None);
     }
-    if !quickwit_common::get_bool_from_env("QW_ENABLE_DATAFUSION_ENDPOINT", false) {
+    if !quickwit_common::get_bool_from_env_cached!("QW_ENABLE_DATAFUSION_ENDPOINT", false) {
         return Ok(None);
     }
 

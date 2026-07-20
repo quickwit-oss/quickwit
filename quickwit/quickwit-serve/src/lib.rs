@@ -67,13 +67,13 @@ use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::rate_limiter::RateLimiterSettings;
 use quickwit_common::retry::RetryParams;
 use quickwit_common::runtimes::RuntimesConfig;
+use quickwit_common::spawn_named_task;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, CircuitBreakerEvaluator,
     ConstantRate, EstimateRateLayer, EventListenerLayer, GrpcMetricsLayer, LoadShedLayer,
     RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer,
 };
 use quickwit_common::uri::Uri;
-use quickwit_common::{get_bool_from_env, spawn_named_task};
 use quickwit_compaction::planner::CompactionPlanner;
 use quickwit_compaction::{
     CompactorSupervisor, notify_compactor_decommission, start_compactor_service,
@@ -159,7 +159,8 @@ const DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY: usize = 6;
 const DISABLE_DELETE_TASK_SERVICE_ENV_KEY: &str = "QW_DISABLE_DELETE_TASK_SERVICE";
 
 fn get_metastore_client_max_concurrency() -> usize {
-    quickwit_common::get_from_env(
+    quickwit_common::get_from_env_cached!(
+        usize,
         METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY,
         DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY,
         false,
@@ -882,7 +883,7 @@ pub async fn serve_quickwit(
             search_job_placer,
             storage_resolver.clone(),
             event_broker.clone(),
-            !get_bool_from_env(DISABLE_DELETE_TASK_SERVICE_ENV_KEY, false),
+            !quickwit_common::get_bool_from_env_cached!(DISABLE_DELETE_TASK_SERVICE_ENV_KEY, false),
             compaction_planner_handle_opt,
         )
         .await

@@ -67,7 +67,8 @@ fn ingest_request_timeout() -> Duration {
         Duration::from_secs(35)
     };
     static TIMEOUT: LazyLock<Duration> = LazyLock::new(|| {
-        let duration_ms = quickwit_common::get_from_env(
+        let duration_ms = quickwit_common::get_from_env_cached!(
+            u64,
             "QW_INGEST_REQUEST_TIMEOUT_MS",
             DEFAULT_INGEST_REQUEST_TIMEOUT.as_millis() as u64,
             false,

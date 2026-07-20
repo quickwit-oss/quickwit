@@ -50,10 +50,9 @@ impl SplitId {
     /// Layout with prefix enabled: `<4 random chars>_<22 remaining ULID chars>`
     /// (27 chars total vs the usual 26).
     pub fn new() -> Self {
-        static RANDOM_PREFIX_ENABLED: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
-            quickwit_common::get_bool_from_env("QW_RANDOM_SPLIT_PREFIX", false)
-        });
-        Self::from_ulid(ulid::Ulid::new(), *RANDOM_PREFIX_ENABLED)
+        let random_prefix_enabled =
+            quickwit_common::get_bool_from_env_cached!("QW_RANDOM_SPLIT_PREFIX", false);
+        Self::from_ulid(ulid::Ulid::new(), random_prefix_enabled)
     }
 
     /// Constructs a `SplitId` from a `Ulid`, optionally prepending a random prefix.
