@@ -40,9 +40,7 @@ use time::OffsetDateTime;
 
 #[cfg(any(test, feature = "testsuite"))]
 pub use crate::change::for_test::*;
-pub use crate::change::{
-    ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory, ClusterKvPublisher,
-};
+pub use crate::change::{ClusterChange, ClusterChangeStream, ClusterKvPublisher};
 pub use crate::cluster::{Cluster, ClusterSnapshot, NodeIdSchema};
 #[cfg(any(test, feature = "testsuite"))]
 pub use crate::cluster::{

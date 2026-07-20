@@ -98,6 +98,7 @@ aws-smithy-query,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS Rust S
 aws-smithy-runtime,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS Rust SDK Team <aws-sdk-rust@amazon.com>, Zelda Hessler <zhessler@amazon.com>"
 aws-smithy-runtime-api,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS Rust SDK Team <aws-sdk-rust@amazon.com>, Zelda Hessler <zhessler@amazon.com>"
 aws-smithy-runtime-api-macros,https://github.com/smithy-lang/smithy-rs,Apache-2.0,AWS Rust SDK Team <aws-sdk-rust@amazon.com>
+aws-smithy-schema,https://github.com/smithy-lang/smithy-rs,Apache-2.0,AWS Rust SDK Team <aws-sdk-rust@amazon.com>
 aws-smithy-types,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS Rust SDK Team <aws-sdk-rust@amazon.com>, Russell Cohen <rcoh@amazon.com>"
 aws-smithy-xml,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS Rust SDK Team <aws-sdk-rust@amazon.com>, Russell Cohen <rcoh@amazon.com>"
 aws-types,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS Rust SDK Team <aws-sdk-rust@amazon.com>, Russell Cohen <rcoh@amazon.com>"
@@ -604,6 +605,7 @@ objc2-foundation,https://github.com/madsmtm/objc2,MIT,The objc2-foundation Autho
 objc2-io-kit,https://github.com/madsmtm/objc2,Zlib OR Apache-2.0 OR MIT,The objc2-io-kit Authors
 object,https://github.com/gimli-rs/object,Apache-2.0 OR MIT,The object Authors
 object_store,https://github.com/apache/arrow-rs-object-store,MIT OR Apache-2.0,The object_store Authors
+octseq,https://github.com/NLnetLabs/octets,BSD-3-Clause,NLnet Labs <rust-team@nlnetlabs.nl>
 octseq,https://github.com/NLnetLabs/octets/,BSD-3-Clause,NLnet Labs <rust-team@nlnetlabs.nl>
 ofb,https://github.com/RustCrypto/block-modes,MIT OR Apache-2.0,RustCrypto Developers
 once_cell,https://github.com/matklad/once_cell,MIT OR Apache-2.0,Aleksey Kladov <aleksey.kladov@gmail.com>
@@ -826,7 +828,6 @@ ryu,https://github.com/dtolnay/ryu,Apache-2.0 OR BSL-1.0,David Tolnay <dtolnay@g
 salsa20,https://github.com/RustCrypto/stream-ciphers,MIT OR Apache-2.0,RustCrypto Developers
 same-file,https://github.com/BurntSushi/same-file,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 sasl2-sys,https://github.com/MaterializeInc/rust-sasl,Apache-2.0,"Materialize, Inc."
-scc,https://github.com/wvwwvwwv/scalable-concurrent-containers,Apache-2.0,wvwwvwwv <wvwwvwwv@me.com>
 schannel,https://github.com/steffengy/schannel-rs,MIT,"Steven Fackler <sfackler@gmail.com>, Steffen Butzer <steffen.butzer@outlook.com>"
 schemars,https://github.com/GREsau/schemars,MIT,Graham Esau <gesau@hotmail.co.uk>
 schemars_derive,https://github.com/GREsau/schemars,MIT,Graham Esau <gesau@hotmail.co.uk>
@@ -834,7 +835,6 @@ scoped-tls,https://github.com/alexcrichton/scoped-tls,MIT OR Apache-2.0,Alex Cri
 scopeguard,https://github.com/bluss/scopeguard,MIT OR Apache-2.0,bluss
 scrypt,https://github.com/RustCrypto/password-hashes/tree/master/scrypt,MIT OR Apache-2.0,RustCrypto Developers
 sct,https://github.com/rustls/sct.rs,Apache-2.0 OR ISC OR MIT,Joseph Birr-Pixton <jpixton@gmail.com>
-sdd,https://github.com/wvwwvwwv/scalable-delayed-dealloc,Apache-2.0,wvwwvwwv <wvwwvwwv@me.com>
 sea-query,https://github.com/SeaQL/sea-query,MIT OR Apache-2.0,"Chris Tsang <chris.2y3@outlook.com>, Billy Chan <ccw.billy.123@gmail.com>, Ivan Krivosheev <py.krivosheev@gmail.com>"
 sea-query-binder,https://github.com/SeaQL/sea-query,MIT OR Apache-2.0,"Valentin Tolmer <valentin@tolmer.fr>, Ivan Krivosheev <py.krivosheev@gmail.com>"
 sea-query-derive,https://github.com/SeaQL/sea-query,MIT OR Apache-2.0,"Follpvosten <wolfi@karpador.xyz>, Rene Leveille <rene@nestingsafe.com>"

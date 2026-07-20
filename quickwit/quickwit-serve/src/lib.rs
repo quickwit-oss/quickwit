@@ -90,7 +90,10 @@ use quickwit_compaction::{
     wait_for_compactor_decommission,
 };
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{ClusterConfig, IngestApiConfig, IngestSettings, NodeConfig};
+use quickwit_config::{
+    ClusterConfig, IngestApiConfig, IngestSettings, NodeConfig, PostgresMetastoreConfig,
+    disable_ingest_v1,
+};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
@@ -388,6 +391,16 @@ async fn start_ingest_client_if_needed(
     universe: &Universe,
     cluster: &Cluster,
 ) -> anyhow::Result<IngestServiceClient> {
+    if disable_ingest_v1() {
+        debug!("returning no-op ingest service because ingest v1 is disabled");
+        let (balance_channel, _change_tx) = BalanceChannel::new();
+        let ingest_service = IngestServiceClient::from_balance_channel(
+            balance_channel,
+            node_config.grpc_config.max_message_size,
+            node_config.ingest_api_config.grpc_compression_encoding(),
+        );
+        return Ok(ingest_service);
+    }
     if node_config.is_service_enabled(QuickwitService::Indexer) {
         let ingest_api_service = start_ingest_api_service(
             universe,
@@ -606,12 +619,12 @@ pub async fn serve_quickwit(
                     )
                 })?;
             let max_in_flight_requests = if node_config.metastore_uri.protocol().is_database() {
-                node_config
+                let max_connections = node_config
                     .metastore_configs
                     .find_postgres()
-                    .map(|config| config.max_connections.get() * 2)
-                    .unwrap_or_default()
-                    .max(100)
+                    .map(|config| config.max_connections)
+                    .unwrap_or_else(PostgresMetastoreConfig::default_max_connections);
+                max_connections.get().saturating_mul(2)
             } else {
                 100
             };
@@ -1280,6 +1293,14 @@ fn setup_ingester_pool(
         Box::pin(async move {
             match cluster_change {
                 ClusterChange::Add(node) if node.is_indexer() => {
+                    let chitchat_id = node.chitchat_id();
+                    info!(
+                        node_id = %chitchat_id.node_id,
+                        generation_id = chitchat_id.generation_id,
+                        "adding node `{}` with ingester status `{}` to ingester pool",
+                        chitchat_id.node_id,
+                        node.ingester_status,
+                    );
                     let change = build_ingester_insert_change(
                         &node,
                         ingester_opt_clone,
@@ -1319,14 +1340,6 @@ fn build_ingester_insert_change(
     grpc_max_message_size: ByteSize,
     grpc_compression_encoding_opt: Option<CompressionEncoding>,
 ) -> Change<NodeId, IngesterPoolEntry> {
-    let chitchat_id = node.chitchat_id();
-    info!(
-        node_id = %chitchat_id.node_id,
-        generation_id = chitchat_id.generation_id,
-        "adding/updating node `{}` with ingester status `{}` to ingester pool",
-        chitchat_id.node_id,
-        node.ingester_status,
-    );
     let node_id: NodeId = node.node_id.clone();
     let ingester_service = build_ingester_service(
         node,
@@ -1477,7 +1490,7 @@ async fn setup_control_plane(
         universe,
         cluster_config,
         self_node_id,
-        cluster.clone(),
+        Arc::new(cluster.clone()),
         indexer_pool,
         ingester_pool,
         metastore,
@@ -1513,6 +1526,14 @@ fn setup_indexer_pool(
         Box::pin(async move {
             match cluster_change {
                 ClusterChange::Add(node) if node.is_indexer() => {
+                    let chitchat_id = node.chitchat_id();
+                    info!(
+                        node_id = %chitchat_id.node_id,
+                        generation_id = chitchat_id.generation_id,
+                        "adding node `{}` with ingester status `{}` to indexer pool",
+                        chitchat_id.node_id,
+                        node.ingester_status
+                    );
                     let change = build_indexer_insert_change(
                         &node,
                         indexing_service_clone_opt,
@@ -1554,13 +1575,6 @@ fn build_indexer_insert_change(
     grpc_max_message_size: ByteSize,
 ) -> Change<NodeId, IndexerNodeInfo> {
     let chitchat_id = node.chitchat_id();
-    info!(
-        node_id = %chitchat_id.node_id,
-        generation_id = chitchat_id.generation_id,
-        "adding node `{}` with ingester status `{}` to indexer pool",
-        chitchat_id.node_id,
-        node.ingester_status
-    );
     let node_id: NodeId = node.node_id.clone();
     let client = build_indexing_service(node, indexing_service_opt, grpc_max_message_size);
     Change::Insert(

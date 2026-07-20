@@ -35,7 +35,7 @@ where
     K: 'static,
     V: 'static,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Pool<{:?}, {:?}>", TypeId::of::<K>(), TypeId::of::<V>())
     }
 }
@@ -165,12 +165,12 @@ where
     }
 
     /// Finds a key in the pool that satisfies the given predicate.
-    pub fn find(&self, func: impl Fn(&K, &V) -> bool) -> Option<(K, V)> {
+    pub fn find(&self, predicate_fn: impl Fn(&K, &V) -> bool) -> Option<(K, V)> {
         self.pool
             .read()
             .expect("lock should not be poisoned")
             .iter()
-            .find(|(key, value)| func(key, value))
+            .find(|(key, value)| predicate_fn(key, value))
             .map(|(key, value)| (key.clone(), value.clone()))
     }
 

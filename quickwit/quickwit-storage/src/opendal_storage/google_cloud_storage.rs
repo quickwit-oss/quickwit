@@ -66,7 +66,7 @@ pub mod test_config_helpers {
             .bucket(&bucket)
             .root(&root.to_string_lossy())
             .endpoint(LOCAL_GCP_EMULATOR_ENDPOINT)
-            .allow_anonymous() // Disable authentication for fake GCS server
+            .skip_signature() // Disable authentication for fake GCS server
             .disable_vm_metadata(); // Disable GCE metadata server requests
         let store = OpendalStorage::new_google_cloud_storage(uri.clone(), cfg)?;
         Ok(store)
@@ -200,7 +200,7 @@ mod tests {
         let cfg = opendal::services::Gcs::default()
             .bucket("quickwit-test-bucket")
             .endpoint(&endpoint)
-            .allow_anonymous()
+            .skip_signature()
             .disable_config_load()
             .disable_vm_metadata();
         let storage = OpendalStorage::new_google_cloud_storage_with_http_client_for_test(

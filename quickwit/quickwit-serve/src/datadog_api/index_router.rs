@@ -273,7 +273,7 @@ mod tests {
             &universe,
             cluster_config,
             control_plane_cluster.self_node_id(),
-            control_plane_cluster.clone(),
+            Arc::new(control_plane_cluster.clone()),
             IndexerPool::default(),
             IngesterPool::default(),
             MetastoreServiceClient::new(metastore.clone()),
