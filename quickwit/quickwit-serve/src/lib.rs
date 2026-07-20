@@ -90,7 +90,9 @@ use quickwit_compaction::{
     wait_for_compactor_decommission,
 };
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{ClusterConfig, IngestApiConfig, IngestSettings, NodeConfig, disable_ingest_v1};
+use quickwit_config::{
+    ClusterConfig, IngestApiConfig, IngestSettings, NodeConfig, disable_ingest_v1,
+};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
@@ -1599,6 +1601,9 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 }
 
 /// Reports node readiness to chitchat cluster every 10 seconds (25 ms for tests).
+// One argument over the clippy default; the extra `read_replica_metastore_opt` comes from
+// upstream's metastore-read-replica feature and doesn't warrant a params struct on its own.
+#[allow(clippy::too_many_arguments)]
 async fn node_readiness_reporting_task(
     cluster: Cluster,
     primary_metastore: MetastoreServiceClient,

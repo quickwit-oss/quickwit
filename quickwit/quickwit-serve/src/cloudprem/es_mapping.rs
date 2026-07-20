@@ -31,7 +31,7 @@ use crate::elasticsearch_api::rest_handler::es_compat_index_mapping;
 pub(crate) async fn cloudprem_index_mapping(
     index_id: String,
     params: IndexMappingQueryParams,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
     search_service: Arc<dyn SearchService>,
 ) -> Result<ElasticsearchMappingsResponse, ElasticsearchError> {
     let requested_fields = params.field_patterns();
@@ -43,7 +43,7 @@ pub(crate) async fn cloudprem_index_mapping(
 
     let index_id_patterns: Vec<String> =
         index_id.split(',').map(|s| s.trim().to_string()).collect();
-    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &mut metastore).await?;
+    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &metastore).await?;
     if all_requested_declared(&requested_fields, &indexes_metadata) {
         return Ok(ElasticsearchMappingsResponse::from_doc_mapping(
             indexes_metadata,
