@@ -293,12 +293,26 @@ impl ShardPositionsService {
             warn!("received an empty publish shard positions update");
             return Vec::new();
         }
+        // Deduplicate the incoming positions by only keeping the max position for each shard.
+        // Downstream consumers only care about the highest published position per shard.
+        let mut max_positions_per_shard: FnvHashMap<ShardId, Position> = FnvHashMap::default();
+        for (shard, new_position) in published_positions_per_shard {
+            max_positions_per_shard
+                .entry(shard)
+                .and_modify(|current_position| {
+                    if new_position > *current_position {
+                        *current_position = new_position.clone();
+                    }
+                })
+                .or_insert(new_position);
+        }
+
         let current_shard_positions = self
             .shard_positions_per_source
             .entry(source_uid.clone())
             .or_default();
 
-        let updated_positions_per_shard = published_positions_per_shard
+        let updated_positions_per_shard = max_positions_per_shard
             .into_iter()
             .filter(|(shard, new_position)| {
                 let Some(position) = current_shard_positions.get(shard) else {
