@@ -13,14 +13,17 @@
 // limitations under the License.
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
 
 use mockall::predicate;
 use quickwit_proto::search::{SearchRequest, SearchResponse};
 
+use super::BatchingSearchService;
 use super::combine::batch_grouping_key;
 use super::dispatcher::batch_execute;
 use super::normalize::normalize_request;
-use crate::{MockSearchService, SearchError};
+use crate::{MockSearchService, SearchError, SearchService};
 
 fn make_search_request(query_ast: &str, max_hits: u64, aggregation: Option<&str>) -> SearchRequest {
     normalize_request(SearchRequest {
@@ -93,6 +96,28 @@ async fn test_batch_combines_aggregations() {
         assert_eq!(response.num_hits, 100);
         assert!(response.hits.is_empty());
     }
+}
+
+#[tokio::test]
+async fn test_batch_dispatches_when_request_limit_is_reached() {
+    let mut mock = MockSearchService::new();
+    mock.expect_root_search()
+        .times(2)
+        .returning(|_| Ok(SearchResponse::default()));
+
+    let service = BatchingSearchService::new(Arc::new(mock), Duration::from_millis(10));
+    let requests = (0..16).map(|idx| {
+        let aggregation = format!(r#"{{"agg_{idx}":{{"avg":{{"field":"price"}}}}}}"#);
+        let mut request = make_search_request(QUERY, 0, Some(&aggregation));
+        request.enable_request_batching = true;
+        request
+    });
+
+    let results =
+        futures::future::join_all(requests.map(|request| service.root_search(request))).await;
+
+    assert_eq!(results.len(), 16);
+    assert!(results.iter().all(Result::is_ok));
 }
 
 #[tokio::test]
