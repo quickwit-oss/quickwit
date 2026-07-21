@@ -566,4 +566,54 @@ mod tests {
         }
         universe.assert_quit().await;
     }
+
+    #[tokio::test]
+    async fn test_shard_positions_apply_update_deduplicates_same_batch() {
+        let transport = ChitchatTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, true)
+            .await
+            .unwrap();
+        let mut shard_positions_service =
+            ShardPositionsService::new(EventBroker::default(), cluster);
+
+        let index_uid = IndexUid::new_with_random_ulid("index-test");
+        let source_id = "test-source".to_string();
+        let source_uid = SourceUid {
+            index_uid,
+            source_id,
+        };
+        let shard_id = ShardId::from(1);
+
+        // The batch contains several positions for the same shard, out of order.
+        // Only the max position should be kept.
+        let update_to_42 = shard_positions_service.apply_update(
+            &source_uid,
+            vec![
+                (shard_id.clone(), Position::offset(10u64)),
+                (shard_id.clone(), Position::offset(42u64)),
+                (shard_id.clone(), Position::offset(5u64)),
+            ],
+        );
+        assert_eq!(
+            &update_to_42,
+            &[(shard_id.clone(), Position::offset(42u64))]
+        );
+
+        // We only update on a strictly greater position
+        let no_updates: Vec<_> = shard_positions_service.apply_update(
+            &source_uid,
+            vec![(shard_id.clone(), Position::offset(42u64))],
+        );
+        assert!(no_updates.is_empty());
+
+        // We only update when there is a strictly greater position
+        let update_to_43: Vec<_> = shard_positions_service.apply_update(
+            &source_uid,
+            vec![(shard_id.clone(), Position::offset(43u64))],
+        );
+        assert_eq!(
+            &update_to_43,
+            &[(shard_id.clone(), Position::offset(43u64))]
+        );
+    }
 }
