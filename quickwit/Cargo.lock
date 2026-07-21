@@ -9028,7 +9028,7 @@ dependencies = [
 
 [[package]]
 name = "pomsky-arrow"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "arrow",
  "hashbrown 0.17.1",
@@ -9039,7 +9039,7 @@ dependencies = [
 
 [[package]]
 name = "pomsky-intake"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -9832,7 +9832,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-actors"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9852,7 +9852,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-aws"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "aws-config",
  "aws-runtime",
@@ -9872,7 +9872,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-cli"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "backtrace",
@@ -9925,7 +9925,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-cluster"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9952,7 +9952,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-codegen"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "futures 0.3.32",
@@ -9968,7 +9968,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-codegen-example"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9995,7 +9995,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-common"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "async-speed-limit",
@@ -10049,7 +10049,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-compaction"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10073,7 +10073,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-config"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "bytes 1.11.1",
@@ -10107,7 +10107,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-control-plane"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10140,7 +10140,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-datadog-log-router"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "nom 8.0.0",
@@ -10151,7 +10151,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-datafusion"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "arrow",
  "async-trait",
@@ -10190,7 +10190,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-datetime"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "itertools 0.15.0",
  "serde",
@@ -10202,7 +10202,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-df-core"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "arrow",
  "async-trait",
@@ -10224,7 +10224,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-directories"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10241,7 +10241,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-doc-mapper"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "arrow",
@@ -10273,7 +10273,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-dst"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "quickwit-metrics",
  "stateright",
@@ -10281,7 +10281,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-index-management"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "futures 0.3.32",
@@ -10303,7 +10303,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-indexing"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -10373,7 +10373,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-ingest"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10414,7 +10414,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-integration-tests"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "arrow",
@@ -10465,7 +10465,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-jaeger"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "async-trait",
  "itertools 0.15.0",
@@ -10498,7 +10498,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-janitor"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10535,7 +10535,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-lambda-client"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10562,7 +10562,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-lambda-server"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -10586,7 +10586,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-macros"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -10595,7 +10595,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-metastore"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10642,7 +10642,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-metrics"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "atomic_float",
  "const_format",
@@ -10660,14 +10660,14 @@ dependencies = [
 
 [[package]]
 name = "quickwit-metrics-inventory"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "quickwit-metrics",
 ]
 
 [[package]]
 name = "quickwit-opentelemetry"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "arrow",
@@ -10691,7 +10691,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-parquet-engine"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "arrow",
@@ -10722,7 +10722,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-processing"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "binggan",
  "env_logger",
@@ -10747,7 +10747,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-proto"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10785,7 +10785,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-query"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -10818,7 +10818,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-remote-api"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "arrow",
@@ -10842,7 +10842,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-rest-client"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "bytes 1.11.1",
@@ -10868,7 +10868,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-search"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "arrow",
@@ -10916,7 +10916,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-serve"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -11019,7 +11019,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-storage"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -11074,7 +11074,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-telemetry-exporters"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "metrics",
@@ -11101,7 +11101,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-transport"
-version = "0.1.32-dev"
+version = "0.1.33-dev"
 dependencies = [
  "anyhow",
  "arc-swap",
