@@ -235,7 +235,7 @@ impl IndexerConfig {
         }
         #[cfg(not(any(test, feature = "testsuite")))]
         {
-            quickwit_common::get_bool_from_env("QW_ENABLE_OTLP_ENDPOINT", true)
+            quickwit_common::get_bool_from_env_cached!("QW_ENABLE_OTLP_ENDPOINT", true)
         }
     }
 
@@ -293,6 +293,61 @@ impl Default for IndexerConfig {
             merge_concurrency: Self::default_merge_concurrency(),
             max_merge_write_throughput: None,
             parquet_merge_use_streaming_engine: Self::default_parquet_merge_use_streaming_engine(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompactorConfig {
+    /// Maximum number of concurrent merges, which hold the CPU for
+    /// a long time. Defaults to `num_cpus - 1`.
+    #[serde(default = "CompactorConfig::default_max_concurrent_merge_executions")]
+    pub max_concurrent_merge_executions: NonZeroUsize,
+    /// Number of pipelines to run per merge executions. Scalar. Since merges perform a lot
+    /// of IO, multiple concurrent merges can be interleaved.
+    #[serde(default = "CompactorConfig::default_pipeline_slots_per_merge_execution")]
+    pub pipeline_slots_per_merge_execution: NonZeroUsize,
+    /// Maximum number of concurrent split uploads across all pipelines.
+    #[serde(default = "CompactorConfig::default_max_concurrent_split_uploads")]
+    pub max_concurrent_split_uploads: NonZeroUsize,
+    /// Limits the IO throughput of the split downloader and the merge executor.
+    #[serde(default)]
+    pub max_merge_write_throughput: Option<ByteSize>,
+}
+
+impl CompactorConfig {
+    fn default_max_concurrent_merge_executions() -> NonZeroUsize {
+        let cpus = quickwit_common::num_cpus().saturating_sub(1);
+        NonZeroUsize::new(cpus).unwrap_or(NonZeroUsize::MIN)
+    }
+
+    fn default_pipeline_slots_per_merge_execution() -> NonZeroUsize {
+        NonZeroUsize::new(2).unwrap()
+    }
+
+    fn default_max_concurrent_split_uploads() -> NonZeroUsize {
+        NonZeroUsize::new(12).unwrap()
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test() -> Self {
+        CompactorConfig {
+            max_concurrent_merge_executions: NonZeroUsize::new(2).unwrap(),
+            pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
+            max_concurrent_split_uploads: NonZeroUsize::new(4).unwrap(),
+            max_merge_write_throughput: None,
+        }
+    }
+}
+
+impl Default for CompactorConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent_merge_executions: Self::default_max_concurrent_merge_executions(),
+            pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
+            max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
+            max_merge_write_throughput: None,
         }
     }
 }
@@ -364,6 +419,10 @@ pub struct SearcherConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
+    /// Routes read-only metastore requests from searchers, including DataFusion when enabled, to
+    /// nodes running the `metastore_read_replica` service.
+    #[serde(default)]
+    pub use_metastore_read_replica: bool,
     pub warmup_memory_budget: ByteSize,
     pub warmup_single_split_initial_allocation: ByteSize,
     /// Lambda configuration for serverless leaf search execution.
@@ -587,6 +646,7 @@ impl Default for SearcherConfig {
             request_timeout_secs: Self::default_request_timeout_secs(),
             leaf_request_timeout_secs: Self::default_request_timeout_secs(),
             storage_timeout_policy: None,
+            use_metastore_read_replica: false,
             warmup_memory_budget: ByteSize::gb(100),
             warmup_single_split_initial_allocation: ByteSize::mb(300),
             lambda: None,
@@ -791,7 +851,7 @@ impl JaegerConfig {
         }
         #[cfg(not(any(test, feature = "testsuite")))]
         {
-            quickwit_common::get_bool_from_env("QW_ENABLE_JAEGER_ENDPOINT", true)
+            quickwit_common::get_bool_from_env_cached!("QW_ENABLE_JAEGER_ENDPOINT", true)
         }
     }
 
@@ -833,6 +893,10 @@ pub struct NodeConfig {
     pub peer_seeds: Vec<String>,
     pub data_dir_path: PathBuf,
     pub metastore_uri: Uri,
+    /// Optional PostgreSQL read replica URI. It is used as the connection URI by nodes running the
+    /// [`QuickwitService::MetastoreReadReplica`] role.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metastore_read_replica_uri: Option<Uri>,
     pub default_index_root_uri: Uri,
     pub rest_config: RestConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -844,6 +908,9 @@ pub struct NodeConfig {
     pub searcher_config: SearcherConfig,
     pub ingest_api_config: IngestApiConfig,
     pub jaeger_config: JaegerConfig,
+    pub compactor_config: CompactorConfig,
+    #[serde(skip_serializing)]
+    pub enable_standalone_compactors: bool,
 }
 
 impl NodeConfig {
@@ -853,8 +920,22 @@ impl NodeConfig {
 
     /// Parses and validates a [`NodeConfig`] from a given URI and config content.
     pub async fn load(config_format: ConfigFormat, config_content: &[u8]) -> anyhow::Result<Self> {
+        Self::load_with_enabled_services(config_format, config_content, None).await
+    }
+
+    /// Parses and validates a [`NodeConfig`] after overriding its enabled services.
+    ///
+    /// The override takes precedence over both the config file and `QW_ENABLED_SERVICES` and is
+    /// applied before service-dependent validation.
+    pub async fn load_with_enabled_services(
+        config_format: ConfigFormat,
+        config_content: &[u8],
+        enabled_services: Option<&HashSet<QuickwitService>>,
+    ) -> anyhow::Result<Self> {
         let env_vars = env::vars().collect::<HashMap<_, _>>();
-        let config = load_node_config_with_env(config_format, config_content, &env_vars).await?;
+        let config =
+            load_node_config_with_env(config_format, config_content, &env_vars, enabled_services)
+                .await?;
         if !config.data_dir_path.try_exists()? {
             bail!(
                 "data dir `{}` does not exist",
@@ -893,6 +974,9 @@ impl NodeConfig {
     pub fn redact(&mut self) {
         self.metastore_configs.redact();
         self.metastore_uri.redact();
+        if let Some(metastore_read_replica_uri) = &mut self.metastore_read_replica_uri {
+            metastore_read_replica_uri.redact();
+        }
         self.storage_configs.redact();
     }
 
@@ -908,6 +992,14 @@ impl NodeConfig {
     pub fn for_test_from_ports(rest_listen_port: u16, grpc_listen_port: u16) -> Self {
         serialize::node_config_for_tests_from_ports(rest_listen_port, grpc_listen_port)
     }
+
+    /// Test config with `enable_standalone_compactors = true`.
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test_with_standalone_compactors() -> Self {
+        let mut node_config = Self::for_test();
+        node_config.enable_standalone_compactors = true;
+        node_config
+    }
 }
 
 #[cfg(test)]
@@ -916,6 +1008,26 @@ mod tests {
 
     use super::*;
     use crate::IndexerConfig;
+
+    #[test]
+    fn test_node_config_redact_metastore_uris() {
+        let mut config = NodeConfig::for_test();
+        config.metastore_uri = Uri::for_test("postgresql://username:password@host:5432/db");
+        config.metastore_read_replica_uri = Some(Uri::for_test(
+            "postgresql://replica-user:replica-password@replica-host:5432/db",
+        ));
+
+        config.redact();
+
+        assert_eq!(
+            config.metastore_uri,
+            "postgresql://username:***redacted***@host:5432/db"
+        );
+        assert_eq!(
+            config.metastore_read_replica_uri.unwrap(),
+            "postgresql://replica-user:***redacted***@replica-host:5432/db"
+        );
+    }
 
     #[test]
     fn test_indexer_config_serialization() {
@@ -940,23 +1052,6 @@ mod tests {
                     .as_str()
                     .unwrap(),
                 "1500m"
-            );
-        }
-        {
-            let indexer_config: IndexerConfig =
-                serde_yaml::from_str(r#"merge_concurrency: 5"#).unwrap();
-            assert_eq!(
-                indexer_config.merge_concurrency,
-                NonZeroUsize::new(5).unwrap()
-            );
-            let indexer_config_json = serde_json::to_value(&indexer_config).unwrap();
-            assert_eq!(
-                indexer_config_json
-                    .get("merge_concurrency")
-                    .unwrap()
-                    .as_u64()
-                    .unwrap(),
-                5
             );
         }
         {

@@ -22,7 +22,7 @@ A commented example is available here: [quickwit.yaml](https://github.com/quickw
 | `version` | Config file version. `0.7` is the only available value with a retro compatibility on `0.5` and `0.4`. | | |
 | `cluster_id` | Unique identifier of the cluster the node will be joining. Clusters sharing the same network should use distinct cluster IDs.| `QW_CLUSTER_ID` | `quickwit-default-cluster` |
 | `node_id` | Unique identifier of the node. It must be distinct from the node IDs of its cluster peers. Defaults to the instance's short hostname if not set. | `QW_NODE_ID` | short hostname |
-| `enabled_services` | Enabled services (control_plane, indexer, janitor, metastore, searcher) | `QW_ENABLED_SERVICES` | all services |
+| `enabled_services` | Enabled services (control_plane, indexer, janitor, metastore, metastore_read_replica, searcher) | `QW_ENABLED_SERVICES` | all services except metastore_read_replica |
 | `listen_address` | The IP address or hostname that Quickwit service binds to for starting REST and GRPC server and connecting this node to other nodes. By default, Quickwit binds itself to 127.0.0.1 (localhost). This default is not valid when trying to form a cluster. | `QW_LISTEN_ADDRESS` | `127.0.0.1` |
 | `advertise_address` | IP address advertised by the node, i.e. the IP address that peer nodes should use to connect to the node for RPCs. | `QW_ADVERTISE_ADDRESS` | `listen_address` |
 | `gossip_listen_port` | The port which to listen for the Gossip cluster membership service (UDP). | `QW_GOSSIP_LISTEN_PORT` | `rest.listen_port` |
@@ -30,6 +30,7 @@ A commented example is available here: [quickwit.yaml](https://github.com/quickw
 | `peer_seeds` | List of IP addresses or hostnames used to bootstrap the cluster and discover the complete set of nodes. This list may contain the current node address and does not need to be exhaustive. If the list of peer seeds contains a host name, Quickwit will resolve it by querying the DNS every minute. On kubernetes for instance, it is a good practise to set it to a [headless service](https://kubernetes.io/docs/concepts/services-networking/service/#headless-services). | `QW_PEER_SEEDS` | |
 | `data_dir` | Path to directory where data (tmp data, splits kept for caching purpose) is persisted. This is mostly used in indexing. | `QW_DATA_DIR` | `./qwdata` |
 | `metastore_uri` | Metastore URI. Can be a local directory or `s3://my-bucket/indexes` or `postgres://username:password@localhost:5432/metastore`. [Learn more about the metastore configuration](metastore-config.md). | `QW_METASTORE_URI` | `{data_dir}/indexes` |
+| `metastore_read_replica_uri` | Optional PostgreSQL read replica URI. Nodes running the `metastore_read_replica` service connect to it over a read-only connection and serve stale-tolerant read-only metastore requests. Searchers use those nodes only when `searcher.use_metastore_read_replica` is enabled. | `QW_METASTORE_READ_REPLICA_URI` | |
 | `default_index_root_uri` | Default index root URI that defines the location where index data (splits) is stored. The index URI is built following the scheme: `{default_index_root_uri}/{index-id}` | `QW_DEFAULT_INDEX_ROOT_URI` | `{data_dir}/indexes` |
 | environment variable only | Log level of Quickwit. Can be a direct log level, or a comma separated list of `module_name=level` | `RUST_LOG` | `info` |
 
@@ -216,6 +217,8 @@ File-backed metastore doesn't have any node level configuration. You can configu
 | `idle_connection_timeout` | Maximum idle duration before closing individual connections. | `10min` |
 | `max_connection_lifetime` | Maximum lifetime of individual connections. | `30min` |
 
+`max_connections` applies per Quickwit node running the `metastore` service. Database-backed metastore nodes admit at most `2 * max_connections` in-flight requests.
+
 Example of a metastore configuration for PostgreSQL in YAML format:
 
 ```yaml
@@ -285,6 +288,7 @@ This section contains the configuration options for a Searcher.
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `split_cache` | Searcher split cache configuration options defined in the section below. Cache disabled if unspecified. | |
 | `request_timeout_secs` | The time before a search request is cancelled. This should match the timeout of the stack calling into quickwit if there is one set.  | `30` |
+| `use_metastore_read_replica` | If true, routes read-only metastore requests from searchers, including DataFusion when enabled, to nodes running the `metastore_read_replica` service. Searchers require at least one `metastore_read_replica` node at startup and do not fall back to the primary metastore. | `false` |
 
 ### Searcher split cache configuration
 
@@ -301,6 +305,7 @@ Example:
 
 ```yaml
 searcher:
+  use_metastore_read_replica: false
   fast_field_cache_capacity: 1G
   split_footer_cache_capacity: 500M
   partial_request_cache_capacity: 64M

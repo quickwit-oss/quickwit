@@ -48,11 +48,11 @@ pub use metastore::{
     ListParquetSplitsQuery, ListParquetSplitsRequestExt, ListParquetSplitsResponseExt,
     ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, MetastoreServiceExt,
     MetastoreServiceStreamSplitsExt, PARQUET_SPLITS_PAGE_SIZE, ParquetSplitRecord,
-    ParquetSplitsPage, PublishParquetSplitsRequestExt, PublishSplitsRequestExt,
+    ParquetSplitsPage, PublishParquetSplitsRequestExt, PublishSplitsRequestExt, SortBy,
     StageParquetSplitsRequestExt, StageSplitsRequestExt, UpdateIndexRequestExt,
     UpdateSourceRequestExt, file_backed, list_parquet_splits_page, list_parquet_splits_paginated,
 };
-pub use metastore_factory::{MetastoreFactory, UnsupportedMetastore};
+pub use metastore_factory::{MetastoreFactory, MetastoreFactoryOptions, UnsupportedMetastore};
 pub use metastore_resolver::MetastoreResolver;
 use quickwit_common::is_disjoint;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;

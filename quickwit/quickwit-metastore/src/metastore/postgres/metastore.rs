@@ -23,7 +23,7 @@ use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::uri::Uri;
-use quickwit_common::{ServiceStream, get_bool_from_env, rate_limited_error};
+use quickwit_common::{ServiceStream, get_bool_from_env_cached, rate_limited_error};
 use quickwit_config::{
     IndexTemplate, IndexTemplateId, PostgresMetastoreConfig, validate_index_id_pattern,
 };
@@ -61,14 +61,20 @@ use time::OffsetDateTime;
 use tracing::{debug, info, instrument, warn};
 use uuid::Uuid;
 
-use super::QW_POSTGRES_READ_ONLY_ENV_KEY;
 use super::error::convert_sqlx_err;
+use super::metrics::MetastoreKind;
 use super::migrator::Migrations;
 use super::model::{PgDeleteTask, PgIndex, PgIndexTemplate, PgShard, PgSplit, Splits};
 use super::parquet_model::{InsertableParquetSplit, ParquetSplitRecord, PgParquetSplit};
 use super::pool::TrackedPool;
 use super::split_stream::SplitStream;
-use super::utils::{append_query_filters_and_order_by, establish_connection};
+use super::utils::{
+    PostgresqlConnectionOptions, append_query_filters_and_order_by, establish_connection,
+};
+use super::{
+    QW_POSTGRES_READ_ONLY_ENV_KEY, QW_POSTGRES_SKIP_DEFERRED_MIGRATIONS_ENV_KEY,
+    QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY, QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY,
+};
 use crate::checkpoint::{
     IndexCheckpointDelta, PartitionId, SourceCheckpoint, SourceCheckpointDelta,
 };
@@ -101,11 +107,83 @@ impl fmt::Debug for PostgresqlMetastore {
     }
 }
 
+/// Connection/migration options for a [`PostgresqlMetastore`].
+#[derive(Clone, Copy, Debug)]
+struct PostgresqlMetastoreOptions {
+    metastore_kind: MetastoreKind,
+    read_only: bool,
+    skip_migrations: bool,
+    skip_locking: bool,
+    skip_deferred: bool,
+}
+
+impl PostgresqlMetastoreOptions {
+    /// Default options, with the read-only and migration flags read from the environment.
+    fn from_env() -> Self {
+        Self {
+            // The environment can make the connection read-only, but only the explicit
+            // `new_read_only` path represents the read-replica service kind.
+            metastore_kind: MetastoreKind::Primary,
+            // These environment variables are process-global and don't change over a process's
+            // lifetime, so they're read (and logged) once rather than on every metastore
+            // construction, which can recur frequently.
+            read_only: get_bool_from_env_cached!(QW_POSTGRES_READ_ONLY_ENV_KEY, false),
+            skip_migrations: get_bool_from_env_cached!(QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY, false),
+            skip_locking: get_bool_from_env_cached!(
+                QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY,
+                false
+            ),
+            skip_deferred: get_bool_from_env_cached!(
+                QW_POSTGRES_SKIP_DEFERRED_MIGRATIONS_ENV_KEY,
+                false
+            ),
+        }
+    }
+
+    /// Options for a read-only metastore: the connection is read-only and migrations are skipped,
+    /// since the read replica cannot be written to and is migrated by the primary.
+    fn read_only() -> Self {
+        Self {
+            metastore_kind: MetastoreKind::ReadReplica,
+            read_only: true,
+            skip_migrations: true,
+            skip_locking: false,
+            skip_deferred: true,
+        }
+    }
+}
+
 impl PostgresqlMetastore {
     /// Creates a metastore given a database URI.
     pub async fn new(
         postgres_metastore_config: &PostgresMetastoreConfig,
         connection_uri: &Uri,
+    ) -> MetastoreResult<Self> {
+        Self::new_with_options(
+            postgres_metastore_config,
+            connection_uri,
+            PostgresqlMetastoreOptions::from_env(),
+        )
+        .await
+    }
+
+    /// Creates a read-only metastore given a database URI.
+    pub async fn new_read_only(
+        postgres_metastore_config: &PostgresMetastoreConfig,
+        connection_uri: &Uri,
+    ) -> MetastoreResult<Self> {
+        Self::new_with_options(
+            postgres_metastore_config,
+            connection_uri,
+            PostgresqlMetastoreOptions::read_only(),
+        )
+        .await
+    }
+
+    async fn new_with_options(
+        postgres_metastore_config: &PostgresMetastoreConfig,
+        connection_uri: &Uri,
+        options: PostgresqlMetastoreOptions,
     ) -> MetastoreResult<Self> {
         let min_connections = postgres_metastore_config.min_connections;
         let max_connections = postgres_metastore_config.max_connections.get();
@@ -119,20 +197,26 @@ impl PostgresqlMetastore {
             .max_connection_lifetime_opt()
             .expect("PostgreSQL metastore config should have been validated");
 
-        let read_only = get_bool_from_env(QW_POSTGRES_READ_ONLY_ENV_KEY, false);
-
-        let connection_pool = establish_connection(
+        let connection_pool = establish_connection(PostgresqlConnectionOptions {
             connection_uri,
             min_connections,
             max_connections,
             acquire_timeout,
             idle_timeout_opt,
             max_lifetime_opt,
-            read_only,
-        )
+            read_only: options.read_only,
+            metastore_kind: options.metastore_kind,
+        })
         .await?;
 
-        Migrations::from_env(connection_pool.clone()).run().await?;
+        Migrations::new(
+            connection_pool.clone(),
+            options.skip_migrations,
+            options.skip_locking,
+            options.skip_deferred,
+        )
+        .run()
+        .await?;
 
         let metastore = PostgresqlMetastore {
             uri: connection_uri.clone(),
@@ -868,7 +952,7 @@ impl MetastoreService for PostgresqlMetastore {
         let list_splits_query = request.deserialize_list_splits_query()?;
         let mut sql_query_builder = Query::select();
         sql_query_builder.column(Asterisk).from(Splits::Table);
-        append_query_filters_and_order_by(&mut sql_query_builder, &list_splits_query);
+        append_query_filters_and_order_by(&mut sql_query_builder, list_splits_query);
 
         let (sql_query, values) = sql_query_builder.build_sqlx(PostgresQueryBuilder);
         let pg_split_stream = SplitStream::new(
@@ -3093,12 +3177,14 @@ impl crate::tests::DefaultForTest for PostgresqlMetastore {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use async_trait::async_trait;
     use quickwit_common::uri::Protocol;
     use quickwit_doc_mapper::tag_pruning::TagFilterAst;
     use quickwit_proto::ingest::Shard;
     use quickwit_proto::metastore::MetastoreService;
-    use quickwit_proto::types::{IndexUid, SourceId};
+    use quickwit_proto::types::{IndexUid, SourceId, SplitId};
     use sea_query::{Asterisk, PostgresQueryBuilder, Query};
     use time::OffsetDateTime;
 
@@ -3197,7 +3283,7 @@ mod tests {
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -3211,7 +3297,7 @@ mod tests {
 
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Published);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -3225,7 +3311,7 @@ mod tests {
 
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -3237,7 +3323,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_update_timestamp_lt(51);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -3249,7 +3335,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_create_timestamp_lte(55);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -3263,7 +3349,7 @@ mod tests {
         let maturity_evaluation_datetime = OffsetDateTime::from_unix_timestamp(55).unwrap();
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .retain_mature(maturity_evaluation_datetime);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -3277,7 +3363,7 @@ mod tests {
 
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .retain_immature(maturity_evaluation_datetime);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -3289,7 +3375,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_delete_opstamp_gte(4);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -3301,7 +3387,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_time_range_start_gt(45);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -3313,7 +3399,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_time_range_end_lt(45);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -3329,7 +3415,7 @@ mod tests {
                 is_present: false,
                 tag: "tag-2".to_string(),
             });
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -3342,7 +3428,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_offset(4);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -3355,7 +3441,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).sort_by_index_uid();
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -3373,7 +3459,7 @@ mod tests {
                 split_id: "my_split".into(),
                 ..Default::default()
             });
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -3386,7 +3472,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_all_indexes().with_split_state(SplitState::Staged);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -3397,7 +3483,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_all_indexes().with_max_time_range_end(42);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -3414,7 +3500,8 @@ mod tests {
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_time_range_start_gt(0)
             .with_time_range_end_lt(40);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
+
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -3428,7 +3515,7 @@ mod tests {
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_time_range_start_gt(45)
             .with_delete_opstamp_gt(0);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -3442,7 +3529,7 @@ mod tests {
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_update_timestamp_lt(51)
             .with_create_timestamp_lte(63);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -3459,7 +3546,7 @@ mod tests {
                 is_present: true,
                 tag: "tag-1".to_string(),
             });
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -3474,12 +3561,26 @@ mod tests {
         let query =
             ListSplitsQuery::try_from_index_uids(vec![index_uid.clone(), index_uid_2.clone()])
                 .unwrap();
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
                 r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}', '{index_uid_2}')"#
             )
+        );
+    }
+
+    #[test]
+    fn test_list_splits_query_excluded_split_ids() {
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
+
+        let query = ListSplitsQuery::for_all_indexes()
+            .with_excluded_split_ids(HashSet::from([SplitId::from("s1"), SplitId::from("s2")]));
+        append_query_filters_and_order_by(sql, query);
+        assert_eq!(
+            sql.to_string(PostgresQueryBuilder),
+            r#"SELECT * FROM "splits" WHERE split_id <> ALL(ARRAY ['s1','s2']::text[])"#
         );
     }
 

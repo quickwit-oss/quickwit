@@ -14,8 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use quickwit_common::get_bool_from_env;
-use quickwit_metrics::{counter, labels};
+use quickwit_metrics::counter;
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
 use sqlx::migrate::{Migrate, Migrator};
 use sqlx::{Acquire, PgConnection, Postgres};
@@ -23,10 +22,6 @@ use tracing::{error, info};
 
 use super::metrics::DEFERRED_MIGRATIONS_APPLY;
 use super::pool::TrackedPool;
-use super::{
-    QW_POSTGRES_SKIP_DEFERRED_MIGRATIONS_ENV_KEY, QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY,
-    QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY,
-};
 
 // The deferred migrations should be attempted by only one metastore pod. We do that by having
 // metastore pods try to acquire a lock to run the deferred migrations. Pods that don't get the lock
@@ -60,12 +55,18 @@ pub(super) struct Migrations {
 }
 
 impl Migrations {
-    pub(super) fn from_env(connection_pool: TrackedPool<Postgres>) -> Self {
+    /// Builds a migration runner with explicit skip settings.
+    pub(super) fn new(
+        connection_pool: TrackedPool<Postgres>,
+        skip_migrations: bool,
+        skip_locking: bool,
+        skip_deferred: bool,
+    ) -> Self {
         Self {
             connection_pool,
-            skip_migrations: get_bool_from_env(QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY, false),
-            skip_locking: get_bool_from_env(QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY, false),
-            skip_deferred: get_bool_from_env(QW_POSTGRES_SKIP_DEFERRED_MIGRATIONS_ENV_KEY, false),
+            skip_migrations,
+            skip_locking,
+            skip_deferred,
         }
     }
 
@@ -137,14 +138,12 @@ impl Migrations {
         match run_migrations(migrator, &mut conn).await {
             Ok(()) => {
                 info!("deferred PostgreSQL migrations applied successfully");
-                counter!(parent: DEFERRED_MIGRATIONS_APPLY, labels: [labels!("result" => "success")])
-                    .inc();
+                counter!(parent: DEFERRED_MIGRATIONS_APPLY, "result" => "success").inc();
                 DeferredOutcome::Success
             }
             Err(error) => {
                 error!(%error, "failed to apply deferred migrations");
-                counter!(parent: DEFERRED_MIGRATIONS_APPLY, labels: [labels!("result" => "failure")])
-                    .inc();
+                counter!(parent: DEFERRED_MIGRATIONS_APPLY, "result" => "failure").inc();
                 DeferredOutcome::Failure
             }
         }
@@ -240,7 +239,8 @@ mod tests {
     use sqlx::{Acquire, Postgres};
 
     use super::{DeferredOutcome, Migrations, TrackedPool};
-    use crate::metastore::postgres::utils::establish_connection;
+    use crate::metastore::postgres::metrics::MetastoreKind;
+    use crate::metastore::postgres::utils::{PostgresqlConnectionOptions, establish_connection};
 
     fn test_uri() -> Uri {
         dotenvy::dotenv().ok();
@@ -251,26 +251,27 @@ mod tests {
     }
 
     async fn test_pool(read_only: bool) -> TrackedPool<Postgres> {
-        establish_connection(
-            &test_uri(),
-            1,
-            5,
-            Duration::from_secs(2),
-            None,
-            None,
+        let connection_uri = test_uri();
+        establish_connection(PostgresqlConnectionOptions {
+            connection_uri: &connection_uri,
+            min_connections: 1,
+            max_connections: 5,
+            acquire_timeout: Duration::from_secs(2),
+            idle_timeout_opt: None,
+            max_lifetime_opt: None,
             read_only,
-        )
+            metastore_kind: if read_only {
+                MetastoreKind::ReadReplica
+            } else {
+                MetastoreKind::Primary
+            },
+        })
         .await
         .unwrap()
     }
 
     fn migrations(connection_pool: &TrackedPool<Postgres>, skip_migrations: bool) -> Migrations {
-        Migrations {
-            connection_pool: connection_pool.clone(),
-            skip_migrations,
-            skip_locking: false,
-            skip_deferred: false,
-        }
+        Migrations::new(connection_pool.clone(), skip_migrations, false, false)
     }
 
     // A single controlled migration so these tests don't depend on the production migration set.
@@ -443,10 +444,19 @@ mod tests {
     #[serial_test::file_serial]
     async fn test_deferred_migrations_elect_single_runner() {
         let _ = tracing_subscriber::fmt::try_init();
-        let connection_pool =
-            establish_connection(&test_uri(), 2, 5, Duration::from_secs(5), None, None, false)
-                .await
-                .unwrap();
+        let connection_uri = test_uri();
+        let connection_pool = establish_connection(PostgresqlConnectionOptions {
+            connection_uri: &connection_uri,
+            min_connections: 2,
+            max_connections: 5,
+            acquire_timeout: Duration::from_secs(5),
+            idle_timeout_opt: None,
+            max_lifetime_opt: None,
+            read_only: false,
+            metastore_kind: MetastoreKind::Primary,
+        })
+        .await
+        .unwrap();
 
         // in case a previous attempt left state behind
         sqlx::query("DROP TABLE IF EXISTS qw_test_deferred_marker")

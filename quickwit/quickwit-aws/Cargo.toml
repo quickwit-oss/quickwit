@@ -17,12 +17,21 @@ aws-sdk-kinesis = { workspace = true, optional = true }
 aws-sdk-s3 = { workspace = true }
 aws-sdk-sqs = { workspace = true, optional = true }
 aws-smithy-async = { workspace = true }
+aws-smithy-http-client = { workspace = true }
+aws-smithy-runtime-api = { workspace = true }
 aws-smithy-types = { workspace = true }
 futures = { workspace = true }
+mini-moka = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
 
 quickwit-common = { workspace = true }
 
 [features]
 kinesis = ["aws-sdk-kinesis"]
 sqs = ["aws-sdk-sqs"]
+
+[package.metadata.cargo-machete]
+# tracing is only referenced from inside quickwit_common's rate_limited_* macros
+# (via an absolute `::tracing::` path), so it doesn't show up textually in this crate.
+ignored = ["tracing"]

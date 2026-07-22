@@ -14,7 +14,7 @@
 
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, LazyLock, Weak};
+use std::sync::{Arc, Weak};
 
 use quickwit_common::rate_limited_error;
 use quickwit_common::thread_pool::run_cpu_intensive;
@@ -90,10 +90,7 @@ pub(super) async fn validate_doc_batch(
 }
 
 fn is_document_validation_enabled() -> bool {
-    static IS_DOCUMENT_VALIDATION_ENABLED: LazyLock<bool> = LazyLock::new(|| {
-        !quickwit_common::get_bool_from_env("QW_DISABLE_DOCUMENT_VALIDATION", false)
-    });
-    *IS_DOCUMENT_VALIDATION_ENABLED
+    !quickwit_common::get_bool_from_env_cached!("QW_DISABLE_DOCUMENT_VALIDATION", false)
 }
 
 #[instrument(name = "ingester.validate_doc_batch", skip_all, fields(num_docs = doc_batch.num_docs(), num_bytes = doc_batch.num_bytes()))]

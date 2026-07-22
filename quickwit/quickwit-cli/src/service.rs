@@ -34,10 +34,10 @@ use crate::{config_cli_arg, get_resolvers, load_node_config, start_actor_runtime
 pub fn build_run_command() -> Command {
     Command::new("run")
         .about("Starts a Quickwit node.")
-        .long_about("Starts a Quickwit node with all services enabled by default: `indexer`, `searcher`, `metastore`, `control-plane`, and `janitor`.")
+        .long_about("Starts a Quickwit node with the default services enabled: `indexer`, `searcher`, `metastore`, `control-plane`, and `janitor`.")
         .arg(config_cli_arg())
         .args(&[
-            arg!(--"service" <SERVICE> "Services (`indexer`, `searcher`, `metastore`, `control-plane`, or `janitor`) to run. If unspecified, all the supported services are started.")
+            arg!(--"service" <SERVICE> "Services (`indexer`, `searcher`, `metastore`, `metastore-read-replica`, `control-plane`, or `janitor`) to run. If unspecified, services from the config are used.")
                 .action(ArgAction::Append)
                 .required(false),
         ])
@@ -117,15 +117,13 @@ impl RunCliCommand {
         debug!(args = ?self, "run-service");
         let version_text = BuildInfo::get_version_text();
         info!("quickwit version: {version_text}");
-        let mut node_config = load_node_config(&self.config_uri).await?;
+        if let Some(services) = &self.services {
+            info!(services = %services.iter().join(", "), "setting services from override");
+        }
+        let node_config = load_node_config(&self.config_uri, self.services.as_ref()).await?;
         let (storage_resolver, metastore_resolver) =
             get_resolvers(&node_config.storage_configs, &node_config.metastore_configs);
         crate::busy_detector::set_enabled(true);
-
-        if let Some(services) = &self.services {
-            info!(services = %services.iter().join(", "), "setting services from override");
-            node_config.enabled_services.clone_from(services);
-        }
         // TODO move in serve quickwit?
         let runtimes_config = RuntimesConfig::default();
         start_actor_runtimes(runtimes_config, &node_config.enabled_services)?;
@@ -152,8 +150,34 @@ impl RunCliCommand {
 #[cfg(test)]
 mod tests {
 
+    use tempfile::tempdir;
+
     use super::*;
     use crate::cli::{CliCommand, build_cli};
+
+    #[tokio::test]
+    async fn test_service_override_is_applied_before_config_validation() -> anyhow::Result<()> {
+        let temp_dir = tempdir()?;
+        let config_path = temp_dir.path().join("quickwit.yaml");
+        let config = format!(
+            r#"
+            version: 0.8
+            data_dir: {}
+            searcher:
+              use_metastore_read_replica: true
+            "#,
+            temp_dir.path().display()
+        );
+        std::fs::write(&config_path, config)?;
+        let config_uri = Uri::from_str(&format!("file://{}", config_path.display()))?;
+        let enabled_services = HashSet::from([QuickwitService::Searcher]);
+
+        let node_config = load_node_config(&config_uri, Some(&enabled_services)).await?;
+
+        assert_eq!(node_config.enabled_services, enabled_services);
+        assert!(node_config.searcher_config.use_metastore_read_replica);
+        Ok(())
+    }
 
     #[test]
     fn test_parse_service_run_args_all_services() -> anyhow::Result<()> {

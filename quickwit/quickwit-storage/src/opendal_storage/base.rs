@@ -133,6 +133,7 @@ impl Storage for OpendalStorage {
     #[instrument(name = "storage.gcs.put", level = "debug", skip(self, payload), fields(payload_len = payload.len()))]
     async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()> {
         crate::metrics::OBJECT_STORAGE_PUT_TOTAL.inc();
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_PUT_OBJECT_DURATION);
         let path = path.as_os_str().to_string_lossy();
         let mut payload_reader = payload.byte_stream().await?.into_async_read();
 
@@ -175,6 +176,7 @@ impl Storage for OpendalStorage {
         // recorded before issuing the query to the object store.
         let _inflight_guards = object_storage_get_slice_in_flight_guards(size);
         crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
         // `Buffer::to_bytes` is zero-copy when the underlying buffer is contiguous, and coalesces
         // into a single `Bytes` otherwise — avoiding the extra `Vec<u8>` round-trip `to_vec` would
         // perform.

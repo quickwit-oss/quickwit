@@ -19,8 +19,8 @@ use std::time::Instant;
 use futures::{Future, ready};
 use pin_project::{pin_project, pinned_drop};
 use quickwit_metrics::{
-    Counter, Gauge, Histogram, LazyCounter, LazyGauge, LazyHistogram, counter, gauge, histogram,
-    labels, lazy_counter, lazy_gauge, lazy_histogram,
+    Counter, Gauge, Histogram, Labels, LazyCounter, LazyGauge, LazyHistogram, counter, gauge,
+    histogram, labels, lazy_counter, lazy_gauge, lazy_histogram,
 };
 use tower::{Layer, Service};
 
@@ -102,15 +102,32 @@ pub struct GrpcMetricsLayer {
 
 impl GrpcMetricsLayer {
     pub fn new(subsystem: &'static str, kind: &'static str) -> Self {
-        // `service` is kept for backward compatibility with existing consumers. Prefer
-        // `grpc_service` for new consumers.
-        // TODO: Remove `service` in a future breaking release.
-        let labels = labels!("service" => subsystem, "grpc_service" => subsystem, "kind" => kind);
+        let labels = Self::default_labels(subsystem, kind);
         Self {
             requests_total: counter!(parent: GRPC_REQUESTS_TOTAL, labels: [labels]),
             requests_in_flight: gauge!(parent: GRPC_REQUESTS_IN_FLIGHT, labels: [labels]),
             request_duration_seconds: histogram!(parent: GRPC_REQUEST_DURATION_SECONDS, labels: [labels]),
         }
+    }
+
+    pub fn new_with_labels<const N: usize>(
+        subsystem: &'static str,
+        kind: &'static str,
+        extra_labels: Labels<N>,
+    ) -> Self {
+        let labels = Self::default_labels(subsystem, kind);
+        Self {
+            requests_total: counter!(parent: GRPC_REQUESTS_TOTAL, labels: [labels, extra_labels]),
+            requests_in_flight: gauge!(parent: GRPC_REQUESTS_IN_FLIGHT, labels: [labels, extra_labels]),
+            request_duration_seconds: histogram!(parent: GRPC_REQUEST_DURATION_SECONDS, labels: [labels, extra_labels]),
+        }
+    }
+
+    fn default_labels(subsystem: &'static str, kind: &'static str) -> Labels<3> {
+        // `service` is kept for backward compatibility with existing consumers. Prefer
+        // `grpc_service` for new consumers.
+        // TODO: Remove `service` in a future breaking release.
+        labels!("service" => subsystem, "grpc_service" => subsystem, "kind" => kind)
     }
 }
 
@@ -196,23 +213,30 @@ mod tests {
 
         with_local_recorder(&recorder, || {
             futures::executor::block_on(async {
-                let layer = GrpcMetricsLayer::new("quickwit_test", "server");
+                let primary_layer = GrpcMetricsLayer::new_with_labels(
+                    "quickwit_test",
+                    "server",
+                    labels!("metastore_kind" => "primary", "test_label" => "test"),
+                );
+                let read_replica_layer = GrpcMetricsLayer::new_with_labels(
+                    "quickwit_test",
+                    "server",
+                    labels!("metastore_kind" => "read_replica", "test_label" => "test"),
+                );
 
-                let mut hello_service =
-                    layer
-                        .clone()
-                        .layer(tower::service_fn(|request: HelloRequest| async move {
-                            Ok::<_, ()>(request)
-                        }));
-                let mut goodbye_service =
-                    layer
-                        .clone()
-                        .layer(tower::service_fn(|request: GoodbyeRequest| async move {
-                            Ok::<_, ()>(request)
-                        }));
+                let mut hello_service = primary_layer.clone().layer(tower::service_fn(
+                    |request: HelloRequest| async move { Ok::<_, ()>(request) },
+                ));
+                let mut goodbye_service = primary_layer.clone().layer(tower::service_fn(
+                    |request: GoodbyeRequest| async move { Ok::<_, ()>(request) },
+                ));
+                let mut read_replica_service = read_replica_layer.layer(tower::service_fn(
+                    |request: HelloRequest| async move { Ok::<_, ()>(request) },
+                ));
 
                 hello_service.call(HelloRequest).await.unwrap();
                 goodbye_service.call(GoodbyeRequest).await.unwrap();
+                read_replica_service.call(HelloRequest).await.unwrap();
 
                 let hello_future = hello_service.call(HelloRequest);
                 drop(hello_future);
@@ -220,7 +244,7 @@ mod tests {
         });
 
         let snapshot = snapshotter.snapshot().into_vec();
-        let counter_value = |rpc: &str, status: &str| {
+        let counter_value = |rpc: &str, status: &str, metastore_kind: &str| {
             snapshot.iter().find_map(|(composite_key, _, _, value)| {
                 let (_, key) = composite_key.clone().into_parts();
                 let labels = key
@@ -230,6 +254,8 @@ mod tests {
                 if key.name() == "quickwit_grpc_requests_total"
                     && labels.contains(&("service", "quickwit_test"))
                     && labels.contains(&("kind", "server"))
+                    && labels.contains(&("metastore_kind", metastore_kind))
+                    && labels.contains(&("test_label", "test"))
                     && labels.contains(&("rpc", rpc))
                     && labels.contains(&("status", status))
                 {
@@ -240,15 +266,19 @@ mod tests {
             })
         };
         assert_eq!(
-            counter_value("hello", "success"),
+            counter_value("hello", "success", "primary"),
             Some(&DebugValue::Counter(1))
         );
         assert_eq!(
-            counter_value("goodbye", "success"),
+            counter_value("goodbye", "success", "primary"),
             Some(&DebugValue::Counter(1))
         );
         assert_eq!(
-            counter_value("hello", "cancelled"),
+            counter_value("hello", "cancelled", "primary"),
+            Some(&DebugValue::Counter(1))
+        );
+        assert_eq!(
+            counter_value("hello", "success", "read_replica"),
             Some(&DebugValue::Counter(1))
         );
     }

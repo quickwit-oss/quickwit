@@ -42,21 +42,23 @@ macro_rules! qw_env_vars {
 // which must be declared first.
 qw_env_vars!(
     QW_NONE,
-    QW_CLUSTER_ID,
-    QW_NODE_ID,
-    QW_AVAILABILITY_ZONE,
-    QW_ENABLED_SERVICES,
-    QW_LISTEN_ADDRESS,
     QW_ADVERTISE_ADDRESS,
-    QW_REST_LISTEN_PORT,
-    QW_HEALTH_LISTEN_PORT,
+    QW_AVAILABILITY_ZONE,
+    QW_CLUSTER_ID,
+    QW_DATA_DIR,
+    QW_DEFAULT_INDEX_ROOT_URI,
+    QW_ENABLE_STANDALONE_COMPACTORS,
+    QW_ENABLED_SERVICES,
+    QW_GOSSIP_INTERVAL_MS,
     QW_GOSSIP_LISTEN_PORT,
     QW_GRPC_LISTEN_PORT,
-    QW_GOSSIP_INTERVAL_MS,
-    QW_PEER_SEEDS,
-    QW_DATA_DIR,
+    QW_HEALTH_LISTEN_PORT,
+    QW_LISTEN_ADDRESS,
     QW_METASTORE_URI,
-    QW_DEFAULT_INDEX_ROOT_URI
+    QW_METASTORE_READ_REPLICA_URI,
+    QW_NODE_ID,
+    QW_PEER_SEEDS,
+    QW_REST_LISTEN_PORT
 );
 
 #[cfg(test)]
@@ -68,10 +70,16 @@ mod tests {
     fn test_qw_env_vars_expansion() {
         assert_eq!(QW_NONE, 0);
 
-        assert_eq!(QW_CLUSTER_ID, 1);
+        assert_eq!(QW_CLUSTER_ID, 3);
         assert_eq!(QW_ENV_VARS.get(&QW_CLUSTER_ID).unwrap(), &"QW_CLUSTER_ID");
 
+        assert_eq!(
+            QW_ENV_VARS.get(&QW_METASTORE_READ_REPLICA_URI).unwrap(),
+            &"QW_METASTORE_READ_REPLICA_URI"
+        );
+        assert_eq!(QW_METASTORE_READ_REPLICA_URI, 14);
+
         assert_eq!(QW_ENV_VARS.get(&QW_NODE_ID).unwrap(), &"QW_NODE_ID");
-        assert_eq!(QW_NODE_ID, 2);
+        assert_eq!(QW_NODE_ID, 15);
     }
 }

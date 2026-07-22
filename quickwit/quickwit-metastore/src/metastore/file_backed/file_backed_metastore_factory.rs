@@ -26,7 +26,9 @@ use regex::Regex;
 use tokio::sync::Mutex;
 use tracing::debug;
 
-use crate::{FileBackedMetastore, MetastoreFactory, MetastoreResolverError};
+use crate::{
+    FileBackedMetastore, MetastoreFactory, MetastoreFactoryOptions, MetastoreResolverError,
+};
 
 /// A file-backed metastore factory.
 ///
@@ -101,6 +103,7 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
         &self,
         _metastore_config: &MetastoreConfig,
         uri: &Uri,
+        _options: MetastoreFactoryOptions,
     ) -> Result<MetastoreServiceClient, MetastoreResolverError> {
         let (uri_stripped, polling_interval_opt) = extract_polling_interval_from_uri(uri.as_str());
         let uri = Uri::from_str(&uri_stripped).map_err(|_| {

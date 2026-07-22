@@ -44,7 +44,7 @@ use quickwit_query::query_ast::{
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
-    BundleStorage, ByteRangeCache, CountingStorage, MemorySizedCache, OwnedBytes, SplitCache,
+    BundleStorage, ByteRangeCache, CountingStorage, MemorySizedCache, OwnedBytes, SearchSplitCache,
     Storage, StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
 };
 use tantivy::aggregation::AggContextParams;
@@ -179,7 +179,7 @@ pub(crate) async fn open_split_bundle(
     // This is before the bundle storage: at this point, this storage is reading `.split` files.
     let index_storage_with_split_cache =
         if let Some(split_cache) = searcher_context.split_cache_opt.as_ref() {
-            SplitCache::wrap_storage(split_cache.clone(), index_storage.clone())
+            SearchSplitCache::wrap_storage(split_cache.clone(), index_storage.clone())
         } else {
             index_storage.clone()
         };
@@ -1893,7 +1893,7 @@ pub async fn single_doc_mapping_leaf_search(
 ) -> Result<LeafSearchResponse, SearchError> {
     let num_docs: u64 = splits.iter().map(|split| split.num_docs).sum();
     let num_splits = splits.len();
-    info!(num_docs, num_splits, split_offsets = ?PrettySample::new(&splits, 5));
+    debug!(num_docs, num_splits, split_offsets = ?PrettySample::new(&splits, 5));
 
     // We simplify the request as much as possible.
     let split_filter: CanSplitDoBetter =
@@ -2080,7 +2080,7 @@ async fn run_local_search_tasks(
         });
     }
 
-    info!(split_outcome_counters=%leaf_search_context.split_outcome_counters, "leaf split search finished");
+    debug!(split_outcome_counters=%leaf_search_context.split_outcome_counters, "leaf split search finished");
 }
 
 /// We identify the splits that are in the cache and append them to the incremental merge collector.

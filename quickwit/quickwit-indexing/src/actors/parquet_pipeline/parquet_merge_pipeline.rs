@@ -78,7 +78,7 @@ async fn fetch_published_parquet_splits_paginated(
     };
     let query = quickwit_metastore::ListParquetSplitsQuery::for_index(index_uid.clone())
         .retain_immature(OffsetDateTime::now_utc());
-    let records = list_parquet_splits_paginated(metastore, kind, query).await?;
+    let records = list_parquet_splits_paginated(&metastore, kind, query).await?;
     debug!(
         num_splits = records.len(),
         "fetched published parquet splits for merge planning"

@@ -43,6 +43,12 @@ On its first execution, Quickwit will transparently create the necessary tables.
 
 Likewise, if you upgrade Quickwit to a version that includes some changes in the PostgreSQL schema, Quickwit will transparently operate the migration startup.
 
+## PostgreSQL connection pool
+
+Each Quickwit node running the `metastore` service maintains its own PostgreSQL connection pool. Database-backed metastore nodes admit at most `2 * metastore.postgres.max_connections` in-flight requests, so the default is `20`.
+
+When sizing the pool, keep `metastore_nodes * metastore.postgres.max_connections` below the PostgreSQL connection limit with operational headroom. If Quickwit logs `pool timed out while waiting for an open connection`, check `quickwit_metastore_active_connections`, `quickwit_metastore_idle_connections`, and `quickwit_metastore_acquire_connections`.
+
 # File-backed metastore
 
 For convenience, Quickwit also makes it possible to store its metadata in files using a file-backed metastore. In that case, Quickwit will write one file per index.

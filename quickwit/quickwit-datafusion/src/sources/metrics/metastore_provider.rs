@@ -65,7 +65,7 @@ impl MetricsSplitProvider for MetastoreSplitProvider {
     async fn list_splits(&self, query: &MetricsSplitQuery) -> DFResult<Vec<ParquetSplitMetadata>> {
         let metastore_query = to_metastore_query(&self.index_uid, query);
         let records =
-            list_parquet_splits_paginated(self.metastore.clone(), self.split_kind, metastore_query)
+            list_parquet_splits_paginated(&self.metastore, self.split_kind, metastore_query)
                 .await
                 .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
         let splits: Vec<ParquetSplitMetadata> =
