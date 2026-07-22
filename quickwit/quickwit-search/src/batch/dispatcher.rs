@@ -27,6 +27,9 @@ use super::combine::{build_combined_request, unbatch_response};
 use crate::SearchError;
 use crate::service::SearchService;
 
+/// Maximum number of requests combined into one batch.
+pub(super) const MAX_REQUESTS_PER_BATCH: usize = 10;
+
 /// Distribution of batch sizes (requests per dispatch).
 /// avg > 1 means batching is effective. count = number of dispatches.
 /// sum = total requests processed.
@@ -77,13 +80,25 @@ pub(super) async fn batch_dispatcher(
                 };
 
                 let key = entry.batch_key;
-
-                if let Some((batch_entries, _deadline)) = pending.get_mut(&key) {
+                if let Some((mut batch_entries, deadline)) = pending.remove(&key) {
                     // Optimistic: the hash covers the common mismatch cases, and
                     // batch_execute falls back to individual calls if combining fails.
-                    let new_size = batch_entries.len() + 1;
-                    debug!(batch_key = key, batch_size = new_size, "appending request to pending batch");
                     batch_entries.push(entry);
+                    debug!(batch_key = key, batch_size = batch_entries.len(), "appending request to pending batch");
+
+                    if batch_entries.len() >= MAX_REQUESTS_PER_BATCH {
+                        debug!(
+                            batch_key = key,
+                            batch_size = batch_entries.len(),
+                            "dispatching batch over request count limit"
+                        );
+                        let svc = search_service.clone();
+                        tokio::spawn(async move {
+                            dispatch_batch(svc.as_ref(), batch_entries).await;
+                        });
+                    } else {
+                        pending.insert(key, (batch_entries, deadline));
+                    }
                 } else {
                     // new batch
                     debug!(batch_key = key, "starting new batch");
