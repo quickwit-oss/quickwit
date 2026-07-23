@@ -41,18 +41,18 @@ static UPTIME_LABELS: LazyLock<Labels<4>> = LazyLock::new(|| {
 });
 
 static CPU_USAGE: LazyGauge = lazy_gauge!(
-    name: "cpu.usage.gauge",
+    name: "usage.gauge",
     description: "CPU usage for legacy Datadog dashboards.",
     system: "cloudprem",
-    subsystem: "",
+    subsystem: "cpu",
     separator: ".",
 );
 
 static MEMORY_USAGE: LazyGauge = lazy_gauge!(
-    name: "memory.usage.gauge",
+    name: "usage.gauge",
     description: "Memory usage for legacy Datadog dashboards.",
     system: "cloudprem",
-    subsystem: "",
+    subsystem: "memory",
     separator: ".",
 );
 
