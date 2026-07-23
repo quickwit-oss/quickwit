@@ -409,14 +409,19 @@ impl IngestController {
             &local_shards_update.source_uid,
             &local_shards_update.shard_infos,
         );
-        let min_shards = model
+        let ingest_settings = &model
             .index_metadata(&local_shards_update.source_uid.index_uid)
             .expect("index should exist")
             .index_config
-            .ingest_settings
-            .min_shards;
+            .ingest_settings;
+        let min_shards = ingest_settings.min_shards;
+        let max_shards = ingest_settings.max_shards.unwrap_or(NonZeroUsize::MAX);
+        let num_shards_range = min_shards..=max_shards;
 
-        let Some(scaling_mode) = self.scaling_arbiter.should_scale(shard_stats, min_shards) else {
+        let Some(scaling_mode) = self
+            .scaling_arbiter
+            .should_scale(shard_stats, num_shards_range)
+        else {
             return Ok(());
         };
         match scaling_mode {
