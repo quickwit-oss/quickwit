@@ -21,7 +21,7 @@ use quickwit_proto::search::{SearchRequest, SearchResponse};
 
 use super::BatchingSearchService;
 use super::combine::batch_grouping_key;
-use super::dispatcher::batch_execute;
+use super::dispatcher::{BatchEntry, batch_execute, dispatch_batch};
 use super::normalize::normalize_request;
 use crate::{MockSearchService, SearchError, SearchService};
 
@@ -39,6 +39,96 @@ fn make_search_request(query_ast: &str, max_hits: u64, aggregation: Option<&str>
 }
 
 const QUERY: &str = r#"{"type":"match_all"}"#;
+
+#[tokio::test]
+async fn test_dispatch_sort_is_stable_and_keeps_response_senders() {
+    use tantivy::aggregation::intermediate_agg_result::{
+        IntermediateAggregationResult, IntermediateAggregationResults, IntermediateMetricResult,
+    };
+    use tantivy::aggregation::metric::IntermediateSum;
+
+    let batch_entry = |request| {
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+        (
+            BatchEntry {
+                request,
+                result_tx,
+                batch_key: 0,
+                span: tracing::Span::none(),
+            },
+            result_rx,
+        )
+    };
+    let assert_aggregation = |response: SearchResponse, expected_key: &str| {
+        let aggregation_postcard = response.aggregation_postcard.unwrap();
+        let aggregation: IntermediateAggregationResults =
+            postcard::from_bytes(&aggregation_postcard).unwrap();
+        assert_eq!(aggregation.keys().count(), 1);
+        assert!(aggregation.get(expected_key).is_some());
+    };
+
+    let agg_a = make_search_request(QUERY, 0, Some(r#"{"sum_a":{"sum":{"field":"a"}}}"#));
+    let agg_b = make_search_request(QUERY, 0, Some(r#"{"sum_b":{"sum":{"field":"b"}}}"#));
+    let list = make_search_request(QUERY, 1, None);
+
+    let combined_requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let combined_requests_clone = combined_requests.clone();
+    let mut mock = MockSearchService::new();
+    mock.expect_root_search()
+        .times(2)
+        .returning(move |request| {
+            combined_requests_clone.lock().unwrap().push(request);
+            let mut aggregation = IntermediateAggregationResults::default();
+            aggregation
+                .push(
+                    "__b1_sum_a".to_string(),
+                    IntermediateAggregationResult::Metric(IntermediateMetricResult::Sum(
+                        IntermediateSum::default(),
+                    )),
+                )
+                .unwrap();
+            aggregation
+                .push(
+                    "__b2_sum_b".to_string(),
+                    IntermediateAggregationResult::Metric(IntermediateMetricResult::Sum(
+                        IntermediateSum::default(),
+                    )),
+                )
+                .unwrap();
+            Ok(SearchResponse {
+                hits: vec![quickwit_proto::search::Hit {
+                    json: r#"{"i":1}"#.to_string(),
+                    ..Default::default()
+                }],
+                aggregation_postcard: Some(postcard::to_stdvec(&aggregation).unwrap()),
+                ..Default::default()
+            })
+        });
+
+    {
+        let (agg_a, agg_a_rx) = batch_entry(agg_a.clone());
+        let (list, list_rx) = batch_entry(list.clone());
+        let (agg_b, agg_b_rx) = batch_entry(agg_b.clone());
+        dispatch_batch(&mock, vec![agg_a, list, agg_b]).await;
+        assert_aggregation(agg_a_rx.await.unwrap().unwrap(), "sum_a");
+        assert_eq!(list_rx.await.unwrap().unwrap().hits.len(), 1);
+        assert_aggregation(agg_b_rx.await.unwrap().unwrap(), "sum_b");
+    }
+
+    {
+        let (agg_a, agg_a_rx) = batch_entry(agg_a.clone());
+        let (list, list_rx) = batch_entry(list.clone());
+        let (agg_b, agg_b_rx) = batch_entry(agg_b.clone());
+        dispatch_batch(&mock, vec![list, agg_b, agg_a]).await;
+        assert_aggregation(agg_a_rx.await.unwrap().unwrap(), "sum_a");
+        assert_eq!(list_rx.await.unwrap().unwrap().hits.len(), 1);
+        assert_aggregation(agg_b_rx.await.unwrap().unwrap(), "sum_b");
+    }
+
+    let combined_requests = combined_requests.lock().unwrap();
+    assert_eq!(combined_requests.len(), 2);
+    assert_eq!(combined_requests[0], combined_requests[1]);
+}
 
 #[tokio::test]
 async fn test_batch_single_request_passthrough() {
