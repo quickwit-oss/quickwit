@@ -159,6 +159,10 @@ pub struct IndexMetasForLeafSearch {
     pub index_uri: Uri,
     /// Doc mapper json string.
     pub doc_mapper_str: String,
+    /// Retention cutoff as a Unix timestamp in seconds. Document with timestamp
+    /// before this value are filtered out.
+    #[serde(default)]
+    pub retention_timestamp_cutoff_opt: Option<i64>,
 }
 
 pub(crate) type IndexesMetasForLeafSearch = HashMap<IndexUid, IndexMetasForLeafSearch>;
@@ -184,6 +188,7 @@ struct RequestMetadata {
 fn validate_request_and_build_metadata(
     indexes_metadata: &[IndexMetadata],
     search_request: &SearchRequest,
+    now_secs: i64,
 ) -> crate::Result<RequestMetadata> {
     validate_sort_by_fields_and_search_after(
         &search_request.sort_fields,
@@ -258,11 +263,18 @@ fn validate_request_and_build_metadata(
             None,
         )?;
 
+        let retention_timestamp_cutoff_opt: Option<i64> = index_metadata
+            .index_config
+            .retention_policy_opt
+            .as_ref()
+            .and_then(|policy| policy.retention_period().ok())
+            .map(|duration| now_secs.saturating_sub(duration.as_secs() as i64));
         let index_metadata_for_leaf_search = IndexMetasForLeafSearch {
             index_uri: index_metadata.index_uri().clone(),
             doc_mapper_str: serde_json::to_string(&doc_mapper).map_err(|err| {
                 SearchError::Internal(format!("failed to serialize doc mapper. cause: {err}"))
             })?,
+            retention_timestamp_cutoff_opt,
         };
         indexes_meta_for_leaf_search.insert(
             index_metadata.index_uid.clone(),
@@ -1214,6 +1226,7 @@ async fn refine_and_list_matches(
     query_ast_resolved: QueryAst,
     sort_fields_is_datetime: HashMap<String, bool>,
     timestamp_field_opt: Option<String>,
+    indexes_meta_for_leaf_search: &IndexesMetasForLeafSearch,
 ) -> crate::Result<Vec<SplitMetadata>> {
     let index_uids = indexes_metadata
         .iter()
@@ -1245,7 +1258,34 @@ async fn refine_and_list_matches(
         metastore,
     )
     .await?;
+
+    // Drop splits where every document falls before the index's retention cutoff.
+    let split_metadatas = split_metadatas
+        .into_iter()
+        .filter(|split| is_split_within_retention(split, indexes_meta_for_leaf_search))
+        .collect();
+
     Ok(split_metadatas)
+}
+
+/// Returns `false` only when a split's entire time range lies before the retention cutoff,
+/// meaning every document it contains is expired. Splits without a time_range are always kept
+/// since we cannot determine their age.
+fn is_split_within_retention(
+    split: &SplitMetadata,
+    indexes_meta_for_leaf_search: &IndexesMetasForLeafSearch,
+) -> bool {
+    let Some(index_meta) = indexes_meta_for_leaf_search.get(&split.index_uid) else {
+        return true;
+    };
+    let Some(cutoff) = index_meta.retention_timestamp_cutoff_opt else {
+        return true;
+    };
+    split
+        .time_range
+        .as_ref()
+        .map(|r| *r.end() >= cutoff)
+        .unwrap_or(true)
 }
 
 /// Fetches the list of splits and their metadata from the metastore
@@ -1270,7 +1310,12 @@ async fn plan_splits_for_root_search(
         return Ok((Vec::new(), HashMap::default()));
     }
 
-    let request_metadata = validate_request_and_build_metadata(&indexes_metadata, search_request)?;
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let request_metadata =
+        validate_request_and_build_metadata(&indexes_metadata, search_request, now_secs)?;
     let split_metadatas = refine_and_list_matches(
         metastore,
         search_request,
@@ -1278,6 +1323,7 @@ async fn plan_splits_for_root_search(
         request_metadata.query_ast_resolved,
         request_metadata.sort_fields_is_datetime,
         request_metadata.timestamp_field_opt,
+        &request_metadata.indexes_meta_for_leaf_search,
     )
     .await?;
     Ok((
@@ -1394,7 +1440,12 @@ pub async fn search_plan(
     )
     .map_err(|err| SearchError::Internal(format!("failed to build doc mapper. cause: {err}")))?;
 
-    let request_metadata = validate_request_and_build_metadata(&indexes_metadata, &search_request)?;
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let request_metadata =
+        validate_request_and_build_metadata(&indexes_metadata, &search_request, now_secs)?;
     let split_metadatas = refine_and_list_matches(
         metastore,
         &mut search_request,
@@ -1402,6 +1453,7 @@ pub async fn search_plan(
         request_metadata.query_ast_resolved.clone(),
         request_metadata.sort_fields_is_datetime,
         request_metadata.timestamp_field_opt,
+        &request_metadata.indexes_meta_for_leaf_search,
     )
     .await?;
 
@@ -1835,6 +1887,7 @@ pub fn jobs_to_leaf_request(
             split_offsets: job_group.into_iter().map(|job| job.offsets).collect(),
             doc_mapper_ord,
             index_uri_ord,
+            retention_timestamp_cutoff: search_index_meta.retention_timestamp_cutoff_opt,
         };
         leaf_search_request
             .leaf_requests
@@ -2045,6 +2098,7 @@ mod tests {
                 index_metadata_no_timestamp,
             ],
             &search_request,
+            0,
         )
         .unwrap();
         assert_eq!(
@@ -2100,6 +2154,7 @@ mod tests {
         let timestamp_field_different = validate_request_and_build_metadata(
             &[index_metadata_1, index_metadata_2],
             &search_request,
+            0,
         )
         .unwrap_err();
         assert_eq!(
@@ -2127,6 +2182,7 @@ mod tests {
         let timestamp_field_different = validate_request_and_build_metadata(
             &[index_metadata_1, index_metadata_2],
             &search_request,
+            0,
         )
         .unwrap_err();
         assert_eq!(
@@ -2205,12 +2261,86 @@ mod tests {
         let search_error = validate_request_and_build_metadata(
             &[index_metadata, index_metadata_with_other_config],
             &search_request,
+            0,
         )
         .unwrap_err();
         assert_eq!(
             search_error.to_string(),
             "sort datetime field `response_date` must be of type datetime on all indexes"
         );
+    }
+
+    #[test]
+    fn test_validate_request_and_build_metadata_retention_cutoff() {
+        let search_request = quickwit_proto::search::SearchRequest {
+            index_id_patterns: vec!["test-index".to_string()],
+            query_ast: qast_json_helper("test", &["body"]),
+            max_hits: 10,
+            ..Default::default()
+        };
+        let mut index_metadata = IndexMetadata::for_test("test-index-1", "ram:///test-index-1");
+        index_metadata.index_config.retention_policy_opt = Some(quickwit_config::RetentionPolicy {
+            retention_period: "7 days".to_string(),
+            evaluation_schedule: "hourly".to_string(),
+        });
+        let now_secs: i64 = 7 * 24 * 3600 + 1000;
+        let request_metadata =
+            validate_request_and_build_metadata(&[index_metadata], &search_request, now_secs)
+                .unwrap();
+        let index_uid = request_metadata
+            .indexes_meta_for_leaf_search
+            .keys()
+            .next()
+            .unwrap()
+            .clone();
+        let cutoff = request_metadata
+            .indexes_meta_for_leaf_search
+            .get(&index_uid)
+            .unwrap()
+            .retention_timestamp_cutoff_opt;
+        assert_eq!(cutoff, Some(1000));
+    }
+
+    #[test]
+    fn test_split_pruning_by_retention_cutoff() {
+        let index_uid = quickwit_proto::types::IndexUid::for_test("test-index", 1);
+        let cutoff: i64 = 1_000;
+
+        let index_meta = IndexMetasForLeafSearch {
+            index_uri: quickwit_common::uri::Uri::for_test("ram:///"),
+            doc_mapper_str: "{}".to_string(),
+            retention_timestamp_cutoff_opt: Some(cutoff),
+        };
+        let indexes_meta: IndexesMetasForLeafSearch =
+            std::iter::once((index_uid.clone(), index_meta)).collect();
+
+        // entirely before cutoff
+        let mut split_before =
+            quickwit_metastore::SplitMetadata::for_test("before".to_string().into());
+        split_before.index_uid = index_uid.clone();
+        split_before.time_range = Some(0..=999);
+        assert!(!is_split_within_retention(&split_before, &indexes_meta));
+
+        // some docs before and after
+        let mut split_straddling =
+            quickwit_metastore::SplitMetadata::for_test("straddling".to_string().into());
+        split_straddling.index_uid = index_uid.clone();
+        split_straddling.time_range = Some(0..=1500);
+        assert!(is_split_within_retention(&split_straddling, &indexes_meta));
+
+        // all after
+        let mut split_after =
+            quickwit_metastore::SplitMetadata::for_test("after".to_string().into());
+        split_after.index_uid = index_uid.clone();
+        split_after.time_range = Some(1001..=2000);
+        assert!(is_split_within_retention(&split_after, &indexes_meta));
+
+        // no time range
+        let mut split_no_range =
+            quickwit_metastore::SplitMetadata::for_test("no_range".to_string().into());
+        split_no_range.index_uid = index_uid.clone();
+        split_no_range.time_range = None;
+        assert!(is_split_within_retention(&split_no_range, &indexes_meta));
     }
 
     #[test]

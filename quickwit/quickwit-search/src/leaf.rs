@@ -1491,6 +1491,33 @@ impl CanSplitDoBetter {
     }
 }
 
+/// Returns a clone of `search_request` with `start_timestamp` tightened to the retention cutoff.
+///
+/// When an index has a retention policy the root sets `retention_timestamp_cutoff` on the
+/// `LeafRequestRef`. We apply it here as an updated `start_timestamp` so that
+/// `remove_redundant_timestamp_range` injects the appropriate Tantivy range filter on any split
+/// that straddles the retention boundary. The user-supplied `start_timestamp` is respected: we
+/// take the max of the two values so the more restrictive bound always wins.
+fn apply_retention_cutoff(
+    search_request: Arc<SearchRequest>,
+    cutoff: Option<i64>,
+) -> Arc<SearchRequest> {
+    let Some(cutoff) = cutoff else {
+        return search_request;
+    };
+    let effective_start = match search_request.start_timestamp {
+        Some(existing) => existing.max(cutoff),
+        None => cutoff,
+    };
+    if search_request.start_timestamp != Some(effective_start) {
+        let mut req = (*search_request).clone();
+        req.start_timestamp = Some(effective_start);
+        Arc::new(req)
+    } else {
+        search_request
+    }
+}
+
 /// Searches multiple splits, potentially in multiple indexes, sitting on different storages and
 /// having different doc mappings.
 #[instrument(skip_all, fields(index = ?leaf_search_request.search_request.as_ref().unwrap().index_id_patterns))]
@@ -1543,14 +1570,17 @@ pub async fn multi_index_leaf_search(
 
         let storage_resolver = storage_resolver.clone();
         let searcher_context = searcher_context.clone();
-        let search_request = search_request.clone();
+        let search_request_for_index = apply_retention_cutoff(
+            search_request.clone(),
+            leaf_search_request_ref.retention_timestamp_cutoff,
+        );
 
         leaf_request_futures.spawn({
             async move {
                 let storage = storage_resolver.resolve(&index_uri).await?;
                 single_doc_mapping_leaf_search(
                     searcher_context,
-                    search_request,
+                    search_request_for_index,
                     storage,
                     leaf_search_request_ref.split_offsets,
                     doc_mapper,
@@ -1711,7 +1741,7 @@ async fn run_offloaded_search_tasks(
         let batch_split_ids: Vec<String> =
             batch.iter().map(|split| split.split_id.clone()).collect();
         let leaf_request = LeafSearchRequest {
-            // Note this is not the split-specific rewritten request, we ship the main request,
+            // Note this is not the split-specific rewritten request, we ship the index-specific request,
             // and the leaf will apply the split specific rewrite on its own.
             search_request: Some(search_request.clone()),
             doc_mappers: vec![doc_mapper_str.clone()],
@@ -1720,6 +1750,7 @@ async fn run_offloaded_search_tasks(
                 index_uri_ord: 0,
                 doc_mapper_ord: 0,
                 split_offsets: batch,
+                retention_timestamp_cutoff: None,
             }],
         };
         let invoker = lambda_invoker.clone();
@@ -3115,5 +3146,45 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_retention_cutoff_no_existing_start_timestamp() {
+        let request = Arc::new(SearchRequest {
+            start_timestamp: None,
+            ..Default::default()
+        });
+        let result = super::apply_retention_cutoff(request, Some(1000));
+        assert_eq!(result.start_timestamp, Some(1000));
+    }
+
+    #[test]
+    fn test_retention_cutoff_more_restrictive_than_user_start() {
+        let request = Arc::new(SearchRequest {
+            start_timestamp: Some(500),
+            ..Default::default()
+        });
+        let result = super::apply_retention_cutoff(request, Some(1000));
+        assert_eq!(result.start_timestamp, Some(1000));
+    }
+
+    #[test]
+    fn test_retention_cutoff_less_restrictive_than_user_start() {
+        let request = Arc::new(SearchRequest {
+            start_timestamp: Some(2000),
+            ..Default::default()
+        });
+        let result = super::apply_retention_cutoff(request, Some(1000));
+        assert_eq!(result.start_timestamp, Some(2000));
+    }
+
+    #[test]
+    fn test_retention_cutoff_none_leaves_request_unchanged() {
+        let request = Arc::new(SearchRequest {
+            start_timestamp: Some(500),
+            ..Default::default()
+        });
+        let result = super::apply_retention_cutoff(request, None);
+        assert_eq!(result.start_timestamp, Some(500));
     }
 }
