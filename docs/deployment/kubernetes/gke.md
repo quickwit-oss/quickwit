@@ -4,7 +4,7 @@ sidebar_label: Google GKE
 sidebar_position: 2
 ---
 
-This guide will help you set up a Quickwit cluster with the correct GCS permissions.
+This guide will help you set up a Quickwit cluster on GKE with the correct GCS permissions.
 
 
 ## Set up
@@ -19,7 +19,6 @@ kubectl create ns ${NS}
 Quickwit stores its index on an object storage. We will use GCS, which is natively supported since the 0.7 version (for versions < 0.7, you should use an S3 interoperability key).
 
 The following steps create a GCP and a GKE service account and bind them together.
-We are going to create them, set the right permissions and bind them.
 
 ```bash
 export PROJECT_ID={your-project-id}
@@ -70,8 +69,8 @@ serviceAccount:
   name: quickwit-sa
 
 config:
-  default_index_root_uri: gs://{BUCKET}/qw-indexes
-  metastore_uri: gs://{BUCKET}/qw-indexes
+  default_index_root_uri: gs://${BUCKET}/qw-indexes
+  metastore_uri: gs://${BUCKET}/qw-indexes
 
 ```
 
@@ -90,7 +89,6 @@ To access the UI, you can run the following command and then open your browser a
 ```
 kubectl port-forward svc/release-name-quickwit-searcher 7280:7280
 ```
-
 
 ## Uninstall the deployment
 
