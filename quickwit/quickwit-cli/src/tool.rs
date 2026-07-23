@@ -154,7 +154,7 @@ pub fn build_tool_command() -> Command {
         .subcommand(
             Command::new("merge")
                 .display_order(10)
-                .about("Merges all the splits for a given Node ID, index ID, source ID.")
+                .about("Runs available merge operations for a given index ID and source ID.")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index.")
                         .display_order(1)
