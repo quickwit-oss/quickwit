@@ -136,11 +136,9 @@ async fn sys_metrics_loop() {
         let cpu_usage = system.global_cpu_usage();
         CPU_USAGE.set(cpu_usage as f64);
         SYSTEM_CPU_USAGE.set(cpu_usage as f64);
-        if system.total_memory() != 0 {
-            let memory_usage = system.used_memory() as f64 / system.total_memory() as f64 * 100.0;
-            MEMORY_USAGE.set(memory_usage);
-            SYSTEM_MEMORY_USAGE.set(memory_usage);
-        }
+        let memory_usage = system.used_memory() as f64 / system.total_memory() as f64 * 100.0;
+        MEMORY_USAGE.set(memory_usage);
+        SYSTEM_MEMORY_USAGE.set(memory_usage);
 
         let uptime = System::uptime();
         gauge!(parent: UPTIME, labels: [UPTIME_LABELS.clone()]).set(uptime as f64);
