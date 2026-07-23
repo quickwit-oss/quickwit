@@ -15,7 +15,7 @@
 use std::sync::LazyLock;
 
 use quickwit_metrics::{Labels, LazyCounter, LazyGauge, gauge, labels, lazy_counter, lazy_gauge};
-use sysinfo::{CpuRefreshKind, Disks, Networks, RefreshKind, System};
+use sysinfo::{CpuRefreshKind, Disks, MemoryRefreshKind, Networks, RefreshKind, System};
 
 static UPTIME: LazyGauge = lazy_gauge!(
     name: "uptime.gauge",
@@ -46,6 +46,26 @@ static CPU_USAGE: LazyGauge = lazy_gauge!(
     system: "cloudprem",
     subsystem: "",
     separator: ".",
+);
+
+static MEMORY_USAGE: LazyGauge = lazy_gauge!(
+    name: "memory.usage.gauge",
+    description: "Memory usage for legacy Datadog dashboards.",
+    system: "cloudprem",
+    subsystem: "",
+    separator: ".",
+);
+
+static SYSTEM_CPU_USAGE: LazyGauge = lazy_gauge!(
+    name: "cpu_usage",
+    description: "CPU usage percentage.",
+    subsystem: "system",
+);
+
+static SYSTEM_MEMORY_USAGE: LazyGauge = lazy_gauge!(
+    name: "memory_usage",
+    description: "Memory usage percentage.",
+    subsystem: "system",
 );
 
 static DISK_BYTES_READ: LazyCounter = lazy_counter!(
@@ -98,19 +118,29 @@ static NETWORK_BYTES_SENT: LazyCounter = lazy_counter!(
 
 async fn sys_metrics_loop() {
     let mut poll_interval = tokio::time::interval(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-    let mut system =
-        System::new_with_specifics(RefreshKind::nothing().with_cpu(CpuRefreshKind::everything()));
+    let mut system = System::new_with_specifics(
+        RefreshKind::nothing()
+            .with_cpu(CpuRefreshKind::everything())
+            .with_memory(MemoryRefreshKind::nothing().with_ram()),
+    );
     let mut disks = Disks::new_with_refreshed_list();
     let mut networks = Networks::new_with_refreshed_list();
 
     loop {
         poll_interval.tick().await;
         system.refresh_cpu_usage();
+        system.refresh_memory_specifics(MemoryRefreshKind::nothing().with_ram());
         disks.refresh(true);
         networks.refresh(true);
 
         let cpu_usage = system.global_cpu_usage();
         CPU_USAGE.set(cpu_usage as f64);
+        SYSTEM_CPU_USAGE.set(cpu_usage as f64);
+        if system.total_memory() != 0 {
+            let memory_usage = system.used_memory() as f64 / system.total_memory() as f64 * 100.0;
+            MEMORY_USAGE.set(memory_usage);
+            SYSTEM_MEMORY_USAGE.set(memory_usage);
+        }
 
         let uptime = System::uptime();
         gauge!(parent: UPTIME, labels: [UPTIME_LABELS.clone()]).set(uptime as f64);
