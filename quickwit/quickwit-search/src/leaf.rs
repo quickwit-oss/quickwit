@@ -2037,7 +2037,7 @@ async fn run_local_search_tasks(
             split_id = split.split_id,
             num_docs = split.num_docs
         );
-        let wait_span = info_span!(parent: &split_span, "waiting_for_leaf_search_split_semaphore");
+        let wait_span = info_span!(parent: &split_span, "acquire_leaf_split_search_permit");
         let leaf_split_search_permit = search_permit_future.instrument(wait_span).await;
 
         // We run simplify search request again: as we push split into the merge collector,
