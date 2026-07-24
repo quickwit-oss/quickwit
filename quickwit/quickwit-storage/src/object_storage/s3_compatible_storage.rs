@@ -417,7 +417,7 @@ impl S3CompatibleObjectStorage {
         len: u64,
     ) -> StorageResult<()> {
         let bucket = &self.bucket;
-        aws_retry(&self.retry_params, || async {
+        aws_retry("s3.put_object", &self.retry_params, || async {
             self.put_single_part_single_try(bucket, key, payload.clone(), len)
                 .await
         })
@@ -427,7 +427,7 @@ impl S3CompatibleObjectStorage {
     }
 
     async fn create_multipart_upload(&self, key: &str) -> StorageResult<MultipartUploadId> {
-        let upload_id = aws_retry(&self.retry_params, || async {
+        let upload_id = aws_retry("s3.create_multipart_upload", &self.retry_params, || async {
             self.s3_client
                 .create_multipart_upload()
                 .bucket(self.bucket.clone())
@@ -584,7 +584,7 @@ impl S3CompatibleObjectStorage {
             stream::iter(parts.into_iter().map(|part| {
                 let payload = payload.clone();
                 let upload_id = upload_id.clone();
-                aws_retry(&self.retry_params, move || {
+                aws_retry("s3.upload_part", &self.retry_params, move || {
                     self.upload_part(upload_id.clone(), key, part.clone(), payload.clone())
                 })
             }))
@@ -623,22 +623,26 @@ impl S3CompatibleObjectStorage {
         let completed_upload = CompletedMultipartUpload::builder()
             .set_parts(Some(completed_parts))
             .build();
-        aws_retry(&self.retry_params, || async {
-            self.s3_client
-                .complete_multipart_upload()
-                .bucket(self.bucket.clone())
-                .key(key)
-                .multipart_upload(completed_upload.clone())
-                .upload_id(upload_id)
-                .send()
-                .await
-        })
+        aws_retry(
+            "s3.complete_multipart_upload",
+            &self.retry_params,
+            || async {
+                self.s3_client
+                    .complete_multipart_upload()
+                    .bucket(self.bucket.clone())
+                    .key(key)
+                    .multipart_upload(completed_upload.clone())
+                    .upload_id(upload_id)
+                    .send()
+                    .await
+            },
+        )
         .await?;
         Ok(())
     }
 
     async fn abort_multipart_upload(&self, key: &str, upload_id: &str) -> StorageResult<()> {
-        aws_retry(&self.retry_params, || async {
+        aws_retry("s3.abort_multipart_upload", &self.retry_params, || async {
             self.s3_client
                 .abort_multipart_upload()
                 .bucket(self.bucket.clone())
@@ -687,7 +691,7 @@ impl S3CompatibleObjectStorage {
         path: &Path,
         range_opt: Option<Range<usize>>,
     ) -> StorageResult<Bytes> {
-        let get_object_output = aws_retry(&self.retry_params, || {
+        let get_object_output = aws_retry("s3.get_object", &self.retry_params, || {
             self.get_object(path, range_opt.clone())
         })
         .await?;
@@ -761,7 +765,7 @@ impl S3CompatibleObjectStorage {
 
         for (path_chunk, delete) in &mut delete_requests_it {
             let delete_objects_res: StorageResult<DeleteObjectsOutput> =
-                aws_retry(&self.retry_params, || async {
+                aws_retry("s3.delete_objects", &self.retry_params, || async {
                     crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL.inc();
                     let _timer = HistogramTimer::new(
                         &crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION,
@@ -899,8 +903,10 @@ impl Storage for S3CompatibleObjectStorage {
     #[instrument(name = "storage.s3.copy_to", level = "debug", skip(self, output))]
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
-        let get_object_output =
-            aws_retry(&self.retry_params, || self.get_object(path, None)).await?;
+        let get_object_output = aws_retry("s3.get_object", &self.retry_params, || {
+            self.get_object(path, None)
+        })
+        .await?;
         let mut body_read = BufReader::new(get_object_output.body.into_async_read());
         let num_bytes_copied = tokio::io::copy_buf(&mut body_read, output).await?;
         crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_copied);
@@ -913,7 +919,7 @@ impl Storage for S3CompatibleObjectStorage {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let bucket = self.bucket.clone();
         let key = self.key(path);
-        let delete_res = aws_retry(&self.retry_params, || async {
+        let delete_res = aws_retry("s3.delete_object", &self.retry_params, || async {
             crate::metrics::OBJECT_STORAGE_DELETE_REQUESTS_TOTAL.inc();
             let _timer =
                 HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_DELETE_REQUEST_DURATION);
@@ -965,7 +971,7 @@ impl Storage for S3CompatibleObjectStorage {
         range: Range<usize>,
     ) -> crate::StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
         let permit = REQUEST_SEMAPHORE.acquire().await;
-        let get_object_output = aws_retry(&self.retry_params, || {
+        let get_object_output = aws_retry("s3.get_object", &self.retry_params, || {
             self.get_object(path, Some(range.clone()))
         })
         .await?;
@@ -1003,7 +1009,7 @@ impl Storage for S3CompatibleObjectStorage {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let bucket = self.bucket.clone();
         let key = self.key(path);
-        let head_object_output = aws_retry(&self.retry_params, || async {
+        let head_object_output = aws_retry("s3.head_object", &self.retry_params, || async {
             self.s3_client
                 .head_object()
                 .bucket(&bucket)
