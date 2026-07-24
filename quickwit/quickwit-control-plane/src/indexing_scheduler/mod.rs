@@ -60,6 +60,29 @@ pub(crate) const APPLY_INDEXING_PLAN_TIMEOUT: Duration = if cfg!(any(test, featu
     Duration::from_secs(2)
 };
 
+/// Number of consecutive control-loop cycles in which the running plan keeps differing from the
+/// last applied plan (each triggering a reapply of the identical plan) before logging escalates
+/// from `info` to `warn`.
+///
+/// At `MIN_DURATION_BETWEEN_SCHEDULING` of 30s this corresponds to ~2.5 minutes of non-convergence,
+/// long enough to exclude the normal transient case where an indexer has not yet reported
+/// its freshly applied tasks, while surfacing a persistently stuck loop.
+const REAPPLY_LOOP_WARN_THRESHOLD: usize = 5;
+
+/// Number of consecutive reapplies of the identical plan after which the scheduler stops re-sending
+/// it and instead rebuilds a fresh plan from the current model.
+///
+/// Re-sending helps only when an indexer transiently lagged behind. If the plan itself is
+/// un-runnable (e.g. it assigns a shard that no longer exists on the indexer after a
+/// crash/restart), re-sending can never converge. After this threshold the plan is recomputed from
+/// the model so a corrected model produces a runnable plan.
+///
+/// Set above `REAPPLY_LOOP_WARN_THRESHOLD` so the non-convergence warning fires before the behavior
+/// changes. A rebuild is attempted only once every `REAPPLY_LOOP_RESCHEDULE_THRESHOLD` cycles (see
+/// `control_running_plan`) to avoid rebuilding every cycle while the model still describes an
+/// unreachable state.
+const REAPPLY_LOOP_RESCHEDULE_THRESHOLD: usize = 10;
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct IndexingSchedulerState {
     pub num_applied_physical_indexing_plan: usize,
@@ -67,6 +90,10 @@ pub struct IndexingSchedulerState {
     pub last_applied_physical_plan: Option<PhysicalIndexingPlan>,
     #[serde(skip)]
     pub last_applied_plan_timestamp: Option<Instant>,
+    /// Consecutive control-loop cycles that reapplied the identical plan
+    /// without the cluster converging. Reset to 0 on convergence or reschedule;
+    /// once it reaches `REAPPLY_LOOP_WARN_THRESHOLD`, logging escalates from `info` to `warn`.
+    pub num_consecutive_reapplies: usize,
 }
 
 /// The [`IndexingScheduler`] is responsible for listing indexing tasks and assigning them to
@@ -311,6 +338,23 @@ impl IndexingScheduler {
     // Prefer not calling this method directly, and instead call
     // `ControlPlane::rebuild_indexing_plan_debounced`.
     pub(crate) fn rebuild_plan(&mut self, model: &ControlPlaneModel) {
+        // The regular rebuild seeds from the last applied plan to keep placement stable.
+        self.rebuild_plan_impl(model, None);
+    }
+
+    /// Rebuilds the physical plan from the current model.
+    ///
+    /// `seed_override` controls the plan the placement solver starts from:
+    /// - `None` seeds from `last_applied_physical_plan` (the default, keeps placement stable).
+    /// - `Some(seed)` seeds from the provided plan instead. The escalation path in
+    ///   `control_running_plan` uses this to strip the un-runnable tasks from the seed, so their
+    ///   shards are re-placed from the current model (following any relocation) rather than pinned
+    ///   to their stale indexer.
+    fn rebuild_plan_impl(
+        &mut self,
+        model: &ControlPlaneModel,
+        seed_override: Option<&PhysicalIndexingPlan>,
+    ) {
         SCHEDULE_TOTAL.inc();
 
         let notify_on_drop = self.next_rebuild_tracker.start_rebuild();
@@ -337,11 +381,15 @@ impl IndexingScheduler {
             return;
         };
 
+        let previous_plan_opt = match seed_override {
+            Some(seed) => Some(seed),
+            None => self.state.last_applied_physical_plan.as_ref(),
+        };
         let shard_locations = model.shard_locations();
         let new_physical_plan = build_physical_indexing_plan(
             &sources,
             &indexer_id_to_cpu_capacities,
-            self.state.last_applied_physical_plan.as_ref(),
+            previous_plan_opt,
             &shard_locations,
         );
         let shard_locality_metrics =
@@ -359,6 +407,36 @@ impl IndexingScheduler {
         }
         self.apply_physical_indexing_plan(new_physical_plan, Some(notify_on_drop));
         self.state.num_schedule_indexing_plan += 1;
+    }
+
+    /// Returns a copy of `last_applied_plan` with the tasks that indexers are not currently running
+    /// removed (per `plans_diff.missing_tasks_by_node_id`). Dropping those tasks leaves their
+    /// shards unassigned, so a rebuild seeded with this plan re-places them from the current model
+    /// (following any relocation) instead of pinning them back to their stale indexer. Healthy
+    /// pipelines keep their tasks - and pipeline UIDs - so they are not needlessly restarted.
+    fn seed_without_diverging_tasks(
+        last_applied_plan: &PhysicalIndexingPlan,
+        plans_diff: &IndexingPlansDiff,
+    ) -> PhysicalIndexingPlan {
+        let indexer_ids: Vec<String> = last_applied_plan
+            .indexing_tasks_per_indexer()
+            .keys()
+            .cloned()
+            .collect();
+        let mut seed = PhysicalIndexingPlan::with_indexer_ids(&indexer_ids);
+        for (indexer_id, tasks) in last_applied_plan.indexing_tasks_per_indexer() {
+            let diverging_tasks = plans_diff
+                .missing_tasks_by_node_id
+                .get(indexer_id.as_str())
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            for task in tasks {
+                if !diverging_tasks.contains(&task) {
+                    seed.add_indexing_task(indexer_id, task.clone());
+                }
+            }
+        }
+        seed
     }
 
     /// Checks if the last applied plan corresponds to the running indexing tasks present in the
@@ -393,12 +471,54 @@ impl IndexingScheduler {
             last_applied_plan.indexing_tasks_per_indexer(),
         );
         if !indexing_plans_diff.has_same_nodes() {
+            // `rebuild_plan` installs a new plan, which resets the reapply counter in
+            // `apply_physical_indexing_plan`.
             info!(plans_diff=?indexing_plans_diff, "running plan and last applied plan node IDs differ: schedule an indexing plan");
             self.rebuild_plan(model);
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
-            info!(plans_diff=?indexing_plans_diff, "running tasks and last applied tasks differ: reapply last plan");
-            self.apply_physical_indexing_plan(last_applied_plan.clone(), None);
+            self.state.num_consecutive_reapplies += 1;
+            let num_consecutive_reapplies = self.state.num_consecutive_reapplies;
+            // Once the identical plan has failed to converge for many cycles it is almost
+            // certainly un-runnable; re-sending it again cannot help. Rebuild a fresh plan from the
+            // current model instead, so that, if the model has since been corrected, the new plan
+            // becomes runnable and the loop converges. Throttled to once every
+            // `REAPPLY_LOOP_RESCHEDULE_THRESHOLD` cycles so a still-unreachable model does not
+            // trigger a rebuild every cycle.
+            if num_consecutive_reapplies >= REAPPLY_LOOP_RESCHEDULE_THRESHOLD
+                && num_consecutive_reapplies.is_multiple_of(REAPPLY_LOOP_RESCHEDULE_THRESHOLD)
+            {
+                warn!(
+                    num_consecutive_reapplies,
+                    plans_diff=?indexing_plans_diff,
+                    "reapplying the last plan is not converging: rebuilding the plan from the model"
+                );
+                // Seed the rebuild with the diverging tasks stripped out so their shards are
+                // re-placed from the current model rather than pinned to their stale indexer (a
+                // plain rebuild reuses the previous assignment and can reproduce the same
+                // un-runnable plan).
+                let seed =
+                    Self::seed_without_diverging_tasks(last_applied_plan, &indexing_plans_diff);
+                self.rebuild_plan_impl(model, Some(&seed));
+            } else if num_consecutive_reapplies >= REAPPLY_LOOP_WARN_THRESHOLD {
+                // A single reapply is the normal transient case (an indexer has not reported its
+                // freshly applied tasks yet). Escalation to `warn` happens only once the loop
+                // persists, since a plan that never converges indicates a stuck cluster rather
+                // than propagation lag.
+                warn!(
+                    num_consecutive_reapplies,
+                    plans_diff=?indexing_plans_diff,
+                    "running tasks still differ from last applied plan after repeated reapplies: \
+                     cluster is not converging"
+                );
+                self.apply_physical_indexing_plan(last_applied_plan.clone(), None);
+            } else {
+                info!(plans_diff=?indexing_plans_diff, "running tasks and last applied tasks differ: reapply last plan");
+                self.apply_physical_indexing_plan(last_applied_plan.clone(), None);
+            }
+        } else {
+            // Running plan matches the last applied plan: the cluster has converged.
+            self.state.num_consecutive_reapplies = 0;
         }
     }
 
@@ -434,6 +554,15 @@ impl IndexingScheduler {
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
         APPLY_PLAN_TOTAL.inc();
+        // Installing a genuinely new plan (rebuild, rebalance, startup) resets the reapply counter,
+        // regardless of which path scheduled it. A reapply of the identical plan (from
+        // `control_running_plan`) leaves the counter untouched so it keeps growing while the
+        // cluster fails to converge.
+        let reapplies_same_plan =
+            self.state.last_applied_physical_plan.as_ref() == Some(&new_physical_plan);
+        if !reapplies_same_plan {
+            self.state.num_consecutive_reapplies = 0;
+        }
         // Retiring and decommissioning indexers still receive the plan so they can gracefully shut
         // down dropped pipelines; other states (initializing, decommissioned, failed) are skipped.
         for indexer in self.indexer_pool.values().into_iter().filter(|indexer| {
@@ -1433,6 +1562,312 @@ mod tests {
                 Duration::from_secs(5)
             )
             .await
+        );
+    }
+
+    // Builds an `IndexerNodeInfo` whose client accepts any number of `apply_indexing_plan` calls
+    // (including zero) and reports `indexing_tasks` as its running tasks.
+    fn accepting_indexer_node_info(
+        node_id: &str,
+        status: IngesterStatus,
+        indexing_tasks: Vec<IndexingTask>,
+    ) -> IndexerNodeInfo {
+        let mut mock_indexer = MockIndexingService::new();
+        mock_indexer
+            .expect_apply_indexing_plan()
+            .times(0..)
+            .returning(|_| Ok(ApplyIndexingPlanResponse {}));
+        let client = IndexingServiceClient::from_mock(mock_indexer);
+        IndexerNodeInfo {
+            node_id: NodeId::from_str(node_id),
+            generation_id: 0,
+            client,
+            indexing_tasks,
+            indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+            ingester_status: status,
+        }
+    }
+
+    // When the running tasks keep differing from the last applied plan, the control loop reapplies
+    // the identical plan every cycle. Each consecutive reapply must be counted so that a cluster
+    // which never converges becomes observable, and the counter must reset to 0 as soon as the
+    // cluster converges.
+    #[tokio::test]
+    async fn test_control_running_plan_counts_consecutive_reapplies() {
+        let index_uid = IndexUid::from_str("index-1:11111111111111111111111111").unwrap();
+        let task = IndexingTask {
+            pipeline_uid: Some(PipelineUid::for_test(1u128)),
+            index_uid: Some(index_uid),
+            source_id: "source-1".to_string(),
+            shard_ids: Vec::new(),
+            params_fingerprint: 0,
+        };
+
+        // Same node in the running plan and the last applied plan, but the indexer runs no task
+        // while the plan expects one: this drives the "reapply last plan" branch every cycle.
+        let indexer_pool = IndexerPool::default();
+        let indexer = accepting_indexer_node_info("indexer-1", IngesterStatus::Ready, Vec::new());
+        indexer_pool.insert(indexer.node_id.clone(), indexer);
+
+        let mut scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool.clone(),
+        );
+        let mut physical_plan = PhysicalIndexingPlan::with_indexer_ids(&["indexer-1".to_string()]);
+        physical_plan.add_indexing_task("indexer-1", task.clone());
+        scheduler.state.last_applied_physical_plan = Some(physical_plan);
+        // Leaving `last_applied_plan_timestamp` at `None` bypasses the min-interval guard so every
+        // call actually evaluates the diff.
+
+        let model = ControlPlaneModel::default();
+
+        // Reapplying a plan stamps `last_applied_plan_timestamp`, which would otherwise make the
+        // next call short-circuit on the min-interval guard; clearing it each cycle simulates that
+        // enough time has elapsed and isolates the counter logic under test.
+        let num_cycles = REAPPLY_LOOP_WARN_THRESHOLD + 1;
+        for expected in 1..=num_cycles {
+            scheduler.state.last_applied_plan_timestamp = None;
+            scheduler.control_running_plan(&model);
+            assert_eq!(scheduler.state.num_consecutive_reapplies, expected);
+        }
+
+        // The indexer now runs exactly the planned task: the cluster has converged (`Pool` is a
+        // shared handle, so re-inserting updates the scheduler's view) and the counter resets.
+        let converged_indexer =
+            accepting_indexer_node_info("indexer-1", IngesterStatus::Ready, vec![task]);
+        indexer_pool.insert(converged_indexer.node_id.clone(), converged_indexer);
+        scheduler.state.last_applied_plan_timestamp = None;
+        scheduler.control_running_plan(&model);
+        assert_eq!(scheduler.state.num_consecutive_reapplies, 0);
+    }
+
+    // The reapply counter must be reset whenever a genuinely new plan is installed, no matter which
+    // path scheduled it (control loop, `RebuildPlan` handler, rebalance). Installing a different
+    // plan resets it; reapplying the identical plan does not. An empty pool keeps
+    // `apply_physical_indexing_plan` from issuing RPCs.
+    #[tokio::test]
+    async fn test_apply_physical_indexing_plan_resets_reapplies_for_new_plan_only() {
+        let indexer_pool = IndexerPool::default();
+        let mut scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool,
+        );
+
+        let plan_a = PhysicalIndexingPlan::with_indexer_ids(&["indexer-1".to_string()]);
+        scheduler.apply_physical_indexing_plan(plan_a.clone(), None);
+        // Simulate a loop that has been stuck reapplying `plan_a` for a while.
+        scheduler.state.num_consecutive_reapplies = 7;
+
+        // Reapplying the identical plan must not reset the counter.
+        scheduler.apply_physical_indexing_plan(plan_a, None);
+        assert_eq!(scheduler.state.num_consecutive_reapplies, 7);
+
+        // Installing a different plan (as rebuild/rebalance would) resets the counter.
+        let plan_b = PhysicalIndexingPlan::with_indexer_ids(&[
+            "indexer-1".to_string(),
+            "indexer-2".to_string(),
+        ]);
+        scheduler.apply_physical_indexing_plan(plan_b, None);
+        assert_eq!(scheduler.state.num_consecutive_reapplies, 0);
+    }
+
+    // Reapplying the identical plan can never converge when the plan is un-runnable (here, it
+    // assigns a task the indexer never reports running while the model has no source to back it).
+    // After `REAPPLY_LOOP_RESCHEDULE_THRESHOLD` cycles the control loop must stop reapplying and
+    // rebuild from the model, which drops the un-runnable task and lets the cluster converge.
+    #[tokio::test]
+    async fn test_control_running_plan_rebuilds_after_persistent_reapplies() {
+        let index_uid = IndexUid::from_str("index-1:11111111111111111111111111").unwrap();
+        let task = IndexingTask {
+            pipeline_uid: Some(PipelineUid::for_test(1u128)),
+            index_uid: Some(index_uid),
+            source_id: "source-1".to_string(),
+            shard_ids: Vec::new(),
+            params_fingerprint: 0,
+        };
+
+        // The indexer runs no task, but the last applied plan expects one, so the control loop hits
+        // the "reapply last plan" branch every cycle.
+        let indexer_pool = IndexerPool::default();
+        let indexer = accepting_indexer_node_info("indexer-1", IngesterStatus::Ready, Vec::new());
+        indexer_pool.insert(indexer.node_id.clone(), indexer);
+
+        let mut scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool,
+        );
+        let mut physical_plan = PhysicalIndexingPlan::with_indexer_ids(&["indexer-1".to_string()]);
+        physical_plan.add_indexing_task("indexer-1", task);
+        scheduler.state.last_applied_physical_plan = Some(physical_plan);
+
+        // The model has no sources, so a rebuild produces a plan with no tasks for indexer-1,
+        // different from the stuck plan, which is what breaks the loop.
+        let model = ControlPlaneModel::default();
+
+        // Cycles below the reschedule threshold keep reapplying the identical (un-runnable) plan:
+        // the counter grows and the stuck task stays in the applied plan.
+        for expected in 1..REAPPLY_LOOP_RESCHEDULE_THRESHOLD {
+            scheduler.state.last_applied_plan_timestamp = None;
+            scheduler.control_running_plan(&model);
+            assert_eq!(scheduler.state.num_consecutive_reapplies, expected);
+            assert_eq!(
+                scheduler
+                    .state
+                    .last_applied_physical_plan
+                    .as_ref()
+                    .unwrap()
+                    .indexing_tasks_per_indexer()["indexer-1"]
+                    .len(),
+                1,
+                "the un-runnable task should still be planned before the reschedule threshold"
+            );
+        }
+
+        // On the threshold cycle the loop rebuilds from the model instead of reapplying: the
+        // rebuilt plan drops the un-runnable task and installing it resets the counter.
+        scheduler.state.last_applied_plan_timestamp = None;
+        scheduler.control_running_plan(&model);
+        assert_eq!(scheduler.state.num_consecutive_reapplies, 0);
+        assert!(
+            scheduler
+                .state
+                .last_applied_physical_plan
+                .as_ref()
+                .unwrap()
+                .indexing_tasks_per_indexer()["indexer-1"]
+                .is_empty(),
+            "the rebuild should have dropped the un-runnable task"
+        );
+    }
+
+    // The seed used for the escalation rebuild must drop exactly the diverging tasks (those the
+    // indexers are not running) and keep the healthy ones untouched, so only the stuck shards get
+    // re-placed and healthy pipelines are not needlessly restarted.
+    #[test]
+    fn test_seed_without_diverging_tasks_strips_only_diverging() {
+        let index_uid = IndexUid::from_str("index-1:11111111111111111111111111").unwrap();
+        let stuck_task = IndexingTask {
+            pipeline_uid: Some(PipelineUid::for_test(1u128)),
+            index_uid: Some(index_uid.clone()),
+            source_id: "source-1".to_string(),
+            shard_ids: vec![ShardId::from(17)],
+            params_fingerprint: 0,
+        };
+        let healthy_task = IndexingTask {
+            pipeline_uid: Some(PipelineUid::for_test(2u128)),
+            index_uid: Some(index_uid),
+            source_id: "source-1".to_string(),
+            shard_ids: vec![ShardId::from(9)],
+            params_fingerprint: 0,
+        };
+        let mut last_applied_plan = PhysicalIndexingPlan::with_indexer_ids(&[
+            "indexer-1".to_string(),
+            "indexer-2".to_string(),
+        ]);
+        last_applied_plan.add_indexing_task("indexer-1", stuck_task);
+        last_applied_plan.add_indexing_task("indexer-2", healthy_task.clone());
+
+        // indexer-1 runs nothing (its task diverges); indexer-2 runs exactly its planned task.
+        let mut running: FnvHashMap<String, Vec<IndexingTask>> = FnvHashMap::default();
+        running.insert("indexer-1".to_string(), Vec::new());
+        running.insert("indexer-2".to_string(), vec![healthy_task.clone()]);
+        let plans_diff =
+            get_indexing_plans_diff(&running, last_applied_plan.indexing_tasks_per_indexer());
+        assert!(!plans_diff.has_same_tasks());
+
+        let seed = IndexingScheduler::seed_without_diverging_tasks(&last_applied_plan, &plans_diff);
+        let seed_tasks = seed.indexing_tasks_per_indexer();
+        assert!(seed_tasks["indexer-1"].is_empty());
+        assert_eq!(seed_tasks["indexer-2"], vec![healthy_task]);
+    }
+
+    // When the model correction relocates a shard (it still exists, but now on a different
+    // indexer), a plain reseeded rebuild would pin it back to the old indexer and stay stuck.
+    // The escalation must re-place the diverging shard from the current model, i.e. follow it
+    // to its new host.
+    #[tokio::test]
+    async fn test_control_running_plan_rebuild_follows_relocated_shard() {
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let index_uid = index_metadata.index_uid.clone();
+        let mut model = ControlPlaneModel::default();
+        model.add_index(index_metadata);
+        model
+            .add_source(
+                &index_uid,
+                SourceConfig {
+                    source_id: "ingest_v2".to_string(),
+                    num_pipelines: NonZeroUsize::new(1).unwrap(),
+                    enabled: true,
+                    source_params: SourceParams::Ingest,
+                    transform_config: None,
+                    input_format: Default::default(),
+                },
+            )
+            .unwrap();
+        // The model now locates shard 17 on indexer-2 (its leader).
+        let shard = Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: "ingest_v2".to_string(),
+            shard_id: Some(ShardId::from(17)),
+            shard_state: ShardState::Open as i32,
+            leader_id: "indexer-2".to_string(),
+            ..Default::default()
+        };
+        model.insert_shards(&index_uid, &"ingest_v2".to_string(), vec![shard]);
+
+        let indexer_pool = IndexerPool::default();
+        for indexer_id in ["indexer-1", "indexer-2"] {
+            let indexer =
+                accepting_indexer_node_info(indexer_id, IngesterStatus::Ready, Vec::new());
+            indexer_pool.insert(indexer.node_id.clone(), indexer);
+        }
+
+        let mut scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool,
+        );
+
+        // Stale plan: shard 17 assigned to indexer-1, which no longer hosts it, and which never
+        // reports running it - so the loop diverges every cycle.
+        let stale_task = IndexingTask {
+            pipeline_uid: Some(PipelineUid::for_test(1u128)),
+            index_uid: Some(index_uid.clone()),
+            source_id: "ingest_v2".to_string(),
+            shard_ids: vec![ShardId::from(17)],
+            params_fingerprint: 0,
+        };
+        let mut stale_plan = PhysicalIndexingPlan::with_indexer_ids(&[
+            "indexer-1".to_string(),
+            "indexer-2".to_string(),
+        ]);
+        stale_plan.add_indexing_task("indexer-1", stale_task);
+        scheduler.state.last_applied_physical_plan = Some(stale_plan);
+
+        for _ in 0..REAPPLY_LOOP_RESCHEDULE_THRESHOLD {
+            scheduler.state.last_applied_plan_timestamp = None;
+            scheduler.control_running_plan(&model);
+        }
+
+        let last_applied_plan = scheduler.state.last_applied_physical_plan.as_ref().unwrap();
+        let tasks_per_indexer = last_applied_plan.indexing_tasks_per_indexer();
+        let shard_17 = ShardId::from(17);
+        let indexer_1_has_shard = tasks_per_indexer["indexer-1"]
+            .iter()
+            .any(|task| task.shard_ids.contains(&shard_17));
+        let indexer_2_has_shard = tasks_per_indexer["indexer-2"]
+            .iter()
+            .any(|task| task.shard_ids.contains(&shard_17));
+        assert!(
+            !indexer_1_has_shard,
+            "the shard should have moved off the stale indexer"
+        );
+        assert!(
+            indexer_2_has_shard,
+            "the shard should follow to the indexer that now hosts it"
         );
     }
 
