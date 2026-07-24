@@ -6,7 +6,7 @@ icon_url: /img/tutorials/aws-logo.png
 sidebar_position: 6
 ---
 
-In this guide, we will index about 40 million log entries (13 GB decompressed) on AWS S3 using an EC2 instance and launch a three-node distributed search cluster.
+In this guide, we will index about 20 million log entries (7 GB decompressed) on AWS S3 using an EC2 instance and launch a three-node distributed search cluster.
 
 Example of a log entry:
 ```json
@@ -50,14 +50,14 @@ export S3_PATH=s3://{path/to/bucket}/indexes
 You'll want to include the necessary authorization for the given bucket, this can be done by setting the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
 environment variables, or via the AWS credentials file. Usually located at `~/.aws/credentials`.
 
-For more info check out [our AWS setup guide](https://quickwit.io/docs/guides/aws-setup)
+For more information, check out [our AWS setup guide](../../guides/aws-setup).
 :::
 
 Now we can create a Quickwit config file.
 
 ```bash
 # Create Quickwit config file.
-echo "version: 0.7
+echo "version: 0.8
 node_id: searcher-1
 listen_address: 0.0.0.0
 metastore_uri: ${S3_PATH}
@@ -70,7 +70,7 @@ default_index_root_uri: ${S3_PATH}
 > # config.yaml
 > node_id: searcher-1
 > listen_address: 0.0.0.0
-> version: 0.7
+> version: 0.8
 > metastore_uri: ${S3_PATH}
 > default_index_root_uri: ${S3_PATH}
 >```
@@ -85,7 +85,7 @@ We are now ready to start Quickwit.
 
 ```bash
 # First, download the hdfs logs config from Quickwit repository.
-curl -o hdfs_logs_index_config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/hdfs-logs/index-config.yaml
+curl -o hdfs_logs_index_config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/v0.9.0/config/tutorials/hdfs-logs/index-config.yaml
 ```
 
 The index config defines five fields: `timestamp`, `tenant_id`, `severity_text`, `body`, and one JSON field
@@ -95,7 +95,7 @@ used by Quickwit for [splits pruning](../../overview/architecture) at query time
 Check out the [index config docs](../../configuration/index-config) for more details.
 
 ```yaml title="hdfs_logs_index_config.yaml"
-version: 0.7
+version: 0.8
 
 index_id: hdfs-logs
 
@@ -146,7 +146,7 @@ Instead of downloading and indexing the data in separate steps, we will use pipe
 
 ```bash
 wget https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz
-gunzip -c hdfs-logs-multitenants.json.gz | ./quickwit index ingest --index hdfs-logs
+gunzip -c hdfs-logs-multitenants.json.gz | ./quickwit index ingest --index hdfs-logs --force
 ```
 
 :::note
@@ -203,11 +203,9 @@ Also, it needs `{rest.listen_port} + 1` for gRPC communication between instances
 In AWS, you can create a security group to group these inbound rules. Check out the [network section](../../guides/aws-setup) of our AWS setup guide.
 
 To make things easier, let's create a security group that opens the TCP/UDP port range [7200-7300]. 
-Next, create three EC2 instances using the previously created security group. Take note of each instance's public IP address.
+Next, create two additional EC2 instances using the previously created security group. Take note of each instance's public IP address.
 
-Now ssh into the first EC2 instance, install Quickwit, and [configure the environment](../../guides/aws-setup) to let Quickwit access the index S3 buckets.
-
-Let's install Quickwit on the second and third EC2 instances.
+SSH into the second and third EC2 instances, install Quickwit, and [configure the environment](../../guides/aws-setup) to let Quickwit access the index S3 bucket.
 
 ```bash
 curl -L https://install.quickwit.io | sh
@@ -223,7 +221,7 @@ export IP_NODE_1={first-ec2-instance-public-ip}
 
 ```bash
 # configuration for our second node
-echo "version: 0.7
+echo "version: 0.8
 node_id: searcher-2
 metastore_uri: ${S3_PATH}
 default_index_root_uri: ${S3_PATH}
@@ -238,7 +236,7 @@ peer_seeds:
 
 ```bash
 # configuration for our third node
-echo "version: 0.7
+echo "version: 0.8
 node_id: searcher-3
 listen_address: 0.0.0.0
 peer_seeds:
@@ -261,7 +259,7 @@ You will see in the terminal the confirmation that the instance has joined the e
 Now we can query one of our instance directly by issuing http requests to one of the nodes rest API endpoint.
 
 ```
-curl -v "http://0.0.0.0:7280/api/v1/hdfs-logs/search?query=severity_text:ERROR"
+curl -v "http://127.0.0.1:7280/api/v1/hdfs-logs/search?query=severity_text:ERROR"
 ```
 
 Check out the logs of all instances and you will see that all nodes are working.
@@ -282,6 +280,6 @@ Let's do some cleanup by deleting the index:
 
 Also remember to remove the security group to protect your EC2 instances. You can just remove the instances if you don't need them.
 
-Congratz! You finished this tutorial!
+Congratulations! You finished this tutorial!
 
-To continue your Quickwit journey, check out the [search REST API reference](/docs/reference/rest-api) or the [query language reference](/docs/reference/query-language).
+To continue your Quickwit journey, check out the [search REST API reference](../../reference/rest-api) or the [query language reference](../../reference/query-language).
