@@ -37,6 +37,7 @@ pub enum Protocol {
     Ram = 6,
     S3 = 7,
     Google = 8,
+    Ipfs = 9,
 }
 
 impl Protocol {
@@ -50,6 +51,7 @@ impl Protocol {
             Protocol::Ram => "ram",
             Protocol::S3 => "s3",
             Protocol::Google => "gs",
+            Protocol::Ipfs => "ipfs",
         }
     }
 
@@ -62,7 +64,10 @@ impl Protocol {
     }
 
     pub fn is_object_storage(&self) -> bool {
-        matches!(&self, Protocol::Azure | Protocol::S3 | Protocol::Google)
+        matches!(
+            &self,
+            Protocol::Azure | Protocol::S3 | Protocol::Google | Protocol::Ipfs
+        )
     }
 
     pub fn is_database(&self) -> bool {
@@ -89,6 +94,7 @@ impl FromStr for Protocol {
             "ram" => Ok(Protocol::Ram),
             "s3" => Ok(Protocol::S3),
             "gs" => Ok(Protocol::Google),
+            "ipfs" => Ok(Protocol::Ipfs),
             _ => bail!("unknown URI protocol `{protocol}`"),
         }
     }
@@ -183,6 +189,9 @@ impl Uri {
         if protocol == Protocol::Google && path.components().count() < 2 {
             return None;
         }
+        if protocol == Protocol::Ipfs && path.components().count() < 2 {
+            return None;
+        }
         let parent_path = path.parent()?;
 
         Some(Self {
@@ -209,6 +218,9 @@ impl Uri {
             return None;
         }
         if self.protocol() == Protocol::Google && path.components().count() < 2 {
+            return None;
+        }
+        if self.protocol() == Protocol::Ipfs && path.components().count() < 2 {
             return None;
         }
         path.file_name().map(Path::new)
@@ -509,6 +521,10 @@ mod tests {
             Protocol::Google
         );
         assert_eq!(
+            Uri::for_test("ipfs://indexes/key").protocol(),
+            Protocol::Ipfs
+        );
+        assert_eq!(
             Uri::for_test("postgres://localhost:5432/metastore").protocol(),
             Protocol::PostgreSQL
         );
@@ -661,6 +677,16 @@ mod tests {
             Uri::for_test("gs://bucket/foo/bar/").parent().unwrap(),
             "gs://bucket/foo"
         );
+        assert!(Uri::for_test("ipfs://indexes").parent().is_none());
+        assert!(Uri::for_test("ipfs://indexes/").parent().is_none());
+        assert_eq!(
+            Uri::for_test("ipfs://indexes/foo").parent().unwrap(),
+            "ipfs://indexes"
+        );
+        assert_eq!(
+            Uri::for_test("ipfs://indexes/foo/bar").parent().unwrap(),
+            "ipfs://indexes/foo"
+        );
     }
 
     #[test]
@@ -731,6 +757,12 @@ mod tests {
         );
         assert_eq!(
             Uri::for_test("gs://bucket/foo/").file_name().unwrap(),
+            Path::new("foo"),
+        );
+        assert!(Uri::for_test("ipfs://indexes").file_name().is_none());
+        assert!(Uri::for_test("ipfs://indexes/").file_name().is_none());
+        assert_eq!(
+            Uri::for_test("ipfs://indexes/foo").file_name().unwrap(),
             Path::new("foo"),
         );
     }

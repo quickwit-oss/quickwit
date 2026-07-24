@@ -32,6 +32,8 @@ pub enum StorageBackend {
     File,
     /// Google Cloud Storage
     Google,
+    /// IPFS (InterPlanetary File System) content-addressed storage
+    Ipfs,
     /// In-memory storage, for testing purposes
     Ram,
     /// Amazon S3 or S3-compatible storage
@@ -146,6 +148,15 @@ impl StorageConfigs {
             })
     }
 
+    pub fn find_ipfs(&self) -> Option<&IpfsStorageConfig> {
+        self.0
+            .iter()
+            .find_map(|storage_config| match storage_config {
+                StorageConfig::Ipfs(ipfs_storage_config) => Some(ipfs_storage_config),
+                _ => None,
+            })
+    }
+
     pub fn find_file(&self) -> Option<&FileStorageConfig> {
         self.0
             .iter()
@@ -187,6 +198,7 @@ impl Deref for StorageConfigs {
 pub enum StorageConfig {
     Azure(AzureStorageConfig),
     File(FileStorageConfig),
+    Ipfs(IpfsStorageConfig),
     Ram(RamStorageConfig),
     S3(S3StorageConfig),
     Google(GoogleCloudStorageConfig),
@@ -196,7 +208,7 @@ impl StorageConfig {
     pub fn redact(&mut self) {
         match self {
             Self::Azure(azure_storage_config) => azure_storage_config.redact(),
-            Self::File(_) | Self::Ram(_) | Self::Google(_) => {}
+            Self::File(_) | Self::Ipfs(_) | Self::Ram(_) | Self::Google(_) => {}
             Self::S3(s3_storage_config) => s3_storage_config.redact(),
         }
     }
@@ -211,6 +223,13 @@ impl StorageConfig {
     pub fn as_file(&self) -> Option<&FileStorageConfig> {
         match self {
             Self::File(file_storage_config) => Some(file_storage_config),
+            _ => None,
+        }
+    }
+
+    pub fn as_ipfs(&self) -> Option<&IpfsStorageConfig> {
+        match self {
+            Self::Ipfs(ipfs_storage_config) => Some(ipfs_storage_config),
             _ => None,
         }
     }
@@ -249,6 +268,12 @@ impl From<FileStorageConfig> for StorageConfig {
     }
 }
 
+impl From<IpfsStorageConfig> for StorageConfig {
+    fn from(ipfs_storage_config: IpfsStorageConfig) -> Self {
+        Self::Ipfs(ipfs_storage_config)
+    }
+}
+
 impl From<RamStorageConfig> for StorageConfig {
     fn from(ram_storage_config: RamStorageConfig) -> Self {
         Self::Ram(ram_storage_config)
@@ -272,6 +297,7 @@ impl StorageConfig {
         match self {
             Self::Azure(_) => StorageBackend::Azure,
             Self::File(_) => StorageBackend::File,
+            Self::Ipfs(_) => StorageBackend::Ipfs,
             Self::Ram(_) => StorageBackend::Ram,
             Self::S3(_) => StorageBackend::S3,
             Self::Google(_) => StorageBackend::Google,
@@ -449,6 +475,73 @@ impl fmt::Debug for S3StorageConfig {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FileStorageConfig;
+
+/// Configuration for the IPFS storage backend.
+///
+/// Splits are stored in the MFS (Mutable File System) of an IPFS node reachable
+/// through its RPC API (Kubo's default is `http://127.0.0.1:5001`). MFS presents
+/// content-addressed blocks as regular files supporting ranged reads, which is
+/// exactly the access pattern Quickwit requires for splits.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IpfsStorageConfig {
+    /// Base URL of the IPFS node RPC API, e.g. `http://127.0.0.1:5001`.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_endpoint: Option<String>,
+    /// Chunker applied when writing splits, e.g. `size-1048576`.
+    /// Larger fixed-size chunks reduce the number of blocks a ranged read spans.
+    #[serde(default = "IpfsStorageConfig::default_chunker")]
+    pub chunker: String,
+    /// Use raw leaf blocks (no UnixFS envelope around data blocks).
+    #[serde(default = "IpfsStorageConfig::default_raw_leaves")]
+    pub raw_leaves: bool,
+    /// Request timeout in seconds for individual RPC calls.
+    #[serde(default = "IpfsStorageConfig::default_request_timeout_secs")]
+    pub request_timeout_secs: u64,
+}
+
+impl Default for IpfsStorageConfig {
+    fn default() -> Self {
+        Self {
+            api_endpoint: None,
+            chunker: Self::default_chunker(),
+            raw_leaves: Self::default_raw_leaves(),
+            request_timeout_secs: Self::default_request_timeout_secs(),
+        }
+    }
+}
+
+impl IpfsStorageConfig {
+    /// Environment variable overriding the IPFS RPC API endpoint.
+    pub const IPFS_API_ENDPOINT_ENV_VAR: &'static str = "QW_IPFS_API_ENDPOINT";
+
+    /// Kubo's default RPC API endpoint.
+    pub const DEFAULT_API_ENDPOINT: &'static str = "http://127.0.0.1:5001";
+
+    fn default_chunker() -> String {
+        // 1 MiB fixed-size chunks: keeps hotcache/footer reads within a small
+        // number of blocks while staying under Kubo's block size limits.
+        "size-1048576".to_string()
+    }
+
+    fn default_raw_leaves() -> bool {
+        true
+    }
+
+    fn default_request_timeout_secs() -> u64 {
+        30
+    }
+
+    /// Resolves the API endpoint from the environment variable
+    /// `QW_IPFS_API_ENDPOINT`, the config, or the Kubo default.
+    pub fn resolve_api_endpoint(&self) -> String {
+        env::var(Self::IPFS_API_ENDPOINT_ENV_VAR)
+            .ok()
+            .or_else(|| self.api_endpoint.clone())
+            .unwrap_or_else(|| Self::DEFAULT_API_ENDPOINT.to_string())
+    }
+}
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -651,6 +744,41 @@ mod tests {
                 google_cloud_storage_config,
                 expected_google_cloud_storage_config
             );
+        }
+    }
+
+    #[test]
+    fn test_storage_ipfs_config_serde() {
+        {
+            let ipfs_storage_config_yaml = r#"
+                api_endpoint: http://localhost:5001
+            "#;
+            let ipfs_storage_config: IpfsStorageConfig =
+                serde_yaml::from_str(ipfs_storage_config_yaml).unwrap();
+
+            let expected_ipfs_config = IpfsStorageConfig {
+                api_endpoint: Some("http://localhost:5001".to_string()),
+                ..Default::default()
+            };
+            assert_eq!(ipfs_storage_config, expected_ipfs_config);
+        }
+        {
+            let ipfs_storage_config_yaml = r#"
+                api_endpoint: http://ipfs-node:5001
+                chunker: size-262144
+                raw_leaves: false
+                request_timeout_secs: 60
+            "#;
+            let ipfs_storage_config: IpfsStorageConfig =
+                serde_yaml::from_str(ipfs_storage_config_yaml).unwrap();
+
+            let expected_ipfs_config = IpfsStorageConfig {
+                api_endpoint: Some("http://ipfs-node:5001".to_string()),
+                chunker: "size-262144".to_string(),
+                raw_leaves: false,
+                request_timeout_secs: 60,
+            };
+            assert_eq!(ipfs_storage_config, expected_ipfs_config);
         }
     }
 

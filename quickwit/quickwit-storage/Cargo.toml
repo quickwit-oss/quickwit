@@ -89,12 +89,14 @@ azure = [
   "azure_storage_blobs/enable_reqwest_rustls",
 ]
 gcs = ["dep:opendal", "opendal/services-gcs"]
+ipfs = ["dep:reqwest", "reqwest/multipart", "reqwest/stream"]
 ci-test = []
 integration-testsuite = [
   "azure",
   "azure_core/azurite_workaround",
   "azure_storage_blobs/azurite_workaround",
   "gcs",                                    # Stands for Google cloud storage.
+  "ipfs",
   "dep:reqwest",
 ]
 testsuite = ["mockall"]

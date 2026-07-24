@@ -5,11 +5,12 @@ sidebar_position: 2
 
 ## Supported Storage Providers
 
-Quickwit currently supports four types of storage providers:
+Quickwit currently supports five types of storage providers:
 - Amazon S3 and S3-compatible (Garage, MinIO, ...)
 - Azure Blob Storage
 - Local file storage*
 - Google Cloud Storage (native API)
+- IPFS (InterPlanetary File System, via the RPC API of a node such as [Kubo](https://github.com/ipfs/kubo))
 
 ## Storage URIs
 
@@ -18,6 +19,7 @@ Storage URIs refer to different storage providers identified by a URI "protocol"
 - `azure://` for Azure Blob Storage
 - `file://` for local file systems
 - `gs://` for Google Cloud Storage
+- `ipfs://` for IPFS (content-addressed storage)
 
 In general, you can use a storage URI or a file path anywhere you would intuitively expect a file path. For instance:
 - when setting the `index_uri` of an index to specify the storage provider and location;
@@ -126,6 +128,45 @@ storage:
     account: your-azure-account-name
     access_key: your-azure-access-key
 ```
+
+### IPFS storage configuration
+
+Quickwit stores splits in the MFS (Mutable File System) of an IPFS node through its RPC API. MFS presents content-addressed, chunked DAGs as regular files supporting ranged reads, which matches the byte-range access pattern Quickwit uses to open splits. Every split written this way has a CID and is addressable, pinnable, and exportable (e.g. as a CAR file) from the wider IPFS network.
+
+An `ipfs://` URI maps to an MFS directory on the configured node: `ipfs://quickwit-indexes/my-index` reads and writes under the MFS path `/quickwit-indexes/my-index`.
+
+| Property | Description | Default value |
+| --- | --- | --- |
+| `api_endpoint` | Base URL of the IPFS node RPC API. | `http://127.0.0.1:5001` |
+| `chunker` | Chunker applied when writing splits. Larger fixed-size chunks reduce the number of blocks a ranged read spans. | `size-1048576` |
+| `raw_leaves` | Use raw leaf blocks (no UnixFS envelope around data blocks). | `true` |
+| `request_timeout_secs` | Request timeout in seconds for individual RPC calls. | `30` |
+
+#### Environment variables
+
+| Env variable | Description |
+| --- | --- |
+| `QW_IPFS_API_ENDPOINT` | Base URL of the IPFS node RPC API. |
+
+Example of a storage configuration for IPFS in YAML format:
+
+```yaml
+storage:
+  ipfs:
+    api_endpoint: http://127.0.0.1:5001
+```
+
+:::note
+The IPFS backend covers index data (splits). Keep the metastore on PostgreSQL or a file-backed URI: metastore state is small, mutable, and frequently rewritten, which is a poor fit for content addressing.
+:::
+
+:::note
+Deleting a split unlinks it from MFS but only reclaims disk space once the IPFS node runs garbage collection. Kubo does not GC by default: run the daemon with `--enable-gc` or schedule `ipfs repo gc`, especially on indexes with frequent merges.
+:::
+
+:::caution
+The IPFS storage backend requires a Quickwit binary compiled with the `ipfs` feature enabled (`--features quickwit-storage/ipfs`). Release binaries built from the default release feature set include it.
+:::
 
 ## Storage configuration examples for various object storage providers
 
