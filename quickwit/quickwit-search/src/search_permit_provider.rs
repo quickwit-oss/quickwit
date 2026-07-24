@@ -17,7 +17,7 @@ use std::collections::binary_heap::PeekMut;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
@@ -56,6 +56,66 @@ pub(crate) struct SplitSearchTaskMetadata {
     /// Estimated cost of this task, in the same arbitrary unit as [`Job::cost()`].
     /// Used to report the current load of this node to the job placer.
     pub job_cost: usize,
+}
+
+/// Why the head of the permit queue could not be granted.
+///
+/// The actor writes it into the shared [`BlockReasonHandle`] each time it fails to serve
+/// the head, so any waiter can read it whether its permit is eventually granted or the
+/// wait is cancelled (e.g. on a search deadline). This is what lets us attribute the
+/// acquisition latency to the binding resource.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PermitBlockReason {
+    /// All concurrent warmup/download slots were in use.
+    WarmupSlots,
+    /// The memory budget could not fit the request's estimated allocation.
+    MemoryBudget,
+}
+
+impl PermitBlockReason {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PermitBlockReason::WarmupSlots => "warmup_slots",
+            PermitBlockReason::MemoryBudget => "memory_budget",
+        }
+    }
+
+    fn to_code(self) -> u8 {
+        match self {
+            PermitBlockReason::WarmupSlots => 1,
+            PermitBlockReason::MemoryBudget => 2,
+        }
+    }
+
+    fn from_code(code: u8) -> Option<Self> {
+        match code {
+            1 => Some(PermitBlockReason::WarmupSlots),
+            2 => Some(PermitBlockReason::MemoryBudget),
+            _ => None,
+        }
+    }
+}
+
+/// Shared cell recording the resource currently blocking the head of the permit queue.
+///
+/// A single instance is shared by the actor (which writes it) and every
+/// [`SearchPermitFuture`] (which reads it). Because permits are served in order, whatever
+/// blocks the head effectively blocks every waiter, so a queue-level reason is correct for
+/// a waiter at any position — including one cancelled deep in the queue before it ever
+/// reaches the head. Uses an atomic so it can be read after the wait future is dropped on
+/// cancellation.
+#[derive(Clone, Default)]
+pub struct BlockReasonHandle(Arc<AtomicU8>);
+
+impl BlockReasonHandle {
+    fn set(&self, reason: PermitBlockReason) {
+        self.0.store(reason.to_code(), Ordering::Relaxed);
+    }
+
+    /// The resource currently blocking the queue, or `None` if it isn't blocked.
+    pub fn get(&self) -> Option<PermitBlockReason> {
+        PermitBlockReason::from_code(self.0.load(Ordering::Relaxed))
+    }
 }
 
 pub enum SearchPermitMessage {
@@ -116,6 +176,7 @@ impl SearchPermitProvider {
             permits_requests: BinaryHeap::new(),
             total_memory_allocated: 0u64,
             total_job_cost: total_job_cost.clone(),
+            block_reason: BlockReasonHandle::default(),
         };
         let actor_join_handle = Arc::new(tokio::spawn(actor.run()));
         Self {
@@ -209,6 +270,9 @@ struct SearchPermitActor {
     /// Only the actor mutates it, so [`Ordering::Relaxed`] is sufficient.
     total_job_cost: Arc<AtomicUsize>,
     permits_requests: BinaryHeap<LeafPermitRequest>,
+    /// Shared with every [`SearchPermitFuture`]; set to the resource blocking the head of
+    /// the queue each time it can't be served.
+    block_reason: BlockReasonHandle,
 }
 
 struct SingleSplitPermitRequest {
@@ -253,6 +317,7 @@ impl LeafPermitRequest {
     // `task_metadata` must not be empty.
     fn from_task_metadata(
         task_metadata: Vec<SplitSearchTaskMetadata>,
+        block_reason: BlockReasonHandle,
     ) -> (Self, Vec<SearchPermitFuture>) {
         assert!(!task_metadata.is_empty(), "task_metadata must not be empty");
         // Stamped on every `SingleSplitPermitRequest` we're about to enqueue.
@@ -272,7 +337,10 @@ impl LeafPermitRequest {
                 job_cost: meta.job_cost,
                 requested_at,
             });
-            permits.push(SearchPermitFuture(rx));
+            permits.push(SearchPermitFuture {
+                receiver: rx,
+                block_reason: block_reason.clone(),
+            });
         }
         (
             LeafPermitRequest {
@@ -338,7 +406,7 @@ impl SearchPermitActor {
                 SEARCHER_NODE_LOAD.set(new_load as f64);
 
                 let (leaf_permit_request, permit_futures) =
-                    LeafPermitRequest::from_task_metadata(task_metadata);
+                    LeafPermitRequest::from_task_metadata(task_metadata, self.block_reason.clone());
                 self.permits_requests.push(leaf_permit_request);
                 self.assign_available_permits();
                 let _ = permit_sender.send(permit_futures);
@@ -374,12 +442,25 @@ impl SearchPermitActor {
     }
 
     fn pop_next_request_if_serviceable(&mut self) -> Option<SingleSplitPermitRequest> {
-        if self.num_warmup_slots_available == 0 {
+        // Nothing is waiting, so there is no block to attribute (avoids leaving a stale
+        // reason set once the queue drains and slots/memory are exhausted).
+        if self.permits_requests.is_empty() {
             return None;
         }
-        let available_memory = self
+        if self.num_warmup_slots_available == 0 {
+            self.block_reason.set(PermitBlockReason::WarmupSlots);
+            return None;
+        }
+        let available_memory = match self
             .total_memory_budget
-            .checked_sub(self.total_memory_allocated)?;
+            .checked_sub(self.total_memory_allocated)
+        {
+            Some(available_memory) => available_memory,
+            None => {
+                self.block_reason.set(PermitBlockReason::MemoryBudget);
+                return None;
+            }
+        };
         let mut peeked = self.permits_requests.peek_mut()?;
 
         assert!(
@@ -392,6 +473,8 @@ impl SearchPermitActor {
             }
             return Some(permit_request);
         }
+        // The head request needs more memory than is currently available.
+        self.block_reason.set(PermitBlockReason::MemoryBudget);
         None
     }
 
@@ -510,13 +593,25 @@ impl Drop for SearchPermit {
     }
 }
 
-pub struct SearchPermitFuture(oneshot::Receiver<SearchPermit>);
+pub struct SearchPermitFuture {
+    receiver: oneshot::Receiver<SearchPermit>,
+    block_reason: BlockReasonHandle,
+}
+
+impl SearchPermitFuture {
+    /// Handle to the reason this permit is blocked on. Readable at any time, including
+    /// after this future is dropped on cancellation, so the waiter can attribute the
+    /// wait even when the permit is never granted.
+    pub fn block_reason_handle(&self) -> BlockReasonHandle {
+        self.block_reason.clone()
+    }
+}
 
 impl Future for SearchPermitFuture {
     type Output = SearchPermit;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let receiver = Pin::new(&mut self.get_mut().0);
+        let receiver = Pin::new(&mut self.get_mut().receiver);
         match receiver.poll(cx) {
             Poll::Ready(Ok(search_permit)) => Poll::Ready(search_permit),
             Poll::Ready(Err(_)) => panic!(
@@ -835,6 +930,52 @@ mod tests {
         permits.drain(0..1);
         let next_blocked_permit_fut = remaining_permit_futs.next().unwrap();
         permits.push(try_get(next_blocked_permit_fut).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_permit_block_reason_warmup_slots() {
+        // A single warmup slot with ample memory: once a second request is queued, the
+        // queue can only be blocked on the warmup slot. The reason is queue-level and
+        // shared by every waiter's handle, readable without being granted a permit.
+        let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(1000));
+        let first_fut = permit_provider
+            .get_permits(make_splits(10, 1))
+            .await
+            .into_iter()
+            .next()
+            .unwrap();
+        // First was granted immediately; nothing is blocked yet.
+        assert_eq!(first_fut.block_reason_handle().get(), None);
+        let second_fut = permit_provider
+            .get_permits(make_splits(10, 1))
+            .await
+            .into_iter()
+            .next()
+            .unwrap();
+        // Second can't get the single slot: the queue is now blocked on warmup slots.
+        assert_eq!(
+            second_fut.block_reason_handle().get(),
+            Some(PermitBlockReason::WarmupSlots)
+        );
+        // Draining still works: freeing the slot lets the second request through.
+        let first_permit = first_fut.await;
+        drop(first_permit);
+        let _second_permit = second_fut.await;
+    }
+
+    #[tokio::test]
+    async fn test_permit_block_reason_memory_budget() {
+        // Ample slots but tight memory (100MB / 10MB = 10 permits): the 11th request can
+        // only be blocked on the memory budget.
+        let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100));
+        let permit_futs = permit_provider.get_permits(make_splits(10, 11)).await;
+        assert_eq!(permit_futs.len(), 11);
+        // The 11th can't fit, so the queue is blocked on memory. The reason is queue-level
+        // and shared, so any waiter's handle reports it — even one deep in the queue.
+        assert_eq!(
+            permit_futs[10].block_reason_handle().get(),
+            Some(PermitBlockReason::MemoryBudget)
+        );
     }
 
     #[tokio::test]

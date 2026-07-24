@@ -67,7 +67,7 @@ use crate::metrics::{
 };
 use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::{
-    SearchPermit, SearchPermitFuture, compute_initial_memory_allocation,
+    BlockReasonHandle, SearchPermit, SearchPermitFuture, compute_initial_memory_allocation,
 };
 use crate::service::{SearcherContext, deserialize_doc_mapper};
 use crate::{QuickwitAggregations, SearchError};
@@ -2047,6 +2047,42 @@ pub async fn single_doc_mapping_leaf_search(
     Ok(leaf_search_response)
 }
 
+/// Records the permit block reason onto the `acquire_leaf_split_search_permit`
+/// span when the wait ends.
+///
+/// Implemented as a drop guard (rather than reading after `.await`) so the reason is
+/// recorded even when the wait future is cancelled before the permit is granted — the
+/// long waits that hit a search deadline are exactly the ones that never get granted.
+struct WaitBlockReasonRecorder {
+    wait_span: Span,
+    block_reason: BlockReasonHandle,
+    started_at: Instant,
+}
+
+impl WaitBlockReasonRecorder {
+    fn new(wait_span: Span, block_reason: BlockReasonHandle) -> Self {
+        Self {
+            wait_span,
+            block_reason,
+            started_at: Instant::now(),
+        }
+    }
+}
+
+impl Drop for WaitBlockReasonRecorder {
+    fn drop(&mut self) {
+        // Skip near-instant grants: a sub-millisecond wait isn't worth attributing and
+        // keeps the span uncluttered.
+        const MIN_WAIT_FOR_BLOCK_ATTRIBUTION: Duration = Duration::from_millis(1);
+        if self.started_at.elapsed() < MIN_WAIT_FOR_BLOCK_ATTRIBUTION {
+            return;
+        }
+        if let Some(block_reason) = self.block_reason.get() {
+            self.wait_span.record("blocked_on", block_reason.as_str());
+        }
+    }
+}
+
 async fn run_local_search_tasks(
     local_search_tasks: Vec<LocalSearchTask>,
     index_storage: Arc<dyn Storage + 'static>,
@@ -2069,7 +2105,18 @@ async fn run_local_search_tasks(
             split_id = split.split_id,
             num_docs = split.num_docs
         );
-        let wait_span = info_span!(parent: &split_span, "acquire_leaf_split_search_permit");
+        let wait_span = info_span!(
+            parent: &split_span,
+            "acquire_leaf_split_search_permit",
+            blocked_on = tracing::field::Empty
+        );
+        // Records the block reason on `wait_span` when the wait ends — whether the permit
+        // is granted or the wait is cancelled on a search deadline (the important, long
+        // waits are exactly the ones that get cancelled before being granted).
+        let _block_reason_recorder = WaitBlockReasonRecorder::new(
+            wait_span.clone(),
+            search_permit_future.block_reason_handle(),
+        );
         let leaf_split_search_permit = search_permit_future.instrument(wait_span).await;
 
         // We run simplify search request again: as we push split into the merge collector,
