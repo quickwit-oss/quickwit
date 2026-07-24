@@ -90,6 +90,15 @@ pub fn set_current_span_parent_from_metadata(metadata: &MetadataMap) {
     let _ = Span::current().set_parent(parent_context);
 }
 
+/// Records an attribute on the currently-active span's OpenTelemetry span.
+///
+/// Unlike a `tracing` field (`#[instrument(fields(...))]` or `Span::record`), this does
+/// not propagate to log events, so it can carry verbose values (e.g. a query AST)
+/// without bloating logs. No-op when no OpenTelemetry layer is installed.
+pub fn record_current_span_attribute(key: &'static str, value: impl Into<opentelemetry::Value>) {
+    Span::current().set_attribute(key, value);
+}
+
 /// Tonic interceptor that injects the active span's W3C trace context into
 /// the outgoing gRPC metadata. Drop-in replacement for the legacy
 /// `quickwit_proto::SpanContextInterceptor`.

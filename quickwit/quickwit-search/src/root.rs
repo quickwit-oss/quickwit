@@ -1312,8 +1312,9 @@ pub async fn root_search(
     let num_docs: usize = split_metadatas.iter().map(|split| split.num_docs).sum();
     let num_splits = split_metadatas.len();
 
-    // It would have been nice to add those in the context of the trace span,
-    // but with our current logging setting, it makes logs too verbose.
+    // These would bloat the logs if added as tracing span fields (they propagate to
+    // every log event in the span), so they go on a one-shot `info!` for logs and, via
+    // `record_current_span_attribute`, on the OpenTelemetry span only for the trace.
     info!(
         query_ast = search_request.query_ast.as_str(),
         agg = search_request.aggregation_request(),
@@ -1323,6 +1324,24 @@ pub async fn root_search(
         num_splits = num_splits,
         "root_search"
     );
+    quickwit_common::tracing_utils::record_current_span_attribute(
+        "query_ast",
+        search_request.query_ast.clone(),
+    );
+    quickwit_common::tracing_utils::record_current_span_attribute("num_docs", num_docs as i64);
+    quickwit_common::tracing_utils::record_current_span_attribute("num_splits", num_splits as i64);
+    if let Some(start_timestamp) = search_request.start_timestamp {
+        quickwit_common::tracing_utils::record_current_span_attribute(
+            "start_timestamp",
+            start_timestamp,
+        );
+    }
+    if let Some(end_timestamp) = search_request.end_timestamp {
+        quickwit_common::tracing_utils::record_current_span_attribute(
+            "end_timestamp",
+            end_timestamp,
+        );
+    }
 
     if let Some(max_total_split_searches) = searcher_context.searcher_config.max_splits_per_search
         && max_total_split_searches < num_splits
