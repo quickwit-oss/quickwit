@@ -61,8 +61,11 @@ pub fn split_deletion_grace_period() -> Duration {
 /// being requested.
 pub const SCROLL_BATCH_LEN: usize = 1_000;
 
-/// Key prefix used in chitchat to broadcast the list of primary shards hosted by a leader.
-pub const INGESTER_PRIMARY_SHARDS_PREFIX: &str = "ingester.primary_shards:";
+/// Key prefix used in chitchat to broadcast the list of shards hosted by an ingester.
+///
+/// The concept of primary shard vs replica shard no longer exists, but the legacy key prefix is
+/// retained for backward compatibility.
+pub const INGESTER_SHARDS_PREFIX: &str = "ingester.primary_shards:";
 
 /// Key used in chitchat to broadcast the status of an ingester.
 pub const INGESTER_STATUS_KEY: &str = "ingester.status";
