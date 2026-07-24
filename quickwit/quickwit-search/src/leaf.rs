@@ -841,7 +841,10 @@ async fn leaf_search_single_split(
     }
 
     let split_num_docs = split.num_docs;
-    let span = info_span!("tantivy_search");
+    // Spans the CPU-pool queue wait: created here (right after warmup) and closed when the
+    // closure starts executing on a pool thread. `tantivy_search` is created inside the
+    // closure so it covers only the CPU execution, not this wait.
+    let cpu_wait_span = info_span!("waiting_for_cpu_pool");
 
     let split_clone = split.clone();
 
@@ -852,9 +855,12 @@ async fn leaf_search_single_split(
     let search_request_and_result: Option<(SearchRequest, LeafSearchResponse)> =
         crate::search_thread_pool()
             .run_cpu_intensive(move || {
+                // The CPU-pool queue wait ends as this closure starts executing.
+                drop(cpu_wait_span);
                 leaf_search_state_guard.set_state(SplitSearchState::Cpu);
                 let cpu_start = Instant::now();
                 let cpu_thread_pool_wait_microsecs = cpu_start.duration_since(warmup_end);
+                let span = info_span!("tantivy_search");
                 let _span_guard = span.enter();
                 // Our search execution has been scheduled, let's check if we can improve the
                 // request based on the results of the preceding searches
@@ -1545,7 +1551,7 @@ pub async fn multi_index_leaf_search(
         let searcher_context = searcher_context.clone();
         let search_request = search_request.clone();
 
-        leaf_request_futures.spawn({
+        leaf_request_futures.spawn(
             async move {
                 let storage = storage_resolver.resolve(&index_uri).await?;
                 single_doc_mapping_leaf_search(
@@ -1555,10 +1561,10 @@ pub async fn multi_index_leaf_search(
                     leaf_search_request_ref.split_offsets,
                     doc_mapper,
                 )
-                .in_current_span()
                 .await
             }
-        });
+            .instrument(Span::current()),
+        );
     }
 
     // Creates a collector which merges responses into one
@@ -1723,12 +1729,15 @@ async fn run_offloaded_search_tasks(
             }],
         };
         let invoker = lambda_invoker.clone();
-        lambda_tasks_joinset.spawn(async move {
-            (
-                batch_split_ids,
-                invoker.invoke_leaf_search(leaf_request).await,
-            )
-        });
+        lambda_tasks_joinset.spawn(
+            async move {
+                (
+                    batch_split_ids,
+                    invoker.invoke_leaf_search(leaf_request).await,
+                )
+            }
+            .in_current_span(),
+        );
     }
 
     while let Some(join_res) = lambda_tasks_joinset.join_next().await {
@@ -2021,9 +2030,15 @@ async fn run_local_search_tasks(
         search_permit_future,
     } in local_search_tasks
     {
-        let leaf_split_search_permit = search_permit_future
-            .instrument(info_span!("waiting_for_leaf_search_split_semaphore"))
-            .await;
+        // Per-split span covering both the permit wait and the search, so each split is a
+        // single subtree (wait + warmup + tantivy) rather than flat siblings.
+        let split_span = info_span!(
+            "leaf_search_single_split_wrapper",
+            split_id = split.split_id,
+            num_docs = split.num_docs
+        );
+        let wait_span = info_span!(parent: &split_span, "acquire_leaf_split_search_permit");
+        let leaf_split_search_permit = search_permit_future.instrument(wait_span).await;
 
         // We run simplify search request again: as we push split into the merge collector,
         // we may have discovered that we won't find any better candidates for top hits in this
@@ -2045,7 +2060,7 @@ async fn run_local_search_tasks(
                 split.clone(),
                 leaf_split_search_permit,
             )
-            .in_current_span(),
+            .instrument(split_span),
         );
         task_id_to_split_id_map.insert(handle.id(), split_id);
     }
@@ -2174,7 +2189,6 @@ struct LeafSearchContext {
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
 }
 
-#[instrument(skip_all, fields(split_id = split.split_id, num_docs = split.num_docs))]
 async fn leaf_search_single_split_wrapper(
     request: SearchRequest,
     ctx: Arc<LeafSearchContext>,
