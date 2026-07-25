@@ -36,6 +36,11 @@ runs:
         echo "QW_COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
         echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
       shell: bash
+    - name: Configure ARM64 Linux Rust flags
+      if: inputs.target == 'aarch64-unknown-linux-gnu'
+      run: |
+        echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS=-C target-cpu=neoverse-n1 -C link-arg=-lresolv --cfg tokio_unstable" >> "$GITHUB_ENV"
+      shell: bash
     - name: Build Quickwit
       run: cross build --release --features release-feature-vendored-set --target ${{ inputs.target }} --bin quickwit
       shell: bash
