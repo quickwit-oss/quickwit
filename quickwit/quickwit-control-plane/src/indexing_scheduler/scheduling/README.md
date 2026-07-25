@@ -10,6 +10,10 @@ We also want to observe some interesting properties such as:
 - (D) when we are working with the Ingest API source, we prefer to colocate indexers on
   the ingesters holding the data.
 
+By default, shard locality is a preference and CPU balancing can result in remote indexing. Setting
+`QW_FORCE_SHARD_LOCALITY=true` makes locality take precedence over CPU balancing. A shard is still
+indexed remotely when none of its ingesters is currently available as an indexer.
+
 # Problem abstraction
 
 To simplify the logic and make it easier to test it, we first abstract this in the following

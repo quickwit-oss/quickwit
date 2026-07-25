@@ -46,6 +46,7 @@ use crate::model::{ControlPlaneModel, ShardEntry, ShardLocations};
 use crate::{IndexerNodeInfo, IndexerPool};
 
 const DEFAULT_ENABLE_VARIABLE_SHARD_LOAD: bool = false;
+const DEFAULT_FORCE_SHARD_LOCALITY: bool = false;
 
 pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
     if cfg!(any(test, feature = "testsuite")) {
@@ -112,6 +113,7 @@ pub struct IndexingScheduler {
     cluster_id: String,
     self_node_id: NodeId,
     indexer_pool: IndexerPool,
+    force_shard_locality: bool,
     state: IndexingSchedulerState,
     pub(crate) next_rebuild_tracker: RebuildNotifier,
 }
@@ -198,6 +200,13 @@ fn get_default_load_per_shard() -> NonZeroU32 {
         false
     );
     NonZeroU32::new(default_load_per_shard).unwrap()
+}
+
+fn force_shard_locality() -> bool {
+    quickwit_common::get_bool_from_env_cached!(
+        "QW_FORCE_SHARD_LOCALITY",
+        DEFAULT_FORCE_SHARD_LOCALITY
+    )
 }
 
 fn get_sources_to_schedule(
@@ -296,6 +305,7 @@ impl IndexingScheduler {
             cluster_id,
             self_node_id,
             indexer_pool,
+            force_shard_locality: force_shard_locality(),
             state: IndexingSchedulerState::default(),
             next_rebuild_tracker: RebuildNotifier::default(),
         }
@@ -343,6 +353,7 @@ impl IndexingScheduler {
             &indexer_id_to_cpu_capacities,
             self.state.last_applied_physical_plan.as_ref(),
             &shard_locations,
+            self.force_shard_locality,
         );
         let shard_locality_metrics =
             get_shard_locality_metrics(&new_physical_plan, &shard_locations);
@@ -1076,8 +1087,13 @@ mod tests {
         indexer_max_loads.insert("indexer1".to_string(), mcpu(3_000));
         indexer_max_loads.insert("indexer2".to_string(), mcpu(3_000));
         let shard_locations = ShardLocations::default();
-        let physical_plan =
-            build_physical_indexing_plan(&sources[..], &indexer_max_loads, None, &shard_locations);
+        let physical_plan = build_physical_indexing_plan(
+            &sources[..],
+            &indexer_max_loads,
+            None,
+            &shard_locations,
+            false,
+        );
         assert_eq!(physical_plan.indexing_tasks_per_indexer().len(), 2);
         let indexing_tasks_1 = physical_plan.indexer("indexer1").unwrap();
         assert_eq!(indexing_tasks_1.len(), 2);
@@ -1153,7 +1169,13 @@ mod tests {
                 indexer_max_loads.insert(indexer_id, mcpu(4_000));
             }
             let shard_locations = ShardLocations::default();
-            let _physical_indexing_plan = build_physical_indexing_plan(&sources, &indexer_max_loads, None, &shard_locations);
+            let _physical_indexing_plan = build_physical_indexing_plan(
+                &sources,
+                &indexer_max_loads,
+                None,
+                &shard_locations,
+                false,
+            );
         }
     }
 
