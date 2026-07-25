@@ -33,11 +33,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Metastore format: new `maturity` field and compaction columns on splits; PostgreSQL metastore migrates automatically on first start.
 - Building from source now requires Rust 1.92 (#6432, #6545).
 
+### Prototype work (not included in release artifacts)
+
+The Parquet metrics and DataFusion work below is an early prototype. It is not built into the v0.9.0 binaries or Docker images and is not a supported 0.9.0 feature.
+
+- Add experimental DataFusion query layer for Parquet metrics with SQL/Substrait execution, Arrow IPC streaming, and distributed workers (#6276)
+- Extend the Parquet metrics pipeline with DDSketch, sorted-series and row-key metadata, zone-map pruning, partitioning, sketch split pagination, and Substrait execution metadata (#6248, #6257, #6290, #6292, #6295, #6340, #6347, #6348, #6349, #6363, #6364, #6368)
+
 ### Added
 - Add Ingest V2 — now the default (#5600, #5566, #5463, #5375, #5350, #5252, #5202, #6078, #6185, #6203, #6207, #6217, #6249)
 - Offload leaf-search work to AWS Lambda functions — searchers can farm out part of their workload to Lambda (#6157, #5c1e60f)
-- Add experimental DataFusion query layer for Parquet metrics with SQL/Substrait execution, Arrow IPC streaming, and distributed workers (#6276)
-- Extend the Parquet metrics pipeline with DDSketch, sorted-series and row-key metadata, zone-map pruning, partitioning, sketch split pagination, and Substrait execution metadata (#6248, #6257, #6290, #6292, #6295, #6340, #6347, #6348, #6349, #6363, #6364, #6368)
 - Add column-major and streaming Parquet merge primitives, merge scheduler wiring, and a rollout flag for routing regular merges through the streaming engine (#6335, #6362, #6367, #6377, #6384, #6386, #6406, #6407, #6408, #6409, #6423, #6424, #6425, #6426, #6428, #6441)
 - Add optional mTLS validation to the REST API and an optional dedicated health-check HTTP server for deployments that put the REST API behind mTLS (#6467, #6528)
 - Add SQS source (#5374, #5335, #5148)
