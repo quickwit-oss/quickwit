@@ -266,11 +266,37 @@ impl Ingester {
     /// or truncate its shards by other means (RPCs from indexers, gossip, etc.).
     #[instrument(name = "ingester.reset_shards", skip_all)]
     async fn reset_shards(&mut self) {
-        let Ok(_permit) = self.reset_shards_permits.try_acquire() else {
-            return;
-        };
+        // Wait before acquiring the permit so a reset task delayed until retirement cannot block
+        // the decommission reconciliation indefinitely.
         self.state.wait_for_ready().await;
 
+        let reset_shards_permits = Arc::clone(&self.reset_shards_permits);
+        let Ok(_permit) = reset_shards_permits.try_acquire_owned() else {
+            return;
+        };
+
+        let now = Instant::now();
+        self.reset_shards_inner().await;
+
+        // We still hold the permit while sleeping so we effectively rate limit the reset shards
+        // operation to once per [`MIN_RESET_SHARDS_INTERVAL`].
+        if let Some(sleep_for) = MIN_RESET_SHARDS_INTERVAL.checked_sub(now.elapsed()) {
+            sleep(sleep_for).await;
+        }
+    }
+
+    /// Reconciles local shards before decommissioning, waiting for an in-flight reset operation
+    /// instead of skipping reconciliation.
+    async fn reconcile_shards_for_decommission(&mut self) {
+        let reset_shards_permits = Arc::clone(&self.reset_shards_permits);
+        let Ok(_permit) = reset_shards_permits.acquire_owned().await else {
+            error!("failed to reconcile shards before decommission: semaphore closed");
+            return;
+        };
+        self.reset_shards_inner().await;
+    }
+
+    async fn reset_shards_inner(&mut self) {
         info!("resetting shards");
         let now = Instant::now();
 
@@ -359,11 +385,6 @@ impl Ingester {
                 .inc();
             }
         };
-        // We still hold the permit while sleeping so we effectively rate limit the reset shards
-        // operation to once per [`MIN_RESET_SHARDS_INTERVAL`].
-        if let Some(sleep_for) = MIN_RESET_SHARDS_INTERVAL.checked_sub(now.elapsed()) {
-            sleep(sleep_for).await;
-        }
     }
 
     async fn init_replication_stream(
@@ -1221,7 +1242,7 @@ impl IngesterService for Ingester {
 
         // Drain write requests by scheduling the decommissioning of the ingester after a delay
         // allowing the propagation of the `Retiring` status to other nodes.
-        let self_clone = self.clone();
+        let mut self_clone = self.clone();
         tokio::spawn(async move {
             const DECOMMISSION_DELAY: Duration = if cfg!(any(test, feature = "testsuite")) {
                 Duration::from_millis(100)
@@ -1234,6 +1255,8 @@ impl IngesterService for Ingester {
                 Duration::from_secs(10)
             };
             tokio::time::sleep(DECOMMISSION_DELAY).await;
+
+            self_clone.reconcile_shards_for_decommission().await;
 
             info!("decommissioning ingester");
             let mut state_guard = match self_clone.state.lock_partially("decommission").await {
@@ -3828,6 +3851,78 @@ mod tests {
         let state_guard = ingester.state.lock_fully("test").await.unwrap();
         let shard = state_guard.shards.get(&queue_id).unwrap();
         shard.assert_is_closed();
+    }
+
+    #[tokio::test]
+    async fn test_ingester_decommission_deletes_orphan_shards() {
+        let mut mock_control_plane = MockControlPlaneService::new();
+        mock_control_plane
+            .expect_advise_reset_shards()
+            .once()
+            .returning(|_| Ok(AdviseResetShardsResponse::default()));
+        mock_control_plane
+            .expect_advise_reset_shards()
+            .once()
+            .returning(|request| {
+                assert_eq!(request.ingester_id, "test-ingester");
+                assert_eq!(request.shard_ids.len(), 1);
+                assert_eq!(request.shard_ids[0].index_uid(), &("test-index", 0));
+                assert_eq!(request.shard_ids[0].source_id, "test-source");
+                assert_eq!(request.shard_ids[0].shard_ids, [ShardId::from(1)]);
+                Ok(AdviseResetShardsResponse {
+                    shards_to_delete: request.shard_ids,
+                    shards_to_truncate: Vec::new(),
+                })
+            });
+        let control_plane = ControlPlaneServiceClient::from_mock(mock_control_plane);
+        let (_ingester_ctx, ingester) = IngesterForTest::default()
+            .with_control_plane(control_plane)
+            .build()
+            .await;
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+        let doc_mapping_uid = DocMappingUid::random();
+        let doc_mapping_json = format!(
+            r#"{{
+                "doc_mapping_uid": "{doc_mapping_uid}"
+            }}"#
+        );
+        let shard = Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            shard_id: Some(ShardId::from(1)),
+            shard_state: ShardState::Closed as i32,
+            doc_mapping_uid: Some(doc_mapping_uid),
+            ..Default::default()
+        };
+        let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
+        let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
+        ingester
+            .init_primary_shard(
+                &mut state_guard.inner,
+                &mut state_guard.mrecordlog,
+                shard,
+                &doc_mapping_json,
+                Instant::now(),
+                true,
+            )
+            .await
+            .unwrap();
+        drop(state_guard);
+
+        ingester.decommission(DecommissionRequest {}).await.unwrap();
+        wait_for_ingester_status(
+            &ingester,
+            IngesterStatus::Decommissioned,
+            Duration::from_secs(1),
+        )
+        .await
+        .unwrap();
+
+        let state_guard = ingester.state.lock_fully("test").await.unwrap();
+        assert!(!state_guard.shards.contains_key(&queue_id));
+        assert!(!state_guard.mrecordlog.queue_exists(&queue_id));
     }
 
     #[tokio::test]
