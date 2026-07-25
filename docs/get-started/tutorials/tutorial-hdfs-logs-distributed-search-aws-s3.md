@@ -135,8 +135,10 @@ We can now create the index with the `create` subcommand.
 
 :::note
 
-This step can also be executed on your local machine. The `create` command creates the index locally and then uploads a 
-json file `metastore.json` to your bucket at `s3://path-to-your-bucket/hdfs-logs/metastore.json`.
+The `create` command sends the index configuration to the running Quickwit node. The node stores the file-backed
+metastore at `s3://path-to-your-bucket/hdfs-logs/metastore.json`.
+
+To run this command from your local machine, add `--endpoint http://<quickwit-host>:7280`.
 
 :::
 
@@ -154,9 +156,10 @@ gunzip -c hdfs-logs-multitenants.json.gz | ./quickwit index ingest --index hdfs-
 8GB of RAM is enough to index this dataset; an instance like `t4g.large` with 8GB and 2 vCPU indexed this dataset in less than 10 minutes 
 (provided that you have some CPU credits).
 
-This step can also be done on your local machine. 
-The `ingest` subcommand generates locally [splits](../../overview/architecture) of 10 million documents and will upload 
-them on your bucket. Concretely, each split is a bundle of index files and metadata files.
+The `ingest` subcommand streams documents to the running Quickwit node through the ingest API. The indexer creates
+[splits](../../overview/architecture), uploads them to your bucket, and merges them according to the index merge policy.
+
+To run this command from your local machine, add `--endpoint http://<quickwit-host>:7280`.
 
 :::
 
@@ -268,7 +271,8 @@ Check out the logs of all instances and you will see that all nodes are working.
 
 Now that you have a search cluster, ideally, you will want to load balance external requests. 
 This can quickly be done by adding an AWS load balancer to listen to incoming HTTP or HTTPS traffic and forward it to a target group.
-You can now play with your cluster, kill processes randomly, add/remove new instances, and keep calm.
+You can now add or remove search-only instances and continue querying the cluster. This tutorial runs the metastore and
+control plane only on `searcher-1`; keep that node running while testing searcher failures.
 
 ## Clean
 
