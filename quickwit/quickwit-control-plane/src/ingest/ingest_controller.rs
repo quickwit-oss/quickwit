@@ -24,7 +24,7 @@ use fnv::FnvHashSet;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use itertools::{Itertools as _, MinMaxResult};
-use quickwit_actors::Mailbox;
+use quickwit_actors::{Mailbox, WeakMailbox};
 use quickwit_common::Progress;
 use quickwit_common::pretty::PrettySample;
 use quickwit_ingest::{IngesterPool, LeaderId, LocalShardsUpdate};
@@ -39,7 +39,7 @@ use quickwit_proto::ingest::ingester::{
     RetainShardsRequest,
 };
 use quickwit_proto::ingest::{
-    Shard, ShardIdPosition, ShardIdPositions, ShardIds, ShardPKey, ShardState,
+    IngestV2Result, Shard, ShardIdPosition, ShardIdPositions, ShardIds, ShardPKey, ShardState,
 };
 use quickwit_proto::metastore::{
     MetastoreResult, MetastoreService, MetastoreServiceClient, OpenShardSubrequest,
@@ -89,6 +89,55 @@ fn fire_and_forget(
         if let Err(_timeout_elapsed) = tokio::time::timeout(FIRE_AND_FORGET_TIMEOUT, fut).await {
             error!(%operation, "timeout elapsed");
         }
+    });
+}
+
+#[derive(Debug)]
+pub(crate) struct SyncIngester {
+    pub ingester_id: NodeId,
+}
+
+async fn request_ingester_sync(
+    control_plane_mailbox: &WeakMailbox<ControlPlane>,
+    ingester_id: &NodeId,
+) {
+    let Some(control_plane_mailbox) = control_plane_mailbox.upgrade() else {
+        return;
+    };
+    let message = SyncIngester {
+        ingester_id: ingester_id.clone(),
+    };
+    if let Err(error) = control_plane_mailbox.send_message(message).await {
+        warn!(%error, %ingester_id, "failed to request ingester sync");
+    }
+}
+
+fn reconcile_ingester_after_init_timeout(
+    control_plane_mailbox_opt: Option<WeakMailbox<ControlPlane>>,
+    ingester_id: NodeId,
+    init_shards_future: impl Future<Output = IngestV2Result<InitShardsResponse>> + Send + 'static,
+) {
+    let Some(control_plane_mailbox) = control_plane_mailbox_opt else {
+        error!(%ingester_id, "failed to reconcile ingester after init shards timeout: control plane mailbox is unavailable");
+        return;
+    };
+    tokio::spawn(async move {
+        // The first sync cleans up shards if the ingester completed the request but the response
+        // was delayed. The second sync is a barrier for a request that was still running when the
+        // timeout elapsed.
+        request_ingester_sync(&control_plane_mailbox, &ingester_id).await;
+        // Do not impose another timeout here: dropping this future would make a later server-side
+        // success ambiguous again.
+        let init_shards_result = init_shards_future.await;
+        match init_shards_result {
+            Ok(_) => {
+                warn!(%ingester_id, "init shards request completed after timeout");
+            }
+            Err(error) => {
+                warn!(%error, %ingester_id, "init shards request failed after timeout");
+            }
+        }
+        request_ingester_sync(&control_plane_mailbox, &ingester_id).await;
     });
 }
 
@@ -209,6 +258,7 @@ pub struct IngestController {
     // This lock ensures that only one rebalance operation is performed at a time.
     rebalance_lock: Arc<Mutex<()>>,
     scaling_arbiter: ScalingArbiter,
+    control_plane_mailbox_opt: Option<WeakMailbox<ControlPlane>>,
 }
 
 impl fmt::Debug for IngestController {
@@ -313,7 +363,15 @@ impl IngestController {
                 max_shard_ingestion_throughput_mib_per_sec,
                 shard_scale_up_factor,
             ),
+            control_plane_mailbox_opt: None,
         }
+    }
+
+    pub(crate) fn set_control_plane_mailbox(
+        &mut self,
+        control_plane_mailbox: WeakMailbox<ControlPlane>,
+    ) {
+        self.control_plane_mailbox_opt = Some(control_plane_mailbox);
     }
 
     /// Sends a retain shard request to the given list of ingesters.
@@ -339,7 +397,11 @@ impl IngestController {
     /// Syncs the ingester in a fire and forget manner.
     ///
     /// The returned oneshot is just here for unit test to wait for the operation to terminate.
-    fn sync_with_ingester(&self, ingester_id: &NodeId, model: &ControlPlaneModel) -> WaitHandle {
+    pub(crate) fn sync_with_ingester(
+        &self,
+        ingester_id: &NodeId,
+        model: &ControlPlaneModel,
+    ) -> WaitHandle {
         info!(ingester = %ingester_id, "sync_with_ingester");
         let (wait_drop_guard, wait_handle) = WaitHandle::new();
         let Some(ingester) = self.ingester_pool.get(ingester_id) else {
@@ -664,12 +726,22 @@ impl IngestController {
                 continue;
             };
             let init_shards_request = InitShardsRequest { subrequests };
+            let control_plane_mailbox_opt = self.control_plane_mailbox_opt.clone();
             let init_shards_future = async move {
-                let init_shards_result = tokio::time::timeout(
-                    INIT_SHARDS_REQUEST_TIMEOUT,
-                    leader.client.init_shards(init_shards_request),
-                )
-                .await;
+                let init_shards_rpc_future =
+                    async move { leader.client.init_shards(init_shards_request).await };
+                let mut init_shards_rpc_future = Box::pin(init_shards_rpc_future);
+                // Borrow the RPC future so the timeout does not cancel it.
+                let init_shards_result =
+                    tokio::time::timeout(INIT_SHARDS_REQUEST_TIMEOUT, &mut init_shards_rpc_future)
+                        .await;
+                if init_shards_result.is_err() {
+                    reconcile_ingester_after_init_timeout(
+                        control_plane_mailbox_opt,
+                        NodeId::from_str(&leader_id),
+                        init_shards_rpc_future,
+                    );
+                }
                 (leader_id.clone(), init_shards_result, init_shard_failures)
             };
             init_shards_futures.push(init_shards_future);
@@ -1985,13 +2057,16 @@ mod tests {
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
 
-        let controller = IngestController::new(
+        let universe = Universe::with_accelerated_time();
+        let (control_plane_mailbox, control_plane_inbox) = universe.create_test_mailbox();
+        let mut controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
             replication_factor,
             TEST_SHARD_THROUGHPUT_LIMIT_MIB,
             1.001,
         );
+        controller.set_control_plane_mailbox(control_plane_mailbox.downgrade());
 
         let ingester_id_0 = NodeId::from_str("test-ingester-0");
         let mut mock_ingester_0 = MockIngesterService::new();
@@ -2070,7 +2145,10 @@ mod tests {
 
         let ingester_id_2 = NodeId::from_str("test-ingester-2");
         let mut mock_ingester_2 = MockIngesterService::new();
-        mock_ingester_2.expect_init_shards().never();
+        mock_ingester_2
+            .expect_init_shards()
+            .once()
+            .returning(|_| Ok(InitShardsResponse::default()));
 
         let client_2 = IngesterServiceClient::tower()
             .stack_init_shards_layer(DelayLayer::new(INIT_SHARDS_REQUEST_TIMEOUT * 2))
@@ -2175,6 +2253,24 @@ mod tests {
         assert_eq!(failures[1].subrequest_id, 2);
         assert_eq!(failures[2].subrequest_id, 3);
         assert_eq!(failures[3].subrequest_id, 4);
+
+        let first_sync: SyncIngester = tokio::time::timeout(
+            INIT_SHARDS_REQUEST_TIMEOUT,
+            control_plane_inbox.recv_typed_message(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(first_sync.ingester_id, "test-ingester-2");
+
+        let second_sync: SyncIngester = tokio::time::timeout(
+            INIT_SHARDS_REQUEST_TIMEOUT * 3,
+            control_plane_inbox.recv_typed_message(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(second_sync.ingester_id, "test-ingester-2");
     }
 
     #[tokio::test]

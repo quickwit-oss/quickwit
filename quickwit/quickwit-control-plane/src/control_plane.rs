@@ -59,7 +59,9 @@ use crate::cooldown_map::{CooldownMap, CooldownStatus};
 use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
 use crate::ingest::IngestController;
-use crate::ingest::ingest_controller::{IngestControllerStats, RebalanceShardsCallback};
+use crate::ingest::ingest_controller::{
+    IngestControllerStats, RebalanceShardsCallback, SyncIngester,
+};
 use crate::metrics::{METASTORE_ERROR_ABORTED, METASTORE_ERROR_MAYBE_EXECUTED, RESTART_TOTAL};
 use crate::model::ControlPlaneModel;
 
@@ -185,6 +187,9 @@ impl Actor for ControlPlane {
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         RESTART_TOTAL.inc();
+
+        self.ingest_controller
+            .set_control_plane_mailbox(ctx.mailbox().downgrade());
 
         self.model
             .load_from_metastore(&mut self.metastore, ctx.progress())
@@ -935,6 +940,23 @@ impl Handler<AdviseResetShardsRequest> for ControlPlane {
             .ingest_controller
             .advise_reset_shards(request, &self.model);
         Ok(Ok(response))
+    }
+}
+
+#[async_trait]
+impl Handler<SyncIngester> for ControlPlane {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        message: SyncIngester,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let wait_handle = self
+            .ingest_controller
+            .sync_with_ingester(&message.ingester_id, &self.model);
+        wait_handle.wait().await;
+        Ok(())
     }
 }
 
