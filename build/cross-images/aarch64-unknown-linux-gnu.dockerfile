@@ -27,7 +27,16 @@ RUN dpkg --add-architecture arm64 && \
 # cmake-rs passes vendored dependency prefixes in the CMAKE_PREFIX_PATH
 # environment variable. Materialize that colon-separated value before the
 # cross-rs toolchain constructs its target-only search roots.
-RUN sed -i '/set(CMAKE_FIND_ROOT_PATH /i\    string(REPLACE ":" ";" CMAKE_PREFIX_PATH "$ENV{CMAKE_PREFIX_PATH}")' /opt/toolchain.cmake
+#
+# The toolchain also selects the unversioned GCC binaries explicitly, which
+# overrides the target-specific CC/CXX variables below. Rewrite only the
+# compiler entries: unlike GCC, the target binutils are not version-suffixed.
+RUN sed -i \
+    -e '/set(CMAKE_FIND_ROOT_PATH /i\    string(REPLACE ":" ";" CMAKE_PREFIX_PATH "$ENV{CMAKE_PREFIX_PATH}")' \
+    -e '/set(CMAKE_C_COMPILER /c\set(CMAKE_C_COMPILER "${prefix}gcc-10")' \
+    -e '/set(CMAKE_ASM_COMPILER /c\set(CMAKE_ASM_COMPILER "${prefix}gcc-10")' \
+    -e '/set(CMAKE_CXX_COMPILER /c\set(CMAKE_CXX_COMPILER "${prefix}g++-10")' \
+    /opt/toolchain.cmake
 
 # GCC 9.4 is affected by https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95189.
 # aws-lc cannot execute its compiler probe while cross-compiling, so select the
