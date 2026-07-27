@@ -34,7 +34,7 @@ use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 use quickwit_proto::types::ShardId;
 use quickwit_storage::{Storage, StorageResolver};
 use tokio::sync::Semaphore;
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 use super::{DocProcessor, IndexSerializer, Indexer, MergePlanner, Packager};
 use crate::SplitsUpdateMailbox;
@@ -503,10 +503,22 @@ impl Handler<AssignShards> for IndexingPipeline {
                 shard_ids=?assign_shards_message.0.shard_ids,
                 "assigning shards to indexing pipeline"
             );
-            handles
+            // The source may have died since the last supervision tick, in which case its
+            // mailbox is already closed. `self.shard_ids` was
+            // updated above, the supervise loop will notice the dead source within
+            // `SUPERVISE_INTERVAL` and respawn the pipeline, and the new generation will be
+            // assigned those shards.
+            if let Err(error) = handles
                 .source_mailbox
                 .send_message(assign_shards_message)
-                .await?;
+                .await
+            {
+                warn!(
+                    %error,
+                    "source mailbox closed while assigning shards, shards will be reassigned on \
+                     respawn"
+                );
+            }
         }
         // We perform observe to make sure the set of shard ids is up to date.
         self.perform_observe(ctx);
@@ -550,8 +562,9 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use quickwit_actors::{Command, Universe};
+    use quickwit_actors::{ActorState, Command, Universe};
     use quickwit_common::ServiceStream;
+    use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams};
     use quickwit_doc_mapper::{DocMapper, default_doc_mapper_for_test};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
@@ -920,6 +933,113 @@ mod tests {
             }
         }
         panic!("Pipeline was apparently not restarted.");
+    }
+
+    /// Assigning shards to a pipeline whose source has just died must not kill the pipeline
+    /// actor itself. The source mailbox is closed as soon as the source actor exits, but the
+    /// pipeline only clears its handles on its next supervision tick, so there is a window
+    /// during which `AssignShards` is forwarded to a closed mailbox.
+    #[tokio::test]
+    async fn test_assign_shards_to_dead_source_does_not_fail_pipeline() {
+        let node_id = NodeId::from_str("test-node");
+        let pipeline_id = IndexingPipelineId {
+            node_id,
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
+            source_id: "test-source".to_string(),
+            pipeline_uid: PipelineUid::for_test(0u128),
+        };
+        let source_config = SourceConfig {
+            source_id: "test-source".to_string(),
+            num_pipelines: NonZeroUsize::MIN,
+            enabled: true,
+            source_params: SourceParams::void(),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
+        let source_config_clone = source_config.clone();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_index_metadata().returning(move |_| {
+            let mut index_metadata =
+                IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
+            index_metadata
+                .add_source(source_config_clone.clone())
+                .unwrap();
+            Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
+        });
+        let metastore = MetastoreServiceClient::from_mock(mock_metastore);
+
+        let universe = Universe::new();
+        let storage = Arc::new(RamStorage::default());
+        let indexing_pipeline_params = IndexingPipelineParams {
+            pipeline_id,
+            doc_mapper: Arc::new(default_doc_mapper_for_test()),
+            source_config,
+            source_storage_resolver: StorageResolver::for_test(),
+            indexing_directory: TempDirectory::for_test(),
+            indexing_settings: IndexingSettings::for_test(),
+            ingester_pool: IngesterPool::default(),
+            metastore,
+            queues_dir_path: PathBuf::from("./queues"),
+            storage: storage.clone(),
+            split_store: IndexingSplitStore::create_without_local_store_for_test(storage),
+            merge_policy: default_merge_policy(),
+            retention_policy: None,
+            max_concurrent_split_uploads_index: 4,
+            max_concurrent_split_uploads_merge: 5,
+            cooperative_indexing_permits: None,
+            merge_planner_mailbox_opt: None,
+            event_broker: Default::default(),
+            params_fingerprint: 42u64,
+        };
+        let indexing_pipeline = IndexingPipeline::new(indexing_pipeline_params);
+        let (pipeline_mailbox, pipeline_handle) = universe.spawn_builder().spawn(indexing_pipeline);
+        let observation = pipeline_handle.process_pending_and_observe().await;
+        assert_eq!(observation.generation, 1);
+
+        // Pause the pipeline so that its supervise loop, which is delivered on the low priority
+        // channel, cannot run and clear `handles_opt` while we set the scenario up. High
+        // priority messages are still processed while paused, which is how we get the
+        // `AssignShards` in without racing the supervision tick.
+        pipeline_handle.pause();
+
+        // Kill the source and wait for its inbox to be dropped: the mailbox the pipeline holds
+        // is then closed, while the pipeline still believes the source is alive.
+        let source_mailbox = universe
+            .get::<SourceActor>()
+            .into_iter()
+            .next()
+            .expect("source actor should be running");
+        let _ = source_mailbox.ask(Command::Quit).await;
+        wait_until_predicate(
+            || async { source_mailbox.is_disconnected() },
+            Duration::from_secs(3),
+            Duration::from_millis(30),
+        )
+        .await
+        .expect("source mailbox was not dropped within 3s");
+        // Forwarding this assignment to the dead source used to exit the pipeline with
+        // `ActorExitStatus::DownstreamClosed`, in which case the reply is never sent.
+        let reply_rx = pipeline_mailbox
+            .send_message_with_high_priority(AssignShards(Assignment {
+                shard_ids: BTreeSet::from_iter([ShardId::from(1u64)]),
+            }))
+            .expect("pipeline mailbox should be open");
+        reply_rx
+            .await
+            .expect("pipeline should have handled the assignment and survived");
+
+        assert_ne!(pipeline_handle.state(), ActorState::Failure);
+
+        // The shard ids are recorded regardless, so the next generation picks them up.
+        pipeline_handle.resume();
+        let observation = pipeline_handle.process_pending_and_observe().await;
+        assert_eq!(
+            observation.shard_ids,
+            BTreeSet::from_iter([ShardId::from(1u64)])
+        );
+
+        universe.quit().await;
     }
 
     async fn indexing_pipeline_all_failures_handling(test_file: &str) -> anyhow::Result<()> {
