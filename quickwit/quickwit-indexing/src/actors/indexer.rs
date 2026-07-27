@@ -695,7 +695,7 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::Universe;
-    use quickwit_config::{FingerprintConfig, FingerprintField, FingerprintFieldKind};
+    use quickwit_config::GroupingConfig;
     use quickwit_doc_mapper::{DocMapper, default_doc_mapper_for_test};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_proto::metastore::{
@@ -1219,13 +1219,6 @@ mod tests {
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let body_field = doc_mapper.schema().get_field("body").unwrap();
-        let fingerprint_config = FingerprintConfig {
-            fields: vec![FingerprintField {
-                path: "body".to_string(),
-                kind: FingerprintFieldKind::Raw,
-            }],
-            ..Default::default()
-        };
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore.expect_publish_splits().never();
@@ -1241,36 +1234,41 @@ mod tests {
             IndexingSettings::for_test(),
             None,
             index_serializer_mailbox,
-            Some(Fingerprinter::new(&fingerprint_config)),
+            Some(Fingerprinter::new(
+                &serde_json::from_value::<GroupingConfig>(serde_json::json!({
+                    "fields": [{
+                        "path": "$",
+                        "kind": "structure"
+                    }],
+                    "grouping": {
+                        "fields": [{
+                            "path": "body",
+                            "kind": "raw"
+                        }]
+                    }
+                }))
+                .unwrap(),
+            )),
         );
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         let docs = vec![
             ProcessedDoc {
                 doc: doc!(body_field=>"first"),
-                fingerprint_opt: Some(Fingerprint {
-                    schema: 1,
-                    grouping: 1,
-                }),
+                fingerprint_opt: Some(Fingerprint::for_test(1, 1)),
                 timestamp_opt: None,
                 partition: 0,
                 num_bytes: 5,
             },
             ProcessedDoc {
                 doc: doc!(body_field=>"second"),
-                fingerprint_opt: Some(Fingerprint {
-                    schema: 1,
-                    grouping: 2,
-                }),
+                fingerprint_opt: Some(Fingerprint::for_test(1, 2)),
                 timestamp_opt: None,
                 partition: 0,
                 num_bytes: 6,
             },
             ProcessedDoc {
                 doc: doc!(body_field=>"third"),
-                fingerprint_opt: Some(Fingerprint {
-                    schema: 1,
-                    grouping: 1,
-                }),
+                fingerprint_opt: Some(Fingerprint::for_test(1, 1)),
                 timestamp_opt: None,
                 partition: 0,
                 num_bytes: 5,

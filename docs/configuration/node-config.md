@@ -39,28 +39,27 @@ A commented example is available here: [quickwit.yaml](https://github.com/quickw
 
 This section configures document sorting, which groups similar documents during indexing. It is optional and is disabled by default. Defining a `docs_sorting` policy enables document sorting unless `QW_ENABLE_DOCS_SORTING=false` is set. Setting `QW_ENABLE_DOCS_SORTING=true` does not enable document sorting by itself: a `docs_sorting` policy must still be present in the node configuration.
 
-The `docs_sorting.fingerprint` section defines how each document fingerprint is computed.
+The `docs_sorting.grouping` section defines how each document fingerprint is computed.
 
-- `docs_sorting.fingerprint.fields` lists the document fields that participate in fingerprinting. Each entry must have a `path` and a `kind`. Paths must be non-empty, must not contain leading or trailing whitespace, and must not contain empty path components such as `message..template`. A path can appear only once in the list.
-- `docs_sorting.fingerprint.fields[].path` is the field path read from the document.
-- `docs_sorting.fingerprint.fields[].kind` controls how the field contributes to the fingerprint. `tokenized` hashes token spans from a string field, `raw` hashes a string field's exact value, and `ignored` explicitly excludes the field from fingerprinting. Missing fields and values that are not strings do not contribute to the grouping fingerprint.
-- `docs_sorting.fingerprint.max_grouping_tokens` limits the number of token spans hashed for each `tokenized` field. It must be greater than zero and defaults to `50`.
+- `docs_sorting.grouping.fields` currently accepts exactly one root field: `path: "$"` and `kind: structure`. This field hashes the document structure. Its optional `exclude` list removes paths from the structure hash.
+- `docs_sorting.grouping.grouping.fields` lists the document fields that participate in grouping. Each entry must have a `path` and a `kind`. Paths must be non-empty, must not contain leading or trailing whitespace, and must not contain empty path components such as `message..template`. A path can appear only once in this list.
+- `docs_sorting.grouping.grouping.fields[].kind` controls how the field contributes to the grouping fingerprint. `tokenized` hashes the token types of the first 50 tokens from a string field, and `raw` hashes a string field's exact value. Missing fields and values that are not strings do not contribute to the grouping fingerprint.
 
 Example:
 
 ```yaml
 docs_sorting:
-  fingerprint:
-    max_grouping_tokens: 50
+  grouping:
     fields:
-      - path: message
-        kind: tokenized
-      - path: service
-        kind: raw
-      - path: tag
-        kind: ignored
-      - path: custom
-        kind: ignored
+      - path: "$"
+        kind: structure
+        exclude: [tags]
+    grouping:
+      fields:
+        - path: status
+          kind: raw
+        - path: message
+          kind: tokenized
 ```
 
 ## REST configuration

@@ -22,13 +22,12 @@
 //! ```text
 //! JSON document
 //!     |
-//!     +--> schema paths, excluding ignored paths
+//!     +--> schema paths, excluding paths configured by `structure.exclude`
 //!     |
-//!     +--> built-in grouping fields
+//!     +--> configured grouping fields
 //!              |
 //!              +--> Tokenized: hash token types, not literal values
 //!              +--> Raw:       hash the exact string value
-//!              +--> Ignored:   remove the path from the schema hash
 //!     |
 //!     v
 //! Fingerprint
@@ -36,7 +35,7 @@
 //!
 //! Tokenized fields use the sequence of token types as a lightweight message template. This keeps
 //! the stable structure of a value while ignoring volatile literals such as IDs, ports, UUIDs, or
-//! IP addresses.
+//! IP addresses. Only the first 50 tokens contribute to the fingerprint.
 //!
 //! Examples:
 //! ```text
@@ -61,7 +60,7 @@ use std::hash::Hasher;
 use std::sync::Arc;
 
 use fnv::FnvHasher;
-use quickwit_config::{FingerprintConfig, FingerprintFieldKind};
+use quickwit_config::{GroupingConfig, GroupingField};
 use serde_json::Value as JsonValue;
 
 use super::tokenize;
@@ -69,47 +68,81 @@ use super::tokenize;
 const PATH_SEPARATOR: u8 = 0xFC;
 const FIELD_BOUNDARY: u8 = 0xFD;
 const TOKENIZED_TOKEN_SEPARATOR: u8 = 0xFE;
+const MAX_GROUPING_TOKENS: usize = 50;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Fingerprint {
-    pub schema: u64,
-    pub grouping: u64,
+    pub(super) schema: u64,
+    pub(super) grouping: u64,
 }
 
-type JsonPath = Vec<String>;
+#[cfg(test)]
+impl Fingerprint {
+    pub(crate) fn for_test(schema: u64, grouping: u64) -> Self {
+        Self { schema, grouping }
+    }
+}
+
+type JsonPath = Box<[String]>;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum FingerprintFieldKind {
+    Tokenized,
+    Raw,
+}
 
 #[derive(Clone)]
 pub struct Fingerprinter {
-    config: Arc<FingerprintConfig>,
+    config: Arc<GroupingConfig>,
     grouping_fields: Arc<[(JsonPath, FingerprintFieldKind)]>,
     ignored_paths: Arc<[JsonPath]>,
 }
 
 impl Fingerprinter {
-    pub fn new(config: &FingerprintConfig) -> Self {
+    pub fn new(config: &GroupingConfig) -> Self {
         let mut grouping_fields = Vec::new();
         let mut ignored_paths = Vec::new();
-        for field in &config.fields {
-            let path: JsonPath = field.path.split('.').map(ToString::to_string).collect();
-            match &field.kind {
-                FingerprintFieldKind::Tokenized | FingerprintFieldKind::Raw => {
-                    grouping_fields.push((path, field.kind));
-                }
-                FingerprintFieldKind::Ignored => {
-                    ignored_paths.push(path);
+
+        // Collect the paths from the nested grouping config.
+        fn collect_paths(
+            config: &GroupingConfig,
+            grouping_fields: &mut Vec<(JsonPath, FingerprintFieldKind)>,
+            ignored_paths: &mut Vec<JsonPath>,
+        ) {
+            fn parse_path(path: &str) -> JsonPath {
+                path.split('.').map(ToString::to_string).collect()
+            }
+
+            for field in &config.fields {
+                match field {
+                    GroupingField::Structure { exclude, .. } => {
+                        ignored_paths.extend(exclude.iter().map(|path| parse_path(path)));
+                    }
+                    GroupingField::Raw { path } => {
+                        grouping_fields.push((parse_path(path), FingerprintFieldKind::Raw));
+                    }
+                    GroupingField::Tokenized { path } => {
+                        grouping_fields.push((parse_path(path), FingerprintFieldKind::Tokenized));
+                    }
                 }
             }
+            if let Some(child_grouping) = config.grouping.as_deref() {
+                collect_paths(child_grouping, grouping_fields, ignored_paths);
+            }
         }
+
+        collect_paths(config, &mut grouping_fields, &mut ignored_paths);
+        // Sort the paths to ensure a stable ordering of the fingerprint.
         grouping_fields.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
 
-        Fingerprinter {
+        Self {
             config: Arc::new(config.clone()),
             grouping_fields: Arc::from(grouping_fields.into_boxed_slice()),
             ignored_paths: Arc::from(ignored_paths.into_boxed_slice()),
         }
     }
 
-    pub(crate) fn config(&self) -> &FingerprintConfig {
+    pub fn config(&self) -> &GroupingConfig {
         &self.config
     }
 
@@ -172,7 +205,7 @@ impl Fingerprinter {
             };
             match kind {
                 FingerprintFieldKind::Tokenized => {
-                    for span in tokenize(value).take(self.config.max_grouping_tokens) {
+                    for span in tokenize(value).take(MAX_GROUPING_TOKENS) {
                         hasher.write_u8(span.token_type as u8);
                         hasher.write_u8(TOKENIZED_TOKEN_SEPARATOR);
                     }
@@ -180,7 +213,6 @@ impl Fingerprinter {
                 FingerprintFieldKind::Raw => {
                     hasher.write(value.as_bytes());
                 }
-                FingerprintFieldKind::Ignored => unreachable!("ignored fields are not grouped"),
             }
             hasher.write_u8(FIELD_BOUNDARY);
         }
@@ -209,7 +241,7 @@ fn get_leaf_string<'a>(json_value: &'a JsonValue, path: &[String]) -> Option<&'a
 
 #[cfg(test)]
 mod tests {
-    use quickwit_config::{FingerprintConfig, FingerprintField, FingerprintFieldKind};
+    use quickwit_config::{DocsSortingConfig, GroupingConfig};
     use serde_json::Value as JsonValue;
 
     use super::Fingerprinter;
@@ -218,37 +250,44 @@ mod tests {
         serde_json::from_str(s).unwrap()
     }
 
-    fn test_config() -> FingerprintConfig {
-        FingerprintConfig {
-            fields: vec![
-                FingerprintField {
-                    path: "message".to_string(),
-                    kind: FingerprintFieldKind::Tokenized,
-                },
-                FingerprintField {
-                    path: "service".to_string(),
-                    kind: FingerprintFieldKind::Raw,
-                },
-                FingerprintField {
-                    path: "tag".to_string(),
-                    kind: FingerprintFieldKind::Ignored,
-                },
-                FingerprintField {
-                    path: "custom".to_string(),
-                    kind: FingerprintFieldKind::Ignored,
-                },
-            ],
-            ..Default::default()
-        }
+    fn test_docs_sorting_config() -> DocsSortingConfig {
+        docs_sorting_config(serde_json::json!({
+            "fields": [{
+                "path": "$",
+                "kind": "structure",
+                "exclude": ["tag", "custom"]
+            }],
+            "grouping": {
+                "fields": [
+                    {
+                        "path": "message",
+                        "kind": "tokenized"
+                    },
+                    {
+                        "path": "service",
+                        "kind": "raw"
+                    }
+                ]
+            }
+        }))
     }
 
     fn test_fingerprinter() -> Fingerprinter {
-        Fingerprinter::new(&test_config())
+        let docs_sorting_config = test_docs_sorting_config();
+        Fingerprinter::new(&docs_sorting_config.grouping)
+    }
+
+    fn docs_sorting_config(json_value: JsonValue) -> DocsSortingConfig {
+        DocsSortingConfig {
+            grouping: serde_json::from_value::<GroupingConfig>(json_value).unwrap(),
+        }
     }
 
     #[test]
     fn configured_fingerprinter_returns_config() {
-        assert_eq!(test_fingerprinter().config(), &test_config());
+        let docs_sorting_config = test_docs_sorting_config();
+        let fingerprinter = test_fingerprinter();
+        assert_eq!(fingerprinter.config(), &docs_sorting_config.grouping);
     }
 
     #[test]
@@ -284,18 +323,23 @@ mod tests {
     }
 
     #[test]
-    fn tokenized_field_respects_max_grouping_tokens() {
-        let config: FingerprintConfig = serde_json::from_value(serde_json::json!({
+    fn tokenized_field_respects_hardcoded_grouping_token_limit() {
+        let docs_sorting_config = docs_sorting_config(serde_json::json!({
             "fields": [{
-                "path": "message",
-                "kind": "tokenized"
+                "path": "$",
+                "kind": "structure"
             }],
-            "max_grouping_tokens": 1
-        }))
-        .unwrap();
-        let fingerprinter = Fingerprinter::new(&config);
-        let doc1 = parse(r#"{"message":"alpha 123"}"#);
-        let doc2 = parse(r#"{"message":"alpha beta"}"#);
+            "grouping": {
+                "fields": [{
+                    "path": "message",
+                    "kind": "tokenized"
+                }]
+            }
+        }));
+        let fingerprinter = Fingerprinter::new(&docs_sorting_config.grouping);
+        let prefix = "alpha ".repeat(25);
+        let doc1 = parse(&format!(r#"{{"message":"{prefix}123"}}"#));
+        let doc2 = parse(&format!(r#"{{"message":"{prefix}beta"}}"#));
         assert_eq!(
             fingerprinter.fingerprint(&doc1).grouping,
             fingerprinter.fingerprint(&doc2).grouping
@@ -339,14 +383,19 @@ mod tests {
 
     #[test]
     fn configured_raw_field_changes_grouping_fingerprint_only() {
-        let config = FingerprintConfig {
-            fields: vec![FingerprintField {
-                path: "host".to_string(),
-                kind: FingerprintFieldKind::Raw,
+        let docs_sorting_config = docs_sorting_config(serde_json::json!({
+            "fields": [{
+                "path": "$",
+                "kind": "structure"
             }],
-            ..Default::default()
-        };
-        let fingerprinter = Fingerprinter::new(&config);
+            "grouping": {
+                "fields": [{
+                    "path": "host",
+                    "kind": "raw"
+                }]
+            }
+        }));
+        let fingerprinter = Fingerprinter::new(&docs_sorting_config.grouping);
         let doc1 = parse(r#"{"message":"same","host":"web-1"}"#);
         let doc2 = parse(r#"{"message":"same","host":"web-2"}"#);
         let doc1_fingerprint = fingerprinter.fingerprint(&doc1);
@@ -357,14 +406,19 @@ mod tests {
 
     #[test]
     fn non_string_grouping_values_are_ignored() {
-        let config = FingerprintConfig {
-            fields: vec![FingerprintField {
-                path: "status".to_string(),
-                kind: FingerprintFieldKind::Raw,
+        let docs_sorting_config = docs_sorting_config(serde_json::json!({
+            "fields": [{
+                "path": "$",
+                "kind": "structure"
             }],
-            ..Default::default()
-        };
-        let fingerprinter = Fingerprinter::new(&config);
+            "grouping": {
+                "fields": [{
+                    "path": "status",
+                    "kind": "raw"
+                }]
+            }
+        }));
+        let fingerprinter = Fingerprinter::new(&docs_sorting_config.grouping);
         let doc1 = parse(r#"{"status":200}"#);
         let doc2 = parse(r#"{"status":500}"#);
         assert_eq!(

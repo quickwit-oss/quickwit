@@ -35,8 +35,10 @@ Sorting is applied exactly once per fresh split, when that split is finalized fr
 The fingerprint is computed from:
 
 1. The document shape, represented by the sorted set of leaf JSON paths.
-2. A YAML-defined grouping policy that selects tokenized, raw, and ignored document fields.
-3. Tokenized signatures for volatile text fields, so messages with the same template but different IDs, ports, UUIDs, or IP addresses hash together.
+2. A YAML-defined grouping policy that selects tokenized and raw document fields and excludes
+   configured paths from the document-shape fingerprint.
+3. Tokenized signatures, limited to the first 50 tokens, for volatile text fields, so messages with
+   the same template but different IDs, ports, UUIDs, or IP addresses hash together.
 
 Example:
 
@@ -99,8 +101,8 @@ The underlying principle generalizes across signals: physically group records th
 | Component | Location | Status |
 |-----------|----------|--------|
 | Deployment scope | Indexer node configuration | Enable only on indexers whose workloads should use document sorting |
-| Policy configuration | `NodeConfig::docs_sorting_config` | Optional YAML policy; presence enables document sorting and is validated when node configuration is loaded |
-| Environment override | `QW_ENABLE_DOCS_SORTING` | Unset preserves the YAML configuration; `false` disables a configured policy |
+| Policy configuration | `NodeConfig::docs_sorting_config` | Optional YAML policy; presence enables document sorting and is validated when node configuration is loaded unless disabled by the environment override |
+| Environment override | `QW_ENABLE_DOCS_SORTING` | Unset preserves and validates the YAML configuration; `false` disables a configured policy without validating it |
 | Fingerprint computation | `quickwit-indexing/src/docs_sorting/fingerprinter.rs` | Implemented on feature branch |
 | Tokenization | `quickwit-indexing/src/docs_sorting/tokenizer.rs` | Implemented on feature branch |
 | Doc ID sorting | `quickwit-indexing/src/docs_sorting/sorter.rs` | Implemented on feature branch |

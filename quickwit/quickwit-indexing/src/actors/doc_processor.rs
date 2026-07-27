@@ -625,9 +625,7 @@ mod tests {
     use prost::Message;
     use quickwit_actors::Universe;
     use quickwit_common::uri::Uri;
-    use quickwit_config::{
-        FingerprintConfig, FingerprintField, FingerprintFieldKind, SearchSettings, build_doc_mapper,
-    };
+    use quickwit_config::{DocsSortingConfig, GroupingConfig, SearchSettings, build_doc_mapper};
     use quickwit_doc_mapper::{DocMapper, default_doc_mapper_for_test};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
@@ -643,6 +641,25 @@ mod tests {
 
     use super::*;
     use crate::models::{PublishLock, RawDocBatch};
+
+    fn raw_body_fingerprinter_for_test() -> Fingerprinter {
+        let docs_sorting_config = DocsSortingConfig {
+            grouping: serde_json::from_value::<GroupingConfig>(serde_json::json!({
+                "fields": [{
+                    "path": "$",
+                    "kind": "structure"
+                }],
+                "grouping": {
+                    "fields": [{
+                        "path": "body",
+                        "kind": "raw"
+                    }]
+                }
+            }))
+            .unwrap(),
+        };
+        Fingerprinter::new(&docs_sorting_config.grouping)
+    }
 
     #[tokio::test]
     async fn test_doc_processor_simple() {
@@ -727,13 +744,6 @@ mod tests {
     async fn test_doc_processor_computes_configured_fingerprint() {
         let universe = Universe::with_accelerated_time();
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
-        let fingerprint_config = FingerprintConfig {
-            fields: vec![FingerprintField {
-                path: "body".to_string(),
-                kind: FingerprintFieldKind::Raw,
-            }],
-            ..Default::default()
-        };
         let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
         let doc_processor = DocProcessor::try_new(
             "test-index".to_string(),
@@ -742,7 +752,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::Json,
-            Some(Fingerprinter::new(&fingerprint_config)),
+            Some(raw_body_fingerprinter_for_test()),
         )
         .unwrap();
         let (doc_processor_mailbox, doc_processor_handle) =

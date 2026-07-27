@@ -686,7 +686,7 @@ mod tests {
 
     use super::*;
     use crate::storage_config::StorageBackendFlavor;
-    use crate::{CacheConfig, FingerprintFieldKind, LambdaConfig, LambdaDeployConfig};
+    use crate::{CacheConfig, GroupingField, LambdaConfig, LambdaDeployConfig};
 
     fn get_config_filepath(config_filename: &str) -> String {
         format!(
@@ -1317,11 +1317,17 @@ mod tests {
         let config_yaml = r#"
             version: 0.8
             docs_sorting:
-              fingerprint:
-                max_grouping_tokens: 25
+              grouping:
                 fields:
-                  - path: message
-                    kind: tokenized
+                  - path: "$"
+                    kind: structure
+                    exclude: [custom]
+                grouping:
+                  fields:
+                    - path: custom
+                      kind: raw
+                    - path: message
+                      kind: tokenized
         "#;
         let node_config = load_node_config_with_env(
             ConfigFormat::Yaml,
@@ -1332,12 +1338,26 @@ mod tests {
         .await
         .unwrap();
         let config = node_config.docs_sorting_config.unwrap();
-        assert_eq!(config.fingerprint.fields[0].path, "message");
+        let GroupingField::Structure {
+            path,
+            exclude: excluded_paths,
+        } = &config.grouping.fields[0]
+        else {
+            panic!("expected root structure field");
+        };
+        assert_eq!(path, "$");
+        assert_eq!(excluded_paths, &["custom".to_string()]);
         assert_eq!(
-            config.fingerprint.fields[0].kind,
-            FingerprintFieldKind::Tokenized
+            config.grouping.grouping.unwrap().fields,
+            vec![
+                GroupingField::Raw {
+                    path: "custom".to_string()
+                },
+                GroupingField::Tokenized {
+                    path: "message".to_string()
+                },
+            ]
         );
-        assert_eq!(config.fingerprint.max_grouping_tokens, 25);
     }
 
     #[tokio::test]
@@ -1345,10 +1365,14 @@ mod tests {
         let config_yaml = r#"
             version: 0.8
             docs_sorting:
-              fingerprint:
+              grouping:
                 fields:
-                  - path: message
-                    kind: tokenized
+                  - path: "$"
+                    kind: structure
+                grouping:
+                  fields:
+                    - path: message
+                      kind: tokenized
         "#;
         let env_vars = HashMap::from([("QW_ENABLE_DOCS_SORTING".to_string(), "false".to_string())]);
         let node_config =
@@ -1363,10 +1387,14 @@ mod tests {
         let config_yaml = r#"
             version: 0.8
             docs_sorting:
-              fingerprint:
+              grouping:
                 fields:
-                  - path: message
-                    kind: tokenized
+                  - path: "$"
+                    kind: structure
+                grouping:
+                  fields:
+                    - path: message
+                      kind: tokenized
         "#;
         let env_vars = HashMap::from([("QW_ENABLE_DOCS_SORTING".to_string(), "true".to_string())]);
         let node_config =
