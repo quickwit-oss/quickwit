@@ -35,6 +35,7 @@ use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Deserializer, Serialize};
 use tracing::{info, warn};
 
+use crate::docs_sorting::DocsSortingConfig;
 use crate::node_config::serialize::load_node_config_with_env;
 use crate::serde_utils::HumanDuration;
 use crate::service::QuickwitService;
@@ -911,6 +912,8 @@ pub struct NodeConfig {
     pub compactor_config: CompactorConfig,
     #[serde(skip_serializing)]
     pub enable_standalone_compactors: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub docs_sorting_config: Option<DocsSortingConfig>,
 }
 
 impl NodeConfig {

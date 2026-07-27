@@ -44,6 +44,7 @@ use crate::actors::pipeline_shared::{
 use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
 use crate::actors::{Publisher, Uploader};
+use crate::docs_sorting::Fingerprinter;
 use crate::merge_policy::MergePolicy;
 use crate::metrics::{ACTOR_NAME, BACKPRESSURE_MICROS, INDEXING_PIPELINES};
 use crate::models::{IndexingStatistics, SharedPublishToken};
@@ -368,6 +369,7 @@ impl IndexingPipeline {
             self.params.indexing_settings.clone(),
             self.params.cooperative_indexing_permits.clone(),
             index_serializer_mailbox,
+            self.params.fingerprinter_opt.clone(),
         );
         let (indexer_mailbox, indexer_handle) = ctx
             .spawn_actor()
@@ -382,6 +384,7 @@ impl IndexingPipeline {
             indexer_mailbox,
             self.params.source_config.transform_config.clone(),
             self.params.source_config.input_format,
+            self.params.fingerprinter_opt.clone(),
         )?;
         let (doc_processor_mailbox, doc_processor_handle) = ctx
             .spawn_actor()
@@ -546,6 +549,7 @@ pub struct IndexingPipelineParams {
     pub doc_mapper: Arc<DocMapper>,
     pub indexing_directory: TempDirectory,
     pub indexing_settings: IndexingSettings,
+    pub fingerprinter_opt: Option<Fingerprinter>,
     pub split_store: IndexingSplitStore,
     pub max_concurrent_split_uploads_index: usize,
     pub cooperative_indexing_permits: Option<Arc<Semaphore>>,
@@ -682,6 +686,7 @@ mod tests {
             source_storage_resolver: StorageResolver::for_test(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
+            fingerprinter_opt: None,
             ingester_pool: IngesterPool::default(),
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
             storage,
@@ -917,6 +922,7 @@ mod tests {
             source_storage_resolver: StorageResolver::for_test(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
+            fingerprinter_opt: None,
             ingester_pool: IngesterPool::default(),
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
             queues_dir_path: PathBuf::from("./queues"),
@@ -1017,6 +1023,7 @@ mod tests {
             source_storage_resolver: StorageResolver::for_test(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
+            fingerprinter_opt: None,
             ingester_pool: IngesterPool::default(),
             metastore,
             queues_dir_path: PathBuf::from("./queues"),
@@ -1253,6 +1260,7 @@ mod tests {
             source_storage_resolver: StorageResolver::for_test(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
+            fingerprinter_opt: None,
             ingester_pool: IngesterPool::default(),
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
             queues_dir_path: PathBuf::from("./queues"),

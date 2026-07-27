@@ -16,17 +16,20 @@ use std::fmt;
 use std::path::Path;
 
 use quickwit_common::io::IoControls;
+use quickwit_common::metrics::index_label;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_metrics::GaugeGuard;
+use quickwit_metrics::{GaugeGuard, histogram, label_values};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::types::{DocMappingUid, IndexUid, SplitId};
 use tantivy::IndexBuilder;
 use tantivy::directory::MmapDirectory;
-use tracing::{Span, instrument};
+use tracing::{Span, error, instrument};
 
 use crate::controlled_directory::ControlledDirectory;
+use crate::docs_sorting::DocIdSorter;
 use crate::merge_policy::MergeTask;
+use crate::metrics::{DOCS_SORT_GROUP_SIZE, INDEX_SOURCE};
 use crate::models::{PublishLock, SplitAttrs};
 
 pub struct IndexedSplitBuilder {
@@ -34,6 +37,7 @@ pub struct IndexedSplitBuilder {
     pub index_writer: tantivy::SingleSegmentIndexWriter,
     pub split_scratch_directory: TempDirectory,
     pub controlled_directory_opt: Option<ControlledDirectory>,
+    pub doc_id_sorter_opt: Option<DocIdSorter>,
 }
 
 pub struct IndexedSplit {
@@ -67,11 +71,13 @@ impl fmt::Debug for IndexedSplitBuilder {
             .field("split_id", &self.split_attrs.split_id)
             .field("dir", &self.split_scratch_directory.path())
             .field("num_docs", &self.split_attrs.num_docs)
+            .field("doc_id_sorter_opt", &self.doc_id_sorter_opt.is_some())
             .finish()
     }
 }
 
 impl IndexedSplitBuilder {
+    #[allow(clippy::too_many_arguments)]
     pub fn new_in_dir(
         pipeline_id: IndexingPipelineId,
         partition_id: u64,
@@ -80,6 +86,7 @@ impl IndexedSplitBuilder {
         scratch_directory: TempDirectory,
         index_builder: IndexBuilder,
         io_controls: IoControls,
+        doc_id_sorter_opt: Option<DocIdSorter>,
     ) -> anyhow::Result<Self> {
         // We avoid intermediary merge, and instead merge all segments in the packager.
         // The benefit is that we don't have to wait for potentially existing merges,
@@ -111,6 +118,7 @@ impl IndexedSplitBuilder {
                 num_merge_ops: 0,
             },
             index_writer,
+            doc_id_sorter_opt,
             split_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
         })
@@ -131,9 +139,33 @@ impl IndexedSplitBuilder {
         )
     )]
     pub fn finalize(self) -> anyhow::Result<IndexedSplit> {
-        let index = self.index_writer.finalize()?;
+        let split_attrs = self.split_attrs;
+        let index = match self.doc_id_sorter_opt {
+            Some(doc_id_sorter) => {
+                // Update metrics for docs sorting.
+                let index_label = index_label(&split_attrs.index_uid.index_id);
+                let labels = label_values!(
+                    INDEX_SOURCE => index_label.to_string(),
+                    split_attrs.source_id.to_string()
+                );
+                for sort_group_size in doc_id_sorter.sort_group_sizes() {
+                    histogram!(parent: DOCS_SORT_GROUP_SIZE, labels: [labels.clone()])
+                        .observe(sort_group_size as f64);
+                }
+
+                // Finalize the index with the doc id mapping.
+                let doc_id_mapping = doc_id_sorter
+                    .into_doc_id_mapping(split_attrs.num_docs)
+                    .inspect_err(|error| {
+                        error!(?error, "failed to create doc id mapping");
+                    })?;
+                self.index_writer
+                    .finalize_with_doc_id_mapping(&doc_id_mapping)?
+            }
+            None => self.index_writer.finalize()?,
+        };
         Ok(IndexedSplit {
-            split_attrs: self.split_attrs,
+            split_attrs,
             index,
             split_scratch_directory: self.split_scratch_directory,
             controlled_directory_opt: self.controlled_directory_opt,
