@@ -156,14 +156,13 @@ impl SearchSplitCache {
     /// for — most importantly pre-existing oversized splits. Those are otherwise
     /// discovered via `get_split_file`/`touch` without a size and would bypass
     /// the download guard entirely. Attaching the size here lets the guard skip
-    /// them just like freshly-reported oversized splits. A zero size (unknown)
-    /// is ignored, so behavior is unchanged when the size is genuinely unknown.
+    /// them just like freshly-reported oversized splits.
+    ///
+    /// It is a no-op unless the `skip_oversized_splits` guard is enabled (and the
+    /// size is known), so the default download path is unaffected.
     pub fn report_split_size(&self, split_id: SplitId, storage_uri: &Uri, num_bytes: u64) {
-        if num_bytes == 0 {
-            return;
-        }
         let mut split_table = self.split_table.lock().unwrap();
-        split_table.report(split_id, storage_uri.clone(), num_bytes);
+        split_table.report_split_size_from_search(split_id, storage_uri.clone(), num_bytes);
     }
 
     // Returns a split guard object. As long as it is not dropped, the

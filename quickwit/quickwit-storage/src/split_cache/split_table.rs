@@ -97,12 +97,15 @@ pub struct SplitInfo {
 /// - downloading_splits
 /// - candidate_splits.
 ///
-/// It is possible for the split table size in bytes to exceed its limits by the
-/// total size of the splits currently downloading (at most one per concurrent
-/// download slot). Each downloading split either fits within `max_num_bytes`
-/// (its reported size was checked before the download started) or has an unknown
-/// size (reported as 0 — legacy behavior). Splits larger than `max_num_bytes`
-/// are never downloaded.
+/// By default the split table size in bytes may exceed its limits by at most one
+/// split (the incoming split's bytes are not reserved before its download
+/// starts).
+///
+/// When `SplitCacheLimits::skip_oversized_splits` is enabled, splits larger than
+/// `max_num_bytes` are never downloaded, and the incoming split plus all
+/// in-flight downloads are reserved against the budget — so on-disk usage stays
+/// within `max_num_bytes`, exceeded only transiently by downloads still in
+/// flight (each already checked to fit).
 pub struct SplitTable {
     on_disk_splits: BTreeSet<SplitKey>,
     downloading_splits: BTreeSet<SplitKey>,
@@ -341,6 +344,23 @@ impl SplitTable {
         });
     }
 
+    /// Registers a split size discovered on the search path.
+    ///
+    /// This is a no-op unless the size guard is enabled and the size is known
+    /// (`num_bytes > 0`), so the default download path is never affected by an
+    /// extra candidate registration.
+    pub(crate) fn report_split_size_from_search(
+        &mut self,
+        split_id: SplitId,
+        storage_uri: Uri,
+        num_bytes: u64,
+    ) {
+        if !self.limits.skip_oversized_splits || num_bytes == 0 {
+            return;
+        }
+        self.report(split_id, storage_uri, num_bytes);
+    }
+
     /// Make sure we have at most `MAX_CANDIDATES` candidate splits.
     fn truncate_candidate_list(&mut self) {
         // we remove one more to make place for one candidate about to be inserted
@@ -379,9 +399,8 @@ impl SplitTable {
         Some(candidate_split)
     }
 
-    // Only used by tests now that `find_download_opportunity` scans for the best
-    // *fitting* candidate itself.
-    #[cfg(test)]
+    /// Returns the hottest candidate (highest last-accessed, ties broken by
+    /// split id). Used by the default download path (size guard disabled).
     fn best_candidate(&self) -> Option<SplitKey> {
         self.candidate_splits.last().cloned()
     }
@@ -420,28 +439,39 @@ impl SplitTable {
             .sum()
     }
 
-    /// Returns true if the table would exceed the byte or split-count budget once
-    /// a split of `incoming_bytes` has finished downloading, accounting for the
-    /// splits already on disk AND the reported sizes of splits currently in
-    /// flight.
+    /// Returns true if the table is (or, with the size guard, would be) over its
+    /// byte or split-count budget.
     ///
-    /// Counting in-flight downloads matters when `num_concurrent_downloads > 1`:
-    /// otherwise two concurrent sub-budget splits could each pass this check and
-    /// still overshoot the budget once both land on disk. With a single download
-    /// slot and `incoming_bytes == 0` (unknown size) this reduces to the
-    /// historical on-disk-only check.
+    /// With the guard disabled (default), room is judged only on what is already
+    /// on disk: neither the incoming split nor in-flight downloads are reserved,
+    /// so the table may exceed its limits by at most one split (per the type
+    /// invariant). Eviction can only reclaim on-disk splits, so an empty disk is
+    /// never reported as over limit.
+    ///
+    /// With the guard enabled, the incoming split (`incoming_bytes`) and every
+    /// in-flight download are reserved against the budget. Counting in-flight
+    /// downloads matters when `num_concurrent_downloads > 1`, where two
+    /// concurrent sub-budget splits could otherwise both pass and overshoot once
+    /// they land.
     fn would_exceed_limits_with(&self, incoming_bytes: u64) -> bool {
+        if !self.limits.skip_oversized_splits {
+            if self.on_disk_splits.is_empty() {
+                return false;
+            }
+            if self.on_disk_splits.len() + self.downloading_splits.len()
+                >= self.limits.max_num_splits.get() as usize
+            {
+                return true;
+            }
+            return self.on_disk_bytes > self.limits.max_num_bytes.as_u64();
+        }
         if self.on_disk_splits.len() + self.downloading_splits.len() + 1
             > self.limits.max_num_splits.get() as usize
         {
             return true;
         }
-        if self.on_disk_bytes + self.downloading_bytes() + incoming_bytes
+        self.on_disk_bytes + self.downloading_bytes() + incoming_bytes
             > self.limits.max_num_bytes.as_u64()
-        {
-            return true;
-        }
-        false
     }
 
     /// Evicts splits to reach the target limits.
@@ -486,13 +516,16 @@ impl SplitTable {
         }
     }
 
-    /// Selects the best download opportunity: the hottest candidate that both
-    /// fits the byte budget and can make room for itself.
+    /// Selects the next split download opportunity.
     ///
-    /// Candidates are scanned hottest-first. Two kinds of candidate are skipped
-    /// in favour of the next one rather than aborting the whole scan — otherwise
-    /// the downloader would stall on a single permanently-blocked (but
-    /// permanently hot) split and starve the entire cache:
+    /// Default behavior (size guard disabled): take the single hottest candidate
+    /// and download it; if room cannot be made for it, do nothing this round.
+    ///
+    /// With the size guard enabled, candidates are instead scanned hottest-first
+    /// for the best *fitting* candidate that can also make room for itself. Two
+    /// kinds of candidate are skipped in favour of the next one rather than
+    /// aborting the scan — otherwise the downloader would stall on a single
+    /// permanently-blocked (but permanently hot) split and starve the cache:
     /// - larger than the whole budget (`max_num_bytes`): can never coexist with
     ///   anything, so it is skipped (and counted) and left to the cold-storage
     ///   warmup path;
@@ -502,6 +535,18 @@ impl SplitTable {
     ///
     /// Candidates with an unknown size (0) are treated as fitting.
     pub(crate) fn find_download_opportunity(&mut self) -> Option<DownloadOpportunity> {
+        if !self.limits.skip_oversized_splits {
+            let best_candidate_split_key = self.best_candidate()?;
+            let splits_to_delete: Vec<SplitId> = self
+                .make_room_for_split_if_necessary(best_candidate_split_key.last_accessed, 0)
+                .ok()?;
+            let split_to_download: CandidateSplit =
+                self.start_download(&best_candidate_split_key.split_id)?;
+            return Some(DownloadOpportunity {
+                splits_to_delete,
+                split_to_download,
+            });
+        }
         let max_num_bytes = self.limits.max_num_bytes.as_u64();
         // Snapshot the candidate keys (hottest first) so we can mutate the table
         // (evict / start a download) while iterating. `make_room` only touches
@@ -601,6 +646,7 @@ mod tests {
                 max_num_splits: NonZeroU32::new(1).unwrap(),
                 num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
                 max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: false,
             },
             Default::default(),
         );
@@ -621,6 +667,7 @@ mod tests {
                 max_num_splits: NonZeroU32::new(1).unwrap(),
                 num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
                 max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: false,
             },
             Default::default(),
         );
@@ -643,6 +690,7 @@ mod tests {
                 max_num_splits: NonZeroU32::new(1).unwrap(),
                 num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
                 max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: false,
             },
             Default::default(),
         );
@@ -676,6 +724,7 @@ mod tests {
                 max_num_splits: NonZeroU32::new(30).unwrap(),
                 num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
                 max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: false,
             },
             Default::default(),
         );
@@ -717,6 +766,7 @@ mod tests {
                 max_num_splits: NonZeroU32::new(5).unwrap(),
                 num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
                 max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: false,
             },
             Default::default(),
         );
@@ -754,6 +804,7 @@ mod tests {
                 max_num_splits: NonZeroU32::new(5).unwrap(),
                 num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
                 max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: false,
             },
             Default::default(),
         );
@@ -784,6 +835,7 @@ mod tests {
                 max_num_splits: NonZeroU32::new(5).unwrap(),
                 num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
                 max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: false,
             },
             Default::default(),
         );
@@ -806,6 +858,7 @@ mod tests {
                 max_num_splits: NonZeroU32::new(2).unwrap(),
                 num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
                 max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: false,
             },
             Default::default(),
         );
@@ -845,6 +898,7 @@ mod tests {
                 max_num_splits: NonZeroU32::new(30).unwrap(),
                 num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
                 max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: true,
             },
             Default::default(),
         );
@@ -883,6 +937,7 @@ mod tests {
                 max_num_splits: NonZeroU32::new(30).unwrap(),
                 num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
                 max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: true,
             },
             Default::default(),
         );
@@ -902,6 +957,7 @@ mod tests {
                 max_num_splits: NonZeroU32::new(30).unwrap(),
                 num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
                 max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: true,
             },
             Default::default(),
         );
@@ -945,6 +1001,7 @@ mod tests {
                 max_num_splits: NonZeroU32::new(30).unwrap(),
                 num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
                 max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: true,
             },
             Default::default(),
         );
@@ -962,6 +1019,7 @@ mod tests {
                 max_num_splits: NonZeroU32::new(30).unwrap(),
                 num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
                 max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: true,
             },
             Default::default(),
         );
@@ -993,6 +1051,7 @@ mod tests {
                 max_num_splits: NonZeroU32::new(30).unwrap(),
                 num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
                 max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: true,
             },
             Default::default(),
         );
@@ -1022,6 +1081,7 @@ mod tests {
                 max_num_splits: NonZeroU32::new(30).unwrap(),
                 num_concurrent_downloads: NonZeroU32::new(2).unwrap(),
                 max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: true,
             },
             Default::default(),
         );
@@ -1048,6 +1108,7 @@ mod tests {
                 max_num_splits: NonZeroU32::new(10).unwrap(),
                 num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
                 max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: true,
             },
             Default::default(),
         );
@@ -1072,5 +1133,27 @@ mod tests {
         assert_eq!(opportunity.split_to_download.split_id, cold_c2);
         // The fresher on-disk split was preserved.
         assert!(opportunity.splits_to_delete.is_empty());
+    }
+
+    #[test]
+    fn test_default_flow_ignores_split_size() {
+        // With the guard disabled (the default), the reported split size is
+        // ignored: an oversized split is still selected for download, exactly as
+        // before this feature existed.
+        let mut split_table = SplitTable::with_limits_and_existing_splits(
+            SplitCacheLimits {
+                max_num_bytes: ByteSize::kb(500),
+                max_num_splits: NonZeroU32::new(30).unwrap(),
+                num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
+                max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: false,
+            },
+            Default::default(),
+        );
+        let split_id = new_test_split_id();
+        // 5 MB split, far larger than the 500 KB budget.
+        split_table.report(split_id.clone(), Uri::for_test(TEST_STORAGE_URI), 5_000_000);
+        let opportunity = split_table.find_download_opportunity().unwrap();
+        assert_eq!(opportunity.split_to_download.split_id, split_id);
     }
 }
