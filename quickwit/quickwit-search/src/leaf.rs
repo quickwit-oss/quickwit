@@ -179,6 +179,15 @@ pub(crate) async fn open_split_bundle(
     // This is before the bundle storage: at this point, this storage is reading `.split` files.
     let index_storage_with_split_cache =
         if let Some(split_cache) = searcher_context.split_cache_opt.as_ref() {
+            // Register the split together with its file size (the footer end
+            // offset) so the download guard can skip it when it is larger than
+            // the cache budget. This is the only size signal for pre-existing
+            // splits that no indexer ever reported a size for.
+            split_cache.report_split_size(
+                split_and_footer_offsets.split_id.clone().into(),
+                index_storage.uri(),
+                split_and_footer_offsets.split_footer_end,
+            );
             SearchSplitCache::wrap_storage(split_cache.clone(), index_storage.clone())
         } else {
             index_storage.clone()

@@ -94,7 +94,8 @@ impl SearchSplitCache {
         let mut split_table = SplitTable::with_limits_and_existing_splits(limits, existing_splits);
 
         // In case of a setting change, it could be useful to evict some splits on startup.
-        let splits_to_remove_res = split_table.make_room_for_split_if_necessary(u64::MAX);
+        // No specific split is incoming here; `0` just trims the table to the current limits.
+        let splits_to_remove_res = split_table.make_room_for_split_if_necessary(u64::MAX, 0);
         if let Ok(splits_to_remove) = splits_to_remove_res {
             info!(
                 num_splits = splits_to_remove.len(),
@@ -144,8 +145,25 @@ impl SearchSplitCache {
                 error!(storage_uri=%report_split.storage_uri, "received invalid storage uri: ignoring");
                 continue;
             };
-            split_table.report(split_id, storage_uri);
+            split_table.report(split_id, storage_uri, report_split.num_bytes);
         }
+    }
+
+    /// Informs the cache that a split is about to be searched, together with its
+    /// file size in bytes (the split footer end offset).
+    ///
+    /// This is the only size signal for splits that no indexer reported a size
+    /// for — most importantly pre-existing oversized splits. Those are otherwise
+    /// discovered via `get_split_file`/`touch` without a size and would bypass
+    /// the download guard entirely. Attaching the size here lets the guard skip
+    /// them just like freshly-reported oversized splits. A zero size (unknown)
+    /// is ignored, so behavior is unchanged when the size is genuinely unknown.
+    pub fn report_split_size(&self, split_id: SplitId, storage_uri: &Uri, num_bytes: u64) {
+        if num_bytes == 0 {
+            return;
+        }
+        let mut split_table = self.split_table.lock().unwrap();
+        split_table.report(split_id, storage_uri.clone(), num_bytes);
     }
 
     // Returns a split guard object. As long as it is not dropped, the
