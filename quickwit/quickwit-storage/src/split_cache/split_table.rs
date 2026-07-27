@@ -60,7 +60,7 @@ impl Eq for SplitKey {}
 #[derive(Clone, Debug)]
 enum Status {
     Candidate(CandidateSplit),
-    Downloading { alive_token: Weak<()> },
+    Downloading { alive_token: Weak<()>, num_bytes: u64 },
     OnDisk { num_bytes: u64 },
 }
 
@@ -173,7 +173,7 @@ impl SplitTable {
         };
         let is_in_queue = split_queue.remove(&split_info.split_key);
         assert!(is_in_queue);
-        if let Status::Downloading { alive_token } = &split_info.status
+        if let Status::Downloading { alive_token, .. } = &split_info.status
             && alive_token.strong_count() == 0
         {
             return None;
@@ -190,7 +190,7 @@ impl SplitTable {
         let mut splits_to_remove = Vec::new();
         for split in &self.downloading_splits {
             if let Some(split_info) = self.split_to_status.get(&split.split_id)
-                && let Status::Downloading { alive_token } = &split_info.status
+                && let Status::Downloading { alive_token, .. } = &split_info.status
                 && alive_token.strong_count() == 0
             {
                 splits_to_remove.push(split.split_id.clone());
@@ -366,15 +366,21 @@ impl SplitTable {
             return None;
         };
         let alive_token = Arc::downgrade(&candidate_split.living_token);
+        // Carry the split size into the downloading state so its bytes are
+        // reserved against the budget while the download is in flight.
+        let num_bytes = candidate_split.num_bytes;
         self.insert(SplitInfo {
             split_key: split_info.split_key,
-            status: Status::Downloading { alive_token },
+            status: Status::Downloading {
+                alive_token,
+                num_bytes,
+            },
         });
         Some(candidate_split)
     }
 
-    // Only used by tests now that `find_download_opportunity` selects the best
-    // *fitting* candidate via `best_fitting_candidate`.
+    // Only used by tests now that `find_download_opportunity` scans for the best
+    // *fitting* candidate itself.
     #[cfg(test)]
     fn best_candidate(&self) -> Option<SplitKey> {
         self.candidate_splits.last().cloned()
@@ -395,49 +401,44 @@ impl SplitTable {
         }
     }
 
-    /// Returns the hottest candidate whose size does not exceed the whole cache
-    /// byte budget, skipping (and counting) any candidate too large to ever fit.
+    /// Sum of the reported sizes of the splits currently being downloaded.
     ///
-    /// A split larger than `max_num_bytes` can never coexist with another split
-    /// and would evict the entire cache without ever fitting, so caching it is
-    /// always net-negative; it is left to be served by the cold-storage warmup
-    /// path. Skipping *advances to the next-best candidate* rather than bailing:
-    /// the downloader always acts on the single highest-scored candidate, so
-    /// returning `None` on an oversized (and permanently hot) split would stall
-    /// the downloader and starve the whole cache. Candidates with an unknown
-    /// size (0) are treated as fitting.
-    fn best_fitting_candidate(&self) -> Option<SplitKey> {
-        let max_num_bytes = self.limits.max_num_bytes.as_u64();
-        for candidate_key in self.candidate_splits.iter().rev() {
-            if self.candidate_num_bytes(&candidate_key.split_id) > max_num_bytes {
-                SEARCHER_SPLIT_CACHE_DOWNLOADS_SKIPPED_TOO_LARGE.inc();
-                continue;
-            }
-            return Some(candidate_key.clone());
-        }
-        None
+    /// These bytes are not yet on disk but will be shortly, so they must be
+    /// reserved against the budget to avoid overshooting when several downloads
+    /// run concurrently (`num_concurrent_downloads > 1`). A downloading split
+    /// with an unknown size (0) contributes nothing, matching legacy behavior.
+    fn downloading_bytes(&self) -> u64 {
+        self.downloading_splits
+            .iter()
+            .map(|key| match self.split_to_status.get(&key.split_id) {
+                Some(SplitInfo {
+                    status: Status::Downloading { num_bytes, .. },
+                    ..
+                }) => *num_bytes,
+                _ => 0,
+            })
+            .sum()
     }
 
     /// Returns true if the table would exceed the byte or split-count budget once
-    /// a split of `incoming_bytes` has finished downloading.
+    /// a split of `incoming_bytes` has finished downloading, accounting for the
+    /// splits already on disk AND the reported sizes of splits currently in
+    /// flight.
     ///
-    /// With `incoming_bytes == 0` (unknown size) this is equivalent to the
-    /// historical limit check, so splits reported without a size keep their old
-    /// behavior. The split-count arm is likewise equivalent to the previous
-    /// `on_disk + downloading >= max_num_splits` check.
+    /// Counting in-flight downloads matters when `num_concurrent_downloads > 1`:
+    /// otherwise two concurrent sub-budget splits could each pass this check and
+    /// still overshoot the budget once both land on disk. With a single download
+    /// slot and `incoming_bytes == 0` (unknown size) this reduces to the
+    /// historical on-disk-only check.
     fn would_exceed_limits_with(&self, incoming_bytes: u64) -> bool {
-        // Eviction can only reclaim on-disk splits. With nothing on disk there is
-        // nothing to evict, so never report "over limit"; the caller's per-split
-        // size guard already keeps a single incoming split within budget.
-        if self.on_disk_splits.is_empty() {
-            return false;
-        }
         if self.on_disk_splits.len() + self.downloading_splits.len() + 1
             > self.limits.max_num_splits.get() as usize
         {
             return true;
         }
-        if self.on_disk_bytes + incoming_bytes > self.limits.max_num_bytes.as_u64() {
+        if self.on_disk_bytes + self.downloading_bytes() + incoming_bytes
+            > self.limits.max_num_bytes.as_u64()
+        {
             return true;
         }
         false
@@ -485,18 +486,50 @@ impl SplitTable {
         }
     }
 
+    /// Selects the best download opportunity: the hottest candidate that both
+    /// fits the byte budget and can make room for itself.
+    ///
+    /// Candidates are scanned hottest-first. Two kinds of candidate are skipped
+    /// in favour of the next one rather than aborting the whole scan — otherwise
+    /// the downloader would stall on a single permanently-blocked (but
+    /// permanently hot) split and starve the entire cache:
+    /// - larger than the whole budget (`max_num_bytes`): can never coexist with
+    ///   anything, so it is skipped (and counted) and left to the cold-storage
+    ///   warmup path;
+    /// - fits, but cannot make room (its eviction would remove a *fresher*
+    ///   on-disk split): a colder candidate that fits without that eviction is
+    ///   preferred.
+    ///
+    /// Candidates with an unknown size (0) are treated as fitting.
     pub(crate) fn find_download_opportunity(&mut self) -> Option<DownloadOpportunity> {
-        let best_candidate_split_key = self.best_fitting_candidate()?;
-        let incoming_bytes = self.candidate_num_bytes(&best_candidate_split_key.split_id);
-        let splits_to_delete: Vec<SplitId> = self
-            .make_room_for_split_if_necessary(best_candidate_split_key.last_accessed, incoming_bytes)
-            .ok()?;
-        let split_to_download: CandidateSplit =
-            self.start_download(&best_candidate_split_key.split_id)?;
-        Some(DownloadOpportunity {
-            splits_to_delete,
-            split_to_download,
-        })
+        let max_num_bytes = self.limits.max_num_bytes.as_u64();
+        // Snapshot the candidate keys (hottest first) so we can mutate the table
+        // (evict / start a download) while iterating. `make_room` only touches
+        // on-disk splits and reinserts them on failure, so the snapshot stays
+        // valid across a skipped candidate.
+        let candidate_keys: Vec<SplitKey> =
+            self.candidate_splits.iter().rev().cloned().collect();
+        for candidate_key in candidate_keys {
+            let incoming_bytes = self.candidate_num_bytes(&candidate_key.split_id);
+            if incoming_bytes > max_num_bytes {
+                SEARCHER_SPLIT_CACHE_DOWNLOADS_SKIPPED_TOO_LARGE.inc();
+                continue;
+            }
+            let Ok(splits_to_delete) =
+                self.make_room_for_split_if_necessary(candidate_key.last_accessed, incoming_bytes)
+            else {
+                // Could not make room without evicting a fresher split; try the
+                // next-best fitting candidate.
+                continue;
+            };
+            let split_to_download: CandidateSplit =
+                self.start_download(&candidate_key.split_id)?;
+            return Some(DownloadOpportunity {
+                splits_to_delete,
+                split_to_download,
+            });
+        }
+        None
     }
 
     #[cfg(test)]
@@ -976,5 +1009,68 @@ mod tests {
         assert_eq!(split_table.candidate_num_bytes(&split_id), 5_000_000);
         // Now known to exceed the 1 MB budget, so it is never downloaded.
         assert!(split_table.find_download_opportunity().is_none());
+    }
+
+    #[test]
+    fn test_concurrent_downloads_reserve_bytes() {
+        // With more than one download slot, an in-flight download's bytes must be
+        // reserved against the budget so two sub-budget splits can't both start
+        // and overshoot once they land.
+        let mut split_table = SplitTable::with_limits_and_existing_splits(
+            SplitCacheLimits {
+                max_num_bytes: ByteSize::mb(1),
+                max_num_splits: NonZeroU32::new(30).unwrap(),
+                num_concurrent_downloads: NonZeroU32::new(2).unwrap(),
+                max_file_descriptors: NonZeroU32::new(100).unwrap(),
+            },
+            Default::default(),
+        );
+        let split_ids = sorted_split_ids(2);
+        // Each fits alone (600K <= 1M) but not together (1.2M > 1M).
+        split_table.report(split_ids[0].clone(), Uri::for_test(TEST_STORAGE_URI), 600_000);
+        split_table.report(split_ids[1].clone(), Uri::for_test(TEST_STORAGE_URI), 600_000);
+        // First download starts; its bytes are now reserved as "in flight". The
+        // returned opportunity keeps the split's living token alive.
+        let first = split_table.find_download_opportunity();
+        assert!(first.is_some());
+        // The second download must not start: 600K in flight + 600K incoming > 1M.
+        assert!(split_table.find_download_opportunity().is_none());
+    }
+
+    #[test]
+    fn test_advances_to_next_candidate_when_room_cannot_be_made() {
+        // If the hottest fitting candidate can only make room by evicting a
+        // *fresher* on-disk split, the downloader must fall through to a colder
+        // candidate that fits without eviction rather than stalling.
+        let mut split_table = SplitTable::with_limits_and_existing_splits(
+            SplitCacheLimits {
+                max_num_bytes: ByteSize::mb(1),
+                max_num_splits: NonZeroU32::new(10).unwrap(),
+                num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
+                max_file_descriptors: NonZeroU32::new(100).unwrap(),
+            },
+            Default::default(),
+        );
+        // A small on-disk split, freshly accessed so eviction must not touch it
+        // (a `touch` sets `last_accessed` to now, far fresher than the reported
+        // candidates below, which are stamped ~10 minutes in the past).
+        let on_disk_id = new_test_split_id();
+        split_table.report(on_disk_id.clone(), Uri::for_test(TEST_STORAGE_URI), 0);
+        split_table.register_as_downloaded(on_disk_id.clone(), 100_000);
+        split_table.touch(on_disk_id.clone(), &Uri::for_test(TEST_STORAGE_URI));
+        // Two candidates, hotter one first by id:
+        //  - hot C1 (larger id): fits by size, but making room would evict the
+        //    fresher on-disk split -> cannot make room;
+        //  - cold C2 (smaller id): fits in the free space with no eviction.
+        let split_ids = sorted_split_ids(2);
+        let cold_c2 = split_ids[0].clone();
+        let hot_c1 = split_ids[1].clone();
+        split_table.report(cold_c2.clone(), Uri::for_test(TEST_STORAGE_URI), 50_000);
+        split_table.report(hot_c1.clone(), Uri::for_test(TEST_STORAGE_URI), 950_000);
+        let opportunity = split_table.find_download_opportunity().unwrap();
+        // Advanced past C1 (could not make room) to C2.
+        assert_eq!(opportunity.split_to_download.split_id, cold_c2);
+        // The fresher on-disk split was preserved.
+        assert!(opportunity.splits_to_delete.is_empty());
     }
 }
