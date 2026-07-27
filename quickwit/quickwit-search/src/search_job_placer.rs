@@ -17,7 +17,6 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
-use std::sync::LazyLock;
 use std::time::Duration;
 
 use anyhow::bail;
@@ -25,7 +24,7 @@ use async_trait::async_trait;
 use futures::future::join_all;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::rendezvous_hasher::{node_affinity, sort_by_rendez_vous_hash};
-use quickwit_common::{SocketAddrLegacyHash, get_bool_from_env};
+use quickwit_common::{SocketAddrLegacyHash, get_bool_from_env_cached};
 use quickwit_metrics::counter;
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
 use tracing::{info, warn};
@@ -104,8 +103,9 @@ impl fmt::Debug for SearchJobPlacer {
     }
 }
 
-static LOAD_ESTIMATION_DISABLED: LazyLock<bool> =
-    LazyLock::new(|| get_bool_from_env("QW_DISABLE_LOAD_ESTIMATION", false));
+fn load_estimation_disabled() -> bool {
+    get_bool_from_env_cached!("QW_DISABLE_LOAD_ESTIMATION", false)
+}
 
 impl SearchJobPlacer {
     /// Returns an [`SearchJobPlacer`] from a search service client pool.
@@ -211,7 +211,7 @@ impl SearchJobPlacer {
             })
             .collect();
 
-        if load_aware && !*LOAD_ESTIMATION_DISABLED {
+        if load_aware && !load_estimation_disabled() {
             // Seed each candidate node with its current load so the placer avoids
             // routing work to already-loaded nodes. If a node fails to report its
             // load (error or timeout), `load` stays `None`: we still route work

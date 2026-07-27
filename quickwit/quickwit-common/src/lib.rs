@@ -15,6 +15,7 @@
 #![deny(clippy::disallowed_methods)]
 
 mod coolid;
+mod env;
 
 #[cfg(feature = "jemalloc-profiled")]
 pub(crate) mod alloc_tracker;
@@ -51,15 +52,16 @@ pub mod type_map;
 pub mod uri;
 
 mod metrics_specific;
+pub use env::{
+    get_bool_from_env, get_bool_from_env_opt, get_from_env, get_from_env_opt, parse_bool_lenient,
+};
 pub use metrics_specific::*;
 
 mod socket_addr_legacy_hash;
 
-use std::env;
-use std::fmt::{Debug, Display};
+use std::fmt::Display;
 use std::future::Future;
 use std::ops::{Range, RangeInclusive};
-use std::str::FromStr;
 
 pub use coolid::new_coolid;
 pub use cpus::num_cpus;
@@ -68,7 +70,6 @@ pub use path_hasher::PathHasher;
 pub use progress::{Progress, ProtectedZoneGuard};
 pub use socket_addr_legacy_hash::SocketAddrLegacyHash;
 pub use stream_utils::{BoxStream, ServiceStream};
-use tracing::{error, info};
 
 /// Returns true at compile time. This function is mostly used with serde to initialize boolean
 /// fields to true.
@@ -110,50 +111,6 @@ pub fn setup_logging_for_tests() {
 
 pub fn split_file(split_id: impl Display) -> String {
     format!("{split_id}.split")
-}
-
-fn get_from_env_opt_aux<T: Debug>(
-    key: &str,
-    parse_fn: impl FnOnce(&str) -> Option<T>,
-    sensitive: bool,
-) -> Option<T> {
-    let value_str = std::env::var(key).ok()?;
-    let Some(value) = parse_fn(&value_str) else {
-        error!(value=%value_str, "failed to parse environment variable `{key}` value");
-        return None;
-    };
-    if sensitive {
-        info!("using environment variable `{key}` value");
-    } else {
-        info!(value=?value, "using environment variable `{key}` value");
-    }
-    Some(value)
-}
-
-pub fn get_from_env<T: FromStr + Debug>(key: &str, default_value: T, sensitive: bool) -> T {
-    if let Some(value) = get_from_env_opt(key, sensitive) {
-        value
-    } else {
-        info!(default_value=?default_value, "using environment variable `{key}` default value");
-        default_value
-    }
-}
-
-pub fn get_from_env_opt<T: FromStr + Debug>(key: &str, sensitive: bool) -> Option<T> {
-    get_from_env_opt_aux(key, |val_str| val_str.parse().ok(), sensitive)
-}
-
-pub fn get_bool_from_env_opt(key: &str) -> Option<bool> {
-    get_from_env_opt_aux(key, parse_bool_lenient, false)
-}
-
-pub fn get_bool_from_env(key: &str, default_value: bool) -> bool {
-    if let Some(flag_value) = get_bool_from_env_opt(key) {
-        flag_value
-    } else {
-        info!(default_value=%default_value, "using environment variable `{key}` default value");
-        default_value
-    }
 }
 
 pub fn truncate_str(text: &str, max_len: usize) -> &str {
@@ -201,7 +158,7 @@ pub fn is_false(value: &bool) -> bool {
 }
 
 pub fn no_color() -> bool {
-    matches!(env::var("NO_COLOR"), Ok(value) if !value.is_empty())
+    matches!(std::env::var("NO_COLOR"), Ok(value) if !value.is_empty())
 }
 
 #[macro_export]
@@ -335,41 +292,11 @@ where
         .unwrap()
 }
 
-pub fn parse_bool_lenient(bool_str: &str) -> Option<bool> {
-    let trimmed_bool_str = bool_str.trim();
-
-    for truthy_value in ["true", "yes", "1"] {
-        if trimmed_bool_str.eq_ignore_ascii_case(truthy_value) {
-            return Some(true);
-        }
-    }
-    for falsy_value in ["false", "no", "0"] {
-        if trimmed_bool_str.eq_ignore_ascii_case(falsy_value) {
-            return Some(false);
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use std::io::ErrorKind;
 
     use super::*;
-
-    #[test]
-    fn test_get_from_env() {
-        // SAFETY: this test may not be entirely sound if not run with nextest or --test-threads=1
-        // as this is only a test, and it would be extremely inconvenient to run it in a different
-        // way, we are keeping it that way
-
-        const TEST_KEY: &str = "TEST_KEY";
-        assert_eq!(super::get_from_env(TEST_KEY, 10, false), 10);
-        unsafe { std::env::set_var(TEST_KEY, "15") };
-        assert_eq!(super::get_from_env(TEST_KEY, 10, false), 15);
-        unsafe { std::env::set_var(TEST_KEY, "1invalidnumber") };
-        assert_eq!(super::get_from_env(TEST_KEY, 10, false), 10);
-    }
 
     #[test]
     fn test_truncate_str() {
@@ -428,22 +355,5 @@ mod tests {
         assert_eq!(div_ceil_u32(2, 3), 1);
         assert_eq!(div_ceil_u32(1, 3), 1);
         assert_eq!(div_ceil_u32(0, 3), 0);
-    }
-
-    #[test]
-    fn test_parse_bool_lenient() {
-        assert_eq!(parse_bool_lenient("true"), Some(true));
-        assert_eq!(parse_bool_lenient("TRUE"), Some(true));
-        assert_eq!(parse_bool_lenient("True"), Some(true));
-        assert_eq!(parse_bool_lenient("yes"), Some(true));
-        assert_eq!(parse_bool_lenient(" 1"), Some(true));
-
-        assert_eq!(parse_bool_lenient("false"), Some(false));
-        assert_eq!(parse_bool_lenient("FALSE"), Some(false));
-        assert_eq!(parse_bool_lenient("False"), Some(false));
-        assert_eq!(parse_bool_lenient("no"), Some(false));
-        assert_eq!(parse_bool_lenient("0 "), Some(false));
-
-        assert_eq!(parse_bool_lenient("foo"), None);
     }
 }

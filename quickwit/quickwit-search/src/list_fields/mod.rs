@@ -18,7 +18,6 @@ mod patterns;
 mod root;
 
 use std::cmp::Ordering;
-use std::sync::LazyLock;
 
 pub use cache::ListFieldsCache;
 use itertools::Itertools;
@@ -37,8 +36,9 @@ pub use crate::list_fields::root::root_list_fields;
 /// a JSON type with random field names. This leads to huge memory consumption
 /// when building the response. This is a workaround until a way is found to
 /// prune the long tail of rare fields.
-static FIELD_LIST_SIZE_LIMIT: LazyLock<usize> =
-    LazyLock::new(|| quickwit_common::get_from_env("QW_FIELD_LIST_SIZE_LIMIT", 100_000, false));
+fn field_list_size_limit() -> usize {
+    quickwit_common::get_from_env_cached!(usize, "QW_FIELD_LIST_SIZE_LIMIT", 100_000, false)
+}
 
 // Sorts and deduplicates the list of fields.
 //
@@ -83,10 +83,10 @@ fn merge_entries(entry_groups: Vec<Vec<ListFieldsEntry>>) -> crate::Result<Vec<L
         {
             flush_group(&mut entries, &mut current_group);
         }
-        if entries.len() >= *FIELD_LIST_SIZE_LIMIT {
+        if entries.len() >= field_list_size_limit() {
             return Err(SearchError::Internal(format!(
                 "list fields response exceeded {} fields",
-                *FIELD_LIST_SIZE_LIMIT
+                field_list_size_limit()
             )));
         }
         current_group.push(entry);

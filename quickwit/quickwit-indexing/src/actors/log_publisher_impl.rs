@@ -98,7 +98,16 @@ impl Handler<SplitsUpdate> for Publisher {
             );
             return Ok(());
         }
-        info!("publish-new-splits");
+        let num_docs: usize = new_splits.iter().map(|split| split.num_docs).sum();
+        // `footer_offsets.end` is the on-disk size of the split file in bytes.
+        let split_size_bytes: u64 = new_splits
+            .iter()
+            .map(|split| split.footer_offsets.end)
+            .sum();
+        info!(
+            num_splits = new_splits.len(),
+            num_docs, split_size_bytes, "publish-new-splits"
+        );
         suggest_truncate(ctx, &self.source_mailbox_opt, checkpoint_delta_opt).await;
 
         if !new_splits.is_empty() {
