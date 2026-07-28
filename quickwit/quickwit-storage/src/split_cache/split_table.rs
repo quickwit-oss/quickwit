@@ -358,7 +358,20 @@ impl SplitTable {
         if !self.limits.skip_oversized_splits || num_bytes == 0 {
             return;
         }
-        self.report(split_id, storage_uri, num_bytes);
+        // Only attach a size to a candidate (or a not-yet-known split). Splits
+        // that are already downloading or on disk already carry an accurate size;
+        // routing them through `report` (a remove + reinsert) would wrongly bump
+        // the cache's eviction counters for what is actually a cache hit.
+        let is_candidate_or_unknown = matches!(
+            self.split_to_status.get(&split_id),
+            None | Some(SplitInfo {
+                status: Status::Candidate(_),
+                ..
+            })
+        );
+        if is_candidate_or_unknown {
+            self.report(split_id, storage_uri, num_bytes);
+        }
     }
 
     /// Make sure we have at most `MAX_CANDIDATES` candidate splits.
@@ -430,10 +443,16 @@ impl SplitTable {
         self.downloading_splits
             .iter()
             .map(|key| match self.split_to_status.get(&key.split_id) {
+                // Only count downloads that are still alive. A failed download
+                // keeps a dead `Downloading` entry until it is garbage-collected;
+                // reserving its bytes would needlessly block other downloads.
                 Some(SplitInfo {
-                    status: Status::Downloading { num_bytes, .. },
+                    status: Status::Downloading {
+                        alive_token,
+                        num_bytes,
+                    },
                     ..
-                }) => *num_bytes,
+                }) if alive_token.strong_count() > 0 => *num_bytes,
                 _ => 0,
             })
             .sum()
@@ -1155,5 +1174,32 @@ mod tests {
         split_table.report(split_id.clone(), Uri::for_test(TEST_STORAGE_URI), 5_000_000);
         let opportunity = split_table.find_download_opportunity().unwrap();
         assert_eq!(opportunity.split_to_download.split_id, split_id);
+    }
+
+    #[test]
+    fn test_failed_download_bytes_not_reserved() {
+        // A failed download leaves a dead `Downloading` entry until it is
+        // garbage-collected. Its bytes must not stay reserved, or an unrelated
+        // candidate that would otherwise fit could be blocked indefinitely.
+        let mut split_table = SplitTable::with_limits_and_existing_splits(
+            SplitCacheLimits {
+                max_num_bytes: ByteSize::mb(1),
+                max_num_splits: NonZeroU32::new(30).unwrap(),
+                num_concurrent_downloads: NonZeroU32::new(2).unwrap(),
+                max_file_descriptors: NonZeroU32::new(100).unwrap(),
+                skip_oversized_splits: true,
+            },
+            Default::default(),
+        );
+        let split_ids = sorted_split_ids(2);
+        split_table.report(split_ids[0].clone(), Uri::for_test(TEST_STORAGE_URI), 600_000);
+        split_table.report(split_ids[1].clone(), Uri::for_test(TEST_STORAGE_URI), 600_000);
+        // Start the first download, then simulate its failure by dropping the
+        // returned guard (its living token is the only strong reference).
+        let first = split_table.find_download_opportunity().unwrap();
+        drop(first);
+        // The dead download's 600K must no longer be reserved, so the second
+        // 600K candidate can now start (600K <= 1M).
+        assert!(split_table.find_download_opportunity().is_some());
     }
 }
