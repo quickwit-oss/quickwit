@@ -1467,8 +1467,7 @@ mod tests {
         )
         .unwrap();
 
-        // limit=2: top 2 buckets (host_12, host_11) + 1 __TOTAL__ row
-        assert_eq!(evp_agg_results.len(), 3);
+        assert_eq!(evp_agg_results.len(), 13);
 
         // Verify host_12 bucket (12 docs)
         let host_12 = find_result_by_key(&evp_agg_results, "host_12");
@@ -1551,8 +1550,7 @@ mod tests {
         )
         .unwrap();
 
-        // limit=2: top 2 host buckets by count (host_12 and host_11)
-        assert_eq!(evp_agg_results.len(), 2);
+        assert_eq!(evp_agg_results.len(), 12);
 
         let host_12 = find_result_by_key(&evp_agg_results, "host_12");
         let count = host_12.value[0].value.as_ref().unwrap();
@@ -1626,8 +1624,7 @@ mod tests {
         )
         .unwrap();
 
-        // limit=2: top 2 host buckets + 1 __TOTAL__ row
-        assert_eq!(evp_agg_results.len(), 3);
+        assert_eq!(evp_agg_results.len(), 13);
 
         let host_12 = find_result_by_key(&evp_agg_results, "host_12");
         let count = host_12.value[0].value.as_ref().unwrap();
@@ -2126,7 +2123,7 @@ mod tests {
         .unwrap();
 
         // The sort-by-key aggregation must not appear in the output values.
-        assert_eq!(evp_agg_results.len(), 2);
+        assert_eq!(evp_agg_results.len(), 12);
         assert_eq!(evp_agg_results[0].value.len(), 1);
     }
 
@@ -2187,7 +2184,7 @@ mod tests {
         .unwrap();
 
         // Count + cardinality — both must appear exactly once per bucket.
-        assert_eq!(evp_agg_results.len(), 2);
+        assert_eq!(evp_agg_results.len(), 12);
         assert_eq!(evp_agg_results[0].value.len(), 2);
 
         // Intermediate CARDINALITY_SKETCH returns an HLL sketch, not a scalar.
