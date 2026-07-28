@@ -1318,12 +1318,12 @@ mod tests {
             version: 0.8
             docs_sorting:
               grouping:
-                fields:
+                fingerprint:
                   - path: "$"
                     kind: structure
                     exclude: [custom]
                 grouping:
-                  fields:
+                  fingerprint:
                     - path: custom
                       kind: raw
                     - path: message
@@ -1341,14 +1341,14 @@ mod tests {
         let GroupingField::Structure {
             path,
             exclude: excluded_paths,
-        } = &config.grouping.fields[0]
+        } = &config.grouping.fingerprint[0]
         else {
             panic!("expected root structure field");
         };
         assert_eq!(path, "$");
         assert_eq!(excluded_paths, &["custom".to_string()]);
         assert_eq!(
-            config.grouping.grouping.unwrap().fields,
+            config.grouping.grouping.unwrap().fingerprint,
             vec![
                 GroupingField::Raw {
                     path: "custom".to_string()
@@ -1366,11 +1366,11 @@ mod tests {
             version: 0.8
             docs_sorting:
               grouping:
-                fields:
+                fingerprint:
                   - path: "$"
                     kind: structure
                 grouping:
-                  fields:
+                  fingerprint:
                     - path: message
                       kind: tokenized
         "#;
@@ -1388,11 +1388,11 @@ mod tests {
             version: 0.8
             docs_sorting:
               grouping:
-                fields:
+                fingerprint:
                   - path: "$"
                     kind: structure
                 grouping:
-                  fields:
+                  fingerprint:
                     - path: message
                       kind: tokenized
         "#;

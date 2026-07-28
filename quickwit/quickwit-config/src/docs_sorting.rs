@@ -29,12 +29,12 @@ use crate::qw_env_vars::QW_ENABLE_DOCS_SORTING;
 ///
 /// ```yaml
 /// grouping:
-///   fields:
+///   fingerprint:
 ///     - path: "$"
 ///       kind: structure
 ///       exclude: [custom]
 ///   grouping:
-///     fields:
+///     fingerprint:
 ///       - path: custom
 ///         kind: raw
 ///       - path: message
@@ -115,12 +115,12 @@ impl DocsSortingConfigBuilder {
 ///
 /// ```yaml
 /// grouping:
-///   fields:
+///   fingerprint:
 ///     - path: "$"
 ///       kind: structure
 ///       exclude: [custom]
 ///   grouping:
-///     fields:
+///     fingerprint:
 ///       - path: status
 ///         kind: raw
 ///       - path: body
@@ -131,7 +131,7 @@ impl DocsSortingConfigBuilder {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GroupingConfig {
-    pub fields: Vec<GroupingField>,
+    pub fingerprint: Vec<GroupingField>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grouping: Option<Box<GroupingConfig>>,
 }
@@ -153,9 +153,9 @@ impl GroupingConfig {
                 Ok(())
             }
 
-            let mut grouping_paths = HashSet::with_capacity(config.fields.len());
+            let mut grouping_paths = HashSet::with_capacity(config.fingerprint.len());
             let mut excluded_paths = HashSet::new();
-            for field in &config.fields {
+            for field in &config.fingerprint {
                 match field {
                     GroupingField::Structure { path, exclude } => {
                         validate_json_path(path)?;
@@ -215,10 +215,10 @@ impl GroupingConfig {
     // fingerprinting implementation.
     fn validate_fingerprinter_limitations(&self) -> anyhow::Result<()> {
         ensure!(
-            self.fields.len() == 1,
+            self.fingerprint.len() == 1,
             "root document sorting grouping must contain exactly one structure field"
         );
-        let Some(GroupingField::Structure { path, .. }) = self.fields.first() else {
+        let Some(GroupingField::Structure { path, .. }) = self.fingerprint.first() else {
             return Err(anyhow::anyhow!(
                 "root document sorting grouping must contain a structure field"
             ));
@@ -239,7 +239,7 @@ impl GroupingConfig {
         );
         ensure!(
             child_grouping
-                .fields
+                .fingerprint
                 .iter()
                 .all(|field| !matches!(field, GroupingField::Structure { .. })),
             "second-level document sorting grouping only supports raw and tokenized fields"
@@ -297,12 +297,12 @@ mod tests {
         let config = build_config(
             r#"
 grouping:
-  fields:
+  fingerprint:
     - path: "$"
       kind: structure
       exclude: [custom]
   grouping:
-    fields:
+    fingerprint:
       - path: custom
         kind: raw
       - path: message
@@ -315,14 +315,14 @@ grouping:
         let GroupingField::Structure {
             path,
             exclude: excluded_paths,
-        } = &config.grouping.fields[0]
+        } = &config.grouping.fingerprint[0]
         else {
             panic!("expected root structure field");
         };
         assert_eq!(path, "$");
         assert_eq!(excluded_paths, &["custom".to_string()]);
         assert_eq!(
-            config.grouping.grouping.unwrap().fields,
+            config.grouping.grouping.unwrap().fingerprint,
             vec![
                 GroupingField::Raw {
                     path: "custom".to_string()
@@ -339,11 +339,11 @@ grouping:
         let config = build_config(
             r#"
 grouping:
-  fields:
+  fingerprint:
     - path: "$"
       kind: structure
   grouping:
-    fields:
+    fingerprint:
       - path: message
         kind: tokenized
 "#,
@@ -356,34 +356,34 @@ grouping:
     fn grouping_config_validation_rejects_invalid_structure_and_paths() {
         let test_cases = [
             (
-                serde_json::json!({"fields": []}),
+                serde_json::json!({"fingerprint": []}),
                 "exactly one structure field",
             ),
             (
                 serde_json::json!({
-                    "fields": [{"path": "message", "kind": "raw"}]
+                    "fingerprint": [{"path": "message", "kind": "raw"}]
                 }),
                 "must contain a structure field",
             ),
             (
                 serde_json::json!({
-                    "fields": [{"path": "message", "kind": "structure"}]
+                    "fingerprint": [{"path": "message", "kind": "structure"}]
                 }),
                 "structure path must be `$`",
             ),
             (
                 serde_json::json!({
-                    "fields": [{"path": "$", "kind": "structure"}]
+                    "fingerprint": [{"path": "$", "kind": "structure"}]
                 }),
                 "must contain a second grouping level",
             ),
             (
                 serde_json::json!({
-                    "fields": [{"path": "$", "kind": "structure"}],
+                    "fingerprint": [{"path": "$", "kind": "structure"}],
                     "grouping": {
-                        "fields": [{"path": "custom", "kind": "raw"}],
+                        "fingerprint": [{"path": "custom", "kind": "raw"}],
                         "grouping": {
-                            "fields": [{"path": "message", "kind": "tokenized"}]
+                            "fingerprint": [{"path": "message", "kind": "tokenized"}]
                         }
                     }
                 }),
@@ -391,31 +391,31 @@ grouping:
             ),
             (
                 serde_json::json!({
-                    "fields": [{"path": "$", "kind": "structure"}],
+                    "fingerprint": [{"path": "$", "kind": "structure"}],
                     "grouping": {
-                        "fields": [{"path": "message", "kind": "structure"}]
+                        "fingerprint": [{"path": "message", "kind": "structure"}]
                     }
                 }),
                 "only supports raw and tokenized fields",
             ),
             (
                 serde_json::json!({
-                    "fields": [{
+                    "fingerprint": [{
                         "path": "$",
                         "kind": "structure",
                         "exclude": ["custom", "custom"]
                     }],
                     "grouping": {
-                        "fields": [{"path": "message", "kind": "tokenized"}]
+                        "fingerprint": [{"path": "message", "kind": "tokenized"}]
                     }
                 }),
                 "duplicate document sorting excluded path `custom`",
             ),
             (
                 serde_json::json!({
-                    "fields": [{"path": "$", "kind": "structure"}],
+                    "fingerprint": [{"path": "$", "kind": "structure"}],
                     "grouping": {
-                        "fields": [
+                        "fingerprint": [
                             {"path": "message", "kind": "raw"},
                             {"path": "message", "kind": "tokenized"}
                         ]
@@ -425,9 +425,9 @@ grouping:
             ),
             (
                 serde_json::json!({
-                    "fields": [{"path": "$", "kind": "structure"}],
+                    "fingerprint": [{"path": "$", "kind": "structure"}],
                     "grouping": {
-                        "fields": [{"path": "message..template", "kind": "tokenized"}]
+                        "fingerprint": [{"path": "message..template", "kind": "tokenized"}]
                     }
                 }),
                 "must not contain empty components",
@@ -446,7 +446,7 @@ grouping:
 
     #[test]
     fn deserialization_rejects_malformed_yaml() {
-        let error = serde_yaml::from_str::<DocsSortingConfigBuilder>("grouping:\n  fields: [")
+        let error = serde_yaml::from_str::<DocsSortingConfigBuilder>("grouping:\n  fingerprint: [")
             .err()
             .unwrap();
         assert!(
@@ -462,7 +462,7 @@ grouping:
         let error = serde_yaml::from_str::<DocsSortingConfigBuilder>(
             r#"
 grouping:
-  fields:
+  fingerprint:
     - path: message
       kind: tokenized
       extra: nope
@@ -481,7 +481,7 @@ grouping:
         let error = serde_yaml::from_str::<DocsSortingConfigBuilder>(
             r#"
 grouping:
-  fields:
+  fingerprint:
     - path: message
       kind: templated
 "#,
@@ -499,12 +499,12 @@ grouping:
         let config = build_config(
             r#"
 grouping:
-  fields:
+  fingerprint:
     - path: "$"
       kind: structure
       exclude: [custom]
   grouping:
-    fields:
+    fingerprint:
       - path: custom
         kind: raw
       - path: message
@@ -516,8 +516,8 @@ grouping:
         let serialized_config = serde_yaml::to_string(&config).unwrap();
 
         assert!(serialized_config.contains("grouping:"));
+        assert!(serialized_config.contains("fingerprint:"));
         assert!(serialized_config.contains("kind: structure"));
-        assert!(!serialized_config.contains("fingerprint:"));
         assert!(!serialized_config.contains("max_grouping_tokens"));
     }
 }

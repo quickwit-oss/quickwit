@@ -113,7 +113,7 @@ impl Fingerprinter {
                 path.split('.').map(ToString::to_string).collect()
             }
 
-            for field in &config.fields {
+            for field in &config.fingerprint {
                 match field {
                     GroupingField::Structure { exclude, .. } => {
                         ignored_paths.extend(exclude.iter().map(|path| parse_path(path)));
@@ -252,13 +252,13 @@ mod tests {
 
     fn test_docs_sorting_config() -> DocsSortingConfig {
         docs_sorting_config(serde_json::json!({
-            "fields": [{
+            "fingerprint": [{
                 "path": "$",
                 "kind": "structure",
                 "exclude": ["tag", "custom"]
             }],
             "grouping": {
-                "fields": [
+                "fingerprint": [
                     {
                         "path": "message",
                         "kind": "tokenized"
@@ -325,12 +325,12 @@ mod tests {
     #[test]
     fn tokenized_field_respects_hardcoded_grouping_token_limit() {
         let docs_sorting_config = docs_sorting_config(serde_json::json!({
-            "fields": [{
+            "fingerprint": [{
                 "path": "$",
                 "kind": "structure"
             }],
             "grouping": {
-                "fields": [{
+                "fingerprint": [{
                     "path": "message",
                     "kind": "tokenized"
                 }]
@@ -384,12 +384,12 @@ mod tests {
     #[test]
     fn configured_raw_field_changes_grouping_fingerprint_only() {
         let docs_sorting_config = docs_sorting_config(serde_json::json!({
-            "fields": [{
+            "fingerprint": [{
                 "path": "$",
                 "kind": "structure"
             }],
             "grouping": {
-                "fields": [{
+                "fingerprint": [{
                     "path": "host",
                     "kind": "raw"
                 }]
@@ -407,12 +407,12 @@ mod tests {
     #[test]
     fn non_string_grouping_values_are_ignored() {
         let docs_sorting_config = docs_sorting_config(serde_json::json!({
-            "fields": [{
+            "fingerprint": [{
                 "path": "$",
                 "kind": "structure"
             }],
             "grouping": {
-                "fields": [{
+                "fingerprint": [{
                     "path": "status",
                     "kind": "raw"
                 }]

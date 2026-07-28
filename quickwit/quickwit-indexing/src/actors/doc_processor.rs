@@ -645,12 +645,12 @@ mod tests {
     fn raw_body_fingerprinter_for_test() -> Fingerprinter {
         let docs_sorting_config = DocsSortingConfig {
             grouping: serde_json::from_value::<GroupingConfig>(serde_json::json!({
-                "fields": [{
+                "fingerprint": [{
                     "path": "$",
                     "kind": "structure"
                 }],
                 "grouping": {
-                    "fields": [{
+                    "fingerprint": [{
                         "path": "body",
                         "kind": "raw"
                     }]

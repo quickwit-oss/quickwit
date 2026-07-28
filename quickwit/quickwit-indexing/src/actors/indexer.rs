@@ -1236,12 +1236,12 @@ mod tests {
             index_serializer_mailbox,
             Some(Fingerprinter::new(
                 &serde_json::from_value::<GroupingConfig>(serde_json::json!({
-                    "fields": [{
+                    "fingerprint": [{
                         "path": "$",
                         "kind": "structure"
                     }],
                     "grouping": {
-                        "fields": [{
+                        "fingerprint": [{
                             "path": "body",
                             "kind": "raw"
                         }]
