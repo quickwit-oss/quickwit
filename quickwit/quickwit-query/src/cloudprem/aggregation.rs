@@ -519,8 +519,11 @@ fn timezone_and_ts_to_offset(timezone: &str, ts_secs: i64) -> Result<i32, Invali
 /// Convert intermediate aggregation results to CloudPrem proto format.
 /// Returns raw sum/count for AVG (for proper weighted-average merging across query steps).
 ///
-/// Prunes bucket results to match what the tantivy finalizer would normally apply
-/// (size limit, min_doc_count).
+/// Prunes bucket results using the same rules as per-segment pruning
+/// (notably `segment_size`), since these are still intermediate results:
+/// callers may merge them further across multi-step or federated queries,
+/// so `PruneMode::Final`'s `size`/`min_doc_count` filtering would drop
+/// buckets that a later merge step still needs.
 pub fn intermediate_aggregation_result_to_proto(
     mut intermediate_results: IntermediateAggregationResults,
     aggregations_def: &quickwit_proto::cloudprem::Aggregation,
@@ -528,7 +531,7 @@ pub fn intermediate_aggregation_result_to_proto(
     parent_count: u64,
 ) -> Result<Vec<EvpAggregationResult>, CloudPremError> {
     intermediate_results
-        .prune_intermediate_results(tantivy_aggregations, PruneMode::Final)
+        .prune_intermediate_results(tantivy_aggregations, PruneMode::Intermediate)
         .map_err(|err| {
             CloudPremError::Internal(format!("failed to prune intermediate results: {err}"))
         })?;
