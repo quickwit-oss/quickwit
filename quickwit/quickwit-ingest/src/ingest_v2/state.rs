@@ -85,7 +85,15 @@ impl InnerIngesterState {
         if self.status() != IngesterStatus::Decommissioning {
             return;
         }
-        if self.shards.is_empty() {
+        // An ingester is decommissioned if:
+        // - `self.shards` is empty OR
+        // - all shards are non-advertisable and empty
+        //
+        // see `IngesterShard::is_empty_orphan` for why the latter are never going to be deleted
+        // by any other cleanup mechanism, so we must not wait on them here.
+        let is_decommissioned = self.shards.values().all(|shard| shard.is_empty_orphan());
+
+        if is_decommissioned {
             self.set_status(IngesterStatus::Decommissioned).await;
         }
     }

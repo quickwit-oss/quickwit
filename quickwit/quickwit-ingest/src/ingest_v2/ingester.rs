@@ -3872,6 +3872,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_check_decommissioning_status_with_empty_orphan_shard() {
+        // A non-advertisable shard is invisible to gossip/RPC-driven cleanup and will never be
+        // deleted, so the ingester must not wait for its removal to consider itself
+        // decommissioned as long as it is empty.
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
+        let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+
+        let empty_orphan_shard =
+            IngesterShard::new_solo(index_uid.clone(), source_id, ShardId::from(1))
+                .with_state(ShardState::Closed)
+                .build();
+        let queue_id = empty_orphan_shard.queue_id();
+        state_guard
+            .shards
+            .insert(queue_id.clone(), empty_orphan_shard);
+
+        state_guard
+            .set_status(IngesterStatus::Decommissioning)
+            .await;
+        state_guard.check_decommissioning_status().await;
+
+        assert_eq!(state_guard.status(), IngesterStatus::Decommissioned);
+        assert!(state_guard.shards.contains_key(&queue_id));
+    }
+
+    #[tokio::test]
     async fn test_decommission_completes_when_empty_shard_deleted_via_gossip() {
         let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
