@@ -49,7 +49,7 @@ where K: Hash + Eq + Clone
     type Item = Result<TowerChange<K, Channel>, Infallible>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match Pin::new(&mut *self.changes).poll_next(cx) {
+        match self.changes.as_mut().poll_next(cx) {
             Poll::Pending | Poll::Ready(None) => Poll::Pending,
             Poll::Ready(Some(change)) => match change {
                 Change::Insert(key, channel) => {

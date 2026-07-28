@@ -1336,7 +1336,7 @@ pub fn ensure_all_indexes_found(
 }
 
 async fn refine_and_list_matches(
-    metastore: &mut MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
     search_request: &mut SearchRequest,
     indexes_metadata: Vec<IndexMetadata>,
     query_ast_resolved: QueryAst,
@@ -1377,9 +1377,9 @@ async fn refine_and_list_matches(
 }
 
 /// Fetches the list of splits and their metadata from the metastore
-async fn plan_splits_for_root_search(
+pub(crate) async fn plan_splits_for_root_search(
     search_request: &mut SearchRequest,
-    metastore: &mut MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<(Vec<SplitMetadata>, IndexesMetasForLeafSearch)> {
     let list_indexes_metadatas_request = ListIndexesMetadataRequest {
         index_id_patterns: search_request.index_id_patterns.clone(),
@@ -1423,14 +1423,14 @@ async fn plan_splits_for_root_search(
 pub async fn root_search(
     searcher_context: &SearcherContext,
     mut search_request: SearchRequest,
-    mut metastore: MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
     let start_instant = Instant::now();
 
     let (split_metadatas, indexes_meta_for_leaf_search) = RootSearchMetricsFuture {
         start: start_instant,
-        tracked: plan_splits_for_root_search(&mut search_request, &mut metastore),
+        tracked: plan_splits_for_root_search(&mut search_request, metastore),
         is_success: None,
         step: RootSearchMetricsStep::Plan,
     }
@@ -1493,7 +1493,7 @@ pub async fn root_search(
 /// Returns details on how a query would be executed
 pub async fn search_plan(
     mut search_request: SearchRequest,
-    mut metastore: MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<SearchPlanResponse> {
     let list_indexes_metadatas_request = ListIndexesMetadataRequest {
         index_id_patterns: search_request.index_id_patterns.clone(),
@@ -1525,7 +1525,7 @@ pub async fn search_plan(
 
     let request_metadata = validate_request_and_build_metadata(&indexes_metadata, &search_request)?;
     let split_metadatas = refine_and_list_matches(
-        &mut metastore,
+        metastore,
         &mut search_request,
         indexes_metadata,
         request_metadata.query_ast_resolved.clone(),
@@ -2031,7 +2031,8 @@ mod tests {
     use quickwit_indexing::MockSplitBuilder;
     use quickwit_metastore::{IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt};
     use quickwit_proto::metastore::{
-        ListIndexesMetadataResponse, ListSplitsResponse, MockMetastoreService,
+        ListIndexesMetadataResponse, ListSplitsResponse, MetastoreServiceClient,
+        MockMetastoreService,
     };
     use quickwit_proto::search::{
         ScrollRequest, SortByValue, SortOrder, SortValue, SplitSearchError,
@@ -2887,7 +2888,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -2957,7 +2958,7 @@ mod tests {
         let search_response = root_search(
             &searcher_context,
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -3049,7 +3050,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -3344,7 +3345,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await?;
@@ -3462,7 +3463,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -3594,7 +3595,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request.clone(),
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await?;
@@ -3776,7 +3777,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request.clone(),
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await?;
@@ -3900,7 +3901,7 @@ mod tests {
         let search_response = root_search(
             &searcher_context,
             search_request,
-            mock_metastore_client.clone(),
+            &mock_metastore_client,
             &cluster_client,
         )
         .await
@@ -3919,7 +3920,7 @@ mod tests {
         let search_error = root_search(
             &searcher_context,
             search_request,
-            mock_metastore_client,
+            &mock_metastore_client,
             &cluster_client,
         )
         .await
@@ -4044,7 +4045,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -4184,7 +4185,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -4265,7 +4266,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -4332,7 +4333,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -4422,7 +4423,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -4504,7 +4505,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -4553,7 +4554,7 @@ mod tests {
                     max_hits: 10,
                     ..Default::default()
                 },
-                metastore.clone(),
+                &metastore,
                 &cluster_client,
             )
             .await
@@ -4569,7 +4570,7 @@ mod tests {
                     max_hits: 10,
                     ..Default::default()
                 },
-                metastore,
+                &metastore,
                 &cluster_client,
             )
             .await
@@ -4634,7 +4635,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await;
@@ -4684,7 +4685,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            metastore.clone(),
+            &metastore,
             &cluster_client,
         )
         .await;
@@ -4704,7 +4705,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            metastore,
+            &metastore,
             &cluster_client,
         )
         .await;
@@ -4754,7 +4755,7 @@ mod tests {
             });
         let search_response = search_plan(
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
         )
         .await
         .unwrap();
@@ -4841,7 +4842,7 @@ mod tests {
                 ignore_missing_indexes: true,
                 ..Default::default()
             },
-            mock_metastore_service.clone(),
+            &mock_metastore_service,
         )
         .await
         .unwrap();
@@ -4855,7 +4856,7 @@ mod tests {
                 ignore_missing_indexes: false,
                 ..Default::default()
             },
-            mock_metastore_service.clone(),
+            &mock_metastore_service,
         )
         .await
         .unwrap_err();
@@ -5222,7 +5223,7 @@ mod tests {
             let search_response = root_search(
                 &searcher_context,
                 search_request,
-                MetastoreServiceClient::from_mock(mock_metastore),
+                &MetastoreServiceClient::from_mock(mock_metastore),
                 &cluster_client,
             )
             .await
@@ -5488,7 +5489,7 @@ mod tests {
             let search_response = root_search(
                 &searcher_context,
                 search_request,
-                MetastoreServiceClient::from_mock(mock_metastore),
+                &MetastoreServiceClient::from_mock(mock_metastore),
                 &cluster_client,
             )
             .await
@@ -5670,7 +5671,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -5791,7 +5792,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -5844,7 +5845,7 @@ mod tests {
         let search_error = root_search(
             &searcher_context,
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await

@@ -21,6 +21,8 @@ pub mod batch;
 mod client;
 mod cluster_client;
 mod collector;
+/// Columnar two-phase read primitive for the Trino endpoints.
+pub mod columnar_stream;
 mod error;
 mod fetch_docs;
 mod find_trace_ids_collector;
@@ -51,7 +53,7 @@ use quickwit_common::thread_pool::with_priority::ThreadPoolWithPriority;
 use quickwit_common::tower::Pool;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::metastore::{
-    ListIndexesMetadataRequest, ListSplitsRequest, MetastoreService, MetastoreServiceClient,
+    ListIndexesMetadataRequest, ListSplitsRequest, MetastoreServiceClient,
 };
 use tantivy::schema::NamedFieldDocument;
 
@@ -68,6 +70,7 @@ use quickwit_metastore::{
     IndexMetadata, ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt,
     MetastoreServiceStreamSplitsExt, SplitMetadata, SplitState,
 };
+use quickwit_proto::metastore::MetastoreService;
 use quickwit_proto::search::{
     LeafResourceStats, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
     SplitResourceStats,
@@ -81,6 +84,10 @@ pub use crate::client::{
     SearchServiceClient, create_search_client_from_channel, create_search_client_from_grpc_addr,
 };
 pub use crate::cluster_client::ClusterClient;
+pub use crate::columnar_stream::{
+    BatchSize, ColumnRequest, ColumnarSplitBatch, ColumnarSplitPlanRequest,
+    SearchSplitBatchColumnarRequest, plan_columnar_splits,
+};
 pub use crate::error::{SearchError, parse_grpc_error};
 use crate::fetch_docs::fetch_docs;
 pub use crate::invoker::LambdaLeafSearchInvoker;
@@ -183,7 +190,7 @@ fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAn
 /// Get all splits of given index ids
 pub async fn list_all_splits(
     index_uids: Vec<IndexUid>,
-    metastore: &mut MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<Vec<SplitMetadata>> {
     list_relevant_splits(index_uids, None, None, None, metastore).await
 }
@@ -194,7 +201,7 @@ pub async fn list_relevant_splits(
     start_timestamp: Option<i64>,
     end_timestamp: Option<i64>,
     tags_filter_opt: Option<TagFilterAst>,
-    metastore: &mut MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<Vec<SplitMetadata>> {
     let Some(mut query) = ListSplitsQuery::try_from_index_uids(index_uids) else {
         return Ok(Vec::new());
@@ -223,7 +230,7 @@ pub async fn list_relevant_splits(
 /// Patterns follow the elastic search patterns.
 pub async fn resolve_index_patterns(
     index_id_patterns: &[String],
-    metastore: &mut MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<Vec<IndexMetadata>> {
     let list_indexes_metadata_request = if index_id_patterns.is_empty() {
         ListIndexesMetadataRequest::all()
@@ -301,7 +308,7 @@ pub async fn single_node_search(
     root_search(
         &searcher_context,
         search_request,
-        metastore,
+        &metastore,
         &cluster_client,
     )
     .await

@@ -47,7 +47,7 @@ use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, IndexBuilder, IndexSettings};
 use tokio::runtime::Handle;
 use tokio::sync::Semaphore;
-use tracing::{Span, info, info_span, warn};
+use tracing::{Span, debug, info_span, warn};
 use ulid::Ulid;
 
 use super::IndexSerializer;
@@ -133,7 +133,7 @@ impl IndexerState {
             index_builder,
             io_controls,
         )?;
-        info!(
+        debug!(
             split_id=%indexed_split.split_id(),
             partition_id=%partition_id,
             "new-split"
@@ -548,6 +548,7 @@ impl Indexer {
             docstore_blocksize: indexing_settings.docstore_blocksize,
             docstore_compression,
             docstore_compress_dedicated_thread: true,
+            manual_doc_id_mapping: false,
         };
         let cooperative_indexing_opt: Option<CooperativeIndexingCycle> =
             cooperative_indexing_permits_opt.map(|cooperative_indexing_permits| {
@@ -667,7 +668,7 @@ impl Indexer {
         }
         let num_splits = splits.len() as u64;
         let split_ids: String = splits.iter().map(|split| split.split_id()).join(",");
-        info!(
+        debug!(
             index=%self.indexer_state.pipeline_id.index_uid,
             source=self.indexer_state.pipeline_id.source_id.as_str(),
             pipeline_uid=%self.indexer_state.pipeline_id.pipeline_uid,

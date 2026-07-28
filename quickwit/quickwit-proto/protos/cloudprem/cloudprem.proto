@@ -58,6 +58,15 @@ service CloudPremService {
   // Requires QW_ENABLE_DATAFUSION_ENDPOINT=true and the Searcher role.
   rpc SubstraitSearch(CloudpremSubstraitRequest) returns (CloudpremSubstraitResponse);
 
+  // Columnar two-phase read API (for Trino and other columnar consumers).
+  //
+  // Phase 1 — enumerate batches of splits a query touches so a client can fan out.
+  rpc ListSplits(ListSplitsRequest) returns (stream SplitBatch);
+
+  // Phase 2 — read a column projection from a batch of splits, streamed as Arrow.
+  // Reads columnar fast fields only; never the row-oriented doc store.
+  rpc SearchSplitBatch(SearchSplitBatchRequest) returns (stream SearchSplitBatchResponse);
+
   // Dynamically sets the log level.
   rpc SetLogLevel(SetLogLevelRequest) returns (SetLogLevelResponse);
 
@@ -80,7 +89,7 @@ message AnyRequest {
 
         // Same as a ping, but not propagated further
         PingRequest local_ping = 21;
-        
+
         GetIndexesRequest get_indexes = 22;
         CreateIndexRequest create_index = 23;
         UpdateIndexRequest update_index = 24;
@@ -118,7 +127,7 @@ message AnyResponse {
 
         // Same as a ping, but not propagated further
         PingResponse local_ping = 21;
-        
+
         GetIndexesResponse get_indexes = 22;
         CreateIndexResponse create_index = 23;
         UpdateIndexResponse update_index = 24;
@@ -627,4 +636,93 @@ message CloudpremSubstraitRequest {
 
 message CloudpremSubstraitResponse {
   bytes arrow_ipc_bytes = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Columnar two-phase read API (Trino).
+// ---------------------------------------------------------------------------
+
+// Phase 1 — enumerate the splits matching a query.
+message ListSplitsRequest {
+  // The row filter applied by both phases: a logs-backend QueryNode (same as
+  // List/FetchOne/Aggregate), normalized to a single internal `QueryAst`
+  // before reaching the engine.
+  //
+  // There is no separate time-range field: like `List`/`FetchOne`/`Aggregate`,
+  // a time window is expressed as a range query over the timestamp field
+  // within the query itself.
+  google.protobuf.Any query_node = 1;
+  // Quickwit index ID patterns to search. If empty, defaults to "datadog*".
+  repeated string index_id_patterns = 2;
+  // unused in pomsky
+  reserved 3;
+  // org_id is used for routing in cloudprem-bridge (which shares this api), ignored in pomsky.
+  int64 org_id = 998;
+}
+
+// A bounded batch of splits. Callers use the aggregate fields for planning and
+// forward split_batch_details unchanged when requesting the batch's data.
+message SplitBatch {
+  // Opaque, self-sufficient encoded SplitBatchDetails.
+  bytes split_batch_details = 1;
+  uint64 total_num_docs = 2;
+  uint64 total_size_bytes = 3;
+}
+
+// Internal by convention. This message is encoded into
+// `SplitBatch.split_batch_details`; callers should forward those bytes without
+// decoding them.
+message SplitBatchDetails {
+  string index_uid = 1;
+  string index_uri = 2;
+  // JSON-serialized doc mapper shared by every split in the batch.
+  string doc_mapper_str = 3;
+  repeated quickwit.search.SplitIdAndFooterOffsets splits = 4;
+}
+
+// Phase 2 — read a column projection from a batch of splits, streamed as Arrow.
+message SearchSplitBatchRequest {
+  SplitBatch split_batch = 1; // the batch returned by ListSplits
+  google.protobuf.Any query_node = 2; // row filter applied within each split (see ListSplitsRequest.query_node)
+  repeated ColumnProjection columns = 3; // the projection (explicit names + types)
+  uint32 batch_size = 4; // rows per Arrow batch (0 -> server default)
+  uint64 limit = 6; // optional per-split cap (0 -> unlimited)
+  // org_id is used for routing in cloudprem-bridge (which shares this api), ignored in pomsky.
+  int64 org_id = 998;
+}
+
+message ColumnProjection {
+  string name = 1; // logical column / dotted json path, e.g. "service" or "http.status_code"
+  ColumnType type = 2; // the type the caller wants the column returned as
+}
+
+// The type of a requested column. A oneof so that a future `Array` variant
+// can wrap a `ScalarType` element type; nested arrays are intentionally not
+// representable (the array element type is a `ScalarType`, not a `ColumnType`).
+message ColumnType {
+  oneof kind {
+    ScalarType scalar = 1;
+  }
+}
+
+enum ScalarType {
+  SCALAR_TYPE_UNSPECIFIED = 0;
+  SCALAR_TYPE_STRING = 1; // -> Arrow Utf8
+  SCALAR_TYPE_INT64 = 2; // -> Arrow Int64
+  SCALAR_TYPE_UINT64 = 3; // -> Arrow UInt64
+  SCALAR_TYPE_FLOAT64 = 4; // -> Arrow Float64
+  SCALAR_TYPE_BOOL = 5; // -> Arrow Boolean
+  SCALAR_TYPE_TIMESTAMP_NANOS = 6; // -> Arrow Timestamp(Nanosecond)
+  SCALAR_TYPE_BYTES = 7; // -> Arrow Binary
+  SCALAR_TYPE_IP = 8; // -> Arrow Utf8
+}
+
+message SearchSplitBatchResponse {
+  // One Arrow IPC stream chunk: an encapsulated IPC message (schema,
+  // record batch, or dictionary batch) or the trailing EOS marker.
+  // Arrow IPC messages are self-describing (each has its own FlatBuffers
+  // header identifying its type), so callers should concatenate these
+  // chunks, in order, into a single byte stream and hand it to an Arrow
+  // IPC stream reader rather than branching on message kind here.
+  bytes arrow_ipc_message = 1;
 }

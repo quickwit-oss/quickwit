@@ -13,40 +13,46 @@
 // limitations under the License.
 
 use quickwit_proto::metastore::{EntityKind, MetastoreError};
-use sqlx::postgres::PgDatabaseError;
 use tracing::error;
 
 // https://www.postgresql.org/docs/current/errcodes-appendix.html
 mod pg_error_codes {
     pub const FOREIGN_KEY_VIOLATION: &str = "23503";
     pub const UNIQUE_VIOLATION: &str = "23505";
+    pub const READ_ONLY_SQL_TRANSACTION: &str = "25006";
 }
 
 pub(super) fn convert_sqlx_err(index_id: &str, sqlx_error: sqlx::Error) -> MetastoreError {
     match &sqlx_error {
         sqlx::Error::Database(boxed_db_error) => {
-            let pg_db_error = boxed_db_error.downcast_ref::<PgDatabaseError>();
-            let pg_error_code = pg_db_error.code();
-            let pg_error_table = pg_db_error.table();
+            let pg_error_code = boxed_db_error.code();
+            let pg_error_table = boxed_db_error.table();
 
-            match (pg_error_code, pg_error_table) {
-                (pg_error_codes::FOREIGN_KEY_VIOLATION, _) => {
+            match (pg_error_code.as_deref(), pg_error_table) {
+                (Some(pg_error_codes::FOREIGN_KEY_VIOLATION), _) => {
                     MetastoreError::NotFound(EntityKind::Index {
                         index_id: index_id.to_string(),
                     })
                 }
-                (pg_error_codes::UNIQUE_VIOLATION, Some(table)) if table.starts_with("indexes") => {
+                (Some(pg_error_codes::UNIQUE_VIOLATION), Some(table))
+                    if table.starts_with("indexes") =>
+                {
                     MetastoreError::AlreadyExists(EntityKind::Index {
                         index_id: index_id.to_string(),
                     })
                 }
-                (pg_error_codes::UNIQUE_VIOLATION, _) => {
+                (Some(pg_error_codes::UNIQUE_VIOLATION), _) => {
                     error!(error=?boxed_db_error, "postgresql-error");
                     MetastoreError::Internal {
                         message: "unique key violation".to_string(),
                         cause: format!("DB error {boxed_db_error:?}"),
                     }
                 }
+                (Some(pg_error_codes::READ_ONLY_SQL_TRANSACTION), _) => MetastoreError::Forbidden {
+                    message: format!(
+                        "cannot issue write request on a read-only replica: {boxed_db_error}"
+                    ),
+                },
                 _ => {
                     error!(error=?boxed_db_error, "postgresql-error");
                     MetastoreError::Db {

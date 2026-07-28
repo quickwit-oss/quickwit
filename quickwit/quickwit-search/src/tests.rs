@@ -966,7 +966,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
         None,
         None,
         extract_tags_from_query(query_ast),
-        &mut test_sandbox.metastore(),
+        &test_sandbox.metastore(),
     )
     .await?;
     assert!(selected_splits.is_empty());
@@ -978,7 +978,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
         None,
         None,
         extract_tags_from_query(query_ast),
-        &mut test_sandbox.metastore(),
+        &test_sandbox.metastore(),
     )
     .await?;
     assert_eq!(selected_splits.len(), 2);
@@ -990,7 +990,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
         None,
         None,
         extract_tags_from_query(query_ast),
-        &mut test_sandbox.metastore(),
+        &test_sandbox.metastore(),
     )
     .await?;
     assert_eq!(selected_splits.len(), 2);
@@ -1899,8 +1899,8 @@ async fn negative_cache_test_setup() -> (
         .add_documents(vec![json!({"body": "hello world"})])
         .await
         .unwrap();
-    let mut metastore = test_sandbox.metastore();
-    let splits_metadata = list_all_splits(vec![test_sandbox.index_uid()], &mut metastore)
+    let metastore = test_sandbox.metastore();
+    let splits_metadata = list_all_splits(vec![test_sandbox.index_uid()], &metastore)
         .await
         .unwrap();
     let splits: Vec<SplitIdAndFooterOffsets> = splits_metadata
@@ -2115,8 +2115,8 @@ async fn negative_cache_ts_test_setup() -> (
         docs.push(json!({"body": format!("info {i}"), "ts": start_timestamp + i}));
     }
     test_sandbox.add_documents(docs).await.unwrap();
-    let mut metastore = test_sandbox.metastore();
-    let splits_metadata = list_all_splits(vec![test_sandbox.index_uid()], &mut metastore)
+    let metastore = test_sandbox.metastore();
+    let splits_metadata = list_all_splits(vec![test_sandbox.index_uid()], &metastore)
         .await
         .unwrap();
     let splits: Vec<SplitIdAndFooterOffsets> = splits_metadata

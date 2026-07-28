@@ -4,8 +4,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::Stream;
 use futures::stream::FuturesUnordered;
 use itertools::Itertools;
+use prost::Message as _;
+use prost_types::Any;
 use quickwit_cluster::{Cluster, ClusterNode};
 use quickwit_common::ServiceStream;
 use quickwit_config::service::QuickwitService;
@@ -27,14 +30,16 @@ use quickwit_proto::cloudprem::index::{
 use quickwit_proto::cloudprem::metrics::{Label, MetricFamily, metric};
 use quickwit_proto::cloudprem::{
     AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
-    CloudpremSubstraitRequest, CloudpremSubstraitResponse, CreateIndexRequest, CreateIndexResponse,
-    DeleteIndexRequest, DeleteIndexResponse, EsHttpRequest, EsHttpResponse, Event, EventTracker,
-    FetchOneRequest, FetchOneResponse, GetClusterDiagnosticsRequest, GetClusterDiagnosticsResponse,
-    GetIndexRoutingTableRequest, GetIndexRoutingTableResponse, GetIndexesRequest,
-    GetIndexesResponse, ListRequest, ListResponse, NodeDiagnostics, NodeMetrics, PingRequest,
-    PingResponse, PullClusterMetricsResponse, SetIndexRoutingTableRequest,
-    SetIndexRoutingTableResponse, SetLogLevelRequest, SetLogLevelResponse, Statistics,
-    UpdateIndexRequest, UpdateIndexResponse,
+    CloudPremServiceStream, CloudpremSubstraitRequest, CloudpremSubstraitResponse,
+    CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteIndexResponse,
+    EsHttpRequest, EsHttpResponse, Event, EventTracker, FetchOneRequest, FetchOneResponse,
+    GetClusterDiagnosticsRequest, GetClusterDiagnosticsResponse, GetIndexRoutingTableRequest,
+    GetIndexRoutingTableResponse, GetIndexesRequest, GetIndexesResponse, ListRequest, ListResponse,
+    ListSplitsRequest, NodeDiagnostics, NodeMetrics, PingRequest, PingResponse,
+    PullClusterMetricsResponse, ScalarType, SearchSplitBatchRequest, SearchSplitBatchResponse,
+    SetIndexRoutingTableRequest, SetIndexRoutingTableResponse, SetLogLevelRequest,
+    SetLogLevelResponse, SplitBatch, SplitBatchDetails, Statistics, UpdateIndexRequest,
+    UpdateIndexResponse, column_type,
 };
 use quickwit_proto::developer::{
     DeveloperService as _, DeveloperServiceClient, GetNodeDiagnosticsRequest, PullMetricsRequest,
@@ -56,7 +61,10 @@ use quickwit_query::cloudprem::{apply_trace_id_rewrite, sanitize_metric_id_aggre
 use quickwit_query::query_ast::{
     BoolQuery, FullTextMode, FullTextParams, FullTextQuery, QueryAst, TermQuery,
 };
-use quickwit_search::{SearchError, SearchService};
+use quickwit_search::{
+    BatchSize, ColumnRequest, ColumnarSplitPlanRequest, SearchError, SearchService,
+    SearchSplitBatchColumnarRequest,
+};
 use serde_json::Value as JsonValue;
 use tokio::time::timeout;
 use tokio_stream::StreamExt as _;
@@ -68,16 +76,79 @@ pub(crate) const CLOUDPREM_INDEX_ID_PATTERN: &str = "datadog*";
 
 /// Returns the index patterns to search. Falls back to `"datadog*"` when the
 /// caller doesn't specify any, for backward compatibility.
-fn resolve_index_patterns(index_id_patterns: &[String]) -> Vec<String> {
+pub(super) fn resolve_index_patterns(index_id_patterns: &[String]) -> Vec<String> {
     if index_id_patterns.is_empty() {
         return vec![CLOUDPREM_INDEX_ID_PATTERN.to_string()];
     }
     index_id_patterns.to_vec()
 }
 
+/// Normalizes the wire filter to a `QueryAst`. An absent `query_node` means
+/// "match everything". Any time window is expected to already be encoded as
+/// a range query over the timestamp field within the filter itself,
+/// consistent with `List`/`FetchOne`/`Aggregate`.
+fn query_node_to_query_ast(query_node: Option<Any>) -> CloudPremResult<QueryAst> {
+    let Some(query_node) = query_node else {
+        return Ok(QueryAst::MatchAll);
+    };
+    let evp_ast = quickwit_query::cloudprem::parse_query(query_node)
+        .map_err(|error| CloudPremError::InvalidQuery(format!("failed to parse query: {error}")))?;
+    let query_ast = quickwit_query::cloudprem::to_quickwit_query(evp_ast)?;
+    Ok(apply_trace_id_rewrite(query_ast))
+}
+
+fn scalar_type_to_arrow(scalar_type: ScalarType) -> Option<arrow::datatypes::DataType> {
+    use arrow::datatypes::TimeUnit;
+    match scalar_type {
+        ScalarType::Unspecified => None,
+        ScalarType::String => Some(arrow::datatypes::DataType::Utf8),
+        ScalarType::Int64 => Some(arrow::datatypes::DataType::Int64),
+        ScalarType::Uint64 => Some(arrow::datatypes::DataType::UInt64),
+        ScalarType::Float64 => Some(arrow::datatypes::DataType::Float64),
+        ScalarType::Bool => Some(arrow::datatypes::DataType::Boolean),
+        ScalarType::TimestampNanos => Some(arrow::datatypes::DataType::Timestamp(
+            TimeUnit::Nanosecond,
+            None,
+        )),
+        ScalarType::Bytes => Some(arrow::datatypes::DataType::Binary),
+        ScalarType::Ip => Some(arrow::datatypes::DataType::Utf8),
+    }
+}
+
 const PULL_METRICS_TIMEOUT: Duration = Duration::from_secs(1);
 const GET_NODE_DIAGNOSTICS_TIMEOUT: Duration = Duration::from_secs(5);
 const SET_NODE_LOG_LEVEL_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// Capacity of the bounded channel buffering columnar API responses ahead of
+/// the gRPC transport.
+///
+/// This is the one point in the columnar read path where we decide how much
+/// output to hold in memory while waiting on a slow network consumer. The
+/// lower layers return plain, unbuffered streams, so nothing runs ahead of the
+/// consumer until it reaches this buffer.
+const COLUMNAR_RESPONSE_BUFFER_CAPACITY: usize = 4;
+
+/// Buffers a lazily-produced response stream into a `ServiceStream` backed
+/// by a bounded channel. The channel decouples the network consumer from
+/// the scan/encode pipeline feeding it and applies backpressure once full;
+/// if the consumer drops the stream, sends fail and the producer task stops
+/// — no `JoinHandle::abort`, no `tokio::sync::Mutex`.
+fn buffer_response_stream<T>(
+    response_stream: impl Stream<Item = CloudPremResult<T>> + Send + 'static,
+) -> CloudPremServiceStream<T>
+where T: Send + 'static {
+    let (sender, stream) = ServiceStream::new_bounded(COLUMNAR_RESPONSE_BUFFER_CAPACITY);
+    tokio::spawn(async move {
+        let mut response_stream = Box::pin(response_stream);
+        while let Some(item) = response_stream.next().await {
+            if sender.send(item).await.is_err() {
+                // Consumer dropped: stop producing.
+                return;
+            }
+        }
+    });
+    stream
+}
 
 #[cfg(feature = "datafusion")]
 fn encode_record_batches_as_arrow_ipc(
@@ -268,6 +339,87 @@ impl CloudPremService for CloudPremServiceImpl {
             streams: vec![quickwit_proto::cloudprem::Stream { events }],
             statistics: Some(statistics),
         })
+    }
+
+    async fn list_splits(
+        &self,
+        request: ListSplitsRequest,
+    ) -> CloudPremResult<CloudPremServiceStream<SplitBatch>> {
+        info!("received ListSplits request");
+        let plan_request = ColumnarSplitPlanRequest {
+            index_id_patterns: resolve_index_patterns(&request.index_id_patterns),
+            query_ast: query_node_to_query_ast(request.query_node)?,
+        };
+        let response_stream =
+            super::columnar::list_splits(&self.metastore_client, plan_request).await?;
+        Ok(buffer_response_stream(response_stream))
+    }
+
+    async fn search_split_batch(
+        &self,
+        request: SearchSplitBatchRequest,
+    ) -> CloudPremResult<CloudPremServiceStream<SearchSplitBatchResponse>> {
+        info!("received SearchSplitBatch request");
+        let Some(split_batch) = request.split_batch else {
+            return Err(CloudPremError::InvalidQuery(
+                "search split batch request is missing its split batch".to_string(),
+            ));
+        };
+        let batch_details = SplitBatchDetails::decode(split_batch.split_batch_details.as_slice())
+            .map_err(|error| {
+            CloudPremError::InvalidQuery(format!("invalid split batch details: {error}"))
+        })?;
+        if batch_details.splits.is_empty() {
+            return Err(CloudPremError::InvalidQuery(
+                "split batch contains no splits".to_string(),
+            ));
+        }
+
+        // Phase 1 only coarsely prunes whole splits using the query's timestamp
+        // range. Each per-split scan applies the complete query to its documents.
+        let query_ast = query_node_to_query_ast(request.query_node)?;
+        let mut columns = Vec::with_capacity(request.columns.len());
+        for projection in request.columns {
+            let scalar_type = match projection.r#type.and_then(|column_type| column_type.kind) {
+                Some(column_type::Kind::Scalar(scalar_type)) => {
+                    ScalarType::try_from(scalar_type).unwrap_or(ScalarType::Unspecified)
+                }
+                None => ScalarType::Unspecified,
+            };
+            let Some(data_type) = scalar_type_to_arrow(scalar_type) else {
+                return Err(CloudPremError::InvalidQuery(format!(
+                    "unsupported column type for `{}`",
+                    projection.name
+                )));
+            };
+            columns.push(ColumnRequest {
+                name: projection.name,
+                data_type,
+            });
+        }
+        let limit = if request.limit == 0 {
+            None
+        } else {
+            Some(usize::try_from(request.limit).map_err(|_| {
+                CloudPremError::InvalidQuery("limit exceeds the platform maximum".to_string())
+            })?)
+        };
+        let columnar_request = SearchSplitBatchColumnarRequest {
+            index_uri: batch_details.index_uri,
+            doc_mapper_str: batch_details.doc_mapper_str,
+            splits: batch_details.splits,
+            query_ast,
+            columns,
+            batch_size: match request.batch_size {
+                0 => BatchSize::Default,
+                batch_size => BatchSize::Value(batch_size),
+            },
+            limit,
+        };
+
+        let response_stream =
+            super::columnar::search_split_batch(&self.search_service, columnar_request).await?;
+        Ok(buffer_response_stream(response_stream))
     }
 
     async fn fetch_one(
@@ -1250,6 +1402,40 @@ mod tests {
             scope: None,
             index_id_patterns: Vec::new(),
         }
+    }
+
+    #[test]
+    fn query_node_absent_matches_everything() {
+        assert!(matches!(
+            query_node_to_query_ast(None).unwrap(),
+            QueryAst::MatchAll
+        ));
+    }
+
+    #[test]
+    fn scalar_type_mapping() {
+        use arrow::datatypes::TimeUnit;
+
+        assert_eq!(scalar_type_to_arrow(ScalarType::Unspecified), None);
+        assert_eq!(
+            scalar_type_to_arrow(ScalarType::String),
+            Some(arrow::datatypes::DataType::Utf8)
+        );
+        assert_eq!(
+            scalar_type_to_arrow(ScalarType::Uint64),
+            Some(arrow::datatypes::DataType::UInt64)
+        );
+        assert_eq!(
+            scalar_type_to_arrow(ScalarType::TimestampNanos),
+            Some(arrow::datatypes::DataType::Timestamp(
+                TimeUnit::Nanosecond,
+                None
+            ))
+        );
+        assert_eq!(
+            scalar_type_to_arrow(ScalarType::Ip),
+            Some(arrow::datatypes::DataType::Utf8)
+        );
     }
 
     #[tokio::test]

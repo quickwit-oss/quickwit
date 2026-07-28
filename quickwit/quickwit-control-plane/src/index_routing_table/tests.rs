@@ -17,10 +17,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_cluster::{
-    ClusterChangeStream, ClusterChangeStreamFactory, ClusterChangeStreamFactoryForTest,
-    ClusterKvPublisher,
-};
+use quickwit_cluster::ClusterKvPublisher;
 use quickwit_config::{ClusterConfig, IndexConfig};
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::{CreateIndexRequestExt, FileBackedMetastore, IndexMetadataResponseExt};
@@ -36,21 +33,14 @@ use quickwit_storage::RamStorage;
 use crate::IndexerPool;
 use crate::control_plane::ControlPlane;
 
-/// A mock ClusterChangeStreamFactory that counts calls to set_self_key_value.
+/// A mock [`ClusterKvPublisher`] that counts calls to `set_self_key_value`.
 #[derive(Clone, Default)]
-struct MockClusterChangeStreamFactory {
-    inner: ClusterChangeStreamFactoryForTest,
+struct MockClusterKvPublisher {
     broadcast_count: Arc<AtomicUsize>,
 }
 
-impl ClusterChangeStreamFactory for MockClusterChangeStreamFactory {
-    fn create(&self) -> ClusterChangeStream {
-        self.inner.create()
-    }
-}
-
 #[async_trait::async_trait]
-impl ClusterKvPublisher for MockClusterChangeStreamFactory {
+impl ClusterKvPublisher for MockClusterKvPublisher {
     async fn set_self_key_value(&self, _key: String, _value: String) {
         self.broadcast_count.fetch_add(1, Ordering::SeqCst);
     }
@@ -67,7 +57,7 @@ async fn setup_test(
     Mailbox<ControlPlane>,
     Arc<AtomicUsize>,
 ) {
-    let mock_cluster = MockClusterChangeStreamFactory::default();
+    let mock_cluster = MockClusterKvPublisher::default();
     let broadcast_count = mock_cluster.broadcast_count.clone();
 
     // Create metastore with indexes
@@ -96,7 +86,7 @@ async fn setup_test(
         &universe,
         cluster_config,
         NodeId::from_str("test-node"),
-        mock_cluster,
+        Arc::new(mock_cluster),
         IndexerPool::default(),
         IngesterPool::default(),
         MetastoreServiceClient::new(metastore.clone()),

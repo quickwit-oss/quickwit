@@ -1,4 +1,4 @@
 """
 Do not modify this variable name or location. It is automatically updated via the Campaigns tooling.
 """
-CNAB_TOOLS_VERSION = "sha256:358d39688c2b726f6a5820beb063d747bc98a7c69706202a6433b26bf6ea0d03"
+CNAB_TOOLS_VERSION = "sha256:5e89c8b610e466f5f499c4e5f5d855cd00d21ee3cdb57c82f648382279fdb54b"

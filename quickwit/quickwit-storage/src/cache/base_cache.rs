@@ -281,9 +281,6 @@ struct QuickCacheQueryEffect {
 impl<K, V: ValueLen> quick_cache::Lifecycle<K, V> for QuickCacheLifecycle {
     type RequestState = QuickCacheQueryEffect;
 
-    fn begin_request(&self) -> Self::RequestState {
-        QuickCacheQueryEffect::default()
-    }
     fn on_evict(&self, state: &mut Self::RequestState, _key: K, val: V) {
         state.count += 1;
         state.bytes += val.len() as u64;
@@ -298,7 +295,7 @@ impl<K: Hash + Eq, V: ValueLen + Clone> S3Fifo<K, V> {
                 (capacity / (128 * 1024)) as usize,
                 capacity,
                 QuickCacheWeighter,
-                quick_cache::DefaultHashBuilder::new(),
+                quick_cache::DefaultHashBuilder::default(),
                 QuickCacheLifecycle,
             ),
             capacity,
@@ -342,7 +339,8 @@ impl<K: Hash + Eq, V: ValueLen + Clone> S3Fifo<K, V> {
         self.cache_metrics
             .in_cache_num_bytes
             .inc_by(value.len() as f64);
-        let evicted = self.cache.insert_with_lifecycle(key, value);
+        let mut evicted = QuickCacheQueryEffect::default();
+        self.cache.insert_with_lifecycle(key, value, &mut evicted);
         self.cache_metrics
             .in_cache_count
             .dec_by(evicted.count as f64);

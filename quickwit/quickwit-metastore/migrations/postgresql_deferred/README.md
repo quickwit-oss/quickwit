@@ -8,7 +8,6 @@ Long, degrade-gracefully-only migrations (e.g. `CREATE INDEX CONCURRENTLY`) run 
 29_add_foo_index.up.sql
   ```sql
   -- no-transaction
-  DROP INDEX CONCURRENTLY IF EXISTS foo_idx;
   CREATE INDEX CONCURRENTLY IF NOT EXISTS foo_idx ON foo (bar);
   ```
 
@@ -17,6 +16,6 @@ Long, degrade-gracefully-only migrations (e.g. `CREATE INDEX CONCURRENTLY`) run 
   -- no-transaction
   DROP INDEX CONCURRENTLY IF EXISTS foo_idx;
   ```
-
-  The `DROP` before the `CREATE` looks like it would drop the index on every run, but it does not: sqlx applies each migration at most once (tracked by version in `_sqlx_migrations`) and never re-runs one that already succeeded. The drop only matters on a retry after a partial failure. If a `CREATE INDEX CONCURRENTLY` is killed midway, Postgres leaves an *invalid* index and sqlx records nothing (the bookkeeping row is written only on success), so the next attempt re-runs the migration. A bare `CREATE INDEX CONCURRENTLY IF NOT EXISTS` would then see that invalid index and skip it forever, so we drop it first to force a clean rebuild.
+- If any migrations failed, they'll need to be manually cleaned up before attempting to retry as failed index creation leaves a broken index, without adding an entry into the migrations table.
+- We tried to clean up invalid indexes inside the migration SQL, but because it's two separate statements, Postgres implicitly runs them inside a transaction block, overriding `-- no-transaction`, which can't work with `concurrently`.
 - Never depend on an unshipped required migration; required migrations must never depend on a deferred one.
