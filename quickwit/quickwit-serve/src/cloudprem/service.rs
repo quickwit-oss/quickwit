@@ -600,6 +600,7 @@ impl CloudPremService for CloudPremServiceImpl {
             quickwit_query::cloudprem::intermediate_aggregation_result_to_proto(
                 intermediate_results,
                 &evp_aggregation_ast,
+                &aggregation_ast,
                 response.num_hits,
             )?;
         tracing::trace!("aggregation result: {cloudprem_aggregation_result:?}");
