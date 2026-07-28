@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use metrics_util::MetricKindMask;
-use metrics_util::layers::{FanoutBuilder, RouterBuilder};
+use metrics_util::layers::FanoutBuilder;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 
 use crate::otlp::OtlpExporterConfig;
@@ -24,26 +23,20 @@ pub(crate) fn init_metrics_provider(
     otlp_config: &OtlpExporterConfig,
 ) -> anyhow::Result<Option<SdkMeterProvider>> {
     let prometheus_recorder = crate::prometheus::metrics::build_recorder()?;
+    let dogstatsd_recorder = crate::dogstatsd::metrics::build_recorder(service_version)?;
+    let fanout_builder = FanoutBuilder::default()
+        .add_recorder(prometheus_recorder)
+        .add_recorder(dogstatsd_recorder);
 
-    let (quickwit_recorder, meter_provider) = if otlp_config.is_enabled() {
+    let (recorder, meter_provider) = if otlp_config.is_enabled() {
         let (otlp_recorder, meter_provider) =
             crate::otlp::metrics::build_recorder(service_version, otlp_config)?;
-        let recorder = FanoutBuilder::default()
-            .add_recorder(prometheus_recorder)
-            .add_recorder(otlp_recorder)
-            .build();
+        let recorder = fanout_builder.add_recorder(otlp_recorder).build();
         (recorder, Some(meter_provider))
     } else {
-        let recorder = FanoutBuilder::default()
-            .add_recorder(prometheus_recorder)
-            .build();
+        let recorder = fanout_builder.build();
         (recorder, None)
     };
-
-    let dogstatsd_recorder = crate::dogstatsd::metrics::build_recorder(service_version)?;
-    let mut router = RouterBuilder::from_recorder(quickwit_recorder);
-    router.add_route(MetricKindMask::ALL, "cloudprem.", dogstatsd_recorder);
-    let recorder = router.build();
 
     metrics::set_global_recorder(recorder)
         .map_err(|_| anyhow::anyhow!("failed to install global metrics recorder"))?;
