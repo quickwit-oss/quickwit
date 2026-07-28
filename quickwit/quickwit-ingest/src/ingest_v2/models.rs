@@ -20,6 +20,7 @@ use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::ingest::ShardState;
 use quickwit_proto::types::{IndexUid, NodeId, Position, QueueId, ShardId, SourceId, queue_id};
 use tokio::sync::watch;
+use tracing::error;
 
 use crate::ingest_v2::rate_meter::RateMeter;
 
@@ -267,6 +268,29 @@ impl IngesterShard {
         now.duration_since(self.last_write_instant) >= idle_timeout
     }
 
+    /// Returns `true` if the shard is unreachable to the control plane and empty.
+    // A non-advertisable shard means the control plane never got confirmation that this
+    // shard was initialized on this ingester (e.g. it lost the `init_shards` response),
+    // so it never recorded the shard in the metastore or handed it out to any router or
+    // indexer. Such a shard can never become advertisable (that requires a persist/fetch
+    // request, which requires the control plane to know about it) and is invisible to
+    // the other RPC or gossip-driven cleanup mechanisms. It's safe to delete: never
+    // having been advertised, it can't have received any writes.
+    pub fn is_empty_orphan(&self) -> bool {
+        if self.is_advertisable {
+            return false;
+        }
+        let is_empty = self.replication_position_inclusive.is_beginning();
+        if !is_empty {
+            error!(
+                "shard `{}` is not advertisable but is not empty, this should never happen, \
+                 please report",
+                self.queue_id()
+            );
+        }
+        is_empty
+    }
+
     pub fn is_replica(&self) -> bool {
         matches!(self.shard_type, IngesterShardType::Replica { .. })
     }
@@ -438,5 +462,37 @@ mod tests {
             Position::Beginning
         );
         assert!(!solo_shard.is_advertisable);
+    }
+
+    #[test]
+    fn test_is_empty_orphan() {
+        let non_advertisable_empty_shard = IngesterShard::new_solo(
+            IndexUid::for_test("test-index", 0),
+            SourceId::from("test-source"),
+            ShardId::from(1),
+        )
+        .with_state(ShardState::Closed)
+        .build();
+        assert!(non_advertisable_empty_shard.is_empty_orphan());
+
+        let advertisable_empty_shard = IngesterShard::new_solo(
+            IndexUid::for_test("test-index", 0),
+            SourceId::from("test-source"),
+            ShardId::from(2),
+        )
+        .with_state(ShardState::Closed)
+        .advertisable()
+        .build();
+        assert!(!advertisable_empty_shard.is_empty_orphan());
+
+        let non_advertisable_non_empty_shard = IngesterShard::new_solo(
+            IndexUid::for_test("test-index", 0),
+            SourceId::from("test-source"),
+            ShardId::from(3),
+        )
+        .with_state(ShardState::Closed)
+        .with_replication_position_inclusive(Position::offset(42u64))
+        .build();
+        assert!(!non_advertisable_non_empty_shard.is_empty_orphan());
     }
 }
