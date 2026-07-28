@@ -43,7 +43,7 @@ The `docs_sorting.grouping` section defines how documents are grouped for sortin
 
 - `docs_sorting.grouping.fingerprint` currently accepts exactly one root field: `path: "$"` and `kind: structure`. This field hashes the document structure. Its optional `exclude` list removes paths from the structure hash.
 - `docs_sorting.grouping.grouping.fingerprint` lists the document fields that participate in grouping. Each entry must have a `path` and a `kind`. Paths must be non-empty, must not contain leading or trailing whitespace, and must not contain empty path components such as `message..template`. A path can appear only once in this list.
-- `docs_sorting.grouping.grouping.fingerprint[].kind` controls how the field contributes to the grouping fingerprint. `tokenized` hashes the token types of the first 50 tokens from a string field, and `raw` hashes a string field's exact value. Missing fields and values that are not strings do not contribute to the grouping fingerprint.
+- `docs_sorting.grouping.grouping.fingerprint[].kind` controls how the field contributes to the grouping fingerprint. `tokenized` hashes the token types of the first 50 tokens from a string field, and `raw` hashes a string field's exact value. Missing fields and values that are not strings are encoded as absent so each configured field retains its position in the fingerprint.
 
 Example:
 

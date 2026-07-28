@@ -55,7 +55,8 @@
 //! ```
 //!
 //! Raw string fields keep exact-value differences, which is useful for dimensions such as
-//! `service`. Missing fields and non-string values do not contribute to the grouping hash.
+//! `service`. Missing fields and non-string values are encoded as absent so configured field
+//! positions remain distinct.
 use std::hash::Hasher;
 use std::sync::Arc;
 
@@ -65,6 +66,8 @@ use serde_json::Value as JsonValue;
 
 use super::tokenize;
 
+const FIELD_ABSENT: u8 = 0xFA;
+const FIELD_PRESENT: u8 = 0xFB;
 const PATH_SEPARATOR: u8 = 0xFC;
 const FIELD_BOUNDARY: u8 = 0xFD;
 const TOKENIZED_TOKEN_SEPARATOR: u8 = 0xFE;
@@ -198,11 +201,12 @@ impl Fingerprinter {
 
     fn hash_grouping_fields(&self, json_value: &JsonValue, hasher: &mut FnvHasher) {
         for (path, kind) in self.grouping_fields.iter() {
-            // Grouping policies operate on strings. Missing fields and values of other JSON types
-            // are intentionally omitted from the grouping fingerprint.
             let Some(value) = get_leaf_string(json_value, path) else {
+                hasher.write_u8(FIELD_ABSENT);
+                hasher.write_u8(FIELD_BOUNDARY);
                 continue;
             };
+            hasher.write_u8(FIELD_PRESENT);
             match kind {
                 FingerprintFieldKind::Tokenized => {
                     for span in tokenize(value).take(MAX_GROUPING_TOKENS) {
@@ -425,5 +429,35 @@ mod tests {
             fingerprinter.fingerprint(&doc1),
             fingerprinter.fingerprint(&doc2)
         );
+    }
+
+    #[test]
+    fn absent_grouping_values_preserve_field_position() {
+        let docs_sorting_config = docs_sorting_config(serde_json::json!({
+            "fingerprint": [{
+                "path": "$",
+                "kind": "structure"
+            }],
+            "grouping": {
+                "fingerprint": [
+                    {
+                        "path": "a",
+                        "kind": "raw"
+                    },
+                    {
+                        "path": "b",
+                        "kind": "raw"
+                    }
+                ]
+            }
+        }));
+        let fingerprinter = Fingerprinter::new(&docs_sorting_config.grouping);
+        let doc1 = parse(r#"{"a":"x","b":null}"#);
+        let doc2 = parse(r#"{"a":null,"b":"x"}"#);
+        let doc1_fingerprint = fingerprinter.fingerprint(&doc1);
+        let doc2_fingerprint = fingerprinter.fingerprint(&doc2);
+
+        assert_eq!(doc1_fingerprint.schema, doc2_fingerprint.schema);
+        assert_ne!(doc1_fingerprint.grouping, doc2_fingerprint.grouping);
     }
 }
