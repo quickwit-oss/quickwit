@@ -66,6 +66,7 @@ use serde_json::Value as JsonValue;
 
 use super::tokenize;
 
+const PATH_COMPONENT_SEPARATOR: u8 = 0xF9;
 const FIELD_ABSENT: u8 = 0xFA;
 const FIELD_PRESENT: u8 = 0xFB;
 const PATH_SEPARATOR: u8 = 0xFC;
@@ -187,13 +188,9 @@ impl Fingerprinter {
         paths.sort_unstable();
 
         for path in paths {
-            let mut first = true;
             for component in path {
-                if !first {
-                    hasher.write(b".");
-                }
                 hasher.write(component.as_bytes());
-                first = false;
+                hasher.write_u8(PATH_COMPONENT_SEPARATOR);
             }
             hasher.write_u8(PATH_SEPARATOR);
         }
@@ -301,6 +298,24 @@ mod tests {
         assert_eq!(
             fingerprinter.fingerprint(&doc),
             fingerprinter.fingerprint(&doc)
+        );
+    }
+
+    #[test]
+    fn dotted_key_and_nested_path_have_different_schema_fingerprints() {
+        let fingerprinter = test_fingerprinter();
+        let dotted_key_doc = parse(r#"{"a.b":1}"#);
+        let nested_path_doc = parse(r#"{"a":{"b":1}}"#);
+        let dotted_key_fingerprint = fingerprinter.fingerprint(&dotted_key_doc);
+        let nested_path_fingerprint = fingerprinter.fingerprint(&nested_path_doc);
+
+        assert_ne!(
+            dotted_key_fingerprint.schema,
+            nested_path_fingerprint.schema
+        );
+        assert_eq!(
+            dotted_key_fingerprint.grouping,
+            nested_path_fingerprint.grouping
         );
     }
 
