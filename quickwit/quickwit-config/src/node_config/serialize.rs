@@ -1374,7 +1374,7 @@ mod tests {
                     - path: message
                       kind: tokenized
         "#;
-        let env_vars = HashMap::from([("QW_ENABLE_DOCS_SORTING".to_string(), "false".to_string())]);
+        let env_vars = HashMap::from([("QW_DISABLE_DOCS_SORTING".to_string(), "true".to_string())]);
         let node_config =
             load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
                 .await
@@ -1383,7 +1383,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_docs_sorting_true_env_var_preserves_config() {
+    async fn test_docs_sorting_false_env_var_preserves_config() {
         let config_yaml = r#"
             version: 0.8
             docs_sorting:
@@ -1396,7 +1396,8 @@ mod tests {
                     - path: message
                       kind: tokenized
         "#;
-        let env_vars = HashMap::from([("QW_ENABLE_DOCS_SORTING".to_string(), "true".to_string())]);
+        let env_vars =
+            HashMap::from([("QW_DISABLE_DOCS_SORTING".to_string(), "false".to_string())]);
         let node_config =
             load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
                 .await
@@ -1407,7 +1408,7 @@ mod tests {
     #[tokio::test]
     async fn test_docs_sorting_rejects_invalid_env_var() {
         let env_vars =
-            HashMap::from([("QW_ENABLE_DOCS_SORTING".to_string(), "invalid".to_string())]);
+            HashMap::from([("QW_DISABLE_DOCS_SORTING".to_string(), "invalid".to_string())]);
         let error = NodeConfigBuilder::default()
             .build_and_validate(&env_vars, None)
             .await

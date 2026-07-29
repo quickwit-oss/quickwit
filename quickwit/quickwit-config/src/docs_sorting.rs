@@ -18,7 +18,7 @@ use anyhow::ensure;
 use serde::{Deserialize, Serialize};
 
 use crate::config_value::ConfigValue;
-use crate::qw_env_vars::QW_ENABLE_DOCS_SORTING;
+use crate::qw_env_vars::QW_DISABLE_DOCS_SORTING;
 
 /// Configuration for document sorting.
 ///
@@ -61,16 +61,16 @@ impl DocsSortingConfigBuilder {
         config_builder_opt: Option<Self>,
         env_vars: &HashMap<String, String>,
     ) -> anyhow::Result<Option<DocsSortingConfig>> {
-        let enable_override =
-            ConfigValue::<bool, QW_ENABLE_DOCS_SORTING>::none().resolve_optional(env_vars)?;
+        let disable_override =
+            ConfigValue::<bool, QW_DISABLE_DOCS_SORTING>::none().resolve_optional(env_vars)?;
 
         let Some(config_builder) = config_builder_opt else {
             return Ok(None);
         };
 
-        match enable_override {
-            Some(false) => Ok(None),
-            Some(true) | None => {
+        match disable_override {
+            Some(true) => Ok(None),
+            Some(false) | None => {
                 config_builder.validate()?;
                 let config = DocsSortingConfig {
                     grouping: config_builder.grouping,

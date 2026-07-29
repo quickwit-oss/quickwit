@@ -40,7 +40,7 @@
 //! # Design
 //!
 //! Document sorting is enabled process-wide when `NodeConfig::docs_sorting_config` contains a
-//! policy, unless `QW_ENABLE_DOCS_SORTING=false`. Deployments should configure it only on indexers
+//! policy, unless `QW_DISABLE_DOCS_SORTING=true`. Deployments should configure it only on indexers
 //! whose workloads are intended to use document sorting.
 //!
 //! [`Fingerprinter`] computes two independent hashes:
