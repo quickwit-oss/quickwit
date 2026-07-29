@@ -60,7 +60,7 @@ use tracing::{debug, error, info, warn};
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::pipeline_shared::{ActorPipeline, PipelineHandle};
 use super::{FinishPendingMergesAndShutdownPipeline, MergePlanner, MergeSchedulerService};
-use crate::docs_sorting::Fingerprinter;
+use crate::docs_clustering::Fingerprinter;
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
 use crate::source::{AssignShards, Assignment};
 use crate::split_store::IndexingSplitCache;
@@ -405,7 +405,7 @@ impl IndexingService {
                 index_id = indexing_pipeline_id.index_uid.index_id,
                 source_id = indexing_pipeline_id.source_id,
                 sorting_config=?fingerprinter.config(),
-                "document sorting enabled",
+                "document clustering enabled",
             );
         }
 

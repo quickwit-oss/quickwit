@@ -40,7 +40,7 @@ use tokio::runtime::Handle;
 #[cfg(feature = "vrl")]
 use super::vrl_processing::*;
 use crate::actors::Indexer;
-use crate::docs_sorting::Fingerprinter;
+use crate::docs_clustering::Fingerprinter;
 use crate::metrics::{PROCESSED_BYTES, PROCESSED_DOCS_TOTAL};
 use crate::models::{NewPublishLock, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch};
 
@@ -625,7 +625,7 @@ mod tests {
     use prost::Message;
     use quickwit_actors::Universe;
     use quickwit_common::uri::Uri;
-    use quickwit_config::{DocsSortingConfig, GroupingConfig, SearchSettings, build_doc_mapper};
+    use quickwit_config::{DocsClusteringConfig, GroupingConfig, SearchSettings, build_doc_mapper};
     use quickwit_doc_mapper::{DocMapper, default_doc_mapper_for_test};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
@@ -643,7 +643,7 @@ mod tests {
     use crate::models::{PublishLock, RawDocBatch};
 
     fn raw_body_fingerprinter_for_test() -> Fingerprinter {
-        let docs_sorting_config = DocsSortingConfig {
+        let docs_clustering_config = DocsClusteringConfig {
             grouping: serde_json::from_value::<GroupingConfig>(serde_json::json!({
                 "fingerprint": [{
                     "path": "$",
@@ -658,7 +658,7 @@ mod tests {
             }))
             .unwrap(),
         };
-        Fingerprinter::new(&docs_sorting_config.grouping)
+        Fingerprinter::new(&docs_clustering_config.grouping)
     }
 
     #[tokio::test]

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Fingerprint-based document sorting for better log compression.
+//! Fingerprint-based document clustering for better log compression.
 //!
 //! # Warning
 //!
@@ -39,9 +39,9 @@
 //!
 //! # Design
 //!
-//! Document sorting is enabled process-wide when `NodeConfig::docs_sorting_config` contains a
-//! policy, unless `QW_DISABLE_DOCS_SORTING=true`. Deployments should configure it only on indexers
-//! whose workloads are intended to use document sorting.
+//! Document clustering is enabled process-wide when `NodeConfig::docs_clustering_config` contains a
+//! policy, unless `QW_DISABLE_DOCS_CLUSTERING=true`. Deployments should configure it only on
+//! indexers whose workloads are intended to use document clustering.
 //!
 //! [`Fingerprinter`] computes two independent hashes:
 //!
@@ -70,7 +70,7 @@
 //!     |
 //!     v
 //! Indexer
-//!     |  records each split-local doc ID in DocIdSorter
+//!     |  records each split-local doc ID in DocIdClusterer
 //!     v
 //! IndexedSplitBuilder::finalize
 //!     |  builds a DocIdMapping: largest schema groups first,
@@ -83,9 +83,9 @@
 //!
 //! 1. `DocProcessor` computes it from the processed JSON document.
 //! 2. `ProcessedDoc::fingerprint_opt` carries it to the `Indexer`.
-//! 3. `Indexer` pushes `(fingerprint_opt, doc_id)` into [`DocIdSorter`].
-//! 4. At split finalization, [`DocIdSorter`] creates the Tantivy `DocIdMapping`. Documents without
-//!    fingerprints are appended in insertion order.
+//! 3. `Indexer` pushes `(fingerprint_opt, doc_id)` into [`DocIdClusterer`].
+//! 4. At split finalization, [`DocIdClusterer`] creates the Tantivy `DocIdMapping`. Documents
+//!    without fingerprints are appended in insertion order.
 //!
 //! Sorting is applied once to each fresh split. Later merges use Tantivy's native merge path and
 //! preserve the ordering of their input splits without repeating the remapping and doc-store
@@ -104,21 +104,17 @@
 //! - Manual doc ID mapping writes a temporary uncompressed doc store and then rewrites it in
 //!   permuted, compressed order, increasing local disk traffic.
 //! - Fingerprinting adds ingest CPU, particularly for tokenized fields.
-//! - [`DocIdSorter`] retains document IDs and hash-map entries outside Tantivy's reported memory
+//! - [`DocIdClusterer`] retains document IDs and hash-map entries outside Tantivy's reported memory
 //!   usage; high-cardinality policies and multiple open partitions require memory headroom.
 //! - Fingerprints provide best-effort locality, not a total order or query-pruning structure.
 //! - Policies that include volatile data can under-group, while broad exclusions can over-group.
 //!   Compression gains therefore depend on workload entropy and should be measured on a
 //!   representative corpus together with CPU, memory, and temporary disk writes.
-//!
-//! This implementation targets logs in the Tantivy indexing path. The principle generalizes to
-//! other signals, but metrics and traces have different physical layouts and query patterns and
-//! require signal-specific sorting policies.
 
+mod clusterer;
 mod fingerprinter;
-mod sorter;
 mod tokenizer;
 
+pub use clusterer::DocIdClusterer;
 pub use fingerprinter::{Fingerprint, Fingerprinter};
-pub use sorter::DocIdSorter;
 pub use tokenizer::tokenize;

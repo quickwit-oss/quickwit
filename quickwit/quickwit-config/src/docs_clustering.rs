@@ -18,13 +18,13 @@ use anyhow::ensure;
 use serde::{Deserialize, Serialize};
 
 use crate::config_value::ConfigValue;
-use crate::qw_env_vars::QW_DISABLE_DOCS_SORTING;
+use crate::qw_env_vars::QW_DISABLE_DOCS_CLUSTERING;
 
-/// Configuration for document sorting.
+/// Configuration for document clustering.
 ///
 /// # Warning
 ///
-/// Document sorting is experimental. Its configuration and behavior may change, and it should be
+/// Document clustering is experimental. Its configuration and behavior may change, and it should be
 /// validated on representative workloads before production use.
 ///
 /// The configuration allows to define how logs are grouped into buckets via the
@@ -46,23 +46,23 @@ use crate::qw_env_vars::QW_DISABLE_DOCS_SORTING;
 ///         kind: tokenized
 /// ```
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct DocsSortingConfig {
+pub struct DocsClusteringConfig {
     pub grouping: GroupingConfig,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct DocsSortingConfigBuilder {
+pub(crate) struct DocsClusteringConfigBuilder {
     grouping: GroupingConfig,
 }
 
-impl DocsSortingConfigBuilder {
+impl DocsClusteringConfigBuilder {
     pub(crate) fn build_optional(
         config_builder_opt: Option<Self>,
         env_vars: &HashMap<String, String>,
-    ) -> anyhow::Result<Option<DocsSortingConfig>> {
+    ) -> anyhow::Result<Option<DocsClusteringConfig>> {
         let disable_override =
-            ConfigValue::<bool, QW_DISABLE_DOCS_SORTING>::none().resolve_optional(env_vars)?;
+            ConfigValue::<bool, QW_DISABLE_DOCS_CLUSTERING>::none().resolve_optional(env_vars)?;
 
         let Some(config_builder) = config_builder_opt else {
             return Ok(None);
@@ -72,7 +72,7 @@ impl DocsSortingConfigBuilder {
             Some(true) => Ok(None),
             Some(false) | None => {
                 config_builder.validate()?;
-                let config = DocsSortingConfig {
+                let config = DocsClusteringConfig {
                     grouping: config_builder.grouping,
                 };
                 Ok(Some(config))
@@ -147,13 +147,16 @@ impl GroupingConfig {
             fn validate_json_path(path: &str) -> anyhow::Result<()> {
                 ensure!(
                     path.trim() == path,
-                    "document sorting path `{path}` must not contain leading or trailing \
+                    "document clustering path `{path}` must not contain leading or trailing \
                      whitespace"
                 );
-                ensure!(!path.is_empty(), "document sorting path must not be empty");
+                ensure!(
+                    !path.is_empty(),
+                    "document clustering path must not be empty"
+                );
                 ensure!(
                     !path.split('.').any(str::is_empty),
-                    "document sorting path `{path}` must not contain empty components"
+                    "document clustering path `{path}` must not contain empty components"
                 );
                 Ok(())
             }
@@ -166,13 +169,13 @@ impl GroupingConfig {
                         validate_json_path(path)?;
                         ensure!(
                             grouping_paths.insert(path.as_str()),
-                            "duplicate document sorting grouping path `{path}`"
+                            "duplicate document clustering grouping path `{path}`"
                         );
                         for excluded_path in exclude {
                             validate_json_path(excluded_path)?;
                             ensure!(
                                 excluded_paths.insert(excluded_path.as_str()),
-                                "duplicate document sorting excluded path `{excluded_path}`"
+                                "duplicate document clustering excluded path `{excluded_path}`"
                             );
                         }
                     }
@@ -180,14 +183,14 @@ impl GroupingConfig {
                         validate_json_path(path)?;
                         ensure!(
                             grouping_paths.insert(path.as_str()),
-                            "duplicate document sorting grouping path `{path}`"
+                            "duplicate document clustering grouping path `{path}`"
                         );
                     }
                     GroupingField::Tokenized { path } => {
                         validate_json_path(path)?;
                         ensure!(
                             grouping_paths.insert(path.as_str()),
-                            "duplicate document sorting grouping path `{path}`"
+                            "duplicate document clustering grouping path `{path}`"
                         );
                     }
                 }
@@ -221,33 +224,33 @@ impl GroupingConfig {
     fn validate_fingerprinter_limitations(&self) -> anyhow::Result<()> {
         ensure!(
             self.fingerprint.len() == 1,
-            "root document sorting grouping must contain exactly one structure field"
+            "root document clustering grouping must contain exactly one structure field"
         );
         let Some(GroupingField::Structure { path, .. }) = self.fingerprint.first() else {
             return Err(anyhow::anyhow!(
-                "root document sorting grouping must contain a structure field"
+                "root document clustering grouping must contain a structure field"
             ));
         };
         ensure!(
             path == "$",
-            "root document sorting structure path must be `$`, got `{path}`"
+            "root document clustering structure path must be `$`, got `{path}`"
         );
 
         let Some(child_grouping) = self.grouping.as_ref() else {
             return Err(anyhow::anyhow!(
-                "document sorting grouping must contain a second grouping level"
+                "document clustering grouping must contain a second grouping level"
             ));
         };
         ensure!(
             child_grouping.grouping.is_none(),
-            "document sorting grouping currently supports exactly two levels"
+            "document clustering grouping currently supports exactly two levels"
         );
         ensure!(
             child_grouping
                 .fingerprint
                 .iter()
                 .all(|field| !matches!(field, GroupingField::Structure { .. })),
-            "second-level document sorting grouping only supports raw and tokenized fields"
+            "second-level document clustering grouping only supports raw and tokenized fields"
         );
         Ok(())
     }
@@ -290,11 +293,11 @@ pub enum GroupingField {
 mod tests {
     use std::collections::HashMap;
 
-    use super::{DocsSortingConfig, DocsSortingConfigBuilder, GroupingConfig, GroupingField};
+    use super::{DocsClusteringConfig, DocsClusteringConfigBuilder, GroupingConfig, GroupingField};
 
-    fn build_config(yaml: &str) -> anyhow::Result<Option<DocsSortingConfig>> {
-        let config_builder = serde_yaml::from_str::<DocsSortingConfigBuilder>(yaml)?;
-        DocsSortingConfigBuilder::build_optional(Some(config_builder), &HashMap::new())
+    fn build_config(yaml: &str) -> anyhow::Result<Option<DocsClusteringConfig>> {
+        let config_builder = serde_yaml::from_str::<DocsClusteringConfigBuilder>(yaml)?;
+        DocsClusteringConfigBuilder::build_optional(Some(config_builder), &HashMap::new())
     }
 
     #[test]
@@ -414,7 +417,7 @@ grouping:
                         "fingerprint": [{"path": "message", "kind": "tokenized"}]
                     }
                 }),
-                "duplicate document sorting excluded path `custom`",
+                "duplicate document clustering excluded path `custom`",
             ),
             (
                 serde_json::json!({
@@ -426,7 +429,7 @@ grouping:
                         ]
                     }
                 }),
-                "duplicate document sorting grouping path `message`",
+                "duplicate document clustering grouping path `message`",
             ),
             (
                 serde_json::json!({
@@ -451,9 +454,10 @@ grouping:
 
     #[test]
     fn deserialization_rejects_malformed_yaml() {
-        let error = serde_yaml::from_str::<DocsSortingConfigBuilder>("grouping:\n  fingerprint: [")
-            .err()
-            .unwrap();
+        let error =
+            serde_yaml::from_str::<DocsClusteringConfigBuilder>("grouping:\n  fingerprint: [")
+                .err()
+                .unwrap();
         assert!(
             error
                 .to_string()
@@ -464,7 +468,7 @@ grouping:
 
     #[test]
     fn deserialization_rejects_unknown_fields() {
-        let error = serde_yaml::from_str::<DocsSortingConfigBuilder>(
+        let error = serde_yaml::from_str::<DocsClusteringConfigBuilder>(
             r#"
 grouping:
   fingerprint:
@@ -483,7 +487,7 @@ grouping:
 
     #[test]
     fn deserialization_rejects_unknown_kinds() {
-        let error = serde_yaml::from_str::<DocsSortingConfigBuilder>(
+        let error = serde_yaml::from_str::<DocsClusteringConfigBuilder>(
             r#"
 grouping:
   fingerprint:

@@ -19,7 +19,7 @@ use quickwit_metastore::checkpoint::SourceCheckpointDelta;
 use quickwit_metrics::GaugeGuard;
 use tantivy::{DateTime, TantivyDocument};
 
-use crate::docs_sorting::Fingerprint;
+use crate::docs_clustering::Fingerprint;
 
 pub struct ProcessedDoc {
     pub doc: TantivyDocument,

@@ -27,7 +27,7 @@ use tantivy::directory::MmapDirectory;
 use tracing::{Span, error, instrument};
 
 use crate::controlled_directory::ControlledDirectory;
-use crate::docs_sorting::DocIdSorter;
+use crate::docs_clustering::DocIdClusterer;
 use crate::merge_policy::MergeTask;
 use crate::metrics::{DOCS_SORT_GROUP_SIZE, INDEX_SOURCE};
 use crate::models::{PublishLock, SplitAttrs};
@@ -37,7 +37,7 @@ pub struct IndexedSplitBuilder {
     pub index_writer: tantivy::SingleSegmentIndexWriter,
     pub split_scratch_directory: TempDirectory,
     pub controlled_directory_opt: Option<ControlledDirectory>,
-    pub doc_id_sorter_opt: Option<DocIdSorter>,
+    pub doc_id_clusterer_opt: Option<DocIdClusterer>,
 }
 
 pub struct IndexedSplit {
@@ -71,7 +71,7 @@ impl fmt::Debug for IndexedSplitBuilder {
             .field("split_id", &self.split_attrs.split_id)
             .field("dir", &self.split_scratch_directory.path())
             .field("num_docs", &self.split_attrs.num_docs)
-            .field("doc_id_sorter_opt", &self.doc_id_sorter_opt.is_some())
+            .field("doc_id_clusterer_opt", &self.doc_id_clusterer_opt.is_some())
             .finish()
     }
 }
@@ -86,7 +86,7 @@ impl IndexedSplitBuilder {
         scratch_directory: TempDirectory,
         index_builder: IndexBuilder,
         io_controls: IoControls,
-        doc_id_sorter_opt: Option<DocIdSorter>,
+        doc_id_clusterer_opt: Option<DocIdClusterer>,
     ) -> anyhow::Result<Self> {
         // We avoid intermediary merge, and instead merge all segments in the packager.
         // The benefit is that we don't have to wait for potentially existing merges,
@@ -118,7 +118,7 @@ impl IndexedSplitBuilder {
                 num_merge_ops: 0,
             },
             index_writer,
-            doc_id_sorter_opt,
+            doc_id_clusterer_opt,
             split_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
         })
@@ -140,21 +140,21 @@ impl IndexedSplitBuilder {
     )]
     pub fn finalize(self) -> anyhow::Result<IndexedSplit> {
         let split_attrs = self.split_attrs;
-        let index = match self.doc_id_sorter_opt {
-            Some(doc_id_sorter) => {
-                // Update metrics for docs sorting.
+        let index = match self.doc_id_clusterer_opt {
+            Some(doc_id_clusterer) => {
+                // Update metrics for document clustering.
                 let index_label = index_label(&split_attrs.index_uid.index_id);
                 let labels = label_values!(
                     INDEX_SOURCE => index_label.to_string(),
                     split_attrs.source_id.to_string()
                 );
-                for sort_group_size in doc_id_sorter.sort_group_sizes() {
+                for sort_group_size in doc_id_clusterer.sort_group_sizes() {
                     histogram!(parent: DOCS_SORT_GROUP_SIZE, labels: [labels.clone()])
                         .observe(sort_group_size as f64);
                 }
 
                 // Finalize the index with the doc id mapping.
-                let doc_id_mapping = doc_id_sorter
+                let doc_id_mapping = doc_id_clusterer
                     .into_doc_id_mapping(split_attrs.num_docs)
                     .inspect_err(|error| {
                         error!(?error, "failed to create doc id mapping");

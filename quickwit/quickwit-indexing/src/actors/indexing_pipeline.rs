@@ -44,7 +44,7 @@ use crate::actors::pipeline_shared::{
 use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
 use crate::actors::{Publisher, Uploader};
-use crate::docs_sorting::Fingerprinter;
+use crate::docs_clustering::Fingerprinter;
 use crate::merge_policy::MergePolicy;
 use crate::metrics::{ACTOR_NAME, BACKPRESSURE_MICROS, INDEXING_PIPELINES};
 use crate::models::{IndexingStatistics, SharedPublishToken};

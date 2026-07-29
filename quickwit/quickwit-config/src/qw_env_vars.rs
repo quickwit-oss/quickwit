@@ -59,7 +59,7 @@ qw_env_vars!(
     QW_NODE_ID,
     QW_PEER_SEEDS,
     QW_REST_LISTEN_PORT,
-    QW_DISABLE_DOCS_SORTING
+    QW_DISABLE_DOCS_CLUSTERING
 );
 
 #[cfg(test)]

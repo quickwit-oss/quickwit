@@ -52,7 +52,7 @@ use ulid::Ulid;
 
 use super::IndexSerializer;
 use super::cooperative_indexing::{CooperativeIndexingCycle, CooperativeIndexingPeriod};
-use crate::docs_sorting::{DocIdSorter, Fingerprinter};
+use crate::docs_clustering::{DocIdClusterer, Fingerprinter};
 use crate::metrics::SPLIT_BUILDERS;
 use crate::models::{
     CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, NewPublishLock,
@@ -133,7 +133,9 @@ impl IndexerState {
             self.indexing_directory.clone(),
             index_builder,
             io_controls,
-            self.fingerprinter_opt.is_some().then(DocIdSorter::default),
+            self.fingerprinter_opt
+                .is_some()
+                .then(DocIdClusterer::default),
         )?;
         debug!(
             split_id=%indexed_split.split_id(),
@@ -322,8 +324,8 @@ impl IndexerState {
             // Tantivy doc IDs are local to the split and continue across processed-doc batches.
             let split_doc_id = indexed_split.split_attrs.num_docs as DocId;
             indexed_split.split_attrs.num_docs += 1;
-            if let Some(doc_id_sorter) = indexed_split.doc_id_sorter_opt.as_mut() {
-                doc_id_sorter.push(fingerprint_opt, split_doc_id);
+            if let Some(doc_id_clusterer) = indexed_split.doc_id_clusterer_opt.as_mut() {
+                doc_id_clusterer.push(fingerprint_opt, split_doc_id);
             }
             if let Some(timestamp) = timestamp_opt {
                 record_timestamp(timestamp, &mut indexed_split.split_attrs.time_range);
@@ -706,7 +708,7 @@ mod tests {
     use tantivy::{DateTime, DocAddress, TantivyDocument, doc};
 
     use super::{IndexerCounters, record_timestamp, *};
-    use crate::docs_sorting::Fingerprint;
+    use crate::docs_clustering::Fingerprint;
 
     #[test]
     fn test_record_timestamp() {
@@ -1288,8 +1290,8 @@ mod tests {
             index_serializer_inbox.drain_for_test_typed();
         let mut split_batch = split_batches.pop().unwrap();
         let split_builder = split_batch.splits.pop().unwrap();
-        let sorter = split_builder.doc_id_sorter_opt.as_ref().unwrap();
-        let mut sort_group_sizes = sorter.sort_group_sizes().collect_vec();
+        let clusterer = split_builder.doc_id_clusterer_opt.as_ref().unwrap();
+        let mut sort_group_sizes = clusterer.sort_group_sizes().collect_vec();
         sort_group_sizes.sort_unstable();
         assert_eq!(sort_group_sizes, [1, 2]);
 

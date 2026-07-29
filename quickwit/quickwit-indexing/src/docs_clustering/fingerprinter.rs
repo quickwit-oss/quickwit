@@ -242,7 +242,7 @@ fn get_leaf_string<'a>(json_value: &'a JsonValue, path: &[String]) -> Option<&'a
 
 #[cfg(test)]
 mod tests {
-    use quickwit_config::{DocsSortingConfig, GroupingConfig};
+    use quickwit_config::{DocsClusteringConfig, GroupingConfig};
     use serde_json::Value as JsonValue;
 
     use super::Fingerprinter;
@@ -251,8 +251,8 @@ mod tests {
         serde_json::from_str(s).unwrap()
     }
 
-    fn test_docs_sorting_config() -> DocsSortingConfig {
-        docs_sorting_config(serde_json::json!({
+    fn test_docs_clustering_config() -> DocsClusteringConfig {
+        docs_clustering_config(serde_json::json!({
             "fingerprint": [{
                 "path": "$",
                 "kind": "structure",
@@ -274,21 +274,21 @@ mod tests {
     }
 
     fn test_fingerprinter() -> Fingerprinter {
-        let docs_sorting_config = test_docs_sorting_config();
-        Fingerprinter::new(&docs_sorting_config.grouping)
+        let docs_clustering_config = test_docs_clustering_config();
+        Fingerprinter::new(&docs_clustering_config.grouping)
     }
 
-    fn docs_sorting_config(json_value: JsonValue) -> DocsSortingConfig {
-        DocsSortingConfig {
+    fn docs_clustering_config(json_value: JsonValue) -> DocsClusteringConfig {
+        DocsClusteringConfig {
             grouping: serde_json::from_value::<GroupingConfig>(json_value).unwrap(),
         }
     }
 
     #[test]
     fn configured_fingerprinter_returns_config() {
-        let docs_sorting_config = test_docs_sorting_config();
+        let docs_clustering_config = test_docs_clustering_config();
         let fingerprinter = test_fingerprinter();
-        assert_eq!(fingerprinter.config(), &docs_sorting_config.grouping);
+        assert_eq!(fingerprinter.config(), &docs_clustering_config.grouping);
     }
 
     #[test]
@@ -343,7 +343,7 @@ mod tests {
 
     #[test]
     fn tokenized_field_respects_hardcoded_grouping_token_limit() {
-        let docs_sorting_config = docs_sorting_config(serde_json::json!({
+        let docs_clustering_config = docs_clustering_config(serde_json::json!({
             "fingerprint": [{
                 "path": "$",
                 "kind": "structure"
@@ -355,7 +355,7 @@ mod tests {
                 }]
             }
         }));
-        let fingerprinter = Fingerprinter::new(&docs_sorting_config.grouping);
+        let fingerprinter = Fingerprinter::new(&docs_clustering_config.grouping);
         let prefix = "alpha ".repeat(25);
         let doc1 = parse(&format!(r#"{{"message":"{prefix}123"}}"#));
         let doc2 = parse(&format!(r#"{{"message":"{prefix}beta"}}"#));
@@ -402,7 +402,7 @@ mod tests {
 
     #[test]
     fn configured_raw_field_changes_grouping_fingerprint_only() {
-        let docs_sorting_config = docs_sorting_config(serde_json::json!({
+        let docs_clustering_config = docs_clustering_config(serde_json::json!({
             "fingerprint": [{
                 "path": "$",
                 "kind": "structure"
@@ -414,7 +414,7 @@ mod tests {
                 }]
             }
         }));
-        let fingerprinter = Fingerprinter::new(&docs_sorting_config.grouping);
+        let fingerprinter = Fingerprinter::new(&docs_clustering_config.grouping);
         let doc1 = parse(r#"{"message":"same","host":"web-1"}"#);
         let doc2 = parse(r#"{"message":"same","host":"web-2"}"#);
         let doc1_fingerprint = fingerprinter.fingerprint(&doc1);
@@ -425,7 +425,7 @@ mod tests {
 
     #[test]
     fn non_string_grouping_values_are_ignored() {
-        let docs_sorting_config = docs_sorting_config(serde_json::json!({
+        let docs_clustering_config = docs_clustering_config(serde_json::json!({
             "fingerprint": [{
                 "path": "$",
                 "kind": "structure"
@@ -437,7 +437,7 @@ mod tests {
                 }]
             }
         }));
-        let fingerprinter = Fingerprinter::new(&docs_sorting_config.grouping);
+        let fingerprinter = Fingerprinter::new(&docs_clustering_config.grouping);
         let doc1 = parse(r#"{"status":200}"#);
         let doc2 = parse(r#"{"status":500}"#);
         assert_eq!(
@@ -448,7 +448,7 @@ mod tests {
 
     #[test]
     fn absent_grouping_values_preserve_field_position() {
-        let docs_sorting_config = docs_sorting_config(serde_json::json!({
+        let docs_clustering_config = docs_clustering_config(serde_json::json!({
             "fingerprint": [{
                 "path": "$",
                 "kind": "structure"
@@ -466,7 +466,7 @@ mod tests {
                 ]
             }
         }));
-        let fingerprinter = Fingerprinter::new(&docs_sorting_config.grouping);
+        let fingerprinter = Fingerprinter::new(&docs_clustering_config.grouping);
         let doc1 = parse(r#"{"a":"x","b":null}"#);
         let doc2 = parse(r#"{"a":null,"b":"x"}"#);
         let doc1_fingerprint = fingerprinter.fingerprint(&doc1);

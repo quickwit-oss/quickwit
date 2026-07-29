@@ -27,7 +27,7 @@ use regex::Regex;
 
 mod cluster_config;
 mod config_value;
-mod docs_sorting;
+mod docs_clustering;
 mod index_config;
 mod index_template;
 pub mod merge_policy_config;
@@ -41,7 +41,7 @@ mod storage_config;
 mod templating;
 
 pub use cluster_config::ClusterConfig;
-pub use docs_sorting::{DocsSortingConfig, GroupingConfig, GroupingField};
+pub use docs_clustering::{DocsClusteringConfig, GroupingConfig, GroupingField};
 // We export that one for backward compatibility.
 // See #2048
 use index_config::serialize::{IndexConfigV0_8, VersionedIndexConfig};

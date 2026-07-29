@@ -30,7 +30,7 @@ use tracing::{info, warn};
 
 use super::{GrpcConfig, HealthConfig, RestConfig};
 use crate::config_value::ConfigValue;
-use crate::docs_sorting::DocsSortingConfigBuilder;
+use crate::docs_clustering::DocsClusteringConfigBuilder;
 use crate::qw_env_vars::*;
 use crate::serde_utils::HumanDuration;
 use crate::service::QuickwitService;
@@ -236,9 +236,9 @@ struct NodeConfigBuilder {
     #[serde(rename = "compactor")]
     #[serde(default)]
     compactor_config: CompactorConfig,
-    #[serde(rename = "docs_sorting")]
+    #[serde(rename = "docs_clustering")]
     #[serde(default)]
-    docs_sorting_config: Option<DocsSortingConfigBuilder>,
+    docs_clustering_config: Option<DocsClusteringConfigBuilder>,
 }
 
 impl NodeConfigBuilder {
@@ -254,8 +254,8 @@ impl NodeConfigBuilder {
         let availability_zone = self.availability_zone.resolve_optional(env_vars)?;
 
         let enable_standalone_compactors = self.enable_standalone_compactors.resolve(env_vars)?;
-        let docs_sorting_config =
-            DocsSortingConfigBuilder::build_optional(self.docs_sorting_config, env_vars)?;
+        let docs_clustering_config =
+            DocsClusteringConfigBuilder::build_optional(self.docs_clustering_config, env_vars)?;
 
         let resolved_enabled_services: HashSet<QuickwitService> =
             if let Some(enabled_services) = enabled_services {
@@ -375,7 +375,7 @@ impl NodeConfigBuilder {
             jaeger_config: self.jaeger_config,
             compactor_config: self.compactor_config,
             enable_standalone_compactors,
-            docs_sorting_config,
+            docs_clustering_config,
         };
 
         validate(&node_config)?;
@@ -519,7 +519,7 @@ impl Default for NodeConfigBuilder {
             ingest_api_config: IngestApiConfig::default(),
             jaeger_config: JaegerConfig::default(),
             compactor_config: CompactorConfig::default(),
-            docs_sorting_config: None,
+            docs_clustering_config: None,
         }
     }
 }
@@ -670,7 +670,7 @@ pub fn node_config_for_tests_from_ports(
         jaeger_config: JaegerConfig::default(),
         compactor_config: CompactorConfig::default(),
         enable_standalone_compactors: false,
-        docs_sorting_config: None,
+        docs_clustering_config: None,
     }
 }
 
@@ -1304,19 +1304,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_docs_sorting_config_is_absent_by_default() {
+    async fn test_docs_clustering_config_is_absent_by_default() {
         let node_config = NodeConfigBuilder::default()
             .build_and_validate(&HashMap::new(), None)
             .await
             .unwrap();
-        assert!(node_config.docs_sorting_config.is_none());
+        assert!(node_config.docs_clustering_config.is_none());
     }
 
     #[tokio::test]
-    async fn test_docs_sorting_config() {
+    async fn test_docs_clustering_config() {
         let config_yaml = r#"
             version: 0.8
-            docs_sorting:
+            docs_clustering:
               grouping:
                 fingerprint:
                   - path: "$"
@@ -1337,7 +1337,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let config = node_config.docs_sorting_config.unwrap();
+        let config = node_config.docs_clustering_config.unwrap();
         let GroupingField::Structure {
             path,
             exclude: excluded_paths,
@@ -1361,32 +1361,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_docs_sorting_can_be_disabled_by_env_var() {
+    async fn test_docs_clustering_can_be_disabled_by_env_var() {
         let config_yaml = r#"
             version: 0.8
-            docs_sorting:
-              grouping:
-                fingerprint:
-                  - path: "$"
-                    kind: structure
-                grouping:
-                  fingerprint:
-                    - path: message
-                      kind: tokenized
-        "#;
-        let env_vars = HashMap::from([("QW_DISABLE_DOCS_SORTING".to_string(), "true".to_string())]);
-        let node_config =
-            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
-                .await
-                .unwrap();
-        assert!(node_config.docs_sorting_config.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_docs_sorting_false_env_var_preserves_config() {
-        let config_yaml = r#"
-            version: 0.8
-            docs_sorting:
+            docs_clustering:
               grouping:
                 fingerprint:
                   - path: "$"
@@ -1397,18 +1375,45 @@ mod tests {
                       kind: tokenized
         "#;
         let env_vars =
-            HashMap::from([("QW_DISABLE_DOCS_SORTING".to_string(), "false".to_string())]);
+            HashMap::from([("QW_DISABLE_DOCS_CLUSTERING".to_string(), "true".to_string())]);
         let node_config =
             load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
                 .await
                 .unwrap();
-        assert!(node_config.docs_sorting_config.is_some());
+        assert!(node_config.docs_clustering_config.is_none());
     }
 
     #[tokio::test]
-    async fn test_docs_sorting_rejects_invalid_env_var() {
-        let env_vars =
-            HashMap::from([("QW_DISABLE_DOCS_SORTING".to_string(), "invalid".to_string())]);
+    async fn test_docs_clustering_false_env_var_preserves_config() {
+        let config_yaml = r#"
+            version: 0.8
+            docs_clustering:
+              grouping:
+                fingerprint:
+                  - path: "$"
+                    kind: structure
+                grouping:
+                  fingerprint:
+                    - path: message
+                      kind: tokenized
+        "#;
+        let env_vars = HashMap::from([(
+            "QW_DISABLE_DOCS_CLUSTERING".to_string(),
+            "false".to_string(),
+        )]);
+        let node_config =
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
+                .await
+                .unwrap();
+        assert!(node_config.docs_clustering_config.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_docs_clustering_rejects_invalid_env_var() {
+        let env_vars = HashMap::from([(
+            "QW_DISABLE_DOCS_CLUSTERING".to_string(),
+            "invalid".to_string(),
+        )]);
         let error = NodeConfigBuilder::default()
             .build_and_validate(&env_vars, None)
             .await

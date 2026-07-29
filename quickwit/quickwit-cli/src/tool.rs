@@ -37,7 +37,7 @@ use quickwit_config::{
 };
 use quickwit_index_management::{IndexService, clear_cache_directory};
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergeSchedulerService};
-use quickwit_indexing::docs_sorting::Fingerprinter;
+use quickwit_indexing::docs_clustering::Fingerprinter;
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
@@ -453,7 +453,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     let split_cache =
         Arc::new(IndexingSplitCache::from_config(&indexer_config, &config.data_dir_path).await?);
     let fingerprinter_opt = config
-        .docs_sorting_config
+        .docs_clustering_config
         .as_ref()
         .map(|config| Fingerprinter::new(&config.grouping));
     let indexing_server = IndexingService::new(
@@ -598,7 +598,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     let universe = Universe::new();
     let merge_scheduler_service: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
     let fingerprinter_opt = config
-        .docs_sorting_config
+        .docs_clustering_config
         .as_ref()
         .map(|config| Fingerprinter::new(&config.grouping));
     let indexing_server = IndexingService::new(
