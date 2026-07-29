@@ -539,7 +539,7 @@ impl Source for IngestSource {
             index_uid: Some(self.client_id.source_uid.index_uid.clone()),
             source_id: self.client_id.source_uid.source_id.clone(),
             shard_ids: shard_ids_to_acquire.clone(),
-            publish_token: publish_token.token.clone(),
+            publish_token: publish_token.to_string(),
         };
         let acquire_shards_response: AcquireShardsResponse = ctx
             .protect_future(self.metastore.acquire_shards(acquire_shards_request))
@@ -565,15 +565,16 @@ impl Source for IngestSource {
         let mut truncate_up_to_positions =
             Vec::with_capacity(acquire_shards_response.acquired_shards.len());
 
-        let newly_acquired_shards: Vec<Shard> = acquire_shards_response.acquired_shards;
+        // we re-acquired these shards to update their publish token; we don't want to
+        // resubscribe here, which would cause an error
+        let newly_acquired_shards: Vec<Shard> = acquire_shards_response
+            .acquired_shards
+            .into_iter()
+            .filter(|shard| !self.assigned_shards.contains_key(shard.shard_id()))
+            .collect();
 
         for newly_acquired_shard in newly_acquired_shards {
             let shard_id = newly_acquired_shard.shard_id().clone();
-            if self.assigned_shards.contains_key(&shard_id) {
-                // we re-acquired these shards to update their publish token; we don't want to
-                // resubscribe here, which would cause an error
-                continue;
-            }
             let index_uid = newly_acquired_shard.index_uid().clone();
             let mut current_position_inclusive = newly_acquired_shard.publish_position_inclusive();
             let leader_id: NodeId = NodeId::from_str(&newly_acquired_shard.leader_id);
@@ -1004,7 +1005,7 @@ mod tests {
 
         assert!(source.publish_lock.is_alive());
         assert_eq!(
-            source.publish_token.load_full().unwrap().token,
+            source.publish_token.load_full().unwrap().as_str(),
             "01ARZ3NDEKTSV4RRFFQ69G5FAV-test-node"
         );
 
@@ -1057,7 +1058,7 @@ mod tests {
         assert_ne!(&source.publish_lock, &publish_lock);
 
         assert_eq!(
-            source.publish_token.load_full().unwrap().token,
+            source.publish_token.load_full().unwrap().as_str(),
             "01ARZ3NDEKTSV4RRFFQ69G5FAV-test-node"
         );
 
@@ -1089,10 +1090,10 @@ mod tests {
 
     #[test]
     fn test_publish_token_resolve() {
-        let with_plan = PublishToken::resolve("test-node", "01ARZ3NDEKTSV4RRFFQ69G5FAV").token;
-        assert_eq!(with_plan, "01ARZ3NDEKTSV4RRFFQ69G5FAV-test-node");
+        let with_plan = PublishToken::resolve("test-node", "01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        assert_eq!(with_plan.as_str(), "01ARZ3NDEKTSV4RRFFQ69G5FAV-test-node");
 
-        let fallback = PublishToken::resolve("test-node", "").token;
+        let fallback = PublishToken::resolve("test-node", "");
         assert!(!fallback.is_empty());
         assert!(fallback.contains('/'));
         assert!(fallback.starts_with("test-node/"));
@@ -1624,9 +1625,9 @@ mod tests {
         // A representative non-empty publish token (the source normally holds one); `emit_batches`
         // never reads it, so it stays out of the way of what this test exercises.
         let publish_token = SharedPublishToken::default();
-        publish_token.store(Some(Arc::new(PublishToken {
-            token: "01ARZ3NDEKTSV4RRFFQ69G5FAV-test-node".to_string(),
-        })));
+        publish_token.store(Some(Arc::new(PublishToken::from(
+            "01ARZ3NDEKTSV4RRFFQ69G5FAV-test-node".to_string(),
+        ))));
         let source_runtime = SourceRuntime {
             pipeline_id,
             source_config,

@@ -99,7 +99,7 @@ impl QueueCoordinator {
         // order against the token already recorded on the shard, so a stale shard can always be
         // reclaimed.
         let publish_token =
-            PublishToken::resolve(source_runtime.pipeline_id.node_id.as_str(), "").token;
+            PublishToken::resolve(source_runtime.pipeline_id.node_id.as_str(), "").to_string();
         source_runtime
             .publish_token
             .store(Some(Arc::new(publish_token.clone().into())));

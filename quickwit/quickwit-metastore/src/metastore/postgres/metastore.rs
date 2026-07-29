@@ -332,7 +332,7 @@ async fn try_apply_delta_v2(
 
     for (shard_id, current_position, current_publish_token_opt) in shards {
         let token_matches = match &current_publish_token_opt {
-            Some(current_publish_token) => *current_publish_token == publish_token.token,
+            Some(current_publish_token) => *current_publish_token == *publish_token,
             None => false,
         };
         if !token_matches {

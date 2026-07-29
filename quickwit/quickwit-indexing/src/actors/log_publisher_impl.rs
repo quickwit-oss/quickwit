@@ -99,8 +99,7 @@ impl Handler<SplitsUpdate> for Publisher {
                     .publish_token
                     .load()
                     .as_deref()
-                    .cloned()
-                    .map(|token| token.token),
+                    .map(|publish_token| publish_token.to_string()),
             };
             async move { metastore.publish_splits(publish_splits_request).await }
         })

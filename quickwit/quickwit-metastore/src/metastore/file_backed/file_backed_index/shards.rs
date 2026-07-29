@@ -331,7 +331,7 @@ impl Shards {
             let shard_id = ShardId::from(partition_id.as_str());
             let shard = self.get_shard(&shard_id)?;
 
-            if shard.publish_token() != publish_token.token {
+            if shard.publish_token() != *publish_token {
                 return Err(MetastoreError::InvalidPublishToken {
                     queue_id: shard.queue_id(),
                 });

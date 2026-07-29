@@ -398,7 +398,7 @@ pub async fn test_metastore_acquire_shards<
     // Queue sources mint their token with `PublishToken::resolve` and no plan ID, because they own
     // shards through their reacquire grace period rather than through the indexing plan. Shard 1 is
     // owned by `NEWER_TOKEN`, and reclaiming it must succeed regardless of how the two tokens rank.
-    let queue_source_token = PublishToken::resolve("test-node", "").token;
+    let queue_source_token = PublishToken::resolve("test-node", "").to_string();
     let acquire_shards_response = metastore
         .acquire_shards(AcquireShardsRequest {
             index_uid: Some(test_index.index_uid.clone()),

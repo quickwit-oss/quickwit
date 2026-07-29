@@ -76,29 +76,31 @@ fn split_queue_id_inner(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)>
         ShardId::from(shard_id),
     ))
 }
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PublishToken {
-    pub token: String,
+pub struct PublishToken(String);
+
+impl Deref for PublishToken {
+    type Target = String;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl PublishToken {
     pub fn resolve(node_id: &str, indexing_plan_id: &str) -> Self {
         if indexing_plan_id.is_empty() {
             let ulid = if cfg!(test) { Ulid::nil() } else { Ulid::new() };
-            PublishToken {
-                token: format!("{node_id}/{ulid}"),
-            }
+            PublishToken(format!("{node_id}/{ulid}"))
         } else {
-            PublishToken {
-                token: format!("{indexing_plan_id}-{node_id}"),
-            }
+            PublishToken(format!("{indexing_plan_id}-{node_id}"))
         }
     }
 }
 
 impl From<String> for PublishToken {
     fn from(token: String) -> Self {
-        PublishToken { token }
+        PublishToken(token)
     }
 }
 

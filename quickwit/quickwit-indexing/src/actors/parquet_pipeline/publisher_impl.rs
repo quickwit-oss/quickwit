@@ -75,8 +75,7 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
                         .publish_token
                         .load()
                         .as_deref()
-                        .cloned()
-                        .map(|token| token.token),
+                        .map(|publish_token| publish_token.to_string()),
                 };
                 async move { metastore.publish_sketch_splits(publish_request).await }
             })
@@ -93,8 +92,7 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
                         .publish_token
                         .load()
                         .as_deref()
-                        .cloned()
-                        .map(|token| token.token),
+                        .map(|publish_token| publish_token.to_string()),
                 };
                 async move { metastore.publish_metrics_splits(publish_request).await }
             })
