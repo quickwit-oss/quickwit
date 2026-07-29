@@ -1226,12 +1226,12 @@ impl IngesterService for Ingester {
             const DECOMMISSION_DELAY: Duration = if cfg!(any(test, feature = "testsuite")) {
                 Duration::from_millis(200)
             } else {
-                // Having to wait for 10s is not great but we can live with it. During this time, we
+                // Having to wait for 15s is not great but we can live with it. During this time, we
                 // still make progress towards decommissioning because we gradually receive less
                 // write requests and indexing is still ongoing. However, it sets a floor on the
                 // amount of time with which we can fully decommission an ingester. This will be
                 // most noticeable when using Quickwit locally.
-                Duration::from_secs(10)
+                Duration::from_secs(15)
             };
             tokio::time::sleep(DECOMMISSION_DELAY).await;
 
