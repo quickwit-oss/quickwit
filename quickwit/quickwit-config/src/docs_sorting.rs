@@ -22,6 +22,11 @@ use crate::qw_env_vars::QW_ENABLE_DOCS_SORTING;
 
 /// Configuration for document sorting.
 ///
+/// # Warning
+///
+/// Document sorting is experimental. Its configuration and behavior may change, and it should be
+/// validated on representative workloads before production use.
+///
 /// The configuration allows to define how logs are grouped into buckets via the
 /// [grouping](`GroupingConfig`) field.
 ///

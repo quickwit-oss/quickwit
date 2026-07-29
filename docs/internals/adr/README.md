@@ -24,7 +24,6 @@ ADRs will be created here as we implement new systems. Start with the metrics pi
 | [001](./001-parquet-data-model.md) | Parquet Metrics Data Model | Proposed | `storage`, `metrics`, `parquet`, `data-model` | quickwit-parquet-engine |
 | [002](./002-sort-schema-parquet-splits.md) | Configurable Sort Schema for Parquet Splits | Proposed | `storage`, `metrics`, `compaction`, `parquet`, `sorting` | quickwit-parquet-engine, quickwit-indexing |
 | [003](./003-time-windowed-sorted-compaction.md) | Time-Windowed Sorted Compaction for Parquet | Proposed | `storage`, `metrics`, `compaction`, `parquet`, `time-windowing` | quickwit-parquet-engine, quickwit-indexing, quickwit-metastore |
-| [004](./004-logs-sorting.md) | Log Sorting for Compression | Proposed | `storage`, `logs`, `indexing`, `tantivy`, `sorting`, `compression` | quickwit-indexing, quickwit-config |
 
 ## Supplements & Roadmaps
 

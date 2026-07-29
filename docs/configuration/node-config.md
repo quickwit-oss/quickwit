@@ -12,7 +12,6 @@ The node configuration allows you to customize and optimize the settings for ind
 - Indexer settings: defined in the [indexer](#indexer-configuration) section
 - Searcher settings: defined in the [searcher](#searcher-configuration) section
 - Jaeger settings: defined in the [jaeger](#jaeger-configuration) section
-- Docs sorting settings: defined in the [docs_sorting](#docs-sorting-configuration) section
 
 A commented example is available here: [quickwit.yaml](https://github.com/quickwit-oss/quickwit/blob/main/config/quickwit.yaml).
 
@@ -34,33 +33,6 @@ A commented example is available here: [quickwit.yaml](https://github.com/quickw
 | `metastore_read_replica_uri` | Optional PostgreSQL read replica URI. Nodes running the `metastore_read_replica` service connect to it over a read-only connection and serve stale-tolerant read-only metastore requests. Searchers use those nodes only when `searcher.use_metastore_read_replica` is enabled. | `QW_METASTORE_READ_REPLICA_URI` | |
 | `default_index_root_uri` | Default index root URI that defines the location where index data (splits) is stored. The index URI is built following the scheme: `{default_index_root_uri}/{index-id}` | `QW_DEFAULT_INDEX_ROOT_URI` | `{data_dir}/indexes` |
 | environment variable only | Log level of Quickwit. Can be a direct log level, or a comma separated list of `module_name=level` | `RUST_LOG` | `info` |
-
-## Docs sorting configuration
-
-This section configures document sorting, which groups similar documents during indexing. It is optional and is disabled by default. Defining a `docs_sorting` policy enables document sorting unless `QW_ENABLE_DOCS_SORTING=false` is set. Setting `QW_ENABLE_DOCS_SORTING=true` does not enable document sorting by itself: a `docs_sorting` policy must still be present in the node configuration.
-
-The `docs_sorting.grouping` section defines how documents are grouped for sorting.
-
-- `docs_sorting.grouping.fingerprint` currently accepts exactly one root field: `path: "$"` and `kind: structure`. This field hashes the document structure. Its optional `exclude` list removes paths from the structure hash.
-- `docs_sorting.grouping.grouping.fingerprint` lists the document fields that participate in grouping. Each entry must have a `path` and a `kind`. Paths must be non-empty, must not contain leading or trailing whitespace, and must not contain empty path components such as `message..template`. A path can appear only once in this list.
-- `docs_sorting.grouping.grouping.fingerprint[].kind` controls how the field contributes to the grouping fingerprint. `tokenized` hashes the token types of the first 50 tokens from a string field, and `raw` hashes a string field's exact value. Missing fields and values that are not strings are encoded as absent so each configured field retains its position in the fingerprint.
-
-Example:
-
-```yaml
-docs_sorting:
-  grouping:
-    fingerprint:
-      - path: "$"
-        kind: structure
-        exclude: [tags]
-    grouping:
-      fingerprint:
-        - path: status
-          kind: raw
-        - path: message
-          kind: tokenized
-```
 
 ## REST configuration
 
