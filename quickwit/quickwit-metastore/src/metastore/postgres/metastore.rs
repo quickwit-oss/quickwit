@@ -53,7 +53,9 @@ use quickwit_proto::metastore::{
     StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
     UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse, serde_utils,
 };
-use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, ShardId, SourceId};
+use quickwit_proto::types::{
+    IndexId, IndexUid, Position, PublishToken, ShardId, SourceId, queue_id,
+};
 use sea_query::{Alias, Asterisk, Expr, Func, PostgresQueryBuilder, Query, UnionType};
 use sea_query_binder::SqlxBinder;
 use sqlx::{Acquire, Executor, Postgres, Transaction};
@@ -302,7 +304,7 @@ async fn try_apply_delta_v2(
         .map(|partition_id| partition_id.to_string())
         .collect();
 
-    let shards: Vec<(String, String, Option<PublishToken>)> = sqlx::query_as(
+    let shards: Vec<(String, String, Option<String>)> = sqlx::query_as(
         r#"
         SELECT
             shard_id, publish_position_inclusive, publish_token
@@ -329,11 +331,14 @@ async fn try_apply_delta_v2(
     let mut current_checkpoint = SourceCheckpoint::default();
 
     for (shard_id, current_position, current_publish_token_opt) in shards {
-        if current_publish_token_opt.is_none()
-            || current_publish_token_opt.unwrap() != publish_token
-        {
-            let message = "failed to apply checkpoint delta: invalid publish token".to_string();
-            return Err(MetastoreError::InvalidArgument { message });
+        let token_matches = match &current_publish_token_opt {
+            Some(current_publish_token) => *current_publish_token == publish_token.token,
+            None => false,
+        };
+        if !token_matches {
+            return Err(MetastoreError::InvalidPublishToken {
+                queue_id: queue_id(index_uid, source_id, &ShardId::from(shard_id.as_str())),
+            });
         }
         let partition_id = PartitionId::from(shard_id);
         let current_position = Position::from(current_position);
@@ -816,7 +821,7 @@ impl MetastoreService for PostgresqlMetastore {
                         &index_uid,
                         &source_id,
                         checkpoint_delta.source_delta,
-                        publish_token,
+                        publish_token.into(),
                     )
                     .await?;
                 } else {
@@ -2354,7 +2359,7 @@ impl PostgresqlMetastore {
                             &index_uid_inner,
                             &source_id,
                             checkpoint_delta.source_delta,
-                            publish_token,
+                            publish_token.into(),
                         )
                         .await?;
                     } else {
@@ -3050,12 +3055,12 @@ fn warn_on_unacquired_shards(request: &AcquireShardsRequest, acquired_pg_shards:
                 .any(|pg_shard| &pg_shard.shard_id == *shard_id)
         })
         .collect();
-    warn!(
+    info!(
         index_uid=%request.index_uid(),
         source_id=%request.source_id,
         shard_ids=?not_acquired_shard_ids,
         publish_token=%request.publish_token,
-        "could not acquire shards: held by a more recent publish token, or no longer present"
+        "failed to acquire shards: held by a more recent publish token, or no longer present"
     );
 }
 

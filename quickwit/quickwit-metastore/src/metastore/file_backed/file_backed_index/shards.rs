@@ -188,7 +188,7 @@ impl Shards {
                         %shard_id,
                         existing_publish_token=%shard.publish_token(),
                         publish_token=%request.publish_token,
-                        "cannot acquire shard held by a more recent publish token"
+                        "failed to acquire shard held by a more recent publish token"
                     );
                     continue;
                 }
@@ -331,9 +331,10 @@ impl Shards {
             let shard_id = ShardId::from(partition_id.as_str());
             let shard = self.get_shard(&shard_id)?;
 
-            if shard.publish_token() != publish_token {
-                let message = "failed to apply checkpoint delta: invalid publish token".to_string();
-                return Err(MetastoreError::InvalidArgument { message });
+            if shard.publish_token() != publish_token.token {
+                return Err(MetastoreError::InvalidPublishToken {
+                    queue_id: shard.queue_id(),
+                });
             }
             let publish_position_inclusive = partition_delta.to;
             shard_ids.push((shard_id, publish_position_inclusive))

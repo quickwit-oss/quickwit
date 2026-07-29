@@ -23,10 +23,9 @@ use quickwit_config::{FileSourceMessageType, FileSourceSqs};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::types::SourceUid;
+use quickwit_proto::types::{PublishToken, SourceUid};
 use quickwit_storage::StorageResolver;
 use serde::Serialize;
-use ulid::Ulid;
 
 use super::Queue;
 use super::helpers::QueueReceiver;
@@ -95,10 +94,15 @@ impl QueueCoordinator {
         shard_max_count: Option<u32>,
         shard_pruning_interval: Duration,
     ) -> Self {
-        let publish_token = Ulid::new().to_string();
+        // Queue sources own their shards through the reacquire grace period, not through the
+        // indexing plan. `resolve` without a plan ID mints a token that `AcquireShards` does not
+        // order against the token already recorded on the shard, so a stale shard can always be
+        // reclaimed.
+        let publish_token =
+            PublishToken::resolve(source_runtime.pipeline_id.node_id.as_str(), "").token;
         source_runtime
             .publish_token
-            .store(Some(Arc::new(publish_token.clone())));
+            .store(Some(Arc::new(publish_token.clone().into())));
         Self {
             shared_state: QueueSharedState::new(
                 source_runtime.metastore,

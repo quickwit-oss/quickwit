@@ -31,7 +31,7 @@ use quickwit_ingest::IngesterPool;
 use quickwit_metrics::{GaugeGuard, counter, gauge, label_values};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
-use quickwit_proto::types::ShardId;
+use quickwit_proto::types::{IndexingPlanId, ShardId};
 use quickwit_storage::{Storage, StorageResolver};
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument, warn};
@@ -91,7 +91,7 @@ pub struct IndexingPipeline {
     shard_ids: BTreeSet<ShardId>,
     // Id of the last indexing plan assigned to this pipeline. Kept here, like `shard_ids`, so it
     // can be re-sent to the source on respawn; the source adopts it as its publish token.
-    indexing_plan_id: String,
+    indexing_plan_id: IndexingPlanId,
     publish_token: SharedPublishToken,
     _indexing_pipelines_gauge_guard: GaugeGuard,
 }
@@ -141,7 +141,7 @@ impl IndexingPipeline {
                 ..Default::default()
             },
             shard_ids: Default::default(),
-            indexing_plan_id: String::new(),
+            indexing_plan_id: IndexingPlanId::new(),
             publish_token: SharedPublishToken::default(),
             _indexing_pipelines_gauge_guard: indexing_pipelines_gauge_guard,
         }
@@ -733,6 +733,117 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_pipeline_retry_1_gz() -> anyhow::Result<()> {
         test_indexing_pipeline_num_fails_before_success(1, "data/test_corpus.json.gz").await
+    }
+
+    fn spawn_pipeline_failing_to_publish(
+        universe: &Universe,
+        publish_error: MetastoreError,
+    ) -> ActorHandle<IndexingPipeline> {
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 1);
+        let pipeline_id = IndexingPipelineId {
+            node_id: NodeId::from_str("test-node"),
+            index_uid: index_uid.clone(),
+            source_id: "test-source".to_string(),
+            pipeline_uid: PipelineUid::for_test(0u128),
+        };
+        let source_config = SourceConfig {
+            source_id: "test-source".to_string(),
+            num_pipelines: NonZeroUsize::MIN,
+            enabled: true,
+            source_params: SourceParams::file_from_str("data/test_corpus.json").unwrap(),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
+        let source_config_clone = source_config.clone();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_index_metadata().returning(move |_| {
+            let mut index_metadata =
+                IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
+            index_metadata
+                .add_source(source_config_clone.clone())
+                .unwrap();
+            Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
+        });
+        mock_metastore
+            .expect_last_delete_opstamp()
+            .returning(move |_| Ok(LastDeleteOpstampResponse::new(10)));
+        mock_metastore
+            .expect_mark_splits_for_deletion()
+            .returning(|_| Ok(EmptyResponse {}));
+        mock_metastore
+            .expect_stage_splits()
+            .returning(|_| Ok(EmptyResponse {}));
+        mock_metastore
+            .expect_publish_splits()
+            .returning(move |_| Err(publish_error.clone()));
+
+        let storage = Arc::new(RamStorage::default());
+        let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
+        let (merge_planner_mailbox, _) = universe.create_test_mailbox();
+        let pipeline_params = IndexingPipelineParams {
+            pipeline_id,
+            doc_mapper: Arc::new(default_doc_mapper_for_test()),
+            source_config,
+            source_storage_resolver: StorageResolver::for_test(),
+            indexing_directory: TempDirectory::for_test(),
+            indexing_settings: IndexingSettings::for_test(),
+            ingester_pool: IngesterPool::default(),
+            metastore: MetastoreServiceClient::from_mock(mock_metastore),
+            queues_dir_path: PathBuf::from("./queues"),
+            storage,
+            split_store,
+            merge_policy: default_merge_policy(),
+            retention_policy: None,
+            max_concurrent_split_uploads_index: 4,
+            max_concurrent_split_uploads_merge: 5,
+            cooperative_indexing_permits: None,
+            merge_planner_mailbox_opt: Some(merge_planner_mailbox),
+            params_fingerprint: 42u64,
+            event_broker: EventBroker::default(),
+        };
+        let (_pipeline_mailbox, pipeline_handle) = universe
+            .spawn_builder()
+            .spawn(IndexingPipeline::new(pipeline_params));
+        pipeline_handle
+    }
+
+    #[tokio::test]
+    async fn test_indexing_pipeline_stops_for_good_on_revoked_publish_token() {
+        let universe = Universe::with_accelerated_time();
+        let pipeline_handle = spawn_pipeline_failing_to_publish(
+            &universe,
+            MetastoreError::InvalidPublishToken {
+                queue_id: "test-index:1/test-source/0".to_string(),
+            },
+        );
+        let (pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
+
+        assert!(pipeline_exit_status.is_success());
+        assert_eq!(pipeline_statistics.generation, 1);
+        assert_eq!(pipeline_statistics.num_spawn_attempts, 1);
+        assert_eq!(pipeline_statistics.num_published_splits, 0);
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_indexing_pipeline_respawns_on_other_publish_errors() {
+        let universe = Universe::with_accelerated_time();
+        let pipeline_handle = spawn_pipeline_failing_to_publish(
+            &universe,
+            MetastoreError::InvalidArgument {
+                message: "failed to apply checkpoint delta".to_string(),
+            },
+        );
+        wait_until_predicate(
+            || async { pipeline_handle.last_observation().generation >= 2 },
+            Duration::from_secs(30),
+            Duration::from_millis(25),
+        )
+        .await
+        .expect("pipeline should respawn after a publish error other than a revoked token");
+
+        universe.assert_quit().await;
     }
 
     async fn indexing_pipeline_simple(test_file: &str) -> anyhow::Result<()> {

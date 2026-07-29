@@ -23,7 +23,7 @@ use quickwit_proto::metastore::{
     ListShardsRequest, ListShardsSubrequest, MetastoreError, MetastoreService, OpenShardSubrequest,
     OpenShardsRequest, PruneShardsRequest, PublishSplitsRequest,
 };
-use quickwit_proto::types::{DocMappingUid, IndexUid, Position, ShardId, SourceId};
+use quickwit_proto::types::{DocMappingUid, IndexUid, Position, PublishToken, ShardId, SourceId};
 use time::OffsetDateTime;
 
 use super::DefaultForTest;
@@ -393,6 +393,25 @@ pub async fn test_metastore_acquire_shards<
     assert_eq!(
         acquire_shards_response.acquired_shards[0].publish_token(),
         LEGACY_TOKEN
+    );
+
+    // Queue sources mint their token with `PublishToken::resolve` and no plan ID, because they own
+    // shards through their reacquire grace period rather than through the indexing plan. Shard 1 is
+    // owned by `NEWER_TOKEN`, and reclaiming it must succeed regardless of how the two tokens rank.
+    let queue_source_token = PublishToken::resolve("test-node", "").token;
+    let acquire_shards_response = metastore
+        .acquire_shards(AcquireShardsRequest {
+            index_uid: Some(test_index.index_uid.clone()),
+            source_id: test_index.source_id.clone(),
+            shard_ids: vec![ShardId::from(1)],
+            publish_token: queue_source_token.clone(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(acquire_shards_response.acquired_shards.len(), 1);
+    assert_eq!(
+        acquire_shards_response.acquired_shards[0].publish_token(),
+        queue_source_token
     );
 
     cleanup_index(&mut metastore, test_index.index_uid).await;
@@ -858,9 +877,7 @@ pub async fn test_metastore_apply_checkpoint_delta_v2_single_shard<
         .publish_splits(publish_splits_request.clone())
         .await
         .unwrap_err();
-    assert!(
-        matches!(error, MetastoreError::InvalidArgument { message } if message.contains("token"))
-    );
+    assert!(matches!(error, MetastoreError::InvalidPublishToken { .. }));
 
     let index_checkpoint_delta_json = serde_json::to_string(&index_checkpoint_delta).unwrap();
     let publish_splits_request = PublishSplitsRequest {

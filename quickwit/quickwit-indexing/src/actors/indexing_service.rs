@@ -50,7 +50,7 @@ use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, ListSplitsRequest, MetastoreResult, MetastoreService,
     MetastoreServiceClient,
 };
-use quickwit_proto::types::{IndexId, IndexUid, NodeId, PipelineUid, PublishToken, ShardId};
+use quickwit_proto::types::{IndexId, IndexUid, IndexingPlanId, NodeId, PipelineUid, ShardId};
 use quickwit_storage::StorageResolver;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -107,7 +107,7 @@ pub struct IndexingService {
     pub(crate) ingester_pool: IngesterPool,
     pub(crate) storage_resolver: StorageResolver,
     indexing_pipelines: HashMap<PipelineUid, BoxedPipelineHandle>,
-    latest_indexing_plan_id: PublishToken,
+    latest_indexing_plan_id: IndexingPlanId,
     counters: IndexingServiceCounters,
     pub(crate) max_concurrent_split_uploads: usize,
     merge_scheduler_service_opt: Option<Mailbox<MergeSchedulerService>>,
@@ -540,10 +540,7 @@ impl IndexingService {
                 match pipeline_handle.state() {
                     ActorState::Paused | ActorState::Running => true,
                     ActorState::Success => {
-                        info!(
-                            pipeline_uid=%pipeline_uid,
-                            "indexing pipeline exited successfully"
-                        );
+                        info!(%pipeline_uid, "indexing pipeline exited successfully");
                         self.counters.num_successful_pipelines += 1;
                         self.counters.num_running_pipelines -= 1;
                         false
@@ -551,10 +548,7 @@ impl IndexingService {
                     ActorState::Failure => {
                         // This should never happen: Indexing Pipelines are not supposed to fail,
                         // and are themselves in charge of supervising the pipeline actors.
-                        error!(
-                            pipeline_uid=%pipeline_uid,
-                            "indexing pipeline exited with failure: this should never happen, please report"
-                        );
+                        error!(%pipeline_uid, "indexing pipeline exited with failure: this should never happen, please report");
                         self.counters.num_failed_pipelines += 1;
                         self.counters.num_running_pipelines -= 1;
                         false
@@ -811,6 +805,9 @@ impl IndexingService {
                 latest_plan_id = %self.latest_indexing_plan_id,
                 "ignoring stale indexing plan"
             );
+            return Ok(());
+        }
+        if plan_request.indexing_plan_id == self.latest_indexing_plan_id {
             return Ok(());
         }
         self.latest_indexing_plan_id = plan_request.indexing_plan_id.clone();
@@ -1507,7 +1504,7 @@ mod tests {
             indexing_service
                 .ask_for_res(ApplyIndexingPlanRequest {
                     indexing_tasks,
-                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FA1".to_string(),
                 })
                 .await
                 .unwrap();
@@ -1576,7 +1573,7 @@ mod tests {
             indexing_service
                 .ask_for_res(ApplyIndexingPlanRequest {
                     indexing_tasks: indexing_tasks.clone(),
-                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FA2".to_string(),
                 })
                 .await
                 .unwrap();
@@ -1633,7 +1630,7 @@ mod tests {
             indexing_service
                 .ask_for_res(ApplyIndexingPlanRequest {
                     indexing_tasks: indexing_tasks.clone(),
-                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FA3".to_string(),
                 })
                 .await
                 .unwrap();
@@ -1693,7 +1690,7 @@ mod tests {
             indexing_service
                 .ask_for_res(ApplyIndexingPlanRequest {
                     indexing_tasks: indexing_tasks.clone(),
-                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FA4".to_string(),
                 })
                 .await
                 .unwrap();
@@ -1713,7 +1710,7 @@ mod tests {
         indexing_service
             .ask_for_res(ApplyIndexingPlanRequest {
                 indexing_tasks: Vec::new(),
-                indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FA5".to_string(),
             })
             .await
             .unwrap();

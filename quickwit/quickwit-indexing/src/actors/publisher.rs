@@ -20,10 +20,10 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Mailbox, QueueCapaci
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult, MetastoreServiceClient};
 use serde::Serialize;
-use tracing::warn;
+use tracing::{error, warn};
 
 use crate::actors::MergePlanner;
-use crate::models::SharedPublishToken;
+use crate::models::{PublishLock, SharedPublishToken};
 use crate::source::{SourceActor, SuggestTruncate};
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -85,6 +85,40 @@ impl Publisher {
         self.parquet_merge_planner_mailbox_opt = Some(mailbox);
         self
     }
+
+    /// Ends the pipeline this publisher belongs to. We do this by signaling the source to exit,
+    /// which will propagate the message downstream to the other actors.
+    pub(crate) async fn terminate_pipeline(
+        &self,
+        ctx: &ActorContext<Publisher>,
+        publish_error: ActorExitStatus,
+        publish_lock: &PublishLock,
+        split_ids: &[String],
+    ) -> Result<(), ActorExitStatus> {
+        let Some(source_mailbox) = self.source_mailbox_opt.as_ref() else {
+            return Err(publish_error);
+        };
+        error!(
+            error=?publish_error,
+            split_ids=?split_ids,
+            "failed to publish splits, terminating the pipeline"
+        );
+        // The actor kill signal will propagate and eventually end up back here, and will try
+        // to publish before exiting, so we kill the publish lock to prevent one final flush.
+        publish_lock.kill().await;
+        let _ = ctx.send_exit_with_success(source_mailbox).await;
+        Ok(())
+    }
+}
+
+pub(crate) fn is_invalid_publish_token(publish_error: &ActorExitStatus) -> bool {
+    let ActorExitStatus::Failure(error) = publish_error else {
+        return false;
+    };
+    matches!(
+        error.downcast_ref::<MetastoreError>(),
+        Some(MetastoreError::InvalidPublishToken { .. })
+    )
 }
 
 pub(crate) fn serialize_checkpoint_delta(
@@ -114,6 +148,8 @@ pub(crate) async fn suggest_truncate(
     }
 }
 
+// This is used primarily for publisher-specific metastore retry logic, specifically to have a
+// handle on an invalid publish token, which will cause the pipeline to be terminated and not
 pub(crate) async fn publish_with_retry<T, F, Fut>(
     ctx: &ActorContext<Publisher>,
     operation_name: &str,
@@ -124,25 +160,18 @@ where
     Fut: Future<Output = MetastoreResult<T>>,
 {
     for retry_delay in [
-        Some(Duration::from_millis(100)),
-        Some(Duration::from_millis(250)),
+        Some(Duration::from_secs(1)),
+        Some(Duration::from_secs(3)),
         None,
     ] {
         let Err(error) = ctx.protect_future(publish()).await else {
             return Ok(());
         };
-        let retryable = matches!(
-            error,
-            MetastoreError::InvalidArgument { .. }
-                | MetastoreError::Unavailable(_)
-                | MetastoreError::TooManyRequests
-                | MetastoreError::Connection { .. }
-                | MetastoreError::Internal { .. }
-        );
+        let retryable = matches!(error, MetastoreError::InvalidPublishToken { .. });
         match retry_delay {
             Some(retry_delay) if retryable => {
                 warn!(%error, operation = operation_name, "metastore publish failed, retrying");
-                ctx.protect_future(tokio::time::sleep(retry_delay)).await;
+                ctx.protect_future(ctx.sleep(retry_delay)).await;
             }
             _ => {
                 warn!(%error, operation = operation_name, retryable, "metastore publish failed, giving up after 3 tries");
