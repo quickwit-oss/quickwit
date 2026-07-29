@@ -134,8 +134,11 @@ pub(super) async fn dispatch_batch(
 
     // determinist sort so the combined aggregation is the same regardless of ordering (= better
     // partial cache usage)
-    entries.sort_unstable_by(|l, r| l.request.aggregation_request.cmp(&r.request.aggregation_request));
-
+    entries.sort_unstable_by(|l, r| {
+        l.request
+            .aggregation_request
+            .cmp(&r.request.aggregation_request)
+    });
 
     let (requests, result_txs): (Vec<_>, Vec<_>) = entries
         .into_iter()
