@@ -253,8 +253,15 @@ mod tests {
     };
 
     fn build_config(yaml: &str) -> anyhow::Result<Option<DocsClusteringConfig>> {
+        build_config_with_env(yaml, &HashMap::new())
+    }
+
+    fn build_config_with_env(
+        yaml: &str,
+        env_vars: &HashMap<String, String>,
+    ) -> anyhow::Result<Option<DocsClusteringConfig>> {
         let config_builder = serde_yaml::from_str::<DocsClusteringConfigBuilder>(yaml)?;
-        DocsClusteringConfigBuilder::build_optional(Some(config_builder), &HashMap::new())
+        DocsClusteringConfigBuilder::build_optional(Some(config_builder), env_vars)
     }
 
     #[test]
@@ -309,6 +316,62 @@ mod tests {
         )
         .unwrap();
         assert!(config.is_some());
+    }
+
+    #[test]
+    fn build_can_be_disabled_by_env_var() {
+        let env_vars =
+            HashMap::from([("QW_DISABLE_DOCS_CLUSTERING".to_string(), "true".to_string())]);
+        let config = build_config_with_env(
+            r#"
+- fingerprint:
+    - kind: structure
+- fingerprint:
+    - path: message
+      kind: tokenized
+"#,
+            &env_vars,
+        )
+        .unwrap();
+
+        assert!(config.is_none());
+    }
+
+    #[test]
+    fn build_false_env_var_preserves_config() {
+        let env_vars = HashMap::from([(
+            "QW_DISABLE_DOCS_CLUSTERING".to_string(),
+            "false".to_string(),
+        )]);
+        let config = build_config_with_env(
+            r#"
+- fingerprint:
+    - kind: structure
+- fingerprint:
+    - path: message
+      kind: tokenized
+"#,
+            &env_vars,
+        )
+        .unwrap();
+
+        assert!(config.is_some());
+    }
+
+    #[test]
+    fn build_rejects_invalid_env_var() {
+        let env_vars = HashMap::from([(
+            "QW_DISABLE_DOCS_CLUSTERING".to_string(),
+            "invalid".to_string(),
+        )]);
+        let error = DocsClusteringConfigBuilder::build_optional(None, &env_vars).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("failed to convert value `invalid`"),
+            "expected invalid boolean error, got: {error}",
+        );
     }
 
     #[test]

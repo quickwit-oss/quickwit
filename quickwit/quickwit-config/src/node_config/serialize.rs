@@ -686,7 +686,7 @@ mod tests {
 
     use super::*;
     use crate::storage_config::StorageBackendFlavor;
-    use crate::{CacheConfig, ClusteringField, ClusteringPolicy, LambdaConfig, LambdaDeployConfig};
+    use crate::{CacheConfig, LambdaConfig, LambdaDeployConfig};
 
     fn get_config_filepath(config_filename: &str) -> String {
         format!(
@@ -1310,116 +1310,6 @@ mod tests {
             .await
             .unwrap();
         assert!(node_config.docs_clustering_config.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_docs_clustering_config() {
-        let config_yaml = r#"
-            version: 0.8
-            docs_clustering:
-              - fingerprint:
-                  - kind: structure
-                    exclude: [custom]
-              - fingerprint:
-                  - kind: raw
-                    path: status
-                  - kind: raw
-                    path: service
-                  - kind: tokenized
-                    path: message
-        "#;
-        let node_config = load_node_config_with_env(
-            ConfigFormat::Yaml,
-            config_yaml.as_bytes(),
-            &HashMap::new(),
-            None,
-        )
-        .await
-        .unwrap();
-        let config = node_config.docs_clustering_config.unwrap();
-        let ClusteringPolicy::Fingerprint { fingerprint } = &config.policies[0];
-        let ClusteringField::Structure {
-            exclude: excluded_paths,
-        } = &fingerprint.fingerprint[0]
-        else {
-            panic!("expected structure field");
-        };
-        assert_eq!(excluded_paths, &["custom".to_string()]);
-        let ClusteringPolicy::Fingerprint { fingerprint } = &config.policies[1];
-        assert_eq!(
-            fingerprint.fingerprint,
-            vec![
-                ClusteringField::Raw {
-                    path: "status".to_string()
-                },
-                ClusteringField::Raw {
-                    path: "service".to_string()
-                },
-                ClusteringField::Tokenized {
-                    path: "message".to_string()
-                },
-            ]
-        );
-    }
-
-    #[tokio::test]
-    async fn test_docs_clustering_can_be_disabled_by_env_var() {
-        let config_yaml = r#"
-            version: 0.8
-            docs_clustering:
-              - fingerprint:
-                  - kind: structure
-              - fingerprint:
-                  - path: message
-                    kind: tokenized
-        "#;
-        let env_vars =
-            HashMap::from([("QW_DISABLE_DOCS_CLUSTERING".to_string(), "true".to_string())]);
-        let node_config =
-            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
-                .await
-                .unwrap();
-        assert!(node_config.docs_clustering_config.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_docs_clustering_false_env_var_preserves_config() {
-        let config_yaml = r#"
-            version: 0.8
-            docs_clustering:
-              - fingerprint:
-                  - kind: structure
-              - fingerprint:
-                  - path: message
-                    kind: tokenized
-        "#;
-        let env_vars = HashMap::from([(
-            "QW_DISABLE_DOCS_CLUSTERING".to_string(),
-            "false".to_string(),
-        )]);
-        let node_config =
-            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
-                .await
-                .unwrap();
-        assert!(node_config.docs_clustering_config.is_some());
-    }
-
-    #[tokio::test]
-    async fn test_docs_clustering_rejects_invalid_env_var() {
-        let env_vars = HashMap::from([(
-            "QW_DISABLE_DOCS_CLUSTERING".to_string(),
-            "invalid".to_string(),
-        )]);
-        let error = NodeConfigBuilder::default()
-            .build_and_validate(&env_vars, None)
-            .await
-            .unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .contains("failed to convert value `invalid`"),
-            "expected invalid boolean error, got: {error}",
-        );
     }
 
     #[tokio::test]
