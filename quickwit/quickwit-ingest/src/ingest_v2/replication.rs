@@ -701,7 +701,7 @@ impl ReplicationTask {
         let wal_usage = state_guard.mrecordlog.resource_usage();
         drop(state_guard);
 
-        report_wal_usage(wal_usage);
+        report_wal_usage(wal_usage, self.disk_capacity, self.memory_capacity);
 
         let follower_id = self.follower_id.to_string();
 
