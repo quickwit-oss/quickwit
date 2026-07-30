@@ -52,9 +52,7 @@ use crate::metrics::{
     DD_INDEXED_EVENTS, DD_INDEXED_EVENTS_BYTES, INDEX_SOURCE, INDEXING_STATUS, PROCESSED_BYTES,
     PROCESSED_DOCS_TOTAL, PROCESSING_PIPELINE_THREAD_CPU_MICROS_TOTAL,
 };
-use crate::models::{
-    NewPublishLock, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch,
-};
+use crate::models::{NewPublishLock, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch};
 
 const PLAIN_TEXT: &str = "plain_text";
 const DEFAULT_MAX_LOG_PAST_AGE_HOURS: u64 = 18;
