@@ -844,7 +844,7 @@ async fn leaf_search_single_split(
     // Spans the CPU-pool queue wait: created here (right after warmup) and closed when the
     // closure starts executing on a pool thread. `tantivy_search` is created inside the
     // closure so it covers only the CPU execution, not this wait.
-    let cpu_wait_span = info_span!("waiting_for_cpu_pool");
+    let cpu_wait_span = info_span!("wait_for_thread_pool");
 
     let split_clone = split.clone();
 
@@ -2033,11 +2033,11 @@ async fn run_local_search_tasks(
         // Per-split span covering both the permit wait and the search, so each split is a
         // single subtree (wait + warmup + tantivy) rather than flat siblings.
         let split_span = info_span!(
-            "leaf_search_single_split_wrapper",
+            "leaf_search_single_split",
             split_id = split.split_id,
             num_docs = split.num_docs
         );
-        let wait_span = info_span!(parent: &split_span, "acquire_leaf_split_search_permit");
+        let wait_span = info_span!(parent: &split_span, "acquire_leaf_search_single_split_permit");
         let leaf_split_search_permit = search_permit_future.instrument(wait_span).await;
 
         // We run simplify search request again: as we push split into the merge collector,
