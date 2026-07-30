@@ -263,6 +263,7 @@ indexer:
 | `max_queue_disk_usage` | Maximum disk-space in bytes taken by the Ingest queue. The minimum size is at least `256M` and be at least `max_queue_memory_usage`. | `4GiB` |
 | `content_length_limit` | Maximum payload size uncompressed. Increasing this is discouraged, use a [file source](../ingest-data/sqs-files.md) instead. | `10MiB` |
 | `grpc_compression_algorithm` | Compression algorithm (`gzip` or `zstd`) to use for gRPC traffic between nodes for the ingest service | `None` |
+| `decommission_timeout` | Maximum amount of time to wait for the ingester to finish decommissioning gracefully on shutdown before giving up. Can be overridden with the `QW_INGEST_DECOMMISSION_TIMEOUT` environment variable. | `300s` |
 
 Example:
 
@@ -272,6 +273,28 @@ ingest_api:
   max_queue_disk_usage: 4GiB
   content_length_limit: 10MiB
   grpc_compression_algorithm: zstd
+  decommission_timeout: 300s
+```
+
+## Compactor configuration
+
+This section contains the configuration options for a Compactor.
+
+| Property | Description | Default value |
+| --- | --- | --- |
+| `max_concurrent_merge_executions` | Maximum number of concurrent merges, which hold the CPU for a long time. | `num threads available - 1` |
+| `pipeline_slots_per_merge_execution` | Number of pipelines to run per merge execution. Since merges perform a lot of IO, multiple concurrent merges can be interleaved. | `2` |
+| `max_concurrent_split_uploads` | Maximum number of concurrent split uploads across all pipelines. | `12` |
+| `max_merge_write_throughput` | Limits the IO throughput of the split downloader and the merge executor. | `None` |
+| `decommission_timeout` | Maximum amount of time to wait for the compactor to finish decommissioning gracefully on shutdown before giving up. Can be overridden with the `QW_COMPACTOR_DECOMMISSION_TIMEOUT` environment variable. | `300s` |
+
+Example:
+
+```yaml
+compactor:
+  max_concurrent_merge_executions: 3
+  max_concurrent_split_uploads: 12
+  decommission_timeout: 300s
 ```
 
 ## Searcher configuration
