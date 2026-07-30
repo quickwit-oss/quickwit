@@ -21,13 +21,16 @@ use sqlx::{
     Acquire, Database, Describe, Either, Error, Execute, Executor, Pool, Postgres, Transaction,
 };
 
-use super::metrics::{ACQUIRE_CONNECTIONS, ACTIVE_CONNECTIONS, IDLE_CONNECTIONS, MetastoreKind};
+use super::metrics::{
+    ACQUIRE_CONNECTIONS, ACTIVE_CONNECTIONS, IDLE_CONNECTIONS, MAX_CONNECTIONS, MetastoreKind,
+};
 
 #[derive(Clone, Debug)]
 struct TrackedPoolMetrics {
     acquire_connections: Gauge,
     active_connections: Gauge,
     idle_connections: Gauge,
+    max_connections: Gauge,
 }
 
 impl TrackedPoolMetrics {
@@ -37,6 +40,7 @@ impl TrackedPoolMetrics {
             acquire_connections: gauge!(parent: ACQUIRE_CONNECTIONS, labels: [kind_label]),
             active_connections: gauge!(parent: ACTIVE_CONNECTIONS, labels: [kind_label]),
             idle_connections: gauge!(parent: IDLE_CONNECTIONS, labels: [kind_label]),
+            max_connections: gauge!(parent: MAX_CONNECTIONS, labels: [kind_label]),
         }
     }
 }
@@ -49,9 +53,13 @@ pub(super) struct TrackedPool<DB: Database> {
 
 impl TrackedPool<Postgres> {
     pub fn new(inner_pool: Pool<Postgres>, kind: MetastoreKind) -> Self {
+        let metrics = TrackedPoolMetrics::new(kind);
+        metrics
+            .max_connections
+            .set(inner_pool.options().get_max_connections() as f64);
         Self {
             inner_pool,
-            metrics: TrackedPoolMetrics::new(kind),
+            metrics,
         }
     }
 }
