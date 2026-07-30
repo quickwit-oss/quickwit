@@ -1211,7 +1211,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_indexer_collects_fingerprints_when_sorting_is_enabled() -> anyhow::Result<()> {
+    async fn test_indexer_collects_fingerprints_when_clustering_is_enabled() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new_with_random_ulid("test-index"),

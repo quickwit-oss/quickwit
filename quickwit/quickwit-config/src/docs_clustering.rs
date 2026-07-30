@@ -26,6 +26,8 @@ use crate::qw_env_vars::QW_DISABLE_DOCS_CLUSTERING;
 /// descending size. It applies only when publishing fresh splits, not during split merge
 /// operations.
 ///
+/// See the docs_clustering module in the quickwit-indexing crate for more details.
+///
 /// # Warning
 ///
 /// Document clustering is experimental. Its configuration and behavior may change, and it should be
