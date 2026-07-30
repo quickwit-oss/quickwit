@@ -303,10 +303,12 @@ impl Cluster {
         let future = async move {
             let mut inner = inner.write().await;
             for node in inner.live_nodes.values() {
-                if node.is_ready {
-                    change_stream_tx
+                if node.is_ready
+                    && change_stream_tx
                         .send(ClusterChange::Add(node.clone()))
-                        .expect("receiver end of the channel should be open");
+                        .is_err()
+                {
+                    return;
                 }
             }
             inner.change_stream_subscribers.push(change_stream_tx);

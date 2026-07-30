@@ -8497,6 +8497,7 @@ dependencies = [
  "home",
  "hostname",
  "http 1.4.2",
+ "humantime",
  "hyper 1.10.1",
  "hyper-util",
  "itertools 0.15.0",
