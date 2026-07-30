@@ -140,29 +140,28 @@ impl IndexedSplitBuilder {
     )]
     pub fn finalize(self) -> anyhow::Result<IndexedSplit> {
         let split_attrs = self.split_attrs;
-        let index = match self.doc_id_clusterer_opt {
-            Some(doc_id_clusterer) => {
-                // Update metrics for document clustering.
-                let index_label = index_label(&split_attrs.index_uid.index_id);
-                let labels = label_values!(
-                    INDEX_SOURCE => index_label.to_string(),
-                    split_attrs.source_id.to_string()
-                );
-                for sort_group_size in doc_id_clusterer.sort_group_sizes() {
-                    histogram!(parent: DOCS_SORT_GROUP_SIZE, labels: [labels.clone()])
-                        .observe(sort_group_size as f64);
-                }
-
-                // Finalize the index with the doc id mapping.
-                let doc_id_mapping = doc_id_clusterer
-                    .into_doc_id_mapping(split_attrs.num_docs)
-                    .inspect_err(|error| {
-                        error!(?error, "failed to create doc id mapping");
-                    })?;
-                self.index_writer
-                    .finalize_with_doc_id_mapping(&doc_id_mapping)?
+        let index = if let Some(doc_id_clusterer) = self.doc_id_clusterer_opt {
+            // Update metrics for document clustering.
+            let index_label = index_label(&split_attrs.index_uid.index_id);
+            let labels = label_values!(
+                INDEX_SOURCE => index_label.to_string(),
+                split_attrs.source_id.to_string()
+            );
+            for sort_group_size in doc_id_clusterer.sort_group_sizes() {
+                histogram!(parent: DOCS_SORT_GROUP_SIZE, labels: [labels.clone()])
+                    .observe(sort_group_size as f64);
             }
-            None => self.index_writer.finalize()?,
+
+            // Finalize the index with the doc id mapping.
+            let doc_id_mapping = doc_id_clusterer
+                .into_doc_id_mapping(split_attrs.num_docs)
+                .inspect_err(|error| {
+                    error!(?error, "failed to create doc id mapping");
+                })?;
+            self.index_writer
+                .finalize_with_doc_id_mapping(&doc_id_mapping)?
+        } else {
+            self.index_writer.finalize()?
         };
         Ok(IndexedSplit {
             split_attrs,

@@ -124,6 +124,11 @@ impl IndexerState {
             .set_progress(ctx.progress().clone())
             .set_kill_switch(ctx.kill_switch().clone())
             .set_component("indexer");
+        let doc_id_clusterer_opt = if self.fingerprinter_opt.is_some() {
+            Some(DocIdClusterer::default())
+        } else {
+            None
+        };
 
         let indexed_split = IndexedSplitBuilder::new_in_dir(
             self.pipeline_id.clone(),
@@ -133,9 +138,7 @@ impl IndexerState {
             self.indexing_directory.clone(),
             index_builder,
             io_controls,
-            self.fingerprinter_opt
-                .is_some()
-                .then(DocIdClusterer::default),
+            doc_id_clusterer_opt,
         )?;
         debug!(
             split_id=%indexed_split.split_id(),

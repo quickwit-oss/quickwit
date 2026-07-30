@@ -496,18 +496,17 @@ impl DocProcessor {
 
     fn process_json_doc(&self, json_doc: JsonDoc) -> Result<ProcessedDoc, DocProcessorError> {
         let num_bytes = json_doc.num_bytes;
-        let mut json_value = JsonValue::Object(json_doc.json_obj);
+        let json_value = JsonValue::Object(json_doc.json_obj);
         let fingerprint_opt = self
             .fingerprinter_opt
             .as_ref()
             .map(|fingerprinter| fingerprinter.fingerprint(&json_value));
-        let JsonValue::Object(json_obj) = &mut json_value else {
+        let JsonValue::Object(json_obj) = json_value else {
             unreachable!("document JSON value is always an object")
         };
-
         let (partition, doc) = self
             .doc_mapper
-            .doc_from_json_obj(std::mem::take(json_obj), json_doc.num_bytes as u64)?;
+            .doc_from_json_obj(json_obj, num_bytes as u64)?;
         let timestamp_opt = self.extract_timestamp(&doc)?;
         Ok(ProcessedDoc {
             doc,
