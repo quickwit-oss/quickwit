@@ -187,13 +187,13 @@ impl IndexingPipeline {
         }
 
         if !failure_or_unhealthy_actors.is_empty() {
-            error!(
+            debug!(
                 pipeline_id=?self.params.pipeline_id,
                 generation=self.generation(),
                 healthy_actors=?healthy_actors,
                 failed_or_unhealthy_actors=?failure_or_unhealthy_actors,
                 success_actors=?success_actors,
-                "Indexing pipeline failure."
+                "indexing pipeline failure"
             );
             return Health::FailureOrUnhealthy;
         }

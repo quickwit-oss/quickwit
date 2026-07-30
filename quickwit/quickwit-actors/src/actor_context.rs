@@ -23,7 +23,7 @@ use std::time::Duration;
 use quickwit_common::{KillSwitch, Progress, ProtectedZoneGuard};
 use quickwit_metrics::Counter;
 use tokio::sync::{oneshot, watch};
-use tracing::{debug, error};
+use tracing::debug;
 
 #[cfg(any(test, feature = "testsuite"))]
 use crate::Universe;
@@ -209,11 +209,14 @@ impl<A: Actor> ActorContext<A> {
         obs_state
     }
 
-    pub(crate) fn exit(&self, exit_status: &ActorExitStatus) {
+    pub(crate) fn exit(&self, exit_status: &ActorExitStatus, fault_opt: Option<anyhow::Error>) {
         self.actor_state.exit(exit_status.is_success());
-        if should_activate_kill_switch(exit_status) {
-            error!(actor=%self.actor_instance_id(), exit_status=?exit_status, "exit activating-kill-switch");
-            self.kill_switch().kill();
+        if !should_activate_kill_switch(exit_status) {
+            return;
+        }
+        match fault_opt {
+            Some(fault) => self.kill_switch().kill_with_fault(fault),
+            None => self.kill_switch().kill(),
         }
     }
 

@@ -19,7 +19,7 @@ use anyhow::Context;
 use quickwit_metrics::Counter;
 use sync_wrapper::SyncWrapper;
 use tokio::sync::watch;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 use crate::envelope::Envelope;
 use crate::mailbox::{Inbox, create_mailbox};
@@ -400,23 +400,24 @@ async fn actor_loop<A: Actor>(
             actor_env.process_messages().await
         };
 
-    let actor_id = actor_env.ctx.actor_instance_id();
-    match after_process_exit_status {
+    let actor_name = actor_env.actor.get_mut().name();
+    let fault_opt: Option<anyhow::Error> = match &after_process_exit_status {
+        ActorExitStatus::Failure(cause) => Some(anyhow::anyhow!(
+            "{actor_name} failed while {exit_phase:?}: {cause:#}"
+        )),
+        ActorExitStatus::Panicked => Some(anyhow::anyhow!(
+            "{actor_name} panicked while {exit_phase:?}"
+        )),
         ActorExitStatus::Success
         | ActorExitStatus::Quit
         | ActorExitStatus::DownstreamClosed
-        | ActorExitStatus::Killed => {
-            info!(actor_id, phase = ?exit_phase, exit_status = ?after_process_exit_status, "actor-exit");
-        }
-        ActorExitStatus::Failure(_) | ActorExitStatus::Panicked => {
-            error!(actor_id, phase = ?exit_phase, exit_status = ?after_process_exit_status, "actor-exit");
-        }
+        | ActorExitStatus::Killed => None,
     };
 
     // TODO the no advance time guard for finalize has a race condition. Ideally we would
     // like to have the guard before we drop the last envelope.
     let final_exit_status = actor_env.finalize(after_process_exit_status).await;
     // The last observation is collected on `ActorExecutionEnv::Drop`.
-    actor_env.ctx.exit(&final_exit_status);
+    actor_env.ctx.exit(&final_exit_status, fault_opt);
     final_exit_status
 }

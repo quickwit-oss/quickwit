@@ -205,7 +205,7 @@ impl MergePipeline {
             }
         }
         if !failure_or_unhealthy_actors.is_empty() {
-            error!(
+            debug!(
                 index_uid=%self.params.pipeline_id.index_uid,
                 source_id=%self.params.pipeline_id.source_id,
                 generation=self.generation(),
