@@ -152,7 +152,6 @@ impl Handler<IndexedSplitBatch> for Packager {
                 packaged_splits,
                 batch.checkpoint_delta_opt,
                 batch.publish_lock,
-                batch.publish_token_opt,
                 batch.merge_task_opt,
                 batch.batch_parent_span,
             ),
@@ -569,7 +568,6 @@ mod tests {
                 splits: vec![indexed_split],
                 checkpoint_delta_opt: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
                 publish_lock: PublishLock::default(),
-                publish_token_opt: None,
                 merge_task_opt: None,
                 batch_parent_span: Span::none(),
             })

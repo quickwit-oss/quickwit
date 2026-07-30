@@ -127,6 +127,9 @@ pub enum MetastoreError {
     #[error("invalid argument: {message}")]
     InvalidArgument { message: String },
 
+    #[error("invalid publish token for shard `{queue_id}`")]
+    InvalidPublishToken { queue_id: QueueId },
+
     #[error("IO error: {message}")]
     Io { message: String },
 
@@ -164,6 +167,7 @@ impl MetastoreError {
             | MetastoreError::FailedPrecondition { .. }
             | MetastoreError::Forbidden { .. }
             | MetastoreError::InvalidArgument { .. }
+            | MetastoreError::InvalidPublishToken { .. }
             | MetastoreError::JsonDeserializeError { .. }
             | MetastoreError::JsonSerializeError { .. }
             | MetastoreError::NotFound(_)
@@ -227,6 +231,7 @@ impl ServiceError for MetastoreError {
                 ServiceErrorCode::Internal
             }
             Self::InvalidArgument { .. } => ServiceErrorCode::BadRequest,
+            Self::InvalidPublishToken { .. } => ServiceErrorCode::BadRequest,
             Self::Io { message } => {
                 rate_limited_error!(limit_per_min = 6, "metastore/io internal error: {message}");
                 ServiceErrorCode::Internal

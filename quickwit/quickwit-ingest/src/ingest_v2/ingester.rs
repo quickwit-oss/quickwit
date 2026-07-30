@@ -1224,7 +1224,7 @@ impl IngesterService for Ingester {
         let self_clone = self.clone();
         tokio::spawn(async move {
             const DECOMMISSION_DELAY: Duration = if cfg!(any(test, feature = "testsuite")) {
-                Duration::from_millis(100)
+                Duration::from_millis(200)
             } else {
                 // Having to wait for 10s is not great but we can live with it. During this time, we
                 // still make progress towards decommissioning because we gradually receive less

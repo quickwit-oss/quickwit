@@ -30,7 +30,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_parquet_engine::storage::ParquetSplitWriter;
-use quickwit_proto::types::{IndexUid, PublishToken};
+use quickwit_proto::types::IndexUid;
 use serde::Serialize;
 use tokio::runtime::Handle;
 use tracing::{info, warn};
@@ -64,8 +64,6 @@ pub struct ParquetBatchForPackager {
     pub checkpoint_delta: IndexCheckpointDelta,
     /// Publish lock for coordination.
     pub publish_lock: PublishLock,
-    /// Optional publish token.
-    pub publish_token_opt: Option<PublishToken>,
 }
 
 /// Counters for ParquetPackager observability.
@@ -182,7 +180,6 @@ impl Handler<ParquetBatchForPackager> for ParquetPackager {
             index_uid,
             checkpoint_delta,
             publish_lock,
-            publish_token_opt,
         } = batch_for_packager;
 
         let output_dir = self.split_writer.base_path().clone();
@@ -235,7 +232,6 @@ impl Handler<ParquetBatchForPackager> for ParquetPackager {
             output_dir,
             checkpoint_delta_opt: Some(checkpoint_delta),
             publish_lock,
-            publish_token_opt,
             replaced_split_ids: Vec::new(),
             _scratch_directory_opt: None,
             _merge_task_opt: None,
@@ -349,7 +345,6 @@ mod tests {
                 source_delta: SourceCheckpointDelta::from_range(0..10),
             },
             publish_lock: PublishLock::default(),
-            publish_token_opt: None,
         };
 
         packager_mailbox
@@ -388,7 +383,6 @@ mod tests {
                 source_delta: SourceCheckpointDelta::from_range(0..10),
             },
             publish_lock: PublishLock::default(),
-            publish_token_opt: None,
         };
 
         packager_mailbox
@@ -431,7 +425,6 @@ mod tests {
                 source_delta: SourceCheckpointDelta::from_range(0..30),
             },
             publish_lock: PublishLock::default(),
-            publish_token_opt: None,
         };
 
         packager_mailbox
@@ -476,7 +469,6 @@ mod tests {
                 source_delta: SourceCheckpointDelta::from_range(0..30),
             },
             publish_lock: PublishLock::default(),
-            publish_token_opt: None,
         };
 
         packager_mailbox

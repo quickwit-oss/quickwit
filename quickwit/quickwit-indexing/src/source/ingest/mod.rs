@@ -14,6 +14,7 @@
 
 use std::collections::BTreeSet;
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -27,11 +28,11 @@ use quickwit_ingest::{
     FetchStreamError, IngesterPool, MRecord, MultiFetchStream, decoded_mrecords,
 };
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
-use quickwit_proto::ingest::IngestV2Error;
 use quickwit_proto::ingest::ingester::{
     FetchEof, FetchPayload, IngesterService, TruncateShardsRequest, TruncateShardsSubrequest,
     fetch_message,
 };
+use quickwit_proto::ingest::{IngestV2Error, Shard};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, MetastoreService, MetastoreServiceClient,
     SourceType,
@@ -43,13 +44,12 @@ use serde::Serialize;
 use serde_json::json;
 use tokio::time;
 use tracing::{debug, error, info, warn};
-use ulid::Ulid;
 
 use super::{
-    BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
+    Assignment, BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
     SourceRuntime, SourceSink, TypedSourceFactory,
 };
-use crate::models::{LocalShardPositionsUpdate, NewPublishLock, NewPublishToken, PublishLock};
+use crate::models::{LocalShardPositionsUpdate, NewPublishLock, PublishLock, SharedPublishToken};
 
 pub struct IngestSourceFactory;
 
@@ -101,11 +101,6 @@ impl ClientId {
             pipeline_uid,
         }
     }
-
-    fn new_publish_token(&self) -> String {
-        let ulid = if cfg!(test) { Ulid::nil() } else { Ulid::new() };
-        format!("{self}/{ulid}")
-    }
 }
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize)]
@@ -142,7 +137,7 @@ pub struct IngestSource {
     assigned_shards: FnvHashMap<ShardId, AssignedShard>,
     fetch_stream: MultiFetchStream,
     publish_lock: PublishLock,
-    publish_token: PublishToken,
+    publish_token: SharedPublishToken,
     event_broker: EventBroker,
 }
 
@@ -176,9 +171,10 @@ impl IngestSource {
             retry_params,
         );
         // We start as dead. The first reset with a non-empty list of shards will create an alive
-        // publish lock.
+        // publish lock. The publish token is left empty until then: the first reset adopts the
+        // indexing plan id carried by the assignment.
         let publish_lock = PublishLock::dead();
-        let publish_token = client_id.new_publish_token();
+        let publish_token = source_runtime.publish_token.clone();
 
         Ok(IngestSource {
             client_id,
@@ -388,7 +384,7 @@ impl IngestSource {
     /// Ongoing work and splits traveling through the pipeline will be dropped.
     ///
     /// After this method has returned we are guaranteed to have the following post condition:
-    /// - a alive publish lock / non-empty publish token
+    /// - an alive publish lock
     /// - all currently assigned shards included in the `new_assigned_shard_ids` set.
     async fn reset_if_needed(
         &mut self,
@@ -439,12 +435,8 @@ impl IngestSource {
         self.fetch_stream.reset();
         self.publish_lock.kill().await;
         self.publish_lock = PublishLock::default();
-        self.publish_token = self.client_id.new_publish_token();
         source_sink
             .send_publish_lock(NewPublishLock(self.publish_lock.clone()), ctx)
-            .await?;
-        source_sink
-            .send_publish_token(NewPublishToken(self.publish_token.clone()), ctx)
             .await?;
         Ok(())
     }
@@ -504,10 +496,14 @@ impl Source for IngestSource {
 
     async fn assign_shards(
         &mut self,
-        new_assigned_shard_ids: BTreeSet<ShardId>,
+        assignment: Assignment,
         source_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> anyhow::Result<()> {
+        let Assignment {
+            shard_ids: new_assigned_shard_ids,
+            indexing_plan_id,
+        } = assignment;
         self.reset_if_needed(&new_assigned_shard_ids, source_sink, ctx)
             .await?;
 
@@ -525,27 +521,34 @@ impl Source for IngestSource {
             return Ok(());
         }
 
-        let added_shard_ids: Vec<ShardId> = new_assigned_shard_ids
-            .into_iter()
-            .filter(|shard_id| !self.assigned_shards.contains_key(shard_id))
-            .collect();
-
+        // Publish tokens are stored per shard in the metastore, but are managed per indexing
+        // pipeline. Whenever a new shard assignment arrives, all the assigned shards need to
+        // be re-acquired so that they all have the same publish token.
+        let (added_shard_ids, renewed_shard_ids): (Vec<&ShardId>, Vec<&ShardId>) =
+            new_assigned_shard_ids
+                .iter()
+                .partition(|shard_id| !self.assigned_shards.contains_key(shard_id));
         assert!(!added_shard_ids.is_empty());
         info!(added_shards=?added_shard_ids, "adding shards assignment");
+        info!(renewed_shards=?renewed_shard_ids, "renewing publish token for shards");
 
+        let publish_token =
+            PublishToken::resolve(self.client_id.node_id.as_str(), &indexing_plan_id);
+        let shard_ids_to_acquire: Vec<ShardId> = new_assigned_shard_ids.into_iter().collect();
         let acquire_shards_request = AcquireShardsRequest {
             index_uid: Some(self.client_id.source_uid.index_uid.clone()),
             source_id: self.client_id.source_uid.source_id.clone(),
-            shard_ids: added_shard_ids.clone(),
-            publish_token: self.publish_token.clone(),
+            shard_ids: shard_ids_to_acquire.clone(),
+            publish_token: publish_token.to_string(),
         };
         let acquire_shards_response: AcquireShardsResponse = ctx
             .protect_future(self.metastore.acquire_shards(acquire_shards_request))
             .await
             .context("failed to acquire shards")?;
+        self.publish_token.store(Some(Arc::new(publish_token)));
 
-        if acquire_shards_response.acquired_shards.len() != added_shard_ids.len() {
-            let missing_shards = added_shard_ids
+        if acquire_shards_response.acquired_shards.len() != shard_ids_to_acquire.len() {
+            let missing_shards = shard_ids_to_acquire
                 .iter()
                 .filter(|shard_id| {
                     !acquire_shards_response
@@ -556,20 +559,29 @@ impl Source for IngestSource {
                 .collect::<Vec<_>>();
             // This can happen if the shards have been deleted by the control plane, after building
             // the plan and before the apply terminated. See #4888.
-            info!(missing_shards=?missing_shards, "failed to acquire all assigned shards");
+            warn!(missing_shards=?missing_shards, "failed to acquire all assigned shards");
         }
 
         let mut truncate_up_to_positions =
             Vec::with_capacity(acquire_shards_response.acquired_shards.len());
 
-        for acquired_shard in acquire_shards_response.acquired_shards {
-            let index_uid = acquired_shard.index_uid().clone();
-            let shard_id = acquired_shard.shard_id().clone();
-            let mut current_position_inclusive = acquired_shard.publish_position_inclusive();
-            let leader_id: NodeId = NodeId::from_str(&acquired_shard.leader_id);
-            let follower_id_opt: Option<NodeId> =
-                acquired_shard.follower_id.map(|id| NodeId::from_str(&id));
-            let source_id: SourceId = acquired_shard.source_id;
+        // we re-acquired these shards to update their publish token; we don't want to
+        // resubscribe here, which would cause an error
+        let newly_acquired_shards: Vec<Shard> = acquire_shards_response
+            .acquired_shards
+            .into_iter()
+            .filter(|shard| !self.assigned_shards.contains_key(shard.shard_id()))
+            .collect();
+
+        for newly_acquired_shard in newly_acquired_shards {
+            let shard_id = newly_acquired_shard.shard_id().clone();
+            let index_uid = newly_acquired_shard.index_uid().clone();
+            let mut current_position_inclusive = newly_acquired_shard.publish_position_inclusive();
+            let leader_id: NodeId = NodeId::from_str(&newly_acquired_shard.leader_id);
+            let follower_id_opt: Option<NodeId> = newly_acquired_shard
+                .follower_id
+                .map(|id| NodeId::from_str(&id));
+            let source_id: SourceId = newly_acquired_shard.source_id;
             let partition_id = PartitionId::from(shard_id.as_str());
             let from_position_exclusive = current_position_inclusive.clone();
 
@@ -650,7 +662,7 @@ impl Source for IngestSource {
         json!({
             "client_id": self.client_id.to_string(),
             "assigned_shards": assigned_shards,
-            "publish_token": self.publish_token,
+            "publish_token": self.publish_token.load().as_deref(),
         })
     }
 }
@@ -730,24 +742,38 @@ mod tests {
         mock_metastore
             .expect_acquire_shards()
             .once()
-            .withf(|request| request.shard_ids == [ShardId::from(1)])
+            .withf(|request| request.shard_ids == [ShardId::from(0), ShardId::from(1)])
             .returning(|request| {
                 assert_eq!(request.index_uid(), &("test-index", 0));
                 assert_eq!(request.source_id, "test-source");
 
                 let response = AcquireShardsResponse {
-                    acquired_shards: vec![Shard {
-                        leader_id: "test-ingester-0".to_string(),
-                        follower_id: None,
-                        index_uid: Some(IndexUid::for_test("test-index", 0)),
-                        source_id: "test-source".to_string(),
-                        shard_id: Some(ShardId::from(1)),
-                        shard_state: ShardState::Open as i32,
-                        doc_mapping_uid: Some(DocMappingUid::default()),
-                        publish_position_inclusive: Some(Position::offset(11u64)),
-                        publish_token: Some(publish_token.to_string()),
-                        update_timestamp: 1724158996,
-                    }],
+                    acquired_shards: vec![
+                        Shard {
+                            leader_id: "test-ingester-0".to_string(),
+                            follower_id: None,
+                            index_uid: Some(IndexUid::for_test("test-index", 0)),
+                            source_id: "test-source".to_string(),
+                            shard_id: Some(ShardId::from(0)),
+                            shard_state: ShardState::Open as i32,
+                            doc_mapping_uid: Some(DocMappingUid::default()),
+                            publish_position_inclusive: Some(Position::offset(10u64)),
+                            publish_token: Some(publish_token.to_string()),
+                            update_timestamp: 1724158996,
+                        },
+                        Shard {
+                            leader_id: "test-ingester-0".to_string(),
+                            follower_id: None,
+                            index_uid: Some(IndexUid::for_test("test-index", 0)),
+                            source_id: "test-source".to_string(),
+                            shard_id: Some(ShardId::from(1)),
+                            shard_state: ShardState::Open as i32,
+                            doc_mapping_uid: Some(DocMappingUid::default()),
+                            publish_position_inclusive: Some(Position::offset(11u64)),
+                            publish_token: Some(publish_token.to_string()),
+                            update_timestamp: 1724158996,
+                        },
+                    ],
                 };
                 Ok(response)
             });
@@ -943,6 +969,7 @@ mod tests {
             storage_resolver: StorageResolver::for_test(),
             event_broker,
             indexing_setting: IndexingSettings::default(),
+            publish_token: SharedPublishToken::default(),
         };
         let retry_params = RetryParams::no_retries();
         let mut source = IngestSource::try_new(source_runtime, retry_params)
@@ -963,21 +990,38 @@ mod tests {
         let shard_ids: BTreeSet<ShardId> = once(0).map(ShardId::from).collect();
         let publish_lock = source.publish_lock.clone();
         source
-            .assign_shards(shard_ids, &source_sink, &ctx)
+            .assign_shards(
+                Assignment {
+                    shard_ids,
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                },
+                &source_sink,
+                &ctx,
+            )
             .await
             .unwrap();
         assert_eq!(sequence_rx.recv().await.unwrap(), 1);
         assert!(!publish_lock.is_alive());
 
         assert!(source.publish_lock.is_alive());
-        assert!(!source.publish_token.is_empty());
+        assert_eq!(
+            source.publish_token.load_full().unwrap().as_str(),
+            "01ARZ3NDEKTSV4RRFFQ69G5FAV-test-node"
+        );
 
         // We assign [0,1] (previously [0]). This should just add the shard 1.
         // The stream does not need to be reset.
         let shard_ids: BTreeSet<ShardId> = (0..2).map(ShardId::from).collect();
         let publish_lock = source.publish_lock.clone();
         source
-            .assign_shards(shard_ids, &source_sink, &ctx)
+            .assign_shards(
+                Assignment {
+                    shard_ids,
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                },
+                &source_sink,
+                &ctx,
+            )
             .await
             .unwrap();
         assert_eq!(sequence_rx.recv().await.unwrap(), 2);
@@ -990,7 +1034,14 @@ mod tests {
         let shard_ids: BTreeSet<ShardId> = (1..3).map(ShardId::from).collect();
         let publish_lock = source.publish_lock.clone();
         source
-            .assign_shards(shard_ids, &source_sink, &ctx)
+            .assign_shards(
+                Assignment {
+                    shard_ids,
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                },
+                &source_sink,
+                &ctx,
+            )
             .await
             .unwrap();
 
@@ -1006,13 +1057,10 @@ mod tests {
             .unwrap();
         assert_ne!(&source.publish_lock, &publish_lock);
 
-        // assert!(publish_token != source.publish_token);
-
-        let NewPublishToken(publish_token) = doc_processor_inbox
-            .recv_typed_message::<NewPublishToken>()
-            .await
-            .unwrap();
-        assert_eq!(source.publish_token, publish_token);
+        assert_eq!(
+            source.publish_token.load_full().unwrap().as_str(),
+            "01ARZ3NDEKTSV4RRFFQ69G5FAV-test-node"
+        );
 
         assert_eq!(source.assigned_shards.len(), 2);
 
@@ -1038,6 +1086,17 @@ mod tests {
 
         // Wait for the truncate future to complete.
         time::sleep(Duration::from_millis(1)).await;
+    }
+
+    #[test]
+    fn test_publish_token_resolve() {
+        let with_plan = PublishToken::resolve("test-node", "01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        assert_eq!(with_plan.as_str(), "01ARZ3NDEKTSV4RRFFQ69G5FAV-test-node");
+
+        let fallback = PublishToken::resolve("test-node", "");
+        assert!(!fallback.is_empty());
+        assert!(fallback.contains('/'));
+        assert!(fallback.starts_with("test-node/"));
     }
 
     #[tokio::test]
@@ -1149,6 +1208,7 @@ mod tests {
             storage_resolver: StorageResolver::for_test(),
             event_broker,
             indexing_setting: IndexingSettings::default(),
+            publish_token: SharedPublishToken::default(),
         };
         let retry_params = RetryParams::for_test();
         let mut source = IngestSource::try_new(source_runtime, retry_params)
@@ -1169,7 +1229,14 @@ mod tests {
             BTreeSet::from_iter([ShardId::from(1), ShardId::from(2)]);
 
         source
-            .assign_shards(shard_ids, &source_sink, &ctx)
+            .assign_shards(
+                Assignment {
+                    shard_ids,
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                },
+                &source_sink,
+                &ctx,
+            )
             .await
             .unwrap();
 
@@ -1316,6 +1383,7 @@ mod tests {
             storage_resolver: StorageResolver::for_test(),
             event_broker,
             indexing_setting: IndexingSettings::default(),
+            publish_token: SharedPublishToken::default(),
         };
         let retry_params = RetryParams::for_test();
         let mut source = IngestSource::try_new(source_runtime, retry_params)
@@ -1340,7 +1408,14 @@ mod tests {
 
         // In this scenario, the indexer will only be able to acquire shard 1.
         source
-            .assign_shards(shard_ids, &source_sink, &ctx)
+            .assign_shards(
+                Assignment {
+                    shard_ids,
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                },
+                &source_sink,
+                &ctx,
+            )
             .await
             .unwrap();
 
@@ -1383,6 +1458,7 @@ mod tests {
             storage_resolver: StorageResolver::for_test(),
             event_broker,
             indexing_setting: IndexingSettings::default(),
+            publish_token: SharedPublishToken::default(),
         };
         let retry_params = RetryParams::for_test();
         let mut source = IngestSource::try_new(source_runtime, retry_params)
@@ -1546,6 +1622,12 @@ mod tests {
         let ingester_pool = IngesterPool::default();
         let event_broker = EventBroker::default();
 
+        // A representative non-empty publish token (the source normally holds one); `emit_batches`
+        // never reads it, so it stays out of the way of what this test exercises.
+        let publish_token = SharedPublishToken::default();
+        publish_token.store(Some(Arc::new(PublishToken::from(
+            "01ARZ3NDEKTSV4RRFFQ69G5FAV-test-node".to_string(),
+        ))));
         let source_runtime = SourceRuntime {
             pipeline_id,
             source_config,
@@ -1555,6 +1637,7 @@ mod tests {
             storage_resolver: StorageResolver::for_test(),
             event_broker,
             indexing_setting: IndexingSettings::default(),
+            publish_token,
         };
         let retry_params = RetryParams::for_test();
         let mut source = IngestSource::try_new(source_runtime, retry_params)
@@ -1698,6 +1781,7 @@ mod tests {
             storage_resolver: StorageResolver::for_test(),
             event_broker,
             indexing_setting: IndexingSettings::default(),
+            publish_token: SharedPublishToken::default(),
         };
         let retry_params = RetryParams::for_test();
         let mut source = IngestSource::try_new(source_runtime, retry_params)
@@ -1716,7 +1800,14 @@ mod tests {
         let shard_ids: BTreeSet<ShardId> = BTreeSet::from_iter([ShardId::from(1)]);
 
         source
-            .assign_shards(shard_ids, &source_sink, &ctx)
+            .assign_shards(
+                Assignment {
+                    shard_ids,
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                },
+                &source_sink,
+                &ctx,
+            )
             .await
             .unwrap();
 
@@ -1854,6 +1945,7 @@ mod tests {
             storage_resolver: StorageResolver::for_test(),
             event_broker,
             indexing_setting: IndexingSettings::default(),
+            publish_token: SharedPublishToken::default(),
         };
         let retry_params = RetryParams::for_test();
         let mut source = IngestSource::try_new(source_runtime, retry_params)
@@ -1986,6 +2078,7 @@ mod tests {
             storage_resolver: StorageResolver::for_test(),
             event_broker: event_broker.clone(),
             indexing_setting: IndexingSettings::default(),
+            publish_token: SharedPublishToken::default(),
         };
         let retry_params = RetryParams::for_test();
         let mut source = IngestSource::try_new(source_runtime, retry_params)
@@ -2011,7 +2104,14 @@ mod tests {
         });
 
         source
-            .assign_shards(shard_ids, &source_sink, &ctx)
+            .assign_shards(
+                Assignment {
+                    shard_ids,
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                },
+                &source_sink,
+                &ctx,
+            )
             .await
             .unwrap();
 

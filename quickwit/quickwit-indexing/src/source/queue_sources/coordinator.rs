@@ -23,10 +23,9 @@ use quickwit_config::{FileSourceMessageType, FileSourceSqs};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::types::SourceUid;
+use quickwit_proto::types::{PublishToken, SourceUid};
 use quickwit_storage::StorageResolver;
 use serde::Serialize;
-use ulid::Ulid;
 
 use super::Queue;
 use super::helpers::QueueReceiver;
@@ -34,7 +33,7 @@ use super::local_state::QueueLocalState;
 use super::message::{MessageType, PreProcessingError, ReadyMessage};
 use super::shared_state::{QueueSharedState, checkpoint_messages};
 use super::visibility::{VisibilitySettings, spawn_visibility_task};
-use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
+use crate::models::{NewPublishLock, PublishLock};
 use crate::source::{SourceContext, SourceRuntime, SourceSink};
 
 /// Maximum duration that the `emit_batches()` callback can wait for
@@ -95,6 +94,15 @@ impl QueueCoordinator {
         shard_max_count: Option<u32>,
         shard_pruning_interval: Duration,
     ) -> Self {
+        // Queue sources own their shards through the reacquire grace period, not through the
+        // indexing plan. `resolve` without a plan ID mints a token that `AcquireShards` does not
+        // order against the token already recorded on the shard, so a stale shard can always be
+        // reclaimed.
+        let publish_token =
+            PublishToken::resolve(source_runtime.pipeline_id.node_id.as_str(), "").to_string();
+        source_runtime
+            .publish_token
+            .store(Some(Arc::new(publish_token.clone().into())));
         Self {
             shared_state: QueueSharedState::new(
                 source_runtime.metastore,
@@ -116,7 +124,7 @@ impl QueueCoordinator {
             observable_state: QueueCoordinatorObservableState::default(),
             message_type,
             publish_lock: PublishLock::default(),
-            publish_token: Ulid::new().to_string(),
+            publish_token,
             visibility_settings: VisibilitySettings::from_commit_timeout(
                 source_runtime.indexing_setting.commit_timeout_secs,
             ),
@@ -153,9 +161,6 @@ impl QueueCoordinator {
         let publish_lock = self.publish_lock.clone();
         source_sink
             .send_publish_lock(NewPublishLock(publish_lock), ctx)
-            .await?;
-        source_sink
-            .send_publish_token(NewPublishToken(self.publish_token.clone()), ctx)
             .await?;
         Ok(())
     }

@@ -41,9 +41,7 @@ use tokio::runtime::Handle;
 use super::vrl_processing::*;
 use crate::actors::Indexer;
 use crate::metrics::{PROCESSED_BYTES, PROCESSED_DOCS_TOTAL};
-use crate::models::{
-    NewPublishLock, NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch,
-};
+use crate::models::{NewPublishLock, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch};
 
 const PLAIN_TEXT: &str = "plain_text";
 pub(super) struct JsonDoc {
@@ -602,20 +600,6 @@ impl Handler<NewPublishLock> for DocProcessor {
     ) -> Result<(), ActorExitStatus> {
         let NewPublishLock(publish_lock) = &message;
         self.publish_lock = publish_lock.clone();
-        ctx.send_message(&self.indexer_mailbox, message).await?;
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<NewPublishToken> for DocProcessor {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        message: NewPublishToken,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
         ctx.send_message(&self.indexer_mailbox, message).await?;
         Ok(())
     }
