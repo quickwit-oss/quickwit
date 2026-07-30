@@ -123,7 +123,7 @@ pub use void_source::{VoidSource, VoidSourceFactory};
 
 use self::doc_file_reader::dir_and_filename;
 use self::stdin_source::StdinSourceFactory;
-use crate::models::RawDocBatch;
+use crate::models::{RawDocBatch, SharedPublishToken};
 use crate::source::ingest::IngestSourceFactory;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
 
@@ -166,6 +166,7 @@ pub struct SourceRuntime {
     pub storage_resolver: StorageResolver,
     pub event_broker: EventBroker,
     pub indexing_setting: IndexingSettings,
+    pub publish_token: SharedPublishToken,
 }
 
 impl SourceRuntime {
@@ -266,7 +267,7 @@ pub trait Source: Send + 'static {
     /// plane.
     async fn assign_shards(
         &mut self,
-        _shard_ids: BTreeSet<ShardId>,
+        _assignment: Assignment,
         _source_sink: &SourceSink,
         _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
@@ -337,6 +338,8 @@ struct Loop;
 #[derive(Debug)]
 pub struct Assignment {
     pub shard_ids: BTreeSet<ShardId>,
+    /// ULID of the originating indexing plan, used as the publish token when (re)acquiring shards.
+    pub indexing_plan_id: String,
 }
 
 #[derive(Debug)]
@@ -402,9 +405,9 @@ impl Handler<AssignShards> for SourceActor {
         assign_shards_message: AssignShards,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
-        let AssignShards(Assignment { shard_ids }) = assign_shards_message;
+        let AssignShards(assignment) = assign_shards_message;
         self.source
-            .assign_shards(shard_ids, &self.source_sink, ctx)
+            .assign_shards(assignment, &self.source_sink, ctx)
             .await?;
         Ok(())
     }
@@ -631,6 +634,7 @@ mod tests {
                 storage_resolver: StorageResolver::for_test(),
                 event_broker: EventBroker::default(),
                 indexing_setting: IndexingSettings::default(),
+                publish_token: SharedPublishToken::default(),
             }
         }
 

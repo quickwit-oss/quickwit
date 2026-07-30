@@ -702,7 +702,7 @@ impl MetastoreService for FileBackedMetastore {
                 request.staged_split_ids,
                 request.replaced_split_ids,
                 index_checkpoint_delta,
-                request.publish_token_opt,
+                request.publish_token_opt.map(|token| token.into()),
             )?;
             Ok(MutationOccurred::Yes(()))
         })
@@ -1394,7 +1394,7 @@ impl MetastoreService for FileBackedMetastore {
                 &staged_split_ids,
                 &replaced_split_ids,
                 index_checkpoint_delta,
-                publish_token_opt,
+                publish_token_opt.map(|token| token.into()),
             )?;
             if mutated {
                 Ok(MutationOccurred::Yes(()))
@@ -1524,7 +1524,7 @@ impl MetastoreService for FileBackedMetastore {
                 &staged_split_ids,
                 &replaced_split_ids,
                 index_checkpoint_delta,
-                publish_token_opt,
+                publish_token_opt.map(|token| token.into()),
             )?;
             if mutated {
                 Ok(MutationOccurred::Yes(()))

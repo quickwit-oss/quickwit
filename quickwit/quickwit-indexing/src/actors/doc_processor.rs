@@ -53,7 +53,7 @@ use crate::metrics::{
     PROCESSED_DOCS_TOTAL, PROCESSING_PIPELINE_THREAD_CPU_MICROS_TOTAL,
 };
 use crate::models::{
-    NewPublishLock, NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch,
+    NewPublishLock, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch,
 };
 
 const PLAIN_TEXT: &str = "plain_text";
@@ -821,20 +821,6 @@ impl Handler<NewPublishLock> for DocProcessor {
     ) -> Result<(), ActorExitStatus> {
         let NewPublishLock(publish_lock) = &message;
         self.publish_lock = publish_lock.clone();
-        ctx.send_message(&self.indexer_mailbox, message).await?;
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<NewPublishToken> for DocProcessor {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        message: NewPublishToken,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
         ctx.send_message(&self.indexer_mailbox, message).await?;
         Ok(())
     }

@@ -4,6 +4,12 @@
 pub struct ApplyIndexingPlanRequest {
     #[prost(message, repeated, tag = "1")]
     pub indexing_tasks: ::prost::alloc::vec::Vec<IndexingTask>,
+    /// Identifier of the indexing plan, minted by the control plane as a ULID when the plan is
+    /// applied. Indexers use it as the publish token for the shards they acquire: since ULIDs are
+    /// monotonic, `AcquireShards` only succeeds for a token greater than or equal to the one already
+    /// recorded, so a stale plan can never steal a shard from a more recent one.
+    #[prost(string, tag = "2")]
+    pub indexing_plan_id: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
