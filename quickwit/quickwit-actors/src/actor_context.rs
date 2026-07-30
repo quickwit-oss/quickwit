@@ -210,14 +210,16 @@ impl<A: Actor> ActorContext<A> {
     }
 
     pub(crate) fn exit(&self, exit_status: &ActorExitStatus, fault_opt: Option<anyhow::Error>) {
+        // The fault has to be recorded before the failed state becomes observable: a supervisor
+        // that sees the failure first would terminate the pipeline and kill this very switch,
+        // and the fault would then be dropped as a mere consequence of that kill.
+        if should_activate_kill_switch(exit_status) {
+            match fault_opt {
+                Some(fault) => self.kill_switch().kill_with_fault(fault),
+                None => self.kill_switch().kill(),
+            }
+        }
         self.actor_state.exit(exit_status.is_success());
-        if !should_activate_kill_switch(exit_status) {
-            return;
-        }
-        match fault_opt {
-            Some(fault) => self.kill_switch().kill_with_fault(fault),
-            None => self.kill_switch().kill(),
-        }
     }
 
     /// Posts a message in an actor's mailbox.

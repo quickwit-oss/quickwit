@@ -401,7 +401,11 @@ async fn actor_loop<A: Actor>(
         };
 
     let actor_name = actor_env.actor.get_mut().name();
-    let fault_opt: Option<anyhow::Error> = match &after_process_exit_status {
+
+    // TODO the no advance time guard for finalize has a race condition. Ideally we would
+    // like to have the guard before we drop the last envelope.
+    let final_exit_status = actor_env.finalize(after_process_exit_status).await;
+    let fault_opt: Option<anyhow::Error> = match &final_exit_status {
         ActorExitStatus::Failure(cause) => Some(anyhow::anyhow!(
             "{actor_name} failed while {exit_phase:?}: {cause:#}"
         )),
@@ -413,10 +417,6 @@ async fn actor_loop<A: Actor>(
         | ActorExitStatus::DownstreamClosed
         | ActorExitStatus::Killed => None,
     };
-
-    // TODO the no advance time guard for finalize has a race condition. Ideally we would
-    // like to have the guard before we drop the last envelope.
-    let final_exit_status = actor_env.finalize(after_process_exit_status).await;
     // The last observation is collected on `ActorExecutionEnv::Drop`.
     actor_env.ctx.exit(&final_exit_status, fault_opt);
     final_exit_status
