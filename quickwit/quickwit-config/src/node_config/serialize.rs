@@ -686,7 +686,7 @@ mod tests {
 
     use super::*;
     use crate::storage_config::StorageBackendFlavor;
-    use crate::{CacheConfig, GroupingField, LambdaConfig, LambdaDeployConfig};
+    use crate::{CacheConfig, ClusteringField, ClusteringPolicy, LambdaConfig, LambdaDeployConfig};
 
     fn get_config_filepath(config_filename: &str) -> String {
         format!(
@@ -1317,17 +1317,16 @@ mod tests {
         let config_yaml = r#"
             version: 0.8
             docs_clustering:
-              grouping:
-                fingerprint:
-                  - path: "$"
-                    kind: structure
+              - fingerprint:
+                  - kind: structure
                     exclude: [custom]
-                grouping:
-                  fingerprint:
-                    - path: custom
-                      kind: raw
-                    - path: message
-                      kind: tokenized
+              - fingerprint:
+                  - kind: raw
+                    path: status
+                  - kind: raw
+                    path: service
+                  - kind: tokenized
+                    path: message
         "#;
         let node_config = load_node_config_with_env(
             ConfigFormat::Yaml,
@@ -1338,22 +1337,25 @@ mod tests {
         .await
         .unwrap();
         let config = node_config.docs_clustering_config.unwrap();
-        let GroupingField::Structure {
-            path,
+        let ClusteringPolicy::Fingerprint { fingerprint } = &config.policies[0];
+        let ClusteringField::Structure {
             exclude: excluded_paths,
-        } = &config.grouping.fingerprint[0]
+        } = &fingerprint.fingerprint[0]
         else {
-            panic!("expected root structure field");
+            panic!("expected structure field");
         };
-        assert_eq!(path, "$");
         assert_eq!(excluded_paths, &["custom".to_string()]);
+        let ClusteringPolicy::Fingerprint { fingerprint } = &config.policies[1];
         assert_eq!(
-            config.grouping.grouping.unwrap().fingerprint,
+            fingerprint.fingerprint,
             vec![
-                GroupingField::Raw {
-                    path: "custom".to_string()
+                ClusteringField::Raw {
+                    path: "status".to_string()
                 },
-                GroupingField::Tokenized {
+                ClusteringField::Raw {
+                    path: "service".to_string()
+                },
+                ClusteringField::Tokenized {
                     path: "message".to_string()
                 },
             ]
@@ -1365,14 +1367,11 @@ mod tests {
         let config_yaml = r#"
             version: 0.8
             docs_clustering:
-              grouping:
-                fingerprint:
-                  - path: "$"
-                    kind: structure
-                grouping:
-                  fingerprint:
-                    - path: message
-                      kind: tokenized
+              - fingerprint:
+                  - kind: structure
+              - fingerprint:
+                  - path: message
+                    kind: tokenized
         "#;
         let env_vars =
             HashMap::from([("QW_DISABLE_DOCS_CLUSTERING".to_string(), "true".to_string())]);
@@ -1388,14 +1387,11 @@ mod tests {
         let config_yaml = r#"
             version: 0.8
             docs_clustering:
-              grouping:
-                fingerprint:
-                  - path: "$"
-                    kind: structure
-                grouping:
-                  fingerprint:
-                    - path: message
-                      kind: tokenized
+              - fingerprint:
+                  - kind: structure
+              - fingerprint:
+                  - path: message
+                    kind: tokenized
         "#;
         let env_vars = HashMap::from([(
             "QW_DISABLE_DOCS_CLUSTERING".to_string(),

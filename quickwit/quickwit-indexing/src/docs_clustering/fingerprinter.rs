@@ -61,7 +61,7 @@ use std::hash::Hasher;
 use std::sync::Arc;
 
 use fnv::FnvHasher;
-use quickwit_config::{GroupingConfig, GroupingField};
+use quickwit_config::{ClusteringField, ClusteringPolicy, DocsClusteringConfig};
 use serde_json::Value as JsonValue;
 
 use super::tokenize;
@@ -97,45 +97,42 @@ enum FingerprintFieldKind {
 
 #[derive(Clone)]
 pub struct Fingerprinter {
-    config: Arc<GroupingConfig>,
+    config: Arc<DocsClusteringConfig>,
     grouping_fields: Arc<[(JsonPath, FingerprintFieldKind)]>,
     ignored_paths: Arc<[JsonPath]>,
 }
 
 impl Fingerprinter {
-    pub fn new(config: &GroupingConfig) -> Self {
+    pub fn new(config: &DocsClusteringConfig) -> Self {
         let mut grouping_fields = Vec::new();
         let mut ignored_paths = Vec::new();
+        debug_assert_eq!(
+            config.policies.len(),
+            2,
+            "document clustering config must contain exactly two policies"
+        );
 
-        // Collect the paths from the nested grouping config.
-        fn collect_paths(
-            config: &GroupingConfig,
-            grouping_fields: &mut Vec<(JsonPath, FingerprintFieldKind)>,
-            ignored_paths: &mut Vec<JsonPath>,
-        ) {
-            fn parse_path(path: &str) -> JsonPath {
-                path.split('.').map(ToString::to_string).collect()
-            }
+        fn parse_path(path: &str) -> JsonPath {
+            path.split('.').map(ToString::to_string).collect()
+        }
 
-            for field in &config.fingerprint {
+        for policy in &config.policies {
+            let ClusteringPolicy::Fingerprint { fingerprint } = policy;
+            for field in &fingerprint.fingerprint {
                 match field {
-                    GroupingField::Structure { exclude, .. } => {
+                    ClusteringField::Structure { exclude } => {
                         ignored_paths.extend(exclude.iter().map(|path| parse_path(path)));
                     }
-                    GroupingField::Raw { path } => {
+                    ClusteringField::Raw { path } => {
                         grouping_fields.push((parse_path(path), FingerprintFieldKind::Raw));
                     }
-                    GroupingField::Tokenized { path } => {
+                    ClusteringField::Tokenized { path } => {
                         grouping_fields.push((parse_path(path), FingerprintFieldKind::Tokenized));
                     }
                 }
             }
-            if let Some(child_grouping) = config.grouping.as_deref() {
-                collect_paths(child_grouping, grouping_fields, ignored_paths);
-            }
         }
 
-        collect_paths(config, &mut grouping_fields, &mut ignored_paths);
         // Sort the paths to ensure a stable ordering of the fingerprint.
         grouping_fields.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
 
@@ -146,7 +143,7 @@ impl Fingerprinter {
         }
     }
 
-    pub fn config(&self) -> &GroupingConfig {
+    pub fn config(&self) -> &DocsClusteringConfig {
         &self.config
     }
 
@@ -242,7 +239,7 @@ fn get_leaf_string<'a>(json_value: &'a JsonValue, path: &[String]) -> Option<&'a
 
 #[cfg(test)]
 mod tests {
-    use quickwit_config::{DocsClusteringConfig, GroupingConfig};
+    use quickwit_config::DocsClusteringConfig;
     use serde_json::Value as JsonValue;
 
     use super::Fingerprinter;
@@ -252,43 +249,40 @@ mod tests {
     }
 
     fn test_docs_clustering_config() -> DocsClusteringConfig {
-        docs_clustering_config(serde_json::json!({
-            "fingerprint": [{
-                "path": "$",
-                "kind": "structure",
-                "exclude": ["tag", "custom"]
-            }],
-            "grouping": {
-                "fingerprint": [
-                    {
-                        "path": "message",
-                        "kind": "tokenized"
-                    },
-                    {
-                        "path": "service",
-                        "kind": "raw"
-                    }
-                ]
+        docs_clustering_config(serde_json::json!([
+            {
+                "fingerprint": [{
+                    "kind": "structure",
+                    "exclude": ["tag", "custom"]
+                }]
+            },
+            {
+                "fingerprint": [{
+                    "path": "message",
+                    "kind": "tokenized"
+                },
+                {
+                    "path": "service",
+                    "kind": "raw"
+                }]
             }
-        }))
+        ]))
     }
 
     fn test_fingerprinter() -> Fingerprinter {
         let docs_clustering_config = test_docs_clustering_config();
-        Fingerprinter::new(&docs_clustering_config.grouping)
+        Fingerprinter::new(&docs_clustering_config)
     }
 
     fn docs_clustering_config(json_value: JsonValue) -> DocsClusteringConfig {
-        DocsClusteringConfig {
-            grouping: serde_json::from_value::<GroupingConfig>(json_value).unwrap(),
-        }
+        serde_json::from_value(json_value).unwrap()
     }
 
     #[test]
     fn configured_fingerprinter_returns_config() {
         let docs_clustering_config = test_docs_clustering_config();
         let fingerprinter = test_fingerprinter();
-        assert_eq!(fingerprinter.config(), &docs_clustering_config.grouping);
+        assert_eq!(fingerprinter.config(), &docs_clustering_config);
     }
 
     #[test]
@@ -343,19 +337,20 @@ mod tests {
 
     #[test]
     fn tokenized_field_respects_hardcoded_grouping_token_limit() {
-        let docs_clustering_config = docs_clustering_config(serde_json::json!({
-            "fingerprint": [{
-                "path": "$",
-                "kind": "structure"
-            }],
-            "grouping": {
+        let docs_clustering_config = docs_clustering_config(serde_json::json!([
+            {
+                "fingerprint": [{
+                    "kind": "structure"
+                }]
+            },
+            {
                 "fingerprint": [{
                     "path": "message",
                     "kind": "tokenized"
                 }]
             }
-        }));
-        let fingerprinter = Fingerprinter::new(&docs_clustering_config.grouping);
+        ]));
+        let fingerprinter = Fingerprinter::new(&docs_clustering_config);
         let prefix = "alpha ".repeat(25);
         let doc1 = parse(&format!(r#"{{"message":"{prefix}123"}}"#));
         let doc2 = parse(&format!(r#"{{"message":"{prefix}beta"}}"#));
@@ -402,19 +397,20 @@ mod tests {
 
     #[test]
     fn configured_raw_field_changes_grouping_fingerprint_only() {
-        let docs_clustering_config = docs_clustering_config(serde_json::json!({
-            "fingerprint": [{
-                "path": "$",
-                "kind": "structure"
-            }],
-            "grouping": {
+        let docs_clustering_config = docs_clustering_config(serde_json::json!([
+            {
+                "fingerprint": [{
+                    "kind": "structure"
+                }]
+            },
+            {
                 "fingerprint": [{
                     "path": "host",
                     "kind": "raw"
                 }]
             }
-        }));
-        let fingerprinter = Fingerprinter::new(&docs_clustering_config.grouping);
+        ]));
+        let fingerprinter = Fingerprinter::new(&docs_clustering_config);
         let doc1 = parse(r#"{"message":"same","host":"web-1"}"#);
         let doc2 = parse(r#"{"message":"same","host":"web-2"}"#);
         let doc1_fingerprint = fingerprinter.fingerprint(&doc1);
@@ -425,19 +421,20 @@ mod tests {
 
     #[test]
     fn non_string_grouping_values_are_ignored() {
-        let docs_clustering_config = docs_clustering_config(serde_json::json!({
-            "fingerprint": [{
-                "path": "$",
-                "kind": "structure"
-            }],
-            "grouping": {
+        let docs_clustering_config = docs_clustering_config(serde_json::json!([
+            {
+                "fingerprint": [{
+                    "kind": "structure"
+                }]
+            },
+            {
                 "fingerprint": [{
                     "path": "status",
                     "kind": "raw"
                 }]
             }
-        }));
-        let fingerprinter = Fingerprinter::new(&docs_clustering_config.grouping);
+        ]));
+        let fingerprinter = Fingerprinter::new(&docs_clustering_config);
         let doc1 = parse(r#"{"status":200}"#);
         let doc2 = parse(r#"{"status":500}"#);
         assert_eq!(
@@ -448,25 +445,24 @@ mod tests {
 
     #[test]
     fn absent_grouping_values_preserve_field_position() {
-        let docs_clustering_config = docs_clustering_config(serde_json::json!({
-            "fingerprint": [{
-                "path": "$",
-                "kind": "structure"
-            }],
-            "grouping": {
-                "fingerprint": [
-                    {
-                        "path": "a",
-                        "kind": "raw"
-                    },
-                    {
-                        "path": "b",
-                        "kind": "raw"
-                    }
-                ]
+        let docs_clustering_config = docs_clustering_config(serde_json::json!([
+            {
+                "fingerprint": [{
+                    "kind": "structure"
+                }]
+            },
+            {
+                "fingerprint": [{
+                    "path": "a",
+                    "kind": "raw"
+                },
+                {
+                    "path": "b",
+                    "kind": "raw"
+                }]
             }
-        }));
-        let fingerprinter = Fingerprinter::new(&docs_clustering_config.grouping);
+        ]));
+        let fingerprinter = Fingerprinter::new(&docs_clustering_config);
         let doc1 = parse(r#"{"a":"x","b":null}"#);
         let doc2 = parse(r#"{"a":null,"b":"x"}"#);
         let doc1_fingerprint = fingerprinter.fingerprint(&doc1);

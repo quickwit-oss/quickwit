@@ -625,7 +625,7 @@ mod tests {
     use prost::Message;
     use quickwit_actors::Universe;
     use quickwit_common::uri::Uri;
-    use quickwit_config::{DocsClusteringConfig, GroupingConfig, SearchSettings, build_doc_mapper};
+    use quickwit_config::{DocsClusteringConfig, SearchSettings, build_doc_mapper};
     use quickwit_doc_mapper::{DocMapper, default_doc_mapper_for_test};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
@@ -643,22 +643,22 @@ mod tests {
     use crate::models::{PublishLock, RawDocBatch};
 
     fn raw_body_fingerprinter_for_test() -> Fingerprinter {
-        let docs_clustering_config = DocsClusteringConfig {
-            grouping: serde_json::from_value::<GroupingConfig>(serde_json::json!({
-                "fingerprint": [{
-                    "path": "$",
-                    "kind": "structure"
-                }],
-                "grouping": {
+        let docs_clustering_config =
+            serde_json::from_value::<DocsClusteringConfig>(serde_json::json!([
+                {
+                    "fingerprint": [{
+                        "kind": "structure"
+                    }]
+                },
+                {
                     "fingerprint": [{
                         "path": "body",
                         "kind": "raw"
                     }]
                 }
-            }))
-            .unwrap(),
-        };
-        Fingerprinter::new(&docs_clustering_config.grouping)
+            ]))
+            .unwrap();
+        Fingerprinter::new(&docs_clustering_config)
     }
 
     #[tokio::test]

@@ -80,7 +80,7 @@ pub async fn start_indexing_service(
     let fingerprinter_opt = config
         .docs_clustering_config
         .as_ref()
-        .map(|config| Fingerprinter::new(&config.grouping));
+        .map(Fingerprinter::new);
     let indexing_service = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.to_path_buf(),

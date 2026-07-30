@@ -455,7 +455,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     let fingerprinter_opt = config
         .docs_clustering_config
         .as_ref()
-        .map(|config| Fingerprinter::new(&config.grouping));
+        .map(Fingerprinter::new);
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
@@ -600,7 +600,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     let fingerprinter_opt = config
         .docs_clustering_config
         .as_ref()
-        .map(|config| Fingerprinter::new(&config.grouping));
+        .map(Fingerprinter::new);
     let indexing_server = IndexingService::new(
         config.node_id,
         config.data_dir_path,

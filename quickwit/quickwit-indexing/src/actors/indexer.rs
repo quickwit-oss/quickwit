@@ -697,7 +697,7 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::Universe;
-    use quickwit_config::GroupingConfig;
+    use quickwit_config::DocsClusteringConfig;
     use quickwit_doc_mapper::{DocMapper, default_doc_mapper_for_test};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_proto::metastore::{
@@ -1237,18 +1237,19 @@ mod tests {
             None,
             index_serializer_mailbox,
             Some(Fingerprinter::new(
-                &serde_json::from_value::<GroupingConfig>(serde_json::json!({
-                    "fingerprint": [{
-                        "path": "$",
-                        "kind": "structure"
-                    }],
-                    "grouping": {
+                &serde_json::from_value::<DocsClusteringConfig>(serde_json::json!([
+                    {
+                        "fingerprint": [{
+                            "kind": "structure"
+                        }]
+                    },
+                    {
                         "fingerprint": [{
                             "path": "body",
                             "kind": "raw"
                         }]
                     }
-                }))
+                ]))
                 .unwrap(),
             )),
         );
