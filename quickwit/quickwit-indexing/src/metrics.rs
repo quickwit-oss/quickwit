@@ -23,6 +23,8 @@ pub(crate) const ACTOR_NAME: LabelNames<1> = label_names!("actor_name");
 pub(crate) const COMPONENT: LabelNames<1> = label_names!("component");
 pub(crate) const INDEX_SOURCE: LabelNames<2> = label_names!("index", "source");
 pub(crate) const PUBLISHED_SPLIT: LabelNames<3> = label_names!("index", "source", "merge_ops");
+pub(crate) const PUBLISHED_SPLIT_DOCS: LabelNames<4> =
+    label_names!("index", "source", "merge_ops", "publication_type");
 
 pub(crate) static PROCESSED_DOCS_TOTAL: LazyCounter = lazy_counter!(
         name: "processed_docs_total",
@@ -51,7 +53,7 @@ pub(crate) static PUBLISHED_SPLIT_BYTES_TOTAL: LazyCounter = lazy_counter!(
 
 pub(crate) static PUBLISHED_SPLIT_DOCS_TOTAL: LazyCounter = lazy_counter!(
     name: "published_split_docs_total",
-    description: "Documents in successfully published splits.",
+    description: "Documents in successfully published splits by publication type.",
     subsystem: "indexing",
 );
 
@@ -76,9 +78,14 @@ pub(crate) static PUBLISHED_SPLIT_SIZE_BYTES: LazyHistogram = lazy_histogram!(
 
 /// Records one split after the metastore has successfully published it.
 ///
-/// All metrics deliberately use the same labels so ratios computed over a time
-/// window describe the same set of splits.
-pub(crate) fn record_published_split(index_id: &str, split: &SplitMetadata) {
+/// The document counter additionally distinguishes initial publications from
+/// replacements, so consumers can exclude documents that were republished by
+/// merges or delete operations.
+pub(crate) fn record_published_split(
+    index_id: &str,
+    split: &SplitMetadata,
+    publication_type: &'static str,
+) {
     let index = quickwit_common::metrics::index_label(index_id);
     let labels = label_values!(
         PUBLISHED_SPLIT =>
@@ -86,11 +93,18 @@ pub(crate) fn record_published_split(index_id: &str, split: &SplitMetadata) {
         split.source_id.to_string(),
         split.num_merge_ops.to_string()
     );
+    let docs_labels = label_values!(
+        PUBLISHED_SPLIT_DOCS =>
+        index.to_string(),
+        split.source_id.to_string(),
+        split.num_merge_ops.to_string(),
+        publication_type
+    );
     let split_size_bytes = split.footer_offsets.end;
 
     counter!(parent: PUBLISHED_SPLIT_BYTES_TOTAL, labels: [labels.clone()])
         .inc_by(split_size_bytes);
-    counter!(parent: PUBLISHED_SPLIT_DOCS_TOTAL, labels: [labels.clone()])
+    counter!(parent: PUBLISHED_SPLIT_DOCS_TOTAL, labels: [docs_labels])
         .inc_by(split.num_docs as u64);
     counter!(parent: PUBLISHED_SPLITS_TOTAL, labels: [labels.clone()]).inc();
     counter!(parent: PUBLISHED_SPLIT_UNCOMPRESSED_BYTES_TOTAL, labels: [labels.clone()])
