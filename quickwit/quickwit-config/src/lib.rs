@@ -42,7 +42,7 @@ mod templating;
 
 pub use cluster_config::ClusterConfig;
 pub use docs_clustering::{
-    ClusteringField, ClusteringPolicy, DocsClusteringConfig, FingerprintPolicy,
+    ClusteringField, ClusteringPolicy, DocsClusteringConfig, FingerprintPolicy, JsonPath,
 };
 // We export that one for backward compatibility.
 // See #2048

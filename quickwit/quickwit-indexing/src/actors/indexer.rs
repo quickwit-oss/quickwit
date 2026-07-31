@@ -1251,6 +1251,12 @@ mod tests {
                             "path": "body",
                             "kind": "raw"
                         }]
+                    },
+                    {
+                        "fingerprint": [{
+                            "path": "body",
+                            "kind": "tokenized"
+                        }]
                     }
                 ]))
                 .unwrap(),
@@ -1260,21 +1266,35 @@ mod tests {
         let docs = vec![
             ProcessedDoc {
                 doc: doc!(body_field=>"first"),
-                fingerprint_opt: Some(Fingerprint::for_test(1, 1)),
+                fingerprint_opt: Some(Fingerprint::for_test([1, 1, 1])),
                 timestamp_opt: None,
                 partition: 0,
                 num_bytes: 5,
             },
             ProcessedDoc {
                 doc: doc!(body_field=>"second"),
-                fingerprint_opt: Some(Fingerprint::for_test(1, 2)),
+                fingerprint_opt: Some(Fingerprint::for_test([1, 2, 1])),
                 timestamp_opt: None,
                 partition: 0,
                 num_bytes: 6,
             },
             ProcessedDoc {
                 doc: doc!(body_field=>"third"),
-                fingerprint_opt: Some(Fingerprint::for_test(1, 1)),
+                fingerprint_opt: Some(Fingerprint::for_test([1, 2, 1])),
+                timestamp_opt: None,
+                partition: 0,
+                num_bytes: 5,
+            },
+            ProcessedDoc {
+                doc: doc!(body_field=>"fourth"),
+                fingerprint_opt: Some(Fingerprint::for_test([1, 1, 1])),
+                timestamp_opt: None,
+                partition: 0,
+                num_bytes: 6,
+            },
+            ProcessedDoc {
+                doc: doc!(body_field=>"fifth"),
+                fingerprint_opt: Some(Fingerprint::for_test([1, 1, 2])),
                 timestamp_opt: None,
                 partition: 0,
                 num_bytes: 5,
@@ -1297,13 +1317,13 @@ mod tests {
         let clusterer = split_builder.doc_id_clusterer_opt.as_ref().unwrap();
         let mut sort_group_sizes = clusterer.sort_group_sizes().collect_vec();
         sort_group_sizes.sort_unstable();
-        assert_eq!(sort_group_sizes, [1, 2]);
+        assert_eq!(sort_group_sizes, [1, 2, 2]);
 
         let indexed_split = split_builder.finalize()?;
         let reader = indexed_split.index.reader()?;
         let searcher = reader.searcher();
         let mut bodies = Vec::new();
-        for doc_id in 0..3 {
+        for doc_id in 0..5 {
             let doc: TantivyDocument = searcher.doc(DocAddress::new(0, doc_id))?;
             let body = doc
                 .get_first(body_field)
@@ -1311,7 +1331,7 @@ mod tests {
                 .unwrap();
             bodies.push(body.to_string());
         }
-        assert_eq!(bodies, ["first", "third", "second"]);
+        assert_eq!(bodies, ["first", "fourth", "fifth", "second", "third"]);
         universe.assert_quit().await;
         Ok(())
     }

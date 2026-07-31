@@ -58,11 +58,15 @@
 //! `service`. Missing fields and non-string values are encoded as absent so configured field
 //! positions remain distinct.
 use std::hash::Hasher;
+use std::ops::Deref;
 use std::sync::Arc;
 
 use fnv::FnvHasher;
-use quickwit_config::{ClusteringField, ClusteringPolicy, DocsClusteringConfig};
+use quickwit_config::{
+    ClusteringField, ClusteringPolicy, DocsClusteringConfig, FingerprintPolicy, JsonPath,
+};
 use serde_json::Value as JsonValue;
+use smallvec::SmallVec;
 
 use super::tokenize;
 
@@ -74,72 +78,46 @@ const FIELD_BOUNDARY: u8 = 0xFD;
 const TOKENIZED_TOKEN_SEPARATOR: u8 = 0xFE;
 const MAX_GROUPING_TOKENS: usize = 50;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Fingerprint {
-    pub(super) schema: u64,
-    pub(super) grouping: u64,
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Fingerprint(SmallVec<[u64; 4]>);
+
+impl Deref for Fingerprint {
+    type Target = [u64];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 #[cfg(test)]
 impl Fingerprint {
-    pub(crate) fn for_test(schema: u64, grouping: u64) -> Self {
-        Self { schema, grouping }
+    pub(crate) fn for_test<const N: usize>(hashes: [u64; N]) -> Self {
+        let mut fingerprint = SmallVec::new();
+        fingerprint.extend_from_slice(&hashes);
+        Self(fingerprint)
     }
-}
-
-type JsonPath = Box<[String]>;
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum FingerprintFieldKind {
-    Tokenized,
-    Raw,
 }
 
 #[derive(Clone)]
 pub struct Fingerprinter {
     config: Arc<DocsClusteringConfig>,
-    grouping_fields: Arc<[(JsonPath, FingerprintFieldKind)]>,
-    ignored_paths: Arc<[JsonPath]>,
+    policies: Arc<[FingerprintPolicy]>,
 }
 
 impl Fingerprinter {
     pub fn new(config: &DocsClusteringConfig) -> Self {
-        let mut grouping_fields = Vec::new();
-        let mut ignored_paths = Vec::new();
-        debug_assert_eq!(
-            config.policies.len(),
-            2,
-            "document clustering config must contain exactly two policies"
-        );
-
-        fn parse_path(path: &str) -> JsonPath {
-            path.split('.').map(ToString::to_string).collect()
-        }
-
+        let mut policies = Vec::new();
         for policy in &config.policies {
-            let ClusteringPolicy::Fingerprint { fingerprint } = policy;
-            for field in &fingerprint.fingerprint {
-                match field {
-                    ClusteringField::Structure { exclude } => {
-                        ignored_paths.extend(exclude.iter().map(|path| parse_path(path)));
-                    }
-                    ClusteringField::Raw { path } => {
-                        grouping_fields.push((parse_path(path), FingerprintFieldKind::Raw));
-                    }
-                    ClusteringField::Tokenized { path } => {
-                        grouping_fields.push((parse_path(path), FingerprintFieldKind::Tokenized));
-                    }
+            match policy {
+                ClusteringPolicy::Fingerprint { fingerprint } => {
+                    policies.push(fingerprint.clone());
                 }
             }
         }
 
-        // Sort the paths to ensure a stable ordering of the fingerprint.
-        grouping_fields.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
-
         Self {
             config: Arc::new(config.clone()),
-            grouping_fields: Arc::from(grouping_fields.into_boxed_slice()),
-            ignored_paths: Arc::from(ignored_paths.into_boxed_slice()),
+            policies: policies.into_boxed_slice().into(),
         }
     }
 
@@ -148,29 +126,54 @@ impl Fingerprinter {
     }
 
     pub fn fingerprint(&self, json_value: &JsonValue) -> Fingerprint {
-        let mut schema_hasher = FnvHasher::default();
-        self.hash_schema(json_value, &mut schema_hasher);
-        let mut grouping_hasher = FnvHasher::default();
-        self.hash_grouping_fields(json_value, &mut grouping_hasher);
-        Fingerprint {
-            schema: schema_hasher.finish(),
-            grouping: grouping_hasher.finish(),
+        let mut fingerprint = SmallVec::new();
+        for policy in self.policies.iter() {
+            let mut hasher = FnvHasher::default();
+
+            for field in policy.fingerprint.iter() {
+                match field {
+                    ClusteringField::Structure { exclude } => {
+                        self.hash_structure(json_value, exclude, &mut hasher);
+                    }
+                    ClusteringField::Raw { path } => {
+                        self.hash_raw_field(json_value, path, &mut hasher);
+                    }
+                    ClusteringField::Tokenized { path } => {
+                        self.hash_tokenized_field(json_value, path, true, &mut hasher);
+                    }
+                }
+            }
+
+            fingerprint.push(hasher.finish());
         }
+
+        Fingerprint(fingerprint)
     }
 
-    fn hash_schema(&self, value: &JsonValue, hasher: &mut FnvHasher) {
+    fn hash_structure(&self, value: &JsonValue, exclude: &[JsonPath], hasher: &mut FnvHasher) {
         fn walk<'a>(
-            fingerprinter: &Fingerprinter,
             json_value: &'a JsonValue,
+            exclude: &[JsonPath],
             current: &mut Vec<&'a str>,
             paths: &mut Vec<Vec<&'a str>>,
         ) {
+            fn is_excluded(exclude: &[JsonPath], path: &[&str]) -> bool {
+                exclude.iter().any(|excluded_path| {
+                    excluded_path.len() == path.len()
+                        && excluded_path.iter().zip(path.iter()).all(
+                            |(excluded_component, component)| {
+                                excluded_component.as_str() == *component
+                            },
+                        )
+                })
+            }
+
             match json_value {
                 JsonValue::Object(obj) => {
                     for (key, child_value) in obj.iter() {
                         current.push(key.as_str());
-                        if !fingerprinter.is_ignored(current) {
-                            walk(fingerprinter, child_value, current, paths);
+                        if !is_excluded(exclude, current) {
+                            walk(child_value, exclude, current, paths);
                         }
                         current.pop();
                     }
@@ -181,7 +184,7 @@ impl Fingerprinter {
 
         let mut current = Vec::with_capacity(16);
         let mut paths = Vec::with_capacity(32);
-        walk(self, value, &mut current, &mut paths);
+        walk(value, exclude, &mut current, &mut paths);
         paths.sort_unstable();
 
         for path in paths {
@@ -193,37 +196,39 @@ impl Fingerprinter {
         }
     }
 
-    fn hash_grouping_fields(&self, json_value: &JsonValue, hasher: &mut FnvHasher) {
-        for (path, kind) in self.grouping_fields.iter() {
-            let Some(value) = get_leaf_string(json_value, path) else {
-                hasher.write_u8(FIELD_ABSENT);
-                hasher.write_u8(FIELD_BOUNDARY);
-                continue;
-            };
-            hasher.write_u8(FIELD_PRESENT);
-            match kind {
-                FingerprintFieldKind::Tokenized => {
-                    for span in tokenize(value).take(MAX_GROUPING_TOKENS) {
-                        hasher.write_u8(span.token_type as u8);
-                        hasher.write_u8(TOKENIZED_TOKEN_SEPARATOR);
-                    }
-                }
-                FingerprintFieldKind::Raw => {
-                    hasher.write(value.as_bytes());
-                }
-            }
+    fn hash_raw_field(&self, json_value: &JsonValue, path: &JsonPath, hasher: &mut FnvHasher) {
+        let Some(value) = get_leaf_string(json_value, path) else {
+            hasher.write_u8(FIELD_ABSENT);
             hasher.write_u8(FIELD_BOUNDARY);
-        }
+            return;
+        };
+        hasher.write_u8(FIELD_PRESENT);
+        hasher.write(value.as_bytes());
+        hasher.write_u8(FIELD_BOUNDARY);
     }
 
-    fn is_ignored(&self, path: &[&str]) -> bool {
-        self.ignored_paths.iter().any(|ignored_path| {
-            ignored_path.len() == path.len()
-                && ignored_path
-                    .iter()
-                    .zip(path.iter())
-                    .all(|(ignored_component, component)| ignored_component == component)
-        })
+    fn hash_tokenized_field(
+        &self,
+        json_value: &JsonValue,
+        path: &JsonPath,
+        tokenized: bool,
+        hasher: &mut FnvHasher,
+    ) {
+        let Some(value) = get_leaf_string(json_value, path) else {
+            hasher.write_u8(FIELD_ABSENT);
+            hasher.write_u8(FIELD_BOUNDARY);
+            return;
+        };
+        hasher.write_u8(FIELD_PRESENT);
+        if tokenized {
+            for span in tokenize(value).take(MAX_GROUPING_TOKENS) {
+                hasher.write_u8(span.token_type as u8);
+                hasher.write_u8(TOKENIZED_TOKEN_SEPARATOR);
+            }
+        } else {
+            hasher.write(value.as_bytes());
+        }
+        hasher.write_u8(FIELD_BOUNDARY);
     }
 }
 
@@ -303,14 +308,8 @@ mod tests {
         let dotted_key_fingerprint = fingerprinter.fingerprint(&dotted_key_doc);
         let nested_path_fingerprint = fingerprinter.fingerprint(&nested_path_doc);
 
-        assert_ne!(
-            dotted_key_fingerprint.schema,
-            nested_path_fingerprint.schema
-        );
-        assert_eq!(
-            dotted_key_fingerprint.grouping,
-            nested_path_fingerprint.grouping
-        );
+        assert_ne!(dotted_key_fingerprint[0], nested_path_fingerprint[0]);
+        assert_eq!(dotted_key_fingerprint[1], nested_path_fingerprint[1]);
     }
 
     #[test]
@@ -331,8 +330,8 @@ mod tests {
         let doc2 = parse(r#"{"message":"connection from 1.2.3.4","service":"api"}"#);
         let doc1_fingerprint = fingerprinter.fingerprint(&doc1);
         let doc2_fingerprint = fingerprinter.fingerprint(&doc2);
-        assert_eq!(doc1_fingerprint.schema, doc2_fingerprint.schema);
-        assert_ne!(doc1_fingerprint.grouping, doc2_fingerprint.grouping);
+        assert_eq!(doc1_fingerprint[0], doc2_fingerprint[0]);
+        assert_ne!(doc1_fingerprint[1], doc2_fingerprint[1]);
     }
 
     #[test]
@@ -355,8 +354,8 @@ mod tests {
         let doc1 = parse(&format!(r#"{{"message":"{prefix}123"}}"#));
         let doc2 = parse(&format!(r#"{{"message":"{prefix}beta"}}"#));
         assert_eq!(
-            fingerprinter.fingerprint(&doc1).grouping,
-            fingerprinter.fingerprint(&doc2).grouping
+            fingerprinter.fingerprint(&doc1)[1],
+            fingerprinter.fingerprint(&doc2)[1]
         );
     }
 
@@ -367,8 +366,8 @@ mod tests {
         let doc2 = parse(r#"{"message":"server started at 8080","service":"worker"}"#);
         let doc1_fingerprint = fingerprinter.fingerprint(&doc1);
         let doc2_fingerprint = fingerprinter.fingerprint(&doc2);
-        assert_eq!(doc1_fingerprint.schema, doc2_fingerprint.schema);
-        assert_ne!(doc1_fingerprint.grouping, doc2_fingerprint.grouping);
+        assert_eq!(doc1_fingerprint[0], doc2_fingerprint[0]);
+        assert_ne!(doc1_fingerprint[1], doc2_fingerprint[1]);
     }
 
     #[test]
@@ -391,8 +390,8 @@ mod tests {
         let doc2 = parse(r#"{"message":"server started at 8080","service":"api","host":"web-1"}"#);
         let doc1_fingerprint = fingerprinter.fingerprint(&doc1);
         let doc2_fingerprint = fingerprinter.fingerprint(&doc2);
-        assert_ne!(doc1_fingerprint.schema, doc2_fingerprint.schema);
-        assert_eq!(doc1_fingerprint.grouping, doc2_fingerprint.grouping);
+        assert_ne!(doc1_fingerprint[0], doc2_fingerprint[0]);
+        assert_eq!(doc1_fingerprint[1], doc2_fingerprint[1]);
     }
 
     #[test]
@@ -415,8 +414,8 @@ mod tests {
         let doc2 = parse(r#"{"message":"same","host":"web-2"}"#);
         let doc1_fingerprint = fingerprinter.fingerprint(&doc1);
         let doc2_fingerprint = fingerprinter.fingerprint(&doc2);
-        assert_eq!(doc1_fingerprint.schema, doc2_fingerprint.schema);
-        assert_ne!(doc1_fingerprint.grouping, doc2_fingerprint.grouping);
+        assert_eq!(doc1_fingerprint[0], doc2_fingerprint[0]);
+        assert_ne!(doc1_fingerprint[1], doc2_fingerprint[1]);
     }
 
     #[test]
@@ -468,7 +467,7 @@ mod tests {
         let doc1_fingerprint = fingerprinter.fingerprint(&doc1);
         let doc2_fingerprint = fingerprinter.fingerprint(&doc2);
 
-        assert_eq!(doc1_fingerprint.schema, doc2_fingerprint.schema);
-        assert_ne!(doc1_fingerprint.grouping, doc2_fingerprint.grouping);
+        assert_eq!(doc1_fingerprint[0], doc2_fingerprint[0]);
+        assert_ne!(doc1_fingerprint[1], doc2_fingerprint[1]);
     }
 }

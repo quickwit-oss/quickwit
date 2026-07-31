@@ -13,9 +13,11 @@
 // limitations under the License.
 
 use std::collections::HashMap;
+use std::ops::Deref;
 
 use anyhow::ensure;
-use serde::{Deserialize, Serialize};
+use serde::de::Error as SerdeError;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::config_value::ConfigValue;
 use crate::qw_env_vars::QW_DISABLE_DOCS_CLUSTERING;
@@ -94,50 +96,6 @@ impl DocsClusteringConfig {
         for policy in &self.policies {
             policy.validate()?;
         }
-        // TODO: Remove this constraint once we support arbitrary levels of clustering in the
-        // runtime fingerprinter.
-        self.validate_fingerprinter_limitations()?;
-        Ok(())
-    }
-
-    // The runtime fingerprinter currently supports exactly two clustering levels.
-    //
-    // Implementation constraints are:
-    // - The first policy must contain exactly one structure field
-    // - The second policy may contain only raw and tokenized fields
-    // - Additional policies are not supported
-    //
-    // TODO: Remove this constraint once the runtime fingerprinter supports arbitrary clustering
-    // levels.
-    fn validate_fingerprinter_limitations(&self) -> anyhow::Result<()> {
-        ensure!(
-            self.policies.len() == 2, // one structure field and one or more other fields
-            "document clustering currently supports exactly two fingerprint policies"
-        );
-
-        // First policy must be a fingerprint policy with exactly one structure field
-        let ClusteringPolicy::Fingerprint { fingerprint } = &self.policies[0];
-        ensure!(
-            fingerprint.fingerprint.len() == 1, // one fingerprinting policy
-            "first document clustering fingerprint policy must contain exactly one field"
-        );
-        ensure!(
-            matches!(
-                fingerprint.fingerprint[0],
-                ClusteringField::Structure { .. }
-            ),
-            "first document clustering fingerprint policy must contain the structure field"
-        );
-
-        let ClusteringPolicy::Fingerprint { fingerprint } = &self.policies[1];
-        let has_structure_field = fingerprint
-            .fingerprint
-            .iter()
-            .any(|field| matches!(field, ClusteringField::Structure { .. }));
-        ensure!(
-            !has_structure_field,
-            "document clustering fingerprint must contain exactly one structure field"
-        );
         Ok(())
     }
 }
@@ -173,10 +131,58 @@ impl FingerprintPolicy {
             !self.fingerprint.is_empty(),
             "document clustering fingerprint policy must contain at least one field"
         );
-        for field in &self.fingerprint {
-            field.validate()?;
-        }
         Ok(())
+    }
+}
+
+#[repr(transparent)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct JsonPath(Box<[String]>);
+
+impl Serialize for JsonPath {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        serializer.serialize_str(&self.0.join("."))
+    }
+}
+
+impl<'de> Deserialize<'de> for JsonPath {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        let path = String::deserialize(deserializer)?;
+        if path.is_empty() {
+            return Err(D::Error::custom(
+                "document clustering path must not be empty",
+            ));
+        }
+
+        let json_path: Box<[String]> = path.split('.').map(ToString::to_string).collect();
+        if json_path
+            .iter()
+            .any(|path_component| path_component.is_empty())
+        {
+            return Err(D::Error::custom(format!(
+                "document clustering path `{path}` must not contain empty components"
+            )));
+        }
+        if json_path
+            .iter()
+            .any(|path_component| path_component.trim() != path_component)
+        {
+            return Err(D::Error::custom(format!(
+                "document clustering path `{path}` must not contain leading or trailing whitespace"
+            )));
+        }
+
+        Ok(Self(json_path))
+    }
+}
+
+impl Deref for JsonPath {
+    type Target = [String];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -191,7 +197,7 @@ pub enum ClusteringField {
     Structure {
         /// Paths omitted from the structure fingerprint.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        exclude: Vec<String>,
+        exclude: Vec<JsonPath>,
     },
     /// Groups documents by the exact string value at `path`.
     ///
@@ -199,7 +205,7 @@ pub enum ClusteringField {
     /// when `path` is `service`.
     Raw {
         /// Dot-separated path to the string value.
-        path: String,
+        path: JsonPath,
     },
     /// Groups documents by the pattern of the first 50 tokens in the string value at `path`.
     ///
@@ -207,52 +213,15 @@ pub enum ClusteringField {
     /// group when `path` is `message`, because both values have the same token pattern.
     Tokenized {
         /// Dot-separated path to the string value.
-        path: String,
+        path: JsonPath,
     },
-}
-
-impl ClusteringField {
-    fn validate(&self) -> anyhow::Result<()> {
-        fn validate_json_path(path: &str) -> anyhow::Result<()> {
-            ensure!(
-                path.trim() == path,
-                "document clustering path `{path}` must not contain leading or trailing whitespace"
-            );
-            ensure!(
-                !path.is_empty(),
-                "document clustering path must not be empty"
-            );
-            ensure!(
-                !path.split('.').any(str::is_empty),
-                "document clustering path `{path}` must not contain empty components"
-            );
-            Ok(())
-        }
-
-        match self {
-            Self::Structure { exclude } => {
-                for excluded_path in exclude {
-                    validate_json_path(excluded_path)?;
-                }
-            }
-            Self::Raw { path } => {
-                validate_json_path(path)?;
-            }
-            Self::Tokenized { path } => {
-                validate_json_path(path)?;
-            }
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
-    use super::{
-        ClusteringField, ClusteringPolicy, DocsClusteringConfig, DocsClusteringConfigBuilder,
-    };
+    use super::{DocsClusteringConfig, DocsClusteringConfigBuilder, JsonPath};
 
     fn build_config(yaml: &str) -> anyhow::Result<Option<DocsClusteringConfig>> {
         build_config_with_env(yaml, &HashMap::new())
@@ -264,45 +233,6 @@ mod tests {
     ) -> anyhow::Result<Option<DocsClusteringConfig>> {
         let config_builder = serde_yaml::from_str::<DocsClusteringConfigBuilder>(yaml)?;
         DocsClusteringConfigBuilder::build_optional(Some(config_builder), env_vars)
-    }
-
-    #[test]
-    fn build_accepts_flattened_fingerprint_policy() {
-        let config = build_config(
-            r#"
-- fingerprint:
-    - kind: structure
-      exclude: [custom]
-- fingerprint:
-    - path: custom
-      kind: raw
-    - path: message
-      kind: tokenized
-"#,
-        )
-        .unwrap();
-
-        let config = config.unwrap();
-        let ClusteringPolicy::Fingerprint { fingerprint } = &config.policies[0];
-        let ClusteringField::Structure {
-            exclude: excluded_paths,
-        } = &fingerprint.fingerprint[0]
-        else {
-            panic!("expected structure field");
-        };
-        assert_eq!(excluded_paths, &["custom".to_string()]);
-        let ClusteringPolicy::Fingerprint { fingerprint } = &config.policies[1];
-        assert_eq!(
-            fingerprint.fingerprint,
-            vec![
-                ClusteringField::Raw {
-                    path: "custom".to_string()
-                },
-                ClusteringField::Tokenized {
-                    path: "message".to_string()
-                },
-            ]
-        );
     }
 
     #[test]
@@ -377,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    fn config_validation_rejects_unsupported_fingerprinter_shapes() {
+    fn config_validation_rejects_invalid_fingerprint_policies() {
         let test_cases = [
             (
                 serde_json::json!([
@@ -393,29 +323,6 @@ mod tests {
                 ]),
                 "fingerprint policy must contain at least one field",
             ),
-            (
-                serde_json::json!([
-                    {"fingerprint": [{"path": "message", "kind": "raw"}]},
-                    {"fingerprint": [{"path": "service", "kind": "raw"}]}
-                ]),
-                "first document clustering fingerprint policy must contain the structure field",
-            ),
-            (
-                serde_json::json!([
-                    {"fingerprint": [{"kind": "structure"}]},
-                    {"fingerprint": [{"kind": "structure"}]}
-                ]),
-                "exactly one structure field",
-            ),
-            (
-                serde_json::json!([
-                    {"fingerprint": [{"kind": "structure"}]},
-                    {"fingerprint": [
-                        {"path": "message..template", "kind": "tokenized"}
-                    ]}
-                ]),
-                "must not contain empty components",
-            ),
         ];
 
         for (json_value, expected_error) in test_cases {
@@ -429,17 +336,32 @@ mod tests {
     }
 
     #[test]
-    fn config_validation_rejects_wrong_policy_count() {
-        let config: DocsClusteringConfig = serde_json::from_value(serde_json::json!([
-            {"fingerprint": [{"kind": "structure"}]}
-        ]))
-        .unwrap();
-        let error = config.validate().unwrap_err();
+    fn deserialization_rejects_invalid_json_path() {
+        let error =
+            serde_json::from_value::<JsonPath>(serde_json::json!("message..template")).unwrap_err();
+
         assert!(
             error
                 .to_string()
-                .contains("exactly two fingerprint policies")
+                .contains("must not contain empty components"),
+            "expected invalid json path failure, got: {error:?}"
         );
+    }
+
+    #[test]
+    fn config_validation_accepts_arbitrary_policy_shapes() {
+        let config: DocsClusteringConfig = serde_json::from_value(serde_json::json!([
+            {"fingerprint": [{"path": "message", "kind": "raw"}]},
+            {"fingerprint": [{"kind": "structure"}]},
+            {"fingerprint": [{"kind": "structure"}]},
+            {"fingerprint": [
+                {"path": "service", "kind": "raw"},
+                {"path": "message", "kind": "tokenized"}
+            ]}
+        ]))
+        .unwrap();
+
+        config.validate().unwrap();
     }
 
     #[test]
