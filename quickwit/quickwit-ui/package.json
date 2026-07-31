@@ -42,7 +42,7 @@
     "styled-icons": "10.47.1",
     "swagger-ui-react": "5.32.0",
     "typescript": "5.9.3",
-    "vite": "7.3.1"
+    "vite": "7.3.2"
   },
   "resolutions": {
     "@types/react": "19.2.14",
