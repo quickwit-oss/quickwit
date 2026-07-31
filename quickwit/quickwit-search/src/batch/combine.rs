@@ -16,7 +16,7 @@
 //!
 //! All functions here expect **pre-normalized** requests (see `normalize.rs`).
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
 use quickwit_proto::search::{SearchRequest, SearchResponse};
@@ -54,7 +54,7 @@ pub(super) fn build_combined_request(requests: &[SearchRequest]) -> Result<Searc
         u64,
         Option<quickwit_proto::search::PartialHit>,
     )> = None;
-    let mut combined_aggs: HashMap<String, serde_json::Value> = HashMap::new();
+    let mut combined_aggs: BTreeMap<String, serde_json::Value> = BTreeMap::new();
     let mut max_hits: u64 = 0;
 
     for (idx, req) in requests.iter().enumerate() {
@@ -114,7 +114,7 @@ pub(super) fn build_combined_request(requests: &[SearchRequest]) -> Result<Searc
                     "request {idx} requires aggregation finalization, which cannot be batched"
                 ));
             }
-            let agg_map: HashMap<String, serde_json::Value> = serde_json::from_str(agg_json)
+            let agg_map: BTreeMap<String, serde_json::Value> = serde_json::from_str(agg_json)
                 .map_err(|err| format!("request {idx} has invalid aggregation JSON: {err}"))?;
             for (key, value) in agg_map {
                 combined_aggs.insert(format!("__b{idx}_{key}"), value);

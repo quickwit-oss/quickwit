@@ -121,13 +121,24 @@ pub(super) async fn batch_dispatcher(
     }
 }
 
-async fn dispatch_batch(search_service: &dyn SearchService, entries: Vec<BatchEntry>) {
+pub(super) async fn dispatch_batch(
+    search_service: &dyn SearchService,
+    mut entries: Vec<BatchEntry>,
+) {
     use tracing::Instrument;
     let batch_size = entries.len();
     let dispatch_span = tracing::info_span!("batch_dispatch", batch_size);
     for entry in &entries {
         dispatch_span.follows_from(entry.span.id());
     }
+
+    // determinist sort so the combined aggregation is the same regardless of ordering (= better
+    // partial cache usage)
+    entries.sort_unstable_by(|l, r| {
+        l.request
+            .aggregation_request
+            .cmp(&r.request.aggregation_request)
+    });
 
     let (requests, result_txs): (Vec<_>, Vec<_>) = entries
         .into_iter()
