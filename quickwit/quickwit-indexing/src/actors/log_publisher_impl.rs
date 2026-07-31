@@ -175,7 +175,7 @@ mod tests {
 
     use super::PUBLISHER_NAME;
     use crate::actors::publisher::Publisher;
-    use crate::metrics::{PUBLISHED_SPLIT_DOCS, PUBLISHED_SPLIT_DOCS_TOTAL};
+    use crate::metrics::{PUBLISHED_SPLIT, PUBLISHED_SPLIT_DOCS_TOTAL};
     use crate::models::{PublishLock, SharedPublishToken, SplitsUpdate};
     use crate::source::SuggestTruncate;
 
@@ -187,7 +187,7 @@ mod tests {
     ) -> u64 {
         let index = quickwit_common::metrics::index_label(index_id);
         let labels = label_values!(
-            PUBLISHED_SPLIT_DOCS =>
+            PUBLISHED_SPLIT =>
             index.to_string(),
             source_id.to_string(),
             merge_ops.to_string(),

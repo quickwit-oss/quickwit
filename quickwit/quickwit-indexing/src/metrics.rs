@@ -22,8 +22,7 @@ use quickwit_metrics::{
 pub(crate) const ACTOR_NAME: LabelNames<1> = label_names!("actor_name");
 pub(crate) const COMPONENT: LabelNames<1> = label_names!("component");
 pub(crate) const INDEX_SOURCE: LabelNames<2> = label_names!("index", "source");
-pub(crate) const PUBLISHED_SPLIT: LabelNames<3> = label_names!("index", "source", "merge_ops");
-pub(crate) const PUBLISHED_SPLIT_DOCS: LabelNames<4> =
+pub(crate) const PUBLISHED_SPLIT: LabelNames<4> =
     label_names!("index", "source", "merge_ops", "publication_type");
 
 pub(crate) static PROCESSED_DOCS_TOTAL: LazyCounter = lazy_counter!(
@@ -47,7 +46,7 @@ pub(crate) static DOCS_SORT_GROUP_SIZE: LazyHistogram = lazy_histogram!(
 
 pub(crate) static PUBLISHED_SPLIT_BYTES_TOTAL: LazyCounter = lazy_counter!(
     name: "published_split_bytes_total",
-    description: "Compressed bytes in successfully published splits.",
+    description: "Compressed bytes in successfully published splits by publication type.",
     subsystem: "indexing",
 );
 
@@ -59,28 +58,27 @@ pub(crate) static PUBLISHED_SPLIT_DOCS_TOTAL: LazyCounter = lazy_counter!(
 
 pub(crate) static PUBLISHED_SPLITS_TOTAL: LazyCounter = lazy_counter!(
     name: "published_splits_total",
-    description: "Number of successfully published splits.",
+    description: "Number of successfully published splits by publication type.",
     subsystem: "indexing",
 );
 
 pub(crate) static PUBLISHED_SPLIT_UNCOMPRESSED_BYTES_TOTAL: LazyCounter = lazy_counter!(
     name: "published_split_uncompressed_bytes_total",
-    description: "Uncompressed document bytes in successfully published splits.",
+    description: "Uncompressed document bytes in successfully published splits by publication type.",
     subsystem: "indexing",
 );
 
 pub(crate) static PUBLISHED_SPLIT_SIZE_BYTES: LazyHistogram = lazy_histogram!(
     name: "published_split_size_bytes",
-    description: "Compressed size in bytes of successfully published splits.",
+    description: "Compressed size in bytes of successfully published splits by publication type.",
     subsystem: "indexing",
     buckets: exponential_buckets(1_000_000.0, 2.0, 14).unwrap(),
 );
 
 /// Records one split after the metastore has successfully published it.
 ///
-/// The document counter additionally distinguishes initial publications from
-/// replacements, so consumers can exclude documents that were republished by
-/// merges or delete operations.
+/// All metrics distinguish initial publications from replacements, so consumers
+/// can exclude documents that were republished by merges or delete operations.
 pub(crate) fn record_published_split(
     index_id: &str,
     split: &SplitMetadata,
@@ -91,12 +89,6 @@ pub(crate) fn record_published_split(
         PUBLISHED_SPLIT =>
         index.to_string(),
         split.source_id.to_string(),
-        split.num_merge_ops.to_string()
-    );
-    let docs_labels = label_values!(
-        PUBLISHED_SPLIT_DOCS =>
-        index.to_string(),
-        split.source_id.to_string(),
         split.num_merge_ops.to_string(),
         publication_type
     );
@@ -104,7 +96,7 @@ pub(crate) fn record_published_split(
 
     counter!(parent: PUBLISHED_SPLIT_BYTES_TOTAL, labels: [labels.clone()])
         .inc_by(split_size_bytes);
-    counter!(parent: PUBLISHED_SPLIT_DOCS_TOTAL, labels: [docs_labels])
+    counter!(parent: PUBLISHED_SPLIT_DOCS_TOTAL, labels: [labels.clone()])
         .inc_by(split.num_docs as u64);
     counter!(parent: PUBLISHED_SPLITS_TOTAL, labels: [labels.clone()]).inc();
     counter!(parent: PUBLISHED_SPLIT_UNCOMPRESSED_BYTES_TOTAL, labels: [labels.clone()])
