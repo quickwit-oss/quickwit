@@ -370,20 +370,26 @@ impl S3StorageConfig {
             Some(StorageBackendFlavor::DigitalOcean) => {
                 self.force_path_style_access = true;
                 self.disable_multi_object_delete = true;
+                // doesn't support CRC32C
+                self.checksum_algorithm = ChecksumAlgorithm::Md5;
             }
             Some(StorageBackendFlavor::Garage) => {
                 self.region = Some("garage".to_string());
                 self.force_path_style_access = true;
+                self.checksum_algorithm = ChecksumAlgorithm::Crc32c;
             }
             Some(StorageBackendFlavor::Gcs) => {
                 self.disable_multi_object_delete = true;
                 self.disable_multipart_upload = true;
                 // doesnt support CRC32C via the S3 SDK
-                self.checksum_algorithm = ChecksumAlgorithm::Disabled;
+                // Quickwit comes with a "native" GCS client that supports CRC32C
+                // when compiled with the GCS feature flag.
+                self.checksum_algorithm = ChecksumAlgorithm::Md5;
             }
             Some(StorageBackendFlavor::MinIO) => {
                 self.region = Some("minio".to_string());
                 self.force_path_style_access = true;
+                self.checksum_algorithm = ChecksumAlgorithm::Crc32c;
             }
             _ => {}
         }
@@ -704,40 +710,55 @@ mod tests {
             let s3_storage_config_yaml = r#"
                 flavor: digital_ocean
             "#;
-            let s3_storage_config: S3StorageConfig =
+            let mut s3_storage_config: S3StorageConfig =
                 serde_yaml::from_str(s3_storage_config_yaml).unwrap();
-
+            s3_storage_config.apply_flavor();
             assert_eq!(
                 s3_storage_config.flavor,
                 Some(StorageBackendFlavor::DigitalOcean)
             );
+            assert!(!s3_storage_config.disable_checksums);
+            assert_eq!(s3_storage_config.checksum_algorithm, ChecksumAlgorithm::Md5);
         }
         {
             let s3_storage_config_yaml = r#"
                 flavor: garage
             "#;
-            let s3_storage_config: S3StorageConfig =
+            let mut s3_storage_config: S3StorageConfig =
                 serde_yaml::from_str(s3_storage_config_yaml).unwrap();
+            s3_storage_config.apply_flavor();
 
             assert_eq!(s3_storage_config.flavor, Some(StorageBackendFlavor::Garage));
+            assert!(!s3_storage_config.disable_checksums);
+            assert_eq!(
+                s3_storage_config.checksum_algorithm,
+                ChecksumAlgorithm::Crc32c
+            );
         }
         {
             let s3_storage_config_yaml = r#"
                 flavor: gcs
             "#;
-            let s3_storage_config: S3StorageConfig =
+            let mut s3_storage_config: S3StorageConfig =
                 serde_yaml::from_str(s3_storage_config_yaml).unwrap();
-
+            s3_storage_config.apply_flavor();
             assert_eq!(s3_storage_config.flavor, Some(StorageBackendFlavor::Gcs));
+            assert!(!s3_storage_config.disable_checksums);
+            assert_eq!(s3_storage_config.checksum_algorithm, ChecksumAlgorithm::Md5);
         }
         {
             let s3_storage_config_yaml = r#"
                 flavor: minio
             "#;
-            let s3_storage_config: S3StorageConfig =
+            let mut s3_storage_config: S3StorageConfig =
                 serde_yaml::from_str(s3_storage_config_yaml).unwrap();
-
+            s3_storage_config.apply_flavor();
             assert_eq!(s3_storage_config.flavor, Some(StorageBackendFlavor::MinIO));
+            assert!(!s3_storage_config.disable_checksums);
+            assert_eq!(
+                s3_storage_config.checksum_algorithm,
+                ChecksumAlgorithm::Crc32c
+            );
         }
     }
 }
