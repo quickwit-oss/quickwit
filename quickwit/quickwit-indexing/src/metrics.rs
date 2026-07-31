@@ -46,39 +46,39 @@ pub(crate) static DOCS_SORT_GROUP_SIZE: LazyHistogram = lazy_histogram!(
 
 pub(crate) static PUBLISHED_SPLIT_BYTES_TOTAL: LazyCounter = lazy_counter!(
     name: "published_split_bytes_total",
-    description: "Compressed bytes in successfully published splits by publication type.",
+    description: "Compressed bytes in successfully published splits.",
     subsystem: "indexing",
 );
 
 pub(crate) static PUBLISHED_SPLIT_DOCS_TOTAL: LazyCounter = lazy_counter!(
     name: "published_split_docs_total",
-    description: "Documents in successfully published splits by publication type.",
+    description: "Documents in successfully published splits.",
     subsystem: "indexing",
 );
 
 pub(crate) static PUBLISHED_SPLITS_TOTAL: LazyCounter = lazy_counter!(
     name: "published_splits_total",
-    description: "Number of successfully published splits by publication type.",
+    description: "Number of successfully published splits.",
     subsystem: "indexing",
 );
 
 pub(crate) static PUBLISHED_SPLIT_UNCOMPRESSED_BYTES_TOTAL: LazyCounter = lazy_counter!(
     name: "published_split_uncompressed_bytes_total",
-    description: "Uncompressed document bytes in successfully published splits by publication type.",
+    description: "Uncompressed document bytes in successfully published splits.",
     subsystem: "indexing",
 );
 
 pub(crate) static PUBLISHED_SPLIT_SIZE_BYTES: LazyHistogram = lazy_histogram!(
     name: "published_split_size_bytes",
-    description: "Compressed size in bytes of successfully published splits by publication type.",
+    description: "Compressed size in bytes of successfully published splits.",
     subsystem: "indexing",
     buckets: exponential_buckets(1_000_000.0, 2.0, 14).unwrap(),
 );
 
 /// Records one split after the metastore has successfully published it.
 ///
-/// All metrics distinguish initial publications from replacements, so consumers
-/// can exclude documents that were republished by merges or delete operations.
+/// All metrics deliberately use the same labels so ratios computed over a time
+/// window describe the same set of splits.
 pub(crate) fn record_published_split(
     index_id: &str,
     split: &SplitMetadata,
