@@ -35,6 +35,7 @@ use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Deserializer, Serialize};
 use tracing::{info, warn};
 
+use crate::docs_clustering::DocsClusteringConfig;
 use crate::node_config::serialize::load_node_config_with_env;
 use crate::serde_utils::HumanDuration;
 use crate::service::QuickwitService;
@@ -235,7 +236,7 @@ impl IndexerConfig {
         }
         #[cfg(not(any(test, feature = "testsuite")))]
         {
-            quickwit_common::get_bool_from_env("QW_ENABLE_OTLP_ENDPOINT", true)
+            quickwit_common::get_bool_from_env_cached!("QW_ENABLE_OTLP_ENDPOINT", true)
         }
     }
 
@@ -297,7 +298,7 @@ impl Default for IndexerConfig {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompactorConfig {
     /// Maximum number of concurrent merges, which hold the CPU for
@@ -314,6 +315,11 @@ pub struct CompactorConfig {
     /// Limits the IO throughput of the split downloader and the merge executor.
     #[serde(default)]
     pub max_merge_write_throughput: Option<ByteSize>,
+    /// Maximum amount of time to wait for the compactor to finish decommissioning gracefully
+    /// on shutdown before giving up. Can be overridden with the
+    /// `QW_COMPACTOR_DECOMMISSION_TIMEOUT` environment variable.
+    #[serde(default = "CompactorConfig::default_decommission_timeout")]
+    decommission_timeout: HumanDuration,
 }
 
 impl CompactorConfig {
@@ -330,6 +336,20 @@ impl CompactorConfig {
         NonZeroUsize::new(12).unwrap()
     }
 
+    fn default_decommission_timeout() -> HumanDuration {
+        HumanDuration::try_from("300s".to_string())
+            .expect("`300s` should be a valid human duration")
+    }
+
+    /// Returns the compactor decommission timeout, as defined in the environment variable or in
+    /// the configuration, in that order (the environment variable overrides the configuration).
+    pub fn decommission_timeout(&self) -> Duration {
+        quickwit_common::get_duration_from_env(
+            "QW_COMPACTOR_DECOMMISSION_TIMEOUT",
+            Duration::from(self.decommission_timeout.clone()),
+        )
+    }
+
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
         CompactorConfig {
@@ -337,6 +357,7 @@ impl CompactorConfig {
             pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
             max_concurrent_split_uploads: NonZeroUsize::new(4).unwrap(),
             max_merge_write_throughput: None,
+            decommission_timeout: Self::default_decommission_timeout(),
         }
     }
 }
@@ -348,6 +369,7 @@ impl Default for CompactorConfig {
             pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
             max_merge_write_throughput: None,
+            decommission_timeout: Self::default_decommission_timeout(),
         }
     }
 }
@@ -419,6 +441,10 @@ pub struct SearcherConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
+    /// Routes read-only metastore requests from searchers, including DataFusion when enabled, to
+    /// nodes running the `metastore_read_replica` service.
+    #[serde(default)]
+    pub use_metastore_read_replica: bool,
     pub warmup_memory_budget: ByteSize,
     pub warmup_single_split_initial_allocation: ByteSize,
     /// Lambda configuration for serverless leaf search execution.
@@ -642,6 +668,7 @@ impl Default for SearcherConfig {
             request_timeout_secs: Self::default_request_timeout_secs(),
             leaf_request_timeout_secs: Self::default_request_timeout_secs(),
             storage_timeout_policy: None,
+            use_metastore_read_replica: false,
             warmup_memory_budget: ByteSize::gb(100),
             warmup_single_split_initial_allocation: ByteSize::mb(300),
             lambda: None,
@@ -714,6 +741,10 @@ pub struct IngestApiConfig {
     pub shard_scale_up_factor: f32,
     #[serde(default)]
     pub grpc_compression_algorithm: Option<CompressionAlgorithm>,
+    /// Maximum amount of time to wait for the ingester to finish decommissioning gracefully
+    /// on shutdown before giving up. Can be overridden with the
+    /// `QW_INGEST_DECOMMISSION_TIMEOUT` environment variable.
+    decommission_timeout: HumanDuration,
 }
 
 impl Default for IngestApiConfig {
@@ -727,6 +758,8 @@ impl Default for IngestApiConfig {
             shard_burst_limit: DEFAULT_SHARD_BURST_LIMIT,
             shard_scale_up_factor: DEFAULT_SHARD_SCALE_UP_FACTOR,
             grpc_compression_algorithm: None,
+            decommission_timeout: HumanDuration::try_from("300s".to_string())
+                .expect("`300s` should be a valid human duration"),
         }
     }
 }
@@ -753,6 +786,15 @@ impl IngestApiConfig {
         );
         Ok(NonZeroUsize::new(self.replication_factor)
             .expect("replication factor should be either 1 or 2"))
+    }
+
+    /// Returns the ingester decommission timeout, as defined in the environment variable or in
+    /// the configuration, in that order (the environment variable overrides the configuration).
+    pub fn decommission_timeout(&self) -> Duration {
+        quickwit_common::get_duration_from_env(
+            "QW_INGEST_DECOMMISSION_TIMEOUT",
+            Duration::from(self.decommission_timeout.clone()),
+        )
     }
 
     pub fn grpc_compression_encoding(&self) -> Option<CompressionEncoding> {
@@ -846,7 +888,7 @@ impl JaegerConfig {
         }
         #[cfg(not(any(test, feature = "testsuite")))]
         {
-            quickwit_common::get_bool_from_env("QW_ENABLE_JAEGER_ENDPOINT", true)
+            quickwit_common::get_bool_from_env_cached!("QW_ENABLE_JAEGER_ENDPOINT", true)
         }
     }
 
@@ -888,6 +930,10 @@ pub struct NodeConfig {
     pub peer_seeds: Vec<String>,
     pub data_dir_path: PathBuf,
     pub metastore_uri: Uri,
+    /// Optional PostgreSQL read replica URI. It is used as the connection URI by nodes running the
+    /// [`QuickwitService::MetastoreReadReplica`] role.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metastore_read_replica_uri: Option<Uri>,
     pub default_index_root_uri: Uri,
     pub rest_config: RestConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -902,6 +948,8 @@ pub struct NodeConfig {
     pub compactor_config: CompactorConfig,
     #[serde(skip_serializing)]
     pub enable_standalone_compactors: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub docs_clustering_config: Option<DocsClusteringConfig>,
 }
 
 impl NodeConfig {
@@ -911,8 +959,22 @@ impl NodeConfig {
 
     /// Parses and validates a [`NodeConfig`] from a given URI and config content.
     pub async fn load(config_format: ConfigFormat, config_content: &[u8]) -> anyhow::Result<Self> {
+        Self::load_with_enabled_services(config_format, config_content, None).await
+    }
+
+    /// Parses and validates a [`NodeConfig`] after overriding its enabled services.
+    ///
+    /// The override takes precedence over both the config file and `QW_ENABLED_SERVICES` and is
+    /// applied before service-dependent validation.
+    pub async fn load_with_enabled_services(
+        config_format: ConfigFormat,
+        config_content: &[u8],
+        enabled_services: Option<&HashSet<QuickwitService>>,
+    ) -> anyhow::Result<Self> {
         let env_vars = env::vars().collect::<HashMap<_, _>>();
-        let config = load_node_config_with_env(config_format, config_content, &env_vars).await?;
+        let config =
+            load_node_config_with_env(config_format, config_content, &env_vars, enabled_services)
+                .await?;
         if !config.data_dir_path.try_exists()? {
             bail!(
                 "data dir `{}` does not exist",
@@ -951,6 +1013,9 @@ impl NodeConfig {
     pub fn redact(&mut self) {
         self.metastore_configs.redact();
         self.metastore_uri.redact();
+        if let Some(metastore_read_replica_uri) = &mut self.metastore_read_replica_uri {
+            metastore_read_replica_uri.redact();
+        }
         self.storage_configs.redact();
     }
 
@@ -982,6 +1047,26 @@ mod tests {
 
     use super::*;
     use crate::IndexerConfig;
+
+    #[test]
+    fn test_node_config_redact_metastore_uris() {
+        let mut config = NodeConfig::for_test();
+        config.metastore_uri = Uri::for_test("postgresql://username:password@host:5432/db");
+        config.metastore_read_replica_uri = Some(Uri::for_test(
+            "postgresql://replica-user:replica-password@replica-host:5432/db",
+        ));
+
+        config.redact();
+
+        assert_eq!(
+            config.metastore_uri,
+            "postgresql://username:***redacted***@host:5432/db"
+        );
+        assert_eq!(
+            config.metastore_read_replica_uri.unwrap(),
+            "postgresql://replica-user:***redacted***@replica-host:5432/db"
+        );
+    }
 
     #[test]
     fn test_indexer_config_serialization() {
@@ -1079,6 +1164,40 @@ mod tests {
                 "shard_throughput_limit (21.0 MB) must be within 1mb and 20mb"
             );
         }
+    }
+
+    #[test]
+    fn test_ingest_api_config_decommission_timeout() {
+        let default_config = IngestApiConfig::default();
+        assert_eq!(
+            default_config.decommission_timeout(),
+            Duration::from_mins(5)
+        );
+
+        let yaml_config: IngestApiConfig = serde_yaml::from_str(
+            r#"
+                decommission_timeout: 2m
+            "#,
+        )
+        .unwrap();
+        assert_eq!(yaml_config.decommission_timeout(), Duration::from_mins(2));
+    }
+
+    #[test]
+    fn test_compactor_config_decommission_timeout() {
+        let default_config = CompactorConfig::default();
+        assert_eq!(
+            default_config.decommission_timeout(),
+            Duration::from_mins(5)
+        );
+
+        let yaml_config: CompactorConfig = serde_yaml::from_str(
+            r#"
+                decommission_timeout: 2m
+            "#,
+        )
+        .unwrap();
+        assert_eq!(yaml_config.decommission_timeout(), Duration::from_mins(2));
     }
 
     #[track_caller]

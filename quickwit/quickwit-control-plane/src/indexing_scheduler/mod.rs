@@ -25,7 +25,9 @@ use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
 use quickwit_common::is_parquet_pipeline_index;
 use quickwit_common::pretty::PrettySample;
-use quickwit_config::{FileSourceParams, SourceParams, indexing_pipeline_params_fingerprint};
+use quickwit_config::{
+    FileSourceParams, SourceParams, disable_ingest_v1, indexing_pipeline_params_fingerprint,
+};
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
     PIPELINE_THROUGHPUT,
@@ -35,6 +37,7 @@ use quickwit_proto::types::NodeId;
 use scheduling::{SourceToSchedule, SourceToScheduleType};
 use serde::Serialize;
 use tracing::{debug, info, warn};
+use ulid::Ulid;
 
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotifier};
@@ -189,18 +192,22 @@ fn compute_load_per_shard(shard_entries: &[&ShardEntry]) -> NonZeroU32 {
 }
 
 fn get_default_load_per_shard() -> NonZeroU32 {
-    static DEFAULT_LOAD_PER_SHARD: LazyLock<NonZeroU32> = LazyLock::new(|| {
-        let default_load_per_shard = quickwit_common::get_from_env(
-            "QW_DEFAULT_LOAD_PER_SHARD",
-            PIPELINE_FULL_CAPACITY.cpu_millis() / 4,
-            false,
-        );
-        NonZeroU32::new(default_load_per_shard).unwrap()
-    });
-    *DEFAULT_LOAD_PER_SHARD
+    let default_load_per_shard = quickwit_common::get_from_env_cached!(
+        u32,
+        "QW_DEFAULT_LOAD_PER_SHARD",
+        PIPELINE_FULL_CAPACITY.cpu_millis() / 4,
+        false
+    );
+    NonZeroU32::new(default_load_per_shard).unwrap()
 }
 
-fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
+fn get_sources_to_schedule(
+    model: &ControlPlaneModel,
+    disable_ingest_v1: bool,
+) -> Vec<SourceToSchedule> {
+    if disable_ingest_v1 {
+        debug!("skipping scheduling of ingest API sources because ingest v1 is disabled");
+    }
     let mut sources = Vec::new();
 
     for (source_uid, source_config) in model.source_configs() {
@@ -222,6 +229,9 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
             }
 
             SourceParams::IngestApi => {
+                if disable_ingest_v1 {
+                    continue;
+                }
                 // Metrics indexes should use IngestV2 only, not IngestV1.
                 // The ParquetSourceLoader doesn't support IngestV1.
                 if is_parquet_pipeline_index(&source_uid.index_uid.index_id) {
@@ -306,7 +316,7 @@ impl IndexingScheduler {
 
         let notify_on_drop = self.next_rebuild_tracker.start_rebuild();
 
-        let sources = get_sources_to_schedule(model);
+        let sources = get_sources_to_schedule(model, disable_ingest_v1());
 
         let indexers: Vec<IndexerNodeInfo> = self.select_available_indexers_for_scheduling();
 
@@ -425,6 +435,11 @@ impl IndexingScheduler {
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
         APPLY_PLAN_TOTAL.inc();
+        // The indexing plan ID is a monotonically increasing time based ID that's used as the
+        // publish token for indexers, which ensures indexing plans and shard acquisition are always
+        // informed by the most recent plan.
+        let indexing_plan_id = Ulid::new().to_string();
+
         // Retiring and decommissioning indexers still receive the plan so they can gracefully shut
         // down dropped pipelines; other states (initializing, decommissioned, failed) are skipped.
         for indexer in self.indexer_pool.values().into_iter().filter(|indexer| {
@@ -437,20 +452,24 @@ impl IndexingScheduler {
                 .indexer(indexer.node_id.as_str())
                 .unwrap_or(&[])
                 .to_vec();
+
             // We don't want to block on a slow indexer so we apply this change asynchronously.
-            // Bound the apply only for retiring/decommissioning indexers, so a slow or unreachable
-            // draining node can't hold the change-notification guard; ready indexers get no
-            // timeout.
+            // Retiring/decommissioning indexers are time-bound, so a slow or unreachable
+            // draining node can't hold the notify guard. Ready indexers get no timeout.
             let apply_deadline = matches!(
                 indexer.ingester_status,
                 IngesterStatus::Retiring | IngesterStatus::Decommissioning
             )
             .then_some(APPLY_INDEXING_PLAN_TIMEOUT);
+
             let notify_on_drop = notify_on_drop.clone();
+            let indexing_plan_id = indexing_plan_id.clone();
             tokio::spawn(async move {
                 let client = indexer.client.clone();
-                let apply_plan_fut =
-                    client.apply_indexing_plan(ApplyIndexingPlanRequest { indexing_tasks });
+                let apply_plan_fut = client.apply_indexing_plan(ApplyIndexingPlanRequest {
+                    indexing_tasks,
+                    indexing_plan_id,
+                });
                 let apply_result = match apply_deadline {
                     Some(timeout) => tokio::time::timeout(timeout, apply_plan_fut).await,
                     None => Ok(apply_plan_fut.await),
@@ -1020,8 +1039,19 @@ mod tests {
             ..Default::default()
         };
         model.insert_shards(&index_uid, &"ingest_v2".to_string(), vec![shard]);
-        let shards: Vec<SourceToSchedule> = get_sources_to_schedule(&model);
-        assert_eq!(shards.len(), 3);
+
+        let disable_ingest_v1 = false;
+        let sources: Vec<SourceToSchedule> = get_sources_to_schedule(&model, disable_ingest_v1);
+        assert_eq!(sources.len(), 3);
+
+        let disable_ingest_v1 = true;
+        let sources: Vec<SourceToSchedule> = get_sources_to_schedule(&model, disable_ingest_v1);
+        assert_eq!(sources.len(), 2);
+
+        let contains_any_ingest_v1_source = sources
+            .iter()
+            .any(|source| matches!(source.source_type, SourceToScheduleType::IngestV1));
+        assert!(!contains_any_ingest_v1_source);
     }
 
     #[test]
@@ -1126,7 +1156,7 @@ mod tests {
                 model.add_source(index_uid, source_config.clone()).unwrap();
             }
 
-            let sources: Vec<SourceToSchedule> = get_sources_to_schedule(&model);
+            let sources: Vec<SourceToSchedule> = get_sources_to_schedule(&model, false);
             let mut indexer_max_loads = FnvHashMap::default();
             for i in 0..num_indexers {
                 let indexer_id = format!("indexer-{i}");

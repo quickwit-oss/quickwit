@@ -16,7 +16,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::path::Path;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -45,7 +45,7 @@ use quickwit_proto::types::{
 use serde_json::{Value as JsonValue, json};
 use tokio::sync::Semaphore;
 use tokio::time::{sleep, timeout};
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{Span, debug, error, info, instrument, warn};
 
 use super::IngesterPool;
 use super::broadcast::{BroadcastIngesterCapacityScoreTask, BroadcastLocalShardsTask};
@@ -63,7 +63,9 @@ use super::replication::{
 };
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
-use crate::ingest_v2::metrics::{RESET_SHARDS_OPERATIONS_TOTAL, STATUS, report_wal_usage};
+use crate::ingest_v2::metrics::{
+    RESET_SHARDS_OPERATIONS_TOTAL, STATUS, report_wal_limits, report_wal_usage,
+};
 use crate::ingest_v2::models::IngesterShardType;
 use crate::metrics::{DOCS_BYTES_TOTAL, DOCS_TOTAL, VALIDITY};
 use crate::mrecordlog_async::MultiRecordLogAsync;
@@ -87,10 +89,12 @@ pub(super) const PERSIST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature =
 const DEFAULT_BATCH_NUM_BYTES: usize = 1024 * 1024; // 1 MiB
 
 fn get_batch_num_bytes() -> usize {
-    static BATCH_NUM_BYTES_CELL: LazyLock<usize> = LazyLock::new(|| {
-        quickwit_common::get_from_env("QW_INGEST_BATCH_NUM_BYTES", DEFAULT_BATCH_NUM_BYTES, false)
-    });
-    *BATCH_NUM_BYTES_CELL
+    quickwit_common::get_from_env_cached!(
+        usize,
+        "QW_INGEST_BATCH_NUM_BYTES",
+        DEFAULT_BATCH_NUM_BYTES,
+        false
+    )
 }
 
 #[derive(Clone)]
@@ -143,6 +147,8 @@ impl Ingester {
         BroadcastLocalShardsTask::spawn(cluster.clone(), weak_state.clone());
         BroadcastIngesterCapacityScoreTask::spawn(cluster, weak_state.clone());
         CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
+
+        report_wal_limits(disk_capacity, memory_capacity);
 
         let ingester = Self {
             self_node_id,
@@ -336,7 +342,7 @@ impl Ingester {
                 .inc();
 
                 let wal_usage = state_guard.mrecordlog.resource_usage();
-                report_wal_usage(wal_usage);
+                report_wal_usage(wal_usage, self.disk_capacity, self.memory_capacity);
             }
             Ok(Err(error)) => {
                 warn!("advise reset shards request failed: {error}");
@@ -811,7 +817,7 @@ impl Ingester {
         if disk_used >= self.disk_capacity.as_u64() * 90 / 100 {
             self.background_reset_shards();
         }
-        report_wal_usage(wal_usage);
+        report_wal_usage(wal_usage, self.disk_capacity, self.memory_capacity);
 
         let source_shard_updates = open_shard_counts
             .into_iter()
@@ -1027,7 +1033,7 @@ impl Ingester {
                 .await;
         }
         let wal_usage = state_guard.mrecordlog.resource_usage();
-        report_wal_usage(wal_usage);
+        report_wal_usage(wal_usage, self.disk_capacity, self.memory_capacity);
 
         state_guard.check_decommissioning_status().await;
         let truncate_response = TruncateShardsResponse {};
@@ -1222,14 +1228,14 @@ impl IngesterService for Ingester {
         let self_clone = self.clone();
         tokio::spawn(async move {
             const DECOMMISSION_DELAY: Duration = if cfg!(any(test, feature = "testsuite")) {
-                Duration::from_millis(100)
+                Duration::from_millis(200)
             } else {
-                // Having to wait for 10s is not great but we can live with it. During this time, we
+                // Having to wait for 15s is not great but we can live with it. During this time, we
                 // still make progress towards decommissioning because we gradually receive less
                 // write requests and indexing is still ongoing. However, it sets a floor on the
                 // amount of time with which we can fully decommission an ingester. This will be
                 // most noticeable when using Quickwit locally.
-                Duration::from_secs(10)
+                Duration::from_secs(15)
             };
             tokio::time::sleep(DECOMMISSION_DELAY).await;
 
@@ -1256,31 +1262,117 @@ impl IngesterService for Ingester {
 
 #[async_trait]
 impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
-    #[instrument(name = "ingester.shard_positions_gossip", skip_all)]
+    #[instrument(name = "ingester.truncate_shards_gossip", skip_all)]
     async fn handle_event(&mut self, shard_positions_update: ShardPositionsUpdate) {
         let Some(state) = self.upgrade() else {
-            warn!("ingester state update failed");
+            debug!("ingester was dropped: exiting");
             return;
         };
-        let Ok(mut state_guard) = state.lock_fully("truncate_shards_gossip").await else {
-            error!("failed to lock the ingester state");
-            return;
-        };
-        let index_uid = shard_positions_update.source_uid.index_uid;
-        let source_id = shard_positions_update.source_uid.source_id;
+        let local_updates = filter_local_shard_updates(&state, shard_positions_update).await;
 
-        for (shard_id, shard_position) in shard_positions_update.updated_shard_positions {
-            let queue_id = queue_id(&index_uid, &source_id, &shard_id);
-            if shard_position.is_eof() {
-                state_guard.delete_shard(&queue_id, "indexer gossip").await;
-            } else if !shard_position.is_beginning() {
-                state_guard
-                    .truncate_shard(&queue_id, shard_position, "indexer gossip")
-                    .await;
-            }
+        if local_updates.is_empty() {
+            return;
         }
-        state_guard.check_decommissioning_status().await;
+        // We're in no rush to process the updates, so yield to avoid starving other tasks waiting
+        // for the lock.
+        tokio::task::yield_now().await;
+
+        apply_local_shard_updates(&state, local_updates).await;
     }
+}
+
+/// The gossiped update is not scoped to this ingester: it carries the positions of every shard
+/// of the source, most of which are typically hosted by other ingesters. This function filters
+/// down to the updates that will actually mutate our local state, using the cheap partial lock
+/// (`inner` only), sparing the caller from taking the full lock, which also holds the WAL write
+/// lock contended by persist/fetch operations on unrelated shards. The per-entry conditions
+/// below mirror the no-op checks performed by `delete_shard` and `truncate_shard` so we can
+/// discard useless entries without ever taking the full lock.
+#[instrument(
+    name = "ingester.filter_local_shard_updates",
+    skip_all,
+    fields(num_global_updates, num_local_updates)
+)]
+async fn filter_local_shard_updates(
+    state: &IngesterState,
+    shard_positions_update: ShardPositionsUpdate,
+) -> Vec<(QueueId, Position)> {
+    let index_uid = shard_positions_update.source_uid.index_uid;
+    let source_id = shard_positions_update.source_uid.source_id;
+
+    let Ok(state_guard) = state.lock_partially("filter_local_shard_updates").await else {
+        debug!("ingester was dropped: exiting");
+        return Vec::new();
+    };
+    let num_global_updates = shard_positions_update.updated_shard_positions.len();
+
+    let local_updates: Vec<(QueueId, Position)> = shard_positions_update
+        .updated_shard_positions
+        .into_iter()
+        .map(|(shard_id, shard_position)| {
+            (queue_id(&index_uid, &source_id, &shard_id), shard_position)
+        })
+        .filter(|(queue_id, shard_position)| {
+            let Some(shard) = state_guard.shards.get(queue_id) else {
+                return false;
+            };
+            if shard_position.is_eof() {
+                return true;
+            }
+            if shard_position.is_beginning() {
+                return false;
+            }
+            shard.truncation_position_inclusive < *shard_position
+        })
+        .collect();
+
+    Span::current().record("num_global_updates", num_global_updates);
+    Span::current().record("num_local_updates", local_updates.len());
+
+    debug!(
+        "filtered out {} of {num_global_updates} shard position update(s)",
+        num_global_updates - local_updates.len(),
+    );
+    local_updates
+}
+
+#[instrument(
+    name = "ingester.apply_local_shard_updates",
+    skip_all,
+    fields(num_deleted_shards, num_truncated_shards)
+)]
+async fn apply_local_shard_updates(state: &IngesterState, local_updates: Vec<(QueueId, Position)>) {
+    let now = Instant::now();
+
+    let Ok(mut state_guard) = state.lock_fully("apply_local_shard_updates").await else {
+        debug!("ingester was dropped: exiting");
+        return;
+    };
+    let mut num_deleted_shards = 0;
+    let mut num_truncated_shards = 0;
+
+    for (queue_id, shard_position) in local_updates {
+        if shard_position.is_eof() {
+            state_guard.delete_shard(&queue_id, "indexer gossip").await;
+            num_deleted_shards += 1;
+        } else if !shard_position.is_beginning() {
+            state_guard
+                .truncate_shard(&queue_id, shard_position, "indexer gossip")
+                .await;
+            num_truncated_shards += 1;
+        }
+    }
+    state_guard.check_decommissioning_status().await;
+
+    Span::current().record("num_deleted_shards", num_deleted_shards);
+    Span::current().record("num_truncated_shards", num_truncated_shards);
+
+    info!(
+        "deleted {} and truncated {} shard(s) via gossip in {}",
+        num_deleted_shards,
+        num_truncated_shards,
+        now.elapsed().pretty_display()
+    );
 }
 
 struct PendingPersistSubrequest {
@@ -1306,6 +1398,7 @@ mod tests {
     use bytes::Bytes;
     use quickwit_cluster::{ChitchatTransport, create_cluster_for_test_with_id};
     use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
+    use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_common::tower::ConstantRate;
     use quickwit_config::service::QuickwitService;
     use quickwit_proto::control_plane::{AdviseResetShardsResponse, MockControlPlaneService};
@@ -1318,7 +1411,6 @@ mod tests {
         ShardState,
     };
     use quickwit_proto::types::{DocMappingUid, DocUid, ShardId, SourceUid, queue_id};
-    use tokio::task::yield_now;
     use tokio::time::timeout;
     use tonic::transport::{Endpoint, Server};
 
@@ -1534,7 +1626,12 @@ mod tests {
 
         ingester
             .state
-            .init(ingester_ctx.tempdir.path(), RateLimiterSettings::default())
+            .init(
+                ingester_ctx.tempdir.path(),
+                ByteSize::mb(256),
+                ByteSize::mb(1),
+                RateLimiterSettings::default(),
+            )
             .await;
 
         let state_guard = ingester.state.lock_fully("test").await.unwrap();
@@ -3784,6 +3881,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_check_decommissioning_status_with_empty_orphan_shard() {
+        // A non-advertisable shard is invisible to gossip/RPC-driven cleanup and will never be
+        // deleted, so the ingester must not wait for its removal to consider itself
+        // decommissioned as long as it is empty.
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
+        let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+
+        let empty_orphan_shard =
+            IngesterShard::new_solo(index_uid.clone(), source_id, ShardId::from(1))
+                .with_state(ShardState::Closed)
+                .build();
+        let queue_id = empty_orphan_shard.queue_id();
+        state_guard
+            .shards
+            .insert(queue_id.clone(), empty_orphan_shard);
+
+        state_guard
+            .set_status(IngesterStatus::Decommissioning)
+            .await;
+        state_guard.check_decommissioning_status().await;
+
+        assert_eq!(state_guard.status(), IngesterStatus::Decommissioned);
+        assert!(state_guard.shards.contains_key(&queue_id));
+    }
+
+    #[tokio::test]
     async fn test_decommission_completes_when_empty_shard_deleted_via_gossip() {
         let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
@@ -3933,8 +4059,23 @@ mod tests {
         // Verify idempotency.
         event_broker.publish(shard_position_update);
 
-        // Yield so that the event is processed.
-        yield_now().await;
+        // Wait for both events to be processed.
+        wait_until_predicate(
+            || async {
+                ingester
+                    .state
+                    .lock_fully("test")
+                    .await
+                    .unwrap()
+                    .shards
+                    .len()
+                    == 1
+            },
+            Duration::from_secs(5),
+            Duration::from_millis(100),
+        )
+        .await
+        .expect("shard `2` should be deleted");
 
         let state_guard = ingester.state.lock_fully("test").await.unwrap();
         assert_eq!(state_guard.shards.len(), 1);
@@ -3947,6 +4088,83 @@ mod tests {
 
         assert!(!state_guard.shards.contains_key(&queue_id_02));
         assert!(!state_guard.mrecordlog.queue_exists(&queue_id_02));
+    }
+
+    #[tokio::test]
+    async fn test_filter_local_shard_updates() {
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+
+        let doc_mapping_uid = DocMappingUid::random();
+        let doc_mapping_json = format!(
+            r#"{{
+                "doc_mapping_uid": "{doc_mapping_uid}"
+            }}"#
+        );
+        let shard_01 = Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            shard_id: Some(ShardId::from(1)),
+            shard_state: ShardState::Open as i32,
+            doc_mapping_uid: Some(doc_mapping_uid),
+            ..Default::default()
+        };
+        let queue_id_01 = queue_id(&index_uid, &source_id, &ShardId::from(1));
+
+        let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
+        let now = Instant::now();
+
+        ingester
+            .init_primary_shard(
+                &mut state_guard.inner,
+                &mut state_guard.mrecordlog,
+                shard_01,
+                &doc_mapping_json,
+                now,
+                true,
+            )
+            .await
+            .unwrap();
+
+        // Truncate the shard once so that its truncation position is already at offset 0. This
+        // lets us exercise the "stale update" case below.
+        state_guard
+            .truncate_shard(&queue_id_01, Position::offset(0u64), "test")
+            .await;
+
+        drop(state_guard);
+
+        let shard_position_update = ShardPositionsUpdate {
+            source_uid: SourceUid {
+                index_uid,
+                source_id,
+            },
+            updated_shard_positions: vec![
+                // Shard hosted by another ingester: filtered out.
+                (ShardId::from(2), Position::offset(5u64)),
+                // Local shard, but the position does not advance the truncation position:
+                // filtered out.
+                (ShardId::from(1), Position::offset(0u64)),
+                // Local shard, `Beginning` position: filtered out.
+                (ShardId::from(1), Position::Beginning),
+                // Local shard, advances the truncation position: kept.
+                (ShardId::from(1), Position::offset(1u64)),
+                // Local shard, EOF position: always kept, regardless of the current truncation
+                // position.
+                (ShardId::from(1), Position::eof(0u64)),
+            ],
+        };
+        let local_updates =
+            filter_local_shard_updates(&ingester.state, shard_position_update).await;
+        assert_eq!(
+            local_updates,
+            vec![
+                (queue_id_01.clone(), Position::offset(1u64)),
+                (queue_id_01, Position::eof(0u64)),
+            ]
+        );
     }
 
     #[tokio::test]

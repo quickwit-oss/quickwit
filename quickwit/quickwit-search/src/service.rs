@@ -170,7 +170,7 @@ impl SearchService for SearchServiceImpl {
         let search_result = root_search(
             &self.searcher_context,
             search_request,
-            self.metastore.clone(),
+            &self.metastore,
             &self.cluster_client,
         )
         .await?;
@@ -231,12 +231,8 @@ impl SearchService for SearchServiceImpl {
         &self,
         list_terms_request: ListTermsRequest,
     ) -> crate::Result<ListTermsResponse> {
-        let search_result = root_list_terms(
-            &list_terms_request,
-            self.metastore.clone(),
-            &self.cluster_client,
-        )
-        .await?;
+        let search_result =
+            root_list_terms(&list_terms_request, &self.metastore, &self.cluster_client).await?;
 
         Ok(search_result)
     }
@@ -290,12 +286,7 @@ impl SearchService for SearchServiceImpl {
         &self,
         list_fields_req: ListFieldsRequest,
     ) -> crate::Result<ListFieldsResponse> {
-        root_list_fields(
-            list_fields_req,
-            &self.cluster_client,
-            self.metastore.clone(),
-        )
-        .await
+        root_list_fields(list_fields_req, &self.cluster_client, &self.metastore).await
     }
 
     async fn leaf_list_fields(
@@ -320,7 +311,7 @@ impl SearchService for SearchServiceImpl {
         &self,
         search_request: SearchRequest,
     ) -> crate::Result<SearchPlanResponse> {
-        let search_plan = search_plan(search_request, self.metastore.clone()).await?;
+        let search_plan = search_plan(search_request, &self.metastore).await?;
         Ok(search_plan)
     }
 

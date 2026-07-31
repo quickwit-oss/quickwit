@@ -31,6 +31,7 @@ use quickwit_indexing::actors::{
     PublisherCounters, Uploader, UploaderCounters, UploaderType,
 };
 use quickwit_indexing::merge_policy::merge_policy_from_settings;
+use quickwit_indexing::models::SharedPublishToken;
 use quickwit_indexing::{IndexingSplitStore, SplitsUpdateMailbox};
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::MergePipelineId;
@@ -167,6 +168,7 @@ impl DeleteTaskPipeline {
             self.metastore.clone(),
             None,
             None,
+            SharedPublishToken::default(),
         );
         let (publisher_mailbox, publisher_supervisor_handler) =
             ctx.spawn_actor().supervise(publisher);

@@ -25,22 +25,38 @@ use sqlx::{ConnectOptions, Postgres};
 use tracing::error;
 use tracing::log::LevelFilter;
 
+use super::metrics::MetastoreKind;
 use super::model::{Splits, ToTimestampFunc};
 use super::pool::TrackedPool;
 use super::tags::generate_sql_condition;
 use crate::metastore::{FilterRange, SortBy};
 use crate::{ListSplitsQuery, SplitMaturity, SplitMetadata};
 
-/// Establishes a connection to the given database URI.
+pub(super) struct PostgresqlConnectionOptions<'a> {
+    pub(super) connection_uri: &'a Uri,
+    pub(super) min_connections: usize,
+    pub(super) max_connections: usize,
+    pub(super) acquire_timeout: Duration,
+    pub(super) idle_timeout_opt: Option<Duration>,
+    pub(super) max_lifetime_opt: Option<Duration>,
+    pub(super) read_only: bool,
+    pub(super) metastore_kind: MetastoreKind,
+}
+
+/// Establishes a tracked connection pool with the given options.
 pub(super) async fn establish_connection(
-    connection_uri: &Uri,
-    min_connections: usize,
-    max_connections: usize,
-    acquire_timeout: Duration,
-    idle_timeout_opt: Option<Duration>,
-    max_lifetime_opt: Option<Duration>,
-    read_only: bool,
+    options: PostgresqlConnectionOptions<'_>,
 ) -> MetastoreResult<TrackedPool<Postgres>> {
+    let PostgresqlConnectionOptions {
+        connection_uri,
+        min_connections,
+        max_connections,
+        acquire_timeout,
+        idle_timeout_opt,
+        max_lifetime_opt,
+        read_only,
+        metastore_kind,
+    } = options;
     let pool_options = PgPoolOptions::new()
         .min_connections(min_connections as u32)
         .max_connections(max_connections as u32)
@@ -66,8 +82,7 @@ pub(super) async fn establish_connection(
                 message: error.to_string(),
             }
         })?;
-    let tracked_pool = TrackedPool::new(sqlx_pool);
-    Ok(tracked_pool)
+    Ok(TrackedPool::new(sqlx_pool, metastore_kind))
 }
 
 /// Extends an existing SQL string with the generated filter range appended to the query.
@@ -207,10 +222,16 @@ pub(super) fn append_query_filters_and_order_by(sql: &mut SelectStatement, query
         // ceiling and keeps parse-time O(1) in the exclude size. The `$1` is
         // postgres' placeholder; sea-query substitutes it with the next bind
         // slot at build time.
-        let excluded_split_ids: Vec<Value> = query
+        let mut excluded_split_ids: Vec<String> = query
             .excluded_split_ids
             .into_iter()
-            .map(|split_id| Value::String(Some(Box::new(split_id.to_string()))))
+            .map(|split_id| split_id.to_string())
+            .collect();
+        // HashSet iteration order is randomized; keep query rendering deterministic.
+        excluded_split_ids.sort_unstable();
+        let excluded_split_ids: Vec<Value> = excluded_split_ids
+            .into_iter()
+            .map(|split_id| Value::String(Some(Box::new(split_id))))
             .collect();
         let excluded_array = Value::Array(ArrayType::String, Some(Box::new(excluded_split_ids)));
         sql.cond_where(Expr::cust_with_values(

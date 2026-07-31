@@ -57,7 +57,7 @@ use crate::actors::pipeline_shared::wait_duration_before_retry;
 use crate::actors::publisher::DisconnectMergePlanner;
 use crate::actors::{MergeSchedulerService, Publisher, Sequencer, UploaderType};
 use crate::metrics::ONGOING_MERGE_OPERATIONS;
-use crate::models::MergeStatistics;
+use crate::models::{MergeStatistics, SharedPublishToken};
 
 /// Limits concurrent Parquet merge pipeline spawns to avoid overwhelming the
 /// metastore. This is a separate semaphore from the Tantivy merge pipeline's.
@@ -78,7 +78,7 @@ async fn fetch_published_parquet_splits_paginated(
     };
     let query = quickwit_metastore::ListParquetSplitsQuery::for_index(index_uid.clone())
         .retain_immature(OffsetDateTime::now_utc());
-    let records = list_parquet_splits_paginated(metastore, kind, query).await?;
+    let records = list_parquet_splits_paginated(&metastore, kind, query).await?;
     debug!(
         num_splits = records.len(),
         "fetched published parquet splits for merge planning"
@@ -302,6 +302,7 @@ impl ParquetMergePipeline {
             self.params.metastore.clone(),
             None, // No Tantivy planner
             None, // No source
+            SharedPublishToken::default(),
         )
         .set_parquet_merge_planner_mailbox(self.merge_planner_mailbox.clone());
 

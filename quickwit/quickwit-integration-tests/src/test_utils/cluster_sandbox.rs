@@ -211,7 +211,7 @@ impl ClusterSandboxBuilder {
 
     pub async fn build_and_start_standalone() -> ClusterSandbox {
         ClusterSandboxBuilder::default()
-            .add_node(QuickwitService::supported_services())
+            .add_node(QuickwitService::default_services())
             .build_config()
             .await
             .start()

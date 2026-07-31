@@ -37,6 +37,7 @@ use quickwit_config::{
 };
 use quickwit_index_management::{IndexService, clear_cache_directory};
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergeSchedulerService};
+use quickwit_indexing::docs_clustering::Fingerprinter;
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
@@ -402,7 +403,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     debug!(args=?args, "local-ingest-docs");
     println!("❯ Ingesting documents locally...");
 
-    let config = load_node_config(&args.config_uri).await?;
+    let config = load_node_config(&args.config_uri, None).await?;
     let (storage_resolver, metastore_resolver) =
         get_resolvers(&config.storage_configs, &config.metastore_configs);
     let mut metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
@@ -451,6 +452,10 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     let merge_scheduler_service_mailbox = universe.get_or_spawn_one();
     let split_cache =
         Arc::new(IndexingSplitCache::from_config(&indexer_config, &config.data_dir_path).await?);
+    let fingerprinter_opt = config
+        .docs_clustering_config
+        .as_ref()
+        .map(Fingerprinter::new);
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
@@ -464,6 +469,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         storage_resolver,
         EventBroker::default(),
         split_cache,
+        fingerprinter_opt,
     )
     .await?;
     let (indexing_server_mailbox, indexing_server_handle) =
@@ -536,7 +542,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
 pub async fn local_search_cli(args: LocalSearchArgs) -> anyhow::Result<()> {
     debug!(args=?args, "local-search");
     println!("❯ Searching directly on the index storage (without calling REST API)...");
-    let config = load_node_config(&args.config_uri).await?;
+    let config = load_node_config(&args.config_uri, None).await?;
     let (storage_resolver, metastore_resolver) =
         get_resolvers(&config.storage_configs, &config.metastore_configs);
     let metastore: MetastoreServiceClient =
@@ -574,7 +580,7 @@ pub async fn local_search_cli(args: LocalSearchArgs) -> anyhow::Result<()> {
 pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     debug!(args=?args, "run-merge-operations");
     println!("❯ Merging splits locally...");
-    let config = load_node_config(&args.config_uri).await?;
+    let config = load_node_config(&args.config_uri, None).await?;
     let (storage_resolver, metastore_resolver) =
         get_resolvers(&config.storage_configs, &config.metastore_configs);
     let mut metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
@@ -591,6 +597,10 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     let indexer_config = IndexerConfig::default();
     let universe = Universe::new();
     let merge_scheduler_service: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
+    let fingerprinter_opt = config
+        .docs_clustering_config
+        .as_ref()
+        .map(Fingerprinter::new);
     let indexing_server = IndexingService::new(
         config.node_id,
         config.data_dir_path,
@@ -604,6 +614,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         storage_resolver,
         EventBroker::default(),
         Arc::new(IndexingSplitCache::no_caching()),
+        fingerprinter_opt,
     )
     .await?;
     let (indexing_service_mailbox, indexing_service_handle) =
@@ -662,7 +673,7 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     debug!(args=?args, "garbage-collect-index");
     println!("❯ Garbage collecting index...");
 
-    let config = load_node_config(&args.config_uri).await?;
+    let config = load_node_config(&args.config_uri, None).await?;
     let (storage_resolver, metastore_resolver) =
         get_resolvers(&config.storage_configs, &config.metastore_configs);
     let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
@@ -792,7 +803,7 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     debug!(args=?args, "extract-split");
     println!("❯ Extracting split...");
 
-    let config = load_node_config(&args.config_uri).await?;
+    let config = load_node_config(&args.config_uri, None).await?;
     let (storage_resolver, metastore_resolver) =
         get_resolvers(&config.storage_configs, &config.metastore_configs);
     let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;

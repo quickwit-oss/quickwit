@@ -129,6 +129,7 @@ impl TestSandbox {
             storage_resolver.clone(),
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
+            None,
         )
         .await?;
         let (indexing_service, _indexing_service_handle) =

@@ -32,6 +32,7 @@ pub use crate::actors::{
     IndexingPipelineParams, IndexingService, MERGE_PUBLISHER_NAME, Sequencer, SplitsUpdateMailbox,
 };
 pub use crate::controlled_directory::ControlledDirectory;
+use crate::docs_clustering::Fingerprinter;
 use crate::models::IndexingStatistics;
 pub use crate::split_store::{
     IndexingSplitCache, IndexingSplitStore, SplitStoreQuota,
@@ -40,6 +41,7 @@ pub use crate::split_store::{
 
 pub mod actors;
 mod controlled_directory;
+pub mod docs_clustering;
 pub mod merge_policy;
 mod metrics;
 pub mod models;
@@ -75,6 +77,10 @@ pub async fn start_indexing_service(
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("starting indexer service");
     let ingest_api_service_mailbox = universe.get_one::<IngestApiService>();
+    let fingerprinter_opt = config
+        .docs_clustering_config
+        .as_ref()
+        .map(Fingerprinter::new);
     let indexing_service = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.to_path_buf(),
@@ -88,6 +94,7 @@ pub async fn start_indexing_service(
         storage_resolver,
         event_broker,
         indexing_split_cache,
+        fingerprinter_opt,
     )
     .await?;
     let (indexing_service, _) = universe.spawn_builder().spawn(indexing_service);

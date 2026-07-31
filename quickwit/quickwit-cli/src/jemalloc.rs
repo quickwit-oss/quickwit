@@ -99,7 +99,7 @@ mod profiled_tracing {
     use tracing_subscriber::{EnvFilter, Layer};
 
     fn time_formatter() -> UtcTime<Vec<BorrowedFormatItem<'static>>> {
-        let time_format = time::format_description::parse(
+        let time_format = time::format_description::parse_borrowed::<2>(
             "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z",
         )
         .expect("time format description should be valid");

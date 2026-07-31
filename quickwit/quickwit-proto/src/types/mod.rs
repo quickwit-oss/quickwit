@@ -47,8 +47,7 @@ pub type SourceId = String;
 
 pub type SubrequestId = u32;
 
-/// See the file `ingest.proto` for more details.
-pub type PublishToken = String;
+pub type IndexingPlanId = String;
 
 /// Uniquely identifies a shard and its underlying mrecordlog queue.
 pub type QueueId = String; // <index_uid>/<source_id>/<shard_id>
@@ -76,6 +75,33 @@ fn split_queue_id_inner(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)>
         source_id.to_string(),
         ShardId::from(shard_id),
     ))
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PublishToken(String);
+
+impl Deref for PublishToken {
+    type Target = String;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl PublishToken {
+    pub fn resolve(node_id: &str, indexing_plan_id: &str) -> Self {
+        if indexing_plan_id.is_empty() {
+            let ulid = if cfg!(test) { Ulid::nil() } else { Ulid::new() };
+            PublishToken(format!("{node_id}/{ulid}"))
+        } else {
+            PublishToken(format!("{indexing_plan_id}-{node_id}"))
+        }
+    }
+}
+
+impl From<String> for PublishToken {
+    fn from(token: String) -> Self {
+        PublishToken(token)
+    }
 }
 
 /// It can however appear only once in a given index.

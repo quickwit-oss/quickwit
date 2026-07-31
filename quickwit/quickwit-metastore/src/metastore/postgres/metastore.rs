@@ -23,7 +23,7 @@ use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::uri::Uri;
-use quickwit_common::{ServiceStream, get_bool_from_env, rate_limited_error};
+use quickwit_common::{ServiceStream, get_bool_from_env_cached, rate_limited_error};
 use quickwit_config::{
     IndexTemplate, IndexTemplateId, PostgresMetastoreConfig, validate_index_id_pattern,
 };
@@ -53,7 +53,9 @@ use quickwit_proto::metastore::{
     StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
     UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse, serde_utils,
 };
-use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, ShardId, SourceId};
+use quickwit_proto::types::{
+    IndexId, IndexUid, Position, PublishToken, ShardId, SourceId, queue_id,
+};
 use sea_query::{Alias, Asterisk, Expr, Func, PostgresQueryBuilder, Query, UnionType};
 use sea_query_binder::SqlxBinder;
 use sqlx::{Acquire, Executor, Postgres, Transaction};
@@ -61,14 +63,20 @@ use time::OffsetDateTime;
 use tracing::{debug, info, instrument, warn};
 use uuid::Uuid;
 
-use super::QW_POSTGRES_READ_ONLY_ENV_KEY;
 use super::error::convert_sqlx_err;
+use super::metrics::MetastoreKind;
 use super::migrator::Migrations;
 use super::model::{PgDeleteTask, PgIndex, PgIndexTemplate, PgShard, PgSplit, Splits};
 use super::parquet_model::{InsertableParquetSplit, ParquetSplitRecord, PgParquetSplit};
 use super::pool::TrackedPool;
 use super::split_stream::SplitStream;
-use super::utils::{append_query_filters_and_order_by, establish_connection};
+use super::utils::{
+    PostgresqlConnectionOptions, append_query_filters_and_order_by, establish_connection,
+};
+use super::{
+    QW_POSTGRES_READ_ONLY_ENV_KEY, QW_POSTGRES_SKIP_DEFERRED_MIGRATIONS_ENV_KEY,
+    QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY, QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY,
+};
 use crate::checkpoint::{
     IndexCheckpointDelta, PartitionId, SourceCheckpoint, SourceCheckpointDelta,
 };
@@ -101,11 +109,83 @@ impl fmt::Debug for PostgresqlMetastore {
     }
 }
 
+/// Connection/migration options for a [`PostgresqlMetastore`].
+#[derive(Clone, Copy, Debug)]
+struct PostgresqlMetastoreOptions {
+    metastore_kind: MetastoreKind,
+    read_only: bool,
+    skip_migrations: bool,
+    skip_locking: bool,
+    skip_deferred: bool,
+}
+
+impl PostgresqlMetastoreOptions {
+    /// Default options, with the read-only and migration flags read from the environment.
+    fn from_env() -> Self {
+        Self {
+            // The environment can make the connection read-only, but only the explicit
+            // `new_read_only` path represents the read-replica service kind.
+            metastore_kind: MetastoreKind::Primary,
+            // These environment variables are process-global and don't change over a process's
+            // lifetime, so they're read (and logged) once rather than on every metastore
+            // construction, which can recur frequently.
+            read_only: get_bool_from_env_cached!(QW_POSTGRES_READ_ONLY_ENV_KEY, false),
+            skip_migrations: get_bool_from_env_cached!(QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY, false),
+            skip_locking: get_bool_from_env_cached!(
+                QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY,
+                false
+            ),
+            skip_deferred: get_bool_from_env_cached!(
+                QW_POSTGRES_SKIP_DEFERRED_MIGRATIONS_ENV_KEY,
+                false
+            ),
+        }
+    }
+
+    /// Options for a read-only metastore: the connection is read-only and migrations are skipped,
+    /// since the read replica cannot be written to and is migrated by the primary.
+    fn read_only() -> Self {
+        Self {
+            metastore_kind: MetastoreKind::ReadReplica,
+            read_only: true,
+            skip_migrations: true,
+            skip_locking: false,
+            skip_deferred: true,
+        }
+    }
+}
+
 impl PostgresqlMetastore {
     /// Creates a metastore given a database URI.
     pub async fn new(
         postgres_metastore_config: &PostgresMetastoreConfig,
         connection_uri: &Uri,
+    ) -> MetastoreResult<Self> {
+        Self::new_with_options(
+            postgres_metastore_config,
+            connection_uri,
+            PostgresqlMetastoreOptions::from_env(),
+        )
+        .await
+    }
+
+    /// Creates a read-only metastore given a database URI.
+    pub async fn new_read_only(
+        postgres_metastore_config: &PostgresMetastoreConfig,
+        connection_uri: &Uri,
+    ) -> MetastoreResult<Self> {
+        Self::new_with_options(
+            postgres_metastore_config,
+            connection_uri,
+            PostgresqlMetastoreOptions::read_only(),
+        )
+        .await
+    }
+
+    async fn new_with_options(
+        postgres_metastore_config: &PostgresMetastoreConfig,
+        connection_uri: &Uri,
+        options: PostgresqlMetastoreOptions,
     ) -> MetastoreResult<Self> {
         let min_connections = postgres_metastore_config.min_connections;
         let max_connections = postgres_metastore_config.max_connections.get();
@@ -119,20 +199,26 @@ impl PostgresqlMetastore {
             .max_connection_lifetime_opt()
             .expect("PostgreSQL metastore config should have been validated");
 
-        let read_only = get_bool_from_env(QW_POSTGRES_READ_ONLY_ENV_KEY, false);
-
-        let connection_pool = establish_connection(
+        let connection_pool = establish_connection(PostgresqlConnectionOptions {
             connection_uri,
             min_connections,
             max_connections,
             acquire_timeout,
             idle_timeout_opt,
             max_lifetime_opt,
-            read_only,
-        )
+            read_only: options.read_only,
+            metastore_kind: options.metastore_kind,
+        })
         .await?;
 
-        Migrations::from_env(connection_pool.clone()).run().await?;
+        Migrations::new(
+            connection_pool.clone(),
+            options.skip_migrations,
+            options.skip_locking,
+            options.skip_deferred,
+        )
+        .run()
+        .await?;
 
         let metastore = PostgresqlMetastore {
             uri: connection_uri.clone(),
@@ -218,7 +304,7 @@ async fn try_apply_delta_v2(
         .map(|partition_id| partition_id.to_string())
         .collect();
 
-    let shards: Vec<(String, String, Option<PublishToken>)> = sqlx::query_as(
+    let shards: Vec<(String, String, Option<String>)> = sqlx::query_as(
         r#"
         SELECT
             shard_id, publish_position_inclusive, publish_token
@@ -245,11 +331,14 @@ async fn try_apply_delta_v2(
     let mut current_checkpoint = SourceCheckpoint::default();
 
     for (shard_id, current_position, current_publish_token_opt) in shards {
-        if current_publish_token_opt.is_none()
-            || current_publish_token_opt.unwrap() != publish_token
-        {
-            let message = "failed to apply checkpoint delta: invalid publish token".to_string();
-            return Err(MetastoreError::InvalidArgument { message });
+        let token_matches = match &current_publish_token_opt {
+            Some(current_publish_token) => *current_publish_token == *publish_token,
+            None => false,
+        };
+        if !token_matches {
+            return Err(MetastoreError::InvalidPublishToken {
+                queue_id: queue_id(index_uid, source_id, &ShardId::from(shard_id.as_str())),
+            });
         }
         let partition_id = PartitionId::from(shard_id);
         let current_position = Position::from(current_position);
@@ -732,7 +821,7 @@ impl MetastoreService for PostgresqlMetastore {
                         &index_uid,
                         &source_id,
                         checkpoint_delta.source_delta,
-                        publish_token,
+                        publish_token.into(),
                     )
                     .await?;
                 } else {
@@ -1431,6 +1520,11 @@ impl MetastoreService for PostgresqlMetastore {
             .bind(&request.publish_token)
             .fetch_all(&self.connection_pool)
             .await?;
+
+        if pg_shards.len() != request.shard_ids.len() {
+            warn_on_unacquired_shards(&request, &pg_shards);
+        }
+
         let acquired_shards = pg_shards
             .into_iter()
             .map(|pg_shard| pg_shard.into())
@@ -2265,7 +2359,7 @@ impl PostgresqlMetastore {
                             &index_uid_inner,
                             &source_id,
                             checkpoint_delta.source_delta,
-                            publish_token,
+                            publish_token.into(),
                         )
                         .await?;
                     } else {
@@ -2946,6 +3040,28 @@ impl PostgresqlMetastore {
         );
         Ok(EmptyResponse {})
     }
+}
+
+/// Best-effort diagnostics for the acquire error path: logs the shards from `request` that were not
+/// acquired — those absent from `acquired_pg_shards` because a more recent publish token owns them,
+/// or because they no longer exist. Does not touch the database.
+fn warn_on_unacquired_shards(request: &AcquireShardsRequest, acquired_pg_shards: &[PgShard]) {
+    let not_acquired_shard_ids: Vec<&ShardId> = request
+        .shard_ids
+        .iter()
+        .filter(|shard_id| {
+            !acquired_pg_shards
+                .iter()
+                .any(|pg_shard| &pg_shard.shard_id == *shard_id)
+        })
+        .collect();
+    info!(
+        index_uid=%request.index_uid(),
+        source_id=%request.source_id,
+        shard_ids=?not_acquired_shard_ids,
+        publish_token=%request.publish_token,
+        "failed to acquire shards: held by a more recent publish token, or no longer present"
+    );
 }
 
 async fn open_or_fetch_shard<'e>(
