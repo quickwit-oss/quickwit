@@ -34,18 +34,18 @@ quickwit-search = { workspace = true }
 quickwit-storage = { workspace = true }
 
 arrow = { workspace = true }
-datafusion = "53"
-datafusion-substrait = "53"
-datafusion-datasource = "53"
-datafusion-physical-plan = "53"
-datafusion-datasource-parquet = "53"
-datafusion-distributed = "1.0"
-object_store = "0.13"
+datafusion = "54"
+datafusion-substrait = "54"
+datafusion-datasource = "54"
+datafusion-physical-plan = "54"
+datafusion-datasource-parquet = "54"
+datafusion-distributed = "2.0"
+object_store = "0.14"
 
 [dev-dependencies]
 bytesize = { workspace = true }
-datafusion = "53"
-datafusion-substrait = "53"
+datafusion = "54"
+datafusion-substrait = "54"
 parquet = { workspace = true }
 prost = { workspace = true }
 serde_json = { workspace = true }
