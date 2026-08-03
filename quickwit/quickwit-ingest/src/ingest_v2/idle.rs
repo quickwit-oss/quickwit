@@ -22,7 +22,7 @@ use super::state::WeakIngesterState;
 const RUN_INTERVAL_PERIOD: Duration = if cfg!(test) {
     Duration::from_millis(50)
 } else {
-    Duration::from_secs(60)
+    Duration::from_mins(1)
 };
 
 /// Periodically closes idle shards.
