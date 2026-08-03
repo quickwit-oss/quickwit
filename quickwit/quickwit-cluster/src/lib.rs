@@ -133,7 +133,7 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         enable_standalone_compactors: node_config.enable_standalone_compactors,
     };
     let failure_detector_config = FailureDetectorConfig {
-        dead_node_grace_period: Duration::from_secs(2 * 60 * 60), // 2 hours
+        dead_node_grace_period: Duration::from_mins(15),
         ..Default::default()
     };
     let channel_factory = ChannelFactory::for_grpc(&node_config.grpc_config)?;
