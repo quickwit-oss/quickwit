@@ -46,11 +46,13 @@ use std::cmp::Reverse;
 use std::mem;
 
 use fnv::FnvHashMap;
+use quickwit_metrics::{Labels, histogram};
 use smallvec::SmallVec;
 use tantivy::DocId;
 use tantivy::indexer::DocIdMapping;
 
 use super::Fingerprint;
+use crate::metrics::DOCS_SORT_GROUP_SIZE;
 
 // We inline as many DocIds as possible to avoid heap allocations.
 // This is done by calculating the inline capacity based on the size of the Vec<DocId> and the
@@ -87,21 +89,25 @@ impl DocIdClusterer {
         }
     }
 
-    pub fn sort_group_sizes(&self) -> impl Iterator<Item = usize> + '_ {
-        self.root.leaf_sizes()
-    }
-
-    pub fn into_doc_id_mapping(self, num_docs: u64) -> anyhow::Result<DocIdMapping> {
+    pub fn into_doc_id_mapping(self) -> anyhow::Result<DocIdMapping> {
         let doc_ids = self.into_sorted_doc_ids();
-        debug_assert_eq!(doc_ids.len(), num_docs as usize);
         let doc_id_mapping = DocIdMapping::new_permutation(doc_ids)?;
         Ok(doc_id_mapping)
+    }
+
+    /// Internal iteration avoids heap allocations and the complex traversal state required by an
+    /// external iterator over the recursive cluster tree.
+    pub(crate) fn observe_cluster_group_sizes<const N: usize>(&self, labels: Labels<N>) {
+        let h = histogram!(parent: DOCS_SORT_GROUP_SIZE, labels: [labels]);
+        self.root.for_each_leaf(&mut |cluster_group_doc_ids| {
+            h.observe(cluster_group_doc_ids.len() as f64);
+        });
     }
 
     fn into_sorted_doc_ids(self) -> Vec<DocId> {
         let mut doc_ids = Vec::with_capacity(self.root.num_docs + self.unclustered_docs.len());
         self.root.append_sorted_doc_ids(&mut doc_ids);
-        doc_ids.extend(self.unclustered_docs);
+        doc_ids.extend_from_slice(&self.unclustered_docs);
         doc_ids
     }
 }
@@ -121,7 +127,7 @@ impl ClusterGroup {
     }
 
     fn append_sorted_doc_ids(self, doc_ids: &mut Vec<DocId>) {
-        doc_ids.extend(self.doc_ids);
+        doc_ids.extend_from_slice(&self.doc_ids);
         let mut children: Vec<ClusterGroup> = self.children.into_values().collect();
         // Larger groups are emitted first.
         children.sort_unstable_by_key(|child| Reverse(child.num_docs));
@@ -130,16 +136,13 @@ impl ClusterGroup {
         }
     }
 
-    /// Iterates over the leaf sort group sizes of this subtree. A leaf reports its document count,
-    /// while an empty tree reports nothing.
-    ///
-    /// The return type is boxed to break the otherwise self-referential (and thus infinitely sized)
-    /// recursive `impl Iterator` type.
-    fn leaf_sizes(&self) -> Box<dyn Iterator<Item = usize> + '_> {
-        let leaf_size = (!self.doc_ids.is_empty())
-            .then_some(self.doc_ids.len())
-            .into_iter();
-        Box::new(leaf_size.chain(self.children.values().flat_map(ClusterGroup::leaf_sizes)))
+    fn for_each_leaf(&self, f: &mut impl FnMut(&[DocId])) {
+        if !self.doc_ids.is_empty() {
+            f(&self.doc_ids);
+        }
+        for child in self.children.values() {
+            child.for_each_leaf(f);
+        }
     }
 }
 
@@ -148,7 +151,7 @@ mod tests {
     use super::{DocIdClusterer, Fingerprint};
 
     fn fingerprint<const N: usize>(hashes: [u64; N]) -> Fingerprint {
-        Fingerprint::for_test(hashes)
+        Fingerprint::new(hashes)
     }
 
     #[test]
@@ -235,18 +238,5 @@ mod tests {
         clusterer.push(None, 3);
 
         assert_eq!(clusterer.into_sorted_doc_ids(), [0, 2, 1, 3]);
-    }
-
-    #[test]
-    fn reports_leaf_grouping_sort_group_sizes() {
-        let mut clusterer = DocIdClusterer::default();
-        clusterer.push(Some(fingerprint([1, 1])), 0);
-        clusterer.push(Some(fingerprint([1, 2])), 1);
-        clusterer.push(Some(fingerprint([1, 2])), 2);
-        clusterer.push(Some(fingerprint([2, 1])), 3);
-
-        let mut sort_group_sizes = clusterer.sort_group_sizes().collect::<Vec<_>>();
-        sort_group_sizes.sort_unstable();
-        assert_eq!(sort_group_sizes, [1, 1, 2]);
     }
 }

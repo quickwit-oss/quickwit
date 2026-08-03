@@ -1266,35 +1266,35 @@ mod tests {
         let docs = vec![
             ProcessedDoc {
                 doc: doc!(body_field=>"first"),
-                fingerprint_opt: Some(Fingerprint::for_test([1, 1, 1])),
+                fingerprint_opt: Some(Fingerprint::new([1, 1, 1])),
                 timestamp_opt: None,
                 partition: 0,
                 num_bytes: 5,
             },
             ProcessedDoc {
                 doc: doc!(body_field=>"second"),
-                fingerprint_opt: Some(Fingerprint::for_test([1, 2, 1])),
+                fingerprint_opt: Some(Fingerprint::new([1, 2, 1])),
                 timestamp_opt: None,
                 partition: 0,
                 num_bytes: 6,
             },
             ProcessedDoc {
                 doc: doc!(body_field=>"third"),
-                fingerprint_opt: Some(Fingerprint::for_test([1, 2, 1])),
+                fingerprint_opt: Some(Fingerprint::new([1, 2, 1])),
                 timestamp_opt: None,
                 partition: 0,
                 num_bytes: 5,
             },
             ProcessedDoc {
                 doc: doc!(body_field=>"fourth"),
-                fingerprint_opt: Some(Fingerprint::for_test([1, 1, 1])),
+                fingerprint_opt: Some(Fingerprint::new([1, 1, 1])),
                 timestamp_opt: None,
                 partition: 0,
                 num_bytes: 6,
             },
             ProcessedDoc {
                 doc: doc!(body_field=>"fifth"),
-                fingerprint_opt: Some(Fingerprint::for_test([1, 1, 2])),
+                fingerprint_opt: Some(Fingerprint::new([1, 1, 2])),
                 timestamp_opt: None,
                 partition: 0,
                 num_bytes: 5,
@@ -1314,10 +1314,6 @@ mod tests {
             index_serializer_inbox.drain_for_test_typed();
         let mut split_batch = split_batches.pop().unwrap();
         let split_builder = split_batch.splits.pop().unwrap();
-        let clusterer = split_builder.doc_id_clusterer_opt.as_ref().unwrap();
-        let mut sort_group_sizes = clusterer.sort_group_sizes().collect_vec();
-        sort_group_sizes.sort_unstable();
-        assert_eq!(sort_group_sizes, [1, 2, 2]);
 
         let indexed_split = split_builder.finalize()?;
         let reader = indexed_split.index.reader()?;

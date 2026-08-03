@@ -91,7 +91,7 @@ impl Deref for Fingerprint {
 
 #[cfg(test)]
 impl Fingerprint {
-    pub(crate) fn for_test<const N: usize>(hashes: [u64; N]) -> Self {
+    pub(crate) fn new<const N: usize>(hashes: [u64; N]) -> Self {
         let mut fingerprint = SmallVec::new();
         fingerprint.extend_from_slice(&hashes);
         Self(fingerprint)
