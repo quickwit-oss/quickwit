@@ -14,23 +14,22 @@
 
 //! Fingerprint computation.
 //!
-//! A fingerprint contains two independent components:
-//! 1. the schema hash, represented by the sorted set of leaf JSON paths;
-//! 2. the grouping hash, represented by raw string values or token types from the configured string
-//!    fields.
+//! A fingerprint contains one hash for each configured fingerprint policy, in configuration order.
+//! Each policy can combine:
+//! 1. structure fields, represented by sorted sets of leaf JSON paths;
+//! 2. raw fields, represented by their exact string values;
+//! 3. tokenized fields, represented by their token types.
 //!
 //! ```text
 //! JSON document
 //!     |
-//!     +--> schema paths, excluding paths configured by `structure.exclude`
-//!     |
-//!     +--> configured grouping fields
-//!              |
-//!              +--> Tokenized: hash token types, not literal values
-//!              +--> Raw:       hash the exact string value
+//!     +--> policy 0 fields --> hash 0
+//!     +--> policy 1 fields --> hash 1
+//!     +--> ...
+//!     +--> policy N fields --> hash N
 //!     |
 //!     v
-//! Fingerprint
+//! Fingerprint [hash 0, hash 1, ..., hash N]
 //! ```
 //!
 //! Tokenized fields use the sequence of token types as a lightweight message template. This keeps
@@ -46,8 +45,8 @@
 //!     -> Word Gap Word Gap Word Gap Number
 //! ```
 //!
-//! These two values produce the same tokenized signature and can be ordered together. A different
-//! shape produces a different signature:
+//! These two values produce the same tokenized signature and policy hash, so they can be ordered
+//! together. A different shape produces a different signature:
 //!
 //! ```text
 //! "connection from 1.2.3.4"
@@ -56,7 +55,7 @@
 //!
 //! Raw string fields keep exact-value differences, which is useful for dimensions such as
 //! `service`. Missing fields and non-string values are encoded as absent so configured field
-//! positions remain distinct.
+//! positions remain distinct within a policy hash.
 use std::hash::Hasher;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -78,6 +77,8 @@ const FIELD_BOUNDARY: u8 = 0xFD;
 const TOKENIZED_TOKEN_SEPARATOR: u8 = 0xFE;
 const MAX_GROUPING_TOKENS: usize = 50;
 
+// Inline 4 hashes to avoid heap allocations.
+// This is usually enough for most use cases.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Fingerprint(SmallVec<[u64; 4]>);
 
