@@ -876,3 +876,13 @@ RUST_LOG=debug quickwit run
 # run with log level info, except for indexing related logs
 RUST_LOG=info,quickwit_indexing=debug quickwit run
 ```
+
+### QW_METRICS_LABELS
+
+Attach the same labels to every Quickwit metric. Specify labels as a comma-separated list of `name=value` pairs.
+
+*Example*
+
+`QW_METRICS_LABELS="environment=production,region=us-east-1" quickwit run`
+
+The environment variable is read once, when the first metric is initialized. Set it before starting Quickwit; changing it while Quickwit is running has no effect.
