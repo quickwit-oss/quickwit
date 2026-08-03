@@ -252,13 +252,9 @@ mod tests {
         for target_phase_secs in [0, 1, 2, 5, 10, 15, 20, 25, 29, 30, 1_000] {
             for start_time_secs in [0, 1, 2, 5, 10, 15, 20, 25, 29, 30] {
                 let target_phase = Duration::from_secs(target_phase_secs);
-                let semaphore = Arc::new(Semaphore::new(1));
                 tokio::time::sleep(Duration::from_secs(start_time_secs)).await;
-                let indexing_cycle = IndexingCycle::new_with_phase(
-                    target_phase,
-                    Duration::from_secs(30),
-                    Some(semaphore.clone()),
-                );
+                let indexing_cycle =
+                    IndexingCycle::new_with_phase(target_phase, Duration::from_secs(30), None);
                 let initial_sleep_duration: Duration = indexing_cycle.initial_sleep_duration();
                 tokio::time::sleep(initial_sleep_duration).await;
                 let target_phase_millis = indexing_cycle.target_phase.as_millis() as i64;
@@ -272,11 +268,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cooperative_indexing_simple() {
+    async fn test_indexing_cycle_simple() {
         tokio::time::pause();
-        let semaphore = Arc::new(Semaphore::new(1));
-        let indexing_cycle =
-            IndexingCycle::new("id", Duration::from_secs(30), Some(semaphore.clone()));
+        let indexing_cycle = IndexingCycle::new("id", Duration::from_secs(30), None);
         let guard = indexing_cycle.indexing_period().await;
         tokio::time::advance(Duration::from_secs(10)).await;
         let (sleep_time, metrics) = guard.end_of_work(100_000_000);
@@ -334,23 +328,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cooperative_indexing_nudge_to_phase() {
+    async fn test_indexing_cycle_nudge_to_phase() {
         tokio::time::pause();
-        let num_threads = 10;
         let num_pipelines = 100;
         let num_steps = 15;
-        let semaphore = Arc::new(Semaphore::new(num_threads));
         let commit_timeout = Duration::from_secs(30);
         let t0 = Instant::now();
         let mut handles = Vec::new();
         for i in 0..num_pipelines {
             let target_phase =
                 Duration::from_millis(commit_timeout.as_millis() as u64 * i / num_pipelines);
-            let indexing_cycle = IndexingCycle::new_with_phase(
-                target_phase,
-                commit_timeout,
-                Some(semaphore.clone()),
-            );
+            let indexing_cycle = IndexingCycle::new_with_phase(target_phase, commit_timeout, None);
             let join_handle = tokio::task::spawn(async move {
                 let mut last_phase = 0;
                 for _ in 0..num_steps {
