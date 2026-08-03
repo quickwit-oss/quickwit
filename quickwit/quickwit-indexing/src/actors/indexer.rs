@@ -51,7 +51,7 @@ use tracing::{Span, debug, info_span, warn};
 use ulid::Ulid;
 
 use super::IndexSerializer;
-use super::cooperative_indexing::{IndexingCycle, IndexingPeriod};
+use super::indexing_cycle::{IndexingCycle, IndexingPeriod};
 use crate::docs_clustering::{DocIdClusterer, Fingerprinter};
 use crate::metrics::SPLIT_BUILDERS;
 use crate::models::{
@@ -426,7 +426,8 @@ impl Actor for Indexer {
             .sum::<u64>();
 
         // This also drops the indexing permit, if any.
-        let (sleep_duration, pipeline_metrics) = indexing_period.end_of_work(uncompressed_num_bytes);
+        let (sleep_duration, pipeline_metrics) =
+            indexing_period.end_of_work(uncompressed_num_bytes);
 
         self.counters.pipeline_metrics_opt = Some(pipeline_metrics);
 
