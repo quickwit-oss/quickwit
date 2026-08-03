@@ -35,9 +35,12 @@ static METRICS_LABELS_ENV_VAR: LazyLock<Box<[Label]>> = LazyLock::new(||
         // QW_METRICS_LABELS="environment=test,region=us-east-1,foo=bar"
         match std::env::var(super::METRICS_LABELS_ENV_VAR_NAME) {
             Ok(labels) => {
+                const LABELS_SEPARATOR: char = ',';
+                const KEY_VALUE_SEPARATOR: char = '=';
+
                 let labels: Vec<Label> = labels
-                    .split(',')
-                    .flat_map(|label| label.split_once('='))
+                    .split(LABELS_SEPARATOR)
+                    .flat_map(|label| label.split_once(KEY_VALUE_SEPARATOR))
                     .map(|(name, value)| Label::new(
                         name.trim().to_string(), value.trim().to_string()
                     ))
