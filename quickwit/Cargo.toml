@@ -114,7 +114,7 @@ bitpacking = "0.9"
 bytes = { version = "1", features = ["serde"] }
 bytesize = { version = "2.4", features = ["serde"] }
 bytestring = "1.5"
-chitchat = "0.11.1"
+chitchat = "0.11.2"
 chrono = { version = "0.4", default-features = false, features = [
   "clock",
   "std",
