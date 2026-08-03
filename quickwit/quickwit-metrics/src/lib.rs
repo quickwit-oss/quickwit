@@ -269,7 +269,7 @@ pub const SYSTEM: &str = "quickwit";
 pub const SEPARATOR: &str = "_";
 
 /// The name of the environment variable that contains the injected labels for all the metrics.
-pub(crate) const METRICS_LABELS_ENV_VAR_NAME: &str = "QW_METRICS_LABELS";
+pub(crate) const QW_METRICS_LABELS_ENV_VAR: &str = "QW_METRICS_LABELS";
 
 // ─── Metric modules ───
 mod counter;

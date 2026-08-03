@@ -26,14 +26,14 @@ pub use const_format::concatcp as __concatcp;
 use metrics::Label;
 use rustc_hash::FxHasher;
 
-static METRICS_LABELS_ENV_VAR: LazyLock<Box<[Label]>> = LazyLock::new(||
+static LABELS_ENV_VAR: LazyLock<Box<[Label]>> = LazyLock::new(||
         // quickwit-common defines common helpers for getting environment variables.
         // However, we need to use the `std::env::var` function directly here because
         // quickwit-common depends on quickwit-metrics and it would cause a circular dependency.
 
         // The format of the environment variable is:
         // QW_METRICS_LABELS="environment=test,region=us-east-1,foo=bar"
-        match std::env::var(super::METRICS_LABELS_ENV_VAR_NAME) {
+        match std::env::var(super::QW_METRICS_LABELS_ENV_VAR) {
             Ok(labels) => {
                 const LABELS_SEPARATOR: char = ',';
                 const KEY_VALUE_SEPARATOR: char = '=';
@@ -54,7 +54,7 @@ static METRICS_LABELS_ENV_VAR: LazyLock<Box<[Label]>> = LazyLock::new(||
 /// Returns the labels from the environment variable.
 #[doc(hidden)]
 pub fn __labels_env_var() -> &'static [Label] {
-    METRICS_LABELS_ENV_VAR.as_ref()
+    LABELS_ENV_VAR.as_ref()
 }
 
 /// Counts the number of token-tree arguments at compile time.
