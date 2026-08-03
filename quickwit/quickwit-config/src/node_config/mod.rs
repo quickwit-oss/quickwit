@@ -210,6 +210,8 @@ pub struct IndexerConfig {
     pub enable_otlp_endpoint: bool,
     #[serde(default = "IndexerConfig::default_enable_cooperative_indexing")]
     pub enable_cooperative_indexing: bool,
+    /// Spreads the indexing pipelines of a node uniformly in time, so that they don't all use
+    /// the same resources at the same time. Implied by `enable_cooperative_indexing`.
     #[serde(default = "IndexerConfig::default_enable_spread_indexing_pipelines")]
     pub enable_spread_indexing_pipelines: bool,
     #[serde(default = "IndexerConfig::default_cpu_capacity")]

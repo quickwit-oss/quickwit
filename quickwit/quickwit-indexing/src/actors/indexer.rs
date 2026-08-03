@@ -287,7 +287,7 @@ impl IndexerState {
             .get_or_create_workbench(indexing_workbench_opt, ctx)
             .await?;
         if publish_lock.is_dead() {
-            // Release indexing permit early.
+            // Release indexing permit early if there is one.
             indexing_workbench_opt.take();
             return Ok(());
         }
@@ -425,7 +425,7 @@ impl Actor for Indexer {
             .map(|split| split.split_attrs.uncompressed_docs_size_in_bytes)
             .sum::<u64>();
 
-        // This also drops the indexing permit.
+        // This also drops the indexing permit, if any.
         let (sleep_duration, pipeline_metrics) = indexing_period.end_of_work(uncompressed_num_bytes);
 
         self.counters.pipeline_metrics_opt = Some(pipeline_metrics);

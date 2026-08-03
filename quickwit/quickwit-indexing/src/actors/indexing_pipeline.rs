@@ -554,6 +554,8 @@ pub struct IndexingPipelineParams {
     pub split_store: IndexingSplitStore,
     pub max_concurrent_split_uploads_index: usize,
     pub cooperative_indexing_permits: Option<Arc<Semaphore>>,
+    /// Spreads the indexing pipelines of a node uniformly in time. Implied by cooperative
+    /// indexing.
     pub spread_indexing_pipelines: bool,
 
     // Merge-related parameters

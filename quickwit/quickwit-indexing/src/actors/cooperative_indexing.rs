@@ -27,20 +27,22 @@ const NUDGE_TOLERANCE: Duration = Duration::from_secs(5);
 // Origin of time. It is used to compute the phase of the pipeline.
 static ORIGIN_OF_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
 
-/// Cooperative indexing is a mechanism to deal with a large amount of pipelines.
+/// The indexing cycle is a mechanism to deal with a large amount of pipelines.
 ///
-/// Instead of having all pipelines index concurrently, cooperative indexing:
-/// - have them take turn, making sure that at most only N pipelines are indexing at the same time.
-///   This has the benefit is reducing RAM using (by having a limited number of `IndexWriter` at the
-///   same time), reducing context switching.
-/// - keeps the different pipelines work uniformously spread in time. If the system is not at
-///   capacity, we prefer to have the indexing pipeline as desynchronized as possible to make sure
-///   they don't all use the same resources (disk/cpu/network) at the same time.
+/// Instead of having all pipelines index concurrently, the cycle keeps the different
+/// pipelines' work uniformly spread in time. If the system is not
+/// at capacity, we prefer to have the indexing pipelines as desynchronized as possible
+/// to make sure they don't all use the same resources (disk/cpu/network) at the
+/// same time.
+///
+/// Optionally, it is possible to have them take turns, making sure that at most N pipelines are
+/// indexing at the same time. This has the benefit of reducing RAM usage (by having a limited
+/// number of `IndexWriter` at the same time), reducing context switching.
 ///
 /// It works by:
-/// - a semaphore is used to restrict the number of pipelines indexing at the same time.
-/// - in the indexer when `on_drain` is called, the indexer will cut a split and "go to sleep" for a
-///   given amount of time.
+/// - an optional semaphore is used to restrict the number of pipelines indexing at the same time.
+/// - in the indexer when `on_drained_messages` is called, the indexer will cut a split and "go to
+///   sleep" for a given amount of time.
 ///
 /// The key logic is in the computation of that sleep time.
 ///
@@ -56,20 +58,20 @@ static ORIGIN_OF_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
 ///
 /// Each period of this cycle is divided into three phases.
 /// - waking [t_wake..t_work_start) acquisition of the period guard (this is instantaneous)
-///   acquisition of the semaphore
+///   acquisition of the semaphore if any
 /// - working [t_work_start..t_work_end)
 /// - sleeping [t=t_work_end..t_sleep_end)
 ///
-/// The idea is to first pick the sleep time to to create a cycle of period
+/// The idea is to first pick the sleep time to create a cycle of period
 /// `commit_timeout`.
-///   sleep_time := max(0, commit_timeout - (t_workend - t_wake))
+///   sleep_time := max(0, commit_timeout - (t_work_end - t_wake))
 ///
 /// If the work phase is too long, the regular commit timeout mechanism
-/// kicks in an the pipeline will create a split without waiting for the
+/// kicks in and the pipeline will create a split without waiting for the
 /// mailbox to be drained.
 ///
 /// We then allow ourselves to tweak the sleep time one way or another by at
-/// most two seconds to eventually nudge the system toward the desired phase.
+/// most `NUDGE_TOLERANCE` to eventually nudge the system toward the desired phase.
 pub(crate) struct IndexingCycle {
     target_phase: Duration,
     commit_timeout: Duration,
@@ -77,7 +79,7 @@ pub(crate) struct IndexingCycle {
 }
 
 impl IndexingCycle {
-    /// Creates a new cooperative indexing cycle object.
+    /// Creates a new indexing cycle.
     /// `phase_id` is hashed to compute the target phase.
     pub fn new(
         phase_id: &(impl Hash + ?Sized),
@@ -100,7 +102,7 @@ impl IndexingCycle {
         commit_timeout: Duration,
         indexing_permits_opt: Option<Arc<Semaphore>>,
     ) -> IndexingCycle {
-        // Force the initial of the origin of time.
+        // Force the initialization of the origin of time.
         let _t0 = *ORIGIN_OF_TIME;
         IndexingCycle {
             target_phase,
@@ -145,9 +147,10 @@ impl IndexingCycle {
 }
 
 pub(crate) struct IndexingPeriod {
-    // measured right before the acquisition of the indexing semaphore
+    // measured right before the acquisition of the indexing semaphore, if any
     t_wake: Instant,
-    // measured after the acquisition of the semaphore.
+    // measured after the acquisition of the semaphore, if any. Equal to `t_wake` when the cycle
+    // has no semaphore.
     t_work_start: Instant,
     commit_timeout: Duration,
     target_phase: Duration,
@@ -200,8 +203,8 @@ impl IndexingPeriod {
         }
     }
 
-    /// This drops the indexing permit, allowing another indexer to start indexing.
-    /// This function also returns the amount of time to sleep until the next period.
+    /// If an indexing permit is being held, it is released here, allowing another indexer to start
+    /// indexing. This function also returns the amount of time to sleep until the next period.
     pub fn end_of_work(self, uncompressed_num_bytes: u64) -> (Duration, PipelineMetrics) {
         let end = Instant::now();
         let sleep_duration = self.compute_sleep_duration(end);
