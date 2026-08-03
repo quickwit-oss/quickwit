@@ -147,10 +147,6 @@ required-features = ["fail/failpoints"]
 name = "doc_process_vrl_bench"
 harness = false
 
-[[bench]]
-name = "doc_id_clusterer_bench"
-harness = false
-
 [package.metadata.cargo-machete]
 # used to vendor/static build native dependencies
 ignored = ["libz-sys", "openssl"]
