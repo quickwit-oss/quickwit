@@ -9101,6 +9101,7 @@ dependencies = [
 name = "quickwit-metrics"
 version = "0.9.0"
 dependencies = [
+ "anyhow",
  "atomic_float",
  "const_format",
  "criterion",

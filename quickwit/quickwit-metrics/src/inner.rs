@@ -19,42 +19,21 @@
 //! items via `$crate::`. **Do not use directly.**
 
 use std::hash::{Hash, Hasher};
-use std::sync::LazyLock;
 
 #[doc(hidden)]
 pub use const_format::concatcp as __concatcp;
 use metrics::Label;
 use rustc_hash::FxHasher;
 
-static LABELS_ENV_VAR: LazyLock<Box<[Label]>> = LazyLock::new(||
-        // quickwit-common defines common helpers for getting environment variables.
-        // However, we need to use the `std::env::var` function directly here because
-        // quickwit-common depends on quickwit-metrics and it would cause a circular dependency.
+use crate::LABELS_ENV_VAR;
 
-        // The format of the environment variable is:
-        // QW_METRICS_LABELS="environment=test,region=us-east-1,foo=bar"
-        match std::env::var(super::QW_METRICS_LABELS_ENV_VAR) {
-            Ok(labels) => {
-                const LABELS_SEPARATOR: char = ',';
-                const KEY_VALUE_SEPARATOR: char = '=';
-
-                let labels: Vec<Label> = labels
-                    .split(LABELS_SEPARATOR)
-                    .flat_map(|label| label.split_once(KEY_VALUE_SEPARATOR))
-                    .map(|(name, value)| Label::new(
-                        name.trim().to_string(), value.trim().to_string()
-                    ))
-                    .collect();
-                labels.into_boxed_slice()
-            },
-            Err(_) => Vec::new().into_boxed_slice(),
-        });
-
-// ─── Helper functions ───
 /// Returns the labels from the environment variable.
 #[doc(hidden)]
 pub fn __labels_env_var() -> &'static [Label] {
-    LABELS_ENV_VAR.as_ref()
+    match LABELS_ENV_VAR.get() {
+        Some(labels) => labels.as_ref(),
+        None => &[],
+    }
 }
 
 /// Counts the number of token-tree arguments at compile time.
