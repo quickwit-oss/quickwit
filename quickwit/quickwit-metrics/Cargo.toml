@@ -11,6 +11,7 @@ description = "Type-safe, zero-allocation metric declarations built on the metri
 categories = ["development-tools::profiling"]
 
 [dependencies]
+anyhow = { workspace = true }
 metrics = { workspace = true }
 metrics-util = { workspace = true }
 inventory = { workspace = true }
