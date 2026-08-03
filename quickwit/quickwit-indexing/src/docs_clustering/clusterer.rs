@@ -52,7 +52,7 @@ use tantivy::DocId;
 use tantivy::indexer::DocIdMapping;
 
 use super::Fingerprint;
-use crate::metrics::DOCS_SORT_GROUP_SIZE;
+use crate::metrics::DOCS_CLUSTER_GROUP_SIZE;
 
 // We inline as many DocIds as possible to avoid heap allocations.
 // This is done by calculating the inline capacity based on the size of the Vec<DocId> and the
@@ -95,7 +95,7 @@ impl DocIdClusterer {
     }
 
     pub(crate) fn observe_cluster_group_sizes<const N: usize>(&self, labels: Labels<N>) {
-        let h = histogram!(parent: DOCS_SORT_GROUP_SIZE, labels: [labels]);
+        let h = histogram!(parent: DOCS_CLUSTER_GROUP_SIZE, labels: [labels]);
         self.root.for_each_leaf(&mut |cluster_group_doc_ids| {
             h.observe(cluster_group_doc_ids.len() as f64);
         });

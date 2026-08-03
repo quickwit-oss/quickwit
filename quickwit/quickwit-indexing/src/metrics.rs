@@ -36,9 +36,9 @@ pub(crate) static PROCESSED_BYTES: LazyCounter = lazy_counter!(
         subsystem: "indexing",
 );
 
-pub(crate) static DOCS_SORT_GROUP_SIZE: LazyHistogram = lazy_histogram!(
-        name: "docs_sort_group_size",
-        description: "Document sort group size when finalizing an indexed split.",
+pub(crate) static DOCS_CLUSTER_GROUP_SIZE: LazyHistogram = lazy_histogram!(
+        name: "docs_cluster_group_size",
+        description: "Document cluster group size when finalizing an indexed split.",
         subsystem: "indexing",
         buckets: exponential_buckets(1.0, 10.0, 8).unwrap(),
 );
