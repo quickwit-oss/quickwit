@@ -69,11 +69,10 @@ pub struct DocIdClusterer {
     unclustered_docs: ClusterDocIds,
 }
 
-/// A node in the fingerprint prefix tree.
+/// A group of documents that share the same fingerprint prefix.
 ///
-/// Each level of the tree partitions documents by one fingerprint hash. Internal nodes hold their
-/// children keyed by the hash at their level; leaf nodes (documents that share the exact same
-/// fingerprint) hold the corresponding doc IDs in insertion order.
+/// The root contains all documents. Each successive tree level groups them by the next hash in
+/// their fingerprint.
 #[derive(Default)]
 struct ClusterGroup {
     num_docs: usize,
@@ -95,8 +94,6 @@ impl DocIdClusterer {
         Ok(doc_id_mapping)
     }
 
-    /// Internal iteration avoids heap allocations and the complex traversal state required by an
-    /// external iterator over the recursive cluster tree.
     pub(crate) fn observe_cluster_group_sizes<const N: usize>(&self, labels: Labels<N>) {
         let h = histogram!(parent: DOCS_SORT_GROUP_SIZE, labels: [labels]);
         self.root.for_each_leaf(&mut |cluster_group_doc_ids| {
