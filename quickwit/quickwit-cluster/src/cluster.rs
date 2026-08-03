@@ -425,8 +425,15 @@ impl Cluster {
         let chitchat_state_snapshot = chitchat_guard.state_snapshot();
         let mut ready_nodes = HashSet::new();
         let mut live_nodes = HashSet::new();
+        let mut failure_detection_timeouts_millis = HashMap::new();
 
         for chitchat_id in chitchat_guard.live_nodes().cloned() {
+            if chitchat_id != self.self_chitchat_id {
+                if let Some(timeout) = chitchat_guard.failure_detection_timeout(&chitchat_id) {
+                    failure_detection_timeouts_millis
+                        .insert(chitchat_id.node_id.to_string(), timeout.as_millis() as u64);
+                }
+            }
             let node_state = chitchat_guard.node_state(&chitchat_id).expect(
                 "The node should always be present in the cluster state because we hold the \
                  Chitchat mutex.",
@@ -445,6 +452,7 @@ impl Cluster {
             ready_nodes,
             live_nodes,
             dead_nodes,
+            failure_detection_timeouts_millis,
             chitchat_state_snapshot,
         }
     }
@@ -689,6 +697,10 @@ pub struct ClusterSnapshot {
     #[schema(value_type  = Vec<NodeIdSchema>)]
     /// The set of cluster node IDs flagged as dead or faulty.
     pub dead_nodes: HashSet<ChitchatId>,
+
+    #[schema(value_type = Object, example = json!({"node-2": 3000}))]
+    /// For each other live node, the current adaptive failure-detection timeout, in milliseconds
+    pub failure_detection_timeouts_millis: HashMap<String, u64>,
 
     #[schema(
         value_type = Object,
