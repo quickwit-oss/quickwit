@@ -91,3 +91,13 @@ PostgreSQL-backed metastores also expose connection pool gauges:
 | `quickwit_storage` | `object_storage_puts_total` | Number of objects uploaded. May differ from object_storage_requests_parts due to multipart upload | `counter` |
 | `quickwit_storage` | `object_storage_puts_parts` | Number of object parts uploaded | `counter` |
 | `quickwit_storage` | `object_storage_download_num_bytes` | Amount of data downloaded from an object storage | `counter` |
+
+## Global labels
+
+You can attach the same labels to every Quickwit metric by setting the `QW_METRICS_LABELS` environment variable. Specify labels as a comma-separated list of `name=value` pairs:
+
+```bash
+QW_METRICS_LABELS="environment=production,region=us-east-1" quickwit run
+```
+
+The environment variable is read once, when the first metric is initialized. Set it before starting Quickwit; changing it while Quickwit is running has no effect.

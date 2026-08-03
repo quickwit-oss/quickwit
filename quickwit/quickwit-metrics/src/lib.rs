@@ -268,6 +268,9 @@
 pub const SYSTEM: &str = "quickwit";
 pub const SEPARATOR: &str = "_";
 
+/// The name of the environment variable that contains the injected labels for all the metrics.
+pub(crate) const METRICS_LABELS_ENV_VAR_NAME: &str = "QW_METRICS_LABELS";
+
 // ─── Metric modules ───
 mod counter;
 mod gauge;
@@ -288,7 +291,7 @@ pub use gauge::__gauge_get_or_register;
 #[doc(hidden)]
 pub use histogram::__histogram_get_or_register;
 #[doc(hidden)]
-pub use inner::{__concatcp, __key_hash, __sep};
+pub use inner::{__concatcp, __key_hash, __labels_env_var, __sep};
 
 // Re-exports of `metrics` and `inventory` used inside macro expansions.
 #[doc(hidden)]

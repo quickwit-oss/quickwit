@@ -19,12 +19,40 @@
 //! items via `$crate::`. **Do not use directly.**
 
 use std::hash::{Hash, Hasher};
+use std::sync::LazyLock;
 
 #[doc(hidden)]
 pub use const_format::concatcp as __concatcp;
+use metrics::Label;
 use rustc_hash::FxHasher;
 
+static METRICS_LABELS_ENV_VAR: LazyLock<Box<[Label]>> = LazyLock::new(||
+        // quickwit-common defines common helpers for getting environment variables.
+        // However, we need to use the `std::env::var` function directly here because
+        // quickwit-common depends on quickwit-metrics and it would cause a circular dependency.
+
+        // The format of the environment variable is:
+        // QW_METRICS_LABELS="environment=test,region=us-east-1,foo=bar"
+        match std::env::var(super::METRICS_LABELS_ENV_VAR_NAME) {
+            Ok(labels) => {
+                let labels: Vec<Label> = labels
+                    .split(',')
+                    .flat_map(|label| label.split_once('='))
+                    .map(|(name, value)| Label::new(
+                        name.trim().to_string(), value.trim().to_string()
+                    ))
+                    .collect();
+                labels.into_boxed_slice()
+            },
+            Err(_) => Vec::new().into_boxed_slice(),
+        });
+
 // ─── Helper functions ───
+/// Returns the labels from the environment variable.
+#[doc(hidden)]
+pub fn __labels_env_var() -> &'static [Label] {
+    METRICS_LABELS_ENV_VAR.as_ref()
+}
 
 /// Counts the number of token-tree arguments at compile time.
 #[doc(hidden)]
@@ -94,7 +122,17 @@ macro_rules! __key_info_metadata {
         static LABELS: [$crate::__metrics::Label; $crate::__count!($($label)*)] = [
             $($crate::__metrics::Label::from_static_parts($label, $value)),*
         ];
-        static KEY: $crate::__metrics::Key = $crate::__metrics::Key::from_static_parts(KEY_NAME, &LABELS);
+        static KEY: std::sync::LazyLock<$crate::__metrics::Key> = std::sync::LazyLock::new(|| {
+            let labels_env_var = $crate::__labels_env_var();
+            if labels_env_var.is_empty() {
+                $crate::__metrics::Key::from_static_parts(KEY_NAME, &LABELS)
+            } else {
+                let mut labels = Vec::with_capacity(LABELS.len() + labels_env_var.len());
+                labels.extend(LABELS.iter().cloned());
+                labels.extend(labels_env_var.iter().cloned());
+                $crate::__metrics::Key::from_parts(KEY_NAME, labels)
+            }
+        });
     };
 }
 
