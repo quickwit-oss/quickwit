@@ -271,9 +271,7 @@ fn aws_checksum_algorithm(
 /// Coarse classification of an SDK error, used as a counter label.
 /// timeout, io, throttling, transient, or other.
 fn classify_sdk_error<E>(error: &SdkError<E>) -> &'static str
-where
-    E: ProvideErrorMetadata,
-{
+where E: ProvideErrorMetadata {
     match error {
         SdkError::TimeoutError(_) => "timeout",
         SdkError::DispatchFailure(failure) => {
