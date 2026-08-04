@@ -40,7 +40,7 @@ use tracing::{debug, info};
 
 use crate::metrics::ONGOING_NUM_DELETE_OPERATIONS_TOTAL;
 
-const PLANNER_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+const PLANNER_REFRESH_INTERVAL: Duration = Duration::from_mins(1);
 const NUM_STALE_SPLITS_TO_FETCH: usize = 1000;
 
 /// The `DeleteTaskPlanner` plans delete operations on splits for a given index.

@@ -63,7 +63,9 @@ use super::replication::{
 };
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
-use crate::ingest_v2::metrics::{RESET_SHARDS_OPERATIONS_TOTAL, STATUS, report_wal_usage};
+use crate::ingest_v2::metrics::{
+    RESET_SHARDS_OPERATIONS_TOTAL, STATUS, report_wal_limits, report_wal_usage,
+};
 use crate::ingest_v2::models::IngesterShardType;
 use crate::metrics::{DOCS_BYTES_TOTAL, DOCS_TOTAL, VALIDITY};
 use crate::mrecordlog_async::MultiRecordLogAsync;
@@ -73,7 +75,7 @@ use crate::{FollowerId, estimate_size};
 const MIN_RESET_SHARDS_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::ZERO
 } else {
-    Duration::from_secs(60)
+    Duration::from_mins(1)
 };
 
 /// Duration after which persist requests time out with
@@ -145,6 +147,8 @@ impl Ingester {
         BroadcastLocalShardsTask::spawn(cluster.clone(), weak_state.clone());
         BroadcastIngesterCapacityScoreTask::spawn(cluster, weak_state.clone());
         CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
+
+        report_wal_limits(disk_capacity, memory_capacity);
 
         let ingester = Self {
             self_node_id,
@@ -338,7 +342,7 @@ impl Ingester {
                 .inc();
 
                 let wal_usage = state_guard.mrecordlog.resource_usage();
-                report_wal_usage(wal_usage);
+                report_wal_usage(wal_usage, self.disk_capacity, self.memory_capacity);
             }
             Ok(Err(error)) => {
                 warn!("advise reset shards request failed: {error}");
@@ -813,7 +817,7 @@ impl Ingester {
         if disk_used >= self.disk_capacity.as_u64() * 90 / 100 {
             self.background_reset_shards();
         }
-        report_wal_usage(wal_usage);
+        report_wal_usage(wal_usage, self.disk_capacity, self.memory_capacity);
 
         let source_shard_updates = open_shard_counts
             .into_iter()
@@ -1029,7 +1033,7 @@ impl Ingester {
                 .await;
         }
         let wal_usage = state_guard.mrecordlog.resource_usage();
-        report_wal_usage(wal_usage);
+        report_wal_usage(wal_usage, self.disk_capacity, self.memory_capacity);
 
         state_guard.check_decommissioning_status().await;
         let truncate_response = TruncateShardsResponse {};
@@ -1224,14 +1228,14 @@ impl IngesterService for Ingester {
         let self_clone = self.clone();
         tokio::spawn(async move {
             const DECOMMISSION_DELAY: Duration = if cfg!(any(test, feature = "testsuite")) {
-                Duration::from_millis(100)
+                Duration::from_millis(200)
             } else {
-                // Having to wait for 10s is not great but we can live with it. During this time, we
+                // Having to wait for 15s is not great but we can live with it. During this time, we
                 // still make progress towards decommissioning because we gradually receive less
                 // write requests and indexing is still ongoing. However, it sets a floor on the
                 // amount of time with which we can fully decommission an ingester. This will be
                 // most noticeable when using Quickwit locally.
-                Duration::from_secs(10)
+                Duration::from_secs(15)
             };
             tokio::time::sleep(DECOMMISSION_DELAY).await;
 
@@ -1622,7 +1626,12 @@ mod tests {
 
         ingester
             .state
-            .init(ingester_ctx.tempdir.path(), RateLimiterSettings::default())
+            .init(
+                ingester_ctx.tempdir.path(),
+                ByteSize::mb(256),
+                ByteSize::mb(1),
+                RateLimiterSettings::default(),
+            )
             .await;
 
         let state_guard = ingester.state.lock_fully("test").await.unwrap();
@@ -3869,6 +3878,35 @@ mod tests {
         state_guard.shards.remove(&queue_id);
         state_guard.check_decommissioning_status().await;
         assert_eq!(state_guard.status(), IngesterStatus::Decommissioned);
+    }
+
+    #[tokio::test]
+    async fn test_check_decommissioning_status_with_empty_orphan_shard() {
+        // A non-advertisable shard is invisible to gossip/RPC-driven cleanup and will never be
+        // deleted, so the ingester must not wait for its removal to consider itself
+        // decommissioned as long as it is empty.
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
+        let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+
+        let empty_orphan_shard =
+            IngesterShard::new_solo(index_uid.clone(), source_id, ShardId::from(1))
+                .with_state(ShardState::Closed)
+                .build();
+        let queue_id = empty_orphan_shard.queue_id();
+        state_guard
+            .shards
+            .insert(queue_id.clone(), empty_orphan_shard);
+
+        state_guard
+            .set_status(IngesterStatus::Decommissioning)
+            .await;
+        state_guard.check_decommissioning_status().await;
+
+        assert_eq!(state_guard.status(), IngesterStatus::Decommissioned);
+        assert!(state_guard.shards.contains_key(&queue_id));
     }
 
     #[tokio::test]

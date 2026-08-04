@@ -50,7 +50,7 @@ use crate::{ClusterChangeStream, ClusterNode};
 const MARKED_FOR_DELETION_GRACE_PERIOD: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(2_500) // 2.5 secs
 } else {
-    Duration::from_secs(3_600 * 2) // 2 hours.
+    Duration::from_mins(15)
 };
 
 // An indexing task key is formatted as
@@ -303,10 +303,12 @@ impl Cluster {
         let future = async move {
             let mut inner = inner.write().await;
             for node in inner.live_nodes.values() {
-                if node.is_ready {
-                    change_stream_tx
+                if node.is_ready
+                    && change_stream_tx
                         .send(ClusterChange::Add(node.clone()))
-                        .expect("receiver end of the channel should be open");
+                        .is_err()
+                {
+                    return;
                 }
             }
             inner.change_stream_subscribers.push(change_stream_tx);

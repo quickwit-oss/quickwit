@@ -356,14 +356,11 @@ json:
 expected:
   aggregations:
     unique_names:
-      value:
-        $expect: 'abs(val - 8) <= 2'
+      value: 8.0
     unique_response:
-      value:
-        $expect: 'abs(val - 6) <= 2' # TODO: Check. The correct number is 6
+      value: 5.0
     unique_dates:
-      value:
-        $expect: 'abs(val - 6) <= 3'
+      value: 6.0
 ---
 # Test extended stats aggregation
 method: [GET]

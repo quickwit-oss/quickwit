@@ -12,10 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use quickwit_metrics::{LabelNames, LazyCounter, LazyGauge, label_names, lazy_counter, lazy_gauge};
+use quickwit_common::metrics::exponential_buckets;
+use quickwit_metastore::SplitMetadata;
+use quickwit_metrics::{
+    LabelNames, LazyCounter, LazyGauge, LazyHistogram, counter, histogram, label_names,
+    label_values, lazy_counter, lazy_gauge, lazy_histogram,
+};
 
 pub(crate) const ACTOR_NAME: LabelNames<1> = label_names!("actor_name");
 pub(crate) const COMPONENT: LabelNames<1> = label_names!("component");
+pub(crate) const INDEX_SOURCE: LabelNames<2> = label_names!("index", "source");
+pub(crate) const PUBLISHED_SPLIT: LabelNames<3> = label_names!("index", "source", "merge_ops");
 
 pub(crate) static PROCESSED_DOCS_TOTAL: LazyCounter = lazy_counter!(
         name: "processed_docs_total",
@@ -28,6 +35,69 @@ pub(crate) static PROCESSED_BYTES: LazyCounter = lazy_counter!(
         description: "Number of bytes of processed documents by index, source and processed status in [valid, schema_error, parse_error, transform_error]",
         subsystem: "indexing",
 );
+
+pub(crate) static DOCS_SORT_GROUP_SIZE: LazyHistogram = lazy_histogram!(
+        name: "docs_sort_group_size",
+        description: "Document sort group size when finalizing an indexed split.",
+        subsystem: "indexing",
+        buckets: exponential_buckets(1.0, 10.0, 8).unwrap(),
+);
+
+pub(crate) static PUBLISHED_SPLIT_BYTES_TOTAL: LazyCounter = lazy_counter!(
+    name: "published_split_bytes_total",
+    description: "Compressed bytes in successfully published splits.",
+    subsystem: "indexing",
+);
+
+pub(crate) static PUBLISHED_SPLIT_DOCS_TOTAL: LazyCounter = lazy_counter!(
+    name: "published_split_docs_total",
+    description: "Documents in successfully published splits.",
+    subsystem: "indexing",
+);
+
+pub(crate) static PUBLISHED_SPLITS_TOTAL: LazyCounter = lazy_counter!(
+    name: "published_splits_total",
+    description: "Number of successfully published splits.",
+    subsystem: "indexing",
+);
+
+pub(crate) static PUBLISHED_SPLIT_UNCOMPRESSED_BYTES_TOTAL: LazyCounter = lazy_counter!(
+    name: "published_split_uncompressed_bytes_total",
+    description: "Uncompressed document bytes in successfully published splits.",
+    subsystem: "indexing",
+);
+
+pub(crate) static PUBLISHED_SPLIT_SIZE_BYTES: LazyHistogram = lazy_histogram!(
+    name: "published_split_size_bytes",
+    description: "Compressed size in bytes of successfully published splits.",
+    subsystem: "indexing",
+    buckets: exponential_buckets(1_000_000.0, 2.0, 14).unwrap(),
+);
+
+/// Records one split after the metastore has successfully published it.
+///
+/// All metrics deliberately use the same labels so ratios computed over a time
+/// window describe the same set of splits.
+pub(crate) fn record_published_split(index_id: &str, split: &SplitMetadata) {
+    let index = quickwit_common::metrics::index_label(index_id);
+    let labels = label_values!(
+        PUBLISHED_SPLIT =>
+        index.to_string(),
+        split.source_id.to_string(),
+        split.num_merge_ops.to_string()
+    );
+    let split_size_bytes = split.footer_offsets.end;
+
+    counter!(parent: PUBLISHED_SPLIT_BYTES_TOTAL, labels: [labels.clone()])
+        .inc_by(split_size_bytes);
+    counter!(parent: PUBLISHED_SPLIT_DOCS_TOTAL, labels: [labels.clone()])
+        .inc_by(split.num_docs as u64);
+    counter!(parent: PUBLISHED_SPLITS_TOTAL, labels: [labels.clone()]).inc();
+    counter!(parent: PUBLISHED_SPLIT_UNCOMPRESSED_BYTES_TOTAL, labels: [labels.clone()])
+        .inc_by(split.uncompressed_docs_size_in_bytes);
+    histogram!(parent: PUBLISHED_SPLIT_SIZE_BYTES, labels: [labels])
+        .observe(split_size_bytes as f64);
+}
 
 pub(crate) static INDEXING_PIPELINES: LazyGauge = lazy_gauge!(
         name: "indexing_pipelines",

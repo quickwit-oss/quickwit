@@ -1,5 +1,6 @@
 [build.env]
 passthrough = [
+    "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS",
     "QW_COMMIT_DATE",
     "QW_COMMIT_HASH",
     "QW_COMMIT_TAGS",

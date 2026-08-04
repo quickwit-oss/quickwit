@@ -107,6 +107,7 @@ impl CompactorSupervisor {
             pipeline_slots_per_merge_execution,
             max_concurrent_split_uploads,
             max_merge_write_throughput,
+            ..
         } = compactor_config;
         let num_pipeline_slots =
             max_concurrent_merge_executions.get() * pipeline_slots_per_merge_execution.get();
@@ -471,11 +472,10 @@ mod tests {
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
         let compaction_client =
             CompactionPlannerServiceClient::from_mock(MockCompactionPlannerService::new());
-        let compactor_config = CompactorConfig {
-            max_concurrent_merge_executions: NonZeroUsize::new(max_concurrent_merge_executions)
-                .expect("max_concurrent_merge_executions must be non-zero"),
-            ..CompactorConfig::for_test()
-        };
+        let mut compactor_config = CompactorConfig::for_test();
+        compactor_config.max_concurrent_merge_executions =
+            NonZeroUsize::new(max_concurrent_merge_executions)
+                .expect("max_concurrent_merge_executions must be non-zero");
         CompactorSupervisor::new(
             NodeId::from_str("test-node"),
             compaction_client,
@@ -701,10 +701,8 @@ mod tests {
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
         let client = CompactionPlannerServiceClient::from_mock(mock);
         // 3 merge-executions → 6 pipeline slots
-        let compactor_config = CompactorConfig {
-            max_concurrent_merge_executions: NonZeroUsize::new(3).unwrap(),
-            ..CompactorConfig::for_test()
-        };
+        let mut compactor_config = CompactorConfig::for_test();
+        compactor_config.max_concurrent_merge_executions = NonZeroUsize::new(3).unwrap();
         let mut supervisor = CompactorSupervisor::new(
             NodeId::from_str("test-node"),
             client,
@@ -865,10 +863,8 @@ mod tests {
         });
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
         let client = CompactionPlannerServiceClient::from_mock(mock);
-        let compactor_config = CompactorConfig {
-            max_concurrent_merge_executions: NonZeroUsize::new(2).unwrap(),
-            ..CompactorConfig::for_test()
-        };
+        let mut compactor_config = CompactorConfig::for_test();
+        compactor_config.max_concurrent_merge_executions = NonZeroUsize::new(2).unwrap();
         let supervisor = CompactorSupervisor::new(
             NodeId::from_str("test-node"),
             client,
