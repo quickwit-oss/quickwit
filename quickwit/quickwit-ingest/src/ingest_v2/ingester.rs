@@ -54,7 +54,7 @@ use super::fetch::FetchStreamTask;
 use super::idle::CloseIdleShardsTask;
 use super::models::IngesterShard;
 use super::mrecordlog_utils::{
-    AppendDocBatchError, append_non_empty_doc_batch, check_enough_capacity,
+    AppendDocBatchError, append_non_empty_doc_batch, check_enough_capacity, wal_stats,
 };
 use super::rate_meter::RateMeter;
 use super::replication::{
@@ -941,13 +941,25 @@ impl Ingester {
     ) -> IngestV2Result<IngesterServiceStream<ObservationMessage>> {
         let status_stream = ServiceStream::from(self.state.status_rx.clone());
         let self_node_id = self.self_node_id.clone();
-        let observation_stream = status_stream.map(move |status| {
-            let observation_message = ObservationMessage {
-                node_id: self_node_id.to_string(),
-                status: status as i32,
-            };
-            Ok(observation_message)
-        });
+        let mrecordlog = self.state.mrecordlog();
+        let observation_stream =
+            ServiceStream::new(Box::pin(Box::pin(status_stream.then(move |status| {
+                let self_node_id = self_node_id.clone();
+                let mrecordlog = mrecordlog.clone();
+                async move {
+                    let mrecordlog_guard = mrecordlog.read().await;
+                    let (wal_memory_used_bytes, wal_disk_used_bytes, wal_num_records) =
+                        wal_stats(mrecordlog_guard.as_ref());
+                    let observation_message = ObservationMessage {
+                        node_id: self_node_id.to_string(),
+                        status: status as i32,
+                        wal_memory_used_bytes,
+                        wal_disk_used_bytes,
+                        wal_num_records,
+                    };
+                    Ok(observation_message)
+                }
+            }))));
         Ok(observation_stream)
     }
 

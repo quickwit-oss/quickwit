@@ -39,6 +39,18 @@ pub(crate) static COMPACTIONS_SUCCEEDED: LazyCounter = lazy_counter!(
     subsystem: "compactor",
 );
 
+static DECOMMISSION_RESULT_TOTAL: LazyCounter = lazy_counter!(
+    name: "decommission_result_total",
+    description: "Number of compactor decommission attempts by result",
+    subsystem: "compactor",
+);
+
+pub(crate) static DECOMMISSION_SUCCEEDED: LazyCounter =
+    lazy_counter!(parent: DECOMMISSION_RESULT_TOTAL, "result" => "success");
+
+pub(crate) static DECOMMISSION_FAILED: LazyCounter =
+    lazy_counter!(parent: DECOMMISSION_RESULT_TOTAL, "result" => "failure");
+
 pub(crate) static AVAILABLE_SLOTS: LazyGauge = lazy_gauge!(
     name: "available_slots",
     description: "number of compaction slots currently available on this compactor",
