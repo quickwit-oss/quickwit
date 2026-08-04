@@ -45,7 +45,7 @@ use tracing::{error, info, warn};
 static TLS_CERT_RELOADS_TOTAL: LazyCounter = lazy_counter!(
         name: "cert_reloads_total",
         description: "Total number of TLS certificate hot-reload attempts, labeled by `result` \
-                      (`success`: a new cert was applied without a restart; `error`: the attempt \
+                      (`success`: a new cert was applied without a restart; `failure`: the attempt \
                       failed and the current cert was kept).",
         subsystem: "tls",
 );

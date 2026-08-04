@@ -426,11 +426,15 @@ pub async fn notify_compactor_decommission(
     let Some(compactor_mailbox) = compactor_mailbox_opt else {
         return Ok(None);
     };
-    let status_rx = compactor_mailbox
-        .send_message_with_high_priority(Decommission)
-        .context("failed to initiate compactor decommission")?
-        .await
-        .context("compactor dropped decommission reply")?;
+    let status_rx = async {
+        compactor_mailbox
+            .send_message_with_high_priority(Decommission)
+            .context("failed to initiate compactor decommission")?
+            .await
+            .context("compactor dropped decommission reply")
+    }
+    .await
+    .inspect_err(|_| DECOMMISSION_FAILED.inc())?;
     Ok(Some(status_rx))
 }
 
