@@ -80,9 +80,8 @@ impl OpendalStorage {
         cfg: opendal::services::Gcs,
         http_transport: opendal::HttpTransporter,
     ) -> Result<Self, StorageResolverError> {
-        let op = Operator::new(cfg)?.with_context(
-            opendal::OperationContext::new().with_http_transport(http_transport),
-        );
+        let op = Operator::new(cfg)?
+            .with_context(opendal::OperationContext::new().with_http_transport(http_transport));
         Ok(Self::from_operator(uri, op))
     }
 
