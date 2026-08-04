@@ -400,10 +400,9 @@ impl S3CompatibleObjectStorage {
             .send()
             .await
             .inspect_err(|error| {
-                let error_class: &'static str = classify_sdk_error(error);
                 counter!(
                     parent: crate::metrics::OBJECT_STORAGE_PUT_ATTEMPT_ERRORS_TOTAL,
-                    labels: [label_values!(ERROR_CLASS => error_class)],
+                    labels: [label_values!(ERROR_CLASS => classify_sdk_error(error))],
                 )
                 .inc();
             })
@@ -558,10 +557,9 @@ impl S3CompatibleObjectStorage {
             .send()
             .await
             .inspect_err(|error| {
-                let error_class: &'static str = classify_sdk_error(error);
                 counter!(
                     parent: crate::metrics::OBJECT_STORAGE_PUT_ATTEMPT_ERRORS_TOTAL,
-                    labels: [label_values!(ERROR_CLASS => error_class)],
+                    labels: [label_values!(ERROR_CLASS => classify_sdk_error(error))],
                 )
                 .inc();
             })
@@ -689,10 +687,9 @@ impl S3CompatibleObjectStorage {
             // retry), labeled by error class so rate limiting (class="throttled") can be measured
             // independently of other transient failures.
             .inspect_err(|error| {
-                let error_class: &'static str = classify_sdk_error(error);
                 counter!(
                     parent: crate::metrics::OBJECT_STORAGE_GET_ATTEMPT_ERRORS_TOTAL,
-                    labels: [label_values!(ERROR_CLASS => error_class)],
+                    labels: [label_values!(ERROR_CLASS => classify_sdk_error(error))],
                 )
                 .inc();
             })
