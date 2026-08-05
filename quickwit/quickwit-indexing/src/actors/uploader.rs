@@ -27,9 +27,11 @@ use quickwit_common::pubsub::EventBroker;
 use quickwit_common::spawn_named_task;
 use quickwit_config::RetentionPolicy;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_metastore::{SplitMetadata, StageSplitsRequestExt};
+use quickwit_metastore::{SplitMaturity, SplitMetadata, StageSplitsRequestExt};
 use quickwit_metrics::{gauge, label_values};
-use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, StageSplitsRequest};
+use quickwit_proto::metastore::{
+    MetastoreService, MetastoreServiceClient, SplitRecoveryMetadata, StageSplitsRequest,
+};
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
 use quickwit_proto::types::IndexUid;
 use quickwit_storage::SplitPayloadBuilder;
@@ -316,9 +318,22 @@ impl Handler<PackagedSplitBatch> for Uploader {
                         return;
                     }
 
+                    let mut split_metadata = create_split_metadata(
+                        &merge_policy,
+                        retention_policy.as_ref(),
+                        &packaged_split.split_attrs,
+                        packaged_split.tags.clone(),
+                        0..0,
+                    );
+                    let recovery_metadata = create_split_recovery_metadata(
+                        &split_metadata,
+                        &packaged_split.split_attrs.replaced_split_ids,
+                    );
+                    let serialized_recovery_metadata = recovery_metadata.serialize();
                     let split_streamer = match SplitPayloadBuilder::get_split_payload(
                         &packaged_split.split_files,
                         &packaged_split.serialized_split_fields,
+                        Some(&serialized_recovery_metadata),
                         &packaged_split.hotcache_bytes,
                     ) {
                         Ok(split_streamer) => split_streamer,
@@ -327,13 +342,8 @@ impl Handler<PackagedSplitBatch> for Uploader {
                             return;
                         }
                     };
-                    let split_metadata = create_split_metadata(
-                        &merge_policy,
-                        retention_policy.as_ref(),
-                        &packaged_split.split_attrs,
-                        packaged_split.tags.clone(),
-                        split_streamer.footer_range.start..split_streamer.footer_range.end,
-                    );
+                    split_metadata.footer_offsets =
+                        split_streamer.footer_range.start..split_streamer.footer_range.end;
 
                     report_splits.push(ReportSplit {
                         storage_uri: split_store.remote_uri().to_string(),
@@ -413,6 +423,37 @@ impl Handler<PackagedSplitBatch> for Uploader {
     }
 }
 
+fn create_split_recovery_metadata(
+    split_metadata: &SplitMetadata,
+    parent_split_ids: &[quickwit_proto::types::SplitId],
+) -> SplitRecoveryMetadata {
+    let (mature, maturation_period_secs) = match split_metadata.maturity {
+        SplitMaturity::Mature => (true, 0),
+        SplitMaturity::Immature { maturation_period } => (false, maturation_period.as_secs()),
+    };
+    SplitRecoveryMetadata {
+        split_id: split_metadata.split_id.to_string(),
+        index_uid: Some(split_metadata.index_uid.clone()),
+        source_id: split_metadata.source_id.clone(),
+        doc_mapping_uid: Some(split_metadata.doc_mapping_uid),
+        partition_id: split_metadata.partition_id,
+        num_docs: split_metadata.num_docs as u64,
+        uncompressed_docs_size_bytes: split_metadata.uncompressed_docs_size_in_bytes,
+        time_range_start_inclusive: split_metadata
+            .time_range
+            .as_ref()
+            .map(|range| *range.start()),
+        time_range_end_inclusive: split_metadata.time_range.as_ref().map(|range| *range.end()),
+        create_timestamp: split_metadata.create_timestamp,
+        mature,
+        maturation_period_secs,
+        tags: split_metadata.tags.iter().cloned().collect(),
+        delete_opstamp: split_metadata.delete_opstamp,
+        num_merge_ops: split_metadata.num_merge_ops as u64,
+        parent_split_ids: parent_split_ids.iter().map(ToString::to_string).collect(),
+    }
+}
+
 #[async_trait]
 impl Handler<EmptySplit> for Uploader {
     type Reply = ();
@@ -485,11 +526,23 @@ async fn upload_split(
     split_store: &IndexingSplitStore,
     counters: UploaderCounters,
 ) -> anyhow::Result<()> {
+    let recovery_metadata = create_split_recovery_metadata(
+        split_metadata,
+        &packaged_split.split_attrs.replaced_split_ids,
+    );
+    let serialized_recovery_metadata = recovery_metadata.serialize();
     let split_streamer = SplitPayloadBuilder::get_split_payload(
         &packaged_split.split_files,
         &packaged_split.serialized_split_fields,
+        Some(&serialized_recovery_metadata),
         &packaged_split.hotcache_bytes,
     )?;
+    anyhow::ensure!(
+        split_streamer.footer_range == split_metadata.footer_offsets,
+        "split footer range changed after embedding its final offsets: expected {:?}, got {:?}",
+        split_metadata.footer_offsets,
+        split_streamer.footer_range
+    );
 
     split_store
         .store_split(

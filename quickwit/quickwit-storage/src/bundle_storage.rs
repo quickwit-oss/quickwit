@@ -45,6 +45,35 @@ pub struct BundleStorage {
 }
 
 impl BundleStorage {
+    /// Opens a split bundle by discovering its footer directly from object storage.
+    ///
+    /// New splits expose the footer start in a fixed-size trailer. Legacy splits are supported by
+    /// walking backward through the hotcache and bundle-metadata length fields.
+    pub async fn open_from_storage(
+        storage: Arc<dyn Storage>,
+        bundle_filepath: PathBuf,
+    ) -> anyhow::Result<(FileSlice, Self, Range<u64>)> {
+        let split_num_bytes = storage.file_num_bytes(&bundle_filepath).await?;
+        let footer_range = discover_split_footer_range(
+            storage.as_ref(),
+            &bundle_filepath,
+            split_num_bytes,
+        )
+        .await?;
+        let footer_bytes = storage
+            .get_slice(
+                &bundle_filepath,
+                usize::try_from(footer_range.start)?..usize::try_from(footer_range.end)?,
+            )
+            .await?;
+        let (hotcache, bundle_storage) = Self::open_from_split_data_with_owned_bytes(
+            storage,
+            bundle_filepath,
+            footer_bytes,
+        )?;
+        Ok((hotcache, bundle_storage, footer_range))
+    }
+
     /// Opens a BundleStorage.
     ///
     /// The provided data must include the footer_bytes at the end of the slice, but it can have
@@ -92,6 +121,97 @@ impl BundleStorage {
 
 const SPLIT_HOTBYTES_FOOTER_LENGTH_NUM_BYTES: usize = std::mem::size_of::<u32>();
 const BUNDLE_METADATA_LENGTH_NUM_BYTES: usize = std::mem::size_of::<u32>();
+pub(crate) const SPLIT_FOOTER_TRAILER_NUM_BYTES: usize = 16;
+const SPLIT_FOOTER_TRAILER_MAGIC: &[u8; 4] = b"QWFT";
+const SPLIT_FOOTER_TRAILER_VERSION: u32 = 1;
+
+pub(crate) fn serialize_split_footer_trailer(footer_start_inclusive: u64) -> [u8; 16] {
+    let mut trailer = [0u8; SPLIT_FOOTER_TRAILER_NUM_BYTES];
+    trailer[..8].copy_from_slice(&footer_start_inclusive.to_le_bytes());
+    trailer[8..12].copy_from_slice(&SPLIT_FOOTER_TRAILER_VERSION.to_le_bytes());
+    trailer[12..].copy_from_slice(SPLIT_FOOTER_TRAILER_MAGIC);
+    trailer
+}
+
+fn deserialize_split_footer_trailer(trailer: &[u8]) -> anyhow::Result<Option<u64>> {
+    if trailer.len() != SPLIT_FOOTER_TRAILER_NUM_BYTES
+        || &trailer[12..] != SPLIT_FOOTER_TRAILER_MAGIC
+    {
+        return Ok(None);
+    }
+    let version = u32::from_le_bytes(trailer[8..12].try_into().unwrap());
+    anyhow::ensure!(
+        version == SPLIT_FOOTER_TRAILER_VERSION,
+        "unsupported split footer trailer version {version}"
+    );
+    let footer_start_inclusive = u64::from_le_bytes(trailer[..8].try_into().unwrap());
+    Ok(Some(footer_start_inclusive))
+}
+
+/// Discovers a split footer range using its fixed trailer, with support for legacy split layouts.
+pub async fn discover_split_footer_range(
+    storage: &dyn Storage,
+    split_path: &Path,
+    split_num_bytes: u64,
+) -> anyhow::Result<Range<u64>> {
+    anyhow::ensure!(
+        split_num_bytes >= SPLIT_FOOTER_TRAILER_NUM_BYTES as u64,
+        "split is too short to contain a footer"
+    );
+    let trailer_start = split_num_bytes - SPLIT_FOOTER_TRAILER_NUM_BYTES as u64;
+    let tail = storage
+        .get_slice(
+            split_path,
+            usize::try_from(trailer_start)?..usize::try_from(split_num_bytes)?,
+        )
+        .await?;
+    if let Some(footer_start_inclusive) = deserialize_split_footer_trailer(tail.as_ref())? {
+        anyhow::ensure!(
+            footer_start_inclusive <= trailer_start,
+            "split footer starts after its trailer"
+        );
+        return Ok(footer_start_inclusive..split_num_bytes);
+    }
+
+    // Legacy split layout:
+    // [body][bundle metadata][metadata len][hotcache][hotcache len]
+    let hotcache_num_bytes = u32::from_le_bytes(tail[12..].try_into().unwrap()) as u64;
+    let metadata_len_offset = split_num_bytes
+        .checked_sub(SPLIT_HOTBYTES_FOOTER_LENGTH_NUM_BYTES as u64)
+        .and_then(|offset| offset.checked_sub(hotcache_num_bytes))
+        .and_then(|offset| offset.checked_sub(BUNDLE_METADATA_LENGTH_NUM_BYTES as u64))
+        .ok_or_else(|| anyhow::anyhow!("invalid legacy split footer lengths"))?;
+    let metadata_len_bytes = storage
+        .get_slice(
+            split_path,
+            usize::try_from(metadata_len_offset)?
+                ..usize::try_from(
+                    metadata_len_offset + BUNDLE_METADATA_LENGTH_NUM_BYTES as u64,
+                )?,
+        )
+        .await?;
+    let metadata_num_bytes =
+        u32::from_le_bytes(metadata_len_bytes.as_ref().try_into().unwrap()) as u64;
+    let footer_start_inclusive = metadata_len_offset
+        .checked_sub(metadata_num_bytes)
+        .ok_or_else(|| anyhow::anyhow!("invalid legacy split metadata length"))?;
+    Ok(footer_start_inclusive..split_num_bytes)
+}
+
+/// Removes the fixed split footer trailer when it is present.
+pub fn strip_split_footer_trailer(file: FileSlice) -> anyhow::Result<FileSlice> {
+    if file.len() < SPLIT_FOOTER_TRAILER_NUM_BYTES {
+        return Ok(file);
+    }
+    let (file_without_trailer, trailer) = file
+        .clone()
+        .split_from_end(SPLIT_FOOTER_TRAILER_NUM_BYTES);
+    if deserialize_split_footer_trailer(trailer.read_bytes()?.as_ref())?.is_some() {
+        Ok(file_without_trailer)
+    } else {
+        Ok(file)
+    }
+}
 
 #[derive(Copy, Clone, Default)]
 #[repr(u32)]
@@ -136,9 +256,10 @@ pub struct BundleStorageFileOffsets {
 impl BundleStorageFileOffsets {
     /// File need to include split data (with hotcache at the end).
     /// See docs/internals/split-format.md
-    /// [Files, FileMetadata, FileMetadata Len, HotCache, HotCache Len]
+    /// [Files, FileMetadata, FileMetadata Len, HotCache, HotCache Len, Split Footer Trailer]
     /// Returns (Hotcache, Self)
     fn open_from_split_data(file: FileSlice) -> anyhow::Result<(FileSlice, Self)> {
+        let file = strip_split_footer_trailer(file)?;
         let (bundle_and_hotcache_bytes, hotcache_num_bytes_data) =
             file.split_from_end(SPLIT_HOTBYTES_FOOTER_LENGTH_NUM_BYTES);
         let hotcache_num_bytes: u32 = u32::from_le_bytes(
@@ -318,6 +439,50 @@ mod tests {
     use crate::{PutPayload, RamStorageBuilder, SplitPayloadBuilder};
 
     #[tokio::test]
+    async fn bundle_storage_discovers_footer_from_object_storage() -> anyhow::Result<()> {
+        let split_payload =
+            SplitPayloadBuilder::get_split_payload(&[], b"fields", None, b"hotcache")?;
+        let expected_footer_range = split_payload.footer_range.clone();
+        let split_bytes = split_payload.read_all().await?;
+        let split_path = PathBuf::from("split");
+        let storage = Arc::new(
+            RamStorageBuilder::default()
+                .put(&split_path.to_string_lossy(), &split_bytes)
+                .build(),
+        );
+
+        let (hotcache, _bundle_storage, footer_range) =
+            BundleStorage::open_from_storage(storage, split_path).await?;
+
+        assert_eq!(hotcache.read_bytes()?.as_ref(), b"hotcache");
+        assert_eq!(footer_range, expected_footer_range);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn bundle_storage_discovers_legacy_footer_from_object_storage() -> anyhow::Result<()> {
+        let split_payload =
+            SplitPayloadBuilder::get_split_payload(&[], b"fields", None, b"hotcache")?;
+        let footer_start = split_payload.footer_range.start;
+        let split_bytes = split_payload.read_all().await?;
+        let legacy_split_bytes =
+            &split_bytes[..split_bytes.len() - SPLIT_FOOTER_TRAILER_NUM_BYTES];
+        let split_path = PathBuf::from("legacy-split");
+        let storage = Arc::new(
+            RamStorageBuilder::default()
+                .put(&split_path.to_string_lossy(), legacy_split_bytes)
+                .build(),
+        );
+
+        let (hotcache, _bundle_storage, footer_range) =
+            BundleStorage::open_from_storage(storage, split_path).await?;
+
+        assert_eq!(hotcache.read_bytes()?.as_ref(), b"hotcache");
+        assert_eq!(footer_range, footer_start..legacy_split_bytes.len() as u64);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn bundle_storage_file_offsets() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let test_filepath1 = temp_dir.path().join("f1");
@@ -332,6 +497,7 @@ mod tests {
         let buffer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
             &[],
+            None,
             &[5, 5, 5],
         )?
         .read_all()
@@ -374,6 +540,7 @@ mod tests {
         let buffer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
             &[],
+            None,
             &[1, 3, 3, 7],
         )?
         .read_all()
@@ -411,7 +578,7 @@ mod tests {
 
     #[tokio::test]
     async fn bundlestorage_test_empty() -> anyhow::Result<()> {
-        let buffer = SplitPayloadBuilder::get_split_payload(&[], &[], &[])?
+        let buffer = SplitPayloadBuilder::get_split_payload(&[], &[], None, &[])?
             .read_all()
             .await?;
 

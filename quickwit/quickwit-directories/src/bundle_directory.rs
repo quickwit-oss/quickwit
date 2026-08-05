@@ -18,7 +18,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, io};
 
-use quickwit_storage::{BundleStorageFileOffsets, OwnedBytes, Storage, StorageResult};
+use quickwit_storage::{
+    BundleStorageFileOffsets, OwnedBytes, Storage, StorageErrorKind, StorageResult,
+    discover_split_footer_range, strip_split_footer_trailer,
+};
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, FileSlice};
 use tantivy::{Directory, HasLen};
@@ -29,8 +32,8 @@ use tantivy::{Directory, HasLen};
 /// It is the `Directory` equivalent of `BundleStorage`.
 ///
 /// Split Format:
-/// `[Files][FilesMetadata][FilesMetadata length 8 byte Little endian][Hotcache][Hotcache length 8
-/// byte Little endian]`
+/// `[Files][FilesMetadata][FilesMetadata length u32][Hotcache][Hotcache length u32][Footer
+/// start u64][Trailer version u32][QWFT]`
 #[derive(Clone)]
 pub struct BundleDirectory {
     file: FileSlice,
@@ -52,28 +55,38 @@ pub async fn read_split_footer(
     storage: Arc<dyn Storage>,
     path: &Path,
 ) -> StorageResult<(OwnedBytes, OwnedBytes)> {
-    let file_len = storage.file_num_bytes(path).await? as usize;
-
-    let hotcache_len_bytes = storage.get_slice(path, file_len - 8..file_len).await?;
-    let hotcache_len = u64::from_le_bytes(hotcache_len_bytes.as_ref().try_into().unwrap()) as usize;
-
-    let second_footer_start = file_len - 8 - hotcache_len - 8;
-    let second_footer_bytes = storage
-        .get_slice(path, second_footer_start..second_footer_start + 8)
+    let file_len = storage.file_num_bytes(path).await?;
+    let footer_range = discover_split_footer_range(storage.as_ref(), path, file_len)
+        .await
+        .map_err(|error| StorageErrorKind::Internal.with_error(error))?;
+    let split_footer_with_trailer = storage
+        .get_slice(
+            path,
+            footer_range.start as usize..footer_range.end as usize,
+        )
         .await?;
-    let second_footer_len =
-        u64::from_le_bytes(second_footer_bytes.as_ref().try_into().unwrap()) as usize;
+    let split_footer = strip_split_footer_trailer(FileSlice::new(Arc::new(
+        split_footer_with_trailer,
+    )))
+    .and_then(|footer| footer.read_bytes().map_err(anyhow::Error::from))
+    .map_err(|error| StorageErrorKind::Internal.with_error(error))?;
 
-    let split_footer = storage
-        .get_slice(path, second_footer_start - second_footer_len..file_len)
-        .await?;
-    let only_bundle_footer = split_footer.slice(0..second_footer_len + 8);
+    let hotcache_len = u32::from_le_bytes(split_footer[split_footer.len() - 4..].try_into().unwrap())
+        as usize;
+    let metadata_len_offset = split_footer.len() - 4 - hotcache_len - 4;
+    let metadata_len = u32::from_le_bytes(
+        split_footer[metadata_len_offset..metadata_len_offset + 4]
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let only_bundle_footer = split_footer.slice(0..metadata_len + 4);
 
     Ok((split_footer, only_bundle_footer))
 }
 
 /// Return two slices for given split: `[body and bundle meta data] [hotcache]`
 fn split_footer(file_slice: FileSlice) -> io::Result<(FileSlice, FileSlice)> {
+    let file_slice = strip_split_footer_trailer(file_slice).map_err(io::Error::other)?;
     let (body_and_footer_slice, footer_len_slice) = file_slice.split_from_end(4);
     let footer_len_bytes = footer_len_slice.read_bytes()?;
     let footer_len = u32::from_le_bytes(footer_len_bytes.as_slice().try_into().unwrap());
@@ -179,6 +192,7 @@ mod tests {
         let split_streamer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
             &[],
+            None,
             &[
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
             ],
@@ -211,6 +225,7 @@ mod tests {
         let split_streamer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
             &[],
+            None,
             &[
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
             ],
@@ -250,6 +265,7 @@ mod tests {
         let split_streamer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
             &[5, 5, 5],
+            None,
             &[1, 2, 3],
         )?;
 

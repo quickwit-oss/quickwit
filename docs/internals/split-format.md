@@ -9,6 +9,8 @@ with:
 - the Tantivy index files (`.idx`, `.pos`, `.term`...)
 - a Quickwit specific file with the list of fields, including those indexed as part of a JSON type. 
 It contains the field name, type and capabilities.
+- a versioned protobuf entry named `split_recovery_metadata` containing the immutable split
+  metadata and direct lineage needed to reconstruct its metastore record.
 
 The split file data layout looks like this:
 - concatenation all of the files in the split

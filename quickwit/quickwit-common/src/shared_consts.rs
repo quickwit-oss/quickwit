@@ -73,6 +73,9 @@ pub const INGESTER_CAPACITY_SCORE_PREFIX: &str = "ingester.capacity_score:";
 /// File name for the encoded list of fields in the split
 pub const SPLIT_FIELDS_FILE_NAME: &str = "split_fields";
 
+/// Name of the recovery metadata entry embedded in split bundles.
+pub const SPLIT_RECOVERY_METADATA_FILE_NAME: &str = "split_recovery_metadata";
+
 /// More or less the indexing throughput of a core
 /// i.e. PIPELINE_THROUGHPUT / PIPELINE_FULL_CAPACITY
 pub const DEFAULT_SHARD_THROUGHPUT_LIMIT: ByteSize = ByteSize::mib(5);

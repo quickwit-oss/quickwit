@@ -23,9 +23,11 @@ use aws_sdk_s3::primitives::{ByteStream, FsBuilder, Length, SdkBody};
 use futures::{Stream, StreamExt, stream};
 use hyper::body::{Bytes, Frame};
 use pin_project::pin_project;
-use quickwit_common::shared_consts::SPLIT_FIELDS_FILE_NAME;
+use quickwit_common::shared_consts::{SPLIT_FIELDS_FILE_NAME, SPLIT_RECOVERY_METADATA_FILE_NAME};
 
-use crate::bundle_storage::BundleStorageFileOffsetsVersions;
+use crate::bundle_storage::{
+    BundleStorageFileOffsetsVersions, serialize_split_footer_trailer,
+};
 use crate::{BundleStorageFileOffsets, PutPayload, VersionedComponent};
 
 /// Payload of a split which builds the split bundle and hotcache on the fly and streams it to the
@@ -143,10 +145,11 @@ pub struct SplitPayloadBuilder {
 }
 
 impl SplitPayloadBuilder {
-    /// Creates a new SplitPayloadBuilder for given files and hotcache.
+    /// Creates a new SplitPayloadBuilder for given files, recovery metadata, and hotcache.
     pub fn get_split_payload(
         split_files: &[PathBuf],
         serialized_split_fields: &[u8],
+        serialized_recovery_metadata: Option<&[u8]>,
         hotcache: &[u8],
     ) -> anyhow::Result<SplitPayload> {
         let mut split_payload_builder = SplitPayloadBuilder::default();
@@ -157,6 +160,12 @@ impl SplitPayloadBuilder {
             SPLIT_FIELDS_FILE_NAME.to_string(),
             Box::new(serialized_split_fields.to_vec()),
         );
+        if let Some(serialized_recovery_metadata) = serialized_recovery_metadata {
+            split_payload_builder.add_payload(
+                SPLIT_RECOVERY_METADATA_FILE_NAME.to_string(),
+                Box::new(serialized_recovery_metadata.to_vec()),
+            );
+        }
         let offsets = split_payload_builder.finalize(hotcache)?;
         Ok(offsets)
     }
@@ -219,6 +228,7 @@ impl SplitPayloadBuilder {
         footer_bytes.extend((metadata_json.len() as u32).to_le_bytes());
         footer_bytes.extend(hotcache);
         footer_bytes.extend((hotcache.len() as u32).to_le_bytes());
+        footer_bytes.extend(serialize_split_footer_trailer(self.current_offset as u64));
 
         let mut payloads: Vec<Box<dyn PutPayload>> = self
             .payloads
@@ -294,11 +304,34 @@ mod tests {
         let mut file2 = File::create(&test_filepath2)?;
         file2.write_all(b"world")?;
 
-        let split_payload =
-            SplitPayloadBuilder::get_split_payload(&[test_filepath1, test_filepath2], &[], b"abc")?;
+        let split_payload = SplitPayloadBuilder::get_split_payload(
+            &[test_filepath1, test_filepath2],
+            &[],
+            None,
+            b"abc",
+        )?;
 
-        assert_eq!(split_payload.len(), 128);
+        assert_eq!(split_payload.len(), 144);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_split_payload_embeds_recovery_metadata() -> anyhow::Result<()> {
+        let recovery_metadata = b"recovery-protobuf";
+        let split_payload = SplitPayloadBuilder::get_split_payload(
+            &[],
+            b"fields",
+            Some(recovery_metadata),
+            b"hotcache",
+        )?;
+
+        let recovery_range =
+            b"fields".len() as u64..(b"fields".len() + recovery_metadata.len()) as u64;
+        assert_eq!(
+            fetch_data(&split_payload, recovery_range).await?,
+            recovery_metadata
+        );
         Ok(())
     }
 
@@ -431,6 +464,7 @@ mod tests {
         let split_streamer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
             &[],
+            None,
             &[1, 2, 3],
         )?;
 
