@@ -48,8 +48,8 @@
 //! 1. A structure policy hashes the sorted set of leaf JSON paths, excluding configured paths.
 //! 2. Raw and tokenized policies hash configured string values and tokenized signatures.
 //!
-//! Tokenized fields hash token types rather than literal values, up to 50 tokens. This groups
-//! volatile values with the same shape:
+//! Tokenized fields hash token types rather than literal values. They use up to 50 tokens by
+//! default, configurable through `max_tokens`. This groups volatile values with the same shape:
 //!
 //! ```text
 //! "server started at 8080" -> Word Gap Word Gap Word Gap Number

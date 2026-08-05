@@ -207,13 +207,17 @@ pub enum ClusteringMethod {
         /// Dot-separated path to the string value.
         path: JsonPath,
     },
-    /// Groups documents by the pattern of the first 50 tokens in the string value at `path`.
+    /// Groups documents by the pattern of the first `max_tokens` tokens in the string value at
+    /// `path`.
     ///
     /// For example, `{"message":"request 123"}` and `{"message":"request 456"}` belong to the same
     /// group when `path` is `message`, because both values have the same token pattern.
     Tokenized {
         /// Dot-separated path to the string value.
         path: JsonPath,
+        /// Maximum number of tokens to consider. Defaults to 50.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_tokens: Option<usize>,
     },
 }
 

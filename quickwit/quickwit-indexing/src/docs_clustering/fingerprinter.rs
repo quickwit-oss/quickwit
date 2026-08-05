@@ -34,7 +34,8 @@
 //!
 //! Tokenized fields use the sequence of token types as a lightweight message template. This keeps
 //! the stable structure of a value while ignoring volatile literals such as IDs, ports, UUIDs, or
-//! IP addresses. Only the first 50 tokens contribute to the fingerprint.
+//! IP addresses. By default, the first 50 tokens contribute to the fingerprint; `max_tokens` can
+//! override this limit for each tokenized method.
 //!
 //! Examples:
 //! ```text
@@ -139,8 +140,8 @@ impl Fingerprinter {
                     ClusteringMethod::Raw { path } => {
                         self.hash_string_value(json_value, path, &mut hasher);
                     }
-                    ClusteringMethod::Tokenized { path } => {
-                        self.hash_string_tokenized(json_value, path, true, &mut hasher);
+                    ClusteringMethod::Tokenized { path, max_tokens } => {
+                        self.hash_string_tokenized(json_value, path, *max_tokens, &mut hasher);
                     }
                 }
             }
@@ -212,7 +213,7 @@ impl Fingerprinter {
         &self,
         json_value: &JsonValue,
         path: &JsonPath,
-        tokenized: bool,
+        max_tokens: Option<usize>,
         hasher: &mut FnvHasher,
     ) {
         let Some(value) = get_leaf_string(json_value, path) else {
@@ -221,14 +222,13 @@ impl Fingerprinter {
             return;
         };
         hasher.write_u8(FIELD_PRESENT);
-        if tokenized {
-            for span in tokenize(value).take(MAX_GROUPING_TOKENS) {
-                hasher.write_u8(span.token_type as u8);
-                hasher.write_u8(TOKENIZED_TOKEN_SEPARATOR);
-            }
-        } else {
-            hasher.write(value.as_bytes());
+
+        let max_tokens = max_tokens.unwrap_or(MAX_GROUPING_TOKENS);
+        for span in tokenize(value).take(max_tokens) {
+            hasher.write_u8(span.token_type as u8);
+            hasher.write_u8(TOKENIZED_TOKEN_SEPARATOR);
         }
+
         hasher.write_u8(FIELD_BOUNDARY);
     }
 }
