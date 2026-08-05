@@ -95,6 +95,18 @@ pub(super) static INGEST_ATTEMPTS: LazyCounter = lazy_counter!(
         subsystem: "ingest",
 );
 
+static DECOMMISSION_RESULT_TOTAL: LazyCounter = lazy_counter!(
+        name: "decommission_result_total",
+        description: "Number of ingester decommission attempts by result",
+        subsystem: "ingest",
+);
+
+pub(super) static DECOMMISSION_SUCCEEDED: LazyCounter =
+    lazy_counter!(parent: DECOMMISSION_RESULT_TOTAL, "result" => "success");
+
+pub(super) static DECOMMISSION_FAILED: LazyCounter =
+    lazy_counter!(parent: DECOMMISSION_RESULT_TOTAL, "result" => "failure");
+
 pub(super) static RESET_SHARDS_OPERATIONS_TOTAL: LazyCounter = lazy_counter!(
         name: "reset_shards_operations_total",
         description: "Total number of reset shards operations performed.",
