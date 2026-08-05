@@ -60,7 +60,9 @@ pub use split_cache::SearchSplitCache;
 pub use tantivy::directory::OwnedBytes;
 pub use versioned_component::VersionedComponent;
 
-pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
+pub use self::bundle_storage::{
+    BundleFileRanges, BundleStorage, locate_split_footer_range, strip_split_footer_trailer,
+};
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::cache::MockStorageCache;
 pub use self::cache::{
