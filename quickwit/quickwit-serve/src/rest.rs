@@ -48,7 +48,7 @@ use crate::byoc_api::byoc_api_handlers;
 use crate::cloudprem_ui_api::cloudprem_ui_api_handlers;
 use crate::cloudprem_ui_handler::cloudprem_ui_handler;
 use crate::cluster_api::cluster_handler;
-use crate::datadog_api::{IndexRouter, datadog_api_handlers};
+use crate::datadog_api::datadog_api_handlers;
 use crate::decompression::{CorruptedData, UnsupportedEncoding};
 use crate::delete_task_api::delete_task_api_handlers;
 use crate::developer_api::developer_api_routes;
@@ -201,13 +201,6 @@ pub(crate) async fn start_rest_server(
     )
     .boxed();
 
-    // Create the index router for Datadog API.
-    let index_router = IndexRouter::create_and_subscribe(
-        quickwit_services.metastore_client.clone(),
-        &quickwit_services.cluster,
-    )
-    .await?;
-
     // `/api/v1/*` routes.
     let api_v1_root_route = api_v1_routes(quickwit_services.clone());
 
@@ -229,11 +222,11 @@ pub(crate) async fn start_rest_server(
     let api_routes = api_v1_root_route
         .or(datadog_api_handlers(
             quickwit_services.ingest_router_service.clone(),
-            index_router.clone(),
+            quickwit_services.index_router.clone(),
         ))
         .or(byoc_api_handlers(
             quickwit_services.ingest_router_service.clone(),
-            index_router,
+            quickwit_services.index_router.clone(),
         ))
         .or(cloudprem_ui_api_handlers(
             quickwit_services.search_service.clone(),
@@ -776,6 +769,7 @@ mod tests {
     use warp::hyper::{Request, Response, StatusCode};
 
     use super::*;
+    use crate::datadog_api::IndexRouter;
     use crate::rest::recover_fn_final;
 
     pub(crate) fn ingest_service_client() -> IngestServiceClient {
@@ -1024,6 +1018,7 @@ mod tests {
             control_plane_client,
             indexing_service_opt: None,
             index_manager: index_service,
+            index_router: IndexRouter::for_test(&[]),
             ingest_service: ingest_service_client(),
             ingest_router_opt: None,
             ingest_router_service: IngestRouterServiceClient::mocked(),
