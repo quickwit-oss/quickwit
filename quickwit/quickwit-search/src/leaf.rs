@@ -300,7 +300,6 @@ async fn run_cancellable(
 ///
 /// Returns whether the query is provably empty in this split (i.e. `on_absent` fired and
 /// warmup was short-circuited).
-#[instrument(skip_all)]
 pub(crate) async fn warmup(
     searcher: &Searcher,
     warmup_info: &WarmupInfo,
@@ -746,6 +745,12 @@ async fn leaf_search_single_split(
     warmup_info.simplify();
 
     let warmup_start = Instant::now();
+    // Baseline the counters so the span attributes cover warmup only. This matters for
+    // `download_counters`: opening the index fetches the footer and hotcache through the same
+    // counted storage on a cold footer cache. The byte-range cache is usually still empty at
+    // this point, since index-open reads are served by the hotcache above it.
+    let cache_bytes_before_warmup = byte_range_cache.get_num_bytes();
+    let downloaded_bytes_before_warmup = download_counters.snapshot().0;
     leaf_search_state_guard.set_state(SplitSearchState::WarmUp);
     // Negative cache: a split is provably empty for this query if any required term has
     // previously been proven absent here. Absence is an immutable, query- and
@@ -779,7 +784,36 @@ async fn leaf_search_single_split(
                 HitSet::empty(),
             );
         };
-        warmup(&searcher, &warmup_info, &record_absence).await?
+        // `downloaded_mb` is what warmup actually fetched from blob storage; `total_mb` adds the
+        // part served from the fast-field cache, since the byte-range cache sits above it and
+        // records every miss it has to resolve below. Both are deltas since `warmup_start`, so
+        // index-open reads are not attributed here, and are recorded after warmup, before the
+        // search adds to either.
+        const BYTES_PER_MB: f64 = 1_000_000.0;
+        let warmup_span = info_span!(
+            "warmup",
+            downloaded_mb = tracing::field::Empty,
+            total_mb = tracing::field::Empty
+        );
+        let provably_empty = warmup(&searcher, &warmup_info, &record_absence)
+            .instrument(warmup_span.clone())
+            .await?;
+        warmup_span.record(
+            "downloaded_mb",
+            download_counters
+                .snapshot()
+                .0
+                .saturating_sub(downloaded_bytes_before_warmup) as f64
+                / BYTES_PER_MB,
+        );
+        warmup_span.record(
+            "total_mb",
+            byte_range_cache
+                .get_num_bytes()
+                .saturating_sub(cache_bytes_before_warmup) as f64
+                / BYTES_PER_MB,
+        );
+        provably_empty
     };
     let warmup_end = Instant::now();
     let warmup_duration: Duration = warmup_end.duration_since(warmup_start);
