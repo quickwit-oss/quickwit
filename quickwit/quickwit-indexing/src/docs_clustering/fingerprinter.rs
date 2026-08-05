@@ -17,7 +17,7 @@
 //! A fingerprint contains one hash for each configured fingerprint policy, in configuration order.
 //! Each policy can combine:
 //! 1. structure fields, represented by sorted sets of leaf JSON paths;
-//! 2. raw fields, represented by their exact string values;
+//! 2. raw fields, represented by their exact JSON values;
 //! 3. tokenized fields, represented by their token types.
 //!
 //! ```text
@@ -54,8 +54,8 @@
 //!     -> Word Gap Word Gap IPv4
 //! ```
 //!
-//! Raw string fields keep exact-value differences, which is useful for dimensions such as
-//! `service`. Missing fields and non-string values are encoded as absent so configured field
+//! Raw fields preserve JSON types and nested structure, which is useful for dimensions such as
+//! `service` or numeric status codes. Missing fields are encoded as absent so configured field
 //! positions remain distinct within a policy hash.
 use std::hash::Hasher;
 use std::ops::Deref;
@@ -76,7 +76,7 @@ const FIELD_PRESENT: u8 = 0xFB;
 const PATH_SEPARATOR: u8 = 0xFC;
 const FIELD_BOUNDARY: u8 = 0xFD;
 const TOKENIZED_TOKEN_SEPARATOR: u8 = 0xFE;
-const MAX_GROUPING_TOKENS: usize = 50;
+const DEFAULT_MAX_GROUPING_TOKENS: usize = 50;
 
 // Inline 4 hashes to avoid heap allocations.
 // This is usually enough for most use cases.
@@ -138,7 +138,7 @@ impl Fingerprinter {
                         self.hash_structure(json_value, exclude, &mut hasher);
                     }
                     ClusteringMethod::Raw { path } => {
-                        self.hash_string_value(json_value, path, &mut hasher);
+                        self.hash_raw_value(json_value, path, &mut hasher);
                     }
                     ClusteringMethod::Tokenized { path, max_tokens } => {
                         self.hash_string_tokenized(json_value, path, *max_tokens, &mut hasher);
@@ -198,14 +198,57 @@ impl Fingerprinter {
         }
     }
 
-    fn hash_string_value(&self, json_value: &JsonValue, path: &JsonPath, hasher: &mut FnvHasher) {
-        let Some(value) = get_leaf_string(json_value, path) else {
+    fn hash_raw_value(&self, json_value: &JsonValue, path: &JsonPath, hasher: &mut FnvHasher) {
+        fn hash_raw_value_inner(json_value: &JsonValue, hasher: &mut FnvHasher) {
+            const RAW_NULL: u8 = 0;
+            const RAW_BOOL: u8 = 1;
+            const RAW_NUMBER: u8 = 2;
+            const RAW_STRING: u8 = 3;
+            const RAW_ARRAY: u8 = 4;
+            const RAW_OBJECT: u8 = 5;
+
+            match json_value {
+                JsonValue::Null => hasher.write_u8(RAW_NULL),
+                JsonValue::Bool(value) => {
+                    hasher.write_u8(RAW_BOOL);
+                    hasher.write_u8(*value as u8);
+                }
+                JsonValue::Number(value) => {
+                    hasher.write_u8(RAW_NUMBER);
+                    let number = value.to_string();
+                    hasher.write(number.as_bytes());
+                }
+                JsonValue::String(value) => {
+                    hasher.write_u8(RAW_STRING);
+                    hasher.write_usize(value.len());
+                    hasher.write(value.as_bytes());
+                }
+                JsonValue::Array(values) => {
+                    hasher.write_u8(RAW_ARRAY);
+                    hasher.write_usize(values.len());
+                    for value in values {
+                        hash_raw_value_inner(value, hasher);
+                    }
+                }
+                JsonValue::Object(map) => {
+                    hasher.write_u8(RAW_OBJECT);
+                    hasher.write_usize(map.len());
+                    for (key, value) in map.iter() {
+                        hasher.write_usize(key.len());
+                        hasher.write(key.as_bytes());
+                        hash_raw_value_inner(value, hasher);
+                    }
+                }
+            }
+        }
+
+        let Some(json_value) = get_leaf_json_value(json_value, path) else {
             hasher.write_u8(FIELD_ABSENT);
             hasher.write_u8(FIELD_BOUNDARY);
             return;
         };
         hasher.write_u8(FIELD_PRESENT);
-        hasher.write(value.as_bytes());
+        hash_raw_value_inner(json_value, hasher);
         hasher.write_u8(FIELD_BOUNDARY);
     }
 
@@ -223,7 +266,7 @@ impl Fingerprinter {
         };
         hasher.write_u8(FIELD_PRESENT);
 
-        let max_tokens = max_tokens.unwrap_or(MAX_GROUPING_TOKENS);
+        let max_tokens = max_tokens.unwrap_or(DEFAULT_MAX_GROUPING_TOKENS);
         for span in tokenize(value).take(max_tokens) {
             hasher.write_u8(span.token_type as u8);
             hasher.write_u8(TOKENIZED_TOKEN_SEPARATOR);
@@ -233,14 +276,18 @@ impl Fingerprinter {
     }
 }
 
-fn get_leaf_string<'a>(json_value: &'a JsonValue, path: &[String]) -> Option<&'a str> {
+fn get_leaf_json_value<'a>(json_value: &'a JsonValue, path: &[String]) -> Option<&'a JsonValue> {
     if path.is_empty() {
-        return json_value.as_str();
+        return Some(json_value);
     }
     let JsonValue::Object(obj) = json_value else {
         return None;
     };
-    get_leaf_string(obj.get(path.first()?)?, &path[1..])
+    get_leaf_json_value(obj.get(path.first()?)?, &path[1..])
+}
+
+fn get_leaf_string<'a>(json_value: &'a JsonValue, path: &[String]) -> Option<&'a str> {
+    get_leaf_json_value(json_value, path)?.as_str()
 }
 
 #[cfg(test)]
@@ -420,7 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn non_string_grouping_values_are_ignored() {
+    fn raw_field_hashes_non_string_values() {
         let docs_clustering_config = docs_clustering_config(serde_json::json!([
             {
                 "fingerprint": [{
@@ -437,10 +484,43 @@ mod tests {
         let fingerprinter = Fingerprinter::new(&docs_clustering_config);
         let doc1 = parse(r#"{"status":200}"#);
         let doc2 = parse(r#"{"status":500}"#);
-        assert_eq!(
-            fingerprinter.fingerprint(&doc1),
-            fingerprinter.fingerprint(&doc2)
-        );
+        let doc1_fingerprint = fingerprinter.fingerprint(&doc1);
+        let doc2_fingerprint = fingerprinter.fingerprint(&doc2);
+        assert_eq!(doc1_fingerprint[0], doc2_fingerprint[0]);
+        assert_ne!(doc1_fingerprint[1], doc2_fingerprint[1]);
+    }
+
+    #[test]
+    fn raw_field_preserves_json_type_and_structure_boundaries() {
+        let docs_clustering_config = docs_clustering_config(serde_json::json!([
+            {
+                "fingerprint": [{
+                    "path": "value",
+                    "kind": "raw"
+                }]
+            }
+        ]));
+        let fingerprinter = Fingerprinter::new(&docs_clustering_config);
+        let docs = [
+            parse(r#"{"value":"null"}"#),
+            parse(r#"{"value":null}"#),
+            parse(r#"{"value":""}"#),
+            parse(r#"{"value":[]}"#),
+            parse(r#"{"value":{}}"#),
+            parse(r#"{"value":false}"#),
+            parse(r#"{"value":-1}"#),
+            parse(r#"{"value":18446744073709551615}"#),
+        ];
+        let fingerprints: Vec<_> = docs
+            .iter()
+            .map(|doc| fingerprinter.fingerprint(doc))
+            .collect();
+
+        for (left_idx, left_fingerprint) in fingerprints.iter().enumerate() {
+            for right_fingerprint in &fingerprints[left_idx + 1..] {
+                assert_ne!(left_fingerprint, right_fingerprint);
+            }
+        }
     }
 
     #[test]

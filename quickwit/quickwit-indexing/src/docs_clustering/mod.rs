@@ -46,7 +46,7 @@
 //! [`Fingerprinter`] computes one hash for each configured fingerprint policy:
 //!
 //! 1. A structure policy hashes the sorted set of leaf JSON paths, excluding configured paths.
-//! 2. Raw and tokenized policies hash configured string values and tokenized signatures.
+//! 2. Raw and tokenized policies hash configured JSON values and tokenized string signatures.
 //!
 //! Tokenized fields hash token types rather than literal values. They use up to 50 tokens by
 //! default, configurable through `max_tokens`. This groups volatile values with the same shape:

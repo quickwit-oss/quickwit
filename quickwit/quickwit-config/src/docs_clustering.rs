@@ -199,12 +199,12 @@ pub enum ClusteringMethod {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         exclude: Vec<JsonPath>,
     },
-    /// Groups documents by the exact string value at `path`.
+    /// Groups documents by the exact JSON value at `path`.
     ///
     /// For example, `{"service":"api"}` and `{"service":"worker"}` belong to different groups
     /// when `path` is `service`.
     Raw {
-        /// Dot-separated path to the string value.
+        /// Dot-separated path to the JSON value.
         path: JsonPath,
     },
     /// Groups documents by the pattern of the first `max_tokens` tokens in the string value at
