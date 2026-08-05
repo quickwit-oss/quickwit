@@ -25,6 +25,8 @@ use quickwit_config::{
 use crate::AzureBlobStorageFactory;
 #[cfg(feature = "gcs")]
 use crate::GoogleCloudStorageFactory;
+#[cfg(feature = "ipfs")]
+use crate::IpfsStorageFactory;
 use crate::local_file_storage::LocalFileStorageFactory;
 use crate::ram_storage::RamStorageFactory;
 use crate::{S3CompatibleObjectStorageFactory, Storage, StorageFactory, StorageResolverError};
@@ -57,6 +59,7 @@ impl StorageResolver {
             Protocol::Ram => StorageBackend::Ram,
             Protocol::S3 => StorageBackend::S3,
             Protocol::Google => StorageBackend::Google,
+            Protocol::Ipfs => StorageBackend::Ipfs,
             _ => {
                 let message = format!(
                     "Quickwit does not support {} as a storage backend",
@@ -127,6 +130,21 @@ impl StorageResolver {
             builder = builder.register(UnsupportedStorage::new(
                 StorageBackend::Google,
                 "Quickwit was compiled without the `gcs` feature",
+            ))
+        }
+        #[cfg(feature = "ipfs")]
+        {
+            builder = builder.register(IpfsStorageFactory::new(
+                storage_configs.find_ipfs().cloned().unwrap_or_default(),
+            ));
+        }
+        #[cfg(not(feature = "ipfs"))]
+        {
+            use crate::storage_factory::UnsupportedStorage;
+
+            builder = builder.register(UnsupportedStorage::new(
+                StorageBackend::Ipfs,
+                "Quickwit was compiled without the `ipfs` feature",
             ))
         }
         builder

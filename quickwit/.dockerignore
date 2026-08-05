@@ -1,0 +1,6 @@
+target/
+**/target/
+.git/
+node_modules/
+quickwit-ui/node_modules/
+build.log
