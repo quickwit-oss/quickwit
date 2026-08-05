@@ -28,7 +28,7 @@ use crate::planner::metrics::{SOURCE_UID, SPLITS_NEEDING_COMPACTION, TIMED_OUT_O
 use crate::planner::{PendingMerge, PendingOperations};
 use crate::{TaskId, source_uid_metrics_label};
 
-const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(60);
+const HEARTBEAT_TIMEOUT: Duration = Duration::from_mins(1);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CompactionPartitionKey {
@@ -290,7 +290,7 @@ mod tests {
             num_docs: 1000,
             create_timestamp: time::OffsetDateTime::now_utc().unix_timestamp(),
             maturity: quickwit_metastore::SplitMaturity::Immature {
-                maturation_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_hours(1),
             },
             ..Default::default()
         }
