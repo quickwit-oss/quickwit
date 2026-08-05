@@ -331,4 +331,10 @@ enum IngesterStatus {
 message ObservationMessage {
   string node_id = 1;
   IngesterStatus Status = 2;
+  // Amount of WAL memory currently used, in bytes.
+  uint64 wal_memory_used_bytes = 3;
+  // Amount of WAL disk space currently used, in bytes.
+  uint64 wal_disk_used_bytes = 4;
+  // Number of records currently held in the WAL, across all queues.
+  uint64 wal_num_records = 5;
 }

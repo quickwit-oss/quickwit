@@ -408,6 +408,15 @@ pub struct ObservationMessage {
     pub node_id: ::prost::alloc::string::String,
     #[prost(enumeration = "IngesterStatus", tag = "2")]
     pub status: i32,
+    /// Amount of WAL memory currently used, in bytes.
+    #[prost(uint64, tag = "3")]
+    pub wal_memory_used_bytes: u64,
+    /// Amount of WAL disk space currently used, in bytes.
+    #[prost(uint64, tag = "4")]
+    pub wal_disk_used_bytes: u64,
+    /// Number of records currently held in the WAL, across all queues.
+    #[prost(uint64, tag = "5")]
+    pub wal_num_records: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]

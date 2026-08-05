@@ -1834,6 +1834,7 @@ mod tests {
                     let message = ObservationMessage {
                         node_id: "test-node".to_string(),
                         status: status as i32,
+                        ..Default::default()
                     };
                     Ok(message)
                 });
