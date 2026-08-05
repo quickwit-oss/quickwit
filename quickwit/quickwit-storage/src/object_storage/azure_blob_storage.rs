@@ -22,9 +22,8 @@ use std::{fmt, io};
 use async_trait::async_trait;
 use azure_core::error::ErrorKind;
 use azure_core::{Pageable, StatusCode};
-use azure_storage::CloudLocation;
-use azure_storage::Error as AzureError;
 use azure_storage::prelude::*;
+use azure_storage::{CloudLocation, Error as AzureError};
 use azure_storage_blobs::blob::operations::GetBlobResponse;
 use azure_storage_blobs::prelude::*;
 use bytes::{Bytes, BytesMut};
@@ -198,8 +197,7 @@ impl AzureBlobStorage {
             let message = format!("failed to extract container name from Azure URI `{uri}`");
             StorageResolverError::InvalidUri(message)
         })?;
-        let blob_service_uri =
-            azure_storage_config.resolve_blob_service_uri(&storage_account_name);
+        let blob_service_uri = azure_storage_config.resolve_blob_service_uri(&storage_account_name);
         let azure_blob_storage = AzureBlobStorage::new(
             storage_account_name,
             storage_credentials,
@@ -571,8 +569,7 @@ fn build_container_client(
     blob_service_uri: Option<String>,
     container_name: String,
 ) -> ContainerClient {
-    let mut builder =
-        ClientBuilder::new(storage_account_name.clone(), storage_credentials);
+    let mut builder = ClientBuilder::new(storage_account_name.clone(), storage_credentials);
     if let Some(uri) = blob_service_uri {
         info!(endpoint=%uri, "using Azure blob storage endpoint defined in storage config or environment variable");
         builder = builder.cloud_location(CloudLocation::Custom {

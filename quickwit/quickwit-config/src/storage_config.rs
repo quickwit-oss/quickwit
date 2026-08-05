@@ -691,9 +691,7 @@ mod tests {
 
             let expected_azure_config = AzureStorageConfig {
                 account_name: Some("test-account".to_string()),
-                endpoint: Some(
-                    "https://test-account.blob.core.usgovcloudapi.net".to_string(),
-                ),
+                endpoint: Some("https://test-account.blob.core.usgovcloudapi.net".to_string()),
                 endpoint_suffix: Some("core.chinacloudapi.cn".to_string()),
                 ..Default::default()
             };
