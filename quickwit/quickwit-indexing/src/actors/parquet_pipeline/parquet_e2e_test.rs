@@ -43,7 +43,7 @@ use crate::actors::sequencer::Sequencer;
 use crate::actors::{
     ParquetDocProcessor, ParquetIndexer, ParquetPackager, ParquetUploader, Publisher, UploaderType,
 };
-use crate::models::RawDocBatch;
+use crate::models::{RawDocBatch, SharedPublishToken};
 
 // =============================================================================
 // Helpers
@@ -166,6 +166,7 @@ async fn test_metrics_pipeline_e2e() {
         metastore_client.clone(),
         None,
         None,
+        SharedPublishToken::default(),
     );
     let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
@@ -516,6 +517,7 @@ async fn test_sketch_pipeline_e2e() {
         metastore_client.clone(),
         None,
         None,
+        SharedPublishToken::default(),
     );
     let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 

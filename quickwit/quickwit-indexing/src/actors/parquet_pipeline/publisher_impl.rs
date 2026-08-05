@@ -15,7 +15,6 @@
 //! `Handler<ParquetSplitsUpdate>` implementation for `Publisher`,
 //! specific to the metrics pipeline.
 
-use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{ActorContext, ActorExitStatus, Handler};
 use quickwit_dst::events::merge_pipeline::{MergePipelineEvent, record_merge_pipeline_event};
@@ -25,7 +24,10 @@ use quickwit_proto::metastore::{
 use tracing::{info, instrument};
 
 use super::ParquetSplitsUpdate;
-use crate::actors::publisher::{Publisher, serialize_checkpoint_delta, suggest_truncate};
+use crate::actors::publisher::{
+    Publisher, is_invalid_publish_token, publish_with_retry, serialize_checkpoint_delta,
+    suggest_truncate,
+};
 
 pub(crate) const METRICS_PUBLISHER_NAME: &str = "ParquetPublisher";
 
@@ -45,7 +47,6 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
             replaced_split_ids,
             checkpoint_delta_opt,
             publish_lock,
-            publish_token_opt,
             _merge_task_opt,
             ..
         } = split_update;
@@ -55,36 +56,57 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
             .iter()
             .map(|split| split.split_id.as_str().to_string())
             .collect();
-        if let Some(_guard) = publish_lock.acquire().await {
-            if quickwit_common::is_sketches_index(&index_uid.index_id) {
-                let publish_request = PublishSketchSplitsRequest {
-                    index_uid: Some(index_uid.clone()),
-                    staged_split_ids: split_ids.clone(),
-                    replaced_split_ids: replaced_split_ids.iter().map(String::from).collect(),
-                    index_checkpoint_delta_json_opt,
-                    publish_token_opt: publish_token_opt.clone(),
-                };
-                ctx.protect_future(self.metastore.publish_sketch_splits(publish_request))
-                    .await
-                    .context("failed to publish sketch splits")?;
-            } else {
-                let publish_request = PublishMetricsSplitsRequest {
-                    index_uid: Some(index_uid.clone()),
-                    staged_split_ids: split_ids.clone(),
-                    replaced_split_ids: replaced_split_ids.iter().map(String::from).collect(),
-                    index_checkpoint_delta_json_opt,
-                    publish_token_opt: publish_token_opt.clone(),
-                };
-                ctx.protect_future(self.metastore.publish_metrics_splits(publish_request))
-                    .await
-                    .context("failed to publish metrics splits")?;
-            }
-        } else {
+        let Some(guard) = publish_lock.acquire().await else {
             info!(
                 split_ids=?split_ids,
                 "Splits' publish lock is dead."
             );
             return Ok(());
+        };
+        let publish_result = if quickwit_common::is_sketches_index(&index_uid.index_id) {
+            publish_with_retry(ctx, "publish sketch splits", || {
+                let metastore = self.metastore.clone();
+                let publish_request = PublishSketchSplitsRequest {
+                    index_uid: Some(index_uid.clone()),
+                    staged_split_ids: split_ids.clone(),
+                    replaced_split_ids: replaced_split_ids.iter().map(String::from).collect(),
+                    index_checkpoint_delta_json_opt: index_checkpoint_delta_json_opt.clone(),
+                    publish_token_opt: self
+                        .publish_token
+                        .load()
+                        .as_deref()
+                        .map(|publish_token| publish_token.to_string()),
+                };
+                async move { metastore.publish_sketch_splits(publish_request).await }
+            })
+            .await
+        } else {
+            publish_with_retry(ctx, "publish metrics splits", || {
+                let metastore = self.metastore.clone();
+                let publish_request = PublishMetricsSplitsRequest {
+                    index_uid: Some(index_uid.clone()),
+                    staged_split_ids: split_ids.clone(),
+                    replaced_split_ids: replaced_split_ids.iter().map(String::from).collect(),
+                    index_checkpoint_delta_json_opt: index_checkpoint_delta_json_opt.clone(),
+                    publish_token_opt: self
+                        .publish_token
+                        .load()
+                        .as_deref()
+                        .map(|publish_token| publish_token.to_string()),
+                };
+                async move { metastore.publish_metrics_splits(publish_request).await }
+            })
+            .await
+        };
+        drop(guard);
+
+        if let Err(publish_error) = publish_result {
+            if is_invalid_publish_token(&publish_error) {
+                return self
+                    .terminate_pipeline(ctx, publish_error, &publish_lock, &split_ids)
+                    .await;
+            }
+            return Err(publish_error);
         }
         info!("publish-metrics-splits");
 
@@ -156,16 +178,21 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::{QueueCapacity, Universe};
+    use std::time::Duration;
+
+    use quickwit_actors::{Command, QueueCapacity, Universe};
+    use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
-    use quickwit_proto::metastore::{EmptyResponse, MetastoreServiceClient, MockMetastoreService};
+    use quickwit_proto::metastore::{
+        EmptyResponse, MetastoreError, MetastoreServiceClient, MockMetastoreService,
+    };
     use quickwit_proto::types::IndexUid;
     use tracing::Span;
 
     use super::{METRICS_PUBLISHER_NAME, ParquetSplitsUpdate};
     use crate::actors::publisher::Publisher;
-    use crate::models::PublishLock;
+    use crate::models::{PublishLock, SharedPublishToken};
 
     fn create_test_metrics_split_metadata(index_uid: &str, split_id: &str) -> ParquetSplitMetadata {
         ParquetSplitMetadata::metrics_builder()
@@ -200,6 +227,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             None,
             None,
+            SharedPublishToken::default(),
         );
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
@@ -215,7 +243,6 @@ mod tests {
                 source_delta: SourceCheckpointDelta::from_range(0..10),
             }),
             publish_lock: PublishLock::default(),
-            publish_token_opt: None,
             parent_span: Span::none(),
             _merge_task_opt: None,
         };
@@ -252,6 +279,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             None,
             None,
+            SharedPublishToken::default(),
         );
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
@@ -264,7 +292,6 @@ mod tests {
                 source_delta: SourceCheckpointDelta::from_range(0..1),
             }),
             publish_lock: PublishLock::default(),
-            publish_token_opt: None,
             parent_span: Span::none(),
             _merge_task_opt: None,
         };
@@ -292,6 +319,7 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
             None,
             None,
+            SharedPublishToken::default(),
         );
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
@@ -310,7 +338,6 @@ mod tests {
                 source_delta: SourceCheckpointDelta::from_range(0..10),
             }),
             publish_lock,
-            publish_token_opt: None,
             parent_span: Span::none(),
             _merge_task_opt: None,
         };
@@ -322,6 +349,77 @@ mod tests {
         assert_eq!(observation.num_replace_operations, 0);
         assert_eq!(observation.num_empty_splits, 0);
 
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_metrics_publisher_terminates_pipeline_on_invalid_publish_token_error() {
+        let universe = Universe::with_accelerated_time();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_publish_metrics_splits()
+            .times(3)
+            .returning(|_| {
+                Err(MetastoreError::InvalidPublishToken {
+                    queue_id: "test-index:0/test-source/0".to_string(),
+                })
+            });
+        let (source_mailbox, source_inbox) = universe.create_test_mailbox();
+        let publisher = Publisher::new(
+            METRICS_PUBLISHER_NAME,
+            QueueCapacity::Bounded(1),
+            MetastoreServiceClient::from_mock(mock_metastore),
+            None,
+            Some(source_mailbox),
+            SharedPublishToken::default(),
+        );
+        let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
+        let publish_lock = PublishLock::default();
+        let splits_update = |split_id: &str| ParquetSplitsUpdate {
+            index_uid: IndexUid::for_test("test-index", 0),
+            new_splits: vec![create_test_metrics_split_metadata(
+                "test-index:00000000000000000000000000",
+                split_id,
+            )],
+            replaced_split_ids: Vec::new(),
+            checkpoint_delta_opt: Some(IndexCheckpointDelta {
+                source_id: "test-source".to_string(),
+                source_delta: SourceCheckpointDelta::from_range(0..10),
+            }),
+            publish_lock: publish_lock.clone(),
+            parent_span: Span::none(),
+            _merge_task_opt: None,
+        };
+        publisher_mailbox
+            .send_message(splits_update("split-1"))
+            .await
+            .unwrap();
+        wait_until_predicate(
+            || {
+                let publish_lock = publish_lock.clone();
+                async move { publish_lock.is_dead() }
+            },
+            Duration::from_secs(10),
+            Duration::from_millis(10),
+        )
+        .await
+        .expect("publisher should give up on the revoked token and kill the publish lock");
+
+        publisher_mailbox
+            .send_message(splits_update("split-2"))
+            .await
+            .unwrap();
+        drop(publisher_mailbox);
+        let (exit_status, observation) = publisher_handle.join().await;
+
+        assert!(exit_status.is_success());
+        assert_eq!(observation.num_published_splits, 0);
+        let source_commands = source_inbox.drain_for_test_typed::<Command>();
+        assert!(matches!(
+            source_commands.as_slice(),
+            [Command::ExitWithSuccess]
+        ));
         universe.assert_quit().await;
     }
 }

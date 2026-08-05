@@ -57,7 +57,7 @@ use crate::actors::pipeline_shared::wait_duration_before_retry;
 use crate::actors::publisher::DisconnectMergePlanner;
 use crate::actors::{MergeSchedulerService, Publisher, Sequencer, UploaderType};
 use crate::metrics::ONGOING_MERGE_OPERATIONS;
-use crate::models::MergeStatistics;
+use crate::models::{MergeStatistics, SharedPublishToken};
 
 /// Limits concurrent Parquet merge pipeline spawns to avoid overwhelming the
 /// metastore. This is a separate semaphore from the Tantivy merge pipeline's.
@@ -302,6 +302,7 @@ impl ParquetMergePipeline {
             self.params.metastore.clone(),
             None, // No Tantivy planner
             None, // No source
+            SharedPublishToken::default(),
         )
         .set_parquet_merge_planner_mailbox(self.merge_planner_mailbox.clone());
 
@@ -675,7 +676,7 @@ mod tests {
                 max_merge_factor: 2,
                 max_merge_ops: 5,
                 target_split_size_bytes: 256 * 1024 * 1024,
-                maturation_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_hours(1),
                 max_finalize_merge_operations: 3,
             },
         ));
@@ -707,7 +708,7 @@ mod tests {
             .window_start_secs(0)
             .window_duration_secs(3600)
             .maturity(ParquetSplitMaturity::Immature {
-                maturation_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_hours(1),
             })
             .build()
     }
@@ -807,7 +808,7 @@ mod tests {
                 max_merge_factor: 2,
                 max_merge_ops: 5,
                 target_split_size_bytes: 256 * 1024 * 1024,
-                maturation_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_hours(1),
                 max_finalize_merge_operations: 3,
             },
         ));

@@ -67,6 +67,7 @@ PostgreSQL-backed metastores also expose connection pool gauges:
 | `quickwit_metastore` | `active_connections` | Number of active PostgreSQL pool connections, including used and idle connections | `gauge` |
 | `quickwit_metastore` | `idle_connections` | Number of idle PostgreSQL pool connections | `gauge` |
 | `quickwit_metastore` | `acquire_connections` | Number of requests currently waiting to acquire a PostgreSQL pool connection | `gauge` |
+| `quickwit_metastore` | `max_connections` | Maximum number of PostgreSQL pool connections configured per metastore node | `gauge` |
 
 ## Rest API Metrics
 

@@ -138,6 +138,8 @@ fn agg_unaffected_by_missing_field(agg: &AggregationVariants, field: &str) -> bo
         // we should check that each source targets the field, unfortunately
         // sources struct does not expose its field. Conservative: never strip.
         AggregationVariants::Composite(_) => false,
+        // multi_terms aggregates over several fields at once — conservative: never strip.
+        AggregationVariants::MultiTerms(_) => false,
         // top_hits returns docs — extra docs change the result
         AggregationVariants::TopHits(_) => false,
     }

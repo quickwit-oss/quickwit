@@ -30,6 +30,7 @@ use tracing::{info, warn};
 
 use super::{CloudPremConfig, GrpcConfig, HealthConfig, RestConfig};
 use crate::config_value::ConfigValue;
+use crate::docs_clustering::DocsClusteringConfigBuilder;
 use crate::node_config::intake_config::IntakeConfig;
 use crate::qw_env_vars::*;
 use crate::serde_utils::HumanDuration;
@@ -244,6 +245,9 @@ struct NodeConfigBuilder {
     #[serde(rename = "compactor")]
     #[serde(default)]
     compactor_config: CompactorConfig,
+    #[serde(rename = "docs_clustering")]
+    #[serde(default)]
+    docs_clustering_config: Option<DocsClusteringConfigBuilder>,
 }
 
 impl NodeConfigBuilder {
@@ -259,6 +263,8 @@ impl NodeConfigBuilder {
         let availability_zone = self.availability_zone.resolve_optional(env_vars)?;
 
         let enable_standalone_compactors = self.enable_standalone_compactors.resolve(env_vars)?;
+        let docs_clustering_config =
+            DocsClusteringConfigBuilder::build_optional(self.docs_clustering_config, env_vars)?;
 
         let resolved_enabled_services: HashSet<QuickwitService> =
             if let Some(enabled_services) = enabled_services {
@@ -390,6 +396,7 @@ impl NodeConfigBuilder {
             jaeger_config: self.jaeger_config,
             compactor_config: self.compactor_config,
             enable_standalone_compactors,
+            docs_clustering_config,
         };
 
         validate(&node_config)?;
@@ -536,6 +543,7 @@ impl Default for NodeConfigBuilder {
             ingest_api_config: IngestApiConfig::default(),
             jaeger_config: JaegerConfig::default(),
             compactor_config: CompactorConfig::default(),
+            docs_clustering_config: None,
         }
     }
 }
@@ -694,6 +702,7 @@ pub fn node_config_for_tests_from_ports(
         jaeger_config: JaegerConfig::default(),
         compactor_config: CompactorConfig::default(),
         enable_standalone_compactors: false,
+        docs_clustering_config: None,
     }
 }
 
@@ -857,11 +866,11 @@ mod tests {
         );
         assert_eq!(
             postgres_config.idle_connection_timeout_opt().unwrap(),
-            Some(Duration::from_secs(1800))
+            Some(Duration::from_mins(30))
         );
         assert_eq!(
             postgres_config.max_connection_lifetime_opt().unwrap(),
-            Some(Duration::from_secs(3600))
+            Some(Duration::from_hours(1))
         );
 
         assert_eq!(
@@ -1325,6 +1334,15 @@ mod tests {
         .await
         .unwrap();
         assert!(node_config.is_service_enabled(QuickwitService::Compactor));
+    }
+
+    #[tokio::test]
+    async fn test_docs_clustering_config_is_absent_by_default() {
+        let node_config = NodeConfigBuilder::default()
+            .build_and_validate(&HashMap::new(), None)
+            .await
+            .unwrap();
+        assert!(node_config.docs_clustering_config.is_none());
     }
 
     #[tokio::test]

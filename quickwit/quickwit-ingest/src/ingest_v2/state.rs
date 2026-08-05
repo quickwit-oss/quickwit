@@ -65,6 +65,8 @@ pub(super) struct InnerIngesterState {
     pub replication_tasks: HashMap<LeaderId, ReplicationTaskHandle>,
     cluster: Cluster,
     pub wal_capacity_tracker: WalCapacityTracker,
+    disk_capacity: ByteSize,
+    memory_capacity: ByteSize,
     status_tx: watch::Sender<IngesterStatus>,
 }
 
@@ -73,8 +75,13 @@ impl InnerIngesterState {
         *self.status_tx.borrow()
     }
 
-    pub async fn set_status(&mut self, status: IngesterStatus) {
+    /// Sets the status and notifies observation streams, even if the status has not changed.
+    fn set_status_and_notify(&self, status: IngesterStatus) {
         self.status_tx.send(status).expect("channel should be open");
+    }
+
+    pub async fn set_status(&mut self, status: IngesterStatus) {
+        self.set_status_and_notify(status);
         self.cluster
             .set_self_key_value(INGESTER_STATUS_KEY, status.as_json_str_name())
             .await;
@@ -85,8 +92,18 @@ impl InnerIngesterState {
         if self.status() != IngesterStatus::Decommissioning {
             return;
         }
-        if self.shards.is_empty() {
+        // An ingester is decommissioned if:
+        // - `self.shards` is empty OR
+        // - all shards are non-advertisable and empty
+        //
+        // see `IngesterShard::is_empty_orphan` for why the latter are never going to be deleted
+        // by any other cleanup mechanism, so we must not wait on them here.
+        let is_decommissioned = self.shards.values().all(|shard| shard.is_empty_orphan());
+
+        if is_decommissioned {
             self.set_status(IngesterStatus::Decommissioned).await;
+        } else {
+            self.set_status_and_notify(IngesterStatus::Decommissioning);
         }
     }
 
@@ -154,6 +171,8 @@ impl IngesterState {
             replication_tasks: Default::default(),
             cluster,
             wal_capacity_tracker: WalCapacityTracker::new(disk_capacity, memory_capacity),
+            disk_capacity,
+            memory_capacity,
             status_tx,
         };
         // We call `set_status` here instead of setting it directly because it also updates the
@@ -182,7 +201,14 @@ impl IngesterState {
         let wal_dir_path = wal_dir_path.to_path_buf();
 
         let init_future = async move {
-            state_clone.init(&wal_dir_path, rate_limiter_settings).await;
+            state_clone
+                .init(
+                    &wal_dir_path,
+                    disk_capacity,
+                    memory_capacity,
+                    rate_limiter_settings,
+                )
+                .await;
         };
         tokio::spawn(init_future);
 
@@ -216,7 +242,13 @@ impl IngesterState {
 
     /// Initializes the internal state of the ingester. It loads the local WAL, then lists all its
     /// queues. Every queue is recovered as a closed shard, including empty ones.
-    pub async fn init(&self, wal_dir_path: &Path, rate_limiter_settings: RateLimiterSettings) {
+    pub async fn init(
+        &self,
+        wal_dir_path: &Path,
+        disk_capacity: ByteSize,
+        memory_capacity: ByteSize,
+        rate_limiter_settings: RateLimiterSettings,
+    ) {
         // Acquire locks in the same order as `lock_fully` (mrecordlog first, then inner) to
         // prevent ABBA deadlocks with the broadcast capacity task.
         let mut mrecordlog_guard = self.mrecordlog.write().await;
@@ -299,7 +331,9 @@ impl IngesterState {
         if num_closed_shards > 0 {
             info!("recovered and closed {num_closed_shards} shard(s)");
         }
+        let wal_usage = mrecordlog.resource_usage();
         mrecordlog_guard.replace(mrecordlog);
+        crate::ingest_v2::metrics::report_wal_usage(wal_usage, disk_capacity, memory_capacity);
         inner_guard.set_status(IngesterStatus::Ready).await;
     }
 
@@ -530,6 +564,19 @@ where
 }
 
 impl FullyLockedIngesterState<'_> {
+    /// Reports the current WAL disk/memory usage and usage-ratio metrics against the configured
+    /// capacity limits. Called after any operation that grows or shrinks WAL usage so that
+    /// dashboards and alerts relying on these metrics stay accurate even when the ingester is
+    /// otherwise idle (e.g. after shards are cleaned up via gossip or a control-plane RPC).
+    fn report_wal_usage(&self) {
+        let wal_usage = self.mrecordlog.resource_usage();
+        crate::ingest_v2::metrics::report_wal_usage(
+            wal_usage,
+            self.disk_capacity,
+            self.memory_capacity,
+        );
+    }
+
     /// Deletes the shard identified by `queue_id` from the ingester state. It removes the
     /// mrecordlog queue first and then removes the associated in-memory shard and rate trackers.
     #[instrument(name = "ingester.delete_shard", skip_all, fields(queue_id, initiator))]
@@ -552,6 +599,7 @@ impl FullyLockedIngesterState<'_> {
                             }
                         }
                     }
+                    self.report_wal_usage();
                 }
             }
             Err(DeleteQueueError::IoError(io_error)) => {
@@ -603,6 +651,7 @@ impl FullyLockedIngesterState<'_> {
              `{initiator}`"
         );
         shard.truncation_position_inclusive = truncate_up_to_position_inclusive;
+        self.report_wal_usage();
     }
 
     /// Deletes and truncates the shards as directed by the `advise_reset_shards_response` returned
@@ -757,7 +806,12 @@ mod tests {
         let cluster = test_cluster().await;
         let mut state = IngesterState::create(cluster, ByteSize::mb(256), ByteSize::mb(256)).await;
         state
-            .init(temp_dir.path(), RateLimiterSettings::default())
+            .init(
+                temp_dir.path(),
+                ByteSize::mb(256),
+                ByteSize::mb(256),
+                RateLimiterSettings::default(),
+            )
             .await;
         timeout(Duration::from_millis(100), state.wait_for_ready())
             .await
@@ -953,7 +1007,12 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
 
         state
-            .init(temp_dir.path(), RateLimiterSettings::default())
+            .init(
+                temp_dir.path(),
+                ByteSize::mb(256),
+                ByteSize::mb(256),
+                RateLimiterSettings::default(),
+            )
             .await;
 
         let mut state_guard = state.lock_fully("test").await.unwrap();

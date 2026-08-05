@@ -190,6 +190,13 @@ indexer:
 #   max_queue_memory_usage: 2GiB
 #   max_queue_disk_usage: 4GiB
 #   content_length_limit: 10MiB
+#   decommission_timeout: 300s
+#
+# -------------------------------- Compactor settings --------------------------------
+# https://quickwit.io/docs/configuration/node-config#compactor-configuration
+#
+# compactor:
+#   decommission_timeout: 300s
 #
 # -------------------------------- Searcher settings --------------------------------
 # https://quickwit.io/docs/configuration/node-config#searcher-configuration

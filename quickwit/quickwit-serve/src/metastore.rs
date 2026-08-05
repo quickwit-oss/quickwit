@@ -167,7 +167,7 @@ impl LocalMetastoreServer {
 
         ensure!(
             balance_channel
-                .wait_for(Duration::from_secs(300), |connections| {
+                .wait_for(Duration::from_mins(5), |connections| {
                     !connections.is_empty()
                 })
                 .await,
