@@ -16,11 +16,12 @@ use std::collections::HashMap;
 use std::ops::Deref;
 
 use anyhow::ensure;
-use serde::de::Error as SerdeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::config_value::ConfigValue;
 use crate::qw_env_vars::QW_DISABLE_DOCS_CLUSTERING;
+
+const JSON_PATH_SEPARATOR: &str = ".";
 
 /// Configuration for document clustering.
 ///
@@ -131,6 +132,9 @@ impl FingerprintPolicy {
             !self.fingerprint.is_empty(),
             "document clustering fingerprint policy must contain at least one field"
         );
+        for method in &self.fingerprint {
+            method.validate()?;
+        }
         Ok(())
     }
 }
@@ -142,7 +146,7 @@ pub struct JsonPath(Box<[String]>);
 impl Serialize for JsonPath {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where S: Serializer {
-        serializer.serialize_str(&self.0.join("."))
+        serializer.serialize_str(&self.0.join(JSON_PATH_SEPARATOR))
     }
 }
 
@@ -150,31 +154,29 @@ impl<'de> Deserialize<'de> for JsonPath {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
         let path = String::deserialize(deserializer)?;
-        if path.is_empty() {
-            return Err(D::Error::custom(
-                "document clustering path must not be empty",
-            ));
-        }
-
-        let json_path: Box<[String]> = path.split('.').map(ToString::to_string).collect();
-        if json_path
-            .iter()
-            .any(|path_component| path_component.is_empty())
-        {
-            return Err(D::Error::custom(format!(
-                "document clustering path `{path}` must not contain empty components"
-            )));
-        }
-        if json_path
-            .iter()
-            .any(|path_component| path_component.trim() != path_component)
-        {
-            return Err(D::Error::custom(format!(
-                "document clustering path `{path}` must not contain leading or trailing whitespace"
-            )));
-        }
-
+        let json_path: Box<[String]> = path
+            .split(JSON_PATH_SEPARATOR)
+            .map(ToString::to_string)
+            .collect();
         Ok(Self(json_path))
+    }
+}
+
+impl JsonPath {
+    fn validate(&self) -> anyhow::Result<()> {
+        ensure!(
+            !self.iter().any(|path_component| path_component.is_empty()),
+            "document clustering path `{:?}` must not contain empty components",
+            self
+        );
+        ensure!(
+            !self
+                .iter()
+                .any(|path_component| path_component.trim() != path_component),
+            "document clustering path `{:?}` must not contain leading or trailing whitespace",
+            self
+        );
+        Ok(())
     }
 }
 
@@ -221,11 +223,25 @@ pub enum ClusteringMethod {
     },
 }
 
+impl ClusteringMethod {
+    fn validate(&self) -> anyhow::Result<()> {
+        match self {
+            Self::Structure { exclude } => {
+                for path in exclude {
+                    path.validate()?;
+                }
+            }
+            Self::Raw { path } | Self::Tokenized { path, .. } => path.validate()?,
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
-    use super::{DocsClusteringConfig, DocsClusteringConfigBuilder, JsonPath};
+    use super::{DocsClusteringConfig, DocsClusteringConfigBuilder};
 
     fn build_config(yaml: &str) -> anyhow::Result<Option<DocsClusteringConfig>> {
         build_config_with_env(yaml, &HashMap::new())
@@ -327,6 +343,26 @@ mod tests {
                 ]),
                 "fingerprint policy must contain at least one field",
             ),
+            (
+                serde_json::json!([
+                    {"fingerprint": [{"path": "", "kind": "raw"}]}
+                ]),
+                "must not contain empty components",
+            ),
+            (
+                serde_json::json!([
+                    {"fingerprint": [
+                        {"path": "message..template", "kind": "tokenized"}
+                    ]}
+                ]),
+                "must not contain empty components",
+            ),
+            (
+                serde_json::json!([
+                    {"fingerprint": [{"kind": "structure", "exclude": [" custom"]}]}
+                ]),
+                "must not contain leading or trailing whitespace",
+            ),
         ];
 
         for (json_value, expected_error) in test_cases {
@@ -340,16 +376,19 @@ mod tests {
     }
 
     #[test]
-    fn deserialization_rejects_invalid_json_path() {
-        let error =
-            serde_json::from_value::<JsonPath>(serde_json::json!("message..template")).unwrap_err();
-
-        assert!(
-            error
-                .to_string()
-                .contains("must not contain empty components"),
-            "expected invalid json path failure, got: {error:?}"
+    fn disable_override_bypasses_invalid_json_path() {
+        let env_vars =
+            HashMap::from([("QW_DISABLE_DOCS_CLUSTERING".to_string(), "true".to_string())]);
+        let config = build_config_with_env(
+            r#"
+- fingerprint:
+    - path: message..template
+      kind: tokenized
+"#,
+            &env_vars,
         );
+
+        assert!(config.unwrap().is_none());
     }
 
     #[test]
