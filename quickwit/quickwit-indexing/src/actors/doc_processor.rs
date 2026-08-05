@@ -52,9 +52,7 @@ use crate::metrics::{
     DD_INDEXED_EVENTS, DD_INDEXED_EVENTS_BYTES, INDEX_SOURCE, INDEXING_STATUS, PROCESSED_BYTES,
     PROCESSED_DOCS_TOTAL, PROCESSING_PIPELINE_THREAD_CPU_MICROS_TOTAL,
 };
-use crate::models::{
-    NewPublishLock, NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch,
-};
+use crate::models::{NewPublishLock, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch};
 
 const PLAIN_TEXT: &str = "plain_text";
 const DEFAULT_MAX_LOG_PAST_AGE_HOURS: u64 = 18;
@@ -821,20 +819,6 @@ impl Handler<NewPublishLock> for DocProcessor {
     ) -> Result<(), ActorExitStatus> {
         let NewPublishLock(publish_lock) = &message;
         self.publish_lock = publish_lock.clone();
-        ctx.send_message(&self.indexer_mailbox, message).await?;
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<NewPublishToken> for DocProcessor {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        message: NewPublishToken,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
         ctx.send_message(&self.indexer_mailbox, message).await?;
         Ok(())
     }

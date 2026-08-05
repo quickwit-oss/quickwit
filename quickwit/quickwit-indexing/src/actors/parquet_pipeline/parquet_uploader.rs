@@ -199,7 +199,6 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                 replaced_split_ids: batch.replaced_split_ids,
                 checkpoint_delta_opt: batch.checkpoint_delta_opt,
                 publish_lock: batch.publish_lock,
-                publish_token_opt: batch.publish_token_opt,
                 parent_span: tracing::Span::current(),
                 _merge_task_opt: batch._merge_task_opt,
             };
@@ -237,7 +236,6 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
         let output_dir = batch.output_dir;
         let checkpoint_delta_opt = batch.checkpoint_delta_opt;
         let publish_lock = batch.publish_lock;
-        let publish_token_opt = batch.publish_token_opt;
         let mut splits = batch.splits;
         let replaced_split_ids = batch.replaced_split_ids;
         let merge_task_opt = batch._merge_task_opt;
@@ -378,7 +376,6 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     replaced_split_ids,
                     checkpoint_delta_opt,
                     publish_lock,
-                    publish_token_opt,
                     parent_span: Span::current(),
                     _merge_task_opt: merge_task_opt,
                 };
@@ -499,7 +496,6 @@ mod tests {
             output_dir: temp_dir.path().to_path_buf(),
             checkpoint_delta_opt: Some(checkpoint_delta),
             publish_lock: PublishLock::default(),
-            publish_token_opt: None,
             replaced_split_ids: Vec::new(),
             _scratch_directory_opt: None,
             _merge_task_opt: None,
@@ -598,7 +594,6 @@ mod tests {
             output_dir: temp_dir.path().to_path_buf(),
             checkpoint_delta_opt: Some(checkpoint_delta),
             publish_lock: PublishLock::default(),
-            publish_token_opt: None,
             replaced_split_ids: Vec::new(),
             _scratch_directory_opt: None,
             _merge_task_opt: None,
@@ -678,7 +673,6 @@ mod tests {
             output_dir: temp_dir.path().to_path_buf(),
             checkpoint_delta_opt: Some(checkpoint_delta),
             publish_lock: PublishLock::default(),
-            publish_token_opt: None,
             replaced_split_ids: Vec::new(),
             _scratch_directory_opt: None,
             _merge_task_opt: None,
@@ -754,7 +748,6 @@ mod tests {
                 output_dir: temp_dir.path().to_path_buf(),
                 checkpoint_delta_opt: Some(checkpoint_delta),
                 publish_lock: PublishLock::default(),
-                publish_token_opt: None,
                 replaced_split_ids: Vec::new(),
                 _scratch_directory_opt: None,
                 _merge_task_opt: None,

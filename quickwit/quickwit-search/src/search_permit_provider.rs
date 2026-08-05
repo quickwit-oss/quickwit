@@ -416,20 +416,6 @@ impl SearchPermitActor {
                 .ok();
         }
         LEAF_SEARCH_SINGLE_SPLIT_TASKS_PENDING.set(self.permits_requests.len() as f64);
-
-        // Invariant: when the queue is empty and no memory is allocated, no tasks are
-        // in-flight, so total_job_cost must be zero.
-        if self.permits_requests.is_empty() && self.total_memory_allocated == 0 {
-            // Atomic swap so we read and reset in a single operation.
-            let prev = self.total_job_cost.swap(0, Ordering::Relaxed);
-            if prev != 0 {
-                warn!(
-                    total_job_cost = prev,
-                    "total_job_cost is non-zero with no tasks in queue or active; resetting to 0"
-                );
-                SEARCHER_NODE_LOAD.set(0.0);
-            }
-        }
     }
 }
 
