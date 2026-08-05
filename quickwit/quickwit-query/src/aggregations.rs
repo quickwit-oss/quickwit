@@ -172,6 +172,15 @@ pub enum BucketResult {
         /// The upper bound error for the doc count of each term.
         doc_count_error_upper_bound: Option<u64>,
     },
+    /// This is the composite aggregation result
+    Composite {
+        /// The buckets
+        buckets: Vec<CompositeBucketEntry>,
+        /// The key to start after when paginating.
+        /// Uses tantivy's AfterKey directly since it carries type-tagged
+        /// serialization needed for correct pagination round-tripping.
+        after_key: FxHashMap<String, TantivyAfterKey>,
+    },
     /// This is the multi_terms result
     MultiTerms {
         /// The buckets, one per unique combination of field values.
@@ -182,15 +191,6 @@ pub enum BucketResult {
         sum_other_doc_count: u64,
         /// The upper bound error for the doc count of each term combination.
         doc_count_error_upper_bound: Option<u64>,
-    },
-    /// This is the composite aggregation result
-    Composite {
-        /// The buckets
-        buckets: Vec<CompositeBucketEntry>,
-        /// The key to start after when paginating.
-        /// Uses tantivy's AfterKey directly since it carries type-tagged
-        /// serialization needed for correct pagination round-tripping.
-        after_key: FxHashMap<String, TantivyAfterKey>,
     },
 }
 
@@ -215,6 +215,10 @@ impl From<TantivyBucketResult> for BucketResult {
             TantivyBucketResult::Filter(_filter_bucket_result) => {
                 unimplemented!("filter aggregation is not yet supported in quickwit")
             }
+            TantivyBucketResult::Composite { buckets, after_key } => BucketResult::Composite {
+                buckets: buckets.into_iter().map(Into::into).collect(),
+                after_key,
+            },
             TantivyBucketResult::MultiTerms {
                 buckets,
                 sum_other_doc_count,
@@ -223,10 +227,6 @@ impl From<TantivyBucketResult> for BucketResult {
                 buckets: buckets.into_iter().map(Into::into).collect(),
                 sum_other_doc_count,
                 doc_count_error_upper_bound,
-            },
-            TantivyBucketResult::Composite { buckets, after_key } => BucketResult::Composite {
-                buckets: buckets.into_iter().map(Into::into).collect(),
-                after_key,
             },
         }
     }
@@ -250,6 +250,10 @@ impl From<BucketResult> for TantivyBucketResult {
                 sum_other_doc_count,
                 doc_count_error_upper_bound,
             },
+            BucketResult::Composite { buckets, after_key } => TantivyBucketResult::Composite {
+                buckets: buckets.into_iter().map(Into::into).collect(),
+                after_key,
+            },
             BucketResult::MultiTerms {
                 buckets,
                 sum_other_doc_count,
@@ -258,10 +262,6 @@ impl From<BucketResult> for TantivyBucketResult {
                 buckets: buckets.into_iter().map(Into::into).collect(),
                 sum_other_doc_count,
                 doc_count_error_upper_bound,
-            },
-            BucketResult::Composite { buckets, after_key } => TantivyBucketResult::Composite {
-                buckets: buckets.into_iter().map(Into::into).collect(),
-                after_key,
             },
         }
     }
