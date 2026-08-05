@@ -145,6 +145,7 @@ use tracing::{debug, error, info, warn};
 use warp::{Filter, Rejection};
 
 pub use crate::build_info::{BuildInfo, RuntimeInfo};
+use crate::datadog_api::IndexRouter;
 pub use crate::deployment_info::DeploymentInfo;
 pub use crate::env_info::EnvInfo;
 pub use crate::index_api::{ListSplitsQueryParams, ListSplitsResponse};
@@ -198,6 +199,7 @@ struct QuickwitServices {
     pub control_plane_server_opt: Option<Mailbox<ControlPlane>>,
     pub control_plane_client: ControlPlaneServiceClient,
     pub index_manager: IndexManager,
+    pub index_router: IndexRouter,
     pub indexing_service_opt: Option<Mailbox<IndexingService>>,
     // Ingest v1
     pub ingest_service: IngestServiceClient,
@@ -903,6 +905,13 @@ pub async fn serve_quickwit(
         None
     };
 
+    let index_router = IndexRouter::create_and_subscribe(
+        primary_metastore_through_control_plane.clone(),
+        &cluster,
+    )
+    .await
+    .context("failed to create index router")?;
+
     let grpc_listen_addr = node_config.grpc_listen_addr;
     let cloudprem_listen_addr = node_config.cloudprem_listen_addr;
     let rest_listen_addr = node_config.rest_config.listen_addr;
@@ -916,6 +925,7 @@ pub async fn serve_quickwit(
         _local_shards_update_listener_handle_opt: local_shards_update_listener_handle_opt,
         _report_splits_subscription_handle_opt: report_splits_subscription_handle_opt,
         index_manager,
+        index_router,
         indexing_service_opt,
         ingest_router_opt: Some(ingest_router),
         ingest_router_service,
