@@ -62,7 +62,7 @@ use std::sync::Arc;
 
 use fnv::FnvHasher;
 use quickwit_config::{
-    ClusteringField, ClusteringPolicy, DocsClusteringConfig, FingerprintPolicy, JsonPath,
+    ClusteringMethod, ClusteringPolicy, DocsClusteringConfig, FingerprintPolicy, JsonPath,
 };
 use serde_json::Value as JsonValue;
 use smallvec::SmallVec;
@@ -131,16 +131,16 @@ impl Fingerprinter {
         for policy in self.policies.iter() {
             let mut hasher = FnvHasher::default();
 
-            for field in policy.fingerprint.iter() {
-                match field {
-                    ClusteringField::Structure { exclude } => {
+            for method in policy.fingerprint.iter() {
+                match method {
+                    ClusteringMethod::Structure { exclude } => {
                         self.hash_structure(json_value, exclude, &mut hasher);
                     }
-                    ClusteringField::Raw { path } => {
-                        self.hash_raw_field(json_value, path, &mut hasher);
+                    ClusteringMethod::Raw { path } => {
+                        self.hash_string_value(json_value, path, &mut hasher);
                     }
-                    ClusteringField::Tokenized { path } => {
-                        self.hash_tokenized_field(json_value, path, true, &mut hasher);
+                    ClusteringMethod::Tokenized { path } => {
+                        self.hash_string_tokenized(json_value, path, true, &mut hasher);
                     }
                 }
             }
@@ -197,7 +197,7 @@ impl Fingerprinter {
         }
     }
 
-    fn hash_raw_field(&self, json_value: &JsonValue, path: &JsonPath, hasher: &mut FnvHasher) {
+    fn hash_string_value(&self, json_value: &JsonValue, path: &JsonPath, hasher: &mut FnvHasher) {
         let Some(value) = get_leaf_string(json_value, path) else {
             hasher.write_u8(FIELD_ABSENT);
             hasher.write_u8(FIELD_BOUNDARY);
@@ -208,7 +208,7 @@ impl Fingerprinter {
         hasher.write_u8(FIELD_BOUNDARY);
     }
 
-    fn hash_tokenized_field(
+    fn hash_string_tokenized(
         &self,
         json_value: &JsonValue,
         path: &JsonPath,

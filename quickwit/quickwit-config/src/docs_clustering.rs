@@ -122,7 +122,7 @@ impl ClusteringPolicy {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct FingerprintPolicy {
-    pub fingerprint: Vec<ClusteringField>,
+    pub fingerprint: Vec<ClusteringMethod>,
 }
 
 impl FingerprintPolicy {
@@ -189,7 +189,7 @@ impl Deref for JsonPath {
 /// A field used to partition documents.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum ClusteringField {
+pub enum ClusteringMethod {
     /// Groups documents by JSON structure.
     ///
     /// For example, `{"message":"hello"}` and `{"body":"hello"}` belong to different groups
