@@ -345,7 +345,7 @@ mod tests {
                 num_docs: 100,
                 create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
                 maturity: SplitMaturity::Immature {
-                    maturation_period: Duration::from_secs(3600),
+                    maturation_period: Duration::from_hours(1),
                 },
                 ..Default::default()
             },

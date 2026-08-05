@@ -676,7 +676,7 @@ mod tests {
                 max_merge_factor: 2,
                 max_merge_ops: 5,
                 target_split_size_bytes: 256 * 1024 * 1024,
-                maturation_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_hours(1),
                 max_finalize_merge_operations: 3,
             },
         ));
@@ -708,7 +708,7 @@ mod tests {
             .window_start_secs(0)
             .window_duration_secs(3600)
             .maturity(ParquetSplitMaturity::Immature {
-                maturation_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_hours(1),
             })
             .build()
     }
@@ -808,7 +808,7 @@ mod tests {
                 max_merge_factor: 2,
                 max_merge_ops: 5,
                 target_split_size_bytes: 256 * 1024 * 1024,
-                maturation_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_hours(1),
                 max_finalize_merge_operations: 3,
             },
         ));

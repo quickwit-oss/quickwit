@@ -47,7 +47,8 @@ use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
 use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
-use tracing::{debug, error, info, info_span, instrument};
+use tracing::{Span, debug, error, info, info_span, instrument};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{QuickwitAggregations, make_merge_collector};
@@ -71,7 +72,7 @@ fn max_scroll_ttl() -> Duration {
              should not happen."
         );
         // We remove an extra margin of 2minutes from the split deletion grace period.
-        split_deletion_grace_period - Duration::from_secs(60 * 2)
+        split_deletion_grace_period - Duration::from_mins(2)
     });
     *MAX_SCROLL_TTL_LOCK
 }
@@ -917,7 +918,7 @@ fn compute_root_resource_stats(
 
 /// If this method fails for some splits, a partial search response is returned, with the list of
 /// faulty splits in the failed_splits field.
-#[instrument(level = "debug", skip_all)]
+#[instrument(skip_all)]
 pub(crate) async fn search_partial_hits_phase(
     searcher_context: &SearcherContext,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
@@ -1377,6 +1378,7 @@ async fn refine_and_list_matches(
 }
 
 /// Fetches the list of splits and their metadata from the metastore
+#[instrument(skip_all)]
 pub(crate) async fn plan_splits_for_root_search(
     search_request: &mut SearchRequest,
     metastore: &MetastoreServiceClient,
@@ -1439,8 +1441,6 @@ pub async fn root_search(
     let num_docs: usize = split_metadatas.iter().map(|split| split.num_docs).sum();
     let num_splits = split_metadatas.len();
 
-    // It would have been nice to add those in the context of the trace span,
-    // but with our current logging setting, it makes logs too verbose.
     info!(
         query_ast = search_request.query_ast.as_str(),
         agg = search_request.aggregation_request(),
@@ -1450,6 +1450,17 @@ pub async fn root_search(
         num_splits = num_splits,
         "root_search"
     );
+
+    // set attributes directly on the trace so it doesn't make logs too verbose
+    Span::current().set_attribute("query_ast", search_request.query_ast.clone());
+    Span::current().set_attribute("num_docs", num_docs as i64);
+    Span::current().set_attribute("num_splits", num_splits as i64);
+    if let Some(start_timestamp) = search_request.start_timestamp {
+        Span::current().set_attribute("start_timestamp", start_timestamp);
+    }
+    if let Some(end_timestamp) = search_request.end_timestamp {
+        Span::current().set_attribute("end_timestamp", end_timestamp);
+    }
 
     if let Some(max_total_split_searches) = searcher_context.searcher_config.max_splits_per_search
         && max_total_split_searches < num_splits

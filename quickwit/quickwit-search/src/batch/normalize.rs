@@ -119,25 +119,32 @@ fn quantize_timestamp_ranges(ast: &mut QueryAst) {
 /// change this aggregation's output. Only checks the top-level agg type —
 /// sub-aggregations are shielded by their parent bucket.
 fn agg_unaffected_by_missing_field(agg: &AggregationVariants, field: &str) -> bool {
+    // If `missing` is set, docs without a value for the field are substituted with it and
+    // counted, so adding more such docs *does* change the result — only safe to strip when
+    // `missing` is unset.
     match agg {
-        AggregationVariants::Terms(t) => t.field == field,
+        AggregationVariants::Terms(t) => t.field == field && t.missing.is_none(),
         AggregationVariants::Range(r) => r.field == field,
         AggregationVariants::Histogram(h) => h.field == field,
         AggregationVariants::DateHistogram(d) => d.field == field,
-        AggregationVariants::Average(a) => a.field_name() == field,
-        AggregationVariants::Count(c) => c.field_name() == field,
-        AggregationVariants::Max(m) => m.field_name() == field,
-        AggregationVariants::Min(m) => m.field_name() == field,
-        AggregationVariants::Sum(s) => s.field_name() == field,
-        AggregationVariants::Stats(s) => s.field_name() == field,
-        AggregationVariants::ExtendedStats(e) => e.field_name() == field,
-        AggregationVariants::Percentiles(p) => p.field_name() == field,
-        AggregationVariants::Cardinality(c) => c.field_name() == field,
+        AggregationVariants::Average(a) => a.field_name() == field && a.missing.is_none(),
+        AggregationVariants::Count(c) => c.field_name() == field && c.missing.is_none(),
+        AggregationVariants::Max(m) => m.field_name() == field && m.missing.is_none(),
+        AggregationVariants::Min(m) => m.field_name() == field && m.missing.is_none(),
+        AggregationVariants::Sum(s) => s.field_name() == field && s.missing.is_none(),
+        AggregationVariants::Stats(s) => s.field_name() == field && s.missing.is_none(),
+        AggregationVariants::ExtendedStats(e) => e.field_name() == field && e.missing.is_none(),
+        AggregationVariants::Percentiles(p) => p.field_name() == field && p.missing.is_none(),
+        AggregationVariants::Cardinality(c) => c.field_name() == field && c.missing.is_none(),
         // filter uses a query, not a field — extra docs could change the result
         AggregationVariants::Filter(_) => false,
         // we should check that each source targets the field, unfortunately
         // sources struct does not expose its field. Conservative: never strip.
         AggregationVariants::Composite(_) => false,
+        AggregationVariants::MultiTerms(mt) => mt
+            .terms
+            .iter()
+            .any(|t| t.field == field && t.missing.is_none()),
         // top_hits returns docs — extra docs change the result
         AggregationVariants::TopHits(_) => false,
     }

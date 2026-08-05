@@ -56,7 +56,8 @@ pub mod uri;
 
 mod metrics_specific;
 pub use env::{
-    get_bool_from_env, get_bool_from_env_opt, get_from_env, get_from_env_opt, parse_bool_lenient,
+    get_bool_from_env, get_bool_from_env_opt, get_duration_from_env, get_from_env,
+    get_from_env_opt, parse_bool_lenient,
 };
 pub use metrics_specific::*;
 

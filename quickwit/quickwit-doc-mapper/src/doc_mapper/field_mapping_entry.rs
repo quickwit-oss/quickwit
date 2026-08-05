@@ -529,7 +529,7 @@ impl From<QuickwitTextOptions> for TextOptions {
         }
         match &quickwit_text_options.fast {
             FastFieldOptions::EnabledWithNormalizer { normalizer } => {
-                text_options = text_options.set_fast(Some(normalizer.get_name()));
+                text_options = text_options.set_fast(normalizer.get_name());
             }
             FastFieldOptions::Disabled => {}
         }
@@ -647,7 +647,7 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
         }
         match &quickwit_json_options.fast {
             FastFieldOptions::EnabledWithNormalizer { normalizer } => {
-                json_options = json_options.set_fast(Some(normalizer.get_name()));
+                json_options = json_options.set_fast(normalizer.get_name());
             }
             FastFieldOptions::Disabled => {}
         }

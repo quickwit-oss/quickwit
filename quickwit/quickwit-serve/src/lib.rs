@@ -166,7 +166,7 @@ const READINESS_FAILURE_THRESHOLD: usize = 3;
 const COMPACTION_SERVICE_DISCOVERY_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(100)
 } else {
-    Duration::from_secs(300)
+    Duration::from_mins(5)
 };
 
 const DISABLE_DELETE_TASK_SERVICE_ENV_KEY: &str = "QW_DISABLE_DELETE_TASK_SERVICE";
@@ -473,7 +473,7 @@ async fn start_control_plane_if_needed(
             info!("connecting to control plane");
 
             if !balance_channel
-                .wait_for(Duration::from_secs(300), |connections| {
+                .wait_for(Duration::from_mins(5), |connections| {
                     !connections.is_empty()
                 })
                 .await
@@ -503,7 +503,7 @@ fn start_shard_positions_service(
     // the `ShardPositionsService`. If we don't, all the events we emit too early will be dismissed.
     tokio::spawn(async move {
         if let Some(ingester) = &ingester_opt
-            && wait_for_ingester_status(ingester, IngesterStatus::Ready, Duration::from_secs(300))
+            && wait_for_ingester_status(ingester, IngesterStatus::Ready, Duration::from_mins(5))
                 .await
                 .is_err()
         {
@@ -524,7 +524,9 @@ async fn shutdown_signal_handler(
     universe: Universe,
     ingester_opt: Option<Ingester>,
     cloudprem_shutdown_trigger_tx: oneshot::Sender<()>,
+    ingester_decommission_timeout: Duration,
     compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
+    compactor_decommission_timeout: Duration,
     grpc_shutdown_trigger_tx: oneshot::Sender<()>,
     rest_shutdown_trigger_tx: oneshot::Sender<()>,
     health_shutdown_trigger_tx_opt: Option<oneshot::Sender<()>>,
@@ -541,8 +543,8 @@ async fn shutdown_signal_handler(
             None
         });
     let (ingester_result, compactor_result) = tokio::join!(
-        wait_for_ingester_decommission(ingester_opt.as_ref(), Duration::from_secs(300)),
-        wait_for_compactor_decommission(compactor_status_rx_opt, Duration::from_secs(300)),
+        wait_for_ingester_decommission(ingester_opt.as_ref(), ingester_decommission_timeout),
+        wait_for_compactor_decommission(compactor_status_rx_opt, compactor_decommission_timeout),
     );
     if let Err(error) = ingester_result {
         error!("failed to decommission ingester gracefully: {:?}", error);
@@ -906,6 +908,8 @@ pub async fn serve_quickwit(
     let grpc_listen_addr = node_config.grpc_listen_addr;
     let cloudprem_listen_addr = node_config.cloudprem_listen_addr;
     let rest_listen_addr = node_config.rest_config.listen_addr;
+    let ingester_decommission_timeout = node_config.ingest_api_config.decommission_timeout();
+    let compactor_decommission_timeout = node_config.compactor_config.decommission_timeout();
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
         node_config: Arc::new(node_config.clone()),
         cluster: cluster.clone(),
@@ -1050,7 +1054,9 @@ pub async fn serve_quickwit(
         universe,
         ingester_opt,
         cloudprem_shutdown_trigger_tx,
+        ingester_decommission_timeout,
         compactor_supervisor_opt,
+        compactor_decommission_timeout,
         grpc_shutdown_trigger_tx,
         rest_shutdown_trigger_tx,
         health_shutdown_trigger_tx_opt,
@@ -1453,7 +1459,7 @@ async fn setup_control_plane(
         .forever();
 
     tokio::time::timeout(
-        Duration::from_secs(300),
+        Duration::from_mins(5),
         readiness_rx.wait_for(|readiness| *readiness),
     )
     .await
@@ -2033,6 +2039,7 @@ mod tests {
                     let message = ObservationMessage {
                         node_id: "test-node".to_string(),
                         status: status as i32,
+                        ..Default::default()
                     };
                     Ok(message)
                 });

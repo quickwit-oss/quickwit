@@ -48,6 +48,7 @@ use tracing::{error, info};
 #[cfg(feature = "vrl")]
 use super::vrl_processing::*;
 use crate::actors::Indexer;
+use crate::docs_clustering::Fingerprinter;
 use crate::metrics::{
     DD_INDEXED_EVENTS, DD_INDEXED_EVENTS_BYTES, INDEX_SOURCE, INDEXING_STATUS, PROCESSED_BYTES,
     PROCESSED_DOCS_TOTAL, PROCESSING_PIPELINE_THREAD_CPU_MICROS_TOTAL,
@@ -512,6 +513,7 @@ pub struct DocProcessor {
     doc_mapper: Arc<DocMapper>,
     indexer_mailbox: Mailbox<Indexer>,
     timestamp_field_opt: Option<Field>,
+    fingerprinter_opt: Option<Fingerprinter>,
     counters: Arc<DocProcessorCounters>,
     publish_lock: PublishLock,
     #[cfg(feature = "vrl")]
@@ -567,6 +569,7 @@ impl DocProcessor {
         indexer_mailbox: Mailbox<Indexer>,
         transform_config_opt: Option<TransformConfig>,
         input_format: SourceInputFormat,
+        fingerprinter_opt: Option<Fingerprinter>,
     ) -> anyhow::Result<Self> {
         let timestamp_field_opt = extract_timestamp_field(&doc_mapper)?;
         if cfg!(not(feature = "vrl")) && transform_config_opt.is_some() {
@@ -605,6 +608,7 @@ impl DocProcessor {
             doc_mapper,
             indexer_mailbox,
             timestamp_field_opt,
+            fingerprinter_opt,
             counters: Arc::new(DocProcessorCounters::new(index_id, source_id)),
             publish_lock: PublishLock::default(),
             #[cfg(feature = "vrl")]
@@ -708,13 +712,21 @@ impl DocProcessor {
 
     fn process_json_doc(&self, json_doc: JsonDoc) -> Result<ProcessedDoc, DocProcessorError> {
         let num_bytes = json_doc.num_bytes;
-
+        let json_value = JsonValue::Object(json_doc.json_obj);
+        let fingerprint_opt = self
+            .fingerprinter_opt
+            .as_ref()
+            .map(|fingerprinter| fingerprinter.fingerprint(&json_value));
+        let JsonValue::Object(json_obj) = json_value else {
+            unreachable!("document JSON value is always an object")
+        };
         let (partition, doc) = self
             .doc_mapper
-            .doc_from_json_obj(json_doc.json_obj, json_doc.num_bytes as u64)?;
+            .doc_from_json_obj(json_obj, num_bytes as u64)?;
         let timestamp_opt = self.extract_timestamp(&doc)?;
         Ok(ProcessedDoc {
             doc,
+            fingerprint_opt,
             timestamp_opt,
             partition,
             num_bytes,
@@ -831,7 +843,7 @@ mod tests {
     use prost::Message;
     use quickwit_actors::Universe;
     use quickwit_common::uri::Uri;
-    use quickwit_config::{SearchSettings, build_doc_mapper};
+    use quickwit_config::{DocsClusteringConfig, SearchSettings, build_doc_mapper};
     use quickwit_doc_mapper::{DocMapper, default_doc_mapper_for_test};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
@@ -849,6 +861,25 @@ mod tests {
     use super::*;
     use crate::models::{PublishLock, RawDocBatch};
 
+    fn raw_body_fingerprinter_for_test() -> Fingerprinter {
+        let docs_clustering_config =
+            serde_json::from_value::<DocsClusteringConfig>(serde_json::json!([
+                {
+                    "fingerprint": [{
+                        "kind": "structure"
+                    }]
+                },
+                {
+                    "fingerprint": [{
+                        "path": "body",
+                        "kind": "raw"
+                    }]
+                }
+            ]))
+            .unwrap();
+        Fingerprinter::new(&docs_clustering_config)
+    }
+
     #[tokio::test]
     async fn test_doc_processor_simple() {
         let index_id = "my-index";
@@ -863,6 +894,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::Json,
+            None,
         )
         .unwrap();
         let (doc_processor_mailbox, doc_processor_handle) =
@@ -927,6 +959,38 @@ mod tests {
         universe.assert_quit().await;
     }
 
+    #[tokio::test]
+    async fn test_doc_processor_computes_configured_fingerprint() {
+        let universe = Universe::with_accelerated_time();
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
+        let doc_processor = DocProcessor::try_new(
+            "test-index".to_string(),
+            "test-source".to_string(),
+            doc_mapper,
+            indexer_mailbox,
+            None,
+            SourceInputFormat::Json,
+            Some(raw_body_fingerprinter_for_test()),
+        )
+        .unwrap();
+        let (doc_processor_mailbox, doc_processor_handle) =
+            universe.spawn_builder().spawn(doc_processor);
+        doc_processor_mailbox
+            .send_message(RawDocBatch::for_test(
+                &[br#"{"body":"happy","timestamp":1628837062}"#],
+                0..1,
+            ))
+            .await
+            .unwrap();
+        doc_processor_handle.process_pending_and_observe().await;
+
+        let output_messages: Vec<ProcessedDocBatch> = indexer_inbox.drain_for_test_typed();
+        assert_eq!(output_messages.len(), 1);
+        assert!(output_messages[0].docs[0].fingerprint_opt.is_some());
+        universe.assert_quit().await;
+    }
+
     const DOCMAPPER_WITH_PARTITION_JSON: &str = r#"
         {
             "tag_fields": ["tenant"],
@@ -950,6 +1014,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::Json,
+            None,
         )
         .unwrap();
         let (doc_processor_mailbox, doc_processor_handle) =
@@ -998,6 +1063,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::Json,
+            None,
         )
         .unwrap();
         let (doc_processor_mailbox, doc_processor_handle) =
@@ -1030,6 +1096,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::Json,
+            None,
         )
         .unwrap();
         let (doc_processor_mailbox, doc_processor_handle) =
@@ -1076,6 +1143,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::OtlpLogsJson,
+            None,
         )
         .unwrap();
 
@@ -1153,6 +1221,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::OtlpLogsProtobuf,
+            None,
         )
         .unwrap();
 
@@ -1228,6 +1297,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::Json,
+            None,
         )
         .unwrap();
         // Override for the test
@@ -1293,6 +1363,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::OtlpTracesJson,
+            None,
         )
         .unwrap();
 
@@ -1366,6 +1437,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::OtlpTracesProtobuf,
+            None,
         )
         .unwrap();
 
@@ -1422,6 +1494,190 @@ mod tests {
 
         let (exit_status, _) = doc_processor_handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Success));
+        universe.assert_quit().await;
+    }
+}
+
+#[cfg(feature = "vrl")]
+#[cfg(test)]
+mod tests_vrl {
+    use quickwit_actors::Universe;
+    use quickwit_doc_mapper::default_doc_mapper_for_test;
+    use quickwit_metastore::checkpoint::SourceCheckpointDelta;
+    use tantivy::Document;
+    use tantivy::schema::NamedFieldDocument;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_doc_processor_simple_vrl() -> anyhow::Result<()> {
+        let index_id = "my-index";
+        let source_id = "my-source";
+        let universe = Universe::with_accelerated_time();
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let transform_config = TransformConfig::for_test(".body = upcase(string!(.body))");
+        let doc_processor = DocProcessor::try_new(
+            index_id.to_string(),
+            source_id.to_string(),
+            doc_mapper.clone(),
+            indexer_mailbox,
+            Some(transform_config),
+            SourceInputFormat::Json,
+            None,
+        )
+        .unwrap();
+        let (doc_processor_mailbox, doc_processor_handle) =
+            universe.spawn_builder().spawn(doc_processor);
+        doc_processor_mailbox
+            .send_message(RawDocBatch::for_test(
+                &[
+                    br#"{"body": "happy", "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#, // missing timestamp
+                    br#"{"body": "happy using VRL", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#, // ok
+                    br#"{"body": "happy2", "timestamp": 1628837062, "response_date": "2021-12-19T16:40:57+00:00", "response_time": 13, "response_payload": "YWJj"}"#, // ok
+                    b"{", // invalid json
+                ],
+                0..4,
+            ))
+            .await?;
+        let counters = doc_processor_handle
+            .process_pending_and_observe()
+            .await
+            .state;
+        assert_eq!(counters.index_id, index_id.to_string());
+        assert_eq!(counters.source_id, source_id.to_string());
+        assert_eq!(counters.doc_mapper_errors.get_num_docs(), 1);
+        assert_eq!(counters.json_parse_errors.get_num_docs(), 1);
+        assert_eq!(counters.transform_errors.get_num_docs(), 0);
+        assert_eq!(counters.otlp_parse_errors.get_num_docs(), 0);
+        assert_eq!(counters.valid.get_num_docs(), 2);
+        assert_eq!(counters.num_bytes_total.load(Ordering::Relaxed), 397);
+
+        let output_messages = indexer_inbox.drain_for_test();
+        assert_eq!(output_messages.len(), 1);
+        let batch = *(output_messages
+            .into_iter()
+            .next()
+            .unwrap()
+            .downcast::<ProcessedDocBatch>()
+            .unwrap());
+        assert_eq!(batch.docs.len(), 2);
+        assert_eq!(
+            batch.checkpoint_delta,
+            SourceCheckpointDelta::from_range(0..4)
+        );
+
+        let schema = doc_mapper.schema();
+        let NamedFieldDocument(named_field_doc_map) = batch.docs[0].doc.to_named_doc(&schema);
+        let doc_json = JsonValue::Object(doc_mapper.doc_to_json(named_field_doc_map)?);
+        assert_eq!(
+            doc_json,
+            serde_json::json!({
+                "_source": {
+                    "body": "HAPPY USING VRL",
+                    "response_date": "2021-12-19T16:39:59Z",
+                    "response_payload": "YWJj",
+                    "response_time": 2,
+                    "timestamp": 1628837062
+                },
+                "body": "HAPPY USING VRL",
+                "response_date": "2021-12-19T16:39:59Z",
+                 "response_payload": "YWJj",
+                 "response_time": 2.0,
+                 "timestamp": 1628837062
+            })
+        );
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_doc_processor_with_plain_text_input() {
+        let index_id = "my-index";
+        let source_id = "my-source";
+        let universe = Universe::with_accelerated_time();
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let vrl_script = r#"
+            values = parse_csv!(.plain_text)
+            .body = upcase(string!(values[0]))
+            .timestamp = to_int!(values[1])
+            .response_date = values[2]
+            .response_time = to_int!(values[3])
+            .response_payload = values[4]
+            del(.plain_text)
+        "#;
+
+        let transform_config = TransformConfig::for_test(vrl_script);
+        let doc_processor = DocProcessor::try_new(
+            index_id.to_string(),
+            source_id.to_string(),
+            doc_mapper.clone(),
+            indexer_mailbox,
+            Some(transform_config),
+            SourceInputFormat::PlainText,
+            None,
+        )
+        .unwrap();
+        let (doc_processor_mailbox, doc_processor_handle) =
+            universe.spawn_builder().spawn(doc_processor);
+        doc_processor_mailbox
+            .send_message(RawDocBatch::for_test(
+                &[
+                    // body,timestamp,response_date,response_time,response_payload
+                    br#""happy using VRL",1628837062,"2021-12-19T16:39:59+00:00",2,"YWJj""#,
+                    br#""happy2",1628837062,"2021-12-19T16:40:57+00:00",13,"YWJj""#,
+                    br#""happy2",1628837062,"2021-12-19T16:40:57+00:00","invalid-response_time","YWJj""#,
+                ],
+                0..4,
+            ))
+            .await.unwrap();
+        let counters = doc_processor_handle
+            .process_pending_and_observe()
+            .await
+            .state;
+        assert_eq!(counters.index_id, index_id);
+        assert_eq!(counters.source_id, source_id);
+        assert_eq!(counters.doc_mapper_errors.get_num_docs(), 0,);
+        assert_eq!(counters.transform_errors.get_num_docs(), 1,);
+        assert_eq!(counters.otlp_parse_errors.get_num_docs(), 0,);
+        assert_eq!(counters.valid.get_num_docs(), 2,);
+        assert_eq!(counters.num_bytes_total.load(Ordering::Relaxed), 200,);
+
+        let output_messages = indexer_inbox.drain_for_test();
+        assert_eq!(output_messages.len(), 1);
+        let batch = *(output_messages
+            .into_iter()
+            .next()
+            .unwrap()
+            .downcast::<ProcessedDocBatch>()
+            .unwrap());
+        assert_eq!(batch.docs.len(), 2);
+        assert_eq!(
+            batch.checkpoint_delta,
+            SourceCheckpointDelta::from_range(0..4)
+        );
+
+        let schema = doc_mapper.schema();
+        let NamedFieldDocument(named_field_doc_map) = batch.docs[0].doc.to_named_doc(&schema);
+        let doc_json = JsonValue::Object(doc_mapper.doc_to_json(named_field_doc_map).unwrap());
+        assert_eq!(
+            doc_json,
+            serde_json::json!({
+                "_source": {
+                    "body": "HAPPY USING VRL",
+                    "response_date": "2021-12-19T16:39:59Z",
+                    "response_payload": "YWJj",
+                    "response_time": 2,
+                    "timestamp": 1628837062
+                },
+                "body": "HAPPY USING VRL",
+                "response_date": "2021-12-19T16:39:59Z",
+                "response_payload": "YWJj",
+                "response_time": 2.0,
+                "timestamp": 1628837062
+            })
+        );
         universe.assert_quit().await;
     }
 }
