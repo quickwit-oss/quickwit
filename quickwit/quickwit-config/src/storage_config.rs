@@ -375,21 +375,9 @@ impl AzureStorageConfig {
         }
         AzureNationalCloud::Public
     }
-
-    /// Returns the OAuth token scope for Azure Storage in the configured national cloud.
-    ///
-    /// Returns `None` for custom endpoints that do not map to a known national cloud.
-    pub fn resolve_storage_token_scope(&self) -> Option<&'static str> {
-        match self.resolve_national_cloud() {
-            AzureNationalCloud::Public => Some(AZURE_PUBLIC_STORAGE_TOKEN_SCOPE),
-            AzureNationalCloud::UsGovernment => Some(AZURE_US_GOVERNMENT_STORAGE_TOKEN_SCOPE),
-            AzureNationalCloud::China => Some(AZURE_CHINA_STORAGE_TOKEN_SCOPE),
-            AzureNationalCloud::Custom => None,
-        }
-    }
 }
 
-/// Azure national cloud classification for token authentication.
+/// Azure national cloud classification derived from the configured blob endpoint.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum AzureNationalCloud {
     Public,
@@ -397,12 +385,6 @@ pub enum AzureNationalCloud {
     China,
     Custom,
 }
-
-pub const AZURE_PUBLIC_STORAGE_TOKEN_SCOPE: &str = "https://storage.azure.com/.default";
-
-pub const AZURE_US_GOVERNMENT_STORAGE_TOKEN_SCOPE: &str = "https://storage.azure.us/.default";
-
-pub const AZURE_CHINA_STORAGE_TOKEN_SCOPE: &str = "https://storage.azure.cn/.default";
 
 const AZURE_PUBLIC_BLOB_SUFFIXES: &[&str] = &["core.windows.net", "blob.core.windows.net"];
 
@@ -909,24 +891,6 @@ mod tests {
             invalid_suffix_config.resolve_national_cloud(),
             AzureNationalCloud::Custom
         );
-    }
-
-    #[test]
-    fn test_storage_azure_config_resolve_storage_token_scope() {
-        let gov_config = AzureStorageConfig {
-            endpoint_suffix: Some("core.usgovcloudapi.net".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(
-            gov_config.resolve_storage_token_scope(),
-            Some(AZURE_US_GOVERNMENT_STORAGE_TOKEN_SCOPE)
-        );
-
-        let custom_config = AzureStorageConfig {
-            endpoint: Some("https://storage.example.com".to_string()),
-            ..Default::default()
-        };
-        assert!(custom_config.resolve_storage_token_scope().is_none());
     }
 
     #[test]

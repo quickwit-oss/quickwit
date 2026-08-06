@@ -46,7 +46,6 @@ use tracing::{info, instrument, warn};
 
 use crate::debouncer::DebouncedStorage;
 use crate::metrics::object_storage_get_slice_in_flight_guards;
-use crate::object_storage::azure_token_credential::ScopedTokenCredential;
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
@@ -569,37 +568,24 @@ fn build_azure_token_credentials(
     credential: Arc<dyn azure_core::auth::TokenCredential>,
 ) -> Result<StorageCredentials, StorageResolverError> {
     let national_cloud = azure_storage_config.resolve_national_cloud();
-    match national_cloud {
-        AzureNationalCloud::UsGovernment | AzureNationalCloud::China => {
-            let token_scope = azure_storage_config
-                .resolve_storage_token_scope()
-                .ok_or_else(|| {
-                    StorageResolverError::InvalidConfig(format!(
-                        "could not resolve Azure storage token scope for national cloud \
-                         `{national_cloud:?}`"
-                    ))
-                })?;
-            info!(
-                token_scope = token_scope,
-                national_cloud = ?national_cloud,
-                "using Azure storage token scope for sovereign cloud"
-            );
-            Ok(StorageCredentials::token_credential(Arc::new(
-                ScopedTokenCredential::new(credential, token_scope),
-            )))
-        }
-        AzureNationalCloud::Custom if azure_storage_config.uses_custom_blob_endpoint() => {
-            Err(StorageResolverError::InvalidConfig(
-                "custom Azure blob endpoints require an access key when using token-based \
-                 authentication; managed identity is only supported for public Azure, Azure \
-                 Government, and Azure China endpoints"
-                    .to_string(),
-            ))
-        }
-        AzureNationalCloud::Public | AzureNationalCloud::Custom => {
-            Ok(StorageCredentials::token_credential(credential))
-        }
+    if national_cloud == AzureNationalCloud::Custom
+        && azure_storage_config.uses_custom_blob_endpoint()
+    {
+        return Err(StorageResolverError::InvalidConfig(
+            "custom Azure blob endpoints require an access key when using token-based \
+             authentication; managed identity is only supported for public Azure, Azure \
+             Government, and Azure China endpoints"
+                .to_string(),
+        ));
     }
+    if national_cloud != AzureNationalCloud::Public {
+        info!(
+            national_cloud = ?national_cloud,
+            "using Azure blob storage endpoint for sovereign cloud; ensure AZURE_AUTHORITY_HOST \
+             is configured for token acquisition when using managed identity"
+        );
+    }
+    Ok(StorageCredentials::token_credential(credential))
 }
 
 fn build_container_client(
@@ -731,10 +717,9 @@ impl From<AzureErrorWrapper> for StorageError {
 mod tests {
     use std::sync::Arc;
 
-    use azure_core::auth::{AccessToken, Secret, TokenCredential};
+    use azure_core::auth::TokenCredential;
     use quickwit_common::uri::Uri;
     use quickwit_config::AzureStorageConfig;
-    use time::OffsetDateTime;
 
     use crate::StorageResolverError;
     use crate::object_storage::azure_blob_storage::{
@@ -747,11 +732,11 @@ mod tests {
     #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
     #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
     impl TokenCredential for MockTokenCredential {
-        async fn get_token(&self, _scopes: &[&str]) -> azure_core::Result<AccessToken> {
-            Ok(AccessToken::new(
-                Secret::new("mock-token"),
-                OffsetDateTime::now_utc(),
-            ))
+        async fn get_token(
+            &self,
+            _scopes: &[&str],
+        ) -> azure_core::Result<azure_core::auth::AccessToken> {
+            unimplemented!("mock credential should not request tokens in these unit tests")
         }
 
         async fn clear_cache(&self) -> azure_core::Result<()> {
