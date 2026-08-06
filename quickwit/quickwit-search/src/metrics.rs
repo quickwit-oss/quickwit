@@ -47,6 +47,7 @@ pub struct SplitSearchOutcomeCounters {
     pub pruned_after_warmup: Counter,
     pub cancel_cpu_queue: Counter,
     pub cancel_cpu: Counter,
+    pub error: Counter,
     pub success: Counter,
 }
 
@@ -61,6 +62,7 @@ impl Default for SplitSearchOutcomeCounters {
             pruned_after_warmup: Counter::local(),
             cancel_cpu_queue: Counter::local(),
             cancel_cpu: Counter::local(),
+            error: Counter::local(),
             success: Counter::local(),
         }
     }
@@ -76,6 +78,7 @@ impl fmt::Display for SplitSearchOutcomeCounters {
         print_if_not_null("pruned_after_warmup", &self.pruned_after_warmup, f)?;
         print_if_not_null("cancel_cpu_queue", &self.cancel_cpu_queue, f)?;
         print_if_not_null("cancel_cpu", &self.cancel_cpu, f)?;
+        print_if_not_null("error", &self.error, f)?;
         print_if_not_null("success", &self.success, f)?;
         Ok(())
     }
@@ -99,6 +102,7 @@ impl SplitSearchOutcomeCounters {
             pruned_after_warmup: counter("pruned_after_warmup"),
             cancel_cpu_queue: counter("cancel_cpu_queue"),
             cancel_cpu: counter("cancel_cpu"),
+            error: counter("error"),
             success: counter("success"),
         }
     }
