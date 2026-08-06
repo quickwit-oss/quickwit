@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Azure Blob Storage: support custom endpoints via `endpoint` and `endpoint_suffix` configuration options for sovereign clouds (#6624)
-- Azure Blob Storage: use sovereign-cloud OAuth token scopes for managed identity on Azure Government and Azure China endpoints (#6624)
 
 ### Fixed
+- Azure Blob Storage: use sovereign-cloud OAuth token scopes for managed identity on Azure Government and Azure China endpoints (#6624)
 - (Jaeger) Query resource attributes when Jaeger request carries tags
 
 ### Changed

@@ -568,14 +568,20 @@ fn build_azure_token_credentials(
     azure_storage_config: &AzureStorageConfig,
     credential: Arc<dyn azure_core::auth::TokenCredential>,
 ) -> Result<StorageCredentials, StorageResolverError> {
-    match azure_storage_config.resolve_national_cloud() {
+    let national_cloud = azure_storage_config.resolve_national_cloud();
+    match national_cloud {
         AzureNationalCloud::UsGovernment | AzureNationalCloud::China => {
             let token_scope = azure_storage_config
                 .resolve_storage_token_scope()
-                .expect("sovereign cloud must resolve a storage token scope");
+                .ok_or_else(|| {
+                    StorageResolverError::InvalidConfig(format!(
+                        "could not resolve Azure storage token scope for national cloud \
+                         `{national_cloud:?}`"
+                    ))
+                })?;
             info!(
                 token_scope = token_scope,
-                national_cloud = ?azure_storage_config.resolve_national_cloud(),
+                national_cloud = ?national_cloud,
                 "using Azure storage token scope for sovereign cloud"
             );
             Ok(StorageCredentials::token_credential(Arc::new(
@@ -785,5 +791,29 @@ mod tests {
             .expect_err("custom endpoint with token auth should fail");
 
         assert!(matches!(error, StorageResolverError::InvalidConfig(_)));
+    }
+
+    #[test]
+    fn test_build_azure_token_credentials_accepts_azure_government_endpoint() {
+        let azure_storage_config = AzureStorageConfig {
+            endpoint_suffix: Some("core.usgovcloudapi.net".to_string()),
+            ..Default::default()
+        };
+        let credential = Arc::new(MockTokenCredential) as Arc<dyn TokenCredential>;
+
+        build_azure_token_credentials(&azure_storage_config, credential)
+            .expect("Azure Government endpoint with token auth should succeed");
+    }
+
+    #[test]
+    fn test_build_azure_token_credentials_accepts_azure_china_endpoint() {
+        let azure_storage_config = AzureStorageConfig {
+            endpoint_suffix: Some("core.chinacloudapi.cn".to_string()),
+            ..Default::default()
+        };
+        let credential = Arc::new(MockTokenCredential) as Arc<dyn TokenCredential>;
+
+        build_azure_token_credentials(&azure_storage_config, credential)
+            .expect("Azure China endpoint with token auth should succeed");
     }
 }

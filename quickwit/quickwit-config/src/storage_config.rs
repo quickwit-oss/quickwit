@@ -365,10 +365,10 @@ impl AzureStorageConfig {
 
     /// Classifies the Azure national cloud from the configured endpoint.
     pub fn resolve_national_cloud(&self) -> AzureNationalCloud {
-        if let Some(endpoint) = self.endpoint() {
-            if let Some(host) = extract_azure_endpoint_host(&endpoint) {
-                return classify_azure_endpoint_host(host);
-            }
+        if let Some(endpoint) = self.endpoint()
+            && let Some(host) = extract_azure_endpoint_host(&endpoint)
+        {
+            return classify_azure_endpoint_host(host);
         }
         if let Some(endpoint_suffix) = self.endpoint_suffix() {
             return classify_azure_endpoint_suffix(&endpoint_suffix);
@@ -404,6 +404,22 @@ pub const AZURE_US_GOVERNMENT_STORAGE_TOKEN_SCOPE: &str = "https://storage.azure
 
 pub const AZURE_CHINA_STORAGE_TOKEN_SCOPE: &str = "https://storage.azure.cn/.default";
 
+const AZURE_PUBLIC_BLOB_SUFFIXES: &[&str] = &["core.windows.net", "blob.core.windows.net"];
+
+const AZURE_US_GOVERNMENT_BLOB_SUFFIXES: &[&str] =
+    &["core.usgovcloudapi.net", "blob.core.usgovcloudapi.net"];
+
+const AZURE_CHINA_BLOB_SUFFIXES: &[&str] = &["core.chinacloudapi.cn", "blob.core.chinacloudapi.cn"];
+
+const AZURE_BLOB_HOST_SUFFIXES: &[(&str, AzureNationalCloud)] = &[
+    (".blob.core.chinacloudapi.cn", AzureNationalCloud::China),
+    (
+        ".blob.core.usgovcloudapi.net",
+        AzureNationalCloud::UsGovernment,
+    ),
+    (".blob.core.windows.net", AzureNationalCloud::Public),
+];
+
 fn extract_azure_endpoint_host(endpoint: &str) -> Option<&str> {
     let endpoint = endpoint.trim();
     let host = endpoint
@@ -413,30 +429,53 @@ fn extract_azure_endpoint_host(endpoint: &str) -> Option<&str> {
     host.split('/').next().filter(|host| !host.is_empty())
 }
 
-fn classify_azure_endpoint_host(host: &str) -> AzureNationalCloud {
-    let host_lower = host.to_ascii_lowercase();
-    if host_lower.contains("chinacloudapi.cn") {
-        AzureNationalCloud::China
-    } else if host_lower.contains("usgovcloudapi.net") {
-        AzureNationalCloud::UsGovernment
-    } else if host_lower.contains("core.windows.net") {
-        AzureNationalCloud::Public
-    } else {
-        AzureNationalCloud::Custom
+fn strip_host_port(host: &str) -> &str {
+    if let Some(stripped_host) = host.strip_prefix('[') {
+        if let Some(bracket_end) = stripped_host.find(']') {
+            return &host[..bracket_end + 1];
+        }
+        return host;
+    }
+    match host.rsplit_once(':') {
+        Some((host_without_port, port))
+            if port.chars().all(|character| character.is_ascii_digit()) =>
+        {
+            host_without_port
+        }
+        _ => host,
     }
 }
 
-fn classify_azure_endpoint_suffix(endpoint_suffix: &str) -> AzureNationalCloud {
-    let endpoint_suffix_lower = endpoint_suffix.to_ascii_lowercase();
-    if endpoint_suffix_lower.contains("chinacloudapi.cn") {
-        AzureNationalCloud::China
-    } else if endpoint_suffix_lower.contains("usgovcloudapi.net") {
-        AzureNationalCloud::UsGovernment
-    } else if endpoint_suffix_lower.contains("windows.net") {
-        AzureNationalCloud::Public
-    } else {
-        AzureNationalCloud::Custom
+fn national_cloud_from_exact_blob_suffix(blob_suffix: &str) -> Option<AzureNationalCloud> {
+    let blob_suffix_lower = blob_suffix.trim().to_ascii_lowercase();
+    if AZURE_CHINA_BLOB_SUFFIXES.contains(&blob_suffix_lower.as_str()) {
+        return Some(AzureNationalCloud::China);
     }
+    if AZURE_US_GOVERNMENT_BLOB_SUFFIXES.contains(&blob_suffix_lower.as_str()) {
+        return Some(AzureNationalCloud::UsGovernment);
+    }
+    if AZURE_PUBLIC_BLOB_SUFFIXES.contains(&blob_suffix_lower.as_str()) {
+        return Some(AzureNationalCloud::Public);
+    }
+    None
+}
+
+fn classify_azure_endpoint_host(host: &str) -> AzureNationalCloud {
+    let host_without_port = strip_host_port(host);
+    let host_lower = host_without_port.to_ascii_lowercase();
+    if let Some(national_cloud) = national_cloud_from_exact_blob_suffix(&host_lower) {
+        return national_cloud;
+    }
+    for (host_suffix, national_cloud) in AZURE_BLOB_HOST_SUFFIXES {
+        if host_lower.ends_with(host_suffix) {
+            return *national_cloud;
+        }
+    }
+    AzureNationalCloud::Custom
+}
+
+fn classify_azure_endpoint_suffix(endpoint_suffix: &str) -> AzureNationalCloud {
+    national_cloud_from_exact_blob_suffix(endpoint_suffix).unwrap_or(AzureNationalCloud::Custom)
 }
 
 impl fmt::Debug for AzureStorageConfig {
@@ -841,6 +880,33 @@ mod tests {
         };
         assert_eq!(
             custom_config.resolve_national_cloud(),
+            AzureNationalCloud::Custom
+        );
+
+        let spoofed_gov_config = AzureStorageConfig {
+            endpoint: Some("https://blob.core.usgovcloudapi.net.example.com".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            spoofed_gov_config.resolve_national_cloud(),
+            AzureNationalCloud::Custom
+        );
+
+        let gov_with_port_config = AzureStorageConfig {
+            endpoint: Some("https://my-account.blob.core.usgovcloudapi.net:443".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            gov_with_port_config.resolve_national_cloud(),
+            AzureNationalCloud::UsGovernment
+        );
+
+        let invalid_suffix_config = AzureStorageConfig {
+            endpoint_suffix: Some("evil.windows.net".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            invalid_suffix_config.resolve_national_cloud(),
             AzureNationalCloud::Custom
         );
     }

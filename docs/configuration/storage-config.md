@@ -153,10 +153,14 @@ storage:
 
 When using managed identity or other token-based authentication (without an `access_key`), Quickwit automatically selects the correct OAuth token scope for Azure Government and Azure China endpoints.
 
-For Azure US Government, you may also need to set the Entra authority host:
+Depending on the national cloud, you may also need to set the Entra authority host:
 
 ```bash
+# Azure US Government
 export AZURE_AUTHORITY_HOST=https://login.microsoftonline.us/
+
+# Azure China
+export AZURE_AUTHORITY_HOST=https://login.chinacloudapi.cn/
 ```
 
 Custom endpoints that are not public Azure, Azure Government, or Azure China (for example Azure Stack) require an `access_key` when using token-based authentication.
