@@ -18,7 +18,7 @@ use std::{env, fmt};
 
 use anyhow::ensure;
 use itertools::Itertools;
-use quickwit_common::get_bool_from_env;
+use quickwit_common::{get_bool_from_env, get_from_env_opt};
 use serde::{Deserialize, Serialize};
 use serde_with::{EnumMap, serde_as};
 
@@ -318,32 +318,27 @@ impl AzureStorageConfig {
     /// Attempts to find the storage account name in the environment variable
     /// `QW_AZURE_STORAGE_ACCOUNT` or node config.
     pub fn resolve_account_name(&self) -> Option<String> {
-        env::var(Self::AZURE_STORAGE_ACCOUNT_ENV_VAR)
-            .ok()
+        get_from_env_opt(Self::AZURE_STORAGE_ACCOUNT_ENV_VAR, false)
             .or_else(|| self.account_name.clone())
     }
 
     /// Attempts to find the storage account access key in the environment variable
     /// `QW_AZURE_STORAGE_ACCESS_KEY` or node config.
     pub fn resolve_access_key(&self) -> Option<String> {
-        env::var(Self::AZURE_STORAGE_ACCESS_KEY_ENV_VAR)
-            .ok()
+        get_from_env_opt(Self::AZURE_STORAGE_ACCESS_KEY_ENV_VAR, true)
             .or_else(|| self.access_key.clone())
     }
 
     /// Attempts to find the blob service endpoint URL in the environment variable
     /// `QW_AZURE_ENDPOINT` or node config.
     pub fn endpoint(&self) -> Option<String> {
-        env::var(Self::AZURE_ENDPOINT_ENV_VAR)
-            .ok()
-            .or_else(|| self.endpoint.clone())
+        get_from_env_opt(Self::AZURE_ENDPOINT_ENV_VAR, false).or_else(|| self.endpoint.clone())
     }
 
     /// Attempts to find the blob service endpoint suffix in the environment variable
     /// `QW_AZURE_ENDPOINT_SUFFIX` or node config.
     pub fn endpoint_suffix(&self) -> Option<String> {
-        env::var(Self::AZURE_ENDPOINT_SUFFIX_ENV_VAR)
-            .ok()
+        get_from_env_opt(Self::AZURE_ENDPOINT_SUFFIX_ENV_VAR, false)
             .or_else(|| self.endpoint_suffix.clone())
     }
 
