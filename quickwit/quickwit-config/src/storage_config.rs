@@ -368,7 +368,7 @@ impl AzureStorageConfig {
         if let Some(endpoint) = self.endpoint()
             && let Some(host) = extract_azure_endpoint_host(&endpoint)
         {
-            return classify_azure_endpoint_host(host);
+            return classify_azure_endpoint_host(&host);
         }
         if let Some(endpoint_suffix) = self.endpoint_suffix() {
             return classify_azure_endpoint_suffix(&endpoint_suffix);
@@ -386,7 +386,11 @@ pub enum AzureNationalCloud {
     Custom,
 }
 
-const AZURE_PUBLIC_BLOB_SUFFIXES: &[&str] = &["core.windows.net", "blob.core.windows.net"];
+const AZURE_PUBLIC_BLOB_SUFFIXES: &[&str] = &[
+    "core.windows.net",
+    "blob.core.windows.net",
+    "blob.storage.azure.net",
+];
 
 const AZURE_US_GOVERNMENT_BLOB_SUFFIXES: &[&str] =
     &["core.usgovcloudapi.net", "blob.core.usgovcloudapi.net"];
@@ -399,16 +403,17 @@ const AZURE_BLOB_HOST_SUFFIXES: &[(&str, AzureNationalCloud)] = &[
         ".blob.core.usgovcloudapi.net",
         AzureNationalCloud::UsGovernment,
     ),
+    (".blob.storage.azure.net", AzureNationalCloud::Public),
     (".blob.core.windows.net", AzureNationalCloud::Public),
 ];
 
-fn extract_azure_endpoint_host(endpoint: &str) -> Option<&str> {
+fn extract_azure_endpoint_host(endpoint: &str) -> Option<String> {
     let endpoint = endpoint.trim();
-    let host = endpoint
-        .strip_prefix("https://")
-        .or_else(|| endpoint.strip_prefix("http://"))
-        .unwrap_or(endpoint);
-    host.split('/').next().filter(|host| !host.is_empty())
+    let parsed_url = url::Url::parse(endpoint).ok()?;
+    if !parsed_url.username().is_empty() || parsed_url.password().is_some() {
+        return None;
+    }
+    parsed_url.host_str().map(str::to_string)
 }
 
 fn strip_host_port(host: &str) -> &str {
@@ -890,6 +895,26 @@ mod tests {
         assert_eq!(
             invalid_suffix_config.resolve_national_cloud(),
             AzureNationalCloud::Custom
+        );
+
+        let query_spoof_config = AzureStorageConfig {
+            endpoint: Some(
+                "https://storage.example.com?x=.blob.core.usgovcloudapi.net".to_string(),
+            ),
+            ..Default::default()
+        };
+        assert_eq!(
+            query_spoof_config.resolve_national_cloud(),
+            AzureNationalCloud::Custom
+        );
+
+        let dns_zone_config = AzureStorageConfig {
+            endpoint: Some("https://myaccount.z18.blob.storage.azure.net".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            dns_zone_config.resolve_national_cloud(),
+            AzureNationalCloud::Public
         );
     }
 
