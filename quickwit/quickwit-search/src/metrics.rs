@@ -64,7 +64,10 @@ pub struct SplitSearchOutcomeCounters {
     pub pruned_after_warmup: Counter,
     pub cancel_cpu_queue: Counter,
     pub cancel_cpu: Counter,
-    pub error: Counter,
+    pub error_create_reader: Counter,
+    pub error_warmup: Counter,
+    pub error_tantivy_search: Counter,
+    pub error_panic: Counter,
     pub success: Counter,
 }
 
@@ -79,7 +82,10 @@ impl Default for SplitSearchOutcomeCounters {
             pruned_after_warmup: Counter::local(),
             cancel_cpu_queue: Counter::local(),
             cancel_cpu: Counter::local(),
-            error: Counter::local(),
+            error_create_reader: Counter::local(),
+            error_warmup: Counter::local(),
+            error_tantivy_search: Counter::local(),
+            error_panic: Counter::local(),
             success: Counter::local(),
         }
     }
@@ -95,7 +101,10 @@ impl fmt::Display for SplitSearchOutcomeCounters {
         print_if_not_null("pruned_after_warmup", &self.pruned_after_warmup, f)?;
         print_if_not_null("cancel_cpu_queue", &self.cancel_cpu_queue, f)?;
         print_if_not_null("cancel_cpu", &self.cancel_cpu, f)?;
-        print_if_not_null("error", &self.error, f)?;
+        print_if_not_null("error_create_reader", &self.error_create_reader, f)?;
+        print_if_not_null("error_warmup", &self.error_warmup, f)?;
+        print_if_not_null("error_tantivy_search", &self.error_tantivy_search, f)?;
+        print_if_not_null("error_panic", &self.error_panic, f)?;
         print_if_not_null("success", &self.success, f)?;
         Ok(())
     }
@@ -110,6 +119,13 @@ impl SplitSearchOutcomeCounters {
                 "category" => category,
             )
         };
+        let error_counter = |error: &'static str| {
+            counter!(
+                parent: &SPLIT_SEARCH_OUTCOME,
+                "category" => "error",
+                "error" => error,
+            )
+        };
         SplitSearchOutcomeCounters {
             cancel_before_warmup: counter("cancel_before_warmup"),
             cache_hit: counter("cache_hit"),
@@ -119,7 +135,10 @@ impl SplitSearchOutcomeCounters {
             pruned_after_warmup: counter("pruned_after_warmup"),
             cancel_cpu_queue: counter("cancel_cpu_queue"),
             cancel_cpu: counter("cancel_cpu"),
-            error: counter("error"),
+            error_create_reader: error_counter("create_reader"),
+            error_warmup: error_counter("warmup"),
+            error_tantivy_search: error_counter("tantivy_search"),
+            error_panic: error_counter("panic"),
             success: counter("success"),
         }
     }
@@ -159,7 +178,7 @@ fn pseudo_exponential_bytes_buckets() -> Vec<f64> {
 
 static SPLIT_SEARCH_OUTCOME: LazyCounter = lazy_counter!(
         name: "split_search_outcome",
-        description: "Count the state in which each leaf search split ended",
+        description: "Count the state in which each leaf search split ended. Errors are classified by the error label",
         subsystem: "search",
 );
 
@@ -277,3 +296,28 @@ pub(crate) static SEARCHER_NODE_LOAD: LazyGauge = lazy_gauge!(
         description: "Current load on this searcher node, expressed as the sum of job costs for all queued and active split search tasks.",
         subsystem: "search",
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_error_label(counter: &Counter, expected_error: &str) {
+        let labels: Vec<(&str, &str)> = counter
+            .key()
+            .labels()
+            .map(|label| (label.key(), label.value()))
+            .collect();
+        assert!(labels.contains(&("category", "error")));
+        assert!(labels.contains(&("error", expected_error)));
+    }
+
+    #[test]
+    fn test_split_search_outcome_error_labels() {
+        let counters = SplitSearchOutcomeCounters::new_global();
+
+        assert_error_label(&counters.error_create_reader, "create_reader");
+        assert_error_label(&counters.error_warmup, "warmup");
+        assert_error_label(&counters.error_tantivy_search, "tantivy_search");
+        assert_error_label(&counters.error_panic, "panic");
+    }
+}

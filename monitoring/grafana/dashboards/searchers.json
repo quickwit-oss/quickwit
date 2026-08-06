@@ -112,7 +112,7 @@
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "{{instance}} / {{category}}",
+          "legendFormat": "{{instance}} / {{category}} / {{error}}",
           "range": true,
           "refId": "A",
           "useBackend": false
