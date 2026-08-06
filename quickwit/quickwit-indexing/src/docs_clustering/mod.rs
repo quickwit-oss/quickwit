@@ -43,13 +43,13 @@
 //! policy, unless `QW_DISABLE_DOCS_CLUSTERING=true`. Deployments should configure it only on
 //! indexers whose workloads are intended to use document clustering.
 //!
-//! [`Fingerprinter`] computes two independent hashes:
+//! [`Fingerprinter`] computes one hash for each configured fingerprint policy:
 //!
-//! 1. A schema hash from the sorted set of leaf JSON paths, excluding configured paths.
-//! 2. A grouping hash from configured raw string values and tokenized signatures.
+//! 1. A structure policy hashes the sorted set of leaf JSON paths, excluding configured paths.
+//! 2. Raw and tokenized policies hash configured JSON values and tokenized string signatures.
 //!
-//! Tokenized fields hash token types rather than literal values, up to 50 tokens. This groups
-//! volatile values with the same shape:
+//! Tokenized fields hash token types rather than literal values. They use up to 50 tokens by
+//! default, configurable through `max_tokens`. This groups volatile values with the same shape:
 //!
 //! ```text
 //! "server started at 8080" -> Word Gap Word Gap Word Gap Number
@@ -57,14 +57,14 @@
 //! ```
 //!
 //! Missing and non-string grouping values are encoded as absent so each configured field retains
-//! its position in the grouping hash.
+//! its position in the policy hash.
 //!
 //! ```text
 //! Raw document
 //!     |
 //!     v
 //! DocProcessor
-//!     |  computes Fingerprint { schema, grouping }
+//!     |  computes Fingerprint { hashes }
 //!     v
 //! ProcessedDoc { doc, fingerprint_opt, ... }
 //!     |
@@ -73,8 +73,7 @@
 //!     |  records each split-local doc ID in DocIdClusterer
 //!     v
 //! IndexedSplitBuilder::finalize
-//!     |  builds a DocIdMapping: largest schema groups first,
-//!     |  then largest grouping-hash groups within each schema
+//!     |  builds a DocIdMapping: largest groups first at every fingerprint level
 //!     v
 //! Tantivy segment with similar documents stored together
 //! ```

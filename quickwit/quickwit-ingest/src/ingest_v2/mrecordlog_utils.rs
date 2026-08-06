@@ -149,6 +149,29 @@ pub(super) fn check_enough_capacity(
     Ok(())
 }
 
+/// Reports the WAL memory usage, disk usage, and total number of records, or `(0, 0, 0)` if the
+/// WAL is not initialized.
+pub(super) fn wal_stats(mrecordlog_opt: Option<&MultiRecordLogAsync>) -> (u64, u64, u64) {
+    let Some(mrecordlog) = mrecordlog_opt else {
+        return (0, 0, 0);
+    };
+    let wal_resource_usage = mrecordlog.resource_usage();
+    let wal_memory_used_bytes = wal_resource_usage.memory_used_bytes as u64;
+    let wal_disk_used_bytes = wal_resource_usage.disk_used_bytes as u64;
+    let wal_num_records = mrecordlog
+        .summary()
+        .queues
+        .values()
+        .map(|queue_summary| {
+            queue_summary
+                .end
+                .map(|end| end.saturating_sub(queue_summary.start) + 1)
+                .unwrap_or(0)
+        })
+        .sum();
+    (wal_memory_used_bytes, wal_disk_used_bytes, wal_num_records)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,5 +257,32 @@ mod tests {
         ));
 
         check_enough_capacity(&mrecordlog, ByteSize::mb(256), ByteSize(12), ByteSize(12)).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_wal_stats() {
+        assert_eq!(wal_stats(None), (0, 0, 0));
+
+        let tempdir = tempfile::tempdir().unwrap();
+        let mut mrecordlog = MultiRecordLogAsync::open(tempdir.path()).await.unwrap();
+
+        let (wal_memory_used_bytes, _wal_disk_used_bytes, wal_num_records) =
+            wal_stats(Some(&mrecordlog));
+        assert_eq!(wal_memory_used_bytes, 0);
+        assert_eq!(wal_num_records, 0);
+
+        let queue_id = "test-queue".to_string();
+        mrecordlog.create_queue(&queue_id).await.unwrap();
+
+        let doc_batch = DocBatchV2::for_test(["test-doc-foo"]);
+        append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch, true)
+            .await
+            .unwrap();
+
+        let (wal_memory_used_bytes, wal_disk_used_bytes, wal_num_records) =
+            wal_stats(Some(&mrecordlog));
+        assert!(wal_memory_used_bytes > 0);
+        assert!(wal_disk_used_bytes > 0);
+        assert!(wal_num_records > 0);
     }
 }

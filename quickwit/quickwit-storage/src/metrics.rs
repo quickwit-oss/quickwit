@@ -33,6 +33,7 @@ const OUTCOME_NAME: LabelNames<1> = label_names!("outcome");
 const COMPONENT_NAME: LabelNames<1> = label_names!("component_name");
 const COMPONENT_CAPACITY_POLICY: LabelNames<3> =
     label_names!("component_name", "capacity", "policy");
+pub(crate) const ERROR_CLASS: LabelNames<1> = label_names!("class");
 
 static GET_SLICE_TIMEOUT_OUTCOME_TOTAL: LazyCounter = lazy_counter!(
         name: "get_slice_timeout_outcome",
@@ -128,6 +129,18 @@ pub(crate) static OBJECT_STORAGE_PUT_TOTAL: LazyCounter = lazy_counter!(
         name: "object_storage_puts_total",
         description: "Number of objects uploaded. May differ from object_storage_requests_parts due to multipart upload.",
         subsystem: "storage",
+);
+
+pub(crate) static OBJECT_STORAGE_PUT_ERRORS_TOTAL: LazyCounter = lazy_counter!(
+    name: "object_storage_put_errors_total",
+        description: "Number of S3 object uploads that failed after retries were exhausted.",
+    subsystem: "storage",
+);
+
+pub(crate) static OBJECT_STORAGE_PUT_ATTEMPT_ERRORS_TOTAL: LazyCounter = lazy_counter!(
+    name: "object_storage_put_attempt_errors_total",
+        description: "Number of failed S3 PutObject and UploadPart attempts, counted per attempt (retried attempts included), labeled by error class. Use class=\"throttling\" to measure S3 rate limiting.",
+    subsystem: "storage",
 );
 
 pub(crate) static OBJECT_STORAGE_PUT_PARTS: LazyCounter = lazy_counter!(
