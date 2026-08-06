@@ -779,6 +779,21 @@ mod tests {
     }
 
     #[test]
+    fn test_build_azure_token_credentials_rejects_unparseable_endpoint() {
+        let azure_storage_config = AzureStorageConfig {
+            endpoint: Some("https://user@storage.example.com".to_string()),
+            endpoint_suffix: Some("core.usgovcloudapi.net".to_string()),
+            ..Default::default()
+        };
+        let credential = Arc::new(MockTokenCredential) as Arc<dyn TokenCredential>;
+
+        let error = build_azure_token_credentials(&azure_storage_config, credential)
+            .expect_err("unparseable endpoint with token auth should fail");
+
+        assert!(matches!(error, StorageResolverError::InvalidConfig(_)));
+    }
+
+    #[test]
     fn test_build_azure_token_credentials_accepts_azure_government_endpoint() {
         let azure_storage_config = AzureStorageConfig {
             endpoint_suffix: Some("core.usgovcloudapi.net".to_string()),

@@ -365,10 +365,11 @@ impl AzureStorageConfig {
 
     /// Classifies the Azure national cloud from the configured endpoint.
     pub fn resolve_national_cloud(&self) -> AzureNationalCloud {
-        if let Some(endpoint) = self.endpoint()
-            && let Some(host) = extract_azure_endpoint_host(&endpoint)
-        {
-            return classify_azure_endpoint_host(&host);
+        if let Some(endpoint) = self.endpoint() {
+            if let Some(host) = extract_azure_endpoint_host(&endpoint) {
+                return classify_azure_endpoint_host(&host);
+            }
+            return AzureNationalCloud::Custom;
         }
         if let Some(endpoint_suffix) = self.endpoint_suffix() {
             return classify_azure_endpoint_suffix(&endpoint_suffix);
@@ -915,6 +916,26 @@ mod tests {
         assert_eq!(
             dns_zone_config.resolve_national_cloud(),
             AzureNationalCloud::Public
+        );
+
+        let userinfo_with_gov_suffix_config = AzureStorageConfig {
+            endpoint: Some("https://user@storage.example.com".to_string()),
+            endpoint_suffix: Some("core.usgovcloudapi.net".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            userinfo_with_gov_suffix_config.resolve_national_cloud(),
+            AzureNationalCloud::Custom
+        );
+
+        let unparseable_endpoint_config = AzureStorageConfig {
+            endpoint: Some("not-a-valid-url".to_string()),
+            endpoint_suffix: Some("core.usgovcloudapi.net".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            unparseable_endpoint_config.resolve_national_cloud(),
+            AzureNationalCloud::Custom
         );
     }
 
