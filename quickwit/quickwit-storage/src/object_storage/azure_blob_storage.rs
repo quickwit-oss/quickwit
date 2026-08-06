@@ -34,7 +34,7 @@ use md5::Digest;
 use quickwit_common::retry::{RetryParams, Retryable, retry};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, ignore_error_kind, into_u64_range};
-use quickwit_config::{AzureStorageConfig, StorageBackend};
+use quickwit_config::{AzureNationalCloud, AzureStorageConfig, StorageBackend};
 use quickwit_metrics::HistogramTimer;
 use regex::Regex;
 use tantivy::directory::OwnedBytes;
@@ -46,6 +46,7 @@ use tracing::{info, instrument, warn};
 
 use crate::debouncer::DebouncedStorage;
 use crate::metrics::object_storage_get_slice_in_flight_guards;
+use crate::object_storage::azure_token_credential::ScopedTokenCredential;
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
@@ -185,7 +186,7 @@ impl AzureBlobStorage {
         {
             StorageCredentials::access_key(storage_account_name.clone(), access_key)
         } else if let Ok(credential) = azure_identity::create_credential() {
-            StorageCredentials::token_credential(credential)
+            build_azure_token_credentials(azure_storage_config, credential)?
         } else {
             return Err(StorageResolverError::InvalidConfig(
                 "could not find Azure storage account credentials using the following credential \
@@ -563,6 +564,38 @@ async fn extract_range_data_and_hash(
     Ok((data, hash))
 }
 
+fn build_azure_token_credentials(
+    azure_storage_config: &AzureStorageConfig,
+    credential: Arc<dyn azure_core::auth::TokenCredential>,
+) -> Result<StorageCredentials, StorageResolverError> {
+    match azure_storage_config.resolve_national_cloud() {
+        AzureNationalCloud::UsGovernment | AzureNationalCloud::China => {
+            let token_scope = azure_storage_config
+                .resolve_storage_token_scope()
+                .expect("sovereign cloud must resolve a storage token scope");
+            info!(
+                token_scope = token_scope,
+                national_cloud = ?azure_storage_config.resolve_national_cloud(),
+                "using Azure storage token scope for sovereign cloud"
+            );
+            Ok(StorageCredentials::token_credential(Arc::new(
+                ScopedTokenCredential::new(credential, token_scope),
+            )))
+        }
+        AzureNationalCloud::Custom if azure_storage_config.uses_custom_blob_endpoint() => {
+            Err(StorageResolverError::InvalidConfig(
+                "custom Azure blob endpoints require an access key when using token-based \
+                 authentication; managed identity is only supported for public Azure, Azure \
+                 Government, and Azure China endpoints"
+                    .to_string(),
+            ))
+        }
+        AzureNationalCloud::Public | AzureNationalCloud::Custom => {
+            Ok(StorageCredentials::token_credential(credential))
+        }
+    }
+}
+
 fn build_container_client(
     storage_account_name: String,
     storage_credentials: StorageCredentials,
@@ -690,9 +723,35 @@ impl From<AzureErrorWrapper> for StorageError {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_common::uri::Uri;
+    use std::sync::Arc;
 
-    use crate::object_storage::azure_blob_storage::parse_azure_uri;
+    use azure_core::auth::{AccessToken, Secret, TokenCredential};
+    use quickwit_common::uri::Uri;
+    use quickwit_config::AzureStorageConfig;
+    use time::OffsetDateTime;
+
+    use crate::StorageResolverError;
+    use crate::object_storage::azure_blob_storage::{
+        build_azure_token_credentials, parse_azure_uri,
+    };
+
+    #[derive(Debug)]
+    struct MockTokenCredential;
+
+    #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+    impl TokenCredential for MockTokenCredential {
+        async fn get_token(&self, _scopes: &[&str]) -> azure_core::Result<AccessToken> {
+            Ok(AccessToken::new(
+                Secret::new("mock-token"),
+                OffsetDateTime::now_utc(),
+            ))
+        }
+
+        async fn clear_cache(&self) -> azure_core::Result<()> {
+            Ok(())
+        }
+    }
 
     #[test]
     fn test_parse_azure_uri() {
@@ -712,5 +771,19 @@ mod tests {
             parse_azure_uri(&Uri::for_test("azure://test-container/indexes")).unwrap();
         assert_eq!(container, "test-container");
         assert_eq!(prefix.to_str().unwrap(), "indexes");
+    }
+
+    #[test]
+    fn test_build_azure_token_credentials_rejects_unknown_custom_endpoint() {
+        let azure_storage_config = AzureStorageConfig {
+            endpoint: Some("https://storage.example.com".to_string()),
+            ..Default::default()
+        };
+        let credential = Arc::new(MockTokenCredential) as Arc<dyn TokenCredential>;
+
+        let error = build_azure_token_credentials(&azure_storage_config, credential)
+            .expect_err("custom endpoint with token auth should fail");
+
+        assert!(matches!(error, StorageResolverError::InvalidConfig(_)));
     }
 }

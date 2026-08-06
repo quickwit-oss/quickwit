@@ -9438,6 +9438,7 @@ dependencies = [
  "tantivy",
  "tempfile",
  "thiserror 2.0.18",
+ "time",
  "tokio",
  "tokio-rustls 0.26.4",
  "tokio-stream",

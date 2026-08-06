@@ -357,6 +357,86 @@ impl AzureStorageConfig {
         };
         Some(uri)
     }
+
+    /// Returns `true` when a custom blob endpoint is configured.
+    pub fn uses_custom_blob_endpoint(&self) -> bool {
+        self.endpoint().is_some() || self.endpoint_suffix().is_some()
+    }
+
+    /// Classifies the Azure national cloud from the configured endpoint.
+    pub fn resolve_national_cloud(&self) -> AzureNationalCloud {
+        if let Some(endpoint) = self.endpoint() {
+            if let Some(host) = extract_azure_endpoint_host(&endpoint) {
+                return classify_azure_endpoint_host(host);
+            }
+        }
+        if let Some(endpoint_suffix) = self.endpoint_suffix() {
+            return classify_azure_endpoint_suffix(&endpoint_suffix);
+        }
+        AzureNationalCloud::Public
+    }
+
+    /// Returns the OAuth token scope for Azure Storage in the configured national cloud.
+    ///
+    /// Returns `None` for custom endpoints that do not map to a known national cloud.
+    pub fn resolve_storage_token_scope(&self) -> Option<&'static str> {
+        match self.resolve_national_cloud() {
+            AzureNationalCloud::Public => Some(AZURE_PUBLIC_STORAGE_TOKEN_SCOPE),
+            AzureNationalCloud::UsGovernment => Some(AZURE_US_GOVERNMENT_STORAGE_TOKEN_SCOPE),
+            AzureNationalCloud::China => Some(AZURE_CHINA_STORAGE_TOKEN_SCOPE),
+            AzureNationalCloud::Custom => None,
+        }
+    }
+}
+
+/// Azure national cloud classification for token authentication.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum AzureNationalCloud {
+    Public,
+    UsGovernment,
+    China,
+    Custom,
+}
+
+pub const AZURE_PUBLIC_STORAGE_TOKEN_SCOPE: &str = "https://storage.azure.com/.default";
+
+pub const AZURE_US_GOVERNMENT_STORAGE_TOKEN_SCOPE: &str = "https://storage.azure.us/.default";
+
+pub const AZURE_CHINA_STORAGE_TOKEN_SCOPE: &str = "https://storage.azure.cn/.default";
+
+fn extract_azure_endpoint_host(endpoint: &str) -> Option<&str> {
+    let endpoint = endpoint.trim();
+    let host = endpoint
+        .strip_prefix("https://")
+        .or_else(|| endpoint.strip_prefix("http://"))
+        .unwrap_or(endpoint);
+    host.split('/').next().filter(|host| !host.is_empty())
+}
+
+fn classify_azure_endpoint_host(host: &str) -> AzureNationalCloud {
+    let host_lower = host.to_ascii_lowercase();
+    if host_lower.contains("chinacloudapi.cn") {
+        AzureNationalCloud::China
+    } else if host_lower.contains("usgovcloudapi.net") {
+        AzureNationalCloud::UsGovernment
+    } else if host_lower.contains("core.windows.net") {
+        AzureNationalCloud::Public
+    } else {
+        AzureNationalCloud::Custom
+    }
+}
+
+fn classify_azure_endpoint_suffix(endpoint_suffix: &str) -> AzureNationalCloud {
+    let endpoint_suffix_lower = endpoint_suffix.to_ascii_lowercase();
+    if endpoint_suffix_lower.contains("chinacloudapi.cn") {
+        AzureNationalCloud::China
+    } else if endpoint_suffix_lower.contains("usgovcloudapi.net") {
+        AzureNationalCloud::UsGovernment
+    } else if endpoint_suffix_lower.contains("windows.net") {
+        AzureNationalCloud::Public
+    } else {
+        AzureNationalCloud::Custom
+    }
 }
 
 impl fmt::Debug for AzureStorageConfig {
@@ -727,6 +807,60 @@ mod tests {
 
         let config = AzureStorageConfig::default();
         assert!(config.resolve_blob_service_uri("my-account").is_none());
+    }
+
+    #[test]
+    fn test_storage_azure_config_resolve_national_cloud() {
+        let public_config = AzureStorageConfig::default();
+        assert_eq!(
+            public_config.resolve_national_cloud(),
+            AzureNationalCloud::Public
+        );
+
+        let gov_config = AzureStorageConfig {
+            endpoint_suffix: Some("core.usgovcloudapi.net".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            gov_config.resolve_national_cloud(),
+            AzureNationalCloud::UsGovernment
+        );
+
+        let china_config = AzureStorageConfig {
+            endpoint: Some("https://my-account.blob.core.chinacloudapi.cn".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            china_config.resolve_national_cloud(),
+            AzureNationalCloud::China
+        );
+
+        let custom_config = AzureStorageConfig {
+            endpoint: Some("https://storage.example.com".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            custom_config.resolve_national_cloud(),
+            AzureNationalCloud::Custom
+        );
+    }
+
+    #[test]
+    fn test_storage_azure_config_resolve_storage_token_scope() {
+        let gov_config = AzureStorageConfig {
+            endpoint_suffix: Some("core.usgovcloudapi.net".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            gov_config.resolve_storage_token_scope(),
+            Some(AZURE_US_GOVERNMENT_STORAGE_TOKEN_SCOPE)
+        );
+
+        let custom_config = AzureStorageConfig {
+            endpoint: Some("https://storage.example.com".to_string()),
+            ..Default::default()
+        };
+        assert!(custom_config.resolve_storage_token_scope().is_none());
     }
 
     #[test]
