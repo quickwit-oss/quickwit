@@ -700,7 +700,8 @@ async fn leaf_search_single_split(
         Some(ctx.doc_mapper.tokenizer_manager()),
         Some(byte_range_cache.clone()),
     )
-    .await?;
+    .await
+    .inspect_err(|_| leaf_search_state_guard.set_state(SplitSearchState::Error))?;
 
     let index_size = compute_index_size(&hot_directory);
     if index_size < search_permit.memory_allocation() {
@@ -797,7 +798,8 @@ async fn leaf_search_single_split(
         );
         let provably_empty = warmup(&searcher, &warmup_info, &record_absence)
             .instrument(warmup_span.clone())
-            .await?;
+            .await
+            .inspect_err(|_| leaf_search_state_guard.set_state(SplitSearchState::Error))?;
         warmup_span.record(
             "downloaded_mb",
             download_counters
@@ -909,10 +911,14 @@ async fn leaf_search_single_split(
                     if is_metadata_count_request_with_ast(&query_ast, &simplified_search_request) {
                         get_leaf_resp_from_count(searcher.num_docs())
                     } else if collector.is_count_only() {
-                        let count = query.count(&searcher)? as u64;
+                        let count = query.count(&searcher).inspect_err(|_| {
+                            leaf_search_state_guard.set_state(SplitSearchState::Error)
+                        })? as u64;
                         get_leaf_resp_from_count(count)
                     } else {
-                        searcher.search(&query, &collector)?
+                        searcher.search(&query, &collector).inspect_err(|_| {
+                            leaf_search_state_guard.set_state(SplitSearchState::Error)
+                        })?
                     };
                 let (download_num_bytes, download_num_requests) =
                     download_counters_clone.snapshot();
@@ -2170,6 +2176,8 @@ enum SplitSearchState {
     PrunedAfterWarmup,
     CpuQueue,
     Cpu,
+    // Reserved for infrastructure and search-execution failures, not invalid user requests.
+    Error,
     Success,
 }
 
@@ -2184,6 +2192,7 @@ impl SplitSearchState {
             SplitSearchState::PrunedAfterWarmup => counters.pruned_after_warmup.inc(),
             SplitSearchState::CpuQueue => counters.cancel_cpu_queue.inc(),
             SplitSearchState::Cpu => counters.cancel_cpu.inc(),
+            SplitSearchState::Error => counters.error.inc(),
             SplitSearchState::Success => counters.success.inc(),
         }
     }
@@ -2191,9 +2200,13 @@ impl SplitSearchState {
 
 impl Drop for SplitSearchStateGuard {
     fn drop(&mut self) {
-        self.state.increment(&SPLIT_SEARCH_OUTCOME_TOTAL);
-        self.state
-            .increment(&self.local_split_search_outcome_counters);
+        let state = if std::thread::panicking() {
+            SplitSearchState::Error
+        } else {
+            self.state
+        };
+        state.increment(&SPLIT_SEARCH_OUTCOME_TOTAL);
+        state.increment(&self.local_split_search_outcome_counters);
     }
 }
 
@@ -2295,6 +2308,30 @@ mod tests {
 
     use super::*;
     use crate::LambdaLeafSearchInvoker;
+
+    #[test]
+    fn test_split_search_state_guard_records_error() {
+        let counters = Arc::new(SplitSearchOutcomeCounters::default());
+        let mut leaf_guard = SplitSearchStateGuard::new(counters.clone());
+        leaf_guard.set_state(SplitSearchState::Error);
+
+        drop(leaf_guard);
+
+        assert_eq!(counters.error.get(), 1);
+        assert_eq!(counters.cancel_warmup.get(), 0);
+    }
+
+    #[test]
+    fn test_split_search_state_guard_preserves_cancellation_state() {
+        let counters = Arc::new(SplitSearchOutcomeCounters::default());
+        let mut leaf_guard = SplitSearchStateGuard::new(counters.clone());
+        leaf_guard.set_state(SplitSearchState::WarmUp);
+
+        drop(leaf_guard);
+
+        assert_eq!(counters.error.get(), 0);
+        assert_eq!(counters.cancel_warmup.get(), 1);
+    }
 
     fn bool_filter(ast: impl Into<QueryAst>) -> QueryAst {
         BoolQuery {
