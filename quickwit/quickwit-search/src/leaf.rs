@@ -701,7 +701,10 @@ async fn leaf_search_single_split(
         Some(byte_range_cache.clone()),
     )
     .await
-    .inspect_err(|_| leaf_search_state_guard.set_state(SplitSearchState::Error))?;
+    .inspect_err(|_| {
+        leaf_search_state_guard
+            .set_state(SplitSearchState::Error(SplitSearchErrorKind::CreateReader))
+    })?;
 
     let index_size = compute_index_size(&hot_directory);
     if index_size < search_permit.memory_allocation() {
@@ -711,7 +714,11 @@ async fn leaf_search_single_split(
     let searcher = index
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
-        .try_into()?
+        .try_into()
+        .inspect_err(|_| {
+            leaf_search_state_guard
+                .set_state(SplitSearchState::Error(SplitSearchErrorKind::CreateReader))
+        })?
         .searcher();
 
     let agg_context_params = AggContextParams {
@@ -799,7 +806,10 @@ async fn leaf_search_single_split(
         let provably_empty = warmup(&searcher, &warmup_info, &record_absence)
             .instrument(warmup_span.clone())
             .await
-            .inspect_err(|_| leaf_search_state_guard.set_state(SplitSearchState::Error))?;
+            .inspect_err(|_| {
+                leaf_search_state_guard
+                    .set_state(SplitSearchState::Error(SplitSearchErrorKind::Warmup))
+            })?;
         warmup_span.record(
             "downloaded_mb",
             download_counters
@@ -912,12 +922,16 @@ async fn leaf_search_single_split(
                         get_leaf_resp_from_count(searcher.num_docs())
                     } else if collector.is_count_only() {
                         let count = query.count(&searcher).inspect_err(|_| {
-                            leaf_search_state_guard.set_state(SplitSearchState::Error)
+                            leaf_search_state_guard.set_state(SplitSearchState::Error(
+                                SplitSearchErrorKind::TantivySearch,
+                            ))
                         })? as u64;
                         get_leaf_resp_from_count(count)
                     } else {
                         searcher.search(&query, &collector).inspect_err(|_| {
-                            leaf_search_state_guard.set_state(SplitSearchState::Error)
+                            leaf_search_state_guard.set_state(SplitSearchState::Error(
+                                SplitSearchErrorKind::TantivySearch,
+                            ))
                         })?
                     };
                 let (download_num_bytes, download_num_requests) =
@@ -2167,6 +2181,14 @@ fn process_partial_result_cache(
 }
 
 #[derive(Copy, Clone)]
+enum SplitSearchErrorKind {
+    CreateReader,
+    Warmup,
+    TantivySearch,
+    Panic,
+}
+
+#[derive(Copy, Clone)]
 enum SplitSearchState {
     Start,
     CacheHit,
@@ -2177,7 +2199,7 @@ enum SplitSearchState {
     CpuQueue,
     Cpu,
     // Reserved for infrastructure and search-execution failures, not invalid user requests.
-    Error,
+    Error(SplitSearchErrorKind),
     Success,
 }
 
@@ -2192,7 +2214,14 @@ impl SplitSearchState {
             SplitSearchState::PrunedAfterWarmup => counters.pruned_after_warmup.inc(),
             SplitSearchState::CpuQueue => counters.cancel_cpu_queue.inc(),
             SplitSearchState::Cpu => counters.cancel_cpu.inc(),
-            SplitSearchState::Error => counters.error.inc(),
+            SplitSearchState::Error(SplitSearchErrorKind::CreateReader) => {
+                counters.error_create_reader.inc()
+            }
+            SplitSearchState::Error(SplitSearchErrorKind::Warmup) => counters.error_warmup.inc(),
+            SplitSearchState::Error(SplitSearchErrorKind::TantivySearch) => {
+                counters.error_tantivy_search.inc()
+            }
+            SplitSearchState::Error(SplitSearchErrorKind::Panic) => counters.error_panic.inc(),
             SplitSearchState::Success => counters.success.inc(),
         }
     }
@@ -2201,7 +2230,7 @@ impl SplitSearchState {
 impl Drop for SplitSearchStateGuard {
     fn drop(&mut self) {
         let state = if std::thread::panicking() {
-            SplitSearchState::Error
+            SplitSearchState::Error(SplitSearchErrorKind::Panic)
         } else {
             self.state
         };
@@ -2310,14 +2339,23 @@ mod tests {
     use crate::LambdaLeafSearchInvoker;
 
     #[test]
-    fn test_split_search_state_guard_records_error() {
+    fn test_split_search_state_guard_records_errors_by_kind() {
         let counters = Arc::new(SplitSearchOutcomeCounters::default());
-        let mut leaf_guard = SplitSearchStateGuard::new(counters.clone());
-        leaf_guard.set_state(SplitSearchState::Error);
+        for error_kind in [
+            SplitSearchErrorKind::CreateReader,
+            SplitSearchErrorKind::Warmup,
+            SplitSearchErrorKind::TantivySearch,
+            SplitSearchErrorKind::Panic,
+        ] {
+            let mut leaf_guard = SplitSearchStateGuard::new(counters.clone());
+            leaf_guard.set_state(SplitSearchState::Error(error_kind));
+            drop(leaf_guard);
+        }
 
-        drop(leaf_guard);
-
-        assert_eq!(counters.error.get(), 1);
+        assert_eq!(counters.error_create_reader.get(), 1);
+        assert_eq!(counters.error_warmup.get(), 1);
+        assert_eq!(counters.error_tantivy_search.get(), 1);
+        assert_eq!(counters.error_panic.get(), 1);
         assert_eq!(counters.cancel_warmup.get(), 0);
     }
 
@@ -2329,7 +2367,10 @@ mod tests {
 
         drop(leaf_guard);
 
-        assert_eq!(counters.error.get(), 0);
+        assert_eq!(counters.error_create_reader.get(), 0);
+        assert_eq!(counters.error_warmup.get(), 0);
+        assert_eq!(counters.error_tantivy_search.get(), 0);
+        assert_eq!(counters.error_panic.get(), 0);
         assert_eq!(counters.cancel_warmup.get(), 1);
     }
 
