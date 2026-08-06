@@ -7,6 +7,7 @@ enabled_services = [ "janitor", "metastore" ]
 listen_address = "0.0.0.0"
 advertise_address = "172.0.0.12"
 gossip_listen_port = 2222
+gossip_protocol_version = 1
 grpc_listen_port = 3333
 peer_seeds = [ "quickwit-searcher-0.local", "quickwit-searcher-1.local" ]
 data_dir = "/opt/quickwit/data"

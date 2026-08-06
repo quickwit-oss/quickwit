@@ -51,6 +51,7 @@ qw_env_vars!(
     QW_ENABLED_SERVICES,
     QW_GOSSIP_INTERVAL_MS,
     QW_GOSSIP_LISTEN_PORT,
+    QW_GOSSIP_PROTOCOL_VERSION,
     QW_GRPC_LISTEN_PORT,
     QW_HEALTH_LISTEN_PORT,
     QW_LISTEN_ADDRESS,
@@ -78,9 +79,9 @@ mod tests {
             QW_ENV_VARS.get(&QW_METASTORE_READ_REPLICA_URI).unwrap(),
             &"QW_METASTORE_READ_REPLICA_URI"
         );
-        assert_eq!(QW_METASTORE_READ_REPLICA_URI, 14);
+        assert_eq!(QW_METASTORE_READ_REPLICA_URI, 15);
 
         assert_eq!(QW_ENV_VARS.get(&QW_NODE_ID).unwrap(), &"QW_NODE_ID");
-        assert_eq!(QW_NODE_ID, 15);
+        assert_eq!(QW_NODE_ID, 16);
     }
 }
