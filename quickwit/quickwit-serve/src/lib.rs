@@ -1034,8 +1034,8 @@ pub async fn serve_quickwit(
             cluster.clone(),
             primary_metastore_through_control_plane,
             read_replica_metastore_client_opt,
-            ingester_opt.clone(),
             control_plane_readiness_opt,
+            ingester_opt.clone(),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
             health_reporter,
@@ -1599,8 +1599,8 @@ async fn node_readiness_reporting_task(
     cluster: Cluster,
     primary_metastore: MetastoreServiceClient,
     read_replica_metastore_opt: Option<MetastoreServiceClient>,
-    ingester_opt: Option<impl IngesterService>,
     control_plane_opt: Option<ControlPlaneServiceClient>,
+    ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
     health_reporter: HealthReporter,
@@ -1650,21 +1650,6 @@ async fn node_readiness_reporting_task(
                 false
             }
         };
-        let ingester_is_available = if let Some(ingester) = &ingester_opt {
-            match try_get_ingester_status(ingester).await {
-                Ok(status) => {
-                    status == IngesterStatus::Initializing || status != IngesterStatus::Failed
-                }
-                Err(error) => {
-                    // If we couldn't get the ingester status, it's not looking good, so we set the
-                    // node to not ready.
-                    error!(%error, "failed to get ingester status");
-                    false
-                }
-            }
-        } else {
-            true
-        };
         let control_plane_is_available = if let Some(control_plane) = &control_plane_opt {
             match control_plane.check_connectivity().await {
                 Ok(()) => {
@@ -1680,6 +1665,21 @@ async fn node_readiness_reporting_task(
                         error=?error,
                         "control plane service is unavailable"
                     );
+                    false
+                }
+            }
+        } else {
+            true
+        };
+        let ingester_is_available = if let Some(ingester) = &ingester_opt {
+            match try_get_ingester_status(ingester).await {
+                Ok(status) => {
+                    status == IngesterStatus::Initializing || status != IngesterStatus::Failed
+                }
+                Err(error) => {
+                    // If we couldn't get the ingester status, it's not looking good, so we set the
+                    // node to not ready.
+                    error!(%error, "failed to get ingester status");
                     false
                 }
             }
@@ -1919,8 +1919,8 @@ mod tests {
             cluster.clone(),
             mock_metastore,
             None,
-            Some(mock_ingester),
             Some(control_plane),
+            Some(mock_ingester),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
             health_reporter,
@@ -2000,8 +2000,8 @@ mod tests {
             cluster.clone(),
             primary_metastore,
             Some(replica_metastore),
-            None::<MockIngesterService>,
             None,
+            None::<MockIngesterService>,
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
             health_reporter,
