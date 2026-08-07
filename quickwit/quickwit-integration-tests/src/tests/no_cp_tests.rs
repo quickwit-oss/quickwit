@@ -14,10 +14,14 @@
 
 //! Tests for cluster configurations without a control plane.
 
+use std::time::Duration;
+
+use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_config::ConfigFormat;
 use quickwit_config::service::QuickwitService;
 use quickwit_rest_client::error::{ApiError, Error as RestClientError};
 use quickwit_serve::SearchRequestQueryString;
+use reqwest::StatusCode;
 
 use crate::test_utils::ClusterSandboxBuilder;
 
@@ -66,6 +70,59 @@ async fn test_search_after_control_plane_shutdown() {
         .unwrap();
 
     sandbox.assert_hit_count(index_id, "", 0).await;
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_indexer_readiness_decreases_after_control_plane_shutdown() {
+    initialize_tests();
+    let mut sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::ControlPlane])
+        .add_node([QuickwitService::Metastore])
+        .add_node([QuickwitService::Indexer])
+        .build_and_start()
+        .await;
+    let indexer_rest_addr = sandbox
+        .node_configs
+        .iter()
+        .find(|(_, services)| services.contains(&QuickwitService::Indexer))
+        .map(|(config, _)| config.rest_config.listen_addr)
+        .unwrap();
+    let indexer_readyz_url = format!("http://{indexer_rest_addr}/health/readyz");
+
+    let indexer_readyz_response = reqwest::get(&indexer_readyz_url).await.unwrap();
+    assert_eq!(indexer_readyz_response.status(), StatusCode::OK);
+    assert_eq!(indexer_readyz_response.text().await.unwrap(), "true");
+
+    sandbox
+        .shutdown_services([QuickwitService::ControlPlane])
+        .await
+        .unwrap();
+    assert!(
+        sandbox
+            .rest_client(QuickwitService::Metastore)
+            .node_health()
+            .is_ready()
+            .await
+            .unwrap()
+    );
+
+    wait_until_predicate(
+        || {
+            let indexer_readyz_url = indexer_readyz_url.clone();
+            async move {
+                match reqwest::get(&indexer_readyz_url).await {
+                    Ok(response) => response.status() == StatusCode::SERVICE_UNAVAILABLE,
+                    Err(_) => false,
+                }
+            }
+        },
+        Duration::from_secs(10),
+        Duration::from_millis(100),
+    )
+    .await
+    .unwrap();
 
     sandbox.shutdown().await.unwrap();
 }
