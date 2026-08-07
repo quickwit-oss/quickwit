@@ -43,6 +43,11 @@ pub struct ReportSplit {
     /// The storage uri. This URI does NOT include the split id.
     #[prost(string, tag = "1")]
     pub storage_uri: ::prost::alloc::string::String,
+    /// Size of the split file in bytes (i.e. `footer_offsets.end`).
+    /// A value of 0 means the size is unknown to the reporter; the split
+    /// cache treats an unknown size as "fits" so behavior is unchanged.
+    #[prost(uint64, tag = "3")]
+    pub num_bytes: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]

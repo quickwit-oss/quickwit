@@ -32,6 +32,7 @@ async fn download_split(
         split_id,
         storage_uri,
         living_token: _,
+        num_bytes: _,
     } = candidate_split;
     let split_filename = split_file(split_id);
     let target_filepath = root_path.join(&split_filename);

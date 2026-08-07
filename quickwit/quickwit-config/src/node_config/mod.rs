@@ -384,6 +384,13 @@ pub struct SplitCacheLimits {
     pub num_concurrent_downloads: NonZeroU32,
     #[serde(default = "SplitCacheLimits::default_max_file_descriptors")]
     pub max_file_descriptors: NonZeroU32,
+    /// Opt-in per-split size guard. When `true`, the searcher split cache refuses
+    /// to download a split larger than `max_num_bytes`, reserves the bytes of
+    /// in-flight downloads against the budget, and advances past candidates it
+    /// cannot make room for. Defaults to `false`, which preserves the historical
+    /// behavior (no size guard: any reported split can be downloaded).
+    #[serde(default)]
+    pub skip_oversized_splits: bool,
 }
 
 impl SplitCacheLimits {
