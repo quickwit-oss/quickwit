@@ -231,7 +231,7 @@ impl ParquetMergePipeline {
             }
         }
         if !failure_or_unhealthy_actors.is_empty() {
-            error!(
+            debug!(
                 generation = self.generation(),
                 healthy_actors = ?healthy_actors,
                 failed_or_unhealthy_actors = ?failure_or_unhealthy_actors,

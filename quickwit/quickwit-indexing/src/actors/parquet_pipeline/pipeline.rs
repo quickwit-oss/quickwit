@@ -209,7 +209,7 @@ impl MetricsPipeline {
         }
 
         if !failure_or_unhealthy_actors.is_empty() {
-            error!(
+            debug!(
                 pipeline_id=?self.params.pipeline_id,
                 generation=self.generation(),
                 healthy_actors=?healthy_actors,
