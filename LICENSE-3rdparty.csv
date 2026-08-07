@@ -535,6 +535,7 @@ oorandom,https://hg.sr.ht/~icefox/oorandom,MIT,Simon Heath <icefox@dreamquest.io
 opaque-debug,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
 opendal,https://github.com/apache/opendal,Apache-2.0,Apache OpenDAL <dev@opendal.apache.org>
 opendal-core,https://github.com/apache/opendal,Apache-2.0,Apache OpenDAL <dev@opendal.apache.org>
+opendal-http-transport-reqwest,https://github.com/apache/opendal,Apache-2.0,Apache OpenDAL <dev@opendal.apache.org>
 opendal-service-gcs,https://github.com/apache/opendal,Apache-2.0,Apache OpenDAL <dev@opendal.apache.org>
 openidconnect,https://github.com/ramosbugs/openidconnect-rs,MIT,David A. Ramos <ramos@cs.stanford.edu>
 openssl,https://github.com/rust-openssl/rust-openssl,Apache-2.0,Steven Fackler <sfackler@gmail.com>
@@ -683,6 +684,7 @@ regex-lite,https://github.com/rust-lang/regex,MIT OR Apache-2.0,"The Rust Projec
 regex-syntax,https://github.com/rust-lang/regex,MIT OR Apache-2.0,"The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>"
 regress,https://github.com/ridiculousfish/regress,MIT OR Apache-2.0,ridiculousfish <corydoras@ridiculousfish.com>
 relative-path,https://github.com/udoprog/relative-path,MIT OR Apache-2.0,John-John Tedro <udoprog@tedro.se>
+reqsign-aws-core,https://github.com/apache/opendal-reqsign,Apache-2.0,The reqsign-aws-core Authors
 reqsign-aws-v4,https://github.com/apache/opendal-reqsign,Apache-2.0,The reqsign-aws-v4 Authors
 reqsign-core,https://github.com/apache/opendal-reqsign,Apache-2.0,The reqsign-core Authors
 reqsign-file-read-tokio,https://github.com/apache/opendal-reqsign,Apache-2.0,The reqsign-file-read-tokio Authors

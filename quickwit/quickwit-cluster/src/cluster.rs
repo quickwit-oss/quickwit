@@ -19,12 +19,12 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-#[cfg(any(test, feature = "testsuite"))]
 use anyhow::Context;
 use chitchat::transport::Transport;
 use chitchat::{
     Chitchat, ChitchatConfig, ChitchatHandle, ChitchatId, ClusterStateSnapshot,
-    FailureDetectorConfig, KeyChangeEvent, ListenerHandle, NodeState, spawn_chitchat,
+    FailureDetectorConfig, KeyChangeEvent, ListenerHandle, NodeState, ProtocolVersion,
+    spawn_chitchat,
 };
 use itertools::Itertools;
 use quickwit_proto::indexing::{IndexingPipelineId, IndexingTask, PipelineMetrics};
@@ -170,6 +170,7 @@ impl Cluster {
         gossip_listen_addr: SocketAddr,
         peer_seed_addrs: Vec<String>,
         gossip_interval: Duration,
+        gossip_protocol_version: u8,
         failure_detector_config: FailureDetectorConfig,
         transport: &dyn Transport,
         channel_factory: ChannelFactory,
@@ -195,6 +196,10 @@ impl Cluster {
                 .iter()
                 .all(|key| node_state.contains_key(key))
         };
+        let gossip_protocol_version = ProtocolVersion::from_code(gossip_protocol_version)
+            .with_context(|| {
+                format!("invalid gossip protocol version `{gossip_protocol_version}`")
+            })?;
         let chitchat_config = ChitchatConfig {
             cluster_id: cluster_id.clone(),
             chitchat_id: self_node.chitchat_id(),
@@ -205,6 +210,7 @@ impl Cluster {
             marked_for_deletion_grace_period: MARKED_FOR_DELETION_GRACE_PERIOD,
             catchup_callback: Some(Box::new(catchup_callback)),
             extra_liveness_predicate: Some(Box::new(extra_liveness_predicate)),
+            protocol_version: gossip_protocol_version,
         };
         let mut initial_key_values = vec![
             (
@@ -744,6 +750,7 @@ pub async fn create_cluster_for_test_with_id(
         gossip_advertise_addr,
         peer_seed_addrs,
         Duration::from_millis(25),
+        ProtocolVersion::V0.to_code(),
         failure_detector_config,
         transport,
         crate::change::for_test::channel_factory_for_test(),
@@ -804,6 +811,7 @@ mod tests {
 
     use itertools::Itertools;
     use quickwit_common::test_utils::wait_until_predicate;
+    use quickwit_config::MAX_GOSSIP_PROTOCOL_VERSION;
     use quickwit_config::service::QuickwitService;
     use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::types::IndexUid;
@@ -811,6 +819,22 @@ mod tests {
 
     use super::*;
     use crate::ChitchatTransport;
+
+    #[test]
+    fn test_max_gossip_protocol_version_matches_chitchat() {
+        // Keep this match exhaustive: when Chitchat adds a protocol version, compilation should
+        // fail until `MAX_GOSSIP_PROTOCOL_VERSION` is reviewed and updated.
+        fn protocol_version_code(protocol_version: ProtocolVersion) -> u8 {
+            match protocol_version {
+                ProtocolVersion::V0 | ProtocolVersion::V1 => protocol_version.to_code(),
+            }
+        }
+
+        assert_eq!(
+            MAX_GOSSIP_PROTOCOL_VERSION,
+            protocol_version_code(ProtocolVersion::V1)
+        );
+    }
 
     #[tokio::test]
     async fn test_single_node_cluster_readiness() {
