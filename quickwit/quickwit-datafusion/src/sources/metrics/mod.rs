@@ -115,6 +115,7 @@ async fn resolve_metrics_table_provider(
 
     match index_resolver.resolve(index_name, split_kind).await {
         Ok((split_provider, index_uri)) => {
+            let schema = metrics_table_provider_schema(schema);
             let provider = MetricsTableProvider::new(schema, split_provider, index_uri)?;
             Ok(Some(Arc::new(provider)))
         }
@@ -126,6 +127,10 @@ async fn resolve_metrics_table_provider(
             }
         }
     }
+}
+
+fn dict_encoded_string_type() -> DataType {
+    DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8))
 }
 
 fn split_kind_from_index_name(index_name: &str) -> Option<ParquetSplitKind> {
@@ -140,7 +145,7 @@ fn split_kind_from_index_name(index_name: &str) -> Option<ParquetSplitKind> {
 
 /// Minimal 4-column schema — always present in every OSS metrics parquet file.
 fn minimal_base_schema() -> SchemaRef {
-    let dict = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+    let dict = dict_encoded_string_type();
     Arc::new(ArrowSchema::new(vec![
         Field::new("metric_name", dict, false),
         Field::new("metric_type", DataType::UInt8, false),
@@ -163,6 +168,43 @@ fn minimal_schema_for_kind(split_kind: ParquetSplitKind) -> SchemaRef {
     match split_kind {
         ParquetSplitKind::Metrics => minimal_base_schema(),
         ParquetSplitKind::Sketches => minimal_sketch_schema(),
+    }
+}
+
+fn is_arrow_string_type(data_type: &DataType) -> bool {
+    matches!(
+        data_type,
+        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
+    )
+}
+
+fn metrics_table_provider_schema(schema: SchemaRef) -> SchemaRef {
+    let mut has_string_fields = false;
+    let fields = schema
+        .fields()
+        .iter()
+        .map(|field| {
+            if is_arrow_string_type(field.data_type()) {
+                has_string_fields = true;
+                Arc::new(
+                    field
+                        .as_ref()
+                        .clone()
+                        .with_data_type(dict_encoded_string_type()),
+                )
+            } else {
+                Arc::clone(field)
+            }
+        })
+        .collect::<Vec<_>>();
+
+    if has_string_fields {
+        Arc::new(ArrowSchema::new_with_metadata(
+            fields,
+            schema.metadata().clone(),
+        ))
+    } else {
+        schema
     }
 }
 
@@ -334,5 +376,64 @@ impl QuickwitSubstraitConsumerExt for MetricsDataSource {
         )
         .await?;
         Ok(provider.map(|provider| (index_name.to_string(), provider)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    #[test]
+    fn table_provider_schema_dictionary_encodes_string_fields() {
+        let field_metadata = HashMap::from([("field_key".to_string(), "field_value".to_string())]);
+        let schema_metadata =
+            HashMap::from([("schema_key".to_string(), "schema_value".to_string())]);
+        let schema = Arc::new(ArrowSchema::new_with_metadata(
+            vec![
+                Field::new("metric_name", DataType::Utf8, false),
+                Field::new("service", DataType::LargeUtf8, true)
+                    .with_metadata(field_metadata.clone()),
+                Field::new("env", DataType::Utf8View, true),
+                Field::new("value", DataType::Float64, false),
+                Field::new("already_dict", dict_encoded_string_type(), true),
+            ],
+            schema_metadata.clone(),
+        ));
+
+        let normalized = metrics_table_provider_schema(schema);
+
+        assert_eq!(
+            normalized
+                .field_with_name("metric_name")
+                .unwrap()
+                .data_type(),
+            &dict_encoded_string_type()
+        );
+        assert_eq!(
+            normalized.field_with_name("service").unwrap().data_type(),
+            &dict_encoded_string_type()
+        );
+        assert_eq!(
+            normalized.field_with_name("env").unwrap().data_type(),
+            &dict_encoded_string_type()
+        );
+        assert_eq!(
+            normalized.field_with_name("value").unwrap().data_type(),
+            &DataType::Float64
+        );
+        assert_eq!(
+            normalized
+                .field_with_name("already_dict")
+                .unwrap()
+                .data_type(),
+            &dict_encoded_string_type()
+        );
+        assert_eq!(normalized.metadata(), &schema_metadata);
+        assert_eq!(
+            normalized.field_with_name("service").unwrap().metadata(),
+            &field_metadata
+        );
     }
 }

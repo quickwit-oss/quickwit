@@ -93,7 +93,8 @@ impl TableProviderFactory for MetricsTableProviderFactory {
             .resolve(&index_name, self.split_kind)
             .await?;
 
-        let arrow_schema: SchemaRef = Arc::new(cmd.schema.as_arrow().clone());
+        let arrow_schema: SchemaRef =
+            super::metrics_table_provider_schema(Arc::new(cmd.schema.as_arrow().clone()));
 
         if arrow_schema.fields().is_empty() {
             return Err(DataFusionError::Plan(format!(
