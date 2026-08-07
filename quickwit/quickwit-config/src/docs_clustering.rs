@@ -94,6 +94,10 @@ impl DocsClusteringConfigBuilder {
 
 impl DocsClusteringConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
+        ensure!(
+            !self.policies.is_empty(),
+            "document clustering policies must contain at least one policy"
+        );
         for policy in &self.policies {
             policy.validate()?;
         }
@@ -373,6 +377,19 @@ mod tests {
                 "expected `{expected_error}`, got: {error:?}"
             );
         }
+    }
+
+    #[test]
+    fn config_validation_rejects_empty_policies() {
+        let json_value = serde_json::json!([]);
+        let expected_error = "document clustering policies must contain at least one policy";
+
+        let config: DocsClusteringConfig = serde_json::from_value(json_value).unwrap();
+        let error = config.validate().unwrap_err();
+        assert!(
+            error.to_string().contains(expected_error),
+            "expected `{expected_error}`, got: {error:?}"
+        );
     }
 
     #[test]
