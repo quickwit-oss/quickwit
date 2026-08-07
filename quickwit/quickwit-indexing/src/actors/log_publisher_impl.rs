@@ -116,8 +116,13 @@ impl Handler<SplitsUpdate> for Publisher {
             }
             return Err(publish_error);
         }
+        let publication_type = if replaced_split_ids.is_empty() {
+            "initial"
+        } else {
+            "replacement"
+        };
         for split in &new_splits {
-            record_published_split(&index_id, split);
+            record_published_split(&index_id, split, publication_type);
         }
         let num_docs: usize = new_splits.iter().map(|split| split.num_docs).sum();
         // `footer_offsets.end` is the on-disk size of the split file in bytes.
@@ -161,6 +166,7 @@ mod tests {
         IndexCheckpointDelta, PartitionId, SourceCheckpoint, SourceCheckpointDelta,
     };
     use quickwit_metastore::{PublishSplitsRequestExt, SplitMetadata};
+    use quickwit_metrics::{counter, label_values};
     use quickwit_proto::metastore::{
         EmptyResponse, MetastoreError, MetastoreServiceClient, MockMetastoreService,
     };
@@ -169,13 +175,34 @@ mod tests {
 
     use super::PUBLISHER_NAME;
     use crate::actors::publisher::Publisher;
+    use crate::metrics::{PUBLISHED_SPLIT, PUBLISHED_SPLIT_DOCS_TOTAL};
     use crate::models::{PublishLock, SharedPublishToken, SplitsUpdate};
     use crate::source::SuggestTruncate;
+
+    fn published_split_docs(
+        index_id: &str,
+        source_id: &str,
+        merge_ops: usize,
+        publication_type: &'static str,
+    ) -> u64 {
+        let index = quickwit_common::metrics::index_label(index_id);
+        let labels = label_values!(
+            PUBLISHED_SPLIT =>
+            index.to_string(),
+            source_id.to_string(),
+            merge_ops.to_string(),
+            publication_type
+        );
+        counter!(parent: PUBLISHED_SPLIT_DOCS_TOTAL, labels: [labels]).get()
+    }
 
     #[tokio::test]
     async fn test_publisher_publish_operation() {
         let universe = Universe::with_accelerated_time();
-        let ref_index_uid: IndexUid = IndexUid::for_test("index", 1);
+        let ref_index_uid: IndexUid = IndexUid::for_test("publisher-metric-initial", 1);
+        let initial_before = published_split_docs(&ref_index_uid.index_id, "source", 0, "initial");
+        let replacement_before =
+            published_split_docs(&ref_index_uid.index_id, "source", 0, "replacement");
         let mut mock_metastore = MockMetastoreService::new();
         let ref_index_uid_clone = ref_index_uid.clone();
         mock_metastore
@@ -213,6 +240,8 @@ mod tests {
                     index_uid: ref_index_uid.clone(),
                     new_splits: vec![SplitMetadata {
                         split_id: "split".into(),
+                        source_id: "source".into(),
+                        num_docs: 7,
                         ..Default::default()
                     }],
                     replaced_split_ids: Vec::new(),
@@ -230,6 +259,15 @@ mod tests {
 
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
         assert_eq!(publisher_observation.num_published_splits, 1);
+        assert_eq!(
+            published_split_docs(&ref_index_uid.index_id, "source", 0, "initial") - initial_before,
+            7
+        );
+        assert_eq!(
+            published_split_docs(&ref_index_uid.index_id, "source", 0, "replacement")
+                - replacement_before,
+            0
+        );
 
         let suggest_truncate_checkpoints: Vec<SourceCheckpoint> = source_inbox
             .drain_for_test_typed::<SuggestTruncate>()
@@ -328,7 +366,10 @@ mod tests {
     async fn test_publisher_replace_operation() {
         let universe = Universe::with_accelerated_time();
         let mut mock_metastore = MockMetastoreService::new();
-        let ref_index_uid: IndexUid = IndexUid::for_test("index", 1);
+        let ref_index_uid: IndexUid = IndexUid::for_test("publisher-metric-replacement", 1);
+        let initial_before = published_split_docs(&ref_index_uid.index_id, "source", 0, "initial");
+        let replacement_before =
+            published_split_docs(&ref_index_uid.index_id, "source", 0, "replacement");
         let ref_index_uid_clone = ref_index_uid.clone();
         mock_metastore
             .expect_publish_splits()
@@ -357,6 +398,10 @@ mod tests {
                 index_uid: ref_index_uid.clone(),
                 new_splits: vec![SplitMetadata {
                     split_id: "split3".into(),
+                    source_id: "source".into(),
+                    num_docs: 11,
+                    // Delete-and-merge rewrites can preserve zero merge operations.
+                    num_merge_ops: 0,
                     ..Default::default()
                 }],
                 replaced_split_ids: vec![SplitId::from("split1"), SplitId::from("split2")],
@@ -370,6 +415,15 @@ mod tests {
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
         assert_eq!(publisher_observation.num_published_splits, 0);
         assert_eq!(publisher_observation.num_replace_operations, 1);
+        assert_eq!(
+            published_split_docs(&ref_index_uid.index_id, "source", 0, "replacement")
+                - replacement_before,
+            11
+        );
+        assert_eq!(
+            published_split_docs(&ref_index_uid.index_id, "source", 0, "initial") - initial_before,
+            0
+        );
 
         use crate::models::NewSplits;
         let merge_planner_msgs = merge_planner_inbox.drain_for_test_typed::<NewSplits>();
