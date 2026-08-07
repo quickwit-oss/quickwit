@@ -283,6 +283,9 @@ dbl,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
 deadpool,https://github.com/bikeshedder/deadpool,MIT OR Apache-2.0,Michael P. Jung <michael.jung@terreon.de>
 deadpool-runtime,https://github.com/bikeshedder/deadpool,MIT OR Apache-2.0,Michael P. Jung <michael.jung@terreon.de>
 debugid,https://github.com/getsentry/rust-debugid,Apache-2.0,Sentry <hello@sentry.io>
+defmt,https://github.com/knurling-rs/defmt,MIT OR Apache-2.0,The Knurling-rs developers
+defmt-macros,https://github.com/knurling-rs/defmt,MIT OR Apache-2.0,The Knurling-rs developers
+defmt-parser,https://github.com/knurling-rs/defmt,MIT OR Apache-2.0,The Knurling-rs developers
 delegate,https://github.com/kobzol/rust-delegate,MIT OR Apache-2.0,"Godfrey Chan <godfreykfc@gmail.com>, Jakub Beránek <berykubik@gmail.com>"
 der,https://github.com/RustCrypto/formats/tree/master/der,Apache-2.0 OR MIT,RustCrypto Developers
 deranged,https://github.com/jhpratt/deranged,MIT OR Apache-2.0,Jacob Pratt <jacob@jhpratt.dev>
@@ -477,6 +480,7 @@ is_terminal_polyfill,https://github.com/polyfill-rs/is_terminal_polyfill,MIT OR 
 itertools,https://github.com/rust-itertools/itertools,MIT OR Apache-2.0,bluss
 itoa,https://github.com/dtolnay/itoa,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 jiff,https://github.com/BurntSushi/jiff,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
+jiff-core,https://github.com/BurntSushi/jiff,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 jiff-static,https://github.com/BurntSushi/jiff,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 jiff-tzdb,https://github.com/BurntSushi/jiff,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 jiff-tzdb-platform,https://github.com/BurntSushi/jiff,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
@@ -617,6 +621,7 @@ oorandom,https://hg.sr.ht/~icefox/oorandom,MIT,Simon Heath <icefox@dreamquest.io
 opaque-debug,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
 opendal,https://github.com/apache/opendal,Apache-2.0,Apache OpenDAL <dev@opendal.apache.org>
 opendal-core,https://github.com/apache/opendal,Apache-2.0,Apache OpenDAL <dev@opendal.apache.org>
+opendal-http-transport-reqwest,https://github.com/apache/opendal,Apache-2.0,Apache OpenDAL <dev@opendal.apache.org>
 opendal-service-gcs,https://github.com/apache/opendal,Apache-2.0,Apache OpenDAL <dev@opendal.apache.org>
 openidconnect,https://github.com/ramosbugs/openidconnect-rs,MIT,David A. Ramos <ramos@cs.stanford.edu>
 openssl,https://github.com/rust-openssl/rust-openssl,Apache-2.0,Steven Fackler <sfackler@gmail.com>
@@ -785,6 +790,7 @@ regex-syntax,https://github.com/rust-lang/regex,MIT OR Apache-2.0,"The Rust Proj
 regress,https://github.com/ridiculousfish/regress,MIT OR Apache-2.0,ridiculousfish <corydoras@ridiculousfish.com>
 relative-path,https://github.com/udoprog/relative-path,MIT OR Apache-2.0,John-John Tedro <udoprog@tedro.se>
 rend,https://github.com/djkoloski/rend,MIT,David Koloski <djkoloski@gmail.com>
+reqsign-aws-core,https://github.com/apache/opendal-reqsign,Apache-2.0,The reqsign-aws-core Authors
 reqsign-aws-v4,https://github.com/apache/opendal-reqsign,Apache-2.0,The reqsign-aws-v4 Authors
 reqsign-core,https://github.com/apache/opendal-reqsign,Apache-2.0,The reqsign-core Authors
 reqsign-file-read-tokio,https://github.com/apache/opendal-reqsign,Apache-2.0,The reqsign-file-read-tokio Authors
@@ -1161,7 +1167,6 @@ zerocopy-derive,https://github.com/google/zerocopy,BSD-2-Clause OR Apache-2.0 OR
 zerofrom,https://github.com/unicode-org/icu4x,Unicode-3.0,The ICU4X Project Developers
 zerofrom-derive,https://github.com/unicode-org/icu4x,Unicode-3.0,Manish Goregaokar <manishsmail@gmail.com>
 zeroize,https://github.com/RustCrypto/utils,Apache-2.0 OR MIT,The RustCrypto Project Developers
-zeroize_derive,https://github.com/RustCrypto/utils/tree/master/zeroize/derive,Apache-2.0 OR MIT,The RustCrypto Project Developers
 zerotrie,https://github.com/unicode-org/icu4x,Unicode-3.0,The ICU4X Project Developers
 zerovec,https://github.com/unicode-org/icu4x,Unicode-3.0,The ICU4X Project Developers
 zerovec-derive,https://github.com/unicode-org/icu4x,Unicode-3.0,Manish Goregaokar <manishsmail@gmail.com>

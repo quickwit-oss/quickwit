@@ -126,12 +126,12 @@ bitpacking = "0.9"
 bytes = { version = "1", features = ["serde"] }
 bytesize = { version = "2.4", features = ["serde"] }
 bytestring = "1.5"
-# WORKAROUND: chitchat 0.11.2 was published to crates.io on 2026-08-03 and is
+# WORKAROUND: chitchat 0.13.0 was published to crates.io on 2026-08-07 and is
 # still inside Datadog Depot's 2-day dependency cooldown, so it cannot be
 # resolved from the internal registry yet. Point at the git rev that bumped the
-# version to 0.11.2 (quickwit-oss/chitchat#197) until the cooldown lapses and
-# the crate is ingested, at which point this should revert to `chitchat = "0.11.2"`.
-chitchat = { git = "https://github.com/quickwit-oss/chitchat.git", rev = "b0dc80ee7543c74f2b0d0081cb3d87b223727b07", version = "0.11.2" }
+# version to 0.13.0 (quickwit-oss/chitchat#202) until the cooldown lapses and
+# the crate is ingested, at which point this should revert to `chitchat = "0.13.0"`.
+chitchat = { git = "https://github.com/quickwit-oss/chitchat.git", rev = "ce2840bcba65fa57df392885d6c4c91e206290c2", version = "0.13.0" }
 chrono = { version = "0.4", default-features = false, features = [
   "clock",
   "std",
@@ -407,7 +407,7 @@ azure_storage_blobs = { version = "0.21", default-features = false, features = [
   "enable_reqwest_rustls",
 ] }
 
-opendal = { version = "0.57", default-features = false, features = ["reqwest-rustls-tls"] }
+opendal = { version = "0.58", default-features = false, features = ["reqwest-rustls-tls"] }
 reqsign = { version = "0.18", default-features = false, features = ["google", "default-context"] }
 
 pomsky-arrow = { path = "pomsky-arrow" }

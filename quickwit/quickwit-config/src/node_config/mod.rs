@@ -54,6 +54,9 @@ mod intake_config;
 
 pub const DEFAULT_QW_CONFIG_PATH: &str = "config/quickwit.yaml";
 
+/// Highest Chitchat protocol version accepted by Quickwit configuration.
+pub const MAX_GOSSIP_PROTOCOL_VERSION: u8 = 1;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RestConfig {
@@ -1152,6 +1155,7 @@ pub struct NodeConfig {
     pub gossip_advertise_addr: SocketAddr,
     pub grpc_advertise_addr: SocketAddr,
     pub gossip_interval: Duration,
+    pub gossip_protocol_version: u8,
     pub peer_seeds: Vec<String>,
     pub data_dir_path: PathBuf,
     pub metastore_uri: Uri,

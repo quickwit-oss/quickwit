@@ -14,7 +14,6 @@
 
 use async_trait::async_trait;
 use serde::Serialize;
-use tracing::{info, warn};
 
 use crate::mailbox::Inbox;
 use crate::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Supervisable};
@@ -140,14 +139,12 @@ impl<A: Actor> Supervisor<A> {
                 return Err(ActorExitStatus::Success);
             }
         }
-        warn!("unhealthy-actor");
-        // The actor is failing we need to restart it.
+        // The actor is failing, we need to restart it.
         let actor_handle = self.handle_opt.take().unwrap();
         let actor_mailbox = actor_handle.mailbox().clone();
         let (actor_exit_status, _last_state) = if !actor_handle.state().is_exit() {
             // The actor is probably frozen.
             // Let's kill it.
-            warn!("killing");
             actor_handle.kill().await
         } else {
             actor_handle.join().await
@@ -172,7 +169,6 @@ impl<A: Actor> Supervisor<A> {
                 self.metrics.num_panics += 1;
             }
         }
-        info!("respawning-actor");
         let (_, actor_handle) = ctx
             .spawn_actor()
             .set_mailboxes(actor_mailbox, self.inbox.clone())
@@ -203,7 +199,6 @@ mod tests {
     use std::time::Duration;
 
     use async_trait::async_trait;
-    use tracing::info;
 
     use crate::supervisor::SupervisorMetrics;
     use crate::tests::{Ping, PingReceiverActor};
@@ -239,7 +234,6 @@ mod tests {
             _exit_status: &ActorExitStatus,
             _ctx: &ActorContext<Self>,
         ) -> anyhow::Result<()> {
-            info!("finalize-failing-actor");
             Ok(())
         }
     }
