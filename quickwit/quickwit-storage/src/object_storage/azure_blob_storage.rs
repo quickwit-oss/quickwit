@@ -22,8 +22,8 @@ use std::{fmt, io};
 use async_trait::async_trait;
 use azure_core::error::ErrorKind;
 use azure_core::{Pageable, StatusCode};
-use azure_storage::Error as AzureError;
 use azure_storage::prelude::*;
+use azure_storage::{CloudLocation, Error as AzureError};
 use azure_storage_blobs::blob::operations::GetBlobResponse;
 use azure_storage_blobs::prelude::*;
 use bytes::{Bytes, BytesMut};
@@ -42,7 +42,7 @@ use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWriteExt, BufReader};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tokio_util::io::StreamReader;
-use tracing::{instrument, warn};
+use tracing::{info, instrument, warn};
 
 use crate::debouncer::DebouncedStorage;
 use crate::metrics::object_storage_get_slice_in_flight_guards;
@@ -100,11 +100,16 @@ impl AzureBlobStorage {
     pub fn new(
         storage_account_name: String,
         storage_credentials: StorageCredentials,
+        blob_service_uri: Option<String>,
         uri: Uri,
         container_name: String,
     ) -> Self {
-        let container_client = BlobServiceClient::new(storage_account_name, storage_credentials)
-            .container_client(container_name);
+        let container_client = build_container_client(
+            storage_account_name,
+            storage_credentials,
+            blob_service_uri,
+            container_name,
+        );
         Self {
             container_client,
             uri,
@@ -192,9 +197,11 @@ impl AzureBlobStorage {
             let message = format!("failed to extract container name from Azure URI `{uri}`");
             StorageResolverError::InvalidUri(message)
         })?;
+        let blob_service_uri = azure_storage_config.resolve_blob_service_uri(&storage_account_name);
         let azure_blob_storage = AzureBlobStorage::new(
             storage_account_name,
             storage_credentials,
+            blob_service_uri,
             uri.clone(),
             container_name,
         );
@@ -562,6 +569,25 @@ async fn extract_range_data_and_hash(
     let data = Bytes::from(buf);
     let hash = md5::compute(&data[..]);
     Ok((data, hash))
+}
+
+fn build_container_client(
+    storage_account_name: String,
+    storage_credentials: StorageCredentials,
+    blob_service_uri: Option<String>,
+    container_name: String,
+) -> ContainerClient {
+    let mut builder = ClientBuilder::new(storage_account_name.clone(), storage_credentials);
+    if let Some(uri) = blob_service_uri {
+        info!(endpoint=%uri, "using Azure blob storage endpoint defined in storage config or environment variable");
+        builder = builder.cloud_location(CloudLocation::Custom {
+            account: storage_account_name,
+            uri,
+        });
+    }
+    builder
+        .blob_service_client()
+        .container_client(container_name)
 }
 
 pub fn parse_azure_uri(uri: &Uri) -> Option<(String, PathBuf)> {

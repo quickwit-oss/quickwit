@@ -404,7 +404,7 @@ impl IndexingService {
             info!(
                 index_id = indexing_pipeline_id.index_uid.index_id,
                 source_id = indexing_pipeline_id.source_id,
-                sorting_config=?fingerprinter.config(),
+                clustering_config=?fingerprinter.config(),
                 "document clustering enabled",
             );
         }

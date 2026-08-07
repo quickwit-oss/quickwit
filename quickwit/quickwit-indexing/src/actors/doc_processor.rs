@@ -874,6 +874,12 @@ mod tests {
                         "path": "body",
                         "kind": "raw"
                     }]
+                },
+                {
+                    "fingerprint": [{
+                        "path": "body",
+                        "kind": "tokenized"
+                    }]
                 }
             ]))
             .unwrap();
@@ -987,7 +993,8 @@ mod tests {
 
         let output_messages: Vec<ProcessedDocBatch> = indexer_inbox.drain_for_test_typed();
         assert_eq!(output_messages.len(), 1);
-        assert!(output_messages[0].docs[0].fingerprint_opt.is_some());
+        let fingerprint = output_messages[0].docs[0].fingerprint_opt.as_ref().unwrap();
+        assert_eq!(fingerprint.len(), 3);
         universe.assert_quit().await;
     }
 
