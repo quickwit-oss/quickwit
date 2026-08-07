@@ -89,7 +89,6 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
             return Health::Success;
         }
         if actor_state == ActorState::Failure {
-            error!(actor = self.name(), "actor-exit-without-success");
             return Health::FailureOrUnhealthy;
         }
         if !check_for_progress
@@ -100,7 +99,12 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
         {
             Health::Healthy
         } else {
-            error!(actor = self.name(), "actor-timeout");
+            self.actor_context
+                .kill_switch()
+                .kill_with_fault(anyhow::anyhow!(
+                    "{} stopped reporting progress",
+                    self.name()
+                ));
             Health::FailureOrUnhealthy
         }
     }

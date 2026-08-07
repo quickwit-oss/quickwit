@@ -269,11 +269,11 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                 let stage_result =
                     stage_splits(metastore.clone(), index_uid.clone(), &splits).await;
 
-                if let Err(e) = stage_result {
-                    warn!(error = %e, "failed to stage splits");
+                if let Err(error) = stage_result {
                     // Discard sequencer position on error
                     let _ = tx.send(SequencerCommand::Discard);
-                    kill_switch.kill();
+                    kill_switch
+                        .kill_with_fault(error.context("ParquetUploader failed to stage splits"));
                     return;
                 }
 
@@ -293,17 +293,17 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     let local_path = output_dir.join(&parquet_file);
                     let file_content = match tokio::fs::read(&local_path).await {
                         Ok(content) => content,
-                        Err(e) => {
-                            warn!(
-                                error = %e,
-                                local_path = %local_path.display(),
-                                split_id = %split.split_id_str(),
-                                parquet_file = %parquet_file,
-                                "failed to read local parquet file"
-                            );
+                        Err(error) => {
                             // Discard sequencer position on error
                             let _ = tx.send(SequencerCommand::Discard);
-                            kill_switch.kill();
+                            kill_switch.kill_with_fault(anyhow::Error::from(error).context(
+                                format!(
+                                    "ParquetUploader failed to read local parquet file {} for \
+                                     split {}",
+                                    local_path.display(),
+                                    split.split_id_str()
+                                ),
+                            ));
                             return;
                         }
                     };
@@ -312,16 +312,14 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     let payload: Box<dyn quickwit_storage::PutPayload> = Box::new(file_content);
 
                     // Upload to S3 using the filename directly (matches logs pipeline)
-                    if let Err(e) = split_store.put(Path::new(&parquet_file), payload).await {
-                        warn!(
-                            error = %e,
-                            split_id = %split.split_id_str(),
-                            parquet_file = %parquet_file,
-                            "failed to upload parquet file"
-                        );
+                    if let Err(error) = split_store.put(Path::new(&parquet_file), payload).await {
                         // Discard sequencer position on error
                         let _ = tx.send(SequencerCommand::Discard);
-                        kill_switch.kill();
+                        kill_switch.kill_with_fault(anyhow::Error::from(error).context(format!(
+                            "ParquetUploader failed to upload parquet file {} for split {}",
+                            parquet_file,
+                            split.split_id_str()
+                        )));
                         return;
                     }
 

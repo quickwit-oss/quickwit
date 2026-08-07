@@ -28,7 +28,7 @@ use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
-use super::{CloudPremConfig, GrpcConfig, HealthConfig, RestConfig};
+use super::{CloudPremConfig, GrpcConfig, HealthConfig, MAX_GOSSIP_PROTOCOL_VERSION, RestConfig};
 use crate::config_value::ConfigValue;
 use crate::docs_clustering::DocsClusteringConfigBuilder;
 use crate::node_config::intake_config::IntakeConfig;
@@ -51,6 +51,8 @@ pub const DEFAULT_GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "tests
 } else {
     Duration::from_secs(1)
 };
+
+const DEFAULT_GOSSIP_PROTOCOL_VERSION: u8 = 0;
 
 // Default config values in the order they appear in [`NodeConfigBuilder`].
 fn default_cluster_id() -> ConfigValue<String, QW_CLUSTER_ID> {
@@ -198,6 +200,8 @@ struct NodeConfigBuilder {
     // Should we move this to `CloudPremConfig` and rename the env var to `CP_LISTEN_PORT`?
     cloudprem_listen_port: ConfigValue<u16, QW_CLOUDPREM_LISTEN_PORT>,
     gossip_interval_ms: ConfigValue<u32, QW_GOSSIP_INTERVAL_MS>,
+    #[serde(default)]
+    gossip_protocol_version: ConfigValue<u8, QW_GOSSIP_PROTOCOL_VERSION>,
     #[serde(default)]
     peer_seeds: ConfigValue<List, QW_PEER_SEEDS>,
     #[serde(rename = "data_dir")]
@@ -366,6 +370,15 @@ impl NodeConfigBuilder {
             .resolve_optional(env_vars)?
             .map(|gossip_interval_ms| Duration::from_millis(gossip_interval_ms as u64))
             .unwrap_or(DEFAULT_GOSSIP_INTERVAL);
+        let gossip_protocol_version = self
+            .gossip_protocol_version
+            .resolve_optional(env_vars)?
+            .unwrap_or(DEFAULT_GOSSIP_PROTOCOL_VERSION);
+        ensure!(
+            gossip_protocol_version <= MAX_GOSSIP_PROTOCOL_VERSION,
+            "gossip protocol version must be between 0 and {MAX_GOSSIP_PROTOCOL_VERSION}, got \
+             `{gossip_protocol_version}`"
+        );
 
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
@@ -378,6 +391,7 @@ impl NodeConfigBuilder {
             gossip_advertise_addr,
             grpc_advertise_addr,
             gossip_interval,
+            gossip_protocol_version,
             peer_seeds: self.peer_seeds.resolve(env_vars)?.0,
             data_dir_path,
             metastore_uri,
@@ -524,6 +538,7 @@ impl Default for NodeConfigBuilder {
             grpc_listen_port: ConfigValue::none(),
             cloudprem_listen_port: ConfigValue::none(),
             gossip_interval_ms: ConfigValue::none(),
+            gossip_protocol_version: ConfigValue::none(),
             advertise_address: ConfigValue::none(),
             peer_seeds: ConfigValue::with_default(List::default()),
             data_dir_uri: default_data_dir_uri(),
@@ -684,6 +699,7 @@ pub fn node_config_for_tests_from_ports(
         grpc_listen_addr,
         cloudprem_listen_addr,
         gossip_interval: Duration::from_millis(25u64),
+        gossip_protocol_version: DEFAULT_GOSSIP_PROTOCOL_VERSION,
         peer_seeds: Vec::new(),
         data_dir_path,
         metastore_uri,
@@ -807,6 +823,7 @@ mod tests {
             config.gossip_listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 2222)
         );
+        assert_eq!(config.gossip_protocol_version, 1);
         assert_eq!(
             config.grpc_listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 3333)
@@ -1046,6 +1063,7 @@ mod tests {
         env_vars.insert("QW_REST_LISTEN_PORT".to_string(), "1234".to_string());
         env_vars.insert("QW_HEALTH_LISTEN_PORT".to_string(), "3456".to_string());
         env_vars.insert("QW_GOSSIP_LISTEN_PORT".to_string(), "5678".to_string());
+        env_vars.insert("QW_GOSSIP_PROTOCOL_VERSION".to_string(), "1".to_string());
         env_vars.insert("QW_GRPC_LISTEN_PORT".to_string(), "9012".to_string());
         env_vars.insert(
             "QW_PEER_SEEDS".to_string(),
@@ -1107,6 +1125,7 @@ mod tests {
             config.grpc_advertise_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 0, 0, 13)), 9012)
         );
+        assert_eq!(config.gossip_protocol_version, 1);
         assert_eq!(
             config.peer_seeds,
             vec![
@@ -1123,6 +1142,41 @@ mod tests {
             "postgresql://test-user:test-password@test-host:4321/test-db"
         );
         assert_eq!(config.default_index_root_uri, "s3://quickwit-indexes/prod");
+    }
+
+    #[tokio::test]
+    async fn test_node_config_rejects_malformed_gossip_protocol_version() {
+        let config_yaml = "version: 0.8";
+        let env_vars = HashMap::from([(
+            "QW_GOSSIP_PROTOCOL_VERSION".to_string(),
+            "invalid".to_string(),
+        )]);
+        let error =
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
+                .await
+                .unwrap_err();
+        assert!(
+            error.to_string().contains("QW_GOSSIP_PROTOCOL_VERSION"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_node_config_rejects_unsupported_gossip_protocol_version() {
+        let config_yaml = "version: 0.8";
+        let unsupported_protocol_version = MAX_GOSSIP_PROTOCOL_VERSION + 1;
+        let env_vars = HashMap::from([(
+            "QW_GOSSIP_PROTOCOL_VERSION".to_string(),
+            unsupported_protocol_version.to_string(),
+        )]);
+        let error =
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
+                .await
+                .unwrap_err();
+        assert!(
+            error.to_string().contains("gossip protocol version"),
+            "unexpected error: {error}"
+        );
     }
 
     #[tokio::test]

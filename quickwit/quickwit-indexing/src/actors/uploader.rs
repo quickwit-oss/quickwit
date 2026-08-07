@@ -376,8 +376,10 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     .await;
 
                     if let Err(cause) = upload_result {
-                        warn!(cause=?cause, split_id=packaged_split.split_id_str(), "Failed to upload split. Killing!");
-                        kill_switch.kill();
+                        kill_switch.kill_with_fault(cause.context(format!(
+                            "Uploader failed to upload split {}",
+                            packaged_split.split_id_str()
+                        )));
                         return;
                     }
 

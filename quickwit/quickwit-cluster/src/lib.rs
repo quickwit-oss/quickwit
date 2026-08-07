@@ -26,9 +26,9 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use chitchat::ChitchatEnvelope;
 pub use chitchat::transport::ChannelTransport as ChitchatTransport;
-use chitchat::transport::{Socket, Transport, UdpSocket};
-use chitchat::{ChitchatMessage, Serializable};
+use chitchat::transport::{RecvOutcome, SendOutcome, Socket, Transport, UdpSocket};
 pub use chitchat::{FailureDetectorConfig, KeyChangeEvent, ListenerHandle};
 pub use grpc_service::cluster_grpc_server;
 use quickwit_config::NodeConfig;
@@ -80,20 +80,26 @@ struct CountingUdpSocket {
 
 #[async_trait]
 impl Socket for CountingUdpSocket {
-    async fn send(&mut self, to: SocketAddr, msg: ChitchatMessage) -> anyhow::Result<()> {
-        let msg_len = msg.serialized_len() as u64;
-        self.socket.send(to, msg).await?;
-        GOSSIP_SENT_MESSAGES_TOTAL.inc();
-        GOSSIP_SENT_BYTES_TOTAL.inc_by(msg_len);
-        Ok(())
+    fn local_addr(&self) -> anyhow::Result<SocketAddr> {
+        self.socket.local_addr()
     }
 
-    async fn recv(&mut self) -> anyhow::Result<(SocketAddr, ChitchatMessage)> {
-        let (socket_addr, msg) = self.socket.recv().await?;
+    async fn send(
+        &mut self,
+        to: SocketAddr,
+        envelope: ChitchatEnvelope,
+    ) -> anyhow::Result<SendOutcome> {
+        let outcome = self.socket.send(to, envelope).await?;
+        GOSSIP_SENT_MESSAGES_TOTAL.inc();
+        GOSSIP_SENT_BYTES_TOTAL.inc_by(outcome.num_bytes_sent as u64);
+        Ok(outcome)
+    }
+
+    async fn recv(&mut self) -> anyhow::Result<RecvOutcome> {
+        let outcome = self.socket.recv().await?;
         GOSSIP_RECV_MESSAGES_TOTAL.inc();
-        let msg_len = msg.serialized_len() as u64;
-        GOSSIP_RECV_BYTES_TOTAL.inc_by(msg_len);
-        Ok((socket_addr, msg))
+        GOSSIP_RECV_BYTES_TOTAL.inc_by(outcome.num_bytes_received as u64);
+        Ok(outcome)
     }
 }
 
@@ -143,6 +149,7 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         gossip_listen_addr,
         peer_seed_addrs,
         node_config.gossip_interval,
+        node_config.gossip_protocol_version,
         failure_detector_config,
         &CountingUdpTransport,
         channel_factory,

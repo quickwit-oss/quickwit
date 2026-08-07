@@ -1033,6 +1033,7 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         config.gossip_advertise_addr,
         Vec::new(),
         config.gossip_interval,
+        config.gossip_protocol_version,
         FailureDetectorConfig::default(),
         &ChitchatTransport::default(),
         channel_factory,
