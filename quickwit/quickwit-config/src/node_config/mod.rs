@@ -35,6 +35,7 @@ use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Deserializer, Serialize};
 use tracing::{info, warn};
 
+use crate::docs_clustering::DocsClusteringConfig;
 use crate::node_config::serialize::load_node_config_with_env;
 use crate::serde_utils::HumanDuration;
 use crate::service::QuickwitService;
@@ -42,6 +43,9 @@ use crate::storage_config::StorageConfigs;
 use crate::{ConfigFormat, MetastoreConfigs};
 
 pub const DEFAULT_QW_CONFIG_PATH: &str = "config/quickwit.yaml";
+
+/// Highest Chitchat protocol version accepted by Quickwit configuration.
+pub const MAX_GOSSIP_PROTOCOL_VERSION: u8 = 1;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -297,7 +301,7 @@ impl Default for IndexerConfig {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompactorConfig {
     /// Maximum number of concurrent merges, which hold the CPU for
@@ -314,6 +318,11 @@ pub struct CompactorConfig {
     /// Limits the IO throughput of the split downloader and the merge executor.
     #[serde(default)]
     pub max_merge_write_throughput: Option<ByteSize>,
+    /// Maximum amount of time to wait for the compactor to finish decommissioning gracefully
+    /// on shutdown before giving up. Can be overridden with the
+    /// `QW_COMPACTOR_DECOMMISSION_TIMEOUT` environment variable.
+    #[serde(default = "CompactorConfig::default_decommission_timeout")]
+    decommission_timeout: HumanDuration,
 }
 
 impl CompactorConfig {
@@ -330,6 +339,20 @@ impl CompactorConfig {
         NonZeroUsize::new(12).unwrap()
     }
 
+    fn default_decommission_timeout() -> HumanDuration {
+        HumanDuration::try_from("300s".to_string())
+            .expect("`300s` should be a valid human duration")
+    }
+
+    /// Returns the compactor decommission timeout, as defined in the environment variable or in
+    /// the configuration, in that order (the environment variable overrides the configuration).
+    pub fn decommission_timeout(&self) -> Duration {
+        quickwit_common::get_duration_from_env(
+            "QW_COMPACTOR_DECOMMISSION_TIMEOUT",
+            Duration::from(self.decommission_timeout.clone()),
+        )
+    }
+
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
         CompactorConfig {
@@ -337,6 +360,7 @@ impl CompactorConfig {
             pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
             max_concurrent_split_uploads: NonZeroUsize::new(4).unwrap(),
             max_merge_write_throughput: None,
+            decommission_timeout: Self::default_decommission_timeout(),
         }
     }
 }
@@ -348,6 +372,7 @@ impl Default for CompactorConfig {
             pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
             max_merge_write_throughput: None,
+            decommission_timeout: Self::default_decommission_timeout(),
         }
     }
 }
@@ -719,6 +744,10 @@ pub struct IngestApiConfig {
     pub shard_scale_up_factor: f32,
     #[serde(default)]
     pub grpc_compression_algorithm: Option<CompressionAlgorithm>,
+    /// Maximum amount of time to wait for the ingester to finish decommissioning gracefully
+    /// on shutdown before giving up. Can be overridden with the
+    /// `QW_INGEST_DECOMMISSION_TIMEOUT` environment variable.
+    decommission_timeout: HumanDuration,
 }
 
 impl Default for IngestApiConfig {
@@ -732,6 +761,8 @@ impl Default for IngestApiConfig {
             shard_burst_limit: DEFAULT_SHARD_BURST_LIMIT,
             shard_scale_up_factor: DEFAULT_SHARD_SCALE_UP_FACTOR,
             grpc_compression_algorithm: None,
+            decommission_timeout: HumanDuration::try_from("300s".to_string())
+                .expect("`300s` should be a valid human duration"),
         }
     }
 }
@@ -758,6 +789,15 @@ impl IngestApiConfig {
         );
         Ok(NonZeroUsize::new(self.replication_factor)
             .expect("replication factor should be either 1 or 2"))
+    }
+
+    /// Returns the ingester decommission timeout, as defined in the environment variable or in
+    /// the configuration, in that order (the environment variable overrides the configuration).
+    pub fn decommission_timeout(&self) -> Duration {
+        quickwit_common::get_duration_from_env(
+            "QW_INGEST_DECOMMISSION_TIMEOUT",
+            Duration::from(self.decommission_timeout.clone()),
+        )
     }
 
     pub fn grpc_compression_encoding(&self) -> Option<CompressionEncoding> {
@@ -837,7 +877,7 @@ pub struct JaegerConfig {
 
 impl JaegerConfig {
     pub fn lookback_period(&self) -> Duration {
-        Duration::from_secs(self.lookback_period_hours.get() * 3600)
+        Duration::from_hours(self.lookback_period_hours.get())
     }
 
     pub fn max_trace_duration(&self) -> Duration {
@@ -890,6 +930,7 @@ pub struct NodeConfig {
     pub gossip_advertise_addr: SocketAddr,
     pub grpc_advertise_addr: SocketAddr,
     pub gossip_interval: Duration,
+    pub gossip_protocol_version: u8,
     pub peer_seeds: Vec<String>,
     pub data_dir_path: PathBuf,
     pub metastore_uri: Uri,
@@ -911,6 +952,8 @@ pub struct NodeConfig {
     pub compactor_config: CompactorConfig,
     #[serde(skip_serializing)]
     pub enable_standalone_compactors: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub docs_clustering_config: Option<DocsClusteringConfig>,
 }
 
 impl NodeConfig {
@@ -1125,6 +1168,40 @@ mod tests {
                 "shard_throughput_limit (21.0 MB) must be within 1mb and 20mb"
             );
         }
+    }
+
+    #[test]
+    fn test_ingest_api_config_decommission_timeout() {
+        let default_config = IngestApiConfig::default();
+        assert_eq!(
+            default_config.decommission_timeout(),
+            Duration::from_mins(5)
+        );
+
+        let yaml_config: IngestApiConfig = serde_yaml::from_str(
+            r#"
+                decommission_timeout: 2m
+            "#,
+        )
+        .unwrap();
+        assert_eq!(yaml_config.decommission_timeout(), Duration::from_mins(2));
+    }
+
+    #[test]
+    fn test_compactor_config_decommission_timeout() {
+        let default_config = CompactorConfig::default();
+        assert_eq!(
+            default_config.decommission_timeout(),
+            Duration::from_mins(5)
+        );
+
+        let yaml_config: CompactorConfig = serde_yaml::from_str(
+            r#"
+                decommission_timeout: 2m
+            "#,
+        )
+        .unwrap();
+        assert_eq!(yaml_config.decommission_timeout(), Duration::from_mins(2));
     }
 
     #[track_caller]

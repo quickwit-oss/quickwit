@@ -60,6 +60,7 @@ use tracing::{debug, error, info, warn};
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::pipeline_shared::{ActorPipeline, PipelineHandle};
 use super::{FinishPendingMergesAndShutdownPipeline, MergePlanner, MergeSchedulerService};
+use crate::docs_clustering::Fingerprinter;
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
 use crate::source::{AssignShards, Assignment};
 use crate::split_store::IndexingSplitCache;
@@ -122,6 +123,7 @@ pub struct IndexingService {
     #[cfg(feature = "metrics")]
     parquet_merge_pipeline_handles: HashMap<IndexUid, ParquetMergePipelineHandle>,
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
+    fingerprinter_opt: Option<Fingerprinter>,
     merge_io_throughput_limiter_opt: Option<io::Limiter>,
     pub(crate) event_broker: EventBroker,
 }
@@ -152,6 +154,7 @@ impl IndexingService {
         storage_resolver: StorageResolver,
         event_broker: EventBroker,
         split_cache: Arc<IndexingSplitCache>,
+        fingerprinter_opt: Option<Fingerprinter>,
     ) -> anyhow::Result<IndexingService> {
         let merge_io_throughput_limiter_opt =
             indexer_config.max_merge_write_throughput.map(io::limiter);
@@ -183,6 +186,7 @@ impl IndexingService {
             merge_pipeline_handles: HashMap::new(),
             #[cfg(feature = "metrics")]
             parquet_merge_pipeline_handles: HashMap::new(),
+            fingerprinter_opt,
             merge_io_throughput_limiter_opt,
             cooperative_indexing_permits,
             event_broker,
@@ -396,6 +400,14 @@ impl IndexingService {
         };
         let max_concurrent_split_uploads_merge =
             (self.max_concurrent_split_uploads - max_concurrent_split_uploads_index).max(1);
+        if let Some(fingerprinter) = self.fingerprinter_opt.as_ref() {
+            info!(
+                index_id = indexing_pipeline_id.index_uid.index_id,
+                source_id = indexing_pipeline_id.source_id,
+                clustering_config=?fingerprinter.config(),
+                "document clustering enabled",
+            );
+        }
 
         let pipeline_params = IndexingPipelineParams {
             pipeline_id: indexing_pipeline_id.clone(),
@@ -404,6 +416,7 @@ impl IndexingService {
             doc_mapper,
             indexing_directory,
             indexing_settings: index_config.indexing_settings.clone(),
+            fingerprinter_opt: self.fingerprinter_opt.clone(),
             split_store,
             max_concurrent_split_uploads_index,
             cooperative_indexing_permits: self.cooperative_indexing_permits.clone(),
@@ -1252,6 +1265,7 @@ mod tests {
             storage_resolver.clone(),
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
+            None,
         )
         .await
         .unwrap();
@@ -1885,6 +1899,7 @@ mod tests {
             storage_resolver.clone(),
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
+            None,
         )
         .await
         .unwrap();
@@ -1982,6 +1997,7 @@ mod tests {
             storage_resolver.clone(),
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
+            None,
         )
         .await
         .unwrap();
@@ -2063,6 +2079,7 @@ mod tests {
             storage_resolver.clone(),
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
+            None,
         )
         .await
         .unwrap();
@@ -2248,6 +2265,7 @@ mod tests {
             storage_resolver.clone(),
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
+            None,
         )
         .await
         .unwrap();

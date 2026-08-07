@@ -118,7 +118,8 @@ mod tests {
     use std::sync::Arc;
 
     use base64::Engine;
-    use opendal::raw::HttpClient;
+    use opendal::HttpTransporter;
+    use opendal_http_transport_reqwest::ReqwestTransport;
     use quickwit_common::uri::Uri;
     use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivateSec1KeyDer};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -203,10 +204,10 @@ mod tests {
             .skip_signature()
             .disable_config_load()
             .disable_vm_metadata();
-        let storage = OpendalStorage::new_google_cloud_storage_with_http_client_for_test(
+        let storage = OpendalStorage::new_google_cloud_storage_with_http_transport_for_test(
             Uri::for_test("gs://quickwit-test-bucket"),
             cfg,
-            HttpClient::with(reqwest_client),
+            HttpTransporter::new(ReqwestTransport::new(reqwest_client)),
         )?;
 
         let bytes = storage.get_slice(Path::new("hello.txt"), 0..2).await?;

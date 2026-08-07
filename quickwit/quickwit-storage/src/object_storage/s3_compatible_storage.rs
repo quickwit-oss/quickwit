@@ -47,13 +47,13 @@ use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
 use quickwit_config::S3StorageConfig;
-use quickwit_metrics::{HistogramTimer, counter};
+use quickwit_metrics::{HistogramTimer, counter, label_values};
 use regex::Regex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
 use tracing::{info, instrument, warn};
 
-use crate::metrics::object_storage_get_slice_in_flight_guards;
+use crate::metrics::{ERROR_CLASS, object_storage_get_slice_in_flight_guards};
 use crate::object_storage::MultiPartPolicy;
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
@@ -399,6 +399,13 @@ impl S3CompatibleObjectStorage {
             .set_content_md5(content_md5)
             .send()
             .await
+            .inspect_err(|error| {
+                counter!(
+                    parent: crate::metrics::OBJECT_STORAGE_PUT_ATTEMPT_ERRORS_TOTAL,
+                    labels: [label_values!(ERROR_CLASS => classify_sdk_error(error))],
+                )
+                .inc();
+            })
             .map_err(|sdk_error| {
                 if sdk_error.is_retryable() {
                     Retry::Transient(StorageError::from(sdk_error))
@@ -549,6 +556,13 @@ impl S3CompatibleObjectStorage {
             .upload_id(upload_id.0)
             .send()
             .await
+            .inspect_err(|error| {
+                counter!(
+                    parent: crate::metrics::OBJECT_STORAGE_PUT_ATTEMPT_ERRORS_TOTAL,
+                    labels: [label_values!(ERROR_CLASS => classify_sdk_error(error))],
+                )
+                .inc();
+            })
             .map_err(|s3_err| {
                 if s3_err.is_retryable() {
                     Retry::Transient(StorageError::from(s3_err))
@@ -673,10 +687,9 @@ impl S3CompatibleObjectStorage {
             // retry), labeled by error class so rate limiting (class="throttled") can be measured
             // independently of other transient failures.
             .inspect_err(|error| {
-                let error_class: &'static str = classify_sdk_error(error);
                 counter!(
                     parent: crate::metrics::OBJECT_STORAGE_GET_ATTEMPT_ERRORS_TOTAL,
-                    "class" => error_class,
+                    labels: [label_values!(ERROR_CLASS => classify_sdk_error(error))],
                 )
                 .inc();
             })
@@ -887,13 +900,16 @@ impl Storage for S3CompatibleObjectStorage {
         let key = self.key(path);
         let total_len = payload.len();
         let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
-        if self.disable_multipart_upload || part_num_bytes >= total_len {
-            self.put_single_part(&key, payload, total_len).await?;
+        let put_result = if self.disable_multipart_upload || part_num_bytes >= total_len {
+            self.put_single_part(&key, payload, total_len).await
         } else {
             self.put_multipart(&key, payload, part_num_bytes, total_len)
-                .await?;
+                .await
+        };
+        if put_result.is_err() {
+            crate::metrics::OBJECT_STORAGE_PUT_ERRORS_TOTAL.inc();
         }
-        Ok(())
+        put_result
     }
 
     #[instrument(name = "storage.s3.copy_to", level = "debug", skip(self, output))]

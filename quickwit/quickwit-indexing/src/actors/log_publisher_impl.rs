@@ -25,6 +25,7 @@ use crate::actors::publisher::{
     DisconnectMergePlanner, Publisher, is_invalid_publish_token, publish_with_retry,
     serialize_checkpoint_delta, suggest_truncate,
 };
+use crate::metrics::record_published_split;
 use crate::models::{NewSplits, SplitsUpdate};
 
 pub(crate) const PUBLISHER_NAME: &str = "Publisher";
@@ -74,6 +75,7 @@ impl Handler<SplitsUpdate> for Publisher {
             ..
         } = split_update;
 
+        let index_id = index_uid.index_id.clone();
         let index_checkpoint_delta_json_opt = serialize_checkpoint_delta(&checkpoint_delta_opt)?;
         let split_ids: Vec<String> = new_splits
             .iter()
@@ -113,6 +115,9 @@ impl Handler<SplitsUpdate> for Publisher {
                     .await;
             }
             return Err(publish_error);
+        }
+        for split in &new_splits {
+            record_published_split(&index_id, split);
         }
         let num_docs: usize = new_splits.iter().map(|split| split.num_docs).sum();
         // `footer_offsets.end` is the on-disk size of the split file in bytes.

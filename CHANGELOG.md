@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Azure Blob Storage: support custom endpoints via `endpoint` and `endpoint_suffix` configuration options for sovereign clouds (#6624)
 
 ### Fixed
 - (Jaeger) Query resource attributes when Jaeger request carries tags

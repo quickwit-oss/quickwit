@@ -54,7 +54,7 @@ use super::fetch::FetchStreamTask;
 use super::idle::CloseIdleShardsTask;
 use super::models::IngesterShard;
 use super::mrecordlog_utils::{
-    AppendDocBatchError, append_non_empty_doc_batch, check_enough_capacity,
+    AppendDocBatchError, append_non_empty_doc_batch, check_enough_capacity, wal_stats,
 };
 use super::rate_meter::RateMeter;
 use super::replication::{
@@ -63,7 +63,9 @@ use super::replication::{
 };
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
-use crate::ingest_v2::metrics::{RESET_SHARDS_OPERATIONS_TOTAL, STATUS, report_wal_usage};
+use crate::ingest_v2::metrics::{
+    RESET_SHARDS_OPERATIONS_TOTAL, STATUS, report_wal_limits, report_wal_usage,
+};
 use crate::ingest_v2::models::IngesterShardType;
 use crate::metrics::{DOCS_BYTES_TOTAL, DOCS_TOTAL, VALIDITY};
 use crate::mrecordlog_async::MultiRecordLogAsync;
@@ -73,7 +75,7 @@ use crate::{FollowerId, estimate_size};
 const MIN_RESET_SHARDS_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::ZERO
 } else {
-    Duration::from_secs(60)
+    Duration::from_mins(1)
 };
 
 /// Duration after which persist requests time out with
@@ -145,6 +147,8 @@ impl Ingester {
         BroadcastLocalShardsTask::spawn(cluster.clone(), weak_state.clone());
         BroadcastIngesterCapacityScoreTask::spawn(cluster, weak_state.clone());
         CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
+
+        report_wal_limits(disk_capacity, memory_capacity);
 
         let ingester = Self {
             self_node_id,
@@ -338,7 +342,7 @@ impl Ingester {
                 .inc();
 
                 let wal_usage = state_guard.mrecordlog.resource_usage();
-                report_wal_usage(wal_usage);
+                report_wal_usage(wal_usage, self.disk_capacity, self.memory_capacity);
             }
             Ok(Err(error)) => {
                 warn!("advise reset shards request failed: {error}");
@@ -813,7 +817,7 @@ impl Ingester {
         if disk_used >= self.disk_capacity.as_u64() * 90 / 100 {
             self.background_reset_shards();
         }
-        report_wal_usage(wal_usage);
+        report_wal_usage(wal_usage, self.disk_capacity, self.memory_capacity);
 
         let source_shard_updates = open_shard_counts
             .into_iter()
@@ -937,13 +941,25 @@ impl Ingester {
     ) -> IngestV2Result<IngesterServiceStream<ObservationMessage>> {
         let status_stream = ServiceStream::from(self.state.status_rx.clone());
         let self_node_id = self.self_node_id.clone();
-        let observation_stream = status_stream.map(move |status| {
-            let observation_message = ObservationMessage {
-                node_id: self_node_id.to_string(),
-                status: status as i32,
-            };
-            Ok(observation_message)
-        });
+        let mrecordlog = self.state.mrecordlog();
+        let observation_stream =
+            ServiceStream::new(Box::pin(Box::pin(status_stream.then(move |status| {
+                let self_node_id = self_node_id.clone();
+                let mrecordlog = mrecordlog.clone();
+                async move {
+                    let mrecordlog_guard = mrecordlog.read().await;
+                    let (wal_memory_used_bytes, wal_disk_used_bytes, wal_num_records) =
+                        wal_stats(mrecordlog_guard.as_ref());
+                    let observation_message = ObservationMessage {
+                        node_id: self_node_id.to_string(),
+                        status: status as i32,
+                        wal_memory_used_bytes,
+                        wal_disk_used_bytes,
+                        wal_num_records,
+                    };
+                    Ok(observation_message)
+                }
+            }))));
         Ok(observation_stream)
     }
 
@@ -1029,7 +1045,7 @@ impl Ingester {
                 .await;
         }
         let wal_usage = state_guard.mrecordlog.resource_usage();
-        report_wal_usage(wal_usage);
+        report_wal_usage(wal_usage, self.disk_capacity, self.memory_capacity);
 
         state_guard.check_decommissioning_status().await;
         let truncate_response = TruncateShardsResponse {};
@@ -1226,12 +1242,12 @@ impl IngesterService for Ingester {
             const DECOMMISSION_DELAY: Duration = if cfg!(any(test, feature = "testsuite")) {
                 Duration::from_millis(200)
             } else {
-                // Having to wait for 10s is not great but we can live with it. During this time, we
+                // Having to wait for 15s is not great but we can live with it. During this time, we
                 // still make progress towards decommissioning because we gradually receive less
                 // write requests and indexing is still ongoing. However, it sets a floor on the
                 // amount of time with which we can fully decommission an ingester. This will be
                 // most noticeable when using Quickwit locally.
-                Duration::from_secs(10)
+                Duration::from_secs(15)
             };
             tokio::time::sleep(DECOMMISSION_DELAY).await;
 
@@ -1622,7 +1638,12 @@ mod tests {
 
         ingester
             .state
-            .init(ingester_ctx.tempdir.path(), RateLimiterSettings::default())
+            .init(
+                ingester_ctx.tempdir.path(),
+                ByteSize::mb(256),
+                ByteSize::mb(1),
+                RateLimiterSettings::default(),
+            )
             .await;
 
         let state_guard = ingester.state.lock_fully("test").await.unwrap();
