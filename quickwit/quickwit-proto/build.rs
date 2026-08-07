@@ -69,6 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_output_dir("src/codegen/quickwit")
         .with_result_type_path("crate::control_plane::ControlPlaneResult")
         .with_error_type_path("crate::control_plane::ControlPlaneError")
+        .generate_extra_service_methods()
         .run()
         .unwrap();
 

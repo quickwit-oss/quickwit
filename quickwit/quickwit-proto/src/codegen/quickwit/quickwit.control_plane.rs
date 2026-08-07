@@ -180,6 +180,8 @@ pub trait ControlPlaneService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: super::metastore::PruneShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
+    async fn check_connectivity(&self) -> anyhow::Result<()>;
+    fn endpoints(&self) -> Vec<quickwit_common::uri::Uri>;
 }
 #[derive(Debug, Clone)]
 pub struct ControlPlaneServiceClient {
@@ -362,6 +364,12 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.inner.0.prune_shards(request).await
     }
+    async fn check_connectivity(&self) -> anyhow::Result<()> {
+        self.inner.0.check_connectivity().await
+    }
+    fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
+        self.inner.0.endpoints()
+    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_control_plane_service {
@@ -449,6 +457,12 @@ pub mod mock_control_plane_service {
             super::super::metastore::EmptyResponse,
         > {
             self.inner.lock().await.prune_shards(request).await
+        }
+        async fn check_connectivity(&self) -> anyhow::Result<()> {
+            self.inner.lock().await.check_connectivity().await
+        }
+        fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
+            futures::executor::block_on(self.inner.lock()).endpoints()
         }
     }
 }
@@ -744,6 +758,12 @@ impl ControlPlaneService for ControlPlaneServiceTowerServiceStack {
         request: super::metastore::PruneShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.prune_shards_svc.clone().ready().await?.call(request).await
+    }
+    async fn check_connectivity(&self) -> anyhow::Result<()> {
+        self.inner.0.check_connectivity().await
+    }
+    fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
+        self.inner.0.endpoints()
     }
 }
 type CreateIndexLayer = quickwit_common::tower::BoxLayer<
@@ -1749,6 +1769,18 @@ where
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.clone().call(request).await
     }
+    async fn check_connectivity(&self) -> anyhow::Result<()> {
+        if self.inner.is_disconnected() {
+            anyhow::bail!("actor `{}` is disconnected", self.inner.actor_instance_id())
+        }
+        Ok(())
+    }
+    fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
+        vec![
+            quickwit_common::uri::Uri::from_str(& format!("actor://localhost/{}", self
+            .inner.actor_instance_id())).expect("URI should be valid")
+        ]
+    }
 }
 #[derive(Debug, Clone)]
 pub struct ControlPlaneServiceGrpcClientAdapter<T> {
@@ -1967,6 +1999,24 @@ where
                 status,
                 super::metastore::PruneShardsRequest::rpc_name(),
             ))
+    }
+    async fn check_connectivity(&self) -> anyhow::Result<()> {
+        if self.connection_addrs_rx.borrow().is_empty() {
+            anyhow::bail!("no server currently available")
+        }
+        Ok(())
+    }
+    fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
+        self.connection_addrs_rx
+            .borrow()
+            .iter()
+            .flat_map(|addr| quickwit_common::uri::Uri::from_str(
+                &format!(
+                    "grpc://{addr}/{}.{}", "quickwit.control_plane",
+                    "ControlPlaneService"
+                ),
+            ))
+            .collect()
     }
 }
 #[derive(Debug)]

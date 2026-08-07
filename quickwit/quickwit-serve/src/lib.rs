@@ -101,7 +101,7 @@ use quickwit_metastore::{
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::compaction::CompactionPlannerServiceClient;
-use quickwit_proto::control_plane::ControlPlaneServiceClient;
+use quickwit_proto::control_plane::{ControlPlaneService, ControlPlaneServiceClient};
 use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
 use quickwit_proto::ingest::ingester::{
     IngesterService, IngesterServiceClient, IngesterServiceTowerLayerStack, IngesterStatus,
@@ -518,6 +518,10 @@ async fn shutdown_signal_handler(
     cluster: Cluster,
 ) -> HashMap<String, ActorExitStatus> {
     shutdown_signal.await;
+    #[cfg(any(test, feature = "testsuite"))]
+    cluster.leave().await;
+    #[cfg(not(any(test, feature = "testsuite")))]
+    cluster.set_self_node_readiness(false).await;
     if let Err(error) = notify_ingester_decommission(ingester_opt.as_ref()).await {
         error!("failed to initiate ingester decommission: {:?}", error);
     }
@@ -1017,11 +1021,20 @@ pub async fn serve_quickwit(
 
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.
+    let control_plane_readiness_opt = if quickwit_services
+        .node_config
+        .is_service_enabled(QuickwitService::Indexer)
+    {
+        Some(quickwit_services.control_plane_client.clone())
+    } else {
+        None
+    };
     spawn_named_task(
         node_readiness_reporting_task(
             cluster.clone(),
             primary_metastore_through_control_plane,
             read_replica_metastore_client_opt,
+            control_plane_readiness_opt,
             ingester_opt.clone(),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
@@ -1581,10 +1594,12 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 }
 
 /// Reports node readiness to chitchat cluster every 10 seconds (25 ms for tests).
+#[allow(clippy::too_many_arguments)] // Readiness dependencies have independent ownership.
 async fn node_readiness_reporting_task(
     cluster: Cluster,
     primary_metastore: MetastoreServiceClient,
     read_replica_metastore_opt: Option<MetastoreServiceClient>,
+    control_plane_opt: Option<ControlPlaneServiceClient>,
     ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
@@ -1635,6 +1650,27 @@ async fn node_readiness_reporting_task(
                 false
             }
         };
+        let control_plane_is_available = if let Some(control_plane) = &control_plane_opt {
+            match control_plane.check_connectivity().await {
+                Ok(()) => {
+                    debug!(
+                        control_plane_endpoints=?control_plane.endpoints(),
+                        "control plane service is available"
+                    );
+                    true
+                }
+                Err(error) => {
+                    debug!(
+                        control_plane_endpoints=?control_plane.endpoints(),
+                        error=?error,
+                        "control plane service is unavailable"
+                    );
+                    false
+                }
+            }
+        } else {
+            true
+        };
         let ingester_is_available = if let Some(ingester) = &ingester_opt {
             match try_get_ingester_status(ingester).await {
                 Ok(status) => {
@@ -1650,7 +1686,7 @@ async fn node_readiness_reporting_task(
         } else {
             true
         };
-        let is_ready = metastore_available && ingester_is_available;
+        let is_ready = metastore_available && ingester_is_available && control_plane_is_available;
         let new_node_ready = if is_ready {
             consecutive_readiness_failures = 0;
             true
@@ -1668,6 +1704,14 @@ async fn node_readiness_reporting_task(
                     metastore_kind,
                     metastore_endpoints = ?metastore.endpoints(),
                     "metastore unavailability caused node readiness to decrease"
+                );
+            }
+            if !node_ready && !control_plane_is_available {
+                warn!(
+                    control_plane_endpoints = ?control_plane_opt
+                        .as_ref()
+                        .map(ControlPlaneServiceClient::endpoints),
+                    "control plane unavailability caused node readiness to decrease"
                 );
             }
             cluster.set_self_node_readiness(node_ready).await;
@@ -1734,6 +1778,7 @@ mod tests {
 
     use anyhow::{bail, ensure};
     use quickwit_cluster::{ChitchatTransport, ClusterNode, create_cluster_for_test};
+    use quickwit_common::tower::{BalanceChannel, Change};
     use quickwit_common::uri::Uri;
     use quickwit_common::{ServiceStream, assert_eventually};
     use quickwit_config::SearcherConfig;
@@ -1744,7 +1789,7 @@ mod tests {
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_search::Job;
     use tokio::sync::watch;
-    use tonic::transport::{Channel, Server};
+    use tonic::transport::{Channel, Endpoint, Server};
     use tonic_health::pb::HealthCheckRequest;
     use tonic_health::pb::health_client::HealthClient;
     use tonic_health::server::health_reporter;
@@ -1840,6 +1885,12 @@ mod tests {
                 });
                 Ok(observation_stream)
             });
+        let (control_plane_balance_channel, control_plane_change_tx) = BalanceChannel::new();
+        let control_plane = ControlPlaneServiceClient::from_balance_channel(
+            control_plane_balance_channel,
+            ByteSize::mib(20),
+            None,
+        );
         let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel();
         let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel();
 
@@ -1868,6 +1919,7 @@ mod tests {
             cluster.clone(),
             mock_metastore,
             None,
+            Some(control_plane),
             Some(mock_ingester),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
@@ -1885,6 +1937,14 @@ mod tests {
 
         metastore_readiness_tx.send(true).unwrap();
         ingester_status_tx.send(IngesterStatus::Ready).unwrap();
+        tokio::time::sleep(READINESS_REPORTING_INTERVAL * 3).await;
+        assert!(!cluster.is_self_node_ready().await);
+
+        let control_plane_addr = "127.0.0.1:10000".parse().unwrap();
+        let control_plane_channel = Endpoint::from_static("http://127.0.0.1:10000").connect_lazy();
+        control_plane_change_tx
+            .send(Change::Insert(control_plane_addr, control_plane_channel))
+            .unwrap();
         assert_eventually!(cluster.is_self_node_ready().await);
 
         let request = tonic::Request::new(HealthCheckRequest::default());
@@ -1896,6 +1956,21 @@ mod tests {
         *metastore_failures_to_inject.lock().unwrap() = READINESS_FAILURE_THRESHOLD - 1;
         tokio::time::sleep(READINESS_REPORTING_INTERVAL * READINESS_FAILURE_THRESHOLD as u32).await;
         assert!(cluster.is_self_node_ready().await);
+
+        control_plane_change_tx
+            .send(Change::Remove(control_plane_addr))
+            .unwrap();
+        assert_eventually!(!cluster.is_self_node_ready().await);
+
+        let request = tonic::Request::new(HealthCheckRequest::default());
+        let response = health_client.check(request).await.unwrap().into_inner();
+        assert_eq!(response.status(), ServingStatus::NotServing.into());
+
+        let control_plane_channel = Endpoint::from_static("http://127.0.0.1:10000").connect_lazy();
+        control_plane_change_tx
+            .send(Change::Insert(control_plane_addr, control_plane_channel))
+            .unwrap();
+        assert_eventually!(cluster.is_self_node_ready().await);
 
         metastore_readiness_tx.send(false).unwrap();
         assert_eventually!(!cluster.is_self_node_ready().await);
@@ -1925,6 +2000,7 @@ mod tests {
             cluster.clone(),
             primary_metastore,
             Some(replica_metastore),
+            None,
             None::<MockIngesterService>,
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
