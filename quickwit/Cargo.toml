@@ -126,7 +126,12 @@ bitpacking = "0.9"
 bytes = { version = "1", features = ["serde"] }
 bytesize = { version = "2.4", features = ["serde"] }
 bytestring = "1.5"
-chitchat = "0.13.0"
+# WORKAROUND: chitchat 0.13.0 was published to crates.io on 2026-08-07 and is
+# still inside Datadog Depot's 2-day dependency cooldown, so it cannot be
+# resolved from the internal registry yet. Point at the git rev that bumped the
+# version to 0.13.0 (quickwit-oss/chitchat#202) until the cooldown lapses and
+# the crate is ingested, at which point this should revert to `chitchat = "0.13.0"`.
+chitchat = { git = "https://github.com/quickwit-oss/chitchat.git", rev = "ce2840bcba65fa57df392885d6c4c91e206290c2", version = "0.13.0" }
 chrono = { version = "0.4", default-features = false, features = [
   "clock",
   "std",
