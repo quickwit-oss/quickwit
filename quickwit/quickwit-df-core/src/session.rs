@@ -56,6 +56,10 @@ use crate::task_estimator::DataSourceExecPartitionEstimator;
 type CatalogProviderFactory = Arc<dyn Fn() -> Arc<dyn CatalogProvider> + Send + Sync>;
 type SchemaProviderFactory = Arc<dyn Fn() -> Arc<dyn SchemaProvider> + Send + Sync>;
 
+/// Default per-node DataFusion cache budget for file-embedded metadata such
+/// as Parquet footers and page indexes.
+pub const DEFAULT_FILE_METADATA_CACHE_LIMIT_BYTES: usize = 4usize * 1024 * 1024 * 1024;
+
 #[derive(Clone)]
 pub(crate) struct CatalogRegistration {
     name: String,
@@ -80,6 +84,7 @@ pub struct DataFusionSessionBuilder {
     task_estimator: Arc<dyn TaskEstimator + Send + Sync>,
     memory_pool: Option<Arc<dyn MemoryPool>>,
     object_store_registry: Option<Arc<dyn ObjectStoreRegistry>>,
+    file_metadata_cache_limit_bytes: usize,
     runtime: Arc<RuntimeEnv>,
 }
 
@@ -91,6 +96,10 @@ impl std::fmt::Debug for DataFusionSessionBuilder {
             .field("num_catalogs", &self.catalog_registrations.len())
             .field("num_schemas", &self.schema_registrations.len())
             .field("distributed", &self.worker_resolver.is_some())
+            .field(
+                "file_metadata_cache_limit_bytes",
+                &self.file_metadata_cache_limit_bytes,
+            )
             .finish()
     }
 }
@@ -103,6 +112,10 @@ impl Default for DataFusionSessionBuilder {
 
 impl DataFusionSessionBuilder {
     pub fn new() -> Self {
+        let runtime = RuntimeEnvBuilder::new()
+            .with_metadata_cache_limit(DEFAULT_FILE_METADATA_CACHE_LIMIT_BYTES)
+            .build_arc()
+            .expect("default DataFusion runtime should build");
         Self {
             runtime_plugins: Vec::new(),
             substrait_extensions: Vec::new(),
@@ -112,12 +125,14 @@ impl DataFusionSessionBuilder {
             task_estimator: Arc::new(DataSourceExecPartitionEstimator),
             memory_pool: None,
             object_store_registry: None,
-            runtime: Arc::new(RuntimeEnv::default()),
+            file_metadata_cache_limit_bytes: DEFAULT_FILE_METADATA_CACHE_LIMIT_BYTES,
+            runtime,
         }
     }
 
     fn rebuild_runtime(&mut self) -> DFResult<()> {
-        let mut builder = RuntimeEnvBuilder::new();
+        let mut builder = RuntimeEnvBuilder::new()
+            .with_metadata_cache_limit(self.file_metadata_cache_limit_bytes);
         if let Some(memory_pool) = &self.memory_pool {
             builder = builder.with_memory_pool(Arc::clone(memory_pool));
         }
@@ -172,6 +187,12 @@ impl DataFusionSessionBuilder {
 
     pub fn with_memory_limit(mut self, bytes: usize) -> DFResult<Self> {
         self.memory_pool = Some(Arc::new(GreedyMemoryPool::new(bytes)));
+        self.rebuild_runtime()?;
+        Ok(self)
+    }
+
+    pub fn with_file_metadata_cache_limit(mut self, bytes: usize) -> DFResult<Self> {
+        self.file_metadata_cache_limit_bytes = bytes;
         self.rebuild_runtime()?;
         Ok(self)
     }
@@ -412,6 +433,21 @@ mod tests {
     }
 
     #[test]
+    fn file_metadata_cache_limit_defaults_to_four_gib_and_can_be_overridden() {
+        let builder = DataFusionSessionBuilder::new();
+        assert_eq!(
+            builder.runtime().cache_manager.get_metadata_cache_limit(),
+            DEFAULT_FILE_METADATA_CACHE_LIMIT_BYTES
+        );
+
+        let builder = builder.with_file_metadata_cache_limit(8 * 1024).unwrap();
+        assert_eq!(
+            builder.runtime().cache_manager.get_metadata_cache_limit(),
+            8 * 1024
+        );
+    }
+
+    #[test]
     fn runtime_settings_compose_and_reinitialize_sources() {
         let source_url = Url::parse("test://source").unwrap();
         let registry_url = Url::parse("memory://registry").unwrap();
@@ -441,6 +477,10 @@ mod tests {
                 .find(|entry| entry.key == "datafusion.runtime.memory_limit")
                 .and_then(|entry| entry.value),
             Some("2K".to_string())
+        );
+        assert_eq!(
+            builder.runtime().cache_manager.get_metadata_cache_limit(),
+            DEFAULT_FILE_METADATA_CACHE_LIMIT_BYTES
         );
         assert!(
             builder
