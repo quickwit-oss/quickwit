@@ -61,14 +61,14 @@ struct CheckPipelineStatuses;
 #[derive(Debug)]
 pub struct Decommission;
 
-/// Lifecycle state of a `CompactorSupervisor`.
+/// Lifecycle state of a `CompactorService`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompactorStatus {
     /// Normal operation: accepts and spawns new merge tasks.
     Ready,
     /// Draining: rejects new tasks (reports zero available slots) while in-flight merges finish.
     Decommissioning,
-    /// All in-flight merges have completed; the supervisor can be torn down.
+    /// All in-flight merges have completed; the compactor service can be torn down.
     Decommissioned,
 }
 
@@ -76,7 +76,7 @@ pub enum CompactorStatus {
 ///
 /// Periodically collects pipeline status updates and forwards them to the
 /// compaction planner. Pipelines manage their own retry logic internally.
-pub struct CompactorSupervisor {
+pub struct CompactorService {
     node_id: NodeId,
     planner_client: CompactionPlannerServiceClient,
     status_tx: watch::Sender<CompactorStatus>,
@@ -96,7 +96,7 @@ pub struct CompactorSupervisor {
     compaction_root_directory: TempDirectory,
 }
 
-impl CompactorSupervisor {
+impl CompactorService {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeId,
@@ -122,7 +122,7 @@ impl CompactorSupervisor {
             Arc::new(Semaphore::new(max_concurrent_merge_executions.get()));
         let io_throughput_limiter = max_merge_write_throughput.map(io::limiter);
         let (status_tx, _status_rx) = watch::channel(CompactorStatus::Ready);
-        CompactorSupervisor {
+        CompactorService {
             node_id,
             planner_client,
             status_tx,
@@ -361,11 +361,11 @@ impl CompactorSupervisor {
 }
 
 #[async_trait]
-impl Actor for CompactorSupervisor {
+impl Actor for CompactorService {
     type ObservableState = ();
 
     fn name(&self) -> String {
-        "CompactorSupervisor".to_string()
+        "CompactorService".to_string()
     }
 
     fn observable_state(&self) -> Self::ObservableState {}
@@ -373,7 +373,7 @@ impl Actor for CompactorSupervisor {
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         info!(
             num_pipeline_slots=%self.pipelines.len(),
-            "compactor supervisor started"
+            "compactor service started"
         );
         ctx.schedule_self_msg(CHECK_PIPELINE_STATUSES_INTERVAL, CheckPipelineStatuses);
         Ok(())
@@ -381,7 +381,7 @@ impl Actor for CompactorSupervisor {
 }
 
 #[async_trait]
-impl Handler<CheckPipelineStatuses> for CompactorSupervisor {
+impl Handler<CheckPipelineStatuses> for CompactorService {
     type Reply = ();
 
     async fn handle(
@@ -401,7 +401,7 @@ impl Handler<CheckPipelineStatuses> for CompactorSupervisor {
 }
 
 #[async_trait]
-impl Handler<Healthz> for CompactorSupervisor {
+impl Handler<Healthz> for CompactorService {
     type Reply = bool;
 
     async fn handle(
@@ -414,7 +414,7 @@ impl Handler<Healthz> for CompactorSupervisor {
 }
 
 #[async_trait]
-impl Handler<Decommission> for CompactorSupervisor {
+impl Handler<Decommission> for CompactorService {
     type Reply = watch::Receiver<CompactorStatus>;
 
     async fn handle(
@@ -432,7 +432,7 @@ impl Handler<Decommission> for CompactorSupervisor {
 
 /// Initiates compactor decommission if one is present, returning a receiver to await it.
 pub async fn notify_compactor_decommission(
-    compactor_mailbox_opt: Option<&Mailbox<CompactorSupervisor>>,
+    compactor_mailbox_opt: Option<&Mailbox<CompactorService>>,
 ) -> anyhow::Result<Option<watch::Receiver<CompactorStatus>>> {
     let Some(compactor_mailbox) = compactor_mailbox_opt else {
         return Ok(None);
@@ -518,9 +518,9 @@ mod tests {
     use super::*;
     use crate::compaction_pipeline::tests::test_pipeline;
 
-    /// Builds a test supervisor with `max_concurrent_merge_executions` permits
+    /// Builds a test compactor service with `max_concurrent_merge_executions` permits
     /// and `2 * max_concurrent_merge_executions` pipeline slots.
-    fn test_supervisor(max_concurrent_merge_executions: usize) -> CompactorSupervisor {
+    fn test_compactor_service(max_concurrent_merge_executions: usize) -> CompactorService {
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
         let compaction_client =
             CompactionPlannerServiceClient::from_mock(MockCompactionPlannerService::new());
@@ -528,7 +528,7 @@ mod tests {
         compactor_config.max_concurrent_merge_executions =
             NonZeroUsize::new(max_concurrent_merge_executions)
                 .expect("max_concurrent_merge_executions must be non-zero");
-        CompactorSupervisor::new(
+        CompactorService::new(
             NodeId::from_str("test-node"),
             compaction_client,
             &compactor_config,
@@ -542,25 +542,25 @@ mod tests {
 
     #[test]
     fn test_check_pipeline_statuses_empty_slots() {
-        let mut supervisor = test_supervisor(4);
-        let statuses = supervisor.check_pipeline_statuses();
+        let mut compactor_service = test_compactor_service(4);
+        let statuses = compactor_service.check_pipeline_statuses();
         assert!(statuses.is_empty());
     }
 
     #[tokio::test]
     async fn test_check_pipeline_statuses_with_pipelines() {
         let universe = Universe::new();
-        let mut supervisor = test_supervisor(4);
+        let mut compactor_service = test_compactor_service(4);
 
         let mut pipeline = test_pipeline("task-1", &["split-a", "split-b"]);
         pipeline.spawn_pipeline(universe.spawn_ctx()).unwrap();
-        supervisor.pipelines[0] = Some(pipeline);
+        compactor_service.pipelines[0] = Some(pipeline);
 
         let mut pipeline = test_pipeline("task-2", &["split-c"]);
         pipeline.spawn_pipeline(universe.spawn_ctx()).unwrap();
-        supervisor.pipelines[2] = Some(pipeline);
+        compactor_service.pipelines[2] = Some(pipeline);
 
-        let statuses = supervisor.check_pipeline_statuses();
+        let statuses = compactor_service.check_pipeline_statuses();
         assert_eq!(statuses.len(), 2);
         assert_eq!(statuses[0].task_id, "task-1");
         assert_eq!(
@@ -579,14 +579,14 @@ mod tests {
     async fn test_end_to_end_statuses_to_proto() {
         let universe = Universe::new();
         // 3 merge-executions → 6 pipeline slots
-        let mut supervisor = test_supervisor(3);
+        let mut compactor_service = test_compactor_service(3);
 
         let mut pipeline = test_pipeline("task-1", &["s1", "s2"]);
         pipeline.spawn_pipeline(universe.spawn_ctx()).unwrap();
-        supervisor.pipelines[0] = Some(pipeline);
+        compactor_service.pipelines[0] = Some(pipeline);
 
-        let statuses = supervisor.check_pipeline_statuses();
-        let request = supervisor.build_report_status_request(&statuses);
+        let statuses = compactor_service.check_pipeline_statuses();
+        let request = compactor_service.build_report_status_request(&statuses);
 
         assert_eq!(request.node_id, "test-node");
         // 6 slots, 1 in-progress = 5 available
@@ -609,8 +609,8 @@ mod tests {
     #[test]
     fn test_build_report_status_request_empty() {
         // 4 merge-executions → 8 pipeline slots
-        let supervisor = test_supervisor(4);
-        let request = supervisor.build_report_status_request(&[]);
+        let compactor_service = test_compactor_service(4);
+        let request = compactor_service.build_report_status_request(&[]);
         assert_eq!(request.node_id, "test-node");
         assert_eq!(request.available_slots, 8);
         assert!(request.in_progress.is_empty());
@@ -645,14 +645,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_compaction_pipeline_deserialization_errors() {
-        let supervisor = test_supervisor(4);
+        let compactor_service = test_compactor_service(4);
         let scratch = TempDirectory::for_test;
 
         // Bad splits JSON.
         let mut assignment = test_assignment("t", &["s1"]);
         assignment.splits_metadata_json = vec!["not json".to_string()];
         assert!(
-            supervisor
+            compactor_service
                 .build_compaction_pipeline(assignment, scratch())
                 .await
                 .is_err()
@@ -662,7 +662,7 @@ mod tests {
         let mut assignment = test_assignment("t", &["s1"]);
         assignment.doc_mapping_json = "not json".to_string();
         assert!(
-            supervisor
+            compactor_service
                 .build_compaction_pipeline(assignment, scratch())
                 .await
                 .is_err()
@@ -672,7 +672,7 @@ mod tests {
         let mut assignment = test_assignment("t", &["s1"]);
         assignment.search_settings_json = "not json".to_string();
         assert!(
-            supervisor
+            compactor_service
                 .build_compaction_pipeline(assignment, scratch())
                 .await
                 .is_err()
@@ -682,7 +682,7 @@ mod tests {
         let mut assignment = test_assignment("t", &["s1"]);
         assignment.indexing_settings_json = "not json".to_string();
         assert!(
-            supervisor
+            compactor_service
                 .build_compaction_pipeline(assignment, scratch())
                 .await
                 .is_err()
@@ -692,7 +692,7 @@ mod tests {
         let mut assignment = test_assignment("t", &["s1"]);
         assignment.retention_policy_json = "not json".to_string();
         assert!(
-            supervisor
+            compactor_service
                 .build_compaction_pipeline(assignment, scratch())
                 .await
                 .is_err()
@@ -702,7 +702,7 @@ mod tests {
         let mut assignment = test_assignment("t", &["s1"]);
         assignment.index_uid = None;
         assert!(
-            supervisor
+            compactor_service
                 .build_compaction_pipeline(assignment, scratch())
                 .await
                 .is_err()
@@ -713,20 +713,20 @@ mod tests {
     async fn test_spawn_task_fails_when_all_slots_occupied() {
         let universe = Universe::new();
         // 1 merge-execution → 2 pipeline slots
-        let mut supervisor = test_supervisor(1);
+        let mut compactor_service = test_compactor_service(1);
 
-        supervisor
+        compactor_service
             .spawn_task(test_assignment("task-1", &["s1"]), universe.spawn_ctx())
             .await
             .unwrap();
-        supervisor
+        compactor_service
             .spawn_task(test_assignment("task-2", &["s2"]), universe.spawn_ctx())
             .await
             .unwrap();
 
         // Both slots InProgress — no room.
         assert!(
-            supervisor
+            compactor_service
                 .spawn_task(test_assignment("task-3", &["s3"]), universe.spawn_ctx())
                 .await
                 .is_err()
@@ -755,7 +755,7 @@ mod tests {
         // 3 merge-executions → 6 pipeline slots
         let mut compactor_config = CompactorConfig::for_test();
         compactor_config.max_concurrent_merge_executions = NonZeroUsize::new(3).unwrap();
-        let mut supervisor = CompactorSupervisor::new(
+        let mut compactor_service = CompactorService::new(
             NodeId::from_str("test-node"),
             client,
             &compactor_config,
@@ -767,22 +767,22 @@ mod tests {
         );
 
         // Simulate what the handler does: collect statuses, report, process response.
-        let statuses = supervisor.check_pipeline_statuses();
-        let request = supervisor.build_report_status_request(&statuses);
+        let statuses = compactor_service.check_pipeline_statuses();
+        let request = compactor_service.build_report_status_request(&statuses);
         assert_eq!(request.available_slots, 6);
 
-        let response = supervisor
+        let response = compactor_service
             .planner_client
             .report_status(request)
             .await
             .unwrap();
-        supervisor
+        compactor_service
             .process_new_tasks(response.new_tasks, universe.spawn_ctx())
             .await;
 
         // Verify the pipeline was spawned.
-        let statuses = supervisor.check_pipeline_statuses();
-        let request = supervisor.build_report_status_request(&statuses);
+        let statuses = compactor_service.check_pipeline_statuses();
+        let request = compactor_service.build_report_status_request(&statuses);
         assert_eq!(request.in_progress.len(), 1);
         assert_eq!(request.in_progress[0].task_id, "planner-task-1");
         assert_eq!(request.in_progress[0].split_ids.len(), 2);
@@ -794,7 +794,7 @@ mod tests {
     #[test]
     fn test_build_report_status_request_mixed_statuses() {
         // 4 merge-executions → 8 pipeline slots
-        let supervisor = test_supervisor(4);
+        let compactor_service = test_compactor_service(4);
         let statuses = vec![
             PipelineStatusUpdate {
                 task_id: "task-1".to_string(),
@@ -821,7 +821,7 @@ mod tests {
             },
         ];
 
-        let request = supervisor.build_report_status_request(&statuses);
+        let request = compactor_service.build_report_status_request(&statuses);
 
         // 8 slots, 1 in-progress = 7 available
         assert_eq!(request.available_slots, 7);
@@ -844,44 +844,44 @@ mod tests {
 
     #[test]
     fn test_check_decommissioning_status_finishes_when_idle() {
-        let mut supervisor = test_supervisor(2);
-        supervisor.set_status(CompactorStatus::Decommissioning);
-        supervisor.check_decommissioning_status();
-        assert_eq!(supervisor.status(), CompactorStatus::Decommissioned);
+        let mut compactor_service = test_compactor_service(2);
+        compactor_service.set_status(CompactorStatus::Decommissioning);
+        compactor_service.check_decommissioning_status();
+        assert_eq!(compactor_service.status(), CompactorStatus::Decommissioned);
     }
 
     #[test]
     fn test_check_decommissioning_status_noop_when_ready() {
-        let mut supervisor = test_supervisor(2);
-        supervisor.check_decommissioning_status();
-        assert_eq!(supervisor.status(), CompactorStatus::Ready);
+        let mut compactor_service = test_compactor_service(2);
+        compactor_service.check_decommissioning_status();
+        assert_eq!(compactor_service.status(), CompactorStatus::Ready);
     }
 
     #[test]
     fn test_decommissioning_reports_zero_available_slots() {
         // 4 merge-executions → 8 free pipeline slots, but decommissioning advertises none.
-        let mut supervisor = test_supervisor(4);
-        supervisor.set_status(CompactorStatus::Decommissioning);
-        let request = supervisor.build_report_status_request(&[]);
+        let mut compactor_service = test_compactor_service(4);
+        compactor_service.set_status(CompactorStatus::Decommissioning);
+        let request = compactor_service.build_report_status_request(&[]);
         assert_eq!(request.available_slots, 0);
     }
 
     #[tokio::test]
     async fn test_decommissioning_waits_for_in_flight_merge() {
         let universe = Universe::new();
-        let mut supervisor = test_supervisor(4);
+        let mut compactor_service = test_compactor_service(4);
 
         let mut pipeline = test_pipeline("task-1", &["s1"]);
         pipeline.spawn_pipeline(universe.spawn_ctx()).unwrap();
-        supervisor.pipelines[0] = Some(pipeline);
+        compactor_service.pipelines[0] = Some(pipeline);
 
-        supervisor.set_status(CompactorStatus::Decommissioning);
-        let statuses = supervisor.check_pipeline_statuses();
-        supervisor.check_decommissioning_status();
+        compactor_service.set_status(CompactorStatus::Decommissioning);
+        let statuses = compactor_service.check_pipeline_statuses();
+        compactor_service.check_decommissioning_status();
 
-        // The in-flight pipeline keeps the supervisor draining and advertising no capacity.
-        assert_eq!(supervisor.status(), CompactorStatus::Decommissioning);
-        let request = supervisor.build_report_status_request(&statuses);
+        // The in-flight pipeline keeps the compactor service draining and advertising no capacity.
+        assert_eq!(compactor_service.status(), CompactorStatus::Decommissioning);
+        let request = compactor_service.build_report_status_request(&statuses);
         assert_eq!(request.available_slots, 0);
         assert_eq!(request.in_progress.len(), 1);
 
@@ -891,15 +891,15 @@ mod tests {
     #[tokio::test]
     async fn test_spawn_task_dropped_while_decommissioning() {
         let universe = Universe::new();
-        let mut supervisor = test_supervisor(2);
-        supervisor.set_status(CompactorStatus::Decommissioning);
+        let mut compactor_service = test_compactor_service(2);
+        compactor_service.set_status(CompactorStatus::Decommissioning);
 
-        supervisor
+        compactor_service
             .spawn_task(test_assignment("task-1", &["s1"]), universe.spawn_ctx())
             .await
             .unwrap();
 
-        assert!(supervisor.pipelines.iter().all(|slot| slot.is_none()));
+        assert!(compactor_service.pipelines.iter().all(|slot| slot.is_none()));
         universe.assert_quit().await;
     }
 
@@ -917,7 +917,7 @@ mod tests {
         let client = CompactionPlannerServiceClient::from_mock(mock);
         let mut compactor_config = CompactorConfig::for_test();
         compactor_config.max_concurrent_merge_executions = NonZeroUsize::new(2).unwrap();
-        let supervisor = CompactorSupervisor::new(
+        let compactor_service = CompactorService::new(
             NodeId::from_str("test-node"),
             client,
             &compactor_config,
@@ -927,8 +927,8 @@ mod tests {
             EventBroker::default(),
             TempDirectory::for_test(),
         );
-        let status_rx = supervisor.status_rx();
-        let (mailbox, _handle) = universe.spawn_builder().spawn(supervisor);
+        let status_rx = compactor_service.status_rx();
+        let (mailbox, _handle) = universe.spawn_builder().spawn(compactor_service);
 
         let decommission_rx_opt = notify_compactor_decommission(Some(&mailbox)).await.unwrap();
         wait_for_compactor_decommission(decommission_rx_opt, Duration::from_secs(10))
@@ -962,7 +962,7 @@ mod tests {
         let event_broker = EventBroker::default();
         let compaction_root_directory = TempDirectory::for_test();
         let (mailbox, _supervisor_handle) = universe.spawn_builder().supervise_fn(move || {
-            CompactorSupervisor::new(
+            CompactorService::new(
                 NodeId::from_str("test-node"),
                 client.clone(),
                 &compactor_config,

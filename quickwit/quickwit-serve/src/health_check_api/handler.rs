@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use quickwit_actors::{Actor, Handler, Healthz, Mailbox};
 use quickwit_cluster::Cluster;
-use quickwit_compaction::CompactorSupervisor;
+use quickwit_compaction::CompactorService;
 use quickwit_indexing::IndexingService;
 use quickwit_ingest::{Ingester, try_get_ingester_status};
 use quickwit_janitor::JanitorService;
@@ -45,13 +45,13 @@ pub(crate) fn health_check_handlers(
     cluster: Cluster,
     indexer_service_opt: Option<Mailbox<IndexingService>>,
     janitor_service_opt: Option<Mailbox<JanitorService>>,
-    compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
+    compactor_service_opt: Option<Mailbox<CompactorService>>,
     ingester_opt: Option<Ingester>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     liveness_handler(
         indexer_service_opt,
         janitor_service_opt,
-        compactor_supervisor_opt,
+        compactor_service_opt,
         ingester_opt,
     )
     .or(startup_handler(cluster))
@@ -60,14 +60,14 @@ pub(crate) fn health_check_handlers(
 fn liveness_handler(
     indexer_service_opt: Option<Mailbox<IndexingService>>,
     janitor_service_opt: Option<Mailbox<JanitorService>>,
-    compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
+    compactor_service_opt: Option<Mailbox<CompactorService>>,
     ingester_opt: Option<Ingester>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("health" / "livez")
         .and(warp::get())
         .and(with_arg(indexer_service_opt))
         .and(with_arg(janitor_service_opt))
-        .and(with_arg(compactor_supervisor_opt))
+        .and(with_arg(compactor_service_opt))
         .and(with_arg(ingester_opt))
         .then(get_liveness)
         .recover(recover_fn)
@@ -109,7 +109,7 @@ fn startup_handler(
 async fn get_liveness(
     indexer_service_opt: Option<Mailbox<IndexingService>>,
     janitor_service_opt: Option<Mailbox<JanitorService>>,
-    compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
+    compactor_service_opt: Option<Mailbox<CompactorService>>,
     ingester_opt: Option<Ingester>,
 ) -> impl warp::Reply {
     let mut is_live = true;
@@ -122,7 +122,7 @@ async fn get_liveness(
         error!("janitor service is unhealthy");
         is_live = false;
     }
-    if !is_actor_healthy(compactor_supervisor_opt).await {
+    if !is_actor_healthy(compactor_service_opt).await {
         error!("compactor service is unhealthy");
         is_live = false;
     }
@@ -172,7 +172,7 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
-    use quickwit_compaction::CompactorSupervisor;
+    use quickwit_compaction::CompactorService;
 
     #[tokio::test]
     async fn test_rest_search_api_health_checks() {
@@ -214,7 +214,7 @@ mod tests {
             .unwrap();
         let universe = Universe::new();
         let (compactor_mailbox, compactor_inbox) =
-            universe.create_test_mailbox::<CompactorSupervisor>();
+            universe.create_test_mailbox::<CompactorService>();
 
         let health_check_handler = super::health_check_handlers(
             cluster.clone(),
