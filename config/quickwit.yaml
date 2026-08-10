@@ -58,7 +58,8 @@ version: 0.8
 #
 # Optional plaintext health-check server. Disabled unless `listen_port` is set (or the
 # `QW_HEALTH_LISTEN_PORT` environment variable). It serves only `/health/livez` and
-# `/health/readyz`, letting liveness/readiness probes reach the node even when the REST API above
+# `/health/startupz` (plus `/health/readyz`, a deprecated alias for `startupz`), letting liveness
+# and startup probes reach the node even when the REST API above
 # is put behind mTLS. The same routes also stay on the main REST server. Bind it to a
 # cluster-internal interface, as it performs no TLS termination or client authentication.
 #

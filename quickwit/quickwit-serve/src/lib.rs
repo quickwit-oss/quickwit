@@ -91,7 +91,7 @@ use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
     IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout, notify_ingester_decommission,
     setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
-    start_ingest_api_service, try_get_ingester_status, wait_for_ingester_decommission,
+    start_ingest_api_service, wait_for_ingester_decommission,
     wait_for_ingester_status,
 };
 use quickwit_jaeger::JaegerService;
@@ -142,13 +142,6 @@ use crate::rate_modulator::RateModulator;
 use crate::rest::recover_fn;
 pub use crate::search_api::{SearchRequestQueryString, SortBy, search_request_from_api_request};
 
-const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
-    Duration::from_millis(25)
-} else {
-    Duration::from_secs(10)
-};
-const READINESS_FAILURE_THRESHOLD: usize = 3;
-
 const COMPACTION_SERVICE_DISCOVERY_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(100)
 } else {
@@ -174,6 +167,7 @@ static INGEST_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
 
 static GRPC_INGESTER_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
 static GRPC_INDEXING_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
+static GRPC_COMPACTION_PLANNER_SERVICE_TIMEOUT: Duration = Duration::from_secs(1);
 
 struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
@@ -193,7 +187,7 @@ struct QuickwitServices {
     ingester_opt: Option<Ingester>,
 
     pub compaction_service_client_opt: Option<CompactionPlannerServiceClient>,
-    pub _compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
+    pub compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
     pub janitor_service_opt: Option<Mailbox<JanitorService>>,
     pub jaeger_service_opt: Option<JaegerService>,
     pub otlp_logs_service_opt: Option<OtlpGrpcLogsService>,
@@ -296,10 +290,10 @@ async fn get_compaction_planner_client_if_needed(
         let planner = CompactionPlanner::new(metastore_client.clone(), cluster.clone());
         let (mailbox, handle) = universe.spawn_builder().spawn(planner);
         info!("compaction planner actor started on janitor node");
-        return Ok((
-            Some(CompactionPlannerServiceClient::from_mailbox(mailbox)),
-            Some(handle),
-        ));
+        let planner_client = CompactionPlannerServiceClient::tower()
+            .stack_layer(TimeoutLayer::new(GRPC_COMPACTION_PLANNER_SERVICE_TIMEOUT))
+            .build_from_mailbox(mailbox);
+        return Ok((Some(planner_client), Some(handle)));
     }
     // Compactor-only node: connect to the planner on a remote janitor.
     let balance_channel = balance_channel_for_service(cluster, QuickwitService::Janitor).await;
@@ -312,14 +306,10 @@ async fn get_compaction_planner_client_if_needed(
         bail!("compactor is enabled but no janitor node was found in the cluster")
     }
     info!("remote compaction planner detected on janitor node");
-    Ok((
-        Some(CompactionPlannerServiceClient::from_balance_channel(
-            balance_channel,
-            node_config.grpc_config.max_message_size,
-            None,
-        )),
-        None,
-    ))
+    let planner_client = CompactionPlannerServiceClient::tower()
+        .stack_layer(TimeoutLayer::new(GRPC_COMPACTION_PLANNER_SERVICE_TIMEOUT))
+        .build_from_balance_channel(balance_channel, node_config.grpc_config.max_message_size, None);
+    Ok((Some(planner_client), None))
 }
 
 fn spawn_merge_scheduler_service(
@@ -928,7 +918,7 @@ pub async fn serve_quickwit(
         ingest_service,
         ingester_opt: ingester_opt.clone(),
         compaction_service_client_opt,
-        _compactor_supervisor_opt: compactor_supervisor_opt.clone(),
+        compactor_supervisor_opt: compactor_supervisor_opt.clone(),
         janitor_service_opt,
         jaeger_service_opt,
         otlp_logs_service_opt,
@@ -988,9 +978,6 @@ pub async fn serve_quickwit(
             let health_listener = tcp_listener_resolver
                 .resolve(health_config.listen_addr)
                 .await?;
-            // The health server serves probes as soon as it is up: it does not wait on the node
-            // readiness signal, since liveness must work during startup and `readyz` reflects
-            // cluster readiness on its own.
             let health_readiness_trigger = Box::pin(async {});
             let (health_shutdown_trigger_tx, health_shutdown_signal_rx) = oneshot::channel::<()>();
             let health_shutdown_signal = Box::pin(async move {
@@ -1015,19 +1002,11 @@ pub async fn serve_quickwit(
             )
         };
 
-    // Node readiness indicates that the server is ready to receive requests.
-    // Thus readiness task is started once gRPC and REST servers are started.
-    spawn_named_task(
-        node_readiness_reporting_task(
-            cluster.clone(),
-            primary_metastore_through_control_plane,
-            read_replica_metastore_client_opt,
-            ingester_opt.clone(),
-            grpc_readiness_signal_rx,
-            rest_readiness_signal_rx,
-            health_reporter,
-        ),
-        "node_readiness_reporting",
+    let readiness_reporting_fut = advertise_node_readiness(
+        cluster.clone(),
+        grpc_readiness_signal_rx,
+        rest_readiness_signal_rx,
+        health_reporter,
     );
 
     let shutdown_handle = tokio::spawn(shutdown_signal_handler(
@@ -1065,13 +1044,15 @@ pub async fn serve_quickwit(
 
     let chitchat_server_handle = cluster.chitchat_server_termination_watcher().await;
 
-    if let Err(err) = tokio::try_join!(
+    if let Err(error) = tokio::try_join!(
         grpc_join_handle,
         rest_join_handle,
         health_join_handle,
-        chitchat_server_handle
+        chitchat_server_handle,
+        readiness_reporting_fut
     ) {
-        error!("server failed: {err:?}");
+        error!(?error, "server failed");
+        return Err(error);
     }
 
     let actor_exit_statuses = shutdown_handle
@@ -1580,106 +1561,36 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
     warp::any().map(move || arg.clone())
 }
 
-/// Reports node readiness to chitchat cluster every 10 seconds (25 ms for tests).
-async fn node_readiness_reporting_task(
+/// Latches node readiness once both the gRPC and REST servers are accepting connections.
+async fn advertise_node_readiness(
     cluster: Cluster,
-    primary_metastore: MetastoreServiceClient,
-    read_replica_metastore_opt: Option<MetastoreServiceClient>,
-    ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
     health_reporter: HealthReporter,
-) {
-    // When a read replica metastore is configured, node readiness follows the replica only.
-    // This keeps search/read traffic available if the primary metastore is down. Write-capable
-    // index-management APIs are still routed to the primary metastore and may fail while this node
-    // remains ready.
-    let (metastore, metastore_kind) = match read_replica_metastore_opt {
-        Some(read_replica_metastore) => (read_replica_metastore, "read_replica"),
-        None => (primary_metastore, "primary"),
-    };
-    info!(metastore_kind, "configured metastore readiness dependency");
-
-    let mut node_ready = false;
-    cluster.set_self_node_readiness(node_ready).await;
+) -> anyhow::Result<()> {
+    cluster.set_self_node_readiness(false).await;
     // Set the initial health status to `NotServing` with "" meaning all services, as per
     // https://github.com/grpc/grpc/blob/master/doc/health-checking.md
     health_reporter
         .set_service_status("", ServingStatus::NotServing)
         .await;
 
-    if grpc_readiness_signal_rx.await.is_err() {
-        // the gRPC server failed.
-        return;
-    };
+    grpc_readiness_signal_rx
+        .await
+        .context("gRPC readiness trigger was dropped before firing")?;
     info!("gRPC server is ready");
 
-    if rest_readiness_signal_rx.await.is_err() {
-        // the REST server failed.
-        return;
-    };
+    rest_readiness_signal_rx
+        .await
+        .context("REST readiness trigger was dropped before firing")?;
     info!("REST server is ready");
 
-    let mut interval = tokio::time::interval(READINESS_REPORTING_INTERVAL);
-    let mut consecutive_readiness_failures = 0usize;
-    loop {
-        interval.tick().await;
-
-        let metastore_available = match metastore.check_connectivity().await {
-            Ok(()) => {
-                debug!(metastore_endpoints=?metastore.endpoints(), "metastore service is available");
-                true
-            }
-            Err(error) => {
-                debug!(metastore_endpoints=?metastore.endpoints(), error=?error, "metastore service is unavailable");
-                false
-            }
-        };
-        let ingester_is_available = if let Some(ingester) = &ingester_opt {
-            match try_get_ingester_status(ingester).await {
-                Ok(status) => {
-                    status == IngesterStatus::Initializing || status != IngesterStatus::Failed
-                }
-                Err(error) => {
-                    // If we couldn't get the ingester status, it's not looking good, so we set the
-                    // node to not ready.
-                    error!(%error, "failed to get ingester status");
-                    false
-                }
-            }
-        } else {
-            true
-        };
-        let is_ready = metastore_available && ingester_is_available;
-        let new_node_ready = if is_ready {
-            consecutive_readiness_failures = 0;
-            true
-        } else {
-            consecutive_readiness_failures += 1;
-            // Only dampen READY -> NOT_READY transitions: a NOT_READY node must observe a
-            // successful readiness sample before becoming READY.
-            node_ready && consecutive_readiness_failures < READINESS_FAILURE_THRESHOLD
-        };
-
-        if new_node_ready != node_ready {
-            node_ready = new_node_ready;
-            if !node_ready && !metastore_available {
-                warn!(
-                    metastore_kind,
-                    metastore_endpoints = ?metastore.endpoints(),
-                    "metastore unavailability caused node readiness to decrease"
-                );
-            }
-            cluster.set_self_node_readiness(node_ready).await;
-
-            let serving_status = if node_ready {
-                ServingStatus::Serving
-            } else {
-                ServingStatus::NotServing
-            };
-            health_reporter.set_service_status("", serving_status).await;
-        }
-    }
+    cluster.set_self_node_readiness(true).await;
+    health_reporter
+        .set_service_status("", ServingStatus::Serving)
+        .await;
+    info!("node is ready");
+    Ok(())
 }
 
 /// Displays some warnings if the cluster runs a file-backed metastore or serves file-backed
@@ -1730,43 +1641,23 @@ async fn check_cluster_configuration(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
-    use anyhow::{bail, ensure};
     use quickwit_cluster::{ChitchatTransport, ClusterNode, create_cluster_for_test};
+    use quickwit_common::assert_eventually;
     use quickwit_common::uri::Uri;
-    use quickwit_common::{ServiceStream, assert_eventually};
     use quickwit_config::SearcherConfig;
     use quickwit_metastore::{IndexMetadata, metastore_for_test};
     use quickwit_proto::indexing::IndexingTask;
-    use quickwit_proto::ingest::ingester::{MockIngesterService, ObservationMessage};
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_search::Job;
-    use tokio::sync::watch;
     use tonic::transport::{Channel, Server};
     use tonic_health::pb::HealthCheckRequest;
     use tonic_health::pb::health_client::HealthClient;
     use tonic_health::server::health_reporter;
 
     use super::*;
-
-    fn metastore_readiness_client(
-        readiness_rx: watch::Receiver<bool>,
-        uri: &'static str,
-    ) -> MetastoreServiceClient {
-        let mut mock_metastore = MockMetastoreService::new();
-        mock_metastore
-            .expect_check_connectivity()
-            .returning(move || {
-                ensure!(*readiness_rx.borrow(), "metastore `{uri}` not ready");
-                Ok(())
-            });
-        mock_metastore
-            .expect_endpoints()
-            .return_const(vec![Uri::for_test(uri)]);
-        MetastoreServiceClient::from_mock(mock_metastore)
-    }
 
     #[tokio::test]
     async fn test_check_cluster_configuration() {
@@ -1800,46 +1691,6 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
             .unwrap();
-        let (metastore_readiness_tx, metastore_readiness_rx) = watch::channel(false);
-        let metastore_failures_to_inject = Arc::new(Mutex::new(0usize));
-        let metastore_failures_to_inject_clone = metastore_failures_to_inject.clone();
-        let mut mock_metastore = MockMetastoreService::new();
-        mock_metastore
-            .expect_check_connectivity()
-            .returning(move || {
-                let mut failures_to_inject = metastore_failures_to_inject_clone.lock().unwrap();
-                if *failures_to_inject > 0 {
-                    *failures_to_inject -= 1;
-                    bail!("metastore `ram:///metastore` transiently not ready");
-                }
-                drop(failures_to_inject);
-
-                ensure!(
-                    *metastore_readiness_rx.borrow(),
-                    "metastore `ram:///metastore` not ready"
-                );
-                Ok(())
-            });
-        mock_metastore
-            .expect_endpoints()
-            .return_const(vec![Uri::for_test("ram:///metastore")]);
-        let mock_metastore = MetastoreServiceClient::from_mock(mock_metastore);
-        let (ingester_status_tx, ingester_status_rx) = watch::channel(IngesterStatus::Initializing);
-        let mut mock_ingester = MockIngesterService::new();
-        mock_ingester
-            .expect_open_observation_stream()
-            .returning(move |_| {
-                let status_stream = ServiceStream::from(ingester_status_rx.clone());
-                let observation_stream = status_stream.map(|status| {
-                    let message = ObservationMessage {
-                        node_id: "test-node".to_string(),
-                        status: status as i32,
-                        ..Default::default()
-                    };
-                    Ok(message)
-                });
-                Ok(observation_stream)
-            });
         let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel();
         let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel();
 
@@ -1864,11 +1715,8 @@ mod tests {
 
         let mut health_client = HealthClient::new(channel);
 
-        tokio::spawn(node_readiness_reporting_task(
+        let readiness_handle = tokio::spawn(advertise_node_readiness(
             cluster.clone(),
-            mock_metastore,
-            None,
-            Some(mock_ingester),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
             health_reporter,
@@ -1879,68 +1727,39 @@ mod tests {
         let response = health_client.check(request).await.unwrap().into_inner();
         assert_eq!(response.status(), ServingStatus::NotServing.into());
 
+        // A single server reaching its accept loop is not enough: both are required.
         grpc_readiness_trigger_tx.send(()).unwrap();
-        rest_readiness_trigger_tx.send(()).unwrap();
         assert!(!cluster.is_self_node_ready().await);
 
-        metastore_readiness_tx.send(true).unwrap();
-        ingester_status_tx.send(IngesterStatus::Ready).unwrap();
-        assert_eventually!(cluster.is_self_node_ready().await);
+        rest_readiness_trigger_tx.send(()).unwrap();
+        readiness_handle.await.unwrap().unwrap();
+        assert!(cluster.is_self_node_ready().await);
 
         let request = tonic::Request::new(HealthCheckRequest::default());
         let response = health_client.check(request).await.unwrap().into_inner();
         assert_eq!(response.status(), ServingStatus::Serving.into());
 
-        // Inject fewer failures than the threshold while the steady-state metastore readiness
-        // remains healthy. The node should stay ready through this short outage.
-        *metastore_failures_to_inject.lock().unwrap() = READINESS_FAILURE_THRESHOLD - 1;
-        tokio::time::sleep(READINESS_REPORTING_INTERVAL * READINESS_FAILURE_THRESHOLD as u32).await;
-        assert!(cluster.is_self_node_ready().await);
-
-        metastore_readiness_tx.send(false).unwrap();
-        assert_eventually!(!cluster.is_self_node_ready().await);
-
-        let request = tonic::Request::new(HealthCheckRequest::default());
-        let response = health_client.check(request).await.unwrap().into_inner();
-        assert_eq!(response.status(), ServingStatus::NotServing.into());
-    }
-
-    #[tokio::test]
-    async fn test_readiness_uses_read_replica_without_requiring_primary() {
-        let transport = ChitchatTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+        // A server that dies before signalling readiness drops its trigger, which must surface as
+        // an error rather than leaving the node silently stuck in a not-ready state.
+        let stuck_cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
             .unwrap();
-        let (replica_readiness_tx, replica_readiness_rx) = watch::channel(false);
-        let mut primary_metastore = MockMetastoreService::new();
-        primary_metastore.expect_check_connectivity().times(0);
-        let primary_metastore = MetastoreServiceClient::from_mock(primary_metastore);
-        let replica_metastore =
-            metastore_readiness_client(replica_readiness_rx, "ram:///replica-metastore");
-        let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel();
-        let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel();
-        let (health_reporter, _health_service) = health_reporter();
+        let (dropped_grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel::<()>();
+        let (_rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel::<()>();
+        let (stuck_health_reporter, _stuck_health_service) =
+            tonic_health::server::health_reporter();
+        drop(dropped_grpc_readiness_trigger_tx);
 
-        tokio::spawn(node_readiness_reporting_task(
-            cluster.clone(),
-            primary_metastore,
-            Some(replica_metastore),
-            None::<MockIngesterService>,
+        let error = advertise_node_readiness(
+            stuck_cluster.clone(),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
-            health_reporter,
-        ));
-        grpc_readiness_trigger_tx.send(()).unwrap();
-        rest_readiness_trigger_tx.send(()).unwrap();
-
-        tokio::time::sleep(READINESS_REPORTING_INTERVAL * 3).await;
-        assert!(!cluster.is_self_node_ready().await);
-
-        replica_readiness_tx.send(true).unwrap();
-        assert_eventually!(cluster.is_self_node_ready().await);
-
-        replica_readiness_tx.send(false).unwrap();
-        assert_eventually!(!cluster.is_self_node_ready().await);
+            stuck_health_reporter,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("gRPC readiness trigger"));
+        assert!(!stuck_cluster.is_self_node_ready().await);
     }
 
     #[tokio::test]
@@ -2341,6 +2160,36 @@ mod tests {
         assert!(!cache_created(&[QuickwitService::Compactor], true).await);
         // Node that neither produces nor merges splits → no cache.
         assert!(!cache_created(&[QuickwitService::Searcher], false).await);
+    }
+
+    #[tokio::test]
+    async fn test_planner_client_times_out_when_planner_never_responds() {
+        use std::time::Instant;
+
+        use quickwit_proto::compaction::{
+            CompactionError, CompactionPlannerService, ReportStatusRequest,
+        };
+
+        let universe = Universe::new();
+        let (planner_mailbox, _planner_inbox) = universe.create_test_mailbox::<CompactionPlanner>();
+        let planner_client = CompactionPlannerServiceClient::tower()
+            .stack_layer(TimeoutLayer::new(GRPC_COMPACTION_PLANNER_SERVICE_TIMEOUT))
+            .build_from_mailbox(planner_mailbox);
+
+        let request = ReportStatusRequest {
+            node_id: "test-node".to_string(),
+            available_slots: 1,
+            ..Default::default()
+        };
+        let start = Instant::now();
+        let error = planner_client.report_status(request).await.unwrap_err();
+        let elapsed = start.elapsed();
+
+        assert!(matches!(error, CompactionError::Timeout(_)));
+        assert!(elapsed >= GRPC_COMPACTION_PLANNER_SERVICE_TIMEOUT);
+        assert!(elapsed < GRPC_COMPACTION_PLANNER_SERVICE_TIMEOUT * 5);
+
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
