@@ -55,6 +55,9 @@ use crate::source_uid_metrics_label;
 
 const CHECK_PIPELINE_STATUSES_INTERVAL: Duration = Duration::from_secs(1);
 
+const MAX_STATUS_CHECK_STALL: Duration =
+    Duration::from_secs(CHECK_PIPELINE_STATUSES_INTERVAL.as_secs() * 5);
+
 #[derive(Debug)]
 struct CheckPipelineStatuses;
 
@@ -94,6 +97,7 @@ pub struct CompactorService {
     event_broker: EventBroker,
     // Scratch directory root (<data_dir>/compaction/).
     compaction_root_directory: TempDirectory,
+    last_status_check_at: Instant,
 }
 
 impl CompactorService {
@@ -135,6 +139,7 @@ impl CompactorService {
             max_concurrent_split_uploads,
             event_broker,
             compaction_root_directory,
+            last_status_check_at: Instant::now(),
         }
     }
 
@@ -169,7 +174,8 @@ impl CompactorService {
         let request = self.build_report_status_request(&statuses);
         match self.planner_client.report_status(request).await {
             Ok(response) => {
-                self.process_new_tasks(response.new_tasks, ctx.spawn_ctx()).await;
+                self.process_new_tasks(response.new_tasks, ctx.spawn_ctx())
+                    .await;
                 self.check_decommissioning_status();
             }
             Err(error) => {
@@ -389,6 +395,7 @@ impl Handler<CheckPipelineStatuses> for CompactorService {
         _msg: CheckPipelineStatuses,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        self.last_status_check_at = Instant::now();
         self.report_status_and_maybe_finish(ctx).await;
         if self.status() == CompactorStatus::Decommissioned {
             // We stop the loop; the node is about to be torn down.
@@ -409,6 +416,17 @@ impl Handler<Healthz> for CompactorService {
         _msg: Healthz,
         _ctx: &ActorContext<Self>,
     ) -> Result<bool, ActorExitStatus> {
+        if self.status() == CompactorStatus::Decommissioned {
+            return Ok(true);
+        }
+        let stall = self.last_status_check_at.elapsed();
+        if stall > MAX_STATUS_CHECK_STALL {
+            error!(
+                stall=%stall.pretty_display(),
+                "compactor service has not checked pipeline statuses recently"
+            );
+            return Ok(false);
+        }
         Ok(true)
     }
 }
@@ -899,7 +917,12 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(compactor_service.pipelines.iter().all(|slot| slot.is_none()));
+        assert!(
+            compactor_service
+                .pipelines
+                .iter()
+                .all(|slot| slot.is_none())
+        );
         universe.assert_quit().await;
     }
 
