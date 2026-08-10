@@ -31,7 +31,7 @@ use quickwit_metastore::{SplitMetadata, StageSplitsRequestExt};
 use quickwit_metrics::{gauge, label_values};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, StageSplitsRequest};
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
-use quickwit_proto::types::{IndexUid, PublishToken};
+use quickwit_proto::types::IndexUid;
 use quickwit_storage::SplitPayloadBuilder;
 use serde::Serialize;
 use tokio::sync::oneshot::Sender;
@@ -380,8 +380,10 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     .await;
 
                     if let Err(cause) = upload_result {
-                        warn!(cause=?cause, split_id=packaged_split.split_id_str(), "Failed to upload split. Killing!");
-                        kill_switch.kill();
+                        kill_switch.kill_with_fault(cause.context(format!(
+                            "Uploader failed to upload split {}",
+                            packaged_split.split_id_str()
+                        )));
                         return;
                     }
 
@@ -393,7 +395,6 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     packaged_splits_and_metadata,
                     batch.checkpoint_delta_opt,
                     batch.publish_lock,
-                    batch.publish_token_opt,
                     batch.merge_task_opt,
                     batch.batch_parent_span,
                 );
@@ -442,7 +443,6 @@ impl Handler<EmptySplit> for Uploader {
             replaced_split_ids: Vec::new(),
             checkpoint_delta_opt: Some(empty_split.checkpoint_delta),
             publish_lock: empty_split.publish_lock,
-            publish_token_opt: empty_split.publish_token_opt,
             merge_task: None,
             parent_span: empty_split.batch_parent_span,
         };
@@ -457,7 +457,6 @@ fn make_publish_operation(
     packaged_splits_and_metadatas: Vec<(PackagedSplit, SplitMetadata)>,
     checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     publish_lock: PublishLock,
-    publish_token_opt: Option<PublishToken>,
     merge_task: Option<MergeTask>,
     parent_span: Span,
 ) -> SplitsUpdate {
@@ -475,7 +474,6 @@ fn make_publish_operation(
         replaced_split_ids: Vec::from_iter(replaced_split_ids),
         checkpoint_delta_opt,
         publish_lock,
-        publish_token_opt,
         merge_task,
         parent_span,
     }
@@ -602,7 +600,6 @@ mod tests {
                 }],
                 checkpoint_delta_opt,
                 PublishLock::default(),
-                None,
                 None,
                 Span::none(),
             ))
@@ -747,7 +744,6 @@ mod tests {
                 None,
                 PublishLock::default(),
                 None,
-                None,
                 Span::none(),
             ))
             .await?;
@@ -864,7 +860,6 @@ mod tests {
                 checkpoint_delta_opt,
                 PublishLock::default(),
                 None,
-                None,
                 Span::none(),
             ))
             .await?;
@@ -916,7 +911,6 @@ mod tests {
                 index_uid: IndexUid::new_with_random_ulid("test-index"),
                 checkpoint_delta,
                 publish_lock: PublishLock::default(),
-                publish_token_opt: None,
                 batch_parent_span: Span::none(),
             })
             .await?;
@@ -1045,7 +1039,6 @@ mod tests {
                 }],
                 checkpoint_delta_opt,
                 PublishLock::default(),
-                None,
                 None,
                 Span::none(),
             ))

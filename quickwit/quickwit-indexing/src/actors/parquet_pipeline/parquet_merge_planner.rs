@@ -449,7 +449,7 @@ mod tests {
             .window_start_secs(0)
             .window_duration_secs(3600)
             .maturity(ParquetSplitMaturity::Immature {
-                maturation_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_hours(1),
             })
             .num_merge_ops(num_merge_ops)
             .build()
@@ -462,7 +462,7 @@ mod tests {
                 max_merge_factor: merge_factor,
                 max_merge_ops: 5,
                 target_split_size_bytes: 256 * 1024 * 1024,
-                maturation_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_hours(1),
                 max_finalize_merge_operations: 3,
             },
         ))
@@ -601,7 +601,7 @@ mod tests {
                 max_merge_factor: 2,
                 max_merge_ops: 2,
                 target_split_size_bytes: 256 * 1024 * 1024,
-                maturation_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_hours(1),
                 max_finalize_merge_operations: 3,
             },
         ));
@@ -689,7 +689,7 @@ mod tests {
             .size_bytes(size_bytes)
             .sort_fields("metric_name|host|timestamp_secs/V2")
             .maturity(ParquetSplitMaturity::Immature {
-                maturation_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_hours(1),
             })
             .num_merge_ops(num_merge_ops)
             .build();
@@ -782,7 +782,7 @@ mod tests {
                             .duration_since(split.created_at)
                             .unwrap_or_default();
                         assert!(
-                            age < std::time::Duration::from_secs(3600),
+                            age < std::time::Duration::from_hours(1),
                             "merge task contains time-mature split: {} age={:?}",
                             split.split_id, age
                         );

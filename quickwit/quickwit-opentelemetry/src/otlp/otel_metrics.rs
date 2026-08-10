@@ -590,7 +590,7 @@ mod tests {
             .expect("retention policy should be set");
         assert_eq!(
             retention.retention_period().unwrap(),
-            std::time::Duration::from_secs(30 * 24 * 3600)
+            std::time::Duration::from_hours(720) // 30 days
         );
         assert_eq!(retention.evaluation_schedule, "hourly");
     }
