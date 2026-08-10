@@ -348,6 +348,19 @@ pub static PREDICATE_CACHE: LazyLock<CacheMetrics> =
 pub(crate) static SEARCHER_SPLIT_CACHE: LazyLock<CacheMetrics> =
     LazyLock::new(|| CacheMetrics::for_component("searcher_split"));
 
+/// Number of times a split download opportunity was skipped because the split
+/// is larger than the entire split-cache byte budget (`split_cache.max_num_bytes`).
+///
+/// Such a split can never coexist with any other split and would evict the whole
+/// cache without ever fitting, so it is left to be served by the cold-storage
+/// warmup path. A steadily rising counter means a searcher keeps re-evaluating a
+/// hot oversized split; it is a "skip events" rate, not a distinct-split count.
+pub(crate) static SEARCHER_SPLIT_CACHE_DOWNLOADS_SKIPPED_TOO_LARGE: LazyCounter = lazy_counter!(
+    name: "searcher_split_cache_downloads_skipped_too_large_total",
+    description: "Number of split downloads skipped because the split is larger than the split cache byte budget.",
+    subsystem: "storage",
+);
+
 /// Cache metrics for short-lived byte range caches (used during leaf search
 /// and caching directory warmup).
 pub static SHORTLIVED_CACHE: LazyLock<CacheMetrics> =

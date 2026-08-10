@@ -338,6 +338,10 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     report_splits.push(ReportSplit {
                         storage_uri: split_store.remote_uri().to_string(),
                         split_id: packaged_split.split_id_str().to_string(),
+                        // The footer sits at the end of the split file, so its end
+                        // offset equals the split file size. The searcher split
+                        // cache uses this to skip caching splits larger than its budget.
+                        num_bytes: split_streamer.footer_range.end,
                     });
 
                     split_metadata_list.push(split_metadata);
@@ -1051,6 +1055,9 @@ mod tests {
         let split = &report_splits.report_splits[0];
         assert_eq!(split.storage_uri, "ram:///");
         assert_eq!(split.split_id, SPLIT_ULID_STR);
+        // The reported size is the split file size (footer end offset), which the
+        // searcher split cache uses to skip caching oversized splits.
+        assert!(split.num_bytes > 0);
         universe.assert_quit().await;
         Ok(())
     }

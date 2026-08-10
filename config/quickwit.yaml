@@ -210,6 +210,9 @@ indexer:
 #      max_num_bytes: 1G
 #      max_num_splits: 10000
 #      num_concurrent_downloads: 1
+#      # Opt-in: refuse to cache a split larger than max_num_bytes (served from
+#      # object storage instead). Defaults to false (no per-split size guard).
+#      skip_oversized_splits: false
 # -------------------------------- Jaeger settings --------------------------------
 
 jaeger:
