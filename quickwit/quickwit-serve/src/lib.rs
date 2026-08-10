@@ -91,8 +91,7 @@ use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
     IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout, notify_ingester_decommission,
     setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
-    start_ingest_api_service, wait_for_ingester_decommission,
-    wait_for_ingester_status,
+    start_ingest_api_service, wait_for_ingester_decommission, wait_for_ingester_status,
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
@@ -308,7 +307,11 @@ async fn get_compaction_planner_client_if_needed(
     info!("remote compaction planner detected on janitor node");
     let planner_client = CompactionPlannerServiceClient::tower()
         .stack_layer(TimeoutLayer::new(GRPC_COMPACTION_PLANNER_SERVICE_TIMEOUT))
-        .build_from_balance_channel(balance_channel, node_config.grpc_config.max_message_size, None);
+        .build_from_balance_channel(
+            balance_channel,
+            node_config.grpc_config.max_message_size,
+            None,
+        );
     Ok((Some(planner_client), None))
 }
 
@@ -1730,7 +1733,8 @@ mod tests {
         let stuck_cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
             .unwrap();
-        let (dropped_grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel::<()>();
+        let (dropped_grpc_readiness_trigger_tx, grpc_readiness_signal_rx) =
+            oneshot::channel::<()>();
         let (_rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel::<()>();
         let (stuck_health_reporter, _stuck_health_service) =
             tonic_health::server::health_reporter();
