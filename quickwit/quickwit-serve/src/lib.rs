@@ -76,7 +76,7 @@ use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
 use quickwit_compaction::planner::CompactionPlanner;
 use quickwit_compaction::{
-    CompactorSupervisor, notify_compactor_decommission, start_compactor_service,
+    CompactorService, notify_compactor_decommission, start_compactor_service,
     wait_for_compactor_decommission,
 };
 use quickwit_config::service::QuickwitService;
@@ -187,7 +187,7 @@ struct QuickwitServices {
     ingester_opt: Option<Ingester>,
 
     pub compaction_service_client_opt: Option<CompactionPlannerServiceClient>,
-    pub compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
+    pub compactor_service_opt: Option<Mailbox<CompactorService>>,
     pub janitor_service_opt: Option<Mailbox<JanitorService>>,
     pub jaeger_service_opt: Option<JaegerService>,
     pub otlp_logs_service_opt: Option<OtlpGrpcLogsService>,
@@ -500,7 +500,7 @@ async fn shutdown_signal_handler(
     universe: Universe,
     ingester_opt: Option<Ingester>,
     ingester_decommission_timeout: Duration,
-    compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
+    compactor_service_opt: Option<Mailbox<CompactorService>>,
     compactor_decommission_timeout: Duration,
     grpc_shutdown_trigger_tx: oneshot::Sender<()>,
     rest_shutdown_trigger_tx: oneshot::Sender<()>,
@@ -511,7 +511,7 @@ async fn shutdown_signal_handler(
     if let Err(error) = notify_ingester_decommission(ingester_opt.as_ref()).await {
         error!("failed to initiate ingester decommission: {:?}", error);
     }
-    let compactor_status_rx_opt = notify_compactor_decommission(compactor_supervisor_opt.as_ref())
+    let compactor_status_rx_opt = notify_compactor_decommission(compactor_service_opt.as_ref())
         .await
         .unwrap_or_else(|error| {
             error!("failed to initiate compactor decommission: {:?}", error);
@@ -837,7 +837,7 @@ pub async fn serve_quickwit(
         None
     };
 
-    let compactor_supervisor_opt = if node_config.is_service_enabled(QuickwitService::Compactor)
+    let compactor_service_opt = if node_config.is_service_enabled(QuickwitService::Compactor)
         && node_config.enable_standalone_compactors
     {
         let compaction_dir = node_config.data_dir_path.join("compaction");
@@ -918,7 +918,7 @@ pub async fn serve_quickwit(
         ingest_service,
         ingester_opt: ingester_opt.clone(),
         compaction_service_client_opt,
-        compactor_supervisor_opt: compactor_supervisor_opt.clone(),
+        compactor_service_opt: compactor_service_opt.clone(),
         janitor_service_opt,
         jaeger_service_opt,
         otlp_logs_service_opt,
@@ -1014,7 +1014,7 @@ pub async fn serve_quickwit(
         universe,
         ingester_opt,
         ingester_decommission_timeout,
-        compactor_supervisor_opt,
+        compactor_service_opt,
         compactor_decommission_timeout,
         grpc_shutdown_trigger_tx,
         rest_shutdown_trigger_tx,

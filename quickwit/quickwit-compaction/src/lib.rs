@@ -15,7 +15,7 @@
 #![deny(clippy::disallowed_methods)]
 
 mod compaction_pipeline;
-mod compactor_supervisor;
+mod compactor_service;
 mod metrics;
 pub mod planner;
 
@@ -23,8 +23,8 @@ pub type TaskId = String;
 
 use std::sync::Arc;
 
-pub use compactor_supervisor::{
-    CompactorSupervisor, notify_compactor_decommission, wait_for_compactor_decommission,
+pub use compactor_service::{
+    CompactorService, notify_compactor_decommission, wait_for_compactor_decommission,
 };
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_common::pubsub::EventBroker;
@@ -53,11 +53,11 @@ pub async fn start_compactor_service(
     split_cache: Arc<IndexingSplitCache>,
     event_broker: EventBroker,
     compaction_root_directory: TempDirectory,
-) -> anyhow::Result<Mailbox<CompactorSupervisor>> {
+) -> anyhow::Result<Mailbox<CompactorService>> {
     info!("starting compactor service");
     let compactor_config = compactor_config.clone();
     let (mailbox, _supervisor_handle) = universe.spawn_builder().supervise_fn(move || {
-        CompactorSupervisor::new(
+        CompactorService::new(
             node_id.clone(),
             compaction_client.clone(),
             &compactor_config,
