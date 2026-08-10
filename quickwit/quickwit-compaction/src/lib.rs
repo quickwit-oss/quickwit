@@ -55,16 +55,18 @@ pub async fn start_compactor_service(
     compaction_root_directory: TempDirectory,
 ) -> anyhow::Result<Mailbox<CompactorSupervisor>> {
     info!("starting compactor service");
-    let supervisor = CompactorSupervisor::new(
-        node_id,
-        compaction_client,
-        compactor_config,
-        metastore,
-        storage_resolver,
-        split_cache,
-        event_broker,
-        compaction_root_directory,
-    );
-    let (mailbox, _handle) = universe.spawn_builder().spawn(supervisor);
+    let compactor_config = compactor_config.clone();
+    let (mailbox, _supervisor_handle) = universe.spawn_builder().supervise_fn(move || {
+        CompactorSupervisor::new(
+            node_id.clone(),
+            compaction_client.clone(),
+            &compactor_config,
+            metastore.clone(),
+            storage_resolver.clone(),
+            split_cache.clone(),
+            event_broker.clone(),
+            compaction_root_directory.clone(),
+        )
+    });
     Ok(mailbox)
 }

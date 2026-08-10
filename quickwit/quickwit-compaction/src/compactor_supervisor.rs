@@ -19,7 +19,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, SpawnContext};
+use quickwit_actors::{
+    Actor, ActorContext, ActorExitStatus, Handler, Healthz, Mailbox, SpawnContext,
+};
 use quickwit_common::io::{self, Limiter};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::EventBroker;
@@ -165,13 +167,9 @@ impl CompactorSupervisor {
     async fn report_status_and_maybe_finish(&mut self, ctx: &ActorContext<Self>) {
         let statuses = self.check_pipeline_statuses();
         let request = self.build_report_status_request(&statuses);
-        match ctx
-            .protect_future(self.planner_client.report_status(request))
-            .await
-        {
+        match self.planner_client.report_status(request).await {
             Ok(response) => {
-                ctx.protect_future(self.process_new_tasks(response.new_tasks, ctx.spawn_ctx()))
-                    .await;
+                self.process_new_tasks(response.new_tasks, ctx.spawn_ctx()).await;
                 self.check_decommissioning_status();
             }
             Err(error) => {
@@ -395,10 +393,23 @@ impl Handler<CheckPipelineStatuses> for CompactorSupervisor {
         if self.status() == CompactorStatus::Decommissioned {
             // We stop the loop; the node is about to be torn down.
             info!("compactor finished draining in-flight merges");
-            return Ok(());
+            return Err(ActorExitStatus::Success);
         }
         ctx.schedule_self_msg(CHECK_PIPELINE_STATUSES_INTERVAL, CheckPipelineStatuses);
         Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<Healthz> for CompactorSupervisor {
+    type Reply = bool;
+
+    async fn handle(
+        &mut self,
+        _msg: Healthz,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<bool, ActorExitStatus> {
+        Ok(true)
     }
 }
 
@@ -925,6 +936,49 @@ mod tests {
             .unwrap();
 
         assert_eq!(*status_rx.borrow(), CompactorStatus::Decommissioned);
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_supervised_compactor_survives_planner_failures() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use quickwit_proto::compaction::CompactionError;
+
+        let universe = Universe::new();
+        let report_count = Arc::new(AtomicUsize::new(0));
+        let report_count_clone = report_count.clone();
+        let mut mock = MockCompactionPlannerService::new();
+        mock.expect_report_status().returning(move |_req| {
+            report_count_clone.fetch_add(1, Ordering::Relaxed);
+            Err(CompactionError::Unavailable("planner is down".to_string()))
+        });
+
+        let client = CompactionPlannerServiceClient::from_mock(mock);
+        let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
+        let compactor_config = CompactorConfig::for_test();
+        let storage_resolver = StorageResolver::for_test();
+        let split_cache = Arc::new(IndexingSplitCache::no_caching());
+        let event_broker = EventBroker::default();
+        let compaction_root_directory = TempDirectory::for_test();
+        let (mailbox, _supervisor_handle) = universe.spawn_builder().supervise_fn(move || {
+            CompactorSupervisor::new(
+                NodeId::from_str("test-node"),
+                client.clone(),
+                &compactor_config,
+                metastore.clone(),
+                storage_resolver.clone(),
+                split_cache.clone(),
+                event_broker.clone(),
+                compaction_root_directory.clone(),
+            )
+        });
+
+        universe.sleep(CHECK_PIPELINE_STATUSES_INTERVAL * 3).await;
+
+        assert!(report_count.load(Ordering::Relaxed) >= 2);
+        assert!(mailbox.ask(Healthz).await.unwrap());
+
         universe.assert_quit().await;
     }
 }
