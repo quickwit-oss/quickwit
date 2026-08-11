@@ -161,7 +161,7 @@ pub(crate) static OBJECT_STORAGE_UPLOAD_NUM_BYTES: LazyCounter = lazy_counter!(
         subsystem: "storage",
 );
 
-/// Metrics for a named cache component (e.g. "shortlived", "splitfooter").
+/// Metrics for a named cache component (e.g. "fastfields", "splitfooter").
 ///
 /// Each `CacheMetrics` instance holds a set of counters and gauges scoped to a
 /// `component_name` label. It also supports virtual sub-caches keyed by
@@ -347,11 +347,6 @@ pub static PREDICATE_CACHE: LazyLock<CacheMetrics> =
 
 pub(crate) static SEARCHER_SPLIT_CACHE: LazyLock<CacheMetrics> =
     LazyLock::new(|| CacheMetrics::for_component("searcher_split"));
-
-/// Cache metrics for short-lived byte range caches (used during leaf search
-/// and caching directory warmup).
-pub static SHORTLIVED_CACHE: LazyLock<CacheMetrics> =
-    LazyLock::new(|| CacheMetrics::for_component("shortlived"));
 
 /// Cache metrics for split footer caches (used to cache split metadata).
 pub static SPLIT_FOOTER_CACHE: LazyLock<CacheMetrics> =
