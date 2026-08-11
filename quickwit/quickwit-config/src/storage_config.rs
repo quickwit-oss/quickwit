@@ -411,6 +411,9 @@ const AZURE_BLOB_HOST_SUFFIXES: &[(&str, AzureNationalCloud)] = &[
 fn extract_azure_endpoint_host(endpoint: &str) -> Option<String> {
     let endpoint = endpoint.trim();
     let parsed_url = url::Url::parse(endpoint).ok()?;
+    if parsed_url.scheme() != "https" {
+        return None;
+    }
     if !parsed_url.username().is_empty() || parsed_url.password().is_some() {
         return None;
     }
@@ -935,6 +938,24 @@ mod tests {
         };
         assert_eq!(
             unparseable_endpoint_config.resolve_national_cloud(),
+            AzureNationalCloud::Custom
+        );
+
+        let http_public_endpoint_config = AzureStorageConfig {
+            endpoint: Some("http://my-account.blob.core.windows.net".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            http_public_endpoint_config.resolve_national_cloud(),
+            AzureNationalCloud::Custom
+        );
+
+        let http_gov_endpoint_config = AzureStorageConfig {
+            endpoint: Some("http://my-account.blob.core.usgovcloudapi.net".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            http_gov_endpoint_config.resolve_national_cloud(),
             AzureNationalCloud::Custom
         );
     }
