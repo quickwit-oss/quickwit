@@ -59,6 +59,7 @@ impl OpendalStorage {
         uri: Uri,
         cfg: opendal::services::Gcs,
     ) -> Result<Self, StorageResolverError> {
+        opendal::install_default();
         let op = Operator::new(cfg)?;
         Ok(Self::from_operator(uri, op))
     }
