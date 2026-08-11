@@ -686,8 +686,7 @@ async fn leaf_search_single_split(
     }
 
     let split_id = split.split_id.to_string();
-    let byte_range_cache =
-        ByteRangeCache::with_infinite_capacity(&quickwit_storage::metrics::SHORTLIVED_CACHE);
+    let byte_range_cache = ByteRangeCache::with_infinite_capacity();
     // Wrap storage at request scope so we observe per-split download volume.
     // Cache layers (split cache, footer cache, hotcache, byte-range cache) live
     // ABOVE this wrapper, so reads served from cache do not contribute to the
