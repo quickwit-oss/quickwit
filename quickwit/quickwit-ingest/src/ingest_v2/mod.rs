@@ -45,6 +45,7 @@ pub use broadcast::{
 use bytes::buf::Writer;
 use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
+use quickwit_common::pubsub::Event;
 use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::{IngesterServiceClient, IngesterStatus};
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
@@ -95,6 +96,14 @@ impl IngesterPoolEntry {
 }
 
 pub type IngesterPool = Pool<NodeId, IngesterPoolEntry>;
+
+/// Published when an ingester leaves the cluster.
+#[derive(Debug, Clone)]
+pub struct IngesterDeparture {
+    pub node_id: NodeId,
+}
+
+impl Event for IngesterDeparture {}
 
 /// Identifies an ingester client, typically a source, for logging and debugging purposes.
 pub type ClientId = String;

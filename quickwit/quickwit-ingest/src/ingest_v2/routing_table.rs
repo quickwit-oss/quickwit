@@ -323,6 +323,18 @@ impl RoutingTable {
         }
         entry.seeded_from_cp = true;
     }
+
+    /// Removes a node that left the cluster from every routing entry.
+    pub fn remove_node(&mut self, node_id: &NodeId) -> usize {
+        let mut num_entries = 0;
+
+        for entry in self.table.values_mut() {
+            if entry.nodes.remove(node_id).is_some() {
+                num_entries += 1;
+            }
+        }
+        num_entries
+    }
 }
 
 #[cfg(test)]
@@ -761,6 +773,35 @@ mod tests {
         assert!(entry.nodes.contains_key("node-2"));
         assert!(entry.nodes.contains_key("node-3"));
         assert!(entry.nodes.contains_key("node-4"));
+    }
+
+    #[test]
+    fn test_remove_node() {
+        let mut table = RoutingTable::default();
+        let index_uid = IndexUid::for_test("test-index", 0);
+
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            index_uid.clone(),
+            "test-source".into(),
+            8,
+            3,
+        );
+        table.apply_capacity_update(
+            NodeId::from_str("node-2"),
+            index_uid,
+            "test-source".into(),
+            6,
+            2,
+        );
+        assert_eq!(table.remove_node(&NodeId::from_str("node-1")), 1);
+
+        let entry = table
+            .table
+            .get(&("test-index".to_string(), "test-source".to_string()))
+            .unwrap();
+        assert!(!entry.nodes.contains_key("node-1"));
+        assert!(entry.nodes.contains_key("node-2"));
     }
 
     #[test]

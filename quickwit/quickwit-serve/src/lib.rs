@@ -88,11 +88,11 @@ use quickwit_indexing::actors::{IndexingService, MergeSchedulerService};
 use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::{IndexingSplitCache, start_indexing_service};
 use quickwit_ingest::{
-    GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
-    IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout, notify_ingester_decommission,
-    setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
-    start_ingest_api_service, try_get_ingester_status, wait_for_ingester_decommission,
-    wait_for_ingester_status,
+    GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester,
+    IngesterDeparture, IngesterPool, IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout,
+    notify_ingester_decommission, setup_ingester_capacity_update_listener,
+    setup_local_shards_update_listener, start_ingest_api_service, try_get_ingester_status,
+    wait_for_ingester_decommission, wait_for_ingester_status,
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
@@ -1205,6 +1205,7 @@ async fn setup_ingest_v2(
         cluster.change_stream(),
         ingester_opt.clone(),
         ingester_pool,
+        event_broker.clone(),
         grpc_compression_encoding_opt,
         node_config.grpc_config.max_message_size,
     );
@@ -1215,11 +1216,13 @@ fn setup_ingester_pool(
     cluster_change_stream: ClusterChangeStream,
     ingester_opt: Option<Ingester>,
     ingester_pool: IngesterPool,
+    event_broker: EventBroker,
     grpc_compression_encoding_opt: Option<CompressionEncoding>,
     grpc_max_message_size: ByteSize,
 ) {
     let ingester_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let ingester_opt_clone = ingester_opt.clone();
+        let event_broker_clone = event_broker.clone();
         Box::pin(async move {
             match cluster_change {
                 ClusterChange::Add(node) if node.is_indexer() => {
@@ -1254,6 +1257,9 @@ fn setup_ingester_pool(
                     Some(change)
                 }
                 ClusterChange::Remove(node) if node.is_indexer() => {
+                    event_broker_clone.publish(IngesterDeparture {
+                        node_id: node.node_id.clone(),
+                    });
                     let change = build_ingester_remove_change(&node);
                     Some(change)
                 }
@@ -2164,10 +2170,17 @@ mod tests {
         let (cluster_change_stream, cluster_change_stream_tx) =
             ClusterChangeStream::new_unbounded();
         let ingester_pool = IngesterPool::default();
+        let event_broker = EventBroker::default();
+        let departures: Arc<Mutex<Vec<NodeId>>> = Arc::new(Mutex::new(Vec::new()));
+        let departures_clone = departures.clone();
+        let _subscription = event_broker.subscribe(move |departure: IngesterDeparture| {
+            departures_clone.lock().unwrap().push(departure.node_id);
+        });
         setup_ingester_pool(
             cluster_change_stream,
             None::<Ingester>,
             ingester_pool.clone(),
+            event_broker,
             None,
             ByteSize::mib(20),
         );
@@ -2249,6 +2262,11 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(1)).await;
 
         assert!(ingester_pool.is_empty());
+        // Routers are told to drop the departed node's routing entries.
+        assert_eq!(
+            *departures.lock().unwrap(),
+            vec![NodeId::from_str("test-ingester-node")]
+        );
     }
 
     #[tokio::test]
