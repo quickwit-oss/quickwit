@@ -7,7 +7,7 @@ Quickwit exposes key metrics in the [Prometheus](https://prometheus.io/) format 
 
 ## Cache Metrics
 
-Currently Quickwit exposes metrics for three caches: `fastfields`, `shortlived`, `splitfooter`. These metrics share the same structure.
+Currently Quickwit exposes metrics for two caches: `fastfields` and `splitfooter`. These metrics share the same structure.
 
 | Namespace | Metric Name | Description | Type |
 | --------- | ----------- | ----------- | ---- |
