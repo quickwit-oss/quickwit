@@ -567,6 +567,11 @@ fn build_azure_token_credentials(
     azure_storage_config: &AzureStorageConfig,
     credential: Arc<dyn azure_core::auth::TokenCredential>,
 ) -> Result<StorageCredentials, StorageResolverError> {
+    if azure_storage_config.endpoint_uses_non_https_transport() {
+        return Err(StorageResolverError::InvalidConfig(
+            "Azure token credentials require an HTTPS endpoint".to_string(),
+        ));
+    }
     let national_cloud = azure_storage_config.resolve_national_cloud();
     if national_cloud == AzureNationalCloud::Custom
         && azure_storage_config.uses_custom_blob_endpoint()
@@ -804,7 +809,7 @@ mod tests {
         let error = build_azure_token_credentials(&azure_storage_config, credential)
             .expect_err("HTTP Azure endpoint with token auth should fail");
 
-        assert!(matches!(error, StorageResolverError::InvalidConfig(_)));
+        assert!(matches!(error, StorageResolverError::InvalidConfig(message) if message.contains("HTTPS")));
     }
 
     #[test]

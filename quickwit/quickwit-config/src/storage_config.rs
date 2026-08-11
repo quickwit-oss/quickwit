@@ -376,6 +376,15 @@ impl AzureStorageConfig {
         }
         AzureNationalCloud::Public
     }
+
+    /// Returns `true` when a configured blob `endpoint` URL does not use HTTPS.
+    pub fn endpoint_uses_non_https_transport(&self) -> bool {
+        self.endpoint().is_some_and(|endpoint| {
+            url::Url::parse(endpoint.trim())
+                .map(|parsed_url| !parsed_url.scheme().eq_ignore_ascii_case("https"))
+                .unwrap_or(false)
+        })
+    }
 }
 
 /// Azure national cloud classification derived from the configured blob endpoint.
@@ -411,9 +420,6 @@ const AZURE_BLOB_HOST_SUFFIXES: &[(&str, AzureNationalCloud)] = &[
 fn extract_azure_endpoint_host(endpoint: &str) -> Option<String> {
     let endpoint = endpoint.trim();
     let parsed_url = url::Url::parse(endpoint).ok()?;
-    if parsed_url.scheme() != "https" {
-        return None;
-    }
     if !parsed_url.username().is_empty() || parsed_url.password().is_some() {
         return None;
     }
@@ -947,8 +953,9 @@ mod tests {
         };
         assert_eq!(
             http_public_endpoint_config.resolve_national_cloud(),
-            AzureNationalCloud::Custom
+            AzureNationalCloud::Public
         );
+        assert!(http_public_endpoint_config.endpoint_uses_non_https_transport());
 
         let http_gov_endpoint_config = AzureStorageConfig {
             endpoint: Some("http://my-account.blob.core.usgovcloudapi.net".to_string()),
@@ -956,8 +963,21 @@ mod tests {
         };
         assert_eq!(
             http_gov_endpoint_config.resolve_national_cloud(),
-            AzureNationalCloud::Custom
+            AzureNationalCloud::UsGovernment
         );
+        assert!(http_gov_endpoint_config.endpoint_uses_non_https_transport());
+
+        let https_public_endpoint_config = AzureStorageConfig {
+            endpoint: Some("https://my-account.blob.core.windows.net".to_string()),
+            ..Default::default()
+        };
+        assert!(!https_public_endpoint_config.endpoint_uses_non_https_transport());
+
+        let uppercase_https_endpoint_config = AzureStorageConfig {
+            endpoint: Some("HTTPS://my-account.blob.core.windows.net".to_string()),
+            ..Default::default()
+        };
+        assert!(!uppercase_https_endpoint_config.endpoint_uses_non_https_transport());
     }
 
     #[test]
