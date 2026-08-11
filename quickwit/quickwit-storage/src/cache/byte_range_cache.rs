@@ -21,8 +21,6 @@ use std::sync::{Arc, Mutex};
 
 use tantivy::directory::OwnedBytes;
 
-use crate::metrics::{CacheMetrics, SingleCacheMetrics};
-
 #[derive(Clone, PartialOrd, Ord, PartialEq, Eq)]
 struct CacheKey<'a, T: ToOwned + ?Sized> {
     tag: Cow<'a, T>,
@@ -55,19 +53,14 @@ struct CacheValue {
 /// T is a tag, usually a file path.
 struct NeedMutByteRangeCache<T: 'static + ToOwned + ?Sized> {
     cache: BTreeMap<CacheKey<'static, T>, CacheValue>,
-    // this is hardly significant as items can get merged if they overlap
-    num_items: u64,
     num_bytes: u64,
-    cache_counters: &'static SingleCacheMetrics,
 }
 
 impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
-    fn with_infinite_capacity(cache_counters: &'static CacheMetrics) -> Self {
+    fn with_infinite_capacity() -> Self {
         NeedMutByteRangeCache {
             cache: BTreeMap::new(),
-            num_items: 0,
             num_bytes: 0,
-            cache_counters: &cache_counters.cache_metrics,
         }
     }
 
@@ -82,20 +75,12 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         } else if let Some((k, v)) = self.merge_ranges(&key, byte_range.end) {
             (k, v)
         } else {
-            self.cache_counters.misses_num_items.inc();
             return None;
         };
 
         let start = byte_range.start - k.range_start;
         let end = byte_range.end - k.range_start;
-        let result = v.bytes.slice(start..end);
-
-        self.cache_counters.hits_num_items.inc();
-        self.cache_counters
-            .hits_num_bytes
-            .inc_by((end - start) as u64);
-
-        Some(result)
+        Some(v.bytes.slice(start..end))
     }
 
     fn put_slice(&mut self, tag: T::Owned, byte_range: Range<usize>, bytes: OwnedBytes) {
@@ -200,7 +185,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
             // were included as prefix/suffix to the final block.
             key.range_start = range.start;
             self.cache.remove(&key);
-            self.update_counter_drop_item(range.end - range.start);
+            self.num_bytes -= (range.end - range.start) as u64;
         }
 
         // and finally insert the newly added buffer
@@ -210,7 +195,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
             bytes: final_bytes,
         };
         self.cache.insert(key, value);
-        self.update_counter_record_item(final_range.end - final_range.start);
+        self.num_bytes += (final_range.end - final_range.start) as u64;
     }
 
     // Return a block that contain everything between query.range_start and range_end
@@ -260,9 +245,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
 
         // we have everything we need. Merge every sub-buffer into a single large buffer.
         let mut buffer = Vec::with_capacity(last_block.1.range_end - first_block.0.range_start);
-        let mut part_count = 0i64;
         for (_, v) in overlapping_blocks {
-            part_count += 1;
             buffer.extend_from_slice(&v.bytes);
         }
         assert_eq!(
@@ -292,43 +275,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         // and insert the new merged buffer
         self.cache.insert(new_key, new_value);
 
-        self.num_items -= (part_count - 1) as u64;
-        self.cache_counters
-            .in_cache_count
-            .dec_by((part_count - 1) as f64);
-
         self.get_block(start, range_end)
-    }
-
-    fn update_counter_record_item(&mut self, num_bytes: usize) {
-        self.num_items += 1;
-        self.num_bytes += num_bytes as u64;
-        self.cache_counters.in_cache_count.inc();
-        self.cache_counters
-            .in_cache_num_bytes
-            .inc_by(num_bytes as f64);
-    }
-
-    fn update_counter_drop_item(&mut self, num_bytes: usize) {
-        self.num_items -= 1;
-        self.num_bytes -= num_bytes as u64;
-        self.cache_counters.in_cache_count.dec();
-        self.cache_counters
-            .in_cache_num_bytes
-            .dec_by(num_bytes as f64);
-        self.cache_counters.evict_num_items.inc();
-        self.cache_counters.evict_num_bytes.inc_by(num_bytes as u64);
-    }
-}
-
-impl<T: 'static + ToOwned + ?Sized> Drop for NeedMutByteRangeCache<T> {
-    fn drop(&mut self) {
-        self.cache_counters
-            .in_cache_count
-            .dec_by(self.num_items as f64);
-        self.cache_counters
-            .in_cache_num_bytes
-            .dec_by(self.num_bytes as f64);
     }
 }
 
@@ -358,9 +305,8 @@ struct Inner {
 
 impl ByteRangeCache {
     /// Creates a slice cache that never removes any entry.
-    pub fn with_infinite_capacity(cache_counters: &'static CacheMetrics) -> Self {
-        let need_mut_byte_range_cache =
-            NeedMutByteRangeCache::with_infinite_capacity(cache_counters);
+    pub fn with_infinite_capacity() -> Self {
+        let need_mut_byte_range_cache = NeedMutByteRangeCache::with_infinite_capacity();
         let inner = Inner {
             num_stored_bytes: AtomicU64::default(),
             need_mut_byte_range_cache: Mutex::new(need_mut_byte_range_cache),
@@ -402,13 +348,11 @@ mod tests {
     use std::collections::HashMap;
     use std::ops::Range;
     use std::path::Path;
-    use std::sync::LazyLock;
 
     use proptest::prelude::*;
 
     use super::ByteRangeCache;
     use crate::OwnedBytes;
-    use crate::metrics::{CACHE_METRICS_FOR_TESTS, CacheMetrics};
 
     #[derive(Debug)]
     enum Operation {
@@ -451,7 +395,7 @@ mod tests {
             state.insert("path1", vec![false; 12]);
             state.insert("path2", vec![false; 12]);
 
-            let cache = ByteRangeCache::with_infinite_capacity(&CACHE_METRICS_FOR_TESTS);
+            let cache = ByteRangeCache::with_infinite_capacity();
 
             for op in ops {
                 match op {
@@ -464,7 +408,6 @@ mod tests {
                         let bytes = range.clone().map(|i| (i%256) as u8).collect::<Vec<_>>();
                         cache.put_slice(tag.into(), range, OwnedBytes::new(bytes));
 
-
                         let expected_item_count: usize = state.values()
                             .map(|tagged_state| {
                                 count_items(tagged_state)
@@ -472,7 +415,14 @@ mod tests {
                             .sum();
                         // in some case we have ranges touching each other, count_items count them
                         // as only one, but cache count them as 2.
-                        assert!(cache.inner_arc.need_mut_byte_range_cache.lock().unwrap().num_items >= expected_item_count as u64);
+                        let cached_item_count = cache
+                            .inner_arc
+                            .need_mut_byte_range_cache
+                            .lock()
+                            .unwrap()
+                            .cache
+                            .len();
+                        assert!(cached_item_count >= expected_item_count);
 
                         let expected_byte_count = state.values()
                             .flatten()
@@ -514,12 +464,7 @@ mod tests {
 
     #[test]
     fn test_byte_range_cache_doesnt_merge_unnecessarily() {
-        // we need to get a 'static ref to metrics, and want a dedicated metrics because we assert
-        // on it
-        static METRICS: LazyLock<CacheMetrics> =
-            LazyLock::new(|| CacheMetrics::for_component("byterange_cache_test"));
-
-        let cache = ByteRangeCache::with_infinite_capacity(&METRICS);
+        let cache = ByteRangeCache::with_infinite_capacity();
 
         let key: std::path::PathBuf = "key".into();
 
@@ -547,10 +492,7 @@ mod tests {
         {
             let mutable_cache = cache.inner_arc.need_mut_byte_range_cache.lock().unwrap();
             assert_eq!(mutable_cache.cache.len(), 4);
-            assert_eq!(mutable_cache.num_items, 4);
-            assert_eq!(mutable_cache.cache_counters.in_cache_count.get(), 4.0);
             assert_eq!(mutable_cache.num_bytes, 20);
-            assert_eq!(mutable_cache.cache_counters.in_cache_num_bytes.get(), 20.0);
         }
 
         cache.get_slice(&key, 3..12).unwrap();
@@ -559,10 +501,7 @@ mod tests {
             // now they should've been merged, except the last one
             let mutable_cache = cache.inner_arc.need_mut_byte_range_cache.lock().unwrap();
             assert_eq!(mutable_cache.cache.len(), 2);
-            assert_eq!(mutable_cache.num_items, 2);
-            assert_eq!(mutable_cache.cache_counters.in_cache_count.get(), 2.0);
             assert_eq!(mutable_cache.num_bytes, 20);
-            assert_eq!(mutable_cache.cache_counters.in_cache_num_bytes.get(), 20.0);
         }
     }
 }
