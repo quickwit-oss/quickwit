@@ -89,7 +89,7 @@ use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::{IndexingSplitCache, start_indexing_service};
 use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester,
-    IngesterDeparture, IngesterPool, IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout,
+    IngesterLeft, IngesterPool, IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout,
     notify_ingester_decommission, setup_ingester_capacity_update_listener,
     setup_local_shards_update_listener, start_ingest_api_service, try_get_ingester_status,
     wait_for_ingester_decommission, wait_for_ingester_status,
@@ -1257,7 +1257,7 @@ fn setup_ingester_pool(
                     Some(change)
                 }
                 ClusterChange::Remove(node) if node.is_indexer() => {
-                    event_broker_clone.publish(IngesterDeparture {
+                    event_broker_clone.publish(IngesterLeft {
                         node_id: node.node_id.clone(),
                     });
                     let change = build_ingester_remove_change(&node);
@@ -2173,7 +2173,7 @@ mod tests {
         let event_broker = EventBroker::default();
         let departures: Arc<Mutex<Vec<NodeId>>> = Arc::new(Mutex::new(Vec::new()));
         let departures_clone = departures.clone();
-        let _subscription = event_broker.subscribe(move |departure: IngesterDeparture| {
+        let _subscription = event_broker.subscribe(move |departure: IngesterLeft| {
             departures_clone.lock().unwrap().push(departure.node_id);
         });
         setup_ingester_pool(

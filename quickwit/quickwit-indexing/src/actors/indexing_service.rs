@@ -777,7 +777,6 @@ impl IndexingService {
         Ok(Some(merge_planner_mailbox))
     }
 
-    //noinspection ALL
     /// For all Ingest V2 pipelines, assigns the set of shards they should be working on.
     /// This is done regardless of whether there has been a change in their shard list
     /// or not.

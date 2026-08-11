@@ -48,7 +48,7 @@ use super::debouncing::{
 use super::ingester::PERSIST_REQUEST_TIMEOUT;
 use super::routing_table::RoutingTable;
 use super::workbench::IngestWorkbench;
-use super::{IngesterDeparture, IngesterPool, pending_subrequests};
+use super::{IngesterLeft, IngesterPool, pending_subrequests};
 use crate::get_ingest_router_buffer_size;
 use crate::ingest_v2::metrics::{
     INGEST_ATTEMPTS, INGEST_RESULT_CIRCUIT_BREAKER, INGEST_RESULT_INDEX_NOT_FOUND,
@@ -154,7 +154,7 @@ impl IngestRouter {
             .subscribe::<IngesterCapacityScoreUpdate>(weak_router_state.clone())
             .forever();
         self.event_broker
-            .subscribe::<IngesterDeparture>(weak_router_state)
+            .subscribe::<IngesterLeft>(weak_router_state)
             .forever();
     }
 
@@ -618,18 +618,18 @@ impl EventSubscriber<IngesterCapacityScoreUpdate> for WeakRouterState {
 
 /// Clears a departed ingester's routing entries.
 #[async_trait]
-impl EventSubscriber<IngesterDeparture> for WeakRouterState {
-    async fn handle_event(&mut self, departure: IngesterDeparture) {
+impl EventSubscriber<IngesterLeft> for WeakRouterState {
+    async fn handle_event(&mut self, departed_ingester: IngesterLeft) {
         let Some(state) = self.0.upgrade() else {
             return;
         };
         let mut state_guard = state.lock().await;
-        let num_entries = state_guard.routing_table.remove_node(&departure.node_id);
+        let num_entries = state_guard.routing_table.remove_node(&departed_ingester.node_id);
         drop(state_guard);
 
         if num_entries > 0 {
             info!(
-                node_id=%departure.node_id,
+                node_id=%departed_ingester.node_id,
                 "removed ingester from routing table after it left the cluster"
             );
         }

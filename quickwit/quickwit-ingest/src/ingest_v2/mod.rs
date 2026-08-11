@@ -99,11 +99,11 @@ pub type IngesterPool = Pool<NodeId, IngesterPoolEntry>;
 
 /// Published when an ingester leaves the cluster.
 #[derive(Debug, Clone)]
-pub struct IngesterDeparture {
+pub struct IngesterLeft {
     pub node_id: NodeId,
 }
 
-impl Event for IngesterDeparture {}
+impl Event for IngesterLeft {}
 
 /// Identifies an ingester client, typically a source, for logging and debugging purposes.
 pub type ClientId = String;
