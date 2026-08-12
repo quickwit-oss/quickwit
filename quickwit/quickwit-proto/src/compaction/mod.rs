@@ -55,6 +55,12 @@ impl ServiceError for CompactionError {
 }
 
 // Required by the codegen tower layers. All four constructors are mandatory.
+impl quickwit_common::tower::GrpcStatusCode for CompactionError {
+    fn grpc_status_code(&self) -> tonic::Code {
+        self.error_code().grpc_status_code()
+    }
+}
+
 impl GrpcServiceError for CompactionError {
     fn new_internal(message: String) -> Self {
         Self::Internal(message)

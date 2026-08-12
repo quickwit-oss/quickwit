@@ -136,7 +136,7 @@ mod tests {
             .unwrap();
 
         let cluster_id = cluster.cluster_id().to_string();
-        let node_id = cluster.self_node_id().to_owned();
+        let node_id = cluster.self_node_id().to_string();
 
         cluster.set_self_key_value("foo", "bar").await;
 

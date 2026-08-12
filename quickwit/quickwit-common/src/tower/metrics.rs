@@ -30,6 +30,45 @@ pub trait RpcName {
     fn rpc_name() -> &'static str;
 }
 
+/// Returns the gRPC status code associated with a service error.
+pub trait GrpcStatusCode {
+    fn grpc_status_code(&self) -> tonic::Code;
+}
+
+impl GrpcStatusCode for tonic::Status {
+    fn grpc_status_code(&self) -> tonic::Code {
+        self.code()
+    }
+}
+
+impl GrpcStatusCode for std::convert::Infallible {
+    fn grpc_status_code(&self) -> tonic::Code {
+        match *self {}
+    }
+}
+
+fn grpc_code_label(code: tonic::Code) -> &'static str {
+    match code {
+        tonic::Code::Ok => "ok",
+        tonic::Code::Cancelled => "cancelled",
+        tonic::Code::Unknown => "unknown",
+        tonic::Code::InvalidArgument => "invalid_argument",
+        tonic::Code::DeadlineExceeded => "deadline_exceeded",
+        tonic::Code::NotFound => "not_found",
+        tonic::Code::AlreadyExists => "already_exists",
+        tonic::Code::PermissionDenied => "permission_denied",
+        tonic::Code::ResourceExhausted => "resource_exhausted",
+        tonic::Code::FailedPrecondition => "failed_precondition",
+        tonic::Code::Aborted => "aborted",
+        tonic::Code::OutOfRange => "out_of_range",
+        tonic::Code::Unimplemented => "unimplemented",
+        tonic::Code::Internal => "internal",
+        tonic::Code::Unavailable => "unavailable",
+        tonic::Code::DataLoss => "data_loss",
+        tonic::Code::Unauthenticated => "unauthenticated",
+    }
+}
+
 static GRPC_REQUESTS_TOTAL: LazyCounter = lazy_counter!(
         name: "requests_total",
         description: "Total number of gRPC requests processed.",
@@ -60,6 +99,7 @@ pub struct GrpcMetrics<S> {
 impl<S, R> Service<R> for GrpcMetrics<S>
 where
     S: Service<R>,
+    S::Error: GrpcStatusCode,
     R: RpcName,
 {
     type Response = S::Response;
@@ -86,6 +126,7 @@ where
             start,
             rpc_name,
             status: "cancelled",
+            code: "cancelled",
             requests_total: self.requests_total.clone(),
             requests_in_flight: self.requests_in_flight.clone(),
             request_duration_seconds: self.request_duration_seconds.clone(),
@@ -151,7 +192,9 @@ pub struct ResponseFuture<F> {
     inner: F,
     start: Instant,
     rpc_name: &'static str,
+    // Should have been called `result` or `outcome` but here we are.
     status: &'static str,
+    code: &'static str,
     requests_total: Counter,
     requests_in_flight: Gauge,
     request_duration_seconds: Histogram,
@@ -163,22 +206,34 @@ impl<F> PinnedDrop for ResponseFuture<F> {
         let elapsed = self.start.elapsed().as_secs_f64();
         let rpc_label = labels!("rpc" => self.rpc_name);
         let status_label = labels!("status" => self.status);
-        counter!(parent: self.requests_total, labels: [rpc_label, status_label]).inc();
-        histogram!(parent: self.request_duration_seconds, labels: [rpc_label, status_label])
+        let code_label = labels!("code" => self.code);
+        counter!(parent: self.requests_total, labels: [rpc_label, status_label, code_label]).inc();
+        histogram!(parent: self.request_duration_seconds, labels: [rpc_label, status_label, code_label])
             .observe(elapsed);
         gauge!(parent: self.requests_in_flight, labels: [rpc_label]).dec();
     }
 }
 
 impl<F, T, E> Future for ResponseFuture<F>
-where F: Future<Output = Result<T, E>>
+where
+    F: Future<Output = Result<T, E>>,
+    E: GrpcStatusCode,
 {
     type Output = Result<T, E>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let response = ready!(this.inner.poll(cx));
-        *this.status = if response.is_ok() { "success" } else { "error" };
+        match &response {
+            Ok(_) => {
+                *this.status = "success";
+                *this.code = "ok";
+            }
+            Err(error) => {
+                *this.status = "error";
+                *this.code = grpc_code_label(error.grpc_status_code());
+            }
+        }
         Poll::Ready(Ok(response?))
     }
 }
@@ -190,6 +245,7 @@ mod tests {
 
     use super::*;
 
+    #[derive(Debug)]
     struct HelloRequest;
 
     impl RpcName for HelloRequest {
@@ -225,18 +281,23 @@ mod tests {
                 );
 
                 let mut hello_service = primary_layer.clone().layer(tower::service_fn(
-                    |request: HelloRequest| async move { Ok::<_, ()>(request) },
+                    |request: HelloRequest| async move { Ok::<_, tonic::Status>(request) },
                 ));
                 let mut goodbye_service = primary_layer.clone().layer(tower::service_fn(
-                    |request: GoodbyeRequest| async move { Ok::<_, ()>(request) },
+                    |request: GoodbyeRequest| async move { Ok::<_, tonic::Status>(request) },
                 ));
                 let mut read_replica_service = read_replica_layer.layer(tower::service_fn(
-                    |request: HelloRequest| async move { Ok::<_, ()>(request) },
+                    |request: HelloRequest| async move { Ok::<_, tonic::Status>(request) },
                 ));
+                let mut failing_service =
+                    primary_layer.layer(tower::service_fn(|_request: HelloRequest| async move {
+                        Err::<HelloRequest, _>(tonic::Status::not_found("not found"))
+                    }));
 
                 hello_service.call(HelloRequest).await.unwrap();
                 goodbye_service.call(GoodbyeRequest).await.unwrap();
                 read_replica_service.call(HelloRequest).await.unwrap();
+                failing_service.call(HelloRequest).await.unwrap_err();
 
                 let hello_future = hello_service.call(HelloRequest);
                 drop(hello_future);
@@ -244,7 +305,7 @@ mod tests {
         });
 
         let snapshot = snapshotter.snapshot().into_vec();
-        let counter_value = |rpc: &str, status: &str, metastore_kind: &str| {
+        let counter_value = |rpc: &str, status: &str, code: &str, metastore_kind: &str| {
             snapshot.iter().find_map(|(composite_key, _, _, value)| {
                 let (_, key) = composite_key.clone().into_parts();
                 let labels = key
@@ -258,6 +319,7 @@ mod tests {
                     && labels.contains(&("test_label", "test"))
                     && labels.contains(&("rpc", rpc))
                     && labels.contains(&("status", status))
+                    && labels.contains(&("code", code))
                 {
                     Some(value)
                 } else {
@@ -266,19 +328,23 @@ mod tests {
             })
         };
         assert_eq!(
-            counter_value("hello", "success", "primary"),
+            counter_value("hello", "success", "ok", "primary"),
             Some(&DebugValue::Counter(1))
         );
         assert_eq!(
-            counter_value("goodbye", "success", "primary"),
+            counter_value("goodbye", "success", "ok", "primary"),
             Some(&DebugValue::Counter(1))
         );
         assert_eq!(
-            counter_value("hello", "cancelled", "primary"),
+            counter_value("hello", "cancelled", "cancelled", "primary"),
             Some(&DebugValue::Counter(1))
         );
         assert_eq!(
-            counter_value("hello", "success", "read_replica"),
+            counter_value("hello", "success", "ok", "read_replica"),
+            Some(&DebugValue::Counter(1))
+        );
+        assert_eq!(
+            counter_value("hello", "error", "not_found", "primary"),
             Some(&DebugValue::Counter(1))
         );
     }
