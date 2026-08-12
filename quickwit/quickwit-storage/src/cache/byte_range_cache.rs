@@ -12,38 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use rustc_hash::FxHashMap;
 use tantivy::directory::OwnedBytes;
-
-#[derive(Clone, PartialOrd, Ord, PartialEq, Eq)]
-struct CacheKey<'a> {
-    path: Cow<'a, Path>,
-    range_start: usize,
-}
-
-impl CacheKey<'static> {
-    fn from_owned(path: PathBuf, range_start: usize) -> Self {
-        CacheKey {
-            path: Cow::Owned(path),
-            range_start,
-        }
-    }
-}
-
-impl<'a> CacheKey<'a> {
-    fn from_borrowed(path: &'a Path, range_start: usize) -> Self {
-        CacheKey {
-            path: Cow::Borrowed(path),
-            range_start,
-        }
-    }
-}
 
 struct CacheValue {
     range_end: usize,
@@ -51,14 +27,15 @@ struct CacheValue {
 }
 
 struct NeedMutByteRangeCache {
-    cache: BTreeMap<CacheKey<'static>, CacheValue>,
+    // Paths identify virtual Tantivy files within this split, not storage object paths.
+    cache: FxHashMap<PathBuf, BTreeMap<usize, CacheValue>>,
     num_bytes: u64,
 }
 
 impl NeedMutByteRangeCache {
     fn with_infinite_capacity() -> Self {
         NeedMutByteRangeCache {
-            cache: BTreeMap::new(),
+            cache: FxHashMap::default(),
             num_bytes: 0,
         }
     }
@@ -68,18 +45,14 @@ impl NeedMutByteRangeCache {
             return Some(OwnedBytes::empty());
         }
 
-        let key = CacheKey::from_borrowed(path, byte_range.start);
-        let (k, v) = if let Some((k, v)) = self.get_block(&key, byte_range.end) {
-            (k, v)
-        } else if let Some((k, v)) = self.merge_ranges(&key, byte_range.end) {
-            (k, v)
-        } else {
-            return None;
-        };
-
-        let start = byte_range.start - k.range_start;
-        let end = byte_range.end - k.range_start;
-        Some(v.bytes.slice(start..end))
+        let blocks = self.cache.get_mut(path)?;
+        if Self::get_block(blocks, byte_range.start, byte_range.end).is_none() {
+            Self::merge_ranges(blocks, byte_range.start, byte_range.end)?;
+        }
+        let (block_start, value) = Self::get_block(blocks, byte_range.start, byte_range.end)?;
+        let start = byte_range.start - block_start;
+        let end = byte_range.end - block_start;
+        Some(value.bytes.slice(start..end))
     }
 
     fn put_slice(&mut self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
@@ -89,191 +62,131 @@ impl NeedMutByteRangeCache {
             return;
         }
 
-        // try to find a block with which we overlap (and not just touch)
-        let start_key = CacheKey::from_borrowed(&path, byte_range.start);
-        let first_matching_block = self
-            .get_block(&start_key, byte_range.start + 1)
-            .map(|(k, _v)| k);
+        let blocks = self.cache.entry(path).or_default();
 
-        let end_key = CacheKey::from_borrowed(&path, byte_range.end - 1);
-        let last_matching_block = self.get_block(&end_key, byte_range.end).map(|(k, _v)| k);
+        // Try to find a block with which we overlap (and not just touch).
+        let first_matching_block = Self::get_block(blocks, byte_range.start, byte_range.start + 1)
+            .map(|(block_start, _)| *block_start);
+        let last_matching_block = Self::get_block(blocks, byte_range.end - 1, byte_range.end)
+            .map(|(block_start, _)| *block_start);
 
         if first_matching_block.is_some() && first_matching_block == last_matching_block {
-            // same start and end: all the range is already covered
             return;
         }
 
-        let first_matching_block = first_matching_block.unwrap_or(&start_key);
-        let last_matching_block = last_matching_block.unwrap_or(&end_key);
-
-        let overlapping: Vec<Range<usize>> = self
-            .cache
+        let first_matching_block = first_matching_block.unwrap_or(byte_range.start);
+        let last_matching_block = last_matching_block.unwrap_or(byte_range.end - 1);
+        let overlapping: Vec<Range<usize>> = blocks
             .range(first_matching_block..=last_matching_block)
-            .map(|(k, v)| k.range_start..v.range_end)
+            .map(|(block_start, value)| *block_start..value.range_end)
             .collect();
 
-        let can_drop_first = overlapping
-            .first()
-            .map(|r| byte_range.start <= r.start)
-            .unwrap_or(true);
-
-        let can_drop_last = overlapping
-            .last()
-            .map(|r| byte_range.end >= r.end)
-            .unwrap_or(true);
+        let can_drop_first = match overlapping.first() {
+            Some(range) => byte_range.start <= range.start,
+            None => true,
+        };
+        let can_drop_last = match overlapping.last() {
+            Some(range) => byte_range.end >= range.end,
+            None => true,
+        };
 
         let (final_range, final_bytes) = if can_drop_first && can_drop_last {
-            // if we are here, either there was no overlapping block, or there was, but this buffer
-            // covers entirely every block it overlapped with. There is no merging to do.
             (byte_range, bytes)
         } else {
-            // if we are here, we have to do some merging
-
-            // first find the final buffer start and end position.
             let start = if can_drop_first {
                 byte_range.start
             } else {
-                // if no first, can_drop_first is true
-                overlapping.first().unwrap().start
+                overlapping[0].start
             };
             let end = if can_drop_last {
                 byte_range.end
             } else {
-                // if no last, can_drop_last is true
-                overlapping.last().unwrap().end
+                overlapping[overlapping.len() - 1].end
             };
-
             let mut buffer = Vec::with_capacity(end - start);
 
-            // if this buffer overlap, but does not contain the 1st buffer, copy the
-            // non-overlapping part at the start of the final buffer.
             if !can_drop_first {
-                let first_range = overlapping.first().unwrap();
-                let key = CacheKey::from_borrowed(&path, first_range.start);
-                let block = self.cache.get(&key).unwrap();
-
-                let len = first_range.end.min(byte_range.start) - first_range.start;
-                buffer.extend_from_slice(&block.bytes[..len]);
+                let first_range = &overlapping[0];
+                let block = &blocks[&first_range.start];
+                let prefix_len = first_range.end.min(byte_range.start) - first_range.start;
+                buffer.extend_from_slice(&block.bytes[..prefix_len]);
             }
-
-            // copy the entire current buffer
             buffer.extend_from_slice(&bytes);
-
-            // if this buffer overlap, but does not contain the last buffer, copy the
-            // non-overlapping part ad the end of the final buffer.
             if !can_drop_last {
-                let last_range = overlapping.last().unwrap();
-                let key = CacheKey::from_borrowed(&path, last_range.start);
-                let block = self.cache.get(&key).unwrap();
-
-                let start = last_range.start.max(byte_range.end) - last_range.start;
-                buffer.extend_from_slice(&block.bytes[start..]);
+                let last_range = &overlapping[overlapping.len() - 1];
+                let block = &blocks[&last_range.start];
+                let suffix_start = last_range.start.max(byte_range.end) - last_range.start;
+                buffer.extend_from_slice(&block.bytes[suffix_start..]);
             }
-
-            // sanity check, we copied as much as expected
             debug_assert_eq!(end - start, buffer.len());
-
             (start..end, OwnedBytes::new(buffer))
         };
 
-        // not sure why, but the borrow check gets unhappy if I create a borrowed
-        // in the loop. It works with .get() instead of .remove() (?).
-        let mut key = CacheKey::from_owned(path, 0);
-        for range in overlapping.into_iter() {
-            // remove every block with which we overlapped, including the 1st and last, as they
-            // were included as prefix/suffix to the final block.
-            key.range_start = range.start;
-            self.cache.remove(&key);
+        for range in overlapping {
+            blocks.remove(&range.start);
             self.num_bytes -= (range.end - range.start) as u64;
         }
-
-        // and finally insert the newly added buffer
-        key.range_start = final_range.start;
         let value = CacheValue {
             range_end: final_range.end,
             bytes: final_bytes,
         };
-        self.cache.insert(key, value);
+        blocks.insert(final_range.start, value);
         self.num_bytes += (final_range.end - final_range.start) as u64;
     }
 
-    // Return a block that contain everything between query.range_start and range_end
-    fn get_block<'a>(
-        &self,
-        query: &CacheKey<'a>,
+    /// Returns a block containing everything between `range_start` and `range_end`.
+    fn get_block(
+        blocks: &BTreeMap<usize, CacheValue>,
+        range_start: usize,
         range_end: usize,
-    ) -> Option<(&CacheKey<'a>, &CacheValue)> {
-        self.cache
-            .range(..=query)
+    ) -> Option<(&usize, &CacheValue)> {
+        blocks
+            .range(..=range_start)
             .next_back()
-            .filter(|(k, v)| k.path == query.path && range_end <= v.range_end)
+            .filter(|(_, value)| range_end <= value.range_end)
     }
 
-    /// Try to merge all blocks in the given range. Fails if some bytes were not already stored.
-    fn merge_ranges<'a>(
-        &mut self,
-        start: &CacheKey<'a>,
+    /// Tries to merge all blocks in the given range. Fails if some bytes are not stored.
+    fn merge_ranges(
+        blocks: &mut BTreeMap<usize, CacheValue>,
+        range_start: usize,
         range_end: usize,
-    ) -> Option<(&CacheKey<'a>, &CacheValue)> {
-        let own_key =
-            |key: &CacheKey<'_>| CacheKey::from_owned(key.path.to_path_buf(), key.range_start);
+    ) -> Option<()> {
+        let (first_start, _) = Self::get_block(blocks, range_start, range_start)?;
+        let first_start = *first_start;
+        let overlapping: Vec<Range<usize>> = blocks
+            .range(first_start..)
+            .take_while(|(block_start, _)| **block_start <= range_end)
+            .map(|(block_start, value)| *block_start..value.range_end)
+            .collect();
 
-        let first_block = self.get_block(start, start.range_start)?;
-
-        // query cache for all blocks which overlap with our query
-        let overlapping_blocks = self
-            .cache
-            .range(first_block.0..)
-            .take_while(|(k, _)| k.path == start.path && k.range_start <= range_end);
-
-        // verify there are no hole, and each range touches the next one. There can't be overlap
-        // due to how we fill our data-structure.
-        let mut last_block = first_block;
-        for (k, v) in overlapping_blocks.clone().skip(1) {
-            if k.range_start != last_block.1.range_end {
+        let mut previous_end = overlapping.first()?.end;
+        for range in overlapping.iter().skip(1) {
+            if range.start != previous_end {
                 return None;
             }
-
-            last_block = (k, v);
+            previous_end = range.end;
         }
-        if last_block.1.range_end < range_end {
-            // we got a gap at the end
+        if previous_end < range_end {
             return None;
         }
 
-        // we have everything we need. Merge every sub-buffer into a single large buffer.
-        let mut buffer = Vec::with_capacity(last_block.1.range_end - first_block.0.range_start);
-        for (_, v) in overlapping_blocks {
-            buffer.extend_from_slice(&v.bytes);
+        let mut buffer = Vec::with_capacity(previous_end - first_start);
+        for range in &overlapping {
+            let value = blocks.get(&range.start)?;
+            buffer.extend_from_slice(&value.bytes);
         }
-        assert_eq!(
-            buffer.len(),
-            (last_block.1.range_end - first_block.0.range_start)
-        );
+        assert_eq!(buffer.len(), previous_end - first_start);
 
-        let new_key = own_key(first_block.0);
-        let new_value = CacheValue {
-            range_end: last_block.1.range_end,
+        for range in &overlapping {
+            blocks.remove(&range.start);
+        }
+        let value = CacheValue {
+            range_end: previous_end,
             bytes: OwnedBytes::new(buffer),
         };
-
-        // cleanup is sub-optimal, we'd need a BTreeMap::drain_range or something like that
-        let last_key = own_key(last_block.0);
-
-        // remove previous buffers from the cache
-        let blocks_to_remove: Vec<_> = self
-            .cache
-            .range(&new_key..=&last_key)
-            .map(|(k, _)| own_key(k))
-            .collect();
-        for block in blocks_to_remove {
-            self.cache.remove(&block);
-        }
-
-        // and insert the new merged buffer
-        self.cache.insert(new_key, new_value);
-
-        self.get_block(start, range_end)
+        blocks.insert(first_start, value);
+        Some(())
     }
 }
 
@@ -413,13 +326,15 @@ mod tests {
                             .sum();
                         // in some case we have ranges touching each other, count_items count them
                         // as only one, but cache count them as 2.
-                        let cached_item_count = cache
+                        let cached_item_count: usize = cache
                             .inner_arc
                             .need_mut_byte_range_cache
                             .lock()
                             .unwrap()
                             .cache
-                            .len();
+                            .values()
+                            .map(|blocks| blocks.len())
+                            .sum();
                         assert!(cached_item_count >= expected_item_count);
 
                         let expected_byte_count = state.values()
@@ -489,7 +404,14 @@ mod tests {
 
         {
             let mutable_cache = cache.inner_arc.need_mut_byte_range_cache.lock().unwrap();
-            assert_eq!(mutable_cache.cache.len(), 4);
+            assert_eq!(
+                mutable_cache
+                    .cache
+                    .values()
+                    .map(|blocks| blocks.len())
+                    .sum::<usize>(),
+                4
+            );
             assert_eq!(mutable_cache.num_bytes, 20);
         }
 
@@ -498,7 +420,14 @@ mod tests {
         {
             // now they should've been merged, except the last one
             let mutable_cache = cache.inner_arc.need_mut_byte_range_cache.lock().unwrap();
-            assert_eq!(mutable_cache.cache.len(), 2);
+            assert_eq!(
+                mutable_cache
+                    .cache
+                    .values()
+                    .map(|blocks| blocks.len())
+                    .sum::<usize>(),
+                2
+            );
             assert_eq!(mutable_cache.num_bytes, 20);
         }
     }
