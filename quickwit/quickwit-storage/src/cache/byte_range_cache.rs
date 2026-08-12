@@ -26,48 +26,45 @@ struct CacheValue {
     bytes: OwnedBytes,
 }
 
-struct NeedMutByteRangeCache {
-    // Paths identify virtual Tantivy files within this split, not storage object paths.
-    cache: FxHashMap<PathBuf, BTreeMap<usize, CacheValue>>,
+struct FileByteRangeCacheState {
+    blocks: BTreeMap<usize, CacheValue>,
     num_bytes: u64,
 }
 
-impl NeedMutByteRangeCache {
+impl FileByteRangeCacheState {
     fn with_infinite_capacity() -> Self {
-        NeedMutByteRangeCache {
-            cache: FxHashMap::default(),
+        FileByteRangeCacheState {
+            blocks: BTreeMap::new(),
             num_bytes: 0,
         }
     }
 
-    fn get_slice(&mut self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
+    fn get_slice(&mut self, byte_range: Range<usize>) -> Option<OwnedBytes> {
         if byte_range.start == byte_range.end {
             return Some(OwnedBytes::empty());
         }
 
-        let blocks = self.cache.get_mut(path)?;
-        if Self::get_block(blocks, byte_range.start, byte_range.end).is_none() {
-            Self::merge_ranges(blocks, byte_range.start, byte_range.end)?;
+        if Self::get_block(&self.blocks, byte_range.start, byte_range.end).is_none() {
+            Self::merge_ranges(&mut self.blocks, byte_range.start, byte_range.end)?;
         }
-        let (block_start, value) = Self::get_block(blocks, byte_range.start, byte_range.end)?;
+        let (block_start, value) = Self::get_block(&self.blocks, byte_range.start, byte_range.end)?;
         let start = byte_range.start - block_start;
         let end = byte_range.end - block_start;
         Some(value.bytes.slice(start..end))
     }
 
-    fn put_slice(&mut self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
+    fn put_slice(&mut self, byte_range: Range<usize>, bytes: OwnedBytes) {
         let len = byte_range.end - byte_range.start;
         assert_eq!(len, bytes.len());
         if len == 0 {
             return;
         }
 
-        let blocks = self.cache.entry(path).or_default();
-
         // Try to find a block with which we overlap (and not just touch).
-        let first_matching_block = Self::get_block(blocks, byte_range.start, byte_range.start + 1)
-            .map(|(block_start, _)| *block_start);
-        let last_matching_block = Self::get_block(blocks, byte_range.end - 1, byte_range.end)
+        let first_matching_block =
+            Self::get_block(&self.blocks, byte_range.start, byte_range.start + 1)
+                .map(|(block_start, _)| *block_start);
+        let last_matching_block = Self::get_block(&self.blocks, byte_range.end - 1, byte_range.end)
             .map(|(block_start, _)| *block_start);
 
         if first_matching_block.is_some() && first_matching_block == last_matching_block {
@@ -76,7 +73,8 @@ impl NeedMutByteRangeCache {
 
         let first_matching_block = first_matching_block.unwrap_or(byte_range.start);
         let last_matching_block = last_matching_block.unwrap_or(byte_range.end - 1);
-        let overlapping: Vec<Range<usize>> = blocks
+        let overlapping: Vec<Range<usize>> = self
+            .blocks
             .range(first_matching_block..=last_matching_block)
             .map(|(block_start, value)| *block_start..value.range_end)
             .collect();
@@ -107,14 +105,14 @@ impl NeedMutByteRangeCache {
 
             if !can_drop_first {
                 let first_range = &overlapping[0];
-                let block = &blocks[&first_range.start];
+                let block = &self.blocks[&first_range.start];
                 let prefix_len = first_range.end.min(byte_range.start) - first_range.start;
                 buffer.extend_from_slice(&block.bytes[..prefix_len]);
             }
             buffer.extend_from_slice(&bytes);
             if !can_drop_last {
                 let last_range = &overlapping[overlapping.len() - 1];
-                let block = &blocks[&last_range.start];
+                let block = &self.blocks[&last_range.start];
                 let suffix_start = last_range.start.max(byte_range.end) - last_range.start;
                 buffer.extend_from_slice(&block.bytes[suffix_start..]);
             }
@@ -123,14 +121,14 @@ impl NeedMutByteRangeCache {
         };
 
         for range in overlapping {
-            blocks.remove(&range.start);
+            self.blocks.remove(&range.start);
             self.num_bytes -= (range.end - range.start) as u64;
         }
         let value = CacheValue {
             range_end: final_range.end,
             bytes: final_bytes,
         };
-        blocks.insert(final_range.start, value);
+        self.blocks.insert(final_range.start, value);
         self.num_bytes += (final_range.end - final_range.start) as u64;
     }
 
@@ -190,12 +188,56 @@ impl NeedMutByteRangeCache {
     }
 }
 
+/// Cache for ranges of bytes in one immutable file.
+///
+/// Clones share the same cached ranges. Obtain this cache from
+/// [`ByteRangeCache::get_file_cache`] so that all handles for one path share it.
+#[derive(Clone)]
+pub struct FileByteRangeCache {
+    state: Arc<Mutex<FileByteRangeCacheState>>,
+    total_num_stored_bytes: Arc<AtomicU64>,
+}
+
+impl FileByteRangeCache {
+    fn with_total_num_stored_bytes(total_num_stored_bytes: Arc<AtomicU64>) -> Self {
+        FileByteRangeCache {
+            state: Arc::new(Mutex::new(FileByteRangeCacheState::with_infinite_capacity())),
+            total_num_stored_bytes,
+        }
+    }
+
+    /// Returns the cached view of the slice if it is available.
+    pub fn get_slice(&self, byte_range: Range<usize>) -> Option<OwnedBytes> {
+        self.state
+            .lock()
+            .expect("file byte range cache mutex is poisoned")
+            .get_slice(byte_range)
+    }
+
+    /// Stores the given slice in the cache.
+    pub fn put_slice(&self, byte_range: Range<usize>, bytes: OwnedBytes) {
+        let mut state = self
+            .state
+            .lock()
+            .expect("file byte range cache mutex is poisoned");
+        let previous_num_bytes = state.num_bytes;
+        state.put_slice(byte_range, bytes);
+        let num_added_bytes = state.num_bytes - previous_num_bytes;
+        self.total_num_stored_bytes
+            .fetch_add(num_added_bytes, Ordering::Relaxed);
+    }
+}
+
 /// Cache for ranges of bytes in files.
 ///
 /// This cache is used in the contraption that makes it possible for Quickwit
 /// to use tantivy while doing asynchronous io.
 /// Quickwit manually populates this cache in an asynchronous "warmup" phase.
 /// tantivy then gets its data from this cache without performing any IO.
+///
+/// Each path has a separate [`FileByteRangeCache`]. A caller binds a file cache
+/// once when opening a file, avoiding a path lookup and cross-file lock
+/// contention for each range read.
 ///
 /// Contrary to `MemorySizedCache`, it's able to answer subset of known ranges,
 /// does not have any eviction, and assumes an infinite capacity.
@@ -210,47 +252,45 @@ pub struct ByteRangeCache {
 }
 
 struct Inner {
-    num_stored_bytes: AtomicU64,
-    need_mut_byte_range_cache: Mutex<NeedMutByteRangeCache>,
+    total_num_stored_bytes: Arc<AtomicU64>,
+    // Paths identify virtual Tantivy files within this split, not storage object paths.
+    file_caches: Mutex<FxHashMap<PathBuf, FileByteRangeCache>>,
 }
 
 impl ByteRangeCache {
     /// Creates a slice cache that never removes any entry.
     pub fn with_infinite_capacity() -> Self {
-        let need_mut_byte_range_cache = NeedMutByteRangeCache::with_infinite_capacity();
         let inner = Inner {
-            num_stored_bytes: AtomicU64::default(),
-            need_mut_byte_range_cache: Mutex::new(need_mut_byte_range_cache),
+            total_num_stored_bytes: Arc::new(AtomicU64::default()),
+            file_caches: Mutex::new(FxHashMap::default()),
         };
         ByteRangeCache {
             inner_arc: Arc::new(inner),
         }
     }
 
+    /// Returns the shared byte-range cache for `path`.
+    pub fn get_file_cache(&self, path: &Path) -> FileByteRangeCache {
+        let mut file_caches = self
+            .inner_arc
+            .file_caches
+            .lock()
+            .expect("byte range cache mutex is poisoned");
+        if let Some(file_cache) = file_caches.get(path) {
+            return file_cache.clone();
+        }
+        let file_cache = FileByteRangeCache::with_total_num_stored_bytes(
+            self.inner_arc.total_num_stored_bytes.clone(),
+        );
+        file_caches.insert(path.to_path_buf(), file_cache.clone());
+        file_cache
+    }
+
     /// Overall amount of bytes stored in the cache.
     pub fn get_num_bytes(&self) -> u64 {
-        self.inner_arc.num_stored_bytes.load(Ordering::Relaxed)
-    }
-
-    /// If available, returns the cached view of the slice.
-    pub fn get_slice(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
         self.inner_arc
-            .need_mut_byte_range_cache
-            .lock()
-            .unwrap()
-            .get_slice(path, byte_range)
-    }
-
-    /// Put the given amount of data in the cache.
-    pub fn put_slice(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
-        let mut need_mut_byte_range_cache_locked =
-            self.inner_arc.need_mut_byte_range_cache.lock().unwrap();
-        need_mut_byte_range_cache_locked.put_slice(path, byte_range, bytes);
-        let num_bytes = need_mut_byte_range_cache_locked.num_bytes;
-        drop(need_mut_byte_range_cache_locked);
-        self.inner_arc
-            .num_stored_bytes
-            .store(num_bytes, Ordering::Relaxed);
+            .total_num_stored_bytes
+            .load(Ordering::Relaxed)
     }
 }
 
@@ -299,6 +339,15 @@ mod tests {
         prop::collection::vec(op_strategy(), 1..100)
     }
 
+    fn get_num_cached_blocks(cache: &ByteRangeCache) -> usize {
+        let file_caches = cache.inner_arc.file_caches.lock().unwrap();
+        let mut num_cached_blocks = 0;
+        for file_cache in file_caches.values() {
+            num_cached_blocks += file_cache.state.lock().unwrap().blocks.len();
+        }
+        num_cached_blocks
+    }
+
     proptest::proptest! {
         #[test]
         fn test_proptest_byte_range_cache(ops in ops_strategy()) {
@@ -317,7 +366,9 @@ mod tests {
                         state.get_mut(tag).unwrap()
                             [range.clone()].fill(true);
                         let bytes = range.clone().map(|i| (i%256) as u8).collect::<Vec<_>>();
-                        cache.put_slice(tag.into(), range, OwnedBytes::new(bytes));
+                        cache
+                            .get_file_cache(Path::new(tag))
+                            .put_slice(range, OwnedBytes::new(bytes));
 
                         let expected_item_count: usize = state.values()
                             .map(|tagged_state| {
@@ -326,28 +377,19 @@ mod tests {
                             .sum();
                         // in some case we have ranges touching each other, count_items count them
                         // as only one, but cache count them as 2.
-                        let cached_item_count: usize = cache
-                            .inner_arc
-                            .need_mut_byte_range_cache
-                            .lock()
-                            .unwrap()
-                            .cache
-                            .values()
-                            .map(|blocks| blocks.len())
-                            .sum();
-                        assert!(cached_item_count >= expected_item_count);
+                        assert!(get_num_cached_blocks(&cache) >= expected_item_count);
 
                         let expected_byte_count = state.values()
                             .flatten()
                             .filter(|stored| **stored)
                             .count();
-                        assert_eq!(cache.inner_arc.need_mut_byte_range_cache.lock().unwrap().num_bytes, expected_byte_count as u64);
+                        assert_eq!(cache.get_num_bytes(), expected_byte_count as u64);
                     }
                     Operation::Get {
                         range,
                         tag,
                     } => {
-                        let slice = cache.get_slice(Path::new(tag), range.clone());
+                        let slice = cache.get_file_cache(Path::new(tag)).get_slice(range.clone());
                         if state[tag][range.clone()].iter().all(|t| *t) {
                             let slice = slice.unwrap();
                             let bytes = range.clone().map(|i| (i%256) as u8).collect::<Vec<_>>();
@@ -376,59 +418,42 @@ mod tests {
     }
 
     #[test]
+    fn test_byte_range_cache_is_shared_for_same_path() {
+        let cache = ByteRangeCache::with_infinite_capacity();
+        let first_file_cache = cache.get_file_cache(Path::new("path1"));
+        let second_file_cache = cache.get_file_cache(Path::new("path1"));
+        let other_file_cache = cache.get_file_cache(Path::new("path2"));
+
+        first_file_cache.put_slice(0..3, OwnedBytes::new(vec![1, 2, 3]));
+
+        assert_eq!(second_file_cache.get_slice(0..3).unwrap()[..], [1, 2, 3]);
+        assert!(other_file_cache.get_slice(0..3).is_none());
+        assert_eq!(cache.get_num_bytes(), 3);
+    }
+
+    #[test]
     fn test_byte_range_cache_doesnt_merge_unnecessarily() {
         let cache = ByteRangeCache::with_infinite_capacity();
+        let file_cache = cache.get_file_cache(Path::new("key"));
 
-        let key: std::path::PathBuf = "key".into();
-
-        cache.put_slice(
-            key.clone(),
-            0..5,
-            OwnedBytes::new((0..5).collect::<Vec<_>>()),
-        );
-        cache.put_slice(
-            key.clone(),
-            5..10,
-            OwnedBytes::new((5..10).collect::<Vec<_>>()),
-        );
-        cache.put_slice(
-            key.clone(),
-            10..15,
-            OwnedBytes::new((10..15).collect::<Vec<_>>()),
-        );
-        cache.put_slice(
-            key.clone(),
-            15..20,
-            OwnedBytes::new((15..20).collect::<Vec<_>>()),
-        );
+        file_cache.put_slice(0..5, OwnedBytes::new((0..5).collect::<Vec<_>>()));
+        file_cache.put_slice(5..10, OwnedBytes::new((5..10).collect::<Vec<_>>()));
+        file_cache.put_slice(10..15, OwnedBytes::new((10..15).collect::<Vec<_>>()));
+        file_cache.put_slice(15..20, OwnedBytes::new((15..20).collect::<Vec<_>>()));
 
         {
-            let mutable_cache = cache.inner_arc.need_mut_byte_range_cache.lock().unwrap();
-            assert_eq!(
-                mutable_cache
-                    .cache
-                    .values()
-                    .map(|blocks| blocks.len())
-                    .sum::<usize>(),
-                4
-            );
-            assert_eq!(mutable_cache.num_bytes, 20);
+            let state = file_cache.state.lock().unwrap();
+            assert_eq!(state.blocks.len(), 4);
+            assert_eq!(state.num_bytes, 20);
         }
 
-        cache.get_slice(&key, 3..12).unwrap();
+        file_cache.get_slice(3..12).unwrap();
 
         {
             // now they should've been merged, except the last one
-            let mutable_cache = cache.inner_arc.need_mut_byte_range_cache.lock().unwrap();
-            assert_eq!(
-                mutable_cache
-                    .cache
-                    .values()
-                    .map(|blocks| blocks.len())
-                    .sum::<usize>(),
-                2
-            );
-            assert_eq!(mutable_cache.num_bytes, 20);
+            let state = file_cache.state.lock().unwrap();
+            assert_eq!(state.blocks.len(), 2);
+            assert_eq!(state.num_bytes, 20);
         }
     }
 }
