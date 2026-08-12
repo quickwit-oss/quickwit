@@ -241,7 +241,7 @@ async fn balance_channel_for_service(
                 ClusterChange::Add(node) if node.is_service_enabled(service) => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
+                        remote_node_id = %chitchat_id.node_id,
                         generation_id = %chitchat_id.generation_id,
                         "adding node `{}` to {} pool",
                         chitchat_id.node_id,
@@ -252,7 +252,7 @@ async fn balance_channel_for_service(
                 ClusterChange::Remove(node) if node.is_service_enabled(service) => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
+                        remote_node_id = %chitchat_id.node_id,
                         generation_id = %chitchat_id.generation_id,
                         "removing node `{}` from {} pool",
                         chitchat_id.node_id,
@@ -1225,7 +1225,7 @@ fn setup_ingester_pool(
                 ClusterChange::Add(node) if node.is_indexer() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
+                        remote_node_id = %chitchat_id.node_id,
                         generation_id = %chitchat_id.generation_id,
                         "adding node `{}` with ingester status `{}` to ingester pool",
                         chitchat_id.node_id,
@@ -1288,7 +1288,7 @@ fn build_ingester_insert_change(
 fn build_ingester_remove_change(node: &ClusterNode) -> Change<NodeId, IngesterPoolEntry> {
     let chitchat_id = node.chitchat_id();
     info!(
-        node_id = %chitchat_id.node_id,
+        remote_node_id = %chitchat_id.node_id,
         generation_id = %chitchat_id.generation_id,
         "removing node `{}` from ingester pool",
         chitchat_id.node_id,
@@ -1352,7 +1352,7 @@ async fn setup_searcher(
                 ClusterChange::Add(node) if node.is_searcher() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
+                        remote_node_id = %chitchat_id.node_id,
                         generation_id = %chitchat_id.generation_id,
                         "adding node `{}` to searcher pool",
                         chitchat_id.node_id,
@@ -1376,7 +1376,7 @@ async fn setup_searcher(
                 ClusterChange::Remove(node) if node.is_searcher() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
+                        remote_node_id = %chitchat_id.node_id,
                         generation_id = %chitchat_id.generation_id,
                         "removing node `{}` from searcher pool",
                         chitchat_id.node_id,
@@ -1457,7 +1457,7 @@ fn setup_indexer_pool(
                 ClusterChange::Add(node) if node.is_indexer() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
+                        remote_node_id = %chitchat_id.node_id,
                         generation_id = %chitchat_id.generation_id,
                         "adding node `{}` with ingester status `{}` to indexer pool",
                         chitchat_id.node_id,
@@ -1522,7 +1522,7 @@ fn build_indexer_insert_change(
 fn build_indexer_remove_change(node: &ClusterNode) -> Change<NodeId, IndexerNodeInfo> {
     let chitchat_id = node.chitchat_id();
     info!(
-        node_id = %chitchat_id.node_id,
+        remote_node_id = %chitchat_id.node_id,
         generation_id = %chitchat_id.generation_id,
         "removing node `{}` from indexer pool",
         chitchat_id.node_id,
