@@ -480,14 +480,14 @@ impl IndexingScheduler {
                         warn!(
                             %error,
                             node_id=%indexer.node_id,
-                            generation_id=indexer.generation_id,
+                            generation_id=%indexer.generation_id,
                             "failed to apply indexing plan to indexer"
                         );
                     }
                     Err(_elapsed) => {
                         warn!(
                             node_id=%indexer.node_id,
-                            generation_id=indexer.generation_id,
+                            generation_id=%indexer.generation_id,
                             "timed out applying indexing plan to indexer"
                         );
                     }

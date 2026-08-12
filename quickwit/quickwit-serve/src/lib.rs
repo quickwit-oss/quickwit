@@ -242,7 +242,7 @@ async fn balance_channel_for_service(
                     let chitchat_id = node.chitchat_id();
                     info!(
                         node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        generation_id = %chitchat_id.generation_id,
                         "adding node `{}` to {} pool",
                         chitchat_id.node_id,
                         service.as_str().replace('_', " "),
@@ -253,7 +253,7 @@ async fn balance_channel_for_service(
                     let chitchat_id = node.chitchat_id();
                     info!(
                         node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        generation_id = %chitchat_id.generation_id,
                         "removing node `{}` from {} pool",
                         chitchat_id.node_id,
                         service.as_str().replace('_', " "),
@@ -1226,7 +1226,7 @@ fn setup_ingester_pool(
                     let chitchat_id = node.chitchat_id();
                     info!(
                         node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        generation_id = %chitchat_id.generation_id,
                         "adding node `{}` with ingester status `{}` to ingester pool",
                         chitchat_id.node_id,
                         node.ingester_status,
@@ -1289,7 +1289,7 @@ fn build_ingester_remove_change(node: &ClusterNode) -> Change<NodeId, IngesterPo
     let chitchat_id = node.chitchat_id();
     info!(
         node_id = %chitchat_id.node_id,
-        generation_id = chitchat_id.generation_id,
+        generation_id = %chitchat_id.generation_id,
         "removing node `{}` from ingester pool",
         chitchat_id.node_id,
     );
@@ -1353,7 +1353,7 @@ async fn setup_searcher(
                     let chitchat_id = node.chitchat_id();
                     info!(
                         node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        generation_id = %chitchat_id.generation_id,
                         "adding node `{}` to searcher pool",
                         chitchat_id.node_id,
                     );
@@ -1377,7 +1377,7 @@ async fn setup_searcher(
                     let chitchat_id = node.chitchat_id();
                     info!(
                         node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        generation_id = %chitchat_id.generation_id,
                         "removing node `{}` from searcher pool",
                         chitchat_id.node_id,
                     );
@@ -1458,7 +1458,7 @@ fn setup_indexer_pool(
                     let chitchat_id = node.chitchat_id();
                     info!(
                         node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        generation_id = %chitchat_id.generation_id,
                         "adding node `{}` with ingester status `{}` to indexer pool",
                         chitchat_id.node_id,
                         node.ingester_status
@@ -1523,7 +1523,7 @@ fn build_indexer_remove_change(node: &ClusterNode) -> Change<NodeId, IndexerNode
     let chitchat_id = node.chitchat_id();
     info!(
         node_id = %chitchat_id.node_id,
-        generation_id = chitchat_id.generation_id,
+        generation_id = %chitchat_id.generation_id,
         "removing node `{}` from indexer pool",
         chitchat_id.node_id,
     );
