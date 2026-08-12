@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::borrow::{Borrow, Cow};
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -22,24 +22,24 @@ use std::sync::{Arc, Mutex};
 use tantivy::directory::OwnedBytes;
 
 #[derive(Clone, PartialOrd, Ord, PartialEq, Eq)]
-struct CacheKey<'a, T: ToOwned + ?Sized> {
-    tag: Cow<'a, T>,
+struct CacheKey<'a> {
+    path: Cow<'a, Path>,
     range_start: usize,
 }
 
-impl<T: ToOwned + ?Sized> CacheKey<'static, T> {
-    fn from_owned(tag: T::Owned, range_start: usize) -> Self {
+impl CacheKey<'static> {
+    fn from_owned(path: PathBuf, range_start: usize) -> Self {
         CacheKey {
-            tag: Cow::Owned(tag),
+            path: Cow::Owned(path),
             range_start,
         }
     }
 }
 
-impl<'a, T: ToOwned + ?Sized> CacheKey<'a, T> {
-    fn from_borrowed(tag: &'a T, range_start: usize) -> Self {
+impl<'a> CacheKey<'a> {
+    fn from_borrowed(path: &'a Path, range_start: usize) -> Self {
         CacheKey {
-            tag: Cow::Borrowed(tag),
+            path: Cow::Borrowed(path),
             range_start,
         }
     }
@@ -50,13 +50,12 @@ struct CacheValue {
     bytes: OwnedBytes,
 }
 
-/// T is a tag, usually a file path.
-struct NeedMutByteRangeCache<T: 'static + ToOwned + ?Sized> {
-    cache: BTreeMap<CacheKey<'static, T>, CacheValue>,
+struct NeedMutByteRangeCache {
+    cache: BTreeMap<CacheKey<'static>, CacheValue>,
     num_bytes: u64,
 }
 
-impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
+impl NeedMutByteRangeCache {
     fn with_infinite_capacity() -> Self {
         NeedMutByteRangeCache {
             cache: BTreeMap::new(),
@@ -64,12 +63,12 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         }
     }
 
-    fn get_slice(&mut self, tag: &T, byte_range: Range<usize>) -> Option<OwnedBytes> {
+    fn get_slice(&mut self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
         if byte_range.start == byte_range.end {
             return Some(OwnedBytes::empty());
         }
 
-        let key = CacheKey::from_borrowed(tag, byte_range.start);
+        let key = CacheKey::from_borrowed(path, byte_range.start);
         let (k, v) = if let Some((k, v)) = self.get_block(&key, byte_range.end) {
             (k, v)
         } else if let Some((k, v)) = self.merge_ranges(&key, byte_range.end) {
@@ -83,7 +82,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         Some(v.bytes.slice(start..end))
     }
 
-    fn put_slice(&mut self, tag: T::Owned, byte_range: Range<usize>, bytes: OwnedBytes) {
+    fn put_slice(&mut self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
         let len = byte_range.end - byte_range.start;
         assert_eq!(len, bytes.len());
         if len == 0 {
@@ -91,12 +90,12 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         }
 
         // try to find a block with which we overlap (and not just touch)
-        let start_key = CacheKey::from_borrowed(tag.borrow(), byte_range.start);
+        let start_key = CacheKey::from_borrowed(&path, byte_range.start);
         let first_matching_block = self
             .get_block(&start_key, byte_range.start + 1)
             .map(|(k, _v)| k);
 
-        let end_key = CacheKey::from_borrowed(tag.borrow(), byte_range.end - 1);
+        let end_key = CacheKey::from_borrowed(&path, byte_range.end - 1);
         let last_matching_block = self.get_block(&end_key, byte_range.end).map(|(k, _v)| k);
 
         if first_matching_block.is_some() && first_matching_block == last_matching_block {
@@ -150,7 +149,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
             // non-overlapping part at the start of the final buffer.
             if !can_drop_first {
                 let first_range = overlapping.first().unwrap();
-                let key = CacheKey::from_borrowed(tag.borrow(), first_range.start);
+                let key = CacheKey::from_borrowed(&path, first_range.start);
                 let block = self.cache.get(&key).unwrap();
 
                 let len = first_range.end.min(byte_range.start) - first_range.start;
@@ -164,7 +163,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
             // non-overlapping part ad the end of the final buffer.
             if !can_drop_last {
                 let last_range = overlapping.last().unwrap();
-                let key = CacheKey::from_borrowed(tag.borrow(), last_range.start);
+                let key = CacheKey::from_borrowed(&path, last_range.start);
                 let block = self.cache.get(&key).unwrap();
 
                 let start = last_range.start.max(byte_range.end) - last_range.start;
@@ -179,7 +178,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
 
         // not sure why, but the borrow check gets unhappy if I create a borrowed
         // in the loop. It works with .get() instead of .remove() (?).
-        let mut key = CacheKey::from_owned(tag, 0);
+        let mut key = CacheKey::from_owned(path, 0);
         for range in overlapping.into_iter() {
             // remove every block with which we overlapped, including the 1st and last, as they
             // were included as prefix/suffix to the final block.
@@ -201,24 +200,23 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
     // Return a block that contain everything between query.range_start and range_end
     fn get_block<'a>(
         &self,
-        query: &CacheKey<'a, T>,
+        query: &CacheKey<'a>,
         range_end: usize,
-    ) -> Option<(&CacheKey<'a, T>, &CacheValue)> {
+    ) -> Option<(&CacheKey<'a>, &CacheValue)> {
         self.cache
             .range(..=query)
             .next_back()
-            .filter(|(k, v)| k.tag == query.tag && range_end <= v.range_end)
+            .filter(|(k, v)| k.path == query.path && range_end <= v.range_end)
     }
 
     /// Try to merge all blocks in the given range. Fails if some bytes were not already stored.
     fn merge_ranges<'a>(
         &mut self,
-        start: &CacheKey<'a, T>,
+        start: &CacheKey<'a>,
         range_end: usize,
-    ) -> Option<(&CacheKey<'a, T>, &CacheValue)> {
-        let own_key = |key: &CacheKey<T>| {
-            CacheKey::from_owned(T::borrow(&key.tag).to_owned(), key.range_start)
-        };
+    ) -> Option<(&CacheKey<'a>, &CacheValue)> {
+        let own_key =
+            |key: &CacheKey<'_>| CacheKey::from_owned(key.path.to_path_buf(), key.range_start);
 
         let first_block = self.get_block(start, start.range_start)?;
 
@@ -226,7 +224,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         let overlapping_blocks = self
             .cache
             .range(first_block.0..)
-            .take_while(|(k, _)| k.tag == start.tag && k.range_start <= range_end);
+            .take_while(|(k, _)| k.path == start.path && k.range_start <= range_end);
 
         // verify there are no hole, and each range touches the next one. There can't be overlap
         // due to how we fill our data-structure.
@@ -300,7 +298,7 @@ pub struct ByteRangeCache {
 
 struct Inner {
     num_stored_bytes: AtomicU64,
-    need_mut_byte_range_cache: Mutex<NeedMutByteRangeCache<Path>>,
+    need_mut_byte_range_cache: Mutex<NeedMutByteRangeCache>,
 }
 
 impl ByteRangeCache {
