@@ -178,7 +178,7 @@ impl Cluster {
         info!(
             cluster_id=%cluster_id,
             node_id=%self_node.node_id,
-            generation_id=self_node.generation_id.as_u64(),
+            generation_id=%self_node.generation_id.as_u64(),
             enabled_services=?self_node.enabled_services,
             gossip_listen_addr=%gossip_listen_addr,
             gossip_advertise_addr=%self_node.gossip_advertise_addr,
