@@ -36,11 +36,18 @@ use azure_core::error::{Error as AzureCoreError, ErrorKind, ResultExt};
 use azure_core::{HttpClient, Url};
 use azure_identity::{TokenCredentialOptions, federated_credentials_flow};
 use time::OffsetDateTime;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 const AZURE_TENANT_ID_ENV_VAR: &str = "AZURE_TENANT_ID";
 const AZURE_CLIENT_ID_ENV_VAR: &str = "AZURE_CLIENT_ID";
 const AZURE_FEDERATED_TOKEN_FILE_ENV_VAR: &str = "AZURE_FEDERATED_TOKEN_FILE";
+const AZURE_FEDERATED_TOKEN_ENV_VAR: &str = "AZURE_FEDERATED_TOKEN";
+const AZURE_CREDENTIAL_KIND_ENV_VAR: &str = "AZURE_CREDENTIAL_KIND";
+
+/// The only two `AZURE_CREDENTIAL_KIND` values that resolve to a workload identity credential
+/// upstream, and therefore the only two this credential may stand in for.
+const CREDENTIAL_KIND_ENVIRONMENT: &str = "environment";
+const CREDENTIAL_KIND_WORKLOAD_IDENTITY: &str = "workloadidentity";
 
 /// Refresh the access token this long before it actually expires, so that a failed refresh is
 /// retried while the token in hand is still usable.
@@ -114,6 +121,12 @@ impl RefreshingWorkloadIdentityCredential {
     /// Returns `None` when the process is not configured for workload identity, in which case the
     /// caller should fall back to the default `azure_identity` credential chain.
     pub(super) fn from_env() -> Option<Self> {
+        if !handles_env(
+            non_empty_env_var(AZURE_CREDENTIAL_KIND_ENV_VAR).as_deref(),
+            non_empty_env_var(AZURE_FEDERATED_TOKEN_ENV_VAR).as_deref(),
+        ) {
+            return None;
+        }
         let tenant_id = non_empty_env_var(AZURE_TENANT_ID_ENV_VAR)?;
         let client_id = non_empty_env_var(AZURE_CLIENT_ID_ENV_VAR)?;
         let token_file_path = non_empty_env_var(AZURE_FEDERATED_TOKEN_FILE_ENV_VAR)?;
@@ -160,24 +173,73 @@ impl RefreshingWorkloadIdentityCredential {
 #[async_trait]
 impl TokenCredential for RefreshingWorkloadIdentityCredential {
     async fn get_token(&self, scopes: &[&str]) -> azure_core::Result<AccessToken> {
-        if let Some(cached_token) = self.cached_token_opt.load_full()
+        let cached_token_opt = self.cached_token_opt.load_full();
+        if let Some(cached_token) = &cached_token_opt
             && cached_token.matches(scopes)
             && !is_expiring(&cached_token.access_token, self.expiration_margin)
         {
             return Ok(cached_token.access_token.clone());
         }
-        let access_token = self.exchange_token(scopes).await?;
-        self.cached_token_opt.store(Some(Arc::new(CachedToken {
-            scopes: scopes.iter().map(|scope| scope.to_string()).collect(),
-            access_token: access_token.clone(),
-        })));
-        Ok(access_token)
+        let exchange_result = self.exchange_token(scopes).await;
+        let error = match exchange_result {
+            Ok(access_token) => {
+                self.cached_token_opt.store(Some(Arc::new(CachedToken {
+                    scopes: scopes.iter().map(|scope| scope.to_string()).collect(),
+                    access_token: access_token.clone(),
+                })));
+                return Ok(access_token);
+            }
+            Err(error) => error,
+        };
+        // The refresh margin exists so that a failed refresh can be retried while the token in
+        // hand is still usable. Keep serving the cached token until it genuinely expires rather
+        // than failing storage operations for a transient hiccup near expiry.
+        if let Some(cached_token) = &cached_token_opt
+            && cached_token.matches(scopes)
+            && !is_expiring(&cached_token.access_token, Duration::ZERO)
+        {
+            warn!(
+                %error,
+                "azure token refresh failed, reusing the cached token until it expires"
+            );
+            return Ok(cached_token.access_token.clone());
+        }
+        Err(error)
     }
 
     async fn clear_cache(&self) -> azure_core::Result<()> {
         self.cached_token_opt.store(None);
         Ok(())
     }
+}
+
+/// Whether this credential should stand in for the stock `azure_identity` chain, given the
+/// relevant environment.
+///
+/// Two cases are deliberately left to the stock chain even though a projected token file is
+/// present, because in both of them the stock chain would not have built a file-backed workload
+/// identity credential either:
+///
+/// - an explicit `AZURE_CREDENTIAL_KIND` selecting some other provider. The workload identity
+///   environment variables are injected automatically by the workload identity webhook, so they are
+///   routinely present even when an operator has deliberately configured a different credential.
+/// - an inline `AZURE_FEDERATED_TOKEN`, which upstream prefers over the file. Honouring the file
+///   instead could authenticate as a different subject, and an inline assertion has nothing to
+///   re-read anyway.
+fn handles_env(
+    credential_kind_opt: Option<&str>,
+    inline_federated_token_opt: Option<&str>,
+) -> bool {
+    if let Some(credential_kind) = credential_kind_opt {
+        // Mirrors the normalization `SpecificAzureCredential::create` applies.
+        let credential_kind = credential_kind.replace(' ', "").to_lowercase();
+        if credential_kind != CREDENTIAL_KIND_ENVIRONMENT
+            && credential_kind != CREDENTIAL_KIND_WORKLOAD_IDENTITY
+        {
+            return false;
+        }
+    }
+    inline_federated_token_opt.is_none()
 }
 
 fn is_expiring(access_token: &AccessToken, expiration_margin: Duration) -> bool {
@@ -508,6 +570,82 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(fake_entra.exchange_count(), 2);
+    }
+
+    #[test]
+    fn test_handles_env_defers_to_an_explicit_credential_kind() {
+        // The workload identity variables are injected automatically by the webhook, so they are
+        // present
+        // even when an operator has explicitly selected a different provider.
+        assert!(!handles_env(Some("azurecli"), None));
+        assert!(!handles_env(Some("virtualmachine"), None));
+        assert!(!handles_env(Some("appservice"), None));
+        assert!(!handles_env(Some("clientsecret"), None));
+
+        // These two do resolve to a workload identity credential upstream.
+        assert!(handles_env(Some("environment"), None));
+        assert!(handles_env(Some("workloadidentity"), None));
+        // Upstream normalizes case and spaces before matching, so we must too.
+        assert!(handles_env(Some(" Workload Identity "), None));
+        assert!(!handles_env(Some(" Azure CLI "), None));
+
+        assert!(handles_env(None, None));
+    }
+
+    #[test]
+    fn test_handles_env_defers_to_an_inline_assertion() {
+        // Upstream prefers `AZURE_FEDERATED_TOKEN` over the file, and an inline assertion has
+        // nothing to re-read.
+        assert!(!handles_env(None, Some("inline-assertion")));
+        assert!(!handles_env(
+            Some("workloadidentity"),
+            Some("inline-assertion")
+        ));
+    }
+
+    /// A transient failure near expiry must not fail storage operations while the cached token is
+    /// still valid — that is the entire point of refreshing ahead of expiry.
+    #[tokio::test]
+    async fn test_refresh_failure_falls_back_to_the_still_valid_cached_token() {
+        let fake_entra = FakeEntra::new("assertion-hour-0", 3600);
+        let token_file = token_file_containing("assertion-hour-0");
+        // Wider than the token lifetime, so the token is always inside the refresh margin while
+        // remaining a long way from actually expiring.
+        let credential = refreshing_credential(
+            fake_entra.clone(),
+            &token_file,
+            Duration::from_secs(48 * 3600),
+        );
+
+        let first_token = credential.get_token(&[STORAGE_SCOPE]).await.unwrap();
+        assert_eq!(fake_entra.exchange_count(), 1);
+
+        // Entra starts rejecting: a hiccup, a revoked assertion, anything transient.
+        fake_entra.rotate_accepted_assertion("some-other-assertion");
+
+        let second_token = credential
+            .get_token(&[STORAGE_SCOPE])
+            .await
+            .expect("the still-valid cached token is served rather than failing the request");
+        assert_eq!(second_token.token.secret(), first_token.token.secret());
+        assert_eq!(fake_entra.exchange_count(), 2, "the refresh was attempted");
+    }
+
+    /// Once the cached token has genuinely expired there is nothing to fall back on, so the error
+    /// must surface rather than handing out an unusable token.
+    #[tokio::test]
+    async fn test_refresh_failure_surfaces_once_the_cached_token_expires() {
+        // `expires_in: 0` means the token is already expired when it is cached.
+        let fake_entra = FakeEntra::new("assertion-hour-0", 0);
+        let token_file = token_file_containing("assertion-hour-0");
+        let credential =
+            refreshing_credential(fake_entra.clone(), &token_file, Duration::from_secs(5 * 60));
+
+        credential.get_token(&[STORAGE_SCOPE]).await.unwrap();
+        fake_entra.rotate_accepted_assertion("some-other-assertion");
+
+        let error = credential.get_token(&[STORAGE_SCOPE]).await.unwrap_err();
+        assert!(matches!(error.kind(), ErrorKind::Credential));
     }
 
     /// A failed exchange must leave the credential able to recover on the next call, rather than
