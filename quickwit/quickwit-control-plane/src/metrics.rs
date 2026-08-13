@@ -16,13 +16,29 @@ use quickwit_metrics::{LabelNames, LazyCounter, LazyGauge, label_names, lazy_cou
 
 #[derive(Debug, Clone, Copy)]
 pub struct ShardLocalityMetrics {
+    // shards on other indexers if az-awareness is off; cross-az if its on
     pub num_remote_shards: usize,
+    // not used if az-awareness is off; same-az if its on
+    pub num_nearby_shards: usize,
+    // shards hosted on this indexer
     pub num_local_shards: usize,
 }
 
 impl ShardLocalityMetrics {
+    /// Share of shards indexed without crossing an availability zone, as a percentage.
+    pub fn locality_percent(self) -> u32 {
+        let num_shards =
+            self.num_local_shards + self.num_nearby_shards + self.num_remote_shards;
+        if num_shards == 0 {
+            return 100;
+        }
+        let num_local_or_nearby_shards = self.num_local_shards + self.num_nearby_shards;
+        (num_local_or_nearby_shards * 100 / num_shards) as u32
+    }
+
     pub fn publish(self) {
         LOCAL_SHARDS.set(self.num_local_shards as f64);
+        NEARBY_SHARDS.set(self.num_nearby_shards as f64);
         REMOTE_SHARDS.set(self.num_remote_shards as f64);
     }
 }
@@ -47,12 +63,15 @@ pub(crate) const INDEX_ID_LABEL_NAMES: LabelNames<1> = label_names!("index_id");
 
 static INDEXED_SHARDS: LazyGauge = lazy_gauge!(
         name: "indexed_shards",
-        description: "Number of (remote/local) shards in the indexing plan",
+        description: "Number of (remote/nearby/local) shards in the indexing plan",
         subsystem: "control_plane",
 );
 
 pub(crate) static LOCAL_SHARDS: LazyGauge =
     lazy_gauge!(parent: INDEXED_SHARDS, "locality" => "local");
+
+pub(crate) static NEARBY_SHARDS: LazyGauge =
+    lazy_gauge!(parent: INDEXED_SHARDS, "locality" => "nearby");
 
 pub(crate) static REMOTE_SHARDS: LazyGauge =
     lazy_gauge!(parent: INDEXED_SHARDS, "locality" => "remote");
