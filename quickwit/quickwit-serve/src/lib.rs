@@ -1515,6 +1515,7 @@ fn build_indexer_insert_change(
             indexing_tasks: node.indexing_tasks.to_vec(),
             indexing_capacity: node.indexing_cpu_capacity,
             ingester_status: node.ingester_status,
+            availability_zone: node.availability_zone().map(|az| az.to_string()),
         },
     )
 }

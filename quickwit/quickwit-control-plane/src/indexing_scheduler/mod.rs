@@ -29,12 +29,14 @@ use quickwit_config::{
     FileSourceParams, SourceParams, disable_ingest_v1, indexing_pipeline_params_fingerprint,
 };
 use quickwit_proto::indexing::{
-    ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
+    ApplyIndexingPlanRequest, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
     PIPELINE_THROUGHPUT,
 };
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::types::NodeId;
-use scheduling::{SourceToSchedule, SourceToScheduleType};
+use scheduling::{
+    Eligibility, IndexerInfo, SourceToSchedule, SourceToScheduleType, is_shard_nearby,
+};
 use serde::Serialize;
 use tracing::{debug, info, warn};
 use ulid::Ulid;
@@ -47,6 +49,8 @@ use crate::model::{ControlPlaneModel, ShardEntry, ShardLocations};
 use crate::{IndexerNodeInfo, IndexerPool};
 
 const DEFAULT_ENABLE_VARIABLE_SHARD_LOAD: bool = false;
+
+const DEFAULT_ENABLE_AZ_AWARE_SCHEDULING: bool = false;
 
 pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
     if cfg!(any(test, feature = "testsuite")) {
@@ -66,6 +70,8 @@ pub struct IndexingSchedulerState {
     pub num_applied_physical_indexing_plan: usize,
     pub num_schedule_indexing_plan: usize,
     pub last_applied_physical_plan: Option<PhysicalIndexingPlan>,
+    #[serde(skip)]
+    pub last_applied_indexer_statuses: FnvHashMap<String, IngesterStatus>,
     #[serde(skip)]
     pub last_applied_plan_timestamp: Option<Instant>,
 }
@@ -158,6 +164,16 @@ fn enable_variable_shard_load() -> bool {
         DEFAULT_ENABLE_VARIABLE_SHARD_LOAD
     });
     *IS_SHARD_LOAD_CP_ENABLED
+}
+
+fn enable_az_aware_scheduling() -> bool {
+    static IS_AZ_AWARE_SCHEDULING_ENABLED: LazyLock<bool> = LazyLock::new(|| {
+        quickwit_common::get_bool_from_env(
+            "QW_ENABLE_AZ_AWARE_SCHEDULING",
+            DEFAULT_ENABLE_AZ_AWARE_SCHEDULING,
+        )
+    });
+    *IS_AZ_AWARE_SCHEDULING_ENABLED
 }
 
 /// Computes the CPU load associated to a single shard of a given index.
@@ -290,6 +306,72 @@ fn get_sources_to_schedule(
     }
     sources
 }
+/// In the case where there are only draining indexers left, they are eligible to index any shards,
+/// including shards hosted on other indexers. Otherwise, they can only index their own shards.
+fn determine_draining_indexer_eligibility(indexers: &[IndexerNodeInfo]) -> Eligibility {
+    let has_ready_indexer = indexers
+        .iter()
+        .any(|indexer| indexer.ingester_status == IngesterStatus::Ready);
+    if has_ready_indexer {
+        return Eligibility::SelfHostedOnly;
+    }
+    warn!("no ready indexer available, letting draining indexers index any shard");
+    Eligibility::Any
+}
+
+fn build_indexer_info(
+    indexer: &IndexerNodeInfo,
+    draining_eligibility: Eligibility,
+    locality_aware: bool,
+) -> IndexerInfo {
+    let eligibility = match indexer.ingester_status {
+        IngesterStatus::Ready => Eligibility::Any,
+        // For draining indexers, if they're the last ones left in the cluster, they need to be
+        // able to drain all remaining shards (Eligibility::Any). Otherwise, they just drain
+        // their own (Eligibility::SelfHostedOnly).
+        _ => draining_eligibility,
+    };
+    let availability_zone = if locality_aware {
+        indexer.availability_zone.clone()
+    } else {
+        None
+    };
+    IndexerInfo {
+        cpu_capacity: indexer.indexing_capacity,
+        availability_zone,
+        eligibility,
+    }
+}
+
+fn build_indexer_infos(
+    indexers: &[IndexerNodeInfo],
+    locality_aware: bool,
+) -> FnvHashMap<String, IndexerInfo> {
+    let draining_eligibility = determine_draining_indexer_eligibility(indexers);
+    let mut indexer_infos: FnvHashMap<String, IndexerInfo> = FnvHashMap::default();
+    for indexer in indexers {
+        if indexer.indexing_capacity.cpu_millis() == 0 {
+            continue;
+        }
+        let indexer_info = build_indexer_info(indexer, draining_eligibility, locality_aware);
+        indexer_infos.insert(indexer.node_id.to_string(), indexer_info);
+    }
+    indexer_infos
+}
+
+fn build_indexer_statuses(indexers: &[IndexerNodeInfo]) -> FnvHashMap<String, IngesterStatus> {
+    indexers
+        .iter()
+        .map(|indexer| (indexer.node_id.to_string(), indexer.ingester_status))
+        .collect()
+}
+
+fn build_indexer_tasks(indexers: &[IndexerNodeInfo]) -> FnvHashMap<String, Vec<IndexingTask>> {
+    indexers
+        .iter()
+        .map(|indexer| (indexer.node_id.to_string(), indexer.indexing_tasks.clone()))
+        .collect()
+}
 
 impl IndexingScheduler {
     pub fn new(cluster_id: String, self_node_id: NodeId, indexer_pool: IndexerPool) -> Self {
@@ -320,18 +402,12 @@ impl IndexingScheduler {
 
         let indexers: Vec<IndexerNodeInfo> = self.select_available_indexers_for_scheduling();
 
-        let indexer_id_to_cpu_capacities: FnvHashMap<String, CpuCapacity> = indexers
-            .iter()
-            .filter_map(|indexer| {
-                if indexer.indexing_capacity.cpu_millis() > 0 {
-                    Some((indexer.node_id.to_string(), indexer.indexing_capacity))
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let locality_aware = enable_az_aware_scheduling();
 
-        if indexer_id_to_cpu_capacities.is_empty() {
+        let indexer_infos: FnvHashMap<String, IndexerInfo> =
+            build_indexer_infos(&indexers, locality_aware);
+
+        if indexer_infos.is_empty() {
             if !sources.is_empty() {
                 warn!("no indexing capacity available, cannot schedule an indexing plan");
             }
@@ -341,23 +417,29 @@ impl IndexingScheduler {
         let shard_locations = model.shard_locations();
         let new_physical_plan = build_physical_indexing_plan(
             &sources,
-            &indexer_id_to_cpu_capacities,
+            &indexer_infos,
+            locality_aware,
             self.state.last_applied_physical_plan.as_ref(),
             &shard_locations,
         );
         let shard_locality_metrics =
-            get_shard_locality_metrics(&new_physical_plan, &shard_locations);
+            get_shard_locality_metrics(&new_physical_plan, &shard_locations, &indexer_infos);
         shard_locality_metrics.publish();
+
+        let indexer_statuses = build_indexer_statuses(&indexers);
         if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
             let plans_diff = get_indexing_plans_diff(
                 last_applied_plan.indexing_tasks_per_indexer(),
                 new_physical_plan.indexing_tasks_per_indexer(),
+                &self.state.last_applied_indexer_statuses,
+                &indexer_statuses,
             );
             // No need to apply the new plan as it is the same as the old one.
             if plans_diff.is_empty() {
                 return;
             }
         }
+        self.state.last_applied_indexer_statuses = indexer_statuses;
         self.apply_physical_indexing_plan(new_physical_plan, Some(notify_on_drop));
         self.state.num_schedule_indexing_plan += 1;
     }
@@ -384,17 +466,17 @@ impl IndexingScheduler {
             return;
         }
         let indexers: Vec<IndexerNodeInfo> = self.select_available_indexers_for_scheduling();
-        let running_indexing_tasks_by_node_id: FnvHashMap<String, Vec<IndexingTask>> = indexers
-            .iter()
-            .map(|indexer| (indexer.node_id.to_string(), indexer.indexing_tasks.clone()))
-            .collect();
+        let running_indexer_tasks = build_indexer_tasks(&indexers);
+        let running_indexer_statuses = build_indexer_statuses(&indexers);
 
         let indexing_plans_diff = get_indexing_plans_diff(
-            &running_indexing_tasks_by_node_id,
+            &running_indexer_tasks,
             last_applied_plan.indexing_tasks_per_indexer(),
+            &running_indexer_statuses,
+            &self.state.last_applied_indexer_statuses,
         );
         if !indexing_plans_diff.has_same_nodes() {
-            info!(plans_diff=?indexing_plans_diff, "running plan and last applied plan node IDs differ: schedule an indexing plan");
+            info!(plans_diff=?indexing_plans_diff, "running plan and last applied plan indexers differ: schedule an indexing plan");
             self.rebuild_plan(model);
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
@@ -404,6 +486,28 @@ impl IndexingScheduler {
     }
 
     fn select_available_indexers_for_scheduling(&self) -> Vec<IndexerNodeInfo> {
+        if enable_az_aware_scheduling() {
+            return self.select_ready_and_draining_indexers();
+        }
+        self.select_ready_or_retiring_indexers()
+    }
+
+    fn select_ready_and_draining_indexers(&self) -> Vec<IndexerNodeInfo> {
+        self.indexer_pool
+            .values()
+            .into_iter()
+            .filter(|indexer| {
+                matches!(
+                    indexer.ingester_status,
+                    IngesterStatus::Ready
+                        | IngesterStatus::Retiring
+                        | IngesterStatus::Decommissioning
+                )
+            })
+            .collect()
+    }
+
+    fn select_ready_or_retiring_indexers(&self) -> Vec<IndexerNodeInfo> {
         let (ready, retiring): (Vec<IndexerNodeInfo>, Vec<IndexerNodeInfo>) = self
             .indexer_pool
             .values()
@@ -504,13 +608,16 @@ impl IndexingScheduler {
 struct IndexingPlansDiff<'a> {
     pub missing_node_ids: FnvHashSet<&'a str>,
     pub unplanned_node_ids: FnvHashSet<&'a str>,
+    pub nodes_with_changed_ingester_status: FnvHashSet<&'a str>,
     pub missing_tasks_by_node_id: FnvHashMap<&'a str, Vec<&'a IndexingTask>>,
     pub unplanned_tasks_by_node_id: FnvHashMap<&'a str, Vec<&'a IndexingTask>>,
 }
 
 impl IndexingPlansDiff<'_> {
     pub fn has_same_nodes(&self) -> bool {
-        self.missing_node_ids.is_empty() && self.unplanned_node_ids.is_empty()
+        self.missing_node_ids.is_empty()
+            && self.unplanned_node_ids.is_empty()
+            && self.nodes_with_changed_ingester_status.is_empty()
     }
 
     pub fn has_same_tasks(&self) -> bool {
@@ -535,8 +642,10 @@ impl IndexingPlansDiff<'_> {
 fn get_shard_locality_metrics(
     physical_plan: &PhysicalIndexingPlan,
     shard_locations: &ShardLocations,
+    indexer_infos: &FnvHashMap<String, IndexerInfo>,
 ) -> ShardLocalityMetrics {
     let mut num_local_shards = 0;
+    let mut num_nearby_shards = 0;
     let mut num_remote_shards = 0;
     for (indexer, tasks) in physical_plan.indexing_tasks_per_indexer() {
         for task in tasks {
@@ -547,6 +656,8 @@ fn get_shard_locality_metrics(
                     .any(|node| node.as_str() == indexer)
                 {
                     num_local_shards += 1;
+                } else if is_shard_nearby(indexer, shard_id, shard_locations, indexer_infos) {
+                    num_nearby_shards += 1;
                 } else {
                     num_remote_shards += 1;
                 }
@@ -555,6 +666,7 @@ fn get_shard_locality_metrics(
     }
     ShardLocalityMetrics {
         num_remote_shards,
+        num_nearby_shards,
         num_local_shards,
     }
 }
@@ -579,6 +691,14 @@ impl fmt::Debug for IndexingPlansDiff<'_> {
                 formatter,
                 "{separator}unplanned_node_ids={:?}",
                 PrettySample::new(&self.unplanned_node_ids, 10)
+            )?;
+            separator = ", "
+        }
+        if !self.nodes_with_changed_ingester_status.is_empty() {
+            write!(
+                formatter,
+                "{separator}nodes_with_changed_ingester_status={:?}",
+                PrettySample::new(&self.nodes_with_changed_ingester_status, 10)
             )?;
             separator = ", "
         }
@@ -676,6 +796,8 @@ fn format_indexing_task_map(
 fn get_indexing_plans_diff<'a>(
     running_plan: &'a FnvHashMap<String, Vec<IndexingTask>>,
     last_applied_plan: &'a FnvHashMap<String, Vec<IndexingTask>>,
+    running_ingester_statuses: &'a FnvHashMap<String, IngesterStatus>,
+    last_applied_ingester_statuses: &'a FnvHashMap<String, IngesterStatus>,
 ) -> IndexingPlansDiff<'a> {
     // Nodes diff.
     let running_node_ids: FnvHashSet<&str> = running_plan
@@ -693,6 +815,19 @@ fn get_indexing_plans_diff<'a>(
     let unplanned_node_ids: FnvHashSet<&str> = running_node_ids
         .difference(&planned_node_ids)
         .copied()
+        .collect();
+    // Ingester status diff.
+    let running_node_states: FnvHashSet<(&str, IngesterStatus)> = running_ingester_statuses
+        .iter()
+        .map(|(node_id, ingester_status)| (node_id.as_str(), *ingester_status))
+        .collect();
+    let planned_node_states: FnvHashSet<(&str, IngesterStatus)> = last_applied_ingester_statuses
+        .iter()
+        .map(|(node_id, ingester_status)| (node_id.as_str(), *ingester_status))
+        .collect();
+    let nodes_with_changed_ingester_status: FnvHashSet<&str> = running_node_states
+        .difference(&planned_node_states)
+        .map(|(node_id, _)| *node_id)
         .collect();
     // Tasks diff.
     let mut missing_tasks_by_node_id: FnvHashMap<&str, Vec<&IndexingTask>> = FnvHashMap::default();
@@ -715,6 +850,7 @@ fn get_indexing_plans_diff<'a>(
     IndexingPlansDiff {
         missing_node_ids,
         unplanned_node_ids,
+        nodes_with_changed_ingester_status,
         missing_tasks_by_node_id,
         unplanned_tasks_by_node_id,
     }
