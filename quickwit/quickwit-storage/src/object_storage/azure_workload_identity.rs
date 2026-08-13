@@ -27,6 +27,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 
 use arc_swap::ArcSwapOption;
@@ -52,6 +53,23 @@ const CREDENTIAL_KIND_WORKLOAD_IDENTITY: &str = "workloadidentity";
 /// Refresh the access token this long before it actually expires, so that a failed refresh is
 /// retried while the token in hand is still usable.
 const EXPIRATION_MARGIN: Duration = Duration::from_secs(5 * 60);
+
+/// Minimum spacing between token exchange attempts while a usable token is still cached.
+///
+/// `get_token` is called on every storage request and the Azure backend runs up to
+/// `max_concurrent_uploads` requests at a time, so without this every in-flight request would
+/// exchange at once when the token enters the refresh margin, and would keep re-exchanging on
+/// every request for the whole margin if the token endpoint were failing. That turns a brief
+/// outage into a retry storm against a service that throttles.
+const REFRESH_RETRY_COOLDOWN: Duration = Duration::from_secs(30);
+
+/// Sentinel for "no exchange has been attempted yet", so the first request never waits.
+const NO_EXCHANGE_ATTEMPTED: i64 = i64::MIN;
+
+/// Upper bound on a token lifetime taken from `expires_in`. Entra issues storage tokens with a
+/// ~24h lifetime; this only exists so that a malformed response cannot overflow the expiry
+/// computation, which would panic.
+const MAX_TOKEN_LIFETIME: Duration = Duration::from_secs(48 * 3600);
 
 /// An access token together with the scopes it was minted for.
 ///
@@ -93,6 +111,10 @@ pub(super) struct RefreshingWorkloadIdentityCredential {
     token_file_path: PathBuf,
     /// How long before actual expiry a cached token is treated as expiring.
     expiration_margin: Duration,
+    /// Minimum spacing between exchange attempts while a usable token is still cached.
+    refresh_retry_cooldown: Duration,
+    /// Unix timestamp of the last claimed exchange attempt, or [`NO_EXCHANGE_ATTEMPTED`].
+    last_exchange_attempt_unix_secs: AtomicI64,
     cached_token_opt: ArcSwapOption<CachedToken>,
 }
 
@@ -104,6 +126,7 @@ impl RefreshingWorkloadIdentityCredential {
         client_id: String,
         token_file_path: PathBuf,
         expiration_margin: Duration,
+        refresh_retry_cooldown: Duration,
     ) -> Self {
         Self {
             http_client,
@@ -112,7 +135,46 @@ impl RefreshingWorkloadIdentityCredential {
             client_id,
             token_file_path,
             expiration_margin,
+            refresh_retry_cooldown,
+            last_exchange_attempt_unix_secs: AtomicI64::new(NO_EXCHANGE_ATTEMPTED),
             cached_token_opt: ArcSwapOption::empty(),
+        }
+    }
+
+    /// Claims the right to attempt a token exchange.
+    ///
+    /// Returns `false` when another caller has claimed one within the cooldown, in which case a
+    /// caller holding a still-usable token should keep using it rather than piling on. Callers
+    /// with nothing usable in hand must exchange regardless and do not consult this.
+    fn try_claim_exchange(&self) -> bool {
+        let now_unix_secs = OffsetDateTime::now_utc().unix_timestamp();
+        let cooldown_secs = self.refresh_retry_cooldown.as_secs() as i64;
+        loop {
+            let last_attempt_unix_secs =
+                self.last_exchange_attempt_unix_secs.load(Ordering::Relaxed);
+            // A negative elapsed time means the wall clock stepped backwards, in which case the
+            // cooldown is treated as elapsed rather than blocking refreshes until the clock
+            // catches up.
+            let elapsed_secs = now_unix_secs.saturating_sub(last_attempt_unix_secs);
+            if last_attempt_unix_secs != NO_EXCHANGE_ATTEMPTED
+                && (0..cooldown_secs).contains(&elapsed_secs)
+            {
+                return false;
+            }
+            // Only the caller that wins this swap performs the exchange; the rest fall back to
+            // the token they already hold.
+            if self
+                .last_exchange_attempt_unix_secs
+                .compare_exchange_weak(
+                    last_attempt_unix_secs,
+                    now_unix_secs,
+                    Ordering::AcqRel,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
+                return true;
+            }
         }
     }
 
@@ -144,6 +206,7 @@ impl RefreshingWorkloadIdentityCredential {
             client_id,
             PathBuf::from(token_file_path),
             EXPIRATION_MARGIN,
+            REFRESH_RETRY_COOLDOWN,
         ))
     }
 
@@ -161,7 +224,11 @@ impl RefreshingWorkloadIdentityCredential {
         .await
         .context(ErrorKind::Credential, "federated token exchange failed")?;
 
-        let expires_on = OffsetDateTime::now_utc() + Duration::from_secs(login_response.expires_in);
+        // `OffsetDateTime + Duration` panics on overflow, so a malformed `expires_in` must not
+        // reach it. Clamping rather than saturating also means a nonsensical lifetime results in
+        // an earlier refresh instead of a token that is never refreshed at all.
+        let expires_in = Duration::from_secs(login_response.expires_in).min(MAX_TOKEN_LIFETIME);
+        let expires_on = OffsetDateTime::now_utc() + expires_in;
         debug!(%expires_on, "obtained azure access token from federated credentials flow");
         Ok(AccessToken::new(
             login_response.access_token().clone(),
@@ -173,15 +240,29 @@ impl RefreshingWorkloadIdentityCredential {
 #[async_trait]
 impl TokenCredential for RefreshingWorkloadIdentityCredential {
     async fn get_token(&self, scopes: &[&str]) -> azure_core::Result<AccessToken> {
-        let cached_token_opt = self.cached_token_opt.load_full();
+        let cached_token_opt = match self.cached_token_opt.load_full() {
+            Some(cached_token) if cached_token.matches(scopes) => Some(cached_token),
+            _ => None,
+        };
         if let Some(cached_token) = &cached_token_opt
-            && cached_token.matches(scopes)
             && !is_expiring(&cached_token.access_token, self.expiration_margin)
         {
             return Ok(cached_token.access_token.clone());
         }
-        let exchange_result = self.exchange_token(scopes).await;
-        let error = match exchange_result {
+        // Nothing cached for these scopes, or the cached token is inside the refresh margin. A
+        // token that has not actually expired yet remains a valid fallback.
+        let usable_cached_token_opt = match cached_token_opt {
+            Some(cached_token) if !is_expiring(&cached_token.access_token, Duration::ZERO) => {
+                Some(cached_token)
+            }
+            _ => None,
+        };
+        if let Some(cached_token) = &usable_cached_token_opt
+            && !self.try_claim_exchange()
+        {
+            return Ok(cached_token.access_token.clone());
+        }
+        let error = match self.exchange_token(scopes).await {
             Ok(access_token) => {
                 self.cached_token_opt.store(Some(Arc::new(CachedToken {
                     scopes: scopes.iter().map(|scope| scope.to_string()).collect(),
@@ -194,10 +275,7 @@ impl TokenCredential for RefreshingWorkloadIdentityCredential {
         // The refresh margin exists so that a failed refresh can be retried while the token in
         // hand is still usable. Keep serving the cached token until it genuinely expires rather
         // than failing storage operations for a transient hiccup near expiry.
-        if let Some(cached_token) = &cached_token_opt
-            && cached_token.matches(scopes)
-            && !is_expiring(&cached_token.access_token, Duration::ZERO)
-        {
+        if let Some(cached_token) = &usable_cached_token_opt {
             warn!(
                 %error,
                 "azure token refresh failed, reusing the cached token until it expires"
@@ -394,6 +472,22 @@ mod tests {
         token_file: &NamedTempFile,
         expiration_margin: Duration,
     ) -> RefreshingWorkloadIdentityCredential {
+        // No cooldown by default, so tests exercise the exchange path on every call unless they
+        // are specifically testing the cooldown.
+        refreshing_credential_with_cooldown(
+            fake_entra,
+            token_file,
+            expiration_margin,
+            Duration::ZERO,
+        )
+    }
+
+    fn refreshing_credential_with_cooldown(
+        fake_entra: Arc<FakeEntra>,
+        token_file: &NamedTempFile,
+        expiration_margin: Duration,
+        refresh_retry_cooldown: Duration,
+    ) -> RefreshingWorkloadIdentityCredential {
         RefreshingWorkloadIdentityCredential::new(
             fake_entra,
             authority_host(),
@@ -401,6 +495,7 @@ mod tests {
             "test-client-id".to_string(),
             token_file.path().to_path_buf(),
             expiration_margin,
+            refresh_retry_cooldown,
         )
     }
 
@@ -646,6 +741,130 @@ mod tests {
 
         let error = credential.get_token(&[STORAGE_SCOPE]).await.unwrap_err();
         assert!(matches!(error.kind(), ErrorKind::Credential));
+    }
+
+    /// `get_token` runs on every storage request, so a failing token endpoint must not be retried
+    /// once per request for the whole refresh margin.
+    #[tokio::test]
+    async fn test_failing_refresh_is_not_retried_on_every_request() {
+        let fake_entra = FakeEntra::new("assertion-hour-0", 3600);
+        let token_file = token_file_containing("assertion-hour-0");
+        let credential = refreshing_credential_with_cooldown(
+            fake_entra.clone(),
+            &token_file,
+            // Always inside the refresh margin, but a long way from actually expiring.
+            Duration::from_secs(48 * 3600),
+            Duration::from_secs(30),
+        );
+
+        credential.get_token(&[STORAGE_SCOPE]).await.unwrap();
+        assert_eq!(fake_entra.exchange_count(), 1);
+
+        // The token endpoint starts failing.
+        fake_entra.rotate_accepted_assertion("some-other-assertion");
+        for _ in 0..50 {
+            credential
+                .get_token(&[STORAGE_SCOPE])
+                .await
+                .expect("the cached token is still valid, so requests keep succeeding");
+        }
+        assert_eq!(
+            fake_entra.exchange_count(),
+            2,
+            "only one retry should have been attempted within the cooldown"
+        );
+    }
+
+    /// The same burst without a cooldown hammers the endpoint, which is what the cooldown exists
+    /// to prevent.
+    #[tokio::test]
+    async fn test_without_a_cooldown_every_request_retries() {
+        let fake_entra = FakeEntra::new("assertion-hour-0", 3600);
+        let token_file = token_file_containing("assertion-hour-0");
+        let credential = refreshing_credential_with_cooldown(
+            fake_entra.clone(),
+            &token_file,
+            Duration::from_secs(48 * 3600),
+            Duration::ZERO,
+        );
+
+        credential.get_token(&[STORAGE_SCOPE]).await.unwrap();
+        fake_entra.rotate_accepted_assertion("some-other-assertion");
+        for _ in 0..50 {
+            credential.get_token(&[STORAGE_SCOPE]).await.unwrap();
+        }
+        assert_eq!(fake_entra.exchange_count(), 51);
+    }
+
+    /// A caller with nothing usable in hand must never be held back by the cooldown, otherwise a
+    /// cold start behind a brief outage would be stuck serving errors it could have recovered
+    /// from.
+    #[tokio::test]
+    async fn test_cooldown_never_blocks_a_caller_without_a_usable_token() {
+        // `expires_in: 0` means every issued token is already expired, so there is never a usable
+        // fallback and every call must be free to exchange.
+        let fake_entra = FakeEntra::new("assertion-hour-0", 0);
+        let token_file = token_file_containing("assertion-hour-0");
+        let credential = refreshing_credential_with_cooldown(
+            fake_entra.clone(),
+            &token_file,
+            Duration::from_secs(5 * 60),
+            Duration::from_secs(3600),
+        );
+
+        for _ in 0..5 {
+            credential.get_token(&[STORAGE_SCOPE]).await.unwrap();
+        }
+        assert_eq!(fake_entra.exchange_count(), 5);
+    }
+
+    /// Concurrent requests entering the refresh margin together must not all exchange at once.
+    #[tokio::test]
+    async fn test_concurrent_requests_do_not_stampede_the_token_endpoint() {
+        let fake_entra = FakeEntra::new("assertion-hour-0", 3600);
+        let token_file = token_file_containing("assertion-hour-0");
+        let credential = Arc::new(refreshing_credential_with_cooldown(
+            fake_entra.clone(),
+            &token_file,
+            Duration::from_secs(48 * 3600),
+            Duration::from_secs(30),
+        ));
+
+        credential.get_token(&[STORAGE_SCOPE]).await.unwrap();
+        assert_eq!(fake_entra.exchange_count(), 1);
+
+        // Mirrors `max_concurrent_uploads` worth of in-flight storage requests.
+        let mut handles = Vec::with_capacity(100);
+        for _ in 0..100 {
+            let credential = credential.clone();
+            handles.push(tokio::spawn(async move {
+                credential.get_token(&[STORAGE_SCOPE]).await.unwrap()
+            }));
+        }
+        for handle in handles {
+            handle.await.unwrap();
+        }
+        assert_eq!(
+            fake_entra.exchange_count(),
+            2,
+            "a single caller should win the refresh, the rest reuse the cached token"
+        );
+    }
+
+    /// A malformed `expires_in` must not overflow the expiry computation, which would panic and
+    /// take the indexer down.
+    #[tokio::test]
+    async fn test_absurd_expires_in_is_clamped_rather_than_overflowing() {
+        let fake_entra = FakeEntra::new("assertion-hour-0", u64::MAX);
+        let token_file = token_file_containing("assertion-hour-0");
+        let credential =
+            refreshing_credential(fake_entra.clone(), &token_file, Duration::from_secs(5 * 60));
+
+        let access_token = credential.get_token(&[STORAGE_SCOPE]).await.unwrap();
+        assert!(
+            access_token.expires_on <= OffsetDateTime::now_utc() + MAX_TOKEN_LIFETIME,
+            "the token lifetime should be clamped to a sane bound"
+        );
     }
 
     /// A failed exchange must leave the credential able to recover on the next call, rather than
