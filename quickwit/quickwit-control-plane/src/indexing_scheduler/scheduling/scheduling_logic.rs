@@ -50,52 +50,34 @@ pub fn solve(
     check_contract_conditions(&problem, &previous_solution);
     let base_problem = problem;
 
-    // Due to the inherent nature of bin-packing, it is possible that the first inflation
-    // is not sufficient to solve the problem.
-    //
-    // In that case, we inflate the capacity iteratively until we find a solution.
-    let mut best_solution: Option<SchedulingSolution> = None;
-    let mut best_attempt: u32 = 0;
-    for attempt in 0..MAX_INFLATION_ATTEMPTS {
-        let scaled_problem = problem_at_inflation_level(&base_problem, attempt);
-        if let Ok(solution) = attempt_solve(&scaled_problem, previous_solution.clone()) {
-            best_solution = Some(solution);
-            best_attempt = attempt;
-            break;
-        }
-    }
-    let mut best_solution =
-        best_solution.expect("failed to assign all of the sources (logical bug)");
-
-    // Just stopping here would not offer any stability guarantee.
-    //
-    // We descend: we re-feed the candidate solution to the algorithm at lower
-    // inflation levels to find the true minimal feasible level for *this* solution.
-    // This is what guarantees stability: the returned solution succeeds at
-    // `best_attempt` but fails at `best_attempt - 1`. On the next call to `solve`
-    // starting from this solution, the ascending search will fail at every level
-    // below `best_attempt` (less capacity than a level that already failed) and
-    // succeed at `best_attempt`, where the pipeline is a no-op. Hence `solve` is
-    // idempotent.
-    while let Some(lower_attempt) = best_attempt.checked_sub(1) {
-        let scaled_problem = problem_at_inflation_level(&base_problem, lower_attempt);
-        match attempt_solve(&scaled_problem, best_solution.clone()) {
-            Ok(solution) => {
-                best_solution = solution;
-                best_attempt = lower_attempt;
-            }
-            Err(NotEnoughCapacity) => break,
-        }
-    }
-
-    if best_attempt > 0 {
+    let inflation_attempt = minimal_feasible_inflation_attempt(&base_problem);
+    if inflation_attempt > 0 {
         // the higher the attempt number, the more unbalanced the solution
         tracing::warn!(
-            attempt_number = best_attempt,
+            attempt_number = inflation_attempt,
             "capacity re-scaled, scheduling solution likely unbalanced"
         );
     }
-    best_solution
+    let scaled_problem = problem_at_inflation_level(&base_problem, inflation_attempt);
+    if let Ok(solution) = attempt_solve(&scaled_problem, previous_solution) {
+        return solution;
+    }
+    let empty_solution = scaled_problem.new_solution();
+    attempt_solve(&scaled_problem, empty_solution)
+        .expect("failed to assign all of the sources (logical bug)")
+}
+
+/// Don't derive this from the previous plan. More capacity means fewer sources get evicted off
+/// overloaded indexers, and that eviction is sometimes the only reason a plan fits at all.
+fn minimal_feasible_inflation_attempt(base_problem: &SchedulingProblem) -> u32 {
+    for attempt in 0..MAX_INFLATION_ATTEMPTS {
+        let scaled_problem = problem_at_inflation_level(base_problem, attempt);
+        let empty_solution = scaled_problem.new_solution();
+        if attempt_solve(&scaled_problem, empty_solution).is_ok() {
+            return attempt;
+        }
+    }
+    panic!("failed to assign all of the sources (logical bug)")
 }
 
 /// Returns a clone of `base_problem` with its node capacities scaled by `1.2^inflation_attempt`.
@@ -131,11 +113,21 @@ fn attempt_solve(
     enforce_indexers_cpu_capacity(problem, &mut solution);
     // The solution now meets the constraint, but it does not necessarily
     // contains all of the shards that we need to assign.
-    //
-    // We first assign sources to indexers that have some affinity with them
-    // (provided they have the capacity.)
-    place_unassigned_shards_with_affinity(problem, &mut solution);
-    // Finally we assign the remaining shards, regardess of whether they have affinity
+    if problem.is_locality_aware() {
+        // First, we remove remote shards from indexers that are only eligible
+        // to index their own shards.
+        strip_self_hosted_only_indexers(problem, &mut solution);
+        // Then, we place shards that are hosted on the indexers, reclaiming a draining
+        // indexer's own shards from its peers so that it gets priority to them.
+        let leftover_shards_per_source = place_self_hosted_shards(problem, &mut solution);
+        // Next we place remaining shards on remote indexers, but in the same locality.
+        place_nearby_shards(problem, &leftover_shards_per_source, &mut solution);
+    } else {
+        // If locality awareness is disabled, we directly assign sources to indexers that have some
+        // affinity with them (provided they have the capacity.)
+        place_unassigned_shards_with_affinity(problem, &mut solution);
+    }
+    // Finally we assign the remaining shards, regardess of whether they have affinity or locality
     // or not.
     place_unassigned_shards_ignoring_affinity(problem, &mut solution)?;
     Ok(solution)
@@ -281,6 +273,69 @@ fn assert_enforce_nodes_cpu_capacity_post_condition(
     );
 }
 
+/// Strips non-local shards off retiring/decommissioning indexers, which are only eligible to index
+/// their own shards.
+fn strip_self_hosted_only_indexers(
+    problem: &SchedulingProblem,
+    solution: &mut SchedulingSolution,
+) {
+    for indexer_assignment in &mut solution.indexer_assignments {
+        let indexer_ord = indexer_assignment.indexer_ord;
+        if problem.is_eligible_for_foreign_shards(indexer_ord) {
+            continue;
+        }
+        let mut num_foreign_shards_per_source: Vec<(SourceOrd, u32)> = Vec::new();
+        for (&source_ord, &num_shards) in &indexer_assignment.num_shards_per_source {
+            let num_self_hosted_shards = problem.source_affinity(source_ord, indexer_ord);
+            if num_shards > num_self_hosted_shards {
+                num_foreign_shards_per_source
+                    .push((source_ord, num_shards - num_self_hosted_shards));
+            }
+        }
+        for (source_ord, num_foreign_shards) in num_foreign_shards_per_source {
+            indexer_assignment.remove_shards(source_ord, num_foreign_shards);
+        }
+    }
+}
+
+fn num_foreign_shards_on_indexer(
+    source: &Source,
+    indexer_ord: IndexerOrd,
+    problem: &SchedulingProblem,
+    solution: &SchedulingSolution,
+) -> u32 {
+    let num_assigned_shards =
+        solution.indexer_assignments[indexer_ord].num_shards(source.source_ord);
+    let num_self_hosted_shards = problem.source_affinity(source.source_ord, indexer_ord);
+    num_assigned_shards.saturating_sub(num_self_hosted_shards)
+}
+
+fn release_foreign_shards_from_peers(
+    source: &Source,
+    num_shards_to_release: u32,
+    problem: &SchedulingProblem,
+    solution: &mut SchedulingSolution,
+) -> u32 {
+    let mut peer_ords: Vec<IndexerOrd> = (0..problem.num_indexers())
+        .filter(|&peer_ord| problem.is_eligible_for_foreign_shards(peer_ord))
+        .collect();
+    peer_ords.sort_by_key(|&peer_ord| {
+        solution.indexer_assignments[peer_ord].indexer_available_capacity(problem)
+    });
+    let mut num_shards_remaining = num_shards_to_release;
+    for peer_ord in peer_ords {
+        if num_shards_remaining == 0 {
+            break;
+        }
+        let num_foreign_shards = num_foreign_shards_on_indexer(source, peer_ord, problem, solution);
+        let num_shards_released = num_foreign_shards.min(num_shards_remaining);
+        solution.indexer_assignments[peer_ord]
+            .remove_shards(source.source_ord, num_shards_released);
+        num_shards_remaining -= num_shards_released;
+    }
+    num_shards_to_release - num_shards_remaining
+}
+
 // ----------------------------------------------------
 // Phase 3
 // Place unassigned sources.
@@ -311,6 +366,7 @@ fn attempt_place_unassigned_shards(
     for source in unassigned_shards {
         let indexers_with_most_available_capacity =
             compute_indexer_available_capacity(problem, &solution)
+                .filter(|&(indexer_ord, _)| problem.is_eligible_for_foreign_shards(indexer_ord))
                 .sorted_by_key(|(indexer_ord, capacity)| Reverse((*capacity, *indexer_ord)));
         place_unassigned_shards_single_source(
             source,
@@ -353,6 +409,177 @@ fn place_unassigned_shards_with_affinity(
             indexers_with_affinity_and_available_capacity,
             solution,
         );
+    }
+}
+
+fn unassigned_sources_by_decreasing_load(
+    problem: &SchedulingProblem,
+    solution: &SchedulingSolution,
+) -> Vec<Source> {
+    let mut unassigned_sources: Vec<Source> = compute_unassigned_sources(problem, solution);
+    unassigned_sources.sort_by_key(|source| {
+        let load = source.num_shards * source.load_per_shard.get();
+        Reverse(load)
+    });
+    unassigned_sources
+}
+
+fn available_cpu_capacity(
+    indexer_ord: IndexerOrd,
+    problem: &SchedulingProblem,
+    solution: &SchedulingSolution,
+) -> CpuCapacity {
+    let available_cpu_millis =
+        solution.indexer_assignments[indexer_ord].indexer_available_capacity(problem);
+    CpuCapacity::from_cpu_millis(available_cpu_millis as u32)
+}
+
+fn place_self_hosted_shards_on_indexer(
+    source: &Source,
+    indexer_ord: IndexerOrd,
+    num_shards_to_place: u32,
+    problem: &SchedulingProblem,
+    solution: &mut SchedulingSolution,
+) -> u32 {
+    let available_capacity = available_cpu_capacity(indexer_ord, problem, solution);
+    let num_placable_shards = available_capacity.cpu_millis() / source.load_per_shard;
+    let num_shards_placed = num_placable_shards.min(num_shards_to_place);
+    solution.indexer_assignments[indexer_ord].add_shards(source.source_ord, num_shards_placed);
+    num_shards_placed
+}
+
+fn reclaim_self_hosted_shards_from_peers(
+    source: &Source,
+    indexer_ord: IndexerOrd,
+    num_self_hosted_shards: u32,
+    num_unaccounted_shards: u32,
+    problem: &SchedulingProblem,
+    solution: &mut SchedulingSolution,
+) -> u32 {
+    let available_capacity = available_cpu_capacity(indexer_ord, problem, solution);
+    let num_placable_shards = available_capacity.cpu_millis() / source.load_per_shard;
+    let num_shards_wanted = num_self_hosted_shards.min(num_placable_shards);
+    let num_shards_short = num_shards_wanted.saturating_sub(num_unaccounted_shards);
+    if num_shards_short == 0 {
+        return 0;
+    }
+    release_foreign_shards_from_peers(source, num_shards_short, problem, solution)
+}
+
+fn place_self_hosted_shards(
+    problem: &SchedulingProblem,
+    solution: &mut SchedulingSolution,
+) -> Vec<LeftoverShards> {
+    let num_locality_groups = problem.num_locality_groups();
+    let mut leftover_shards_per_source: Vec<LeftoverShards> = (0..problem.num_sources())
+        .map(|_| LeftoverShards::none(num_locality_groups))
+        .collect();
+    let unassigned_sources: Vec<Source> = unassigned_sources_by_decreasing_load(problem, solution);
+    for unassigned_source in &unassigned_sources {
+        let source_ord = unassigned_source.source_ord as usize;
+        let leftover_shards = &mut leftover_shards_per_source[source_ord];
+        let mut num_unaccounted_shards = unassigned_source.num_shards;
+        // A draining indexer claims its own shards before any other host of the same source.
+        let (draining_indexer_ords, ready_indexer_ords): (Vec<IndexerOrd>, Vec<IndexerOrd>) =
+            unassigned_source
+                .affinities
+                .keys()
+                .copied()
+                .partition(|&indexer_ord| !problem.is_eligible_for_foreign_shards(indexer_ord));
+        for indexer_ord in draining_indexer_ords.into_iter().chain(ready_indexer_ords) {
+            let num_self_hosted_shards = unassigned_source.affinities[&indexer_ord];
+            if !problem.is_eligible_for_foreign_shards(indexer_ord) {
+                let num_shards_reclaimed = reclaim_self_hosted_shards_from_peers(
+                    unassigned_source,
+                    indexer_ord,
+                    num_self_hosted_shards,
+                    num_unaccounted_shards,
+                    problem,
+                    solution,
+                );
+                num_unaccounted_shards += num_shards_reclaimed;
+            }
+            let num_shards_to_place = num_self_hosted_shards.min(num_unaccounted_shards);
+            if num_shards_to_place == 0 {
+                continue;
+            }
+            let num_shards_placed = place_self_hosted_shards_on_indexer(
+                unassigned_source,
+                indexer_ord,
+                num_shards_to_place,
+                problem,
+                solution,
+            );
+            num_unaccounted_shards -= num_shards_to_place;
+            let Some(locality_group) = problem.indexer_locality_group(indexer_ord) else {
+                continue;
+            };
+            leftover_shards.add(locality_group, num_shards_to_place - num_shards_placed);
+        }
+    }
+    leftover_shards_per_source
+}
+/// Gets a list of the indexers in the locality group that are eligible to receive other indexers'
+/// shards.
+fn nearby_eligible_indexer_ords(
+    locality_group: LocalityGroup,
+    problem: &SchedulingProblem,
+) -> Vec<IndexerOrd> {
+    (0..problem.num_indexers())
+        .filter(|&indexer_ord| problem.is_eligible_for_foreign_shards(indexer_ord))
+        .filter(|&indexer_ord| problem.indexer_locality_group(indexer_ord) == Some(locality_group))
+        .collect()
+}
+
+fn place_shards_on_emptiest_indexers(
+    source: &Source,
+    num_shards_to_place: u32,
+    indexer_ords: &[IndexerOrd],
+    problem: &SchedulingProblem,
+    solution: &mut SchedulingSolution,
+) {
+    if num_shards_to_place == 0 {
+        return;
+    }
+    let emptiest_indexers: Vec<(IndexerOrd, CpuCapacity)> = indexer_ords
+        .iter()
+        .map(|&indexer_ord| {
+            let available_capacity = available_cpu_capacity(indexer_ord, problem, solution);
+            (indexer_ord, available_capacity)
+        })
+        .sorted_by_key(|(indexer_ord, available_capacity)| {
+            Reverse((*available_capacity, *indexer_ord))
+        })
+        .collect();
+    place_shards_capped(
+        source,
+        num_shards_to_place,
+        emptiest_indexers.into_iter(),
+        solution,
+    );
+}
+
+fn place_nearby_shards(
+    problem: &SchedulingProblem,
+    leftover_shards_per_source: &[LeftoverShards],
+    solution: &mut SchedulingSolution,
+) {
+    let unassigned_sources: Vec<Source> = unassigned_sources_by_decreasing_load(problem, solution);
+    for group_ord in 0..problem.num_locality_groups() {
+        let locality_group = LocalityGroup::from_ord(group_ord);
+        let indexer_ords = nearby_eligible_indexer_ords(locality_group, problem);
+        for unassigned_source in &unassigned_sources {
+            let source_ord = unassigned_source.source_ord as usize;
+            let num_leftover_shards =
+                leftover_shards_per_source[source_ord].in_locality_group(locality_group);
+            place_shards_on_emptiest_indexers(
+                unassigned_source,
+                num_leftover_shards,
+                &indexer_ords,
+                problem,
+                solution,
+            );
+        }
     }
 }
 
@@ -421,6 +648,48 @@ fn place_unassigned_shards_single_source(
         num_shards -= num_shards_to_place;
     }
     Ok(())
+}
+
+/// By placing a capped number of shards on indexers one pass at a time, we can better control
+/// which shards end up where. AZ-aware routing is accomplished this way- place the shards one pass
+/// at a time, first self-hosted, then same-AZ, and finally cross-AZ shards.
+fn place_shards_capped(
+    source: &Source,
+    num_shards_to_place: u32,
+    indexers: impl Iterator<Item = (IndexerOrd, CpuCapacity)>,
+    solution: &mut SchedulingSolution,
+) {
+    let mut num_shards_remaining = num_shards_to_place;
+    for (indexer_ord, available_capacity) in indexers {
+        if num_shards_remaining == 0 {
+            break;
+        }
+        let num_placable_shards = available_capacity.cpu_millis() / source.load_per_shard;
+        let num_shards_placed_on_indexer = num_placable_shards.min(num_shards_remaining);
+        solution.indexer_assignments[indexer_ord]
+            .add_shards(source.source_ord, num_shards_placed_on_indexer);
+        num_shards_remaining -= num_shards_placed_on_indexer;
+    }
+}
+
+struct LeftoverShards {
+    num_shards_per_locality_group: Vec<u32>,
+}
+
+impl LeftoverShards {
+    fn none(num_locality_groups: usize) -> LeftoverShards {
+        LeftoverShards {
+            num_shards_per_locality_group: vec![0u32; num_locality_groups],
+        }
+    }
+
+    fn add(&mut self, locality_group: LocalityGroup, num_shards: u32) {
+        self.num_shards_per_locality_group[locality_group.ord()] += num_shards;
+    }
+
+    fn in_locality_group(&self, locality_group: LocalityGroup) -> u32 {
+        self.num_shards_per_locality_group[locality_group.ord()]
+    }
 }
 
 /// Compute the sources/shards that have not been assigned to any indexer yet.
@@ -581,6 +850,101 @@ mod tests {
         assert_eq!(solution.indexer_assignments[4].num_shards(0), 1);
         assert_eq!(solution.indexer_assignments[4].num_shards(1), 0);
         assert_eq!(solution.indexer_assignments[4].num_shards(2), 2);
+    }
+
+    #[test]
+    fn test_self_hosted_only_indexer_removes_foreign_work() {
+        let draining_locality = IndexerLocality {
+            group: Some(LocalityGroup::from_ord(0)),
+            eligibility: Eligibility::SelfHostedOnly,
+        };
+        let ready_locality = IndexerLocality {
+            group: Some(LocalityGroup::from_ord(0)),
+            eligibility: Eligibility::Any,
+        };
+        let mut problem = SchedulingProblem::with_indexer_localities(
+            vec![mcpu(3_000), mcpu(4_000)],
+            vec![draining_locality, ready_locality],
+        );
+        problem.add_source(3, NonZeroU32::new(1_000).unwrap());
+        problem.add_source(1, NonZeroU32::new(1_000).unwrap());
+        problem.inc_affinity(0, 0);
+
+        let mut previous_solution = problem.new_solution();
+        previous_solution.indexer_assignments[0].add_shards(0, 2);
+        previous_solution.indexer_assignments[0].add_shards(1, 1);
+
+        let solution = attempt_solve(&problem, previous_solution).unwrap();
+
+        assert_eq!(solution.indexer_assignments[0].num_shards(0), 1);
+        assert_eq!(solution.indexer_assignments[0].num_shards(1), 0);
+        assert_eq!(solution.indexer_assignments[1].num_shards(0), 2);
+        assert_eq!(solution.indexer_assignments[1].num_shards(1), 1);
+    }
+
+    fn locality_in_az(group_ord: usize, eligibility: Eligibility) -> IndexerLocality {
+        IndexerLocality {
+            group: Some(LocalityGroup::from_ord(group_ord)),
+            eligibility,
+        }
+    }
+
+    #[test]
+    fn test_draining_indexer_reclaims_own_shards_from_peers() {
+        let draining_locality = locality_in_az(0, Eligibility::SelfHostedOnly);
+        let same_az_peer_locality = locality_in_az(0, Eligibility::Any);
+        let other_az_peer_locality = locality_in_az(1, Eligibility::Any);
+        {
+            let mut problem = SchedulingProblem::with_indexer_localities(
+                vec![mcpu(4_000), mcpu(4_000), mcpu(4_000)],
+                vec![
+                    draining_locality,
+                    same_az_peer_locality,
+                    other_az_peer_locality,
+                ],
+            );
+            problem.add_source(4, NonZeroU32::new(1_000).unwrap());
+            problem.inc_affinity(0, 0);
+            problem.inc_affinity(0, 0);
+            problem.inc_affinity(0, 2);
+            problem.inc_affinity(0, 2);
+
+            let mut previous_solution = problem.new_solution();
+            previous_solution.indexer_assignments[1].add_shards(0, 3);
+
+            let solution = attempt_solve(&problem, previous_solution).unwrap();
+
+            assert_eq!(solution.indexer_assignments[0].num_shards(0), 2);
+            assert_eq!(solution.indexer_assignments[1].num_shards(0), 2);
+            assert_eq!(solution.indexer_assignments[2].num_shards(0), 0);
+
+            let settled = attempt_solve(&problem, solution.clone()).unwrap();
+            assert_eq!(settled.indexer_assignments, solution.indexer_assignments);
+        }
+        {
+            let mut problem = SchedulingProblem::with_indexer_localities(
+                vec![mcpu(1_000), mcpu(4_000), mcpu(4_000)],
+                vec![
+                    draining_locality,
+                    same_az_peer_locality,
+                    other_az_peer_locality,
+                ],
+            );
+            problem.add_source(4, NonZeroU32::new(1_000).unwrap());
+            problem.inc_affinity(0, 0);
+            problem.inc_affinity(0, 0);
+            problem.inc_affinity(0, 2);
+            problem.inc_affinity(0, 2);
+
+            let mut previous_solution = problem.new_solution();
+            previous_solution.indexer_assignments[1].add_shards(0, 3);
+
+            let solution = attempt_solve(&problem, previous_solution).unwrap();
+
+            assert_eq!(solution.indexer_assignments[0].num_shards(0), 1);
+            assert_eq!(solution.indexer_assignments[1].num_shards(0), 3);
+            assert_eq!(solution.indexer_assignments[2].num_shards(0), 0);
+        }
     }
 
     #[test]
@@ -792,6 +1156,133 @@ mod tests {
         })
     }
 
+    fn locality_groups_strat(
+        num_indexers: usize,
+        num_groups: usize,
+    ) -> impl Strategy<Value = Vec<Option<LocalityGroup>>> {
+        let group_strat = (0..num_groups).prop_map(|group_ord| Some(LocalityGroup::from_ord(group_ord)));
+        let every_indexer_in_a_zone = proptest::collection::vec(group_strat, num_indexers);
+        let no_indexer_in_a_zone = Just(vec![None; num_indexers]);
+        prop_oneof![
+            4 => every_indexer_in_a_zone,
+            1 => no_indexer_in_a_zone,
+        ]
+    }
+
+    fn eligibility_strat() -> impl Strategy<Value = Eligibility> {
+        prop_oneof![
+            3 => Just(Eligibility::Any),
+            1 => Just(Eligibility::SelfHostedOnly),
+        ]
+    }
+
+    fn locality_source_strat(
+        num_indexers: usize,
+    ) -> impl Strategy<Value = (u32, NonZeroU32, Vec<IndexerOrd>)> {
+        let load_strat = prop_oneof![
+            Just(1u32),
+            Just(250u32),
+            Just(1_000u32),
+            Just(1_200u32),
+            Just(3_200u32),
+            1u32..1_000u32,
+        ];
+        (0u32..12u32, load_strat).prop_flat_map(move |(num_shards, load)| {
+            let host_strat = prop_oneof![
+                3 => (0..num_indexers).prop_map(Some),
+                1 => Just(None),
+            ];
+            let shard_hosts_strat = proptest::collection::vec(host_strat, num_shards as usize);
+            let load_per_shard = NonZeroU32::new(load).unwrap();
+            shard_hosts_strat.prop_map(move |shard_hosts| {
+                let hosting_indexer_ords: Vec<IndexerOrd> =
+                    shard_hosts.into_iter().flatten().collect();
+                (num_shards, load_per_shard, hosting_indexer_ords)
+            })
+        })
+    }
+
+    fn locality_problem_strategy(
+        num_indexers: usize,
+        num_sources: usize,
+        num_groups: usize,
+    ) -> impl Strategy<Value = SchedulingProblem> {
+        let cpu_capacities_strat =
+            proptest::collection::vec(indexer_cpu_capacity_strat(), num_indexers);
+        let groups_strat = locality_groups_strat(num_indexers, num_groups);
+        let eligibilities_strat = proptest::collection::vec(eligibility_strat(), num_indexers);
+        let sources_strat =
+            proptest::collection::vec(locality_source_strat(num_indexers), num_sources);
+        (
+            cpu_capacities_strat,
+            groups_strat,
+            eligibilities_strat,
+            sources_strat,
+        )
+            .prop_map(
+                |(cpu_capacities, groups, mut eligibilities, sources)| {
+                    eligibilities[0] = Eligibility::Any;
+                    let indexer_localities: Vec<IndexerLocality> = groups
+                        .into_iter()
+                        .zip(eligibilities)
+                        .map(|(group, eligibility)| IndexerLocality { group, eligibility })
+                        .collect();
+                    let mut problem = SchedulingProblem::with_indexer_localities(
+                        cpu_capacities,
+                        indexer_localities,
+                    );
+                    for (num_shards, load_per_shard, hosting_indexer_ords) in sources {
+                        let source_ord = problem.add_source(num_shards, load_per_shard);
+                        for hosting_indexer_ord in hosting_indexer_ords {
+                            problem.inc_affinity(source_ord, hosting_indexer_ord);
+                        }
+                    }
+                    problem
+                },
+            )
+    }
+
+    fn locality_problem_solution_strategy()
+    -> impl Strategy<Value = (SchedulingProblem, SchedulingSolution)> {
+        (1usize..8, 0usize..8, 1usize..4).prop_flat_map(
+            |(num_indexers, num_sources, num_groups)| {
+                (
+                    locality_problem_strategy(num_indexers, num_sources, num_groups),
+                    initial_solution_strategy(num_indexers, num_sources),
+                )
+            },
+        )
+    }
+
+    proptest! {
+        #[test]
+        fn test_proptest_locality_aware_idempotence((problem, solution) in locality_problem_solution_strategy()) {
+            let solution_1 = solve(problem.clone(), solution);
+            let solution_2 = solve(problem.clone(), solution_1.clone());
+            assert_eq!(
+                solution_1.indexer_assignments, solution_2.indexer_assignments,
+                "solution unstable!\nProblem: {problem:?}\nSolution 1: {solution_1:?}\nSolution \
+                 2: {solution_2:?}"
+            );
+            for indexer_assignment in &solution_1.indexer_assignments {
+                let indexer_ord = indexer_assignment.indexer_ord;
+                if problem.is_eligible_for_foreign_shards(indexer_ord) {
+                    continue;
+                }
+                for source in problem.sources() {
+                    let num_shards = indexer_assignment.num_shards(source.source_ord);
+                    let num_self_hosted_shards = problem.source_affinity(source.source_ord, indexer_ord);
+                    assert!(
+                        num_shards <= num_self_hosted_shards,
+                        "self-hosted-only indexer {indexer_ord} holds {num_shards} shards of source \
+                         {} but hosts {num_self_hosted_shards}",
+                        source.source_ord
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_problem_missing_capacities() {
         let mut problem =
@@ -867,6 +1358,60 @@ mod tests {
             solution_2.indexer_assignments, solution_3.indexer_assignments,
             "solution unstable!\nSolution 1: {solution_1:?}\nSolution 2: {solution_2:?}\nSolution \
              3: {solution_3:?}"
+        );
+    }
+
+    #[test]
+    fn test_reproduce_non_monotonic_inflation() {
+        let localities = vec![
+            locality_in_az(0, Eligibility::Any),
+            locality_in_az(0, Eligibility::SelfHostedOnly),
+            locality_in_az(0, Eligibility::Any),
+            locality_in_az(0, Eligibility::SelfHostedOnly),
+        ];
+        let mut problem = SchedulingProblem::with_indexer_localities(
+            vec![mcpu(4_237), mcpu(4_146), mcpu(1_953), mcpu(1_964)],
+            localities,
+        );
+        problem.add_source(2, NonZeroU32::new(3_200).unwrap());
+        problem.add_source(3, NonZeroU32::new(250).unwrap());
+        problem.add_source(10, NonZeroU32::new(1_000).unwrap());
+        let affinities = [
+            (0u32, 1usize, 1),
+            (0, 2, 1),
+            (1, 0, 2),
+            (1, 3, 1),
+            (2, 0, 3),
+            (2, 1, 1),
+            (2, 2, 3),
+            (2, 3, 1),
+        ];
+        for (source_ord, indexer_ord, num_shards) in affinities {
+            for _ in 0..num_shards {
+                problem.inc_affinity(source_ord, indexer_ord);
+            }
+        }
+
+        let mut previous_solution = problem.new_solution();
+        let seeded_assignments = [
+            (0usize, 0u32, 1),
+            (0, 1, 2),
+            (0, 2, 6),
+            (1, 2, 1),
+            (2, 0, 1),
+            (2, 2, 2),
+            (3, 1, 1),
+            (3, 2, 1),
+        ];
+        for (indexer_ord, source_ord, num_shards) in seeded_assignments {
+            previous_solution.indexer_assignments[indexer_ord].add_shards(source_ord, num_shards);
+        }
+
+        let solution_1 = solve(problem.clone(), previous_solution);
+        let solution_2 = solve(problem, solution_1.clone());
+        assert_eq!(
+            solution_1.indexer_assignments, solution_2.indexer_assignments,
+            "solution unstable!\nSolution 1: {solution_1:?}\nSolution 2: {solution_2:?}"
         );
     }
 
