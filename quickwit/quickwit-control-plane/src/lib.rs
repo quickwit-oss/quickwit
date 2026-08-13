@@ -33,6 +33,7 @@ pub struct IndexerNodeInfo {
     pub indexing_tasks: Vec<IndexingTask>,
     pub indexing_capacity: CpuCapacity,
     pub ingester_status: IngesterStatus,
+    pub availability_zone: Option<String>,
 }
 
 pub type IndexerPool = Pool<NodeId, IndexerNodeInfo>;
