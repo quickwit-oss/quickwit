@@ -339,6 +339,7 @@ pub async fn leaf_list_terms(
             crate::search_permit_provider::SplitSearchTaskMetadata {
                 memory_allocation,
                 job_cost,
+                priority: 0,
             }
         })
         .collect();

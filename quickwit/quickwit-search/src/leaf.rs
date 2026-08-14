@@ -1893,7 +1893,7 @@ async fn schedule_search_tasks(
 ) -> ScheduleSearchTaskResult {
     let task_metadata: Vec<crate::search_permit_provider::SplitSearchTaskMetadata> = splits
         .iter()
-        .map(|(split, _)| {
+        .map(|(split, search_request)| {
             let memory_allocation = compute_initial_memory_allocation(
                 split,
                 searcher_context
@@ -1904,6 +1904,7 @@ async fn schedule_search_tasks(
             crate::search_permit_provider::SplitSearchTaskMetadata {
                 memory_allocation,
                 job_cost,
+                priority: search_request.priority.unwrap_or_default(),
             }
         })
         .collect();

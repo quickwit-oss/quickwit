@@ -208,6 +208,10 @@ pub struct SearchRequest {
     /// the raw IntermediateAggregationResults bytes instead.
     #[prost(bool, tag = "19")]
     pub skip_aggregation_finalization: bool,
+    /// Scheduling priority for leaf search execution. Negative values are allowed,
+    /// and lower values have higher priority. Callers that omit it get priority 0.
+    #[prost(int32, optional, tag = "21")]
+    pub priority: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

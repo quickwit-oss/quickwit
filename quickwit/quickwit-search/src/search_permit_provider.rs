@@ -34,11 +34,11 @@ use crate::metrics::{
 
 /// Distributor of permits to perform split search operation.
 ///
-/// Requests are served in order. Each permit initially reserves a slot for the
-/// warmup (limit concurrent downloads) and a pessimistic amount of memory. Once
-/// the warmup is completed, the actual memory usage is set and the warmup slot
-/// is released. Once the search is completed and the permit is dropped, the
-/// remaining memory is also released.
+/// Requests are served by priority, then by fewest remaining splits. Each permit initially
+/// reserves a slot for the warmup (limit concurrent downloads) and a pessimistic amount of
+/// memory. Once the warmup is completed, the actual memory usage is set and the warmup slot is
+/// released. Once the search is completed and the permit is dropped, the remaining memory is also
+/// released.
 #[derive(Clone)]
 pub struct SearchPermitProvider {
     message_sender: mpsc::UnboundedSender<SearchPermitMessage>,
@@ -56,6 +56,8 @@ pub(crate) struct SplitSearchTaskMetadata {
     /// Estimated cost of this task, in the same arbitrary unit as [`Job::cost()`].
     /// Used to report the current load of this node to the job placer.
     pub job_cost: usize,
+    /// Priority of the leaf request this split belongs to.
+    pub priority: i32,
 }
 
 pub enum SearchPermitMessage {
@@ -219,19 +221,23 @@ struct SingleSplitPermitRequest {
 }
 
 struct LeafPermitRequest {
+    /// Lower values have higher priority.
+    priority: i32,
     /// Single split permit requests for this leaf search.
     single_split_permit_requests: std::vec::IntoIter<SingleSplitPermitRequest>,
 }
 
 impl Ord for LeafPermitRequest {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // we compare other with self and not the other way arround because we want a min-heap and
+        // we compare other with self and not the other way around because we want a min-heap and
         // Rust's is a max-heap
-        other
-            .single_split_permit_requests
-            .as_slice()
-            .len()
-            .cmp(&self.single_split_permit_requests.as_slice().len())
+        other.priority.cmp(&self.priority).then_with(|| {
+            other
+                .single_split_permit_requests
+                .as_slice()
+                .len()
+                .cmp(&self.single_split_permit_requests.as_slice().len())
+        })
     }
 }
 
@@ -255,6 +261,7 @@ impl LeafPermitRequest {
         task_metadata: Vec<SplitSearchTaskMetadata>,
     ) -> (Self, Vec<SearchPermitFuture>) {
         assert!(!task_metadata.is_empty(), "task_metadata must not be empty");
+        let priority = task_metadata[0].priority;
         // Stamped on every `SingleSplitPermitRequest` we're about to enqueue.
         // The actor will compute `requested_at.elapsed()` at grant time to
         // report the permit's acquisition latency.
@@ -276,6 +283,7 @@ impl LeafPermitRequest {
         }
         (
             LeafPermitRequest {
+                priority,
                 single_split_permit_requests: single_split_permit_requests.into_iter(),
             },
             permits,
@@ -524,12 +532,72 @@ mod tests {
     use super::*;
 
     fn make_splits(memory_mb: u64, count: usize) -> Vec<SplitSearchTaskMetadata> {
+        make_splits_with_priority(memory_mb, count, 0)
+    }
+
+    fn make_splits_with_priority(
+        memory_mb: u64,
+        count: usize,
+        priority: i32,
+    ) -> Vec<SplitSearchTaskMetadata> {
         (0..count)
             .map(|_| SplitSearchTaskMetadata {
                 memory_allocation: ByteSize::mb(memory_mb),
                 job_cost: 5,
+                priority,
             })
             .collect()
+    }
+
+    #[tokio::test]
+    async fn test_search_permit_priority_precedes_remaining_splits() {
+        let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100));
+        let blocker = permit_provider
+            .get_permits(make_splits(10, 1))
+            .await
+            .pop()
+            .unwrap()
+            .await;
+
+        let negative_priority = permit_provider
+            .get_permits(make_splits_with_priority(10, 3, -10))
+            .await;
+        let default_priority = permit_provider.get_permits(make_splits(10, 1)).await;
+        let positive_priority = permit_provider
+            .get_permits(make_splits_with_priority(10, 1, 10))
+            .await;
+
+        let mut join_set = JoinSet::new();
+        for (request, permit_futures) in [
+            ("negative", negative_priority),
+            ("default", default_priority),
+            ("positive", positive_priority),
+        ] {
+            for (split_idx, permit_future) in permit_futures.into_iter().enumerate() {
+                join_set.spawn(async move {
+                    let permit = permit_future.await;
+                    (request, split_idx, permit)
+                });
+            }
+        }
+
+        drop(blocker);
+
+        let mut execution_order = Vec::new();
+        while let Some(result) = join_set.join_next().await {
+            let (request, split_idx, _permit) = result.unwrap();
+            execution_order.push((request, split_idx));
+        }
+        assert_eq!(
+            execution_order,
+            vec![
+                ("negative", 0),
+                ("negative", 1),
+                ("negative", 2),
+                ("default", 0),
+                ("positive", 0),
+            ]
+        );
     }
 
     #[tokio::test]
@@ -833,14 +901,17 @@ mod tests {
             SplitSearchTaskMetadata {
                 memory_allocation: ByteSize::mb(10),
                 job_cost: 7,
+                priority: 0,
             },
             SplitSearchTaskMetadata {
                 memory_allocation: ByteSize::mb(10),
                 job_cost: 3,
+                priority: 0,
             },
             SplitSearchTaskMetadata {
                 memory_allocation: ByteSize::mb(10),
                 job_cost: 5,
+                priority: 0,
             },
         ];
         let mut permit_futs = permit_provider.get_permits(splits).await;
