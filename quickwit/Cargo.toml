@@ -375,14 +375,14 @@ aws-smithy-types = { version = "1.6", features = [
 ] }
 aws-types = "1.4"
 
-azure_core = { version = "0.21", features = ["hmac_rust", "enable_reqwest_rustls"] }
-azure_identity = { version = "0.21", default-features = false, features = ["enable_reqwest_rustls"] }
-azure_storage = { version = "0.21", default-features = false, features = [
-  "enable_reqwest_rustls",
+azure_core = { version = "1", default-features = false, features = [
+  "hmac_rust",
+  "reqwest_rustls",
+  "tokio",
+  "xml",
 ] }
-azure_storage_blobs = { version = "0.21", default-features = false, features = [
-  "enable_reqwest_rustls",
-] }
+azure_identity = { version = "1", default-features = false }
+azure_storage_blob = { version = "1", default-features = false }
 
 opendal = { version = "0.58", default-features = false, features = ["http-transport-reqwest"] }
 reqsign = { version = "0.18", default-features = false, features = ["google", "default-context"] }
