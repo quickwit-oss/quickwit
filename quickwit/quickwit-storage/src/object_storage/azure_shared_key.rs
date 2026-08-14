@@ -218,8 +218,8 @@ mod tests {
     /// <https://learn.microsoft.com/azure/storage/common/storage-use-azurite>, so this is
     /// not a secret.
     const EMULATOR_ACCOUNT: &str = "devstoreaccount1";
-    const EMULATOR_ACCOUNT_KEY: &str = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVEr\
-                                        Cz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==";
+    const EMULATOR_ACCOUNT_KEY: &str =
+        "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==";
 
     fn headers_from(pairs: &[(&str, &str)]) -> Headers {
         let mut headers = Headers::new();
@@ -255,8 +255,8 @@ mod tests {
 
     #[test]
     fn test_canonicalized_resource_comma_joins_repeated_query_params() {
-        let url =
-            Url::parse("https://acct.blob.core.windows.net/c?include=metadata&include=copy").unwrap();
+        let url = Url::parse("https://acct.blob.core.windows.net/c?include=metadata&include=copy")
+            .unwrap();
         assert_eq!(
             canonicalized_resource("acct", &url),
             "/acct/c\ninclude:copy,metadata"
@@ -273,7 +273,8 @@ mod tests {
         ]);
         assert_eq!(
             canonicalized_headers(&headers),
-            "x-ms-blob-type:Block Blob\nx-ms-date:Fri, 14 Aug 2026 12:00:00 GMT\nx-ms-version:2025-05-05\n"
+            "x-ms-blob-type:Block Blob\nx-ms-date:Fri, 14 Aug 2026 12:00:00 \
+             GMT\nx-ms-version:2025-05-05\n"
         );
     }
 
@@ -285,8 +286,7 @@ mod tests {
         // GET, then eleven empty slots, then the canonicalized headers and resource.
         assert_eq!(
             signed,
-            "GET\n\n\n\n\n\n\n\n\n\n\n\nx-ms-date:Fri, 14 Aug 2026 12:00:00 \
-             GMT\n/acct/c/blob"
+            "GET\n\n\n\n\n\n\n\n\n\n\n\nx-ms-date:Fri, 14 Aug 2026 12:00:00 GMT\n/acct/c/blob"
         );
     }
 
@@ -296,7 +296,9 @@ mod tests {
         let with_zero = headers_from(&[("content-length", "0")]);
         let with_body = headers_from(&[("content-length", "17")]);
         assert!(string_to_sign("acct", &Method::Put, &url, &with_zero).starts_with("PUT\n\n\n\n"));
-        assert!(string_to_sign("acct", &Method::Put, &url, &with_body).starts_with("PUT\n\n\n17\n"));
+        assert!(
+            string_to_sign("acct", &Method::Put, &url, &with_body).starts_with("PUT\n\n\n17\n")
+        );
     }
 
     #[test]
@@ -309,8 +311,7 @@ mod tests {
         let signature = hmac_sha256(&string_to_sign, &Secret::new(EMULATOR_ACCOUNT_KEY)).unwrap();
         // Signatures are 32 bytes of HMAC SHA256, base64 encoded.
         assert_eq!(signature.len(), 44);
-        let recomputed =
-            hmac_sha256(&string_to_sign, &Secret::new(EMULATOR_ACCOUNT_KEY)).unwrap();
+        let recomputed = hmac_sha256(&string_to_sign, &Secret::new(EMULATOR_ACCOUNT_KEY)).unwrap();
         assert_eq!(signature, recomputed);
     }
 

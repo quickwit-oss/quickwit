@@ -96,16 +96,12 @@ fn resolve_token_credential() -> azure_core::Result<Arc<dyn TokenCredential>> {
 /// A partial set means the webhook did not inject a usable identity, and building the
 /// credential would fail at the first request rather than here.
 fn workload_identity_env_is_complete() -> bool {
-    [
-        AZURE_CLIENT_ID,
-        AZURE_TENANT_ID,
-        AZURE_FEDERATED_TOKEN_FILE,
-    ]
-    .iter()
-    .all(|variable| match env::var(variable) {
-        Ok(value) => !value.trim().is_empty(),
-        Err(_) => false,
-    })
+    [AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_FEDERATED_TOKEN_FILE]
+        .iter()
+        .all(|variable| match env::var(variable) {
+            Ok(value) => !value.trim().is_empty(),
+            Err(_) => false,
+        })
 }
 
 /// Builds the container client.
@@ -162,11 +158,12 @@ fn join_container(
     blob_service_uri: &str,
     container_name: &str,
 ) -> Result<Url, StorageResolverError> {
-    let mut container_url = Url::parse(blob_service_uri.trim_end_matches('/')).map_err(|error| {
-        StorageResolverError::InvalidConfig(format!(
-            "`{blob_service_uri}` is not a valid Azure blob service URL: {error}"
-        ))
-    })?;
+    let mut container_url =
+        Url::parse(blob_service_uri.trim_end_matches('/')).map_err(|error| {
+            StorageResolverError::InvalidConfig(format!(
+                "`{blob_service_uri}` is not a valid Azure blob service URL: {error}"
+            ))
+        })?;
     container_url
         .path_segments_mut()
         .map_err(|_| {
@@ -186,13 +183,19 @@ mod tests {
     #[test]
     fn test_join_container_appends_the_container() {
         let url = join_container("https://acct.blob.core.windows.net", "my-container").unwrap();
-        assert_eq!(url.as_str(), "https://acct.blob.core.windows.net/my-container");
+        assert_eq!(
+            url.as_str(),
+            "https://acct.blob.core.windows.net/my-container"
+        );
     }
 
     #[test]
     fn test_join_container_tolerates_a_trailing_slash() {
         let url = join_container("https://acct.blob.core.windows.net/", "my-container").unwrap();
-        assert_eq!(url.as_str(), "https://acct.blob.core.windows.net/my-container");
+        assert_eq!(
+            url.as_str(),
+            "https://acct.blob.core.windows.net/my-container"
+        );
     }
 
     #[test]
