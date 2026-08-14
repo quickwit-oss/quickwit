@@ -734,17 +734,53 @@ async fn leaf_search_single_split(
         None
     } else {
         Some((
-            ctx.searcher_context.predicate_cache.clone() as _,
+            ctx.searcher_context.predicate_cache.clone() as Arc<dyn PredicateCache>,
             split.split_id.clone(),
         ))
     };
+    let predicate_cache_warmup_ast =
+        predicate_cache
+            .as_ref()
+            .and_then(|(cache, cache_split_id)| {
+                let timestamp_field = ctx.doc_mapper.timestamp_field_name()?;
+                let predicate_ast = time_bounded_cached_predicate(&query_ast, timestamp_field)?;
+                let predicate_key = serde_json::to_string(&predicate_ast).ok()?;
+                if cache.get(cache_split_id.clone(), predicate_key).is_some() {
+                    return None;
+                }
+                Some(QueryAst::from(CacheNode::new(predicate_ast)))
+            });
     let split_schema = index.schema();
     let (query, mut warmup_info) = ctx.doc_mapper.query(
         split_schema.clone(),
         query_ast.clone(),
         false,
-        predicate_cache,
+        predicate_cache.clone(),
     )?;
+    if predicate_cache.is_some()
+        && let Some(timestamp_field) = ctx.doc_mapper.timestamp_field_name()
+        && let Some(predicate_ast) = time_bounded_cached_predicate(&query_ast, timestamp_field)
+    {
+        // CacheNode builds to an opaque Tantivy leaf, so required-term extraction cannot
+        // see through it. Build the predicate without cache injection as well to retain
+        // negative-cache pruning and its term warmup information.
+        let (_uncached_predicate_query, uncached_predicate_warmup_info) =
+            ctx.doc_mapper
+                .query(split_schema.clone(), predicate_ast, false, None)?;
+        warmup_info.merge(uncached_predicate_warmup_info);
+    }
+    let predicate_cache_warmup_query = if let Some(warmup_ast) = predicate_cache_warmup_ast {
+        let (warmup_query, predicate_warmup_info) = ctx.doc_mapper.query(
+            split_schema.clone(),
+            warmup_ast,
+            false,
+            predicate_cache.clone(),
+        )?;
+        warmup_info.merge(predicate_warmup_info);
+        Some(warmup_query)
+    } else {
+        None
+    };
 
     let collector_warmup_info = collector.warmup_info();
     warmup_info.merge(collector_warmup_info);
@@ -915,6 +951,22 @@ async fn leaf_search_single_split(
                     return Ok(None);
                 };
                 collector.update_search_param(&simplified_search_request);
+                let query = if let Some(predicate_warmup_query) = predicate_cache_warmup_query {
+                    let predicate_warmup_span = info_span!("predicate_cache_warmup");
+                    let _predicate_warmup_span_guard = predicate_warmup_span.enter();
+                    predicate_warmup_query.count(&searcher).inspect_err(|_| {
+                        leaf_search_state_guard
+                            .set_state(SplitSearchState::Error(SplitSearchErrorKind::TantivySearch))
+                    })?;
+                    drop(_predicate_warmup_span_guard);
+                    ctx_clone
+                        .doc_mapper
+                        .query(split_schema, query_ast.clone(), false, predicate_cache)
+                        .map_err(|error| TantivyError::InvalidArgument(error.to_string()))?
+                        .0
+                } else {
+                    query
+                };
                 let mut leaf_search_response: LeafSearchResponse =
                     if is_metadata_count_request_with_ast(&query_ast, &simplified_search_request) {
                         get_leaf_resp_from_count(searcher.num_docs())
@@ -974,7 +1026,7 @@ async fn leaf_search_single_split(
 ///
 /// This include things such as sorting result by a field or _score when no document is requested,
 /// or applying date range when the range covers the entire split.
-fn rewrite_request(
+pub(crate) fn rewrite_request(
     search_request: &mut SearchRequest,
     split: &SplitIdAndFooterOffsets,
     timestamp_field: Option<&str>,
@@ -984,12 +1036,125 @@ fn rewrite_request(
     }
     if let Some(timestamp_field) = timestamp_field {
         remove_redundant_timestamp_range(search_request, split, timestamp_field);
+        wrap_time_bounded_predicate_for_cache(search_request, timestamp_field);
     }
     rewrite_aggregation(search_request);
     // we add a top level cache node when search_after is set, this won't help for this query (which
     // is the 2nd in its series), but should speedup every other request that comes after
     if search_request.search_after.is_some() {
         add_top_cache_node(search_request)
+    }
+}
+
+/// Wraps the non-time part of a normalized, time-bounded query in a cache node.
+///
+/// `remove_redundant_timestamp_range` appends the canonical split-relative timestamp
+/// restriction as the last top-level filter. Timestamp predicates in `should` and
+/// `must_not` clauses remain inside the predicate because removing them would change
+/// user semantics.
+fn wrap_time_bounded_predicate_for_cache(
+    search_request: &mut SearchRequest,
+    timestamp_field: &str,
+) {
+    let Ok(QueryAst::Bool(mut bool_query)) = serde_json::from_str(&search_request.query_ast) else {
+        return;
+    };
+    let Some(QueryAst::Range(time_range)) = bool_query.filter.last() else {
+        return;
+    };
+    if time_range.field != timestamp_field {
+        return;
+    }
+    let time_range = bool_query
+        .filter
+        .pop()
+        .expect("the last filter was checked above");
+    let predicate_ast = QueryAst::Bool(bool_query);
+    if is_trivial_time_bounded_predicate(&predicate_ast) {
+        return;
+    }
+    let cached_predicate = QueryAst::from(CacheNode::new(predicate_ast));
+    let time_bounded_ast = QueryAst::from(BoolQuery {
+        must: vec![cached_predicate],
+        filter: vec![time_range],
+        ..Default::default()
+    });
+    search_request.query_ast =
+        serde_json::to_string(&time_bounded_ast).expect("serializing QueryAst should never fail");
+}
+
+fn is_trivial_time_bounded_predicate(query_ast: &QueryAst) -> bool {
+    match query_ast {
+        QueryAst::MatchAll | QueryAst::MatchNone => true,
+        QueryAst::Bool(bool_query) => {
+            let has_required_match_none = bool_query
+                .must
+                .iter()
+                .chain(&bool_query.filter)
+                .any(is_trivial_match_none);
+            let is_match_all = bool_query.must_not.is_empty()
+                && bool_query.should.is_empty()
+                && bool_query.must.iter().all(is_trivial_match_all)
+                && bool_query.filter.iter().all(is_trivial_match_all);
+            has_required_match_none || is_match_all
+        }
+        _ => false,
+    }
+}
+
+fn is_trivial_match_none(query_ast: &QueryAst) -> bool {
+    match query_ast {
+        QueryAst::MatchNone => true,
+        QueryAst::Bool(bool_query) => bool_query
+            .must
+            .iter()
+            .chain(&bool_query.filter)
+            .any(is_trivial_match_none),
+        _ => false,
+    }
+}
+
+fn is_trivial_match_all(query_ast: &QueryAst) -> bool {
+    match query_ast {
+        QueryAst::MatchAll => true,
+        QueryAst::Bool(bool_query) => {
+            bool_query.must_not.is_empty()
+                && bool_query.should.is_empty()
+                && bool_query.must.iter().all(is_trivial_match_all)
+                && bool_query.filter.iter().all(is_trivial_match_all)
+        }
+        _ => false,
+    }
+}
+
+/// Returns the predicate installed by `wrap_time_bounded_predicate_for_cache`.
+/// An outer cache node can be present for search-after requests.
+pub(crate) fn time_bounded_cached_predicate(
+    query_ast: &QueryAst,
+    timestamp_field: &str,
+) -> Option<QueryAst> {
+    match query_ast {
+        QueryAst::Cache(cache_node) => {
+            time_bounded_cached_predicate(&cache_node.inner, timestamp_field)
+        }
+        QueryAst::Bool(bool_query)
+            if bool_query.must.len() == 1
+                && bool_query.filter.len() == 1
+                && bool_query.must_not.is_empty()
+                && bool_query.should.is_empty() =>
+        {
+            let QueryAst::Cache(cache_node) = &bool_query.must[0] else {
+                return None;
+            };
+            let QueryAst::Range(time_range) = &bool_query.filter[0] else {
+                return None;
+            };
+            if time_range.field != timestamp_field {
+                return None;
+            }
+            Some((*cache_node.inner).clone())
+        }
+        _ => None,
     }
 }
 
