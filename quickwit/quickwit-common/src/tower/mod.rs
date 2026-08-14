@@ -44,7 +44,7 @@ pub use estimate_rate::{EstimateRate, EstimateRateLayer};
 pub use event_listener::{EventListener, EventListenerLayer};
 use futures::Future;
 pub use load_shed::{LoadShed, LoadShedLayer, MakeLoadShedError};
-pub use metrics::{GrpcMetrics, GrpcMetricsLayer, RpcName};
+pub use metrics::{GrpcMetrics, GrpcMetricsLayer, GrpcStatusCode, RpcName};
 pub use one_task_per_call_layer::{OneTaskPerCallLayer, TaskCancelled};
 pub use pool::Pool;
 pub use rate::{ConstantRate, Rate};

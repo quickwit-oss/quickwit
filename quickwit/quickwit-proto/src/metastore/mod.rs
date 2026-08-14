@@ -264,6 +264,12 @@ impl ServiceError for MetastoreError {
     }
 }
 
+impl quickwit_common::tower::GrpcStatusCode for MetastoreError {
+    fn grpc_status_code(&self) -> tonic::Code {
+        self.error_code().grpc_status_code()
+    }
+}
+
 impl GrpcServiceError for MetastoreError {
     fn new_internal(message: String) -> Self {
         quickwit_common::rate_limited_error!(limit_per_min=6, message=%message.as_str(), "metastore error: internal");
