@@ -44,15 +44,13 @@ impl FileByteRangeCacheState {
             return Some(OwnedBytes::empty());
         }
 
-        if let Some((block_start, value)) =
-            Self::get_block(&self.blocks, byte_range.start, byte_range.end)
-        {
+        if let Some((block_start, value)) = self.get_block(byte_range.start, byte_range.end) {
             let start = byte_range.start - block_start;
             let end = byte_range.end - block_start;
             return Some(value.bytes.slice(start..end));
         }
-        Self::merge_ranges(&mut self.blocks, byte_range.start, byte_range.end)?;
-        let (block_start, value) = Self::get_block(&self.blocks, byte_range.start, byte_range.end)?;
+        self.merge_ranges(byte_range.start, byte_range.end)?;
+        let (block_start, value) = self.get_block(byte_range.start, byte_range.end)?;
         let start = byte_range.start - block_start;
         let end = byte_range.end - block_start;
         Some(value.bytes.slice(start..end))
@@ -66,10 +64,11 @@ impl FileByteRangeCacheState {
         }
 
         // Try to find a block with which we overlap (and not just touch).
-        let first_matching_block =
-            Self::get_block(&self.blocks, byte_range.start, byte_range.start + 1)
-                .map(|(block_start, _)| *block_start);
-        let last_matching_block = Self::get_block(&self.blocks, byte_range.end - 1, byte_range.end)
+        let first_matching_block = self
+            .get_block(byte_range.start, byte_range.start + 1)
+            .map(|(block_start, _)| *block_start);
+        let last_matching_block = self
+            .get_block(byte_range.end - 1, byte_range.end)
             .map(|(block_start, _)| *block_start);
 
         if first_matching_block.is_some() && first_matching_block == last_matching_block {
@@ -138,26 +137,19 @@ impl FileByteRangeCacheState {
     }
 
     /// Returns a block containing everything between `range_start` and `range_end`.
-    fn get_block(
-        blocks: &BTreeMap<usize, CacheValue>,
-        range_start: usize,
-        range_end: usize,
-    ) -> Option<(&usize, &CacheValue)> {
-        blocks
+    fn get_block(&self, range_start: usize, range_end: usize) -> Option<(&usize, &CacheValue)> {
+        self.blocks
             .range(..=range_start)
             .next_back()
             .filter(|(_, value)| range_end <= value.range_end)
     }
 
     /// Tries to merge all blocks in the given range. Fails if some bytes are not stored.
-    fn merge_ranges(
-        blocks: &mut BTreeMap<usize, CacheValue>,
-        range_start: usize,
-        range_end: usize,
-    ) -> Option<()> {
-        let (first_start, _) = Self::get_block(blocks, range_start, range_start)?;
+    fn merge_ranges(&mut self, range_start: usize, range_end: usize) -> Option<()> {
+        let (first_start, _) = self.get_block(range_start, range_start)?;
         let first_start = *first_start;
-        let overlapping: Vec<Range<usize>> = blocks
+        let overlapping: Vec<Range<usize>> = self
+            .blocks
             .range(first_start..)
             .take_while(|(block_start, _)| **block_start <= range_end)
             .map(|(block_start, value)| *block_start..value.range_end)
@@ -176,19 +168,19 @@ impl FileByteRangeCacheState {
 
         let mut buffer = Vec::with_capacity(previous_end - first_start);
         for range in &overlapping {
-            let value = blocks.get(&range.start)?;
+            let value = self.blocks.get(&range.start)?;
             buffer.extend_from_slice(&value.bytes);
         }
         assert_eq!(buffer.len(), previous_end - first_start);
 
         for range in &overlapping {
-            blocks.remove(&range.start);
+            self.blocks.remove(&range.start);
         }
         let value = CacheValue {
             range_end: previous_end,
             bytes: OwnedBytes::new(buffer),
         };
-        blocks.insert(first_start, value);
+        self.blocks.insert(first_start, value);
         Some(())
     }
 }
