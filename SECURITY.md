@@ -12,7 +12,7 @@ We take all disclosures seriously and will do our best to respond promptly, veri
 
 ### Other Reports
 
-Quickwit is an open source project designed to be self-hosted, so users are responsible for managing their deployments. Vulnerabilities in Quickwit deployments could potentially be exploited by malicious actors who already have access to the user's infrastructure. We encourage responsible disclosure by [opening a GitHub issue](https://github.com/quickwit-oss/quickwit/issues/new) so that risks can be properly assessed and mitigated.
+Quickwit is an open source project. Users are responsible for managing the environments where they deploy or integrate it. Vulnerabilities in those environments could potentially be exploited by malicious actors who already have access to the user's infrastructure. We encourage responsible disclosure by emailing [security@datadoghq.com](mailto:security@datadoghq.com) so that risks can be properly assessed and mitigated.
 
 To help us investigate your report, please include any of the following:
 
