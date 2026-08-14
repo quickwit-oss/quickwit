@@ -44,9 +44,14 @@ impl FileByteRangeCacheState {
             return Some(OwnedBytes::empty());
         }
 
-        if Self::get_block(&self.blocks, byte_range.start, byte_range.end).is_none() {
-            Self::merge_ranges(&mut self.blocks, byte_range.start, byte_range.end)?;
+        if let Some((block_start, value)) =
+            Self::get_block(&self.blocks, byte_range.start, byte_range.end)
+        {
+            let start = byte_range.start - block_start;
+            let end = byte_range.end - block_start;
+            return Some(value.bytes.slice(start..end));
         }
+        Self::merge_ranges(&mut self.blocks, byte_range.start, byte_range.end)?;
         let (block_start, value) = Self::get_block(&self.blocks, byte_range.start, byte_range.end)?;
         let start = byte_range.start - block_start;
         let end = byte_range.end - block_start;
