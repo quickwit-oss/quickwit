@@ -324,6 +324,13 @@ fn build_indexer_info(
     draining_eligibility: Eligibility,
     locality_aware: bool,
 ) -> IndexerInfo {
+    if !locality_aware {
+        return IndexerInfo {
+            cpu_capacity: indexer.indexing_capacity,
+            availability_zone: None,
+            eligibility: Eligibility::Any,
+        };
+    }
     let eligibility = match indexer.ingester_status {
         IngesterStatus::Ready => Eligibility::Any,
         // For draining indexers, if they're the last ones left in the cluster, they need to be
@@ -331,14 +338,9 @@ fn build_indexer_info(
         // their own (Eligibility::SelfHostedOnly).
         _ => draining_eligibility,
     };
-    let availability_zone = if locality_aware {
-        indexer.availability_zone.clone()
-    } else {
-        None
-    };
     IndexerInfo {
         cpu_capacity: indexer.indexing_capacity,
-        availability_zone,
+        availability_zone: indexer.availability_zone.clone(),
         eligibility,
     }
 }
@@ -1128,6 +1130,18 @@ mod tests {
                 indexing_plans_diff.nodes_with_changed_ingester_status,
                 FnvHashSet::from_iter(["indexer-1"])
             );
+
+            let mirrored_plans_diff = get_indexing_plans_diff(
+                &running_plan,
+                &desired_plan,
+                &last_applied_statuses,
+                &running_statuses,
+            );
+            assert!(!mirrored_plans_diff.has_same_nodes());
+            assert_eq!(
+                mirrored_plans_diff.nodes_with_changed_ingester_status,
+                FnvHashSet::from_iter(["indexer-1"])
+            );
         }
     }
 
@@ -1542,12 +1556,21 @@ mod tests {
         {
             let mut ready = mock_indexer_node_info("indexer-ready", IngesterStatus::Ready);
             ready.availability_zone = Some("az-a".to_string());
-            let indexers = vec![ready];
+            let mut retiring =
+                mock_indexer_node_info("indexer-retiring", IngesterStatus::Retiring);
+            retiring.availability_zone = Some("az-b".to_string());
+            let indexers = vec![ready, retiring];
             let locality_unaware = false;
 
             let indexer_infos = build_indexer_infos(&indexers, locality_unaware);
 
             assert_eq!(indexer_infos["indexer-ready"].availability_zone, None);
+            assert_eq!(indexer_infos["indexer-retiring"].availability_zone, None);
+            assert_eq!(indexer_infos["indexer-ready"].eligibility, Eligibility::Any);
+            assert_eq!(
+                indexer_infos["indexer-retiring"].eligibility,
+                Eligibility::Any
+            );
         }
     }
 
