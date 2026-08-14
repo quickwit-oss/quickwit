@@ -52,6 +52,11 @@ const DEFAULT_ENABLE_VARIABLE_SHARD_LOAD: bool = false;
 
 const DEFAULT_ENABLE_AZ_AWARE_SCHEDULING: bool = false;
 
+const DEFAULT_MIN_SHARD_LOCALITY_PERCENT: u32 = 30;
+
+/// Minimum period before being able to rebuild the plan from scratch.
+const PLAN_FROM_SCRATCH_COOLDOWN_PERIOD: Duration = Duration::from_mins(30);
+
 pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
     if cfg!(any(test, feature = "testsuite")) {
         Duration::from_millis(50)
@@ -74,6 +79,8 @@ pub struct IndexingSchedulerState {
     pub last_applied_indexer_statuses: FnvHashMap<String, IngesterStatus>,
     #[serde(skip)]
     pub last_applied_plan_timestamp: Option<Instant>,
+    #[serde(skip)]
+    pub next_plan_from_scratch_timestamp: Option<Instant>,
 }
 
 /// The [`IndexingScheduler`] is responsible for listing indexing tasks and assigning them to
@@ -417,15 +424,23 @@ impl IndexingScheduler {
         };
 
         let shard_locations = model.shard_locations();
-        let new_physical_plan = build_physical_indexing_plan(
+        let plan_from_previous = build_physical_indexing_plan(
             &sources,
             &indexer_infos,
             locality_aware,
             self.state.last_applied_physical_plan.as_ref(),
             &shard_locations,
         );
-        let shard_locality_metrics =
-            get_shard_locality_metrics(&new_physical_plan, &shard_locations, &indexer_infos);
+        let locality_metrics_from_previous =
+            get_shard_locality_metrics(&plan_from_previous, &shard_locations, &indexer_infos);
+        let (new_physical_plan, shard_locality_metrics) = self.maybe_build_plan_from_scratch(
+            plan_from_previous,
+            locality_metrics_from_previous,
+            &sources,
+            &indexer_infos,
+            locality_aware,
+            &shard_locations,
+        );
         shard_locality_metrics.publish();
 
         let indexer_statuses = build_indexer_statuses(&indexers);
@@ -444,6 +459,47 @@ impl IndexingScheduler {
         self.state.last_applied_indexer_statuses = indexer_statuses;
         self.apply_physical_indexing_plan(new_physical_plan, Some(notify_on_drop));
         self.state.num_schedule_indexing_plan += 1;
+    }
+
+    /// A plan built from the previous one can lose locality over time but never regain it. Below
+    /// the threshold we try one built from scratch (equivalent to restarting the control plane).
+    fn maybe_build_plan_from_scratch(
+        &mut self,
+        plan: PhysicalIndexingPlan,
+        locality_metrics: ShardLocalityMetrics,
+        sources: &[SourceToSchedule],
+        indexer_infos: &FnvHashMap<String, IndexerInfo>,
+        locality_aware: bool,
+        shard_locations: &ShardLocations,
+    ) -> (PhysicalIndexingPlan, ShardLocalityMetrics) {
+        if locality_metrics.locality_percent() >= min_shard_locality_percent() {
+            return (plan, locality_metrics);
+        }
+        let now = Instant::now();
+        if let Some(next_plan_from_scratch_timestamp) = self.state.next_plan_from_scratch_timestamp
+            && now < next_plan_from_scratch_timestamp
+        {
+            return (plan, locality_metrics);
+        }
+        let plan_from_scratch = build_physical_indexing_plan(
+            sources,
+            indexer_infos,
+            locality_aware,
+            None,
+            shard_locations,
+        );
+        let locality_metrics_from_scratch =
+            get_shard_locality_metrics(&plan_from_scratch, shard_locations, indexer_infos);
+        if locality_metrics_from_scratch.locality_percent() <= locality_metrics.locality_percent() {
+            return (plan, locality_metrics);
+        }
+        info!(
+            locality_percent = locality_metrics.locality_percent(),
+            locality_percent_from_scratch = locality_metrics_from_scratch.locality_percent(),
+            "rebuilding the indexing plan from scratch to restore shard locality"
+        );
+        self.state.next_plan_from_scratch_timestamp = Some(now + PLAN_FROM_SCRATCH_COOLDOWN_PERIOD);
+        (plan_from_scratch, locality_metrics_from_scratch)
     }
 
     /// Checks if the last applied plan corresponds to the running indexing tasks present in the
@@ -639,6 +695,15 @@ impl IndexingPlansDiff<'_> {
     pub fn is_empty(&self) -> bool {
         self.has_same_nodes() && self.has_same_tasks()
     }
+}
+
+fn min_shard_locality_percent() -> u32 {
+    quickwit_common::get_from_env_cached!(
+        u32,
+        "QW_MIN_SHARD_LOCALITY_PERCENT",
+        DEFAULT_MIN_SHARD_LOCALITY_PERCENT,
+        false
+    )
 }
 
 fn get_shard_locality_metrics(
@@ -911,7 +976,9 @@ mod tests {
     use quickwit_proto::types::{IndexUid, PipelineUid, ShardId, SourceUid};
 
     use super::*;
-    use crate::indexing_scheduler::scheduling::build_physical_indexing_plan_without_locality;
+    use crate::indexing_scheduler::scheduling::{
+        build_physical_indexing_plan_without_locality, shard_ids_for_indexer,
+    };
     use crate::model::ShardLocations;
     #[test]
     fn test_indexing_plans_diff() {
@@ -1143,6 +1210,98 @@ mod tests {
                 FnvHashSet::from_iter(["indexer-1"])
             );
         }
+    }
+
+    #[test]
+    fn test_maybe_build_plan_from_scratch() {
+        let indexer1 = NodeId::from_str("indexer1");
+        let indexer2 = NodeId::from_str("indexer2");
+        let shard1 = ShardId::from(1);
+        let shard2 = ShardId::from(2);
+        let source_uid = SourceUid {
+            index_uid: IndexUid::for_test("test-index", 0),
+            source_id: "test-source".to_string(),
+        };
+        let sources = vec![SourceToSchedule {
+            source_uid: source_uid.clone(),
+            source_type: SourceToScheduleType::Sharded {
+                shard_ids: vec![shard1.clone(), shard2.clone()],
+                load_per_shard: NonZeroU32::new(1_000).unwrap(),
+            },
+            params_fingerprint: 0,
+        }];
+        let mut shard_locations = ShardLocations::default();
+        shard_locations.add_location(&shard1, &indexer1);
+        shard_locations.add_location(&shard2, &indexer2);
+
+        let mut indexer_infos = FnvHashMap::default();
+        indexer_infos.insert(indexer1.to_string(), IndexerInfo::for_test(mcpu(4_000)));
+        indexer_infos.insert(indexer2.to_string(), IndexerInfo::for_test(mcpu(4_000)));
+
+        // Each indexer indexes the shard the other one hosts, so nothing is local.
+        let swapped_plan = || {
+            let indexer_ids = vec![indexer1.to_string(), indexer2.to_string()];
+            let mut plan = PhysicalIndexingPlan::with_indexer_ids(&indexer_ids);
+            for (indexer, shard_id) in [(&indexer1, &shard2), (&indexer2, &shard1)] {
+                plan.add_indexing_task(
+                    indexer.as_str(),
+                    IndexingTask {
+                        index_uid: Some(source_uid.index_uid.clone()),
+                        source_id: source_uid.source_id.clone(),
+                        pipeline_uid: Some(PipelineUid::random()),
+                        shard_ids: vec![shard_id.clone()],
+                        params_fingerprint: 0,
+                    },
+                );
+            }
+            plan
+        };
+
+        let mut scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            IndexerPool::default(),
+        );
+        let locality_aware = false;
+
+        let plan = swapped_plan();
+        let metrics = get_shard_locality_metrics(&plan, &shard_locations, &indexer_infos);
+        assert_eq!(metrics.locality_percent(), 0);
+        let (plan, metrics) = scheduler.maybe_build_plan_from_scratch(
+            plan,
+            metrics,
+            &sources,
+            &indexer_infos,
+            locality_aware,
+            &shard_locations,
+        );
+        assert_eq!(metrics.locality_percent(), 100);
+        assert_eq!(shard_ids_for_indexer(&plan, indexer1.as_str()), vec![shard1.clone()]);
+
+        let plan_in_cooldown = swapped_plan();
+        let metrics_in_cooldown =
+            get_shard_locality_metrics(&plan_in_cooldown, &shard_locations, &indexer_infos);
+        let (_, metrics_in_cooldown) = scheduler.maybe_build_plan_from_scratch(
+            plan_in_cooldown,
+            metrics_in_cooldown,
+            &sources,
+            &indexer_infos,
+            locality_aware,
+            &shard_locations,
+        );
+        assert_eq!(metrics_in_cooldown.locality_percent(), 0);
+
+        scheduler.state.next_plan_from_scratch_timestamp = None;
+        let (_, metrics_above_threshold) = scheduler.maybe_build_plan_from_scratch(
+            plan,
+            metrics,
+            &sources,
+            &indexer_infos,
+            locality_aware,
+            &shard_locations,
+        );
+        assert_eq!(metrics_above_threshold.locality_percent(), 100);
+        assert!(scheduler.state.next_plan_from_scratch_timestamp.is_none());
     }
 
     #[test]
