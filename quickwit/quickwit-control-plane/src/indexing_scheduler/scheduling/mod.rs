@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[cfg(test)]
+mod churn_tests;
+#[cfg(test)]
+mod scale_tests;
 pub mod scheduling_logic;
 pub mod scheduling_logic_model;
 
@@ -21,6 +25,8 @@ use std::num::NonZeroU32;
 use fnv::{FnvHashMap, FnvHashSet};
 use quickwit_common::rate_limited_debug;
 use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
+#[cfg(test)]
+use quickwit_proto::types::NodeId;
 use quickwit_proto::types::{PipelineUid, ShardId, SourceUid};
 pub use scheduling_logic_model::Eligibility;
 use scheduling_logic_model::{IndexerLocality, IndexerOrd, LocalityGroup, SourceOrd};
@@ -167,6 +173,64 @@ impl IndexerInfo {
             eligibility: Eligibility::Any,
         }
     }
+}
+
+#[cfg(test)]
+pub(crate) struct IndexerSpec {
+    pub node_id: NodeId,
+    pub cpu_capacity: CpuCapacity,
+    pub availability_zone: Option<String>,
+}
+
+#[cfg(test)]
+impl IndexerSpec {
+    pub(crate) fn new(
+        node_id: &str,
+        cpu_capacity: CpuCapacity,
+        availability_zone: Option<&str>,
+    ) -> IndexerSpec {
+        IndexerSpec {
+            node_id: NodeId::from_str(node_id),
+            cpu_capacity,
+            availability_zone: availability_zone.map(|az| az.to_string()),
+        }
+    }
+
+    pub(crate) fn to_indexer_info(&self, eligibility: Eligibility) -> IndexerInfo {
+        IndexerInfo {
+            cpu_capacity: self.cpu_capacity,
+            availability_zone: self.availability_zone.clone(),
+            eligibility,
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn shard_ids_of_source(source: &SourceToSchedule) -> &[ShardId] {
+    let SourceToScheduleType::Sharded { shard_ids, .. } = &source.source_type else {
+        return &[];
+    };
+    shard_ids
+}
+
+#[cfg(test)]
+pub(crate) fn total_num_shards(sources: &[SourceToSchedule]) -> usize {
+    sources
+        .iter()
+        .map(|source| shard_ids_of_source(source).len())
+        .sum()
+}
+
+#[cfg(test)]
+pub(crate) fn shard_ids_for_indexer(plan: &PhysicalIndexingPlan, indexer: &str) -> Vec<ShardId> {
+    let mut shard_ids: Vec<ShardId> = plan
+        .indexer(indexer)
+        .unwrap()
+        .iter()
+        .flat_map(|task| task.shard_ids.iter().cloned())
+        .collect();
+    shard_ids.sort();
+    shard_ids
 }
 
 #[derive(Debug)]
@@ -413,6 +477,7 @@ fn convert_scheduling_solution_to_physical_plan(
             HashMap::with_capacity(new_physical_plan.num_indexers());
         for (indexer, indexing_tasks) in new_physical_plan.indexing_tasks_per_indexer_mut() {
             let indexer_ord = id_to_ord_map.indexer_ord(indexer).unwrap();
+            let eligibility = indexer_infos[indexer].eligibility;
             let mut num_shards_for_indexer_source: u32 =
                 indexer_assignments[indexer_ord].num_shards(source_ord);
             for indexing_task in indexing_tasks {
@@ -420,6 +485,15 @@ fn convert_scheduling_solution_to_physical_plan(
                     && indexing_task.source_id == source.source_uid.source_id
                 {
                     indexing_task.shard_ids.retain(|shard_id| {
+                        if !may_keep_shard_in_previous_pipeline(
+                            indexer,
+                            eligibility,
+                            shard_id,
+                            shard_locations,
+                            indexer_infos,
+                        ) {
+                            return false;
+                        }
                         let shard_added = scheduled_shards.insert(shard_id.clone());
                         if shard_added {
                             true
@@ -472,6 +546,45 @@ fn convert_scheduling_solution_to_physical_plan(
     new_physical_plan.normalize();
 
     new_physical_plan
+}
+
+fn is_shard_local(indexer: &str, shard_id: &ShardId, shard_locations: &ShardLocations) -> bool {
+    shard_locations
+        .get_shard_locations(shard_id)
+        .iter()
+        .any(|node_id| node_id.as_str() == indexer)
+}
+
+fn is_shard_hosted_on_draining_indexer(
+    shard_id: &ShardId,
+    shard_locations: &ShardLocations,
+    indexer_infos: &FnvHashMap<String, IndexerInfo>,
+) -> bool {
+    shard_locations
+        .get_shard_locations(shard_id)
+        .iter()
+        .any(|node_id| {
+            let Some(indexer_info) = indexer_infos.get(node_id.as_str()) else {
+                return false;
+            };
+            indexer_info.eligibility == Eligibility::SelfHostedOnly
+        })
+}
+
+fn may_keep_shard_in_previous_pipeline(
+    indexer: &str,
+    eligibility: Eligibility,
+    shard_id: &ShardId,
+    shard_locations: &ShardLocations,
+    indexer_infos: &FnvHashMap<String, IndexerInfo>,
+) -> bool {
+    if is_shard_local(indexer, shard_id, shard_locations) {
+        return true;
+    }
+    if eligibility == Eligibility::SelfHostedOnly {
+        return false;
+    }
+    !is_shard_hosted_on_draining_indexer(shard_id, shard_locations, indexer_infos)
 }
 
 fn indexer_availability_zone<'a>(
@@ -891,10 +1004,10 @@ mod tests {
 
     use super::scheduling_logic::solve;
     use super::{
-        Eligibility, IndexerInfo, SourceToSchedule, SourceToScheduleType,
+        Eligibility, IndexerInfo, IndexerSpec, SourceToSchedule, SourceToScheduleType,
         build_physical_indexing_plan, build_physical_indexing_plan_without_locality,
         convert_scheduling_solution_to_physical_plan_single_node_single_source,
-        convert_to_simplified_problem,
+        convert_to_simplified_problem, shard_ids_for_indexer,
     };
     use crate::indexing_plan::PhysicalIndexingPlan;
     use crate::indexing_scheduler::get_shard_locality_metrics;
@@ -911,45 +1024,6 @@ mod tests {
             availability_zone: Some(availability_zone.to_string()),
             eligibility,
         }
-    }
-
-    struct IndexerSpec {
-        node_id: NodeId,
-        cpu_capacity: CpuCapacity,
-        availability_zone: Option<String>,
-    }
-
-    impl IndexerSpec {
-        fn new(
-            node_id: &str,
-            cpu_capacity: CpuCapacity,
-            availability_zone: Option<&str>,
-        ) -> IndexerSpec {
-            IndexerSpec {
-                node_id: NodeId::from_str(node_id),
-                cpu_capacity,
-                availability_zone: availability_zone.map(|az| az.to_string()),
-            }
-        }
-
-        fn to_indexer_info(&self) -> IndexerInfo {
-            IndexerInfo {
-                cpu_capacity: self.cpu_capacity,
-                availability_zone: self.availability_zone.clone(),
-                eligibility: Eligibility::Any,
-            }
-        }
-    }
-
-    fn shard_ids_for_indexer(plan: &PhysicalIndexingPlan, indexer: &str) -> Vec<ShardId> {
-        let mut shard_ids: Vec<ShardId> = plan
-            .indexer(indexer)
-            .unwrap()
-            .iter()
-            .flat_map(|task| task.shard_ids.iter().cloned())
-            .collect();
-        shard_ids.sort();
-        shard_ids
     }
 
     fn shard_counts_per_az(
@@ -1215,7 +1289,7 @@ mod tests {
 
         let mut indexer_infos = FnvHashMap::default();
         for indexer_spec in indexer_specs {
-            let indexer_info = indexer_spec.to_indexer_info();
+            let indexer_info = indexer_spec.to_indexer_info(Eligibility::Any);
             indexer_infos.insert(indexer_spec.node_id.to_string(), indexer_info);
         }
 
@@ -1249,7 +1323,7 @@ mod tests {
 
         let mut reversed_indexer_infos = FnvHashMap::default();
         for indexer_spec in indexer_specs.iter().rev() {
-            let indexer_info = indexer_spec.to_indexer_info();
+            let indexer_info = indexer_spec.to_indexer_info(Eligibility::Any);
             reversed_indexer_infos.insert(indexer_spec.node_id.to_string(), indexer_info);
         }
         let reversed_plan = build_physical_indexing_plan(
@@ -1337,6 +1411,87 @@ mod tests {
                 (Some("az-c".to_string()), vec![1]),
             ]);
             assert_eq!(outcome.shard_counts_per_az, expected_counts_per_az);
+        }
+    }
+
+    #[test]
+    fn test_small_clusters_are_not_unbalanced() {
+        const NUM_SHARDS: usize = 12;
+        for num_indexers in [2usize, 4, 5] {
+            let indexer_specs: Vec<IndexerSpec> = (0..num_indexers)
+                .map(|indexer_ord| {
+                    let node_id = format!("indexer{indexer_ord}");
+                    IndexerSpec::new(&node_id, mcpu(4_000), Some("az-a"))
+                })
+                .collect();
+            let shard_ids: Vec<ShardId> = (0..NUM_SHARDS as u64).map(ShardId::from).collect();
+            let source = SourceToSchedule {
+                source_uid: source_id(),
+                source_type: SourceToScheduleType::Sharded {
+                    shard_ids: shard_ids.clone(),
+                    load_per_shard: NonZeroU32::new(1_000).unwrap(),
+                },
+                params_fingerprint: 0,
+            };
+            let sources = vec![source];
+
+            let mut shard_locations = ShardLocations::default();
+            for shard_id in &shard_ids {
+                shard_locations.add_location(shard_id, &indexer_specs[0].node_id);
+            }
+
+            let mut indexer_infos = FnvHashMap::default();
+            for indexer_spec in &indexer_specs {
+                let indexer_info = indexer_spec.to_indexer_info(Eligibility::Any);
+                indexer_infos.insert(indexer_spec.node_id.to_string(), indexer_info);
+            }
+
+            let locality_aware = true;
+            let plan = build_physical_indexing_plan(
+                &sources,
+                &indexer_infos,
+                locality_aware,
+                None,
+                &shard_locations,
+            );
+
+            let mut legacy_indexer_infos = FnvHashMap::default();
+            for indexer_spec in &indexer_specs {
+                let indexer_info = IndexerInfo::for_test(mcpu(4_000));
+                legacy_indexer_infos.insert(indexer_spec.node_id.to_string(), indexer_info);
+            }
+            let legacy_plan = build_physical_indexing_plan_without_locality(
+                &sources,
+                &legacy_indexer_infos,
+                None,
+                &shard_locations,
+            );
+
+            let mut shard_counts: Vec<usize> = indexer_specs
+                .iter()
+                .map(|indexer_spec| {
+                    shard_ids_for_indexer(&plan, indexer_spec.node_id.as_str()).len()
+                })
+                .collect();
+            shard_counts.sort();
+            let mut legacy_shard_counts: Vec<usize> = indexer_specs
+                .iter()
+                .map(|indexer_spec| {
+                    shard_ids_for_indexer(&legacy_plan, indexer_spec.node_id.as_str()).len()
+                })
+                .collect();
+            legacy_shard_counts.sort();
+            let fair_share = NUM_SHARDS.div_ceil(num_indexers);
+            let max_shard_count = *shard_counts.last().unwrap();
+            println!(
+                "{num_indexers} indexers hold {shard_counts:?}, legacy holds {legacy_shard_counts:?}"
+            );
+            assert_eq!(shard_counts.iter().sum::<usize>(), NUM_SHARDS);
+            assert_eq!(shard_counts, legacy_shard_counts);
+            assert!(
+                max_shard_count <= fair_share + 1,
+                "{num_indexers} indexers hold {shard_counts:?}, fair share is {fair_share}"
+            );
         }
     }
 
