@@ -47,6 +47,7 @@ aws-smithy-types = { workspace = true }
 azure_core = { workspace = true, optional = true }
 azure_identity = { workspace = true, optional = true }
 azure_storage_blob = { workspace = true, optional = true }
+time = { workspace = true, optional = true }
 
 quickwit-aws = { workspace = true }
 quickwit-common = { workspace = true }
@@ -83,6 +84,7 @@ azure = [
   "azure_core",
   "azure_identity",
   "azure_storage_blob",
+  "dep:time",
 ]
 gcs = ["dep:opendal", "opendal/services-gcs"]
 ci-test = []
