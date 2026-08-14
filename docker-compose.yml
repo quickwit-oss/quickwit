@@ -128,7 +128,7 @@ services:
         retries: 100
 
   azurite:
-    image: mcr.microsoft.com/azure-storage/azurite:${AZURITE_VERSION:-3.24.0}
+    image: mcr.microsoft.com/azure-storage/azurite:${AZURITE_VERSION:-3.36.0}
     container_name: azurite
     ports:
         - "${MAP_HOST_AZURITE:-127.0.0.1}:10000:10000" # Blob store port
@@ -137,7 +137,11 @@ services:
       - azurite
     volumes:
         - azurite_data:/data
-    command: azurite --blobHost 0.0.0.0 --loose
+    # `--skipApiVersionCheck` because `azure_storage_blob` 1.0 sends a newer
+    # `x-ms-version` than any released Azurite recognizes. Skipping the check keeps the
+    # emulated client sending the same request as production, which is the point of the
+    # test, rather than pinning an older API version only the tests would use.
+    command: azurite --blobHost 0.0.0.0 --loose --skipApiVersionCheck
 
   fake-gcs-server:
     image: fsouza/fake-gcs-server:${FAKE_GCS_SERVER_VERSION:-1.47.7}

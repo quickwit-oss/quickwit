@@ -40,6 +40,8 @@ use time::OffsetDateTime;
 /// `Date` slot of the string to sign stays empty, which is what the service expects when
 /// `x-ms-date` is present.
 const X_MS_DATE: &str = "x-ms-date";
+/// Signed and sent together, so both have to be derived from the same value.
+const CONTENT_LENGTH: &str = "content-length";
 
 /// Signs every request with the storage account key.
 ///
@@ -82,6 +84,21 @@ impl Policy for SharedKeyAuthorizationPolicy {
         let now = OffsetDateTime::now_utc();
         request.insert_header(X_MS_DATE, to_rfc7231(&now));
 
+        // Some operations leave `Content-Length` for the transport to fill in, `commit_block
+        // _list` among them, while others set it themselves. Signing has to agree with what
+        // finally goes on the wire, so set the header here when the body length is known and
+        // the header is missing. Signing an empty length against a request that carries a
+        // real one is rejected as `AuthorizationFailure`, with nothing to indicate why.
+        let body_len = request.body().len();
+        if header_or_empty(request.headers(), CONTENT_LENGTH).is_empty() {
+            match body_len {
+                // A zero length body is the documented exception: the slot stays empty in
+                // the string to sign even though the wire carries `Content-Length: 0`.
+                Some(len) if len > 0 => request.insert_header(CONTENT_LENGTH, len.to_string()),
+                _ => {}
+            }
+        }
+
         let method = request.method();
         let string_to_sign =
             string_to_sign(&self.account, &method, request.url(), request.headers());
@@ -115,7 +132,7 @@ fn header_or_empty(headers: &Headers, header_name: &str) -> String {
 /// calls out: it must be empty rather than `0` for requests without a body, for API
 /// versions from 2015-02-21 onwards.
 fn string_to_sign(account: &str, method: &Method, url: &Url, headers: &Headers) -> String {
-    let content_length = match header_or_empty(headers, "content-length") {
+    let content_length = match header_or_empty(headers, CONTENT_LENGTH) {
         length if length == "0" => String::new(),
         length => length,
     };
@@ -313,6 +330,90 @@ mod tests {
         assert_eq!(signature.len(), 44);
         let recomputed = hmac_sha256(&string_to_sign, &Secret::new(EMULATOR_ACCOUNT_KEY)).unwrap();
         assert_eq!(signature, recomputed);
+    }
+
+    /// Terminal policy: records the headers it is handed and answers 200.
+    #[derive(Debug, Default)]
+    struct HeaderCapturingPolicy {
+        seen_headers: std::sync::Mutex<Option<Headers>>,
+    }
+
+    #[async_trait::async_trait]
+    impl Policy for HeaderCapturingPolicy {
+        async fn send(
+            &self,
+            _ctx: &Context,
+            request: &mut Request,
+            _next: &[Arc<dyn Policy>],
+        ) -> PolicyResult {
+            *self.seen_headers.lock().unwrap() = Some(request.headers().clone());
+            Ok(azure_core::http::AsyncRawResponse::from_bytes(
+                azure_core::http::StatusCode::Ok,
+                Headers::default(),
+                azure_core::Bytes::new(),
+            ))
+        }
+    }
+
+    /// `commit_block_list` leaves `Content-Length` to the transport. Signing an empty length
+    /// while the wire carries a real one is rejected as `AuthorizationFailure`, and only a
+    /// live service reveals it, so pin the header here instead.
+    #[tokio::test]
+    async fn test_send_sets_content_length_before_signing() {
+        let capturing_policy = Arc::new(HeaderCapturingPolicy::default());
+        let policy = SharedKeyAuthorizationPolicy::new(
+            EMULATOR_ACCOUNT.to_owned(),
+            EMULATOR_ACCOUNT_KEY.to_owned(),
+        );
+        let url =
+            Url::parse("http://127.0.0.1:10000/devstoreaccount1/c/blob?comp=blocklist").unwrap();
+        let mut request = Request::new(url, Method::Put);
+        request.set_body(azure_core::Bytes::from_static(b"<BlockList/>"));
+
+        let next: Vec<Arc<dyn Policy>> = vec![capturing_policy.clone()];
+        policy
+            .send(&Context::default(), &mut request, &next)
+            .await
+            .unwrap();
+
+        let seen_headers = capturing_policy
+            .seen_headers
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap();
+        assert_eq!(header_or_empty(&seen_headers, CONTENT_LENGTH), "12");
+        // The signature has to cover that same length.
+        let signed = string_to_sign(EMULATOR_ACCOUNT, &Method::Put, request.url(), &seen_headers);
+        assert!(signed.starts_with("PUT\n\n\n12\n"));
+    }
+
+    /// A request the caller already sized keeps that value rather than being overwritten.
+    #[tokio::test]
+    async fn test_send_keeps_an_existing_content_length() {
+        let capturing_policy = Arc::new(HeaderCapturingPolicy::default());
+        let policy = SharedKeyAuthorizationPolicy::new(
+            EMULATOR_ACCOUNT.to_owned(),
+            EMULATOR_ACCOUNT_KEY.to_owned(),
+        );
+        let url = Url::parse("http://127.0.0.1:10000/devstoreaccount1/c/blob").unwrap();
+        let mut request = Request::new(url, Method::Put);
+        request.insert_header(CONTENT_LENGTH, "5");
+        request.set_body(azure_core::Bytes::from_static(b"hello"));
+
+        let next: Vec<Arc<dyn Policy>> = vec![capturing_policy.clone()];
+        policy
+            .send(&Context::default(), &mut request, &next)
+            .await
+            .unwrap();
+
+        let seen_headers = capturing_policy
+            .seen_headers
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap();
+        assert_eq!(header_or_empty(&seen_headers, CONTENT_LENGTH), "5");
     }
 
     #[test]
