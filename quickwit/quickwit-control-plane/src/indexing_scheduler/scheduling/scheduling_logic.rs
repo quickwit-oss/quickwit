@@ -67,14 +67,8 @@ pub fn solve(
         .expect("failed to assign all of the sources (logical bug)")
 }
 
-/// Smallest inflation attempt at which the placement succeeds from an empty solution.
-///
-/// The attempt is deliberately derived from the problem alone, never from the previous solution.
-/// A search seeded with the previous solution is not reproducible: shedding whole sources off
-/// over-capacity indexers is what makes a tight problem placeable, so raising the capacities can
-/// stop that shedding and turn a feasible attempt infeasible. Feasibility is therefore not
-/// monotonic in the attempt number, and any rule of the form "stop at the first attempt that
-/// works" would pick a different attempt depending on where it started.
+/// Don't derive this from the previous plan. More capacity means fewer sources get evicted off
+/// overloaded indexers, and that eviction is sometimes the only reason a plan fits at all.
 fn minimal_feasible_inflation_attempt(base_problem: &SchedulingProblem) -> u32 {
     for attempt in 0..MAX_INFLATION_ATTEMPTS {
         let scaled_problem = problem_at_inflation_level(base_problem, attempt);
