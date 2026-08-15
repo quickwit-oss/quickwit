@@ -25,8 +25,8 @@ use azure_core::http::{NoFormat, RequestContent, StatusCode};
 use azure_storage_blob::BlobContainerClient;
 use azure_storage_blob::models::{
     BlobClientDownloadOptions, BlobClientGetPropertiesResultHeaders,
-    BlobContainerClientListBlobsOptions, BlockBlobClientStageBlockOptions,
-    BlockBlobClientUploadOptions, BlockLookupList, HttpRange,
+    BlobContainerClientListBlobsOptions, BlockBlobClientStageBlockOptions, BlockLookupList,
+    HttpRange,
 };
 use bytes::Bytes;
 use bytesize::ByteSize;
@@ -56,6 +56,12 @@ use crate::{
     BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, Storage, StorageError,
     StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
 };
+
+/// Block id used by the single part upload path.
+///
+/// Zero padded like the multipart ids so that a blob written by either path carries a block
+/// list of the same shape.
+const SINGLE_PART_BLOCK_ID: &[u8] = b"block:00000";
 
 /// Azure object storage resolver.
 pub struct AzureBlobStorageFactory {
@@ -323,19 +329,37 @@ impl AzureBlobStorage {
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
             let digest = md5::compute(&data[..]);
-            // 1.0 exposes `blob_content_md5` rather than a transactional checksum on this
-            // path: the digest is stored with the blob instead of checked per request.
-            let upload_options = BlockBlobClientUploadOptions {
-                blob_content_md5: Some(digest.0.to_vec()),
+            let content_length = data.len() as u64;
+            let block_blob_client = self.container_client.blob_client(name).block_blob_client();
+            // Staged and committed rather than uploaded in one shot, because `upload()`
+            // only exposes `blob_content_md5`, which the service stores without checking it
+            // against the body. `stage_block` takes a transactional checksum, so a corrupted
+            // payload is rejected on arrival. Splits are immutable and never re-verified, so
+            // a silent corruption here would be permanent. The cost is one extra request per
+            // object below the multipart threshold.
+            let stage_block_options = BlockBlobClientStageBlockOptions {
+                transactional_content_md5: Some(digest.0.to_vec()),
                 ..Default::default()
             };
             // `RequestContent::from` is an inherent function over `Vec<u8>`, which shadows
             // the `From<Bytes>` impl, so go through `Into` to keep the `Bytes` as is.
             let content: RequestContent<Bytes, NoFormat> = data.into();
-            self.container_client
-                .blob_client(name)
-                .block_blob_client()
-                .upload(content, Some(upload_options))
+            block_blob_client
+                .stage_block(
+                    SINGLE_PART_BLOCK_ID,
+                    content_length,
+                    content,
+                    Some(stage_block_options),
+                )
+                .await?;
+            let block_lookup_list = BlockLookupList {
+                uncommitted: Some(vec![SINGLE_PART_BLOCK_ID.to_vec()]),
+                ..Default::default()
+            };
+            let block_list_content =
+                RequestContent::try_from(block_lookup_list).map_err(AzureErrorWrapper::from)?;
+            block_blob_client
+                .commit_block_list(block_list_content, None)
                 .await?;
             Result::<(), AzureErrorWrapper>::Ok(())
         })

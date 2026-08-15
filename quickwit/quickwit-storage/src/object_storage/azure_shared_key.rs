@@ -182,8 +182,20 @@ fn canonicalized_headers(headers: &Headers) -> String {
     rendered
 }
 
-/// Renders the resource the request addresses: the account, the decoded path, then every
-/// query parameter, lowercased and sorted, with repeated parameters comma joined.
+/// Renders the resource the request addresses: the account, the path as encoded in the URI,
+/// then every query parameter, lowercased, decoded and sorted, with repeated parameters comma
+/// joined.
+///
+/// The asymmetry is deliberate and specified: "any portion of the CanonicalizedResource
+/// string that is derived from the resource's URI should be encoded exactly as it is in the
+/// URI", and the path step says to append "the resource's encoded URI path", while the query
+/// steps say to "URL-decode each query parameter name and value". So a blob named
+/// `indexes/my-index/split` signs as `indexes%2Fmy-index%2Fsplit`, because that is how the
+/// 1.0 clients put it in the URL. Decoding the path here is rejected with
+/// `AuthorizationFailure`, which the integration suite confirms.
+///
+/// The account appears twice for the emulator, whose URLs carry the account in the path.
+/// That is expected and documented.
 fn canonicalized_resource(account: &str, url: &Url) -> String {
     let mut resource = String::with_capacity(url.as_str().len());
     resource.push('/');
@@ -278,6 +290,28 @@ mod tests {
             canonicalized_resource("acct", &url),
             "/acct/c\ninclude:copy,metadata"
         );
+    }
+
+    /// The path is signed exactly as the URI carries it, escapes included. Quickwit blob
+    /// names hold separators, so the 1.0 clients percent-encode them into one segment and
+    /// the signature has to keep that form. Decoding here looks tidier and is rejected with
+    /// `AuthorizationFailure`.
+    #[test]
+    fn test_canonicalized_resource_keeps_the_path_encoded() {
+        let url =
+            Url::parse("https://acct.blob.core.windows.net/c/indexes%2Fmy-index%2Fsplit.split")
+                .unwrap();
+        assert_eq!(
+            canonicalized_resource("acct", &url),
+            "/acct/c/indexes%2Fmy-index%2Fsplit.split"
+        );
+    }
+
+    /// Query parameters are the exception: the specification decodes those.
+    #[test]
+    fn test_canonicalized_resource_decodes_query_values() {
+        let url = Url::parse("https://acct.blob.core.windows.net/c?prefix=a%2Fb").unwrap();
+        assert_eq!(canonicalized_resource("acct", &url), "/acct/c\nprefix:a/b");
     }
 
     #[test]
