@@ -19,13 +19,16 @@
 //! nearest remaining type, `DeveloperToolsCredential`, chains the Azure CLI and the
 //! Developer CLI only, which does not cover a pod.
 
-use std::env;
 use std::sync::Arc;
+use std::{env, fmt};
 
 use azure_core::credentials::TokenCredential;
 use azure_core::http::policies::Policy;
 use azure_core::http::{ClientOptions, Url};
-use azure_identity::{ManagedIdentityCredential, WorkloadIdentityCredential};
+use azure_identity::{
+    ClientSecretCredential, ManagedIdentityCredential, ManagedIdentityCredentialOptions,
+    UserAssignedId, WorkloadIdentityCredential,
+};
 use azure_storage_blob::{BlobContainerClient, BlobContainerClientOptions};
 use quickwit_config::AzureStorageConfig;
 use tracing::info;
@@ -37,8 +40,96 @@ use crate::object_storage::azure_shared_key::SharedKeyAuthorizationPolicy;
 const AZURE_CLIENT_ID: &str = "AZURE_CLIENT_ID";
 const AZURE_TENANT_ID: &str = "AZURE_TENANT_ID";
 const AZURE_FEDERATED_TOKEN_FILE: &str = "AZURE_FEDERATED_TOKEN_FILE";
+/// Set when a service principal authenticates with a secret rather than a federated token.
+const AZURE_CLIENT_SECRET: &str = "AZURE_CLIENT_SECRET";
 /// Lets an operator pin the provider instead of relying on the detection below.
 const AZURE_CREDENTIAL_KIND: &str = "AZURE_CREDENTIAL_KIND";
+
+/// Which token credential the environment describes.
+///
+/// Kept separate from construction so the precedence can be tested without mutating process
+/// environment, which no test can do safely while others run.
+#[derive(Eq, PartialEq)]
+enum TokenCredentialKind {
+    /// Service principal with a client secret, the `EnvironmentCredential` of the old chain.
+    ClientSecret {
+        tenant_id: String,
+        client_id: String,
+        secret: String,
+    },
+    /// Federated token file, injected into a pod by the workload identity webhook.
+    WorkloadIdentity,
+    /// IMDS. `user_assigned_client_id` selects a user-assigned identity, and `None` means the
+    /// system-assigned one.
+    ManagedIdentity {
+        user_assigned_client_id: Option<String>,
+    },
+}
+
+impl fmt::Debug for TokenCredentialKind {
+    /// Hand written so the client secret cannot reach a log line or a panic message. A
+    /// derived implementation would print it, and test failures print this type.
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ClientSecret {
+                tenant_id,
+                client_id,
+                ..
+            } => formatter
+                .debug_struct("ClientSecret")
+                .field("tenant_id", tenant_id)
+                .field("client_id", client_id)
+                .finish_non_exhaustive(),
+            Self::WorkloadIdentity => formatter.write_str("WorkloadIdentity"),
+            Self::ManagedIdentity {
+                user_assigned_client_id,
+            } => formatter
+                .debug_struct("ManagedIdentity")
+                .field("user_assigned_client_id", user_assigned_client_id)
+                .finish(),
+        }
+    }
+}
+
+/// Decides which credential the environment describes.
+///
+/// Precedence follows the chain `azure_identity::create_credential()` used to walk, where an
+/// environment credential came before managed identity. Dropping that ordering silently
+/// breaks every deployment that authenticates with a service principal, because the client
+/// secret is ignored and IMDS is contacted instead.
+fn select_token_credential_kind(var: impl Fn(&str) -> Option<String>) -> TokenCredentialKind {
+    let non_empty = |name: &str| match var(name) {
+        Some(value) if !value.trim().is_empty() => Some(value),
+        _ => None,
+    };
+    let client_id = non_empty(AZURE_CLIENT_ID);
+
+    // A secret and a federated token file are mutually exclusive in practice. The secret is
+    // checked first because the webhook injects the token file, so its presence says less
+    // about operator intent than a secret does.
+    if let (Some(tenant_id), Some(client_id), Some(secret)) = (
+        non_empty(AZURE_TENANT_ID),
+        client_id.clone(),
+        non_empty(AZURE_CLIENT_SECRET),
+    ) {
+        return TokenCredentialKind::ClientSecret {
+            tenant_id,
+            client_id,
+            secret,
+        };
+    }
+    if non_empty(AZURE_TENANT_ID).is_some()
+        && client_id.is_some()
+        && non_empty(AZURE_FEDERATED_TOKEN_FILE).is_some()
+    {
+        return TokenCredentialKind::WorkloadIdentity;
+    }
+    // `AZURE_CLIENT_ID` on its own names a user-assigned identity. Ignoring it asks IMDS for
+    // the system-assigned identity, which either does not exist or is the wrong principal.
+    TokenCredentialKind::ManagedIdentity {
+        user_assigned_client_id: client_id,
+    }
+}
 
 /// How requests to the blob service are authorized.
 pub(crate) enum AzureCredential {
@@ -74,34 +165,58 @@ fn resolve_token_credential() -> azure_core::Result<Arc<dyn TokenCredential>> {
         .map(|kind| kind.trim().to_lowercase())
         .unwrap_or_default();
 
-    match credential_kind.as_str() {
-        "workloadidentity" => Ok(WorkloadIdentityCredential::new(None)?),
-        "managedidentity" => Ok(ManagedIdentityCredential::new(None)?),
-        // An empty or unrecognized value falls through to detection. The workload identity
-        // variables are injected by a mutating webhook rather than by an operator, so their
-        // presence is the signal that the pod runs under workload identity.
-        _ => {
-            if workload_identity_env_is_complete() {
-                info!("using azure workload identity credential");
-                return Ok(WorkloadIdentityCredential::new(None)?);
-            }
-            info!("using azure managed identity credential");
-            Ok(ManagedIdentityCredential::new(None)?)
-        }
-    }
+    let kind = match credential_kind.as_str() {
+        "workloadidentity" => TokenCredentialKind::WorkloadIdentity,
+        "managedidentity" => TokenCredentialKind::ManagedIdentity {
+            user_assigned_client_id: env::var(AZURE_CLIENT_ID).ok().filter(|id| !id.is_empty()),
+        },
+        // An empty or unrecognized value falls through to detection.
+        _ => select_token_credential_kind(|name| env::var(name).ok()),
+    };
+    build_token_credential(kind)
 }
 
-/// Returns `true` when all three variables a `WorkloadIdentityCredential` needs are present.
-///
-/// A partial set means the webhook did not inject a usable identity, and building the
-/// credential would fail at the first request rather than here.
-fn workload_identity_env_is_complete() -> bool {
-    [AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_FEDERATED_TOKEN_FILE]
-        .iter()
-        .all(|variable| match env::var(variable) {
-            Ok(value) => !value.trim().is_empty(),
-            Err(_) => false,
-        })
+/// Builds the credential for a kind already chosen.
+fn build_token_credential(
+    kind: TokenCredentialKind,
+) -> azure_core::Result<Arc<dyn TokenCredential>> {
+    match kind {
+        TokenCredentialKind::ClientSecret {
+            tenant_id,
+            client_id,
+            secret,
+        } => {
+            info!("using azure client secret credential");
+            Ok(ClientSecretCredential::new(
+                &tenant_id,
+                client_id,
+                secret.into(),
+                None,
+            )?)
+        }
+        TokenCredentialKind::WorkloadIdentity => {
+            info!("using azure workload identity credential");
+            Ok(WorkloadIdentityCredential::new(None)?)
+        }
+        TokenCredentialKind::ManagedIdentity {
+            user_assigned_client_id,
+        } => {
+            let options = match user_assigned_client_id {
+                Some(client_id) => {
+                    info!(%client_id, "using azure user-assigned managed identity credential");
+                    Some(ManagedIdentityCredentialOptions {
+                        user_assigned_id: Some(UserAssignedId::ClientId(client_id)),
+                        ..Default::default()
+                    })
+                }
+                None => {
+                    info!("using azure system-assigned managed identity credential");
+                    None
+                }
+            };
+            Ok(ManagedIdentityCredential::new(options)?)
+        }
+    }
 }
 
 /// Builds the container client.
@@ -178,7 +293,138 @@ fn join_container(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
+
+    fn env_from(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let map: HashMap<String, String> = pairs
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            .collect();
+        move |name: &str| map.get(name).cloned()
+    }
+
+    /// A service principal authenticates with a secret. The old chain tried an environment
+    /// credential before managed identity, and losing that ordering sends the request to
+    /// IMDS with the secret ignored, so the deployment loses access entirely.
+    #[test]
+    fn test_client_secret_wins_over_managed_identity() {
+        let kind = select_token_credential_kind(env_from(&[
+            (AZURE_TENANT_ID, "tenant"),
+            (AZURE_CLIENT_ID, "client"),
+            (AZURE_CLIENT_SECRET, "secret"),
+        ]));
+        assert_eq!(
+            kind,
+            TokenCredentialKind::ClientSecret {
+                tenant_id: "tenant".to_owned(),
+                client_id: "client".to_owned(),
+                secret: "secret".to_owned(),
+            }
+        );
+    }
+
+    /// The webhook injects the token file, so a secret is the stronger statement of intent.
+    #[test]
+    fn test_client_secret_wins_over_workload_identity() {
+        let kind = select_token_credential_kind(env_from(&[
+            (AZURE_TENANT_ID, "tenant"),
+            (AZURE_CLIENT_ID, "client"),
+            (AZURE_CLIENT_SECRET, "secret"),
+            (AZURE_FEDERATED_TOKEN_FILE, "/var/run/token"),
+        ]));
+        assert!(matches!(kind, TokenCredentialKind::ClientSecret { .. }));
+    }
+
+    #[test]
+    fn test_workload_identity_when_the_three_variables_are_present() {
+        let kind = select_token_credential_kind(env_from(&[
+            (AZURE_TENANT_ID, "tenant"),
+            (AZURE_CLIENT_ID, "client"),
+            (AZURE_FEDERATED_TOKEN_FILE, "/var/run/token"),
+        ]));
+        assert_eq!(kind, TokenCredentialKind::WorkloadIdentity);
+    }
+
+    /// `AZURE_CLIENT_ID` alone names a user-assigned identity. Dropping it asks IMDS for the
+    /// system-assigned one, which is either absent or the wrong principal.
+    #[test]
+    fn test_client_id_alone_selects_a_user_assigned_identity() {
+        let kind = select_token_credential_kind(env_from(&[(AZURE_CLIENT_ID, "client")]));
+        assert_eq!(
+            kind,
+            TokenCredentialKind::ManagedIdentity {
+                user_assigned_client_id: Some("client".to_owned()),
+            }
+        );
+    }
+
+    #[test]
+    fn test_empty_environment_selects_the_system_assigned_identity() {
+        let kind = select_token_credential_kind(env_from(&[]));
+        assert_eq!(
+            kind,
+            TokenCredentialKind::ManagedIdentity {
+                user_assigned_client_id: None,
+            }
+        );
+    }
+
+    /// A half configured service principal must not be read as one, and a blank variable is
+    /// the same as an unset one.
+    #[test]
+    fn test_blank_and_partial_values_do_not_select_a_service_principal() {
+        let partial = select_token_credential_kind(env_from(&[
+            (AZURE_TENANT_ID, "tenant"),
+            (AZURE_CLIENT_ID, "client"),
+        ]));
+        assert_eq!(
+            partial,
+            TokenCredentialKind::ManagedIdentity {
+                user_assigned_client_id: Some("client".to_owned()),
+            }
+        );
+
+        let blank = select_token_credential_kind(env_from(&[
+            (AZURE_TENANT_ID, "tenant"),
+            (AZURE_CLIENT_ID, "client"),
+            (AZURE_CLIENT_SECRET, "   "),
+        ]));
+        assert_eq!(
+            blank,
+            TokenCredentialKind::ManagedIdentity {
+                user_assigned_client_id: Some("client".to_owned()),
+            }
+        );
+    }
+
+    #[test]
+    fn test_debug_does_not_leak_the_client_secret() {
+        let kind = select_token_credential_kind(env_from(&[
+            (AZURE_TENANT_ID, "tenant"),
+            (AZURE_CLIENT_ID, "client"),
+            (AZURE_CLIENT_SECRET, "super-secret-value"),
+        ]));
+        let rendered = format!("{kind:?}");
+        assert!(rendered.contains("client"));
+        assert!(!rendered.contains("super-secret-value"));
+    }
+
+    /// A partial workload identity set is not workload identity.
+    #[test]
+    fn test_token_file_without_tenant_is_not_workload_identity() {
+        let kind = select_token_credential_kind(env_from(&[
+            (AZURE_CLIENT_ID, "client"),
+            (AZURE_FEDERATED_TOKEN_FILE, "/var/run/token"),
+        ]));
+        assert_eq!(
+            kind,
+            TokenCredentialKind::ManagedIdentity {
+                user_assigned_client_id: Some("client".to_owned()),
+            }
+        );
+    }
 
     #[test]
     fn test_join_container_appends_the_container() {
