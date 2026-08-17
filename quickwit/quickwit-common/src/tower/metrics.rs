@@ -47,7 +47,7 @@ impl GrpcStatusCode for std::convert::Infallible {
     }
 }
 
-fn grpc_code_label(code: tonic::Code) -> &'static str {
+pub(crate) fn grpc_code_label(code: tonic::Code) -> &'static str {
     match code {
         tonic::Code::Ok => "ok",
         tonic::Code::Cancelled => "cancelled",
@@ -162,6 +162,14 @@ impl GrpcMetricsLayer {
             requests_in_flight: gauge!(parent: GRPC_REQUESTS_IN_FLIGHT, labels: [labels, extra_labels]),
             request_duration_seconds: histogram!(parent: GRPC_REQUEST_DURATION_SECONDS, labels: [labels, extra_labels]),
         }
+    }
+
+    /// Returns the request counter with this layer's static labels.
+    ///
+    /// A retry policy uses this to record a retryable failed attempt with
+    /// `status="transient"` after it decides to retry it.
+    pub fn requests_total_counter(&self) -> Counter {
+        self.requests_total.clone()
     }
 
     fn default_labels(subsystem: &'static str, kind: &'static str) -> Labels<3> {

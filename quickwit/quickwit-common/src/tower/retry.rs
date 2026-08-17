@@ -15,11 +15,13 @@
 use std::any::type_name;
 use std::fmt;
 
+use quickwit_metrics::{Counter, counter, labels};
 use tokio::time::Sleep;
 use tower::Layer;
 use tower::retry::{Policy, Retry};
 use tracing::debug;
 
+use super::metrics::{GrpcStatusCode, RpcName, grpc_code_label};
 use crate::retry::{RetryParams, Retryable};
 
 /// Retry layer copy/pasted from `tower::retry::RetryLayer`
@@ -47,10 +49,19 @@ impl<P> RetryLayer<P> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct RetryPolicy {
     num_attempts: usize,
     retry_params: RetryParams,
+    retry_metrics_counter_opt: Option<Counter>,
+}
+
+impl RetryPolicy {
+    /// Records each failed attempt that this policy will retry as a transient request.
+    pub fn with_retry_metrics(mut self, retry_metrics_counter: Counter) -> Self {
+        self.retry_metrics_counter_opt = Some(retry_metrics_counter);
+        self
+    }
 }
 
 impl From<RetryParams> for RetryPolicy {
@@ -58,14 +69,15 @@ impl From<RetryParams> for RetryPolicy {
         Self {
             num_attempts: 0,
             retry_params,
+            retry_metrics_counter_opt: None,
         }
     }
 }
 
 impl<R, T, E> Policy<R, T, E> for RetryPolicy
 where
-    R: Clone,
-    E: fmt::Debug + Retryable,
+    R: Clone + RpcName,
+    E: fmt::Debug + Retryable + GrpcStatusCode,
 {
     type Future = Sleep;
 
@@ -78,6 +90,17 @@ where
                 if !error.is_retryable() || self.num_attempts >= self.retry_params.max_attempts {
                     None
                 } else {
+                    if let Some(retry_metrics_counter) = &self.retry_metrics_counter_opt {
+                        counter!(
+                            parent: retry_metrics_counter,
+                            labels: [labels!(
+                                "rpc" => R::rpc_name(),
+                                "status" => "transient",
+                                "code" => grpc_code_label(error.grpc_status_code()),
+                            )],
+                        )
+                        .inc();
+                    }
                     let delay = self.retry_params.compute_delay(self.num_attempts);
                     debug!(
                         num_attempts=%self.num_attempts,
@@ -104,6 +127,8 @@ mod tests {
     use std::task::{Context, Poll};
 
     use futures::future::{Ready, ready};
+    use metrics::with_local_recorder;
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
     use tower::{Layer, Service, ServiceExt};
 
     use super::*;
@@ -123,6 +148,12 @@ mod tests {
         }
     }
 
+    impl<E> GrpcStatusCode for Retry<E> {
+        fn grpc_status_code(&self) -> tonic::Code {
+            tonic::Code::Unavailable
+        }
+    }
+
     #[derive(Debug, Clone, Default)]
     struct HelloService;
 
@@ -132,6 +163,12 @@ mod tests {
     struct HelloRequest {
         num_attempts: Arc<AtomicUsize>,
         results: HelloResults,
+    }
+
+    impl RpcName for HelloRequest {
+        fn rpc_name() -> &'static str {
+            "hello"
+        }
     }
 
     impl Service<HelloRequest> for HelloService {
@@ -153,6 +190,40 @@ mod tests {
                 .unwrap_or(Err(Retry::Permanent(())));
             ready(result)
         }
+    }
+
+    #[tokio::test]
+    async fn test_retry_policy_records_retryable_failures_as_transient() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+
+        with_local_recorder(&recorder, || {
+            let retry_metrics_counter = counter!(
+                name: "requests_total",
+                description: "test request count",
+                subsystem: "grpc",
+            );
+            let mut retry_policy = RetryPolicy::from(RetryParams::for_test())
+                .with_retry_metrics(retry_metrics_counter);
+            let mut request = HelloRequest::default();
+            let mut result: Result<(), Retry<()>> = Err(Retry::Transient(()));
+
+            assert!(retry_policy.retry(&mut request, &mut result).is_some());
+        });
+
+        let snapshot = snapshotter.snapshot().into_vec();
+        assert!(snapshot.iter().any(|(composite_key, _, _, value)| {
+            let (_, key) = composite_key.clone().into_parts();
+            let labels = key
+                .labels()
+                .map(|label| (label.key(), label.value()))
+                .collect::<Vec<_>>();
+            key.name() == "quickwit_grpc_requests_total"
+                && labels.contains(&("rpc", "hello"))
+                && labels.contains(&("status", "transient"))
+                && labels.contains(&("code", "unavailable"))
+                && value == &DebugValue::Counter(1)
+        }));
     }
 
     #[tokio::test]
