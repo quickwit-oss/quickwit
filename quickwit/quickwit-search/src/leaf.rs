@@ -1904,7 +1904,7 @@ async fn schedule_search_tasks(
             crate::search_permit_provider::SplitSearchTaskMetadata {
                 memory_allocation,
                 job_cost,
-                priority: search_request.priority.unwrap_or_default(),
+                priority: search_request.priority,
             }
         })
         .collect();
