@@ -17,12 +17,15 @@ async-trait = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
+foyer = { workspace = true }
 futures = { workspace = true }
 http-body-util = { workspace = true}
 hyper = { workspace = true }
 lru = { workspace = true }
 md5 = { workspace = true }
+metrics = { workspace = true }
 mini-moka = { workspace = true }
+mixtrics = { workspace = true }
 mockall = { workspace = true, optional = true }
 pin-project = { workspace = true }
 quick_cache = { workspace = true }
@@ -102,3 +105,8 @@ integration-testsuite = [
   "dep:reqwest",
 ]
 testsuite = ["mockall"]
+
+[package.metadata.cargo-machete]
+# Declared here so the Foyer pin lands with licenses. Follow-up split-range
+# cache PRs use these crates; remove the ignore when they do.
+ignored = ["foyer", "metrics", "mixtrics"]
