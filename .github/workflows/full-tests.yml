@@ -74,7 +74,17 @@ jobs:
         if: steps.modified.outputs.rust_src == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get -y install protobuf-compiler libsasl2-dev libcurl4-openssl-dev
+          sudo apt-get -y install libsasl2-dev libcurl4-openssl-dev
+
+      # apt's protobuf-compiler is too old to support proto3 optional fields
+      # by default, which the `substrait` crate (pulled in by --all-features
+      # via the `datafusion` feature) requires. coverage.yml hits the same
+      # constraint and installs protoc this way for the same reason.
+      - name: Install protoc
+        if: steps.modified.outputs.rust_src == 'true'
+        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
+        with:
+          tool: protoc
 
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v.6.2.0
         if: steps.modified.outputs.rust_src == 'true'
