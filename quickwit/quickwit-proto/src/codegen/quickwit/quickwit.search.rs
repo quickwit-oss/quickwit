@@ -148,6 +148,9 @@ pub struct ListFieldsEntry {
     pub non_aggregatable_index_ids: ::prost::alloc::vec::Vec<
         ::prost::alloc::string::String,
     >,
+    /// Number of splits whose fields metadata contains this field.
+    #[prost(uint64, tag = "8")]
+    pub num_splits: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Hash, Eq)]
