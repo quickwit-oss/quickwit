@@ -344,6 +344,8 @@ fn field_metadata_to_list_fields_entry(field_metadata: &FieldMetadata) -> ListFi
         index_ids: Vec::new(),
         non_searchable_index_ids: Vec::new(),
         non_aggregatable_index_ids: Vec::new(),
+        // Split counts are populated by the search leaf when it reads this metadata.
+        num_splits: 0,
     }
 }
 
