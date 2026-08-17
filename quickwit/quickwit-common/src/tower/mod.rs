@@ -50,7 +50,7 @@ pub use pool::Pool;
 pub use rate::{ConstantRate, Rate};
 pub use rate_estimator::{RateEstimator, SmaRateEstimator};
 pub use rate_limit::{RateLimit, RateLimitLayer};
-pub use retry::{RetryLayer, RetryPolicy};
+pub use retry::{RetryCallbacks, RetryLayer, RetryPolicy};
 pub use timeout::{Timeout, TimeoutExceeded, TimeoutLayer};
 pub use transport::{BalanceChannel, warmup_channel};
 

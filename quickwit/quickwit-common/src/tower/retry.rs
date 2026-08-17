@@ -15,19 +15,18 @@
 use std::any::type_name;
 use std::fmt;
 
-use quickwit_metrics::{Counter, counter, labels};
 use tokio::time::Sleep;
 use tower::Layer;
 use tower::retry::{Policy, Retry};
 use tracing::debug;
 
-use super::metrics::{GrpcStatusCode, RpcName, grpc_code_label};
 use crate::retry::{RetryParams, Retryable};
 
 /// Retry layer copy/pasted from `tower::retry::RetryLayer`
 /// but which implements `Clone`.
 impl<P, S> Layer<S> for RetryLayer<P>
-where P: Clone
+where
+    P: Clone,
 {
     type Service = Retry<P, S>;
 
@@ -49,18 +48,39 @@ impl<P> RetryLayer<P> {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct RetryPolicy {
-    num_attempts: usize,
-    retry_params: RetryParams,
-    retry_metrics_counter_opt: Option<Counter>,
+/// Callbacks invoked after the retry policy classifies an attempt's result.
+pub trait RetryCallbacks<R, T, E>: Clone {
+    /// Called when an attempt failed and another attempt will be made.
+    fn on_retry(&mut self, _request: &R, _error: &E, _num_attempts: usize) {}
+
+    /// Called when the logical request completed with an error.
+    fn on_error(&mut self, _request: &R, _error: &E, _num_attempts: usize) {}
+
+    /// Called when the logical request completed successfully.
+    fn on_success(&mut self, _request: &R, _response: &T, _num_attempts: usize) {}
 }
 
-impl RetryPolicy {
-    /// Records each failed attempt that this policy will retry as a transient request.
-    pub fn with_retry_metrics(mut self, retry_metrics_counter: Counter) -> Self {
-        self.retry_metrics_counter_opt = Some(retry_metrics_counter);
-        self
+/// Default callbacks that do nothing.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoopRetryCallbacks;
+
+impl<R, T, E> RetryCallbacks<R, T, E> for NoopRetryCallbacks {}
+
+#[derive(Clone, Debug)]
+pub struct RetryPolicy<C = NoopRetryCallbacks> {
+    num_attempts: usize,
+    retry_params: RetryParams,
+    callbacks: C,
+}
+
+impl<C> RetryPolicy<C> {
+    /// Replaces the callbacks invoked when an attempt is classified.
+    pub fn with_callbacks<D>(self, callbacks: D) -> RetryPolicy<D> {
+        RetryPolicy {
+            num_attempts: self.num_attempts,
+            retry_params: self.retry_params,
+            callbacks,
+        }
     }
 }
 
@@ -69,38 +89,34 @@ impl From<RetryParams> for RetryPolicy {
         Self {
             num_attempts: 0,
             retry_params,
-            retry_metrics_counter_opt: None,
+            callbacks: NoopRetryCallbacks,
         }
     }
 }
 
-impl<R, T, E> Policy<R, T, E> for RetryPolicy
+impl<R, T, E, C> Policy<R, T, E> for RetryPolicy<C>
 where
-    R: Clone + RpcName,
-    E: fmt::Debug + Retryable + GrpcStatusCode,
+    R: Clone,
+    E: fmt::Debug + Retryable,
+    C: RetryCallbacks<R, T, E>,
 {
     type Future = Sleep;
 
-    fn retry(&mut self, _request: &mut R, result: &mut Result<T, E>) -> Option<Self::Future> {
+    fn retry(&mut self, request: &mut R, result: &mut Result<T, E>) -> Option<Self::Future> {
         match result {
-            Ok(_) => None,
+            Ok(response) => {
+                self.callbacks
+                    .on_success(request, response, self.num_attempts + 1);
+                None
+            }
             Err(error) => {
                 self.num_attempts += 1;
 
                 if !error.is_retryable() || self.num_attempts >= self.retry_params.max_attempts {
+                    self.callbacks.on_error(request, error, self.num_attempts);
                     None
                 } else {
-                    if let Some(retry_metrics_counter) = &self.retry_metrics_counter_opt {
-                        counter!(
-                            parent: retry_metrics_counter,
-                            labels: [labels!(
-                                "rpc" => R::rpc_name(),
-                                "status" => "transient",
-                                "code" => grpc_code_label(error.grpc_status_code()),
-                            )],
-                        )
-                        .inc();
-                    }
+                    self.callbacks.on_retry(request, error, self.num_attempts);
                     let delay = self.retry_params.compute_delay(self.num_attempts);
                     debug!(
                         num_attempts=%self.num_attempts,
@@ -127,8 +143,6 @@ mod tests {
     use std::task::{Context, Poll};
 
     use futures::future::{Ready, ready};
-    use metrics::with_local_recorder;
-    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
     use tower::{Layer, Service, ServiceExt};
 
     use super::*;
@@ -148,12 +162,6 @@ mod tests {
         }
     }
 
-    impl<E> GrpcStatusCode for Retry<E> {
-        fn grpc_status_code(&self) -> tonic::Code {
-            tonic::Code::Unavailable
-        }
-    }
-
     #[derive(Debug, Clone, Default)]
     struct HelloService;
 
@@ -163,12 +171,6 @@ mod tests {
     struct HelloRequest {
         num_attempts: Arc<AtomicUsize>,
         results: HelloResults,
-    }
-
-    impl RpcName for HelloRequest {
-        fn rpc_name() -> &'static str {
-            "hello"
-        }
     }
 
     impl Service<HelloRequest> for HelloService {
@@ -192,38 +194,69 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Debug, Default)]
+    struct TestRetryCallbacks {
+        events: Arc<Mutex<Vec<(&'static str, usize)>>>,
+    }
+
+    impl RetryCallbacks<HelloRequest, (), Retry<()>> for TestRetryCallbacks {
+        fn on_retry(&mut self, _request: &HelloRequest, _error: &Retry<()>, num_attempts: usize) {
+            self.events.lock().unwrap().push(("retry", num_attempts));
+        }
+
+        fn on_error(&mut self, _request: &HelloRequest, _error: &Retry<()>, num_attempts: usize) {
+            self.events.lock().unwrap().push(("error", num_attempts));
+        }
+
+        fn on_success(&mut self, _request: &HelloRequest, _response: &(), num_attempts: usize) {
+            self.events.lock().unwrap().push(("success", num_attempts));
+        }
+    }
+
     #[tokio::test]
-    async fn test_retry_policy_records_retryable_failures_as_transient() {
-        let recorder = DebuggingRecorder::new();
-        let snapshotter = recorder.snapshotter();
+    async fn test_retry_policy_callbacks() {
+        let callbacks = TestRetryCallbacks::default();
+        let mut retry_policy =
+            RetryPolicy::from(RetryParams::for_test()).with_callbacks(callbacks.clone());
+        let mut request = HelloRequest::default();
 
-        with_local_recorder(&recorder, || {
-            let retry_metrics_counter = counter!(
-                name: "requests_total",
-                description: "test request count",
-                subsystem: "grpc",
-            );
-            let mut retry_policy = RetryPolicy::from(RetryParams::for_test())
-                .with_retry_metrics(retry_metrics_counter);
-            let mut request = HelloRequest::default();
-            let mut result: Result<(), Retry<()>> = Err(Retry::Transient(()));
+        let mut transient_error = Err(Retry::Transient(()));
+        assert!(
+            retry_policy
+                .retry(&mut request, &mut transient_error)
+                .is_some()
+        );
+        let mut success = Ok(());
+        assert!(retry_policy.retry(&mut request, &mut success).is_none());
+        assert_eq!(
+            callbacks.events.lock().unwrap().as_slice(),
+            &[("retry", 1), ("success", 2)]
+        );
 
-            assert!(retry_policy.retry(&mut request, &mut result).is_some());
-        });
+        let callbacks = TestRetryCallbacks::default();
+        let mut retry_policy =
+            RetryPolicy::from(RetryParams::for_test()).with_callbacks(callbacks.clone());
+        for num_attempts in 1..=3 {
+            let mut transient_error = Err(Retry::Transient(()));
+            let retry = retry_policy.retry(&mut request, &mut transient_error);
+            assert_eq!(retry.is_some(), num_attempts < 3);
+        }
+        assert_eq!(
+            callbacks.events.lock().unwrap().as_slice(),
+            &[("retry", 1), ("retry", 2), ("error", 3)]
+        );
 
-        let snapshot = snapshotter.snapshot().into_vec();
-        assert!(snapshot.iter().any(|(composite_key, _, _, value)| {
-            let (_, key) = composite_key.clone().into_parts();
-            let labels = key
-                .labels()
-                .map(|label| (label.key(), label.value()))
-                .collect::<Vec<_>>();
-            key.name() == "quickwit_grpc_requests_total"
-                && labels.contains(&("rpc", "hello"))
-                && labels.contains(&("status", "transient"))
-                && labels.contains(&("code", "unavailable"))
-                && value == &DebugValue::Counter(1)
-        }));
+        let callbacks = TestRetryCallbacks::default();
+        let mut retry_policy =
+            RetryPolicy::from(RetryParams::for_test()).with_callbacks(callbacks.clone());
+        let mut permanent_error = Err(Retry::Permanent(()));
+        assert!(retry_policy
+            .retry(&mut request, &mut permanent_error)
+            .is_none());
+        assert_eq!(
+            callbacks.events.lock().unwrap().as_slice(),
+            &[("error", 1)]
+        );
     }
 
     #[tokio::test]

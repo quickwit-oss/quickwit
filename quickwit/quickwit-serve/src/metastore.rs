@@ -21,7 +21,8 @@ use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::retry::RetryParams;
 use quickwit_common::tower::{
-    EventListenerLayer, GrpcMetricsLayer, LoadShedLayer, RetryLayer, RetryPolicy, TimeoutLayer,
+    EventListenerLayer, GrpcMetricsLayer, GrpcStatusCode, LoadShedLayer, RetryCallbacks,
+    RetryLayer, RetryPolicy, RpcName, TimeoutLayer,
 };
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
@@ -70,6 +71,22 @@ static READ_REPLICA_METASTORE_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLay
             labels!("metastore_kind" => "read_replica"),
         )
     });
+
+#[derive(Clone)]
+struct MetastoreRetryCallbacks {
+    metrics_layer: GrpcMetricsLayer,
+}
+
+impl<R, T, E> RetryCallbacks<R, T, E> for MetastoreRetryCallbacks
+where
+    R: RpcName,
+    E: GrpcStatusCode,
+{
+    fn on_retry(&mut self, _request: &R, error: &E, _num_attempts: usize) {
+        self.metrics_layer
+            .record_request(R::rpc_name(), "transient", error.grpc_status_code());
+    }
+}
 
 fn get_metastore_client_max_concurrency() -> usize {
     quickwit_common::get_from_env(
@@ -176,8 +193,11 @@ impl LocalMetastoreServer {
             }
             _ => unreachable!("unexpected metastore service `{service}`"),
         };
-        let retry_policy = RetryPolicy::from(RetryParams::standard())
-            .with_retry_metrics(metrics_layer.requests_total_counter());
+        let retry_callbacks = MetastoreRetryCallbacks {
+            metrics_layer: metrics_layer.clone(),
+        };
+        let retry_policy =
+            RetryPolicy::from(RetryParams::standard()).with_callbacks(retry_callbacks);
         Ok(MetastoreServiceClient::tower()
             // Keep the request metric outside retries so `success` and `error` represent the
             // final result seen by the caller. RetryPolicy records each retryable failed attempt
