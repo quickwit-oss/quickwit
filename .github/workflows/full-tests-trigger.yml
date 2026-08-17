@@ -34,34 +34,46 @@ jobs:
     if: ${{ startsWith(github.event.review.body, '/ci-run-full-tests') }}
     timeout-minutes: 5
     steps:
+      # Bound to github.event.review.user.login (who actually submitted the
+      # review), not context.actor (whoever triggered this workflow *run*).
+      # Those differ if someone later hits "Re-run all jobs": actor becomes
+      # the re-runner while review.body/commit_id/user stay frozen from the
+      # original event, which would otherwise let the re-runner's
+      # permission stand in for the original reviewer's.
       - name: Check reviewer has maintain/admin permission
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          REVIEWER: ${{ github.event.review.user.login }}
         with:
           script: |
+            const reviewer = process.env.REVIEWER;
             const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              username: context.actor,
+              username: reviewer,
             });
-            core.info(`${context.actor} has permission: ${data.permission}`);
+            core.info(`${reviewer} has permission: ${data.permission}`);
             if (!['maintain', 'admin'].includes(data.permission)) {
               core.setFailed(
-                `@${context.actor} has '${data.permission}' permission on this repo, ` +
+                `@${reviewer} has '${data.permission}' permission on this repo, ` +
                 `but triggering the full test suite requires 'maintain' or 'admin'.`
               );
             }
 
       - name: Set commit status to pending
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          REVIEWER: ${{ github.event.review.user.login }}
+          SHA: ${{ github.event.review.commit_id }}
         with:
           script: |
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              sha: '${{ github.event.review.commit_id }}',
+              sha: process.env.SHA,
               state: 'pending',
               context: 'full-tests / make test-all',
-              description: `Triggered by @${context.actor}`,
+              description: `Triggered by @${process.env.REVIEWER}`,
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/pull/${{ github.event.pull_request.number }}`,
             })
 
@@ -73,6 +85,9 @@ jobs:
       # commit under review, regardless of which ref ran the dispatch.
       - name: Dispatch full-tests.yml
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          SHA: ${{ github.event.review.commit_id }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         with:
           script: |
             await github.rest.actions.createWorkflowDispatch({
@@ -81,7 +96,7 @@ jobs:
               workflow_id: 'full-tests.yml',
               ref: 'main',
               inputs: {
-                sha: '${{ github.event.review.commit_id }}',
-                pr_number: '${{ github.event.pull_request.number }}',
+                sha: process.env.SHA,
+                pr_number: process.env.PR_NUMBER,
               },
             })
