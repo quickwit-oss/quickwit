@@ -30,6 +30,11 @@ name: Full test suite
 # (`validate-inputs`) before any other job trusts them, and passed to
 # github-script via `env:`/`process.env` rather than templated into script
 # source, so a crafted input can't break out of a string literal.
+# TEMPORARY: pull_request: added to validate the redesigned job graph
+# (validate-inputs/set-pending/full-tests/report-status split, the protoc
+# fix, docker-compose services) actually runs green before wiring up the
+# real workflow_dispatch-only trigger. Remove this trigger, and the
+# `|| github.event.pull_request...` fallbacks below, before merging.
 on:
   workflow_dispatch:
     inputs:
@@ -41,6 +46,7 @@ on:
         description: "PR number (used only for the failure notification link)"
         required: true
         type: string
+  pull_request:
 
 permissions:
   contents: read
@@ -49,7 +55,7 @@ env:
   STATUS_CONTEXT: "full-tests / make test-all"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.sha }}
+  group: ${{ github.workflow }}-${{ inputs.sha || github.event.pull_request.head.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -61,8 +67,8 @@ jobs:
     steps:
       - name: Validate sha and pr_number are well-formed
         env:
-          SHA: ${{ inputs.sha }}
-          PR_NUMBER: ${{ inputs.pr_number }}
+          SHA: ${{ inputs.sha || github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
         run: |
           if ! [[ "$SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
             echo "::error::sha must be a 40-character hex commit SHA, got: $SHA"
@@ -76,6 +82,11 @@ jobs:
   set-pending:
     name: Set pending status
     needs: [validate-inputs]
+    # TEMPORARY (see `on:` above): while pull_request: is active, don't
+    # post a real commit status on every PR push in the repo — that could
+    # auto-satisfy this exact check's context if it's already required
+    # elsewhere. Remove this condition along with the trigger before merge.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
@@ -83,7 +94,7 @@ jobs:
     steps:
       - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
-          SHA: ${{ inputs.sha }}
+          SHA: ${{ inputs.sha || github.event.pull_request.head.sha }}
         with:
           script: |
             await github.rest.repos.createCommitStatus({
@@ -99,6 +110,10 @@ jobs:
   full-tests:
     name: All-features tests + failpoints (make test-all)
     needs: [set-pending]
+    # A skipped set-pending (see TEMPORARY note there) would otherwise
+    # cascade into skipping this job too, since `needs` defaults to
+    # requiring success, not skipped-or-success.
+    if: ${{ !failure() && !cancelled() }}
     runs-on: gh-ubuntu-arm64
     timeout-minutes: 60
     permissions:
@@ -106,7 +121,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ inputs.sha }}
+          ref: ${{ inputs.sha || github.event.pull_request.head.sha }}
           persist-credentials: false
 
       - name: Install Ubuntu packages
@@ -164,7 +179,9 @@ jobs:
   report-status:
     name: Report final status
     needs: [validate-inputs, full-tests]
-    if: ${{ always() && needs.validate-inputs.result == 'success' }}
+    # TEMPORARY (see `on:` above): only post a real status for a
+    # workflow_dispatch run, same reasoning as set-pending.
+    if: ${{ always() && needs.validate-inputs.result == 'success' && github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
@@ -172,7 +189,7 @@ jobs:
     steps:
       - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
-          SHA: ${{ inputs.sha }}
+          SHA: ${{ inputs.sha || github.event.pull_request.head.sha }}
           RESULT: ${{ needs.full-tests.result }}
         with:
           script: |
@@ -203,7 +220,7 @@ jobs:
           color: "#FF0000"
           title: ""
           description: |
-            ### ❌ [PR #${{ inputs.pr_number }}](https://github.com/${{ github.repository }}/pull/${{ inputs.pr_number }})
+            ### ❌ [PR #${{ inputs.pr_number || github.event.pull_request.number }}](https://github.com/${{ github.repository }}/pull/${{ inputs.pr_number || github.event.pull_request.number }})
 
             The full test suite (`make test-all`) failed.
 
