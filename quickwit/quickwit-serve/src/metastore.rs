@@ -178,8 +178,9 @@ impl LocalMetastoreServer {
         };
         let retry_policy = metrics_layer.retry_policy(RetryParams::standard());
         Ok(MetastoreServiceClient::tower()
-            // Keep the metrics layer outside retries: the retry policy records each retryable
-            // failed attempt as `retry`, while the layer records the final outcome.
+            // Keep metrics outside retries so the response future records only the final outcome
+            // seen by the caller. The retry policy records attempts that will be retried as
+            // `status="retry"`; placing metrics inside retries would also count them as errors.
             .stack_layer(metrics_layer)
             .stack_layer(RetryLayer::new(retry_policy))
             .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
