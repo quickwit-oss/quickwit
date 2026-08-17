@@ -164,17 +164,12 @@ impl GrpcMetricsLayer {
         }
     }
 
-    /// Records a request outcome with this layer's static labels.
-    pub fn record_request(&self, rpc_name: &'static str, status: &'static str, code: tonic::Code) {
-        counter!(
-            parent: self.requests_total,
-            labels: [labels!(
-                "rpc" => rpc_name,
-                "status" => status,
-                "code" => grpc_code_label(code),
-            )],
-        )
-        .inc();
+    /// Returns the request counter with this layer's static labels.
+    ///
+    /// A retry policy uses this to record a retryable failed attempt with
+    /// `status="transient"` after it decides to retry it.
+    pub fn requests_total_counter(&self) -> Counter {
+        self.requests_total.clone()
     }
 
     fn default_labels(subsystem: &'static str, kind: &'static str) -> Labels<3> {
@@ -293,8 +288,6 @@ mod tests {
                     labels!("metastore_kind" => "read_replica", "test_label" => "test"),
                 );
 
-                primary_layer.record_request("hello", "transient", tonic::Code::Unavailable);
-
                 let mut hello_service = primary_layer.clone().layer(tower::service_fn(
                     |request: HelloRequest| async move { Ok::<_, tonic::Status>(request) },
                 ));
@@ -344,10 +337,6 @@ mod tests {
         };
         assert_eq!(
             counter_value("hello", "success", "ok", "primary"),
-            Some(&DebugValue::Counter(1))
-        );
-        assert_eq!(
-            counter_value("hello", "transient", "unavailable", "primary"),
             Some(&DebugValue::Counter(1))
         );
         assert_eq!(
