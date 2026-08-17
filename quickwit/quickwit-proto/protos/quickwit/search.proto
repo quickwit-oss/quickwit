@@ -185,6 +185,8 @@ message ListFieldsEntry {
   repeated string non_searchable_index_ids = 6;
   // The index ids the field exists, but is not aggregatable
   repeated string non_aggregatable_index_ids = 7;
+  // Number of splits whose fields metadata contains this field.
+  uint64 num_splits = 8;
 }
 
 enum ListFieldsType {
