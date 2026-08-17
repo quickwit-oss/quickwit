@@ -109,4 +109,4 @@ testsuite = ["mockall"]
 [package.metadata.cargo-machete]
 # Declared here so the Foyer pin lands with licenses. Follow-up split-range
 # cache PRs use these crates; remove the ignore when they do.
-ignored = ["foyer", "metrics", "mixtrics"]
+ignored = ["metrics", "mixtrics"]
