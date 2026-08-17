@@ -114,7 +114,13 @@ jobs:
     # cascade into skipping this job too, since `needs` defaults to
     # requiring success, not skipped-or-success.
     if: ${{ !failure() && !cancelled() }}
-    runs-on: gh-ubuntu-arm64
+    # gh-ubuntu-arm64 (used by coverage.yml too) reproducibly killed this
+    # job at ~8 minutes across two separate runs — not our timeout-minutes,
+    # something infra-side. Vector's CI (test.yml) uses plain GitHub-hosted
+    # runners throughout (ubuntu-24.04, ubuntu-24.04-8core for heavy jobs);
+    # matching that here with the standard tier first since we can't
+    # confirm quickwit-oss has GitHub's larger-runner tier provisioned.
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
