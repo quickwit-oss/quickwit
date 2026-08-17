@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Instant;
@@ -23,12 +22,9 @@ use quickwit_metrics::{
     Counter, Gauge, Histogram, Labels, LazyCounter, LazyGauge, LazyHistogram, counter, gauge,
     histogram, labels, lazy_counter, lazy_gauge, lazy_histogram,
 };
-use tower::retry::Policy;
 use tower::{Layer, Service};
 
-use super::retry::RetryPolicy;
 use crate::metrics::exponential_buckets;
-use crate::retry::{RetryParams, Retryable};
 
 pub trait RpcName {
     fn rpc_name() -> &'static str;
@@ -51,7 +47,7 @@ impl GrpcStatusCode for std::convert::Infallible {
     }
 }
 
-fn grpc_code_label(code: tonic::Code) -> &'static str {
+pub(crate) fn grpc_code_label(code: tonic::Code) -> &'static str {
     match code {
         tonic::Code::Ok => "ok",
         tonic::Code::Cancelled => "cancelled",
@@ -145,37 +141,6 @@ pub struct GrpcMetricsLayer {
     request_duration_seconds: Histogram,
 }
 
-/// Retry policy that records each failed attempt which will be retried as transient.
-#[derive(Clone)]
-pub struct GrpcRetryPolicy {
-    inner: RetryPolicy,
-    metrics_layer: GrpcMetricsLayer,
-}
-
-impl<R, T, E> Policy<R, T, E> for GrpcRetryPolicy
-where
-    R: Clone + RpcName,
-    E: fmt::Debug + Retryable + GrpcStatusCode,
-{
-    type Future = <RetryPolicy as Policy<R, T, E>>::Future;
-
-    fn retry(&mut self, request: &mut R, result: &mut Result<T, E>) -> Option<Self::Future> {
-        let retry = self.inner.retry(request, result);
-        if retry.is_some() {
-            let Err(error) = result else {
-                unreachable!("a successful request should not be retried");
-            };
-            self.metrics_layer
-                .record_request(R::rpc_name(), "transient", error.grpc_status_code());
-        }
-        retry
-    }
-
-    fn clone_request(&mut self, request: &R) -> Option<R> {
-        <RetryPolicy as Policy<R, T, E>>::clone_request(&mut self.inner, request)
-    }
-}
-
 impl GrpcMetricsLayer {
     pub fn new(subsystem: &'static str, kind: &'static str) -> Self {
         let labels = Self::default_labels(subsystem, kind);
@@ -199,15 +164,8 @@ impl GrpcMetricsLayer {
         }
     }
 
-    /// Wraps the retry policy to record retryable failed attempts as transient requests.
-    pub fn retry_policy(&self, retry_params: RetryParams) -> GrpcRetryPolicy {
-        GrpcRetryPolicy {
-            inner: RetryPolicy::from(retry_params),
-            metrics_layer: self.clone(),
-        }
-    }
-
-    fn record_request(&self, rpc_name: &'static str, status: &'static str, code: tonic::Code) {
+    /// Records a request outcome with this layer's static labels.
+    pub fn record_request(&self, rpc_name: &'static str, status: &'static str, code: tonic::Code) {
         counter!(
             parent: self.requests_total,
             labels: [labels!(
@@ -300,7 +258,7 @@ mod tests {
 
     use super::*;
 
-    #[derive(Clone, Debug)]
+    #[derive(Debug)]
     struct HelloRequest;
 
     impl RpcName for HelloRequest {
@@ -311,29 +269,14 @@ mod tests {
 
     struct GoodbyeRequest;
 
-    #[derive(Debug)]
-    struct RetryableError;
-
-    impl Retryable for RetryableError {
-        fn is_retryable(&self) -> bool {
-            true
-        }
-    }
-
-    impl GrpcStatusCode for RetryableError {
-        fn grpc_status_code(&self) -> tonic::Code {
-            tonic::Code::Unavailable
-        }
-    }
-
     impl RpcName for GoodbyeRequest {
         fn rpc_name() -> &'static str {
             "goodbye"
         }
     }
 
-    #[tokio::test]
-    async fn test_grpc_metrics() {
+    #[test]
+    fn test_grpc_metrics() {
         let recorder = DebuggingRecorder::new();
         let snapshotter = recorder.snapshotter();
 
@@ -350,13 +293,7 @@ mod tests {
                     labels!("metastore_kind" => "read_replica", "test_label" => "test"),
                 );
 
-                let mut retry_policy = primary_layer.retry_policy(RetryParams::for_test());
-                let mut request = HelloRequest;
-                for num_attempts in 1..=3 {
-                    let mut retryable_error: Result<(), RetryableError> = Err(RetryableError);
-                    let retry = retry_policy.retry(&mut request, &mut retryable_error);
-                    assert_eq!(retry.is_some(), num_attempts < 3);
-                }
+                primary_layer.record_request("hello", "transient", tonic::Code::Unavailable);
 
                 let mut hello_service = primary_layer.clone().layer(tower::service_fn(
                     |request: HelloRequest| async move { Ok::<_, tonic::Status>(request) },
@@ -411,7 +348,7 @@ mod tests {
         );
         assert_eq!(
             counter_value("hello", "transient", "unavailable", "primary"),
-            Some(&DebugValue::Counter(2))
+            Some(&DebugValue::Counter(1))
         );
         assert_eq!(
             counter_value("goodbye", "success", "ok", "primary"),
