@@ -50,24 +50,15 @@ Quickwit exposes metrics for several cache components, including `fastfields`, `
 
 ## Metastore Metrics
 
-Metastore RPCs use the shared gRPC metrics:
+All metastore methods are monitored by the 3 metrics:
 
 | Namespace | Metric Name | Description | Labels | Type |
 | --------- | ----------- | ----------- | ------ | ---- |
-| `quickwit_grpc` | `requests_total` | Number of metastore RPC outcomes and retryable failed attempts | [`grpc_service`, `kind`, `metastore_kind`, `rpc`, `status`, `code`] | `counter` |
+| `quickwit_metastore` | `requests_total` | Number of requests | [`operation`, `index`] | `counter` |
+| `quickwit_metastore` | `request_errors_total` | Number of failed requests | [`operation`, `index`] | `counter` |
+| `quickwit_metastore` | `request_duration_seconds` | Duration of requests | [`operation`, `index`, `error`] | `histogram` |
 
-Filter this metric with `grpc_service="metastore"`. `kind` identifies the client or server,
-and `metastore_kind` identifies the primary or read-replica metastore. The `status` label has the
-following meaning for client metrics:
-
-- `success`: the logical RPC succeeded, including after any retries.
-- `transient`: a retryable failed attempt for which the client will issue another attempt.
-- `error`: the logical RPC failed and was returned to the caller (a non-retryable error or after
-  retry exhaustion).
-- `cancelled`: the client cancelled the RPC before it completed.
-
-`rpc` contains the metastore operation name, such as `create_index`, `index_metadata`,
-`delete_index`, `stage_splits`, `publish_splits`, `list_splits`, or `add_source`.
+Examples of operation names: `create_index`, `index_metadata`, `delete_index`, `stage_splits`, `publish_splits`, `list_splits`, `add_source`, ...
 
 PostgreSQL-backed metastores also expose connection pool gauges:
 
