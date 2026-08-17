@@ -80,10 +80,22 @@ fn merge_entries_with_limit(
     let mut entries = Vec::new();
     let mut current_group: Vec<ListFieldsEntry> = Vec::new();
 
+    let truncate_entries = |entries: &mut Vec<ListFieldsEntry>| {
+        entries.sort_unstable_by(|left, right| {
+            right
+                .num_splits
+                .cmp(&left.num_splits)
+                .then_with(|| left.cmp_by_name_and_type(right))
+        });
+        entries.truncate(limit);
+    };
     let flush_group = |entries: &mut Vec<ListFieldsEntry>,
                        current_group: &mut Vec<ListFieldsEntry>| {
         entries.push(merge_same_entry_group(current_group));
         current_group.clear();
+        if entries.len() >= limit * 2 {
+            truncate_entries(entries);
+        }
     };
 
     for entry in merged_entries {
@@ -98,15 +110,7 @@ fn merge_entries_with_limit(
         flush_group(&mut entries, &mut current_group);
     }
 
-    // Prefer fields present in more splits. The name and type tie-breaker makes truncation
-    // deterministic.
-    entries.sort_unstable_by(|left, right| {
-        right
-            .num_splits
-            .cmp(&left.num_splits)
-            .then_with(|| left.cmp_by_name_and_type(right))
-    });
-    entries.truncate(limit);
+    truncate_entries(&mut entries);
     entries.sort_unstable_by(ListFieldsEntry::cmp_by_name_and_type);
     entries
 }
@@ -499,30 +503,27 @@ mod tests {
 
     #[test]
     fn merge_entries_truncates_by_split_count() {
-        let common = ListFieldsEntry {
-            field_name: "common".to_string(),
-            num_splits: 2,
+        let entry = |field_name: &str, num_splits: u64| ListFieldsEntry {
+            field_name: field_name.to_string(),
+            num_splits,
             ..Default::default()
         };
-        let rare_a = ListFieldsEntry {
-            field_name: "rare-a".to_string(),
-            num_splits: 1,
-            ..Default::default()
-        };
-        let rare_b = ListFieldsEntry {
-            field_name: "rare-b".to_string(),
-            num_splits: 1,
-            ..Default::default()
-        };
+        let entries = vec![
+            entry("early-a", 2),
+            entry("early-b", 1),
+            entry("early-c", 1),
+            entry("early-d", 1),
+            entry("late", 3),
+        ];
 
-        let entries = merge_entries_with_limit(vec![vec![common, rare_a, rare_b]], 2);
+        let entries = merge_entries_with_limit(vec![entries], 2);
 
         let field_names: Vec<&str> = entries
             .iter()
             .map(|entry| entry.field_name.as_str())
             .collect();
-        assert_eq!(field_names, ["common", "rare-a"]);
-        assert_eq!(entries[0].num_splits, 2);
+        assert_eq!(field_names, ["early-a", "late"]);
+        assert_eq!(entries[1].num_splits, 3);
     }
 
     #[test]
