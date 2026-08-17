@@ -1,0 +1,143 @@
+name: Full test suite
+
+# Runs the full test suite (`make test-all`: --all-features + failpoints)
+# against every broker/backend service (Kafka, Pulsar, Azurite, fake GCS,
+# Pub/Sub emulator, LocalStack, Postgres) *before* merge.
+#
+# Today only `ci.yml` gates PRs, and it runs `cargo nextest --features=postgres,metrics`
+# on `ubuntu-latest` with a single Postgres service container. None of the
+# other optional features (kafka, pulsar, sqs, gcp-pubsub, azure, gcs,
+# datafusion, failpoints, ...) or broker-backed integration tests are
+# compiled or exercised pre-merge. The only workflow that does run them
+# (`coverage.yml`) triggers on `push` to `main`, i.e. *after* the PR already
+# merged. This workflow closes that gap by running the same `make test-all`
+# target documented in CLAUDE.md directly on pull requests, so a broken
+# feature or broker integration blocks the merge instead of breaking main
+# after the fact.
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+      - trigger-ci-workflow
+    paths:
+      - "quickwit/**"
+      - "!quickwit/quickwit-ui/**"
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCESS_KEY_ID: "placeholder"
+  AWS_SECRET_ACCESS_KEY: "placeholder"
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: -Dwarnings --cfg tokio_unstable
+  # Services started by `make docker-compose-up` expose themselves on
+  # localhost since the job (not the services) is running on the runner host.
+  QW_S3_ENDPOINT: "http://localhost:4566"
+  QW_S3_FORCE_PATH_STYLE_ACCESS: 1
+  PUBSUB_EMULATOR_HOST: "localhost:8681"
+  # Only the backends exercised by the test suite — skips the
+  # observability stack (jaeger/grafana/otel-collector/prometheus).
+  DOCKER_SERVICES: "localstack,postgres,kafka-broker,pulsar-broker,azurite,fake-gcs-server,gcp-pubsub-emulator"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full-tests:
+    name: All-features tests + failpoints (make test-all)
+    runs-on: gh-ubuntu-arm64
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: modified
+        with:
+          filters: |
+            rust_src:
+              - quickwit/**
+              - Makefile
+              - docker-compose.yml
+              - .github/workflows/full-tests.yml
+              - "!quickwit/quickwit-ui/**"
+
+      - name: Install Ubuntu packages
+        if: steps.modified.outputs.rust_src == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install protobuf-compiler libsasl2-dev libcurl4-openssl-dev
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v.6.2.0
+        if: steps.modified.outputs.rust_src == 'true'
+        with:
+          python-version: '3.11'
+
+      - name: Setup stable Rust Toolchain
+        if: steps.modified.outputs.rust_src == 'true'
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: stable
+
+      - name: Setup cache
+        if: steps.modified.outputs.rust_src == 'true'
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: "./quickwit -> target"
+          shared-key: "quickwit-cargo-full"
+
+      - name: Install cargo-nextest
+        if: steps.modified.outputs.rust_src == 'true'
+        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
+        with:
+          tool: cargo-nextest
+
+      - name: Start Docker services
+        if: steps.modified.outputs.rust_src == 'true'
+        run: make docker-compose-up
+
+      - name: Install python packages
+        if: steps.modified.outputs.rust_src == 'true'
+        run: |
+          pip install --user --require-hashes -r ${{ github.workspace }}/.github/workflows/requirements.txt
+          pipenv install --deploy --ignore-pipfile
+        working-directory: ./quickwit/quickwit-cli/tests
+
+      - name: Prepare LocalStack S3
+        if: steps.modified.outputs.rust_src == 'true'
+        run: pipenv run ./prepare_tests.sh
+        working-directory: ./quickwit/quickwit-cli/tests
+
+      - name: make test-all
+        if: always() && steps.modified.outputs.rust_src == 'true'
+        run: make -C quickwit test-all
+        env:
+          QW_TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev
+
+  on-failure:
+    if: ${{ github.repository_owner == 'quickwit-oss' && failure() }}
+    name: On Failure
+    needs: [full-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Message
+        uses: sarisia/actions-status-discord@eb045afee445dc055c18d3d90bd0f244fd062708 # v1.16.0
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          nodetail: true
+          color: "#FF0000"
+          title: ""
+          description: |
+            ### ❌ [${{ github.event.pull_request.title }}](${{ github.event.pull_request.html_url }})
+
+            @${{ github.actor }} the full test suite (`make test-all`) failed on your PR.
+
+            **[View logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})**
