@@ -21,7 +21,7 @@ use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::retry::RetryParams;
 use quickwit_common::tower::{
-    EventListenerLayer, GrpcMetricsLayer, LoadShedLayer, RetryLayer, RetryPolicy, TimeoutLayer,
+    EventListenerLayer, GrpcMetricsLayer, LoadShedLayer, RetryLayer, TimeoutLayer,
 };
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
@@ -176,10 +176,13 @@ impl LocalMetastoreServer {
             }
             _ => unreachable!("unexpected metastore service `{service}`"),
         };
+        let retry_policy = metrics_layer.retry_policy(RetryParams::standard());
         Ok(MetastoreServiceClient::tower()
-            .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
-            .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
+            // Keep the metrics layer outside retries: the retry policy records each retryable
+            // failed attempt as `retry`, while the layer records the final outcome.
             .stack_layer(metrics_layer)
+            .stack_layer(RetryLayer::new(retry_policy))
+            .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
             .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
                 get_metastore_client_max_concurrency(),
             ))

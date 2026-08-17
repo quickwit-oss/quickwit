@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::fmt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Instant;
@@ -19,12 +20,15 @@ use std::time::Instant;
 use futures::{Future, ready};
 use pin_project::{pin_project, pinned_drop};
 use quickwit_metrics::{
-    Counter, Gauge, Histogram, Labels, LazyCounter, LazyGauge, LazyHistogram, counter, gauge,
-    histogram, labels, lazy_counter, lazy_gauge, lazy_histogram,
+    Counter, Gauge, Histogram, LabelNames, Labels, LazyCounter, LazyGauge, LazyHistogram, counter,
+    gauge, histogram, label_names, label_values, labels, lazy_counter, lazy_gauge, lazy_histogram,
 };
+use tower::retry::Policy;
 use tower::{Layer, Service};
 
+use super::retry::RetryPolicy;
 use crate::metrics::exponential_buckets;
+use crate::retry::{RetryParams, Retryable};
 
 pub trait RpcName {
     fn rpc_name() -> &'static str;
@@ -68,6 +72,9 @@ fn grpc_code_label(code: tonic::Code) -> &'static str {
         tonic::Code::Unauthenticated => "unauthenticated",
     }
 }
+
+const GRPC_REQUEST_RPC_LABEL_NAME: LabelNames<1> = label_names!("rpc");
+const GRPC_REQUEST_LABEL_NAMES: LabelNames<3> = label_names!("rpc", "status", "code");
 
 static GRPC_REQUESTS_TOTAL: LazyCounter = lazy_counter!(
         name: "requests_total",
@@ -117,7 +124,7 @@ where
 
         gauge!(
             parent: self.requests_in_flight,
-            "rpc" => rpc_name,
+            labels: [label_values!(GRPC_REQUEST_RPC_LABEL_NAME => rpc_name)],
         )
         .inc();
 
@@ -141,6 +148,36 @@ pub struct GrpcMetricsLayer {
     request_duration_seconds: Histogram,
 }
 
+/// Retry policy that records each failed attempt which will be retried.
+#[derive(Clone)]
+pub struct GrpcRetryPolicy {
+    inner: RetryPolicy,
+    metrics_layer: GrpcMetricsLayer,
+}
+
+impl<R, T, E> Policy<R, T, E> for GrpcRetryPolicy
+where
+    R: Clone + RpcName,
+    E: fmt::Debug + GrpcStatusCode + Retryable,
+{
+    type Future = <RetryPolicy as Policy<R, T, E>>::Future;
+
+    fn retry(&mut self, request: &mut R, result: &mut Result<T, E>) -> Option<Self::Future> {
+        let retry = self.inner.retry(request, result);
+        if let Err(error) = result
+            && retry.is_some()
+        {
+            self.metrics_layer
+                .record_request(R::rpc_name(), "retry", error.grpc_status_code());
+        }
+        retry
+    }
+
+    fn clone_request(&mut self, request: &R) -> Option<R> {
+        <RetryPolicy as Policy<R, T, E>>::clone_request(&mut self.inner, request)
+    }
+}
+
 impl GrpcMetricsLayer {
     pub fn new(subsystem: &'static str, kind: &'static str) -> Self {
         let labels = Self::default_labels(subsystem, kind);
@@ -162,6 +199,24 @@ impl GrpcMetricsLayer {
             requests_in_flight: gauge!(parent: GRPC_REQUESTS_IN_FLIGHT, labels: [labels, extra_labels]),
             request_duration_seconds: histogram!(parent: GRPC_REQUEST_DURATION_SECONDS, labels: [labels, extra_labels]),
         }
+    }
+
+    /// Wraps the retry policy to record retryable failed attempts as retries.
+    pub fn retry_policy(&self, retry_params: RetryParams) -> GrpcRetryPolicy {
+        GrpcRetryPolicy {
+            inner: RetryPolicy::from(retry_params),
+            metrics_layer: self.clone(),
+        }
+    }
+
+    fn record_request(&self, rpc_name: &'static str, status: &'static str, code: tonic::Code) {
+        let labels =
+            label_values!(GRPC_REQUEST_LABEL_NAMES => rpc_name, status, grpc_code_label(code));
+        counter!(
+            parent: self.requests_total,
+            labels: [labels],
+        )
+        .inc();
     }
 
     fn default_labels(subsystem: &'static str, kind: &'static str) -> Labels<3> {
@@ -204,11 +259,13 @@ pub struct ResponseFuture<F> {
 impl<F> PinnedDrop for ResponseFuture<F> {
     fn drop(self: Pin<&mut Self>) {
         let elapsed = self.start.elapsed().as_secs_f64();
-        let rpc_label = labels!("rpc" => self.rpc_name);
-        let status_label = labels!("status" => self.status);
-        let code_label = labels!("code" => self.code);
-        counter!(parent: self.requests_total, labels: [rpc_label, status_label, code_label]).inc();
-        histogram!(parent: self.request_duration_seconds, labels: [rpc_label, status_label, code_label])
+        let counter_labels =
+            label_values!(GRPC_REQUEST_LABEL_NAMES => self.rpc_name, self.status, self.code);
+        let histogram_labels =
+            label_values!(GRPC_REQUEST_LABEL_NAMES => self.rpc_name, self.status, self.code);
+        let rpc_label = label_values!(GRPC_REQUEST_RPC_LABEL_NAME => self.rpc_name);
+        counter!(parent: self.requests_total, labels: [counter_labels]).inc();
+        histogram!(parent: self.request_duration_seconds, labels: [histogram_labels])
             .observe(elapsed);
         gauge!(parent: self.requests_in_flight, labels: [rpc_label]).dec();
     }
@@ -240,12 +297,16 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use metrics::with_local_recorder;
     use metrics_util::debugging::{DebugValue, DebuggingRecorder};
 
+    use super::super::retry::RetryLayer;
     use super::*;
 
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     struct HelloRequest;
 
     impl RpcName for HelloRequest {
@@ -262,13 +323,47 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Debug)]
+    struct RetrySuccessRequest;
+
+    impl RpcName for RetrySuccessRequest {
+        fn rpc_name() -> &'static str {
+            "retry_success"
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    struct RetryExhaustedRequest;
+
+    impl RpcName for RetryExhaustedRequest {
+        fn rpc_name() -> &'static str {
+            "retry_exhausted"
+        }
+    }
+
+    #[derive(Debug)]
+    struct RetryableError;
+
+    impl GrpcStatusCode for RetryableError {
+        fn grpc_status_code(&self) -> tonic::Code {
+            tonic::Code::Unavailable
+        }
+    }
+
+    impl Retryable for RetryableError {
+        fn is_retryable(&self) -> bool {
+            true
+        }
+    }
+
     #[test]
     fn test_grpc_metrics() {
         let recorder = DebuggingRecorder::new();
         let snapshotter = recorder.snapshotter();
 
         with_local_recorder(&recorder, || {
-            futures::executor::block_on(async {
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            runtime.block_on(async {
                 let primary_layer = GrpcMetricsLayer::new_with_labels(
                     "quickwit_test",
                     "server",
@@ -301,6 +396,48 @@ mod tests {
 
                 let hello_future = hello_service.call(HelloRequest);
                 drop(hello_future);
+
+                let retry_params = RetryParams {
+                    base_delay: std::time::Duration::ZERO,
+                    max_delay: std::time::Duration::ZERO,
+                    max_attempts: 3,
+                };
+                let success_attempts = Arc::new(AtomicUsize::new(0));
+                let mut retry_success_service = primary_layer.clone().layer(
+                    RetryLayer::new(primary_layer.retry_policy(retry_params)).layer(
+                        tower::service_fn(move |request: RetrySuccessRequest| {
+                            let success_attempts = success_attempts.clone();
+                            async move {
+                                if success_attempts.fetch_add(1, Ordering::Relaxed) < 2 {
+                                    Err(RetryableError)
+                                } else {
+                                    Ok(request)
+                                }
+                            }
+                        }),
+                    ),
+                );
+                retry_success_service
+                    .call(RetrySuccessRequest)
+                    .await
+                    .unwrap();
+
+                let retry_params = RetryParams {
+                    base_delay: std::time::Duration::ZERO,
+                    max_delay: std::time::Duration::ZERO,
+                    max_attempts: 3,
+                };
+                let mut retry_exhausted_service = primary_layer.clone().layer(
+                    RetryLayer::new(primary_layer.retry_policy(retry_params)).layer(
+                        tower::service_fn(|_request: RetryExhaustedRequest| async move {
+                            Err::<RetryExhaustedRequest, _>(RetryableError)
+                        }),
+                    ),
+                );
+                retry_exhausted_service
+                    .call(RetryExhaustedRequest)
+                    .await
+                    .unwrap_err();
             });
         });
 
@@ -345,6 +482,22 @@ mod tests {
         );
         assert_eq!(
             counter_value("hello", "error", "not_found", "primary"),
+            Some(&DebugValue::Counter(1))
+        );
+        assert_eq!(
+            counter_value("retry_success", "retry", "unavailable", "primary"),
+            Some(&DebugValue::Counter(2))
+        );
+        assert_eq!(
+            counter_value("retry_success", "success", "ok", "primary"),
+            Some(&DebugValue::Counter(1))
+        );
+        assert_eq!(
+            counter_value("retry_exhausted", "retry", "unavailable", "primary"),
+            Some(&DebugValue::Counter(2))
+        );
+        assert_eq!(
+            counter_value("retry_exhausted", "error", "unavailable", "primary"),
             Some(&DebugValue::Counter(1))
         );
     }

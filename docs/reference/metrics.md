@@ -69,6 +69,16 @@ PostgreSQL-backed metastores also expose connection pool gauges:
 | `quickwit_metastore` | `acquire_connections` | Number of requests currently waiting to acquire a PostgreSQL pool connection | `gauge` |
 | `quickwit_metastore` | `max_connections` | Maximum number of PostgreSQL pool connections configured per metastore node | `gauge` |
 
+Metastore gRPC clients and servers also expose shared gRPC metrics:
+
+| Namespace | Metric Name | Description | Labels | Type |
+| --------- | ----------- | ----------- | ------ | ---- |
+| `quickwit_grpc` | `requests_total` | Total number of gRPC requests processed | [`service`, `grpc_service`, `kind`, `rpc`, `status`, `code`, `metastore_kind`] | `counter` |
+| `quickwit_grpc` | `requests_in_flight` | Number of gRPC requests currently in flight | [`service`, `grpc_service`, `kind`, `rpc`, `metastore_kind`] | `gauge` |
+| `quickwit_grpc` | `request_duration_seconds` | Duration of gRPC requests | [`service`, `grpc_service`, `kind`, `rpc`, `status`, `code`, `metastore_kind`] | `histogram` |
+
+For `quickwit_grpc_requests_total`, `status="success"`, `status="error"`, and `status="cancelled"` describe the final outcome of a logical RPC. `status="retry"` describes a failed attempt that the retry policy will retry. The `code` label contains the gRPC status code for the final outcome or retry attempt.
+
 ## Rest API Metrics
 
 | Namespace | Metric Name | Description | Type |
