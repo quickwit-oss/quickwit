@@ -18,10 +18,10 @@ use super::*;
 
 #[test]
 fn test_flush_on_close_pairs_with_write_policy() {
-    assert!(!foyer_flush_on_close(
+    assert!(foyer_flush_on_close(
         SplitRangeCacheWritePolicy::WriteOnEviction
     ));
-    assert!(foyer_flush_on_close(
+    assert!(!foyer_flush_on_close(
         SplitRangeCacheWritePolicy::WriteOnInsertion
     ));
 }

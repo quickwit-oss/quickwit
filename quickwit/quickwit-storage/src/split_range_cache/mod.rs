@@ -97,8 +97,11 @@ pub(crate) fn foyer_write_policy(policy: SplitRangeCacheWritePolicy) -> foyer::H
     }
 }
 
+/// Flush the memory tier on close under write-on-eviction so a graceful
+/// restart can recover hot entries. Write-on-insertion already submitted
+/// those entries to disk.
 pub(crate) fn foyer_flush_on_close(policy: SplitRangeCacheWritePolicy) -> bool {
-    matches!(policy, SplitRangeCacheWritePolicy::WriteOnInsertion)
+    matches!(policy, SplitRangeCacheWritePolicy::WriteOnEviction)
 }
 
 fn foyer_recover_mode(recover_mode: RecoverMode) -> foyer::RecoverMode {
@@ -128,8 +131,6 @@ fn build_foyer_fs_device(
     path: &Path,
     disk_capacity: usize,
 ) -> anyhow::Result<Arc<dyn foyer::Device>> {
-    // Foyer 0.22.3 defaults Linux `direct` to false (buffered I/O). `with_direct`
-    // exists only on Linux, so one builder is enough on every platform.
     let device = foyer::FsDeviceBuilder::new(path)
         .with_capacity(disk_capacity)
         .with_throttle(foyer::Throttle::default())
