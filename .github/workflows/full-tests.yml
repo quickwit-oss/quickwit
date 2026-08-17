@@ -2,31 +2,42 @@ name: Full test suite
 
 # Runs the full test suite (`make test-all`: --all-features + failpoints)
 # against every broker/backend service (Kafka, Pulsar, Azurite, fake GCS,
-# Pub/Sub emulator, LocalStack, Postgres) *before* merge.
+# Pub/Sub emulator, LocalStack, Postgres).
 #
-# Today only `ci.yml` gates PRs, and it runs `cargo nextest --features=postgres,metrics`
-# on `ubuntu-latest` with a single Postgres service container. None of the
-# other optional features (kafka, pulsar, sqs, gcp-pubsub, azure, gcs,
-# datafusion, failpoints, ...) or broker-backed integration tests are
-# compiled or exercised pre-merge. The only workflow that does run them
-# (`coverage.yml`) triggers on `push` to `main`, i.e. *after* the PR already
-# merged. This workflow closes that gap by running the same `make test-all`
-# target documented in CLAUDE.md directly on pull requests, so a broken
-# feature or broker integration blocks the merge instead of breaking main
-# after the fact.
+# This is a REQUIRED status check for merging, but it never runs on its
+# own — it only runs via workflow_dispatch, triggered by
+# full-tests-trigger.yml when a reviewer with `maintain`/`admin` permission
+# on the repo submits a PR review containing `/ci-run-full-tests`. That
+# reviewer is also the one who can merge, so the required check can't be
+# bypassed: they can't hit merge until they've explicitly run (and passed)
+# the full suite themselves.
+#
+# Why gate it at all instead of running automatically on every PR: only
+# `ci.yml` (`cargo nextest --features=postgres,metrics`) and
+# `datafusion-ci.yml` run automatically. None of the other optional
+# features (kafka, pulsar, sqs, gcp-pubsub, azure, gcs, failpoints, ...) or
+# broker-backed integration tests get compiled/exercised otherwise pre-merge
+# — the only workflow that already runs them (`coverage.yml`) triggers on
+# `push` to `main`, i.e. after merge. Running the full suite unconditionally
+# on every PR push was the first design here, but it doesn't match how
+# quickwit's team already runs the sibling `vector` repo's CI (broker/full
+# suites there are merge-queue- or maintainer-comment-gated, never
+# automatic-for-everyone) — this mirrors that instead.
 on:
   workflow_dispatch:
-  pull_request:
-  push:
-    branches:
-      - main
-      - trigger-ci-workflow
-    paths:
-      - "quickwit/**"
-      - "!quickwit/quickwit-ui/**"
+    inputs:
+      sha:
+        description: "Commit SHA to check out and report the status against"
+        required: true
+        type: string
+      pr_number:
+        description: "PR number (used only for the failure notification link)"
+        required: true
+        type: string
 
 permissions:
   contents: read
+  statuses: write
 
 env:
   AWS_REGION: us-east-1
@@ -43,9 +54,10 @@ env:
   # Only the backends exercised by the test suite — skips the
   # observability stack (jaeger/grafana/otel-collector/prometheus).
   DOCKER_SERVICES: "localstack,postgres,kafka-broker,pulsar-broker,azurite,fake-gcs-server,gcp-pubsub-emulator"
+  STATUS_CONTEXT: "full-tests / make test-all"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ inputs.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -55,23 +67,27 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
-      actions: write
+      statuses: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
-        id: modified
         with:
-          filters: |
-            rust_src:
-              - quickwit/**
-              - Makefile
-              - docker-compose.yml
-              - .github/workflows/full-tests.yml
-              - "!quickwit/quickwit-ui/**"
+          ref: ${{ inputs.sha }}
+
+      - name: Set commit status to pending
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ inputs.sha }}',
+              state: 'pending',
+              context: '${{ env.STATUS_CONTEXT }}',
+              description: 'Running full test suite...',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            })
 
       - name: Install Ubuntu packages
-        if: steps.modified.outputs.rust_src == 'true'
         run: |
           sudo apt-get update
           sudo apt-get -y install libsasl2-dev libcurl4-openssl-dev
@@ -81,56 +97,63 @@ jobs:
       # via the `datafusion` feature) requires. coverage.yml hits the same
       # constraint and installs protoc this way for the same reason.
       - name: Install protoc
-        if: steps.modified.outputs.rust_src == 'true'
         uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
         with:
           tool: protoc
 
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v.6.2.0
-        if: steps.modified.outputs.rust_src == 'true'
         with:
           python-version: '3.11'
 
       - name: Setup stable Rust Toolchain
-        if: steps.modified.outputs.rust_src == 'true'
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
           toolchain: stable
 
       - name: Setup cache
-        if: steps.modified.outputs.rust_src == 'true'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: "./quickwit -> target"
           shared-key: "quickwit-cargo-full"
 
       - name: Install cargo-nextest
-        if: steps.modified.outputs.rust_src == 'true'
         uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
         with:
           tool: cargo-nextest
 
       - name: Start Docker services
-        if: steps.modified.outputs.rust_src == 'true'
         run: make docker-compose-up
 
       - name: Install python packages
-        if: steps.modified.outputs.rust_src == 'true'
         run: |
           pip install --user --require-hashes -r ${{ github.workspace }}/.github/workflows/requirements.txt
           pipenv install --deploy --ignore-pipfile
         working-directory: ./quickwit/quickwit-cli/tests
 
       - name: Prepare LocalStack S3
-        if: steps.modified.outputs.rust_src == 'true'
         run: pipenv run ./prepare_tests.sh
         working-directory: ./quickwit/quickwit-cli/tests
 
       - name: make test-all
-        if: always() && steps.modified.outputs.rust_src == 'true'
         run: make -C quickwit test-all
         env:
           QW_TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev
+
+      - name: Report final status
+        if: always()
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const state = '${{ job.status }}' === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ inputs.sha }}',
+              state,
+              context: '${{ env.STATUS_CONTEXT }}',
+              description: state === 'success' ? 'Full test suite passed' : 'Full test suite failed',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            })
 
   on-failure:
     if: ${{ github.repository_owner == 'quickwit-oss' && failure() }}
@@ -146,8 +169,8 @@ jobs:
           color: "#FF0000"
           title: ""
           description: |
-            ### ❌ [${{ github.event.pull_request.title }}](${{ github.event.pull_request.html_url }})
+            ### ❌ [PR #${{ inputs.pr_number }}](https://github.com/${{ github.repository }}/pull/${{ inputs.pr_number }})
 
-            @${{ github.actor }} the full test suite (`make test-all`) failed on your PR.
+            The full test suite (`make test-all`) failed.
 
             **[View logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})**
