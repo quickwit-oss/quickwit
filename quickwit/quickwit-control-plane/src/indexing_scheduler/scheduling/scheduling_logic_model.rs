@@ -21,6 +21,34 @@ use quickwit_proto::indexing::CpuCapacity;
 pub type SourceOrd = u32;
 pub type IndexerOrd = usize;
 
+/// Identifies a set of indexers that are local to each other, ie. availability zone.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct LocalityGroup(usize);
+
+impl LocalityGroup {
+    pub fn from_ord(group_ord: usize) -> LocalityGroup {
+        LocalityGroup(group_ord)
+    }
+
+    pub fn ord(self) -> usize {
+        self.0
+    }
+}
+
+/// Whether an indexer may be assigned shards it does not host.
+/// An indexer in a not-ready state (Retiring, Decommissioning) can only be assigned its own shards.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Eligibility {
+    Any,
+    SelfHostedOnly,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IndexerLocality {
+    pub group: Option<LocalityGroup>,
+    pub eligibility: Eligibility,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Source {
     pub source_ord: SourceOrd,
@@ -78,6 +106,17 @@ impl Source {
 pub struct SchedulingProblem {
     sources: Vec<Source>,
     indexer_cpu_capacities: Vec<CpuCapacity>,
+    indexer_localities: Option<Vec<IndexerLocality>>,
+}
+
+/// Panics if the list of indexers is empty or if one of the indexer has a null capacity.
+fn assert_valid_indexer_cpu_capacities(indexer_cpu_capacities: &[CpuCapacity]) {
+    assert!(!indexer_cpu_capacities.is_empty());
+    assert!(
+        indexer_cpu_capacities
+            .iter()
+            .all(|cpu_capacity| cpu_capacity.cpu_millis() > 0)
+    );
 }
 
 impl SchedulingProblem {
@@ -88,16 +127,29 @@ impl SchedulingProblem {
     pub fn with_indexer_cpu_capacities(
         indexer_cpu_capacities: Vec<CpuCapacity>,
     ) -> SchedulingProblem {
-        assert!(!indexer_cpu_capacities.is_empty());
-        assert!(
-            indexer_cpu_capacities
-                .iter()
-                .all(|cpu_capacity| cpu_capacity.cpu_millis() > 0)
-        );
+        assert_valid_indexer_cpu_capacities(&indexer_cpu_capacities);
         // TODO assert for affinity.
         SchedulingProblem {
             sources: Vec::new(),
             indexer_cpu_capacities,
+            indexer_localities: None,
+        }
+    }
+
+    /// Same as `with_indexer_cpu_capacities`, but the problem also carries the locality group and
+    /// the eligibility of every indexer.
+    ///
+    /// Panics if the two vectors do not have the same length.
+    pub fn with_indexer_localities(
+        indexer_cpu_capacities: Vec<CpuCapacity>,
+        indexer_localities: Vec<IndexerLocality>,
+    ) -> SchedulingProblem {
+        assert_valid_indexer_cpu_capacities(&indexer_cpu_capacities);
+        assert_eq!(indexer_cpu_capacities.len(), indexer_localities.len());
+        SchedulingProblem {
+            sources: Vec::new(),
+            indexer_cpu_capacities,
+            indexer_localities: Some(indexer_localities),
         }
     }
 
@@ -168,6 +220,44 @@ impl SchedulingProblem {
 
     pub fn num_indexers(&self) -> usize {
         self.indexer_cpu_capacities.len()
+    }
+
+    pub fn is_locality_aware(&self) -> bool {
+        self.indexer_localities.is_some()
+    }
+
+    /// Retiring/Decommissioning indexers are only eligible for shards they host.
+    pub fn is_eligible_for_foreign_shards(&self, indexer_ord: IndexerOrd) -> bool {
+        let Some(indexer_localities) = &self.indexer_localities else {
+            return true;
+        };
+        indexer_localities[indexer_ord].eligibility == Eligibility::Any
+    }
+
+    pub fn indexer_locality_group(&self, indexer_ord: IndexerOrd) -> Option<LocalityGroup> {
+        let indexer_localities = self.indexer_localities.as_ref()?;
+        indexer_localities[indexer_ord].group
+    }
+
+    pub fn num_locality_groups(&self) -> usize {
+        let Some(indexer_localities) = &self.indexer_localities else {
+            return 0;
+        };
+        indexer_localities
+            .iter()
+            .filter_map(|indexer_locality| indexer_locality.group)
+            .map(|group| group.ord() + 1)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Number of shards of the source hosted on the indexer.
+    pub fn source_affinity(&self, source_ord: SourceOrd, indexer_ord: IndexerOrd) -> u32 {
+        self.sources[source_ord as usize]
+            .affinities
+            .get(&indexer_ord)
+            .copied()
+            .unwrap_or(0u32)
     }
 }
 
