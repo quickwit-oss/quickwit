@@ -1028,8 +1028,8 @@ impl Storage for S3CompatibleObjectStorage {
                     match list_result {
                         Ok(response) => response,
                         Err(error) => {
-                            let storage_error = StorageErrorKind::Service
-                                .with_error(anyhow::anyhow!("failed to list objects: {error:?}"));
+                            let storage_error =
+                                StorageError::from(error).add_context("failed to list objects");
                             return Err(storage_error);
                         }
                     }
