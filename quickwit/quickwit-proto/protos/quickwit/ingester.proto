@@ -20,27 +20,24 @@ import "quickwit/common.proto";
 import "quickwit/ingest.proto";
 
 service IngesterService {
-  // Persists batches of documents to primary shards hosted on a leader.
+  // Persists batches of documents to shards hosted on an ingester.
   rpc Persist(PersistRequest) returns (PersistResponse);
 
-  // Opens a replication stream from a leader to a follower.
-  rpc OpenReplicationStream(stream SynReplicationMessage) returns (stream AckReplicationMessage);
-
-  // Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch,
+  // Streams records from an ingester. The client can optionally specify a range of positions to fetch,
   // otherwise the stream will go indefinitely or until the shard is closed.
   rpc OpenFetchStream(OpenFetchStreamRequest) returns (stream FetchMessage);
 
   // Streams status updates, called "observations", from an ingester.
   rpc OpenObservationStream(OpenObservationStreamRequest) returns (stream ObservationMessage);
 
-  // Creates and initializes a set of newly opened shards. This RPC is called by the control plane on leaders.
+  // Creates and initializes a set of newly opened shards. This RPC is called by the control plane on ingesters.
   rpc InitShards(InitShardsRequest) returns (InitShardsResponse);
 
   // Only retain the shards that are listed in the request.
   // Other shards are deleted.
   rpc RetainShards(RetainShardsRequest) returns (RetainShardsResponse);
 
-  // Truncates a set of shards at the given positions. This RPC is called by indexers on leaders AND followers.
+  // Truncates a set of shards at the given positions. This RPC is called by indexers on ingesters.
   rpc TruncateShards(TruncateShardsRequest) returns (TruncateShardsResponse);
 
   // Closes a set of shards. This RPC is called by the control plane.
@@ -64,7 +61,7 @@ message RetainShardsResponse {
 }
 
 message PersistRequest {
-  string leader_id = 1;
+  string ingester_id = 1;
   quickwit.ingest.CommitTypeV2 commit_type = 3;
   repeated PersistSubrequest subrequests = 4;
 }
@@ -78,7 +75,7 @@ message PersistSubrequest {
 }
 
 message PersistResponse {
-  string leader_id = 1;
+  string ingester_id = 1;
   repeated PersistSuccess successes = 2;
   repeated PersistFailure failures = 3;
   RoutingUpdate routing_update = 4;
@@ -124,93 +121,6 @@ message PersistFailure {
   string source_id = 3;
   PersistFailureReason reason = 5;
   reserved 4;
-}
-
-message SynReplicationMessage {
-  oneof message {
-    OpenReplicationStreamRequest open_request = 1;
-    InitReplicaRequest init_request = 2;
-    ReplicateRequest replicate_request = 3;
-  }
-}
-
-message AckReplicationMessage {
-  oneof message {
-    OpenReplicationStreamResponse open_response = 1;
-    InitReplicaResponse init_response = 2;
-    ReplicateResponse replicate_response = 3;
-  }
-}
-
-message OpenReplicationStreamRequest {
-  string leader_id = 1;
-  string follower_id = 2;
-  // Position of the request in the replication stream.
-  uint64 replication_seqno = 3;
-}
-
-message OpenReplicationStreamResponse {
-  // Position of the response in the replication stream. It should match the position of the request.
-  uint64 replication_seqno = 1;
-}
-
-message InitReplicaRequest {
-  Shard replica_shard = 1;
-  uint64 replication_seqno = 2;
-}
-
-message InitReplicaResponse {
-  uint64 replication_seqno = 1;
-}
-
-message ReplicateRequest {
-  string leader_id = 1;
-  string follower_id = 2;
-  quickwit.ingest.CommitTypeV2 commit_type = 3;
-  repeated ReplicateSubrequest subrequests = 4;
-  // Position of the request in the replication stream.
-  uint64 replication_seqno = 5;
-}
-
-message ReplicateSubrequest {
-  uint32 subrequest_id = 1;
-  quickwit.common.IndexUid index_uid = 2;
-  string source_id = 3;
-  quickwit.ingest.ShardId shard_id = 4;
-  quickwit.ingest.Position from_position_exclusive = 5;
-  ingest.DocBatchV2 doc_batch = 6;
-}
-
-message ReplicateResponse {
-  string follower_id = 1;
-  repeated ReplicateSuccess successes = 2;
-  repeated ReplicateFailure failures = 3;
-  // Position of the response in the replication stream. It should match the position of the request.
-  uint64 replication_seqno = 4;
-}
-
-message ReplicateSuccess {
-  uint32 subrequest_id = 1;
-  quickwit.common.IndexUid index_uid = 2;
-  string source_id = 3;
-  quickwit.ingest.ShardId shard_id = 4;
-  quickwit.ingest.Position replication_position_inclusive = 5;
-}
-
-enum ReplicateFailureReason {
-  REPLICATE_FAILURE_REASON_UNSPECIFIED = 0;
-  REPLICATE_FAILURE_REASON_SHARD_NOT_FOUND = 1;
-  REPLICATE_FAILURE_REASON_SHARD_CLOSED = 2;
-  reserved 3; // REPLICATE_FAILURE_REASON_RATE_LIMITED = 3;
-  REPLICATE_FAILURE_REASON_WAL_FULL = 4;
-}
-
-message ReplicateFailure {
-  uint32 subrequest_id = 1;
-  quickwit.common.IndexUid index_uid = 2;
-  string source_id = 3;
-  quickwit.ingest.ShardId shard_id = 4;
-  ReplicateFailureReason reason = 5;
 }
 
 message TruncateShardsRequest {

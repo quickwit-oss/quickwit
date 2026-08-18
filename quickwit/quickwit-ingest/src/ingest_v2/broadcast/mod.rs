@@ -50,7 +50,7 @@ fn parse_key(key: &str) -> Option<SourceUid> {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
+    use quickwit_common::shared_consts::INGESTER_SHARDS_PREFIX;
     use quickwit_proto::types::{IndexUid, SourceId, SourceUid};
 
     use super::*;
@@ -61,7 +61,7 @@ mod tests {
             index_uid: IndexUid::for_test("test-index", 0),
             source_id: SourceId::from("test-source"),
         };
-        let key = make_key(INGESTER_PRIMARY_SHARDS_PREFIX, &source_uid);
+        let key = make_key(INGESTER_SHARDS_PREFIX, &source_uid);
         assert_eq!(
             key,
             "ingester.primary_shards:test-index:00000000000000000000000000:test-source"
