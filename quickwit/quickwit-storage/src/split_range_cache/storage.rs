@@ -90,16 +90,17 @@ impl FoyerSplitRangeCache {
             .cache
             .get_or_fetch(&key, || async move {
                 let bytes = fetch().await.map_err(LowerStorageError)?;
-                let properties =
-                    if admission_bypass_reason(key_size, &bytes, max_entry_size, block_size)
-                        .is_some()
-                    {
+                if admission_bypass_reason(key_size, &bytes, max_entry_size, block_size).is_some() {
+                    // Foyer keeps this tag on the RAM entry and skips disk enqueue
+                    // on eviction (write-on-eviction).
+                    Ok::<_, LowerStorageError>((
+                        bytes,
                         foyer::HybridCacheProperties::default()
-                            .with_location(foyer::Location::InMem)
-                    } else {
-                        foyer::HybridCacheProperties::default()
-                    };
-                Ok::<_, LowerStorageError>((bytes, properties))
+                            .with_location(foyer::Location::InMem),
+                    ))
+                } else {
+                    Ok((bytes, foyer::HybridCacheProperties::default()))
+                }
             })
             .await
         {
