@@ -176,10 +176,13 @@ impl LocalMetastoreServer {
             }
             _ => unreachable!("unexpected metastore service `{service}`"),
         };
+        let retry_policy =
+            metrics_layer.from_retry_policy(RetryPolicy::from(RetryParams::standard()));
         Ok(MetastoreServiceClient::tower()
-            .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
-            .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
+            // Metrics wrap retries so they record only the final outcome.
             .stack_layer(metrics_layer)
+            .stack_layer(RetryLayer::new(retry_policy))
+            .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
             .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
                 get_metastore_client_max_concurrency(),
             ))
