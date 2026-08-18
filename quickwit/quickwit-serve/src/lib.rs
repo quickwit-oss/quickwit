@@ -82,7 +82,7 @@ use quickwit_compaction::{
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig, disable_ingest_v1};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
-use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
+use quickwit_control_plane::{IndexerPoolEntry, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
 use quickwit_indexing::actors::{IndexingService, MergeSchedulerService};
 use quickwit_indexing::models::ShardPositionsService;
@@ -1502,13 +1502,13 @@ fn build_indexer_insert_change(
     node: &ClusterNode,
     indexing_service_opt: Option<Mailbox<IndexingService>>,
     grpc_max_message_size: ByteSize,
-) -> Change<NodeId, IndexerNodeInfo> {
+) -> Change<NodeId, IndexerPoolEntry> {
     let chitchat_id = node.chitchat_id();
     let node_id: NodeId = node.node_id.clone();
     let client = build_indexing_service(node, indexing_service_opt, grpc_max_message_size);
     Change::Insert(
         node_id.clone(),
-        IndexerNodeInfo {
+        IndexerPoolEntry {
             node_id,
             generation_id: chitchat_id.generation_id,
             client,
@@ -1520,7 +1520,7 @@ fn build_indexer_insert_change(
     )
 }
 
-fn build_indexer_remove_change(node: &ClusterNode) -> Change<NodeId, IndexerNodeInfo> {
+fn build_indexer_remove_change(node: &ClusterNode) -> Change<NodeId, IndexerPoolEntry> {
     let chitchat_id = node.chitchat_id();
     info!(
         node_id = %chitchat_id.node_id,
