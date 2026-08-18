@@ -19,8 +19,8 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use async_trait::async_trait;
-use futures::stream::BoxStream;
-use futures::{StreamExt, stream};
+use futures::StreamExt;
+use futures::stream::{self, BoxStream};
 use quickwit_common::uri::Uri;
 use tempfile::TempPath;
 use tokio::fs::File;
@@ -31,7 +31,7 @@ use crate::{BulkDeleteError, OwnedBytes, PutPayload, StorageErrorKind, StorageRe
 
 /// Metadata for an object listed from storage.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ObjectMetadata {
+pub struct ListObjectMetadata {
     /// Object path relative to this storage root.
     pub path: PathBuf,
     /// Object size in bytes.
@@ -41,7 +41,7 @@ pub struct ObjectMetadata {
 }
 
 /// Stream of object metadata batches returned by [`Storage::list`].
-pub type ListStream = BoxStream<'static, StorageResult<Vec<ObjectMetadata>>>;
+pub type ListObjectsStream = BoxStream<'static, StorageResult<Vec<ListObjectMetadata>>>;
 
 /// This trait is only used to make it build trait object with `AsyncWrite + Send + Unpin`.
 pub trait SendableAsync: AsyncWrite + Send + Unpin {}
@@ -147,11 +147,10 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
     /// Lists object metadata for objects whose paths start with `prefix`.
     ///
     /// Returned paths are relative to this storage root, like every other [`Storage`] operation.
-    fn list(&self, prefix: &Path) -> ListStream {
+    fn list(&self, _prefix: &Path) -> ListObjectsStream {
         let err = anyhow::anyhow!(
-            "listing objects is not supported for storage `{}` with prefix `{}`",
+            "listing objects is not supported for storage `{}`",
             self.uri(),
-            prefix.display()
         );
         let storage_error = StorageErrorKind::Internal.with_error(err);
         stream::once(async move { Err(storage_error) }).boxed()

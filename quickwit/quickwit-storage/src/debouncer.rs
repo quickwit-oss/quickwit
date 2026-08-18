@@ -28,7 +28,7 @@ use tantivy::directory::OwnedBytes;
 use tokio::io::AsyncRead;
 
 use crate::storage::SendableAsync;
-use crate::{BulkDeleteError, ListStream, Storage, StorageResult};
+use crate::{BulkDeleteError, ListObjectsStream, Storage, StorageResult};
 
 /// The AsyncDebouncer debounces inflight Futures, so that concurrent async request to the same data
 /// source can be deduplicated.
@@ -206,7 +206,7 @@ impl<T: Storage> Storage for DebouncedStorage<T> {
         self.underlying.bulk_delete(paths).await
     }
 
-    fn list(&self, prefix: &Path) -> ListStream {
+    fn list(&self, prefix: &Path) -> ListObjectsStream {
         self.underlying.list(prefix)
     }
 

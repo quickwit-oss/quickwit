@@ -59,8 +59,8 @@ use crate::object_storage::MultiPartPolicy;
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DeleteFailure, ListStream, ObjectMetadata, OwnedBytes, Storage, StorageError,
-    StorageErrorKind, StorageResolverError, StorageResult,
+    BulkDeleteError, DeleteFailure, ListObjectMetadata, ListObjectsStream, OwnedBytes, Storage,
+    StorageError, StorageErrorKind, StorageResolverError, StorageResult,
 };
 
 /// Semaphore to limit the number of concurrent requests to the object store. Some object stores
@@ -272,9 +272,7 @@ fn aws_checksum_algorithm(
 /// Coarse classification of an SDK error, used as a counter label.
 /// timeout, io, throttling, transient, or other.
 fn classify_sdk_error<E>(error: &SdkError<E>) -> &'static str
-where
-    E: ProvideErrorMetadata,
-{
+where E: ProvideErrorMetadata {
     match error {
         SdkError::TimeoutError(_) => "timeout",
         SdkError::DispatchFailure(failure) => {
@@ -962,7 +960,7 @@ impl Storage for S3CompatibleObjectStorage {
     }
 
     #[instrument(name = "storage.s3.list", level = "debug", skip(self))]
-    fn list(&self, prefix: &Path) -> ListStream {
+    fn list(&self, prefix: &Path) -> ListObjectsStream {
         let s3_client = self.s3_client.clone();
         let bucket = self.bucket.clone();
         let key_prefix = self.key(prefix);
@@ -1049,7 +1047,8 @@ impl Storage for S3CompatibleObjectStorage {
                         Err(error) => {
                             let storage_error =
                                 StorageErrorKind::Internal.with_error(anyhow::anyhow!(
-                                    "listed object `{key}` is not under storage prefix `{}`: {error}",
+                                    "listed object `{key}` is not under storage prefix `{}`: \
+                                     {error}",
                                     storage_prefix.display()
                                 ));
                             return Err(storage_error);
@@ -1073,7 +1072,8 @@ impl Storage for S3CompatibleObjectStorage {
                             Ok(last_modified) => last_modified,
                             Err(error) => {
                                 warn!(
-                                    "listed object last modified time conversion failed, skipping: {error}"
+                                    "listed object last modified time conversion failed, \
+                                     skipping: {error}"
                                 );
                                 continue;
                             }
@@ -1083,7 +1083,7 @@ impl Storage for S3CompatibleObjectStorage {
                             continue;
                         }
                     };
-                    let metadata = ObjectMetadata {
+                    let metadata = ListObjectMetadata {
                         path: relative_path,
                         size_bytes,
                         last_modified,
@@ -1360,7 +1360,7 @@ mod tests {
             checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         });
 
-        let pages: Vec<Vec<ObjectMetadata>> = storage
+        let pages: Vec<Vec<ListObjectMetadata>> = storage
             .list(Path::new("splits"))
             .try_collect()
             .await
