@@ -16,13 +16,13 @@ use std::num::NonZeroU32;
 
 use fnv::{FnvHashMap, FnvHashSet};
 use quickwit_proto::indexing::CpuCapacity;
-use quickwit_proto::types::{IndexUid, ShardId, SourceUid};
+use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
 use super::{
-    Eligibility, IndexerInfo, IndexerSpec, SourceToSchedule, SourceToScheduleType,
-    build_physical_indexing_plan, shard_ids_of_source, total_num_shards,
+    ChurnTally, Eligibility, IndexerInfo, IndexerSpec, SourceToSchedule, SourceToScheduleType,
+    build_physical_indexing_plan, count_shards_that_moved, shard_ids_of_source, total_num_shards,
 };
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::model::ShardLocations;
@@ -207,7 +207,7 @@ impl ChurnWorld {
         shard_locations
     }
 
-    fn indexer_infos(&self, locality_aware: bool) -> FnvHashMap<String, IndexerInfo> {
+    fn indexer_infos(&self, locality_aware: bool) -> FnvHashMap<NodeId, IndexerInfo> {
         let mut indexer_infos = FnvHashMap::default();
         for (indexer_ord, indexer_spec) in self.indexer_specs.iter().enumerate() {
             let draining = self.draining_indexer_ords.contains(&indexer_ord);
@@ -216,7 +216,7 @@ impl ChurnWorld {
                     continue;
                 }
                 let indexer_info = IndexerInfo::for_test(INDEXER_CPU_CAPACITY);
-                indexer_infos.insert(indexer_spec.node_id.to_string(), indexer_info);
+                indexer_infos.insert(indexer_spec.node_id.clone(), indexer_info);
                 continue;
             }
             let eligibility = if draining {
@@ -225,61 +225,9 @@ impl ChurnWorld {
                 Eligibility::Any
             };
             let indexer_info = indexer_spec.to_indexer_info(eligibility);
-            indexer_infos.insert(indexer_spec.node_id.to_string(), indexer_info);
+            indexer_infos.insert(indexer_spec.node_id.clone(), indexer_info);
         }
         indexer_infos
-    }
-}
-
-fn indexer_per_shard(plan: &PhysicalIndexingPlan) -> FnvHashMap<&ShardId, &String> {
-    let mut indexer_per_shard = FnvHashMap::default();
-    for (indexer, tasks) in plan.indexing_tasks_per_indexer() {
-        for task in tasks {
-            for shard_id in &task.shard_ids {
-                indexer_per_shard.insert(shard_id, indexer);
-            }
-        }
-    }
-    indexer_per_shard
-}
-
-fn count_shards_that_moved(
-    plan: &PhysicalIndexingPlan,
-    replanned: &PhysicalIndexingPlan,
-) -> (usize, usize) {
-    let indexer_per_shard_before = indexer_per_shard(plan);
-    let indexer_per_shard_after = indexer_per_shard(replanned);
-    let mut num_surviving_shards = 0;
-    let mut num_moved_shards = 0;
-    for (shard_id, indexer_before) in &indexer_per_shard_before {
-        let Some(indexer_after) = indexer_per_shard_after.get(*shard_id) else {
-            continue;
-        };
-        num_surviving_shards += 1;
-        if indexer_before != indexer_after {
-            num_moved_shards += 1;
-        }
-    }
-    (num_moved_shards, num_surviving_shards)
-}
-
-#[derive(Default)]
-struct ChurnTally {
-    num_moved_shards: usize,
-    num_surviving_shards: usize,
-    max_moved_percent: f32,
-}
-
-impl ChurnTally {
-    fn record(&mut self, num_moved_shards: usize, num_surviving_shards: usize) {
-        self.num_moved_shards += num_moved_shards;
-        self.num_surviving_shards += num_surviving_shards;
-        let moved_percent = num_moved_shards as f32 * 100.0 / num_surviving_shards.max(1) as f32;
-        self.max_moved_percent = self.max_moved_percent.max(moved_percent);
-    }
-
-    fn moved_percent(&self) -> f32 {
-        self.num_moved_shards as f32 * 100.0 / self.num_surviving_shards.max(1) as f32
     }
 }
 

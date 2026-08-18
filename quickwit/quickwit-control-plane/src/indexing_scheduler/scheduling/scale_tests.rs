@@ -17,7 +17,7 @@ use std::num::NonZeroU32;
 
 use fnv::{FnvHashMap, FnvHashSet};
 use quickwit_proto::indexing::CpuCapacity;
-use quickwit_proto::types::{IndexUid, PipelineUid, ShardId, SourceUid};
+use quickwit_proto::types::{IndexUid, NodeId, PipelineUid, ShardId, SourceUid};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
@@ -377,7 +377,7 @@ fn build_shard_locations<'a>(
 fn build_indexer_infos(
     indexer_specs: &[IndexerSpec],
     draining_indexer_ords: &FnvHashSet<usize>,
-) -> FnvHashMap<String, IndexerInfo> {
+) -> FnvHashMap<NodeId, IndexerInfo> {
     let mut indexer_infos = FnvHashMap::default();
     for (indexer_ord, indexer_spec) in indexer_specs.iter().enumerate() {
         let eligibility = if draining_indexer_ords.contains(&indexer_ord) {
@@ -386,7 +386,7 @@ fn build_indexer_infos(
             Eligibility::Any
         };
         let indexer_info = indexer_spec.to_indexer_info(eligibility);
-        indexer_infos.insert(indexer_spec.node_id.to_string(), indexer_info);
+        indexer_infos.insert(indexer_spec.node_id.clone(), indexer_info);
     }
     indexer_infos
 }
@@ -477,8 +477,7 @@ fn num_idle_indexers(plan: &PhysicalIndexingPlan, indexer_specs: &[IndexerSpec])
     indexer_specs
         .iter()
         .filter(|indexer_spec| {
-            let node_id = indexer_spec.node_id.as_str();
-            shard_ids_for_indexer(plan, node_id).is_empty()
+            shard_ids_for_indexer(plan, &indexer_spec.node_id).is_empty()
         })
         .count()
 }
@@ -497,14 +496,14 @@ fn assert_load_is_balanced(plan: &PhysicalIndexingPlan, sources: &[SourceToSched
 fn build_host_per_shard<'a>(
     sources: &'a [SourceToSchedule],
     shard_locations: &ShardLocations,
-) -> FnvHashMap<&'a ShardId, String> {
+) -> FnvHashMap<&'a ShardId, NodeId> {
     let mut host_per_shard = FnvHashMap::default();
     for source in sources {
         for shard_id in shard_ids_of_source(source) {
             let Some(host) = shard_locations.get_shard_locations(shard_id).first() else {
                 continue;
             };
-            host_per_shard.insert(shard_id, host.to_string());
+            host_per_shard.insert(shard_id, (*host).clone());
         }
     }
     host_per_shard
@@ -512,7 +511,7 @@ fn build_host_per_shard<'a>(
 
 fn pipeline_per_shard(
     plan: &PhysicalIndexingPlan,
-) -> FnvHashMap<&ShardId, (&String, Option<PipelineUid>)> {
+) -> FnvHashMap<&ShardId, (&NodeId, Option<PipelineUid>)> {
     let mut pipeline_per_shard = FnvHashMap::default();
     for (indexer, tasks) in plan.indexing_tasks_per_indexer() {
         for task in tasks {
@@ -542,7 +541,7 @@ fn assert_locality_of_hosted_shards_is_stable(
     plan: &PhysicalIndexingPlan,
     replanned: &PhysicalIndexingPlan,
     shard_locations: &ShardLocations,
-    indexer_infos: &FnvHashMap<String, IndexerInfo>,
+    indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
 ) {
     let metrics_before = get_shard_locality_metrics(plan, shard_locations, indexer_infos);
     let metrics_after = get_shard_locality_metrics(replanned, shard_locations, indexer_infos);
@@ -557,14 +556,14 @@ fn assert_locality_of_hosted_shards_is_stable(
     assert_eq!(num_displaced_before, num_displaced_after);
 }
 
-fn is_draining(indexer: &str, indexer_infos: &FnvHashMap<String, IndexerInfo>) -> bool {
+fn is_draining(indexer: &NodeId, indexer_infos: &FnvHashMap<NodeId, IndexerInfo>) -> bool {
     indexer_infos[indexer].eligibility == Eligibility::SelfHostedOnly
 }
 
 fn assert_draining_indexers_index_only_own_shards(
     plan: &PhysicalIndexingPlan,
-    host_per_shard: &FnvHashMap<&ShardId, String>,
-    indexer_infos: &FnvHashMap<String, IndexerInfo>,
+    host_per_shard: &FnvHashMap<&ShardId, NodeId>,
+    indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
 ) {
     for (indexer, tasks) in plan.indexing_tasks_per_indexer() {
         if !is_draining(indexer, indexer_infos) {
@@ -584,15 +583,15 @@ fn assert_draining_indexers_index_only_own_shards(
 
 fn assert_drained_az_spills_across_zones(
     plan: &PhysicalIndexingPlan,
-    host_per_shard: &FnvHashMap<&ShardId, String>,
-    indexer_infos: &FnvHashMap<String, IndexerInfo>,
+    host_per_shard: &FnvHashMap<&ShardId, NodeId>,
+    indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
     drained_az: &str,
 ) {
     for (indexer, tasks) in plan.indexing_tasks_per_indexer() {
         for task in tasks {
             for shard_id in &task.shard_ids {
                 let host = &host_per_shard[shard_id];
-                let host_az = indexer_infos[host.as_str()].availability_zone.as_deref();
+                let host_az = indexer_infos[host].availability_zone.as_deref();
                 if host_az != Some(drained_az) || host == indexer {
                     continue;
                 }
@@ -609,8 +608,8 @@ fn assert_drained_az_spills_across_zones(
 }
 
 fn num_shards_hosted_on_draining_indexers(
-    host_per_shard: &FnvHashMap<&ShardId, String>,
-    indexer_infos: &FnvHashMap<String, IndexerInfo>,
+    host_per_shard: &FnvHashMap<&ShardId, NodeId>,
+    indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
 ) -> usize {
     host_per_shard
         .values()
@@ -620,7 +619,7 @@ fn num_shards_hosted_on_draining_indexers(
 
 fn num_shards_indexed_by_draining_indexers(
     plan: &PhysicalIndexingPlan,
-    indexer_infos: &FnvHashMap<String, IndexerInfo>,
+    indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
 ) -> usize {
     plan.indexing_tasks_per_indexer()
         .iter()
