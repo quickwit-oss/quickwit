@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Instant;
@@ -26,9 +25,7 @@ use quickwit_metrics::{
 use tower::retry::Policy;
 use tower::{Layer, Service};
 
-use super::retry::RetryPolicy;
 use crate::metrics::exponential_buckets;
-use crate::retry::{RetryParams, Retryable};
 
 pub trait RpcName {
     fn rpc_name() -> &'static str;
@@ -150,17 +147,18 @@ pub struct GrpcMetricsLayer {
 
 /// Retry policy that records each failed attempt which will be retried.
 #[derive(Clone)]
-pub struct GrpcRetryPolicy {
-    inner: RetryPolicy,
+pub struct GrpcRetryPolicy<P> {
+    inner: P,
     metrics_layer: GrpcMetricsLayer,
 }
 
-impl<R, T, E> Policy<R, T, E> for GrpcRetryPolicy
+impl<R, T, E, P> Policy<R, T, E> for GrpcRetryPolicy<P>
 where
-    R: Clone + RpcName,
-    E: fmt::Debug + GrpcStatusCode + Retryable,
+    P: Policy<R, T, E>,
+    R: RpcName,
+    E: GrpcStatusCode,
 {
-    type Future = <RetryPolicy as Policy<R, T, E>>::Future;
+    type Future = P::Future;
 
     fn retry(&mut self, request: &mut R, result: &mut Result<T, E>) -> Option<Self::Future> {
         let retry = self.inner.retry(request, result);
@@ -174,7 +172,7 @@ where
     }
 
     fn clone_request(&mut self, request: &R) -> Option<R> {
-        <RetryPolicy as Policy<R, T, E>>::clone_request(&mut self.inner, request)
+        self.inner.clone_request(request)
     }
 }
 
@@ -201,10 +199,10 @@ impl GrpcMetricsLayer {
         }
     }
 
-    /// Wraps the retry policy to record retryable failed attempts as retries.
-    pub fn retry_policy(&self, retry_params: RetryParams) -> GrpcRetryPolicy {
+    /// Wraps a retry policy to record failed attempts that it retries.
+    pub fn from_retry_policy<P>(&self, inner: P) -> GrpcRetryPolicy<P> {
         GrpcRetryPolicy {
-            inner: RetryPolicy::from(retry_params),
+            inner,
             metrics_layer: self.clone(),
         }
     }
@@ -303,8 +301,9 @@ mod tests {
     use metrics::with_local_recorder;
     use metrics_util::debugging::{DebugValue, DebuggingRecorder};
 
-    use super::super::retry::RetryLayer;
+    use super::super::retry::{RetryLayer, RetryPolicy};
     use super::*;
+    use crate::retry::{RetryParams, Retryable};
 
     #[derive(Clone, Debug)]
     struct HelloRequest;
@@ -403,20 +402,22 @@ mod tests {
                     max_attempts: 3,
                 };
                 let success_attempts = Arc::new(AtomicUsize::new(0));
-                let mut retry_success_service = primary_layer.clone().layer(
-                    RetryLayer::new(primary_layer.retry_policy(retry_params)).layer(
-                        tower::service_fn(move |request: RetrySuccessRequest| {
-                            let success_attempts = success_attempts.clone();
-                            async move {
-                                if success_attempts.fetch_add(1, Ordering::Relaxed) < 2 {
-                                    Err(RetryableError)
-                                } else {
-                                    Ok(request)
+                let retry_policy = primary_layer.from_retry_policy(RetryPolicy::from(retry_params));
+                let mut retry_success_service =
+                    primary_layer
+                        .clone()
+                        .layer(RetryLayer::new(retry_policy).layer(tower::service_fn(
+                            move |request: RetrySuccessRequest| {
+                                let success_attempts = success_attempts.clone();
+                                async move {
+                                    if success_attempts.fetch_add(1, Ordering::Relaxed) < 2 {
+                                        Err(RetryableError)
+                                    } else {
+                                        Ok(request)
+                                    }
                                 }
-                            }
-                        }),
-                    ),
-                );
+                            },
+                        )));
                 retry_success_service
                     .call(RetrySuccessRequest)
                     .await
@@ -427,13 +428,15 @@ mod tests {
                     max_delay: std::time::Duration::ZERO,
                     max_attempts: 3,
                 };
-                let mut retry_exhausted_service = primary_layer.clone().layer(
-                    RetryLayer::new(primary_layer.retry_policy(retry_params)).layer(
-                        tower::service_fn(|_request: RetryExhaustedRequest| async move {
-                            Err::<RetryExhaustedRequest, _>(RetryableError)
-                        }),
-                    ),
-                );
+                let retry_policy = primary_layer.from_retry_policy(RetryPolicy::from(retry_params));
+                let mut retry_exhausted_service =
+                    primary_layer
+                        .clone()
+                        .layer(RetryLayer::new(retry_policy).layer(tower::service_fn(
+                            |_request: RetryExhaustedRequest| async move {
+                                Err::<RetryExhaustedRequest, _>(RetryableError)
+                            },
+                        )));
                 retry_exhausted_service
                     .call(RetryExhaustedRequest)
                     .await
