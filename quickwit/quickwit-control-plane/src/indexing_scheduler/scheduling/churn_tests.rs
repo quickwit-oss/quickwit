@@ -16,7 +16,7 @@ use std::num::NonZeroU32;
 
 use fnv::{FnvHashMap, FnvHashSet};
 use quickwit_proto::indexing::CpuCapacity;
-use quickwit_proto::types::{IndexUid, ShardId, SourceUid};
+use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
@@ -207,7 +207,7 @@ impl ChurnWorld {
         shard_locations
     }
 
-    fn indexer_infos(&self, locality_aware: bool) -> FnvHashMap<String, IndexerInfo> {
+    fn indexer_infos(&self, locality_aware: bool) -> FnvHashMap<NodeId, IndexerInfo> {
         let mut indexer_infos = FnvHashMap::default();
         for (indexer_ord, indexer_spec) in self.indexer_specs.iter().enumerate() {
             let draining = self.draining_indexer_ords.contains(&indexer_ord);
@@ -216,7 +216,7 @@ impl ChurnWorld {
                     continue;
                 }
                 let indexer_info = IndexerInfo::for_test(INDEXER_CPU_CAPACITY);
-                indexer_infos.insert(indexer_spec.node_id.to_string(), indexer_info);
+                indexer_infos.insert(indexer_spec.node_id.clone(), indexer_info);
                 continue;
             }
             let eligibility = if draining {
@@ -225,13 +225,13 @@ impl ChurnWorld {
                 Eligibility::Any
             };
             let indexer_info = indexer_spec.to_indexer_info(eligibility);
-            indexer_infos.insert(indexer_spec.node_id.to_string(), indexer_info);
+            indexer_infos.insert(indexer_spec.node_id.clone(), indexer_info);
         }
         indexer_infos
     }
 }
 
-fn indexer_per_shard(plan: &PhysicalIndexingPlan) -> FnvHashMap<&ShardId, &String> {
+fn indexer_per_shard(plan: &PhysicalIndexingPlan) -> FnvHashMap<&ShardId, &NodeId> {
     let mut indexer_per_shard = FnvHashMap::default();
     for (indexer, tasks) in plan.indexing_tasks_per_indexer() {
         for task in tasks {

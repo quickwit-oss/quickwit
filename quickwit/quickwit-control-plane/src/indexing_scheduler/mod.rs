@@ -46,11 +46,11 @@ use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotif
 use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
 use crate::metrics::{APPLY_PLAN_TOTAL, SCHEDULE_TOTAL, ShardLocalityMetrics};
 use crate::model::{ControlPlaneModel, ShardEntry, ShardLocations};
-use crate::{IndexerNodeInfo, IndexerPool};
+use crate::{IndexerPoolEntry, IndexerPool};
 
 const DEFAULT_ENABLE_VARIABLE_SHARD_LOAD: bool = false;
 
-const DEFAULT_ENABLE_AZ_AWARE_SCHEDULING: bool = false;
+const DEFAULT_ENABLE_LOCALITY_AWARE_SCHEDULING: bool = false;
 
 const DEFAULT_MIN_SHARD_LOCALITY_PERCENT: u32 = 30;
 
@@ -76,7 +76,7 @@ pub struct IndexingSchedulerState {
     pub num_schedule_indexing_plan: usize,
     pub last_applied_physical_plan: Option<PhysicalIndexingPlan>,
     #[serde(skip)]
-    pub last_applied_indexer_statuses: FnvHashMap<String, IngesterStatus>,
+    pub last_applied_indexer_statuses: FnvHashMap<NodeId, IngesterStatus>,
     #[serde(skip)]
     pub last_applied_plan_timestamp: Option<Instant>,
     #[serde(skip)]
@@ -173,14 +173,18 @@ fn enable_variable_shard_load() -> bool {
     *IS_SHARD_LOAD_CP_ENABLED
 }
 
-fn enable_az_aware_scheduling() -> bool {
-    static IS_AZ_AWARE_SCHEDULING_ENABLED: LazyLock<bool> = LazyLock::new(|| {
+/// Locality aware scheduling is additional constraints on top of the regular indexing scheduler.
+/// With this enabled, availability zone will be used (if provided) to preferentially index shards
+/// in the same-AZ. It also allows decommissioning indexers to index their own shards to speed up
+/// the decommissioning process.
+fn enable_locality_aware_scheduling() -> bool {
+    static IS_LOCALITY_AWARE_SCHEDULING_ENABLED: LazyLock<bool> = LazyLock::new(|| {
         quickwit_common::get_bool_from_env(
-            "QW_ENABLE_AZ_AWARE_SCHEDULING",
-            DEFAULT_ENABLE_AZ_AWARE_SCHEDULING,
+            "QW_ENABLE_LOCALITY_AWARE_SCHEDULING",
+            DEFAULT_ENABLE_LOCALITY_AWARE_SCHEDULING,
         )
     });
-    *IS_AZ_AWARE_SCHEDULING_ENABLED
+    *IS_LOCALITY_AWARE_SCHEDULING_ENABLED
 }
 
 /// Computes the CPU load associated to a single shard of a given index.
@@ -313,24 +317,8 @@ fn get_sources_to_schedule(
     }
     sources
 }
-/// In the case where there are only draining indexers left, they are eligible to index any shards,
-/// including shards hosted on other indexers. Otherwise, they can only index their own shards.
-fn determine_draining_indexer_eligibility(indexers: &[IndexerNodeInfo]) -> Eligibility {
-    let has_ready_indexer = indexers
-        .iter()
-        .any(|indexer| indexer.ingester_status == IngesterStatus::Ready);
-    if has_ready_indexer {
-        return Eligibility::SelfHostedOnly;
-    }
-    warn!("no ready indexer available, letting draining indexers index any shard");
-    Eligibility::Any
-}
 
-fn build_indexer_info(
-    indexer: &IndexerNodeInfo,
-    draining_eligibility: Eligibility,
-    locality_aware: bool,
-) -> IndexerInfo {
+fn build_indexer_info(indexer: &IndexerPoolEntry, locality_aware: bool) -> IndexerInfo {
     if !locality_aware {
         return IndexerInfo {
             cpu_capacity: indexer.indexing_capacity,
@@ -340,10 +328,7 @@ fn build_indexer_info(
     }
     let eligibility = match indexer.ingester_status {
         IngesterStatus::Ready => Eligibility::Any,
-        // For draining indexers, if they're the last ones left in the cluster, they need to be
-        // able to drain all remaining shards (Eligibility::Any). Otherwise, they just drain
-        // their own (Eligibility::SelfHostedOnly).
-        _ => draining_eligibility,
+        _ => Eligibility::SelfHostedOnly,
     };
     IndexerInfo {
         cpu_capacity: indexer.indexing_capacity,
@@ -353,32 +338,31 @@ fn build_indexer_info(
 }
 
 fn build_indexer_infos(
-    indexers: &[IndexerNodeInfo],
+    indexers: &[IndexerPoolEntry],
     locality_aware: bool,
-) -> FnvHashMap<String, IndexerInfo> {
-    let draining_eligibility = determine_draining_indexer_eligibility(indexers);
-    let mut indexer_infos: FnvHashMap<String, IndexerInfo> = FnvHashMap::default();
+) -> FnvHashMap<NodeId, IndexerInfo> {
+    let mut indexer_infos: FnvHashMap<NodeId, IndexerInfo> = FnvHashMap::default();
     for indexer in indexers {
         if indexer.indexing_capacity.cpu_millis() == 0 {
             continue;
         }
-        let indexer_info = build_indexer_info(indexer, draining_eligibility, locality_aware);
-        indexer_infos.insert(indexer.node_id.to_string(), indexer_info);
+        let indexer_info = build_indexer_info(indexer, locality_aware);
+        indexer_infos.insert(indexer.node_id.clone(), indexer_info);
     }
     indexer_infos
 }
 
-fn build_indexer_statuses(indexers: &[IndexerNodeInfo]) -> FnvHashMap<String, IngesterStatus> {
+fn build_indexer_statuses(indexers: &[IndexerPoolEntry]) -> FnvHashMap<NodeId, IngesterStatus> {
     indexers
         .iter()
-        .map(|indexer| (indexer.node_id.to_string(), indexer.ingester_status))
+        .map(|indexer| (indexer.node_id.clone(), indexer.ingester_status))
         .collect()
 }
 
-fn build_indexer_tasks(indexers: &[IndexerNodeInfo]) -> FnvHashMap<String, Vec<IndexingTask>> {
+fn build_indexer_tasks(indexers: &[IndexerPoolEntry]) -> FnvHashMap<NodeId, Vec<IndexingTask>> {
     indexers
         .iter()
-        .map(|indexer| (indexer.node_id.to_string(), indexer.indexing_tasks.clone()))
+        .map(|indexer| (indexer.node_id.clone(), indexer.indexing_tasks.clone()))
         .collect()
 }
 
@@ -409,12 +393,12 @@ impl IndexingScheduler {
 
         let sources = get_sources_to_schedule(model, disable_ingest_v1());
 
-        let indexers: Vec<IndexerNodeInfo> = self.select_available_indexers_for_scheduling();
+        let indexers: Vec<IndexerPoolEntry> = self.select_available_indexers_for_scheduling();
 
-        let locality_aware = enable_az_aware_scheduling();
+        let is_locality_aware = enable_locality_aware_scheduling();
 
-        let indexer_infos: FnvHashMap<String, IndexerInfo> =
-            build_indexer_infos(&indexers, locality_aware);
+        let indexer_infos: FnvHashMap<NodeId, IndexerInfo> =
+            build_indexer_infos(&indexers, is_locality_aware);
 
         if indexer_infos.is_empty() {
             if !sources.is_empty() {
@@ -424,21 +408,10 @@ impl IndexingScheduler {
         };
 
         let shard_locations = model.shard_locations();
-        let plan_from_previous = build_physical_indexing_plan(
+        let (new_physical_plan, shard_locality_metrics) = self.build_new_plan(
             &sources,
             &indexer_infos,
-            locality_aware,
-            self.state.last_applied_physical_plan.as_ref(),
-            &shard_locations,
-        );
-        let locality_metrics_from_previous =
-            get_shard_locality_metrics(&plan_from_previous, &shard_locations, &indexer_infos);
-        let (new_physical_plan, shard_locality_metrics) = self.maybe_build_plan_from_scratch(
-            plan_from_previous,
-            locality_metrics_from_previous,
-            &sources,
-            &indexer_infos,
-            locality_aware,
+            is_locality_aware,
             &shard_locations,
         );
         shard_locality_metrics.publish();
@@ -461,45 +434,61 @@ impl IndexingScheduler {
         self.state.num_schedule_indexing_plan += 1;
     }
 
-    /// A plan built from the previous one can lose locality over time but never regain it. Below
-    /// the threshold we try one built from scratch (equivalent to restarting the control plane).
-    fn maybe_build_plan_from_scratch(
+    /// An indexing plan built incrementally from the previous plan can lose locality over time but
+    /// never regain it. Below a certain locality threshold, we try to rebuild the plan from scratch to improve locality (equivalent to restarting the control plane).
+    /// We expect a plan built from scratch to have better locality. There is a long cooldown to prevent churning indexing too frequently.
+    fn build_new_plan(
         &mut self,
-        plan: PhysicalIndexingPlan,
-        locality_metrics: ShardLocalityMetrics,
         sources: &[SourceToSchedule],
-        indexer_infos: &FnvHashMap<String, IndexerInfo>,
+        indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
         locality_aware: bool,
         shard_locations: &ShardLocations,
     ) -> (PhysicalIndexingPlan, ShardLocalityMetrics) {
-        if locality_metrics.locality_percent() >= min_shard_locality_percent() {
-            return (plan, locality_metrics);
+        // Build the plan normally, seeded with the existing plan.
+        let new_plan_incremental = build_physical_indexing_plan(
+            sources,
+            indexer_infos,
+            locality_aware,
+            self.state.last_applied_physical_plan.as_ref(),
+            shard_locations,
+        );
+        let locality_incremental =
+            get_shard_locality_metrics(&new_plan_incremental, shard_locations, indexer_infos);
+        if locality_incremental.locality_percent() >= min_shard_locality_percent() {
+            return (new_plan_incremental, locality_incremental);
         }
         let now = Instant::now();
         if let Some(next_plan_from_scratch_timestamp) = self.state.next_plan_from_scratch_timestamp
             && now < next_plan_from_scratch_timestamp
         {
-            return (plan, locality_metrics);
+            // The cooldown for applying a new plan from scratch is still active, so we return the
+            // incremental plan.
+            return (new_plan_incremental, locality_incremental);
         }
-        let plan_from_scratch = build_physical_indexing_plan(
+        // Locality on the incremental plan has degraded; let's see if building the plan from
+        // scratch will yield a more optimal plan.
+        let new_plan_from_scratch = build_physical_indexing_plan(
             sources,
             indexer_infos,
             locality_aware,
             None,
             shard_locations,
         );
-        let locality_metrics_from_scratch =
-            get_shard_locality_metrics(&plan_from_scratch, shard_locations, indexer_infos);
-        if locality_metrics_from_scratch.locality_percent() <= locality_metrics.locality_percent() {
-            return (plan, locality_metrics);
+        let locality_from_scratch =
+            get_shard_locality_metrics(&new_plan_from_scratch, shard_locations, indexer_infos);
+        if locality_from_scratch.locality_percent() <= locality_incremental.locality_percent() {
+            // The plan from scratch yielded worse locality than the incremental plan, so we apply
+            // the incremental plan. We don't really expect this.
+            info!("indexing plan rebuilt from scratch had worse locality than plan built incrementally; returning incremental plan");
+            return (new_plan_incremental, locality_incremental);
         }
         info!(
-            locality_percent = locality_metrics.locality_percent(),
-            locality_percent_from_scratch = locality_metrics_from_scratch.locality_percent(),
-            "rebuilding the indexing plan from scratch to restore shard locality"
+            locality_percent = locality_incremental.locality_percent(),
+            locality_percent_from_scratch = locality_from_scratch.locality_percent(),
+            "rebuilt the indexing plan from scratch to restore shard locality"
         );
         self.state.next_plan_from_scratch_timestamp = Some(now + PLAN_FROM_SCRATCH_COOLDOWN_PERIOD);
-        (plan_from_scratch, locality_metrics_from_scratch)
+        (new_plan_from_scratch, locality_from_scratch)
     }
 
     /// Checks if the last applied plan corresponds to the running indexing tasks present in the
@@ -523,7 +512,7 @@ impl IndexingScheduler {
         {
             return;
         }
-        let indexers: Vec<IndexerNodeInfo> = self.select_available_indexers_for_scheduling();
+        let indexers: Vec<IndexerPoolEntry> = self.select_available_indexers_for_scheduling();
         let running_indexer_tasks = build_indexer_tasks(&indexers);
         let running_indexer_statuses = build_indexer_statuses(&indexers);
 
@@ -543,14 +532,14 @@ impl IndexingScheduler {
         }
     }
 
-    fn select_available_indexers_for_scheduling(&self) -> Vec<IndexerNodeInfo> {
-        if enable_az_aware_scheduling() {
+    fn select_available_indexers_for_scheduling(&self) -> Vec<IndexerPoolEntry> {
+        if enable_locality_aware_scheduling() {
             return self.select_ready_and_draining_indexers();
         }
         self.select_ready_or_retiring_indexers()
     }
 
-    fn select_ready_and_draining_indexers(&self) -> Vec<IndexerNodeInfo> {
+    fn select_ready_and_draining_indexers(&self) -> Vec<IndexerPoolEntry> {
         self.indexer_pool
             .values()
             .into_iter()
@@ -565,8 +554,8 @@ impl IndexingScheduler {
             .collect()
     }
 
-    fn select_ready_or_retiring_indexers(&self) -> Vec<IndexerNodeInfo> {
-        let (ready, retiring): (Vec<IndexerNodeInfo>, Vec<IndexerNodeInfo>) = self
+    fn select_ready_or_retiring_indexers(&self) -> Vec<IndexerPoolEntry> {
+        let (ready, retiring): (Vec<IndexerPoolEntry>, Vec<IndexerPoolEntry>) = self
             .indexer_pool
             .values()
             .into_iter()
@@ -611,7 +600,7 @@ impl IndexingScheduler {
             )
         }) {
             let indexing_tasks = new_physical_plan
-                .indexer(indexer.node_id.as_str())
+                .indexer(&indexer.node_id)
                 .unwrap_or(&[])
                 .to_vec();
 
@@ -664,11 +653,11 @@ impl IndexingScheduler {
 }
 
 struct IndexingPlansDiff<'a> {
-    pub missing_node_ids: FnvHashSet<&'a str>,
-    pub unplanned_node_ids: FnvHashSet<&'a str>,
-    pub nodes_with_changed_ingester_status: FnvHashSet<&'a str>,
-    pub missing_tasks_by_node_id: FnvHashMap<&'a str, Vec<&'a IndexingTask>>,
-    pub unplanned_tasks_by_node_id: FnvHashMap<&'a str, Vec<&'a IndexingTask>>,
+    pub missing_node_ids: FnvHashSet<&'a NodeId>,
+    pub unplanned_node_ids: FnvHashSet<&'a NodeId>,
+    pub nodes_with_changed_ingester_status: FnvHashSet<&'a NodeId>,
+    pub missing_tasks_by_node_id: FnvHashMap<&'a NodeId, Vec<&'a IndexingTask>>,
+    pub unplanned_tasks_by_node_id: FnvHashMap<&'a NodeId, Vec<&'a IndexingTask>>,
 }
 
 impl IndexingPlansDiff<'_> {
@@ -709,7 +698,7 @@ fn min_shard_locality_percent() -> u32 {
 fn get_shard_locality_metrics(
     physical_plan: &PhysicalIndexingPlan,
     shard_locations: &ShardLocations,
-    indexer_infos: &FnvHashMap<String, IndexerInfo>,
+    indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
 ) -> ShardLocalityMetrics {
     let mut num_local_shards = 0;
     let mut num_nearby_shards = 0;
@@ -720,7 +709,7 @@ fn get_shard_locality_metrics(
                 if shard_locations
                     .get_shard_locations(shard_id)
                     .iter()
-                    .any(|node| node.as_str() == indexer)
+                    .any(|node| *node == indexer)
                 {
                     num_local_shards += 1;
                 } else if is_shard_nearby(indexer, shard_id, shard_locations, indexer_infos) {
@@ -749,7 +738,7 @@ impl fmt::Debug for IndexingPlansDiff<'_> {
             write!(
                 formatter,
                 "missing_node_ids={:?}",
-                PrettySample::new(&self.missing_node_ids, 10)
+                PrettySample::new(self.missing_node_ids.iter().map(|node_id| node_id.as_str()), 10)
             )?;
             separator = ", "
         }
@@ -757,7 +746,10 @@ impl fmt::Debug for IndexingPlansDiff<'_> {
             write!(
                 formatter,
                 "{separator}unplanned_node_ids={:?}",
-                PrettySample::new(&self.unplanned_node_ids, 10)
+                PrettySample::new(
+                    self.unplanned_node_ids.iter().map(|node_id| node_id.as_str()),
+                    10
+                )
             )?;
             separator = ", "
         }
@@ -765,7 +757,12 @@ impl fmt::Debug for IndexingPlansDiff<'_> {
             write!(
                 formatter,
                 "{separator}nodes_with_changed_ingester_status={:?}",
-                PrettySample::new(&self.nodes_with_changed_ingester_status, 10)
+                PrettySample::new(
+                    self.nodes_with_changed_ingester_status
+                        .iter()
+                        .map(|node_id| node_id.as_str()),
+                    10
+                )
             )?;
             separator = ", "
         }
@@ -784,7 +781,7 @@ impl fmt::Debug for IndexingPlansDiff<'_> {
 
 fn format_indexing_task_map(
     formatter: &mut std::fmt::Formatter,
-    indexing_tasks: &FnvHashMap<&str, Vec<&IndexingTask>>,
+    indexing_tasks: &FnvHashMap<&NodeId, Vec<&IndexingTask>>,
 ) -> std::fmt::Result {
     // we show at most 5 nodes, and aggregate the results for the other.
     // we show at most 10 indexes, but aggregate results after.
@@ -801,7 +798,7 @@ fn format_indexing_task_map(
             write!(formatter, ", ")?;
         }
         if index_displayed != MAX_INDEXES - 1 {
-            write!(formatter, "{index_name:?}: [")?;
+            write!(formatter, "\"{index_name}\": [")?;
             let mut tasks_iter = tasks.iter().enumerate();
             for (i, task) in &mut tasks_iter {
                 if i != 0 {
@@ -832,7 +829,7 @@ fn format_indexing_task_map(
         } else {
             write!(
                 formatter,
-                "{index_name:?}: [with {} tasks and {} shards]",
+                "\"{index_name}\": [with {} tasks and {} shards]",
                 tasks.len(),
                 tasks.iter().map(|task| task.shard_ids.len()).sum::<usize>()
             )?;
@@ -861,44 +858,41 @@ fn format_indexing_task_map(
 /// Returns the difference between the `running_plan` retrieved from the chitchat state and
 /// the last plan applied by the scheduler.
 fn get_indexing_plans_diff<'a>(
-    running_plan: &'a FnvHashMap<String, Vec<IndexingTask>>,
-    last_applied_plan: &'a FnvHashMap<String, Vec<IndexingTask>>,
-    running_ingester_statuses: &'a FnvHashMap<String, IngesterStatus>,
-    last_applied_ingester_statuses: &'a FnvHashMap<String, IngesterStatus>,
+    running_plan: &'a FnvHashMap<NodeId, Vec<IndexingTask>>,
+    last_applied_plan: &'a FnvHashMap<NodeId, Vec<IndexingTask>>,
+    running_ingester_statuses: &'a FnvHashMap<NodeId, IngesterStatus>,
+    last_applied_ingester_statuses: &'a FnvHashMap<NodeId, IngesterStatus>,
 ) -> IndexingPlansDiff<'a> {
     // Nodes diff.
-    let running_node_ids: FnvHashSet<&str> = running_plan
+    let running_node_ids: FnvHashSet<&NodeId> = running_plan
         .keys()
-        .map(|node_id| node_id.as_str())
         .collect();
-    let planned_node_ids: FnvHashSet<&str> = last_applied_plan
-        .keys()
-        .map(|node_id| node_id.as_str())
-        .collect();
-    let missing_node_ids: FnvHashSet<&str> = planned_node_ids
+    let planned_node_ids: FnvHashSet<&NodeId> = last_applied_plan.keys().collect();
+    let missing_node_ids: FnvHashSet<&NodeId> = planned_node_ids
         .difference(&running_node_ids)
         .copied()
         .collect();
-    let unplanned_node_ids: FnvHashSet<&str> = running_node_ids
+    let unplanned_node_ids: FnvHashSet<&NodeId> = running_node_ids
         .difference(&planned_node_ids)
         .copied()
         .collect();
     // Ingester status diff.
-    let running_node_states: FnvHashSet<(&str, IngesterStatus)> = running_ingester_statuses
+    let running_node_states: FnvHashSet<(&NodeId, IngesterStatus)> = running_ingester_statuses
         .iter()
-        .map(|(node_id, ingester_status)| (node_id.as_str(), *ingester_status))
+        .map(|(node_id, ingester_status)| (node_id, *ingester_status))
         .collect();
-    let planned_node_states: FnvHashSet<(&str, IngesterStatus)> = last_applied_ingester_statuses
+    let planned_node_states: FnvHashSet<(&NodeId, IngesterStatus)> = last_applied_ingester_statuses
         .iter()
-        .map(|(node_id, ingester_status)| (node_id.as_str(), *ingester_status))
+        .map(|(node_id, ingester_status)| (node_id, *ingester_status))
         .collect();
-    let nodes_with_changed_ingester_status: FnvHashSet<&str> = running_node_states
+    let nodes_with_changed_ingester_status: FnvHashSet<&NodeId> = running_node_states
         .difference(&planned_node_states)
         .map(|(node_id, _)| *node_id)
         .collect();
     // Tasks diff.
-    let mut missing_tasks_by_node_id: FnvHashMap<&str, Vec<&IndexingTask>> = FnvHashMap::default();
-    let mut unplanned_tasks_by_node_id: FnvHashMap<&str, Vec<&IndexingTask>> =
+    let mut missing_tasks_by_node_id: FnvHashMap<&NodeId, Vec<&IndexingTask>> =
+        FnvHashMap::default();
+    let mut unplanned_tasks_by_node_id: FnvHashMap<&NodeId, Vec<&IndexingTask>> =
         FnvHashMap::default();
     for node_id in running_node_ids.iter().chain(planned_node_ids.iter()) {
         let running_tasks = running_plan
@@ -984,7 +978,9 @@ mod tests {
     fn test_indexing_plans_diff() {
         let index_uid = IndexUid::from_str("index-1:11111111111111111111111111").unwrap();
         let index_uid2 = IndexUid::from_str("index-2:11111111111111111111111111").unwrap();
-        let indexer_statuses: FnvHashMap<String, IngesterStatus> = FnvHashMap::default();
+        let indexer_1 = NodeId::from_str("indexer-1");
+        let indexer_2 = NodeId::from_str("indexer-2");
+        let indexer_statuses: FnvHashMap<NodeId, IngesterStatus> = FnvHashMap::default();
         {
             let running_plan = FnvHashMap::default();
             let desired_plan = FnvHashMap::default();
@@ -1021,11 +1017,11 @@ mod tests {
                 params_fingerprint: 0,
             };
             running_plan.insert(
-                "indexer-1".to_string(),
+                indexer_1.clone(),
                 vec![task_1.clone(), task_1b.clone(), task_2.clone()],
             );
             desired_plan.insert(
-                "indexer-1".to_string(),
+                indexer_1.clone(),
                 vec![task_2, task_1.clone(), task_1b.clone()],
             );
             let indexing_plans_diff = get_indexing_plans_diff(
@@ -1053,8 +1049,8 @@ mod tests {
                 shard_ids: Vec::new(),
                 params_fingerprint: 0,
             };
-            running_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
-            desired_plan.insert("indexer-1".to_string(), vec![task_2.clone()]);
+            running_plan.insert(indexer_1.clone(), vec![task_1.clone()]);
+            desired_plan.insert(indexer_1.clone(), vec![task_2.clone()]);
 
             let indexing_plans_diff = get_indexing_plans_diff(
                 &running_plan,
@@ -1067,11 +1063,11 @@ mod tests {
             assert!(!indexing_plans_diff.has_same_tasks());
             assert_eq!(
                 indexing_plans_diff.unplanned_tasks_by_node_id,
-                FnvHashMap::from_iter([("indexer-1", vec![&task_1])])
+                FnvHashMap::from_iter([(&indexer_1, vec![&task_1])])
             );
             assert_eq!(
                 indexing_plans_diff.missing_tasks_by_node_id,
-                FnvHashMap::from_iter([("indexer-1", vec![&task_2])])
+                FnvHashMap::from_iter([(&indexer_1, vec![&task_2])])
             );
         }
         {
@@ -1092,8 +1088,8 @@ mod tests {
                 shard_ids: Vec::new(),
                 params_fingerprint: 0,
             };
-            running_plan.insert("indexer-2".to_string(), vec![task_2.clone()]);
-            desired_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
+            running_plan.insert(indexer_2.clone(), vec![task_2.clone()]);
+            desired_plan.insert(indexer_1.clone(), vec![task_1.clone()]);
 
             let indexing_plans_diff = get_indexing_plans_diff(
                 &running_plan,
@@ -1106,19 +1102,19 @@ mod tests {
             assert!(!indexing_plans_diff.has_same_tasks());
             assert_eq!(
                 indexing_plans_diff.missing_node_ids,
-                FnvHashSet::from_iter(["indexer-1"])
+                FnvHashSet::from_iter([&indexer_1])
             );
             assert_eq!(
                 indexing_plans_diff.unplanned_node_ids,
-                FnvHashSet::from_iter(["indexer-2"])
+                FnvHashSet::from_iter([&indexer_2])
             );
             assert_eq!(
                 indexing_plans_diff.missing_tasks_by_node_id,
-                FnvHashMap::from_iter([("indexer-1", vec![&task_1]), ("indexer-2", Vec::new())])
+                FnvHashMap::from_iter([(&indexer_1, vec![&task_1]), (&indexer_2, Vec::new())])
             );
             assert_eq!(
                 indexing_plans_diff.unplanned_tasks_by_node_id,
-                FnvHashMap::from_iter([("indexer-2", vec![&task_2]), ("indexer-1", Vec::new())])
+                FnvHashMap::from_iter([(&indexer_2, vec![&task_2]), (&indexer_1, Vec::new())])
             );
         }
         {
@@ -1146,9 +1142,9 @@ mod tests {
                 shard_ids: Vec::new(),
                 params_fingerprint: 0,
             };
-            running_plan.insert("indexer-1".to_string(), vec![task_1a.clone()]);
+            running_plan.insert(indexer_1.clone(), vec![task_1a.clone()]);
             desired_plan.insert(
-                "indexer-1".to_string(),
+                indexer_1.clone(),
                 vec![task_1a.clone(), task_1b.clone(), task_1c.clone()],
             );
 
@@ -1163,7 +1159,7 @@ mod tests {
             assert!(!indexing_plans_diff.has_same_tasks());
             assert_eq!(
                 indexing_plans_diff.missing_tasks_by_node_id,
-                FnvHashMap::from_iter([("indexer-1", vec![&task_1b, &task_1c])])
+                FnvHashMap::from_iter([(&indexer_1, vec![&task_1b, &task_1c])])
             );
         }
         {
@@ -1176,13 +1172,13 @@ mod tests {
                 shard_ids: Vec::new(),
                 params_fingerprint: 0,
             };
-            running_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
-            desired_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
+            running_plan.insert(indexer_1.clone(), vec![task_1.clone()]);
+            desired_plan.insert(indexer_1.clone(), vec![task_1.clone()]);
 
             let mut running_statuses = FnvHashMap::default();
-            running_statuses.insert("indexer-1".to_string(), IngesterStatus::Retiring);
+            running_statuses.insert(indexer_1.clone(), IngesterStatus::Retiring);
             let mut last_applied_statuses = FnvHashMap::default();
-            last_applied_statuses.insert("indexer-1".to_string(), IngesterStatus::Ready);
+            last_applied_statuses.insert(indexer_1.clone(), IngesterStatus::Ready);
 
             let indexing_plans_diff = get_indexing_plans_diff(
                 &running_plan,
@@ -1195,7 +1191,7 @@ mod tests {
             assert!(!indexing_plans_diff.has_same_nodes());
             assert_eq!(
                 indexing_plans_diff.nodes_with_changed_ingester_status,
-                FnvHashSet::from_iter(["indexer-1"])
+                FnvHashSet::from_iter([&indexer_1])
             );
 
             let mirrored_plans_diff = get_indexing_plans_diff(
@@ -1207,13 +1203,13 @@ mod tests {
             assert!(!mirrored_plans_diff.has_same_nodes());
             assert_eq!(
                 mirrored_plans_diff.nodes_with_changed_ingester_status,
-                FnvHashSet::from_iter(["indexer-1"])
+                FnvHashSet::from_iter([&indexer_1])
             );
         }
     }
 
     #[test]
-    fn test_maybe_build_plan_from_scratch() {
+    fn test_build_new_plan() {
         let indexer1 = NodeId::from_str("indexer1");
         let indexer2 = NodeId::from_str("indexer2");
         let shard1 = ShardId::from(1);
@@ -1235,16 +1231,16 @@ mod tests {
         shard_locations.add_location(&shard2, &indexer2);
 
         let mut indexer_infos = FnvHashMap::default();
-        indexer_infos.insert(indexer1.to_string(), IndexerInfo::for_test(mcpu(4_000)));
-        indexer_infos.insert(indexer2.to_string(), IndexerInfo::for_test(mcpu(4_000)));
+        indexer_infos.insert(indexer1.clone(), IndexerInfo::for_test(mcpu(4_000)));
+        indexer_infos.insert(indexer2.clone(), IndexerInfo::for_test(mcpu(4_000)));
 
         // Each indexer indexes the shard the other one hosts, so nothing is local.
         let swapped_plan = || {
-            let indexer_ids = vec![indexer1.to_string(), indexer2.to_string()];
+            let indexer_ids = vec![indexer1.clone(), indexer2.clone()];
             let mut plan = PhysicalIndexingPlan::with_indexer_ids(&indexer_ids);
             for (indexer, shard_id) in [(&indexer1, &shard2), (&indexer2, &shard1)] {
                 plan.add_indexing_task(
-                    indexer.as_str(),
+                    indexer,
                     IndexingTask {
                         index_uid: Some(source_uid.index_uid.clone()),
                         source_id: source_uid.source_id.clone(),
@@ -1264,26 +1260,21 @@ mod tests {
         );
         let locality_aware = false;
 
-        let plan = swapped_plan();
-        let metrics = get_shard_locality_metrics(&plan, &shard_locations, &indexer_infos);
-        assert_eq!(metrics.locality_percent(), 0);
-        let (plan, metrics) = scheduler.maybe_build_plan_from_scratch(
-            plan,
-            metrics,
+        scheduler.state.last_applied_physical_plan = Some(swapped_plan());
+        let (plan, metrics) = scheduler.build_new_plan(
             &sources,
             &indexer_infos,
             locality_aware,
             &shard_locations,
         );
         assert_eq!(metrics.locality_percent(), 100);
-        assert_eq!(shard_ids_for_indexer(&plan, indexer1.as_str()), vec![shard1.clone()]);
+        assert_eq!(
+            shard_ids_for_indexer(&plan, &indexer1),
+            vec![shard1.clone()]
+        );
 
-        let plan_in_cooldown = swapped_plan();
-        let metrics_in_cooldown =
-            get_shard_locality_metrics(&plan_in_cooldown, &shard_locations, &indexer_infos);
-        let (_, metrics_in_cooldown) = scheduler.maybe_build_plan_from_scratch(
-            plan_in_cooldown,
-            metrics_in_cooldown,
+        scheduler.state.last_applied_physical_plan = Some(swapped_plan());
+        let (_, metrics_in_cooldown) = scheduler.build_new_plan(
             &sources,
             &indexer_infos,
             locality_aware,
@@ -1292,9 +1283,8 @@ mod tests {
         assert_eq!(metrics_in_cooldown.locality_percent(), 0);
 
         scheduler.state.next_plan_from_scratch_timestamp = None;
-        let (_, metrics_above_threshold) = scheduler.maybe_build_plan_from_scratch(
-            plan,
-            metrics,
+        scheduler.state.last_applied_physical_plan = Some(plan);
+        let (_, metrics_above_threshold) = scheduler.build_new_plan(
             &sources,
             &indexer_infos,
             locality_aware,
@@ -1450,9 +1440,11 @@ mod tests {
                 params_fingerprint: 0,
             },
         ];
+        let indexer1 = NodeId::from_str("indexer1");
+        let indexer2 = NodeId::from_str("indexer2");
         let mut indexer_infos = FnvHashMap::default();
-        indexer_infos.insert("indexer1".to_string(), IndexerInfo::for_test(mcpu(3_000)));
-        indexer_infos.insert("indexer2".to_string(), IndexerInfo::for_test(mcpu(3_000)));
+        indexer_infos.insert(indexer1.clone(), IndexerInfo::for_test(mcpu(3_000)));
+        indexer_infos.insert(indexer2.clone(), IndexerInfo::for_test(mcpu(3_000)));
         let shard_locations = ShardLocations::default();
         let physical_plan = build_physical_indexing_plan_without_locality(
             &sources[..],
@@ -1461,9 +1453,9 @@ mod tests {
             &shard_locations,
         );
         assert_eq!(physical_plan.indexing_tasks_per_indexer().len(), 2);
-        let indexing_tasks_1 = physical_plan.indexer("indexer1").unwrap();
+        let indexing_tasks_1 = physical_plan.indexer(&indexer1).unwrap();
         assert_eq!(indexing_tasks_1.len(), 2);
-        let indexer_2_tasks = physical_plan.indexer("indexer2").unwrap();
+        let indexer_2_tasks = physical_plan.indexer(&indexer2).unwrap();
         assert_eq!(indexer_2_tasks.len(), 3);
     }
 
@@ -1491,13 +1483,16 @@ mod tests {
             shard_ids: vec!["shard6".into()],
             params_fingerprint: 0,
         };
+        let indexers: Vec<NodeId> = (1..=6)
+            .map(|indexer_ord| NodeId::from_str(&format!("indexer{indexer_ord}")))
+            .collect();
         // order made to map with the debug for lisibility
-        map.insert("indexer5", vec![&task2]);
-        map.insert("indexer4", vec![&task1]);
-        map.insert("indexer3", vec![&task1, &task3]);
-        map.insert("indexer2", vec![&task2, &task3, &task1, &task2]);
-        map.insert("indexer1", vec![&task1, &task2, &task3, &task1]);
-        map.insert("indexer6", vec![&task1, &task2, &task3]);
+        map.insert(&indexers[4], vec![&task2]);
+        map.insert(&indexers[3], vec![&task1]);
+        map.insert(&indexers[2], vec![&task1, &task3]);
+        map.insert(&indexers[1], vec![&task2, &task3, &task1, &task2]);
+        map.insert(&indexers[0], vec![&task1, &task2, &task3, &task1]);
+        map.insert(&indexers[5], vec![&task1, &task2, &task3]);
         let plan = IndexingPlansDiff {
             missing_node_ids: FnvHashSet::default(),
             unplanned_node_ids: FnvHashSet::default(),
@@ -1533,7 +1528,7 @@ mod tests {
             let mut indexer_infos = FnvHashMap::default();
             for i in 0..num_indexers {
                 let indexer_id = format!("indexer-{i}");
-                indexer_infos.insert(indexer_id, IndexerInfo::for_test(mcpu(4_000)));
+                indexer_infos.insert(NodeId::from_str(&indexer_id), IndexerInfo::for_test(mcpu(4_000)));
             }
             let shard_locations = ShardLocations::default();
             let _physical_indexing_plan = build_physical_indexing_plan_without_locality(&sources, &indexer_infos, None, &shard_locations);
@@ -1546,10 +1541,10 @@ mod tests {
     };
     use quickwit_proto::ingest::{Shard, ShardState};
 
-    fn mock_indexer_node_info(node_id: &str, status: IngesterStatus) -> IndexerNodeInfo {
+    fn mock_indexer_node_info(node_id: &str, status: IngesterStatus) -> IndexerPoolEntry {
         let mock_indexer = MockIndexingService::new();
         let client = IndexingServiceClient::from_mock(mock_indexer);
-        IndexerNodeInfo {
+        IndexerPoolEntry {
             node_id: NodeId::from_str(node_id),
             generation_id: 0,
             client,
@@ -1705,11 +1700,11 @@ mod tests {
 
             assert_eq!(
                 indexer_infos["indexer-retiring"].eligibility,
-                Eligibility::Any
+                Eligibility::SelfHostedOnly
             );
             assert_eq!(
                 indexer_infos["indexer-decommissioning"].eligibility,
-                Eligibility::Any
+                Eligibility::SelfHostedOnly
             );
         }
         {
@@ -1800,8 +1795,8 @@ mod tests {
             params_fingerprint: 0,
         };
         let mut physical_plan =
-            PhysicalIndexingPlan::with_indexer_ids(&["indexer-ready".to_string()]);
-        physical_plan.add_indexing_task("indexer-ready", task);
+            PhysicalIndexingPlan::with_indexer_ids(&[NodeId::from_str("indexer-ready")]);
+        physical_plan.add_indexing_task(&NodeId::from_str("indexer-ready"), task);
 
         // `apply_physical_indexing_plan` dispatches the RPCs on spawned tasks; the rebuild waiter
         // resolves once every spawned task has dropped its `notify_on_drop` clone, i.e. after all
@@ -1818,7 +1813,7 @@ mod tests {
         node_id: &str,
         status: IngesterStatus,
         expect_empty_plan: bool,
-    ) -> IndexerNodeInfo {
+    ) -> IndexerPoolEntry {
         let mut mock_indexer = MockIndexingService::new();
         mock_indexer
             .expect_apply_indexing_plan()
@@ -1826,7 +1821,7 @@ mod tests {
             .withf(move |request| request.indexing_tasks.is_empty() == expect_empty_plan)
             .returning(|_| Ok(ApplyIndexingPlanResponse {}));
         let client = IndexingServiceClient::from_mock(mock_indexer);
-        IndexerNodeInfo {
+        IndexerPoolEntry {
             node_id: NodeId::from_str(node_id),
             generation_id: 0,
             client,
@@ -1840,11 +1835,11 @@ mod tests {
     // Builds an `IndexerNodeInfo` whose client asserts it is never asked to apply a plan (via
     // `never()`, verified on drop). The shared mock is `Arc`-cloned across the client, so a wrong
     // call from a spawned task is seen when the pool's copy drops on the main thread.
-    fn never_applied_indexer_node_info(node_id: &str, status: IngesterStatus) -> IndexerNodeInfo {
+    fn never_applied_indexer_node_info(node_id: &str, status: IngesterStatus) -> IndexerPoolEntry {
         let mut mock_indexer = MockIndexingService::new();
         mock_indexer.expect_apply_indexing_plan().never();
         let client = IndexingServiceClient::from_mock(mock_indexer);
-        IndexerNodeInfo {
+        IndexerPoolEntry {
             node_id: NodeId::from_str(node_id),
             generation_id: 0,
             client,
@@ -1870,9 +1865,9 @@ mod tests {
         }
     }
 
-    fn hanging_indexer_node_info(status: IngesterStatus) -> IndexerNodeInfo {
+    fn hanging_indexer_node_info(status: IngesterStatus) -> IndexerPoolEntry {
         let client = IndexingServiceClient::tower().build(HangingIndexingService);
-        IndexerNodeInfo {
+        IndexerPoolEntry {
             node_id: NodeId::from_str("indexer"),
             generation_id: 0,
             client,
