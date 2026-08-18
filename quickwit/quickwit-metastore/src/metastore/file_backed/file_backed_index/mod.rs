@@ -1253,6 +1253,12 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
         return false;
     }
 
+    if let Some(included_split_ids) = &query.included_split_ids
+        && !included_split_ids.contains(&split.split_metadata.split_id)
+    {
+        return false;
+    }
+
     match &query.mature {
         Bound::Included(evaluation_datetime) => {
             return split.split_metadata.is_mature(*evaluation_datetime);
@@ -1289,12 +1295,6 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
         {
             return false;
         }
-    }
-
-    if let Some(included_split_ids) = &query.included_split_ids
-        && !included_split_ids.contains(&split.split_metadata.split_id)
-    {
-        return false;
     }
 
     if query
@@ -1415,6 +1415,11 @@ mod tests {
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(!split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
+
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
+            .retain_mature(time::OffsetDateTime::now_utc())
+            .with_included_split_ids(Default::default());
+        assert!(!split_query_predicate(&&split_1, &query));
 
         let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_delete_opstamp_gte(4);
