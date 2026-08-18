@@ -1023,8 +1023,7 @@ pub(crate) fn rewrite_request(
         search_request.sort_fields = Vec::new();
     }
     if let Some(timestamp_field) = timestamp_field {
-        remove_redundant_timestamp_range(search_request, split, timestamp_field);
-        wrap_time_bounded_predicate_for_cache(search_request, timestamp_field);
+        normalize_timestamp_range(search_request, split, timestamp_field, true);
     }
     rewrite_aggregation(search_request);
     // we add a top level cache node when search_after is set, this won't help for this query (which
@@ -1032,43 +1031,6 @@ pub(crate) fn rewrite_request(
     if search_request.search_after.is_some() {
         add_top_cache_node(search_request)
     }
-}
-
-/// Wraps the non-time part of a normalized, time-bounded query in a cache node.
-///
-/// `remove_redundant_timestamp_range` appends the canonical split-relative timestamp
-/// restriction as the last top-level filter. Timestamp predicates in `should` and
-/// `must_not` clauses remain inside the predicate because removing them would change
-/// user semantics.
-fn wrap_time_bounded_predicate_for_cache(
-    search_request: &mut SearchRequest,
-    timestamp_field: &str,
-) {
-    let Ok(QueryAst::Bool(mut bool_query)) = serde_json::from_str(&search_request.query_ast) else {
-        return;
-    };
-    let Some(QueryAst::Range(time_range)) = bool_query.filter.last() else {
-        return;
-    };
-    if time_range.field != timestamp_field {
-        return;
-    }
-    let time_range = bool_query
-        .filter
-        .pop()
-        .expect("the last filter was checked above");
-    let predicate_ast = QueryAst::Bool(bool_query);
-    if is_trivial_time_bounded_predicate(&predicate_ast) {
-        return;
-    }
-    let cached_predicate = QueryAst::from(CacheNode::new(predicate_ast));
-    let time_bounded_ast = QueryAst::from(BoolQuery {
-        must: vec![cached_predicate],
-        filter: vec![time_range],
-        ..Default::default()
-    });
-    search_request.query_ast =
-        serde_json::to_string(&time_bounded_ast).expect("serializing QueryAst should never fail");
 }
 
 fn is_trivial_time_bounded_predicate(query_ast: &QueryAst) -> bool {
@@ -1115,7 +1077,7 @@ fn is_trivial_match_all(query_ast: &QueryAst) -> bool {
     }
 }
 
-/// Returns the predicate installed by `wrap_time_bounded_predicate_for_cache`.
+/// Returns the predicate cached after timestamp normalization.
 /// An outer cache node can be present for search-after requests.
 pub(crate) fn time_bounded_cached_predicate(
     query_ast: &QueryAst,
@@ -1127,18 +1089,20 @@ pub(crate) fn time_bounded_cached_predicate(
         }
         QueryAst::Bool(bool_query)
             if bool_query.must.len() == 1
-                && bool_query.filter.len() == 1
+                && bool_query.filter.len() <= 1
                 && bool_query.must_not.is_empty()
                 && bool_query.should.is_empty() =>
         {
             let QueryAst::Cache(cache_node) = &bool_query.must[0] else {
                 return None;
             };
-            let QueryAst::Range(time_range) = &bool_query.filter[0] else {
-                return None;
-            };
-            if time_range.field != timestamp_field {
-                return None;
+            if let Some(time_filter) = bool_query.filter.first() {
+                let QueryAst::Range(time_range) = time_filter else {
+                    return None;
+                };
+                if time_range.field != timestamp_field {
+                    return None;
+                }
             }
             Some((*cache_node.inner).clone())
         }
@@ -1261,6 +1225,15 @@ fn remove_redundant_timestamp_range(
     split: &SplitIdAndFooterOffsets,
     timestamp_field: &str,
 ) {
+    normalize_timestamp_range(search_request, split, timestamp_field, false);
+}
+
+fn normalize_timestamp_range(
+    search_request: &mut SearchRequest,
+    split: &SplitIdAndFooterOffsets,
+    timestamp_field: &str,
+    install_predicate_cache_node: bool,
+) {
     let Ok(query_ast) = serde_json::from_str(search_request.query_ast.as_str()) else {
         // an error will get raised a bit after anyway
         return;
@@ -1286,6 +1259,8 @@ fn remove_redundant_timestamp_range(
         .transform(query_ast)
         .expect("can't fail unwrapping Infallible")
         .unwrap_or(QueryAst::MatchAll);
+    let is_time_bounded =
+        visitor.start_timestamp != Bound::Unbounded || visitor.end_timestamp != Bound::Unbounded;
 
     let final_start_timestamp = match (
         visitor.start_timestamp,
@@ -1325,12 +1300,23 @@ fn remove_redundant_timestamp_range(
         (Bound::Unbounded, Some(_)) => Bound::Unbounded,
         (query_bound, None) => query_bound,
     };
+    if install_predicate_cache_node
+        && is_time_bounded
+        && !is_trivial_time_bounded_predicate(&new_ast)
+    {
+        new_ast = BoolQuery {
+            must: vec![QueryAst::from(CacheNode::new(new_ast))],
+            ..Default::default()
+        }
+        .into();
+    }
+
     if final_start_timestamp != Bound::Unbounded || final_end_timestamp != Bound::Unbounded {
-        let range = RangeQuery {
+        let time_range = QueryAst::from(RangeQuery {
             field: timestamp_field.to_string(),
             lower_bound: final_start_timestamp.map(|bound| bound.into_timestamp_nanos().into()),
             upper_bound: final_end_timestamp.map(|bound| bound.into_timestamp_nanos().into()),
-        };
+        });
         new_ast = if let QueryAst::Bool(mut bool_query) = new_ast {
             if bool_query.must.is_empty()
                 && bool_query.filter.is_empty()
@@ -1340,22 +1326,22 @@ fn remove_redundant_timestamp_range(
                 // add a new layer of bool query
                 BoolQuery {
                     must: vec![bool_query.into()],
-                    filter: vec![range.into()],
+                    filter: vec![time_range],
                     ..Default::default()
                 }
                 .into()
             } else {
-                bool_query.filter.push(range.into());
+                bool_query.filter.push(time_range);
                 QueryAst::Bool(bool_query)
             }
         } else {
             BoolQuery {
                 must: vec![new_ast],
-                filter: vec![range.into()],
+                filter: vec![time_range],
                 ..Default::default()
             }
             .into()
-        }
+        };
     }
 
     search_request.query_ast = serde_json::to_string(&new_ast).unwrap();

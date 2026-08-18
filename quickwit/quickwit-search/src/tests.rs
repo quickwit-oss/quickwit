@@ -2156,7 +2156,8 @@ fn test_time_bounded_predicate_cache_eligibility_after_split_normalization() {
     };
     leaf::rewrite_request(&mut partial_request, &split, Some("ts"));
     let partial_ast: QueryAst = serde_json::from_str(&partial_request.query_ast).unwrap();
-    assert!(leaf::time_bounded_cached_predicate(&partial_ast, "ts").is_some());
+    let partial_predicate = leaf::time_bounded_cached_predicate(&partial_ast, "ts")
+        .expect("a partial range should install a cached predicate");
 
     let mut full_split_request = SearchRequest {
         query_ast: serde_json::to_string(&predicate_ast).unwrap(),
@@ -2166,7 +2167,37 @@ fn test_time_bounded_predicate_cache_eligibility_after_split_normalization() {
     };
     leaf::rewrite_request(&mut full_split_request, &split, Some("ts"));
     let full_split_ast: QueryAst = serde_json::from_str(&full_split_request.query_ast).unwrap();
-    assert!(leaf::time_bounded_cached_predicate(&full_split_ast, "ts").is_none());
+    let full_split_predicate = leaf::time_bounded_cached_predicate(&full_split_ast, "ts")
+        .expect("a full-split range should install a cached predicate");
+    assert_eq!(full_split_predicate, partial_predicate);
+
+    let mut full_split_search_after_request = SearchRequest {
+        query_ast: serde_json::to_string(&predicate_ast).unwrap(),
+        start_timestamp: Some(50),
+        end_timestamp: Some(250),
+        search_after: Some(Default::default()),
+        ..Default::default()
+    };
+    leaf::rewrite_request(&mut full_split_search_after_request, &split, Some("ts"));
+    let full_split_search_after_ast: QueryAst =
+        serde_json::from_str(&full_split_search_after_request.query_ast).unwrap();
+    assert_eq!(
+        leaf::time_bounded_cached_predicate(&full_split_search_after_ast, "ts"),
+        Some(partial_predicate.clone())
+    );
+
+    let mut timeless_search_after_request = SearchRequest {
+        query_ast: serde_json::to_string(&predicate_ast).unwrap(),
+        search_after: Some(Default::default()),
+        ..Default::default()
+    };
+    leaf::rewrite_request(&mut timeless_search_after_request, &split, Some("ts"));
+    let timeless_search_after_ast: QueryAst =
+        serde_json::from_str(&timeless_search_after_request.query_ast).unwrap();
+    assert!(
+        leaf::time_bounded_cached_predicate(&timeless_search_after_ast, "ts").is_none(),
+        "the search-after cache node should not be treated as a predicate cache node"
+    );
 
     for trivial_predicate in [QueryAst::MatchAll, QueryAst::MatchNone] {
         let mut time_only_request = SearchRequest {
@@ -2255,46 +2286,46 @@ async fn test_time_bounded_query_populates_and_reuses_complete_predicate_cache()
         .expect("the first window should populate the predicate cache");
     assert_eq!(complete_hits.size_hint(), 10);
 
-    let shifted_window_request = SearchRequest {
+    let full_split_window_request = SearchRequest {
         index_id_patterns: vec!["negative-cache-ts-index".to_string()],
         query_ast: qast_json_helper("info", &["body"]),
-        start_timestamp: Some(start_timestamp + 4),
-        end_timestamp: Some(start_timestamp + 9),
+        start_timestamp: Some(start_timestamp - 10),
+        end_timestamp: Some(start_timestamp + 20),
         max_hits: 10,
         ..Default::default()
     };
-    let shifted_response = single_doc_mapping_leaf_search(
+    let full_split_response = single_doc_mapping_leaf_search(
         searcher_context.clone(),
-        std::sync::Arc::new(shifted_window_request),
-        storage,
+        std::sync::Arc::new(full_split_window_request),
+        storage.clone(),
         splits.clone(),
         doc_mapper.clone(),
     )
     .await
     .unwrap();
-    assert_eq!(shifted_response.num_hits, 5);
-    let shifted_input_memory_bytes = shifted_response
+    assert_eq!(full_split_response.num_hits, 10);
+    let full_split_input_memory_bytes = full_split_response
         .resource_stats
         .as_ref()
         .and_then(|stats| stats.split_resources_sum)
         .expect("the split should report resource stats")
         .input_memory_bytes;
     assert!(
-        shifted_input_memory_bytes < first_input_memory_bytes,
-        "a predicate-cache hit should not warm the predicate posting lists"
+        full_split_input_memory_bytes < first_input_memory_bytes,
+        "a full-split predicate-cache hit should not warm the predicate posting lists"
     );
 
     let (_segment_id, reused_hits) = searcher_context
         .predicate_cache
         .get(split_id.clone(), predicate_key.clone())
-        .expect("the shifted window should reuse the same predicate entry");
+        .expect("the full-split window should reuse the same predicate entry");
     assert_eq!(reused_hits.size_hint(), 10);
 
     let different_predicate_request = SearchRequest {
         index_id_patterns: vec!["negative-cache-ts-index".to_string()],
         query_ast: qast_json_helper("0", &["body"]),
-        start_timestamp: Some(start_timestamp),
-        end_timestamp: Some(start_timestamp + 2),
+        start_timestamp: Some(start_timestamp - 10),
+        end_timestamp: Some(start_timestamp + 20),
         max_hits: 10,
         ..Default::default()
     };
@@ -2308,7 +2339,7 @@ async fn test_time_bounded_query_populates_and_reuses_complete_predicate_cache()
         serde_json::from_str(&different_rewritten_request.query_ast).unwrap();
     let different_predicate_ast =
         leaf::time_bounded_cached_predicate(&different_rewritten_ast, "ts")
-            .expect("a partial time range should install a cached predicate");
+            .expect("a full-split time range should install a cached predicate");
     let different_predicate_key = serde_json::to_string(&different_predicate_ast).unwrap();
     assert_ne!(different_predicate_key, predicate_key);
 
@@ -2316,17 +2347,59 @@ async fn test_time_bounded_query_populates_and_reuses_complete_predicate_cache()
         searcher_context.clone(),
         std::sync::Arc::new(different_predicate_request),
         test_sandbox.storage(),
-        splits,
-        doc_mapper,
+        splits.clone(),
+        doc_mapper.clone(),
     )
     .await
     .unwrap();
     assert_eq!(different_predicate_response.num_hits, 1);
     let (_segment_id, different_hits) = searcher_context
         .predicate_cache
-        .get(split_id, different_predicate_key)
+        .get(split_id.clone(), different_predicate_key.clone())
         .expect("a different predicate should populate a separate entry");
     assert_eq!(different_hits.size_hint(), 1);
+
+    let different_partial_request = SearchRequest {
+        index_id_patterns: vec!["negative-cache-ts-index".to_string()],
+        query_ast: qast_json_helper("0", &["body"]),
+        start_timestamp: Some(start_timestamp),
+        end_timestamp: Some(start_timestamp + 2),
+        max_hits: 10,
+        ..Default::default()
+    };
+    let mut different_partial_rewritten_request = different_partial_request.clone();
+    leaf::rewrite_request(
+        &mut different_partial_rewritten_request,
+        &splits[0],
+        doc_mapper.timestamp_field_name(),
+    );
+    let different_partial_ast: QueryAst =
+        serde_json::from_str(&different_partial_rewritten_request.query_ast).unwrap();
+    let different_partial_predicate =
+        leaf::time_bounded_cached_predicate(&different_partial_ast, "ts")
+            .expect("a partial time range should install a cached predicate");
+    assert_eq!(
+        serde_json::to_string(&different_partial_predicate).unwrap(),
+        different_predicate_key,
+        "full-split and partial windows should use the same predicate key"
+    );
+    let different_partial_response = single_doc_mapping_leaf_search(
+        searcher_context.clone(),
+        std::sync::Arc::new(different_partial_request),
+        storage,
+        splits,
+        doc_mapper,
+    )
+    .await
+    .unwrap();
+    assert_eq!(different_partial_response.num_hits, 1);
+    assert!(
+        searcher_context
+            .predicate_cache
+            .get(split_id, different_predicate_key)
+            .is_some(),
+        "the partial window should reuse the full-split predicate entry"
+    );
     assert!(
         searcher_context
             .predicate_cache
