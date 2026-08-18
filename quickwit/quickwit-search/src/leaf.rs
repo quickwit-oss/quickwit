@@ -738,18 +738,17 @@ async fn leaf_search_single_split(
             split.split_id.clone(),
         ))
     };
-    let predicate_cache_warmup_ast =
-        predicate_cache
-            .as_ref()
-            .and_then(|(cache, cache_split_id)| {
-                let timestamp_field = ctx.doc_mapper.timestamp_field_name()?;
-                let predicate_ast = time_bounded_cached_predicate(&query_ast, timestamp_field)?;
-                let predicate_key = serde_json::to_string(&predicate_ast).ok()?;
-                if cache.get(cache_split_id.clone(), predicate_key).is_some() {
-                    return None;
-                }
-                Some(QueryAst::from(CacheNode::new(predicate_ast)))
-            });
+    let predicate_cache_miss_ast = predicate_cache
+        .as_ref()
+        .and_then(|(cache, cache_split_id)| {
+            let timestamp_field = ctx.doc_mapper.timestamp_field_name()?;
+            let predicate_ast = time_bounded_cached_predicate(&query_ast, timestamp_field)?;
+            let predicate_key = serde_json::to_string(&predicate_ast).ok()?;
+            if cache.get(cache_split_id.clone(), predicate_key).is_some() {
+                return None;
+            }
+            Some(predicate_ast)
+        });
     let split_schema = index.schema();
     let (query, mut warmup_info) = ctx.doc_mapper.query(
         split_schema.clone(),
@@ -757,19 +756,8 @@ async fn leaf_search_single_split(
         false,
         predicate_cache.clone(),
     )?;
-    if predicate_cache.is_some()
-        && let Some(timestamp_field) = ctx.doc_mapper.timestamp_field_name()
-        && let Some(predicate_ast) = time_bounded_cached_predicate(&query_ast, timestamp_field)
-    {
-        // CacheNode builds to an opaque Tantivy leaf, so required-term extraction cannot
-        // see through it. Build the predicate without cache injection as well to retain
-        // negative-cache pruning and its term warmup information.
-        let (_uncached_predicate_query, uncached_predicate_warmup_info) =
-            ctx.doc_mapper
-                .query(split_schema.clone(), predicate_ast, false, None)?;
-        warmup_info.merge(uncached_predicate_warmup_info);
-    }
-    let predicate_cache_warmup_query = if let Some(warmup_ast) = predicate_cache_warmup_ast {
+    let predicate_cache_warmup_query = if let Some(predicate_ast) = predicate_cache_miss_ast {
+        let warmup_ast = QueryAst::from(CacheNode::new(predicate_ast));
         let (warmup_query, predicate_warmup_info) = ctx.doc_mapper.query(
             split_schema.clone(),
             warmup_ast,

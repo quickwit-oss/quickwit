@@ -2242,6 +2242,12 @@ async fn test_time_bounded_query_populates_and_reuses_complete_predicate_cache()
     .await
     .unwrap();
     assert_eq!(first_response.num_hits, 3);
+    let first_input_memory_bytes = first_response
+        .resource_stats
+        .as_ref()
+        .and_then(|stats| stats.split_resources_sum)
+        .expect("the split should report resource stats")
+        .input_memory_bytes;
 
     let (_segment_id, complete_hits) = searcher_context
         .predicate_cache
@@ -2267,6 +2273,16 @@ async fn test_time_bounded_query_populates_and_reuses_complete_predicate_cache()
     .await
     .unwrap();
     assert_eq!(shifted_response.num_hits, 5);
+    let shifted_input_memory_bytes = shifted_response
+        .resource_stats
+        .as_ref()
+        .and_then(|stats| stats.split_resources_sum)
+        .expect("the split should report resource stats")
+        .input_memory_bytes;
+    assert!(
+        shifted_input_memory_bytes < first_input_memory_bytes,
+        "a predicate-cache hit should not warm the predicate posting lists"
+    );
 
     let (_segment_id, reused_hits) = searcher_context
         .predicate_cache

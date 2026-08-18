@@ -37,6 +37,7 @@ use tantivy::Term;
 use tantivy::query::TermQuery as TantivyTermQuery;
 use tantivy::schema::Schema;
 
+use crate::query_ast::cache_node::CacheFillerQuery;
 use crate::query_ast::tantivy_query_ast::{TantivyBoolQuery, TantivyQueryAst};
 
 /// Collects the terms that must be present for the (already simplified) query to
@@ -48,12 +49,15 @@ pub(crate) fn collect_required_terms(
 ) {
     match ast {
         TantivyQueryAst::Leaf(query) => {
-            let Some(term_query) = query.downcast_ref::<TantivyTermQuery>() else {
+            if let Some(term_query) = query.downcast_ref::<TantivyTermQuery>() {
+                let term = term_query.term();
+                if schema.get_field_entry(term.field()).is_indexed() {
+                    required_terms.insert(term.clone());
+                }
                 return;
-            };
-            let term = term_query.term();
-            if schema.get_field_entry(term.field()).is_indexed() {
-                required_terms.insert(term.clone());
+            }
+            if let Some(cache_filler_query) = query.downcast_ref::<CacheFillerQuery>() {
+                required_terms.extend(cache_filler_query.required_terms().iter().cloned());
             }
         }
         TantivyQueryAst::Bool(bool_query) => {
