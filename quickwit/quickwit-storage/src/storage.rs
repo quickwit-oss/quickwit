@@ -19,7 +19,8 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use async_trait::async_trait;
-use futures::future::BoxFuture;
+use futures::stream::BoxStream;
+use futures::{StreamExt, stream};
 use quickwit_common::uri::Uri;
 use tempfile::TempPath;
 use tokio::fs::File;
@@ -39,9 +40,8 @@ pub struct ObjectMetadata {
     pub last_modified: SystemTime,
 }
 
-/// Asynchronous callback invoked with each batch of objects returned by [`Storage::list`].
-pub type ListCallback<'a> =
-    dyn FnMut(Vec<ObjectMetadata>) -> BoxFuture<'static, StorageResult<()>> + Send + 'a;
+/// Stream of object metadata batches returned by [`Storage::list`].
+pub type ListStream = BoxStream<'static, StorageResult<Vec<ObjectMetadata>>>;
 
 /// This trait is only used to make it build trait object with `AsyncWrite + Send + Unpin`.
 pub trait SendableAsync: AsyncWrite + Send + Unpin {}
@@ -147,18 +147,14 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
     /// Lists object metadata for objects whose paths start with `prefix`.
     ///
     /// Returned paths are relative to this storage root, like every other [`Storage`] operation.
-    async fn list<'a>(
-        &self,
-        prefix: &Path,
-        _callback: &mut ListCallback<'a>,
-    ) -> StorageResult<usize> {
+    fn list(&self, prefix: &Path) -> ListStream {
         let err = anyhow::anyhow!(
             "listing objects is not supported for storage `{}` with prefix `{}`",
             self.uri(),
             prefix.display()
         );
         let storage_error = StorageErrorKind::Internal.with_error(err);
-        Err(storage_error)
+        stream::once(async move { Err(storage_error) }).boxed()
     }
 
     /// Returns whether a file exists or not.

@@ -52,15 +52,15 @@ use quickwit_metrics::{HistogramTimer, counter, label_values};
 use regex::Regex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
-use tracing::{debug, info, instrument, warn};
+use tracing::{Instrument, debug, info, instrument, warn};
 
 use crate::metrics::{ERROR_CLASS, object_storage_get_slice_in_flight_guards};
 use crate::object_storage::MultiPartPolicy;
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DeleteFailure, ListCallback, ObjectMetadata, OwnedBytes, Storage,
-    StorageError, StorageErrorKind, StorageResolverError, StorageResult,
+    BulkDeleteError, DeleteFailure, ListStream, ObjectMetadata, OwnedBytes, Storage, StorageError,
+    StorageErrorKind, StorageResolverError, StorageResult,
 };
 
 /// Semaphore to limit the number of concurrent requests to the object store. Some object stores
@@ -959,100 +959,154 @@ impl Storage for S3CompatibleObjectStorage {
         }
     }
 
-    #[instrument(name = "storage.s3.list", level = "debug", skip(self, callback))]
-    async fn list<'a>(
-        &self,
-        prefix: &Path,
-        callback: &mut ListCallback<'a>,
-    ) -> StorageResult<usize> {
+    #[instrument(name = "storage.s3.list", level = "debug", skip(self))]
+    fn list(&self, prefix: &Path) -> ListStream {
+        let s3_client = self.s3_client.clone();
         let bucket = self.bucket.clone();
         let key_prefix = self.key(prefix);
         let storage_prefix = self.prefix.clone();
         let retry_params = self.retry_params;
-        let mut continuation_token = None;
-        let mut num_objects = 0;
-        loop {
-            let response = {
-                let _permit = REQUEST_SEMAPHORE.acquire().await;
-                let list_result = aws_retry(&retry_params, || {
-                    let mut list_request = self
-                        .s3_client
-                        .list_objects_v2()
-                        .bucket(&bucket)
-                        .prefix(&key_prefix);
-                    if let Some(token) = continuation_token.as_deref() {
-                        list_request = list_request.continuation_token(token);
-                    }
-                    list_request.send()
-                })
-                .await;
-                match list_result {
-                    Ok(response) => response,
-                    Err(error) => {
-                        let storage_error = StorageErrorKind::Service
-                            .with_error(anyhow::anyhow!("failed to list objects: {error:?}"));
-                        return Err(storage_error);
-                    }
-                }
-            };
+        let list_span = tracing::Span::current();
 
-            let mut page_objects = Vec::with_capacity(response.contents().len());
-            for object in response.contents() {
-                let Some(key) = object.key() else {
-                    debug!("listed object has no key, skipping");
-                    continue;
-                };
-                let relative_path = match Path::new(key).strip_prefix(&storage_prefix) {
-                    Ok(relative_path) => relative_path.to_path_buf(),
-                    Err(error) => {
-                        let storage_error = StorageErrorKind::Internal.with_error(anyhow::anyhow!(
-                            "listed object `{key}` is not under storage prefix `{}`: {error}",
-                            storage_prefix.display()
-                        ));
-                        return Err(storage_error);
-                    }
-                };
-                let size_bytes = match object.size() {
-                    Some(size) => match u64::try_from(size) {
-                        Ok(size) => size,
-                        Err(error) => {
-                            debug!("listed object size conversion failed, skipping: {error}");
-                            continue;
-                        }
-                    },
-                    None => {
-                        debug!("listed object has no size, skipping");
-                        continue;
-                    }
-                };
-                let last_modified = match object.last_modified() {
-                    Some(modified) => {
-                        if modified.secs() < 0 {
-                            debug!("listed object has negative last modified time, skipping");
-                            continue;
-                        }
-                        UNIX_EPOCH + Duration::new(modified.secs() as u64, modified.subsec_nanos())
-                    }
-                    None => {
-                        debug!("listed object has no last modified time, skipping");
-                        continue;
-                    }
-                };
-                let metadata = ObjectMetadata {
-                    path: relative_path,
-                    size_bytes,
-                    last_modified,
-                };
-                page_objects.push(metadata);
-            }
-            num_objects += page_objects.len();
-            callback(page_objects).await?;
-
-            continuation_token = response.next_continuation_token().map(str::to_string);
-            if continuation_token.is_none() {
-                return Ok(num_objects);
-            }
+        enum ListPosition {
+            First,
+            Middle(String),
+            Last,
         }
+        type ListState = (
+            S3Client,
+            String,
+            String,
+            PathBuf,
+            RetryParams,
+            ListPosition,
+            tracing::Span,
+        );
+        let initial_state: ListState = (
+            s3_client,
+            bucket,
+            key_prefix,
+            storage_prefix,
+            retry_params,
+            ListPosition::First,
+            list_span,
+        );
+
+        let fetch_next_page = |(
+            s3_client,
+            bucket,
+            key_prefix,
+            storage_prefix,
+            retry_params,
+            list_position,
+            list_span,
+        ): ListState| {
+            let page_span = list_span.clone();
+            async move {
+                let continuation_token = match list_position {
+                    ListPosition::First => None,
+                    ListPosition::Middle(token) => Some(token),
+                    // The final page was emitted by the previous unfold step.
+                    ListPosition::Last => return Ok(None),
+                };
+
+                // Fetch one S3 page. The state owns everything needed by this future so the
+                // returned stream does not borrow the storage instance.
+                let response = {
+                    let _permit = REQUEST_SEMAPHORE.acquire().await;
+                    let list_result = aws_retry(&retry_params, || {
+                        let mut list_request = s3_client
+                            .list_objects_v2()
+                            .bucket(&bucket)
+                            .prefix(&key_prefix);
+                        if let Some(token) = continuation_token.as_deref() {
+                            list_request = list_request.continuation_token(token);
+                        }
+                        list_request.send()
+                    })
+                    .await;
+                    match list_result {
+                        Ok(response) => response,
+                        Err(error) => {
+                            let storage_error = StorageErrorKind::Service
+                                .with_error(anyhow::anyhow!("failed to list objects: {error:?}"));
+                            return Err(storage_error);
+                        }
+                    }
+                };
+
+                // Convert S3 metadata to paths relative to the configured storage root.
+                let mut page_objects = Vec::with_capacity(response.contents().len());
+                for object in response.contents() {
+                    let Some(key) = object.key() else {
+                        debug!("listed object has no key, skipping");
+                        continue;
+                    };
+                    let relative_path = match Path::new(key).strip_prefix(&storage_prefix) {
+                        Ok(relative_path) => relative_path.to_path_buf(),
+                        Err(error) => {
+                            let storage_error =
+                                StorageErrorKind::Internal.with_error(anyhow::anyhow!(
+                                    "listed object `{key}` is not under storage prefix `{}`: \
+                                     {error}",
+                                    storage_prefix.display()
+                                ));
+                            return Err(storage_error);
+                        }
+                    };
+                    let size_bytes = match object.size() {
+                        Some(size) => match u64::try_from(size) {
+                            Ok(size) => size,
+                            Err(error) => {
+                                debug!("listed object size conversion failed, skipping: {error}");
+                                continue;
+                            }
+                        },
+                        None => {
+                            debug!("listed object has no size, skipping");
+                            continue;
+                        }
+                    };
+                    let last_modified = match object.last_modified() {
+                        Some(modified) => {
+                            if modified.secs() < 0 {
+                                debug!("listed object has negative last modified time, skipping");
+                                continue;
+                            }
+                            UNIX_EPOCH
+                                + Duration::new(modified.secs() as u64, modified.subsec_nanos())
+                        }
+                        None => {
+                            debug!("listed object has no last modified time, skipping");
+                            continue;
+                        }
+                    };
+                    let metadata = ObjectMetadata {
+                        path: relative_path,
+                        size_bytes,
+                        last_modified,
+                    };
+                    page_objects.push(metadata);
+                }
+
+                let next_list_position = response
+                    .next_continuation_token()
+                    .map(|token| ListPosition::Middle(token.to_string()))
+                    .unwrap_or(ListPosition::Last);
+                let state = (
+                    s3_client,
+                    bucket,
+                    key_prefix,
+                    storage_prefix,
+                    retry_params,
+                    next_list_position,
+                    list_span,
+                );
+                Ok(Some((page_objects, state)))
+            }
+            .instrument(page_span)
+        };
+        stream::try_unfold(initial_state, fetch_next_page).boxed()
     }
 
     #[instrument(name = "storage.s3.get_slice", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
@@ -1138,12 +1192,11 @@ impl Storage for S3CompatibleObjectStorage {
 mod tests {
 
     use std::path::PathBuf;
-    use std::sync::{Arc, Mutex};
 
     use aws_sdk_s3::config::{Credentials, Region};
     use aws_sdk_s3::primitives::SdkBody;
     use aws_smithy_runtime::client::http::test_util::{ReplayEvent, StaticReplayClient};
-    use futures::FutureExt;
+    use futures::TryStreamExt;
     use hyper::http;
     use quickwit_aws::aws_behavior_version;
     use quickwit_common::chunk_range;
@@ -1238,7 +1291,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_s3_compatible_storage_list_invokes_callback_for_all_pages() {
+    async fn test_s3_compatible_storage_list_streams_all_pages() {
         let first_page = r#"<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Name>bucket</Name>
@@ -1305,23 +1358,14 @@ mod tests {
             checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         });
 
-        let pages = Arc::new(Mutex::new(Vec::new()));
-        let callback_pages = pages.clone();
-        let mut callback = move |objects| {
-            let callback_pages = callback_pages.clone();
-            async move {
-                callback_pages.lock().unwrap().push(objects);
-                Ok(())
-            }
-            .boxed()
-        };
-        let num_objects = storage
-            .list(Path::new("splits"), &mut callback)
+        let pages: Vec<Vec<ObjectMetadata>> = storage
+            .list(Path::new("splits"))
+            .try_collect()
             .await
             .unwrap();
 
+        let num_objects: usize = pages.iter().map(Vec::len).sum();
         assert_eq!(num_objects, 2);
-        let pages = pages.lock().unwrap();
         assert_eq!(pages.len(), 2);
         assert_eq!(pages[0].len(), 1);
         assert_eq!(pages[0][0].path, Path::new("splits/a.split"));
