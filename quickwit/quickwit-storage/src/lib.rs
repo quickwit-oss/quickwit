@@ -58,7 +58,7 @@ mod versioned_component;
 
 use quickwit_common::uri::Uri;
 pub use split_cache::SearchSplitCache;
-pub use split_range_cache::FoyerSplitRangeCache;
+pub use split_range_cache::{FoyerSplitRangeCache, FoyerSplitRangeStorage};
 pub use tantivy::directory::OwnedBytes;
 pub use versioned_component::VersionedComponent;
 
