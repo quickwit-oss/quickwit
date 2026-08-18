@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::LazyLock;
 use std::task::{Context, Poll};
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::SystemTime;
 use std::{fmt, io};
 
 use anyhow::{Context as AnyhhowContext, anyhow};
@@ -52,7 +52,7 @@ use quickwit_metrics::{HistogramTimer, counter, label_values};
 use regex::Regex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
-use tracing::{Instrument, debug, info, instrument, warn};
+use tracing::{Instrument, info, instrument, warn};
 
 use crate::metrics::{ERROR_CLASS, object_storage_get_slice_in_flight_guards};
 use crate::object_storage::MultiPartPolicy;
@@ -272,7 +272,9 @@ fn aws_checksum_algorithm(
 /// Coarse classification of an SDK error, used as a counter label.
 /// timeout, io, throttling, transient, or other.
 fn classify_sdk_error<E>(error: &SdkError<E>) -> &'static str
-where E: ProvideErrorMetadata {
+where
+    E: ProvideErrorMetadata,
+{
     match error {
         SdkError::TimeoutError(_) => "timeout",
         SdkError::DispatchFailure(failure) => {
@@ -1039,7 +1041,7 @@ impl Storage for S3CompatibleObjectStorage {
                 let mut page_objects = Vec::with_capacity(response.contents().len());
                 for object in response.contents() {
                     let Some(key) = object.key() else {
-                        debug!("listed object has no key, skipping");
+                        warn!("listed object has no key, skipping");
                         continue;
                     };
                     let relative_path = match Path::new(key).strip_prefix(&storage_prefix) {
@@ -1047,8 +1049,7 @@ impl Storage for S3CompatibleObjectStorage {
                         Err(error) => {
                             let storage_error =
                                 StorageErrorKind::Internal.with_error(anyhow::anyhow!(
-                                    "listed object `{key}` is not under storage prefix `{}`: \
-                                     {error}",
+                                    "listed object `{key}` is not under storage prefix `{}`: {error}",
                                     storage_prefix.display()
                                 ));
                             return Err(storage_error);
@@ -1058,26 +1059,27 @@ impl Storage for S3CompatibleObjectStorage {
                         Some(size) => match u64::try_from(size) {
                             Ok(size) => size,
                             Err(error) => {
-                                debug!("listed object size conversion failed, skipping: {error}");
+                                warn!("listed object size conversion failed, skipping: {error}");
                                 continue;
                             }
                         },
                         None => {
-                            debug!("listed object has no size, skipping");
+                            warn!("listed object has no size, skipping");
                             continue;
                         }
                     };
                     let last_modified = match object.last_modified() {
-                        Some(modified) => {
-                            if modified.secs() < 0 {
-                                debug!("listed object has negative last modified time, skipping");
+                        Some(modified) => match SystemTime::try_from(*modified) {
+                            Ok(last_modified) => last_modified,
+                            Err(error) => {
+                                warn!(
+                                    "listed object last modified time conversion failed, skipping: {error}"
+                                );
                                 continue;
                             }
-                            UNIX_EPOCH
-                                + Duration::new(modified.secs() as u64, modified.subsec_nanos())
-                        }
+                        },
                         None => {
-                            debug!("listed object has no last modified time, skipping");
+                            warn!("listed object has no last modified time, skipping");
                             continue;
                         }
                     };

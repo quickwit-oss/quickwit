@@ -36,7 +36,7 @@ pub struct ObjectMetadata {
     pub path: PathBuf,
     /// Object size in bytes.
     pub size_bytes: u64,
-    /// Last modification time when the backend exposes one.
+    /// Last modification time.
     pub last_modified: SystemTime,
 }
 
