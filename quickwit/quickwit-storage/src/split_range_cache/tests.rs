@@ -28,8 +28,8 @@ use tokio::sync::watch;
 use super::*;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, FoyerSplitRangeStorage, OwnedBytes, PutPayload, RamStorageBuilder, Storage,
-    StorageErrorKind, StorageResult,
+    BulkDeleteError, OwnedBytes, PutPayload, RamStorageBuilder, Storage, StorageErrorKind,
+    StorageResult, wrap_storage_with_split_range_cache,
 };
 
 const SPLIT_PATH: &str = "a.split";
@@ -139,7 +139,8 @@ impl Storage for LowerProbe {
 }
 
 struct Fixture {
-    storage: FoyerSplitRangeStorage,
+    storage: Arc<dyn Storage>,
+    cache: Arc<FoyerSplitRangeCache>,
     lower: Arc<LowerProbe>,
     gate_tx: watch::Sender<bool>,
     _temp_dir: tempfile::TempDir,
@@ -173,9 +174,10 @@ impl Fixture {
             get_slice_completed: AtomicUsize::new(0),
             gate: gate_rx,
         });
-        let storage = FoyerSplitRangeStorage::new(lower.clone(), cache);
+        let storage = wrap_storage_with_split_range_cache(cache.clone(), lower.clone());
         Self {
             storage,
+            cache,
             lower,
             gate_tx,
             _temp_dir: temp_dir,
@@ -203,7 +205,7 @@ impl Fixture {
     }
 
     async fn close(&self) {
-        self.storage.cache().close().await.unwrap();
+        self.cache.close().await.unwrap();
     }
 }
 
@@ -290,7 +292,7 @@ async fn test_remote_error_is_not_cached_or_rewritten() {
 }
 
 #[tokio::test]
-async fn test_writes_are_rejected_as_read_only() {
+async fn test_writes_are_unsupported() {
     let fixture = Fixture::new().await;
     let path = Path::new(SPLIT_PATH);
     let put_error = fixture
@@ -298,18 +300,18 @@ async fn test_writes_are_rejected_as_read_only() {
         .put(path, Box::new(b"x".to_vec()))
         .await
         .unwrap_err();
-    assert_eq!(put_error.kind(), StorageErrorKind::Internal);
+    assert_eq!(put_error.kind(), StorageErrorKind::Io);
     assert!(
         put_error
             .to_string()
-            .contains("split range cache storage is read-only")
+            .contains("Unsupported operation. FoyerSplitRangeStorage only supports async reads")
     );
     let delete_error = fixture.storage.delete(path).await.unwrap_err();
-    assert_eq!(delete_error.kind(), StorageErrorKind::Internal);
+    assert_eq!(delete_error.kind(), StorageErrorKind::Io);
     let bulk_error = fixture.storage.bulk_delete(&[path]).await.unwrap_err();
     assert_eq!(
         bulk_error.error.as_ref().unwrap().kind(),
-        StorageErrorKind::Internal
+        StorageErrorKind::Io
     );
     fixture.close().await;
 }

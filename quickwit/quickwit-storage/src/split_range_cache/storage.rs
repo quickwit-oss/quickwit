@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt;
 use std::future::Future;
 use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
+use std::{fmt, io};
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use foyer::Code;
 use quickwit_common::uri::Uri;
 use tokio::io::AsyncRead;
-use tracing::warn;
+use tracing::{error, warn};
 
 use super::{FoyerSplitRangeCache, SplitRangeCacheKey};
 use crate::stable_deref_bytes::into_owned_bytes;
@@ -54,6 +54,8 @@ pub(crate) fn admission_bypass_reason(
     if value.len() > max_entry_size {
         return Some(AdmissionBypass::MaxEntrySize);
     }
+    // `max_entry_size < block_size` is not enough: the disk slot is
+    // `block_size - blob index` after header, key, and page alignment.
     let encoded_len = FOYER_ENTRY_HEADER_SIZE + key_size + Bytes::estimated_size(value);
     let aligned_len = encoded_len.div_ceil(FOYER_PAGE_SIZE) * FOYER_PAGE_SIZE;
     if aligned_len > block_size - FOYER_BLOB_INDEX_SIZE {
@@ -124,17 +126,16 @@ pub struct FoyerSplitRangeStorage {
     cache: Arc<FoyerSplitRangeCache>,
 }
 
-impl FoyerSplitRangeStorage {
-    /// Wraps `inner` so [`Storage::get_slice`] is served from `cache` on an exact
-    /// `{object URI, byte range}` key.
-    pub fn new(inner: Arc<dyn Storage>, cache: Arc<FoyerSplitRangeCache>) -> Self {
-        Self { inner, cache }
-    }
-
-    /// Process-wide cache behind this decorator.
-    pub fn cache(&self) -> &Arc<FoyerSplitRangeCache> {
-        &self.cache
-    }
+/// Wraps `storage` so [`Storage::get_slice`] is served from `cache` on an exact
+/// `{object URI, byte range}` key.
+pub fn wrap_storage_with_split_range_cache(
+    cache: Arc<FoyerSplitRangeCache>,
+    storage: Arc<dyn Storage>,
+) -> Arc<dyn Storage> {
+    Arc::new(FoyerSplitRangeStorage {
+        inner: storage,
+        cache,
+    })
 }
 
 impl fmt::Debug for FoyerSplitRangeStorage {
@@ -145,8 +146,10 @@ impl fmt::Debug for FoyerSplitRangeStorage {
     }
 }
 
-fn read_only_error() -> StorageError {
-    StorageErrorKind::Internal.with_error(anyhow::anyhow!("split range cache storage is read-only"))
+fn unsupported_operation(paths: &[&Path]) -> StorageError {
+    let msg = "Unsupported operation. FoyerSplitRangeStorage only supports async reads";
+    error!(paths=?paths, msg);
+    io::Error::other(format!("{msg}: {paths:?}")).into()
 }
 
 #[async_trait]
@@ -155,8 +158,8 @@ impl Storage for FoyerSplitRangeStorage {
         self.inner.check_connectivity().await
     }
 
-    async fn put(&self, _path: &Path, _payload: Box<dyn PutPayload>) -> StorageResult<()> {
-        Err(read_only_error())
+    async fn put(&self, path: &Path, _payload: Box<dyn PutPayload>) -> StorageResult<()> {
+        Err(unsupported_operation(&[path]))
     }
 
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
@@ -208,13 +211,13 @@ impl Storage for FoyerSplitRangeStorage {
         self.inner.get_all(path).await
     }
 
-    async fn delete(&self, _path: &Path) -> StorageResult<()> {
-        Err(read_only_error())
+    async fn delete(&self, path: &Path) -> StorageResult<()> {
+        Err(unsupported_operation(&[path]))
     }
 
-    async fn bulk_delete<'a>(&self, _paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
         Err(BulkDeleteError {
-            error: Some(read_only_error()),
+            error: Some(unsupported_operation(paths)),
             ..Default::default()
         })
     }
@@ -260,6 +263,17 @@ mod tests {
         assert_eq!(
             admission_bypass_reason(key_size, &Bytes::from(vec![0; 101]), 100, 4 * 1024 * 1024),
             Some(AdmissionBypass::MaxEntrySize)
+        );
+        // 5 KiB < max_entry_size 7 KiB < block_size 8 KiB, but the disk slot is
+        // only 4 KiB after the blob index.
+        assert_eq!(
+            admission_bypass_reason(
+                key_size,
+                &Bytes::from(vec![0; 5 * 1024]),
+                7 * 1024,
+                8 * 1024
+            ),
+            Some(AdmissionBypass::EncodedTooLarge)
         );
     }
 }

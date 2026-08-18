@@ -29,7 +29,7 @@ use quickwit_config::{
     CachePolicy, DiskCompression, RecoverMode, SplitRangeCacheWritePolicy,
     SplitRangeDiskCacheConfig,
 };
-pub use storage::FoyerSplitRangeStorage;
+pub use storage::{FoyerSplitRangeStorage, wrap_storage_with_split_range_cache};
 
 /// Process-wide Foyer hybrid cache for exact split byte-range payloads.
 pub struct FoyerSplitRangeCache {
