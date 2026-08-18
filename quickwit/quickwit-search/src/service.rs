@@ -29,7 +29,8 @@ use quickwit_proto::search::{
     SearchPlanResponse, SearchRequest, SearchResponse, SnippetRequest,
 };
 use quickwit_storage::{
-    MemorySizedCache, QuickwitCache, SearchSplitCache, StorageCache, StorageResolver,
+    FoyerSplitRangeCache, MemorySizedCache, QuickwitCache, SearchSplitCache, StorageCache,
+    StorageResolver,
 };
 use tantivy::aggregation::AggregationLimitsGuard;
 
@@ -417,6 +418,8 @@ pub struct SearcherContext {
     pub predicate_cache: Arc<PredicateCacheImpl>,
     /// Search split cache. `None` if no split cache is configured.
     pub split_cache_opt: Option<Arc<SearchSplitCache>>,
+    /// Process-wide split range disk cache. `None` if not configured.
+    pub split_range_disk_cache_opt: Option<Arc<FoyerSplitRangeCache>>,
     /// List fields cache. Caches the raw fields-metadata blob for a given split.
     pub list_fields_cache: ListFieldsCache,
     /// The aggregation limits are passed to limit the memory usage.
@@ -439,17 +442,19 @@ impl SearcherContext {
     #[cfg(test)]
     pub fn for_test() -> SearcherContext {
         let searcher_config = SearcherConfig::default();
-        SearcherContext::new_without_invoker(searcher_config, None)
+        SearcherContext::new_without_invoker(searcher_config, None, None)
     }
 
     /// Creates a new searcher context without a lambda invoker.
     pub fn new_without_invoker(
         searcher_config: SearcherConfig,
         split_cache_opt: Option<Arc<SearchSplitCache>>,
+        split_range_disk_cache_opt: Option<Arc<FoyerSplitRangeCache>>,
     ) -> Self {
         Self::new(
             searcher_config,
             split_cache_opt,
+            split_range_disk_cache_opt,
             None::<Box<dyn LambdaLeafSearchInvoker>>,
         )
     }
@@ -458,6 +463,7 @@ impl SearcherContext {
     pub fn new(
         searcher_config: SearcherConfig,
         split_cache_opt: Option<Arc<SearchSplitCache>>,
+        split_range_disk_cache_opt: Option<Arc<FoyerSplitRangeCache>>,
         lambda_invoker: Option<impl LambdaLeafSearchInvoker + 'static>,
     ) -> Self {
         let global_split_footer_cache = MemorySizedCache::from_config(
@@ -490,6 +496,7 @@ impl SearcherContext {
             leaf_search_cache,
             list_fields_cache,
             split_cache_opt,
+            split_range_disk_cache_opt,
             aggregation_limit,
             lambda_invoker,
         }

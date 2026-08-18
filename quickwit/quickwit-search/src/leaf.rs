@@ -3113,7 +3113,8 @@ mod tests {
             offload_threshold: 3,
             ..LambdaConfig::for_test()
         });
-        let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
+        let searcher_context =
+            SearcherContext::new(config, None, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(7);
         let result = super::schedule_search_tasks(splits, &searcher_context).await;
         assert_eq!(result.local_search_tasks.len(), 3);
@@ -3133,7 +3134,8 @@ mod tests {
             offload_threshold: 0,
             ..LambdaConfig::for_test()
         });
-        let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
+        let searcher_context =
+            SearcherContext::new(config, None, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(5);
         let result = super::schedule_search_tasks(splits, &searcher_context).await;
         assert!(result.local_search_tasks.is_empty());
@@ -3147,7 +3149,8 @@ mod tests {
             offload_threshold: 100,
             ..LambdaConfig::for_test()
         });
-        let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
+        let searcher_context =
+            SearcherContext::new(config, None, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(5);
         let result = super::schedule_search_tasks(splits, &searcher_context).await;
         assert_eq!(result.local_search_tasks.len(), 5);

@@ -289,7 +289,11 @@ pub async fn single_node_search(
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
     let cluster_client = ClusterClient::new(search_job_placer);
     let searcher_config = SearcherConfig::default();
-    let searcher_context = Arc::new(SearcherContext::new_without_invoker(searcher_config, None));
+    let searcher_context = Arc::new(SearcherContext::new_without_invoker(
+        searcher_config,
+        None,
+        None,
+    ));
     let search_service = Arc::new(SearchServiceImpl::new(
         metastore.clone(),
         storage_resolver,
