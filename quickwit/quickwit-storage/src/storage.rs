@@ -16,8 +16,10 @@ use std::fmt;
 use std::io::{self};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use async_trait::async_trait;
+use futures::future::BoxFuture;
 use quickwit_common::uri::Uri;
 use tempfile::TempPath;
 use tokio::fs::File;
@@ -25,6 +27,21 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::error;
 
 use crate::{BulkDeleteError, OwnedBytes, PutPayload, StorageErrorKind, StorageResult};
+
+/// Metadata for an object listed from storage.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ObjectMetadata {
+    /// Object path relative to this storage root.
+    pub path: PathBuf,
+    /// Object size in bytes.
+    pub size_bytes: u64,
+    /// Last modification time when the backend exposes one.
+    pub last_modified: SystemTime,
+}
+
+/// Asynchronous callback invoked with each batch of objects returned by [`Storage::list`].
+pub type ListCallback<'a> =
+    dyn FnMut(Vec<ObjectMetadata>) -> BoxFuture<'static, StorageResult<()>> + Send + 'a;
 
 /// This trait is only used to make it build trait object with `AsyncWrite + Send + Unpin`.
 pub trait SendableAsync: AsyncWrite + Send + Unpin {}
@@ -126,6 +143,23 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
     /// not support deleting objects in bulk. The request can fail partially, i.e. some objects are
     /// successfully deleted while others are not.
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError>;
+
+    /// Lists object metadata for objects whose paths start with `prefix`.
+    ///
+    /// Returned paths are relative to this storage root, like every other [`Storage`] operation.
+    async fn list<'a>(
+        &self,
+        prefix: &Path,
+        _callback: &mut ListCallback<'a>,
+    ) -> StorageResult<usize> {
+        let err = anyhow::anyhow!(
+            "listing objects is not supported for storage `{}` with prefix `{}`",
+            self.uri(),
+            prefix.display()
+        );
+        let storage_error = StorageErrorKind::Internal.with_error(err);
+        Err(storage_error)
+    }
 
     /// Returns whether a file exists or not.
     async fn exists(&self, path: &Path) -> StorageResult<bool> {

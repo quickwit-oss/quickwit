@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::LazyLock;
 use std::task::{Context, Poll};
+use std::time::{Duration, UNIX_EPOCH};
 use std::{fmt, io};
 
 use anyhow::{Context as AnyhhowContext, anyhow};
@@ -51,15 +52,15 @@ use quickwit_metrics::{HistogramTimer, counter, label_values};
 use regex::Regex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
-use tracing::{info, instrument, warn};
+use tracing::{debug, info, instrument, warn};
 
 use crate::metrics::{ERROR_CLASS, object_storage_get_slice_in_flight_guards};
 use crate::object_storage::MultiPartPolicy;
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DeleteFailure, OwnedBytes, Storage, StorageError, StorageErrorKind,
-    StorageResolverError, StorageResult,
+    BulkDeleteError, DeleteFailure, ListCallback, ObjectMetadata, OwnedBytes, Storage,
+    StorageError, StorageErrorKind, StorageResolverError, StorageResult,
 };
 
 /// Semaphore to limit the number of concurrent requests to the object store. Some object stores
@@ -958,6 +959,102 @@ impl Storage for S3CompatibleObjectStorage {
         }
     }
 
+    #[instrument(name = "storage.s3.list", level = "debug", skip(self, callback))]
+    async fn list<'a>(
+        &self,
+        prefix: &Path,
+        callback: &mut ListCallback<'a>,
+    ) -> StorageResult<usize> {
+        let bucket = self.bucket.clone();
+        let key_prefix = self.key(prefix);
+        let storage_prefix = self.prefix.clone();
+        let retry_params = self.retry_params;
+        let mut continuation_token = None;
+        let mut num_objects = 0;
+        loop {
+            let response = {
+                let _permit = REQUEST_SEMAPHORE.acquire().await;
+                let list_result = aws_retry(&retry_params, || {
+                    let mut list_request = self
+                        .s3_client
+                        .list_objects_v2()
+                        .bucket(&bucket)
+                        .prefix(&key_prefix);
+                    if let Some(token) = continuation_token.as_deref() {
+                        list_request = list_request.continuation_token(token);
+                    }
+                    list_request.send()
+                })
+                .await;
+                match list_result {
+                    Ok(response) => response,
+                    Err(error) => {
+                        let storage_error = StorageErrorKind::Service
+                            .with_error(anyhow::anyhow!("failed to list objects: {error:?}"));
+                        return Err(storage_error);
+                    }
+                }
+            };
+
+            let mut page_objects = Vec::with_capacity(response.contents().len());
+            for object in response.contents() {
+                let Some(key) = object.key() else {
+                    debug!("listed object has no key, skipping");
+                    continue;
+                };
+                let relative_path = match Path::new(key).strip_prefix(&storage_prefix) {
+                    Ok(relative_path) => relative_path.to_path_buf(),
+                    Err(error) => {
+                        let storage_error = StorageErrorKind::Internal.with_error(anyhow::anyhow!(
+                            "listed object `{key}` is not under storage prefix `{}`: {error}",
+                            storage_prefix.display()
+                        ));
+                        return Err(storage_error);
+                    }
+                };
+                let size_bytes = match object.size() {
+                    Some(size) => match u64::try_from(size) {
+                        Ok(size) => size,
+                        Err(error) => {
+                            debug!("listed object size conversion failed, skipping: {error}");
+                            continue;
+                        }
+                    },
+                    None => {
+                        debug!("listed object has no size, skipping");
+                        continue;
+                    }
+                };
+                let last_modified = match object.last_modified() {
+                    Some(modified) => {
+                        if modified.secs() < 0 {
+                            debug!("listed object has negative last modified time, skipping");
+                            continue;
+                        }
+                        UNIX_EPOCH + Duration::new(modified.secs() as u64, modified.subsec_nanos())
+                    }
+                    None => {
+                        debug!("listed object has no last modified time, skipping");
+                        continue;
+                    }
+                };
+                let metadata = ObjectMetadata {
+                    path: relative_path,
+                    size_bytes,
+                    last_modified,
+                };
+                page_objects.push(metadata);
+            }
+            num_objects += page_objects.len();
+            callback(page_objects).await?;
+
+            continuation_token = response.next_continuation_token().map(str::to_string);
+            if continuation_token.is_none() {
+                return Ok(num_objects);
+            }
+        }
+    }
+
     #[instrument(name = "storage.s3.get_slice", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
@@ -1041,17 +1138,19 @@ impl Storage for S3CompatibleObjectStorage {
 mod tests {
 
     use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
 
     use aws_sdk_s3::config::{Credentials, Region};
     use aws_sdk_s3::primitives::SdkBody;
     use aws_smithy_runtime::client::http::test_util::{ReplayEvent, StaticReplayClient};
+    use futures::FutureExt;
     use hyper::http;
     use quickwit_aws::aws_behavior_version;
     use quickwit_common::chunk_range;
     use quickwit_common::uri::Uri;
 
     use super::*;
-    use crate::{MultiPartPolicy, S3CompatibleObjectStorage};
+    use crate::{DebouncedStorage, MultiPartPolicy, S3CompatibleObjectStorage};
 
     #[tokio::test]
     async fn test_md5_calc() -> std::io::Result<()> {
@@ -1136,6 +1235,103 @@ mod tests {
             s3_storage.relative_path("indexes/foo"),
             PathBuf::from("foo")
         );
+    }
+
+    #[tokio::test]
+    async fn test_s3_compatible_storage_list_invokes_callback_for_all_pages() {
+        let first_page = r#"<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Name>bucket</Name>
+  <Prefix>indexes/splits</Prefix>
+  <KeyCount>1</KeyCount>
+  <MaxKeys>1000</MaxKeys>
+  <IsTruncated>true</IsTruncated>
+  <Contents>
+    <Key>indexes/splits/a.split</Key>
+    <LastModified>2026-08-14T10:00:00.000Z</LastModified>
+    <ETag>&quot;etag-a&quot;</ETag>
+    <Size>5</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+  <NextContinuationToken>next-token</NextContinuationToken>
+</ListBucketResult>"#;
+        let second_page = r#"<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Name>bucket</Name>
+  <Prefix>indexes/splits</Prefix>
+  <KeyCount>1</KeyCount>
+  <MaxKeys>1000</MaxKeys>
+  <IsTruncated>false</IsTruncated>
+  <Contents>
+    <Key>indexes/splits/b.split</Key>
+    <LastModified>2026-08-14T10:01:00.000Z</LastModified>
+    <ETag>&quot;etag-b&quot;</ETag>
+    <Size>7</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+</ListBucketResult>"#;
+        let client = StaticReplayClient::new(vec![
+            ReplayEvent::new(
+                http::Request::builder().body(SdkBody::empty()).unwrap(),
+                http::Response::builder()
+                    .status(200)
+                    .body(SdkBody::from(first_page))
+                    .unwrap(),
+            ),
+            ReplayEvent::new(
+                http::Request::builder().body(SdkBody::empty()).unwrap(),
+                http::Response::builder()
+                    .status(200)
+                    .body(SdkBody::from(second_page))
+                    .unwrap(),
+            ),
+        ]);
+        let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
+        let config = aws_sdk_s3::Config::builder()
+            .behavior_version(aws_behavior_version())
+            .region(Some(Region::new("Foo")))
+            .http_client(client.clone())
+            .credentials_provider(credentials)
+            .build();
+        let storage = DebouncedStorage::new(S3CompatibleObjectStorage {
+            s3_client: S3Client::from_conf(config),
+            uri: Uri::for_test("s3://bucket/indexes"),
+            bucket: "bucket".to_string(),
+            prefix: PathBuf::from("indexes"),
+            multipart_policy: MultiPartPolicy::default(),
+            retry_params: RetryParams::for_test(),
+            disable_multi_object_delete: false,
+            disable_multipart_upload: false,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
+        });
+
+        let pages = Arc::new(Mutex::new(Vec::new()));
+        let callback_pages = pages.clone();
+        let mut callback = move |objects| {
+            let callback_pages = callback_pages.clone();
+            async move {
+                callback_pages.lock().unwrap().push(objects);
+                Ok(())
+            }
+            .boxed()
+        };
+        let num_objects = storage
+            .list(Path::new("splits"), &mut callback)
+            .await
+            .unwrap();
+
+        assert_eq!(num_objects, 2);
+        let pages = pages.lock().unwrap();
+        assert_eq!(pages.len(), 2);
+        assert_eq!(pages[0].len(), 1);
+        assert_eq!(pages[0][0].path, Path::new("splits/a.split"));
+        assert_eq!(pages[0][0].size_bytes, 5);
+        assert_eq!(pages[1].len(), 1);
+        assert_eq!(pages[1][0].path, Path::new("splits/b.split"));
+        assert_eq!(pages[1][0].size_bytes, 7);
+        let requests: Vec<_> = client.actual_requests().collect();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[1].uri().contains("continuation-token=next-token"));
     }
 
     #[tokio::test]
