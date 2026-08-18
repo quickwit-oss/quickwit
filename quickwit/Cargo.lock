@@ -9469,6 +9469,7 @@ dependencies = [
  "serde_json",
  "tantivy",
  "tantivy-fst",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",

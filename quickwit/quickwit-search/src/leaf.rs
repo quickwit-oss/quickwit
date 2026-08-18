@@ -46,6 +46,7 @@ use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
     BundleStorage, ByteRangeCache, CountingStorage, MemorySizedCache, OwnedBytes, SearchSplitCache,
     Storage, StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
+    wrap_storage_with_split_range_cache,
 };
 use tantivy::aggregation::AggContextParams;
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
@@ -160,32 +161,34 @@ async fn get_split_footer_from_cache_or_fetch(
     Ok(footer_data_opt)
 }
 
-/// Returns hotcache_bytes and the split directory (`BundleStorage`) with cache layer:
-/// - A split footer cache given by `SearcherContext.split_footer_cache`.
+/// Returns hotcache_bytes and the split directory (`BundleStorage`).
+///
+/// Footer lookup and later body reads share the same storage stack:
+/// RAM footer cache → optional whole-split cache → optional Foyer range cache →
+/// caller storage.
 pub(crate) async fn open_split_bundle(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<(FileSlice, BundleStorage)> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
+    let foyer_storage: Arc<dyn Storage> = match &searcher_context.split_range_disk_cache_opt {
+        Some(cache) => wrap_storage_with_split_range_cache(cache.clone(), index_storage.clone()),
+        None => index_storage.clone(),
+    };
+    let physical_storage = match &searcher_context.split_cache_opt {
+        Some(split_cache) => SearchSplitCache::wrap_storage(split_cache.clone(), foyer_storage),
+        None => foyer_storage,
+    };
     let footer_data = get_split_footer_from_cache_or_fetch(
-        index_storage.clone(),
+        physical_storage.clone(),
         split_and_footer_offsets,
         &searcher_context.split_footer_cache,
     )
     .await?;
 
-    // We wrap the top-level storage with the split cache.
-    // This is before the bundle storage: at this point, this storage is reading `.split` files.
-    let index_storage_with_split_cache =
-        if let Some(split_cache) = searcher_context.split_cache_opt.as_ref() {
-            SearchSplitCache::wrap_storage(split_cache.clone(), index_storage.clone())
-        } else {
-            index_storage.clone()
-        };
-
     let (hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data(
-        index_storage_with_split_cache,
+        physical_storage,
         split_file,
         FileSlice::new(Arc::new(footer_data)),
     )?;
@@ -3245,3 +3248,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "split_range_cache_layer_tests.rs"]
+mod split_range_cache_layer_tests;
