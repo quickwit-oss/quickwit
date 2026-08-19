@@ -189,6 +189,9 @@ fn deserialize_fields_metadata(
             return false;
         }
         list_field_entry.index_ids = vec![index_id.to_string()];
+        // On-disk entries describe exactly one split. The count is initialized while reading so
+        // the split metadata wire format remains compatible with existing splits.
+        list_field_entry.num_splits = 1;
 
         if list_field_entry
             .field_name
@@ -253,6 +256,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: Vec::new(),
+            num_splits: 0,
         }
     }
 

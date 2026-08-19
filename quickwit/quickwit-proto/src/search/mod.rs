@@ -291,6 +291,7 @@ mod tests {
             index_ids: vec!["index-1".to_string()],
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
+            num_splits: 0,
         }
     }
 

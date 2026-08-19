@@ -82,11 +82,8 @@ pub struct Shard {
     pub shard_id: ::core::option::Option<crate::types::ShardId>,
     /// The node ID of the ingester to which all the write requests for this shard should be sent to.
     #[prost(string, tag = "4")]
-    pub leader_id: ::prost::alloc::string::String,
-    /// The node ID of the ingester holding a copy of the data.
-    #[prost(string, optional, tag = "5")]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub follower_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[serde(rename = "leader_id", alias = "ingester_id")]
+    pub ingester_id: ::prost::alloc::string::String,
     /// Mutable fields
     #[prost(enumeration = "ShardState", tag = "8")]
     pub shard_state: i32,
