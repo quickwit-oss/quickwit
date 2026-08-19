@@ -357,19 +357,18 @@ searcher:
     max_num_splits: 10000
     num_concurrent_downloads: 1
   split_range_disk_cache:
-    path: /var/cache/quickwit/split-range-v1
-    disk_capacity: 300G
-    memory_capacity: 1G
-    buffer_pool_size: 512M
-    submit_queue_size_threshold: 1G
+    path: /quickwit/qwdata/split-range-v1
+    disk_capacity: 1500G
+    memory_capacity: 150G
     memory_eviction_policy: s3-fifo
-    write_policy: write-on-eviction
     compression: lz4
     recover_mode: quiet
-    block_size: 16M
-    max_entry_size: 15M
-    flushers: 4
-    reclaimers: 4
+    block_size: 64M
+    max_entry_size: 60M
+    flushers: 24
+    buffer_pool_size: 20G
+    submit_queue_size_threshold: 24G
+    reclaimers: 8
 ```
 
 ## Jaeger configuration
