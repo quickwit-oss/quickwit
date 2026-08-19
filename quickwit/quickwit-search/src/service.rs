@@ -474,10 +474,11 @@ impl SearcherContext {
             searcher_config.max_num_concurrent_split_searches,
             searcher_config.warmup_memory_budget,
         );
-        let storage_long_term_cache = if searcher_config.fast_field_cache.capacity().as_u64() == 0 {
+        let fast_field_cache = searcher_config.resolved_fast_field_cache();
+        let storage_long_term_cache = if fast_field_cache.capacity().as_u64() == 0 {
             Arc::new(QuickwitCache::empty())
         } else {
-            Arc::new(QuickwitCache::new(&searcher_config.fast_field_cache))
+            Arc::new(QuickwitCache::new(&fast_field_cache))
         };
         let leaf_search_cache = LeafSearchCache::new(&searcher_config.partial_request_cache);
         let predicate_cache = PredicateCacheImpl::new(&searcher_config.predicate_cache);
@@ -523,7 +524,7 @@ mod tests {
     #[tokio::test]
     async fn test_zero_capacity_fast_field_cache_does_not_retain_entries() {
         let mut searcher_config = SearcherConfig::default();
-        searcher_config.fast_field_cache = CacheConfig::no_cache();
+        searcher_config.fast_field_cache = Some(CacheConfig::no_cache());
         let searcher_context = SearcherContext::new_without_invoker(searcher_config, None, None);
         let path = PathBuf::from("segment.fast");
         searcher_context
