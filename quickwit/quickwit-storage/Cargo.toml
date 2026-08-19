@@ -37,6 +37,7 @@ stable_deref_trait = { workspace = true }
 tantivy = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
+fail = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
@@ -97,6 +98,7 @@ azure = [
 ]
 gcs = ["dep:opendal", "opendal/services-gcs"]
 ci-test = []
+failpoints = ["fail/failpoints"]
 integration-testsuite = [
   "azure",
   "azure_core/azurite_workaround",

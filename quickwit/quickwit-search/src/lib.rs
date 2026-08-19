@@ -43,6 +43,8 @@ mod metrics;
 mod search_permit_provider;
 
 #[cfg(test)]
+mod split_range_cache_layer_tests;
+#[cfg(test)]
 mod tests;
 
 pub use collector::QuickwitAggregations;

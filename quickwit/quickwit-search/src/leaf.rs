@@ -162,10 +162,6 @@ async fn get_split_footer_from_cache_or_fetch(
 }
 
 /// Returns hotcache_bytes and the split directory (`BundleStorage`).
-///
-/// Footer lookup and later body reads share the same storage stack:
-/// RAM footer cache → optional whole-split cache → optional Foyer range cache →
-/// caller storage.
 pub(crate) async fn open_split_bundle(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
@@ -176,19 +172,24 @@ pub(crate) async fn open_split_bundle(
         Some(cache) => wrap_storage_with_split_range_cache(cache.clone(), index_storage.clone()),
         None => index_storage.clone(),
     };
-    let physical_storage = match &searcher_context.split_cache_opt {
-        Some(split_cache) => SearchSplitCache::wrap_storage(split_cache.clone(), foyer_storage),
-        None => foyer_storage,
-    };
     let footer_data = get_split_footer_from_cache_or_fetch(
-        physical_storage.clone(),
+        foyer_storage.clone(),
         split_and_footer_offsets,
         &searcher_context.split_footer_cache,
     )
     .await?;
 
+    // We wrap the top-level storage with the split cache.
+    // This is before the bundle storage: at this point, this storage is reading `.split` files.
+    let index_storage_with_split_cache =
+        if let Some(split_cache) = searcher_context.split_cache_opt.as_ref() {
+            SearchSplitCache::wrap_storage(split_cache.clone(), foyer_storage)
+        } else {
+            foyer_storage
+        };
+
     let (hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data(
-        physical_storage,
+        index_storage_with_split_cache,
         split_file,
         FileSlice::new(Arc::new(footer_data)),
     )?;
@@ -3248,7 +3249,3 @@ mod tests {
         }
     }
 }
-
-#[cfg(test)]
-#[path = "split_range_cache_layer_tests.rs"]
-mod split_range_cache_layer_tests;

@@ -20,6 +20,7 @@ use std::{fmt, io};
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use fail::fail_point;
 use foyer::Code;
 use quickwit_common::uri::Uri;
 use tokio::io::AsyncRead;
@@ -171,6 +172,9 @@ impl Storage for FoyerSplitRangeStorage {
         if byte_range.is_empty() {
             return Ok(OwnedBytes::empty());
         }
+        if should_bypass_cache() {
+            return self.inner.get_slice(path, byte_range).await;
+        }
         let object_uri = self
             .inner
             .uri()
@@ -230,6 +234,11 @@ impl Storage for FoyerSplitRangeStorage {
     fn uri(&self) -> &Uri {
         self.inner.uri()
     }
+}
+
+fn should_bypass_cache() -> bool {
+    fail_point!("split-range-cache-before-get", |_| true);
+    false
 }
 
 #[cfg(test)]
