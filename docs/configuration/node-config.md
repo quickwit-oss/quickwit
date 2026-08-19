@@ -310,6 +310,7 @@ This section contains the configuration options for a Searcher.
 | `partial_request_cache_capacity` | Partial request in memory cache capacity on a Searcher. Cache intermediate state for a request, possibly making subsequent requests faster. It can be disabled by setting the size to `0`. | `64M` |
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `split_cache` | Searcher split cache configuration options defined in the section below. Cache disabled if unspecified. | |
+| `split_range_disk_cache` | Process-wide on-disk cache for exact split footer and body byte ranges. Configuration options are defined in the section below. Cache disabled if unspecified. | |
 | `request_timeout_secs` | The time before a search request is cancelled. This should match the timeout of the stack calling into quickwit if there is one set.  | `30` |
 | `use_metastore_read_replica` | If true, routes read-only metastore requests from searchers, including DataFusion when enabled, to nodes running the `metastore_read_replica` service. Searchers require at least one `metastore_read_replica` node at startup and do not fall back to the primary metastore. | `false` |
 
@@ -323,6 +324,25 @@ This section contains the configuration options for the on-disk searcher split c
 | `max_num_splits` | Maximum number of splits allowed in the split cache.   | `10000` |
 | `num_concurrent_downloads` | Maximum number of concurrent download of splits. | `1` |
 
+### Searcher split range disk cache configuration
+
+This section contains the configuration options for the process-wide on-disk cache of exact split footer and body ranges. The cache is disabled when this section is omitted or set to `null`. If it is set and `fast_field_cache_capacity` is omitted, the long-lived fast field RAM cache is disabled; set a capacity explicitly to keep both.
+
+| Property | Description | Default value |
+| --- | --- | --- |
+| `path` | Directory used to store cache files. Created if missing. Must already sit on a usable filesystem. | |
+| `disk_capacity` | Maximum on-disk size of the cache. | |
+| `memory_capacity` | In-memory tier size in front of the disk cache. | |
+| `buffer_pool_size` | Size of the disk write buffer pool. | |
+| `submit_queue_size_threshold` | Maximum amount of data waiting to be flushed to disk. | |
+| `memory_eviction_policy` | Eviction policy for the memory tier. Currently only `s3-fifo` is accepted. | |
+| `write_policy` | When admitted values are written to disk: `write-on-eviction` or `write-on-insertion`. | `write-on-eviction` |
+| `compression` | On-disk compression. Currently only `lz4` is accepted. | |
+| `recover_mode` | How existing cache files are recovered on startup. Currently only `quiet` is accepted. | |
+| `block_size` | Disk block size. Must be larger than `max_entry_size`. | |
+| `max_entry_size` | Maximum uncompressed payload stored as one disk entry. Larger ranges stay in memory only. | |
+| `flushers` | Number of flush worker threads. Must be positive. | |
+| `reclaimers` | Number of reclaim worker threads. Must be positive. | |
 
 Example:
 
@@ -336,6 +356,20 @@ searcher:
     max_num_bytes: 1G
     max_num_splits: 10000
     num_concurrent_downloads: 1
+  split_range_disk_cache:
+    path: /var/cache/quickwit/split-range-v1
+    disk_capacity: 300G
+    memory_capacity: 1G
+    buffer_pool_size: 512M
+    submit_queue_size_threshold: 1G
+    memory_eviction_policy: s3-fifo
+    write_policy: write-on-eviction
+    compression: lz4
+    recover_mode: quiet
+    block_size: 16M
+    max_entry_size: 15M
+    flushers: 4
+    reclaimers: 4
 ```
 
 ## Jaeger configuration
