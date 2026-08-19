@@ -18,11 +18,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use futures::StreamExt;
 use quickwit_common::uri::Uri;
 use tokio::io::AsyncRead;
 
 use crate::storage::SendableAsync;
-use crate::{BulkDeleteError, OwnedBytes, Storage};
+use crate::{
+    BulkDeleteError, ListObjectsStream, ObjectMetadata, OwnedBytes, Storage, StorageErrorKind,
+    StorageResult,
+};
 
 /// This storage acts as a proxy to another storage that simply modifies each API call
 /// by preceding each path with a given a prefix.
@@ -101,6 +105,39 @@ impl Storage for PrefixStorage {
             .await
             .map_err(|error| strip_prefix_from_error(error, &self.prefix))?;
         Ok(())
+    }
+
+    fn list(&self, prefix: &Path) -> ListObjectsStream {
+        /// Makes listed paths relative to this storage root again, undoing the prefix added by
+        /// [`PrefixStorage::list`].
+        fn strip_prefix_from_objects(
+            mut objects: Vec<ObjectMetadata>,
+            prefix: &Path,
+        ) -> StorageResult<Vec<ObjectMetadata>> {
+            if prefix == Path::new("") {
+                return Ok(objects);
+            }
+            for object in &mut objects {
+                let relative_path = object.path.strip_prefix(prefix).map_err(|error| {
+                    StorageErrorKind::Internal.with_error(anyhow::anyhow!(
+                        "listed object `{}` is not under storage prefix `{}`: {error}",
+                        object.path.display(),
+                        prefix.display()
+                    ))
+                })?;
+                object.path = relative_path.to_path_buf();
+            }
+            Ok(objects)
+        }
+
+        let storage_prefix = self.prefix.clone();
+        self.storage
+            .list(&self.prefix.join(prefix))
+            .map(move |objects_res| {
+                let objects = objects_res?;
+                strip_prefix_from_objects(objects, &storage_prefix)
+            })
+            .boxed()
     }
 
     async fn exists(&self, path: &Path) -> crate::StorageResult<bool> {
@@ -184,9 +221,41 @@ fn strip_prefix_from_error(error: BulkDeleteError, prefix: &Path) -> BulkDeleteE
 mod tests {
 
     use std::collections::HashMap;
+    use std::time::SystemTime;
+
+    use futures::{TryStreamExt, stream};
 
     use super::*;
-    use crate::DeleteFailure;
+    use crate::{DeleteFailure, MockStorage};
+
+    #[tokio::test]
+    async fn test_prefix_storage_list() {
+        let mut mock_storage = MockStorage::default();
+        mock_storage.expect_list().times(1).returning(|prefix| {
+            assert_eq!(prefix, Path::new("ram:///indexes/splits"));
+            let objects = vec![ObjectMetadata {
+                path: PathBuf::from("ram:///indexes/splits/foo.split"),
+                size: bytesize::ByteSize(11),
+                last_modified: SystemTime::UNIX_EPOCH,
+            }];
+            stream::once(async move { Ok(objects) }).boxed()
+        });
+        let storage = add_prefix_to_storage(
+            Arc::new(mock_storage),
+            PathBuf::from("ram:///indexes"),
+            Uri::for_test("ram:///indexes"),
+        );
+        let pages: Vec<Vec<ObjectMetadata>> = storage
+            .list(Path::new("splits"))
+            .try_collect()
+            .await
+            .unwrap();
+
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].len(), 1);
+        assert_eq!(pages[0][0].path, Path::new("splits/foo.split"));
+        assert_eq!(pages[0][0].size, bytesize::ByteSize(11));
+    }
 
     #[test]
     fn test_strip_prefix_from_error() {
