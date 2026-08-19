@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -36,12 +37,14 @@ use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
 use aws_sdk_s3::primitives::{AggregatedBytes, ByteStream};
 use aws_sdk_s3::types::builders::ObjectIdentifierBuilder;
 use aws_sdk_s3::types::{
-    ChecksumAlgorithm, CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier,
+    ChecksumAlgorithm, CompletedMultipartUpload, CompletedPart, Delete, EncodingType,
+    ObjectIdentifier,
 };
 use base64::prelude::{BASE64_STANDARD, Engine};
 use bytes::Bytes;
 use bytesize::ByteSize;
 use futures::{StreamExt, stream};
+use percent_encoding::percent_decode_str;
 use quickwit_aws::retry::{AwsRetryable, aws_retry};
 use quickwit_aws::{aws_behavior_version, get_aws_config};
 use quickwit_common::retry::{Retry, RetryParams};
@@ -273,7 +276,9 @@ fn aws_checksum_algorithm(
 /// Coarse classification of an SDK error, used as a counter label.
 /// timeout, io, throttling, transient, or other.
 fn classify_sdk_error<E>(error: &SdkError<E>) -> &'static str
-where E: ProvideErrorMetadata {
+where
+    E: ProvideErrorMetadata,
+{
     match error {
         SdkError::TimeoutError(_) => "timeout",
         SdkError::DispatchFailure(failure) => {
@@ -1026,6 +1031,7 @@ impl Storage for S3CompatibleObjectStorage {
                         let mut list_request = s3_client
                             .list_objects_v2()
                             .bucket(&bucket)
+                            .encoding_type(EncodingType::Url)
                             .prefix(&key_prefix);
                         if let Some(continuation_token) = &continuation_token_opt {
                             list_request = list_request.continuation_token(continuation_token);
@@ -1038,7 +1044,7 @@ impl Storage for S3CompatibleObjectStorage {
                         StorageError::from(error).add_context("failed to list objects")
                     })?;
 
-                    let objects = convert_list_objects(response.contents(), &storage_prefix);
+                    let objects = convert_list_objects(response.contents(), &storage_prefix)?;
                     let next_list_position = response
                         .next_continuation_token
                         .map(ListPosition::Middle)
@@ -1147,16 +1153,21 @@ impl Storage for S3CompatibleObjectStorage {
 fn convert_list_objects(
     objects: &[aws_sdk_s3::types::Object],
     storage_prefix: &Path,
-) -> Vec<ObjectMetadata> {
+) -> StorageResult<Vec<ObjectMetadata>> {
     let mut object_metadata = Vec::with_capacity(objects.len());
     for object in objects {
-        let Some(key) = object.key() else {
+        let Some(encoded_key) = object.key() else {
             warn!("listed object has no key, skipping");
             continue;
         };
-        let Some(relative_key) = strip_storage_prefix(key, storage_prefix) else {
+        let key = decode_list_object_key(encoded_key)?;
+        let Some(relative_key) = strip_storage_prefix(&key, storage_prefix) else {
             continue;
         };
+        if relative_key.is_empty() && key != storage_prefix.to_string_lossy() {
+            // The key `<storage-prefix>/` collides with `<storage-prefix>` after relativization.
+            continue;
+        }
         let relative_path = PathBuf::from(relative_key);
         let size_bytes = match object.size() {
             Some(size) => match u64::try_from(size) {
@@ -1190,7 +1201,17 @@ fn convert_list_objects(
             last_modified,
         });
     }
-    object_metadata
+    Ok(object_metadata)
+}
+
+fn decode_list_object_key(encoded_key: &str) -> StorageResult<Cow<'_, str>> {
+    percent_decode_str(encoded_key)
+        .decode_utf8()
+        .map_err(|error| {
+            StorageErrorKind::Internal.with_error(anyhow::anyhow!(
+                "failed to URL-decode listed object key `{encoded_key}`: {error}"
+            ))
+        })
 }
 
 /// Strips a storage prefix from an S3 key without interpreting it as a filesystem path.
@@ -1332,8 +1353,9 @@ mod tests {
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Name>bucket</Name>
   <Prefix>indexes</Prefix>
-  <KeyCount>3</KeyCount>
+  <KeyCount>4</KeyCount>
   <MaxKeys>1000</MaxKeys>
+  <EncodingType>url</EncodingType>
   <IsTruncated>true</IsTruncated>
   <Contents>
     <Key>indexes</Key>
@@ -1343,14 +1365,21 @@ mod tests {
     <StorageClass>STANDARD</StorageClass>
   </Contents>
   <Contents>
-    <Key>indexes-old/object</Key>
+    <Key>indexes%2F</Key>
+    <LastModified>2026-08-14T09:59:00.000Z</LastModified>
+    <ETag>&quot;etag-trailing-slash-root&quot;</ETag>
+    <Size>4</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+  <Contents>
+    <Key>indexes-old%2Fobject</Key>
     <LastModified>2026-08-14T09:59:00.000Z</LastModified>
     <ETag>&quot;etag-sibling&quot;</ETag>
     <Size>4</Size>
     <StorageClass>STANDARD</StorageClass>
   </Contents>
   <Contents>
-    <Key>indexes/splits/./a.split</Key>
+    <Key>indexes%2Fsplits%2F.%2Fa%25.split</Key>
     <LastModified>2026-08-14T10:00:00.000Z</LastModified>
     <ETag>&quot;etag-a&quot;</ETag>
     <Size>5</Size>
@@ -1364,9 +1393,10 @@ mod tests {
   <Prefix>indexes</Prefix>
   <KeyCount>1</KeyCount>
   <MaxKeys>1000</MaxKeys>
+  <EncodingType>url</EncodingType>
   <IsTruncated>false</IsTruncated>
   <Contents>
-    <Key>indexes/splits//b.split</Key>
+    <Key>indexes%2Fsplits%2F%2Fb.split</Key>
     <LastModified>2026-08-14T10:01:00.000Z</LastModified>
     <ETag>&quot;etag-b&quot;</ETag>
     <Size>7</Size>
@@ -1417,13 +1447,14 @@ mod tests {
         assert_eq!(pages[0].len(), 2);
         assert_eq!(pages[0][0].path, Path::new(""));
         assert_eq!(pages[0][0].size, ByteSize(3));
-        assert_eq!(pages[0][1].path.to_string_lossy(), "splits/./a.split");
+        assert_eq!(pages[0][1].path.to_string_lossy(), "splits/./a%.split");
         assert_eq!(pages[0][1].size, ByteSize(5));
         assert_eq!(pages[1].len(), 1);
         assert_eq!(pages[1][0].path.to_string_lossy(), "splits//b.split");
         assert_eq!(pages[1][0].size, ByteSize(7));
         let requests: Vec<_> = client.actual_requests().collect();
         assert_eq!(requests.len(), 2);
+        assert!(requests[0].uri().contains("encoding-type=url"));
         assert!(requests[0].uri().contains("prefix=indexes"));
         assert!(requests[1].uri().contains("continuation-token=next-token"));
     }
