@@ -1226,15 +1226,18 @@ impl Debug for Stamper {
 }
 
 fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
-    if let Some(included_split_ids) = &query.included_split_ids
-        && !included_split_ids.contains(&split.split_metadata.split_id)
+    if !query.included_split_ids.is_empty()
+        && !query
+            .included_split_ids
+            .contains(&split.split_metadata.split_id)
     {
         return false;
     }
 
-    if query
-        .excluded_split_ids
-        .contains(&split.split_metadata.split_id)
+    if !query.excluded_split_ids.is_empty()
+        && query
+            .excluded_split_ids
+            .contains(&split.split_metadata.split_id)
     {
         return false;
     }

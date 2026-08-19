@@ -176,17 +176,6 @@ pub async fn test_metastore_list_all_splits<
     let split_ids = collect_split_ids(&splits);
     assert_eq!(split_ids, &[&split_id_2, &split_id_4]);
 
-    let query =
-        ListSplitsQuery::for_index(index_uid.clone()).with_included_split_ids(Default::default());
-    let splits = metastore
-        .list_splits(ListSplitsRequest::try_from_list_splits_query(&query).unwrap())
-        .await
-        .unwrap()
-        .collect_splits()
-        .await
-        .unwrap();
-    assert!(splits.is_empty());
-
     cleanup_index(&mut metastore, index_uid.clone()).await;
 }
 

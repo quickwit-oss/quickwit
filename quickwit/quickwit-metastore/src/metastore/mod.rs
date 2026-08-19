@@ -1077,14 +1077,14 @@ pub struct ListSplitsQuery {
     /// Only return splits whose (index_uid, split_id) are lexicographically after this split
     pub after_split: Option<(IndexUid, SplitId)>,
 
-    /// Include only splits whose `split_id` appears in this set. `None` means no inclusion filter;
-    /// an empty set matches no splits.
+    /// Include only splits whose `split_id` appears in this set. An empty set means no inclusion
+    /// filter.
     ///
     /// `#[serde(default)]` keeps this field optional on the wire: the query crosses nodes as JSON,
     /// so during a rolling upgrade an older caller serializes it without this key and an upgraded
-    /// metastore must still deserialize the query (an absent set means "no inclusion filter").
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub included_split_ids: Option<HashSet<SplitId>>,
+    /// metastore must still deserialize the query (an absent set defaults to an empty set).
+    #[serde(default, skip_serializing_if = "HashSet::is_empty")]
+    pub included_split_ids: HashSet<SplitId>,
 
     /// Exclude any split whose `split_id` appears in this set. Empty means no
     /// exclusion.
@@ -1170,7 +1170,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
-            included_split_ids: None,
+            included_split_ids: HashSet::new(),
             excluded_split_ids: HashSet::new(),
         }
     }
@@ -1196,7 +1196,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
-            included_split_ids: None,
+            included_split_ids: HashSet::new(),
             excluded_split_ids: HashSet::new(),
         })
     }
@@ -1218,7 +1218,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
-            included_split_ids: None,
+            included_split_ids: HashSet::new(),
             excluded_split_ids: HashSet::new(),
         }
     }
@@ -1425,7 +1425,7 @@ impl ListSplitsQuery {
 
     /// Includes only splits whose `split_id` is in the provided set.
     pub fn with_included_split_ids(mut self, included_split_ids: HashSet<SplitId>) -> Self {
-        self.included_split_ids = Some(included_split_ids);
+        self.included_split_ids = included_split_ids;
         self
     }
 }
@@ -1692,7 +1692,7 @@ mod tests {
             query_json: query_value.to_string(),
         };
         let deserialized = request.deserialize_list_splits_query().unwrap();
-        assert!(deserialized.included_split_ids.is_none());
+        assert!(deserialized.included_split_ids.is_empty());
 
         let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"));
         let query_value: serde_json::Value =

@@ -218,8 +218,8 @@ pub(super) fn append_query_filters_and_order_by(sql: &mut SelectStatement, query
         );
     }
 
-    if let Some(included_split_ids) = query.included_split_ids {
-        let included_array = split_ids_to_array(included_split_ids);
+    if !query.included_split_ids.is_empty() {
+        let included_array = split_ids_to_array(query.included_split_ids);
         sql.cond_where(Expr::cust_with_values(
             "split_id = ANY($1::text[])",
             [included_array],
