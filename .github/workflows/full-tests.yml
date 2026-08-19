@@ -29,6 +29,17 @@ on:
         required: false
   merge_group:
     types: [checks_requested]
+  # TEMPORARY -- DELETE BEFORE MERGE, along with the three `||` fallbacks in the
+  # `prepare` job and the one in `concurrency` below.
+  #
+  # issue_comment workflows only ever run from the default branch, so the real
+  # trigger cannot be exercised from this PR. Running automatically on pushes
+  # here proves out the expensive job, the dual-SHA status writes and the
+  # report-status drift check. It does NOT exercise full-tests-trigger.yml's
+  # authorize job (permission check + mergeability polling), which stays
+  # unverified until this lands on main.
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -41,7 +52,9 @@ env:
   STATUS_CONTEXT: "full-test-suite"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.pr_number || github.event.merge_group.head_sha }}
+  group: >-
+    ${{ github.workflow }}-${{ inputs.pr_number ||
+    github.event.pull_request.number || github.event.merge_group.head_sha }}
   cancel-in-progress: true
 
 jobs:
@@ -63,9 +76,13 @@ jobs:
         id: resolve
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
-          MERGE_SHA: ${{ inputs.merge_sha }}
-          HEAD_SHA: ${{ inputs.head_sha }}
-          PR_NUMBER: ${{ inputs.pr_number }}
+          # The `|| github.event.pull_request.*` halves are TEMPORARY and exist
+          # only for the pull_request trigger above. On a pull_request run
+          # github.sha is the test merge commit, which is exactly what the
+          # comment path passes as merge_sha.
+          MERGE_SHA: ${{ inputs.merge_sha || github.sha }}
+          HEAD_SHA: ${{ inputs.head_sha || github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
           MERGE_GROUP_SHA: ${{ github.event.merge_group.head_sha }}
         with:
           script: |

@@ -50,11 +50,17 @@ jobs:
               repo: context.repo.repo,
               username: commenter,
             });
-            core.info(`${commenter} has permission: ${data.permission}`);
-            if (!['maintain', 'admin'].includes(data.permission)) {
+            core.info(`${commenter}: permission=${data.permission} role=${data.role_name}`);
+
+            // `permission` is the coarse field and only ever returns admin,
+            // write, read or none -- a `maintain` role reports here as `write`.
+            // Comparing it against 'maintain' therefore admits admins only,
+            // which is not the intent. Use `role_name` instead if a threshold
+            // above write access is ever wanted.
+            if (!['admin', 'write'].includes(data.permission)) {
               core.setFailed(
-                `@${commenter} has '${data.permission}' permission on this repo, ` +
-                `but triggering the full test suite requires 'maintain' or 'admin'.`
+                `@${commenter} has '${data.role_name}' access to this repo, but ` +
+                'triggering the full test suite requires write access or above.'
               );
             }
 
