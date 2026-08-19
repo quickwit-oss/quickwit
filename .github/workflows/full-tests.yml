@@ -117,8 +117,22 @@ jobs:
     needs: [validate-inputs, set-pending]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    # This is the only job that executes the reviewed/merge-group code. It
-    # deliberately has no secret or write permission.
+    # This is the only job that checks out and executes PR-authored code, and
+    # it is deliberately non-privileged. CodeQL flags this checkout
+    # (actions/untrusted-checkout): that is expected here, and is mitigated by
+    # isolation rather than by avoiding the checkout, which would defeat the
+    # entire purpose of the job. Specifically:
+    #   - no secrets: this job never references `secrets.*`. DISCORD_WEBHOOK is
+    #     only read by `on-failure`, which has `permissions: {}` and does not
+    #     check out code.
+    #   - no write scopes: `contents: read` is the minimum `actions/checkout`
+    #     needs. The jobs holding `statuses: write` (set-pending,
+    #     report-status) never check out or run PR code.
+    #   - `persist-credentials: false`, so the token is not left in .git/config
+    #     for the untrusted build steps to pick up.
+    #   - the ref is never arbitrary fork input: the review path tests the exact
+    #     commit a maintain/admin reviewer approved, and the merge_group path
+    #     tests a candidate the merge queue built.
     permissions:
       contents: read
     steps:
