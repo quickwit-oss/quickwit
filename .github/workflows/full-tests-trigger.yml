@@ -38,7 +38,7 @@ jobs:
       # Re-running a workflow replaces the actor while retaining the original
       # comment payload, so trusting github.actor would let a maintainer's re-run
       # launder authorization for someone else's command.
-      - name: Check commenter has maintain/admin permission
+      - name: Check commenter has write access or above
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
           COMMENTER: ${{ github.event.comment.user.login }}
