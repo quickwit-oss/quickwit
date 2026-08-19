@@ -22,15 +22,16 @@ use std::time::Duration;
 use anyhow::bail;
 use async_trait::async_trait;
 use futures::future::join_all;
+use quickwit_common::get_bool_from_env_cached;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::rendezvous_hasher::{node_affinity, sort_by_rendez_vous_hash};
-use quickwit_common::{SocketAddrLegacyHash, get_bool_from_env_cached};
 use quickwit_metrics::counter;
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
+use quickwit_proto::types::NodeId;
 use tracing::{info, warn};
 
 use crate::metrics::JOB_ASSIGNED_TOTAL;
-use crate::{SearchJob, SearchServiceClient, SearcherPool};
+use crate::{SearchJob, SearchServiceClient, SearcherNode, SearcherPool};
 
 /// Job.
 /// The unit in which distributed search is performed.
@@ -67,7 +68,7 @@ pub struct SearchJobPlacer {
 #[async_trait]
 impl EventSubscriber<ReportSplitsRequest> for SearchJobPlacer {
     async fn handle_event(&mut self, evt: ReportSplitsRequest) {
-        let mut nodes: HashMap<SocketAddr, SearchServiceClient> =
+        let mut nodes: HashMap<SocketAddr, SearcherNode> =
             self.searcher_pool.pairs().into_iter().collect();
         if nodes.is_empty() {
             return;
@@ -76,22 +77,23 @@ impl EventSubscriber<ReportSplitsRequest> for SearchJobPlacer {
             HashMap::with_capacity(nodes.len().min(evt.report_splits.len()));
         for report_split in evt.report_splits {
             let node_addr = nodes
-                .keys()
-                .max_by_key(|node_addr| {
-                    node_affinity(SocketAddrLegacyHash(node_addr), &report_split.split_id)
+                .iter()
+                .max_by_key(|(_node_addr, node)| {
+                    node_affinity(&node.node_id, &report_split.split_id)
                 })
                 // This actually never happens thanks to the if-condition at the
                 // top of this function.
+                .map(|(node_addr, _node)| *node_addr)
                 .expect("`nodes` should not be empty");
             splits_per_node
-                .entry(*node_addr)
+                .entry(node_addr)
                 .or_default()
                 .push(report_split);
         }
         for (node_addr, report_splits) in splits_per_node {
-            if let Some(search_client) = nodes.get_mut(&node_addr) {
+            if let Some(searcher_node) = nodes.get_mut(&node_addr) {
                 let report_splits_req = ReportSplitsRequest { report_splits };
-                let _ = search_client.report_splits(report_splits_req).await;
+                let _ = searcher_node.client.report_splits(report_splits_req).await;
             }
         }
     }
@@ -115,13 +117,13 @@ impl SearchJobPlacer {
 }
 
 struct SocketAddrAndClient {
-    socket_addr: SocketAddr,
+    node_id: NodeId,
     client: SearchServiceClient,
 }
 
 impl Hash for SocketAddrAndClient {
     fn hash<H: Hasher>(&self, hasher: &mut H) {
-        SocketAddrLegacyHash(&self.socket_addr).hash(hasher);
+        self.node_id.hash(hasher);
     }
 }
 
@@ -136,15 +138,31 @@ impl SearchJobPlacer {
             .searcher_pool
             .pairs()
             .into_iter()
-            .map(|(socket_addr, client)| SocketAddrAndClient {
-                socket_addr,
-                client,
+            .map(|(_socket_addr, searcher_node)| SocketAddrAndClient {
+                node_id: searcher_node.node_id,
+                client: searcher_node.client,
             })
             .collect();
         sort_by_rendez_vous_hash(&mut nodes[..], affinity_key);
         nodes
             .into_iter()
             .map(|socket_addr_and_client| socket_addr_and_client.client)
+    }
+
+    /// Returns searcher node IDs ordered by decreasing affinity with `affinity_key`.
+    #[cfg(test)]
+    async fn best_node_ids_per_affinity(&self, affinity_key: &[u8]) -> Vec<NodeId> {
+        let mut nodes: Vec<SearcherNode> = self
+            .searcher_pool
+            .pairs()
+            .into_iter()
+            .map(|(_grpc_addr, searcher_node)| searcher_node)
+            .collect();
+        sort_by_rendez_vous_hash(&mut nodes[..], affinity_key);
+        nodes
+            .into_iter()
+            .map(|searcher_node| searcher_node.node_id)
+            .collect()
     }
 
     /// Assign the given job to the clients
@@ -204,9 +222,10 @@ impl SearchJobPlacer {
         }
         let mut candidate_nodes: Vec<CandidateNode> = all_nodes
             .into_iter()
-            .map(|(grpc_addr, client)| CandidateNode {
+            .map(|(grpc_addr, searcher_node)| CandidateNode {
+                affinity_id: searcher_node.node_id,
                 grpc_addr,
-                client,
+                client: searcher_node.client,
                 load: None,
             })
             .collect();
@@ -352,6 +371,7 @@ impl SearchJobPlacer {
 
 #[derive(Debug, Clone)]
 struct CandidateNode {
+    affinity_id: NodeId,
     pub grpc_addr: SocketAddr,
     pub client: SearchServiceClient,
     /// Current load of this node in job-cost units. `None` means the node
@@ -361,13 +381,13 @@ struct CandidateNode {
 
 impl Hash for CandidateNode {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        SocketAddrLegacyHash(&self.grpc_addr).hash(state);
+        self.affinity_id.hash(state);
     }
 }
 
 impl PartialEq for CandidateNode {
     fn eq(&self, other: &Self) -> bool {
-        self.grpc_addr == other.grpc_addr
+        self.affinity_id == other.affinity_id
     }
 }
 
@@ -415,7 +435,9 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{MockSearchService, SearchJob, SearchServiceClient, searcher_pool_for_test};
+    use crate::{
+        MockSearchService, SearchJob, SearchServiceClient, SearcherNode, searcher_pool_for_test,
+    };
 
     fn searcher_pool_with_loads_for_test(
         iter: impl IntoIterator<Item = (&'static str, usize)>,
@@ -427,7 +449,27 @@ mod tests {
             let client =
                 SearchServiceClient::from_service(Arc::new(MockSearchService::new()), grpc_addr)
                     .with_test_load(load);
-            (grpc_addr, client)
+            (grpc_addr, SearcherNode::for_test(client))
+        }))
+    }
+
+    fn searcher_pool_for_named_nodes(
+        iter: impl IntoIterator<Item = (&'static str, &'static str, usize)>,
+    ) -> SearcherPool {
+        SearcherPool::from_iter(iter.into_iter().map(|(node_id, grpc_addr_str, load)| {
+            let grpc_addr: SocketAddr = grpc_addr_str
+                .parse()
+                .expect("the gRPC address should be a valid socket address");
+            let client =
+                SearchServiceClient::from_service(Arc::new(MockSearchService::new()), grpc_addr)
+                    .with_test_load(load);
+            (
+                grpc_addr,
+                SearcherNode {
+                    node_id: NodeId::from_str(node_id),
+                    client,
+                },
+            )
         }))
     }
 
@@ -552,17 +594,17 @@ mod tests {
                 (
                     expected_searcher_addr_1,
                     vec![
-                        SearchJob::for_test("split5", 5),
                         SearchJob::for_test("split4", 4),
                         SearchJob::for_test("split3", 3),
+                        SearchJob::for_test("split2", 2),
+                        SearchJob::for_test("split1", 1),
                     ],
                 ),
                 (
                     expected_searcher_addr_2,
                     vec![
                         SearchJob::for_test("split6", 6),
-                        SearchJob::for_test("split2", 2),
-                        SearchJob::for_test("split1", 1),
+                        SearchJob::for_test("split5", 5),
                     ],
                 ),
             ];
@@ -629,9 +671,9 @@ mod tests {
     // With both nodes at equal load, each split should go to its highest-affinity
     // node as determined by rendezvous hashing.
     //
-    // Affinities for the (1001, 1002) pool (from test_search_job_placer):
-    //   1001 ← split3, split4, split5
-    //   1002 ← split1, split2, split6
+    // Affinities for the (node-1001, node-1002) pool:
+    //   1001 ← split3
+    //   1002 ← split1
     #[tokio::test]
     async fn test_equal_load_affinity_respected() {
         let searcher_pool = searcher_pool_for_test([
@@ -744,5 +786,60 @@ mod tests {
         let mut split_ids: Vec<&str> = jobs.iter().map(|job| job.split_id()).collect();
         split_ids.sort_unstable();
         assert_eq!(split_ids, vec!["split1", "split3"]);
+    }
+
+    #[tokio::test]
+    async fn test_rendezvous_order_survives_address_change_for_same_node_ids() {
+        let first_pool = searcher_pool_for_named_nodes([
+            ("searcher-0", "127.0.0.1:1001", 0),
+            ("searcher-1", "127.0.0.1:1002", 0),
+        ]);
+        let restarted_pool = searcher_pool_for_named_nodes([
+            ("searcher-0", "127.0.0.1:2001", 0),
+            ("searcher-1", "127.0.0.1:2002", 0),
+        ]);
+        let before = SearchJobPlacer::new(first_pool)
+            .best_node_ids_per_affinity(b"split-a")
+            .await;
+        let after = SearchJobPlacer::new(restarted_pool)
+            .best_node_ids_per_affinity(b"split-a")
+            .await;
+        assert_eq!(before, after);
+        assert_eq!(before.len(), 2);
+    }
+
+    // Load-aware fallback still skips the highest-affinity node when that node
+    // is overloaded, and picks the next node in the stable node-id order.
+    #[tokio::test]
+    async fn test_load_fallback_still_uses_next_stable_candidate() {
+        let overloaded_addr: SocketAddr = ([127, 0, 0, 1], 1001).into();
+        let idle_addr: SocketAddr = ([127, 0, 0, 1], 1002).into();
+        let searcher_pool = searcher_pool_for_named_nodes([
+            ("searcher-0", "127.0.0.1:1001", 1_000_000),
+            ("searcher-1", "127.0.0.1:1002", 0),
+        ]);
+        let placer = SearchJobPlacer::new(searcher_pool);
+
+        let mut split_id = "split-0".to_string();
+        let mut ordered = Vec::new();
+        for split_ord in 0..200 {
+            split_id = format!("split-{split_ord}");
+            ordered = placer.best_node_ids_per_affinity(split_id.as_bytes()).await;
+            if ordered.first().map(|node_id| node_id.as_str()) == Some("searcher-0") {
+                break;
+            }
+        }
+        assert_eq!(
+            ordered.first().map(|node_id| node_id.as_str()),
+            Some("searcher-0"),
+            "could not find a split whose highest-affinity node is searcher-0"
+        );
+
+        let selected = placer
+            .assign_job(SearchJob::for_test(&split_id, 1), &HashSet::new())
+            .await
+            .unwrap();
+        assert_eq!(selected.grpc_addr(), idle_addr);
+        assert_ne!(selected.grpc_addr(), overloaded_addr);
     }
 }
