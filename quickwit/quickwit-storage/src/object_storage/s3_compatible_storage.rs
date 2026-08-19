@@ -1003,45 +1003,54 @@ impl Storage for S3CompatibleObjectStorage {
                 list_position,
                 list_span,
             ): ListState| async move {
-                let continuation_token_opt = match list_position {
-                    ListPosition::First => None,
-                    ListPosition::Middle(token) => Some(token),
-                    ListPosition::Last => return Ok(None),
-                };
+                let mut list_position = list_position;
+                loop {
+                    let continuation_token_opt = match list_position {
+                        ListPosition::First => None,
+                        ListPosition::Middle(token) => Some(token),
+                        ListPosition::Last => return Ok(None),
+                    };
 
-                let _permit = REQUEST_SEMAPHORE.acquire().await;
-                let list_objects_span =
-                    tracing::debug_span!(parent: &list_span, "storage.s3.list_objects_v2");
-                let response = aws_retry(&retry_params, || {
-                    let mut list_request = s3_client
-                        .list_objects_v2()
-                        .bucket(&bucket)
-                        .prefix(&key_prefix);
-                    if let Some(continuation_token) = &continuation_token_opt {
-                        list_request = list_request.continuation_token(continuation_token);
+                    let _permit = REQUEST_SEMAPHORE.acquire().await;
+                    let list_objects_span =
+                        tracing::debug_span!(parent: &list_span, "storage.s3.list_objects_v2");
+                    let response = aws_retry(&retry_params, || {
+                        let mut list_request = s3_client
+                            .list_objects_v2()
+                            .bucket(&bucket)
+                            .prefix(&key_prefix);
+                        if let Some(continuation_token) = &continuation_token_opt {
+                            list_request = list_request.continuation_token(continuation_token);
+                        }
+                        list_request.send()
+                    })
+                    .instrument(list_objects_span)
+                    .await
+                    .map_err(|error| {
+                        StorageError::from(error).add_context("failed to list objects")
+                    })?;
+
+                    let objects = convert_list_objects(response.contents(), &storage_prefix)?;
+                    let next_list_position = response
+                        .next_continuation_token
+                        .map(ListPosition::Middle)
+                        .unwrap_or(ListPosition::Last);
+                    if objects.is_empty() {
+                        list_position = next_list_position;
+                        continue;
                     }
-                    list_request.send()
-                })
-                .instrument(list_objects_span)
-                .await
-                .map_err(|error| StorageError::from(error).add_context("failed to list objects"))?;
 
-                let objects = convert_list_objects(response.contents(), &storage_prefix)?;
-                let next_list_position = response
-                    .next_continuation_token
-                    .map(ListPosition::Middle)
-                    .unwrap_or(ListPosition::Last);
-
-                let state = (
-                    s3_client,
-                    bucket,
-                    key_prefix,
-                    storage_prefix,
-                    retry_params,
-                    next_list_position,
-                    list_span,
-                );
-                Ok(Some((objects, state)))
+                    let state = (
+                        s3_client,
+                        bucket,
+                        key_prefix,
+                        storage_prefix,
+                        retry_params,
+                        next_list_position,
+                        list_span,
+                    );
+                    return Ok(Some((objects, state)));
+                }
             },
         )
         .boxed()
