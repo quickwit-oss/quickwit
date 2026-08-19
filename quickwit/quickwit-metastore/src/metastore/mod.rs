@@ -1083,7 +1083,7 @@ pub struct ListSplitsQuery {
     /// `#[serde(default)]` keeps this field optional on the wire: the query crosses nodes as JSON,
     /// so during a rolling upgrade an older caller serializes it without this key and an upgraded
     /// metastore must still deserialize the query (an absent set means "no inclusion filter").
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub included_split_ids: Option<HashSet<SplitId>>,
 
     /// Exclude any split whose `split_id` appears in this set. Empty means no
@@ -1693,5 +1693,10 @@ mod tests {
         };
         let deserialized = request.deserialize_list_splits_query().unwrap();
         assert!(deserialized.included_split_ids.is_none());
+
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"));
+        let query_value: serde_json::Value =
+            serde_json::from_str(&serde_utils::to_json_str(&query).unwrap()).unwrap();
+        assert!(query_value.get("included_split_ids").is_none());
     }
 }
