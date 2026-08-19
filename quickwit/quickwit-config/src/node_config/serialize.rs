@@ -874,7 +874,7 @@ mod tests {
         assert_eq!(
             config.ingest_api_config,
             IngestApiConfig {
-                replication_factor: 2,
+                _replication_factor: Some(serde::de::IgnoredAny),
                 ..Default::default()
             }
         );
@@ -1012,7 +1012,7 @@ mod tests {
                 env::current_dir().unwrap().display()
             )
         );
-        assert_eq!(config.ingest_api_config.replication_factor, 1);
+        assert!(config.ingest_api_config._replication_factor.is_none());
     }
 
     #[tokio::test]
@@ -1759,36 +1759,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_node_config_validates_ingest_config() {
-        let ingest_config = IngestApiConfig {
-            replication_factor: 0,
-            ..Default::default()
-        };
-        let error_message = ingest_config.validate().unwrap_err().to_string();
-        assert!(error_message.contains("either 1 or 2, got `0`"));
-
-        let ingest_config = IngestApiConfig {
-            replication_factor: 3,
-            ..Default::default()
-        };
-        let error_message = ingest_config.validate().unwrap_err().to_string();
-        assert!(error_message.contains("either 1 or 2, got `3`"));
-
+    async fn test_node_config_accepts_deprecated_replication_factor() {
         let node_config_yaml = r#"
             version: 0.8
             ingest_api:
-              replication_factor: 0
+              replication_factor: 1
         "#;
-        let error_message = load_node_config_with_env(
+        let config = load_node_config_with_env(
             ConfigFormat::Yaml,
             node_config_yaml.as_bytes(),
             &Default::default(),
             None,
         )
         .await
-        .unwrap_err()
-        .to_string();
-        assert!(error_message.contains("replication factor"));
+        .unwrap();
+        assert!(config.ingest_api_config._replication_factor.is_some());
     }
 
     #[tokio::test]
