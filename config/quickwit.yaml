@@ -217,15 +217,15 @@ indexer:
 #   split_range_disk_cache:
 #     path: /quickwit/qwdata/split-range-v1
 #     disk_capacity: 1500G
-#     memory_capacity: 150G
+#     memory_capacity: 15G
 #     memory_eviction_policy: s3-fifo
 #     compression: lz4
 #     recover_mode: quiet
 #     block_size: 64M
 #     max_entry_size: 60M
 #     flushers: 24
-#     buffer_pool_size: 20G
-#     submit_queue_size_threshold: 24G
+#     buffer_pool_size: 2G
+#     submit_queue_size_threshold: 3G
 #     reclaimers: 8
 # -------------------------------- Jaeger settings --------------------------------
 
