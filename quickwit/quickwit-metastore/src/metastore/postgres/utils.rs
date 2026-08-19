@@ -219,18 +219,18 @@ pub(super) fn append_query_filters_and_order_by(sql: &mut SelectStatement, query
     }
 
     if let Some(included_split_ids) = query.included_split_ids {
-        let included_split_ids = split_ids_to_array(included_split_ids);
+        let included_array = split_ids_to_array(included_split_ids);
         sql.cond_where(Expr::cust_with_values(
             "split_id = ANY($1::text[])",
-            [included_split_ids],
+            [included_array],
         ));
     }
 
     if !query.excluded_split_ids.is_empty() {
-        let excluded_split_ids = split_ids_to_array(query.excluded_split_ids);
+        let excluded_array = split_ids_to_array(query.excluded_split_ids);
         sql.cond_where(Expr::cust_with_values(
             "split_id <> ALL($1::text[])",
-            [excluded_split_ids],
+            [excluded_array],
         ));
     }
 
