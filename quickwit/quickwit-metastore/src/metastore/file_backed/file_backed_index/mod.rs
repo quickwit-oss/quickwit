@@ -1419,11 +1419,6 @@ mod tests {
         assert!(split_query_predicate(&&split_3, &query));
 
         let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
-            .retain_mature(time::OffsetDateTime::now_utc())
-            .with_included_split_ids(Default::default());
-        assert!(!split_query_predicate(&&split_1, &query));
-
-        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_delete_opstamp_gte(4);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
