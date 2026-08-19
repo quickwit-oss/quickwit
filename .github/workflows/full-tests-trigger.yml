@@ -1,124 +1,56 @@
 name: Full test suite trigger
 
-# `full-tests.yml` ("full-tests / make test-all") is a required status check
-# but never runs on its own — see the comment there for why. This workflow
-# is the trigger: a PR comment whose body starts with `/ci-run-full-tests`,
-# and if that commenter actually holds `maintain` or `admin` permission on
-# this repo, this sets a pending status on the PR's current head commit and
-# dispatches full-tests.yml against it.
-#
-# Uses issue_comment (a plain PR comment on the Conversation tab), not
-# pull_request_review — a submitted review pins naturally to a specific
-# commit (github.event.review.commit_id); a plain comment doesn't carry a
-# commit sha at all, so this fetches the PR's current head sha itself. That
-# means there's a small window between commenting and this job running
-# where a new push could move the head sha out from under the comment —
-# accepted as a UX tradeoff for "just comment normally" over requiring the
-# Review-changes flow.
-#
-# Deliberately checks the real collaborator permission level via the API
-# rather than `github.event.comment.author_association` — that field can
-# only tell you OWNER/MEMBER/COLLABORATOR/etc, none of which distinguish
-# "has write access" from "has maintain/admin access". As of 2026-08-17,
-# quickwit-oss/quickwit has 57 collaborators with at least write access but
-# only 24 with maintain/admin — author_association would have let all 57
-# trigger this, not just the intended 24.
+# A maintainer can run the expensive full suite by submitting a PR review
+# beginning with `/ci-run-full-tests`. Review events include the immutable
+# commit SHA that the review covers, so the suite cannot drift to a later push.
 on:
-  issue_comment:
-    types: [created]
+  pull_request_review:
+    types: [submitted]
 
 permissions:
   contents: read
-  statuses: write
-  actions: write
-
-concurrency:
-  group: full-tests-trigger-${{ github.event.comment.id }}
-  cancel-in-progress: false
 
 jobs:
-  trigger:
-    name: Trigger full test suite
-    runs-on: ubuntu-latest
-    # github.event.issue.pull_request only exists when the comment is on a
-    # PR (issue_comment fires for both issues and PRs).
-    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body, '/ci-run-full-tests') }}
+  authorize:
+    name: Authorize full test suite
+    if: ${{ startsWith(github.event.review.body, '/ci-run-full-tests') }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
-      - name: Resolve PR head sha
-        id: pr
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
-        with:
-          script: |
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number,
-            });
-            core.setOutput('sha', pr.head.sha);
-
-      # Bound to github.event.comment.user.login (who actually posted the
-      # comment), not context.actor (whoever triggered this workflow *run*
-      # — those differ on a manual re-run, where actor becomes the
-      # re-runner while the comment payload stays frozen from the
-      # original event).
-      - name: Check commenter has maintain/admin permission
+      # Check the actual review author rather than github.actor: re-runs change
+      # the actor while retaining the original review event payload.
+      - name: Check reviewer has maintain/admin permission
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
-          COMMENTER: ${{ github.event.comment.user.login }}
+          REVIEWER: ${{ github.event.review.user.login }}
         with:
           script: |
-            const commenter = process.env.COMMENTER;
+            const reviewer = process.env.REVIEWER;
             const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              username: commenter,
+              username: reviewer,
             });
-            core.info(`${commenter} has permission: ${data.permission}`);
+            core.info(`${reviewer} has permission: ${data.permission}`);
             if (!['maintain', 'admin'].includes(data.permission)) {
               core.setFailed(
-                `@${commenter} has '${data.permission}' permission on this repo, ` +
+                `@${reviewer} has '${data.permission}' permission on this repo, ` +
                 `but triggering the full test suite requires 'maintain' or 'admin'.`
               );
             }
 
-      - name: Set commit status to pending
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
-        env:
-          COMMENTER: ${{ github.event.comment.user.login }}
-          SHA: ${{ steps.pr.outputs.sha }}
-        with:
-          script: |
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: process.env.SHA,
-              state: 'pending',
-              context: 'full-tests / make test-all',
-              description: `Triggered by @${process.env.COMMENTER}`,
-              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/pull/${context.issue.number}`,
-            })
-
-      # Dispatch against `main` (a ref guaranteed to exist in this repo),
-      # not the PR's own branch: for fork PRs, the head branch name only
-      # exists in the fork, not here, and workflow_dispatch's `ref` must
-      # name a branch/tag in *this* repo. full-tests.yml's own checkout
-      # step is what actually fetches `inputs.sha` — that's the PR head
-      # commit resolved above, regardless of which ref ran the dispatch.
-      - name: Dispatch full-tests.yml
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
-        env:
-          SHA: ${{ steps.pr.outputs.sha }}
-          PR_NUMBER: ${{ github.event.issue.number }}
-        with:
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'full-tests.yml',
-              ref: 'main',
-              inputs: {
-                sha: process.env.SHA,
-                pr_number: process.env.PR_NUMBER,
-              },
-            })
+  full-tests:
+    name: Run full test suite
+    needs: authorize
+    uses: ./.github/workflows/full-tests.yml
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    with:
+      sha: ${{ github.event.review.commit_id }}
+      pr_number: ${{ github.event.pull_request.number }}
+    secrets:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}

@@ -1,52 +1,24 @@
 name: Full test suite
 
-# Runs the full test suite (`make test-all`: --all-features + failpoints)
-# against every broker/backend service (Kafka, Pulsar, Azurite, fake GCS,
-# Pub/Sub emulator, LocalStack, Postgres).
-#
-# This is a REQUIRED status check for merging, but it never runs on its
-# own — it only runs via workflow_dispatch, triggered by
-# full-tests-trigger.yml when a reviewer with `maintain`/`admin` permission
-# on the repo submits a PR review containing `/ci-run-full-tests`.
-#
-# Why gate it at all instead of running automatically on every PR: only
-# `ci.yml` (`cargo nextest --features=postgres,metrics`) and
-# `datafusion-ci.yml` run automatically. None of the other optional
-# features (kafka, pulsar, sqs, gcp-pubsub, azure, gcs, failpoints, ...) or
-# broker-backed integration tests get compiled/exercised otherwise pre-merge
-# — the only workflow that already runs them (`coverage.yml`) triggers on
-# `push` to `main`, i.e. after merge. Running the full suite unconditionally
-# on every PR push was the first design here, but it doesn't match how
-# quickwit's team already runs the sibling `vector` repo's CI (broker/full
-# suites there are merge-queue- or maintainer-comment-gated, never
-# automatic-for-everyone) — this mirrors that instead.
-#
-# Job layout is deliberately split so that the only job which checks out
-# and executes untrusted PR content (`full-tests`) never holds
-# `statuses: write`. `inputs.sha`/`inputs.pr_number` are workflow_dispatch
-# inputs — free-text fields anyone with plain repo write access can set to
-# anything via the Actions UI/API, bypassing full-tests-trigger.yml's
-# permission check entirely — so they're validated to a strict shape
-# (`validate-inputs`) before any other job trusts them, and passed to
-# github-script via `env:`/`process.env` rather than templated into script
-# source, so a crafted input can't break out of a string literal.
-# TEMPORARY: pull_request: added to validate the redesigned job graph
-# (validate-inputs/set-pending/full-tests/report-status split, the protoc
-# fix, docker-compose services) actually runs green before wiring up the
-# real workflow_dispatch-only trigger. Remove this trigger, and the
-# `|| github.event.pull_request...` fallbacks below, before merging.
+# Runs `make test-all` (--all-features plus failpoints) against every
+# broker/backend service. A maintainer's submitted PR review invokes this as a
+# reusable workflow; merge-queue commits run it automatically.
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       sha:
-        description: "Commit SHA to check out and report the status against"
+        description: "Immutable PR head SHA to test"
         required: true
         type: string
       pr_number:
-        description: "PR number (used only for the failure notification link)"
+        description: "PR number whose head SHA is tested"
         required: true
         type: string
-  pull_request:
+    secrets:
+      DISCORD_WEBHOOK:
+        required: false
+  merge_group:
+    types: [checks_requested]
 
 permissions:
   contents: read
@@ -55,46 +27,79 @@ env:
   STATUS_CONTEXT: "full-tests / make test-all"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.sha || github.event.pull_request.head.sha }}
+  group: ${{ github.workflow }}-${{ inputs.pr_number || github.event.merge_group.head_sha }}
   cancel-in-progress: true
 
 jobs:
   validate-inputs:
-    name: Validate inputs
-    runs-on: ubuntu-latest
+    name: Validate target
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
-    permissions: {}
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      sha: ${{ steps.validate.outputs.sha }}
+      pr_number: ${{ steps.validate.outputs.pr_number }}
+      review_triggered: ${{ steps.validate.outputs.review_triggered }}
     steps:
-      - name: Validate sha and pr_number are well-formed
+      - name: Validate target SHA
+        id: validate
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
-          SHA: ${{ inputs.sha || github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
-        run: |
-          if ! [[ "$SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
-            echo "::error::sha must be a 40-character hex commit SHA, got: $SHA"
-            exit 1
-          fi
-          if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
-            echo "::error::pr_number must be numeric, got: $PR_NUMBER"
-            exit 1
-          fi
+          REVIEW_TRIGGERED: ${{ inputs.sha != '' }}
+          SHA: ${{ inputs.sha || github.event.merge_group.head_sha }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        with:
+          script: |
+            const reviewTriggered = process.env.REVIEW_TRIGGERED === 'true';
+            const sha = process.env.SHA;
+            const prNumber = process.env.PR_NUMBER;
+
+            if (!/^[0-9a-fA-F]{40}$/.test(sha)) {
+              core.setFailed(`sha must be a 40-character hex commit SHA, got: ${sha}`);
+              return;
+            }
+
+            if (reviewTriggered) {
+              if (!/^[0-9]+$/.test(prNumber)) {
+                core.setFailed(`pr_number must be numeric, got: ${prNumber}`);
+                return;
+              }
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: Number(prNumber),
+              });
+              if (pr.state !== 'open') {
+                core.setFailed(`PR #${prNumber} is ${pr.state}, not open.`);
+                return;
+              }
+              if (pr.head.sha.toLowerCase() !== sha.toLowerCase()) {
+                core.setFailed(
+                  `PR #${prNumber} head is ${pr.head.sha}, not reviewed SHA ${sha}. ` +
+                  'Submit a new /ci-run-full-tests review for the current head.'
+                );
+                return;
+              }
+            }
+
+            core.setOutput('sha', sha);
+            core.setOutput('pr_number', reviewTriggered ? prNumber : '');
+            core.setOutput('review_triggered', String(reviewTriggered));
 
   set-pending:
     name: Set pending status
-    needs: [validate-inputs]
-    # TEMPORARY (see `on:` above): while pull_request: is active, don't
-    # post a real commit status on every PR push in the repo — that could
-    # auto-satisfy this exact check's context if it's already required
-    # elsewhere. Remove this condition along with the trigger before merge.
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-latest
+    needs: validate-inputs
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions:
       statuses: write
     steps:
       - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
-          SHA: ${{ inputs.sha || github.event.pull_request.head.sha }}
+          SHA: ${{ needs.validate-inputs.outputs.sha }}
+          STATUS_CONTEXT: ${{ env.STATUS_CONTEXT }}
         with:
           script: |
             await github.rest.repos.createCommitStatus({
@@ -102,32 +107,24 @@ jobs:
               repo: context.repo.repo,
               sha: process.env.SHA,
               state: 'pending',
-              context: '${{ env.STATUS_CONTEXT }}',
+              context: process.env.STATUS_CONTEXT,
               description: 'Running full test suite...',
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-            })
+            });
 
   full-tests:
     name: All-features tests + failpoints (make test-all)
-    needs: [set-pending]
-    # A skipped set-pending (see TEMPORARY note there) would otherwise
-    # cascade into skipping this job too, since `needs` defaults to
-    # requiring success, not skipped-or-success.
-    if: ${{ !failure() && !cancelled() }}
-    # gh-ubuntu-arm64 (used by coverage.yml too) reproducibly killed this
-    # job at ~8 minutes across two separate runs — not our timeout-minutes,
-    # something infra-side. Vector's CI (test.yml) uses plain GitHub-hosted
-    # runners throughout (ubuntu-24.04, ubuntu-24.04-8core for heavy jobs);
-    # matching that here with the standard tier first since we can't
-    # confirm quickwit-oss has GitHub's larger-runner tier provisioned.
-    runs-on: ubuntu-latest
+    needs: [validate-inputs, set-pending]
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
+    # This is the only job that executes the reviewed/merge-group code. It
+    # deliberately has no secret or write permission.
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ inputs.sha || github.event.pull_request.head.sha }}
+          ref: ${{ needs.validate-inputs.outputs.sha }}
           persist-credentials: false
 
       - name: Install Ubuntu packages
@@ -135,10 +132,8 @@ jobs:
           sudo apt-get update
           sudo apt-get -y install libsasl2-dev libcurl4-openssl-dev
 
-      # apt's protobuf-compiler is too old to support proto3 optional fields
-      # by default, which the `substrait` crate (pulled in by --all-features
-      # via the `datafusion` feature) requires. coverage.yml hits the same
-      # constraint and installs protoc this way for the same reason.
+      # apt's protobuf-compiler is too old for proto3 optional fields required
+      # by the substrait crate enabled through the datafusion feature.
       - name: Install protoc
         uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
         with:
@@ -185,18 +180,17 @@ jobs:
   report-status:
     name: Report final status
     needs: [validate-inputs, full-tests]
-    # TEMPORARY (see `on:` above): only post a real status for a
-    # workflow_dispatch run, same reasoning as set-pending.
-    if: ${{ always() && needs.validate-inputs.result == 'success' && github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-latest
+    if: ${{ always() && needs.validate-inputs.result == 'success' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions:
       statuses: write
     steps:
       - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
-          SHA: ${{ inputs.sha || github.event.pull_request.head.sha }}
+          SHA: ${{ needs.validate-inputs.outputs.sha }}
           RESULT: ${{ needs.full-tests.result }}
+          STATUS_CONTEXT: ${{ env.STATUS_CONTEXT }}
         with:
           script: |
             const state = process.env.RESULT === 'success' ? 'success' : 'failure';
@@ -205,28 +199,38 @@ jobs:
               repo: context.repo.repo,
               sha: process.env.SHA,
               state,
-              context: '${{ env.STATUS_CONTEXT }}',
+              context: process.env.STATUS_CONTEXT,
               description: state === 'success' ? 'Full test suite passed' : 'Full test suite failed',
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-            })
+            });
 
   on-failure:
-    if: ${{ github.repository_owner == 'quickwit-oss' && needs.full-tests.result == 'failure' }}
-    name: On Failure
-    needs: [full-tests]
-    runs-on: ubuntu-latest
+    name: Send failure notification
+    needs: [validate-inputs, full-tests]
+    if: >-
+      ${{ always() && github.repository_owner == 'quickwit-oss' &&
+      needs.validate-inputs.result == 'success' && needs.full-tests.result == 'failure' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
+    env:
+      TARGET: >-
+        ${{ needs.validate-inputs.outputs.review_triggered == 'true' &&
+        format('PR #{0}', needs.validate-inputs.outputs.pr_number) ||
+        format('merge-group commit {0}', needs.validate-inputs.outputs.sha) }}
     steps:
-      - name: Send Message
+      - name: Send message
+        if: env.DISCORD_WEBHOOK != ''
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         uses: sarisia/actions-status-discord@eb045afee445dc055c18d3d90bd0f244fd062708 # v1.16.0
         with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          webhook: ${{ env.DISCORD_WEBHOOK }}
           nodetail: true
           color: "#FF0000"
           title: ""
           description: |
-            ### ❌ [PR #${{ inputs.pr_number || github.event.pull_request.number }}](https://github.com/${{ github.repository }}/pull/${{ inputs.pr_number || github.event.pull_request.number }})
+            ### ❌ ${{ env.TARGET }}
 
             The full test suite (`make test-all`) failed.
 
