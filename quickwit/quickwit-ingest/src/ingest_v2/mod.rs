@@ -25,7 +25,6 @@ mod mrecord;
 mod mrecordlog_utils;
 mod publish_tracker;
 mod rate_meter;
-mod replication;
 mod router;
 mod routing_table;
 mod state;
@@ -98,10 +97,6 @@ pub type IngesterPool = Pool<NodeId, IngesterPoolEntry>;
 
 /// Identifies an ingester client, typically a source, for logging and debugging purposes.
 pub type ClientId = String;
-
-pub type LeaderId = NodeId;
-
-pub type FollowerId = NodeId;
 
 pub type OpenShardCounts = Vec<(IndexUid, SourceId, usize)>;
 

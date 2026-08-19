@@ -1121,7 +1121,6 @@ fn ingester_service_layer_stack(
                 CIRCUIT_BREAK_TOTAL.clone(),
             ),
         )
-        .stack_open_replication_stream_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_init_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_retain_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_truncate_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
@@ -1139,11 +1138,6 @@ async fn setup_ingest_v2(
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().to_owned();
     let grpc_compression_encoding_opt = node_config.ingest_api_config.grpc_compression_encoding();
-    let replication_factor = node_config
-        .ingest_api_config
-        .replication_factor()
-        .expect("replication factor should have been validated")
-        .get();
 
     // Any node can serve ingest requests, so we always instantiate an ingest router.
     // TODO: I'm not sure that's such a good idea.
@@ -1151,7 +1145,6 @@ async fn setup_ingest_v2(
         self_node_id.clone(),
         control_plane.clone(),
         ingester_pool.clone(),
-        replication_factor,
         event_broker.clone(),
         node_config.availability_zone.clone(),
     );
@@ -1183,12 +1176,10 @@ async fn setup_ingest_v2(
         let ingester = Ingester::try_new(
             cluster.clone(),
             control_plane,
-            ingester_pool.clone(),
             &wal_dir_path,
             node_config.ingest_api_config.max_queue_disk_usage,
             node_config.ingest_api_config.max_queue_memory_usage,
             rate_limiter_settings,
-            replication_factor,
             idle_shard_timeout,
         )
         .await?;
@@ -1404,15 +1395,10 @@ async fn setup_control_plane(
     ingest_api_config: &IngestApiConfig,
 ) -> anyhow::Result<Mailbox<ControlPlane>> {
     let cluster_id = cluster.cluster_id().to_string();
-    let replication_factor = ingest_api_config
-        .replication_factor()
-        .expect("replication factor should have been validated")
-        .get();
     let cluster_config = ClusterConfig {
         cluster_id,
         auto_create_indexes: true,
         default_index_root_uri,
-        replication_factor,
         shard_throughput_limit: ingest_api_config.shard_throughput_limit,
         shard_scale_up_factor: ingest_api_config.shard_scale_up_factor,
     };
