@@ -26,6 +26,7 @@ use quickwit_common::uri::Uri;
 use tokio::io::AsyncRead;
 use tracing::{error, warn};
 
+use super::metrics::{FetchOutcome, record_admission_bypass, record_fail_open, record_request};
 use super::{FoyerSplitRangeCache, SplitRangeCacheKey};
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
@@ -85,13 +86,17 @@ impl FoyerSplitRangeCache {
         Fut: Future<Output = StorageResult<Bytes>> + Send + 'static,
     {
         let key_size = key.estimated_size();
+        let requested_num_bytes = (key.byte_range.end - key.byte_range.start) as u64;
         let max_entry_size = self.max_entry_size;
         let block_size = self.block_size;
         match self
             .cache
             .get_or_fetch(&key, || async move {
                 let bytes = fetch().await.map_err(LowerStorageError)?;
-                if admission_bypass_reason(key_size, &bytes, max_entry_size, block_size).is_some() {
+                if let Some(reason) =
+                    admission_bypass_reason(key_size, &bytes, max_entry_size, block_size)
+                {
+                    record_admission_bypass(reason);
                     // Foyer keeps this tag on the RAM entry and skips disk enqueue
                     // on eviction (write-on-eviction).
                     Ok::<_, LowerStorageError>((
@@ -105,8 +110,18 @@ impl FoyerSplitRangeCache {
             })
             .await
         {
-            Ok(entry) => Ok(entry.value().clone()),
+            Ok(entry) => {
+                let outcome = match entry.source() {
+                    foyer::Source::Memory => FetchOutcome::MemoryHit,
+                    foyer::Source::Disk => FetchOutcome::DiskHit,
+                    foyer::Source::Outer => FetchOutcome::RemoteMiss,
+                };
+                let bytes = entry.value().clone();
+                record_request(outcome, bytes.len() as u64);
+                Ok(bytes)
+            }
             Err(error) => {
+                record_request(FetchOutcome::Error, requested_num_bytes);
                 if let Some(lower_error) = error.downcast_ref::<LowerStorageError>() {
                     Err(CacheFetchError::Lower(lower_error.0.clone()))
                 } else {
@@ -200,7 +215,10 @@ impl Storage for FoyerSplitRangeStorage {
         match fetch_result {
             Ok(bytes) => Ok(into_owned_bytes(bytes)),
             Err(CacheFetchError::Lower(storage_error)) => Err(storage_error),
-            Err(CacheFetchError::Foyer) => self.inner.get_slice(path, byte_range).await,
+            Err(CacheFetchError::Foyer) => {
+                record_fail_open();
+                self.inner.get_slice(path, byte_range).await
+            }
         }
     }
 

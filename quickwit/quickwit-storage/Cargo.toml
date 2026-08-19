@@ -65,6 +65,7 @@ reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
 http = { workspace = true }
+metrics-util = { workspace = true }
 mockall = { workspace = true }
 proptest = { workspace = true }
 # Match OpenDAL's internal reqwest major. `default-features = false` is
@@ -107,8 +108,3 @@ integration-testsuite = [
   "dep:reqwest",
 ]
 testsuite = ["mockall"]
-
-[package.metadata.cargo-machete]
-# Declared here so the Foyer pin lands with licenses. Follow-up split-range
-# cache PRs use these crates; remove the ignore when they do.
-ignored = ["metrics", "mixtrics"]
