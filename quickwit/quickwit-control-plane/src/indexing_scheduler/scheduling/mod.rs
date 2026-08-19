@@ -15,6 +15,8 @@
 #[cfg(test)]
 mod churn_tests;
 #[cfg(test)]
+mod deployment_tests;
+#[cfg(test)]
 mod scale_tests;
 pub mod scheduling_logic;
 pub mod scheduling_logic_model;
@@ -967,6 +969,44 @@ pub(crate) fn shard_ids_for_indexer(plan: &PhysicalIndexingPlan, indexer: &NodeI
     shard_ids
 }
 
+/// Same as `build_physical_indexing_plan`, but lets a test choose whether the solver starts from
+/// the previous plan or from an empty solution. The previous plan is still handed to the physical
+/// conversion either way, so pipeline identity is preserved.
+#[cfg(test)]
+pub(crate) fn build_physical_indexing_plan_with_seed_choice(
+    sources: &[SourceToSchedule],
+    indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
+    previous_plan_opt: Option<&PhysicalIndexingPlan>,
+    shard_locations: &ShardLocations,
+    seed_solution_from_previous_plan: bool,
+) -> PhysicalIndexingPlan {
+    let locality_aware = true;
+    check_sources(sources);
+    let (id_to_ord_map, problem) =
+        convert_to_simplified_problem(indexer_infos, locality_aware, sources, shard_locations);
+    let mut previous_solution = problem.new_solution();
+    if seed_solution_from_previous_plan
+        && let Some(previous_plan) = previous_plan_opt
+    {
+        convert_physical_plan_to_solution(previous_plan, &id_to_ord_map, &mut previous_solution);
+    }
+    let new_solution = scheduling_logic::solve(problem, previous_solution);
+    let new_physical_plan = convert_scheduling_solution_to_physical_plan(
+        &new_solution,
+        &id_to_ord_map,
+        sources,
+        previous_plan_opt,
+        shard_locations,
+        indexer_infos,
+    );
+    assert_post_condition_physical_plan_match_solution(
+        &new_physical_plan,
+        &new_solution,
+        &id_to_ord_map,
+    );
+    new_physical_plan
+}
+
 #[cfg(test)]
 pub(crate) fn build_physical_indexing_plan_without_locality(
     sources: &[SourceToSchedule],
@@ -982,6 +1022,62 @@ pub(crate) fn build_physical_indexing_plan_without_locality(
         previous_plan_opt,
         shard_locations,
     )
+}
+
+#[cfg(test)]
+pub(crate) fn indexer_per_shard(plan: &PhysicalIndexingPlan) -> FnvHashMap<&ShardId, &NodeId> {
+    let mut indexer_per_shard = FnvHashMap::default();
+    for (indexer, tasks) in plan.indexing_tasks_per_indexer() {
+        for task in tasks {
+            for shard_id in &task.shard_ids {
+                indexer_per_shard.insert(shard_id, indexer);
+            }
+        }
+    }
+    indexer_per_shard
+}
+
+#[cfg(test)]
+pub(crate) fn count_shards_that_moved(
+    plan: &PhysicalIndexingPlan,
+    replanned: &PhysicalIndexingPlan,
+) -> (usize, usize) {
+    let indexer_per_shard_before = indexer_per_shard(plan);
+    let indexer_per_shard_after = indexer_per_shard(replanned);
+    let mut num_surviving_shards = 0;
+    let mut num_moved_shards = 0;
+    for (shard_id, indexer_before) in &indexer_per_shard_before {
+        let Some(indexer_after) = indexer_per_shard_after.get(*shard_id) else {
+            continue;
+        };
+        num_surviving_shards += 1;
+        if indexer_before != indexer_after {
+            num_moved_shards += 1;
+        }
+    }
+    (num_moved_shards, num_surviving_shards)
+}
+
+#[cfg(test)]
+#[derive(Default)]
+pub(crate) struct ChurnTally {
+    pub num_moved_shards: usize,
+    pub num_surviving_shards: usize,
+    pub max_moved_percent: f32,
+}
+
+#[cfg(test)]
+impl ChurnTally {
+    pub(crate) fn record(&mut self, num_moved_shards: usize, num_surviving_shards: usize) {
+        self.num_moved_shards += num_moved_shards;
+        self.num_surviving_shards += num_surviving_shards;
+        let moved_percent = num_moved_shards as f32 * 100.0 / num_surviving_shards.max(1) as f32;
+        self.max_moved_percent = self.max_moved_percent.max(moved_percent);
+    }
+
+    pub(crate) fn moved_percent(&self) -> f32 {
+        self.num_moved_shards as f32 * 100.0 / self.num_surviving_shards.max(1) as f32
+    }
 }
 
 #[cfg(test)]
