@@ -36,7 +36,7 @@ pub use debouncer::AsyncDebouncer;
 pub(crate) use debouncer::DebouncedStorage;
 
 pub use self::payload::PutPayload;
-pub use self::storage::{ListObjectMetadata, ListObjectsStream, Storage};
+pub use self::storage::{ListObjectsStream, ObjectMetadata, Storage};
 
 mod bundle_storage;
 mod error;

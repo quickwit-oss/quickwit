@@ -40,6 +40,7 @@ use aws_sdk_s3::types::{
 };
 use base64::prelude::{BASE64_STANDARD, Engine};
 use bytes::Bytes;
+use bytesize::ByteSize;
 use futures::{StreamExt, stream};
 use quickwit_aws::retry::{AwsRetryable, aws_retry};
 use quickwit_aws::{aws_behavior_version, get_aws_config};
@@ -59,7 +60,7 @@ use crate::object_storage::MultiPartPolicy;
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DeleteFailure, ListObjectMetadata, ListObjectsStream, OwnedBytes, Storage,
+    BulkDeleteError, DeleteFailure, ListObjectsStream, ObjectMetadata, OwnedBytes, Storage,
     StorageError, StorageErrorKind, StorageResolverError, StorageResult,
 };
 
@@ -959,7 +960,7 @@ impl Storage for S3CompatibleObjectStorage {
         }
     }
 
-    #[instrument(name = "storage.s3.list", level = "debug", skip(self))]
+    #[instrument(name = "storage.s3.list", level = "debug", skip(self), fields(prefix = %prefix.display()))]
     fn list(&self, prefix: &Path) -> ListObjectsStream {
         let s3_client = self.s3_client.clone();
         let bucket = self.bucket.clone();
@@ -1001,9 +1002,10 @@ impl Storage for S3CompatibleObjectStorage {
             list_position,
             list_span,
         ): ListState| {
-            let page_span = list_span.clone();
+            let list_objects_span =
+                tracing::debug_span!(parent: &list_span, "storage.s3.list_objects_v2");
             async move {
-                let continuation_token = match list_position {
+                let continuation_token_opt = match list_position {
                     ListPosition::First => None,
                     ListPosition::Middle(token) => Some(token),
                     // The final page was emitted by the previous unfold step.
@@ -1019,8 +1021,8 @@ impl Storage for S3CompatibleObjectStorage {
                             .list_objects_v2()
                             .bucket(&bucket)
                             .prefix(&key_prefix);
-                        if let Some(token) = continuation_token.as_deref() {
-                            list_request = list_request.continuation_token(token);
+                        if let Some(continuation_token) = &continuation_token_opt {
+                            list_request = list_request.continuation_token(continuation_token);
                         }
                         list_request.send()
                     })
@@ -1083,17 +1085,17 @@ impl Storage for S3CompatibleObjectStorage {
                             continue;
                         }
                     };
-                    let metadata = ListObjectMetadata {
+                    let metadata = ObjectMetadata {
                         path: relative_path,
-                        size_bytes,
+                        size: ByteSize(size_bytes),
                         last_modified,
                     };
                     page_objects.push(metadata);
                 }
 
                 let next_list_position = response
-                    .next_continuation_token()
-                    .map(|token| ListPosition::Middle(token.to_string()))
+                    .next_continuation_token
+                    .map(ListPosition::Middle)
                     .unwrap_or(ListPosition::Last);
                 let state = (
                     s3_client,
@@ -1106,7 +1108,7 @@ impl Storage for S3CompatibleObjectStorage {
                 );
                 Ok(Some((page_objects, state)))
             }
-            .instrument(page_span)
+            .instrument(list_objects_span)
         };
         stream::try_unfold(initial_state, fetch_next_page).boxed()
     }
@@ -1360,7 +1362,7 @@ mod tests {
             checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         });
 
-        let pages: Vec<Vec<ListObjectMetadata>> = storage
+        let pages: Vec<Vec<ObjectMetadata>> = storage
             .list(Path::new("splits"))
             .try_collect()
             .await
@@ -1371,10 +1373,10 @@ mod tests {
         assert_eq!(pages.len(), 2);
         assert_eq!(pages[0].len(), 1);
         assert_eq!(pages[0][0].path, Path::new("splits/a.split"));
-        assert_eq!(pages[0][0].size_bytes, 5);
+        assert_eq!(pages[0][0].size, ByteSize(5));
         assert_eq!(pages[1].len(), 1);
         assert_eq!(pages[1][0].path, Path::new("splits/b.split"));
-        assert_eq!(pages[1][0].size_bytes, 7);
+        assert_eq!(pages[1][0].size, ByteSize(7));
         let requests: Vec<_> = client.actual_requests().collect();
         assert_eq!(requests.len(), 2);
         assert!(requests[1].uri().contains("continuation-token=next-token"));

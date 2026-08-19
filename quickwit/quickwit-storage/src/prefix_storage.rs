@@ -24,7 +24,7 @@ use tokio::io::AsyncRead;
 
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, ListObjectMetadata, ListObjectsStream, OwnedBytes, Storage, StorageErrorKind,
+    BulkDeleteError, ListObjectsStream, ObjectMetadata, OwnedBytes, Storage, StorageErrorKind,
     StorageResult,
 };
 
@@ -111,9 +111,9 @@ impl Storage for PrefixStorage {
         /// Makes listed paths relative to this storage root again, undoing the prefix added by
         /// [`PrefixStorage::list`].
         fn strip_prefix_from_objects(
-            mut objects: Vec<ListObjectMetadata>,
+            mut objects: Vec<ObjectMetadata>,
             prefix: &Path,
-        ) -> StorageResult<Vec<ListObjectMetadata>> {
+        ) -> StorageResult<Vec<ObjectMetadata>> {
             if prefix == Path::new("") {
                 return Ok(objects);
             }
@@ -233,9 +233,9 @@ mod tests {
         let mut mock_storage = MockStorage::default();
         mock_storage.expect_list().times(1).returning(|prefix| {
             assert_eq!(prefix, Path::new("ram:///indexes/splits"));
-            let objects = vec![ListObjectMetadata {
+            let objects = vec![ObjectMetadata {
                 path: PathBuf::from("ram:///indexes/splits/foo.split"),
-                size_bytes: 11,
+                size: bytesize::ByteSize(11),
                 last_modified: SystemTime::UNIX_EPOCH,
             }];
             stream::once(async move { Ok(objects) }).boxed()
@@ -245,7 +245,7 @@ mod tests {
             PathBuf::from("ram:///indexes"),
             Uri::for_test("ram:///indexes"),
         );
-        let pages: Vec<Vec<ListObjectMetadata>> = storage
+        let pages: Vec<Vec<ObjectMetadata>> = storage
             .list(Path::new("splits"))
             .try_collect()
             .await
@@ -254,7 +254,7 @@ mod tests {
         assert_eq!(pages.len(), 1);
         assert_eq!(pages[0].len(), 1);
         assert_eq!(pages[0][0].path, Path::new("splits/foo.split"));
-        assert_eq!(pages[0][0].size_bytes, 11);
+        assert_eq!(pages[0][0].size, bytesize::ByteSize(11));
     }
 
     #[test]

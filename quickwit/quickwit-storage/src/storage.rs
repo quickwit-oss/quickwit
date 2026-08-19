@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use async_trait::async_trait;
+use bytesize::ByteSize;
 use futures::StreamExt;
 use futures::stream::{self, BoxStream};
 use quickwit_common::uri::Uri;
@@ -31,17 +32,17 @@ use crate::{BulkDeleteError, OwnedBytes, PutPayload, StorageErrorKind, StorageRe
 
 /// Metadata for an object listed from storage.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ListObjectMetadata {
+pub struct ObjectMetadata {
     /// Object path relative to this storage root.
     pub path: PathBuf,
-    /// Object size in bytes.
-    pub size_bytes: u64,
+    /// Object size.
+    pub size: ByteSize,
     /// Last modification time.
     pub last_modified: SystemTime,
 }
 
 /// Stream of object metadata batches returned by [`Storage::list`].
-pub type ListObjectsStream = BoxStream<'static, StorageResult<Vec<ListObjectMetadata>>>;
+pub type ListObjectsStream = BoxStream<'static, StorageResult<Vec<ObjectMetadata>>>;
 
 /// This trait is only used to make it build trait object with `AsyncWrite + Send + Unpin`.
 pub trait SendableAsync: AsyncWrite + Send + Unpin {}
