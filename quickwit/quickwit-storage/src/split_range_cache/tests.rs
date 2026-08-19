@@ -25,6 +25,7 @@ use quickwit_config::SplitRangeCacheWritePolicy;
 use tokio::io::AsyncRead;
 use tokio::sync::watch;
 
+use super::metrics::{ADMISSION_MAX_ENTRY_SIZE, REQUESTS_ERROR, REQUESTS_MEMORY, REQUESTS_MISS};
 use super::*;
 use crate::storage::SendableAsync;
 use crate::{
@@ -232,6 +233,8 @@ async fn test_empty_range_and_exact_hit_behavior() {
             .is_empty()
     );
     assert_eq!(fixture.lower_reads(), 0);
+    let misses_before = REQUESTS_MISS.get();
+    let memory_hits_before = REQUESTS_MEMORY.get();
     assert_eq!(
         fixture
             .storage
@@ -241,6 +244,7 @@ async fn test_empty_range_and_exact_hit_behavior() {
             .as_slice(),
         b"bcd"
     );
+    assert!(REQUESTS_MISS.get() > misses_before);
     assert_eq!(
         fixture
             .storage
@@ -250,6 +254,7 @@ async fn test_empty_range_and_exact_hit_behavior() {
             .as_slice(),
         b"bcd"
     );
+    assert!(REQUESTS_MEMORY.get() > memory_hits_before);
     assert_eq!(fixture.lower_reads(), 1);
     fixture.storage.get_slice(path, 0..5).await.unwrap();
     assert_eq!(
@@ -279,6 +284,7 @@ async fn test_identical_concurrent_misses_fetch_once() {
 #[tokio::test]
 async fn test_remote_error_is_not_cached_or_rewritten() {
     let fixture = Fixture::new().await;
+    let errors_before = REQUESTS_ERROR.get();
     for _ in 0..2 {
         let error = fixture
             .storage
@@ -287,6 +293,7 @@ async fn test_remote_error_is_not_cached_or_rewritten() {
             .unwrap_err();
         assert_eq!(error.kind(), StorageErrorKind::NotFound);
     }
+    assert!(REQUESTS_ERROR.get() >= errors_before + 2);
     assert_eq!(fixture.lower_reads(), 2);
     fixture.close().await;
 }
@@ -405,6 +412,7 @@ async fn test_oversized_value_is_memory_only_and_returned() {
     let fixture = Fixture::with_payload(&payload, true).await;
     let path = Path::new(SPLIT_PATH);
     let range = 0..payload.len();
+    let bypasses_before = ADMISSION_MAX_ENTRY_SIZE.get();
     assert_eq!(
         fixture
             .storage
@@ -424,5 +432,6 @@ async fn test_oversized_value_is_memory_only_and_returned() {
         payload.as_slice()
     );
     assert_eq!(fixture.lower_reads(), 1);
+    assert!(ADMISSION_MAX_ENTRY_SIZE.get() > bypasses_before);
     fixture.close().await;
 }

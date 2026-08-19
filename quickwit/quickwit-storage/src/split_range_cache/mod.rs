@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod key;
+mod metrics;
 mod storage;
 #[cfg(test)]
 mod tests;
@@ -61,6 +62,7 @@ impl FoyerSplitRangeCache {
         let memory_capacity = bytesize_to_usize(config.memory_capacity, "memory_capacity")?;
         let cache = foyer::HybridCacheBuilder::new()
             .with_name("split-range-v1")
+            .with_metrics_registry(Box::new(metrics::QuickwitMetricsRegistry))
             .with_policy(foyer_write_policy(config.write_policy))
             .with_flush_on_close(foyer_flush_on_close(config.write_policy))
             .memory(memory_capacity)
