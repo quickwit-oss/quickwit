@@ -354,16 +354,24 @@ impl Part {
 impl S3CompatibleObjectStorage {
     fn key(&self, relative_path: &Path) -> String {
         // FIXME: This may not work on Windows.
-        let key_path = self.prefix.join(relative_path);
-        key_path.to_string_lossy().to_string()
+        let prefix = self.prefix.to_string_lossy();
+        let relative_path = relative_path.to_string_lossy();
+        if prefix.is_empty() {
+            relative_path.to_string()
+        } else if relative_path.is_empty() {
+            prefix.to_string()
+        } else if prefix.ends_with('/') {
+            format!("{prefix}{relative_path}")
+        } else {
+            format!("{prefix}/{relative_path}")
+        }
     }
 
     fn relative_path(&self, key: &str) -> PathBuf {
         // FIXME: This may not work on Windows.
-        Path::new(key)
-            .strip_prefix(&self.prefix)
-            .expect("The prefix should have been prepended to the key before this method call.")
-            .to_path_buf()
+        let relative_key = strip_storage_prefix(key, &self.prefix)
+            .expect("The prefix should have been prepended to the key before this method call.");
+        PathBuf::from(relative_key)
     }
 
     async fn put_single_part_single_try<'a>(
@@ -1146,15 +1154,13 @@ fn convert_list_objects(
             warn!("listed object has no key, skipping");
             continue;
         };
-        let relative_path = Path::new(key)
-            .strip_prefix(storage_prefix)
-            .map_err(|error| {
-                StorageErrorKind::Internal.with_error(anyhow::anyhow!(
-                    "listed object `{key}` is not under requested storage prefix `{}`: {error}",
-                    storage_prefix.display()
-                ))
-            })?
-            .to_path_buf();
+        let relative_key = strip_storage_prefix(key, storage_prefix).ok_or_else(|| {
+            StorageErrorKind::Internal.with_error(anyhow::anyhow!(
+                "listed object `{key}` is not under requested storage prefix `{}`",
+                storage_prefix.display()
+            ))
+        })?;
+        let relative_path = PathBuf::from(relative_key);
         let size_bytes = match object.size() {
             Some(size) => match u64::try_from(size) {
                 Ok(size) => size,
@@ -1188,6 +1194,23 @@ fn convert_list_objects(
         });
     }
     Ok(object_metadata)
+}
+
+/// Strips a storage prefix from an S3 key without interpreting it as a filesystem path.
+fn strip_storage_prefix<'a>(key: &'a str, storage_prefix: &Path) -> Option<&'a str> {
+    let prefix = storage_prefix.to_string_lossy();
+    if prefix.is_empty() {
+        return Some(key);
+    }
+    if key == prefix {
+        return Some("");
+    }
+    if prefix.ends_with('/') {
+        key.strip_prefix(prefix.as_ref())
+    } else {
+        let prefix_with_separator = format!("{prefix}/");
+        key.strip_prefix(&prefix_with_separator)
+    }
 }
 
 #[cfg(test)]
@@ -1290,6 +1313,20 @@ mod tests {
             s3_storage.relative_path("indexes/foo"),
             PathBuf::from("foo")
         );
+        let relative_path = s3_storage.relative_path("indexes/./foo");
+        assert_eq!(relative_path.to_string_lossy(), "./foo");
+        assert_eq!(s3_storage.key(&relative_path), "indexes/./foo");
+
+        let relative_path = s3_storage.relative_path("indexes//foo");
+        assert_eq!(relative_path.to_string_lossy(), "/foo");
+        assert_eq!(s3_storage.key(&relative_path), "indexes//foo");
+
+        s3_storage.prefix = PathBuf::from("indexes/");
+        assert_eq!(s3_storage.key(Path::new("foo")), "indexes/foo");
+        assert_eq!(
+            s3_storage.relative_path("indexes/foo"),
+            PathBuf::from("foo")
+        );
     }
 
     #[tokio::test]
@@ -1302,7 +1339,7 @@ mod tests {
   <MaxKeys>1000</MaxKeys>
   <IsTruncated>true</IsTruncated>
   <Contents>
-    <Key>indexes/splits/a.split</Key>
+    <Key>indexes/splits/./a.split</Key>
     <LastModified>2026-08-14T10:00:00.000Z</LastModified>
     <ETag>&quot;etag-a&quot;</ETag>
     <Size>5</Size>
@@ -1318,7 +1355,7 @@ mod tests {
   <MaxKeys>1000</MaxKeys>
   <IsTruncated>false</IsTruncated>
   <Contents>
-    <Key>indexes/splits/b.split</Key>
+    <Key>indexes/splits//b.split</Key>
     <LastModified>2026-08-14T10:01:00.000Z</LastModified>
     <ETag>&quot;etag-b&quot;</ETag>
     <Size>7</Size>
@@ -1370,10 +1407,10 @@ mod tests {
         assert_eq!(num_objects, 2);
         assert_eq!(pages.len(), 2);
         assert_eq!(pages[0].len(), 1);
-        assert_eq!(pages[0][0].path, Path::new("splits/a.split"));
+        assert_eq!(pages[0][0].path.to_string_lossy(), "splits/./a.split");
         assert_eq!(pages[0][0].size, ByteSize(5));
         assert_eq!(pages[1].len(), 1);
-        assert_eq!(pages[1][0].path, Path::new("splits/b.split"));
+        assert_eq!(pages[1][0].path.to_string_lossy(), "splits//b.split");
         assert_eq!(pages[1][0].size, ByteSize(7));
         let requests: Vec<_> = client.actual_requests().collect();
         assert_eq!(requests.len(), 2);
