@@ -199,6 +199,8 @@ indexer:
 #   # service. Searchers require at least one `metastore_read_replica` node at
 #   # startup and do not fall back to the primary metastore.
 #   use_metastore_read_replica: false
+#   # Fast field RAM cache. Default 1G. Omitted while split_range_disk_cache
+#   # is set disables this cache; set a capacity explicitly to keep both.
 #   fast_field_cache_capacity: 1G
 #   split_footer_cache_capacity: 500M
 #   partial_request_cache_capacity: 64M

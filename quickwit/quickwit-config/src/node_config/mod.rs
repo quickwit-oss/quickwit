@@ -501,15 +501,14 @@ impl SplitRangeDiskCacheConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, default)]
+#[serde(from = "SearcherConfigDeser")]
 pub struct SearcherConfig {
     pub aggregation_memory_limit: ByteSize,
     pub aggregation_bucket_limit: u32,
 
+    /// Long-lived `.fast` RAM cache. Omitted defaults to 1 GiB, or disabled when
+    /// [`Self::split_range_disk_cache`] is set.
     #[serde(alias = "fast_field_cache_capacity")]
-    #[serde(
-        deserialize_with = "CacheConfig::deserialize_with_default::<_, {ByteSize::gb(1).as_u64()}>"
-    )]
     pub fast_field_cache: CacheConfig,
     #[serde(alias = "split_footer_cache_capacity")]
     #[serde(deserialize_with = "CacheConfig::deserialize_with_default::<_, \
@@ -559,6 +558,113 @@ pub struct SearcherConfig {
     /// fail on startup.
     #[serde(default)]
     pub lambda: Option<LambdaConfig>,
+}
+
+/// Input-only view of [`SearcherConfig`] so an omitted `fast_field_cache` can
+/// default to 0 when `split_range_disk_cache` is set.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, default)]
+struct SearcherConfigDeser {
+    aggregation_memory_limit: ByteSize,
+    aggregation_bucket_limit: u32,
+    #[serde(alias = "fast_field_cache_capacity")]
+    fast_field_cache: Option<SpecifiedFastFieldCache>,
+    #[serde(alias = "split_footer_cache_capacity")]
+    #[serde(deserialize_with = "CacheConfig::deserialize_with_default::<_, \
+                                {ByteSize::mb(500).as_u64()}>")]
+    split_footer_cache: CacheConfig,
+    #[serde(alias = "partial_request_cache_capacity")]
+    #[serde(deserialize_with = "CacheConfig::deserialize_with_default::<_, \
+                                {ByteSize::mb(64).as_u64()}>")]
+    partial_request_cache: CacheConfig,
+    #[serde(alias = "predicate_cache_capacity")]
+    #[serde(deserialize_with = "CacheConfig::deserialize_with_default::<_, \
+                                {ByteSize::mb(256).as_u64()}>")]
+    predicate_cache: CacheConfig,
+    max_num_concurrent_split_searches: usize,
+    max_splits_per_search: Option<usize>,
+    #[serde(alias = "max_num_concurrent_split_streams", default)]
+    _max_num_concurrent_split_streams: Option<serde::de::IgnoredAny>,
+    split_cache: Option<SplitCacheLimits>,
+    split_range_disk_cache: Option<SplitRangeDiskCacheConfig>,
+    #[serde(default = "SearcherConfig::default_request_timeout_secs")]
+    request_timeout_secs: NonZeroU64,
+    #[serde(default = "SearcherConfig::default_request_timeout_secs")]
+    leaf_request_timeout_secs: NonZeroU64,
+    storage_timeout_policy: Option<StorageTimeoutPolicy>,
+    use_metastore_read_replica: bool,
+    warmup_memory_budget: ByteSize,
+    warmup_single_split_initial_allocation: ByteSize,
+    #[serde(default)]
+    lambda: Option<LambdaConfig>,
+}
+
+struct SpecifiedFastFieldCache(CacheConfig);
+
+impl<'de> Deserialize<'de> for SpecifiedFastFieldCache {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        CacheConfig::deserialize_with_default::<D, { ByteSize::gb(1).as_u64() }>(deserializer)
+            .map(SpecifiedFastFieldCache)
+    }
+}
+
+impl Default for SearcherConfigDeser {
+    fn default() -> Self {
+        let config = SearcherConfig::default();
+        Self {
+            aggregation_memory_limit: config.aggregation_memory_limit,
+            aggregation_bucket_limit: config.aggregation_bucket_limit,
+            fast_field_cache: None,
+            split_footer_cache: config.split_footer_cache,
+            partial_request_cache: config.partial_request_cache,
+            predicate_cache: config.predicate_cache,
+            max_num_concurrent_split_searches: config.max_num_concurrent_split_searches,
+            max_splits_per_search: config.max_splits_per_search,
+            _max_num_concurrent_split_streams: config._max_num_concurrent_split_streams,
+            split_cache: config.split_cache,
+            split_range_disk_cache: config.split_range_disk_cache,
+            request_timeout_secs: config.request_timeout_secs,
+            leaf_request_timeout_secs: config.leaf_request_timeout_secs,
+            storage_timeout_policy: config.storage_timeout_policy,
+            use_metastore_read_replica: config.use_metastore_read_replica,
+            warmup_memory_budget: config.warmup_memory_budget,
+            warmup_single_split_initial_allocation: config.warmup_single_split_initial_allocation,
+            lambda: config.lambda,
+        }
+    }
+}
+
+impl From<SearcherConfigDeser> for SearcherConfig {
+    fn from(deser: SearcherConfigDeser) -> Self {
+        let fast_field_cache = match deser.fast_field_cache {
+            Some(SpecifiedFastFieldCache(cache_config)) => cache_config,
+            None => match &deser.split_range_disk_cache {
+                Some(_) => CacheConfig::no_cache(),
+                None => CacheConfig::default_with_capacity(ByteSize::gb(1)),
+            },
+        };
+        SearcherConfig {
+            aggregation_memory_limit: deser.aggregation_memory_limit,
+            aggregation_bucket_limit: deser.aggregation_bucket_limit,
+            fast_field_cache,
+            split_footer_cache: deser.split_footer_cache,
+            partial_request_cache: deser.partial_request_cache,
+            predicate_cache: deser.predicate_cache,
+            max_num_concurrent_split_searches: deser.max_num_concurrent_split_searches,
+            max_splits_per_search: deser.max_splits_per_search,
+            _max_num_concurrent_split_streams: deser._max_num_concurrent_split_streams,
+            split_cache: deser.split_cache,
+            split_range_disk_cache: deser.split_range_disk_cache,
+            request_timeout_secs: deser.request_timeout_secs,
+            leaf_request_timeout_secs: deser.leaf_request_timeout_secs,
+            storage_timeout_policy: deser.storage_timeout_policy,
+            use_metastore_read_replica: deser.use_metastore_read_replica,
+            warmup_memory_budget: deser.warmup_memory_budget,
+            warmup_single_split_initial_allocation: deser.warmup_single_split_initial_allocation,
+            lambda: deser.lambda,
+        }
+    }
 }
 
 /// Configuration for AWS Lambda leaf search execution.
@@ -1429,6 +1535,75 @@ mod tests {
     #[test]
     fn test_split_range_disk_cache_config_is_disabled_by_default() {
         assert!(SearcherConfig::default().split_range_disk_cache.is_none());
+        assert_eq!(
+            SearcherConfig::default().fast_field_cache,
+            CacheConfig::default_with_capacity(ByteSize::gb(1))
+        );
+    }
+
+    #[test]
+    fn test_omitted_fast_field_cache_stays_1g_without_split_range_disk_cache() {
+        let config: SearcherConfig = serde_yaml::from_str("{}").unwrap();
+        assert!(config.split_range_disk_cache.is_none());
+        assert_eq!(
+            config.fast_field_cache,
+            CacheConfig::default_with_capacity(ByteSize::gb(1))
+        );
+    }
+
+    #[test]
+    fn test_omitted_fast_field_cache_is_disabled_when_split_range_disk_cache_is_set() {
+        let yaml = r#"
+split_range_disk_cache:
+  path: /var/cache/quickwit/split-range-v1
+  disk_capacity: 300G
+  memory_capacity: 1G
+  buffer_pool_size: 512M
+  submit_queue_size_threshold: 1G
+  memory_eviction_policy: s3-fifo
+  compression: lz4
+  recover_mode: quiet
+  block_size: 16M
+  max_entry_size: 15M
+  flushers: 4
+  reclaimers: 4
+"#;
+        let config: SearcherConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.split_range_disk_cache.is_some());
+        assert_eq!(config.fast_field_cache, CacheConfig::no_cache());
+    }
+
+    #[test]
+    fn test_explicit_fast_field_cache_is_kept_when_split_range_disk_cache_is_set() {
+        let yaml = r#"
+fast_field_cache_capacity: 1G
+split_range_disk_cache:
+  path: /var/cache/quickwit/split-range-v1
+  disk_capacity: 300G
+  memory_capacity: 1G
+  buffer_pool_size: 512M
+  submit_queue_size_threshold: 1G
+  memory_eviction_policy: s3-fifo
+  compression: lz4
+  recover_mode: quiet
+  block_size: 16M
+  max_entry_size: 15M
+  flushers: 4
+  reclaimers: 4
+"#;
+        let config: SearcherConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.split_range_disk_cache.is_some());
+        assert_eq!(
+            config.fast_field_cache,
+            CacheConfig::default_with_capacity(ByteSize::gb(1))
+        );
+    }
+
+    #[test]
+    fn test_explicit_zero_fast_field_cache_disables_without_split_range_disk_cache() {
+        let config: SearcherConfig = serde_yaml::from_str("fast_field_cache_capacity: 0").unwrap();
+        assert!(config.split_range_disk_cache.is_none());
+        assert_eq!(config.fast_field_cache.capacity(), ByteSize::b(0));
     }
 
     #[test]
