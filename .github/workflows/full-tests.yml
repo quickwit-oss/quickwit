@@ -5,15 +5,16 @@ name: Full test suite
 #
 # Two entry points:
 #   - full-tests-trigger.yml calls this as a reusable workflow when a maintainer
-#     comments `/ci-run-all-tests` on a PR. It tests the PR's *merge* commit, so
-#     the result reflects the code as merged rather than the branch in isolation.
+#     comments `/ci-run-all-tests` on a PR. It tests the PR's *merge* commit so
+#     the result reflects the code as merged rather than the branch in isolation,
+#     but reports the status on the PR *head* (see `prepare`).
 #   - merge_group runs it directly on merge-queue candidates. That event is
 #     trusted infrastructure, so it needs no authorization hop.
 on:
   workflow_call:
     inputs:
       head_sha:
-        description: "PR head SHA at resolution time (used to detect drift)"
+        description: "PR head SHA -- the commit the status is reported on"
         required: true
         type: string
       merge_sha:
@@ -29,17 +30,6 @@ on:
         required: false
   merge_group:
     types: [checks_requested]
-  # TEMPORARY -- DELETE BEFORE MERGE, along with the three `||` fallbacks in the
-  # `prepare` job and the one in `concurrency` below.
-  #
-  # issue_comment workflows only ever run from the default branch, so the real
-  # trigger cannot be exercised from this PR. Running automatically on pushes
-  # here proves out the expensive job, the dual-SHA status writes and the
-  # report-status drift check. It does NOT exercise full-tests-trigger.yml's
-  # authorize job (permission check + mergeability polling), which stays
-  # unverified until this lands on main.
-  pull_request:
-    branches: [main]
 
 permissions:
   contents: read
@@ -52,9 +42,7 @@ env:
   STATUS_CONTEXT: "full-test-suite"
 
 concurrency:
-  group: >-
-    ${{ github.workflow }}-${{ inputs.pr_number ||
-    github.event.pull_request.number || github.event.merge_group.head_sha }}
+  group: ${{ github.workflow }}-${{ inputs.pr_number || github.event.merge_group.head_sha }}
   cancel-in-progress: true
 
 jobs:
@@ -69,20 +57,16 @@ jobs:
       statuses: write
     outputs:
       test_sha: ${{ steps.resolve.outputs.test_sha }}
-      head_sha: ${{ steps.resolve.outputs.head_sha }}
+      status_sha: ${{ steps.resolve.outputs.status_sha }}
       pr_number: ${{ steps.resolve.outputs.pr_number }}
     steps:
       - name: Resolve target and set pending
         id: resolve
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
-          # The `|| github.event.pull_request.*` halves are TEMPORARY and exist
-          # only for the pull_request trigger above. On a pull_request run
-          # github.sha is the test merge commit, which is exactly what the
-          # comment path passes as merge_sha.
-          MERGE_SHA: ${{ inputs.merge_sha || github.sha }}
-          HEAD_SHA: ${{ inputs.head_sha || github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
+          MERGE_SHA: ${{ inputs.merge_sha }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          PR_NUMBER: ${{ inputs.pr_number }}
           MERGE_GROUP_SHA: ${{ github.event.merge_group.head_sha }}
         with:
           script: |
@@ -97,26 +81,39 @@ jobs:
               return;
             }
 
+            // We test the merge commit but report on the PR head, and those are
+            // deliberately different commits.
+            //
+            // Every other required check here (CI / Lints, CI / Unit tests) is a
+            // check run on the head commit, so that is where branch protection
+            // looks. A status on the merge commit is therefore ignored for
+            // gating and only shows up as a confusing duplicate entry in the
+            // PR's check list.
+            //
+            // The tradeoff: because the status is pinned to the head, a later
+            // push invalidates it (new head, no status -> required check
+            // unsatisfied), but a new commit on the base branch does not, so a
+            // green result can reflect an older merge base. That is inherent to
+            // any "test the PR" gate and is exactly what the merge_group path
+            // fixes, since the queue rebuilds the candidate against current main.
+            //
+            // On the merge-queue path there is no PR head, so the candidate
+            // commit is both tested and reported on.
+            const statusSha = headSha || testSha;
+
             core.setOutput('test_sha', testSha);
-            core.setOutput('head_sha', headSha);
+            core.setOutput('status_sha', statusSha);
             core.setOutput('pr_number', prNumber);
 
-            // Publish to every commit the required check might be evaluated
-            // against. GitHub prefers the test merge commit when it carries a
-            // status and otherwise falls back to the head commit; covering both
-            // removes that ambiguity instead of betting on one reading.
-            const targets = [...new Set([testSha, headSha].filter(Boolean))];
-            for (const sha of targets) {
-              await github.rest.repos.createCommitStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                sha,
-                state: 'pending',
-                context: process.env.STATUS_CONTEXT,
-                description: 'Running full test suite...',
-                target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              });
-            }
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: statusSha,
+              state: 'pending',
+              context: process.env.STATUS_CONTEXT,
+              description: 'Running full test suite...',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
 
   full-tests:
     name: All-features tests + failpoints (make test-all)
@@ -171,12 +168,19 @@ jobs:
       # cache this job wrote would land in the default-branch scope -- readable
       # by every other PR and by trusted workflows on main. Reading a cache
       # built by trusted runs is fine; letting PR-authored code write one is
-      # cache poisoning. Reads still warm the build, so the cost is negligible.
+      # cache poisoning.
+      #
+      # Since this job never saves, it must read a key some *trusted* workflow
+      # populates, hence `quickwit-cargo` rather than a key of its own: ci.yml
+      # runs on push to main on the same ubuntu x64 runners (cache keys are
+      # arch-scoped) and its `lints` job builds `--all-features`, so the
+      # expensive dependency artifacts are already there. A dedicated key would
+      # simply never be written by anyone and every run would start cold.
       - name: Setup cache (read-only)
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: "./quickwit -> target"
-          shared-key: "quickwit-cargo-full"
+          shared-key: "quickwit-cargo"
           save-if: false
 
       - name: Install cargo-nextest
@@ -215,7 +219,7 @@ jobs:
       - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
           TEST_SHA: ${{ needs.prepare.outputs.test_sha }}
-          HEAD_SHA: ${{ needs.prepare.outputs.head_sha }}
+          STATUS_SHA: ${{ needs.prepare.outputs.status_sha }}
           PR_NUMBER: ${{ needs.prepare.outputs.pr_number }}
           RESULT: ${{ needs.full-tests.result }}
         with:
@@ -223,41 +227,43 @@ jobs:
             const state = process.env.RESULT === 'success' ? 'success' : 'failure';
             const prNumber = process.env.PR_NUMBER;
             const testSha = process.env.TEST_SHA;
-            const headSha = process.env.HEAD_SHA;
+            // On the comment path this is the PR head; on the merge-queue path
+            // it is the candidate commit.
+            const statusSha = process.env.STATUS_SHA;
 
-            // Drift detection is informational only. The status is pinned to the
-            // SHAs actually tested, so a push (or a new commit on the base
-            // branch) produces a different merge commit that carries no status
-            // and leaves the required check unsatisfied. The gate therefore
-            // fails closed structurally; this block only explains why.
+            // Drift detection is informational only. The status is pinned to an
+            // immutable SHA, so a push produces a new head that carries no
+            // status and leaves the required check unsatisfied. The gate fails
+            // closed structurally; this block only explains why in the log.
             if (prNumber) {
               const { data: pr } = await github.rest.pulls.get({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: Number(prNumber),
               });
-              if (pr.head.sha !== headSha || pr.merge_commit_sha !== testSha) {
+              if (pr.head.sha !== statusSha || pr.merge_commit_sha !== testSha) {
                 core.notice(
                   `PR #${prNumber} moved while the suite was running ` +
-                  `(head ${headSha} -> ${pr.head.sha}, merge ${testSha} -> ${pr.merge_commit_sha}). ` +
-                  'This result applies only to the commits that were tested, so the ' +
+                  `(head ${statusSha} -> ${pr.head.sha}, merge ${testSha} -> ${pr.merge_commit_sha}). ` +
+                  'This result applies only to the commit that was tested, so the ' +
                   'required check stays unsatisfied until /ci-run-all-tests is run again.'
                 );
               }
             }
 
-            const targets = [...new Set([testSha, headSha].filter(Boolean))];
-            for (const sha of targets) {
-              await github.rest.repos.createCommitStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                sha,
-                state,
-                context: process.env.STATUS_CONTEXT,
-                description: state === 'success' ? 'Full test suite passed' : 'Full test suite failed',
-                target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              });
-            }
+            // Name the tested commit in the description: the status hangs on the
+            // head, so it is otherwise invisible which merge result was proven.
+            const suffix = testSha === statusSha ? '' : ` (merge commit ${testSha.slice(0, 7)})`;
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: statusSha,
+              state,
+              context: process.env.STATUS_CONTEXT,
+              description: (state === 'success' ? 'Full test suite passed' : 'Full test suite failed') + suffix,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
 
   on-failure:
     name: Send failure notification
