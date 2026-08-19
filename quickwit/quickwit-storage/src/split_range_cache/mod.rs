@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod key;
+mod storage;
 #[cfg(test)]
 mod tests;
 
@@ -28,13 +29,12 @@ use quickwit_config::{
     CachePolicy, DiskCompression, RecoverMode, SplitRangeCacheWritePolicy,
     SplitRangeDiskCacheConfig,
 };
+pub use storage::{FoyerSplitRangeStorage, wrap_storage_with_split_range_cache};
 
 /// Process-wide Foyer hybrid cache for exact split byte-range payloads.
 pub struct FoyerSplitRangeCache {
     pub(crate) cache: foyer::HybridCache<SplitRangeCacheKey, Bytes>,
-    #[allow(dead_code)]
     pub(crate) max_entry_size: usize,
-    #[allow(dead_code)]
     pub(crate) block_size: usize,
 }
 

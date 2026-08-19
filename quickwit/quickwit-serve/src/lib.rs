@@ -119,7 +119,7 @@ use quickwit_search::{
     SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext, SearcherPool,
     create_search_client_from_channel, start_searcher_service,
 };
-use quickwit_storage::{SearchSplitCache, StorageResolver};
+use quickwit_storage::{FoyerSplitRangeCache, SearchSplitCache, StorageResolver};
 pub use quickwit_telemetry_exporters::{EnvFilterReloadFn, do_nothing_env_filter_reload_fn};
 pub use quickwit_transport::reload_tls_cert;
 use tcp_listener::TcpListenerResolver;
@@ -729,6 +729,20 @@ pub async fn serve_quickwit(
             None
         };
 
+    let split_range_disk_cache_opt = if node_config.is_service_enabled(QuickwitService::Searcher) {
+        match &node_config.searcher_config.split_range_disk_cache {
+            Some(config) => Some(Arc::new(
+                FoyerSplitRangeCache::open(config)
+                    .await
+                    .context("failed to open searcher split range disk cache")?,
+            )),
+            None => None,
+        }
+    } else {
+        None
+    };
+    let split_range_disk_cache_for_shutdown = split_range_disk_cache_opt.clone();
+
     // Initialize Lambda invoker if enabled and searcher service is running
     let searcher_context = if node_config.is_service_enabled(QuickwitService::Searcher) {
         if let Some(lambda_config) = &node_config.searcher_config.lambda {
@@ -741,6 +755,7 @@ pub async fn serve_quickwit(
                 Arc::new(SearcherContext::new(
                     node_config.searcher_config.clone(),
                     search_split_cache_opt,
+                    split_range_disk_cache_opt,
                     Some(invoker),
                 ))
             }
@@ -753,12 +768,14 @@ pub async fn serve_quickwit(
             Arc::new(SearcherContext::new_without_invoker(
                 node_config.searcher_config.clone(),
                 search_split_cache_opt,
+                split_range_disk_cache_opt,
             ))
         }
     } else {
         Arc::new(SearcherContext::new_without_invoker(
             node_config.searcher_config.clone(),
             search_split_cache_opt,
+            split_range_disk_cache_opt,
         ))
     };
 
@@ -1077,6 +1094,12 @@ pub async fn serve_quickwit(
     let actor_exit_statuses = shutdown_handle
         .await
         .context("failed to gracefully shutdown services")?;
+    if let Some(cache) = split_range_disk_cache_for_shutdown {
+        cache
+            .close()
+            .await
+            .context("failed to close searcher split range disk cache")?;
+    }
     Ok(actor_exit_statuses)
 }
 
@@ -2085,6 +2108,7 @@ mod tests {
         let node_config = NodeConfig::for_test();
         let searcher_context = Arc::new(SearcherContext::new_without_invoker(
             SearcherConfig::default(),
+            None,
             None,
         ));
         let metastore = metastore_for_test();

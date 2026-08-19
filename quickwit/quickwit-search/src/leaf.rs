@@ -46,6 +46,7 @@ use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
     BundleStorage, ByteRangeCache, CountingStorage, MemorySizedCache, OwnedBytes, SearchSplitCache,
     Storage, StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
+    wrap_storage_with_split_range_cache,
 };
 use tantivy::aggregation::AggContextParams;
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
@@ -160,16 +161,19 @@ async fn get_split_footer_from_cache_or_fetch(
     Ok(footer_data_opt)
 }
 
-/// Returns hotcache_bytes and the split directory (`BundleStorage`) with cache layer:
-/// - A split footer cache given by `SearcherContext.split_footer_cache`.
+/// Returns hotcache_bytes and the split directory (`BundleStorage`).
 pub(crate) async fn open_split_bundle(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<(FileSlice, BundleStorage)> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
+    let foyer_storage: Arc<dyn Storage> = match &searcher_context.split_range_disk_cache_opt {
+        Some(cache) => wrap_storage_with_split_range_cache(cache.clone(), index_storage.clone()),
+        None => index_storage.clone(),
+    };
     let footer_data = get_split_footer_from_cache_or_fetch(
-        index_storage.clone(),
+        foyer_storage.clone(),
         split_and_footer_offsets,
         &searcher_context.split_footer_cache,
     )
@@ -179,9 +183,9 @@ pub(crate) async fn open_split_bundle(
     // This is before the bundle storage: at this point, this storage is reading `.split` files.
     let index_storage_with_split_cache =
         if let Some(split_cache) = searcher_context.split_cache_opt.as_ref() {
-            SearchSplitCache::wrap_storage(split_cache.clone(), index_storage.clone())
+            SearchSplitCache::wrap_storage(split_cache.clone(), foyer_storage)
         } else {
-            index_storage.clone()
+            foyer_storage
         };
 
     let (hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data(
@@ -3113,7 +3117,8 @@ mod tests {
             offload_threshold: 3,
             ..LambdaConfig::for_test()
         });
-        let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
+        let searcher_context =
+            SearcherContext::new(config, None, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(7);
         let result = super::schedule_search_tasks(splits, &searcher_context).await;
         assert_eq!(result.local_search_tasks.len(), 3);
@@ -3133,7 +3138,8 @@ mod tests {
             offload_threshold: 0,
             ..LambdaConfig::for_test()
         });
-        let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
+        let searcher_context =
+            SearcherContext::new(config, None, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(5);
         let result = super::schedule_search_tasks(splits, &searcher_context).await;
         assert!(result.local_search_tasks.is_empty());
@@ -3147,7 +3153,8 @@ mod tests {
             offload_threshold: 100,
             ..LambdaConfig::for_test()
         });
-        let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
+        let searcher_context =
+            SearcherContext::new(config, None, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(5);
         let result = super::schedule_search_tasks(splits, &searcher_context).await;
         assert_eq!(result.local_search_tasks.len(), 5);
