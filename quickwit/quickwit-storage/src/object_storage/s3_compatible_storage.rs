@@ -273,7 +273,9 @@ fn aws_checksum_algorithm(
 /// Coarse classification of an SDK error, used as a counter label.
 /// timeout, io, throttling, transient, or other.
 fn classify_sdk_error<E>(error: &SdkError<E>) -> &'static str
-where E: ProvideErrorMetadata {
+where
+    E: ProvideErrorMetadata,
+{
     match error {
         SdkError::TimeoutError(_) => "timeout",
         SdkError::DispatchFailure(failure) => {
@@ -992,111 +994,46 @@ impl Storage for S3CompatibleObjectStorage {
             ListPosition::First,
             list_span,
         );
-
-        let fetch_next_page = |(
-            s3_client,
-            bucket,
-            key_prefix,
-            storage_prefix,
-            retry_params,
-            list_position,
-            list_span,
-        ): ListState| {
-            let list_objects_span =
-                tracing::debug_span!(parent: &list_span, "storage.s3.list_objects_v2");
-            async move {
+        stream::try_unfold(
+            initial_state,
+            |(
+                s3_client,
+                bucket,
+                key_prefix,
+                storage_prefix,
+                retry_params,
+                list_position,
+                list_span,
+            ): ListState| async move {
                 let continuation_token_opt = match list_position {
                     ListPosition::First => None,
                     ListPosition::Middle(token) => Some(token),
-                    // The final page was emitted by the previous unfold step.
                     ListPosition::Last => return Ok(None),
                 };
 
-                // Fetch one S3 page. The state owns everything needed by this future so the
-                // returned stream does not borrow the storage instance.
-                let response = {
-                    let _permit = REQUEST_SEMAPHORE.acquire().await;
-                    let list_result = aws_retry(&retry_params, || {
-                        let mut list_request = s3_client
-                            .list_objects_v2()
-                            .bucket(&bucket)
-                            .prefix(&key_prefix);
-                        if let Some(continuation_token) = &continuation_token_opt {
-                            list_request = list_request.continuation_token(continuation_token);
-                        }
-                        list_request.send()
-                    })
-                    .await;
-                    match list_result {
-                        Ok(response) => response,
-                        Err(error) => {
-                            let storage_error =
-                                StorageError::from(error).add_context("failed to list objects");
-                            return Err(storage_error);
-                        }
+                let _permit = REQUEST_SEMAPHORE.acquire().await;
+                let list_objects_span =
+                    tracing::debug_span!(parent: &list_span, "storage.s3.list_objects_v2");
+                let response = aws_retry(&retry_params, || {
+                    let mut list_request = s3_client
+                        .list_objects_v2()
+                        .bucket(&bucket)
+                        .prefix(&key_prefix);
+                    if let Some(continuation_token) = &continuation_token_opt {
+                        list_request = list_request.continuation_token(continuation_token);
                     }
-                };
+                    list_request.send()
+                })
+                .instrument(list_objects_span)
+                .await
+                .map_err(|error| StorageError::from(error).add_context("failed to list objects"))?;
 
-                // Convert S3 metadata to paths relative to the configured storage root.
-                let mut page_objects = Vec::with_capacity(response.contents().len());
-                for object in response.contents() {
-                    let Some(key) = object.key() else {
-                        warn!("listed object has no key, skipping");
-                        continue;
-                    };
-                    let relative_path = match Path::new(key).strip_prefix(&storage_prefix) {
-                        Ok(relative_path) => relative_path.to_path_buf(),
-                        Err(error) => {
-                            let storage_error =
-                                StorageErrorKind::Internal.with_error(anyhow::anyhow!(
-                                    "listed object `{key}` is not under storage prefix `{}`: \
-                                     {error}",
-                                    storage_prefix.display()
-                                ));
-                            return Err(storage_error);
-                        }
-                    };
-                    let size_bytes = match object.size() {
-                        Some(size) => match u64::try_from(size) {
-                            Ok(size) => size,
-                            Err(error) => {
-                                warn!("listed object size conversion failed, skipping: {error}");
-                                continue;
-                            }
-                        },
-                        None => {
-                            warn!("listed object has no size, skipping");
-                            continue;
-                        }
-                    };
-                    let last_modified = match object.last_modified() {
-                        Some(modified) => match SystemTime::try_from(*modified) {
-                            Ok(last_modified) => last_modified,
-                            Err(error) => {
-                                warn!(
-                                    "listed object last modified time conversion failed, \
-                                     skipping: {error}"
-                                );
-                                continue;
-                            }
-                        },
-                        None => {
-                            warn!("listed object has no last modified time, skipping");
-                            continue;
-                        }
-                    };
-                    let metadata = ObjectMetadata {
-                        path: relative_path,
-                        size: ByteSize(size_bytes),
-                        last_modified,
-                    };
-                    page_objects.push(metadata);
-                }
-
+                let objects = convert_list_objects(response.contents(), &storage_prefix)?;
                 let next_list_position = response
                     .next_continuation_token
                     .map(ListPosition::Middle)
                     .unwrap_or(ListPosition::Last);
+
                 let state = (
                     s3_client,
                     bucket,
@@ -1106,11 +1043,10 @@ impl Storage for S3CompatibleObjectStorage {
                     next_list_position,
                     list_span,
                 );
-                Ok(Some((page_objects, state)))
-            }
-            .instrument(list_objects_span)
-        };
-        stream::try_unfold(initial_state, fetch_next_page).boxed()
+                Ok(Some((objects, state)))
+            },
+        )
+        .boxed()
     }
 
     #[instrument(name = "storage.s3.get_slice", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
@@ -1190,6 +1126,61 @@ impl Storage for S3CompatibleObjectStorage {
     fn uri(&self) -> &Uri {
         &self.uri
     }
+}
+
+/// Converts S3 object metadata to paths relative to the configured storage root.
+fn convert_list_objects(
+    objects: &[aws_sdk_s3::types::Object],
+    storage_prefix: &Path,
+) -> StorageResult<Vec<ObjectMetadata>> {
+    let mut object_metadata = Vec::with_capacity(objects.len());
+    for object in objects {
+        let Some(key) = object.key() else {
+            warn!("listed object has no key, skipping");
+            continue;
+        };
+        let relative_path = Path::new(key)
+            .strip_prefix(storage_prefix)
+            .map_err(|error| {
+                StorageErrorKind::Internal.with_error(anyhow::anyhow!(
+                    "listed object `{key}` is not under requested storage prefix `{}`: {error}",
+                    storage_prefix.display()
+                ))
+            })?
+            .to_path_buf();
+        let size_bytes = match object.size() {
+            Some(size) => match u64::try_from(size) {
+                Ok(size) => size,
+                Err(error) => {
+                    warn!("listed object size conversion failed, skipping: {error}");
+                    continue;
+                }
+            },
+            None => {
+                warn!("listed object has no size, skipping");
+                continue;
+            }
+        };
+        let last_modified = match object.last_modified() {
+            Some(modified) => match SystemTime::try_from(*modified) {
+                Ok(last_modified) => last_modified,
+                Err(error) => {
+                    warn!("listed object last modified time conversion failed, skipping: {error}");
+                    continue;
+                }
+            },
+            None => {
+                warn!("listed object has no last modified time, skipping");
+                continue;
+            }
+        };
+        object_metadata.push(ObjectMetadata {
+            path: relative_path,
+            size: ByteSize(size_bytes),
+            last_modified,
+        });
+    }
+    Ok(object_metadata)
 }
 
 #[cfg(test)]
