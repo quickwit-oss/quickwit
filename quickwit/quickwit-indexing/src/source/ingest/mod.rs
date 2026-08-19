@@ -121,8 +121,7 @@ enum IndexingStatus {
 
 #[derive(Debug, Eq, PartialEq)]
 struct AssignedShard {
-    leader_id: NodeId,
-    follower_id_opt: Option<NodeId>,
+    ingester_id: NodeId,
     // This is just the shard id converted to a partition id object.
     partition_id: PartitionId,
     current_position_inclusive: Position,
@@ -164,12 +163,8 @@ impl IngestSource {
         let metastore = source_runtime.metastore.clone();
         let ingester_pool = source_runtime.ingester_pool.clone();
         let assigned_shards = FnvHashMap::default();
-        let fetch_stream = MultiFetchStream::new(
-            self_node_id,
-            client_id.to_string(),
-            ingester_pool.clone(),
-            retry_params,
-        );
+        let fetch_stream =
+            MultiFetchStream::new(client_id.to_string(), ingester_pool.clone(), retry_params);
         // We start as dead. The first reset with a non-empty list of shards will create an alive
         // publish lock. The publish token is left empty until then: the first reset adopts the
         // indexing plan id carried by the assignment.
@@ -328,14 +323,8 @@ impl IngestSource {
                 shard_id: Some(shard_id),
                 truncate_up_to_position_inclusive: Some(truncate_up_to_position_inclusive),
             };
-            if let Some(follower_id) = &shard.follower_id_opt {
-                per_ingester_truncate_subrequests
-                    .entry(follower_id)
-                    .or_default()
-                    .push(truncate_shards_subrequest.clone());
-            }
             per_ingester_truncate_subrequests
-                .entry(&shard.leader_id)
+                .entry(&shard.ingester_id)
                 .or_default()
                 .push(truncate_shards_subrequest);
         }
@@ -577,10 +566,7 @@ impl Source for IngestSource {
             let shard_id = newly_acquired_shard.shard_id().clone();
             let index_uid = newly_acquired_shard.index_uid().clone();
             let mut current_position_inclusive = newly_acquired_shard.publish_position_inclusive();
-            let leader_id: NodeId = NodeId::from_str(&newly_acquired_shard.leader_id);
-            let follower_id_opt: Option<NodeId> = newly_acquired_shard
-                .follower_id
-                .map(|id| NodeId::from_str(&id));
+            let ingester_id: NodeId = NodeId::from_str(&newly_acquired_shard.ingester_id);
             let source_id: SourceId = newly_acquired_shard.source_id;
             let partition_id = PartitionId::from(shard_id.as_str());
             let from_position_exclusive = current_position_inclusive.clone();
@@ -589,8 +575,7 @@ impl Source for IngestSource {
                 IndexingStatus::Complete
             } else if let Err(error) = ctx
                 .protect_future(self.fetch_stream.subscribe(
-                    leader_id.clone(),
-                    follower_id_opt.clone(),
+                    ingester_id.clone(),
                     index_uid,
                     source_id,
                     shard_id.clone(),
@@ -612,8 +597,7 @@ impl Source for IngestSource {
             truncate_up_to_positions.push((shard_id.clone(), current_position_inclusive.clone()));
 
             let assigned_shard = AssignedShard {
-                leader_id,
-                follower_id_opt,
+                ingester_id,
                 partition_id,
                 current_position_inclusive,
                 status,
@@ -727,8 +711,7 @@ mod tests {
                     acquired_shards: vec![Shard {
                         index_uid: Some(IndexUid::for_test("test-index", 0)),
                         source_id: "test-source".to_string(),
-                        leader_id: "test-ingester-0".to_string(),
-                        follower_id: None,
+                        ingester_id: "test-ingester-0".to_string(),
                         shard_id: Some(ShardId::from(0)),
                         shard_state: ShardState::Open as i32,
                         doc_mapping_uid: Some(DocMappingUid::default()),
@@ -750,8 +733,7 @@ mod tests {
                 let response = AcquireShardsResponse {
                     acquired_shards: vec![
                         Shard {
-                            leader_id: "test-ingester-0".to_string(),
-                            follower_id: None,
+                            ingester_id: "test-ingester-0".to_string(),
                             index_uid: Some(IndexUid::for_test("test-index", 0)),
                             source_id: "test-source".to_string(),
                             shard_id: Some(ShardId::from(0)),
@@ -762,8 +744,7 @@ mod tests {
                             update_timestamp: 1724158996,
                         },
                         Shard {
-                            leader_id: "test-ingester-0".to_string(),
-                            follower_id: None,
+                            ingester_id: "test-ingester-0".to_string(),
                             index_uid: Some(IndexUid::for_test("test-index", 0)),
                             source_id: "test-source".to_string(),
                             shard_id: Some(ShardId::from(1)),
@@ -788,8 +769,7 @@ mod tests {
                 let response = AcquireShardsResponse {
                     acquired_shards: vec![
                         Shard {
-                            leader_id: "test-ingester-0".to_string(),
-                            follower_id: None,
+                            ingester_id: "test-ingester-0".to_string(),
                             index_uid: Some(IndexUid::for_test("test-index", 0)),
                             source_id: "test-source".to_string(),
                             shard_id: Some(ShardId::from(1)),
@@ -800,8 +780,7 @@ mod tests {
                             update_timestamp: 1724158996,
                         },
                         Shard {
-                            leader_id: "test-ingester-0".to_string(),
-                            follower_id: None,
+                            ingester_id: "test-ingester-0".to_string(),
                             index_uid: Some(IndexUid::for_test("test-index", 0)),
                             source_id: "test-source".to_string(),
                             shard_id: Some(ShardId::from(2)),
@@ -1066,8 +1045,7 @@ mod tests {
 
         let assigned_shard = source.assigned_shards.get(&ShardId::from(1)).unwrap();
         let expected_assigned_shard = AssignedShard {
-            leader_id: NodeId::from_str("test-ingester-0"),
-            follower_id_opt: None,
+            ingester_id: NodeId::from_str("test-ingester-0"),
             partition_id: 1u64.into(),
             current_position_inclusive: Position::offset(11u64),
             status: IndexingStatus::Active,
@@ -1076,8 +1054,7 @@ mod tests {
 
         let assigned_shard = source.assigned_shards.get(&ShardId::from(2)).unwrap();
         let expected_assigned_shard = AssignedShard {
-            leader_id: NodeId::from_str("test-ingester-0"),
-            follower_id_opt: None,
+            ingester_id: NodeId::from_str("test-ingester-0"),
             partition_id: 2u64.into(),
             current_position_inclusive: Position::offset(12u64),
             status: IndexingStatus::Active,
@@ -1127,8 +1104,7 @@ mod tests {
                 let response = AcquireShardsResponse {
                     acquired_shards: vec![
                         Shard {
-                            leader_id: "test-ingester-0".to_string(),
-                            follower_id: None,
+                            ingester_id: "test-ingester-0".to_string(),
                             index_uid: Some(IndexUid::for_test("test-index", 0)),
                             source_id: "test-source".to_string(),
                             shard_id: Some(ShardId::from(1)),
@@ -1139,8 +1115,7 @@ mod tests {
                             update_timestamp: 1724158996,
                         },
                         Shard {
-                            leader_id: "test-ingester-0".to_string(),
-                            follower_id: None,
+                            ingester_id: "test-ingester-0".to_string(),
                             index_uid: Some(IndexUid::for_test("test-index", 0)),
                             source_id: "test-source".to_string(),
                             shard_id: Some(ShardId::from(2)),
@@ -1282,8 +1257,7 @@ mod tests {
                 let response = AcquireShardsResponse {
                     acquired_shards: vec![
                         Shard {
-                            leader_id: "test-ingester-0".to_string(),
-                            follower_id: None,
+                            ingester_id: "test-ingester-0".to_string(),
                             index_uid: Some(IndexUid::for_test("test-index", 0)),
                             source_id: "test-source".to_string(),
                             shard_id: Some(ShardId::from(1)),
@@ -1294,8 +1268,7 @@ mod tests {
                             update_timestamp: 1724158996,
                         },
                         Shard {
-                            leader_id: "test-ingester-0".to_string(),
-                            follower_id: None,
+                            ingester_id: "test-ingester-0".to_string(),
                             index_uid: Some(IndexUid::for_test("test-index", 0)),
                             source_id: "test-source".to_string(),
                             shard_id: Some(ShardId::from(2)),
@@ -1478,8 +1451,7 @@ mod tests {
         source.assigned_shards.insert(
             ShardId::from(1),
             AssignedShard {
-                leader_id: NodeId::from_str("test-ingester-0"),
-                follower_id_opt: None,
+                ingester_id: NodeId::from_str("test-ingester-0"),
                 partition_id: 1u64.into(),
                 current_position_inclusive: Position::offset(11u64),
                 status: IndexingStatus::Active,
@@ -1488,8 +1460,7 @@ mod tests {
         source.assigned_shards.insert(
             ShardId::from(2),
             AssignedShard {
-                leader_id: NodeId::from_str("test-ingester-1"),
-                follower_id_opt: None,
+                ingester_id: NodeId::from_str("test-ingester-1"),
                 partition_id: 2u64.into(),
                 current_position_inclusive: Position::offset(22u64),
                 status: IndexingStatus::Active,
@@ -1656,8 +1627,7 @@ mod tests {
         source.assigned_shards.insert(
             ShardId::from(1),
             AssignedShard {
-                leader_id: NodeId::from_str("test-ingester-0"),
-                follower_id_opt: None,
+                ingester_id: NodeId::from_str("test-ingester-0"),
                 partition_id: 1u64.into(),
                 current_position_inclusive: Position::offset(11u64),
                 status: IndexingStatus::Active,
@@ -1736,8 +1706,7 @@ mod tests {
 
                 let response = AcquireShardsResponse {
                     acquired_shards: vec![Shard {
-                        leader_id: "test-ingester-0".to_string(),
-                        follower_id: None,
+                        ingester_id: "test-ingester-0".to_string(),
                         index_uid: Some(IndexUid::for_test("test-index", 0)),
                         source_id: "test-source".to_string(),
                         shard_id: Some(ShardId::from(1)),
@@ -1849,7 +1818,7 @@ mod tests {
             .once()
             .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-0");
-                assert_eq!(request.subrequests.len(), 3);
+                assert_eq!(request.subrequests.len(), 2);
 
                 let subrequest_0 = &request.subrequests[0];
                 assert_eq!(subrequest_0.shard_id(), ShardId::from(1));
@@ -1865,13 +1834,6 @@ mod tests {
                     Position::offset(22u64)
                 );
 
-                let subrequest_2 = &request.subrequests[2];
-                assert_eq!(subrequest_2.shard_id(), ShardId::from(3));
-                assert_eq!(
-                    subrequest_2.truncate_up_to_position_inclusive(),
-                    Position::eof(33u64)
-                );
-
                 Ok(TruncateShardsResponse {})
             });
         let ingester_0 =
@@ -1884,19 +1846,12 @@ mod tests {
             .once()
             .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-1");
-                assert_eq!(request.subrequests.len(), 2);
+                assert_eq!(request.subrequests.len(), 1);
 
                 let subrequest_0 = &request.subrequests[0];
-                assert_eq!(subrequest_0.shard_id(), ShardId::from(2));
+                assert_eq!(subrequest_0.shard_id(), ShardId::from(3));
                 assert_eq!(
                     subrequest_0.truncate_up_to_position_inclusive(),
-                    Position::offset(22u64)
-                );
-
-                let subrequest_1 = &request.subrequests[1];
-                assert_eq!(subrequest_1.shard_id(), ShardId::from(3));
-                assert_eq!(
-                    subrequest_1.truncate_up_to_position_inclusive(),
                     Position::eof(33u64)
                 );
 
@@ -1905,27 +1860,6 @@ mod tests {
         let ingester_1 =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1));
         ingester_pool.insert(NodeId::from_str("test-ingester-1"), ingester_1.clone());
-
-        let mut mock_ingester_3 = MockIngesterService::new();
-        mock_ingester_3
-            .expect_truncate_shards()
-            .once()
-            .returning(|request| {
-                assert_eq!(request.ingester_id, "test-ingester-3");
-                assert_eq!(request.subrequests.len(), 1);
-
-                let subrequest_0 = &request.subrequests[0];
-                assert_eq!(subrequest_0.shard_id(), ShardId::from(4));
-                assert_eq!(
-                    subrequest_0.truncate_up_to_position_inclusive(),
-                    Position::offset(44u64)
-                );
-
-                Ok(TruncateShardsResponse {})
-            });
-        let ingester_3 =
-            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_3));
-        ingester_pool.insert(NodeId::from_str("test-ingester-3"), ingester_3.clone());
 
         let event_broker = EventBroker::default();
         let (shard_positions_update_tx, mut shard_positions_update_rx) =
@@ -1962,8 +1896,7 @@ mod tests {
         source.assigned_shards.insert(
             ShardId::from(1),
             AssignedShard {
-                leader_id: NodeId::from_str("test-ingester-0"),
-                follower_id_opt: None,
+                ingester_id: NodeId::from_str("test-ingester-0"),
                 partition_id: 1u64.into(),
                 current_position_inclusive: Position::offset(11u64),
                 status: IndexingStatus::Active,
@@ -1972,8 +1905,7 @@ mod tests {
         source.assigned_shards.insert(
             ShardId::from(2),
             AssignedShard {
-                leader_id: NodeId::from_str("test-ingester-0"),
-                follower_id_opt: Some(NodeId::from_str("test-ingester-1")),
+                ingester_id: NodeId::from_str("test-ingester-0"),
                 partition_id: 2u64.into(),
                 current_position_inclusive: Position::offset(22u64),
                 status: IndexingStatus::Active,
@@ -1982,8 +1914,7 @@ mod tests {
         source.assigned_shards.insert(
             ShardId::from(3),
             AssignedShard {
-                leader_id: NodeId::from_str("test-ingester-1"),
-                follower_id_opt: Some(NodeId::from_str("test-ingester-0")),
+                ingester_id: NodeId::from_str("test-ingester-1"),
                 partition_id: 3u64.into(),
                 current_position_inclusive: Position::offset(33u64),
                 status: IndexingStatus::Active,
@@ -1992,8 +1923,7 @@ mod tests {
         source.assigned_shards.insert(
             ShardId::from(4),
             AssignedShard {
-                leader_id: NodeId::from_str("test-ingester-2"),
-                follower_id_opt: Some(NodeId::from_str("test-ingester-3")),
+                ingester_id: NodeId::from_str("test-ingester-2"),
                 partition_id: 4u64.into(),
                 current_position_inclusive: Position::offset(44u64),
                 status: IndexingStatus::Active,
@@ -2002,8 +1932,7 @@ mod tests {
         source.assigned_shards.insert(
             ShardId::from(5),
             AssignedShard {
-                leader_id: NodeId::from_str("test-ingester-2"),
-                follower_id_opt: Some(NodeId::from_str("test-ingester-3")),
+                ingester_id: NodeId::from_str("test-ingester-2"),
                 partition_id: 5u64.into(),
                 current_position_inclusive: Position::Beginning,
                 status: IndexingStatus::Active,

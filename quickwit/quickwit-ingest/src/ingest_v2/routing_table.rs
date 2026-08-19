@@ -41,12 +41,12 @@ impl IngesterNode {
     fn is_routing_candidate(
         &self,
         ingester_pool: &IngesterPool,
-        unavailable_leaders: &mut HashSet<NodeId>,
+        unavailable_ingesters: &mut HashSet<NodeId>,
     ) -> bool {
         if self.capacity_score == 0 || self.open_shard_count == 0 {
             return false;
         }
-        if unavailable_leaders.contains(&self.node_id) {
+        if unavailable_ingesters.contains(&self.node_id) {
             return false;
         }
         let is_ready = ingester_pool
@@ -55,7 +55,7 @@ impl IngesterNode {
             .unwrap_or(false);
 
         if !is_ready {
-            unavailable_leaders.insert(self.node_id.clone());
+            unavailable_ingesters.insert(self.node_id.clone());
         }
         is_ready
     }
@@ -111,7 +111,7 @@ impl RoutingEntry {
     fn pick_node(
         &self,
         ingester_pool: &IngesterPool,
-        unavailable_leaders: &HashSet<NodeId>,
+        unavailable_ingesters: &HashSet<NodeId>,
         self_availability_zone: &Option<String>,
     ) -> Option<&IngesterNode> {
         let (local_ingesters, remote_ingesters): (Vec<&IngesterNode>, Vec<&IngesterNode>) = self
@@ -124,7 +124,7 @@ impl RoutingEntry {
                         .get(&node.node_id)
                         .map(|entry| entry.status.is_ready())
                         .unwrap_or(false)
-                    && !unavailable_leaders.contains(&node.node_id)
+                    && !unavailable_ingesters.contains(&node.node_id)
             })
             .partition(|node| {
                 let node_az = ingester_pool
@@ -156,13 +156,13 @@ impl RoutingTable {
         index_id: &str,
         source_id: &str,
         ingester_pool: &IngesterPool,
-        unavailable_leaders: &HashSet<NodeId>,
+        unavailable_ingesters: &HashSet<NodeId>,
     ) -> Option<&IngesterNode> {
         let key = (index_id.to_string(), source_id.to_string());
         let entry = self.table.get(&key)?;
         entry.pick_node(
             ingester_pool,
-            unavailable_leaders,
+            unavailable_ingesters,
             &self.self_availability_zone,
         )
     }
@@ -210,14 +210,14 @@ impl RoutingTable {
 
     /// Returns `true` if the entry has at least one routing candidate, i.e. an available node with
     /// at least one open shard and a capacity score greater than 0. As it scans the entry, it
-    /// records any leader that has open shards but is no longer in the ingester pool or is not
-    /// ready into `unavailable_leaders`, so they can be reported to the control plane.
+    /// records any ingester that has open shards but is no longer in the ingester pool or is not
+    /// ready into `unavailable_ingesters`, so they can be reported to the control plane.
     pub fn has_any_routing_candidate(
         &self,
         index_id: &str,
         source_id: &str,
         ingester_pool: &IngesterPool,
-        unavailable_leaders: &mut HashSet<NodeId>,
+        unavailable_ingesters: &mut HashSet<NodeId>,
     ) -> bool {
         let key = (index_id.to_string(), source_id.to_string());
         let Some(entry) = self.table.get(&key) else {
@@ -232,7 +232,7 @@ impl RoutingTable {
         let mut has_any_candidate = false;
 
         for node in entry.nodes.values() {
-            has_any_candidate |= node.is_routing_candidate(ingester_pool, unavailable_leaders);
+            has_any_candidate |= node.is_routing_candidate(ingester_pool, unavailable_ingesters);
         }
         has_any_candidate
     }
@@ -299,17 +299,17 @@ impl RoutingTable {
             Ordering::Equal => {}
         }
 
-        let per_leader_count: HashMap<NodeId, usize> = shards
+        let per_ingester_count: HashMap<NodeId, usize> = shards
             .iter()
             .map(|shard| {
                 let num_open_shards = shard.is_open() as usize;
-                let leader_id = NodeId::from_str(&shard.leader_id);
-                (leader_id, num_open_shards)
+                let ingester_id = NodeId::from_str(&shard.ingester_id);
+                (ingester_id, num_open_shards)
             })
             .into_grouping_map()
             .sum();
 
-        for (node_id, open_shard_count) in per_leader_count {
+        for (node_id, open_shard_count) in per_ingester_count {
             entry
                 .nodes
                 .entry(node_id.clone())
@@ -361,36 +361,36 @@ mod tests {
         pool.insert(NodeId::from_str("node-1"), mocked_ingester(None));
 
         // No capacity or no open shards: not a routing candidate, not reported as unavailable.
-        let mut unavailable_leaders = HashSet::new();
+        let mut unavailable_ingesters = HashSet::new();
         assert!(
-            !ingester_node("node-1", 0, 3).is_routing_candidate(&pool, &mut unavailable_leaders)
+            !ingester_node("node-1", 0, 3).is_routing_candidate(&pool, &mut unavailable_ingesters)
         );
         assert!(
-            !ingester_node("node-1", 5, 0).is_routing_candidate(&pool, &mut unavailable_leaders)
+            !ingester_node("node-1", 5, 0).is_routing_candidate(&pool, &mut unavailable_ingesters)
         );
-        assert!(unavailable_leaders.is_empty());
+        assert!(unavailable_ingesters.is_empty());
 
-        // Open shards and a ready leader: open, not reported as unavailable.
+        // Open shards and a ready ingester: open, not reported as unavailable.
         assert!(
-            ingester_node("node-1", 5, 3).is_routing_candidate(&pool, &mut unavailable_leaders)
+            ingester_node("node-1", 5, 3).is_routing_candidate(&pool, &mut unavailable_ingesters)
         );
-        assert!(unavailable_leaders.is_empty());
+        assert!(unavailable_ingesters.is_empty());
 
-        // Open shards but the leader is missing from the pool: not open, reported as unavailable.
+        // Open shards but the ingester is missing from the pool: not open, reported as unavailable.
         assert!(
-            !ingester_node("node-2", 5, 3).is_routing_candidate(&pool, &mut unavailable_leaders)
+            !ingester_node("node-2", 5, 3).is_routing_candidate(&pool, &mut unavailable_ingesters)
         );
         assert_eq!(
-            unavailable_leaders,
+            unavailable_ingesters,
             HashSet::from([NodeId::from_str("node-2")])
         );
 
-        // A leader already known to be unavailable is skipped without re-inserting.
+        // A ingester already known to be unavailable is skipped without re-inserting.
         assert!(
-            !ingester_node("node-2", 5, 3).is_routing_candidate(&pool, &mut unavailable_leaders)
+            !ingester_node("node-2", 5, 3).is_routing_candidate(&pool, &mut unavailable_ingesters)
         );
         assert_eq!(
-            unavailable_leaders,
+            unavailable_ingesters,
             HashSet::from([NodeId::from_str("node-2")])
         );
     }
@@ -469,7 +469,7 @@ mod tests {
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(1u64)),
                 shard_state: ShardState::Open as i32,
-                leader_id: "node-1".to_string(),
+                ingester_id: "node-1".to_string(),
                 ..Default::default()
             },
             Shard {
@@ -477,57 +477,59 @@ mod tests {
                 source_id: "test-source".to_string(),
                 shard_id: Some(ShardId::from(2u64)),
                 shard_state: ShardState::Open as i32,
-                leader_id: "node-2".to_string(),
+                ingester_id: "node-2".to_string(),
                 ..Default::default()
             },
         ];
         table.merge_from_shards(index_uid.clone(), "test-source".into(), shards);
 
-        // Neither node is in the pool: both leaders are recorded as unavailable and reported to
+        // Neither node is in the pool: both ingesters are recorded as unavailable and reported to
         // the control plane.
-        let mut unavailable_leaders: HashSet<NodeId> = HashSet::new();
+        let mut unavailable_ingesters: HashSet<NodeId> = HashSet::new();
         assert!(!table.has_any_routing_candidate(
             "test-index",
             "test-source",
             &pool,
-            &mut unavailable_leaders
+            &mut unavailable_ingesters
         ));
-        assert_eq!(unavailable_leaders.len(), 2);
-        assert!(unavailable_leaders.contains(&NodeId::from_str("node-1")));
-        assert!(unavailable_leaders.contains(&NodeId::from_str("node-2")));
+        assert_eq!(unavailable_ingesters.len(), 2);
+        assert!(unavailable_ingesters.contains(&NodeId::from_str("node-1")));
+        assert!(unavailable_ingesters.contains(&NodeId::from_str("node-2")));
 
         // node-1 is in pool → true. node-2 is still missing from the pool and gets recorded.
         pool.insert(NodeId::from_str("node-1"), mocked_ingester(None));
-        let mut unavailable_leaders = HashSet::new();
+        let mut unavailable_ingesters = HashSet::new();
         assert!(table.has_any_routing_candidate(
             "test-index",
             "test-source",
             &pool,
-            &mut unavailable_leaders
+            &mut unavailable_ingesters
         ));
         assert_eq!(
-            unavailable_leaders,
+            unavailable_ingesters,
             HashSet::from([NodeId::from_str("node-2")])
         );
 
         // node-1 is already known to be unavailable, and node-2 is not in the pool → false. The
-        // leader already in the set is left untouched.
-        let mut unavailable_leaders: HashSet<NodeId> = HashSet::from([NodeId::from_str("node-1")]);
+        // ingester already in the set is left untouched.
+        let mut unavailable_ingesters: HashSet<NodeId> =
+            HashSet::from([NodeId::from_str("node-1")]);
         assert!(!table.has_any_routing_candidate(
             "test-index",
             "test-source",
             &pool,
-            &mut unavailable_leaders
+            &mut unavailable_ingesters
         ));
 
         // Second node available → true despite first being unavailable.
         pool.insert(NodeId::from_str("node-2"), mocked_ingester(None));
-        let mut unavailable_leaders: HashSet<NodeId> = HashSet::from([NodeId::from_str("node-1")]);
+        let mut unavailable_ingesters: HashSet<NodeId> =
+            HashSet::from([NodeId::from_str("node-1")]);
         assert!(table.has_any_routing_candidate(
             "test-index",
             "test-source",
             &pool,
-            &mut unavailable_leaders
+            &mut unavailable_ingesters
         ));
 
         // Node with capacity_score=0 is not eligible and is not reported as unavailable.
@@ -538,15 +540,16 @@ mod tests {
             0,
             2,
         );
-        let mut unavailable_leaders: HashSet<NodeId> = HashSet::from([NodeId::from_str("node-1")]);
+        let mut unavailable_ingesters: HashSet<NodeId> =
+            HashSet::from([NodeId::from_str("node-1")]);
         assert!(!table.has_any_routing_candidate(
             "test-index",
             "test-source",
             &pool,
-            &mut unavailable_leaders
+            &mut unavailable_ingesters
         ));
         assert_eq!(
-            unavailable_leaders,
+            unavailable_ingesters,
             HashSet::from([NodeId::from_str("node-1")])
         );
     }
@@ -579,7 +582,7 @@ mod tests {
             source_id: "test-source".to_string(),
             shard_id: Some(ShardId::from(1u64)),
             shard_state: ShardState::Open as i32,
-            leader_id: "node-1".to_string(),
+            ingester_id: "node-1".to_string(),
             ..Default::default()
         }];
         table.merge_from_shards(
@@ -715,7 +718,7 @@ mod tests {
         let index_uid = IndexUid::for_test("test-index", 0);
         let key = ("test-index".to_string(), "test-source".to_string());
 
-        let make_shard = |id: u64, leader: &str, open: bool| Shard {
+        let make_shard = |id: u64, ingester: &str, open: bool| Shard {
             index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
             shard_id: Some(ShardId::from(id)),
@@ -724,7 +727,7 @@ mod tests {
             } else {
                 ShardState::Closed as i32
             },
-            leader_id: leader.to_string(),
+            ingester_id: ingester.to_string(),
             ..Default::default()
         };
 
@@ -842,7 +845,7 @@ mod tests {
             source_id: "test-source".to_string(),
             shard_id: Some(ShardId::from(1u64)),
             shard_state: ShardState::Open as i32,
-            leader_id: "node-4".to_string(),
+            ingester_id: "node-4".to_string(),
             ..Default::default()
         }];
         table.merge_from_shards(
