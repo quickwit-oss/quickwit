@@ -1038,7 +1038,7 @@ impl Storage for S3CompatibleObjectStorage {
                         StorageError::from(error).add_context("failed to list objects")
                     })?;
 
-                    let objects = convert_list_objects(response.contents(), &storage_prefix)?;
+                    let objects = convert_list_objects(response.contents(), &storage_prefix);
                     let next_list_position = response
                         .next_continuation_token
                         .map(ListPosition::Middle)
@@ -1147,19 +1147,16 @@ impl Storage for S3CompatibleObjectStorage {
 fn convert_list_objects(
     objects: &[aws_sdk_s3::types::Object],
     storage_prefix: &Path,
-) -> StorageResult<Vec<ObjectMetadata>> {
+) -> Vec<ObjectMetadata> {
     let mut object_metadata = Vec::with_capacity(objects.len());
     for object in objects {
         let Some(key) = object.key() else {
             warn!("listed object has no key, skipping");
             continue;
         };
-        let relative_key = strip_storage_prefix(key, storage_prefix).ok_or_else(|| {
-            StorageErrorKind::Internal.with_error(anyhow::anyhow!(
-                "listed object `{key}` is not under requested storage prefix `{}`",
-                storage_prefix.display()
-            ))
-        })?;
+        let Some(relative_key) = strip_storage_prefix(key, storage_prefix) else {
+            continue;
+        };
         let relative_path = PathBuf::from(relative_key);
         let size_bytes = match object.size() {
             Some(size) => match u64::try_from(size) {
@@ -1193,7 +1190,7 @@ fn convert_list_objects(
             last_modified,
         });
     }
-    Ok(object_metadata)
+    object_metadata
 }
 
 /// Strips a storage prefix from an S3 key without interpreting it as a filesystem path.
@@ -1334,10 +1331,24 @@ mod tests {
         let first_page = r#"<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Name>bucket</Name>
-  <Prefix>indexes/splits</Prefix>
-  <KeyCount>1</KeyCount>
+  <Prefix>indexes</Prefix>
+  <KeyCount>3</KeyCount>
   <MaxKeys>1000</MaxKeys>
   <IsTruncated>true</IsTruncated>
+  <Contents>
+    <Key>indexes</Key>
+    <LastModified>2026-08-14T09:58:00.000Z</LastModified>
+    <ETag>&quot;etag-root&quot;</ETag>
+    <Size>3</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+  <Contents>
+    <Key>indexes-old/object</Key>
+    <LastModified>2026-08-14T09:59:00.000Z</LastModified>
+    <ETag>&quot;etag-sibling&quot;</ETag>
+    <Size>4</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
   <Contents>
     <Key>indexes/splits/./a.split</Key>
     <LastModified>2026-08-14T10:00:00.000Z</LastModified>
@@ -1350,7 +1361,7 @@ mod tests {
         let second_page = r#"<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Name>bucket</Name>
-  <Prefix>indexes/splits</Prefix>
+  <Prefix>indexes</Prefix>
   <KeyCount>1</KeyCount>
   <MaxKeys>1000</MaxKeys>
   <IsTruncated>false</IsTruncated>
@@ -1397,23 +1408,23 @@ mod tests {
             checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         });
 
-        let pages: Vec<Vec<ObjectMetadata>> = storage
-            .list(Path::new("splits"))
-            .try_collect()
-            .await
-            .unwrap();
+        let pages: Vec<Vec<ObjectMetadata>> =
+            storage.list(Path::new("")).try_collect().await.unwrap();
 
         let num_objects: usize = pages.iter().map(Vec::len).sum();
-        assert_eq!(num_objects, 2);
+        assert_eq!(num_objects, 3);
         assert_eq!(pages.len(), 2);
-        assert_eq!(pages[0].len(), 1);
-        assert_eq!(pages[0][0].path.to_string_lossy(), "splits/./a.split");
-        assert_eq!(pages[0][0].size, ByteSize(5));
+        assert_eq!(pages[0].len(), 2);
+        assert_eq!(pages[0][0].path, Path::new(""));
+        assert_eq!(pages[0][0].size, ByteSize(3));
+        assert_eq!(pages[0][1].path.to_string_lossy(), "splits/./a.split");
+        assert_eq!(pages[0][1].size, ByteSize(5));
         assert_eq!(pages[1].len(), 1);
         assert_eq!(pages[1][0].path.to_string_lossy(), "splits//b.split");
         assert_eq!(pages[1][0].size, ByteSize(7));
         let requests: Vec<_> = client.actual_requests().collect();
         assert_eq!(requests.len(), 2);
+        assert!(requests[0].uri().contains("prefix=indexes"));
         assert!(requests[1].uri().contains("continuation-token=next-token"));
     }
 
