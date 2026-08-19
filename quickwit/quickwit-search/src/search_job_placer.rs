@@ -116,12 +116,12 @@ impl SearchJobPlacer {
     }
 }
 
-struct SocketAddrAndClient {
+struct NodeIdAndClient {
     node_id: NodeId,
     client: SearchServiceClient,
 }
 
-impl Hash for SocketAddrAndClient {
+impl Hash for NodeIdAndClient {
     fn hash<H: Hasher>(&self, hasher: &mut H) {
         self.node_id.hash(hasher);
     }
@@ -134,11 +134,11 @@ impl SearchJobPlacer {
         &self,
         affinity_key: &[u8],
     ) -> impl Iterator<Item = SearchServiceClient> {
-        let mut nodes: Vec<SocketAddrAndClient> = self
+        let mut nodes: Vec<NodeIdAndClient> = self
             .searcher_pool
             .pairs()
             .into_iter()
-            .map(|(_socket_addr, searcher_node)| SocketAddrAndClient {
+            .map(|(_socket_addr, searcher_node)| NodeIdAndClient {
                 node_id: searcher_node.node_id,
                 client: searcher_node.client,
             })
@@ -146,7 +146,7 @@ impl SearchJobPlacer {
         sort_by_rendez_vous_hash(&mut nodes[..], affinity_key);
         nodes
             .into_iter()
-            .map(|socket_addr_and_client| socket_addr_and_client.client)
+            .map(|node_id_and_client| node_id_and_client.client)
     }
 
     /// Returns searcher node IDs ordered by decreasing affinity with `affinity_key`.
