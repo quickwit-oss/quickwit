@@ -176,10 +176,12 @@ impl SearchSplitCache {
 fn delete_evicted_splits(root_path: &Path, splits_to_delete: &[SplitId]) {
     for split_to_delete in splits_to_delete {
         let split_file_path = root_path.join(split_file(split_to_delete));
-        if let Err(_io_err) = std::fs::remove_file(&split_file_path) {
+        if let Err(io_err) = std::fs::remove_file(&split_file_path)
+            && io_err.kind() != io::ErrorKind::NotFound
+        {
             // This is an pretty critical error. The split size is not tracked anymore at this
             // point.
-            error!(path=%split_file_path.display(), "failed to remove split file from cache directory. This is critical as the file is now not taken in account in the cache size limits");
+            error!(path=%split_file_path.display(), error=%io_err, "failed to remove split file from cache directory. This is critical as the file is now not taken in account in the cache size limits");
         }
     }
 }
