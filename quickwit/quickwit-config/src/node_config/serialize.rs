@@ -867,6 +867,7 @@ mod tests {
                 merge_concurrency: NonZeroUsize::new(2).unwrap(),
                 cpu_capacity: IndexerConfig::default_cpu_capacity(),
                 enable_cooperative_indexing: false,
+                enable_spread_indexing_pipelines: false,
                 max_merge_write_throughput: Some(ByteSize::mb(100)),
                 parquet_merge_use_streaming_engine: true,
             }
