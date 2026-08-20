@@ -23,7 +23,10 @@ use quickwit_common::uri::Uri;
 use tokio::io::AsyncRead;
 
 use crate::storage::SendableAsync;
-use crate::{BulkDeleteError, ListObjectsStream, ObjectMetadata, OwnedBytes, Storage};
+use crate::{
+    BulkDeleteError, ListObjectsStream, ObjectMetadata, OwnedBytes, Storage, StorageErrorKind,
+    StorageResult,
+};
 
 /// This storage acts as a proxy to another storage that simply modifies each API call
 /// by preceding each path with a given a prefix.
@@ -110,20 +113,37 @@ impl Storage for PrefixStorage {
         fn strip_prefix_from_objects(
             objects: Vec<ObjectMetadata>,
             prefix: &Path,
-        ) -> Vec<ObjectMetadata> {
+        ) -> StorageResult<Vec<ObjectMetadata>> {
             if prefix == Path::new("") {
-                return objects;
+                return Ok(objects);
             }
+            let prefix_bytes = prefix.as_os_str().as_encoded_bytes();
             let mut relative_objects = Vec::with_capacity(objects.len());
             for mut object in objects {
-                let Ok(relative_path) = object.path.strip_prefix(prefix) else {
-                    // Some backends use byte-prefix semantics and may return lexical siblings.
-                    continue;
-                };
-                object.path = relative_path.to_path_buf();
-                relative_objects.push(object);
+                match object.path.strip_prefix(prefix) {
+                    Ok(relative_path) => {
+                        object.path = relative_path.to_path_buf();
+                        relative_objects.push(object);
+                    }
+                    Err(_)
+                        if object
+                            .path
+                            .as_os_str()
+                            .as_encoded_bytes()
+                            .starts_with(prefix_bytes) =>
+                    {
+                        // Byte-prefix backends may return lexical siblings of the storage root.
+                    }
+                    Err(error) => {
+                        return Err(StorageErrorKind::Internal.with_error(anyhow::anyhow!(
+                            "listed object `{}` is not under storage prefix `{}`: {error}",
+                            object.path.display(),
+                            prefix.display()
+                        )));
+                    }
+                }
             }
-            relative_objects
+            Ok(relative_objects)
         }
 
         let storage_prefix = self.prefix.clone();
@@ -131,7 +151,7 @@ impl Storage for PrefixStorage {
             .list(&self.prefix.join(prefix))
             .map(move |objects_res| {
                 let objects = objects_res?;
-                Ok(strip_prefix_from_objects(objects, &storage_prefix))
+                strip_prefix_from_objects(objects, &storage_prefix)
             })
             .boxed()
     }
@@ -283,6 +303,32 @@ mod tests {
         assert_eq!(pages.len(), 1);
         assert_eq!(pages[0].len(), 1);
         assert_eq!(pages[0][0].path, Path::new("foo.split"));
+    }
+
+    #[tokio::test]
+    async fn test_prefix_storage_list_rejects_unrelated_paths() {
+        let mut mock_storage = MockStorage::default();
+        mock_storage.expect_list().times(1).returning(|prefix| {
+            assert_eq!(prefix, Path::new("ram:///indexes"));
+            let objects = vec![ObjectMetadata {
+                path: PathBuf::from("ram:///unrelated/foo.split"),
+                size: bytesize::ByteSize(11),
+                last_modified: SystemTime::UNIX_EPOCH,
+            }];
+            stream::once(async move { Ok(objects) }).boxed()
+        });
+        let storage = add_prefix_to_storage(
+            Arc::new(mock_storage),
+            PathBuf::from("ram:///indexes"),
+            Uri::for_test("ram:///indexes"),
+        );
+        let error = storage
+            .list(Path::new(""))
+            .try_collect::<Vec<Vec<ObjectMetadata>>>()
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.kind(), StorageErrorKind::Internal);
     }
 
     #[test]
