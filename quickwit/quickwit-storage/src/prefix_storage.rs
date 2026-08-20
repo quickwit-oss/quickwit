@@ -125,21 +125,19 @@ impl Storage for PrefixStorage {
                         object.path = relative_path.to_path_buf();
                         relative_objects.push(object);
                     }
-                    Err(_)
-                        if object
+                    Err(error) => {
+                        let is_under_prefix = object
                             .path
                             .as_os_str()
                             .as_encoded_bytes()
-                            .starts_with(prefix_bytes) =>
-                    {
-                        // Byte-prefix backends may return lexical siblings of the storage root.
-                    }
-                    Err(error) => {
-                        return Err(StorageErrorKind::Internal.with_error(anyhow::anyhow!(
-                            "listed object `{}` is not under storage prefix `{}`: {error}",
-                            object.path.display(),
-                            prefix.display()
-                        )));
+                            .starts_with(prefix_bytes);
+                        if !is_under_prefix {
+                            return Err(StorageErrorKind::Internal.with_error(anyhow::anyhow!(
+                                "listed object `{}` is not under storage prefix `{}`: {error}",
+                                object.path.display(),
+                                prefix.display()
+                            )));
+                        }
                     }
                 }
             }
