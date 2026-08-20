@@ -111,23 +111,37 @@ impl Storage for PrefixStorage {
         /// Makes listed paths relative to this storage root again, undoing the prefix added by
         /// [`PrefixStorage::list`].
         fn strip_prefix_from_objects(
-            mut objects: Vec<ObjectMetadata>,
+            objects: Vec<ObjectMetadata>,
             prefix: &Path,
         ) -> StorageResult<Vec<ObjectMetadata>> {
             if prefix == Path::new("") {
                 return Ok(objects);
             }
-            for object in &mut objects {
-                let relative_path = object.path.strip_prefix(prefix).map_err(|error| {
-                    StorageErrorKind::Internal.with_error(anyhow::anyhow!(
-                        "listed object `{}` is not under storage prefix `{}`: {error}",
-                        object.path.display(),
-                        prefix.display()
-                    ))
-                })?;
-                object.path = relative_path.to_path_buf();
+            let prefix_bytes = prefix.as_os_str().as_encoded_bytes();
+            let mut relative_objects = Vec::with_capacity(objects.len());
+            for mut object in objects {
+                match object.path.strip_prefix(prefix) {
+                    Ok(relative_path) => {
+                        object.path = relative_path.to_path_buf();
+                        relative_objects.push(object);
+                    }
+                    Err(error) => {
+                        let is_under_prefix = object
+                            .path
+                            .as_os_str()
+                            .as_encoded_bytes()
+                            .starts_with(prefix_bytes);
+                        if !is_under_prefix {
+                            return Err(StorageErrorKind::Internal.with_error(anyhow::anyhow!(
+                                "listed object `{}` is not under storage prefix `{}`: {error}",
+                                object.path.display(),
+                                prefix.display()
+                            )));
+                        }
+                    }
+                }
             }
-            Ok(objects)
+            Ok(relative_objects)
         }
 
         let storage_prefix = self.prefix.clone();
@@ -255,6 +269,64 @@ mod tests {
         assert_eq!(pages[0].len(), 1);
         assert_eq!(pages[0][0].path, Path::new("splits/foo.split"));
         assert_eq!(pages[0][0].size, bytesize::ByteSize(11));
+    }
+
+    #[tokio::test]
+    async fn test_prefix_storage_list_filters_lexical_siblings() {
+        let mut mock_storage = MockStorage::default();
+        mock_storage.expect_list().times(1).returning(|prefix| {
+            assert_eq!(prefix, Path::new("ram:///indexes"));
+            let objects = vec![
+                ObjectMetadata {
+                    path: PathBuf::from("ram:///indexes/foo.split"),
+                    size: bytesize::ByteSize(11),
+                    last_modified: SystemTime::UNIX_EPOCH,
+                },
+                ObjectMetadata {
+                    path: PathBuf::from("ram:///indexes-old/unrelated.split"),
+                    size: bytesize::ByteSize(13),
+                    last_modified: SystemTime::UNIX_EPOCH,
+                },
+            ];
+            stream::once(async move { Ok(objects) }).boxed()
+        });
+        let storage = add_prefix_to_storage(
+            Arc::new(mock_storage),
+            PathBuf::from("ram:///indexes"),
+            Uri::for_test("ram:///indexes"),
+        );
+        let pages: Vec<Vec<ObjectMetadata>> =
+            storage.list(Path::new("")).try_collect().await.unwrap();
+
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].len(), 1);
+        assert_eq!(pages[0][0].path, Path::new("foo.split"));
+    }
+
+    #[tokio::test]
+    async fn test_prefix_storage_list_rejects_unrelated_paths() {
+        let mut mock_storage = MockStorage::default();
+        mock_storage.expect_list().times(1).returning(|prefix| {
+            assert_eq!(prefix, Path::new("ram:///indexes"));
+            let objects = vec![ObjectMetadata {
+                path: PathBuf::from("ram:///unrelated/foo.split"),
+                size: bytesize::ByteSize(11),
+                last_modified: SystemTime::UNIX_EPOCH,
+            }];
+            stream::once(async move { Ok(objects) }).boxed()
+        });
+        let storage = add_prefix_to_storage(
+            Arc::new(mock_storage),
+            PathBuf::from("ram:///indexes"),
+            Uri::for_test("ram:///indexes"),
+        );
+        let error = storage
+            .list(Path::new(""))
+            .try_collect::<Vec<Vec<ObjectMetadata>>>()
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.kind(), StorageErrorKind::Internal);
     }
 
     #[test]
