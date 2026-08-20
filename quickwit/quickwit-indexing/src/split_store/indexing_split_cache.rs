@@ -812,6 +812,7 @@ mod tests {
         let split_streamer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1, test_filepath2],
             &[],
+            None,
             b"hotcache",
         )
         .unwrap();
