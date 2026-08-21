@@ -22,7 +22,7 @@ use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::search::{
     FetchDocsResponse, PartialHit, SnippetRequest, SplitIdAndFooterOffsets,
 };
-use quickwit_storage::Storage;
+use quickwit_storage::StorageGetSlice;
 use tantivy::query::Query;
 use tantivy::schema::document::CompactDocValue;
 use tantivy::schema::{Document as DocumentTrait, Field, TantivyDocument, Value};
@@ -38,10 +38,10 @@ const SNIPPET_MAX_NUM_CHARS: usize = 150;
 
 /// Given a list of global doc address, fetches all the documents and
 /// returns them as a hashmap.
-async fn fetch_docs_to_map(
+async fn fetch_docs_to_map<T: StorageGetSlice + Clone>(
     searcher_context: Arc<SearcherContext>,
     mut global_doc_addrs: Vec<GlobalDocAddress>,
-    index_storage: Arc<dyn Storage>,
+    storage: T,
     splits: &[SplitIdAndFooterOffsets],
     doc_mapper: Arc<DocMapper>,
     snippet_request_opt: Option<&SnippetRequest>,
@@ -70,7 +70,7 @@ async fn fetch_docs_to_map(
             fetch_docs_in_split(
                 searcher_context.clone(),
                 global_doc_addrs,
-                index_storage.clone(),
+                storage.clone(),
                 split_and_offset,
                 doc_mapper.clone(),
                 snippet_request_opt,
@@ -100,10 +100,10 @@ async fn fetch_docs_to_map(
 /// This function takes a list of partial hits (possibly from different splits)
 /// and the storage associated to an index, fetches the document from
 /// the split document stores, and returns the full hits.
-pub async fn fetch_docs(
+pub async fn fetch_docs<T: StorageGetSlice + Clone>(
     searcher_context: Arc<SearcherContext>,
     partial_hits: Vec<PartialHit>,
-    index_storage: Arc<dyn Storage>,
+    storage: T,
     splits: &[SplitIdAndFooterOffsets],
     doc_mapper: Arc<DocMapper>,
     snippet_request_opt: Option<&SnippetRequest>,
@@ -116,7 +116,7 @@ pub async fn fetch_docs(
     let mut global_doc_addr_to_doc_json = fetch_docs_to_map(
         searcher_context,
         global_doc_addrs,
-        index_storage,
+        storage,
         splits,
         doc_mapper,
         snippet_request_opt,
@@ -154,10 +154,10 @@ struct Document {
 
 /// Fetching docs from a specific split.
 #[instrument(skip_all, fields(split_id = split.split_id, num_docs = global_doc_addrs.len()))]
-async fn fetch_docs_in_split(
+async fn fetch_docs_in_split<T: StorageGetSlice + Clone>(
     searcher_context: Arc<SearcherContext>,
     mut global_doc_addrs: Vec<GlobalDocAddress>,
-    index_storage: Arc<dyn Storage>,
+    storage: T,
     split: &SplitIdAndFooterOffsets,
     doc_mapper: Arc<DocMapper>,
     snippet_request_opt: Option<&SnippetRequest>,
@@ -167,7 +167,7 @@ async fn fetch_docs_in_split(
     // when fetching docs as we will fetch them only once.
     let (mut index, _) = open_index_with_caches(
         &searcher_context,
-        index_storage,
+        storage,
         split,
         Some(doc_mapper.tokenizer_manager()),
         None,

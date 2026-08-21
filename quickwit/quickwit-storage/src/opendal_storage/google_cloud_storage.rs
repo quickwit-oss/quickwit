@@ -13,17 +13,16 @@
 // limitations under the License.
 
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
-use async_trait::async_trait;
 use quickwit_common::uri::Uri;
-use quickwit_config::{GoogleCloudStorageConfig, StorageBackend};
+use quickwit_config::GoogleCloudStorageConfig;
 use regex::Regex;
 use tracing::info;
 
 use super::OpendalStorage;
+use crate::StorageResolverError;
 use crate::debouncer::DebouncedStorage;
-use crate::{Storage, StorageFactory, StorageResolverError};
 
 /// Google cloud storage resolver.
 pub struct GoogleCloudStorageFactory {
@@ -37,15 +36,13 @@ impl GoogleCloudStorageFactory {
     }
 }
 
-#[async_trait]
-impl StorageFactory for GoogleCloudStorageFactory {
-    fn backend(&self) -> StorageBackend {
-        StorageBackend::Google
-    }
-
-    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+impl GoogleCloudStorageFactory {
+    pub(crate) fn resolve(
+        &self,
+        uri: &Uri,
+    ) -> Result<DebouncedStorage<OpendalStorage>, StorageResolverError> {
         let storage = from_uri(&self.storage_config, uri)?;
-        Ok(Arc::new(DebouncedStorage::new(storage)))
+        Ok(DebouncedStorage::new(storage))
     }
 }
 

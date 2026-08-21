@@ -14,6 +14,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::StreamExt;
@@ -37,7 +38,7 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
-use quickwit_storage::{StorageResolver, StorageResolverError};
+use quickwit_storage::{Storage, StorageResolver, StorageResolverError};
 use thiserror::Error;
 use tracing::{error, info};
 
@@ -385,7 +386,7 @@ impl IndexService {
             .deserialize_index_metadata()?;
         let index_uid = index_metadata.index_uid.clone();
         let index_config = index_metadata.into_index_config();
-        let storage = self
+        let storage: Arc<dyn Storage> = self
             .storage_resolver
             .resolve(&index_config.index_uri)
             .await?;
@@ -426,7 +427,7 @@ impl IndexService {
             .deserialize_index_metadata()?;
         let index_uid = index_metadata.index_uid.clone();
         let index_config = index_metadata.into_index_config();
-        let storage = self
+        let storage: Arc<dyn Storage> = self
             .storage_resolver
             .resolve(&index_config.index_uri)
             .await?;

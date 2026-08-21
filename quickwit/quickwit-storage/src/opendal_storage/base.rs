@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::future::Future;
 use std::ops::Range;
 use std::path::Path;
 use std::{fmt, io};
@@ -30,7 +31,7 @@ use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, MultiPartPolicy, OwnedBytes, PutPayload, Storage, StorageError,
-    StorageErrorKind, StorageResolverError, StorageResult,
+    StorageErrorKind, StorageGetSlice, StorageResolverError, StorageResult,
 };
 
 /// OpenDAL based storage implementation.
@@ -123,6 +124,24 @@ where
     }
 }
 
+impl OpendalStorage {
+    #[instrument(name = "storage.gcs.get_slice", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
+    async fn get_slice_impl(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
+        let path = path.as_os_str().to_string_lossy();
+        let size = range.len();
+        let range = range.start as u64..range.end as u64;
+        // Unlike other object store implementations, in-flight requests are recorded before
+        // issuing the query to the object store.
+        let _inflight_guards = object_storage_get_slice_in_flight_guards(size);
+        crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
+        // `Buffer::to_bytes` is zero-copy when the underlying buffer is contiguous, and coalesces
+        // into a single `Bytes` otherwise.
+        let storage_content = self.op.read_with(&path).range(range).await?.to_bytes();
+        Ok(into_owned_bytes(storage_content))
+    }
+}
+
 #[async_trait]
 impl Storage for OpendalStorage {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
@@ -167,21 +186,8 @@ impl Storage for OpendalStorage {
         Ok(())
     }
 
-    #[instrument(name = "storage.gcs.get_slice", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
-        let path = path.as_os_str().to_string_lossy();
-        let size = range.len();
-        let range = range.start as u64..range.end as u64;
-        // Unlike other object store implementations, in flight requests are
-        // recorded before issuing the query to the object store.
-        let _inflight_guards = object_storage_get_slice_in_flight_guards(size);
-        crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
-        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
-        // `Buffer::to_bytes` is zero-copy when the underlying buffer is contiguous, and coalesces
-        // into a single `Bytes` otherwise — avoiding the extra `Vec<u8>` round-trip `to_vec` would
-        // perform.
-        let storage_content = self.op.read_with(&path).range(range).await?.to_bytes();
-        Ok(into_owned_bytes(storage_content))
+        self.get_slice_impl(path, range).await
     }
 
     #[instrument(name = "storage.gcs.get_slice_stream", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
@@ -285,6 +291,16 @@ impl Storage for OpendalStorage {
 
     fn uri(&self) -> &Uri {
         &self.uri
+    }
+}
+
+impl StorageGetSlice for OpendalStorage {
+    fn get_slice_unboxed(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> impl Future<Output = StorageResult<OwnedBytes>> + Send {
+        self.get_slice_impl(path, range)
     }
 }
 

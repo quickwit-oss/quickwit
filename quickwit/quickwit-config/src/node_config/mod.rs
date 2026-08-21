@@ -633,7 +633,7 @@ impl std::fmt::Display for CachePolicy {
 /// This policy is inspired by this guidance. It does not track instanteneous throughput, but
 /// computes an overall timeout using the following formula:
 /// `timeout_offset + num_bytes_get_request / min_throughtput`
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StorageTimeoutPolicy {
     pub min_throughtput_bytes_per_secs: u64,
     pub timeout_millis: u64,

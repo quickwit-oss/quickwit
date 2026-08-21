@@ -112,7 +112,7 @@ use quickwit_proto::metastore::{
     MetastoreServiceClient, SourceType,
 };
 use quickwit_proto::types::{IndexUid, NodeIdRef, PipelineUid, ShardId};
-use quickwit_storage::StorageResolver;
+use quickwit_storage::{Storage, StorageResolver};
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 pub use source_sink::SourceSink;

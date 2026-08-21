@@ -43,18 +43,18 @@ use object_store::{
     Result as ObjectStoreResult,
 };
 use quickwit_common::uri::Uri;
-use quickwit_storage::{Storage, StorageResolver};
+use quickwit_storage::{ResolvedStorage, Storage, StorageResolver};
 use tokio::sync::OnceCell;
 
 /// Adapts Quickwit's `Storage` trait to DataFusion's `ObjectStore` interface.
 ///
 /// Construction is sync and cheap: a `Uri` plus a `StorageResolver` handle
-/// (resolver is `Clone`). The underlying `Arc<dyn Storage>` is materialised
+/// (resolver is `Clone`). The underlying storage handle is materialised
 /// on the first async method call and cached for the wrapper's lifetime.
 pub struct QuickwitObjectStore {
     index_uri: Uri,
     storage_resolver: StorageResolver,
-    storage: OnceCell<Arc<dyn Storage>>,
+    storage: OnceCell<Arc<ResolvedStorage>>,
 }
 
 impl QuickwitObjectStore {
@@ -68,7 +68,7 @@ impl QuickwitObjectStore {
 
     /// Returns the handle to the underlying `Storage`, resolving it via the
     /// `StorageResolver` if this is the first call.
-    async fn storage(&self) -> ObjectStoreResult<&Arc<dyn Storage>> {
+    async fn storage(&self) -> ObjectStoreResult<&Arc<ResolvedStorage>> {
         self.storage
             .get_or_try_init(|| async {
                 self.storage_resolver

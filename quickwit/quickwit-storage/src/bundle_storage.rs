@@ -33,40 +33,44 @@ use tracing::error;
 
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, OwnedBytes, Storage, StorageError, StorageResult, VersionedComponent,
+    BulkDeleteError, OwnedBytes, Storage, StorageError, StorageGetSlice, StorageResult,
+    VersionedComponent,
 };
 
 /// BundleStorage bundles together multiple files into a single file.
-pub struct BundleStorage {
-    storage: Arc<dyn Storage>,
+#[derive(Clone)]
+pub struct BundleStorage<T> {
+    storage: T,
     /// The file path of the bundle in the storage.
     bundle_filepath: PathBuf,
     file_ranges: BundleFileRanges,
 }
 
-impl BundleStorage {
+impl<T: StorageGetSlice> BundleStorage<T> {
     /// Opens a split bundle by locating its footer directly from object storage.
     ///
     /// New splits expose the footer start in a fixed-size trailer. Legacy splits are supported by
     /// walking backward through the hotcache and bundle-metadata length fields.
     pub async fn open_from_storage(
-        storage: Arc<dyn Storage>,
+        storage: T,
         bundle_filepath: PathBuf,
     ) -> anyhow::Result<(Self, OwnedBytes, Range<u64>)> {
         let split_len = storage.file_num_bytes(&bundle_filepath).await?;
         let split_footer_range =
-            locate_split_footer_range(storage.as_ref(), &bundle_filepath, split_len).await?;
+            locate_split_footer_range(&storage, &bundle_filepath, split_len).await?;
         let split_footer_start = usize::try_from(split_footer_range.start)?;
         let split_footer_end = usize::try_from(split_footer_range.end)?;
         let split_footer_range_usize = split_footer_start..split_footer_end;
         let split_footer_bytes = storage
-            .get_slice(&bundle_filepath, split_footer_range_usize)
+            .get_slice_unboxed(&bundle_filepath, split_footer_range_usize)
             .await?;
         let (bundle_storage, hotcache) =
             Self::open_from_split_bytes(storage, bundle_filepath, split_footer_bytes)?;
         Ok((bundle_storage, hotcache, split_footer_range))
     }
+}
 
+impl<T> BundleStorage<T> {
     /// Opens a BundleStorage.
     ///
     /// The provided bytes must include the footer bytes at the end of the slice, but they can have
@@ -74,7 +78,7 @@ impl BundleStorage {
     ///
     /// Returns (Self, Hotcache)
     pub fn open_from_split_bytes(
-        storage: Arc<dyn Storage>,
+        storage: T,
         bundle_filepath: PathBuf,
         split_bytes: OwnedBytes,
     ) -> anyhow::Result<(Self, OwnedBytes)> {
@@ -136,8 +140,8 @@ fn deserialize_split_footer_trailer(trailer: &[u8]) -> anyhow::Result<Option<u64
 }
 
 /// Locates a split footer range using its fixed trailer, with support for legacy split layouts.
-pub async fn locate_split_footer_range(
-    storage: &dyn Storage,
+pub async fn locate_split_footer_range<S: Storage + ?Sized>(
+    storage: &S,
     split_path: &Path,
     split_len: u64,
 ) -> anyhow::Result<Range<u64>> {
@@ -288,7 +292,7 @@ impl BundleFileRanges {
 }
 
 #[async_trait]
-impl Storage for BundleStorage {
+impl<T: StorageGetSlice> Storage for BundleStorage<T> {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         if !self
             .storage
@@ -329,15 +333,7 @@ impl Storage for BundleStorage {
         path: &Path,
         range: Range<usize>,
     ) -> crate::StorageResult<OwnedBytes> {
-        let file_range = self.file_ranges.get(path).ok_or_else(|| {
-            crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
-        })?;
-        let new_range =
-            file_range.start as usize + range.start..file_range.start as usize + range.end;
-        self.storage
-            .get_slice(&self.bundle_filepath, new_range)
-            .await
+        self.get_slice_unboxed(path, range).await
     }
 
     async fn get_slice_stream(
@@ -390,13 +386,31 @@ impl Storage for BundleStorage {
     }
 }
 
-impl HasLen for BundleStorage {
+impl<T: StorageGetSlice> StorageGetSlice for BundleStorage<T> {
+    async fn get_slice_unboxed(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> StorageResult<OwnedBytes> {
+        let file_range = self.file_ranges.get(path).ok_or_else(|| {
+            crate::StorageErrorKind::NotFound
+                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
+        })?;
+        let translated_range =
+            file_range.start as usize + range.start..file_range.start as usize + range.end;
+        self.storage
+            .get_slice_unboxed(&self.bundle_filepath, translated_range)
+            .await
+    }
+}
+
+impl<T> HasLen for BundleStorage<T> {
     fn len(&self) -> usize {
         unimplemented!()
     }
 }
 
-impl fmt::Debug for BundleStorage {
+impl<T> fmt::Debug for BundleStorage<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,

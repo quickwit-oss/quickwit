@@ -14,7 +14,6 @@
 
 use std::ops::Range;
 use std::path::Path;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
@@ -25,77 +24,108 @@ use tokio::io::AsyncRead;
 
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, ListObjectsStream, PutPayload, Storage, StorageErrorKind, StorageResult,
+    BulkDeleteError, ListObjectsStream, PutPayload, Storage, StorageErrorKind, StorageGetSlice,
+    StorageResult,
 };
 
 /// Storage proxy that implements a retry operation if the underlying storage
 /// takes too long.
 ///
 /// This is useful in order to ensure a low latency on S3.
-/// Retrying agressively is recommended for S3.
+/// Retrying aggressively is recommended for S3.
 ///
 /// <https://docs.aws.amazon.com/whitepapers/latest/s3-optimizing-performance-best-practices/timeouts-and-retries-for-latency-sensitive-applications.html>
 #[derive(Clone, Debug)]
-pub struct TimeoutAndRetryStorage {
-    underlying: Arc<dyn Storage>,
+pub struct TimeoutAndRetryStorage<T> {
+    storage: T,
     storage_timeout_policy: StorageTimeoutPolicy,
 }
 
-impl TimeoutAndRetryStorage {
+impl<T> TimeoutAndRetryStorage<T> {
     /// Creates a new `TimeoutAndRetryStorage`.
     ///
     /// See [StorageTimeoutPolicy] for more information.
-    pub fn new(storage: Arc<dyn Storage>, storage_timeout_policy: StorageTimeoutPolicy) -> Self {
-        TimeoutAndRetryStorage {
-            underlying: storage,
+    pub fn new(storage: T, storage_timeout_policy: StorageTimeoutPolicy) -> Self {
+        Self {
+            storage,
             storage_timeout_policy,
         }
     }
 }
 
 #[async_trait]
-impl Storage for TimeoutAndRetryStorage {
+impl<T: StorageGetSlice> Storage for TimeoutAndRetryStorage<T> {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
-        self.underlying.check_connectivity().await
+        self.storage.check_connectivity().await
     }
 
     async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()> {
-        self.underlying.put(path, payload).await
+        self.storage.put(path, payload).await
     }
 
-    fn copy_to<'life0, 'life1, 'life2, 'async_trait>(
-        &'life0 self,
-        path: &'life1 Path,
-        output: &'life2 mut dyn SendableAsync,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn ::core::future::Future<Output = StorageResult<()>>
-                + ::core::marker::Send
-                + 'async_trait,
-        >,
-    >
-    where
-        'life0: 'async_trait,
-        'life1: 'async_trait,
-        'life2: 'async_trait,
-        Self: 'async_trait,
-    {
-        self.underlying.copy_to(path, output)
+    async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
+        self.storage.copy_to(path, output).await
     }
 
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<u64> {
-        self.underlying.copy_to_file(path, output_path).await
+        self.storage.copy_to_file(path, output_path).await
     }
 
     /// Downloads a slice of a file from the storage, and returns an in memory buffer
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
+        self.get_slice_unboxed(path, range).await
+    }
+
+    async fn get_slice_stream(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
+        self.storage.get_slice_stream(path, range).await
+    }
+
+    async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
+        self.storage.get_all(path).await
+    }
+
+    async fn delete(&self, path: &Path) -> StorageResult<()> {
+        self.storage.delete(path).await
+    }
+
+    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        self.storage.bulk_delete(paths).await
+    }
+
+    fn list(&self, prefix: &Path) -> ListObjectsStream {
+        self.storage.list(prefix)
+    }
+
+    async fn exists(&self, path: &Path) -> StorageResult<bool> {
+        self.storage.exists(path).await
+    }
+
+    async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
+        self.storage.file_num_bytes(path).await
+    }
+
+    fn uri(&self) -> &Uri {
+        self.storage.uri()
+    }
+}
+
+impl<T: StorageGetSlice> StorageGetSlice for TimeoutAndRetryStorage<T> {
+    async fn get_slice_unboxed(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> StorageResult<OwnedBytes> {
         let num_bytes = range.len();
         for (attempt_id, timeout_duration) in self
             .storage_timeout_policy
             .compute_timeout(num_bytes)
             .enumerate()
         {
-            let get_slice_fut = self.underlying.get_slice(path, range.clone());
+            let get_slice_fut = self.storage.get_slice_unboxed(path, range.clone());
             // TODO test avoid aborting timed out requests. #5468
             match tokio::time::timeout(timeout_duration, get_slice_fut).await {
                 Ok(result) => {
@@ -108,58 +138,19 @@ impl Storage for TimeoutAndRetryStorage {
                 }
                 Err(_elapsed) => {
                     rate_limited_info!(limit_per_min=60, num_bytes=num_bytes, path=%path.display(), timeout_secs=timeout_duration.as_secs_f32(), "get timeout elapsed");
-                    continue;
                 }
             }
         }
         rate_limited_warn!(limit_per_min=60, num_bytes=num_bytes, path=%path.display(), "all get_slice attempts timeouted");
         crate::metrics::GET_SLICE_TIMEOUT_ALL_TIMEOUTS.inc();
-        return Err(
-            StorageErrorKind::Timeout.with_error(anyhow::anyhow!("internal timeout on get_slice"))
-        );
-    }
-
-    async fn get_slice_stream(
-        &self,
-        path: &Path,
-        range: Range<usize>,
-    ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        self.underlying.get_slice_stream(path, range).await
-    }
-
-    async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
-        self.underlying.get_all(path).await
-    }
-
-    async fn delete(&self, path: &Path) -> StorageResult<()> {
-        self.underlying.delete(path).await
-    }
-
-    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
-        self.underlying.bulk_delete(paths).await
-    }
-
-    fn list(&self, prefix: &Path) -> ListObjectsStream {
-        self.underlying.list(prefix)
-    }
-
-    async fn exists(&self, path: &Path) -> StorageResult<bool> {
-        self.underlying.exists(path).await
-    }
-
-    async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
-        self.underlying.file_num_bytes(path).await
-    }
-
-    fn uri(&self) -> &Uri {
-        self.underlying.uri()
+        Err(StorageErrorKind::Timeout.with_error(anyhow::anyhow!("internal timeout on get_slice")))
     }
 }
 
 #[cfg(test)]
 mod tests {
 
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use tokio::time::Instant;
@@ -192,23 +183,11 @@ mod tests {
         async fn put(&self, _path: &Path, _payload: Box<dyn PutPayload>) -> StorageResult<()> {
             todo!();
         }
-        fn copy_to<'life0, 'life1, 'life2, 'async_trait>(
-            &'life0 self,
-            _path: &'life1 Path,
-            _output: &'life2 mut dyn SendableAsync,
-        ) -> ::core::pin::Pin<
-            Box<
-                dyn ::core::future::Future<Output = StorageResult<()>>
-                    + ::core::marker::Send
-                    + 'async_trait,
-            >,
-        >
-        where
-            'life0: 'async_trait,
-            'life1: 'async_trait,
-            'life2: 'async_trait,
-            Self: 'async_trait,
-        {
+        async fn copy_to(
+            &self,
+            _path: &Path,
+            _output: &mut dyn SendableAsync,
+        ) -> StorageResult<()> {
             todo!();
         }
 
@@ -247,6 +226,16 @@ mod tests {
         }
     }
 
+    impl StorageGetSlice for StorageWithDelay {
+        async fn get_slice_unboxed(
+            &self,
+            path: &Path,
+            range: Range<usize>,
+        ) -> StorageResult<OwnedBytes> {
+            Storage::get_slice(self, path, range).await
+        }
+    }
+
     #[tokio::test]
     async fn test_timeout_and_retry_storage() {
         tokio::time::pause();
@@ -263,8 +252,7 @@ mod tests {
             let now = Instant::now();
             let storage_with_delay =
                 StorageWithDelay::new(vec![Duration::from_secs(5), Duration::from_secs(3)]);
-            let storage =
-                TimeoutAndRetryStorage::new(Arc::new(storage_with_delay), timeout_policy.clone());
+            let storage = TimeoutAndRetryStorage::new(Arc::new(storage_with_delay), timeout_policy);
             assert_eq!(
                 storage.get_slice(path, 10..100).await.unwrap_err().kind,
                 StorageErrorKind::Timeout

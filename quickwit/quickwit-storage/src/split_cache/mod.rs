@@ -35,7 +35,7 @@ use tracing::{error, info, instrument, warn};
 use crate::file_descriptor_cache::{FileDescriptorCache, SplitFile};
 use crate::split_cache::download_task::spawn_download_task;
 use crate::split_cache::split_table::SplitTable;
-use crate::{Storage, StorageCache, wrap_storage_with_cache};
+use crate::{StorageCache, StorageGetSlice, StorageWithCache, wrap_storage_with_cache};
 
 /// On disk Cache of splits for searchers.
 ///
@@ -126,7 +126,10 @@ impl SearchSplitCache {
     }
 
     /// Wraps a storage with our split cache.
-    pub fn wrap_storage(self_arc: Arc<Self>, storage: Arc<dyn Storage>) -> Arc<dyn Storage> {
+    pub fn wrap_storage<T: StorageGetSlice>(
+        self_arc: Arc<Self>,
+        storage: T,
+    ) -> StorageWithCache<T> {
         let cache = Arc::new(SplitCacheBackingStorage {
             split_cache: self_arc,
             storage_root_uri: storage.uri().clone(),

@@ -21,7 +21,7 @@ use quickwit_common::split_file;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::split_cache::split_table::{CandidateSplit, DownloadOpportunity};
-use crate::{SearchSplitCache, StorageResolver};
+use crate::{SearchSplitCache, Storage, StorageResolver};
 
 async fn download_split(
     root_path: &Path,

@@ -12,18 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-
-use async_trait::async_trait;
 use aws_sdk_s3::Client as S3Client;
 use quickwit_common::uri::Uri;
-use quickwit_config::{S3StorageConfig, StorageBackend};
+use quickwit_config::S3StorageConfig;
 use tokio::sync::OnceCell;
 
 use super::s3_compatible_storage::create_s3_client;
-use crate::{
-    DebouncedStorage, S3CompatibleObjectStorage, Storage, StorageFactory, StorageResolverError,
-};
+use crate::{DebouncedStorage, S3CompatibleObjectStorage, StorageResolverError};
 
 /// S3 compatible object storage resolver.
 pub struct S3CompatibleObjectStorageFactory {
@@ -46,13 +41,11 @@ impl S3CompatibleObjectStorageFactory {
     }
 }
 
-#[async_trait]
-impl StorageFactory for S3CompatibleObjectStorageFactory {
-    fn backend(&self) -> StorageBackend {
-        StorageBackend::S3
-    }
-
-    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+impl S3CompatibleObjectStorageFactory {
+    pub(crate) async fn resolve(
+        &self,
+        uri: &Uri,
+    ) -> Result<DebouncedStorage<S3CompatibleObjectStorage>, StorageResolverError> {
         let s3_client = self
             .s3_client
             .get_or_init(|| create_s3_client(&self.storage_config))
@@ -61,6 +54,6 @@ impl StorageFactory for S3CompatibleObjectStorageFactory {
         let storage =
             S3CompatibleObjectStorage::from_uri_and_client(&self.storage_config, uri, s3_client)
                 .await?;
-        Ok(Arc::new(DebouncedStorage::new(storage)))
+        Ok(DebouncedStorage::new(storage))
     }
 }

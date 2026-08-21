@@ -27,14 +27,16 @@ use crate::AzureBlobStorageFactory;
 use crate::GoogleCloudStorageFactory;
 use crate::local_file_storage::LocalFileStorageFactory;
 use crate::ram_storage::RamStorageFactory;
-use crate::{S3CompatibleObjectStorageFactory, Storage, StorageFactory, StorageResolverError};
+use crate::{
+    ResolvedStorage, S3CompatibleObjectStorageFactory, StorageFactory, StorageResolverError,
+};
 
 /// Returns the [`Storage`] instance associated with the protocol of a URI. The actual creation of
 /// storage objects is delegated to pre-registered [`StorageFactory`]. The resolver is only
 /// responsible for dispatching to the appropriate factory.
 #[derive(Clone)]
 pub struct StorageResolver {
-    per_backend_factories: Arc<HashMap<StorageBackend, Box<dyn StorageFactory>>>,
+    per_backend_factories: Arc<HashMap<StorageBackend, StorageFactory>>,
 }
 
 impl fmt::Debug for StorageResolver {
@@ -50,7 +52,7 @@ impl StorageResolver {
     }
 
     /// Resolves the given URI.
-    pub async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    pub async fn resolve(&self, uri: &Uri) -> Result<Arc<ResolvedStorage>, StorageResolverError> {
         let backend = match uri.protocol() {
             Protocol::Azure => StorageBackend::Azure,
             Protocol::File => StorageBackend::File,
@@ -70,7 +72,7 @@ impl StorageResolver {
             StorageResolverError::UnsupportedBackend(message)
         })?;
         let storage = storage_factory.resolve(uri).await?;
-        Ok(storage)
+        Ok(Arc::new(storage))
     }
 
     /// Creates and returns a default [`StorageResolver`] with the default storage configuration for
@@ -148,14 +150,15 @@ impl StorageResolver {
 
 #[derive(Default)]
 pub struct StorageResolverBuilder {
-    per_backend_factories: HashMap<StorageBackend, Box<dyn StorageFactory>>,
+    per_backend_factories: HashMap<StorageBackend, StorageFactory>,
 }
 
 impl StorageResolverBuilder {
     /// Registers a [`StorageFactory`].
-    pub fn register<S: StorageFactory>(mut self, storage_factory: S) -> Self {
+    pub fn register<S: Into<StorageFactory>>(mut self, storage_factory: S) -> Self {
+        let storage_factory = storage_factory.into();
         self.per_backend_factories
-            .insert(storage_factory.backend(), Box::new(storage_factory));
+            .insert(storage_factory.backend(), storage_factory);
         self
     }
 
@@ -173,26 +176,16 @@ mod tests {
     use std::path::Path;
 
     use super::*;
-    use crate::{MockStorageFactory, RamStorage};
+    use crate::{RamStorage, Storage};
 
     #[tokio::test]
     async fn test_storage_resolver_simple() -> anyhow::Result<()> {
-        let mut file_storage_factory = MockStorageFactory::new();
-        file_storage_factory
-            .expect_backend()
-            .returning(|| StorageBackend::File);
-
-        let mut ram_storage_factory = MockStorageFactory::new();
-        ram_storage_factory
-            .expect_backend()
-            .returning(|| StorageBackend::Ram);
-        ram_storage_factory.expect_resolve().returning(|_uri| {
-            Ok(Arc::new(
-                RamStorage::builder()
-                    .put("hello", b"hello_content_second")
-                    .build(),
-            ))
-        });
+        let file_storage_factory = LocalFileStorageFactory;
+        let ram_storage_factory = RamStorageFactory::new(
+            RamStorage::builder()
+                .put("/hello", b"hello_content_second")
+                .build(),
+        );
         let storage_resolver = StorageResolver::builder()
             .register(file_storage_factory)
             .register(ram_storage_factory)
@@ -206,25 +199,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_storage_resolver_override() -> anyhow::Result<()> {
-        let mut first_ram_storage_factory = MockStorageFactory::new();
-        first_ram_storage_factory
-            .expect_backend()
-            .returning(|| StorageBackend::Ram);
-
-        let mut second_ram_storage_factory = MockStorageFactory::new();
-        second_ram_storage_factory
-            .expect_backend()
-            .returning(|| StorageBackend::Ram);
-        second_ram_storage_factory
-            .expect_resolve()
-            .returning(|uri| {
-                assert_eq!(uri.as_str(), "ram:///home");
-                Ok(Arc::new(
-                    RamStorage::builder()
-                        .put("hello", b"hello_content_second")
-                        .build(),
-                ))
-            });
+        let first_ram_storage_factory = RamStorageFactory::new(
+            RamStorage::builder()
+                .put("/home/hello", b"hello_content_first")
+                .build(),
+        );
+        let second_ram_storage_factory = RamStorageFactory::new(
+            RamStorage::builder()
+                .put("/home/hello", b"hello_content_second")
+                .build(),
+        );
         let storage_resolver = StorageResolver::builder()
             .register(first_ram_storage_factory)
             .register(second_ram_storage_factory)

@@ -15,7 +15,6 @@
 use std::fmt;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -25,18 +24,19 @@ use tokio::io::AsyncRead;
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, ListObjectsStream, ObjectMetadata, OwnedBytes, Storage, StorageErrorKind,
-    StorageResult,
+    StorageGetSlice, StorageResult,
 };
 
 /// This storage acts as a proxy to another storage that simply modifies each API call
 /// by preceding each path with a given a prefix.
-struct PrefixStorage {
-    pub storage: Arc<dyn Storage>,
+#[derive(Clone)]
+pub(crate) struct PrefixStorage<T> {
+    pub storage: T,
     pub prefix: PathBuf,
     uri: Uri,
 }
 
-impl fmt::Debug for PrefixStorage {
+impl<T> fmt::Debug for PrefixStorage<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PrefixStorage")
             .field("uri", &self.uri)
@@ -46,7 +46,7 @@ impl fmt::Debug for PrefixStorage {
 }
 
 #[async_trait]
-impl Storage for PrefixStorage {
+impl<T: StorageGetSlice> Storage for PrefixStorage<T> {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         self.storage.check_connectivity().await
     }
@@ -72,7 +72,7 @@ impl Storage for PrefixStorage {
         path: &Path,
         range: Range<usize>,
     ) -> crate::StorageResult<OwnedBytes> {
-        self.storage.get_slice(&self.prefix.join(path), range).await
+        self.get_slice_unboxed(path, range).await
     }
 
     async fn get_all(&self, path: &Path) -> crate::StorageResult<OwnedBytes> {
@@ -167,17 +167,28 @@ impl Storage for PrefixStorage {
     }
 }
 
+impl<T: StorageGetSlice> StorageGetSlice for PrefixStorage<T> {
+    async fn get_slice_unboxed(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> StorageResult<OwnedBytes> {
+        let prefixed_path = self.prefix.join(path);
+        self.storage.get_slice_unboxed(&prefixed_path, range).await
+    }
+}
+
 /// Creates a [`PrefixStorage`] using an underlying storage and a prefix.
-pub(crate) fn add_prefix_to_storage(
-    storage: Arc<dyn Storage>,
+pub(crate) fn add_prefix_to_storage<T: StorageGetSlice>(
+    storage: T,
     prefix: PathBuf,
     uri: Uri,
-) -> Arc<dyn Storage> {
-    Arc::new(PrefixStorage {
+) -> PrefixStorage<T> {
+    PrefixStorage {
         storage,
         prefix,
         uri,
-    })
+    }
 }
 
 fn strip_prefix_from_error(error: BulkDeleteError, prefix: &Path) -> BulkDeleteError {
@@ -233,8 +244,8 @@ fn strip_prefix_from_error(error: BulkDeleteError, prefix: &Path) -> BulkDeleteE
 
 #[cfg(test)]
 mod tests {
-
     use std::collections::HashMap;
+    use std::sync::Arc;
     use std::time::SystemTime;
 
     use futures::{TryStreamExt, stream};

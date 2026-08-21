@@ -22,7 +22,7 @@ use quickwit_proto::search::{
     ListFieldsEntry, ListFieldsMetadata, ListFieldsResponse, SplitIdAndFooterOffsets,
 };
 use quickwit_proto::types::IndexId;
-use quickwit_storage::{OwnedBytes, Storage};
+use quickwit_storage::{OwnedBytes, StorageGetSlice};
 use tracing::{Span, instrument};
 
 use crate::leaf::open_split_bundle;
@@ -41,12 +41,12 @@ const MAX_CONCURRENT_DOWNLOADS: usize = 500;
 ///
 /// Returns field metadata from the assigned splits.
 #[instrument(skip_all, fields(index_id = %index_id, num_splits = split_footers.len()))]
-pub async fn leaf_list_fields(
+pub async fn leaf_list_fields<T: StorageGetSlice + Clone>(
     index_id: IndexId,
     field_patterns_strs: &[String],
     split_footers: Vec<SplitIdAndFooterOffsets>,
     searcher_ctx: Arc<SearcherContext>,
-    storage: Arc<dyn Storage>,
+    storage: T,
 ) -> crate::Result<ListFieldsResponse> {
     if split_footers.is_empty() {
         return Ok(ListFieldsResponse::default());
@@ -73,12 +73,12 @@ pub async fn leaf_list_fields(
 /// Two-stage pipeline: download blobs with bounded I/O concurrency, then hand each one off to the
 /// CPU pool as soon as it's ready. The CPU stage is left unbounded here because `run_cpu_intensive`
 /// already serializes work through the search thread pool.
-async fn get_and_process_fields_metadata(
+async fn get_and_process_fields_metadata<T: StorageGetSlice + Clone>(
     index_id: &str,
     field_patterns: &FieldPatterns,
     split_footers: Vec<SplitIdAndFooterOffsets>,
     searcher_ctx: Arc<SearcherContext>,
-    storage: Arc<dyn Storage>,
+    storage: T,
 ) -> anyhow::Result<Vec<Vec<ListFieldsEntry>>> {
     stream::iter(split_footers)
         .map(|split_footer| {
@@ -112,10 +112,10 @@ async fn get_and_process_fields_metadata(
 /// on miss, from storage (populating the cache as a side effect). The cache stores the bytes
 /// exactly as fetched (proto + zstd).
 #[instrument(skip_all, fields(split_id = %split_footer.split_id))]
-async fn get_fields_metadata(
+async fn get_fields_metadata<T: StorageGetSlice>(
     split_footer: &SplitIdAndFooterOffsets,
     searcher_ctx: &SearcherContext,
-    storage: Arc<dyn Storage>,
+    storage: T,
 ) -> anyhow::Result<OwnedBytes> {
     if let Some(serialized_entries) = searcher_ctx.list_fields_cache.get(&split_footer.split_id) {
         return Ok(serialized_entries);
@@ -131,9 +131,9 @@ async fn get_fields_metadata(
 
 /// Downloads the serialized fields metadata blob for one split.
 #[instrument(skip_all, fields(split_id = %split_footer.split_id))]
-async fn fetch_fields_metadata(
+async fn fetch_fields_metadata<T: StorageGetSlice>(
     searcher_ctx: &SearcherContext,
-    storage: Arc<dyn Storage>,
+    storage: T,
     split_footer: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<OwnedBytes> {
     let (_, split_bundle) = open_split_bundle(searcher_ctx, storage, split_footer).await?;

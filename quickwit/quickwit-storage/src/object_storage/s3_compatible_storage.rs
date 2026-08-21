@@ -14,6 +14,7 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::future::Future;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -64,7 +65,7 @@ use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, DeleteFailure, ListObjectsStream, ObjectMetadata, OwnedBytes, Storage,
-    StorageError, StorageErrorKind, StorageResolverError, StorageResult,
+    StorageError, StorageErrorKind, StorageGetSlice, StorageResolverError, StorageResult,
 };
 
 /// Semaphore to limit the number of concurrent requests to the object store. Some object stores
@@ -888,6 +889,24 @@ fn byte_stream_to_storage_error(error: aws_sdk_s3::primitives::ByteStreamError) 
     kind.with_error(error)
 }
 
+impl S3CompatibleObjectStorage {
+    #[instrument(name = "storage.s3.get_slice", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
+    async fn get_slice_impl(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
+        let _permit = REQUEST_SEMAPHORE.acquire().await;
+        self.get_to_bytes(path, Some(range.clone()))
+            .await
+            .map(into_owned_bytes)
+            .map_err(|err| {
+                err.add_context(format!(
+                    "failed to fetch slice {:?} for object: {}/{}",
+                    range,
+                    self.uri,
+                    path.display(),
+                ))
+            })
+    }
+}
+
 #[async_trait]
 impl Storage for S3CompatibleObjectStorage {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
@@ -1068,20 +1087,8 @@ impl Storage for S3CompatibleObjectStorage {
         .boxed()
     }
 
-    #[instrument(name = "storage.s3.get_slice", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
-        let _permit = REQUEST_SEMAPHORE.acquire().await;
-        self.get_to_bytes(path, Some(range.clone()))
-            .await
-            .map(into_owned_bytes)
-            .map_err(|err| {
-                err.add_context(format!(
-                    "failed to fetch slice {:?} for object: {}/{}",
-                    range,
-                    self.uri,
-                    path.display(),
-                ))
-            })
+        self.get_slice_impl(path, range).await
     }
 
     #[instrument(name = "storage.s3.get_slice_stream", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
@@ -1144,6 +1151,16 @@ impl Storage for S3CompatibleObjectStorage {
 
     fn uri(&self) -> &Uri {
         &self.uri
+    }
+}
+
+impl StorageGetSlice for S3CompatibleObjectStorage {
+    fn get_slice_unboxed(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> impl Future<Output = StorageResult<OwnedBytes>> + Send {
+        self.get_slice_impl(path, range)
     }
 }
 

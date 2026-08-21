@@ -23,7 +23,7 @@ use quickwit_common::uri::Uri;
 use quickwit_metastore::checkpoint::PartitionId;
 use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::Position;
-use quickwit_storage::StorageResolver;
+use quickwit_storage::{Storage, StorageResolver};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 
 use super::{BATCH_NUM_BYTES_LIMIT, BatchBuilder};

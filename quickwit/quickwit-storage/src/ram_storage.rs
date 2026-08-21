@@ -14,6 +14,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::future::Future;
 use std::io::Cursor;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -21,14 +22,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_common::uri::{Protocol, Uri};
-use quickwit_config::StorageBackend;
 use tokio::io::{AsyncRead, AsyncWriteExt};
 use tokio::sync::RwLock;
 
 use crate::prefix_storage::add_prefix_to_storage;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResolverError,
+    BulkDeleteError, OwnedBytes, Storage, StorageErrorKind, StorageGetSlice, StorageResolverError,
     StorageResult,
 };
 
@@ -73,6 +73,14 @@ impl RamStorage {
         self.files.read().await.get(path).cloned()
     }
 
+    async fn get_slice_impl(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
+        let payload_bytes = self.get_data(path).await.ok_or_else(|| {
+            StorageErrorKind::NotFound
+                .with_error(anyhow::anyhow!("failed to find dest_path {:?}", path))
+        })?;
+        Ok(payload_bytes.slice(range.start..range.end))
+    }
+
     /// Returns the list of files that are present in the RamStorage.
     pub async fn list_files(&self) -> Vec<PathBuf> {
         self.files.read().await.keys().cloned().collect()
@@ -106,11 +114,7 @@ impl Storage for RamStorage {
     }
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
-        let payload_bytes = self.get_data(path).await.ok_or_else(|| {
-            StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("failed to find dest_path {:?}", path))
-        })?;
-        Ok(payload_bytes.slice(range.start..range.end))
+        self.get_slice_impl(path, range).await
     }
 
     async fn get_slice_stream(
@@ -157,6 +161,16 @@ impl Storage for RamStorage {
     }
 }
 
+impl StorageGetSlice for RamStorage {
+    fn get_slice_unboxed(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> impl Future<Output = StorageResult<OwnedBytes>> + Send {
+        self.get_slice_impl(path, range)
+    }
+}
+
 /// Builder to create a prepopulated [`RamStorage`]. This is mostly useful for tests.
 #[derive(Default)]
 pub struct RamStorageBuilder {
@@ -182,7 +196,7 @@ impl RamStorageBuilder {
 
 /// Storage resolver for [`RamStorage`].
 pub struct RamStorageFactory {
-    ram_storage: Arc<dyn Storage>,
+    ram_storage: Arc<RamStorage>,
 }
 
 impl Default for RamStorageFactory {
@@ -193,13 +207,18 @@ impl Default for RamStorageFactory {
     }
 }
 
-#[async_trait]
-impl StorageFactory for RamStorageFactory {
-    fn backend(&self) -> StorageBackend {
-        StorageBackend::Ram
+impl RamStorageFactory {
+    /// Creates a RAM storage factory backed by the supplied storage instance.
+    pub fn new(ram_storage: RamStorage) -> Self {
+        Self {
+            ram_storage: Arc::new(ram_storage),
+        }
     }
 
-    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    pub(crate) fn resolve(
+        &self,
+        uri: &Uri,
+    ) -> Result<crate::prefix_storage::PrefixStorage<Arc<RamStorage>>, StorageResolverError> {
         match uri.filepath() {
             Some(prefix) if uri.protocol() == Protocol::Ram => Ok(add_prefix_to_storage(
                 self.ram_storage.clone(),
@@ -231,16 +250,16 @@ mod tests {
     async fn test_ram_storage_factory() {
         let ram_storage_factory = RamStorageFactory::default();
         let ram_uri = Uri::for_test("s3:///foo");
-        let err = ram_storage_factory.resolve(&ram_uri).await.err().unwrap();
+        let err = ram_storage_factory.resolve(&ram_uri).err().unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
         let data_uri = Uri::for_test("ram:///data");
-        let data_storage = ram_storage_factory.resolve(&data_uri).await.ok().unwrap();
+        let data_storage = ram_storage_factory.resolve(&data_uri).ok().unwrap();
         let home_uri = Uri::for_test("ram:///home");
-        let home_storage = ram_storage_factory.resolve(&home_uri).await.ok().unwrap();
+        let home_storage = ram_storage_factory.resolve(&home_uri).ok().unwrap();
         assert_ne!(data_storage.uri(), home_storage.uri());
 
-        let data_storage_two = ram_storage_factory.resolve(&data_uri).await.ok().unwrap();
+        let data_storage_two = ram_storage_factory.resolve(&data_uri).ok().unwrap();
         assert_eq!(data_storage.uri(), data_storage_two.uri());
     }
 

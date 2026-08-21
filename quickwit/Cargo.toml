@@ -180,7 +180,7 @@ metrics-exporter-prometheus = { version = "0.18", default-features = false }
 metrics-util = "0.20"
 mime_guess = "2.0"
 mini-moka = "0.10"
-mockall = "0.14"
+mockall = "0.15"
 mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "3b3562ef" }
 new_string_template = "1.5"
 nom = "8.0"

@@ -20,24 +20,24 @@ use std::{fmt, io};
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
-use quickwit_storage::{OwnedBytes, Storage};
+use quickwit_storage::{OwnedBytes, Storage, StorageGetSlice};
 use tantivy::directory::FileHandle;
 use tantivy::directory::error::OpenReadError;
 use tantivy::{Directory, HasLen};
 use tracing::{error, instrument};
 
-struct StorageDirectoryFileHandle {
-    storage_directory: StorageDirectory,
+struct StorageDirectoryFileHandle<T> {
+    storage_directory: StorageDirectory<T>,
     path: PathBuf,
 }
 
-impl HasLen for StorageDirectoryFileHandle {
+impl<T> HasLen for StorageDirectoryFileHandle<T> {
     fn len(&self) -> usize {
         unimplemented!()
     }
 }
 
-impl fmt::Debug for StorageDirectoryFileHandle {
+impl<T: Storage> fmt::Debug for StorageDirectoryFileHandle<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -48,7 +48,7 @@ impl fmt::Debug for StorageDirectoryFileHandle {
 }
 
 #[async_trait]
-impl FileHandle for StorageDirectoryFileHandle {
+impl<T: StorageGetSlice + Clone> FileHandle for StorageDirectoryFileHandle<T> {
     fn read_bytes(&self, _byte_range: Range<usize>) -> io::Result<OwnedBytes> {
         Err(unsupported_operation(&self.path))
     }
@@ -76,25 +76,29 @@ impl FileHandle for StorageDirectoryFileHandle {
 /// This directory is fetch slices of data to a possibly distant storage
 /// everytime `read_bytes` is called.
 #[derive(Clone)]
-pub struct StorageDirectory {
-    storage: Arc<dyn Storage>,
+pub struct StorageDirectory<T> {
+    storage: T,
 }
 
-impl Debug for StorageDirectory {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "StorageDirectory({:?})", self.uri())
+impl<T: Storage> Debug for StorageDirectory<T> {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter
+            .debug_tuple("StorageDirectory")
+            .field(&self.uri())
+            .finish()
     }
 }
 
-impl StorageDirectory {
+impl<T: Storage> StorageDirectory<T> {
     /// Creates a new StorageDirectory, backed by the given `storage`.
-    pub fn new(storage: Arc<dyn Storage>) -> StorageDirectory {
-        StorageDirectory { storage }
+    pub fn new(storage: T) -> Self {
+        Self { storage }
     }
 
     /// Fetches a slice of byte from a file asynchronously.
-    pub async fn get_slice(&self, path: &Path, range: Range<usize>) -> io::Result<OwnedBytes> {
-        let payload: OwnedBytes = self.storage.get_slice(path, range).await?;
+    pub async fn get_slice(&self, path: &Path, range: Range<usize>) -> io::Result<OwnedBytes>
+    where T: StorageGetSlice {
+        let payload: OwnedBytes = self.storage.get_slice_unboxed(path, range).await?;
         Ok(payload)
     }
 
@@ -116,7 +120,7 @@ fn unsupported_operation(path: &Path) -> io::Error {
     io::Error::other(format!("{error}: {}", path.display()))
 }
 
-impl Directory for StorageDirectory {
+impl<T: StorageGetSlice + Clone> Directory for StorageDirectory<T> {
     fn get_file_handle(&self, path: &Path) -> Result<Arc<dyn FileHandle>, OpenReadError> {
         Ok(Arc::new(StorageDirectoryFileHandle {
             storage_directory: self.clone(),
