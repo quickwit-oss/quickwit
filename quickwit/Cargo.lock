@@ -8582,6 +8582,7 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
+ "url",
  "utoipa",
  "vrl",
 ]
