@@ -14,7 +14,7 @@
 
 import { Editor } from "@monaco-editor/react";
 import { Box } from "@mui/material";
-import * as monacoEditor from "monaco-editor/esm/vs/editor/editor.api";
+import type * as monacoEditor from "monaco-editor";
 import React, { useEffect, useRef, useState } from "react";
 import { SearchComponentProps } from "../../utils/SearchComponentProps";
 import { EDITOR_THEME } from "../../utils/theme";

@@ -1,3 +1,16 @@
+const transformImportMeta = ({ types }) => ({
+  visitor: {
+    MetaProperty(path) {
+      if (
+        path.node.meta.name === "import" &&
+        path.node.property.name === "meta"
+      ) {
+        path.replaceWith(types.objectExpression([]));
+      }
+    },
+  },
+});
+
 module.exports = {
   setupFiles: [
     "react-app-polyfill/jsdom", // polyfill jsdom api (such as fetch)
@@ -15,6 +28,7 @@ module.exports = {
       {
         presets: [["babel-preset-react-app", { runtime: "automatic" }]],
         plugins: [
+          transformImportMeta,
           [
             "@dr.pogodin/babel-plugin-transform-assets",
             { extensions: ["svg", "woff2"] },
@@ -25,6 +39,8 @@ module.exports = {
       },
     ],
   },
+
+  transformIgnorePatterns: ["/node_modules/(?!react-router)/"],
 
   moduleNameMapper: {
     "@monaco-editor/react": "<rootDir>/mocks/monacoMock.js",
