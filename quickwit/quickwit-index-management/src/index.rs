@@ -737,7 +737,7 @@ mod tests {
         let retention_policy = RetentionPolicy {
             retention_period: "42 hours".to_string(),
             evaluation_schedule: "hourly".to_string(),
-            jitter: None,
+            evaluation_schedule_jitter: None,
         };
         index_config.retention_policy_opt = Some(retention_policy.clone());
 

@@ -274,7 +274,7 @@ mod tests {
     use mockall::Sequence;
     use quickwit_actors::Universe;
     use quickwit_common::ServiceStream;
-    use quickwit_config::RetentionPolicy;
+    use quickwit_config::{HumanDuration, RetentionPolicy};
     use quickwit_metastore::{
         IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitMetadata,
         SplitState,
@@ -327,7 +327,9 @@ mod tests {
             index.retention_policy_opt = Some(RetentionPolicy {
                 retention_period: retention_period.to_string(),
                 evaluation_schedule: EVALUATION_SCHEDULE.to_string(),
-                jitter: Some(Duration::ZERO),
+                evaluation_schedule_jitter: Some(
+                    HumanDuration::try_from("0s".to_string()).unwrap(),
+                ),
             })
         }
         index
@@ -361,7 +363,7 @@ mod tests {
         let scheduler = RetentionPolicy {
             retention_period: "".to_string(),
             evaluation_schedule: EVALUATION_SCHEDULE.to_string(),
-            jitter: Some(Duration::ZERO),
+            evaluation_schedule_jitter: Some(HumanDuration::try_from("0s".to_string()).unwrap()),
         };
 
         scheduler.duration_until_next_evaluation().unwrap() + Duration::from_secs(1)

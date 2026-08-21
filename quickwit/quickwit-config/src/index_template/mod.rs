@@ -177,7 +177,7 @@ impl crate::TestableForRegression for IndexTemplate {
             retention_policy_opt: Some(RetentionPolicy {
                 retention_period: "42 days".to_string(),
                 evaluation_schedule: "daily".to_string(),
-                jitter: None,
+                evaluation_schedule_jitter: None,
             }),
         }
     }
@@ -237,7 +237,7 @@ mod tests {
         index_template.retention_policy_opt = Some(RetentionPolicy {
             retention_period: "42 days".to_string(),
             evaluation_schedule: "hourly".to_string(),
-            jitter: None,
+            evaluation_schedule_jitter: None,
         });
         let default_index_root_uri = Uri::for_test("s3://test-bucket/indexes");
 
@@ -293,7 +293,7 @@ mod tests {
         index_template.retention_policy_opt = Some(RetentionPolicy {
             retention_period: "".to_string(),
             evaluation_schedule: "".to_string(),
-            jitter: None,
+            evaluation_schedule_jitter: None,
         });
         let error = index_template.validate().unwrap_err();
         assert!(

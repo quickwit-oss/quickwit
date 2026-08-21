@@ -575,7 +575,7 @@ async fn test_cmd_update_index() {
         Some(RetentionPolicy {
             retention_period: String::from("1 week"),
             evaluation_schedule: String::from("daily"),
-            jitter: None,
+            evaluation_schedule_jitter: None,
         })
     );
 

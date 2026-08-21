@@ -165,7 +165,7 @@ mod tests {
         let retention_policy = quickwit_config::RetentionPolicy {
             evaluation_schedule: "daily".to_string(),
             retention_period: "300 sec".to_string(),
-            jitter: None,
+            evaluation_schedule_jitter: None,
         };
         let create_timestamp = 1000;
 
