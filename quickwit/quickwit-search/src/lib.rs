@@ -46,11 +46,11 @@ mod search_permit_provider;
 mod tests;
 
 pub use collector::QuickwitAggregations;
-use quickwit_common::thread_pool::ThreadPool;
+use quickwit_common::thread_pool::with_priority::ThreadPoolWithPriority;
 use quickwit_common::tower::Pool;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::metastore::{
-    ListIndexesMetadataRequest, ListSplitsRequest, MetastoreService, MetastoreServiceClient,
+    ListIndexesMetadataRequest, ListSplitsRequest, MetastoreServiceClient,
 };
 use tantivy::schema::NamedFieldDocument;
 
@@ -67,6 +67,7 @@ use quickwit_metastore::{
     IndexMetadata, ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt,
     MetastoreServiceStreamSplitsExt, SplitMetadata, SplitState,
 };
+use quickwit_proto::metastore::MetastoreService;
 use quickwit_proto::search::{
     LeafResourceStats, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
     SplitResourceStats,
@@ -96,9 +97,9 @@ pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 /// A pool of searcher clients identified by their gRPC socket address.
 pub type SearcherPool = Pool<SocketAddr, SearchServiceClient>;
 
-fn search_thread_pool() -> &'static ThreadPool {
-    static SEARCH_THREAD_POOL: LazyLock<ThreadPool> =
-        LazyLock::new(|| ThreadPool::new("search", None));
+fn search_thread_pool() -> &'static ThreadPoolWithPriority {
+    static SEARCH_THREAD_POOL: LazyLock<ThreadPoolWithPriority> =
+        LazyLock::new(|| ThreadPoolWithPriority::new("search", None));
     &SEARCH_THREAD_POOL
 }
 
@@ -164,7 +165,7 @@ impl std::str::FromStr for GlobalDocAddress {
 
 fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAndFooterOffsets {
     SplitIdAndFooterOffsets {
-        split_id: split_metadata.split_id.clone(),
+        split_id: split_metadata.split_id.to_string(),
         split_footer_start: split_metadata.footer_offsets.start,
         split_footer_end: split_metadata.footer_offsets.end,
         timestamp_start: split_metadata
@@ -182,18 +183,19 @@ fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAn
 /// Get all splits of given index ids
 pub async fn list_all_splits(
     index_uids: Vec<IndexUid>,
-    metastore: &mut MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<Vec<SplitMetadata>> {
     list_relevant_splits(index_uids, None, None, None, metastore).await
 }
 
 /// Extract the list of relevant splits for a given request.
+#[tracing::instrument(skip_all, fields(num_indexes = index_uids.len()))]
 pub async fn list_relevant_splits(
     index_uids: Vec<IndexUid>,
     start_timestamp: Option<i64>,
     end_timestamp: Option<i64>,
     tags_filter_opt: Option<TagFilterAst>,
-    metastore: &mut MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<Vec<SplitMetadata>> {
     let Some(mut query) = ListSplitsQuery::try_from_index_uids(index_uids) else {
         return Ok(Vec::new());
@@ -222,7 +224,7 @@ pub async fn list_relevant_splits(
 /// Patterns follow the elastic search patterns.
 pub async fn resolve_index_patterns(
     index_id_patterns: &[String],
-    metastore: &mut MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<Vec<IndexMetadata>> {
     let list_indexes_metadata_request = if index_id_patterns.is_empty() {
         ListIndexesMetadataRequest::all()
@@ -300,7 +302,7 @@ pub async fn single_node_search(
     root_search(
         &searcher_context,
         search_request,
-        metastore,
+        &metastore,
         &cluster_client,
     )
     .await
@@ -398,6 +400,7 @@ pub(crate) fn add_leaf_stats(acc: &mut LeafResourceStats, other: &LeafResourceSt
     acc.localexec_num_splits += other.localexec_num_splits;
     acc.localexec_num_docs += other.localexec_num_docs;
     acc.wall_time_microsecs += other.wall_time_microsecs;
+    acc.search_pool_cpu_threads += other.search_pool_cpu_threads;
     acc.min_wait_for_search_permit_microsecs = min_opt(
         acc.min_wait_for_search_permit_microsecs,
         other.min_wait_for_search_permit_microsecs,
@@ -562,6 +565,7 @@ mod stats_merge_tests {
             min_wait_for_search_permit_microsecs: Some(100),
             min_wait_for_cpu_pool_microsecs: Some(2_000),
             wall_time_microsecs: 100_000_000,
+            search_pool_cpu_threads: 8,
         };
         let other = LeafResourceStats {
             partial_result_cache_num_splits: 2,
@@ -578,6 +582,7 @@ mod stats_merge_tests {
             min_wait_for_search_permit_microsecs: Some(50),
             min_wait_for_cpu_pool_microsecs: Some(1_000),
             wall_time_microsecs: 200_000_000,
+            search_pool_cpu_threads: 16,
         };
 
         add_leaf_stats(&mut acc, &other);
@@ -595,6 +600,7 @@ mod stats_merge_tests {
         assert_eq!(acc.localexec_num_docs, 30_000_000);
         // `wall_time_microsecs` is summed post-refactor, not maxed.
         assert_eq!(acc.wall_time_microsecs, 300_000_000);
+        assert_eq!(acc.search_pool_cpu_threads, 24);
 
         // `min_wait_for_*_microsecs` is MIN, not sum — the exception to the
         // extensive-sum rule.

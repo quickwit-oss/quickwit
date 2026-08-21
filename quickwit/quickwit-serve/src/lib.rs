@@ -30,6 +30,7 @@ mod indexing_api;
 mod ingest_api;
 mod jaeger_api;
 mod load_shield;
+mod metastore;
 mod metrics;
 mod metrics_api;
 mod node_info_handler;
@@ -59,32 +60,36 @@ pub(crate) use decompression::Body;
 pub use format::BodyFormat;
 use futures::StreamExt;
 use itertools::Itertools;
-use quickwit_actors::{ActorExitStatus, Mailbox, SpawnContext, Universe};
+use quickwit_actors::{ActorExitStatus, ActorHandle, Mailbox, SpawnContext, Universe};
 use quickwit_cluster::{
     Cluster, ClusterChange, ClusterChangeStream, ClusterNode, ListenerHandle, start_cluster_service,
 };
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::rate_limiter::RateLimiterSettings;
-use quickwit_common::retry::RetryParams;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, CircuitBreakerEvaluator,
-    ConstantRate, EstimateRateLayer, EventListenerLayer, GrpcMetricsLayer, LoadShedLayer,
-    RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer,
+    ConstantRate, EstimateRateLayer, GrpcMetricsLayer, LoadShedLayer, RateLimitLayer,
+    SmaRateEstimator, TimeoutLayer,
 };
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
+use quickwit_compaction::planner::CompactionPlanner;
+use quickwit_compaction::{
+    CompactorSupervisor, notify_compactor_decommission, start_compactor_service,
+    wait_for_compactor_decommission,
+};
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig};
+use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig, disable_ingest_v1};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
-use quickwit_indexing::actors::IndexingService;
+use quickwit_indexing::actors::{IndexingService, MergeSchedulerService};
 use quickwit_indexing::models::ShardPositionsService;
-use quickwit_indexing::start_indexing_service;
+use quickwit_indexing::{IndexingSplitCache, start_indexing_service};
 use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
-    IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout,
+    IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout, notify_ingester_decommission,
     setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
     start_ingest_api_service, try_get_ingester_status, wait_for_ingester_decommission,
     wait_for_ingester_status,
@@ -95,6 +100,7 @@ use quickwit_metastore::{
     ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
+use quickwit_proto::compaction::CompactionPlannerServiceClient;
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
 use quickwit_proto::ingest::ingester::{
@@ -113,8 +119,9 @@ use quickwit_search::{
     SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext, SearcherPool,
     create_search_client_from_channel, start_searcher_service,
 };
-use quickwit_storage::{SplitCache, StorageResolver};
+use quickwit_storage::{SearchSplitCache, StorageResolver};
 pub use quickwit_telemetry_exporters::{EnvFilterReloadFn, do_nothing_env_filter_reload_fn};
+pub use quickwit_transport::reload_tls_cert;
 use tcp_listener::TcpListenerResolver;
 use tokio::sync::oneshot;
 use tonic::codec::CompressionEncoding;
@@ -128,6 +135,7 @@ use warp::{Filter, Rejection};
 pub use crate::build_info::{BuildInfo, RuntimeInfo};
 pub use crate::index_api::{ListSplitsQueryParams, ListSplitsResponse};
 pub use crate::ingest_api::{RestIngestResponse, RestParseFailure};
+use crate::metastore::start_metastore_service_if_needed;
 use crate::metrics::CIRCUIT_BREAK_TOTAL;
 use crate::rate_modulator::RateModulator;
 #[cfg(test)]
@@ -139,18 +147,15 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
 } else {
     Duration::from_secs(10)
 };
+const READINESS_FAILURE_THRESHOLD: usize = 3;
 
-const METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY: &str = "QW_METASTORE_CLIENT_MAX_CONCURRENCY";
-const DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY: usize = 6;
+const COMPACTION_SERVICE_DISCOVERY_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(100)
+} else {
+    Duration::from_mins(5)
+};
+
 const DISABLE_DELETE_TASK_SERVICE_ENV_KEY: &str = "QW_DISABLE_DELETE_TASK_SERVICE";
-
-fn get_metastore_client_max_concurrency() -> usize {
-    quickwit_common::get_from_env(
-        METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY,
-        DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY,
-        false,
-    )
-}
 
 static CP_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
     LazyLock::new(|| GrpcMetricsLayer::new("control_plane", "client"));
@@ -167,18 +172,13 @@ static INGEST_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
 static INGEST_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
     LazyLock::new(|| GrpcMetricsLayer::new("ingest", "server"));
 
-static METASTORE_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
-    LazyLock::new(|| GrpcMetricsLayer::new("metastore", "client"));
-static METASTORE_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
-    LazyLock::new(|| GrpcMetricsLayer::new("metastore", "server"));
-
 static GRPC_INGESTER_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
 static GRPC_INDEXING_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
-static GRPC_METASTORE_SERVICE_TIMEOUT: Duration = Duration::from_secs(10);
 
 struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
     pub cluster: Cluster,
+    /// Locally served metastore gRPC service, either the primary metastore or a read-only replica.
     pub metastore_server_opt: Option<MetastoreServiceClient>,
     pub metastore_client: MetastoreServiceClient,
     pub control_plane_server_opt: Option<Mailbox<ControlPlane>>,
@@ -192,6 +192,8 @@ struct QuickwitServices {
     pub ingest_router_service: IngestRouterServiceClient,
     ingester_opt: Option<Ingester>,
 
+    pub compaction_service_client_opt: Option<CompactionPlannerServiceClient>,
+    pub _compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
     pub janitor_service_opt: Option<Mailbox<JanitorService>>,
     pub jaeger_service_opt: Option<JaegerService>,
     pub otlp_logs_service_opt: Option<OtlpGrpcLogsService>,
@@ -236,27 +238,27 @@ async fn balance_channel_for_service(
     let service_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         Box::pin(async move {
             match cluster_change {
-                ClusterChange::Add(node) if node.enabled_services().contains(&service) => {
+                ClusterChange::Add(node) if node.is_service_enabled(service) => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
                         "adding node `{}` to {} pool",
                         chitchat_id.node_id,
                         service.as_str().replace('_', " "),
                     );
-                    Some(Change::Insert(node.grpc_advertise_addr(), node.channel()))
+                    Some(Change::Insert(node.grpc_advertise_addr, node.channel()))
                 }
-                ClusterChange::Remove(node) if node.enabled_services().contains(&service) => {
+                ClusterChange::Remove(node) if node.is_service_enabled(service) => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
                         "removing node `{}` from {} pool",
                         chitchat_id.node_id,
                         service.as_str().replace('_', " "),
                     );
-                    Some(Change::Remove(node.grpc_advertise_addr()))
+                    Some(Change::Remove(node.grpc_advertise_addr))
                 }
                 _ => None,
             }
@@ -265,11 +267,108 @@ async fn balance_channel_for_service(
     BalanceChannel::from_stream(service_change_stream)
 }
 
+/// Builds a `CompactionPlannerServiceClient` if standalone compactors are enabled
+/// and the node runs the janitor or compactor.
+///
+/// On janitor nodes, spawns a `CompactionPlanner` actor and builds the client from
+/// its mailbox. On compactor-only nodes, connects to a remote janitor via gRPC.
+///
+/// The second tuple element is the local planner's `ActorHandle`, returned only
+/// on janitor nodes so the caller can attach it to the janitor liveness probe.
+async fn get_compaction_planner_client_if_needed(
+    node_config: &NodeConfig,
+    cluster: &Cluster,
+    universe: &Universe,
+    metastore_client: &MetastoreServiceClient,
+) -> anyhow::Result<(
+    Option<CompactionPlannerServiceClient>,
+    Option<ActorHandle<CompactionPlanner>>,
+)> {
+    if !node_config.enable_standalone_compactors {
+        return Ok((None, None));
+    }
+    let is_janitor = node_config.is_service_enabled(QuickwitService::Janitor);
+    let is_compactor = node_config.is_service_enabled(QuickwitService::Compactor);
+    if !is_janitor && !is_compactor {
+        return Ok((None, None));
+    }
+    if is_janitor {
+        let planner = CompactionPlanner::new(metastore_client.clone(), cluster.clone());
+        let (mailbox, handle) = universe.spawn_builder().spawn(planner);
+        info!("compaction planner actor started on janitor node");
+        return Ok((
+            Some(CompactionPlannerServiceClient::from_mailbox(mailbox)),
+            Some(handle),
+        ));
+    }
+    // Compactor-only node: connect to the planner on a remote janitor.
+    let balance_channel = balance_channel_for_service(cluster, QuickwitService::Janitor).await;
+    let found = balance_channel
+        .wait_for(COMPACTION_SERVICE_DISCOVERY_TIMEOUT, |connections| {
+            !connections.is_empty()
+        })
+        .await;
+    if !found {
+        bail!("compactor is enabled but no janitor node was found in the cluster")
+    }
+    info!("remote compaction planner detected on janitor node");
+    Ok((
+        Some(CompactionPlannerServiceClient::from_balance_channel(
+            balance_channel,
+            node_config.grpc_config.max_message_size,
+            None,
+        )),
+        None,
+    ))
+}
+
+fn spawn_merge_scheduler_service(
+    universe: &Universe,
+    node_config: &NodeConfig,
+) -> Mailbox<MergeSchedulerService> {
+    let (mailbox, _) = universe.spawn_builder().spawn(MergeSchedulerService::new(
+        node_config.indexer_config.merge_concurrency.get(),
+    ));
+    mailbox
+}
+
+/// The split cache is used when a node both indexes and merges its own splits. Split compactors
+/// never do; indexers only do if split compaction is disabled. The third case is a node running
+/// both services, in which case the two services share it.
+async fn indexing_split_cache_for_config(
+    node_config: &NodeConfig,
+) -> anyhow::Result<Arc<IndexingSplitCache>> {
+    let runs_indexer = node_config.is_service_enabled(QuickwitService::Indexer);
+    let runs_local_compactor = node_config.is_service_enabled(QuickwitService::Compactor);
+    let merges_own_splits =
+        runs_indexer && (!node_config.enable_standalone_compactors || runs_local_compactor);
+    if merges_own_splits {
+        let cache = IndexingSplitCache::from_config(
+            &node_config.indexer_config,
+            &node_config.data_dir_path,
+        )
+        .await?;
+        Ok(Arc::new(cache))
+    } else {
+        Ok(Arc::new(IndexingSplitCache::no_caching()))
+    }
+}
+
 async fn start_ingest_client_if_needed(
     node_config: &NodeConfig,
     universe: &Universe,
     cluster: &Cluster,
 ) -> anyhow::Result<IngestServiceClient> {
+    if disable_ingest_v1() {
+        debug!("returning no-op ingest service because ingest v1 is disabled");
+        let (balance_channel, _change_tx) = BalanceChannel::new();
+        let ingest_service = IngestServiceClient::from_balance_channel(
+            balance_channel,
+            node_config.grpc_config.max_message_size,
+            node_config.ingest_api_config.grpc_compression_encoding(),
+        );
+        return Ok(ingest_service);
+    }
     if node_config.is_service_enabled(QuickwitService::Indexer) {
         let ingest_api_service = start_ingest_api_service(
             universe,
@@ -311,7 +410,7 @@ async fn start_control_plane_if_needed(
     node_config: &NodeConfig,
     cluster: &Cluster,
     event_broker: &EventBroker,
-    metastore_client: &MetastoreServiceClient,
+    primary_metastore_client: &MetastoreServiceClient,
     universe: &Universe,
     indexer_pool: &IndexerPool,
     ingester_pool: &IngesterPool,
@@ -320,11 +419,11 @@ async fn start_control_plane_if_needed(
         check_cluster_configuration(
             &node_config.enabled_services,
             &node_config.peer_seeds,
-            metastore_client.clone(),
+            primary_metastore_client.clone(),
         )
         .await?;
 
-        let self_node_id: NodeId = cluster.self_node_id().into();
+        let self_node_id: NodeId = cluster.self_node_id().to_owned();
 
         let control_plane_mailbox = setup_control_plane(
             universe,
@@ -333,7 +432,7 @@ async fn start_control_plane_if_needed(
             cluster.clone(),
             indexer_pool.clone(),
             ingester_pool.clone(),
-            metastore_client.clone(),
+            primary_metastore_client.clone(),
             node_config.default_index_root_uri.clone(),
             &node_config.ingest_api_config,
         )
@@ -350,14 +449,17 @@ async fn start_control_plane_if_needed(
             balance_channel_for_service(cluster, QuickwitService::ControlPlane).await;
 
         // If the node is a metastore, we skip this check in order to avoid a deadlock.
+        // A read-replica metastore node is skipped for the same reason: it only serves read-only
+        // metastore traffic and does not need the control plane.
         // If the node is a searcher, we skip this check because the searcher does not need to.
         if !node_config.is_service_enabled(QuickwitService::Metastore)
+            && !node_config.is_service_enabled(QuickwitService::MetastoreReadReplica)
             && node_config.enabled_services != HashSet::from([QuickwitService::Searcher])
         {
             info!("connecting to control plane");
 
             if !balance_channel
-                .wait_for(Duration::from_secs(300), |connections| {
+                .wait_for(Duration::from_mins(5), |connections| {
                     !connections.is_empty()
                 })
                 .await
@@ -387,7 +489,7 @@ fn start_shard_positions_service(
     // the `ShardPositionsService`. If we don't, all the events we emit too early will be dismissed.
     tokio::spawn(async move {
         if let Some(ingester) = &ingester_opt
-            && wait_for_ingester_status(ingester, IngesterStatus::Ready, Duration::from_secs(300))
+            && wait_for_ingester_status(ingester, IngesterStatus::Ready, Duration::from_mins(5))
                 .await
                 .is_err()
         {
@@ -402,21 +504,38 @@ fn start_shard_positions_service(
 ///
 /// Usually called when receiving a SIGTERM signal, e.g. k8s trying to
 /// decomission a pod.
+#[allow(clippy::too_many_arguments)] // Will go away when we remove ingest v1.
 async fn shutdown_signal_handler(
     shutdown_signal: BoxFutureInfaillible<()>,
     universe: Universe,
     ingester_opt: Option<Ingester>,
+    ingester_decommission_timeout: Duration,
+    compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
+    compactor_decommission_timeout: Duration,
     grpc_shutdown_trigger_tx: oneshot::Sender<()>,
     rest_shutdown_trigger_tx: oneshot::Sender<()>,
+    health_shutdown_trigger_tx_opt: Option<oneshot::Sender<()>>,
     cluster: Cluster,
 ) -> HashMap<String, ActorExitStatus> {
     shutdown_signal.await;
-    // We must decommission the ingester first before terminating the indexing pipelines that
-    // may consume from it. We also need to keep the gRPC server running while doing so.
-    if let Some(ingester) = &ingester_opt
-        && let Err(error) = wait_for_ingester_decommission(ingester, Duration::from_secs(300)).await
-    {
+    if let Err(error) = notify_ingester_decommission(ingester_opt.as_ref()).await {
+        error!("failed to initiate ingester decommission: {:?}", error);
+    }
+    let compactor_status_rx_opt = notify_compactor_decommission(compactor_supervisor_opt.as_ref())
+        .await
+        .unwrap_or_else(|error| {
+            error!("failed to initiate compactor decommission: {:?}", error);
+            None
+        });
+    let (ingester_result, compactor_result) = tokio::join!(
+        wait_for_ingester_decommission(ingester_opt.as_ref(), ingester_decommission_timeout),
+        wait_for_compactor_decommission(compactor_status_rx_opt, compactor_decommission_timeout),
+    );
+    if let Err(error) = ingester_result {
         error!("failed to decommission ingester gracefully: {:?}", error);
+    }
+    if let Err(error) = compactor_result {
+        error!("failed to decommission compactor gracefully: {:?}", error);
     }
     let actor_exit_statuses = universe.quit().await;
 
@@ -425,6 +544,11 @@ async fn shutdown_signal_handler(
     }
     if rest_shutdown_trigger_tx.send(()).is_err() {
         debug!("REST server shutdown signal receiver was dropped");
+    }
+    if let Some(health_shutdown_trigger_tx) = health_shutdown_trigger_tx_opt
+        && health_shutdown_trigger_tx.send(()).is_err()
+    {
+        debug!("health check server shutdown signal receiver was dropped");
     }
     if let Err(err) = cluster.initiate_shutdown().await {
         debug!("{err}");
@@ -451,80 +575,25 @@ pub async fn serve_quickwit(
     let universe = Universe::new();
     let grpc_config = node_config.grpc_config.clone();
 
-    // Instantiate a metastore "server" if the `metastore` role is enabled on the node.
-    let metastore_server_opt: Option<MetastoreServiceClient> =
-        if node_config.is_service_enabled(QuickwitService::Metastore) {
-            let metastore: MetastoreServiceClient = metastore_resolver
-                .resolve(&node_config.metastore_uri)
-                .await
-                .with_context(|| {
-                    format!(
-                        "failed to resolve metastore uri `{}`",
-                        node_config.metastore_uri
-                    )
-                })?;
-            let max_in_flight_requests = if node_config.metastore_uri.protocol().is_database() {
-                node_config
-                    .metastore_configs
-                    .find_postgres()
-                    .map(|config| config.max_connections.get() * 2)
-                    .unwrap_or_default()
-                    .max(100)
-            } else {
-                100
-            };
-            // These layers apply to all the RPCs of the metastore.
-            let shared_layer = ServiceBuilder::new()
-                .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
-                .layer(LoadShedLayer::new(max_in_flight_requests))
-                .into_inner();
-            let broker_layer = EventListenerLayer::new(event_broker.clone());
-            let metastore = MetastoreServiceClient::tower()
-                .stack_layer(shared_layer)
-                .stack_create_index_layer(broker_layer.clone())
-                .stack_delete_index_layer(broker_layer.clone())
-                .stack_add_source_layer(broker_layer.clone())
-                .stack_delete_source_layer(broker_layer.clone())
-                .stack_toggle_source_layer(broker_layer)
-                .build(metastore);
-            Some(metastore)
-        } else {
-            None
-        };
-    // Instantiate a metastore client, either local if available or remote otherwise.
-    let metastore_client: MetastoreServiceClient =
-        if let Some(metastore_server) = &metastore_server_opt {
-            metastore_server.clone()
-        } else {
-            info!("connecting to metastore");
+    // Instantiate the local metastore gRPC server for this node (the primary metastore, a
+    // read-only replica, or none; the `metastore` and `metastore_read_replica` roles are mutually
+    // exclusive).
+    let local_metastore_server =
+        start_metastore_service_if_needed(&node_config, &metastore_resolver, &event_broker)
+            .await
+            .context("failed to start metastore service")?;
 
-            let balance_channel =
-                balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
+    let primary_metastore_client = local_metastore_server
+        .resolve_primary_client(&cluster, &node_config)
+        .await?;
 
-            if !balance_channel
-                .wait_for(Duration::from_secs(300), |connections| {
-                    !connections.is_empty()
-                })
-                .await
-            {
-                bail!("could not find any metastore node in the cluster");
-            }
-            MetastoreServiceClient::tower()
-                .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
-                .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
-                .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
-                .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
-                    get_metastore_client_max_concurrency(),
-                ))
-                .build_from_balance_channel(balance_channel, grpc_config.max_message_size, None)
-        };
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
     // Otherwise, instantiate a control plane client.
     let (control_plane_server_opt, control_plane_client) = start_control_plane_if_needed(
         &node_config,
         &cluster,
         &event_broker,
-        &metastore_client,
+        &primary_metastore_client,
         &universe,
         &indexer_pool,
         &ingester_pool,
@@ -532,27 +601,51 @@ pub async fn serve_quickwit(
     .await
     .context("failed to start control plane service")?;
 
-    // Set up the "control plane proxy" for the metastore.
-    let metastore_through_control_plane = MetastoreServiceClient::new(ControlPlaneMetastore::new(
-        control_plane_client.clone(),
-        metastore_client,
-    ));
+    // Set up the "control plane proxy" for the primary metastore.
+    let primary_metastore_through_control_plane =
+        MetastoreServiceClient::new(ControlPlaneMetastore::new(
+            control_plane_client.clone(),
+            primary_metastore_client.clone(),
+        ));
 
     // Setup ingest service v1.
     let ingest_service = start_ingest_client_if_needed(&node_config, &universe, &cluster)
         .await
         .context("failed to start ingest v1 service")?;
 
+    let (compaction_service_client_opt, compaction_planner_handle_opt) =
+        get_compaction_planner_client_if_needed(
+            &node_config,
+            &cluster,
+            &universe,
+            &primary_metastore_client,
+        )
+        .await
+        .context("failed to initialize compaction service client")?;
+
+    let indexing_split_cache = indexing_split_cache_for_config(&node_config).await?;
+
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
+        // if standalone compactors is enabled, indexing pipelines don't perform any merges.
+        // if standalone compactors is disabled, indexing pipelines perform all merges as before.
+        let merge_scheduler_mailbox_opt = if !node_config.enable_standalone_compactors {
+            Some(spawn_merge_scheduler_service(&universe, &node_config))
+        } else {
+            None
+        };
+
+        let split_cache = indexing_split_cache.clone();
         let indexing_service = start_indexing_service(
             &universe,
             &node_config,
             runtimes_config.num_threads_blocking,
             cluster.clone(),
-            metastore_through_control_plane.clone(),
+            primary_metastore_through_control_plane.clone(),
             ingester_pool.clone(),
             storage_resolver.clone(),
             event_broker.clone(),
+            merge_scheduler_mailbox_opt,
+            split_cache,
         )
         .await
         .context("failed to start indexing service")?;
@@ -594,7 +687,7 @@ pub async fn serve_quickwit(
     // Any node can serve index management requests (create/update/delete index, add/remove source,
     // etc.), so we always instantiate an index manager.
     let mut index_manager = IndexManager::new(
-        metastore_through_control_plane.clone(),
+        primary_metastore_through_control_plane.clone(),
         storage_resolver.clone(),
     );
 
@@ -623,15 +716,15 @@ pub async fn serve_quickwit(
         }
     }
 
-    let split_cache_opt: Option<Arc<SplitCache>> =
+    let search_split_cache_opt: Option<Arc<SearchSplitCache>> =
         if let Some(split_cache_limits) = node_config.searcher_config.split_cache {
-            let split_cache = SplitCache::with_root_path(
+            let search_split_cache = SearchSplitCache::with_root_path(
                 node_config.data_dir_path.join("searcher-split-cache"),
                 storage_resolver.clone(),
                 split_cache_limits,
             )
             .context("failed to load searcher split cache")?;
-            Some(split_cache)
+            Some(search_split_cache)
         } else {
             None
         };
@@ -647,7 +740,7 @@ pub async fn serve_quickwit(
                     quickwit_lambda_client::try_get_or_deploy_invoker(lambda_config).await?;
                 Arc::new(SearcherContext::new(
                     node_config.searcher_config.clone(),
-                    split_cache_opt,
+                    search_split_cache_opt,
                     Some(invoker),
                 ))
             }
@@ -659,22 +752,40 @@ pub async fn serve_quickwit(
         } else {
             Arc::new(SearcherContext::new_without_invoker(
                 node_config.searcher_config.clone(),
-                split_cache_opt,
+                search_split_cache_opt,
             ))
         }
     } else {
         Arc::new(SearcherContext::new_without_invoker(
             node_config.searcher_config.clone(),
-            split_cache_opt,
+            search_split_cache_opt,
         ))
     };
+
+    let read_replica_metastore_client_opt = local_metastore_server
+        .resolve_read_only_client(&cluster, &node_config)
+        .await?;
+
+    // Search uses the read replica when configured, and the primary otherwise.
+    let search_metastore_kind = if read_replica_metastore_client_opt.is_some() {
+        "read_replica"
+    } else {
+        "primary"
+    };
+    let search_metastore_client = read_replica_metastore_client_opt
+        .clone()
+        .unwrap_or_else(|| primary_metastore_through_control_plane.clone());
+    info!(
+        metastore_kind = search_metastore_kind,
+        "configured search metastore client"
+    );
 
     let (search_job_placer, search_service, searcher_pool) = setup_searcher(
         &node_config,
         cluster.change_stream(),
         // search remains available without a control plane because not all
         // metastore RPCs are proxied
-        metastore_through_control_plane.clone(),
+        search_metastore_client.clone(),
         storage_resolver.clone(),
         searcher_context,
     )
@@ -691,7 +802,7 @@ pub async fn serve_quickwit(
     let datafusion_session_builder = datafusion_api::setup::build_datafusion_session_builder(
         &node_config,
         cluster.change_stream(),
-        metastore_through_control_plane.clone(),
+        search_metastore_client,
         storage_resolver.clone(),
     )?;
     // The search job placer owns a clone of this pool; the local binding is not
@@ -722,15 +833,46 @@ pub async fn serve_quickwit(
         let janitor_service = start_janitor_service(
             &universe,
             &node_config,
-            metastore_through_control_plane.clone(),
+            primary_metastore_through_control_plane.clone(),
             search_job_placer,
             storage_resolver.clone(),
             event_broker.clone(),
             !get_bool_from_env(DISABLE_DELETE_TASK_SERVICE_ENV_KEY, false),
+            compaction_planner_handle_opt,
         )
         .await
         .context("failed to start janitor service")?;
         Some(janitor_service)
+    } else {
+        None
+    };
+
+    let compactor_supervisor_opt = if node_config.is_service_enabled(QuickwitService::Compactor)
+        && node_config.enable_standalone_compactors
+    {
+        let compaction_dir = node_config.data_dir_path.join("compaction");
+        fs::create_dir_all(&compaction_dir)?;
+        let compaction_root_directory = quickwit_common::temp_dir::Builder::default()
+            .tempdir_in(&compaction_dir)
+            .context("failed to create compaction temp directory")?;
+        let compaction_client = compaction_service_client_opt
+            .clone()
+            .expect("compactor service enabled but no compaction client available");
+        let split_cache = indexing_split_cache.clone();
+        let compactor_mailbox = start_compactor_service(
+            &universe,
+            cluster.self_node_id(),
+            compaction_client,
+            &node_config.compactor_config,
+            primary_metastore_client.clone(),
+            storage_resolver.clone(),
+            split_cache,
+            event_broker.clone(),
+            compaction_root_directory,
+        )
+        .await
+        .context("failed to start compactor service")?;
+        Some(compactor_mailbox)
     } else {
         None
     };
@@ -768,11 +910,13 @@ pub async fn serve_quickwit(
 
     let grpc_listen_addr = node_config.grpc_listen_addr;
     let rest_listen_addr = node_config.rest_config.listen_addr;
+    let ingester_decommission_timeout = node_config.ingest_api_config.decommission_timeout();
+    let compactor_decommission_timeout = node_config.compactor_config.decommission_timeout();
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
         node_config: Arc::new(node_config),
         cluster: cluster.clone(),
-        metastore_server_opt,
-        metastore_client: metastore_through_control_plane.clone(),
+        metastore_server_opt: local_metastore_server.client().cloned(),
+        metastore_client: primary_metastore_through_control_plane.clone(),
         control_plane_server_opt,
         control_plane_client,
         _local_shards_update_listener_handle_opt: local_shards_update_listener_handle_opt,
@@ -783,6 +927,8 @@ pub async fn serve_quickwit(
         ingest_router_service,
         ingest_service,
         ingester_opt: ingester_opt.clone(),
+        compaction_service_client_opt,
+        _compactor_supervisor_opt: compactor_supervisor_opt.clone(),
         janitor_service_opt,
         jaeger_service_opt,
         otlp_logs_service_opt,
@@ -830,17 +976,52 @@ pub async fn serve_quickwit(
 
     let rest_server = rest::start_rest_server(
         tcp_listener_resolver.resolve(rest_listen_addr).await?,
-        quickwit_services,
+        quickwit_services.clone(),
         rest_readiness_trigger,
         rest_shutdown_signal,
     );
+
+    // Setup and start the optional plaintext health-check server. It only runs when a health
+    // listen port is configured (`health.listen_port` or `QW_HEALTH_LISTEN_PORT`).
+    let (health_shutdown_trigger_tx_opt, health_server_fut) =
+        if let Some(health_config) = quickwit_services.node_config.health_config.clone() {
+            let health_listener = tcp_listener_resolver
+                .resolve(health_config.listen_addr)
+                .await?;
+            // The health server serves probes as soon as it is up: it does not wait on the node
+            // readiness signal, since liveness must work during startup and `readyz` reflects
+            // cluster readiness on its own.
+            let health_readiness_trigger = Box::pin(async {});
+            let (health_shutdown_trigger_tx, health_shutdown_signal_rx) = oneshot::channel::<()>();
+            let health_shutdown_signal = Box::pin(async move {
+                if health_shutdown_signal_rx.await.is_err() {
+                    debug!("health check server shutdown trigger sender was dropped");
+                }
+            });
+            let health_server = rest::start_health_check_server(
+                health_listener,
+                quickwit_services.clone(),
+                health_readiness_trigger,
+                health_shutdown_signal,
+            );
+            (
+                Some(health_shutdown_trigger_tx),
+                futures::future::Either::Left(health_server),
+            )
+        } else {
+            (
+                None,
+                futures::future::Either::Right(futures::future::ready(anyhow::Ok(()))),
+            )
+        };
 
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.
     spawn_named_task(
         node_readiness_reporting_task(
             cluster.clone(),
-            metastore_through_control_plane,
+            primary_metastore_through_control_plane,
+            read_replica_metastore_client_opt,
             ingester_opt.clone(),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
@@ -853,8 +1034,12 @@ pub async fn serve_quickwit(
         shutdown_signal,
         universe,
         ingester_opt,
+        ingester_decommission_timeout,
+        compactor_supervisor_opt,
+        compactor_decommission_timeout,
         grpc_shutdown_trigger_tx,
         rest_shutdown_trigger_tx,
+        health_shutdown_trigger_tx_opt,
         cluster.clone(),
     ));
     let grpc_join_handle = async move {
@@ -871,9 +1056,21 @@ pub async fn serve_quickwit(
             .context("REST server failed")
     };
 
+    let health_join_handle = async move {
+        spawn_named_task(health_server_fut, "health_server")
+            .await
+            .expect("tasks running the health check server should not panic or be cancelled")
+            .context("health check server failed")
+    };
+
     let chitchat_server_handle = cluster.chitchat_server_termination_watcher().await;
 
-    if let Err(err) = tokio::try_join!(grpc_join_handle, rest_join_handle, chitchat_server_handle) {
+    if let Err(err) = tokio::try_join!(
+        grpc_join_handle,
+        rest_join_handle,
+        health_join_handle,
+        chitchat_server_handle
+    ) {
         error!("server failed: {err:?}");
     }
 
@@ -924,7 +1121,6 @@ fn ingester_service_layer_stack(
                 CIRCUIT_BREAK_TOTAL.clone(),
             ),
         )
-        .stack_open_replication_stream_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_init_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_retain_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_truncate_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
@@ -940,13 +1136,8 @@ async fn setup_ingest_v2(
     ingester_pool: IngesterPool,
 ) -> anyhow::Result<(IngestRouter, IngestRouterServiceClient, Option<Ingester>)> {
     // Instantiate ingest router.
-    let self_node_id: NodeId = cluster.self_node_id().into();
+    let self_node_id: NodeId = cluster.self_node_id().to_owned();
     let grpc_compression_encoding_opt = node_config.ingest_api_config.grpc_compression_encoding();
-    let replication_factor = node_config
-        .ingest_api_config
-        .replication_factor()
-        .expect("replication factor should have been validated")
-        .get();
 
     // Any node can serve ingest requests, so we always instantiate an ingest router.
     // TODO: I'm not sure that's such a good idea.
@@ -954,7 +1145,6 @@ async fn setup_ingest_v2(
         self_node_id.clone(),
         control_plane.clone(),
         ingester_pool.clone(),
-        replication_factor,
         event_broker.clone(),
         node_config.availability_zone.clone(),
     );
@@ -986,12 +1176,10 @@ async fn setup_ingest_v2(
         let ingester = Ingester::try_new(
             cluster.clone(),
             control_plane,
-            ingester_pool.clone(),
             &wal_dir_path,
             node_config.ingest_api_config.max_queue_disk_usage,
             node_config.ingest_api_config.max_queue_memory_usage,
             rate_limiter_settings,
-            replication_factor,
             idle_shard_timeout,
         )
         .await?;
@@ -1026,6 +1214,14 @@ fn setup_ingester_pool(
         Box::pin(async move {
             match cluster_change {
                 ClusterChange::Add(node) if node.is_indexer() => {
+                    let chitchat_id = node.chitchat_id();
+                    info!(
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
+                        "adding node `{}` with ingester status `{}` to ingester pool",
+                        chitchat_id.node_id,
+                        node.ingester_status,
+                    );
                     let change = build_ingester_insert_change(
                         &node,
                         ingester_opt_clone,
@@ -1038,7 +1234,7 @@ fn setup_ingester_pool(
                 // unnecessary churn
                 ClusterChange::Update { previous, updated }
                     if updated.is_indexer()
-                        && previous.ingester_status() != updated.ingester_status() =>
+                        && previous.ingester_status != updated.ingester_status =>
                 {
                     let change = build_ingester_insert_change(
                         &updated,
@@ -1065,15 +1261,7 @@ fn build_ingester_insert_change(
     grpc_max_message_size: ByteSize,
     grpc_compression_encoding_opt: Option<CompressionEncoding>,
 ) -> Change<NodeId, IngesterPoolEntry> {
-    let chitchat_id = node.chitchat_id();
-    info!(
-        node_id = chitchat_id.node_id,
-        generation_id = chitchat_id.generation_id,
-        "adding/updating node `{}` with ingester status `{}` to ingester pool",
-        chitchat_id.node_id,
-        node.ingester_status(),
-    );
-    let node_id: NodeId = node.node_id().into();
+    let node_id: NodeId = node.node_id.clone();
     let ingester_service = build_ingester_service(
         node,
         ingester_opt,
@@ -1082,7 +1270,7 @@ fn build_ingester_insert_change(
     );
     let pool_entry = IngesterPoolEntry {
         client: ingester_service,
-        status: node.ingester_status(),
+        status: node.ingester_status,
         availability_zone: node.availability_zone().map(|az| az.to_string()),
     };
     Change::Insert(node_id, pool_entry)
@@ -1091,12 +1279,12 @@ fn build_ingester_insert_change(
 fn build_ingester_remove_change(node: &ClusterNode) -> Change<NodeId, IngesterPoolEntry> {
     let chitchat_id = node.chitchat_id();
     info!(
-        node_id = chitchat_id.node_id,
-        generation_id = chitchat_id.generation_id,
+        remote_node_id = %chitchat_id.node_id,
+        generation_id = %chitchat_id.generation_id,
         "removing node `{}` from ingester pool",
         chitchat_id.node_id,
     );
-    let node_id: NodeId = node.node_id().into();
+    let node_id: NodeId = node.node_id.clone();
     Change::Remove(node_id)
 }
 
@@ -1121,7 +1309,7 @@ fn build_ingester_service(
         .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
         .stack_layer(TimeoutLayer::new(GRPC_INGESTER_SERVICE_TIMEOUT))
         .build_from_channel(
-            node.grpc_advertise_addr(),
+            node.grpc_advertise_addr,
             node.channel(),
             max_message_size,
             grpc_compression_encoding_opt,
@@ -1155,12 +1343,12 @@ async fn setup_searcher(
                 ClusterChange::Add(node) if node.is_searcher() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
                         "adding node `{}` to searcher pool",
                         chitchat_id.node_id,
                     );
-                    let grpc_addr = node.grpc_advertise_addr();
+                    let grpc_addr = node.grpc_advertise_addr;
 
                     if node.is_self_node() {
                         let search_client =
@@ -1179,12 +1367,12 @@ async fn setup_searcher(
                 ClusterChange::Remove(node) if node.is_searcher() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
                         "removing node `{}` from searcher pool",
                         chitchat_id.node_id,
                     );
-                    Some(Change::Remove(node.grpc_advertise_addr()))
+                    Some(Change::Remove(node.grpc_advertise_addr))
                 }
                 _ => None,
             }
@@ -1207,15 +1395,10 @@ async fn setup_control_plane(
     ingest_api_config: &IngestApiConfig,
 ) -> anyhow::Result<Mailbox<ControlPlane>> {
     let cluster_id = cluster.cluster_id().to_string();
-    let replication_factor = ingest_api_config
-        .replication_factor()
-        .expect("replication factor should have been validated")
-        .get();
     let cluster_config = ClusterConfig {
         cluster_id,
         auto_create_indexes: true,
         default_index_root_uri,
-        replication_factor,
         shard_throughput_limit: ingest_api_config.shard_throughput_limit,
         shard_scale_up_factor: ingest_api_config.shard_scale_up_factor,
     };
@@ -1223,7 +1406,6 @@ async fn setup_control_plane(
         universe,
         cluster_config,
         self_node_id,
-        cluster.clone(),
         indexer_pool,
         ingester_pool,
         metastore,
@@ -1237,7 +1419,7 @@ async fn setup_control_plane(
         .forever();
 
     tokio::time::timeout(
-        Duration::from_secs(300),
+        Duration::from_mins(5),
         readiness_rx.wait_for(|readiness| *readiness),
     )
     .await
@@ -1259,8 +1441,26 @@ fn setup_indexer_pool(
         Box::pin(async move {
             match cluster_change {
                 ClusterChange::Add(node) if node.is_indexer() => {
+                    let chitchat_id = node.chitchat_id();
+                    info!(
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
+                        "adding node `{}` with ingester status `{}` to indexer pool",
+                        chitchat_id.node_id,
+                        node.ingester_status
+                    );
                     let change = build_indexer_insert_change(
                         &node,
+                        indexing_service_clone_opt,
+                        grpc_max_message_size,
+                    );
+                    Some(change)
+                }
+                ClusterChange::Update { previous, updated }
+                    if updated.is_indexer() && indexer_node_changed(&previous, &updated) =>
+                {
+                    let change = build_indexer_insert_change(
+                        &updated,
                         indexing_service_clone_opt,
                         grpc_max_message_size,
                     );
@@ -1277,20 +1477,20 @@ fn setup_indexer_pool(
     indexer_pool.listen_for_changes(indexer_change_stream);
 }
 
+/// Only update the indexer pool when a change meaningful to indexing occurs.
+fn indexer_node_changed(previous: &ClusterNode, updated: &ClusterNode) -> bool {
+    previous.ingester_status != updated.ingester_status
+        || previous.indexing_cpu_capacity != updated.indexing_cpu_capacity
+        || previous.indexing_tasks != updated.indexing_tasks
+}
+
 fn build_indexer_insert_change(
     node: &ClusterNode,
     indexing_service_opt: Option<Mailbox<IndexingService>>,
     grpc_max_message_size: ByteSize,
 ) -> Change<NodeId, IndexerNodeInfo> {
     let chitchat_id = node.chitchat_id();
-    info!(
-        node_id = chitchat_id.node_id,
-        generation_id = chitchat_id.generation_id,
-        "adding node `{}` with ingester status `{}` to indexer pool",
-        chitchat_id.node_id,
-        node.ingester_status()
-    );
-    let node_id: NodeId = node.node_id().into();
+    let node_id: NodeId = node.node_id.clone();
     let client = build_indexing_service(node, indexing_service_opt, grpc_max_message_size);
     Change::Insert(
         node_id.clone(),
@@ -1298,8 +1498,9 @@ fn build_indexer_insert_change(
             node_id,
             generation_id: chitchat_id.generation_id,
             client,
-            indexing_tasks: node.indexing_tasks().to_vec(),
-            indexing_capacity: node.indexing_capacity(),
+            indexing_tasks: node.indexing_tasks.to_vec(),
+            indexing_capacity: node.indexing_cpu_capacity,
+            ingester_status: node.ingester_status,
         },
     )
 }
@@ -1307,12 +1508,12 @@ fn build_indexer_insert_change(
 fn build_indexer_remove_change(node: &ClusterNode) -> Change<NodeId, IndexerNodeInfo> {
     let chitchat_id = node.chitchat_id();
     info!(
-        node_id = chitchat_id.node_id,
-        generation_id = chitchat_id.generation_id,
+        remote_node_id = %chitchat_id.node_id,
+        generation_id = %chitchat_id.generation_id,
         "removing node `{}` from indexer pool",
         chitchat_id.node_id,
     );
-    let node_id: NodeId = node.node_id().into();
+    let node_id: NodeId = node.node_id.clone();
     Change::Remove(node_id)
 }
 
@@ -1339,7 +1540,7 @@ fn build_indexing_service(
         .stack_layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
         .stack_layer(TimeoutLayer::new(GRPC_INDEXING_SERVICE_TIMEOUT))
         .build_from_channel(
-            node.grpc_advertise_addr(),
+            node.grpc_advertise_addr,
             node.channel(),
             max_message_size,
             None,
@@ -1368,12 +1569,23 @@ fn with_arg<T: Clone + Send>(arg: T) -> impl Filter<Extract = (T,), Error = Infa
 /// Reports node readiness to chitchat cluster every 10 seconds (25 ms for tests).
 async fn node_readiness_reporting_task(
     cluster: Cluster,
-    metastore: MetastoreServiceClient,
+    primary_metastore: MetastoreServiceClient,
+    read_replica_metastore_opt: Option<MetastoreServiceClient>,
     ingester_opt: Option<impl IngesterService>,
     grpc_readiness_signal_rx: oneshot::Receiver<()>,
     rest_readiness_signal_rx: oneshot::Receiver<()>,
     health_reporter: HealthReporter,
 ) {
+    // When a read replica metastore is configured, node readiness follows the replica only.
+    // This keeps search/read traffic available if the primary metastore is down. Write-capable
+    // index-management APIs are still routed to the primary metastore and may fail while this node
+    // remains ready.
+    let (metastore, metastore_kind) = match read_replica_metastore_opt {
+        Some(read_replica_metastore) => (read_replica_metastore, "read_replica"),
+        None => (primary_metastore, "primary"),
+    };
+    info!(metastore_kind, "configured metastore readiness dependency");
+
     let mut node_ready = false;
     cluster.set_self_node_readiness(node_ready).await;
     // Set the initial health status to `NotServing` with "" meaning all services, as per
@@ -1395,17 +1607,17 @@ async fn node_readiness_reporting_task(
     info!("REST server is ready");
 
     let mut interval = tokio::time::interval(READINESS_REPORTING_INTERVAL);
-
+    let mut consecutive_readiness_failures = 0usize;
     loop {
         interval.tick().await;
 
-        let metastore_is_available = match metastore.check_connectivity().await {
+        let metastore_available = match metastore.check_connectivity().await {
             Ok(()) => {
                 debug!(metastore_endpoints=?metastore.endpoints(), "metastore service is available");
                 true
             }
             Err(error) => {
-                warn!(metastore_endpoints=?metastore.endpoints(), error=?error, "metastore service is unavailable");
+                debug!(metastore_endpoints=?metastore.endpoints(), error=?error, "metastore service is unavailable");
                 false
             }
         };
@@ -1424,10 +1636,26 @@ async fn node_readiness_reporting_task(
         } else {
             true
         };
-        let new_node_ready = metastore_is_available && ingester_is_available;
+        let is_ready = metastore_available && ingester_is_available;
+        let new_node_ready = if is_ready {
+            consecutive_readiness_failures = 0;
+            true
+        } else {
+            consecutive_readiness_failures += 1;
+            // Only dampen READY -> NOT_READY transitions: a NOT_READY node must observe a
+            // successful readiness sample before becoming READY.
+            node_ready && consecutive_readiness_failures < READINESS_FAILURE_THRESHOLD
+        };
 
         if new_node_ready != node_ready {
             node_ready = new_node_ready;
+            if !node_ready && !metastore_available {
+                warn!(
+                    metastore_kind,
+                    metastore_endpoints = ?metastore.endpoints(),
+                    "metastore unavailability caused node readiness to decrease"
+                );
+            }
             cluster.set_self_node_readiness(node_ready).await;
 
             let serving_status = if node_ready {
@@ -1488,13 +1716,18 @@ async fn check_cluster_configuration(
 
 #[cfg(test)]
 mod tests {
-    use quickwit_cluster::{ChannelTransport, ClusterNode, create_cluster_for_test};
+    use std::sync::{Arc, Mutex};
+
+    use anyhow::{bail, ensure};
+    use quickwit_cluster::{ChitchatTransport, ClusterNode, create_cluster_for_test};
     use quickwit_common::uri::Uri;
     use quickwit_common::{ServiceStream, assert_eventually};
     use quickwit_config::SearcherConfig;
     use quickwit_metastore::{IndexMetadata, metastore_for_test};
+    use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::ingest::ingester::{MockIngesterService, ObservationMessage};
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
+    use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_search::Job;
     use tokio::sync::watch;
     use tonic::transport::{Channel, Server};
@@ -1503,6 +1736,23 @@ mod tests {
     use tonic_health::server::health_reporter;
 
     use super::*;
+
+    fn metastore_readiness_client(
+        readiness_rx: watch::Receiver<bool>,
+        uri: &'static str,
+    ) -> MetastoreServiceClient {
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_check_connectivity()
+            .returning(move || {
+                ensure!(*readiness_rx.borrow(), "metastore `{uri}` not ready");
+                Ok(())
+            });
+        mock_metastore
+            .expect_endpoints()
+            .return_const(vec![Uri::for_test(uri)]);
+        MetastoreServiceClient::from_mock(mock_metastore)
+    }
 
     #[tokio::test]
     async fn test_check_cluster_configuration() {
@@ -1532,21 +1782,34 @@ mod tests {
 
     #[tokio::test]
     async fn test_readiness_updates() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
             .unwrap();
         let (metastore_readiness_tx, metastore_readiness_rx) = watch::channel(false);
+        let metastore_failures_to_inject = Arc::new(Mutex::new(0usize));
+        let metastore_failures_to_inject_clone = metastore_failures_to_inject.clone();
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_check_connectivity()
             .returning(move || {
-                if *metastore_readiness_rx.borrow() {
-                    Ok(())
-                } else {
-                    Err(anyhow::anyhow!("Metastore not ready"))
+                let mut failures_to_inject = metastore_failures_to_inject_clone.lock().unwrap();
+                if *failures_to_inject > 0 {
+                    *failures_to_inject -= 1;
+                    bail!("metastore `ram:///metastore` transiently not ready");
                 }
+                drop(failures_to_inject);
+
+                ensure!(
+                    *metastore_readiness_rx.borrow(),
+                    "metastore `ram:///metastore` not ready"
+                );
+                Ok(())
             });
+        mock_metastore
+            .expect_endpoints()
+            .return_const(vec![Uri::for_test("ram:///metastore")]);
+        let mock_metastore = MetastoreServiceClient::from_mock(mock_metastore);
         let (ingester_status_tx, ingester_status_rx) = watch::channel(IngesterStatus::Initializing);
         let mut mock_ingester = MockIngesterService::new();
         mock_ingester
@@ -1557,6 +1820,7 @@ mod tests {
                     let message = ObservationMessage {
                         node_id: "test-node".to_string(),
                         status: status as i32,
+                        ..Default::default()
                     };
                     Ok(message)
                 });
@@ -1588,7 +1852,8 @@ mod tests {
 
         tokio::spawn(node_readiness_reporting_task(
             cluster.clone(),
-            MetastoreServiceClient::from_mock(mock_metastore),
+            mock_metastore,
+            None,
             Some(mock_ingester),
             grpc_readiness_signal_rx,
             rest_readiness_signal_rx,
@@ -1612,12 +1877,56 @@ mod tests {
         let response = health_client.check(request).await.unwrap().into_inner();
         assert_eq!(response.status(), ServingStatus::Serving.into());
 
+        // Inject fewer failures than the threshold while the steady-state metastore readiness
+        // remains healthy. The node should stay ready through this short outage.
+        *metastore_failures_to_inject.lock().unwrap() = READINESS_FAILURE_THRESHOLD - 1;
+        tokio::time::sleep(READINESS_REPORTING_INTERVAL * READINESS_FAILURE_THRESHOLD as u32).await;
+        assert!(cluster.is_self_node_ready().await);
+
         metastore_readiness_tx.send(false).unwrap();
         assert_eventually!(!cluster.is_self_node_ready().await);
 
         let request = tonic::Request::new(HealthCheckRequest::default());
         let response = health_client.check(request).await.unwrap().into_inner();
         assert_eq!(response.status(), ServingStatus::NotServing.into());
+    }
+
+    #[tokio::test]
+    async fn test_readiness_uses_read_replica_without_requiring_primary() {
+        let transport = ChitchatTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+            .await
+            .unwrap();
+        let (replica_readiness_tx, replica_readiness_rx) = watch::channel(false);
+        let mut primary_metastore = MockMetastoreService::new();
+        primary_metastore.expect_check_connectivity().times(0);
+        let primary_metastore = MetastoreServiceClient::from_mock(primary_metastore);
+        let replica_metastore =
+            metastore_readiness_client(replica_readiness_rx, "ram:///replica-metastore");
+        let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel();
+        let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel();
+        let (health_reporter, _health_service) = health_reporter();
+
+        tokio::spawn(node_readiness_reporting_task(
+            cluster.clone(),
+            primary_metastore,
+            Some(replica_metastore),
+            None::<MockIngesterService>,
+            grpc_readiness_signal_rx,
+            rest_readiness_signal_rx,
+            health_reporter,
+        ));
+        grpc_readiness_trigger_tx.send(()).unwrap();
+        rest_readiness_trigger_tx.send(()).unwrap();
+
+        tokio::time::sleep(READINESS_REPORTING_INTERVAL * 3).await;
+        assert!(!cluster.is_self_node_ready().await);
+
+        replica_readiness_tx.send(true).unwrap();
+        assert_eventually!(cluster.is_self_node_ready().await);
+
+        replica_readiness_tx.send(false).unwrap();
+        assert_eventually!(!cluster.is_self_node_ready().await);
     }
 
     #[tokio::test]
@@ -1637,30 +1946,124 @@ mod tests {
             node_config.grpc_config.max_message_size,
         );
 
-        // adding a indexer node refreshes the indexer pool
-        let new_indexer_node = ClusterNode::for_test(
-            "test-indexer-node",
-            1,
-            true,
-            &["indexer"],
-            &[],
-            IngesterStatus::Ready,
-        )
-        .await;
-        cluster_change_stream_tx
-            .send(ClusterChange::Add(new_indexer_node.clone()))
-            .unwrap();
-        tokio::time::sleep(Duration::from_millis(1)).await;
+        let node_id = NodeId::from_str("test-indexer-node");
+        let plan = [IndexingTask {
+            index_uid: Some(IndexUid::for_test("test-index", 0)),
+            source_id: "test-source".to_string(),
+            pipeline_uid: Some(PipelineUid::for_test(1)),
+            shard_ids: Vec::new(),
+            params_fingerprint: 0,
+        }];
+        let build_node = async |tasks: &[IndexingTask], status: IngesterStatus| {
+            ClusterNode::for_test("test-indexer-node", 1, true, &["indexer"], tasks, status).await
+        };
+        // Reads the pool entry's indexing tasks, or an empty vec if the node is absent.
+        let pool_tasks = || {
+            indexer_pool
+                .get(&node_id)
+                .map(|entry| entry.indexing_tasks.clone())
+                .unwrap_or_default()
+        };
 
+        // A node first joins ready with no assigned plan.
+        let ready_no_plan = build_node(&[], IngesterStatus::Ready).await;
+        cluster_change_stream_tx
+            .send(ClusterChange::Add(ready_no_plan.clone()))
+            .unwrap();
+        assert_eventually!(indexer_pool.len() == 1);
+        {
+            let entry = indexer_pool
+                .get(&node_id)
+                .expect("indexer node should be in the pool");
+            assert_eq!(entry.ingester_status, IngesterStatus::Ready);
+            assert!(entry.indexing_tasks.is_empty());
+        }
+
+        // The control plane assigns it an indexing plan: the new plan must be reflected exactly.
+        let ready_with_plan = build_node(&plan, IngesterStatus::Ready).await;
+        cluster_change_stream_tx
+            .send(ClusterChange::Update {
+                previous: ready_no_plan,
+                updated: ready_with_plan.clone(),
+            })
+            .unwrap();
+        assert_eventually!(pool_tasks() == plan);
+        assert_eq!(
+            indexer_pool
+                .get(&node_id)
+                .expect("indexer node should be in the pool")
+                .ingester_status,
+            IngesterStatus::Ready
+        );
         assert_eq!(indexer_pool.len(), 1);
 
-        // removing an indexer node refreshes the indexer pool
+        // The node begins retiring while still owning its plan: the status change is applied and
+        // the plan is preserved.
+        let retiring_with_plan = build_node(&plan, IngesterStatus::Retiring).await;
         cluster_change_stream_tx
-            .send(ClusterChange::Remove(new_indexer_node))
+            .send(ClusterChange::Update {
+                previous: ready_with_plan,
+                updated: retiring_with_plan.clone(),
+            })
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(1)).await;
+        assert_eventually!(matches!(
+            indexer_pool.get(&node_id),
+            Some(entry) if entry.ingester_status == IngesterStatus::Retiring
+        ));
+        assert_eq!(pool_tasks(), plan);
+        assert_eq!(indexer_pool.len(), 1);
 
-        assert!(indexer_pool.is_empty());
+        // The node transitions to decommissioning and sheds its plan: both the status and the
+        // now-empty plan must be reflected.
+        let decommissioning_no_plan = build_node(&[], IngesterStatus::Decommissioning).await;
+        cluster_change_stream_tx
+            .send(ClusterChange::Update {
+                previous: retiring_with_plan,
+                updated: decommissioning_no_plan.clone(),
+            })
+            .unwrap();
+        assert_eventually!(matches!(
+            indexer_pool.get(&node_id),
+            Some(entry)
+                if entry.ingester_status == IngesterStatus::Decommissioning
+                    && entry.indexing_tasks.is_empty()
+        ));
+        assert_eq!(indexer_pool.len(), 1);
+
+        // Removing the node clears the pool.
+        cluster_change_stream_tx
+            .send(ClusterChange::Remove(decommissioning_no_plan))
+            .unwrap();
+        assert_eventually!(indexer_pool.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_indexer_node_changed() {
+        let plan = [IndexingTask {
+            index_uid: Some(IndexUid::for_test("test-index", 0)),
+            source_id: "test-source".to_string(),
+            pipeline_uid: Some(PipelineUid::for_test(1)),
+            shard_ids: Vec::new(),
+            params_fingerprint: 0,
+        }];
+        let build_node = async |tasks: &[IndexingTask], status: IngesterStatus| {
+            ClusterNode::for_test("test-indexer-node", 1, true, &["indexer"], tasks, status).await
+        };
+        let ready_with_plan = build_node(&plan, IngesterStatus::Ready).await;
+
+        // An update that touches none of the tracked fields is skipped. `indexing_cpu_capacity` is
+        // not exercised here because `ClusterNode::for_test` cannot set it; it follows the same
+        // comparison as the other two fields.
+        let unchanged = build_node(&plan, IngesterStatus::Ready).await;
+        assert!(!indexer_node_changed(&ready_with_plan, &unchanged));
+
+        // A change to the ingester status is material.
+        let retiring_with_plan = build_node(&plan, IngesterStatus::Retiring).await;
+        assert!(indexer_node_changed(&ready_with_plan, &retiring_with_plan));
+
+        // A change to the indexing plan is material.
+        let ready_without_plan = build_node(&[], IngesterStatus::Ready).await;
+        assert!(indexer_node_changed(&ready_with_plan, &ready_without_plan));
     }
 
     #[tokio::test]
@@ -1772,7 +2175,7 @@ mod tests {
 
         assert_eq!(ingester_pool.len(), 1);
         let pool_entry = ingester_pool
-            .get(&NodeId::from("test-ingester-node"))
+            .get(&NodeId::from_str("test-ingester-node"))
             .unwrap();
         assert_eq!(pool_entry.status, IngesterStatus::Initializing);
 
@@ -1796,7 +2199,7 @@ mod tests {
 
         assert_eq!(ingester_pool.len(), 1);
         let pool_entry = ingester_pool
-            .get(&NodeId::from("test-ingester-node"))
+            .get(&NodeId::from_str("test-ingester-node"))
             .unwrap();
         assert_eq!(pool_entry.status, IngesterStatus::Ready);
 
@@ -1821,7 +2224,7 @@ mod tests {
         // The node should still be in the pool with updated status.
         assert_eq!(ingester_pool.len(), 1);
         let pool_entry = ingester_pool
-            .get(&NodeId::from("test-ingester-node"))
+            .get(&NodeId::from_str("test-ingester-node"))
             .unwrap();
         assert_eq!(pool_entry.status, IngesterStatus::Decommissioning);
 
@@ -1832,5 +2235,117 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(1)).await;
 
         assert!(ingester_pool.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_compaction_service_on_janitor_node() {
+        let transport = ChitchatTransport::default();
+        let cluster =
+            create_cluster_for_test(Vec::new(), &["janitor", "indexer"], &transport, true)
+                .await
+                .unwrap();
+        let universe = Universe::new();
+        let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
+
+        // Janitor + indexer with standalone compactors enabled: planner client is returned.
+        let mut node_config = NodeConfig::for_test_with_standalone_compactors();
+        node_config.enabled_services =
+            HashSet::from([QuickwitService::Janitor, QuickwitService::Indexer]);
+        let (client_opt, handle_opt) =
+            get_compaction_planner_client_if_needed(&node_config, &cluster, &universe, &metastore)
+                .await
+                .unwrap();
+        assert!(client_opt.is_some());
+        assert!(handle_opt.is_some());
+
+        // With compactor + janitor enabled, planner client is also returned.
+        node_config.enabled_services = HashSet::from([
+            QuickwitService::Janitor,
+            QuickwitService::Indexer,
+            QuickwitService::Compactor,
+        ]);
+        let (client_opt, handle_opt) =
+            get_compaction_planner_client_if_needed(&node_config, &cluster, &universe, &metastore)
+                .await
+                .unwrap();
+        assert!(client_opt.is_some());
+        assert!(handle_opt.is_some());
+
+        // Neither janitor nor compactor: no client, no handle.
+        node_config.enabled_services = HashSet::from([QuickwitService::Indexer]);
+        let (client_opt, handle_opt) =
+            get_compaction_planner_client_if_needed(&node_config, &cluster, &universe, &metastore)
+                .await
+                .unwrap();
+        assert!(client_opt.is_none());
+        assert!(handle_opt.is_none());
+
+        // Standalone compactors disabled: short-circuit returns (None, None) regardless of
+        // which services are enabled.
+        node_config.enable_standalone_compactors = false;
+        node_config.enabled_services =
+            HashSet::from([QuickwitService::Janitor, QuickwitService::Indexer]);
+        let (client_opt, handle_opt) =
+            get_compaction_planner_client_if_needed(&node_config, &cluster, &universe, &metastore)
+                .await
+                .unwrap();
+        assert!(client_opt.is_none());
+        assert!(handle_opt.is_none());
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_indexing_split_cache_for_config() {
+        async fn cache_created(services: &[QuickwitService], standalone_compactors: bool) -> bool {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let mut node_config = NodeConfig::for_test();
+            node_config.data_dir_path = temp_dir.path().to_path_buf();
+            node_config.enabled_services = services.iter().copied().collect();
+            node_config.enable_standalone_compactors = standalone_compactors;
+            indexing_split_cache_for_config(&node_config).await.unwrap();
+            temp_dir
+                .path()
+                .join("indexer-split-cache")
+                .join("splits")
+                .is_dir()
+        }
+
+        // Indexer merging its own splits in-pipeline → real cache.
+        assert!(cache_created(&[QuickwitService::Indexer], false).await);
+        // Indexer co-located with a compactor → shared real cache.
+        assert!(
+            cache_created(
+                &[QuickwitService::Indexer, QuickwitService::Compactor],
+                true
+            )
+            .await
+        );
+        // Indexer offloading merges to remote compactors → no cache.
+        assert!(!cache_created(&[QuickwitService::Indexer], true).await);
+        // Standalone compactor → no cache by default.
+        assert!(!cache_created(&[QuickwitService::Compactor], true).await);
+        // Node that neither produces nor merges splits → no cache.
+        assert!(!cache_created(&[QuickwitService::Searcher], false).await);
+    }
+
+    #[tokio::test]
+    async fn test_compaction_service_returns_error_when_no_janitor() {
+        let transport = ChitchatTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, false)
+            .await
+            .unwrap();
+        let universe = Universe::new();
+        let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
+
+        let mut node_config = NodeConfig::for_test_with_standalone_compactors();
+        node_config.enabled_services =
+            HashSet::from([QuickwitService::Indexer, QuickwitService::Compactor]);
+        let result =
+            get_compaction_planner_client_if_needed(&node_config, &cluster, &universe, &metastore)
+                .await;
+        assert!(result.is_err());
+
+        universe.assert_quit().await;
     }
 }

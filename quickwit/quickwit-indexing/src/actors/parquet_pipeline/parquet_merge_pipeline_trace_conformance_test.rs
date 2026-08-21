@@ -481,7 +481,7 @@ fn merge_policy(
             max_merge_factor: merge_factor,
             max_merge_ops,
             target_split_size_bytes: 256 * 1024 * 1024,
-            maturation_period: Duration::from_secs(3600),
+            maturation_period: Duration::from_hours(1),
             max_finalize_merge_operations: 3,
         },
     ))
@@ -524,7 +524,13 @@ fn build_mock_metastore(tracker: Arc<MockMetastoreState>) -> MetastoreServiceCli
         let n = publish_clone
             .publish_call_count
             .fetch_add(1, Ordering::SeqCst);
-        if Some(n) == publish_clone.fail_publish_at_call {
+        // `publish_with_retry` retries each logical publish up to 3× on a retryable error
+        // (Internal is retryable). To actually crash the pipeline the injected failure must
+        // span all 3 attempts (calls k..=k+2) so the retry budget is exhausted rather than
+        // masked by a successful retry.
+        if let Some(k) = publish_clone.fail_publish_at_call
+            && (k..=k + 2).contains(&n)
+        {
             // Failed publish: do NOT promote staged → published.
             return Err(quickwit_proto::metastore::MetastoreError::Internal {
                 message: "injected failure for trace conformance test".to_string(),
@@ -545,9 +551,11 @@ fn build_mock_metastore(tracker: Arc<MockMetastoreState>) -> MetastoreServiceCli
             published.remove(replaced_id);
             replaced_history.insert(replaced_id.clone(), ());
         }
+        // The first successful publish after the exhausted retries (call k+3) marks
+        // completion. With no injected failure (None), the first publish (n >= 0) marks it.
         if n >= publish_clone
             .fail_publish_at_call
-            .map(|x| x + 1)
+            .map(|x| x + 3)
             .unwrap_or(0)
         {
             publish_clone.publish_done.store(true, Ordering::SeqCst);
@@ -627,6 +635,7 @@ async fn test_trace_conformance_normal_path() {
         merge_scheduler_service: universe.get_or_spawn_one(),
         max_concurrent_split_uploads: 4,
         event_broker: EventBroker::default(),
+        skip_initial_seed: false,
         writer_config: ParquetWriterConfig::default(),
         use_streaming_engine: false,
         target_split_size_bytes: 256 * 1024 * 1024,
@@ -642,7 +651,7 @@ async fn test_trace_conformance_normal_path() {
             let count = tracker.publish_call_count.load(Ordering::SeqCst);
             async move { count >= 3 }
         },
-        Duration::from_secs(60),
+        Duration::from_mins(1),
         Duration::from_millis(100),
     )
     .await
@@ -748,6 +757,7 @@ async fn test_trace_conformance_crash_mid_cascade() {
         merge_scheduler_service: universe.get_or_spawn_one(),
         max_concurrent_split_uploads: 4,
         event_broker: EventBroker::default(),
+        skip_initial_seed: false,
         writer_config: ParquetWriterConfig::default(),
         use_streaming_engine: false,
         target_split_size_bytes: 256 * 1024 * 1024,
@@ -763,7 +773,7 @@ async fn test_trace_conformance_crash_mid_cascade() {
             let done = publish_done.clone();
             async move { done.load(Ordering::SeqCst) }
         },
-        Duration::from_secs(60),
+        Duration::from_mins(1),
         Duration::from_millis(100),
     )
     .await

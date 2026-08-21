@@ -204,7 +204,7 @@ impl FetchStreamTask {
                         index_uid=%self.index_uid,
                         source_id=%self.source_id,
                         shard_id=%self.shard_id,
-                        to_position_inclusive=%self.from_position_inclusive - 1,
+                        %to_position_inclusive,
                         "fetch stream reached end of shard"
                     );
                     let eof_position = to_position_inclusive.as_eof();
@@ -254,10 +254,8 @@ pub struct FetchStreamError {
     pub ingest_error: IngestV2Error,
 }
 
-/// Combines multiple fetch streams originating from different ingesters into a single stream. It
-/// tolerates the failure of ingesters and automatically fails over to replica shards.
+/// Combines multiple fetch streams originating from different ingesters into a single stream.
 pub struct MultiFetchStream {
-    self_node_id: NodeId,
     client_id: ClientId,
     ingester_pool: IngesterPool,
     retry_params: RetryParams,
@@ -268,14 +266,12 @@ pub struct MultiFetchStream {
 
 impl MultiFetchStream {
     pub fn new(
-        self_node_id: NodeId,
         client_id: ClientId,
         ingester_pool: IngesterPool,
         retry_params: RetryParams,
     ) -> Self {
         let (fetch_message_tx, fetch_message_rx) = mpsc::channel(3);
         Self {
-            self_node_id,
             client_id,
             ingester_pool,
             retry_params,
@@ -292,12 +288,11 @@ impl MultiFetchStream {
         self.fetch_message_tx.clone()
     }
 
-    /// Subscribes to a shard and fails over to the replica if an error occurs.
+    /// Subscribes to a shard.
     #[allow(clippy::too_many_arguments)]
     pub async fn subscribe(
         &mut self,
-        leader_id: NodeId,
-        follower_id_opt: Option<NodeId>,
+        ingester_id: NodeId,
         index_uid: IndexUid,
         source_id: SourceId,
         shard_id: ShardId,
@@ -311,22 +306,13 @@ impl MultiFetchStream {
                 "stream has already subscribed to shard `{queue_id}`"
             )));
         }
-        let (preferred_ingester_id, failover_ingester_id_opt) =
-            select_preferred_and_failover_ingesters(&self.self_node_id, leader_id, follower_id_opt);
-
-        let mut ingester_ids = Vec::with_capacity(1 + failover_ingester_id_opt.is_some() as usize);
-        ingester_ids.push(preferred_ingester_id);
-
-        if let Some(failover_ingester_id) = failover_ingester_id_opt {
-            ingester_ids.push(failover_ingester_id);
-        }
         let fetch_stream_future = retrying_fetch_stream(
             self.client_id.clone(),
             index_uid,
             source_id,
             shard_id,
             from_position_exclusive,
-            ingester_ids,
+            ingester_id,
             self.ingester_pool.clone(),
             self.retry_params,
             self.fetch_message_tx.clone(),
@@ -385,27 +371,6 @@ impl Drop for MultiFetchStream {
     }
 }
 
-/// Chooses the ingester to stream records from, preferring "local" ingesters.
-fn select_preferred_and_failover_ingesters(
-    self_node_id: &NodeId,
-    leader_id: NodeId,
-    follower_id_opt: Option<NodeId>,
-) -> (NodeId, Option<NodeId>) {
-    // The replication factor is 1 and there is no follower.
-    let Some(follower_id) = follower_id_opt else {
-        return (leader_id, None);
-    };
-    if &leader_id == self_node_id {
-        (leader_id, Some(follower_id))
-    } else if &follower_id == self_node_id {
-        (follower_id, Some(leader_id))
-    } else if rand::random::<bool>() {
-        (leader_id, Some(follower_id))
-    } else {
-        (follower_id, Some(leader_id))
-    }
-}
-
 /// Performs multiple fault-tolerant fetch stream attempts until the stream reaches
 /// the end of the shard.
 #[allow(clippy::too_many_arguments)]
@@ -415,19 +380,19 @@ async fn retrying_fetch_stream(
     source_id: SourceId,
     shard_id: ShardId,
     mut from_position_exclusive: Position,
-    ingester_ids: Vec<NodeId>,
+    ingester_id: NodeId,
     ingester_pool: IngesterPool,
     retry_params: RetryParams,
     fetch_message_tx: mpsc::Sender<Result<InFlightValue<FetchMessage>, FetchStreamError>>,
 ) {
     for num_attempts in 1..=retry_params.max_attempts {
-        fault_tolerant_fetch_stream(
+        fetch_stream_once(
             client_id.clone(),
             index_uid.clone(),
             source_id.clone(),
             shard_id.clone(),
             &mut from_position_exclusive,
-            &ingester_ids,
+            &ingester_id,
             ingester_pool.clone(),
             fetch_message_tx.clone(),
         )
@@ -441,31 +406,61 @@ async fn retrying_fetch_stream(
     }
 }
 
-/// Streams records from the preferred ingester and fails over to the other ingester if an error
-/// occurs.
+/// Streams records from an ingester until the stream ends or fails.
 #[allow(clippy::too_many_arguments)]
-async fn fault_tolerant_fetch_stream(
+async fn fetch_stream_once(
     client_id: String,
     index_uid: IndexUid,
     source_id: SourceId,
     shard_id: ShardId,
     from_position_exclusive: &mut Position,
-    ingester_ids: &[NodeId],
+    ingester_id: &NodeId,
     ingester_pool: IngesterPool,
     fetch_message_tx: mpsc::Sender<Result<InFlightValue<FetchMessage>, FetchStreamError>>,
 ) {
-    // TODO: We can probably simplify this code by breaking it into smaller functions.
-    'outer: for (ingester_idx, ingester_id) in ingester_ids.iter().enumerate() {
-        let failover_ingester_id_opt = ingester_ids.get(ingester_idx + 1);
+    let Some(ingester) = ingester_pool.get(ingester_id) else {
+        error!(
+            client_id=%client_id,
+            index_uid=%index_uid,
+            source_id=%source_id,
+            shard_id=%shard_id,
+            "ingester `{ingester_id}` is unavailable: closing fetch stream"
+        );
+        let ingest_error = IngestV2Error::Unavailable(format!(
+            "ingester `{ingester_id}` is unavailable: closing fetch stream"
+        ));
+        let fetch_stream_error = FetchStreamError {
+            index_uid,
+            source_id,
+            shard_id,
+            ingest_error,
+        };
+        let _ = fetch_message_tx.send(Err(fetch_stream_error)).await;
+        return;
+    };
+    let open_fetch_stream_request = OpenFetchStreamRequest {
+        client_id: client_id.clone(),
+        index_uid: index_uid.clone().into(),
+        source_id: source_id.clone(),
+        shard_id: Some(shard_id.clone()),
+        from_position_exclusive: Some(from_position_exclusive.clone()),
+    };
+    let mut fetch_stream = match ingester
+        .client
+        .open_fetch_stream(open_fetch_stream_request)
+        .await
+    {
+        Ok(fetch_stream) => fetch_stream,
+        Err(ingest_error) => {
+            let is_shard_not_found = matches!(&ingest_error, IngestV2Error::ShardNotFound { .. });
 
-        let Some(ingester) = ingester_pool.get(ingester_id) else {
-            if let Some(failover_ingester_id) = failover_ingester_id_opt {
-                warn!(
+            if is_shard_not_found {
+                error!(
                     client_id=%client_id,
                     index_uid=%index_uid,
                     source_id=%source_id,
                     shard_id=%shard_id,
-                    "ingester `{ingester_id}` is unavailable: failing over to ingester `{failover_ingester_id}`"
+                    "failed to open fetch stream from ingester `{ingester_id}`: shard not found"
                 );
             } else {
                 error!(
@@ -473,13 +468,69 @@ async fn fault_tolerant_fetch_stream(
                     index_uid=%index_uid,
                     source_id=%source_id,
                     shard_id=%shard_id,
-                    "ingester `{ingester_id}` is unavailable: closing fetch stream"
+                    error=%ingest_error,
+                    "failed to open fetch stream from ingester `{ingester_id}`: closing fetch stream"
                 );
-                let message =
-                    format!("ingester `{ingester_id}` is unavailable: closing fetch stream");
-                let ingest_error = IngestV2Error::Unavailable(message);
-                // Attempt to send the error to the consumer in a best-effort manner before
-                // returning.
+            }
+            let fetch_stream_error = FetchStreamError {
+                index_uid,
+                source_id,
+                shard_id,
+                ingest_error,
+            };
+            let _ = fetch_message_tx.send(Err(fetch_stream_error)).await;
+
+            if is_shard_not_found {
+                from_position_exclusive.to_eof();
+            }
+            return;
+        }
+    };
+    while let Some(fetch_message_result) = fetch_stream.next().await {
+        match fetch_message_result {
+            Ok(fetch_message) => match &fetch_message.message {
+                Some(fetch_message::Message::Payload(fetch_payload)) => {
+                    let batch_size = fetch_payload.estimate_size();
+                    let to_position_inclusive = fetch_payload.to_position_inclusive();
+                    let in_flight_value = InFlightValue::new(
+                        fetch_message,
+                        batch_size,
+                        &IN_FLIGHT_MULTI_FETCH_STREAM,
+                    );
+                    if fetch_message_tx.send(Ok(in_flight_value)).await.is_err() {
+                        // The consumer was dropped.
+                        return;
+                    }
+                    *from_position_exclusive = to_position_inclusive;
+                }
+                Some(fetch_message::Message::Eof(fetch_eof)) => {
+                    let eof_position = fetch_eof.eof_position();
+                    let in_flight_value = InFlightValue::new(
+                        fetch_message,
+                        ByteSize(0),
+                        &IN_FLIGHT_MULTI_FETCH_STREAM,
+                    );
+                    // We ignore the send error if the consumer was dropped because we're going
+                    // to return anyway.
+                    let _ = fetch_message_tx.send(Ok(in_flight_value)).await;
+
+                    *from_position_exclusive = eof_position;
+                    return;
+                }
+                None => {
+                    warn!("received empty fetch message");
+                    continue;
+                }
+            },
+            Err(ingest_error) => {
+                error!(
+                    client_id=%client_id,
+                    index_uid=%index_uid,
+                    source_id=%source_id,
+                    shard_id=%shard_id,
+                    error=%ingest_error,
+                    "failed to fetch records from ingester `{ingester_id}`: closing fetch stream"
+                );
                 let fetch_stream_error = FetchStreamError {
                     index_uid,
                     source_id,
@@ -488,137 +539,6 @@ async fn fault_tolerant_fetch_stream(
                 };
                 let _ = fetch_message_tx.send(Err(fetch_stream_error)).await;
                 return;
-            }
-            continue;
-        };
-        let open_fetch_stream_request = OpenFetchStreamRequest {
-            client_id: client_id.clone(),
-            index_uid: index_uid.clone().into(),
-            source_id: source_id.clone(),
-            shard_id: Some(shard_id.clone()),
-            from_position_exclusive: Some(from_position_exclusive.clone()),
-        };
-        let mut fetch_stream = match ingester
-            .client
-            .open_fetch_stream(open_fetch_stream_request)
-            .await
-        {
-            Ok(fetch_stream) => fetch_stream,
-            Err(not_found_error @ IngestV2Error::ShardNotFound { .. }) => {
-                error!(
-                    client_id=%client_id,
-                    index_uid=%index_uid,
-                    source_id=%source_id,
-                    shard_id=%shard_id,
-                    "failed to open fetch stream from ingester `{ingester_id}`: shard not found"
-                );
-                let fetch_stream_error = FetchStreamError {
-                    index_uid,
-                    source_id,
-                    shard_id,
-                    ingest_error: not_found_error,
-                };
-                let _ = fetch_message_tx.send(Err(fetch_stream_error)).await;
-                from_position_exclusive.to_eof();
-                return;
-            }
-            Err(other_ingest_error) => {
-                if let Some(failover_ingester_id) = failover_ingester_id_opt {
-                    warn!(
-                        client_id=%client_id,
-                        index_uid=%index_uid,
-                        source_id=%source_id,
-                        shard_id=%shard_id,
-                        error=%other_ingest_error,
-                        "failed to open fetch stream from ingester `{ingester_id}`: failing over to ingester `{failover_ingester_id}`"
-                    );
-                } else {
-                    error!(
-                        client_id=%client_id,
-                        index_uid=%index_uid,
-                        source_id=%source_id,
-                        shard_id=%shard_id,
-                        error=%other_ingest_error,
-                        "failed to open fetch stream from ingester `{ingester_id}`: closing fetch stream"
-                    );
-                    let fetch_stream_error = FetchStreamError {
-                        index_uid,
-                        source_id,
-                        shard_id,
-                        ingest_error: other_ingest_error,
-                    };
-                    let _ = fetch_message_tx.send(Err(fetch_stream_error)).await;
-                    return;
-                }
-                continue;
-            }
-        };
-        while let Some(fetch_message_result) = fetch_stream.next().await {
-            match fetch_message_result {
-                Ok(fetch_message) => match &fetch_message.message {
-                    Some(fetch_message::Message::Payload(fetch_payload)) => {
-                        let batch_size = fetch_payload.estimate_size();
-                        let to_position_inclusive = fetch_payload.to_position_inclusive();
-                        let in_flight_value = InFlightValue::new(
-                            fetch_message,
-                            batch_size,
-                            &IN_FLIGHT_MULTI_FETCH_STREAM,
-                        );
-                        if fetch_message_tx.send(Ok(in_flight_value)).await.is_err() {
-                            // The consumer was dropped.
-                            return;
-                        }
-                        *from_position_exclusive = to_position_inclusive;
-                    }
-                    Some(fetch_message::Message::Eof(fetch_eof)) => {
-                        let eof_position = fetch_eof.eof_position();
-                        let in_flight_value = InFlightValue::new(
-                            fetch_message,
-                            ByteSize(0),
-                            &IN_FLIGHT_MULTI_FETCH_STREAM,
-                        );
-                        // We ignore the send error if the consumer was dropped because we're going
-                        // to return anyway.
-                        let _ = fetch_message_tx.send(Ok(in_flight_value)).await;
-
-                        *from_position_exclusive = eof_position;
-                        return;
-                    }
-                    None => {
-                        warn!("received empty fetch message");
-                        continue;
-                    }
-                },
-                Err(ingest_error) => {
-                    if let Some(failover_ingester_id) = failover_ingester_id_opt {
-                        warn!(
-                            client_id=%client_id,
-                            index_uid=%index_uid,
-                            source_id=%source_id,
-                            shard_id=%shard_id,
-                            error=%ingest_error,
-                            "failed to fetch records from ingester `{ingester_id}`: failing over to ingester `{failover_ingester_id}`"
-                        );
-                    } else {
-                        error!(
-                            client_id=%client_id,
-                            index_uid=%index_uid,
-                            source_id=%source_id,
-                            shard_id=%shard_id,
-                            error=%ingest_error,
-                            "failed to fetch records from ingester `{ingester_id}`: closing fetch stream"
-                        );
-                        let fetch_stream_error = FetchStreamError {
-                            index_uid,
-                            source_id,
-                            shard_id,
-                            ingest_error,
-                        };
-                        let _ = fetch_message_tx.send(Err(fetch_stream_error)).await;
-                        return;
-                    }
-                    continue 'outer;
-                }
             }
         }
     }
@@ -847,8 +767,15 @@ pub(super) mod tests {
         fetch_task_handle.await.unwrap();
     }
 
-    #[tokio::test]
-    async fn test_fetch_task_signals_eof() {
+    /// Spawns a fetch task against a closed shard whose queue holds `num_records` records and whose
+    /// replication position is `replication_position_inclusive`, then asserts that fetching from
+    /// `from_position_exclusive` immediately signals EOF at `expected_eof_position`.
+    async fn check_fetch_task_signals_eof(
+        num_records: usize,
+        replication_position_inclusive: Position,
+        from_position_exclusive: Position,
+        expected_eof_position: Position,
+    ) {
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = Arc::new(RwLock::new(Some(
             MultiRecordLogAsync::open(tempdir.path()).await.unwrap(),
@@ -868,26 +795,25 @@ pub(super) mod tests {
             .await
             .unwrap();
 
-        mrecordlog_guard
-            .as_mut()
-            .unwrap()
-            .append_records(
-                &queue_id,
-                None,
-                std::iter::once(MRecord::new_doc("test-doc-foo").encode()),
-            )
-            .await
-            .unwrap();
+        if num_records > 0 {
+            let records = (0..num_records).map(|_| MRecord::new_doc("test-doc-foo").encode());
+            mrecordlog_guard
+                .as_mut()
+                .unwrap()
+                .append_records(&queue_id, None, records)
+                .await
+                .unwrap();
+        }
         drop(mrecordlog_guard);
 
         let open_fetch_stream_request = OpenFetchStreamRequest {
-            client_id: client_id.clone(),
+            client_id,
             index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(shard_id.clone()),
-            from_position_exclusive: Some(Position::offset(0u64)),
+            from_position_exclusive: Some(from_position_exclusive.clone()),
         };
-        let shard_status = (ShardState::Closed, Position::offset(0u64));
+        let shard_status = (ShardState::Closed, replication_position_inclusive);
         let (_shard_status_tx, shard_status_rx) = watch::channel(shard_status);
 
         let (mut fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
@@ -906,63 +832,56 @@ pub(super) mod tests {
         assert_eq!(fetch_eof.index_uid(), &index_uid);
         assert_eq!(fetch_eof.source_id, source_id);
         assert_eq!(fetch_eof.shard_id(), shard_id);
-        assert_eq!(fetch_eof.eof_position, Some(Position::eof(0u64).as_eof()));
+        assert_eq!(
+            fetch_eof.eof_position,
+            Some(expected_eof_position),
+            "unexpected EOF position when fetching from `{from_position_exclusive:?}`"
+        );
 
         fetch_task_handle.await.unwrap();
     }
 
     #[tokio::test]
-    async fn test_fetch_task_signals_eof_at_beginning() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = Arc::new(RwLock::new(Some(
-            MultiRecordLogAsync::open(tempdir.path()).await.unwrap(),
-        )));
-        let client_id = "test-client".to_string();
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
-        let source_id = "test-source".to_string();
-        let shard_id = ShardId::from(1);
-        let queue_id = queue_id(&index_uid, &source_id, &shard_id);
+    async fn test_fetch_task_signals_eof() {
+        check_fetch_task_signals_eof(
+            0,
+            Position::Beginning,
+            Position::Beginning,
+            Position::Beginning.as_eof(),
+        )
+        .await;
 
-        let open_fetch_stream_request = OpenFetchStreamRequest {
-            client_id: client_id.clone(),
-            index_uid: Some(index_uid.clone()),
-            source_id: source_id.clone(),
-            shard_id: Some(shard_id.clone()),
-            from_position_exclusive: Some(Position::Beginning),
-        };
-        let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
-        let (mut fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
-            open_fetch_stream_request,
-            mrecordlog.clone(),
-            shard_status_rx,
-            1024,
-        );
-        let mut mrecordlog_guard = mrecordlog.write().await;
+        check_fetch_task_signals_eof(
+            0,
+            Position::Beginning,
+            Position::offset(0u64),
+            Position::eof(0u64),
+        )
+        .await;
 
-        mrecordlog_guard
-            .as_mut()
-            .unwrap()
-            .create_queue(&queue_id)
-            .await
-            .unwrap();
-        drop(mrecordlog_guard);
+        check_fetch_task_signals_eof(
+            0,
+            Position::Beginning,
+            Position::offset(42u64),
+            Position::eof(42u64),
+        )
+        .await;
 
-        let shard_status = (ShardState::Closed, Position::Beginning);
-        shard_status_tx.send(shard_status).unwrap();
+        check_fetch_task_signals_eof(
+            1,
+            Position::offset(0u64),
+            Position::offset(0u64),
+            Position::eof(0u64),
+        )
+        .await;
 
-        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        let fetch_eof = into_fetch_eof(fetch_message);
-
-        assert_eq!(fetch_eof.index_uid(), &index_uid);
-        assert_eq!(fetch_eof.source_id, source_id);
-        assert_eq!(fetch_eof.shard_id(), shard_id);
-        assert_eq!(fetch_eof.eof_position, Some(Position::Beginning.as_eof()));
-
-        fetch_task_handle.await.unwrap();
+        check_fetch_task_signals_eof(
+            1,
+            Position::offset(0u64),
+            Position::offset(42u64),
+            Position::eof(42u64),
+        )
+        .await;
     }
 
     #[tokio::test]
@@ -1279,377 +1198,15 @@ pub(super) mod tests {
         );
     }
 
-    #[test]
-    fn test_select_preferred_and_failover_ingesters() {
-        let self_node_id: NodeId = "test-ingester-0".into();
-
-        let (preferred, failover) =
-            select_preferred_and_failover_ingesters(&self_node_id, "test-ingester-0".into(), None);
-        assert_eq!(preferred, "test-ingester-0");
-        assert!(failover.is_none());
-
-        let (preferred, failover) = select_preferred_and_failover_ingesters(
-            &self_node_id,
-            "test-ingester-0".into(),
-            Some("test-ingester-1".into()),
-        );
-        assert_eq!(preferred, "test-ingester-0");
-        assert_eq!(failover.unwrap(), "test-ingester-1");
-
-        let (preferred, failover) = select_preferred_and_failover_ingesters(
-            &self_node_id,
-            "test-ingester-1".into(),
-            Some("test-ingester-0".into()),
-        );
-        assert_eq!(preferred, "test-ingester-0");
-        assert_eq!(failover.unwrap(), "test-ingester-1");
-    }
-
     #[tokio::test]
-    async fn test_fault_tolerant_fetch_stream_ingester_unavailable_failover() {
+    async fn test_fetch_stream_once_shard_not_found() {
         let client_id = "test-client".to_string();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let source_id: SourceId = "test-source".into();
         let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
 
-        let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
-        let ingester_pool = IngesterPool::default();
-
-        let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
-        let (service_stream_tx_1, service_stream_1) = ServiceStream::new_unbounded();
-
-        let mut mock_ingester_1 = MockIngesterService::new();
-        let index_uid_clone = index_uid.clone();
-        mock_ingester_1
-            .expect_open_fetch_stream()
-            .return_once(move |request| {
-                assert_eq!(request.client_id, "test-client");
-                assert_eq!(request.index_uid(), &index_uid_clone);
-                assert_eq!(request.source_id, "test-source");
-                assert_eq!(request.shard_id(), ShardId::from(1));
-                assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
-
-                Ok(service_stream_1)
-            });
-        let ingester_1 =
-            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1));
-        ingester_pool.insert("test-ingester-1".into(), ingester_1);
-
-        let fetch_payload = FetchPayload {
-            index_uid: Some(index_uid.clone()),
-            source_id: source_id.clone(),
-            shard_id: Some(shard_id.clone()),
-            mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
-            from_position_exclusive: Some(Position::offset(0u64)),
-            to_position_inclusive: Some(Position::offset(1u64)),
-        };
-        let fetch_message = FetchMessage::new_payload(fetch_payload);
-        service_stream_tx_1.send(Ok(fetch_message)).unwrap();
-
-        let fetch_eof = FetchEof {
-            index_uid: Some(index_uid.clone()),
-            source_id: source_id.clone(),
-            shard_id: Some(shard_id.clone()),
-            eof_position: Some(Position::eof(1u64)),
-        };
-        let fetch_message = FetchMessage::new_eof(fetch_eof);
-        service_stream_tx_1.send(Ok(fetch_message)).unwrap();
-
-        fault_tolerant_fetch_stream(
-            client_id,
-            index_uid,
-            source_id,
-            shard_id,
-            &mut from_position_exclusive,
-            &ingester_ids,
-            ingester_pool,
-            fetch_message_tx,
-        )
-        .await;
-
-        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap()
-            .into_inner();
-        let fetch_payload = into_fetch_payload(fetch_message);
-
-        assert_eq!(
-            fetch_payload.from_position_exclusive(),
-            Position::offset(0u64)
-        );
-        assert_eq!(
-            fetch_payload.to_position_inclusive(),
-            Position::offset(1u64)
-        );
-
-        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap()
-            .into_inner();
-        let fetch_eof = into_fetch_eof(fetch_message);
-
-        assert_eq!(fetch_eof.eof_position(), Position::eof(1u64));
-
-        assert!(
-            timeout(Duration::from_millis(100), fetch_stream.next())
-                .await
-                .unwrap()
-                .is_none()
-        );
-    }
-
-    #[tokio::test]
-    async fn test_fault_tolerant_fetch_stream_open_fetch_stream_error_failover() {
-        let client_id = "test-client".to_string();
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
-        let source_id: SourceId = "test-source".into();
-        let shard_id = ShardId::from(1);
-        let mut from_position_exclusive = Position::offset(0u64);
-
-        let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
-        let ingester_pool = IngesterPool::default();
-
-        let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
-        let (service_stream_tx_1, service_stream_1) = ServiceStream::new_unbounded();
-
-        let mut mock_ingester_0 = MockIngesterService::new();
-        let index_uid_clone = index_uid.clone();
-        mock_ingester_0
-            .expect_open_fetch_stream()
-            .return_once(move |request| {
-                assert_eq!(request.client_id, "test-client");
-                assert_eq!(request.index_uid(), &index_uid_clone);
-                assert_eq!(request.source_id, "test-source");
-                assert_eq!(request.shard_id(), ShardId::from(1));
-                assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
-
-                Err(IngestV2Error::Internal(
-                    "open fetch stream error".to_string(),
-                ))
-            });
-        let ingester_0 =
-            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
-
-        let mut mock_ingester_1 = MockIngesterService::new();
-        let index_uid_clone = index_uid.clone();
-        mock_ingester_1
-            .expect_open_fetch_stream()
-            .return_once(move |request| {
-                assert_eq!(request.client_id, "test-client");
-                assert_eq!(request.index_uid(), &index_uid_clone);
-                assert_eq!(request.source_id, "test-source");
-                assert_eq!(request.shard_id(), ShardId::from(1));
-                assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
-
-                Ok(service_stream_1)
-            });
-        let ingester_1 =
-            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1));
-
-        ingester_pool.insert("test-ingester-0".into(), ingester_0);
-        ingester_pool.insert("test-ingester-1".into(), ingester_1);
-
-        let fetch_payload = FetchPayload {
-            index_uid: Some(index_uid.clone()),
-            source_id: source_id.clone(),
-            shard_id: Some(shard_id.clone()),
-            mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
-            from_position_exclusive: Some(Position::offset(0u64)),
-            to_position_inclusive: Some(Position::offset(1u64)),
-        };
-        let fetch_message = FetchMessage::new_payload(fetch_payload);
-        service_stream_tx_1.send(Ok(fetch_message)).unwrap();
-
-        let fetch_eof = FetchEof {
-            index_uid: Some(index_uid.clone()),
-            source_id: source_id.clone(),
-            shard_id: Some(shard_id.clone()),
-            eof_position: Some(Position::eof(1u64)),
-        };
-        let fetch_message = FetchMessage::new_eof(fetch_eof);
-        service_stream_tx_1.send(Ok(fetch_message)).unwrap();
-
-        fault_tolerant_fetch_stream(
-            client_id,
-            index_uid,
-            source_id,
-            shard_id,
-            &mut from_position_exclusive,
-            &ingester_ids,
-            ingester_pool,
-            fetch_message_tx,
-        )
-        .await;
-
-        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap()
-            .into_inner();
-        let fetch_payload = into_fetch_payload(fetch_message);
-
-        assert_eq!(
-            fetch_payload.from_position_exclusive(),
-            Position::offset(0u64)
-        );
-        assert_eq!(
-            fetch_payload.to_position_inclusive(),
-            Position::offset(1u64)
-        );
-
-        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap()
-            .into_inner();
-        let fetch_eof = into_fetch_eof(fetch_message);
-
-        assert_eq!(fetch_eof.eof_position(), Position::eof(1u64));
-
-        assert!(
-            timeout(Duration::from_millis(100), fetch_stream.next())
-                .await
-                .unwrap()
-                .is_none()
-        );
-    }
-
-    #[tokio::test]
-    async fn test_fault_tolerant_fetch_stream_error_failover() {
-        let client_id = "test-client".to_string();
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
-        let source_id: SourceId = "test-source".into();
-        let shard_id = ShardId::from(1);
-        let mut from_position_exclusive = Position::offset(0u64);
-
-        let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
-        let ingester_pool = IngesterPool::default();
-
-        let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
-        let (service_stream_tx_0, service_stream_0) = ServiceStream::new_unbounded();
-        let (service_stream_tx_1, service_stream_1) = ServiceStream::new_unbounded();
-
-        let mut mock_ingester_0 = MockIngesterService::new();
-        let index_uid_clone = index_uid.clone();
-        mock_ingester_0
-            .expect_open_fetch_stream()
-            .return_once(move |request| {
-                assert_eq!(request.client_id, "test-client");
-                assert_eq!(request.index_uid(), &index_uid_clone);
-                assert_eq!(request.source_id, "test-source");
-                assert_eq!(request.shard_id(), ShardId::from(1));
-                assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
-
-                Ok(service_stream_0)
-            });
-        let ingester_0 =
-            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
-
-        let mut mock_ingester_1 = MockIngesterService::new();
-        let index_uid_clone = index_uid.clone();
-        mock_ingester_1
-            .expect_open_fetch_stream()
-            .return_once(move |request| {
-                assert_eq!(request.client_id, "test-client");
-                assert_eq!(request.index_uid(), &index_uid_clone);
-                assert_eq!(request.source_id, "test-source");
-                assert_eq!(request.shard_id(), ShardId::from(1));
-                assert_eq!(request.from_position_exclusive(), Position::offset(1u64));
-
-                Ok(service_stream_1)
-            });
-        let ingester_1 =
-            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1));
-
-        ingester_pool.insert("test-ingester-0".into(), ingester_0);
-        ingester_pool.insert("test-ingester-1".into(), ingester_1);
-
-        let fetch_payload = FetchPayload {
-            index_uid: Some(index_uid.clone()),
-            source_id: source_id.clone(),
-            shard_id: Some(shard_id.clone()),
-            mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
-            from_position_exclusive: Some(Position::offset(0u64)),
-            to_position_inclusive: Some(Position::offset(1u64)),
-        };
-        let fetch_message = FetchMessage::new_payload(fetch_payload);
-        service_stream_tx_0.send(Ok(fetch_message)).unwrap();
-
-        let ingest_error = IngestV2Error::Internal("fetch stream error".into());
-        service_stream_tx_0.send(Err(ingest_error)).unwrap();
-
-        let fetch_eof = FetchEof {
-            index_uid: Some(index_uid.clone()),
-            source_id: source_id.clone(),
-            shard_id: Some(shard_id.clone()),
-            eof_position: Some(Position::eof(1u64)),
-        };
-        let fetch_message = FetchMessage::new_eof(fetch_eof);
-        service_stream_tx_1.send(Ok(fetch_message)).unwrap();
-
-        fault_tolerant_fetch_stream(
-            client_id,
-            index_uid,
-            source_id,
-            shard_id,
-            &mut from_position_exclusive,
-            &ingester_ids,
-            ingester_pool,
-            fetch_message_tx,
-        )
-        .await;
-
-        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap()
-            .into_inner();
-        let fetch_payload = into_fetch_payload(fetch_message);
-
-        assert_eq!(
-            fetch_payload.from_position_exclusive(),
-            Position::offset(0u64)
-        );
-        assert_eq!(
-            fetch_payload.to_position_inclusive(),
-            Position::offset(1u64)
-        );
-
-        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap()
-            .into_inner();
-        let fetch_eof = into_fetch_eof(fetch_message);
-
-        assert_eq!(fetch_eof.eof_position(), Position::eof(1u64));
-
-        assert!(
-            timeout(Duration::from_millis(100), fetch_stream.next())
-                .await
-                .unwrap()
-                .is_none()
-        );
-    }
-
-    #[tokio::test]
-    async fn test_fault_tolerant_fetch_stream_shard_not_found() {
-        let client_id = "test-client".to_string();
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
-        let source_id: SourceId = "test-source".into();
-        let shard_id = ShardId::from(1);
-        let mut from_position_exclusive = Position::offset(0u64);
-
-        let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
+        let ingester_id = NodeId::from_str("test-ingester-0");
         let ingester_pool = IngesterPool::default();
 
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
@@ -1671,15 +1228,15 @@ pub(super) mod tests {
             });
         let ingester_0 =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
-        ingester_pool.insert("test-ingester-0".into(), ingester_0);
+        ingester_pool.insert(NodeId::from_str("test-ingester-0"), ingester_0);
 
-        fault_tolerant_fetch_stream(
+        fetch_stream_once(
             client_id,
             index_uid,
             source_id,
             shard_id,
             &mut from_position_exclusive,
-            &ingester_ids,
+            &ingester_id,
             ingester_pool,
             fetch_message_tx,
         )
@@ -1706,7 +1263,7 @@ pub(super) mod tests {
         let shard_id = ShardId::from(1);
         let from_position_exclusive = Position::offset(0u64);
 
-        let ingester_ids: Vec<NodeId> = vec!["test-ingester".into()];
+        let ingester_id = NodeId::from_str("test-ingester");
         let ingester_pool = IngesterPool::default();
 
         let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
@@ -1761,7 +1318,7 @@ pub(super) mod tests {
         let ingester =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
 
-        ingester_pool.insert("test-ingester".into(), ingester);
+        ingester_pool.insert(NodeId::from_str("test-ingester"), ingester);
 
         let fetch_payload = FetchPayload {
             index_uid: Some(index_uid.clone()),
@@ -1797,7 +1354,7 @@ pub(super) mod tests {
             source_id,
             shard_id,
             from_position_exclusive,
-            ingester_ids,
+            ingester_id,
             ingester_pool,
             retry_params,
             fetch_message_tx,
@@ -1876,12 +1433,10 @@ pub(super) mod tests {
 
     #[tokio::test]
     async fn test_multi_fetch_stream() {
-        let self_node_id: NodeId = "test-node".into();
         let client_id = "test-client".to_string();
         let ingester_pool = IngesterPool::default();
         let retry_params = RetryParams::for_test();
-        let _multi_fetch_stream =
-            MultiFetchStream::new(self_node_id, client_id, ingester_pool, retry_params);
+        let _multi_fetch_stream = MultiFetchStream::new(client_id, ingester_pool, retry_params);
         // TODO: Backport from original branch.
     }
 }

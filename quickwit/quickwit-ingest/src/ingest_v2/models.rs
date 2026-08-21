@@ -18,20 +18,11 @@ use std::time::{Duration, Instant};
 use quickwit_common::rate_limiter::RateLimiter;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::ingest::ShardState;
-use quickwit_proto::types::{IndexUid, NodeId, Position, QueueId, ShardId, SourceId, queue_id};
+use quickwit_proto::types::{IndexUid, Position, QueueId, ShardId, SourceId, queue_id};
 use tokio::sync::watch;
+use tracing::error;
 
 use crate::ingest_v2::rate_meter::RateMeter;
-
-#[derive(Debug, Clone)]
-pub(super) enum IngesterShardType {
-    /// A primary shard hosted on a leader and replicated on a follower.
-    Primary { follower_id: NodeId },
-    /// A replica shard hosted on a follower.
-    Replica { leader_id: NodeId },
-    /// A shard hosted on a single node when the replication factor is set to 1.
-    Solo,
-}
 
 /// Status of a shard: state + position of the last record written.
 pub(super) type ShardStatus = (ShardState, Position);
@@ -41,24 +32,21 @@ pub(super) struct IngesterShard {
     pub index_uid: IndexUid,
     pub source_id: SourceId,
     pub shard_id: ShardId,
-    pub shard_type: IngesterShardType,
     pub shard_state: ShardState,
     /// Position of the last record written in the shard's mrecordlog queue.
     pub replication_position_inclusive: Position,
     /// Position up to which the shard has been truncated.
     pub truncation_position_inclusive: Position,
-    // Rate limiter for the shard. Unused for replica shards.
     pub rate_limiter: RateLimiter,
-    // Rate meter for the shard. Unused for replica shards.
     pub rate_meter: RateMeter,
     /// Whether the shard should be advertised to other nodes (routers) via gossip.
     ///
-    /// Because shards  are created in multiple steps, (e.g., init shard on leader, create shard in
-    /// metastore), we must receive a "signal" from the control plane confirming that a shard
-    /// was successfully opened before advertising it. Currently, this confirmation comes in the
-    /// form of `PersistRequest` or `FetchRequest`.
+    /// Because shards  are created in multiple steps, (e.g., init shard on ingester, create shard
+    /// in metastore), we must receive a "signal" from the control plane confirming that a
+    /// shard was successfully opened before advertising it. Currently, this confirmation comes
+    /// in the form of `PersistRequest` or `FetchRequest`.
     pub is_advertisable: bool,
-    /// Document mapper for the shard. Replica shards and closed solo shards do not have one.
+    /// Document mapper for the shard. Closed shards do not have one.
     pub doc_mapper_opt: Option<Arc<DocMapper>>,
     /// Whether to validate documents in this shard. True if no preprocessing (VRL) will happen
     /// before indexing.
@@ -76,7 +64,6 @@ pub(super) struct IngesterShardBuilder {
     index_uid: IndexUid,
     source_id: SourceId,
     shard_id: ShardId,
-    shard_type: IngesterShardType,
     shard_state: ShardState,
     replication_position_inclusive: Position,
     truncation_position_inclusive: Position,
@@ -154,7 +141,6 @@ impl IngesterShardBuilder {
             index_uid: self.index_uid,
             source_id: self.source_id,
             shard_id: self.shard_id,
-            shard_type: self.shard_type,
             shard_state: self.shard_state,
             replication_position_inclusive: self.replication_position_inclusive,
             truncation_position_inclusive: self.truncation_position_inclusive,
@@ -171,18 +157,16 @@ impl IngesterShardBuilder {
 }
 
 impl IngesterShard {
-    /// Creates a builder for a primary shard hosted on a leader and replicated on a follower.
-    pub fn new_primary(
+    /// Creates a shard builder.
+    pub fn builder(
         index_uid: IndexUid,
         source_id: SourceId,
         shard_id: ShardId,
-        follower_id: NodeId,
     ) -> IngesterShardBuilder {
         IngesterShardBuilder {
             index_uid,
             source_id,
             shard_id,
-            shard_type: IngesterShardType::Primary { follower_id },
             shard_state: ShardState::Open,
             replication_position_inclusive: Position::Beginning,
             truncation_position_inclusive: Position::Beginning,
@@ -192,61 +176,6 @@ impl IngesterShard {
             validate_docs: false,
             is_advertisable: false,
             last_write_instant: None,
-        }
-    }
-
-    /// Creates a builder for a replica shard hosted on a follower.
-    pub fn new_replica(
-        index_uid: IndexUid,
-        source_id: SourceId,
-        shard_id: ShardId,
-        leader_id: NodeId,
-    ) -> IngesterShardBuilder {
-        IngesterShardBuilder {
-            index_uid,
-            source_id,
-            shard_id,
-            shard_type: IngesterShardType::Replica { leader_id },
-            shard_state: ShardState::Open,
-            replication_position_inclusive: Position::Beginning,
-            truncation_position_inclusive: Position::Beginning,
-            rate_limiter: RateLimiter::default(),
-            rate_meter: RateMeter::default(),
-            doc_mapper_opt: None,
-            validate_docs: false,
-            is_advertisable: false,
-            last_write_instant: None,
-        }
-    }
-
-    /// Creates a builder for a solo shard hosted on a single node (i.e. replication factor = 1).
-    pub fn new_solo(
-        index_uid: IndexUid,
-        source_id: SourceId,
-        shard_id: ShardId,
-    ) -> IngesterShardBuilder {
-        IngesterShardBuilder {
-            index_uid,
-            source_id,
-            shard_id,
-            shard_type: IngesterShardType::Solo,
-            shard_state: ShardState::Open,
-            replication_position_inclusive: Position::Beginning,
-            truncation_position_inclusive: Position::Beginning,
-            rate_limiter: RateLimiter::default(),
-            rate_meter: RateMeter::default(),
-            doc_mapper_opt: None,
-            validate_docs: false,
-            is_advertisable: false,
-            last_write_instant: None,
-        }
-    }
-
-    pub fn follower_id_opt(&self) -> Option<&NodeId> {
-        match &self.shard_type {
-            IngesterShardType::Primary { follower_id, .. } => Some(follower_id),
-            IngesterShardType::Replica { .. } => None,
-            IngesterShardType::Solo => None,
         }
     }
 
@@ -267,12 +196,27 @@ impl IngesterShard {
         now.duration_since(self.last_write_instant) >= idle_timeout
     }
 
-    pub fn is_indexed(&self) -> bool {
-        self.shard_state.is_closed() && self.truncation_position_inclusive.is_eof()
-    }
-
-    pub fn is_replica(&self) -> bool {
-        matches!(self.shard_type, IngesterShardType::Replica { .. })
+    /// Returns `true` if the shard is unreachable to the control plane and empty.
+    // A non-advertisable shard means the control plane never got confirmation that this
+    // shard was initialized on this ingester (e.g. it lost the `init_shards` response),
+    // so it never recorded the shard in the metastore or handed it out to any router or
+    // indexer. Such a shard can never become advertisable (that requires a persist/fetch
+    // request, which requires the control plane to know about it) and is invisible to
+    // the other RPC or gossip-driven cleanup mechanisms. It's safe to delete: never
+    // having been advertised, it can't have received any writes.
+    pub fn is_empty_orphan(&self) -> bool {
+        if self.is_advertisable {
+            return false;
+        }
+        let is_empty = self.replication_position_inclusive.is_beginning();
+        if !is_empty {
+            error!(
+                "shard `{}` is not advertisable but is not empty, this should never happen, \
+                 please report",
+                self.queue_id()
+            );
+        }
+        is_empty
     }
 
     pub fn notify_shard_status(&self) {
@@ -312,21 +256,6 @@ mod tests {
 
     impl IngesterShard {
         #[track_caller]
-        pub fn assert_is_solo(&self) {
-            assert!(matches!(self.shard_type, IngesterShardType::Solo))
-        }
-
-        #[track_caller]
-        pub fn assert_is_primary(&self) {
-            assert!(matches!(self.shard_type, IngesterShardType::Primary { .. }))
-        }
-
-        #[track_caller]
-        pub fn assert_is_replica(&self) {
-            assert!(matches!(self.shard_type, IngesterShardType::Replica { .. }))
-        }
-
-        #[track_caller]
         pub fn assert_is_open(&self) {
             assert!(self.shard_state.is_open())
         }
@@ -356,16 +285,15 @@ mod tests {
     }
 
     #[test]
-    fn test_new_primary_shard() {
+    fn test_shard_builder() {
         let doc_mapping: DocMapping = serde_json::from_str("{}").unwrap();
         let search_settings = SearchSettings::default();
         let doc_mapper = build_doc_mapper(&doc_mapping, &search_settings).unwrap();
 
-        let primary_shard = IngesterShard::new_primary(
+        let shard = IngesterShard::builder(
             IndexUid::for_test("test-index", 0),
             SourceId::from("test-source"),
             ShardId::from(1),
-            NodeId::from("test-follower"),
         )
         .with_state(ShardState::Closed)
         .with_replication_position_inclusive(Position::offset(42u64))
@@ -373,74 +301,44 @@ mod tests {
         .with_validate_docs(true)
         .build();
 
-        assert!(matches!(
-            &primary_shard.shard_type,
-            IngesterShardType::Primary { follower_id, .. } if *follower_id == "test-follower"
-        ));
-        assert!(!primary_shard.is_replica());
-        assert_eq!(primary_shard.shard_state, ShardState::Closed);
+        assert_eq!(shard.shard_state, ShardState::Closed);
         assert_eq!(
-            primary_shard.replication_position_inclusive,
+            shard.replication_position_inclusive,
             Position::offset(42u64)
         );
-        assert_eq!(
-            primary_shard.truncation_position_inclusive,
-            Position::Beginning
-        );
-        assert!(!primary_shard.is_advertisable);
+        assert_eq!(shard.truncation_position_inclusive, Position::Beginning);
+        assert!(!shard.is_advertisable);
     }
 
     #[test]
-    fn test_new_replica_shard() {
-        let replica_shard = IngesterShard::new_replica(
-            IndexUid::for_test("test-index", 0),
-            SourceId::from("test-source"),
-            ShardId::from(1),
-            NodeId::from("test-leader"),
-        )
-        .with_state(ShardState::Closed)
-        .with_replication_position_inclusive(Position::offset(42u64))
-        .build();
-
-        assert!(matches!(
-            &replica_shard.shard_type,
-            IngesterShardType::Replica { leader_id } if *leader_id == "test-leader"
-        ));
-        assert!(replica_shard.is_replica());
-        assert_eq!(replica_shard.shard_state, ShardState::Closed);
-        assert_eq!(
-            replica_shard.replication_position_inclusive,
-            Position::offset(42u64)
-        );
-        assert_eq!(
-            replica_shard.truncation_position_inclusive,
-            Position::Beginning
-        );
-        assert!(!replica_shard.is_advertisable);
-    }
-
-    #[test]
-    fn test_new_solo_shard() {
-        let solo_shard = IngesterShard::new_solo(
+    fn test_is_empty_orphan() {
+        let non_advertisable_empty_shard = IngesterShard::builder(
             IndexUid::for_test("test-index", 0),
             SourceId::from("test-source"),
             ShardId::from(1),
         )
         .with_state(ShardState::Closed)
+        .build();
+        assert!(non_advertisable_empty_shard.is_empty_orphan());
+
+        let advertisable_empty_shard = IngesterShard::builder(
+            IndexUid::for_test("test-index", 0),
+            SourceId::from("test-source"),
+            ShardId::from(2),
+        )
+        .with_state(ShardState::Closed)
+        .advertisable()
+        .build();
+        assert!(!advertisable_empty_shard.is_empty_orphan());
+
+        let non_advertisable_non_empty_shard = IngesterShard::builder(
+            IndexUid::for_test("test-index", 0),
+            SourceId::from("test-source"),
+            ShardId::from(3),
+        )
+        .with_state(ShardState::Closed)
         .with_replication_position_inclusive(Position::offset(42u64))
         .build();
-
-        solo_shard.assert_is_solo();
-        assert!(!solo_shard.is_replica());
-        assert_eq!(solo_shard.shard_state, ShardState::Closed);
-        assert_eq!(
-            solo_shard.replication_position_inclusive,
-            Position::offset(42u64)
-        );
-        assert_eq!(
-            solo_shard.truncation_position_inclusive,
-            Position::Beginning
-        );
-        assert!(!solo_shard.is_advertisable);
+        assert!(!non_advertisable_non_empty_shard.is_empty_orphan());
     }
 }

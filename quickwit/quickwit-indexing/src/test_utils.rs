@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use bytes::Bytes;
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
@@ -40,6 +40,7 @@ use serde_json::Value as JsonValue;
 
 use crate::actors::IndexingService;
 use crate::models::{DetachIndexingPipeline, IndexingStatistics, SpawnPipeline};
+use crate::split_store::IndexingSplitCache;
 
 /// Creates a Test environment.
 ///
@@ -74,8 +75,8 @@ impl TestSandbox {
         indexing_settings_yaml: &str,
         search_fields: &[&str],
     ) -> anyhow::Result<TestSandbox> {
-        let node_id = NodeId::new(append_random_suffix("test-node"));
-        let transport = ChannelTransport::default();
+        let node_id = NodeId::from_str(&append_random_suffix("test-node"));
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -123,10 +124,12 @@ impl TestSandbox {
             cluster,
             metastore.clone(),
             Some(ingest_api_service),
-            merge_scheduler_mailbox,
+            Some(merge_scheduler_mailbox),
             IngesterPool::default(),
             storage_resolver.clone(),
             EventBroker::default(),
+            Arc::new(IndexingSplitCache::no_caching()),
+            None,
         )
         .await?;
         let (indexing_service, _indexing_service_handle) =
@@ -280,7 +283,7 @@ pub fn mock_split(split_id: &str) -> Split {
 pub fn mock_split_meta(split_id: &str, index_uid: &IndexUid) -> SplitMetadata {
     SplitMetadata {
         index_uid: index_uid.clone(),
-        split_id: split_id.to_string(),
+        split_id: split_id.into(),
         partition_id: 13u64,
         num_docs: if split_id == "split1" { 1_000_000 } else { 10 },
         uncompressed_docs_size_in_bytes: 256,

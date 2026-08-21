@@ -42,11 +42,12 @@ use tantivy::index::SegmentId;
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, Directory, Index, IndexMeta, IndexWriter, SegmentReader};
 use tokio::runtime::Handle;
+use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
-use crate::merge_policy::MergeOperationType;
+use crate::merge_policy::{MergeOperationType, MergeSource};
 use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, SplitAttrs};
 
 #[derive(Clone)]
@@ -56,6 +57,9 @@ pub struct MergeExecutor {
     doc_mapper: Arc<DocMapper>,
     io_controls: IoControls,
     merge_packager_mailbox: Mailbox<Packager>,
+    /// Bounds concurrent Tantivy merges across pipelines on this node.
+    /// `None` in the legacy indexing-side merge pipeline.
+    merge_execution_semaphore: Option<Arc<Semaphore>>,
 }
 
 #[async_trait]
@@ -81,22 +85,38 @@ impl Actor for MergeExecutor {
 impl Handler<MergeScratch> for MergeExecutor {
     type Reply = ();
 
-    #[instrument(level = "info", name = "merge_executor", parent = merge_scratch.merge_task.merge_parent_span.id(), skip_all)]
+    #[instrument(level = "info", name = "merge_executor", parent = merge_scratch.merge_source.as_operation().merge_parent_span.id(), skip_all)]
     async fn handle(
         &mut self,
         merge_scratch: MergeScratch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         let start = Instant::now();
-        let merge_task = merge_scratch.merge_task;
-        let indexed_split_opt: Option<IndexedSplit> = match merge_task.operation_type {
+        let MergeScratch {
+            merge_source,
+            tantivy_dirs,
+            merge_scratch_directory,
+            ..
+        } = merge_scratch;
+        let merge_operation = merge_source.as_operation();
+        // On nodes running the split compaction architecture, merge pipelines are ephemeral, and we
+        // need to make sure there aren't too many CPU-bound operations occurring concurrently.
+        let _cpu_permit = match &self.merge_execution_semaphore {
+            Some(semaphore) => Some(
+                ctx.protect_future(semaphore.clone().acquire_owned())
+                    .await
+                    .expect("merge execution semaphore should never be closed"),
+            ),
+            None => None,
+        };
+        let indexed_split_opt: Option<IndexedSplit> = match merge_operation.operation_type {
             MergeOperationType::Merge => {
                 let merge_res = self
                     .process_merge(
-                        merge_task.merge_split_id.clone(),
-                        merge_task.splits.clone(),
-                        merge_scratch.tantivy_dirs,
-                        merge_scratch.merge_scratch_directory,
+                        merge_operation.merge_split_id.clone(),
+                        merge_operation.splits.clone(),
+                        tantivy_dirs,
+                        merge_scratch_directory,
                         ctx,
                     )
                     .await;
@@ -114,24 +134,24 @@ impl Handler<MergeScratch> for MergeExecutor {
                         // With a merge policy that marks splits as mature after a day or so, this
                         // limits the noise associated to those failed
                         // merges.
-                        error!(task=?merge_task, err=?err, "failed to merge splits");
+                        error!(task=?merge_operation, err=?err, "failed to merge splits");
                         return Ok(());
                     }
                 }
             }
             MergeOperationType::DeleteAndMerge => {
                 assert_eq!(
-                    merge_task.splits.len(),
+                    merge_operation.splits.len(),
                     1,
                     "Delete tasks can be applied only on one split."
                 );
-                assert_eq!(merge_scratch.tantivy_dirs.len(), 1);
-                let split_with_docs_to_delete = merge_task.splits[0].clone();
+                assert_eq!(tantivy_dirs.len(), 1);
+                let split_with_docs_to_delete = merge_operation.splits[0].clone();
                 self.process_delete_and_merge(
-                    merge_task.merge_split_id.clone(),
+                    merge_operation.merge_split_id.clone(),
                     split_with_docs_to_delete,
-                    merge_scratch.tantivy_dirs,
-                    merge_scratch.merge_scratch_directory,
+                    tantivy_dirs,
+                    merge_scratch_directory,
                     ctx,
                 )
                 .await?
@@ -141,18 +161,22 @@ impl Handler<MergeScratch> for MergeExecutor {
             info!(
                 merged_num_docs = %indexed_split.split_attrs.num_docs,
                 elapsed_secs = %start.elapsed().as_secs_f32(),
-                operation_type = %merge_task.operation_type,
+                operation_type = %merge_operation.operation_type,
                 "merge-operation-success"
             );
+            let batch_parent_span = merge_operation.merge_parent_span.clone();
+            let merge_task_opt = match merge_source {
+                MergeSource::Task(task) => Some(task),
+                MergeSource::Operation(_) => None,
+            };
             ctx.send_message(
                 &self.merge_packager_mailbox,
                 IndexedSplitBatch {
                     splits: vec![indexed_split],
                     checkpoint_delta_opt: Default::default(),
                     publish_lock: PublishLock::default(),
-                    publish_token_opt: None,
-                    batch_parent_span: merge_task.merge_parent_span.clone(),
-                    merge_task_opt: Some(merge_task),
+                    batch_parent_span,
+                    merge_task_opt,
                 },
             )
             .await?;
@@ -257,7 +281,7 @@ pub fn merge_split_attrs(
     let num_docs = sum_num_docs(splits);
     let replaced_split_ids: Vec<SplitId> = splits
         .iter()
-        .map(|split| split.split_id().to_string())
+        .map(|split| split.split_id().clone())
         .collect();
     let delete_opstamp = splits
         .iter()
@@ -305,6 +329,7 @@ impl MergeExecutor {
         doc_mapper: Arc<DocMapper>,
         io_controls: IoControls,
         merge_packager_mailbox: Mailbox<Packager>,
+        merge_execution_semaphore: Option<Arc<Semaphore>>,
     ) -> Self {
         MergeExecutor {
             pipeline_id,
@@ -312,6 +337,7 @@ impl MergeExecutor {
             doc_mapper,
             io_controls,
             merge_packager_mailbox,
+            merge_execution_semaphore,
         }
     }
 
@@ -434,7 +460,7 @@ impl MergeExecutor {
                 );
                 let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest::new(
                     split.index_uid.clone(),
-                    vec![split.split_id.clone()],
+                    [split.split_id.clone()],
                 );
                 self.metastore
                     .mark_splits_for_deletion(mark_splits_for_deletion_request)
@@ -458,7 +484,7 @@ impl MergeExecutor {
         };
         let indexed_split = IndexedSplit {
             split_attrs: SplitAttrs {
-                node_id: NodeId::new(split.node_id),
+                node_id: NodeId::from_str(&split.node_id),
                 index_uid: split.index_uid,
                 source_id: split.source_id,
                 doc_mapping_uid: split.doc_mapping_uid,
@@ -593,8 +619,8 @@ mod tests {
     use tantivy::{Document, ReloadPolicy, TantivyDocument};
 
     use super::*;
-    use crate::merge_policy::{MergeOperation, MergeTask};
-    use crate::{TestSandbox, get_tantivy_directory_from_split_bundle, new_split_id};
+    use crate::merge_policy::{MergeOperation, MergeSource, MergeTask};
+    use crate::{TestSandbox, get_tantivy_directory_from_split_bundle};
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {
@@ -644,7 +670,7 @@ mod tests {
         let merge_operation = MergeOperation::new_merge_operation(split_metas);
         let merge_task = MergeTask::from_merge_operation_for_test(merge_operation);
         let merge_scratch = MergeScratch {
-            merge_task,
+            merge_source: MergeSource::Task(merge_task),
             tantivy_dirs,
             merge_scratch_directory,
             downloaded_splits_directory,
@@ -662,6 +688,7 @@ mod tests {
             test_sandbox.doc_mapper(),
             IoControls::default(),
             merge_packager_mailbox,
+            None,
         );
         let (merge_executor_mailbox, merge_executor_handle) = test_sandbox
             .universe()
@@ -755,7 +782,7 @@ mod tests {
 
         // We want to test a delete on a split with num_merge_ops > 0.
         let mut new_split_metadata = splits[0].split_metadata.clone();
-        new_split_metadata.split_id = new_split_id();
+        new_split_metadata.split_id = SplitId::new();
         new_split_metadata.num_merge_ops = 1;
         let stage_splits_request =
             StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &new_split_metadata)
@@ -788,7 +815,7 @@ mod tests {
         let merge_operation = MergeOperation::new_delete_and_merge_operation(new_split_metadata);
         let merge_task = MergeTask::from_merge_operation_for_test(merge_operation);
         let merge_scratch = MergeScratch {
-            merge_task,
+            merge_source: MergeSource::Task(merge_task),
             tantivy_dirs: vec![tantivy_dir],
             merge_scratch_directory,
             downloaded_splits_directory,
@@ -806,6 +833,7 @@ mod tests {
             test_sandbox.doc_mapper(),
             IoControls::default(),
             merge_packager_mailbox,
+            None,
         );
         let (delete_task_executor_mailbox, delete_task_executor_handle) =
             universe.spawn_builder().spawn(delete_task_executor);

@@ -22,11 +22,12 @@ use std::{fmt, io};
 use async_trait::async_trait;
 use azure_core::error::ErrorKind;
 use azure_core::{Pageable, StatusCode};
-use azure_storage::Error as AzureError;
 use azure_storage::prelude::*;
+use azure_storage::{CloudLocation, Error as AzureError};
 use azure_storage_blobs::blob::operations::GetBlobResponse;
 use azure_storage_blobs::prelude::*;
 use bytes::{Bytes, BytesMut};
+use bytesize::ByteSize;
 use futures::io::Error as FutureError;
 use futures::stream::{StreamExt, TryStreamExt};
 use md5::Digest;
@@ -34,13 +35,14 @@ use quickwit_common::retry::{RetryParams, Retryable, retry};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, ignore_error_kind, into_u64_range};
 use quickwit_config::{AzureStorageConfig, StorageBackend};
+use quickwit_metrics::HistogramTimer;
 use regex::Regex;
 use tantivy::directory::OwnedBytes;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWriteExt, BufReader};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tokio_util::io::StreamReader;
-use tracing::{instrument, warn};
+use tracing::{info, instrument, warn};
 
 use crate::debouncer::DebouncedStorage;
 use crate::metrics::object_storage_get_slice_in_flight_guards;
@@ -98,11 +100,16 @@ impl AzureBlobStorage {
     pub fn new(
         storage_account_name: String,
         storage_credentials: StorageCredentials,
+        blob_service_uri: Option<String>,
         uri: Uri,
         container_name: String,
     ) -> Self {
-        let container_client = BlobServiceClient::new(storage_account_name, storage_credentials)
-            .container_client(container_name);
+        let container_client = build_container_client(
+            storage_account_name,
+            storage_credentials,
+            blob_service_uri,
+            container_name,
+        );
         Self {
             container_client,
             uri,
@@ -110,10 +117,11 @@ impl AzureBlobStorage {
             multipart_policy: MultiPartPolicy {
                 // Azure max part size is 100MB
                 // https://azure.microsoft.com/en-us/blog/general-availability-larger-block-blobs-in-azure-storage/
-                target_part_num_bytes: 100_000_000,
-                multipart_threshold_num_bytes: 100_000_000,
+                target_part_num_bytes: ByteSize::mb(100),
+                multipart_threshold_num_bytes: ByteSize::mb(100),
                 max_num_parts: 50_000, // Azure allows up to 50,000 blocks
-                max_object_num_bytes: 4_770_000_000_000u64, // Azure allows up to 4.77TB objects
+                max_object_num_bytes: ByteSize::b(4_770_000_000_000), /* Azure allows up to
+                                        * 4.77TB objects */
                 max_concurrent_uploads: 100,
             },
             retry_params: RetryParams::aggressive(),
@@ -189,9 +197,11 @@ impl AzureBlobStorage {
             let message = format!("failed to extract container name from Azure URI `{uri}`");
             StorageResolverError::InvalidUri(message)
         })?;
+        let blob_service_uri = azure_storage_config.resolve_blob_service_uri(&storage_account_name);
         let azure_blob_storage = AzureBlobStorage::new(
             storage_account_name,
             storage_credentials,
+            blob_service_uri,
             uri.clone(),
             container_name,
         );
@@ -213,6 +223,7 @@ impl AzureBlobStorage {
         let name = self.blob_name(path);
         let capacity = range_opt.as_ref().map(Range::len).unwrap_or(0);
         retry(&self.retry_params, || async {
+            let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
             let (mut response_stream, _in_flight_guards) = if let Some(range) = range_opt.as_ref() {
                 let stream = self
                     .container_client
@@ -242,6 +253,7 @@ impl AzureBlobStorage {
     ) -> StorageResult<()> {
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(payload.len());
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_PUT_OBJECT_DURATION);
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
             let hash = azure_storage_blobs::prelude::Hash::from(md5::compute(&data[..]).0);
@@ -277,6 +289,8 @@ impl AzureBlobStorage {
                 crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
                 crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(range.end - range.start);
                 async move {
+                    let _timer =
+                        HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_UPLOAD_PART_DURATION);
                     retry(&self.retry_params, || async {
                         // zero pad block ids to make them sortable as strings
                         let block_id = format!("block:{:05}", num);
@@ -382,6 +396,10 @@ impl Storage for AzureBlobStorage {
 
     #[instrument(name = "storage.azure.delete", level = "debug", skip(self))]
     async fn delete(&self, path: &Path) -> StorageResult<()> {
+        // The Azure SDK has no batch delete, so bulk_delete also funnels through
+        // here one blob at a time.
+        crate::metrics::OBJECT_STORAGE_DELETE_REQUESTS_TOTAL.inc();
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_DELETE_REQUEST_DURATION);
         let blob_name = self.blob_name(path);
         let delete_res: Result<_, StorageError> = self
             .container_client
@@ -543,6 +561,25 @@ async fn extract_range_data_and_hash(
     let data = Bytes::from(buf);
     let hash = md5::compute(&data[..]);
     Ok((data, hash))
+}
+
+fn build_container_client(
+    storage_account_name: String,
+    storage_credentials: StorageCredentials,
+    blob_service_uri: Option<String>,
+    container_name: String,
+) -> ContainerClient {
+    let mut builder = ClientBuilder::new(storage_account_name.clone(), storage_credentials);
+    if let Some(uri) = blob_service_uri {
+        info!(endpoint=%uri, "using Azure blob storage endpoint defined in storage config or environment variable");
+        builder = builder.cloud_location(CloudLocation::Custom {
+            account: storage_account_name,
+            uri,
+        });
+    }
+    builder
+        .blob_service_client()
+        .container_client(container_name)
 }
 
 pub fn parse_azure_uri(uri: &Uri) -> Option<(String, PathBuf)> {

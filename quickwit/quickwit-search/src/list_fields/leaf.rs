@@ -21,7 +21,7 @@ use quickwit_common::shared_consts::{FIELD_PRESENCE_FIELD_NAME, SPLIT_FIELDS_FIL
 use quickwit_proto::search::{
     ListFieldsEntry, ListFieldsMetadata, ListFieldsResponse, SplitIdAndFooterOffsets,
 };
-use quickwit_proto::types::{IndexId, SplitId};
+use quickwit_proto::types::IndexId;
 use quickwit_storage::{OwnedBytes, Storage};
 use tracing::{Span, instrument};
 
@@ -154,7 +154,7 @@ async fn fetch_fields_metadata(
 async fn process_fields_metadata(
     serialized_entries: OwnedBytes,
     index_id: IndexId,
-    split_id: SplitId,
+    split_id: String,
     field_patterns: FieldPatterns,
 ) -> anyhow::Result<Vec<ListFieldsEntry>> {
     let parent_span = Span::current();
@@ -189,6 +189,9 @@ fn deserialize_fields_metadata(
             return false;
         }
         list_field_entry.index_ids = vec![index_id.to_string()];
+        // On-disk entries describe exactly one split. The count is initialized while reading so
+        // the split metadata wire format remains compatible with existing splits.
+        list_field_entry.num_splits = 1;
 
         if list_field_entry
             .field_name
@@ -253,6 +256,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: Vec::new(),
+            num_splits: 0,
         }
     }
 

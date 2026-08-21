@@ -32,7 +32,7 @@ use crate::retention_policy_execution::{
     run_execute_parquet_retention_policy, run_execute_retention_policy,
 };
 
-const RUN_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hours
+const RUN_INTERVAL: Duration = Duration::from_hours(1);
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct RetentionPolicyExecutorCounters {
@@ -344,7 +344,7 @@ mod tests {
     fn make_split(split_id: &str, time_range: Option<RangeInclusive<i64>>) -> Split {
         Split {
             split_metadata: SplitMetadata {
-                split_id: split_id.to_string(),
+                split_id: split_id.into(),
                 footer_offsets: 5..20,
                 time_range,
                 ..Default::default()

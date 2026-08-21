@@ -29,6 +29,7 @@ use quickwit_common::spawn_named_task;
 use quickwit_dst::events::merge_pipeline::{MergePipelineEvent, record_merge_pipeline_event};
 use quickwit_metastore::StageParquetSplitsRequestExt;
 use quickwit_metrics::{gauge, label_values};
+use quickwit_parquet_engine::merge::policy::ParquetMergePolicy;
 use quickwit_parquet_engine::split::{ParquetSplitKind, ParquetSplitMetadata};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
 use quickwit_storage::Storage;
@@ -95,6 +96,7 @@ pub struct ParquetUploader {
     split_store: Arc<dyn Storage>,
     sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
     max_concurrent_uploads: usize,
+    merge_policy: Arc<dyn ParquetMergePolicy>,
     counters: UploaderCounters,
 }
 
@@ -106,6 +108,7 @@ impl ParquetUploader {
         split_store: Arc<dyn Storage>,
         sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
         max_concurrent_uploads: usize,
+        merge_policy: Arc<dyn ParquetMergePolicy>,
     ) -> Self {
         Self {
             uploader_type,
@@ -113,6 +116,7 @@ impl ParquetUploader {
             split_store,
             sequencer_mailbox,
             max_concurrent_uploads,
+            merge_policy,
             counters: Default::default(),
         }
     }
@@ -195,7 +199,6 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                 replaced_split_ids: batch.replaced_split_ids,
                 checkpoint_delta_opt: batch.checkpoint_delta_opt,
                 publish_lock: batch.publish_lock,
-                publish_token_opt: batch.publish_token_opt,
                 parent_span: tracing::Span::current(),
                 _merge_task_opt: batch._merge_task_opt,
             };
@@ -227,13 +230,13 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
         // Clone what we need for the async task
         let metastore = self.metastore.clone();
         let split_store = self.split_store.clone();
+        let merge_policy = self.merge_policy.clone();
         let counters = self.counters.clone();
 
         let output_dir = batch.output_dir;
         let checkpoint_delta_opt = batch.checkpoint_delta_opt;
         let publish_lock = batch.publish_lock;
-        let publish_token_opt = batch.publish_token_opt;
-        let splits = batch.splits;
+        let mut splits = batch.splits;
         let replaced_split_ids = batch.replaced_split_ids;
         let merge_task_opt = batch._merge_task_opt;
         // Hold the scratch directory alive until the upload task completes.
@@ -257,15 +260,20 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     return;
                 }
 
+                for split in &mut splits {
+                    split.maturity =
+                        merge_policy.split_maturity(split.size_bytes, split.num_merge_ops);
+                }
+
                 // Stage splits in metastore based on split type
                 let stage_result =
                     stage_splits(metastore.clone(), index_uid.clone(), &splits).await;
 
-                if let Err(e) = stage_result {
-                    warn!(error = %e, "failed to stage splits");
+                if let Err(error) = stage_result {
                     // Discard sequencer position on error
                     let _ = tx.send(SequencerCommand::Discard);
-                    kill_switch.kill();
+                    kill_switch
+                        .kill_with_fault(error.context("ParquetUploader failed to stage splits"));
                     return;
                 }
 
@@ -285,17 +293,17 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     let local_path = output_dir.join(&parquet_file);
                     let file_content = match tokio::fs::read(&local_path).await {
                         Ok(content) => content,
-                        Err(e) => {
-                            warn!(
-                                error = %e,
-                                local_path = %local_path.display(),
-                                split_id = %split.split_id_str(),
-                                parquet_file = %parquet_file,
-                                "failed to read local parquet file"
-                            );
+                        Err(error) => {
                             // Discard sequencer position on error
                             let _ = tx.send(SequencerCommand::Discard);
-                            kill_switch.kill();
+                            kill_switch.kill_with_fault(anyhow::Error::from(error).context(
+                                format!(
+                                    "ParquetUploader failed to read local parquet file {} for \
+                                     split {}",
+                                    local_path.display(),
+                                    split.split_id_str()
+                                ),
+                            ));
                             return;
                         }
                     };
@@ -304,16 +312,14 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     let payload: Box<dyn quickwit_storage::PutPayload> = Box::new(file_content);
 
                     // Upload to S3 using the filename directly (matches logs pipeline)
-                    if let Err(e) = split_store.put(Path::new(&parquet_file), payload).await {
-                        warn!(
-                            error = %e,
-                            split_id = %split.split_id_str(),
-                            parquet_file = %parquet_file,
-                            "failed to upload parquet file"
-                        );
+                    if let Err(error) = split_store.put(Path::new(&parquet_file), payload).await {
                         // Discard sequencer position on error
                         let _ = tx.send(SequencerCommand::Discard);
-                        kill_switch.kill();
+                        kill_switch.kill_with_fault(anyhow::Error::from(error).context(format!(
+                            "ParquetUploader failed to upload parquet file {} for split {}",
+                            parquet_file,
+                            split.split_id_str()
+                        )));
                         return;
                     }
 
@@ -368,7 +374,6 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     replaced_split_ids,
                     checkpoint_delta_opt,
                     publish_lock,
-                    publish_token_opt,
                     parent_span: Span::current(),
                     _merge_task_opt: merge_task_opt,
                 };
@@ -444,7 +449,20 @@ mod tests {
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_stage_metrics_splits()
-            .withf(|request| request.index_uid().index_id == "test-index")
+            .withf(|request| {
+                if request.index_uid().index_id != "test-index" {
+                    return false;
+                }
+                let splits = request.deserialize_splits_metadata().unwrap();
+                matches!(
+                    splits.as_slice(),
+                    [split]
+                        if matches!(
+                            split.maturity,
+                            quickwit_parquet_engine::merge::policy::ParquetSplitMaturity::Immature { .. }
+                        )
+                )
+            })
             .times(1)
             .returning(|_| Ok(EmptyResponse {}));
 
@@ -455,6 +473,9 @@ mod tests {
             ram_storage.clone(),
             sequencer_mailbox,
             4,
+            crate::merge_policy::parquet_merge_policy_from_settings(
+                &quickwit_config::IndexingSettings::default(),
+            ),
         );
 
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
@@ -473,7 +494,6 @@ mod tests {
             output_dir: temp_dir.path().to_path_buf(),
             checkpoint_delta_opt: Some(checkpoint_delta),
             publish_lock: PublishLock::default(),
-            publish_token_opt: None,
             replaced_split_ids: Vec::new(),
             _scratch_directory_opt: None,
             _merge_task_opt: None,
@@ -544,6 +564,9 @@ mod tests {
             ram_storage.clone(),
             sequencer_mailbox,
             4,
+            crate::merge_policy::parquet_merge_policy_from_settings(
+                &quickwit_config::IndexingSettings::default(),
+            ),
         );
 
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
@@ -569,7 +592,6 @@ mod tests {
             output_dir: temp_dir.path().to_path_buf(),
             checkpoint_delta_opt: Some(checkpoint_delta),
             publish_lock: PublishLock::default(),
-            publish_token_opt: None,
             replaced_split_ids: Vec::new(),
             _scratch_directory_opt: None,
             _merge_task_opt: None,
@@ -631,6 +653,9 @@ mod tests {
             ram_storage.clone(),
             sequencer_mailbox,
             4,
+            crate::merge_policy::parquet_merge_policy_from_settings(
+                &quickwit_config::IndexingSettings::default(),
+            ),
         );
 
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
@@ -646,7 +671,6 @@ mod tests {
             output_dir: temp_dir.path().to_path_buf(),
             checkpoint_delta_opt: Some(checkpoint_delta),
             publish_lock: PublishLock::default(),
-            publish_token_opt: None,
             replaced_split_ids: Vec::new(),
             _scratch_directory_opt: None,
             _merge_task_opt: None,
@@ -697,6 +721,9 @@ mod tests {
             ram_storage.clone(),
             sequencer_mailbox,
             4,
+            crate::merge_policy::parquet_merge_policy_from_settings(
+                &quickwit_config::IndexingSettings::default(),
+            ),
         );
 
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
@@ -719,7 +746,6 @@ mod tests {
                 output_dir: temp_dir.path().to_path_buf(),
                 checkpoint_delta_opt: Some(checkpoint_delta),
                 publish_lock: PublishLock::default(),
-                publish_token_opt: None,
                 replaced_split_ids: Vec::new(),
                 _scratch_directory_opt: None,
                 _merge_task_opt: None,

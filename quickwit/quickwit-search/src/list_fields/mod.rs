@@ -18,7 +18,6 @@ mod patterns;
 mod root;
 
 use std::cmp::Ordering;
-use std::sync::LazyLock;
 
 pub use cache::ListFieldsCache;
 use itertools::Itertools;
@@ -26,19 +25,19 @@ use quickwit_common::rate_limited_warn;
 use quickwit_proto::search::ListFieldsEntry;
 use tracing::instrument;
 
-use crate::SearchError;
 pub use crate::list_fields::leaf::leaf_list_fields;
 pub use crate::list_fields::root::root_list_fields;
 
 /// QW_FIELD_LIST_SIZE_LIMIT defines a hard limit on the number of fields that
-/// can be returned (error otherwise).
+/// can be returned. When the limit is exceeded, the fields present in the most
+/// splits are retained.
 ///
 /// Having many fields can happen when a user is creating fields dynamically in
-/// a JSON type with random field names. This leads to huge memory consumption
-/// when building the response. This is a workaround until a way is found to
-/// prune the long tail of rare fields.
-static FIELD_LIST_SIZE_LIMIT: LazyLock<usize> =
-    LazyLock::new(|| quickwit_common::get_from_env("QW_FIELD_LIST_SIZE_LIMIT", 100_000, false));
+/// a JSON type with random field names. Retaining the most common fields bounds
+/// response memory while pruning the long tail of rare fields.
+fn field_list_size_limit() -> usize {
+    quickwit_common::get_from_env_cached!(usize, "QW_FIELD_LIST_SIZE_LIMIT", 100_000, false)
+}
 
 // Sorts and deduplicates the list of fields.
 //
@@ -65,36 +64,55 @@ fn sort_and_dedup(entries: &mut Vec<ListFieldsEntry>) {
 }
 
 fn merge_entries(entry_groups: Vec<Vec<ListFieldsEntry>>) -> crate::Result<Vec<ListFieldsEntry>> {
+    Ok(merge_entries_with_limit(
+        entry_groups,
+        field_list_size_limit(),
+    ))
+}
+
+fn merge_entries_with_limit(
+    entry_groups: Vec<Vec<ListFieldsEntry>>,
+    limit: usize,
+) -> Vec<ListFieldsEntry> {
     let merged_entries = entry_groups
         .into_iter()
         .kmerge_by(|left, right| left.cmp_by_name_and_type(right) == Ordering::Less);
     let mut entries = Vec::new();
-
     let mut current_group: Vec<ListFieldsEntry> = Vec::new();
-    // Build ListFieldsEntry from current group
-    let flush_group = |responses: &mut Vec<_>, current_group: &mut Vec<ListFieldsEntry>| {
-        let entry = merge_same_entry_group(current_group);
-        responses.push(entry);
-        current_group.clear();
+
+    let truncate_entries = |entries: &mut Vec<ListFieldsEntry>| {
+        entries.sort_unstable_by(|left, right| {
+            right
+                .num_splits
+                .cmp(&left.num_splits)
+                .then_with(|| left.cmp_by_name_and_type(right))
+        });
+        entries.truncate(limit);
     };
+    let flush_group = |entries: &mut Vec<ListFieldsEntry>,
+                       current_group: &mut Vec<ListFieldsEntry>| {
+        entries.push(merge_same_entry_group(current_group));
+        current_group.clear();
+        if entries.len() >= limit * 2 {
+            truncate_entries(entries);
+        }
+    };
+
     for entry in merged_entries {
         if let Some(last) = current_group.last()
             && (last.field_name != entry.field_name || last.field_type != entry.field_type)
         {
             flush_group(&mut entries, &mut current_group);
         }
-        if entries.len() >= *FIELD_LIST_SIZE_LIMIT {
-            return Err(SearchError::Internal(format!(
-                "list fields response exceeded {} fields",
-                *FIELD_LIST_SIZE_LIMIT
-            )));
-        }
         current_group.push(entry);
     }
     if !current_group.is_empty() {
         flush_group(&mut entries, &mut current_group);
     }
-    Ok(entries)
+
+    truncate_entries(&mut entries);
+    entries.sort_unstable_by(ListFieldsEntry::cmp_by_name_and_type);
+    entries
 }
 
 /// `current_group` needs to contain at least one element.
@@ -120,6 +138,7 @@ fn merge_same_entry_group(current_group: &mut Vec<ListFieldsEntry>) -> ListField
     let aggregatable = current_group.iter().any(|entry| entry.aggregatable);
     let field_name = metadata.field_name.to_string();
     let field_type = metadata.field_type;
+    let num_splits = current_group.iter().map(|entry| entry.num_splits).sum();
     let mut non_searchable_index_ids = if searchable {
         // We need to combine the non_searchable_index_ids + index_ids where searchable is set to
         // false (as they are all non_searchable)
@@ -175,6 +194,7 @@ fn merge_same_entry_group(current_group: &mut Vec<ListFieldsEntry>) -> ListField
         non_searchable_index_ids,
         non_aggregatable_index_ids,
         index_ids,
+        num_splits,
     }
 }
 
@@ -194,6 +214,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
+            num_splits: 1,
         };
         let entry2 = ListFieldsEntry {
             field_name: "field1".to_string(),
@@ -203,9 +224,12 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
+            num_splits: 1,
         };
         let resp = merge_entries(vec![vec![entry1.clone()], vec![entry2.clone()]]).unwrap();
-        assert_eq!(resp, vec![entry1]);
+        let mut expected = entry1;
+        expected.num_splits = 2;
+        assert_eq!(resp, vec![expected]);
     }
 
     #[test]
@@ -218,6 +242,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
+            num_splits: 1,
         };
         let entry2 = ListFieldsEntry {
             field_name: "field2".to_string(),
@@ -227,6 +252,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
+            num_splits: 1,
         };
         let resp = merge_entries(vec![vec![entry1.clone()], vec![entry2.clone()]]).unwrap();
         assert_eq!(resp, vec![entry1, entry2]);
@@ -242,6 +268,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
+            num_splits: 1,
         };
         let entry2 = ListFieldsEntry {
             field_name: "field1".to_string(),
@@ -251,6 +278,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index2".to_string()],
+            num_splits: 1,
         };
         let resp = merge_entries(vec![vec![entry1.clone()], vec![entry2.clone()]]).unwrap();
         let expected = ListFieldsEntry {
@@ -261,6 +289,7 @@ mod tests {
             non_searchable_index_ids: vec!["index2".to_string()],
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string(), "index2".to_string()],
+            num_splits: 2,
         };
         assert_eq!(resp, vec![expected]);
     }
@@ -275,6 +304,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
+            num_splits: 1,
         };
         let entry2 = ListFieldsEntry {
             field_name: "field1".to_string(),
@@ -284,6 +314,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index2".to_string()],
+            num_splits: 1,
         };
         let resp = merge_entries(vec![vec![entry1.clone()], vec![entry2.clone()]]).unwrap();
         let expected = ListFieldsEntry {
@@ -294,6 +325,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: vec!["index2".to_string()],
             index_ids: vec!["index1".to_string(), "index2".to_string()],
+            num_splits: 2,
         };
         assert_eq!(resp, vec![expected]);
     }
@@ -308,6 +340,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
+            num_splits: 1,
         };
         let entry2 = ListFieldsEntry {
             field_name: "field1".to_string(),
@@ -317,6 +350,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
+            num_splits: 1,
         };
         let entry3 = ListFieldsEntry {
             field_name: "field1".to_string(),
@@ -326,13 +360,16 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
+            num_splits: 1,
         };
         let resp = merge_entries(vec![
             vec![entry1.clone(), entry2.clone()],
             vec![entry3.clone()],
         ])
         .unwrap();
-        assert_eq!(resp, vec![entry1.clone(), entry3.clone()]);
+        let mut expected_entry1 = entry1;
+        expected_entry1.num_splits = 2;
+        assert_eq!(resp, vec![expected_entry1, entry3]);
     }
 
     #[test]
@@ -345,6 +382,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
+            num_splits: 1,
         };
         let entry2 = ListFieldsEntry {
             field_name: "field1".to_string(),
@@ -354,6 +392,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
+            num_splits: 1,
         };
         let entry3 = ListFieldsEntry {
             field_name: "field1".to_string(),
@@ -363,13 +402,16 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
+            num_splits: 1,
         };
         let resp = merge_entries(vec![
             vec![entry1.clone(), entry3.clone()],
             vec![entry2.clone()],
         ])
         .unwrap();
-        assert_eq!(resp, vec![entry1.clone(), entry3.clone()]);
+        let mut expected_entry1 = entry1;
+        expected_entry1.num_splits = 2;
+        assert_eq!(resp, vec![expected_entry1, entry3]);
     }
 
     #[test]
@@ -382,6 +424,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
+            num_splits: 1,
         };
         let entry2 = ListFieldsEntry {
             field_name: "field1".to_string(),
@@ -391,6 +434,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
+            num_splits: 1,
         };
         let entry3 = ListFieldsEntry {
             field_name: "field2".to_string(),
@@ -400,13 +444,16 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
+            num_splits: 1,
         };
         let resp = merge_entries(vec![
             vec![entry1.clone(), entry3.clone()],
             vec![entry2.clone()],
         ])
         .unwrap();
-        assert_eq!(resp, vec![entry1.clone(), entry3.clone()]);
+        let mut expected_entry1 = entry1;
+        expected_entry1.num_splits = 2;
+        assert_eq!(resp, vec![expected_entry1, entry3]);
     }
 
     #[test]
@@ -423,6 +470,7 @@ mod tests {
                 "index2".to_string(),
                 "index3".to_string(),
             ],
+            num_splits: 1,
         };
         let entry2 = ListFieldsEntry {
             field_name: "field1".to_string(),
@@ -432,6 +480,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index4".to_string()],
+            num_splits: 1,
         };
         let resp = merge_entries(vec![vec![entry1.clone()], vec![entry2.clone()]]).unwrap();
         let expected = ListFieldsEntry {
@@ -447,7 +496,52 @@ mod tests {
                 "index3".to_string(),
                 "index4".to_string(),
             ],
+            num_splits: 2,
         };
         assert_eq!(resp, vec![expected]);
+    }
+
+    #[test]
+    fn merge_entries_truncates_by_split_count() {
+        let entry = |field_name: &str, num_splits: u64| ListFieldsEntry {
+            field_name: field_name.to_string(),
+            num_splits,
+            ..Default::default()
+        };
+        let entries = vec![
+            entry("early-a", 2),
+            entry("early-b", 1),
+            entry("early-c", 1),
+            entry("early-d", 1),
+            entry("late", 3),
+        ];
+
+        let entries = merge_entries_with_limit(vec![entries], 2);
+
+        let field_names: Vec<&str> = entries
+            .iter()
+            .map(|entry| entry.field_name.as_str())
+            .collect();
+        assert_eq!(field_names, ["early-a", "late"]);
+        assert_eq!(entries[1].num_splits, 3);
+    }
+
+    #[test]
+    fn merge_entries_carries_split_counts_across_merge_levels() {
+        let leaf_entry = ListFieldsEntry {
+            field_name: "field".to_string(),
+            num_splits: 3,
+            ..Default::default()
+        };
+        let other_leaf_entry = ListFieldsEntry {
+            field_name: "field".to_string(),
+            num_splits: 2,
+            ..Default::default()
+        };
+
+        let entries = merge_entries_with_limit(vec![vec![leaf_entry], vec![other_leaf_entry]], 10);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].num_splits, 5);
     }
 }

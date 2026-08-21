@@ -83,7 +83,7 @@ pub(crate) fn build_datafusion_session_builder(
         node_config.grpc_config.max_message_size,
     );
     let worker_resolver = QuickwitWorkerResolver::new(datafusion_worker_pool)
-        .with_tls(node_config.grpc_config.tls.is_some());
+        .with_tls(node_config.grpc_config.tls_config.is_some());
     let registry = Arc::new(QuickwitObjectStoreRegistry::new(storage_resolver));
     let builder = DataFusionSessionBuilder::new()
         .with_object_store_registry(registry)
@@ -118,12 +118,12 @@ async fn datafusion_worker_changes(
             vec![insert_datafusion_worker(&node, max_message_size)]
         }
         ClusterChange::Remove(node) if node.is_searcher() => {
-            vec![Change::Remove(node.grpc_advertise_addr())]
+            vec![Change::Remove(node.grpc_advertise_addr)]
         }
         ClusterChange::Update { previous, updated } => {
             let mut changes = Vec::new();
             if previous.is_searcher() {
-                changes.push(Change::Remove(previous.grpc_advertise_addr()));
+                changes.push(Change::Remove(previous.grpc_advertise_addr));
             }
             if is_datafusion_worker_node(&updated).await {
                 changes.push(insert_datafusion_worker(&updated, max_message_size));
@@ -173,7 +173,7 @@ fn insert_datafusion_worker(
     node: &ClusterNode,
     max_message_size: ByteSize,
 ) -> Change<SocketAddr, SearchServiceClient> {
-    let grpc_addr = node.grpc_advertise_addr();
+    let grpc_addr = node.grpc_advertise_addr;
     Change::Insert(
         grpc_addr,
         create_search_client_from_grpc_addr(grpc_addr, max_message_size),
@@ -286,7 +286,7 @@ mod tests {
             IngesterStatus::Ready,
         )
         .await;
-        let grpc_addr = node.grpc_advertise_addr();
+        let grpc_addr = node.grpc_advertise_addr;
 
         let changes =
             datafusion_worker_changes(ClusterChange::Remove(node), ByteSize::mib(1)).await;

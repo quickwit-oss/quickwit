@@ -152,7 +152,6 @@ impl Handler<IndexedSplitBatch> for Packager {
                 packaged_splits,
                 batch.checkpoint_delta_opt,
                 batch.publish_lock,
-                batch.publish_token_opt,
                 batch.merge_task_opt,
                 batch.batch_parent_span,
             ),
@@ -272,12 +271,12 @@ fn create_packaged_split(
     tag_fields: &[NamedField],
     ctx: &ActorContext<Packager>,
 ) -> anyhow::Result<PackagedSplit> {
-    debug!(split_id = split.split_id(), "create-packaged-split");
+    debug!(split_id = %split.split_id(), "create-packaged-split");
     let split_files = list_split_files(segment_metas, &split.split_scratch_directory)?;
 
     // Extracts tag values from inverted indexes only when a field cardinality is less
     // than `MAX_VALUES_PER_TAG_FIELD`.
-    debug!(split_id = split.split_id(), tag_fields =? tag_fields, "extract-tags-values");
+    debug!(split_id = %split.split_id(), tag_fields =? tag_fields, "extract-tags-values");
     let index_reader = split
         .index
         .reader_builder()
@@ -307,7 +306,7 @@ fn create_packaged_split(
 
     ctx.record_progress();
 
-    debug!(split_id = split.split_id(), "build-hotcache");
+    debug!(split_id = %split.split_id(), "build-hotcache");
     let mut hotcache_bytes = Vec::new();
     build_hotcache(split.split_scratch_directory.path(), &mut hotcache_bytes)?;
     ctx.record_progress();
@@ -345,6 +344,8 @@ fn field_metadata_to_list_fields_entry(field_metadata: &FieldMetadata) -> ListFi
         index_ids: Vec::new(),
         non_searchable_index_ids: Vec::new(),
         non_aggregatable_index_ids: Vec::new(),
+        // Split counts are populated by the search leaf when it reads this metadata.
+        num_splits: 0,
     }
 }
 
@@ -504,7 +505,7 @@ mod tests {
         }
         let index = index_writer.finalize()?;
 
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_id = "test-source".to_string();
 
@@ -516,7 +517,7 @@ mod tests {
                 index_uid,
                 source_id,
                 doc_mapping_uid: DocMappingUid::default(),
-                split_id: "test-split".to_string(),
+                split_id: "test-split".into(),
                 partition_id: 17u64,
                 num_docs,
                 uncompressed_docs_size_in_bytes: num_docs * 15,
@@ -569,7 +570,6 @@ mod tests {
                 splits: vec![indexed_split],
                 checkpoint_delta_opt: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
                 publish_lock: PublishLock::default(),
-                publish_token_opt: None,
                 merge_task_opt: None,
                 batch_parent_span: Span::none(),
             })

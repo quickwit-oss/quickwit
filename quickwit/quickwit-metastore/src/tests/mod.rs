@@ -113,7 +113,7 @@ async fn create_channel(client: tokio::io::DuplexStream) -> anyhow::Result<Chann
 fn collect_split_ids(splits: &[Split]) -> Vec<&str> {
     splits
         .iter()
-        .map(|split| split.split_id())
+        .map(|split| split.split_id().as_str())
         .sorted()
         .collect()
 }
@@ -665,6 +665,13 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_list_metrics_splits_by_compaction_scope() {
                 let _ = tracing_subscriber::fmt::try_init();
                 $crate::tests::metrics::test_metastore_list_metrics_splits_by_compaction_scope::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_list_metrics_splits_by_maturity() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_list_metrics_splits_by_maturity::<$metastore_type>().await;
             }
 
             #[tokio::test]

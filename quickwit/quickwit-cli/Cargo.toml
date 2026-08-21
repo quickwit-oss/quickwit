@@ -65,6 +65,7 @@ quickwit-rest-client = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-serve = { workspace = true }
 quickwit-storage = { workspace = true }
+quickwit-transport = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = { workspace = true }

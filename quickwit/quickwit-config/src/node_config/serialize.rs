@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::Duration;
 
-use anyhow::{Context, bail};
+use anyhow::{Context, bail, ensure};
 use bytesize::ByteSize;
 use http::HeaderMap;
 use quickwit_common::fs::get_disk_size;
@@ -28,15 +28,17 @@ use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
-use super::{GrpcConfig, RestConfig};
+use super::{GrpcConfig, HealthConfig, MAX_GOSSIP_PROTOCOL_VERSION, RestConfig};
 use crate::config_value::ConfigValue;
+use crate::docs_clustering::DocsClusteringConfigBuilder;
 use crate::qw_env_vars::*;
+use crate::serde_utils::HumanDuration;
 use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::templating::render_config;
 use crate::{
-    ConfigFormat, IndexerConfig, IngestApiConfig, JaegerConfig, MetastoreConfigs, NodeConfig,
-    SearcherConfig, TlsConfig, validate_identifier, validate_node_id,
+    CompactorConfig, ConfigFormat, IndexerConfig, IngestApiConfig, JaegerConfig, MetastoreConfigs,
+    NodeConfig, SearcherConfig, TlsConfig, validate_identifier, validate_node_id,
 };
 
 pub const DEFAULT_CLUSTER_ID: &str = "quickwit-default-cluster";
@@ -48,6 +50,8 @@ pub const DEFAULT_GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "tests
 } else {
     Duration::from_secs(1)
 };
+
+const DEFAULT_GOSSIP_PROTOCOL_VERSION: u8 = 0;
 
 // Default config values in the order they appear in [`NodeConfigBuilder`].
 fn default_cluster_id() -> ConfigValue<String, QW_CLUSTER_ID> {
@@ -87,8 +91,9 @@ impl FromStr for List {
 }
 
 fn default_enabled_services() -> ConfigValue<List, QW_ENABLED_SERVICES> {
+    // Opt-in standalone services are excluded from all-in-one nodes by default.
     ConfigValue::with_default(List(
-        QuickwitService::supported_services()
+        QuickwitService::default_services()
             .into_iter()
             .map(|service| service.to_string())
             .collect(),
@@ -130,6 +135,10 @@ fn default_metastore_uri(data_dir_uri: &Uri) -> Uri {
     data_dir_uri.join("indexes#polling_interval=30s").expect("Failed to create default metastore URI. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
 }
 
+fn default_metastore_read_replica_uri() -> ConfigValue<Uri, QW_METASTORE_READ_REPLICA_URI> {
+    ConfigValue::none()
+}
+
 // See comment above.
 fn default_index_root_uri(data_dir_uri: &Uri) -> Uri {
     data_dir_uri.join("indexes").expect("Failed to create default index root URI. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
@@ -139,12 +148,15 @@ pub async fn load_node_config_with_env(
     config_format: ConfigFormat,
     config_content: &[u8],
     env_vars: &HashMap<String, String>,
+    enabled_services: Option<&HashSet<QuickwitService>>,
 ) -> anyhow::Result<NodeConfig> {
     let rendered_config_content = render_config(config_content)?;
     let versioned_node_config: VersionedNodeConfig =
         config_format.parse(rendered_config_content.as_bytes())?;
     let node_config_builder: NodeConfigBuilder = versioned_node_config.into();
-    let config = node_config_builder.build_and_validate(env_vars).await?;
+    let config = node_config_builder
+        .build_and_validate(env_vars, enabled_services)
+        .await?;
     Ok(config)
 }
 
@@ -186,15 +198,24 @@ struct NodeConfigBuilder {
     grpc_listen_port: ConfigValue<u16, QW_GRPC_LISTEN_PORT>,
     gossip_interval_ms: ConfigValue<u32, QW_GOSSIP_INTERVAL_MS>,
     #[serde(default)]
+    gossip_protocol_version: ConfigValue<u8, QW_GOSSIP_PROTOCOL_VERSION>,
+    #[serde(default)]
     peer_seeds: ConfigValue<List, QW_PEER_SEEDS>,
     #[serde(rename = "data_dir")]
     #[serde(default = "default_data_dir_uri")]
     data_dir_uri: ConfigValue<Uri, QW_DATA_DIR>,
     metastore_uri: ConfigValue<Uri, QW_METASTORE_URI>,
+    #[serde(default = "default_metastore_read_replica_uri")]
+    metastore_read_replica_uri: ConfigValue<Uri, QW_METASTORE_READ_REPLICA_URI>,
     default_index_root_uri: ConfigValue<Uri, QW_DEFAULT_INDEX_ROOT_URI>,
+    #[serde(default)]
+    enable_standalone_compactors: ConfigValue<bool, QW_ENABLE_STANDALONE_COMPACTORS>,
     #[serde(rename = "rest")]
     #[serde(default)]
     rest_config_builder: RestConfigBuilder,
+    #[serde(rename = "health")]
+    #[serde(default)]
+    health_config_builder: HealthConfigBuilder,
     #[serde(rename = "grpc")]
     #[serde(default)]
     grpc_config: GrpcConfig,
@@ -216,23 +237,41 @@ struct NodeConfigBuilder {
     #[serde(rename = "jaeger")]
     #[serde(default)]
     jaeger_config: JaegerConfig,
+    #[serde(rename = "compactor")]
+    #[serde(default)]
+    compactor_config: CompactorConfig,
+    #[serde(rename = "docs_clustering")]
+    #[serde(default)]
+    docs_clustering_config: Option<DocsClusteringConfigBuilder>,
 }
 
 impl NodeConfigBuilder {
     pub async fn build_and_validate(
         mut self,
         env_vars: &HashMap<String, String>,
+        enabled_services: Option<&HashSet<QuickwitService>>,
     ) -> anyhow::Result<NodeConfig> {
-        let node_id = self.node_id.resolve(env_vars).map(NodeId::new)?;
+        let node_id = self
+            .node_id
+            .resolve(env_vars)
+            .map(|node_id_str| NodeId::from_str(&node_id_str))?;
         let availability_zone = self.availability_zone.resolve_optional(env_vars)?;
 
-        let enabled_services = self
-            .enabled_services
-            .resolve(env_vars)?
-            .0
-            .into_iter()
-            .map(|service| service.parse())
-            .collect::<Result<_, _>>()?;
+        let enable_standalone_compactors = self.enable_standalone_compactors.resolve(env_vars)?;
+        let docs_clustering_config =
+            DocsClusteringConfigBuilder::build_optional(self.docs_clustering_config, env_vars)?;
+
+        let resolved_enabled_services: HashSet<QuickwitService> =
+            if let Some(enabled_services) = enabled_services {
+                enabled_services.clone()
+            } else {
+                self.enabled_services
+                    .resolve(env_vars)?
+                    .0
+                    .into_iter()
+                    .map(|service| service.parse())
+                    .collect::<Result<_, _>>()?
+            };
 
         let listen_address = self.listen_address.resolve(env_vars)?;
         let listen_host = listen_address.parse::<Host>()?;
@@ -253,6 +292,8 @@ impl NodeConfigBuilder {
         let rest_config = self
             .rest_config_builder
             .build_and_validate(listen_ip, env_vars)?;
+
+        let health_config = self.health_config_builder.build(listen_ip, env_vars)?;
 
         self.grpc_config.validate()?;
 
@@ -293,6 +334,9 @@ impl NodeConfigBuilder {
             .resolve_optional(env_vars)?
             .unwrap_or_else(|| default_metastore_uri(&data_dir_uri));
 
+        let metastore_read_replica_uri =
+            self.metastore_read_replica_uri.resolve_optional(env_vars)?;
+
         let default_index_root_uri = self
             .default_index_root_uri
             .resolve_optional(env_vars)?
@@ -308,22 +352,34 @@ impl NodeConfigBuilder {
             .resolve_optional(env_vars)?
             .map(|gossip_interval_ms| Duration::from_millis(gossip_interval_ms as u64))
             .unwrap_or(DEFAULT_GOSSIP_INTERVAL);
+        let gossip_protocol_version = self
+            .gossip_protocol_version
+            .resolve_optional(env_vars)?
+            .unwrap_or(DEFAULT_GOSSIP_PROTOCOL_VERSION);
+        ensure!(
+            gossip_protocol_version <= MAX_GOSSIP_PROTOCOL_VERSION,
+            "gossip protocol version must be between 0 and {MAX_GOSSIP_PROTOCOL_VERSION}, got \
+             `{gossip_protocol_version}`"
+        );
 
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
             node_id,
             availability_zone,
-            enabled_services,
+            enabled_services: resolved_enabled_services,
             gossip_listen_addr,
             grpc_listen_addr,
             gossip_advertise_addr,
             grpc_advertise_addr,
             gossip_interval,
+            gossip_protocol_version,
             peer_seeds: self.peer_seeds.resolve(env_vars)?.0,
             data_dir_path,
             metastore_uri,
+            metastore_read_replica_uri,
             default_index_root_uri,
             rest_config,
+            health_config,
             grpc_config: self.grpc_config,
             metastore_configs: self.metastore_configs,
             storage_configs: self.storage_configs,
@@ -331,6 +387,9 @@ impl NodeConfigBuilder {
             searcher_config: self.searcher_config,
             ingest_api_config: self.ingest_api_config,
             jaeger_config: self.jaeger_config,
+            compactor_config: self.compactor_config,
+            enable_standalone_compactors,
+            docs_clustering_config,
         };
 
         validate(&node_config)?;
@@ -348,7 +407,48 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
     if node_config.peer_seeds.is_empty() {
         warn!("peer seeds are empty");
     }
+    validate_metastore_read_replica(node_config)?;
+    if node_config.is_service_enabled(QuickwitService::Compactor)
+        && !node_config.enable_standalone_compactors
+    {
+        bail!(
+            "the `compactor` service can only be enabled when `enable_standalone_compactors` is \
+             true (or `QW_ENABLE_STANDALONE_COMPACTORS=true`). With the default indexer-local \
+             merge pipeline, the compactor service must not be enabled."
+        );
+    }
     validate_disk_usage(node_config);
+    Ok(())
+}
+
+/// Validates the configuration of the [`QuickwitService::MetastoreReadReplica`] role and searcher
+/// read-replica routing.
+///
+/// The [`QuickwitService::MetastoreReadReplica`] role serves the same gRPC service as a read-only
+/// metastore, so it must run standalone and requires `metastore_read_replica_uri` to connect to.
+fn validate_metastore_read_replica(node_config: &NodeConfig) -> anyhow::Result<()> {
+    let read_replica_enabled =
+        node_config.is_service_enabled(QuickwitService::MetastoreReadReplica);
+    if read_replica_enabled {
+        ensure!(
+            node_config.enabled_services.len() == 1,
+            "the `metastore_read_replica` service must run standalone and cannot be combined with \
+             any other service"
+        );
+        ensure!(
+            node_config.metastore_read_replica_uri.is_some(),
+            "the `metastore_read_replica` service requires `metastore_read_replica_uri` to be set"
+        );
+    }
+    let searcher_uses_read_replica = node_config.is_service_enabled(QuickwitService::Searcher)
+        && node_config.searcher_config.use_metastore_read_replica;
+    // Avoid a deadlock where the searcher waits for a READY read replica, while the read
+    // replica waits for this primary metastore to become READY.
+    ensure!(
+        !(searcher_uses_read_replica && node_config.is_service_enabled(QuickwitService::Metastore)),
+        "`searcher.use_metastore_read_replica` cannot be enabled on a node running the \
+         `metastore` service"
+    );
     Ok(())
 }
 
@@ -416,12 +516,16 @@ impl Default for NodeConfigBuilder {
             gossip_listen_port: ConfigValue::none(),
             grpc_listen_port: ConfigValue::none(),
             gossip_interval_ms: ConfigValue::none(),
+            gossip_protocol_version: ConfigValue::none(),
             advertise_address: ConfigValue::none(),
             peer_seeds: ConfigValue::with_default(List::default()),
             data_dir_uri: default_data_dir_uri(),
             metastore_uri: ConfigValue::none(),
+            metastore_read_replica_uri: default_metastore_read_replica_uri(),
             default_index_root_uri: ConfigValue::none(),
+            enable_standalone_compactors: Default::default(),
             rest_config_builder: RestConfigBuilder::default(),
+            health_config_builder: HealthConfigBuilder::default(),
             grpc_config: GrpcConfig::default(),
             storage_configs: StorageConfigs::default(),
             metastore_configs: MetastoreConfigs::default(),
@@ -429,6 +533,8 @@ impl Default for NodeConfigBuilder {
             searcher_config: SearcherConfig::default(),
             ingest_api_config: IngestApiConfig::default(),
             jaeger_config: JaegerConfig::default(),
+            compactor_config: CompactorConfig::default(),
+            docs_clustering_config: None,
         }
     }
 }
@@ -445,8 +551,12 @@ struct RestConfigBuilder {
     #[serde(with = "http_serde::header_map")]
     #[serde(default)]
     pub extra_headers: HeaderMap,
-    #[serde(default)]
-    pub tls: Option<TlsConfig>,
+    #[serde(default, rename = "tls")]
+    pub tls_config: Option<TlsConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connection_age: Option<HumanDuration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connection_age_grace: Option<HumanDuration>,
 }
 
 impl RestConfigBuilder {
@@ -461,13 +571,54 @@ impl RestConfigBuilder {
             listen_port_from_config_or_default,
         )
         .resolve(env_vars)?;
+
+        if let Some(tls_config) = &self.tls_config {
+            tls_config.validate()?;
+        }
+        ensure!(
+            !(self.max_connection_age_grace.is_some() && self.max_connection_age.is_none()),
+            "`rest.max_connection_age_grace` requires `rest.max_connection_age` to be set"
+        );
         let rest_config = RestConfig {
             listen_addr: SocketAddr::new(listen_ip, listen_port),
             cors_allow_origins: self.cors_allow_origins,
             extra_headers: self.extra_headers,
-            tls: self.tls,
+            tls_config: self.tls_config,
+            max_connection_age: self.max_connection_age,
+            max_connection_age_grace: self.max_connection_age_grace,
         };
         Ok(rest_config)
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
+struct HealthConfigBuilder {
+    #[serde(default)]
+    listen_port: Option<u16>,
+}
+
+impl HealthConfigBuilder {
+    /// Builds the optional [`HealthConfig`]. The health server is enabled only when a listen port
+    /// is provided via the config file or the `QW_HEALTH_LISTEN_PORT` environment variable.
+    fn build(
+        self,
+        listen_ip: IpAddr,
+        env_vars: &HashMap<String, String>,
+    ) -> anyhow::Result<Option<HealthConfig>> {
+        let listen_port_opt = match self.listen_port {
+            // A port was set in the config file; an env var (if any) still takes precedence.
+            Some(listen_port) => Some(
+                ConfigValue::<u16, QW_HEALTH_LISTEN_PORT>::with_default(listen_port)
+                    .resolve(env_vars)?,
+            ),
+            // No port in the config file; the server is enabled only if the env var is set.
+            None => ConfigValue::<u16, QW_HEALTH_LISTEN_PORT>::none().resolve_optional(env_vars)?,
+        };
+        let health_config_opt = listen_port_opt.map(|listen_port| HealthConfig {
+            listen_addr: SocketAddr::new(listen_ip, listen_port),
+        });
+        Ok(health_config_opt)
     }
 }
 
@@ -476,8 +627,8 @@ pub fn node_config_for_tests_from_ports(
     rest_listen_port: u16,
     grpc_listen_port: u16,
 ) -> NodeConfig {
-    let node_id = NodeId::new(default_node_id().unwrap());
-    let enabled_services = QuickwitService::supported_services();
+    let node_id = NodeId::from_str(&default_node_id().unwrap());
+    let enabled_services = QuickwitService::default_services();
     let availability_zone = Some(String::from("az-1"));
     let listen_address = Host::default();
     let rest_listen_addr = listen_address
@@ -504,7 +655,9 @@ pub fn node_config_for_tests_from_ports(
         listen_addr: rest_listen_addr,
         cors_allow_origins: Vec::new(),
         extra_headers: HeaderMap::new(),
-        tls: None,
+        tls_config: None,
+        max_connection_age: None,
+        max_connection_age_grace: None,
     };
     NodeConfig {
         cluster_id: default_cluster_id().unwrap(),
@@ -516,11 +669,14 @@ pub fn node_config_for_tests_from_ports(
         gossip_listen_addr,
         grpc_listen_addr,
         gossip_interval: Duration::from_millis(25u64),
+        gossip_protocol_version: DEFAULT_GOSSIP_PROTOCOL_VERSION,
         peer_seeds: Vec::new(),
         data_dir_path,
         metastore_uri,
+        metastore_read_replica_uri: None,
         default_index_root_uri,
         rest_config,
+        health_config: None,
         grpc_config: GrpcConfig::default(),
         storage_configs: StorageConfigs::default(),
         metastore_configs: MetastoreConfigs::default(),
@@ -528,6 +684,9 @@ pub fn node_config_for_tests_from_ports(
         searcher_config: SearcherConfig::default(),
         ingest_api_config: IngestApiConfig::default(),
         jaeger_config: JaegerConfig::default(),
+        compactor_config: CompactorConfig::default(),
+        enable_standalone_compactors: false,
+        docs_clustering_config: None,
     }
 }
 
@@ -558,7 +717,8 @@ mod tests {
             get_config_filepath(&format!("quickwit.{config_format:?}").to_lowercase());
         let file = std::fs::read_to_string(&config_filepath).unwrap();
         let env_vars = HashMap::default();
-        let config = load_node_config_with_env(config_format, file.as_bytes(), &env_vars).await?;
+        let config =
+            load_node_config_with_env(config_format, file.as_bytes(), &env_vars, None).await?;
         assert_eq!(config.cluster_id, "quickwit-cluster");
         assert_eq!(config.enabled_services.len(), 2);
 
@@ -578,12 +738,59 @@ mod tests {
             config.rest_config.extra_headers.get("x-header-2").unwrap(),
             "header-value-2"
         );
+        let rest_tls_config = config.rest_config.tls_config.unwrap();
+        assert_eq!(
+            rest_tls_config,
+            TlsConfig {
+                cert_path: "/path/to/rest.crt".to_string(),
+                key_path: "/path/to/rest.key".to_string(),
+                ca_path: "/path/to/ca.crt".to_string(),
+                expected_name: None,
+                verify_client_cert: true,
+                cert_poll_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
+            }
+        );
+        assert_eq!(
+            config.rest_config.max_connection_age,
+            Some(HumanDuration::try_from("30m".to_string()).unwrap())
+        );
+        assert_eq!(
+            config.rest_config.max_connection_age_grace,
+            Some(HumanDuration::try_from("30s".to_string()).unwrap())
+        );
         assert_eq!(config.grpc_config.max_message_size, ByteSize::mb(10));
 
+        let grpc_tls_config = config.grpc_config.tls_config.unwrap();
+        assert_eq!(
+            grpc_tls_config,
+            TlsConfig {
+                cert_path: "/path/to/grpc.crt".to_string(),
+                key_path: "/path/to/grpc.key".to_string(),
+                ca_path: "/path/to/ca.crt".to_string(),
+                expected_name: Some("quickwit.local".to_string()),
+                verify_client_cert: true,
+                cert_poll_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
+            }
+        );
+        assert_eq!(
+            config.grpc_config.max_connection_age,
+            Some(HumanDuration::try_from("1h".to_string()).unwrap())
+        );
+        assert_eq!(
+            config.grpc_config.max_connection_age_grace,
+            Some(HumanDuration::try_from("10s".to_string()).unwrap())
+        );
+
+        let health_config = config.health_config.unwrap();
+        assert_eq!(
+            health_config.listen_addr,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 4444)
+        );
         assert_eq!(
             config.gossip_listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 2222)
         );
+        assert_eq!(config.gossip_protocol_version, 1);
         assert_eq!(
             config.grpc_listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 3333)
@@ -607,6 +814,10 @@ mod tests {
         assert_eq!(
             config.metastore_uri,
             "postgresql://username:password@host:port/db"
+        );
+        assert_eq!(
+            config.metastore_read_replica_uri.unwrap(),
+            "postgresql://username:replica-password@replica-host:port/db"
         );
         assert_eq!(config.default_index_root_uri, "s3://quickwit-indexes");
 
@@ -639,11 +850,11 @@ mod tests {
         );
         assert_eq!(
             postgres_config.idle_connection_timeout_opt().unwrap(),
-            Some(Duration::from_secs(1800))
+            Some(Duration::from_mins(30))
         );
         assert_eq!(
             postgres_config.max_connection_lifetime_opt().unwrap(),
-            Some(Duration::from_secs(3600))
+            Some(Duration::from_hours(1))
         );
 
         assert_eq!(
@@ -663,7 +874,7 @@ mod tests {
         assert_eq!(
             config.ingest_api_config,
             IngestApiConfig {
-                replication_factor: 2,
+                _replication_factor: Some(serde::de::IgnoredAny),
                 ..Default::default()
             }
         );
@@ -687,6 +898,7 @@ mod tests {
                     timeout_millis: 2_000,
                     max_num_retries: 2
                 }),
+                use_metastore_read_replica: true,
                 warmup_memory_budget: ByteSize::gb(100),
                 warmup_single_split_initial_allocation: ByteSize::mb(300),
                 lambda: Some(LambdaConfig {
@@ -743,6 +955,7 @@ mod tests {
             ConfigFormat::Yaml,
             config_str.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .unwrap_err();
@@ -759,16 +972,14 @@ mod tests {
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .unwrap();
         assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
-        assert_eq!(config.node_id, get_short_hostname().unwrap());
+        assert_eq!(config.node_id.as_str(), get_short_hostname().unwrap());
         assert_eq!(config.availability_zone, None);
-        assert_eq!(
-            config.enabled_services,
-            QuickwitService::supported_services()
-        );
+        assert_eq!(config.enabled_services, QuickwitService::default_services());
         assert_eq!(
             config.rest_config.listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7280)
@@ -781,6 +992,7 @@ mod tests {
             config.grpc_listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7281)
         );
+        assert!(config.health_config.is_none());
         assert_eq!(
             config.data_dir_path.to_string_lossy(),
             format!("{}/qwdata", env::current_dir().unwrap().display())
@@ -792,6 +1004,7 @@ mod tests {
                 env::current_dir().unwrap().display()
             )
         );
+        assert!(config.metastore_read_replica_uri.is_none());
         assert_eq!(
             config.default_index_root_uri,
             format!(
@@ -799,7 +1012,7 @@ mod tests {
                 env::current_dir().unwrap().display()
             )
         );
-        assert_eq!(config.ingest_api_config.replication_factor, 1);
+        assert!(config.ingest_api_config._replication_factor.is_none());
     }
 
     #[tokio::test]
@@ -815,13 +1028,19 @@ mod tests {
         env_vars.insert("QW_LISTEN_ADDRESS".to_string(), "172.0.0.12".to_string());
         env_vars.insert("QW_ADVERTISE_ADDRESS".to_string(), "172.0.0.13".to_string());
         env_vars.insert("QW_REST_LISTEN_PORT".to_string(), "1234".to_string());
+        env_vars.insert("QW_HEALTH_LISTEN_PORT".to_string(), "3456".to_string());
         env_vars.insert("QW_GOSSIP_LISTEN_PORT".to_string(), "5678".to_string());
+        env_vars.insert("QW_GOSSIP_PROTOCOL_VERSION".to_string(), "1".to_string());
         env_vars.insert("QW_GRPC_LISTEN_PORT".to_string(), "9012".to_string());
         env_vars.insert(
             "QW_PEER_SEEDS".to_string(),
             "test-peer-seed-0,test-peer-seed-1".to_string(),
         );
         env_vars.insert("QW_DATA_DIR".to_string(), "test-data-dir".to_string());
+        env_vars.insert(
+            "QW_ENABLE_STANDALONE_COMPACTORS".to_string(),
+            "true".to_string(),
+        );
         env_vars.insert(
             "QW_METASTORE_URI".to_string(),
             "postgresql://test-user:test-password@test-host:4321/test-db".to_string(),
@@ -831,7 +1050,7 @@ mod tests {
             "s3://quickwit-indexes/prod".to_string(),
         );
         let config =
-            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars)
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
                 .await
                 .unwrap();
         assert_eq!(config.cluster_id, "test-cluster");
@@ -850,6 +1069,14 @@ mod tests {
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 0, 0, 12)), 1234)
         );
         assert_eq!(
+            config
+                .health_config
+                .as_ref()
+                .expect("health config should be set")
+                .listen_addr,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 0, 0, 12)), 3456)
+        );
+        assert_eq!(
             config.gossip_listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 0, 0, 12)), 5678)
         );
@@ -865,6 +1092,7 @@ mod tests {
             config.grpc_advertise_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 0, 0, 13)), 9012)
         );
+        assert_eq!(config.gossip_protocol_version, 1);
         assert_eq!(
             config.peer_seeds,
             vec![
@@ -884,6 +1112,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_node_config_rejects_malformed_gossip_protocol_version() {
+        let config_yaml = "version: 0.8";
+        let env_vars = HashMap::from([(
+            "QW_GOSSIP_PROTOCOL_VERSION".to_string(),
+            "invalid".to_string(),
+        )]);
+        let error =
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
+                .await
+                .unwrap_err();
+        assert!(
+            error.to_string().contains("QW_GOSSIP_PROTOCOL_VERSION"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_node_config_rejects_unsupported_gossip_protocol_version() {
+        let config_yaml = "version: 0.8";
+        let unsupported_protocol_version = MAX_GOSSIP_PROTOCOL_VERSION + 1;
+        let env_vars = HashMap::from([(
+            "QW_GOSSIP_PROTOCOL_VERSION".to_string(),
+            unsupported_protocol_version.to_string(),
+        )]);
+        let error =
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
+                .await
+                .unwrap_err();
+        assert!(
+            error.to_string().contains("gossip protocol version"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
     async fn test_quickwwit_config_default_values_storage() {
         let config_yaml = r#"
             version: 0.8
@@ -894,6 +1157,7 @@ mod tests {
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .unwrap();
@@ -916,6 +1180,7 @@ mod tests {
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .unwrap();
@@ -940,9 +1205,165 @@ mod tests {
             "QW_DATA_DIR".to_string(),
             data_dir_path.to_string_lossy().to_string(),
         );
-        load_node_config_with_env(ConfigFormat::Toml, file_content.as_bytes(), &env_vars)
+        load_node_config_with_env(ConfigFormat::Toml, file_content.as_bytes(), &env_vars, None)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_metastore_read_replica_role_without_uri_is_rejected() {
+        let config_yaml = r#"
+            version: 0.8
+            node_id: test-node
+            enabled_services:
+              - metastore_read_replica
+        "#;
+        let error = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &Default::default(),
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("requires `metastore_read_replica_uri`")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_metastore_read_replica_role_must_run_standalone() {
+        let config_yaml = r#"
+            version: 0.8
+            node_id: test-node
+            enabled_services:
+              - metastore_read_replica
+              - searcher
+            metastore_read_replica_uri: postgres://user:pass@host:5432/db
+        "#;
+        let error = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &Default::default(),
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("must run standalone"));
+    }
+
+    #[tokio::test]
+    async fn test_searcher_read_replica_cannot_run_with_metastore() {
+        let error = NodeConfigBuilder {
+            enabled_services: ConfigValue::for_test(List(vec![
+                "metastore".to_string(),
+                "searcher".to_string(),
+            ])),
+            searcher_config: SearcherConfig {
+                use_metastore_read_replica: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+        .build_and_validate(&HashMap::new(), None)
+        .await
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("cannot be enabled on a node running the `metastore` service")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_searcher_read_replica_is_allowed_on_dedicated_searcher() {
+        let node_config = NodeConfigBuilder {
+            enabled_services: ConfigValue::for_test(List(vec!["searcher".to_string()])),
+            searcher_config: SearcherConfig {
+                use_metastore_read_replica: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+        .build_and_validate(&HashMap::new(), None)
+        .await
+        .unwrap();
+        assert!(node_config.searcher_config.use_metastore_read_replica);
+    }
+
+    #[tokio::test]
+    async fn test_enabled_services_validates_metastore_read_replica_uri() {
+        let config_yaml = "version: 0.8";
+        let enabled_services = HashSet::from([QuickwitService::MetastoreReadReplica]);
+
+        let error = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            config_yaml.as_bytes(),
+            &HashMap::new(),
+            Some(&enabled_services),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("requires `metastore_read_replica_uri`")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_compactor_service_requires_standalone_flag() {
+        // Compactor service enabled while `enable_standalone_compactors` is off is an
+        // invalid combination: the default indexer-local merge pipeline is in use, so a
+        // dedicated compactor must not run.
+        let error = NodeConfigBuilder {
+            enabled_services: ConfigValue::for_test(List(vec![
+                "indexer".to_string(),
+                "compactor".to_string(),
+            ])),
+            ..Default::default()
+        }
+        .build_and_validate(&HashMap::new(), None)
+        .await
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("enable_standalone_compactors"),
+            "expected error to mention `enable_standalone_compactors`, got: {error}",
+        );
+    }
+
+    #[tokio::test]
+    async fn test_compactor_service_with_standalone_flag_validates() {
+        // All services enabled, including the compactor, with the standalone flag on
+        // is a valid configuration.
+        let node_config = NodeConfigBuilder {
+            enabled_services: ConfigValue::for_test(List(vec![
+                "control_plane".to_string(),
+                "indexer".to_string(),
+                "searcher".to_string(),
+                "janitor".to_string(),
+                "metastore".to_string(),
+                "compactor".to_string(),
+            ])),
+            enable_standalone_compactors: ConfigValue::for_test(true),
+            ..Default::default()
+        }
+        .build_and_validate(&HashMap::new(), None)
+        .await
+        .unwrap();
+        assert!(node_config.is_service_enabled(QuickwitService::Compactor));
+    }
+
+    #[tokio::test]
+    async fn test_docs_clustering_config_is_absent_by_default() {
+        let node_config = NodeConfigBuilder::default()
+            .build_and_validate(&HashMap::new(), None)
+            .await
+            .unwrap();
+        assert!(node_config.docs_clustering_config.is_none());
     }
 
     #[tokio::test]
@@ -951,7 +1372,7 @@ mod tests {
             let node_config = NodeConfigBuilder {
                 ..Default::default()
             }
-            .build_and_validate(&HashMap::new())
+            .build_and_validate(&HashMap::new(), None)
             .await
             .unwrap();
             assert!(node_config.peer_seed_addrs().await.unwrap().is_empty());
@@ -971,7 +1392,7 @@ mod tests {
                 ])),
                 ..Default::default()
             }
-            .build_and_validate(&HashMap::new())
+            .build_and_validate(&HashMap::new(), None)
             .await
             .unwrap();
             assert_eq!(
@@ -994,7 +1415,7 @@ mod tests {
                 listen_address: default_listen_address(),
                 ..Default::default()
             }
-            .build_and_validate(&HashMap::new())
+            .build_and_validate(&HashMap::new(), None)
             .await
             .unwrap();
             assert_eq!(
@@ -1013,7 +1434,7 @@ mod tests {
                 },
                 ..Default::default()
             }
-            .build_and_validate(&HashMap::new())
+            .build_and_validate(&HashMap::new(), None)
             .await
             .unwrap();
             assert_eq!(
@@ -1034,7 +1455,7 @@ mod tests {
                 },
                 ..Default::default()
             }
-            .build_and_validate(&HashMap::new())
+            .build_and_validate(&HashMap::new(), None)
             .await
             .unwrap();
             assert_eq!(
@@ -1058,7 +1479,7 @@ mod tests {
             },
             ..Default::default()
         }
-        .build_and_validate(&HashMap::new())
+        .build_and_validate(&HashMap::new(), None)
         .await
         .unwrap();
         assert_eq!(
@@ -1091,7 +1512,8 @@ mod tests {
                 load_node_config_with_env(
                     ConfigFormat::Yaml,
                     config_yaml.as_bytes(),
-                    &Default::default()
+                    &Default::default(),
+                    None,
                 )
                 .await
                 .is_err()
@@ -1108,7 +1530,8 @@ mod tests {
                 load_node_config_with_env(
                     ConfigFormat::Yaml,
                     config_yaml.as_bytes(),
-                    &Default::default()
+                    &Default::default(),
+                    None,
                 )
                 .await
                 .is_err()
@@ -1127,6 +1550,7 @@ mod tests {
                 ConfigFormat::Yaml,
                 config_yaml.as_bytes(),
                 &HashMap::default(),
+                None,
             )
             .await
             .unwrap();
@@ -1141,6 +1565,7 @@ mod tests {
                 ConfigFormat::Yaml,
                 config_yaml.as_bytes(),
                 &HashMap::default(),
+                None,
             )
             .await
             .unwrap();
@@ -1155,6 +1580,7 @@ mod tests {
                 ConfigFormat::Yaml,
                 config_yaml.as_bytes(),
                 &HashMap::default(),
+                None,
             )
             .await
             .unwrap_err();
@@ -1174,6 +1600,7 @@ mod tests {
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
             &HashMap::default(),
+            None,
         )
         .await
         .unwrap_err();
@@ -1210,6 +1637,7 @@ mod tests {
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .expect("Deserialize rest config");
@@ -1228,6 +1656,7 @@ mod tests {
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .expect("Deserialize rest config");
@@ -1245,6 +1674,7 @@ mod tests {
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .expect("Deserialize rest config");
@@ -1266,6 +1696,7 @@ mod tests {
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .expect("Deserialize rest config");
@@ -1285,6 +1716,7 @@ mod tests {
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .expect("Deserialize rest config");
@@ -1305,6 +1737,7 @@ mod tests {
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .expect_err("Config should not allow empty origins.");
@@ -1319,40 +1752,71 @@ mod tests {
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
         .expect_err("Config should not allow empty origins.");
     }
 
     #[tokio::test]
-    async fn test_node_config_validates_ingest_config() {
-        let ingest_config = IngestApiConfig {
-            replication_factor: 0,
-            ..Default::default()
-        };
-        let error_message = ingest_config.validate().unwrap_err().to_string();
-        assert!(error_message.contains("either 1 or 2, got `0`"));
-
-        let ingest_config = IngestApiConfig {
-            replication_factor: 3,
-            ..Default::default()
-        };
-        let error_message = ingest_config.validate().unwrap_err().to_string();
-        assert!(error_message.contains("either 1 or 2, got `3`"));
-
+    async fn test_node_config_accepts_deprecated_replication_factor() {
         let node_config_yaml = r#"
             version: 0.8
             ingest_api:
-              replication_factor: 0
+              replication_factor: 1
         "#;
-        let error_message = load_node_config_with_env(
+        let config = load_node_config_with_env(
             ConfigFormat::Yaml,
             node_config_yaml.as_bytes(),
             &Default::default(),
+            None,
         )
         .await
-        .unwrap_err()
-        .to_string();
-        assert!(error_message.contains("replication factor"));
+        .unwrap();
+        assert!(config.ingest_api_config._replication_factor.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_standalone_compactors_prevents_implicit_compactor() {
+        let config_yaml = r#"
+            version: 0.8
+            enabled_services: [indexer]
+        "#;
+        let env_vars = HashMap::from([(
+            "QW_ENABLE_STANDALONE_COMPACTORS".to_string(),
+            "true".to_string(),
+        )]);
+        let config =
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
+                .await
+                .unwrap();
+        assert!(config.enabled_services.contains(&QuickwitService::Indexer));
+        assert!(
+            !config
+                .enabled_services
+                .contains(&QuickwitService::Compactor)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_standalone_compactors_env_var_override() {
+        let env_vars = HashMap::from([(
+            "QW_ENABLE_STANDALONE_COMPACTORS".to_string(),
+            "true".to_string(),
+        )]);
+        let config_yaml = r#"
+            version: 0.8
+            enabled_services: [indexer]
+        "#;
+        let config =
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
+                .await
+                .unwrap();
+        assert!(config.enabled_services.contains(&QuickwitService::Indexer));
+        assert!(
+            !config
+                .enabled_services
+                .contains(&QuickwitService::Compactor)
+        );
     }
 }

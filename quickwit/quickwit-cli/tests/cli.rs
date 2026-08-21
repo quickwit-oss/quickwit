@@ -710,7 +710,7 @@ async fn test_garbage_collect_cli_no_grace() {
     let create_gc_args = |dry_run| GarbageCollectIndexArgs {
         config_uri: test_env.resource_files.config.clone(),
         index_id: index_id.clone(),
-        grace_period: Duration::from_secs(3600),
+        grace_period: Duration::from_hours(1),
         dry_run,
     };
 
@@ -731,7 +731,7 @@ async fn test_garbage_collect_cli_no_grace() {
     let index_path = test_env.indexes_dir_path.join(&test_env.index_id);
     assert_eq!(index_path.try_exists().unwrap(), true);
 
-    let split_ids = vec![splits_metadata[0].split_id().to_string()];
+    let split_ids = vec![splits_metadata[0].split_id.clone()];
     let metastore = refresh_metastore(metastore).await.unwrap();
     let mark_for_deletion_request =
         MarkSplitsForDeletionRequest::new(index_uid.clone(), split_ids.clone());
@@ -866,7 +866,7 @@ async fn test_garbage_collect_index_cli() {
             index_uid: Some(index_uid.clone()),
             split_ids: splits_metadata
                 .into_iter()
-                .map(|split_metadata| split_metadata.split_id)
+                .map(|split_metadata| split_metadata.split_id.to_string())
                 .collect(),
         })
         .await
@@ -981,6 +981,7 @@ async fn test_all_local_index() {
 #[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_all_with_s3_localstack_cli() {
+    quickwit_common::setup_logging_for_tests();
     let index_id = append_random_suffix("test-all--cli-s3-localstack");
     let test_env = create_test_env(index_id.clone(), TestStorageType::S3)
         .await

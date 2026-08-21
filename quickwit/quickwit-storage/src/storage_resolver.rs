@@ -17,7 +17,9 @@ use std::fmt;
 use std::sync::{Arc, LazyLock};
 
 use quickwit_common::uri::{Protocol, Uri};
-use quickwit_config::{StorageBackend, StorageConfigs};
+use quickwit_config::{
+    ChecksumAlgorithm, S3StorageConfig, StorageBackend, StorageConfig, StorageConfigs,
+};
 
 #[cfg(feature = "azure")]
 use crate::AzureBlobStorageFactory;
@@ -77,7 +79,13 @@ impl StorageResolver {
     /// resolver will not work.
     pub fn unconfigured() -> Self {
         static STORAGE_RESOLVER: LazyLock<StorageResolver> = LazyLock::new(|| {
-            let storage_configs = StorageConfigs::default();
+            // We default to the md5 checksum, as the way we compute crc32c
+            // is causing us to emit a checksum header and a trailer,
+            // which is not supported by localstack.
+            let storage_configs = StorageConfigs::new(vec![StorageConfig::S3(S3StorageConfig {
+                checksum_algorithm: ChecksumAlgorithm::Md5,
+                ..Default::default()
+            })]);
             StorageResolver::configured(&storage_configs)
         });
         STORAGE_RESOLVER.clone()

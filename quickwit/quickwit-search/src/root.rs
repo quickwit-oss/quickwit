@@ -22,6 +22,7 @@ use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::shared_consts;
+use quickwit_common::thread_pool::with_priority::Priority;
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
 use quickwit_doc_mapper::DYNAMIC_FIELD_NAME;
@@ -46,7 +47,8 @@ use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
 use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
-use tracing::{debug, error, info, info_span, instrument};
+use tracing::{Span, debug, error, info, info_span, instrument};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{QuickwitAggregations, make_merge_collector};
@@ -70,7 +72,7 @@ fn max_scroll_ttl() -> Duration {
              should not happen."
         );
         // We remove an extra margin of 2minutes from the split deletion grace period.
-        split_deletion_grace_period - Duration::from_secs(60 * 2)
+        split_deletion_grace_period - Duration::from_mins(2)
     });
     *MAX_SCROLL_TTL_LOCK
 }
@@ -113,7 +115,7 @@ impl<'a> From<&'a SplitMetadata> for SearchJob {
     fn from(split_metadata: &'a SplitMetadata) -> Self {
         SearchJob {
             index_uid: split_metadata.index_uid.clone(),
-            cost: compute_split_cost(split_metadata),
+            cost: compute_split_cost(split_metadata.num_docs as u64),
             offsets: extract_split_and_footer_offsets(split_metadata),
         }
     }
@@ -741,6 +743,8 @@ fn is_top_5pct_memory_intensive(num_bytes: u64, split_num_docs: u64) -> bool {
 ///
 /// `leaf_resources_worst` is the leaf with the largest `wall_time_microsecs`.
 /// `leaf_resources_sum` is a field-wise sum of every leaf's stats.
+///
+/// Root specific stats are left as 0 and will be filled in within the root phase.
 fn compute_root_resource_stats(
     leaf_responses: &[LeafSearchResponse],
     leaf_num_calls: u64,
@@ -779,12 +783,14 @@ fn compute_root_resource_stats(
         leaf_num_calls_including_retries,
         num_failed_splits,
         leaf_wall_times_microsecs,
+        root_first_phase_wall_time_microsecs: 0u64,
+        root_wall_time_microsecs: 0u64,
     })
 }
 
 /// If this method fails for some splits, a partial search response is returned, with the list of
 /// faulty splits in the failed_splits field.
-#[instrument(level = "debug", skip_all)]
+#[instrument(skip_all)]
 pub(crate) async fn search_partial_hits_phase(
     searcher_context: &SearcherContext,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
@@ -836,15 +842,15 @@ pub(crate) async fn search_partial_hits_phase(
     let merge_collector =
         make_merge_collector(search_request, searcher_context.get_aggregation_limits())?;
 
-    // Merging is a cpu-bound task.
-    // It should be executed by Tokio's blocking threads.
+    // Merging is a cpu-bound task. Prioritize it over queued split searches to avoid delaying the
+    // final response once all leaf responses are available.
 
     // Wrap into result for merge_fruits
     let leaf_search_results: Vec<tantivy::Result<LeafSearchResponse>> =
         leaf_search_responses.into_iter().map(Ok).collect_vec();
     let span = info_span!("merge_fruits");
     let leaf_search_response = crate::search_thread_pool()
-        .run_cpu_intensive(move || {
+        .run_cpu_intensive_with_priority(Priority::High, move || {
             let _span_guard = span.enter();
             merge_collector.merge_fruits(leaf_search_results)
         })
@@ -942,11 +948,11 @@ pub(crate) async fn fetch_docs_phase(
 
     // Build map of Split ID > index ID to add the index ID to the hits.
     // Used for ES compatibility.
-    let split_id_to_index_id_map: HashMap<&SplitId, &str> = split_metadatas
+    let split_id_to_index_id_map: HashMap<SplitId, &str> = split_metadatas
         .iter()
         .map(|split_metadata| {
             (
-                &split_metadata.split_id,
+                split_metadata.split_id().clone(),
                 split_metadata.index_uid.index_id.as_str(),
             )
         })
@@ -979,7 +985,7 @@ pub(crate) async fn fetch_docs_phase(
 
 fn build_hit_with_position(
     mut leaf_hit: LeafHit,
-    split_id_to_index_id_map: &HashMap<&SplitId, &str>,
+    split_id_to_index_id_map: &HashMap<SplitId, &str>,
     hit_order: &HashMap<(String, u32, u32), usize>,
     sort_field_1_datetime_format_opt: &Option<SortDatetimeFormat>,
     sort_field_2_datetime_format_opt: &Option<SortDatetimeFormat>,
@@ -1013,7 +1019,7 @@ fn build_hit_with_position(
     }
     let position = *hit_order.get(&key).expect("hit order must be present");
     let index_id = split_id_to_index_id_map
-        .get(&partial_hit_ref.split_id)
+        .get(partial_hit_ref.split_id.as_str())
         .map(|split_id| split_id.to_string())
         .unwrap_or_default();
 
@@ -1055,7 +1061,8 @@ async fn root_search_aux(
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
     debug!(split_metadatas = ?PrettySample::new(&split_metadatas, 5));
-    let (first_phase_result, scroll_key_and_start_offset_opt, root_resource_stats): (
+    let start = Instant::now();
+    let (first_phase_result, scroll_key_and_start_offset_opt, mut root_resource_stats_opt): (
         LeafSearchResponse,
         Option<ScrollKeyAndStartOffset>,
         Option<RootResourceStats>,
@@ -1067,6 +1074,11 @@ async fn root_search_aux(
         cluster_client,
     )
     .await?;
+
+    if let Some(root_resource_stats) = root_resource_stats_opt.as_mut() {
+        root_resource_stats.root_first_phase_wall_time_microsecs =
+            start.elapsed().as_micros() as u64;
+    }
 
     let hits = fetch_docs_phase(
         indexes_metas_for_leaf_search,
@@ -1087,6 +1099,10 @@ async fn root_search_aux(
         aggregation_result_postcard_opt = None;
     }
 
+    if let Some(root_resource_stats) = root_resource_stats_opt.as_mut() {
+        root_resource_stats.root_wall_time_microsecs = start.elapsed().as_micros() as u64;
+    }
+
     Ok(SearchResponse {
         aggregation_postcard: aggregation_result_postcard_opt,
         num_hits: first_phase_result.num_hits,
@@ -1098,7 +1114,7 @@ async fn root_search_aux(
             .map(ToString::to_string),
         failed_splits: first_phase_result.failed_splits,
         num_successful_splits: first_phase_result.num_successful_splits,
-        resource_stats: root_resource_stats,
+        resource_stats: root_resource_stats_opt,
     })
 }
 
@@ -1193,7 +1209,7 @@ pub fn ensure_all_indexes_found(
 }
 
 async fn refine_and_list_matches(
-    metastore: &mut MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
     search_request: &mut SearchRequest,
     indexes_metadata: Vec<IndexMetadata>,
     query_ast_resolved: QueryAst,
@@ -1234,9 +1250,10 @@ async fn refine_and_list_matches(
 }
 
 /// Fetches the list of splits and their metadata from the metastore
+#[instrument(skip_all)]
 async fn plan_splits_for_root_search(
     search_request: &mut SearchRequest,
-    metastore: &mut MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<(Vec<SplitMetadata>, IndexesMetasForLeafSearch)> {
     let list_indexes_metadatas_request = ListIndexesMetadataRequest {
         index_id_patterns: search_request.index_id_patterns.clone(),
@@ -1280,14 +1297,14 @@ async fn plan_splits_for_root_search(
 pub async fn root_search(
     searcher_context: &SearcherContext,
     mut search_request: SearchRequest,
-    mut metastore: MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
     let start_instant = Instant::now();
 
     let (split_metadatas, indexes_meta_for_leaf_search) = RootSearchMetricsFuture {
         start: start_instant,
-        tracked: plan_splits_for_root_search(&mut search_request, &mut metastore),
+        tracked: plan_splits_for_root_search(&mut search_request, metastore),
         is_success: None,
         step: RootSearchMetricsStep::Plan,
     }
@@ -1296,8 +1313,6 @@ pub async fn root_search(
     let num_docs: usize = split_metadatas.iter().map(|split| split.num_docs).sum();
     let num_splits = split_metadatas.len();
 
-    // It would have been nice to add those in the context of the trace span,
-    // but with our current logging setting, it makes logs too verbose.
     info!(
         query_ast = search_request.query_ast.as_str(),
         agg = search_request.aggregation_request(),
@@ -1307,6 +1322,17 @@ pub async fn root_search(
         num_splits = num_splits,
         "root_search"
     );
+
+    // set attributes directly on the trace so it doesn't make logs too verbose
+    Span::current().set_attribute("query_ast", search_request.query_ast.clone());
+    Span::current().set_attribute("num_docs", num_docs as i64);
+    Span::current().set_attribute("num_splits", num_splits as i64);
+    if let Some(start_timestamp) = search_request.start_timestamp {
+        Span::current().set_attribute("start_timestamp", start_timestamp);
+    }
+    if let Some(end_timestamp) = search_request.end_timestamp {
+        Span::current().set_attribute("end_timestamp", end_timestamp);
+    }
 
     if let Some(max_total_split_searches) = searcher_context.searcher_config.max_splits_per_search
         && max_total_split_searches < num_splits
@@ -1349,7 +1375,7 @@ pub async fn root_search(
 /// Returns details on how a query would be executed
 pub async fn search_plan(
     mut search_request: SearchRequest,
-    mut metastore: MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<SearchPlanResponse> {
     let list_indexes_metadatas_request = ListIndexesMetadataRequest {
         index_id_patterns: search_request.index_id_patterns.clone(),
@@ -1381,7 +1407,7 @@ pub async fn search_plan(
 
     let request_metadata = validate_request_and_build_metadata(&indexes_metadata, &search_request)?;
     let split_metadatas = refine_and_list_matches(
-        &mut metastore,
+        metastore,
         &mut search_request,
         indexes_metadata,
         request_metadata.query_ast_resolved.clone(),
@@ -1716,7 +1742,7 @@ async fn assign_client_fetch_docs_jobs(
             .iter()
             .map(|metadata| {
                 (
-                    metadata.split_id().to_string(),
+                    metadata.split_id.to_string(),
                     (
                         metadata.index_uid.clone(),
                         extract_split_and_footer_offsets(metadata),
@@ -1752,18 +1778,21 @@ async fn assign_client_fetch_docs_jobs(
         fetch_docs_req_jobs.push(fetch_docs_job);
     }
 
+    // don't do a second call to GetLoad to place fetch_docs jobs
     let assigned_jobs = client_pool
-        .assign_jobs(fetch_docs_req_jobs, &HashSet::new())
+        .assign_jobs_ignoring_load(fetch_docs_req_jobs, &HashSet::new())
         .await?;
 
     Ok(assigned_jobs)
 }
 
 // Measure the cost associated to searching in a given split metadata.
-fn compute_split_cost(split_metadata: &SplitMetadata) -> usize {
+pub(crate) fn compute_split_cost(num_docs: u64) -> usize {
     // TODO this formula could be tuned a lot more. The general idea is that there is a fixed
     // cost to searching a split, plus a somewhat-linear cost depending on the size of the split
-    5 + split_metadata.num_docs / 100_000
+    // This should also factor the query shape (is it an expensive filter, is it an expensive
+    // aggregation...)
+    5 + (num_docs / 100_000) as usize
 }
 
 /// Builds a LeafSearchRequest to one node, from a list of [`SearchJob`].
@@ -1884,7 +1913,8 @@ mod tests {
     use quickwit_indexing::MockSplitBuilder;
     use quickwit_metastore::{IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt};
     use quickwit_proto::metastore::{
-        ListIndexesMetadataResponse, ListSplitsResponse, MockMetastoreService,
+        ListIndexesMetadataResponse, ListSplitsResponse, MetastoreServiceClient,
+        MockMetastoreService,
     };
     use quickwit_proto::search::{
         ScrollRequest, SortByValue, SortOrder, SortValue, SplitSearchError,
@@ -2740,7 +2770,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -2810,7 +2840,7 @@ mod tests {
         let search_response = root_search(
             &searcher_context,
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -2902,7 +2932,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -3197,7 +3227,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await?;
@@ -3315,7 +3345,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -3447,7 +3477,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request.clone(),
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await?;
@@ -3629,7 +3659,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request.clone(),
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await?;
@@ -3753,7 +3783,7 @@ mod tests {
         let search_response = root_search(
             &searcher_context,
             search_request,
-            mock_metastore_client.clone(),
+            &mock_metastore_client,
             &cluster_client,
         )
         .await
@@ -3772,7 +3802,7 @@ mod tests {
         let search_error = root_search(
             &searcher_context,
             search_request,
-            mock_metastore_client,
+            &mock_metastore_client,
             &cluster_client,
         )
         .await
@@ -3897,7 +3927,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -4037,7 +4067,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -4118,7 +4148,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -4185,7 +4215,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -4275,7 +4305,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -4357,7 +4387,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -4406,7 +4436,7 @@ mod tests {
                     max_hits: 10,
                     ..Default::default()
                 },
-                metastore.clone(),
+                &metastore,
                 &cluster_client,
             )
             .await
@@ -4422,7 +4452,7 @@ mod tests {
                     max_hits: 10,
                     ..Default::default()
                 },
-                metastore,
+                &metastore,
                 &cluster_client,
             )
             .await
@@ -4487,7 +4517,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await;
@@ -4537,7 +4567,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            metastore.clone(),
+            &metastore,
             &cluster_client,
         )
         .await;
@@ -4557,7 +4587,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            metastore,
+            &metastore,
             &cluster_client,
         )
         .await;
@@ -4607,7 +4637,7 @@ mod tests {
             });
         let search_response = search_plan(
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
         )
         .await
         .unwrap();
@@ -4694,7 +4724,7 @@ mod tests {
                 ignore_missing_indexes: true,
                 ..Default::default()
             },
-            mock_metastore_service.clone(),
+            &mock_metastore_service,
         )
         .await
         .unwrap();
@@ -4708,7 +4738,7 @@ mod tests {
                 ignore_missing_indexes: false,
                 ..Default::default()
             },
-            mock_metastore_service.clone(),
+            &mock_metastore_service,
         )
         .await
         .unwrap_err();
@@ -5075,7 +5105,7 @@ mod tests {
             let search_response = root_search(
                 &searcher_context,
                 search_request,
-                MetastoreServiceClient::from_mock(mock_metastore),
+                &MetastoreServiceClient::from_mock(mock_metastore),
                 &cluster_client,
             )
             .await
@@ -5341,7 +5371,7 @@ mod tests {
             let search_response = root_search(
                 &searcher_context,
                 search_request,
-                MetastoreServiceClient::from_mock(mock_metastore),
+                &MetastoreServiceClient::from_mock(mock_metastore),
                 &cluster_client,
             )
             .await
@@ -5523,7 +5553,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -5644,7 +5674,7 @@ mod tests {
         let search_response = root_search(
             &SearcherContext::for_test(),
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await
@@ -5697,7 +5727,7 @@ mod tests {
         let search_error = root_search(
             &searcher_context,
             search_request,
-            MetastoreServiceClient::from_mock(mock_metastore),
+            &MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
         )
         .await

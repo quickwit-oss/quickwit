@@ -41,7 +41,8 @@ pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineParams};
 pub use indexing_service::{
     BoxedPipelineHandle, INDEXING_DIR_NAME, IndexingService, IndexingServiceCounters,
 };
-pub(crate) use log_publisher_impl::{MERGE_PUBLISHER_NAME, PUBLISHER_NAME};
+pub use log_publisher_impl::MERGE_PUBLISHER_NAME;
+pub(crate) use log_publisher_impl::PUBLISHER_NAME;
 pub use merge_executor::{MergeExecutor, combine_partition_ids, merge_split_attrs};
 pub use merge_pipeline::{
     FinishPendingMergesAndShutdownPipeline, MergePipeline, MergePipelineParams,

@@ -14,25 +14,31 @@
 
 use std::fmt::Formatter;
 use std::io;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
+use futures_util::{Stream, StreamExt};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
+use hyper_util::server::graceful::GracefulConnection;
 use hyper_util::service::TowerToHyperService;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_metrics::{counter, histogram, labels};
 use quickwit_search::SearchService;
-use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinSet;
 use tokio_rustls::TlsAcceptor;
+use tokio_rustls::server::TlsStream;
 use tokio_util::either::Either;
+use tokio_util::sync::CancellationToken;
 use tower::ServiceBuilder;
 use tower_http::compression::CompressionLayer;
 use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use warp::filters::log::Info;
 use warp::hyper::http::HeaderValue;
 use warp::hyper::{Method, StatusCode, http};
@@ -115,18 +121,27 @@ impl Predicate for CompressionPredicate {
     }
 }
 
-async fn apply_tls_if_necessary(
-    tcp_stream: TcpStream,
-    tls_acceptor_opt: &Option<TlsAcceptor>,
-) -> io::Result<impl AsyncRead + AsyncWrite + Unpin + 'static> {
-    let Some(tls_acceptor) = &tls_acceptor_opt else {
-        return Ok(Either::Right(tcp_stream));
-    };
-    let tls_stream_res = tls_acceptor
-        .accept(tcp_stream)
-        .await
-        .inspect_err(|err| error!("failed to perform tls handshake: {err:#}"))?;
-    Ok(Either::Left(tls_stream_res))
+/// A ready-to-serve connection: TLS-terminated (`Left`) or plaintext (`Right`). Both implement
+/// `AsyncRead`/`AsyncWrite`, so the serve loop handles them uniformly.
+type MaybeTlsStream = Either<TlsStream<TcpStream>, TcpStream>;
+
+/// Wraps a stream of accepted TCP connections into the stream of connections the serve loop reads.
+///
+/// When TLS is configured we terminate it ourselves (so the certificate can be hot-reloaded),
+/// running the handshakes off the accept path so a client that connects but stalls its handshake
+/// cannot block new connections; otherwise the plaintext stream is served directly. Either way the
+/// result is a single stream of [`MaybeTlsStream`]s.
+fn accept_connections(
+    tcp_incoming: impl Stream<Item = io::Result<TcpStream>> + Send + 'static,
+    tls_acceptor_opt: Option<TlsAcceptor>,
+) -> Pin<Box<dyn Stream<Item = io::Result<MaybeTlsStream>> + Send>> {
+    match tls_acceptor_opt {
+        Some(tls_acceptor) => {
+            let tls_incoming = quickwit_transport::accept_tls_incoming(tcp_incoming, tls_acceptor);
+            Box::pin(tls_incoming.map(|stream_res| stream_res.map(Either::Left)))
+        }
+        None => Box::pin(tcp_incoming.map(|stream_res| stream_res.map(Either::Right))),
+    }
 }
 
 /// Starts REST services.
@@ -212,9 +227,108 @@ pub(crate) async fn start_rest_server(
         .with(extra_headers)
         .boxed();
 
-    let warp_service = warp::service(rest_routes);
+    let tls_acceptor_opt: Option<TlsAcceptor> = if let Some(tls_config) =
+        &quickwit_services.node_config.rest_config.tls_config
+    {
+        let alpn_protocols: &[&[u8]] = &[b"h2", b"http/1.1", b"http/1.0"];
+        let rustls_config = quickwit_transport::make_tls_server_config(tls_config, alpn_protocols)?;
+        Some(TlsAcceptor::from(rustls_config))
+    } else {
+        None
+    };
+    let rest_config = &quickwit_services.node_config.rest_config;
+    // `max_connection_age_grace` without `max_connection_age` is rejected at config validation, so
+    // the grace is only carried when an age is present.
+    let max_connection_age_opt =
+        rest_config
+            .max_connection_age
+            .as_ref()
+            .map(|max_connection_age| MaxConnectionAge {
+                age: **max_connection_age,
+                grace: rest_config
+                    .max_connection_age_grace
+                    .as_ref()
+                    .map(|max_connection_age_grace| **max_connection_age_grace),
+            });
+    serve_warp_routes(
+        "REST",
+        tcp_listener,
+        rest_routes,
+        rest_config.cors_allow_origins.clone(),
+        tls_acceptor_opt,
+        max_connection_age_opt,
+        readiness_trigger,
+        shutdown_signal,
+    )
+    .await
+}
+
+/// Starts the optional plaintext health-check server.
+///
+/// This server exposes only the `/health/livez` and `/health/readyz` endpoints over plain HTTP
+/// (no TLS). It lets liveness/readiness probes reach the node even when the main REST API is put
+/// behind mTLS. The same routes remain mounted on the main REST server.
+pub(crate) async fn start_health_check_server(
+    tcp_listener: TcpListener,
+    quickwit_services: Arc<QuickwitServices>,
+    readiness_trigger: BoxFutureInfaillible<()>,
+    shutdown_signal: BoxFutureInfaillible<()>,
+) -> anyhow::Result<()> {
+    let health_check_routes = health_check_handlers(
+        quickwit_services.cluster.clone(),
+        quickwit_services.indexing_service_opt.clone(),
+        quickwit_services.janitor_service_opt.clone(),
+    )
+    .recover(recover_fn_final)
+    .boxed();
+    // No TLS: the whole point of this server is to offer a plaintext probe surface that bypasses
+    // the mTLS configured on the main REST server.
+    serve_warp_routes(
+        "health check",
+        tcp_listener,
+        health_check_routes,
+        Vec::new(),
+        None,
+        None,
+        readiness_trigger,
+        shutdown_signal,
+    )
+    .await
+}
+
+/// Bounds the lifetime of an accepted connection so a hot-reloaded TLS certificate eventually
+/// reaches long-lived clients, which only pick up a new certificate when they reconnect. `grace`
+/// is how long the connection may keep draining after the GOAWAY before it is forcefully closed;
+/// `None` waits indefinitely. Grouping the two fields makes a grace-without-age combination
+/// unrepresentable.
+#[derive(Clone, Copy)]
+struct MaxConnectionAge {
+    age: Duration,
+    grace: Option<Duration>,
+}
+
+/// Serves a set of warp `routes` over `tcp_listener` until `shutdown_signal` resolves, optionally
+/// terminating TLS. Shared by the main REST server and the health-check server.
+// `serve_warp_routes` wires together several independent concerns (routing, CORS, TLS, connection
+// lifetime, readiness, shutdown); bundling them further would not aid readability.
+#[allow(clippy::too_many_arguments)]
+async fn serve_warp_routes<F>(
+    server_name: &str,
+    tcp_listener: TcpListener,
+    routes: F,
+    cors_allow_origins: Vec<String>,
+    tls_acceptor_opt: Option<TlsAcceptor>,
+    max_connection_age_opt: Option<MaxConnectionAge>,
+    readiness_trigger: BoxFutureInfaillible<()>,
+    shutdown_signal: BoxFutureInfaillible<()>,
+) -> anyhow::Result<()>
+where
+    F: Filter<Error = Rejection> + Clone + Send + Sync + 'static,
+    F::Extract: Reply,
+{
+    let warp_service = warp::service(routes);
     let compression_predicate = CompressionPredicate::from_env().and(NotForContentType::IMAGES);
-    let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
+    let cors = build_cors(&cors_allow_origins);
 
     let trace_layer = TraceLayer::new_for_http()
         .make_span_with(make_http_request_span as fn(&http::Request<_>) -> tracing::Span)
@@ -235,61 +349,132 @@ pub(crate) async fn start_rest_server(
         .layer(cors)
         .service(warp_service);
 
-    let rest_listen_addr = tcp_listener.local_addr()?;
-    info!(
-        rest_listen_addr=?rest_listen_addr,
-        "starting REST server listening on {rest_listen_addr}"
-    );
+    let listen_addr = tcp_listener.local_addr()?;
+    info!(listen_addr=?listen_addr, "starting {server_name} server listening on {listen_addr}");
 
     let service = TowerToHyperService::new(service);
 
     let server = Builder::new(TokioExecutor::new());
-    let graceful = hyper_util::server::graceful::GracefulShutdown::new();
+    // Triggers a graceful shutdown (HTTP/2 GOAWAY) on every live connection. Fired once on server
+    // shutdown; each connection also drains on its own when `max_connection_age` elapses.
+    let cancellation_token = CancellationToken::new();
+    // Tracks in-flight connection tasks so we can wait for them to drain on shutdown. We do not use
+    // `hyper_util`'s `GracefulShutdown` helper because it takes ownership of each connection, which
+    // would prevent us from also triggering a per-connection `graceful_shutdown` when the
+    // connection's max age elapses (the `GracefulConnection` trait is sealed, so we cannot wrap
+    // it).
+    let mut connection_tasks: JoinSet<()> = JoinSet::new();
     let mut shutdown_signal = std::pin::pin!(shutdown_signal);
     readiness_trigger.await;
 
-    let tls_acceptor_opt: Option<TlsAcceptor> =
-        if let Some(tls_config) = &quickwit_services.node_config.rest_config.tls {
-            let rustls_config = tls::make_rustls_config(tls_config)?;
-            Some(TlsAcceptor::from(rustls_config))
-        } else {
-            None
-        };
+    // A stream of accepted TCP connections, preserving the previous raw-`accept` semantics.
+    let tcp_incoming = futures_util::stream::unfold(tcp_listener, |tcp_listener| async move {
+        let tcp_accept_res = tcp_listener
+            .accept()
+            .await
+            .map(|(tcp_stream, _remote_addr)| tcp_stream);
+        Some((tcp_accept_res, tcp_listener))
+    });
+    let mut incoming_connections = accept_connections(tcp_incoming, tls_acceptor_opt);
 
     loop {
         tokio::select! {
-            tcp_accept_res = tcp_listener.accept() => {
-                let tcp_stream = match tcp_accept_res {
-                    Ok((tcp_stream, _remote_addr)) => tcp_stream,
-                    Err(err) => {
-                        error!("failed to accept connection: {err:#}");
+            next_connection_opt = incoming_connections.next() => {
+                let Some(connection_res) = next_connection_opt else {
+                    break;
+                };
+                let connection = match connection_res {
+                    Ok(connection) => connection,
+                    Err(accept_error) => {
+                        error!("failed to accept connection: {accept_error:#}");
                         continue;
                     }
                 };
-
-                let Ok(tcp_or_tls_stream) = apply_tls_if_necessary(tcp_stream, &tls_acceptor_opt).await else {
-                    continue;
-                };
-
-                let serve_fut = server.serve_connection_with_upgrades(TokioIo::new(tcp_or_tls_stream), service.clone());
-                let serve_with_shutdown_fut = graceful.watch(serve_fut.into_owned());
-                tokio::spawn(async move {
-                    if let Err(err) = serve_with_shutdown_fut.await {
-                        error!("failed to serve connection: {err:#}");
-                    }
-                });
+                let serve_connection_fut = server
+                    .serve_connection_with_upgrades(TokioIo::new(connection), service.clone())
+                    .into_owned();
+                let cancellation_token = cancellation_token.clone();
+                connection_tasks.spawn(serve_connection(
+                    serve_connection_fut,
+                    cancellation_token,
+                    max_connection_age_opt,
+                ));
             },
+            // Reap finished connection tasks so the set does not grow without bound on a
+            // long-running server. Disabled while empty so the branch does not busy-loop.
+            _ = connection_tasks.join_next(), if !connection_tasks.is_empty() => {},
             _ = &mut shutdown_signal => {
-                info!("REST server shutdown signal received");
+                info!("{server_name} server shutdown signal received");
                 break;
             }
         }
     }
-
-    graceful.shutdown().await;
-    info!("gracefully shutdown");
+    info!("shutting down {server_name} server");
+    // Ask every live connection to drain, then wait for the tasks to finish.
+    cancellation_token.cancel();
+    while connection_tasks.join_next().await.is_some() {}
+    info!("{server_name} server successfully shut down");
 
     Ok(())
+}
+
+/// Drives a single accepted connection to completion, sending an HTTP/2 GOAWAY and then waiting for
+/// it to drain when either the connection's max age (`max_connection_age_opt`) elapses or a global
+/// drain is requested via `cancellation_token`. When a grace period is configured, the connection
+/// is forcefully closed (dropped) if it has not finished draining within that period.
+///
+/// Bounding the connection lifetime is what lets a hot-reloaded TLS certificate eventually reach
+/// long-lived clients: the new certificate is only presented on a fresh handshake, so the client
+/// must reconnect to pick it up.
+async fn serve_connection<C>(
+    connection: C,
+    cancellation_token: CancellationToken,
+    max_connection_age_opt: Option<MaxConnectionAge>,
+) where
+    C: GracefulConnection,
+    C::Error: std::fmt::Display,
+{
+    let mut connection = std::pin::pin!(connection);
+
+    let max_age_sleep = match max_connection_age_opt {
+        Some(max_connection_age) => Either::Left(tokio::time::sleep(max_connection_age.age)),
+        None => Either::Right(std::future::pending::<()>()),
+    };
+    // Phase 1: serve until the connection ends on its own, its max age elapses, or a global drain
+    // is requested.
+    let max_age_exceeded = tokio::select! {
+        connection_res = connection.as_mut() => {
+            if let Err(serve_error) = connection_res {
+                error!("failed to serve connection: {serve_error:#}");
+            }
+            return;
+        }
+        _ = max_age_sleep => true,
+        _ = cancellation_token.cancelled() => false,
+    };
+    // Phase 2: we asked the peer to reconnect; send GOAWAY and let in-flight requests drain.
+    connection.as_mut().graceful_shutdown();
+
+    let max_connection_age_grace_opt = match max_connection_age_opt {
+        Some(max_connection_age) if max_age_exceeded => max_connection_age.grace,
+        _ => None,
+    };
+    let max_connection_age_grace_sleep = match max_connection_age_grace_opt {
+        Some(max_connection_age_grace) => {
+            Either::Left(tokio::time::sleep(max_connection_age_grace))
+        }
+        None => Either::Right(std::future::pending::<()>()),
+    };
+    tokio::select! {
+        connection_res = connection.as_mut() => {
+            if let Err(serve_error) = connection_res {
+                error!("failed to serve connection: {serve_error:#}");
+            }
+        }
+        _ = max_connection_age_grace_sleep => {
+            warn!("connection did not drain within the grace period; closing it forcefully");
+        }
+    }
 }
 
 fn search_routes(
@@ -496,7 +681,7 @@ fn get_status_with_error(rejection: Rejection) -> Result<RestApiError, Rejection
 }
 
 fn build_cors(cors_origins: &[String]) -> CorsLayer {
-    let debug_mode = quickwit_common::get_bool_from_env("QW_ENABLE_CORS_DEBUG", false);
+    let debug_mode = quickwit_common::get_bool_from_env_cached!("QW_ENABLE_CORS_DEBUG", false);
     if debug_mode {
         info!("CORS debug mode is enabled, localhost and 127.0.0.1 origins will be allowed");
         return CorsLayer::new()
@@ -540,69 +725,13 @@ fn build_cors(cors_origins: &[String]) -> CorsLayer {
     cors
 }
 
-mod tls {
-    // most of this module is copied from hyper-tls examples, licensed under Apache 2.0, MIT or ISC
-
-    use std::sync::Arc;
-    use std::vec::Vec;
-    use std::{fs, io};
-
-    use quickwit_config::TlsConfig;
-    use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-    use tokio_rustls::rustls::ServerConfig;
-
-    fn io_error(error: String) -> io::Error {
-        io::Error::other(error)
-    }
-
-    // Load public certificate from file.
-    fn load_certs(filename: &str) -> io::Result<Vec<CertificateDer<'static>>> {
-        // Open certificate file.
-        let certfile = fs::File::open(filename)
-            .map_err(|error| io_error(format!("failed to open {filename}: {error}")))?;
-        let mut reader = io::BufReader::new(certfile);
-        // Load and return certificate.
-        rustls_pemfile::certs(&mut reader).collect()
-    }
-
-    // Load private key from file.
-    fn load_private_key(filename: &str) -> io::Result<PrivateKeyDer<'static>> {
-        // Open keyfile.
-        let keyfile = fs::File::open(filename)
-            .map_err(|error| io_error(format!("failed to open {filename}: {error}")))?;
-        let mut reader = io::BufReader::new(keyfile);
-
-        // Load and return a single private key.
-        rustls_pemfile::private_key(&mut reader).map(|key| key.unwrap())
-    }
-
-    pub fn make_rustls_config(config: &TlsConfig) -> anyhow::Result<Arc<ServerConfig>> {
-        let certs = load_certs(&config.cert_path)?;
-        let key = load_private_key(&config.key_path)?;
-
-        // TODO we could add support for client authorization, it seems less important than on the
-        // gRPC side though
-        if config.validate_client {
-            anyhow::bail!("mTLS isn't supported on rest api");
-        }
-
-        let mut cfg = rustls::ServerConfig::builder()
-            .with_no_client_auth()
-            .with_single_cert(certs, key)
-            .map_err(|error| io_error(error.to_string()))?;
-        // Configure ALPN to accept HTTP/2, HTTP/1.1, and HTTP/1.0 in that order.
-        cfg.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
-        Ok(Arc::new(cfg))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::future::Future;
     use std::pin::Pin;
     use std::task::{Context, Poll};
 
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_config::NodeConfig;
     use quickwit_index_management::IndexService;
     use quickwit_ingest::{IngestApiService, IngestServiceClient};
@@ -851,7 +980,7 @@ mod tests {
         let index_service =
             IndexService::new(metastore_client.clone(), StorageResolver::unconfigured());
         let control_plane_client = ControlPlaneServiceClient::mocked();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
             .unwrap();
@@ -859,6 +988,7 @@ mod tests {
             _report_splits_subscription_handle_opt: None,
             _local_shards_update_listener_handle_opt: None,
             cluster,
+            compaction_service_client_opt: None,
             control_plane_server_opt: None,
             control_plane_client,
             indexing_service_opt: None,
@@ -875,6 +1005,7 @@ mod tests {
             node_config: Arc::new(node_config.clone()),
             search_service: Arc::new(MockSearchService::new()),
             jaeger_service_opt: None,
+            _compactor_supervisor_opt: None,
             env_filter_reload_fn: crate::do_nothing_env_filter_reload_fn(),
             #[cfg(feature = "datafusion")]
             datafusion_session_builder: None,

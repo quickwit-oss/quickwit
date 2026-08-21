@@ -80,7 +80,7 @@ fn make_merge_policy(
             max_merge_factor: merge_factor,
             max_merge_ops: 5,
             target_split_size_bytes: 256 * 1024 * 1024,
-            maturation_period: Duration::from_secs(3600),
+            maturation_period: Duration::from_hours(1),
             max_finalize_merge_operations: 3,
         },
     ))
@@ -138,12 +138,14 @@ async fn test_merge_pipeline_crash_and_restart() {
     let final_publish_done = Arc::new(AtomicBool::new(false));
     let final_publish_clone = final_publish_done.clone();
 
+    // `publish_with_retry` retries each publish up to 3×; the second logical publish must fail on
+    // all 3 attempts (calls 1-3) to actually crash the pipeline rather than be masked by a retry.
     mock_metastore
         .expect_publish_metrics_splits()
         .returning(move |request| {
             let call_num = publish_call_clone.fetch_add(1, Ordering::SeqCst);
-            if call_num == 1 {
-                // Fail on the second publish to trigger pipeline restart.
+            if (1..=3).contains(&call_num) {
+                // Second publish: fail every retry attempt to trigger pipeline restart.
                 return Err(quickwit_proto::metastore::MetastoreError::Internal {
                     message: "injected failure for crash test".to_string(),
                     cause: "test".to_string(),
@@ -153,8 +155,8 @@ async fn test_merge_pipeline_crash_and_restart() {
                 .lock()
                 .unwrap()
                 .extend(request.replaced_split_ids.clone());
-            // Signal completion after a post-restart publish.
-            if call_num >= 2 {
+            // Signal completion on the first post-restart publish (call 4, after the 3 failures).
+            if call_num >= 4 {
                 final_publish_clone.store(true, Ordering::SeqCst);
             }
             Ok(EmptyResponse {})
@@ -202,6 +204,7 @@ async fn test_merge_pipeline_crash_and_restart() {
         merge_scheduler_service: universe.get_or_spawn_one(),
         max_concurrent_split_uploads: 4,
         event_broker: EventBroker::default(),
+        skip_initial_seed: false,
         writer_config: ParquetWriterConfig::default(),
         use_streaming_engine: false,
         target_split_size_bytes: 256 * 1024 * 1024,
@@ -217,7 +220,7 @@ async fn test_merge_pipeline_crash_and_restart() {
             let done = final_publish_done.clone();
             async move { done.load(Ordering::SeqCst) }
         },
-        Duration::from_secs(60),
+        Duration::from_mins(1),
         Duration::from_millis(200),
     )
     .await
@@ -327,6 +330,7 @@ async fn test_merge_pipeline_multi_round() {
         merge_scheduler_service: universe.get_or_spawn_one(),
         max_concurrent_split_uploads: 4,
         event_broker: EventBroker::default(),
+        skip_initial_seed: false,
         writer_config: ParquetWriterConfig::default(),
         use_streaming_engine: false,
         target_split_size_bytes: 256 * 1024 * 1024,
@@ -342,7 +346,7 @@ async fn test_merge_pipeline_multi_round() {
             let staged = staged_metadata.clone();
             async move { staged.lock().unwrap().iter().any(|s| s.num_merge_ops >= 2) }
         },
-        Duration::from_secs(60),
+        Duration::from_mins(1),
         Duration::from_millis(200),
     )
     .await

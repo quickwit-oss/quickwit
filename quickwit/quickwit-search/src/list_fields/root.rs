@@ -54,10 +54,10 @@ struct IndexMetasForLeafSearch {
 pub async fn root_list_fields(
     list_fields_req: ListFieldsRequest,
     cluster_client: &ClusterClient,
-    mut metastore: MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<ListFieldsResponse> {
     let indexes_metadata =
-        resolve_index_patterns(&list_fields_req.index_id_patterns[..], &mut metastore).await?;
+        resolve_index_patterns(&list_fields_req.index_id_patterns[..], metastore).await?;
 
     // The request contains a wildcard, but couldn't find any index.
     if indexes_metadata.is_empty() {
@@ -115,7 +115,7 @@ pub async fn root_list_fields(
         start_timestamp,
         end_timestamp,
         tags_filter_opt,
-        &mut metastore,
+        metastore,
     )
     .await?;
 

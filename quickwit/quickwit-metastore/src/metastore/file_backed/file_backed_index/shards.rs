@@ -25,7 +25,7 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::types::{IndexUid, Position, PublishToken, ShardId, SourceId, queue_id};
 use time::OffsetDateTime;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::checkpoint::{PartitionId, SourceCheckpoint, SourceCheckpointDelta};
 use crate::file_backed::MutationOccurred;
@@ -49,6 +49,23 @@ impl fmt::Debug for Shards {
             .field("shards", &self.shards)
             .finish()
     }
+}
+
+/// Whether a shard recording `existing_token` can be acquired by a pipeline presenting
+/// `presented_token`. Acquisition between ULIDs is monotonic (newer-or-equal wins). A legacy
+/// (`'/'`-containing, pre-ULID) presented token always wins, so a rolling upgrade can still hand a
+/// shard to an old indexer; a missing or legacy recorded token loses to any ULID.
+fn can_acquire_shard(existing_token: &str, presented_token: &str) -> bool {
+    // An old indexer presenting a legacy token keeps the pre-upgrade overwrite behavior.
+    if presented_token.contains('/') {
+        return true;
+    }
+    // A missing or legacy recorded token loses to any ULID.
+    if existing_token.is_empty() || existing_token.contains('/') {
+        return true;
+    }
+    // Both are ULIDs: acquire only if ours is newer-or-equal.
+    presented_token >= existing_token
 }
 
 impl Shards {
@@ -123,8 +140,7 @@ impl Shards {
                     source_id: self.source_id.clone(),
                     shard_id: Some(shard_id.clone()),
                     shard_state: ShardState::Open as i32,
-                    leader_id: subrequest.leader_id,
-                    follower_id: subrequest.follower_id,
+                    ingester_id: subrequest.ingester_id,
                     doc_mapping_uid: subrequest.doc_mapping_uid,
                     publish_position_inclusive: Some(Position::Beginning),
                     publish_token: subrequest.publish_token.clone(),
@@ -137,8 +153,7 @@ impl Shards {
                     index_uid=%self.index_uid,
                     source_id=%self.source_id,
                     %shard_id,
-                    leader_id=%shard.leader_id,
-                    follower_id=?shard.follower_id,
+                    ingester_id=%shard.ingester_id,
                     "opened shard"
                 );
                 shard
@@ -164,6 +179,17 @@ impl Shards {
 
         for shard_id in &request.shard_ids {
             if let Some(shard) = self.shards.get_mut(shard_id) {
+                if !can_acquire_shard(shard.publish_token(), &request.publish_token) {
+                    error!(
+                        index_uid=%self.index_uid,
+                        source_id=%self.source_id,
+                        %shard_id,
+                        existing_publish_token=%shard.publish_token(),
+                        publish_token=%request.publish_token,
+                        "failed to acquire shard held by a more recent publish token"
+                    );
+                    continue;
+                }
                 if shard.publish_token() != request.publish_token {
                     shard.publish_token = Some(request.publish_token.clone());
                     mutation_occurred = true;
@@ -303,9 +329,10 @@ impl Shards {
             let shard_id = ShardId::from(partition_id.as_str());
             let shard = self.get_shard(&shard_id)?;
 
-            if shard.publish_token() != publish_token {
-                let message = "failed to apply checkpoint delta: invalid publish token".to_string();
-                return Err(MetastoreError::InvalidArgument { message });
+            if shard.publish_token() != *publish_token {
+                return Err(MetastoreError::InvalidPublishToken {
+                    queue_id: shard.queue_id(),
+                });
             }
             let publish_position_inclusive = partition_delta.to;
             shard_ids.push((shard_id, publish_position_inclusive))
@@ -366,8 +393,7 @@ mod tests {
             index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
-            leader_id: "leader_id".to_string(),
-            follower_id: None,
+            ingester_id: "ingester_id".to_string(),
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_token: None,
         };
@@ -382,8 +408,7 @@ mod tests {
         assert_eq!(shard.source_id, source_id);
         assert_eq!(shard.shard_id(), ShardId::from(1));
         assert_eq!(shard.shard_state(), ShardState::Open);
-        assert_eq!(shard.leader_id, "leader_id");
-        assert_eq!(shard.follower_id, None);
+        assert_eq!(shard.ingester_id, "ingester_id");
         assert_eq!(shard.publish_token, None);
         assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
 
@@ -400,8 +425,7 @@ mod tests {
             index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(2)),
-            leader_id: "leader_id".to_string(),
-            follower_id: Some("follower_id".to_string()),
+            ingester_id: "ingester_id".to_string(),
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_token: Some("publish_token".to_string()),
         };
@@ -415,8 +439,7 @@ mod tests {
         assert_eq!(shard.source_id, source_id);
         assert_eq!(shard.shard_id(), ShardId::from(2));
         assert_eq!(shard.shard_state(), ShardState::Open);
-        assert_eq!(shard.leader_id, "leader_id");
-        assert_eq!(shard.follower_id.as_ref().unwrap(), "follower_id");
+        assert_eq!(shard.ingester_id, "ingester_id");
         assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
 
         assert_eq!(shards.shards.get(&ShardId::from(2)).unwrap(), shard);
@@ -533,6 +556,27 @@ mod tests {
                 .publish_token(),
             "test-publish-token"
         );
+    }
+
+    #[test]
+    fn test_can_acquire_shard() {
+        const OLDER: &str = "01000000000000000000000000";
+        const NEWER: &str = "02000000000000000000000000";
+        const LEGACY: &str = "indexer/node/index:0/source/01000000000000000000000000";
+
+        // No token recorded yet: free to acquire.
+        assert!(can_acquire_shard("", NEWER));
+        // A legacy (pre-ULID) recorded token is always superseded by a ULID.
+        assert!(can_acquire_shard(LEGACY, NEWER));
+        // A newer ULID supersedes an older one.
+        assert!(can_acquire_shard(OLDER, NEWER));
+        // The same ULID re-acquires (e.g. after a local respawn).
+        assert!(can_acquire_shard(NEWER, NEWER));
+        // An older ULID cannot steal a shard owned by a newer one.
+        assert!(!can_acquire_shard(NEWER, OLDER));
+        // A legacy presented token always wins, so a rolling upgrade can move a shard from a new
+        // indexer back to an old one.
+        assert!(can_acquire_shard(NEWER, LEGACY));
     }
 
     #[test]

@@ -13,22 +13,30 @@
 // limitations under the License.
 
 use anyhow::Context;
-use opentelemetry_otlp::{Protocol as OtlpWireProtocol, SpanExporter, WithExportConfig};
+use opentelemetry_otlp::{
+    Protocol as OtlpWireProtocol, SpanExporter, WithExportConfig, WithHttpConfig, WithTonicConfig,
+};
+use opentelemetry_sdk::trace::span_processor_with_async_runtime::BatchSpanProcessor;
 use opentelemetry_sdk::trace::{BatchConfigBuilder, SdkTracerProvider};
-use opentelemetry_sdk::{Resource, trace};
+use opentelemetry_sdk::{Resource, runtime};
 
 use crate::otlp::{OtlpExporterConfig, OtlpProtocol};
 
 impl OtlpProtocol {
     pub(crate) fn span_exporter(&self) -> anyhow::Result<SpanExporter> {
         match self {
-            OtlpProtocol::Grpc => SpanExporter::builder().with_tonic().build(),
+            OtlpProtocol::Grpc => SpanExporter::builder()
+                .with_tonic()
+                .with_retry_policy(super::RETRY_POLICY)
+                .build(),
             OtlpProtocol::HttpProtobuf => SpanExporter::builder()
                 .with_http()
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_protocol(OtlpWireProtocol::HttpBinary)
                 .build(),
             OtlpProtocol::HttpJson => SpanExporter::builder()
                 .with_http()
+                .with_retry_policy(super::RETRY_POLICY)
                 .with_protocol(OtlpWireProtocol::HttpJson)
                 .build(),
         }
@@ -36,13 +44,14 @@ impl OtlpProtocol {
     }
 }
 
+/// Builds the OTLP tracer provider.
 pub(crate) fn init_tracer_provider(
     otlp_config: &OtlpExporterConfig,
     resource: Resource,
 ) -> anyhow::Result<SdkTracerProvider> {
     let traces_protocol = otlp_config.traces_protocol()?;
     let span_exporter = traces_protocol.span_exporter()?;
-    let span_processor = trace::BatchSpanProcessor::builder(span_exporter)
+    let span_processor = BatchSpanProcessor::builder(span_exporter, runtime::Tokio)
         .with_batch_config(
             BatchConfigBuilder::default()
                 // Quickwit can generate a lot of spans, especially in debug mode, and the

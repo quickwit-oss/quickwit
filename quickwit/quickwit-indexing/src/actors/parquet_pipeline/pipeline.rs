@@ -51,7 +51,7 @@ use crate::actors::pipeline_shared::{
 use crate::actors::sequencer::Sequencer;
 use crate::actors::{Publisher, UploaderType};
 use crate::metrics::INDEXING_PIPELINES;
-use crate::models::IndexingStatistics;
+use crate::models::{IndexingStatistics, SharedPublishToken};
 use crate::source::{
     AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
 };
@@ -97,6 +97,8 @@ pub struct MetricsPipelineParams {
     pub partition_key: quickwit_doc_mapper::RoutingExpr,
     /// Maximum number of index partitions allowed in a workbench.
     pub max_num_partitions: NonZeroU32,
+    /// Parquet merge policy used to assign maturity to newly produced splits.
+    pub parquet_merge_policy: Arc<dyn quickwit_parquet_engine::merge::policy::ParquetMergePolicy>,
     /// Parquet merge planner mailbox for the publisher feedback loop.
     /// When set, the publisher sends ParquetNewSplits to the planner
     /// after publishing ingest splits so they can be considered for merging.
@@ -112,6 +114,10 @@ pub struct MetricsPipeline {
     handles_opt: Option<MetricsPipelineHandles>,
     kill_switch: KillSwitch,
     shard_ids: BTreeSet<ShardId>,
+    // Id of the last indexing plan assigned to this pipeline. Kept here, like `shard_ids`, so it
+    // can be re-sent to the source on respawn; the source adopts it as its publish token.
+    indexing_plan_id: String,
+    publish_token: SharedPublishToken,
     _indexing_pipelines_gauge_guard: GaugeGuard,
 }
 
@@ -161,6 +167,8 @@ impl MetricsPipeline {
                 ..Default::default()
             },
             shard_ids: Default::default(),
+            indexing_plan_id: String::new(),
+            publish_token: SharedPublishToken::default(),
             _indexing_pipelines_gauge_guard: indexing_pipelines_gauge_guard,
         }
     }
@@ -201,7 +209,7 @@ impl MetricsPipeline {
         }
 
         if !failure_or_unhealthy_actors.is_empty() {
-            error!(
+            debug!(
                 pipeline_id=?self.params.pipeline_id,
                 generation=self.generation(),
                 healthy_actors=?healthy_actors,
@@ -330,6 +338,7 @@ impl MetricsPipeline {
             self.params.metastore.clone(),
             None,
             Some(source_mailbox.clone()),
+            self.publish_token.clone(),
         );
         if let Some(planner_mailbox) = &self.params.parquet_merge_planner_mailbox_opt {
             publisher = publisher.set_parquet_merge_planner_mailbox(planner_mailbox.clone());
@@ -353,6 +362,7 @@ impl MetricsPipeline {
             self.params.storage.clone(),
             sequencer_mailbox,
             self.params.max_concurrent_split_uploads,
+            self.params.parquet_merge_policy.clone(),
         );
         let (uploader_mailbox, uploader_handle) = ctx
             .spawn_actor()
@@ -432,6 +442,7 @@ impl MetricsPipeline {
             storage_resolver: self.params.source_storage_resolver.clone(),
             event_broker: self.params.event_broker.clone(),
             indexing_setting: self.params.indexing_settings.clone(),
+            publish_token: self.publish_token.clone(),
         };
         let source = ctx
             .protect_future(quickwit_supported_sources().load_source(source_runtime))
@@ -444,6 +455,7 @@ impl MetricsPipeline {
             .spawn(actor_source);
         let assign_shards_message = AssignShards(Assignment {
             shard_ids: self.shard_ids.clone(),
+            indexing_plan_id: self.indexing_plan_id.clone(),
         });
         source_mailbox.send_message(assign_shards_message).await?;
 
@@ -536,6 +548,8 @@ impl Handler<AssignShards> for MetricsPipeline {
     ) -> Result<(), ActorExitStatus> {
         self.shard_ids
             .clone_from(&assign_shards_message.0.shard_ids);
+        self.indexing_plan_id
+            .clone_from(&assign_shards_message.0.indexing_plan_id);
         if let Some(handles) = &self.handles_opt {
             info!(
                 shard_ids=?assign_shards_message.0.shard_ids,

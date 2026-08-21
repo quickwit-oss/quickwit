@@ -31,7 +31,7 @@ use tokio::runtime::Handle;
 use tracing::{debug, info, instrument};
 
 use super::{ParquetIndexer, ProcessedParquetBatch};
-use crate::models::{NewPublishLock, NewPublishToken, PublishLock, RawDocBatch};
+use crate::models::{NewPublishLock, PublishLock, RawDocBatch};
 
 /// Arrow IPC stream continuation marker (4 bytes of 0xFF).
 const ARROW_IPC_CONTINUATION_MARKER: [u8; 4] = [0xFF, 0xFF, 0xFF, 0xFF];
@@ -323,21 +323,6 @@ impl Handler<NewPublishLock> for ParquetDocProcessor {
     }
 }
 
-#[async_trait]
-impl Handler<NewPublishToken> for ParquetDocProcessor {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        message: NewPublishToken,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
-        ctx.send_message(&self.indexer_mailbox, message).await?;
-
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::Ordering;
@@ -591,6 +576,9 @@ mod tests {
             ram_storage,
             sequencer_mailbox,
             4,
+            crate::merge_policy::parquet_merge_policy_from_settings(
+                &quickwit_config::IndexingSettings::default(),
+            ),
         );
         let (uploader_mailbox, _uploader_handle) = universe.spawn_builder().spawn(uploader);
 

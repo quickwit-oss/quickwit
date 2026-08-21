@@ -135,8 +135,7 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
-            leader_id: "leader-ingester".to_string(),
-            follower_id: Some("follower-ingester".to_string()),
+            ingester_id: "ingester".to_string(),
             doc_mapping_uid: Some(DocMappingUid::for_test(1)),
             publish_position_inclusive: Some(Position::Beginning),
             update_timestamp: 1724240908,
@@ -232,9 +231,9 @@ impl FileBackedIndex {
             .map(|delete_task| delete_task.opstamp)
             .max()
             .unwrap_or(0) as usize;
-        let splits = splits
+        let splits: HashMap<SplitId, Split> = splits
             .into_iter()
-            .map(|split| (split.split_id().to_string(), split))
+            .map(|split| (split.split_id().clone(), split))
             .collect();
         let metrics_splits = metrics_splits
             .into_iter()
@@ -330,7 +329,7 @@ impl FileBackedIndex {
             publish_timestamp: None,
             split_metadata,
         };
-        self.splits.insert(split.split_id().to_string(), split);
+        self.splits.insert(split.split_id().clone(), split);
         Ok(())
     }
 
@@ -913,6 +912,7 @@ fn stage_parquet_splits(
     let now = OffsetDateTime::now_utc().unix_timestamp();
     for metadata in splits_metadata {
         let split_id = metadata.split_id.as_str().to_string();
+        let maturity_timestamp = metadata.maturity_timestamp_secs();
 
         if let Some(existing) = splits_map.get(&split_id)
             && existing.state != SplitState::Staged
@@ -931,7 +931,7 @@ fn stage_parquet_splits(
             create_timestamp: now,
             node_id: String::new(),
             delete_opstamp: 0,
-            maturity_timestamp: 0,
+            maturity_timestamp,
         };
         splits_map.insert(split_id, stored);
     }
@@ -1226,6 +1226,22 @@ impl Debug for Stamper {
 }
 
 fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
+    if !query.included_split_ids.is_empty()
+        && !query
+            .included_split_ids
+            .contains(&split.split_metadata.split_id)
+    {
+        return false;
+    }
+
+    if !query.excluded_split_ids.is_empty()
+        && query
+            .excluded_split_ids
+            .contains(&split.split_metadata.split_id)
+    {
+        return false;
+    }
+
     if !split_tag_filter(&split.split_metadata, query.tags.as_ref()) {
         return false;
     }
@@ -1330,7 +1346,7 @@ mod tests {
         [
             Split {
                 split_metadata: SplitMetadata {
-                    split_id: "split-1".to_string(),
+                    split_id: "split-1".into(),
                     delete_opstamp: 9,
                     time_range: Some(32..=40),
                     tags: BTreeSet::from(["tag-1".to_string()]),
@@ -1344,7 +1360,7 @@ mod tests {
             },
             Split {
                 split_metadata: SplitMetadata {
-                    split_id: "split-2".to_string(),
+                    split_id: "split-2".into(),
                     delete_opstamp: 4,
                     time_range: None,
                     tags: BTreeSet::from(["tag-2".to_string(), "tag-3".to_string()]),
@@ -1358,7 +1374,7 @@ mod tests {
             },
             Split {
                 split_metadata: SplitMetadata {
-                    split_id: "split-3".to_string(),
+                    split_id: "split-3".into(),
                     delete_opstamp: 0,
                     time_range: Some(0..=90),
                     tags: BTreeSet::from(["tag-2".to_string(), "tag-4".to_string()]),

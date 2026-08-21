@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use bytesize::ByteSize;
 use mrecordlog::ResourceUsage;
 use quickwit_common::metrics::{IN_FLIGHT_WAL, exponential_buckets, linear_buckets};
 use quickwit_metrics::{
@@ -72,11 +73,39 @@ pub(super) static INGEST_RESULT_SHARD_NOT_FOUND: LazyCounter =
 pub(super) static INGEST_RESULT_UNAVAILABLE: LazyCounter =
     lazy_counter!(parent: INGEST_RESULT_TOTAL, "result" => "unavailable");
 
+static SKIPPED_MRECORDS_TOTAL: LazyCounter = lazy_counter!(
+        name: "skipped_mrecords_total",
+        description: "Number of mrecords skipped during decoding, by reason (e.g. an unknown \
+                      header version or record type written by a newer binary).",
+        subsystem: "ingest",
+);
+
+pub(super) static SKIPPED_MRECORDS_UNKNOWN_HEADER_VERSION: LazyCounter =
+    lazy_counter!(parent: SKIPPED_MRECORDS_TOTAL, "reason" => "unknown_header_version");
+
+pub(super) static SKIPPED_MRECORDS_UNKNOWN_RECORD_TYPE: LazyCounter =
+    lazy_counter!(parent: SKIPPED_MRECORDS_TOTAL, "reason" => "unknown_record_type");
+
+pub(super) static SKIPPED_MRECORDS_MALFORMED: LazyCounter =
+    lazy_counter!(parent: SKIPPED_MRECORDS_TOTAL, "reason" => "malformed");
+
 pub(super) static INGEST_ATTEMPTS: LazyCounter = lazy_counter!(
         name: "ingest_attempts",
         description: "Number of routing attempts by AZ locality",
         subsystem: "ingest",
 );
+
+static DECOMMISSION_RESULT_TOTAL: LazyCounter = lazy_counter!(
+        name: "decommission_result_total",
+        description: "Number of ingester decommission attempts by result",
+        subsystem: "ingest",
+);
+
+pub(super) static DECOMMISSION_SUCCEEDED: LazyCounter =
+    lazy_counter!(parent: DECOMMISSION_RESULT_TOTAL, "result" => "success");
+
+pub(super) static DECOMMISSION_FAILED: LazyCounter =
+    lazy_counter!(parent: DECOMMISSION_RESULT_TOTAL, "result" => "failure");
 
 pub(super) static RESET_SHARDS_OPERATIONS_TOTAL: LazyCounter = lazy_counter!(
         name: "reset_shards_operations_total",
@@ -140,6 +169,30 @@ pub(super) static WAL_MEMORY_USED_BYTES: LazyGauge = lazy_gauge!(
         subsystem: "ingest",
 );
 
+pub(super) static WAL_DISK_LIMIT_BYTES: LazyGauge = lazy_gauge!(
+        name: "wal_disk_limit_bytes",
+        description: "WAL disk space limit in bytes.",
+        subsystem: "ingest",
+);
+
+pub(super) static WAL_MEMORY_LIMIT_BYTES: LazyGauge = lazy_gauge!(
+        name: "wal_memory_limit_bytes",
+        description: "WAL memory limit in bytes.",
+        subsystem: "ingest",
+);
+
+pub(super) static WAL_DISK_USAGE_RATIO: LazyGauge = lazy_gauge!(
+        name: "wal_disk_usage_ratio",
+        description: "Ratio of WAL disk space used to the disk limit.",
+        subsystem: "ingest",
+);
+
+pub(super) static WAL_MEMORY_USAGE_RATIO: LazyGauge = lazy_gauge!(
+        name: "wal_memory_usage_ratio",
+        description: "Ratio of WAL memory used to the memory limit.",
+        subsystem: "ingest",
+);
+
 static WAL_BYTES_WRITTEN_TOTAL: LazyCounter = lazy_counter!(
     name: "wal_bytes_written_total",
     description: "Total number of bytes written to the WAL by write operations (create_queue, append_records, truncate_queue, delete_queue), including frame headers and end-of-block padding.",
@@ -158,8 +211,26 @@ pub(crate) static WAL_BYTES_WRITTEN_APPEND: LazyCounter =
 pub(crate) static WAL_BYTES_WRITTEN_TRUNCATE: LazyCounter =
     lazy_counter!(parent: WAL_BYTES_WRITTEN_TOTAL, "operation" => "truncate");
 
-pub(super) fn report_wal_usage(wal_usage: ResourceUsage) {
+/// Records the WAL disk and memory capacity limits.
+pub(super) fn report_wal_limits(disk_capacity: ByteSize, memory_capacity: ByteSize) {
+    WAL_DISK_LIMIT_BYTES.set(disk_capacity.as_u64() as f64);
+    WAL_MEMORY_LIMIT_BYTES.set(memory_capacity.as_u64() as f64);
+}
+
+pub(super) fn report_wal_usage(
+    wal_usage: ResourceUsage,
+    disk_capacity: ByteSize,
+    memory_capacity: ByteSize,
+) {
     WAL_DISK_USED_BYTES.set(wal_usage.disk_used_bytes as f64);
     IN_FLIGHT_WAL.set(wal_usage.memory_allocated_bytes as f64);
     WAL_MEMORY_USED_BYTES.set(wal_usage.memory_used_bytes as f64);
+
+    if disk_capacity.as_u64() > 0 {
+        WAL_DISK_USAGE_RATIO.set(wal_usage.disk_used_bytes as f64 / disk_capacity.as_u64() as f64);
+    }
+    if memory_capacity.as_u64() > 0 {
+        WAL_MEMORY_USAGE_RATIO
+            .set(wal_usage.memory_used_bytes as f64 / memory_capacity.as_u64() as f64);
+    }
 }

@@ -17,7 +17,6 @@ use std::ops::Bound;
 use std::sync::Arc;
 
 use anyhow::Context;
-use bytesize::ByteSize;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use quickwit_common::pretty::PrettySample;
@@ -49,12 +48,12 @@ use crate::{ClusterClient, SearchError, SearchJob, SearcherContext, resolve_inde
 #[instrument(skip(list_terms_request, cluster_client, metastore))]
 pub async fn root_list_terms(
     list_terms_request: &ListTermsRequest,
-    mut metastore: MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
     cluster_client: &ClusterClient,
 ) -> crate::Result<ListTermsResponse> {
     let start_instant = tokio::time::Instant::now();
     let indexes_metadata =
-        resolve_index_patterns(&list_terms_request.index_id_patterns, &mut metastore).await?;
+        resolve_index_patterns(&list_terms_request.index_id_patterns, metastore).await?;
     // The request contains a wildcard, but couldn't find any index.
     if indexes_metadata.is_empty() {
         return Ok(ListTermsResponse {
@@ -114,7 +113,6 @@ pub async fn root_list_terms(
         .collect();
     let list_splits_request = ListSplitsRequest::try_from_list_splits_query(&query)?;
     let split_metadatas: Vec<SplitMetadata> = metastore
-        .clone()
         .list_splits(list_splits_request)
         .await?
         .collect_splits_metadata()
@@ -216,8 +214,7 @@ async fn leaf_list_terms_single_split(
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
 ) -> crate::Result<LeafListTermsResponse> {
-    let cache =
-        ByteRangeCache::with_infinite_capacity(&quickwit_storage::metrics::SHORTLIVED_CACHE);
+    let cache = ByteRangeCache::with_infinite_capacity();
     let (index, _) =
         open_index_with_caches(searcher_context, storage, &split, None, Some(cache)).await?;
     let split_schema = index.schema();
@@ -329,15 +326,20 @@ pub async fn leaf_list_terms(
     splits: &[SplitIdAndFooterOffsets],
 ) -> Result<LeafListTermsResponse, SearchError> {
     info!(split_offsets = ?PrettySample::new(splits, 5));
-    let permit_sizes: Vec<ByteSize> = splits
+    let task_metadata: Vec<crate::search_permit_provider::SplitSearchTaskMetadata> = splits
         .iter()
         .map(|split| {
-            compute_initial_memory_allocation(
+            let memory_allocation = compute_initial_memory_allocation(
                 split,
                 searcher_context
                     .searcher_config
                     .warmup_single_split_initial_allocation,
-            )
+            );
+            let job_cost = crate::root::compute_split_cost(split.num_docs);
+            crate::search_permit_provider::SplitSearchTaskMetadata {
+                memory_allocation,
+                job_cost,
+            }
         })
         .collect();
     // We have added offloading leaf search to lambdas, but not for list_terms yet.
@@ -345,7 +347,7 @@ pub async fn leaf_list_terms(
     // https://github.com/quickwit-oss/quickwit/issues/6150
     let permits = searcher_context
         .search_permit_provider
-        .get_permits(permit_sizes)
+        .get_permits(task_metadata)
         .await;
     let leaf_search_single_split_futures: Vec<_> = splits
         .iter()

@@ -48,7 +48,20 @@ pub struct TelemetryHandle {
 }
 
 impl TelemetryHandle {
-    pub fn shutdown(self) -> anyhow::Result<()> {
+    /// Shuts down the OpenTelemetry providers, flushing any pending telemetry.
+    ///
+    /// The providers are driven by processors spawned onto the Tokio runtime, so the underlying
+    /// `shutdown` blocks while it hands a flush message to those tasks and waits for the
+    /// acknowledgement. We run it on the blocking pool rather than inline so it never occupies a
+    /// runtime worker: the flush tasks can then make progress even when the runtime is configured
+    /// with a single worker.
+    pub async fn shutdown(self) -> anyhow::Result<()> {
+        tokio::task::spawn_blocking(move || self.shutdown_blocking())
+            .await
+            .context("failed to join telemetry shutdown task")?
+    }
+
+    fn shutdown_blocking(self) -> anyhow::Result<()> {
         if let Some(tracer_provider) = self.tracer_provider {
             tracer_provider
                 .shutdown()

@@ -30,8 +30,10 @@ tantivy = { workspace = true }
 tantivy-fst = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tower = { workspace = true, features = ["timeout"] }
 tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
 ttl_cache = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }

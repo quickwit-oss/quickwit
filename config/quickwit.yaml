@@ -40,9 +40,53 @@ version: 0.8
 #   extra_headers:
 #     x-header-1: header-value-1
 #     x-header-2: header-value-2
+#   tls:
+#     cert_path: /path/to/server.crt
+#     key_path: /path/to/server.key
+#     # mTLS: require clients to present a certificate signed by this CA.
+#     ca_path: /path/to/ca.crt
+#     verify_client_cert: true
+#     # How often cert_path/key_path are polled for changes and hot-reloaded; an
+#     # immediate reload can also be triggered with SIGHUP. Defaults to 5m.
+#     cert_poll_interval: 5m
+#     # Maximum lifetime of a connection before the server sends an HTTP/2 GOAWAY and the
+#     # client reconnects. Disabled when unset.
+#     max_connection_age: 30m
+#     # Grace period after the GOAWAY before a still-draining connection is forcefully
+#     # closed. Requires `max_connection_age` to be set.
+#     max_connection_age_grace: 30s
+#
+# Optional plaintext health-check server. Disabled unless `listen_port` is set (or the
+# `QW_HEALTH_LISTEN_PORT` environment variable). It serves only `/health/livez` and
+# `/health/readyz`, letting liveness/readiness probes reach the node even when the REST API above
+# is put behind mTLS. The same routes also stay on the main REST server. Bind it to a
+# cluster-internal interface, as it performs no TLS termination or client authentication.
+#
+# health:
+#   listen_port: 7282
 #
 # grpc:
 #   max_message_size: 10 MiB
+#   tls:
+#     cert_path: /path/to/server.crt
+#     key_path: /path/to/server.key
+#     # Trust root for peers this node *connects to* (every node is also a gRPC client to
+#     # its peers). With verify_client_cert, also validates peers connecting to this node.
+#     ca_path: /path/to/ca.crt
+#     # mTLS: require peers to present a certificate signed by ca_path. Each node reuses
+#     # cert_path/key_path above as its own client identity toward peers.
+#     verify_client_cert: true
+#     # Hostname checked against the peer certificate's SAN when connecting to peers.
+#     expected_name: quickwit.local
+#     # How often cert_path/key_path are polled for changes and hot-reloaded; an
+#     # immediate reload can also be triggered with SIGHUP. Defaults to 5m.
+#     cert_poll_interval: 5m
+#     # Maximum lifetime of an inbound connection before the server sends an HTTP/2 GOAWAY
+#     # and the peer reconnects. Disabled when unset.
+#     max_connection_age: 30m
+#     # Grace period after the GOAWAY before a still-draining connection is forcefully
+#     # closed. Requires `max_connection_age` to be set.
+#     max_connection_age_grace: 30s
 #
 # IP address advertised by the node, i.e. the IP address that peer nodes should use to connect to the node for RPCs.
 # The environment variable `QW_ADVERTISE_ADDRESS` can also be used to override this value.
@@ -70,6 +114,13 @@ version: 0.8
 #
 # metastore_uri: s3://your-bucket/indexes
 # metastore_uri: postgres://username:password@host:port/db
+#
+# Optional PostgreSQL read replica URI. Nodes started with the
+# `metastore_read_replica` service connect to it over a read-only connection and
+# serve stale-tolerant read-only metastore requests. Searchers use those nodes
+# only when `searcher.use_metastore_read_replica` is enabled. Defaults to unset.
+#
+# metastore_read_replica_uri: postgres://username:password@read-replica-host:port/db
 #
 # When using a file-backed metastore, the state of the metastore will be cached forever.
 # If you are indexing and searching from different processes, it is possible to periodically
@@ -131,11 +182,23 @@ indexer:
 #   max_queue_memory_usage: 2GiB
 #   max_queue_disk_usage: 4GiB
 #   content_length_limit: 10MiB
+#   decommission_timeout: 300s
+#
+# -------------------------------- Compactor settings --------------------------------
+# https://quickwit.io/docs/configuration/node-config#compactor-configuration
+#
+# compactor:
+#   decommission_timeout: 300s
 #
 # -------------------------------- Searcher settings --------------------------------
 # https://quickwit.io/docs/configuration/node-config#searcher-configuration
 #
 # searcher:
+#   # If true, routes read-only metastore requests from searchers, including
+#   # DataFusion when enabled, to nodes running the `metastore_read_replica`
+#   # service. Searchers require at least one `metastore_read_replica` node at
+#   # startup and do not fall back to the primary metastore.
+#   use_metastore_read_replica: false
 #   fast_field_cache_capacity: 1G
 #   split_footer_cache_capacity: 500M
 #   partial_request_cache_capacity: 64M

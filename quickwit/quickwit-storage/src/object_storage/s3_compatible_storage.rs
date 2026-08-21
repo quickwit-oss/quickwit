@@ -12,16 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::LazyLock;
 use std::task::{Context, Poll};
+use std::time::SystemTime;
 use std::{fmt, io};
 
 use anyhow::{Context as AnyhhowContext, anyhow};
 use async_trait::async_trait;
+use aws_config::retry::ErrorKind;
 use aws_config::stalled_stream_protection::StalledStreamProtectionConfig;
 use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_sdk_s3::Client as S3Client;
@@ -33,29 +36,35 @@ use aws_sdk_s3::operation::delete_objects::DeleteObjectsOutput;
 use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
 use aws_sdk_s3::primitives::{AggregatedBytes, ByteStream};
 use aws_sdk_s3::types::builders::ObjectIdentifierBuilder;
-use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier};
+use aws_sdk_s3::types::{
+    ChecksumAlgorithm, CompletedMultipartUpload, CompletedPart, Delete, EncodingType,
+    ObjectIdentifier,
+};
 use base64::prelude::{BASE64_STANDARD, Engine};
 use bytes::Bytes;
+use bytesize::ByteSize;
 use futures::{StreamExt, stream};
+use percent_encoding::percent_decode_str;
 use quickwit_aws::retry::{AwsRetryable, aws_retry};
 use quickwit_aws::{aws_behavior_version, get_aws_config};
 use quickwit_common::retry::{Retry, RetryParams};
+use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
 use quickwit_config::S3StorageConfig;
-use quickwit_metrics::HistogramTimer;
+use quickwit_metrics::{HistogramTimer, counter, label_values};
 use regex::Regex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
-use tracing::{info, instrument, warn};
+use tracing::{Instrument, info, instrument, warn};
 
-use crate::metrics::object_storage_get_slice_in_flight_guards;
+use crate::metrics::{ERROR_CLASS, object_storage_get_slice_in_flight_guards};
 use crate::object_storage::MultiPartPolicy;
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DeleteFailure, OwnedBytes, Storage, StorageError, StorageErrorKind,
-    StorageResolverError, StorageResult,
+    BulkDeleteError, DeleteFailure, ListObjectsStream, ObjectMetadata, OwnedBytes, Storage,
+    StorageError, StorageErrorKind, StorageResolverError, StorageResult,
 };
 
 /// Semaphore to limit the number of concurrent requests to the object store. Some object stores
@@ -94,6 +103,7 @@ pub struct S3CompatibleObjectStorage {
     retry_params: RetryParams,
     disable_multi_object_delete: bool,
     disable_multipart_upload: bool,
+    checksum_algorithm: quickwit_config::ChecksumAlgorithm,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
@@ -154,9 +164,12 @@ pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     s3_config.set_stalled_stream_protection(Some(stalled_stream_protection));
     s3_config.set_timeout_config(aws_config.timeout_config().cloned());
 
-    if s3_storage_config.disable_checksums {
+    // We always disable response checksum. We mostly do range request anyway.
+    // Somehow, localstack keeps returning the full checksum on range request, which
+    // causes error.
+    s3_config.set_response_checksum_validation(Some(ResponseChecksumValidation::WhenRequired));
+    if s3_storage_config.checksum_algorithm.is_disabled() {
         s3_config.set_request_checksum_calculation(Some(RequestChecksumCalculation::WhenRequired));
-        s3_config.set_response_checksum_validation(Some(ResponseChecksumValidation::WhenRequired));
     }
 
     if let Some(endpoint) = s3_storage_config.endpoint() {
@@ -198,6 +211,7 @@ impl S3CompatibleObjectStorage {
             retry_params,
             disable_multi_object_delete,
             disable_multipart_upload,
+            checksum_algorithm: s3_storage_config.checksum_algorithm,
         })
     }
 
@@ -215,6 +229,7 @@ impl S3CompatibleObjectStorage {
             retry_params: self.retry_params,
             disable_multi_object_delete: self.disable_multi_object_delete,
             disable_multipart_upload: self.disable_multipart_upload,
+            checksum_algorithm: self.checksum_algorithm,
         }
     }
 
@@ -244,19 +259,61 @@ pub fn parse_s3_uri(uri: &Uri) -> Option<(String, PathBuf)> {
     Some((bucket, prefix))
 }
 
-#[derive(Clone, Debug)]
-struct MultipartUploadId(pub String);
-
-#[derive(Clone, Debug)]
-struct Part {
-    pub part_number: usize,
-    pub range: Range<u64>,
-    pub md5: md5::Digest,
+/// Maps a [`ChecksumAlgorithm`] onto the AWS SDK's flexible-checksum algorithm.
+/// `Md5` returns `None` because the S3 SDK silently no-ops `ChecksumAlgorithm::Md5`;
+/// MD5 is instead sent via the legacy `Content-MD5` header, computed client-side.
+fn aws_checksum_algorithm(
+    strategy: quickwit_config::ChecksumAlgorithm,
+) -> Option<ChecksumAlgorithm> {
+    match strategy {
+        quickwit_config::ChecksumAlgorithm::Crc32c => Some(ChecksumAlgorithm::Crc32C),
+        quickwit_config::ChecksumAlgorithm::Md5 | quickwit_config::ChecksumAlgorithm::Disabled => {
+            None
+        }
+    }
 }
 
-impl Part {
-    fn len(&self) -> u64 {
-        self.range.end - self.range.start
+/// Coarse classification of an SDK error, used as a counter label.
+/// timeout, io, throttling, transient, or other.
+fn classify_sdk_error<E>(error: &SdkError<E>) -> &'static str
+where E: ProvideErrorMetadata {
+    match error {
+        SdkError::TimeoutError(_) => "timeout",
+        SdkError::DispatchFailure(failure) => {
+            if failure.is_timeout() {
+                "timeout"
+            } else if failure.is_io() {
+                "io"
+            } else {
+                match failure.as_other() {
+                    Some(ErrorKind::ThrottlingError) => "throttling",
+                    Some(ErrorKind::TransientError) => "transient",
+                    _ => "other",
+                }
+            }
+        }
+        SdkError::ResponseError(_resp_error) => "response",
+        SdkError::ServiceError(service_error) => {
+            let Some(code_str) = service_error.err().code() else {
+                return "other";
+            };
+            match code_str {
+                "Throttling"
+                | "ThrottlingException"
+                | "ThrottledException"
+                | "RequestThrottledException"
+                | "TooManyRequestsException"
+                | "RequestLimitExceeded"
+                | "BandwidthLimitExceeded"
+                | "LimitExceededException"
+                | "RequestThrottled"
+                | "SlowDown"
+                | "EC2ThrottledException" => "throttling",
+                _ => "other",
+            }
+        }
+        // non-exhaustive future variants.
+        _ => "other",
     }
 }
 
@@ -267,26 +324,57 @@ async fn compute_md5<T: AsyncRead + std::marker::Unpin>(mut read: T) -> io::Resu
     let mut buf = vec![0; MD5_CHUNK_SIZE];
     loop {
         let read_len = read.read(&mut buf).await?;
-        checksum.consume(&buf[..read_len]);
         if read_len == 0 {
             return Ok(checksum.finalize());
         }
+        (checksum, buf) = run_cpu_intensive(move || {
+            checksum.consume(&buf[..read_len]);
+            (checksum, buf)
+        })
+        .await
+        .map_err(io::Error::other)?;
+    }
+}
+
+#[derive(Clone, Debug)]
+struct MultipartUploadId(pub String);
+
+#[derive(Clone, Debug)]
+struct Part {
+    pub part_number: usize,
+    pub range: Range<u64>,
+    /// Pre-computed MD5 of the part bytes; only populated when
+    /// [`ChecksumAlgorithm::Md5`] is in use.
+    pub md5: Option<md5::Digest>,
+}
+
+impl Part {
+    fn len(&self) -> u64 {
+        self.range.end - self.range.start
     }
 }
 
 impl S3CompatibleObjectStorage {
     fn key(&self, relative_path: &Path) -> String {
         // FIXME: This may not work on Windows.
-        let key_path = self.prefix.join(relative_path);
-        key_path.to_string_lossy().to_string()
+        let prefix = self.prefix.to_string_lossy();
+        let relative_path = relative_path.to_string_lossy();
+        if prefix.is_empty() {
+            relative_path.to_string()
+        } else if relative_path.is_empty() {
+            prefix.to_string()
+        } else if prefix.ends_with('/') {
+            format!("{prefix}{relative_path}")
+        } else {
+            format!("{prefix}/{relative_path}")
+        }
     }
 
     fn relative_path(&self, key: &str) -> PathBuf {
         // FIXME: This may not work on Windows.
-        Path::new(key)
-            .strip_prefix(&self.prefix)
-            .expect("The prefix should have been prepended to the key before this method call.")
-            .to_path_buf()
+        let relative_key = strip_storage_prefix(key, &self.prefix)
+            .expect("The prefix should have been prepended to the key before this method call.");
+        PathBuf::from(relative_key)
     }
 
     async fn put_single_part_single_try<'a>(
@@ -296,6 +384,15 @@ impl S3CompatibleObjectStorage {
         payload: Box<dyn crate::PutPayload>,
         len: u64,
     ) -> Result<(), Retry<StorageError>> {
+        // For MD5 uploads, compute Content-MD5 before streaming the body.
+        // The AWS SDK no-ops ChecksumAlgorithm::Md5, so MD5 must be sent via
+        // the legacy Content-MD5 header (same as the multipart path does per part).
+        let content_md5: Option<String> = self
+            .maybe_compute_part_md5(payload.as_ref(), 0..len)
+            .await
+            .map_err(|err| Retry::Permanent(StorageError::from(err)))?
+            .map(|digest| BASE64_STANDARD.encode(digest.0));
+
         let body = payload
             .byte_stream()
             .await
@@ -303,6 +400,7 @@ impl S3CompatibleObjectStorage {
 
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(len);
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_PUT_OBJECT_DURATION);
 
         self.s3_client
             .put_object()
@@ -310,8 +408,17 @@ impl S3CompatibleObjectStorage {
             .key(key)
             .body(body)
             .content_length(len as i64)
+            .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_algorithm))
+            .set_content_md5(content_md5)
             .send()
             .await
+            .inspect_err(|error| {
+                counter!(
+                    parent: crate::metrics::OBJECT_STORAGE_PUT_ATTEMPT_ERRORS_TOTAL,
+                    labels: [label_values!(ERROR_CLASS => classify_sdk_error(error))],
+                )
+                .inc();
+            })
             .map_err(|sdk_error| {
                 if sdk_error.is_retryable() {
                     Retry::Transient(StorageError::from(sdk_error))
@@ -322,6 +429,7 @@ impl S3CompatibleObjectStorage {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn put_single_part<'a>(
         &'a self,
         key: &'a str,
@@ -343,6 +451,7 @@ impl S3CompatibleObjectStorage {
             self.s3_client
                 .create_multipart_upload()
                 .bucket(self.bucket.clone())
+                .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_algorithm))
                 .key(key)
                 .send()
                 .await
@@ -356,32 +465,39 @@ impl S3CompatibleObjectStorage {
         Ok(MultipartUploadId(upload_id))
     }
 
+    /// Returns the MD5 of the byte range when the configured strategy is
+    /// [`ChecksumAlgorithm::Md5`], otherwise `None` (no I/O performed).
+    async fn maybe_compute_part_md5(
+        &self,
+        payload: &dyn crate::PutPayload,
+        range: Range<u64>,
+    ) -> io::Result<Option<md5::Digest>> {
+        if !self.checksum_algorithm.is_md5() {
+            return Ok(None);
+        }
+        let read = payload.range_byte_stream(range).await?.into_async_read();
+        Ok(Some(compute_md5(read).await?))
+    }
+
     async fn create_multipart_requests(
         &self,
-        payload: Box<dyn crate::PutPayload>,
+        payload: &dyn crate::PutPayload,
         len: u64,
         part_len: u64,
     ) -> io::Result<Vec<Part>> {
         assert!(len > 0);
-        let multipart_ranges = chunk_range(0..len as usize, part_len as usize)
+        let multipart_ranges: Vec<Range<u64>> = chunk_range(0..len as usize, part_len as usize)
             .map(into_u64_range)
-            .collect::<Vec<_>>();
-
+            .collect();
         let mut parts = Vec::with_capacity(multipart_ranges.len());
-
         for (multipart_id, multipart_range) in multipart_ranges.into_iter().enumerate() {
-            let read = payload
-                .range_byte_stream(multipart_range.clone())
-                .await?
-                .into_async_read();
-            let md5 = compute_md5(read).await?;
-
-            let part = Part {
+            parts.push(Part {
                 part_number: multipart_id + 1, // parts are 1-indexed
+                md5: self
+                    .maybe_compute_part_md5(payload, multipart_range.clone())
+                    .await?,
                 range: multipart_range,
-                md5,
-            };
-            parts.push(part);
+            });
         }
         Ok(parts)
     }
@@ -420,6 +536,7 @@ impl S3CompatibleObjectStorage {
         Ok(delete_requests)
     }
 
+    #[tracing::instrument(level = "debug", skip_all, fields(part_number = part.part_number, num_bytes=part.len()))]
     async fn upload_part<'a>(
         &'a self,
         upload_id: MultipartUploadId,
@@ -432,33 +549,47 @@ impl S3CompatibleObjectStorage {
             .await
             .map_err(StorageError::from)
             .map_err(Retry::Permanent)?;
-        let md5 = BASE64_STANDARD.encode(part.md5.0);
 
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(part.len());
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_UPLOAD_PART_DURATION);
 
+        let content_md5 = part.md5.map(|digest| BASE64_STANDARD.encode(digest.0));
         let upload_part_output = self
             .s3_client
             .upload_part()
             .bucket(self.bucket.clone())
+            .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_algorithm))
+            // None if checksum isnt md5.
+            .set_content_md5(content_md5)
             .key(key)
             .body(byte_stream)
             .content_length(part.len() as i64)
-            .content_md5(md5)
             .part_number(part.part_number as i32)
             .upload_id(upload_id.0)
             .send()
             .await
-            .map_err(|sdk_error| {
-                if sdk_error.is_retryable() {
-                    Retry::Transient(StorageError::from(sdk_error))
+            .inspect_err(|error| {
+                counter!(
+                    parent: crate::metrics::OBJECT_STORAGE_PUT_ATTEMPT_ERRORS_TOTAL,
+                    labels: [label_values!(ERROR_CLASS => classify_sdk_error(error))],
+                )
+                .inc();
+            })
+            .map_err(|s3_err| {
+                if s3_err.is_retryable() {
+                    Retry::Transient(StorageError::from(s3_err))
                 } else {
-                    Retry::Permanent(StorageError::from(sdk_error))
+                    Retry::Permanent(StorageError::from(s3_err))
                 }
             })?;
 
+        // Only one checksum field is populated by the SDK, matching the algorithm we
+        // advertised on the upload; the rest stay `None`.
         let completed_part = CompletedPart::builder()
             .set_e_tag(upload_part_output.e_tag)
+            .set_checksum_crc32_c(upload_part_output.checksum_crc32_c)
+            .set_checksum_md5(upload_part_output.checksum_md5)
             .part_number(part.part_number as i32)
             .build();
         Ok(completed_part)
@@ -473,7 +604,7 @@ impl S3CompatibleObjectStorage {
     ) -> StorageResult<()> {
         let upload_id = self.create_multipart_upload(key).await?;
         let parts = self
-            .create_multipart_requests(payload.clone(), total_len, part_len)
+            .create_multipart_requests(payload.as_ref(), total_len, part_len)
             .await?;
         let max_concurrent_upload = self.multipart_policy.max_concurrent_uploads();
         let completed_parts_res: StorageResult<Vec<CompletedPart>> =
@@ -488,7 +619,7 @@ impl S3CompatibleObjectStorage {
             .collect::<Vec<_>>()
             .await
             .into_iter()
-            .map(|res| res.map_err(|error| error.into_inner()))
+            .map(|res| res.map_err(|e| e.into_inner()))
             .collect();
         match completed_parts_res {
             Ok(completed_parts) => {
@@ -556,16 +687,25 @@ impl S3CompatibleObjectStorage {
         let range_str = range_opt.map(|range| format!("bytes={}-{}", range.start, range.end - 1));
 
         crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
 
-        let get_object_output = self
-            .s3_client
+        self.s3_client
             .get_object()
             .bucket(self.bucket.clone())
             .key(key)
             .set_range(range_str)
             .send()
-            .await?;
-        Ok(get_object_output)
+            .await
+            // Count failed attempts per attempt (this method is re-invoked by `aws_retry` on each
+            // retry), labeled by error class so rate limiting (class="throttled") can be measured
+            // independently of other transient failures.
+            .inspect_err(|error| {
+                counter!(
+                    parent: crate::metrics::OBJECT_STORAGE_GET_ATTEMPT_ERRORS_TOTAL,
+                    labels: [label_values!(ERROR_CLASS => classify_sdk_error(error))],
+                )
+                .inc();
+            })
     }
 
     async fn get_to_bytes(
@@ -773,13 +913,16 @@ impl Storage for S3CompatibleObjectStorage {
         let key = self.key(path);
         let total_len = payload.len();
         let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
-        if self.disable_multipart_upload || part_num_bytes >= total_len {
-            self.put_single_part(&key, payload, total_len).await?;
+        let put_result = if self.disable_multipart_upload || part_num_bytes >= total_len {
+            self.put_single_part(&key, payload, total_len).await
         } else {
             self.put_multipart(&key, payload, part_num_bytes, total_len)
-                .await?;
+                .await
+        };
+        if put_result.is_err() {
+            crate::metrics::OBJECT_STORAGE_PUT_ERRORS_TOTAL.inc();
         }
-        Ok(())
+        put_result
     }
 
     #[instrument(name = "storage.s3.copy_to", level = "debug", skip(self, output))]
@@ -826,6 +969,103 @@ impl Storage for S3CompatibleObjectStorage {
         } else {
             self.bulk_delete_multi(paths).await
         }
+    }
+
+    #[instrument(name = "storage.s3.list", level = "debug", skip(self), fields(prefix = %prefix.display()))]
+    fn list(&self, prefix: &Path) -> ListObjectsStream {
+        let s3_client = self.s3_client.clone();
+        let bucket = self.bucket.clone();
+        let key_prefix = self.key(prefix);
+        let storage_prefix = self.prefix.clone();
+        let retry_params = self.retry_params;
+        let list_span = tracing::Span::current();
+
+        enum ListPosition {
+            First,
+            Middle(String),
+            Last,
+        }
+        type ListState = (
+            S3Client,
+            String,
+            String,
+            PathBuf,
+            RetryParams,
+            ListPosition,
+            tracing::Span,
+        );
+        let initial_state: ListState = (
+            s3_client,
+            bucket,
+            key_prefix,
+            storage_prefix,
+            retry_params,
+            ListPosition::First,
+            list_span,
+        );
+        stream::try_unfold(
+            initial_state,
+            |(
+                s3_client,
+                bucket,
+                key_prefix,
+                storage_prefix,
+                retry_params,
+                list_position,
+                list_span,
+            ): ListState| async move {
+                let mut list_position = list_position;
+                loop {
+                    let continuation_token_opt = match list_position {
+                        ListPosition::First => None,
+                        ListPosition::Middle(token) => Some(token),
+                        ListPosition::Last => return Ok(None),
+                    };
+
+                    let _permit = REQUEST_SEMAPHORE.acquire().await;
+                    let list_objects_span =
+                        tracing::debug_span!(parent: &list_span, "storage.s3.list_objects_v2");
+                    let response = aws_retry(&retry_params, || {
+                        let mut list_request = s3_client
+                            .list_objects_v2()
+                            .bucket(&bucket)
+                            .encoding_type(EncodingType::Url)
+                            .prefix(&key_prefix);
+                        if let Some(continuation_token) = &continuation_token_opt {
+                            list_request = list_request.continuation_token(continuation_token);
+                        }
+                        list_request.send()
+                    })
+                    .instrument(list_objects_span)
+                    .await
+                    .map_err(|error| {
+                        StorageError::from(error).add_context("failed to list objects")
+                    })?;
+
+                    let objects = convert_list_objects(response.contents(), &storage_prefix)?;
+                    let next_list_position = response
+                        .next_continuation_token
+                        .map(ListPosition::Middle)
+                        .unwrap_or(ListPosition::Last);
+                    if objects.is_empty() {
+                        list_position = next_list_position;
+                        continue;
+                    }
+
+                    let state = (
+                        s3_client,
+                        bucket,
+                        key_prefix,
+                        storage_prefix,
+                        retry_params,
+                        next_list_position,
+                        list_span,
+                    );
+                    return Ok(Some((objects, state)));
+                }
+            },
+        )
+        .boxed()
     }
 
     #[instrument(name = "storage.s3.get_slice", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
@@ -907,6 +1147,88 @@ impl Storage for S3CompatibleObjectStorage {
     }
 }
 
+/// Converts S3 object metadata to paths relative to the configured storage root.
+fn convert_list_objects(
+    objects: &[aws_sdk_s3::types::Object],
+    storage_prefix: &Path,
+) -> StorageResult<Vec<ObjectMetadata>> {
+    let mut object_metadata = Vec::with_capacity(objects.len());
+    for object in objects {
+        let Some(encoded_key) = object.key() else {
+            warn!("listed object has no key, skipping");
+            continue;
+        };
+        let key = decode_list_object_key(encoded_key)?;
+        let Some(relative_key) = strip_storage_prefix(&key, storage_prefix) else {
+            continue;
+        };
+        if relative_key.is_empty() && key != storage_prefix.to_string_lossy() {
+            // The key `<storage-prefix>/` collides with `<storage-prefix>` after relativization.
+            continue;
+        }
+        let relative_path = PathBuf::from(relative_key);
+        let size_bytes = match object.size() {
+            Some(size) => match u64::try_from(size) {
+                Ok(size) => size,
+                Err(error) => {
+                    warn!("listed object size conversion failed, skipping: {error}");
+                    continue;
+                }
+            },
+            None => {
+                warn!("listed object has no size, skipping");
+                continue;
+            }
+        };
+        let last_modified = match object.last_modified() {
+            Some(modified) => match SystemTime::try_from(*modified) {
+                Ok(last_modified) => last_modified,
+                Err(error) => {
+                    warn!("listed object last modified time conversion failed, skipping: {error}");
+                    continue;
+                }
+            },
+            None => {
+                warn!("listed object has no last modified time, skipping");
+                continue;
+            }
+        };
+        object_metadata.push(ObjectMetadata {
+            path: relative_path,
+            size: ByteSize(size_bytes),
+            last_modified,
+        });
+    }
+    Ok(object_metadata)
+}
+
+fn decode_list_object_key(encoded_key: &str) -> StorageResult<Cow<'_, str>> {
+    percent_decode_str(encoded_key)
+        .decode_utf8()
+        .map_err(|error| {
+            StorageErrorKind::Internal.with_error(anyhow::anyhow!(
+                "failed to URL-decode listed object key `{encoded_key}`: {error}"
+            ))
+        })
+}
+
+/// Strips a storage prefix from an S3 key without interpreting it as a filesystem path.
+fn strip_storage_prefix<'a>(key: &'a str, storage_prefix: &Path) -> Option<&'a str> {
+    let prefix = storage_prefix.to_string_lossy();
+    if prefix.is_empty() {
+        return Some(key);
+    }
+    if key == prefix {
+        return Some("");
+    }
+    if prefix.ends_with('/') {
+        key.strip_prefix(prefix.as_ref())
+    } else {
+        let prefix_with_separator = format!("{prefix}/");
+        key.strip_prefix(&prefix_with_separator)
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -915,20 +1237,20 @@ mod tests {
     use aws_sdk_s3::config::{Credentials, Region};
     use aws_sdk_s3::primitives::SdkBody;
     use aws_smithy_runtime::client::http::test_util::{ReplayEvent, StaticReplayClient};
+    use futures::TryStreamExt;
     use hyper::http;
     use quickwit_aws::aws_behavior_version;
     use quickwit_common::chunk_range;
     use quickwit_common::uri::Uri;
 
     use super::*;
-    use crate::{MultiPartPolicy, S3CompatibleObjectStorage};
+    use crate::{DebouncedStorage, MultiPartPolicy, S3CompatibleObjectStorage};
 
     #[tokio::test]
     async fn test_md5_calc() -> std::io::Result<()> {
         let data = (0..1_500_000).map(|el| el as u8).collect::<Vec<_>>();
         let md5 = compute_md5(data.as_slice()).await?;
         assert_eq!(md5, md5::compute(data));
-
         Ok(())
     }
 
@@ -994,6 +1316,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         assert_eq!(
             s3_storage.relative_path("indexes/foo"),
@@ -1006,6 +1329,132 @@ mod tests {
             s3_storage.relative_path("indexes/foo"),
             PathBuf::from("foo")
         );
+        let relative_path = s3_storage.relative_path("indexes/./foo");
+        assert_eq!(relative_path.to_string_lossy(), "./foo");
+        assert_eq!(s3_storage.key(&relative_path), "indexes/./foo");
+
+        let relative_path = s3_storage.relative_path("indexes//foo");
+        assert_eq!(relative_path.to_string_lossy(), "/foo");
+        assert_eq!(s3_storage.key(&relative_path), "indexes//foo");
+
+        s3_storage.prefix = PathBuf::from("indexes/");
+        assert_eq!(s3_storage.key(Path::new("foo")), "indexes/foo");
+        assert_eq!(
+            s3_storage.relative_path("indexes/foo"),
+            PathBuf::from("foo")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_s3_compatible_storage_list_streams_all_pages() {
+        let first_page = r#"<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Name>bucket</Name>
+  <Prefix>indexes</Prefix>
+  <KeyCount>4</KeyCount>
+  <MaxKeys>1000</MaxKeys>
+  <EncodingType>url</EncodingType>
+  <IsTruncated>true</IsTruncated>
+  <Contents>
+    <Key>indexes</Key>
+    <LastModified>2026-08-14T09:58:00.000Z</LastModified>
+    <ETag>&quot;etag-root&quot;</ETag>
+    <Size>3</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+  <Contents>
+    <Key>indexes%2F</Key>
+    <LastModified>2026-08-14T09:59:00.000Z</LastModified>
+    <ETag>&quot;etag-trailing-slash-root&quot;</ETag>
+    <Size>4</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+  <Contents>
+    <Key>indexes-old%2Fobject</Key>
+    <LastModified>2026-08-14T09:59:00.000Z</LastModified>
+    <ETag>&quot;etag-sibling&quot;</ETag>
+    <Size>4</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+  <Contents>
+    <Key>indexes%2Fsplits%2F.%2Fa%25.split</Key>
+    <LastModified>2026-08-14T10:00:00.000Z</LastModified>
+    <ETag>&quot;etag-a&quot;</ETag>
+    <Size>5</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+  <NextContinuationToken>next-token</NextContinuationToken>
+</ListBucketResult>"#;
+        let second_page = r#"<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Name>bucket</Name>
+  <Prefix>indexes</Prefix>
+  <KeyCount>1</KeyCount>
+  <MaxKeys>1000</MaxKeys>
+  <EncodingType>url</EncodingType>
+  <IsTruncated>false</IsTruncated>
+  <Contents>
+    <Key>indexes%2Fsplits%2F%2Fb.split</Key>
+    <LastModified>2026-08-14T10:01:00.000Z</LastModified>
+    <ETag>&quot;etag-b&quot;</ETag>
+    <Size>7</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+</ListBucketResult>"#;
+        let client = StaticReplayClient::new(vec![
+            ReplayEvent::new(
+                http::Request::builder().body(SdkBody::empty()).unwrap(),
+                http::Response::builder()
+                    .status(200)
+                    .body(SdkBody::from(first_page))
+                    .unwrap(),
+            ),
+            ReplayEvent::new(
+                http::Request::builder().body(SdkBody::empty()).unwrap(),
+                http::Response::builder()
+                    .status(200)
+                    .body(SdkBody::from(second_page))
+                    .unwrap(),
+            ),
+        ]);
+        let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
+        let config = aws_sdk_s3::Config::builder()
+            .behavior_version(aws_behavior_version())
+            .region(Some(Region::new("Foo")))
+            .http_client(client.clone())
+            .credentials_provider(credentials)
+            .build();
+        let storage = DebouncedStorage::new(S3CompatibleObjectStorage {
+            s3_client: S3Client::from_conf(config),
+            uri: Uri::for_test("s3://bucket/indexes"),
+            bucket: "bucket".to_string(),
+            prefix: PathBuf::from("indexes"),
+            multipart_policy: MultiPartPolicy::default(),
+            retry_params: RetryParams::for_test(),
+            disable_multi_object_delete: false,
+            disable_multipart_upload: false,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
+        });
+
+        let pages: Vec<Vec<ObjectMetadata>> =
+            storage.list(Path::new("")).try_collect().await.unwrap();
+
+        let num_objects: usize = pages.iter().map(Vec::len).sum();
+        assert_eq!(num_objects, 3);
+        assert_eq!(pages.len(), 2);
+        assert_eq!(pages[0].len(), 2);
+        assert_eq!(pages[0][0].path, Path::new(""));
+        assert_eq!(pages[0][0].size, ByteSize(3));
+        assert_eq!(pages[0][1].path.to_string_lossy(), "splits/./a%.split");
+        assert_eq!(pages[0][1].size, ByteSize(5));
+        assert_eq!(pages[1].len(), 1);
+        assert_eq!(pages[1][0].path.to_string_lossy(), "splits//b.split");
+        assert_eq!(pages[1][0].size, ByteSize(7));
+        let requests: Vec<_> = client.actual_requests().collect();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[0].uri().contains("encoding-type=url"));
+        assert!(requests[0].uri().contains("prefix=indexes"));
+        assert!(requests[1].uri().contains("continuation-token=next-token"));
     }
 
     #[tokio::test]
@@ -1041,6 +1490,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: true,
             disable_multipart_upload: false,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1078,6 +1528,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1160,6 +1611,7 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         let bulk_delete_error = s3_storage
             .bulk_delete(&[
@@ -1251,10 +1703,84 @@ mod tests {
             retry_params: RetryParams::for_test(),
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
         };
         s3_storage
             .put(Path::new("my-path"), Box::new(vec![1, 2, 3]))
             .await
             .unwrap();
+    }
+
+    fn make_s3_storage_with_replay(
+        client: StaticReplayClient,
+        checksum_algorithm: quickwit_config::ChecksumAlgorithm,
+    ) -> S3CompatibleObjectStorage {
+        let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
+        let config = aws_sdk_s3::Config::builder()
+            .behavior_version(aws_behavior_version())
+            .region(Some(Region::new("us-east-1")))
+            .http_client(client)
+            .credentials_provider(credentials)
+            .build();
+        S3CompatibleObjectStorage {
+            s3_client: S3Client::from_conf(config),
+            uri: Uri::for_test("s3://bucket/"),
+            bucket: "bucket".to_string(),
+            prefix: PathBuf::new(),
+            multipart_policy: MultiPartPolicy::default(),
+            retry_params: RetryParams::for_test(),
+            disable_multi_object_delete: false,
+            disable_multipart_upload: true,
+            checksum_algorithm,
+        }
+    }
+
+    fn ok_put_response() -> ReplayEvent {
+        ReplayEvent::new(
+            http::Request::builder().body(SdkBody::empty()).unwrap(),
+            http::Response::builder()
+                .status(200)
+                .body(SdkBody::empty())
+                .unwrap(),
+        )
+    }
+
+    #[tokio::test]
+    async fn test_single_part_upload_sets_content_md5_for_md5_algorithm() {
+        let client = StaticReplayClient::new(vec![ok_put_response()]);
+        let s3_storage =
+            make_s3_storage_with_replay(client.clone(), quickwit_config::ChecksumAlgorithm::Md5);
+        let payload: Vec<u8> = b"hello world".to_vec();
+        s3_storage
+            .put(Path::new("test-key"), Box::new(payload.clone()))
+            .await
+            .unwrap();
+
+        let requests = client.actual_requests().collect::<Vec<_>>();
+        assert_eq!(requests.len(), 1);
+        let content_md5 = requests[0]
+            .headers()
+            .get("content-md5")
+            .expect("Content-MD5 header must be present for md5 checksum algorithm");
+        let expected = BASE64_STANDARD.encode(md5::compute(&payload).0);
+        assert_eq!(content_md5, expected.as_str());
+    }
+
+    #[tokio::test]
+    async fn test_single_part_upload_no_content_md5_for_crc32c_algorithm() {
+        let client = StaticReplayClient::new(vec![ok_put_response()]);
+        let s3_storage =
+            make_s3_storage_with_replay(client.clone(), quickwit_config::ChecksumAlgorithm::Crc32c);
+        s3_storage
+            .put(Path::new("test-key"), Box::new(b"hello world".to_vec()))
+            .await
+            .unwrap();
+
+        let requests = client.actual_requests().collect::<Vec<_>>();
+        assert_eq!(requests.len(), 1);
+        assert!(
+            requests[0].headers().get("content-md5").is_none(),
+            "Content-MD5 header must not be set for crc32c checksum algorithm"
+        );
     }
 }

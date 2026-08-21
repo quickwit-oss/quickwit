@@ -35,13 +35,17 @@ use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Deserializer, Serialize};
 use tracing::{info, warn};
 
+use crate::docs_clustering::DocsClusteringConfig;
 use crate::node_config::serialize::load_node_config_with_env;
-use crate::serde_utils::DurationAsStr;
+use crate::serde_utils::HumanDuration;
 use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::{ConfigFormat, MetastoreConfigs};
 
 pub const DEFAULT_QW_CONFIG_PATH: &str = "config/quickwit.yaml";
+
+/// Highest Chitchat protocol version accepted by Quickwit configuration.
+pub const MAX_GOSSIP_PROTOCOL_VERSION: u8 = 1;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -50,8 +54,27 @@ pub struct RestConfig {
     pub cors_allow_origins: Vec<String>,
     #[serde(with = "http_serde::header_map")]
     pub extra_headers: HeaderMap,
-    #[serde(default)]
-    pub tls: Option<TlsConfig>,
+    #[serde(default, rename = "tls")]
+    pub tls_config: Option<TlsConfig>,
+    // See `GrpcConfig::max_connection_age`. Closes long-lived keep-alive connections so an updated
+    // TLS certificate is eventually presented.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connection_age: Option<HumanDuration>,
+    // See `GrpcConfig::max_connection_age_grace`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connection_age_grace: Option<HumanDuration>,
+}
+
+/// Configuration for the optional plaintext health-check HTTP server.
+///
+/// This server exposes only the `/health/livez` and `/health/readyz` endpoints over plain HTTP
+/// (no TLS). It lets liveness/readiness probes reach the node even when the main REST API is put
+/// behind mTLS. It is disabled unless `health.listen_port` (or the `QW_HEALTH_LISTEN_PORT`
+/// environment variable) is set.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HealthConfig {
+    pub listen_addr: SocketAddr,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -59,20 +82,28 @@ pub struct RestConfig {
 pub struct GrpcConfig {
     #[serde(default = "GrpcConfig::default_max_message_size")]
     pub max_message_size: ByteSize,
-    #[serde(default)]
-    pub tls: Option<TlsConfig>,
+    #[serde(default, rename = "tls")]
+    pub tls_config: Option<TlsConfig>,
     // If set, keeps idle connection alive by periodically perform a
     // keep alive ping request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keep_alive: Option<KeepAliveConfig>,
+    // Maximum lifetime of an inbound connection before the server sends an HTTP/2 GOAWAY and the
+    // peer reconnects. Disabled when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connection_age: Option<HumanDuration>,
+    // Grace period after the GOAWAY before a still-draining connection is forcefully closed.
+    // Requires `max_connection_age` to be set. Waits indefinitely when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connection_age_grace: Option<HumanDuration>,
 }
 
-fn default_http2_keep_alive_interval() -> DurationAsStr {
-    DurationAsStr::try_from("10s".to_string()).unwrap()
+fn default_http2_keep_alive_interval() -> HumanDuration {
+    HumanDuration::try_from("10s".to_string()).unwrap()
 }
 
-fn default_keep_alive_timeout() -> DurationAsStr {
-    DurationAsStr::try_from("5s".to_string()).unwrap()
+fn default_keep_alive_timeout() -> HumanDuration {
+    HumanDuration::try_from("5s".to_string()).unwrap()
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -80,23 +111,14 @@ pub struct KeepAliveConfig {
     // Set the HTTP/2 KEEP_ALIVE_INTERVAL. This is the time the connection
     // should be idle before sending a keepalive ping.
     #[serde(default = "default_http2_keep_alive_interval")]
-    pub interval: DurationAsStr,
+    pub interval: HumanDuration,
 
     // Set the HTTP/2 KEEP_ALIVE_TIMEOUT. This is the time to wait for an ACK
     // after sending a keepalive ping. If the server doesn't respond within
     // this time, the connection might be considered dead.
     // Tonic uses hyper's default (20 seconds) if not set.
     #[serde(default = "default_keep_alive_timeout")]
-    pub timeout: DurationAsStr,
-}
-
-impl From<KeepAliveConfig> for quickwit_common::tower::KeepAliveConfig {
-    fn from(val: KeepAliveConfig) -> Self {
-        quickwit_common::tower::KeepAliveConfig {
-            interval: *val.interval,
-            timeout: *val.timeout,
-        }
-    }
+    pub timeout: HumanDuration,
 }
 
 impl GrpcConfig {
@@ -110,6 +132,13 @@ impl GrpcConfig {
             "max gRPC message size (`grpc.max_message_size`) must be at least 1MB, got `{}`",
             self.max_message_size
         );
+        if let Some(tls_config) = &self.tls_config {
+            tls_config.validate()?;
+        }
+        ensure!(
+            !(self.max_connection_age_grace.is_some() && self.max_connection_age.is_none()),
+            "`grpc.max_connection_age_grace` requires `grpc.max_connection_age` to be set"
+        );
         Ok(())
     }
 }
@@ -118,8 +147,10 @@ impl Default for GrpcConfig {
     fn default() -> Self {
         Self {
             max_message_size: Self::default_max_message_size(),
-            tls: None,
+            tls_config: None,
             keep_alive: None,
+            max_connection_age: None,
+            max_connection_age_grace: None,
         }
     }
 }
@@ -129,12 +160,33 @@ impl Default for GrpcConfig {
 pub struct TlsConfig {
     pub cert_path: String,
     pub key_path: String,
+    // Path to a PEM file holding the trusted CA certificate(s). Multiple CA certificates may be
+    // concatenated in the same file: all of them are trusted.
     #[serde(default)]
     pub ca_path: String,
     #[serde(default)]
     pub expected_name: Option<String>,
-    #[serde(default)]
-    pub validate_client: bool,
+    #[serde(default, alias = "validate_client")]
+    pub verify_client_cert: bool,
+    // How often the certificate and key files are polled for changes and hot-reloaded (e.g.
+    // `"5m"`). An immediate reload can also be triggered out-of-band with `SIGHUP`.
+    #[serde(alias = "cert_reload_interval", default = "default_cert_poll_interval")]
+    pub cert_poll_interval: HumanDuration,
+}
+
+impl TlsConfig {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        ensure!(
+            !self.cert_poll_interval.is_zero(),
+            "`tls.cert_poll_interval` must be greater than zero, got `{}`",
+            self.cert_poll_interval
+        );
+        Ok(())
+    }
+}
+
+fn default_cert_poll_interval() -> HumanDuration {
+    HumanDuration::try_from("5m".to_string()).expect("`5m`should be a valid human duration")
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -187,7 +239,7 @@ impl IndexerConfig {
         }
         #[cfg(not(any(test, feature = "testsuite")))]
         {
-            quickwit_common::get_bool_from_env("QW_ENABLE_OTLP_ENDPOINT", true)
+            quickwit_common::get_bool_from_env_cached!("QW_ENABLE_OTLP_ENDPOINT", true)
         }
     }
 
@@ -245,6 +297,82 @@ impl Default for IndexerConfig {
             merge_concurrency: Self::default_merge_concurrency(),
             max_merge_write_throughput: None,
             parquet_merge_use_streaming_engine: Self::default_parquet_merge_use_streaming_engine(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompactorConfig {
+    /// Maximum number of concurrent merges, which hold the CPU for
+    /// a long time. Defaults to `num_cpus - 1`.
+    #[serde(default = "CompactorConfig::default_max_concurrent_merge_executions")]
+    pub max_concurrent_merge_executions: NonZeroUsize,
+    /// Number of pipelines to run per merge executions. Scalar. Since merges perform a lot
+    /// of IO, multiple concurrent merges can be interleaved.
+    #[serde(default = "CompactorConfig::default_pipeline_slots_per_merge_execution")]
+    pub pipeline_slots_per_merge_execution: NonZeroUsize,
+    /// Maximum number of concurrent split uploads across all pipelines.
+    #[serde(default = "CompactorConfig::default_max_concurrent_split_uploads")]
+    pub max_concurrent_split_uploads: NonZeroUsize,
+    /// Limits the IO throughput of the split downloader and the merge executor.
+    #[serde(default)]
+    pub max_merge_write_throughput: Option<ByteSize>,
+    /// Maximum amount of time to wait for the compactor to finish decommissioning gracefully
+    /// on shutdown before giving up. Can be overridden with the
+    /// `QW_COMPACTOR_DECOMMISSION_TIMEOUT` environment variable.
+    #[serde(default = "CompactorConfig::default_decommission_timeout")]
+    decommission_timeout: HumanDuration,
+}
+
+impl CompactorConfig {
+    fn default_max_concurrent_merge_executions() -> NonZeroUsize {
+        let cpus = quickwit_common::num_cpus().saturating_sub(1);
+        NonZeroUsize::new(cpus).unwrap_or(NonZeroUsize::MIN)
+    }
+
+    fn default_pipeline_slots_per_merge_execution() -> NonZeroUsize {
+        NonZeroUsize::new(2).unwrap()
+    }
+
+    fn default_max_concurrent_split_uploads() -> NonZeroUsize {
+        NonZeroUsize::new(12).unwrap()
+    }
+
+    fn default_decommission_timeout() -> HumanDuration {
+        HumanDuration::try_from("300s".to_string())
+            .expect("`300s` should be a valid human duration")
+    }
+
+    /// Returns the compactor decommission timeout, as defined in the environment variable or in
+    /// the configuration, in that order (the environment variable overrides the configuration).
+    pub fn decommission_timeout(&self) -> Duration {
+        quickwit_common::get_duration_from_env(
+            "QW_COMPACTOR_DECOMMISSION_TIMEOUT",
+            Duration::from(self.decommission_timeout.clone()),
+        )
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test() -> Self {
+        CompactorConfig {
+            max_concurrent_merge_executions: NonZeroUsize::new(2).unwrap(),
+            pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
+            max_concurrent_split_uploads: NonZeroUsize::new(4).unwrap(),
+            max_merge_write_throughput: None,
+            decommission_timeout: Self::default_decommission_timeout(),
+        }
+    }
+}
+
+impl Default for CompactorConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent_merge_executions: Self::default_max_concurrent_merge_executions(),
+            pipeline_slots_per_merge_execution: Self::default_pipeline_slots_per_merge_execution(),
+            max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
+            max_merge_write_throughput: None,
+            decommission_timeout: Self::default_decommission_timeout(),
         }
     }
 }
@@ -316,6 +444,10 @@ pub struct SearcherConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
+    /// Routes read-only metastore requests from searchers, including DataFusion when enabled, to
+    /// nodes running the `metastore_read_replica` service.
+    #[serde(default)]
+    pub use_metastore_read_replica: bool,
     pub warmup_memory_budget: ByteSize,
     pub warmup_single_split_initial_allocation: ByteSize,
     /// Lambda configuration for serverless leaf search execution.
@@ -539,6 +671,7 @@ impl Default for SearcherConfig {
             request_timeout_secs: Self::default_request_timeout_secs(),
             leaf_request_timeout_secs: Self::default_request_timeout_secs(),
             storage_timeout_policy: None,
+            use_metastore_read_replica: false,
             warmup_memory_budget: ByteSize::gb(100),
             warmup_single_split_initial_allocation: ByteSize::mb(300),
             lambda: None,
@@ -597,7 +730,9 @@ pub struct IngestApiConfig {
     pub max_queue_memory_usage: ByteSize,
     /// Maximum disk space taken by the ingest WAL
     pub max_queue_disk_usage: ByteSize,
-    replication_factor: usize,
+    /// Deprecated: ingest replication is no longer supported.
+    #[serde(default, rename = "replication_factor", skip_serializing)]
+    _replication_factor: Option<serde::de::IgnoredAny>,
     pub content_length_limit: ByteSize,
     /// (hidden) Targeted throughput for each shard
     pub shard_throughput_limit: ByteSize,
@@ -611,6 +746,10 @@ pub struct IngestApiConfig {
     pub shard_scale_up_factor: f32,
     #[serde(default)]
     pub grpc_compression_algorithm: Option<CompressionAlgorithm>,
+    /// Maximum amount of time to wait for the ingester to finish decommissioning gracefully
+    /// on shutdown before giving up. Can be overridden with the
+    /// `QW_INGEST_DECOMMISSION_TIMEOUT` environment variable.
+    decommission_timeout: HumanDuration,
 }
 
 impl Default for IngestApiConfig {
@@ -618,38 +757,40 @@ impl Default for IngestApiConfig {
         Self {
             max_queue_memory_usage: ByteSize::gib(2),
             max_queue_disk_usage: ByteSize::gib(4),
-            replication_factor: 1,
+            _replication_factor: None,
             content_length_limit: ByteSize::mib(10),
             shard_throughput_limit: DEFAULT_SHARD_THROUGHPUT_LIMIT,
             shard_burst_limit: DEFAULT_SHARD_BURST_LIMIT,
             shard_scale_up_factor: DEFAULT_SHARD_SCALE_UP_FACTOR,
             grpc_compression_algorithm: None,
+            decommission_timeout: HumanDuration::try_from("300s".to_string())
+                .expect("`300s` should be a valid human duration"),
         }
     }
 }
 
 impl IngestApiConfig {
-    /// Returns the replication factor, as defined in environment variable or in the configuration
-    /// in that order (the environment variable can overrides the configuration).
-    pub fn replication_factor(&self) -> anyhow::Result<NonZeroUsize> {
-        if let Ok(replication_factor_str) = env::var("QW_INGEST_REPLICATION_FACTOR") {
-            let replication_factor = match replication_factor_str.trim() {
-                "1" => 1,
-                "2" => 2,
-                _ => bail!(
-                    "replication factor must be either 1 or 2, got `{replication_factor_str}`"
-                ),
-            };
-            return Ok(NonZeroUsize::new(replication_factor)
-                .expect("replication factor should be either 1 or 2"));
+    fn warn_if_replication_factor_is_set(&self) {
+        if env::var_os("QW_INGEST_REPLICATION_FACTOR").is_some() {
+            warn!(
+                "ignoring environment variable `QW_INGEST_REPLICATION_FACTOR`: ingest replication \
+                 is no longer supported"
+            );
+        } else if self._replication_factor.is_some() {
+            warn!(
+                "ignoring ingest config parameter `ingest_api.replication_factor`: ingest \
+                 replication is no longer supported"
+            );
         }
-        ensure!(
-            self.replication_factor >= 1 && self.replication_factor <= 2,
-            "replication factor must be either 1 or 2, got `{}`",
-            self.replication_factor
-        );
-        Ok(NonZeroUsize::new(self.replication_factor)
-            .expect("replication factor should be either 1 or 2"))
+    }
+
+    /// Returns the ingester decommission timeout, as defined in the environment variable or in
+    /// the configuration, in that order (the environment variable overrides the configuration).
+    pub fn decommission_timeout(&self) -> Duration {
+        quickwit_common::get_duration_from_env(
+            "QW_INGEST_DECOMMISSION_TIMEOUT",
+            Duration::from(self.decommission_timeout.clone()),
+        )
     }
 
     pub fn grpc_compression_encoding(&self) -> Option<CompressionEncoding> {
@@ -662,7 +803,7 @@ impl IngestApiConfig {
     }
 
     fn validate(&self) -> anyhow::Result<()> {
-        self.replication_factor()?;
+        self.warn_if_replication_factor_is_set();
         ensure!(
             self.max_queue_disk_usage > ByteSize::mib(256),
             "max_queue_disk_usage must be at least 256 MiB, got `{}`",
@@ -729,7 +870,7 @@ pub struct JaegerConfig {
 
 impl JaegerConfig {
     pub fn lookback_period(&self) -> Duration {
-        Duration::from_secs(self.lookback_period_hours.get() * 3600)
+        Duration::from_hours(self.lookback_period_hours.get())
     }
 
     pub fn max_trace_duration(&self) -> Duration {
@@ -743,7 +884,7 @@ impl JaegerConfig {
         }
         #[cfg(not(any(test, feature = "testsuite")))]
         {
-            quickwit_common::get_bool_from_env("QW_ENABLE_JAEGER_ENDPOINT", true)
+            quickwit_common::get_bool_from_env_cached!("QW_ENABLE_JAEGER_ENDPOINT", true)
         }
     }
 
@@ -782,11 +923,18 @@ pub struct NodeConfig {
     pub gossip_advertise_addr: SocketAddr,
     pub grpc_advertise_addr: SocketAddr,
     pub gossip_interval: Duration,
+    pub gossip_protocol_version: u8,
     pub peer_seeds: Vec<String>,
     pub data_dir_path: PathBuf,
     pub metastore_uri: Uri,
+    /// Optional PostgreSQL read replica URI. It is used as the connection URI by nodes running the
+    /// [`QuickwitService::MetastoreReadReplica`] role.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metastore_read_replica_uri: Option<Uri>,
     pub default_index_root_uri: Uri,
     pub rest_config: RestConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub health_config: Option<HealthConfig>,
     pub grpc_config: GrpcConfig,
     pub storage_configs: StorageConfigs,
     pub metastore_configs: MetastoreConfigs,
@@ -794,6 +942,11 @@ pub struct NodeConfig {
     pub searcher_config: SearcherConfig,
     pub ingest_api_config: IngestApiConfig,
     pub jaeger_config: JaegerConfig,
+    pub compactor_config: CompactorConfig,
+    #[serde(skip_serializing)]
+    pub enable_standalone_compactors: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub docs_clustering_config: Option<DocsClusteringConfig>,
 }
 
 impl NodeConfig {
@@ -803,8 +956,22 @@ impl NodeConfig {
 
     /// Parses and validates a [`NodeConfig`] from a given URI and config content.
     pub async fn load(config_format: ConfigFormat, config_content: &[u8]) -> anyhow::Result<Self> {
+        Self::load_with_enabled_services(config_format, config_content, None).await
+    }
+
+    /// Parses and validates a [`NodeConfig`] after overriding its enabled services.
+    ///
+    /// The override takes precedence over both the config file and `QW_ENABLED_SERVICES` and is
+    /// applied before service-dependent validation.
+    pub async fn load_with_enabled_services(
+        config_format: ConfigFormat,
+        config_content: &[u8],
+        enabled_services: Option<&HashSet<QuickwitService>>,
+    ) -> anyhow::Result<Self> {
         let env_vars = env::vars().collect::<HashMap<_, _>>();
-        let config = load_node_config_with_env(config_format, config_content, &env_vars).await?;
+        let config =
+            load_node_config_with_env(config_format, config_content, &env_vars, enabled_services)
+                .await?;
         if !config.data_dir_path.try_exists()? {
             bail!(
                 "data dir `{}` does not exist",
@@ -843,6 +1010,9 @@ impl NodeConfig {
     pub fn redact(&mut self) {
         self.metastore_configs.redact();
         self.metastore_uri.redact();
+        if let Some(metastore_read_replica_uri) = &mut self.metastore_read_replica_uri {
+            metastore_read_replica_uri.redact();
+        }
         self.storage_configs.redact();
     }
 
@@ -858,6 +1028,14 @@ impl NodeConfig {
     pub fn for_test_from_ports(rest_listen_port: u16, grpc_listen_port: u16) -> Self {
         serialize::node_config_for_tests_from_ports(rest_listen_port, grpc_listen_port)
     }
+
+    /// Test config with `enable_standalone_compactors = true`.
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test_with_standalone_compactors() -> Self {
+        let mut node_config = Self::for_test();
+        node_config.enable_standalone_compactors = true;
+        node_config
+    }
 }
 
 #[cfg(test)]
@@ -866,6 +1044,26 @@ mod tests {
 
     use super::*;
     use crate::IndexerConfig;
+
+    #[test]
+    fn test_node_config_redact_metastore_uris() {
+        let mut config = NodeConfig::for_test();
+        config.metastore_uri = Uri::for_test("postgresql://username:password@host:5432/db");
+        config.metastore_read_replica_uri = Some(Uri::for_test(
+            "postgresql://replica-user:replica-password@replica-host:5432/db",
+        ));
+
+        config.redact();
+
+        assert_eq!(
+            config.metastore_uri,
+            "postgresql://username:***redacted***@host:5432/db"
+        );
+        assert_eq!(
+            config.metastore_read_replica_uri.unwrap(),
+            "postgresql://replica-user:***redacted***@replica-host:5432/db"
+        );
+    }
 
     #[test]
     fn test_indexer_config_serialization() {
@@ -890,23 +1088,6 @@ mod tests {
                     .as_str()
                     .unwrap(),
                 "1500m"
-            );
-        }
-        {
-            let indexer_config: IndexerConfig =
-                serde_yaml::from_str(r#"merge_concurrency: 5"#).unwrap();
-            assert_eq!(
-                indexer_config.merge_concurrency,
-                NonZeroUsize::new(5).unwrap()
-            );
-            let indexer_config_json = serde_json::to_value(&indexer_config).unwrap();
-            assert_eq!(
-                indexer_config_json
-                    .get("merge_concurrency")
-                    .unwrap()
-                    .as_u64()
-                    .unwrap(),
-                5
             );
         }
         {
@@ -982,42 +1163,70 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_ingest_api_config_decommission_timeout() {
+        let default_config = IngestApiConfig::default();
+        assert_eq!(
+            default_config.decommission_timeout(),
+            Duration::from_mins(5)
+        );
+
+        let yaml_config: IngestApiConfig = serde_yaml::from_str(
+            r#"
+                decommission_timeout: 2m
+            "#,
+        )
+        .unwrap();
+        assert_eq!(yaml_config.decommission_timeout(), Duration::from_mins(2));
+    }
+
+    #[test]
+    fn test_compactor_config_decommission_timeout() {
+        let default_config = CompactorConfig::default();
+        assert_eq!(
+            default_config.decommission_timeout(),
+            Duration::from_mins(5)
+        );
+
+        let yaml_config: CompactorConfig = serde_yaml::from_str(
+            r#"
+                decommission_timeout: 2m
+            "#,
+        )
+        .unwrap();
+        assert_eq!(yaml_config.decommission_timeout(), Duration::from_mins(2));
+    }
+
     #[track_caller]
     fn test_keepalive_config_serialization_aux(
         keep_alive_json: serde_json::Value,
-        expected: quickwit_common::tower::KeepAliveConfig,
+        expected_interval: Duration,
+        expected_timeout: Duration,
     ) {
-        let keep_alive_config: KeepAliveConfig =
-            serde_json::from_value(keep_alive_json.clone()).unwrap();
-        let keep_alive_deser: quickwit_common::tower::KeepAliveConfig =
-            keep_alive_config.clone().into();
-        assert_eq!(&keep_alive_deser, &expected);
-        let keep_alive_config_deser_ser = serde_json::to_value(keep_alive_config).unwrap();
-        let keep_alive_config_deser_ser_deser: KeepAliveConfig =
-            serde_json::from_value(keep_alive_config_deser_ser).unwrap();
-        let keep_alive_config_deser_ser_deser: quickwit_common::tower::KeepAliveConfig =
-            keep_alive_config_deser_ser_deser.into();
-        assert_eq!(&keep_alive_config_deser_ser_deser, &expected);
+        let keep_alive_config: KeepAliveConfig = serde_json::from_value(keep_alive_json).unwrap();
+        assert_eq!(*keep_alive_config.interval, expected_interval);
+        assert_eq!(*keep_alive_config.timeout, expected_timeout);
+        // The config round-trips through serde unchanged.
+        let reserialized = serde_json::to_value(&keep_alive_config).unwrap();
+        let roundtripped: KeepAliveConfig = serde_json::from_value(reserialized).unwrap();
+        assert_eq!(*roundtripped.interval, expected_interval);
+        assert_eq!(*roundtripped.timeout, expected_timeout);
     }
 
     #[test]
     fn test_keepalive_config_serialization() {
         test_keepalive_config_serialization_aux(
             serde_json::json!({}),
-            quickwit_common::tower::KeepAliveConfig {
-                interval: Duration::from_secs(10),
-                timeout: Duration::from_secs(5),
-            },
+            Duration::from_secs(10),
+            Duration::from_secs(5),
         );
         test_keepalive_config_serialization_aux(
             serde_json::json!({
                 "interval": "3s",
                 "timeout": "1s",
             }),
-            quickwit_common::tower::KeepAliveConfig {
-                interval: Duration::from_secs(3),
-                timeout: Duration::from_secs(1),
-            },
+            Duration::from_secs(3),
+            Duration::from_secs(1),
         );
     }
 
@@ -1042,15 +1251,65 @@ mod tests {
     fn test_grpc_config_validate() {
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::mb(1),
-            tls: None,
-            keep_alive: None,
+            ..Default::default()
         };
         assert!(grpc_config.validate().is_ok());
 
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::kb(1),
-            tls: None,
-            keep_alive: None,
+            ..Default::default()
+        };
+        assert!(grpc_config.validate().is_err());
+    }
+
+    #[test]
+    fn test_grpc_config_validate_rejects_connection_age_grace_without_age() {
+        let grpc_config = GrpcConfig {
+            max_connection_age_grace: Some(HumanDuration::try_from("10s".to_string()).unwrap()),
+            ..Default::default()
+        };
+        let error = grpc_config.validate().unwrap_err().to_string();
+        assert!(
+            error.contains("requires `grpc.max_connection_age`"),
+            "unexpected error: {error}"
+        );
+
+        let grpc_config = GrpcConfig {
+            max_connection_age: Some(HumanDuration::try_from("1h".to_string()).unwrap()),
+            max_connection_age_grace: Some(HumanDuration::try_from("10s".to_string()).unwrap()),
+            ..Default::default()
+        };
+        assert!(grpc_config.validate().is_ok());
+    }
+
+    fn tls_config(poll_interval: &str) -> TlsConfig {
+        TlsConfig {
+            cert_path: "/path/to/server.crt".to_string(),
+            key_path: "/path/to/server.key".to_string(),
+            ca_path: String::new(),
+            expected_name: None,
+            verify_client_cert: false,
+            cert_poll_interval: HumanDuration::try_from(poll_interval.to_string()).unwrap(),
+        }
+    }
+
+    #[test]
+    fn test_tls_config_validate() {
+        assert!(tls_config("5m").validate().is_ok());
+
+        let error = tls_config("0s").validate().unwrap_err().to_string();
+        assert!(
+            error.contains("must be greater than zero"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn test_grpc_config_validate_rejects_zero_tls_poll_interval() {
+        let grpc_config = GrpcConfig {
+            max_message_size: ByteSize::mib(20),
+            tls_config: Some(tls_config("0s")),
+            ..Default::default()
         };
         assert!(grpc_config.validate().is_err());
     }
