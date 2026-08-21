@@ -656,13 +656,19 @@ impl MetastoreService for FileBackedMetastore {
     #[instrument(name = "metastore.file_backed.stage_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn stage_splits(&self, request: StageSplitsRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid = request.index_uid().clone();
+        let create_only = request.create_only;
         let splits_metadata = request.deserialize_splits_metadata()?;
 
         self.mutate(&index_uid, |index| {
             let mut failed_split_ids = Vec::new();
 
             for split_metadata in splits_metadata {
-                match index.stage_split(split_metadata) {
+                let stage_result = if create_only {
+                    index.stage_split_create_only(split_metadata)
+                } else {
+                    index.stage_split(split_metadata)
+                };
+                match stage_result {
                     Ok(()) => {}
                     Err(MetastoreError::FailedPrecondition {
                         entity: EntityKind::Split { split_id },
