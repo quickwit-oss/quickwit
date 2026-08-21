@@ -222,6 +222,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     prost_config
         .file_descriptor_set_path("src/codegen/quickwit/search_descriptor.bin")
         .protoc_arg("--experimental_allow_proto3_optional")
+        .field_attribute("SearchRequest.priority", "#[serde(default)]")
         // Box the large `LeafSearchResponse` variant so the oneof stays small
         // (the `Error` variant only carries a `String`).
         .boxed("LambdaSingleSplitResult.outcome.response");
