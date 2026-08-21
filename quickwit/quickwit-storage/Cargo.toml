@@ -48,8 +48,8 @@ aws-smithy-types = { workspace = true }
 
 azure_core = { workspace = true, optional = true }
 azure_identity = { workspace = true, optional = true }
-azure_storage = { workspace = true, optional = true }
-azure_storage_blobs = { workspace = true, optional = true }
+azure_storage_blob = { workspace = true, optional = true }
+time = { workspace = true, optional = true }
 
 quickwit-aws = { workspace = true }
 quickwit-common = { workspace = true }
@@ -85,21 +85,14 @@ quickwit-common = { workspace = true, features = ["testsuite"] }
 azure = [
   "azure_core",
   "azure_identity",
-  "azure_identity/enable_reqwest_rustls",
-  "azure_storage",
-  "azure_storage_blobs",
-  "azure_core/hmac_rust",
-  "azure_core/enable_reqwest_rustls",
-  "azure_storage/enable_reqwest_rustls",
-  "azure_storage_blobs/enable_reqwest_rustls",
+  "azure_storage_blob",
+  "dep:time",
 ]
 gcs = ["dep:opendal", "opendal/services-gcs"]
 ci-test = []
 integration-testsuite = [
   "azure",
-  "azure_core/azurite_workaround",
-  "azure_storage_blobs/azurite_workaround",
-  "gcs",                                    # Stands for Google cloud storage.
+  "gcs",     # Stands for Google cloud storage.
   "dep:reqwest",
 ]
 testsuite = ["mockall"]

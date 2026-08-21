@@ -13,20 +13,22 @@
 // limitations under the License.
 
 use std::collections::HashMap;
-use std::num::NonZeroU32;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use std::{fmt, io};
 
 use async_trait::async_trait;
+use azure_core::Error as AzureError;
 use azure_core::error::ErrorKind;
-use azure_core::{Pageable, StatusCode};
-use azure_storage::prelude::*;
-use azure_storage::{CloudLocation, Error as AzureError};
-use azure_storage_blobs::blob::operations::GetBlobResponse;
-use azure_storage_blobs::prelude::*;
-use bytes::{Bytes, BytesMut};
+use azure_core::http::{NoFormat, RequestContent, StatusCode};
+use azure_storage_blob::BlobContainerClient;
+use azure_storage_blob::models::{
+    BlobClientDownloadOptions, BlobClientGetPropertiesResultHeaders,
+    BlobContainerClientListBlobsOptions, BlockBlobClientStageBlockOptions, BlockLookupList,
+    HttpRange,
+};
+use bytes::Bytes;
 use bytesize::ByteSize;
 use futures::io::Error as FutureError;
 use futures::stream::{StreamExt, TryStreamExt};
@@ -40,18 +42,26 @@ use regex::Regex;
 use tantivy::directory::OwnedBytes;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWriteExt, BufReader};
-use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tokio_util::io::StreamReader;
-use tracing::{info, instrument, warn};
+use tracing::{instrument, warn};
 
 use crate::debouncer::DebouncedStorage;
 use crate::metrics::object_storage_get_slice_in_flight_guards;
+use crate::object_storage::azure_credentials::{
+    AzureCredential, build_container_client, resolve_credential,
+};
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, Storage, StorageError,
     StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
 };
+
+/// Block id used by the single part upload path.
+///
+/// Zero padded like the multipart ids so that a blob written by either path carries a block
+/// list of the same shape.
+const SINGLE_PART_BLOCK_ID: &[u8] = b"block:00000";
 
 /// Azure object storage resolver.
 pub struct AzureBlobStorageFactory {
@@ -79,7 +89,7 @@ impl StorageFactory for AzureBlobStorageFactory {
 
 /// Azure object storage implementation
 pub struct AzureBlobStorage {
-    container_client: ContainerClient,
+    container_client: BlobContainerClient,
     uri: Uri,
     prefix: PathBuf,
     multipart_policy: MultiPartPolicy,
@@ -97,20 +107,23 @@ impl fmt::Debug for AzureBlobStorage {
 
 impl AzureBlobStorage {
     /// Creates a new [`AzureBlobStorage`] instance.
-    pub fn new(
-        storage_account_name: String,
-        storage_credentials: StorageCredentials,
+    ///
+    /// Crate visible because the credential type is: callers outside the crate go through
+    /// [`AzureBlobStorage::from_uri`], which resolves the credential from the config.
+    pub(crate) fn new(
+        storage_account_name: &str,
+        credential: AzureCredential,
         blob_service_uri: Option<String>,
         uri: Uri,
-        container_name: String,
-    ) -> Self {
+        container_name: &str,
+    ) -> Result<Self, StorageResolverError> {
         let container_client = build_container_client(
             storage_account_name,
-            storage_credentials,
+            credential,
             blob_service_uri,
             container_name,
-        );
-        Self {
+        )?;
+        Ok(Self {
             container_client,
             uri,
             prefix: PathBuf::new(),
@@ -125,7 +138,7 @@ impl AzureBlobStorage {
                 max_concurrent_uploads: 100,
             },
             retry_params: RetryParams::aggressive(),
-        }
+        })
     }
 
     /// Sets the prefix path.
@@ -142,11 +155,16 @@ impl AzureBlobStorage {
     }
 
     /// Creates an emulated storage for testing.
+    ///
+    /// The 1.0 SDK has no `emulator()` helper, and could not offer one: the emulator
+    /// authenticates with a shared key, which the SDK no longer signs. The well-known
+    /// account and key are documented at
+    /// <https://learn.microsoft.com/azure/storage/common/storage-use-azurite>.
     #[cfg(feature = "integration-testsuite")]
     pub fn new_emulated(container: &str) -> Self {
         use std::str::FromStr;
 
-        let container_client = ClientBuilder::emulator().container_client(container);
+        let container_client = build_emulated_container_client(container);
         let uri = Uri::from_str(&format!("azure://tester/{container}")).unwrap();
 
         Self {
@@ -156,6 +174,30 @@ impl AzureBlobStorage {
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams::no_retries(),
         }
+    }
+
+    /// Creates the container the emulated storage writes to.
+    ///
+    /// Exposed for the integration test suite because the shared key signing the emulator
+    /// needs stays inside this crate, so a test cannot build a client of its own.
+    #[cfg(feature = "integration-testsuite")]
+    pub async fn create_emulated_container(container: &str) -> anyhow::Result<()> {
+        build_emulated_container_client(container)
+            .create(None)
+            .await?;
+        Ok(())
+    }
+
+    /// Deletes the container the emulated storage writes to.
+    ///
+    /// Counterpart of [`AzureBlobStorage::create_emulated_container`], exposed for the same
+    /// reason.
+    #[cfg(feature = "integration-testsuite")]
+    pub async fn delete_emulated_container(container: &str) -> anyhow::Result<()> {
+        build_emulated_container_client(container)
+            .delete(None)
+            .await?;
+        Ok(())
     }
 
     /// Sets the multipart policy.
@@ -180,31 +222,19 @@ impl AzureBlobStorage {
                 );
                 StorageResolverError::InvalidConfig(message)
             })?;
-        let storage_credentials = if let Some(access_key) =
-            azure_storage_config.resolve_access_key()
-        {
-            StorageCredentials::access_key(storage_account_name.clone(), access_key)
-        } else if let Ok(credential) = azure_identity::create_credential() {
-            StorageCredentials::token_credential(credential)
-        } else {
-            return Err(StorageResolverError::InvalidConfig(
-                "could not find Azure storage account credentials using the following credential \
-                 providers: environment, managed identity, and storage account access key"
-                    .to_string(),
-            ));
-        };
+        let credential = resolve_credential(azure_storage_config)?;
         let (container_name, prefix) = parse_azure_uri(uri).ok_or_else(|| {
             let message = format!("failed to extract container name from Azure URI `{uri}`");
             StorageResolverError::InvalidUri(message)
         })?;
         let blob_service_uri = azure_storage_config.resolve_blob_service_uri(&storage_account_name);
         let azure_blob_storage = AzureBlobStorage::new(
-            storage_account_name,
-            storage_credentials,
+            &storage_account_name,
+            credential,
             blob_service_uri,
             uri.clone(),
-            container_name,
-        );
+            &container_name,
+        )?;
         Ok(azure_blob_storage.with_prefix(prefix))
     }
 
@@ -214,7 +244,7 @@ impl AzureBlobStorage {
         key_path.to_string_lossy().to_string()
     }
 
-    /// Downloads a blob as `Bytes` — zero-copy when the blob arrives as a single chunk.
+    /// Downloads a blob as `Bytes`.
     async fn get_to_bytes(
         &self,
         path: &Path,
@@ -224,25 +254,67 @@ impl AzureBlobStorage {
         let capacity = range_opt.as_ref().map(Range::len).unwrap_or(0);
         retry(&self.retry_params, || async {
             let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
-            let (mut response_stream, _in_flight_guards) = if let Some(range) = range_opt.as_ref() {
-                let stream = self
-                    .container_client
-                    .blob_client(&name)
-                    .get()
-                    .range(range.clone())
-                    .into_stream();
-                // only record ranged get request as being in flight
-                let in_flight_guards = object_storage_get_slice_in_flight_guards(capacity);
-                (stream, Some(in_flight_guards))
-            } else {
-                let stream = self.container_client.blob_client(&name).get().into_stream();
-                (stream, None)
+            let mut download_options = BlobClientDownloadOptions::default();
+            // Only a ranged get counts as in flight, matching the metric's meaning.
+            let _in_flight_guards = match range_opt.as_ref() {
+                Some(range) => {
+                    download_options.range = Some(HttpRange::from(range.clone()));
+                    Some(object_storage_get_slice_in_flight_guards(capacity))
+                }
+                None => None,
             };
-            let bytes = download_all(&mut response_stream).await?;
+            let download_response = self
+                .container_client
+                .blob_client(&name)
+                .download(Some(download_options))
+                .await?;
+            let bytes = download_response.body.collect().await?;
+            crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(bytes.len() as u64);
             Result::<_, AzureErrorWrapper>::Ok(bytes)
         })
         .await
         .map_err(StorageError::from)
+    }
+
+    /// Opens a download as an [`AsyncRead`], optionally over a range.
+    ///
+    /// The first chunk is pulled before returning so that an error arriving with the
+    /// response headers is still inside the retry, rather than surfacing later to a caller
+    /// that cannot retry it.
+    async fn get_to_reader(
+        &self,
+        path: &Path,
+        range_opt: Option<Range<usize>>,
+    ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
+        let name = self.blob_name(path);
+        retry(&self.retry_params, || async {
+            let mut download_options = BlobClientDownloadOptions::default();
+            if let Some(range) = range_opt.as_ref() {
+                download_options.range = Some(HttpRange::from(range.clone()));
+            }
+            let download_response = self
+                .container_client
+                .blob_client(&name)
+                .download(Some(download_options))
+                .await?;
+            let mut bytes_stream = download_response
+                .body
+                .map(|bytes_res| bytes_res.map_err(FutureError::other));
+            let first_chunk = bytes_stream.next().await;
+            let reader: Box<dyn AsyncRead + Send + Unpin> = match first_chunk {
+                Some(bytes_res) => {
+                    let first_chunk = bytes_res.map_err(AzureErrorWrapper::from)?;
+                    let reconstructed_stream = Box::pin(
+                        futures::stream::once(async { Ok(first_chunk) }).chain(bytes_stream),
+                    );
+                    Box::new(StreamReader::new(reconstructed_stream))
+                }
+                None => Box::new(tokio::io::empty()),
+            };
+            Result::<Box<dyn AsyncRead + Send + Unpin>, AzureErrorWrapper>::Ok(reader)
+        })
+        .await
+        .map_err(|err| err.into())
     }
 
     /// Performs a single part upload.
@@ -256,12 +328,38 @@ impl AzureBlobStorage {
         let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_PUT_OBJECT_DURATION);
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
-            let hash = azure_storage_blobs::prelude::Hash::from(md5::compute(&data[..]).0);
-            self.container_client
-                .blob_client(name)
-                .put_block_blob(data)
-                .hash(hash)
-                .into_future()
+            let digest = md5::compute(&data[..]);
+            let content_length = data.len() as u64;
+            let block_blob_client = self.container_client.blob_client(name).block_blob_client();
+            // Staged and committed rather than uploaded in one shot, because `upload()`
+            // only exposes `blob_content_md5`, which the service stores without checking it
+            // against the body. `stage_block` takes a transactional checksum, so a corrupted
+            // payload is rejected on arrival. Splits are immutable and never re-verified, so
+            // a silent corruption here would be permanent. The cost is one extra request per
+            // object below the multipart threshold.
+            let stage_block_options = BlockBlobClientStageBlockOptions {
+                transactional_content_md5: Some(digest.0.to_vec()),
+                ..Default::default()
+            };
+            // `RequestContent::from` is an inherent function over `Vec<u8>`, which shadows
+            // the `From<Bytes>` impl, so go through `Into` to keep the `Bytes` as is.
+            let content: RequestContent<Bytes, NoFormat> = data.into();
+            block_blob_client
+                .stage_block(
+                    SINGLE_PART_BLOCK_ID,
+                    content_length,
+                    content,
+                    Some(stage_block_options),
+                )
+                .await?;
+            let block_lookup_list = BlockLookupList {
+                uncommitted: Some(vec![SINGLE_PART_BLOCK_ID.to_vec()]),
+                ..Default::default()
+            };
+            let block_list_content =
+                RequestContent::try_from(block_lookup_list).map_err(AzureErrorWrapper::from)?;
+            block_blob_client
+                .commit_block_list(block_list_content, None)
                 .await?;
             Result::<(), AzureErrorWrapper>::Ok(())
         })
@@ -281,10 +379,14 @@ impl AzureBlobStorage {
         let multipart_ranges =
             chunk_range(0..total_len as usize, part_len as usize).map(into_u64_range);
 
-        let blob_client = self.container_client.blob_client(name);
+        let block_blob_client = self.container_client.blob_client(name).block_blob_client();
         let upload_blocks_stream = tokio_stream::iter(multipart_ranges.enumerate())
             .map(|(num, range)| {
-                let moved_blob_client = blob_client.clone();
+                // `BlockBlobClient` is not `Clone` in the 1.0 SDK, so each part builds its
+                // own from the container client. Construction is local: it clones the
+                // pipeline behind an `Arc` and appends the blob name to the URL.
+                let moved_block_blob_client =
+                    self.container_client.blob_client(name).block_blob_client();
                 let moved_payload = payload.clone();
                 crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
                 crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(range.end - range.start);
@@ -297,11 +399,19 @@ impl AzureBlobStorage {
                         let (data, hash_digest) =
                             extract_range_data_and_hash(moved_payload.box_clone(), range.clone())
                                 .await?;
-                        let hash = azure_storage_blobs::prelude::Hash::from(hash_digest.0);
-                        moved_blob_client
-                            .put_block(block_id.clone(), data)
-                            .hash(hash)
-                            .into_future()
+                        let content_length = data.len() as u64;
+                        let stage_block_options = BlockBlobClientStageBlockOptions {
+                            transactional_content_md5: Some(hash_digest.0.to_vec()),
+                            ..Default::default()
+                        };
+                        // The SDK base64 encodes the block id, so it takes the raw bytes.
+                        moved_block_blob_client
+                            .stage_block(
+                                block_id.as_bytes(),
+                                content_length,
+                                data.into(),
+                                Some(stage_block_options),
+                            )
                             .await?;
                         Result::<_, AzureErrorWrapper>::Ok(block_id)
                     })
@@ -310,7 +420,7 @@ impl AzureBlobStorage {
             })
             .buffer_unordered(self.multipart_policy.max_concurrent_uploads());
 
-        // Collect and sort block ids to preserve part order for put_block_list.
+        // Collect and sort block ids to preserve part order for the block list.
         // Azure docs: "The put block list operation enforces the order in which blocks
         // are to be combined to create a blob".
         // https://docs.microsoft.com/en-us/rest/api/storageservices/put-block-list
@@ -320,17 +430,22 @@ impl AzureBlobStorage {
             .map_err(StorageError::from)?;
         block_ids.sort_unstable();
 
-        let block_list = BlockList {
-            blocks: block_ids
-                .into_iter()
-                .map(BlobBlockType::new_uncommitted)
-                .collect(),
+        let block_lookup_list = BlockLookupList {
+            uncommitted: Some(
+                block_ids
+                    .into_iter()
+                    .map(|block_id| block_id.into_bytes())
+                    .collect(),
+            ),
+            ..Default::default()
         };
+        let block_list_content = RequestContent::try_from(block_lookup_list)
+            .map_err(AzureErrorWrapper::from)
+            .map_err(StorageError::from)?;
 
         // Commit all uploaded blocks.
-        blob_client
-            .put_block_list(block_list)
-            .into_future()
+        block_blob_client
+            .commit_block_list(block_list_content, None)
             .await
             .map_err(AzureErrorWrapper::from)?;
 
@@ -341,15 +456,13 @@ impl AzureBlobStorage {
 #[async_trait]
 impl Storage for AzureBlobStorage {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
-        if let Some(first_blob_result) = self
-            .container_client
-            .list_blobs()
-            .max_results(NonZeroU32::new(1u32).expect("1 is always non-zero."))
-            .into_stream()
-            .next()
-            .await
-        {
-            let _ = first_blob_result?;
+        let list_blobs_options = BlobContainerClientListBlobsOptions {
+            maxresults: Some(1),
+            ..Default::default()
+        };
+        let mut blob_pager = self.container_client.list_blobs(Some(list_blobs_options))?;
+        if let Some(first_page_result) = blob_pager.next().await {
+            let _ = first_page_result?;
         }
         Ok(())
     }
@@ -376,20 +489,10 @@ impl Storage for AzureBlobStorage {
 
     #[instrument(name = "storage.azure.copy_to", level = "debug", skip(self, output))]
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
-        let name = self.blob_name(path);
-        let mut output_stream = self.container_client.blob_client(name).get().into_stream();
-
-        while let Some(chunk_result) = output_stream.next().await {
-            let chunk_response = chunk_result.map_err(AzureErrorWrapper::from)?;
-            let chunk_response_body_stream = chunk_response
-                .data
-                .map_err(FutureError::other)
-                .into_async_read()
-                .compat();
-            let mut body_stream_reader = BufReader::new(chunk_response_body_stream);
-            let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
-            crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_copied);
-        }
+        let reader = self.get_to_reader(path, None).await?;
+        let mut body_stream_reader = BufReader::new(reader);
+        let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
+        crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_copied);
         output.flush().await?;
         Ok(())
     }
@@ -403,9 +506,8 @@ impl Storage for AzureBlobStorage {
         let blob_name = self.blob_name(path);
         let delete_res: Result<_, StorageError> = self
             .container_client
-            .blob_client(blob_name)
-            .delete()
-            .into_future()
+            .blob_client(&blob_name)
+            .delete(None)
             .await
             .map_err(|err| AzureErrorWrapper::from(err).into());
         ignore_error_kind!(StorageErrorKind::NotFound, delete_res)?;
@@ -476,33 +578,7 @@ impl Storage for AzureBlobStorage {
         path: &Path,
         range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        retry(&self.retry_params, || async {
-            let range = range.clone();
-            let name = self.blob_name(path);
-            let page_stream = self
-                .container_client
-                .blob_client(name)
-                .get()
-                .range(range)
-                .into_stream();
-            let mut bytes_stream = page_stream
-                .map(|page_res| page_res.map(|page| page.data).map_err(FutureError::other))
-                .try_flatten()
-                .map(|bytes_res| bytes_res.map_err(FutureError::other));
-            // Peek into the stream so that any early error can be retried
-            let first_chunk = bytes_stream.next().await;
-            let reader: Box<dyn AsyncRead + Send + Unpin> = if let Some(res) = first_chunk {
-                let first_chunk = res.map_err(AzureErrorWrapper::from)?;
-                let reconstructed_stream =
-                    Box::pin(futures::stream::once(async { Ok(first_chunk) }).chain(bytes_stream));
-                Box::new(StreamReader::new(reconstructed_stream))
-            } else {
-                Box::new(tokio::io::empty())
-            };
-            Result::<Box<dyn AsyncRead + Send + Unpin>, AzureErrorWrapper>::Ok(reader)
-        })
-        .await
-        .map_err(|e| e.into())
+        self.get_to_reader(path, Some(range)).await
     }
 
     #[instrument(
@@ -532,12 +608,17 @@ impl Storage for AzureBlobStorage {
         let name = self.blob_name(path);
         let properties_result = self
             .container_client
-            .blob_client(name)
-            .get_properties()
-            .into_future()
+            .blob_client(&name)
+            .get_properties(None)
             .await;
         match properties_result {
-            Ok(response) => Ok(response.blob.properties.content_length),
+            Ok(response) => {
+                let content_length = response
+                    .content_length()
+                    .map_err(AzureErrorWrapper::from)?
+                    .unwrap_or(0);
+                Ok(content_length)
+            }
             Err(err) => Err(StorageError::from(AzureErrorWrapper::from(err))),
         }
     }
@@ -545,6 +626,28 @@ impl Storage for AzureBlobStorage {
     fn uri(&self) -> &Uri {
         &self.uri
     }
+}
+
+/// Builds a container client pointed at Azurite.
+///
+/// The well-known emulator account and key are published by Microsoft at
+/// <https://learn.microsoft.com/azure/storage/common/storage-use-azurite>, so neither is a
+/// secret. The 1.0 SDK dropped `ClientBuilder::emulator()`, and could not have kept it: the
+/// emulator authenticates with a shared key, which the SDK no longer signs.
+#[cfg(feature = "integration-testsuite")]
+fn build_emulated_container_client(container: &str) -> BlobContainerClient {
+    const EMULATOR_ACCOUNT: &str = "devstoreaccount1";
+    const EMULATOR_ACCOUNT_KEY: &str =
+        "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==";
+    const EMULATOR_BLOB_SERVICE_URI: &str = "http://127.0.0.1:10000/devstoreaccount1";
+
+    build_container_client(
+        EMULATOR_ACCOUNT,
+        AzureCredential::SharedKey(EMULATOR_ACCOUNT_KEY.to_string()),
+        Some(EMULATOR_BLOB_SERVICE_URI.to_string()),
+        container,
+    )
+    .expect("the emulator endpoint should be a valid URL")
 }
 
 /// Copy range of payload into `Bytes` and return the computed md5.
@@ -563,25 +666,6 @@ async fn extract_range_data_and_hash(
     Ok((data, hash))
 }
 
-fn build_container_client(
-    storage_account_name: String,
-    storage_credentials: StorageCredentials,
-    blob_service_uri: Option<String>,
-    container_name: String,
-) -> ContainerClient {
-    let mut builder = ClientBuilder::new(storage_account_name.clone(), storage_credentials);
-    if let Some(uri) = blob_service_uri {
-        info!(endpoint=%uri, "using Azure blob storage endpoint defined in storage config or environment variable");
-        builder = builder.cloud_location(CloudLocation::Custom {
-            account: storage_account_name,
-            uri,
-        });
-    }
-    builder
-        .blob_service_client()
-        .container_client(container_name)
-}
-
 pub fn parse_azure_uri(uri: &Uri) -> Option<(String, PathBuf)> {
     // Ex: azure://container/prefix.
     static URI_PTN: LazyLock<Regex> = LazyLock::new(|| {
@@ -597,45 +681,6 @@ pub fn parse_azure_uri(uri: &Uri) -> Option<(String, PathBuf)> {
         .map(|prefix_match| PathBuf::from(prefix_match.as_str()))
         .unwrap_or_default();
     Some((container, prefix))
-}
-
-/// Collect a download stream into a single [`Bytes`].
-///
-/// `Bytes` segments yielded by the SDK are preserved so that the single-segment case avoids the
-/// extra copy into a contiguous buffer. When more than one segment is received, they are
-/// concatenated exactly once into a freshly allocated `Bytes`.
-async fn download_all(
-    chunk_stream: &mut Pageable<GetBlobResponse, AzureError>,
-) -> Result<Bytes, AzureErrorWrapper> {
-    let mut segments: Vec<Bytes> = Vec::new();
-    let mut total_num_bytes: usize = 0;
-    while let Some(chunk_result) = chunk_stream.next().await {
-        let chunk_response = chunk_result?;
-        let mut data_stream = chunk_response.data;
-        while let Some(bytes_res) = data_stream.next().await {
-            let bytes = bytes_res?;
-            total_num_bytes += bytes.len();
-            segments.push(bytes);
-        }
-    }
-    crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(total_num_bytes as u64);
-    Ok(coalesce_segments(segments, total_num_bytes))
-}
-
-/// Returns a single [`Bytes`] covering `segments`. Zero-copy when there is at most one segment;
-/// otherwise a single allocation concatenates them.
-fn coalesce_segments(mut segments: Vec<Bytes>, total_num_bytes: usize) -> Bytes {
-    match segments.len() {
-        0 => Bytes::new(),
-        1 => segments.remove(0),
-        _ => {
-            let mut out = BytesMut::with_capacity(total_num_bytes);
-            for segment in segments {
-                out.extend_from_slice(&segment);
-            }
-            out.freeze()
-        }
-    }
 }
 
 #[derive(Error, Debug)]

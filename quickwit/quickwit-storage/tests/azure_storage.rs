@@ -23,15 +23,13 @@ async fn azure_storage_test_suite() -> anyhow::Result<()> {
     use std::path::PathBuf;
 
     use anyhow::Context;
-    use azure_storage_blobs::prelude::ClientBuilder;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_storage::{AzureBlobStorage, MultiPartPolicy};
     let _ = tracing_subscriber::fmt::try_init();
 
     // Setup container.
     let container_name = append_random_suffix("quickwit").to_lowercase();
-    let container_client = ClientBuilder::emulator().container_client(&container_name);
-    container_client.create().into_future().await?;
+    AzureBlobStorage::create_emulated_container(&container_name).await?;
 
     let mut object_storage = AzureBlobStorage::new_emulated(&container_name);
     quickwit_storage::storage_test_suite(&mut object_storage).await?;
@@ -56,6 +54,6 @@ async fn azure_storage_test_suite() -> anyhow::Result<()> {
         .context("test multipart upload failed")?;
 
     // Teardown container.
-    container_client.delete().into_future().await?;
+    AzureBlobStorage::delete_emulated_container(&container_name).await?;
     Ok(())
 }

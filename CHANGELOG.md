@@ -12,8 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - (Jaeger) Query resource attributes when Jaeger request carries tags
+- Azure Blob Storage: workload identity no longer fails 24 hours after start, since `azure_identity` 1.0 re-reads the projected service account token (#6672)
 
 ### Changed
+- Azure Blob Storage: migrate to `azure_storage_blob` 1.0, the rewritten Azure SDK (#6672)
 
 ### Deprecated
 
