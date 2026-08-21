@@ -1,0 +1,301 @@
+name: Full test suite
+
+# Runs `make test-all` (--all-features plus failpoints) against every
+# broker/backend service.
+#
+# Two entry points:
+#   - full-tests-trigger.yml calls this as a reusable workflow when a maintainer
+#     comments `/ci-run-all-tests` on a PR. It tests the PR's *merge* commit so
+#     the result reflects the code as merged rather than the branch in isolation,
+#     but reports the status on the PR *head* (see `prepare`).
+#   - merge_group runs it directly on merge-queue candidates. That event is
+#     trusted infrastructure, so it needs no authorization hop.
+on:
+  workflow_call:
+    inputs:
+      head_sha:
+        description: "PR head SHA -- the commit the status is reported on"
+        required: true
+        type: string
+      merge_sha:
+        description: "PR test merge commit SHA -- this is what gets tested"
+        required: true
+        type: string
+      pr_number:
+        description: "PR number being tested"
+        required: true
+        type: string
+    secrets:
+      DISCORD_WEBHOOK:
+        required: false
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+env:
+  # This string is a long-lived contract with branch protection: renaming it
+  # breaks merges until the ruleset is updated in lockstep. It is deliberately
+  # decoupled from the Makefile target name so the implementation can change
+  # without touching repository settings.
+  STATUS_CONTEXT: "full-test-suite"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.pr_number || github.event.merge_group.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  # Resolves which commit this run targets and publishes the pending status.
+  # Doubles as the single source of truth for downstream jobs, which avoids a
+  # separate resolve job and keeps the two entry points from diverging.
+  prepare:
+    name: Resolve target and set pending status
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      statuses: write
+    outputs:
+      test_sha: ${{ steps.resolve.outputs.test_sha }}
+      status_sha: ${{ steps.resolve.outputs.status_sha }}
+      pr_number: ${{ steps.resolve.outputs.pr_number }}
+    steps:
+      - name: Resolve target and set pending
+        id: resolve
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          MERGE_SHA: ${{ inputs.merge_sha }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          MERGE_GROUP_SHA: ${{ github.event.merge_group.head_sha }}
+        with:
+          script: |
+            // pr_number is only set on the comment-triggered path; merge-queue
+            // runs identify their candidate through the event payload instead.
+            const prNumber = process.env.PR_NUMBER || '';
+            const headSha = process.env.HEAD_SHA || '';
+            const testSha = prNumber ? process.env.MERGE_SHA : process.env.MERGE_GROUP_SHA;
+
+            if (!testSha) {
+              core.setFailed('Could not determine which commit to test.');
+              return;
+            }
+
+            // We test the merge commit but report on the PR head, and those are
+            // deliberately different commits.
+            //
+            // Every other required check here (CI / Lints, CI / Unit tests) is a
+            // check run on the head commit, so that is where branch protection
+            // looks. A status on the merge commit is therefore ignored for
+            // gating and only shows up as a confusing duplicate entry in the
+            // PR's check list.
+            //
+            // The tradeoff: because the status is pinned to the head, a later
+            // push invalidates it (new head, no status -> required check
+            // unsatisfied), but a new commit on the base branch does not, so a
+            // green result can reflect an older merge base. That is inherent to
+            // any "test the PR" gate and is exactly what the merge_group path
+            // fixes, since the queue rebuilds the candidate against current main.
+            //
+            // On the merge-queue path there is no PR head, so the candidate
+            // commit is both tested and reported on.
+            const statusSha = headSha || testSha;
+
+            core.setOutput('test_sha', testSha);
+            core.setOutput('status_sha', statusSha);
+            core.setOutput('pr_number', prNumber);
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: statusSha,
+              state: 'pending',
+              context: process.env.STATUS_CONTEXT,
+              description: 'Running full test suite...',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+  full-tests:
+    name: All-features tests + failpoints (make test-all)
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # This is the only job that checks out and executes PR-authored code, and it
+    # is deliberately non-privileged. CodeQL flags this checkout
+    # (actions/untrusted-checkout); that is expected, and is mitigated by
+    # isolation rather than by avoiding the checkout, which would defeat the
+    # entire purpose of the job. Specifically:
+    #   - no secrets: this job never references `secrets.*`. DISCORD_WEBHOOK is
+    #     read only by `on-failure`, which has `permissions: {}` and does not
+    #     check out code.
+    #   - no write scopes: `contents: read` is the minimum `actions/checkout`
+    #     needs. The jobs holding `statuses: write` (prepare, report-status)
+    #     never check out or run PR code.
+    #   - `persist-credentials: false`, so the token is not left in .git/config
+    #     for the untrusted build steps to pick up.
+    #   - the cache is read-only (see `save-if` below).
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.prepare.outputs.test_sha }}
+          persist-credentials: false
+
+      - name: Install Ubuntu packages
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install libsasl2-dev libcurl4-openssl-dev
+
+      # apt's protobuf-compiler is too old for proto3 optional fields required
+      # by the substrait crate enabled through the datafusion feature.
+      - name: Install protoc
+        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
+        with:
+          tool: protoc
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v.6.2.0
+        with:
+          python-version: '3.11'
+
+      - name: Setup stable Rust Toolchain
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: stable
+
+      # `save-if: false` is load-bearing, not an optimisation. The caller is a
+      # default-branch event, so this run's ref is the default branch and any
+      # cache this job wrote would land in the default-branch scope -- readable
+      # by every other PR and by trusted workflows on main. Reading a cache
+      # built by trusted runs is fine; letting PR-authored code write one is
+      # cache poisoning.
+      #
+      # Since this job never saves, it must read a key some *trusted* workflow
+      # populates, hence `quickwit-cargo` rather than a key of its own: ci.yml
+      # runs on push to main on the same ubuntu x64 runners (cache keys are
+      # arch-scoped) and its `lints` job builds `--all-features`, so the
+      # expensive dependency artifacts are already there. A dedicated key would
+      # simply never be written by anyone and every run would start cold.
+      - name: Setup cache (read-only)
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: "./quickwit -> target"
+          shared-key: "quickwit-cargo"
+          save-if: false
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
+        with:
+          tool: cargo-nextest
+
+      - name: Start Docker services
+        run: make docker-compose-up
+
+      - name: Install python packages
+        run: |
+          pip install --user --require-hashes -r ${{ github.workspace }}/.github/workflows/requirements.txt
+          pipenv install --deploy --ignore-pipfile
+        working-directory: ./quickwit/quickwit-cli/tests
+
+      - name: Prepare LocalStack S3
+        run: pipenv run ./prepare_tests.sh
+        working-directory: ./quickwit/quickwit-cli/tests
+
+      - name: make test-all
+        run: make -C quickwit test-all
+        env:
+          QW_TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev
+
+  report-status:
+    name: Report final status
+    needs: [prepare, full-tests]
+    if: ${{ always() && needs.prepare.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      statuses: write
+      pull-requests: read
+    steps:
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          TEST_SHA: ${{ needs.prepare.outputs.test_sha }}
+          STATUS_SHA: ${{ needs.prepare.outputs.status_sha }}
+          PR_NUMBER: ${{ needs.prepare.outputs.pr_number }}
+          RESULT: ${{ needs.full-tests.result }}
+        with:
+          script: |
+            const state = process.env.RESULT === 'success' ? 'success' : 'failure';
+            const prNumber = process.env.PR_NUMBER;
+            const testSha = process.env.TEST_SHA;
+            // On the comment path this is the PR head; on the merge-queue path
+            // it is the candidate commit.
+            const statusSha = process.env.STATUS_SHA;
+
+            // Drift detection is informational only. The status is pinned to an
+            // immutable SHA, so a push produces a new head that carries no
+            // status and leaves the required check unsatisfied. The gate fails
+            // closed structurally; this block only explains why in the log.
+            if (prNumber) {
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: Number(prNumber),
+              });
+              if (pr.head.sha !== statusSha || pr.merge_commit_sha !== testSha) {
+                core.notice(
+                  `PR #${prNumber} moved while the suite was running ` +
+                  `(head ${statusSha} -> ${pr.head.sha}, merge ${testSha} -> ${pr.merge_commit_sha}). ` +
+                  'This result applies only to the commit that was tested, so the ' +
+                  'required check stays unsatisfied until /ci-run-all-tests is run again.'
+                );
+              }
+            }
+
+            // Name the tested commit in the description: the status hangs on the
+            // head, so it is otherwise invisible which merge result was proven.
+            const suffix = testSha === statusSha ? '' : ` (merge commit ${testSha.slice(0, 7)})`;
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: statusSha,
+              state,
+              context: process.env.STATUS_CONTEXT,
+              description: (state === 'success' ? 'Full test suite passed' : 'Full test suite failed') + suffix,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+  on-failure:
+    name: Send failure notification
+    needs: [prepare, full-tests]
+    if: >-
+      ${{ always() && github.repository_owner == 'quickwit-oss' &&
+      needs.prepare.result == 'success' && needs.full-tests.result == 'failure' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    # Declared at job level so the step's own `if` can see it: a step's inline
+    # `env` block is not reliably available when evaluating that same step's
+    # condition. This job never checks out code, so holding the webhook here is
+    # not an exposure to untrusted input.
+    env:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+      TARGET: >-
+        ${{ needs.prepare.outputs.pr_number != '' &&
+        format('PR #{0}', needs.prepare.outputs.pr_number) ||
+        format('merge-group commit {0}', needs.prepare.outputs.test_sha) }}
+    steps:
+      - name: Send message
+        if: env.DISCORD_WEBHOOK != ''
+        uses: sarisia/actions-status-discord@eb045afee445dc055c18d3d90bd0f244fd062708 # v1.16.0
+        with:
+          webhook: ${{ env.DISCORD_WEBHOOK }}
+          nodetail: true
+          color: "#FF0000"
+          title: ""
+          description: |
+            ### ❌ ${{ env.TARGET }}
+
+            The full test suite (`make test-all`) failed.
+
+            **[View logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})**

@@ -1,0 +1,134 @@
+name: Full test suite trigger
+
+# A maintainer runs the expensive full suite by commenting `/ci-run-all-tests`
+# on a pull request.
+#
+# `issue_comment` is a trusted, default-branch event: the workflow definition is
+# always read from the default branch (never from the PR), and the run keeps the
+# token scopes and secrets it needs to publish a commit status even when the PR
+# comes from a fork.
+#
+# `pull_request_review` cannot do this. GitHub hands fork-PR review runs a
+# read-only token and withholds secrets, so `statuses: write` would 403 and the
+# required check could never be satisfied for external contributors -- the exact
+# people an open-source repo has to support.
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  authorize:
+    name: Authorize and resolve target
+    if: >-
+      ${{ github.event.issue.pull_request != null &&
+      startsWith(github.event.comment.body, '/ci-run-all-tests') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      head_sha: ${{ steps.resolve.outputs.head_sha }}
+      merge_sha: ${{ steps.resolve.outputs.merge_sha }}
+    steps:
+      # Read the comment author from the event payload rather than github.actor.
+      # Re-running a workflow replaces the actor while retaining the original
+      # comment payload, so trusting github.actor would let a maintainer's re-run
+      # launder authorization for someone else's command.
+      - name: Check commenter has write access or above
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          COMMENTER: ${{ github.event.comment.user.login }}
+        with:
+          script: |
+            const commenter = process.env.COMMENTER;
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: commenter,
+            });
+            core.info(`${commenter}: permission=${data.permission} role=${data.role_name}`);
+
+            // `permission` is the coarse field and only ever returns admin,
+            // write, read or none -- a `maintain` role reports here as `write`.
+            // Comparing it against 'maintain' therefore admits admins only,
+            // which is not the intent. Use `role_name` instead if a threshold
+            // above write access is ever wanted.
+            if (!['admin', 'write'].includes(data.permission)) {
+              core.setFailed(
+                `@${commenter} has '${data.role_name}' access to this repo, but ` +
+                'triggering the full test suite requires write access or above.'
+              );
+            }
+
+      # The command deliberately carries no SHA: it means "test this PR as it is
+      # right now". Both SHAs are resolved here so the run is pinned to one
+      # immutable snapshot rather than following a moving target for 25 minutes.
+      #
+      # GitHub computes the test merge commit asynchronously, so `mergeable` is
+      # null and `merge_commit_sha` can be stale immediately after a push. Poll
+      # until mergeability is known instead of testing the wrong tree.
+      - name: Resolve PR head and merge commit
+        id: resolve
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const pull_number = context.issue.number;
+            let pr;
+            for (let attempt = 1; attempt <= 10; attempt += 1) {
+              ({ data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number,
+              }));
+              if (pr.state !== 'open') {
+                core.setFailed(`PR #${pull_number} is ${pr.state}, not open.`);
+                return;
+              }
+              if (pr.mergeable !== null) {
+                break;
+              }
+              core.info(`Mergeability not computed yet (attempt ${attempt}/10); retrying in 3s.`);
+              await new Promise((resolve) => { setTimeout(resolve, 3000); });
+            }
+
+            if (pr.mergeable === null) {
+              core.setFailed(
+                `GitHub did not finish computing mergeability for PR #${pull_number}. ` +
+                'Comment /ci-run-all-tests again in a moment.'
+              );
+              return;
+            }
+            if (pr.mergeable === false) {
+              core.setFailed(
+                `PR #${pull_number} conflicts with ${pr.base.ref}. Merge or rebase ` +
+                `${pr.base.ref} before running the full suite.`
+              );
+              return;
+            }
+            if (!pr.merge_commit_sha) {
+              core.setFailed(`PR #${pull_number} has no test merge commit to test.`);
+              return;
+            }
+
+            core.info(`Testing merge commit ${pr.merge_commit_sha} (head ${pr.head.sha}).`);
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('merge_sha', pr.merge_commit_sha);
+
+  full-tests:
+    name: Run full test suite
+    needs: authorize
+    uses: ./.github/workflows/full-tests.yml
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    with:
+      head_sha: ${{ needs.authorize.outputs.head_sha }}
+      merge_sha: ${{ needs.authorize.outputs.merge_sha }}
+      pr_number: ${{ github.event.issue.number }}
+    secrets:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
