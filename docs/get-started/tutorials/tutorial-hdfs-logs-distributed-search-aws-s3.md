@@ -260,9 +260,11 @@ In AWS, you can create a security group to group these inbound rules. Check out 
 Create one security group for the Quickwit cluster. Set the security group itself as the source and allow TCP ports
 7280 and 7281, plus UDP port 7280.
 
-Attach this group to all three instances, including the `searcher-1` instance you launched earlier. Nodes 2 and 3
-connect to node 1, so node 1 must accept inbound traffic on these ports. If `searcher-1` does not have this group
-attached, the other nodes cannot reach it and the cluster does not form.
+Attach this group to all three instances, including the `searcher-1` instance you launched earlier. All three nodes
+exchange cluster gossip over UDP port 7280 in both directions, and the searcher nodes communicate with each other
+over gRPC on TCP port 7281, also in both directions. Each instance must therefore accept inbound traffic from the
+other instances in the security group. Cluster communication can fail if an instance does not have this group
+attached.
 
 Next, create two additional EC2 instances using this security group, and note the private IP address of `searcher-1`.
 
