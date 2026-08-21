@@ -75,6 +75,41 @@ fn total_rows(batches: &[RecordBatch]) -> usize {
     batches.iter().map(|b| b.num_rows()).sum()
 }
 
+fn string_value(array: &dyn Array, row: usize) -> String {
+    assert!(!array.is_null(row), "unexpected NULL string at row {row}");
+    if let Some(strings) = array
+        .as_any()
+        .downcast_ref::<arrow::array::StringViewArray>()
+    {
+        strings.value(row).to_string()
+    } else if let Some(strings) = array.as_any().downcast_ref::<arrow::array::StringArray>() {
+        strings.value(row).to_string()
+    } else if let Some(dict) = array
+        .as_any()
+        .downcast_ref::<arrow::array::DictionaryArray<arrow::datatypes::Int32Type>>()
+    {
+        let key = usize::try_from(dict.keys().value(row)).unwrap();
+        string_value(dict.values().as_ref(), key)
+    } else {
+        panic!("unexpected string column type {:?}", array.data_type());
+    }
+}
+
+fn assert_dict_encoded_string_column(batches: &[RecordBatch], column_name: &str) {
+    let expected = arrow::datatypes::DataType::Dictionary(
+        Box::new(arrow::datatypes::DataType::Int32),
+        Box::new(arrow::datatypes::DataType::Utf8),
+    );
+    for batch in batches {
+        let column = batch.column_by_name(column_name).unwrap();
+        assert_eq!(
+            column.data_type(),
+            &expected,
+            "expected `{column_name}` to stay dictionary encoded"
+        );
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════
@@ -995,33 +1030,28 @@ async fn test_rollup_nested_aggregation() {
         6,
         "expected 6 rows (3 bins × 2 services); staging rows must be excluded"
     );
+    assert_dict_encoded_string_column(&batches, "service");
 
     // Collect (service, avg_val) pairs in ORDER BY time_bin, service order.
-    // After GROUP BY, DataFusion casts dict-encoded strings to plain Utf8.
-    let results: Vec<(String, f64)> = batches.iter().flat_map(|batch| {
-        let svc_raw = batch.column_by_name("service").unwrap();
-        let avg_col = batch.column_by_name("avg_val").unwrap()
-            .as_any().downcast_ref::<Float64Array>().unwrap();
-        (0..batch.num_rows()).map(|i| {
-            // After GROUP BY, DataFusion 52 may return Utf8View, Utf8, or Dict.
-            let svc = if let Some(sa) = svc_raw.as_any()
-                    .downcast_ref::<arrow::array::StringViewArray>() {
-                sa.value(i).to_string()
-            } else if let Some(sa) = svc_raw.as_any()
-                    .downcast_ref::<arrow::array::StringArray>() {
-                sa.value(i).to_string()
-            } else {
-                let dict = svc_raw.as_any()
-                    .downcast_ref::<arrow::array::DictionaryArray<arrow::datatypes::Int32Type>>()
-                    .unwrap_or_else(|| panic!("service column: unexpected type {:?}", svc_raw.data_type()));
-                let keys = dict.keys().as_any().downcast_ref::<arrow::array::Int32Array>().unwrap();
-                let vals = dict.values().as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
-                vals.value(keys.value(i) as usize).to_string()
-            };
-            let avg = avg_col.value(i);
-            (svc, avg)
-        }).collect::<Vec<_>>()
-    }).collect();
+    let results: Vec<(String, f64)> = batches
+        .iter()
+        .flat_map(|batch| {
+            let svc_raw = batch.column_by_name("service").unwrap();
+            let avg_col = batch
+                .column_by_name("avg_val")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Float64Array>()
+                .unwrap();
+            (0..batch.num_rows())
+                .map(|i| {
+                    let svc = string_value(svc_raw.as_ref(), i);
+                    let avg = avg_col.value(i);
+                    (svc, avg)
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
 
     // Expected: [(api,200), (web,11), (api,400), (web,22), (api,600), (web,33)]
     let expected = [
@@ -1131,11 +1161,12 @@ async fn test_substrait_named_table_query() {
         .await
         .unwrap();
 
-    let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+    let num_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
     assert_eq!(
-        total_rows, 2,
+        num_rows, 2,
         "expected 2 metric names (cpu.usage, memory.used)"
     );
+    assert_dict_encoded_string_column(&batches, "metric_name");
 
     // Verify SUM values: cpu.usage = 1+2+3 = 6, memory.used = 10+20+30 = 60
     let metric_col = batches[0].column_by_name("metric_name").unwrap();
@@ -1146,23 +1177,9 @@ async fn test_substrait_named_table_query() {
         .downcast_ref::<Float64Array>()
         .unwrap();
 
-    // metric_name may come back as StringViewArray or StringArray after aggregation
+    // metric_name may come back as Utf8View, Utf8, or Dictionary after aggregation.
     let names: Vec<String> = (0..batches[0].num_rows())
-        .map(|i| {
-            if let Some(sv) = metric_col
-                .as_any()
-                .downcast_ref::<arrow::array::StringViewArray>()
-            {
-                sv.value(i).to_string()
-            } else {
-                metric_col
-                    .as_any()
-                    .downcast_ref::<arrow::array::StringArray>()
-                    .unwrap()
-                    .value(i)
-                    .to_string()
-            }
-        })
+        .map(|i| string_value(metric_col.as_ref(), i))
         .collect();
 
     assert_eq!(names, vec!["cpu.usage", "memory.used"]);
@@ -1175,6 +1192,39 @@ async fn test_substrait_named_table_query() {
         (total_col.value(1) - 60.0).abs() < 0.01,
         "memory.used SUM expected 60.0, got {}",
         total_col.value(1)
+    );
+
+    let like_df = ctx
+        .sql(
+            r#"SELECT metric_name, SUM(value) as total
+           FROM "metrics-substrait-test"
+           WHERE metric_name LIKE 'cpu.%'
+           GROUP BY metric_name
+           ORDER BY metric_name"#,
+        )
+        .await
+        .unwrap();
+    let like_plan = like_df.into_optimized_plan().unwrap();
+    let like_substrait_plan = to_substrait_plan(&like_plan, &ctx.state()).unwrap();
+    let like_stream = builder
+        .execute_substrait(&like_substrait_plan.encode_to_vec())
+        .await
+        .unwrap();
+    let like_batches = datafusion::physical_plan::common::collect(like_stream)
+        .await
+        .unwrap();
+
+    assert_eq!(total_rows(&like_batches), 1);
+    assert_dict_encoded_string_column(&like_batches, "metric_name");
+    assert_eq!(
+        string_value(
+            like_batches[0]
+                .column_by_name("metric_name")
+                .unwrap()
+                .as_ref(),
+            0
+        ),
+        "cpu.usage"
     );
 }
 
@@ -1325,6 +1375,7 @@ async fn test_rollup_substrait_from_file() {
     // 3 bins × 2 services (api, web) = 6 rows.
     let total: usize = batches.iter().map(|b| b.num_rows()).sum();
     assert_eq!(total, 6, "expected 6 rows (3 bins × 2 services)");
+    assert_dict_encoded_string_column(&batches, "service");
 
     // Expected order: (api,bin0,200), (web,bin0,11), (api,bin30,400),
     //                 (web,bin30,22), (api,bin60,600), (web,bin60,33)

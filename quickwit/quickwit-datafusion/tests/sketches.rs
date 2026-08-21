@@ -247,7 +247,8 @@ async fn test_sketch_merge_and_quantile_substrait() {
             SELECT
                 dd_quantile(dd_sketch(keys, counts, "count", "min", "max", flags), 0.50) AS p50
             FROM "datadog-sketches"
-            WHERE metric_name = 'req.latency' AND timestamp_secs = 600
+            -- DataFusion's Substrait producer cannot serialize dictionary literals yet.
+            WHERE CAST(metric_name AS VARCHAR) = 'req.latency' AND timestamp_secs = 600
             "#,
         )
         .await
