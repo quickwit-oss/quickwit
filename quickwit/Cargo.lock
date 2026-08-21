@@ -9397,6 +9397,7 @@ version = "0.9.0"
 dependencies = [
  "ahash",
  "anyhow",
+ "arc-swap",
  "async-trait",
  "aws-config",
  "aws-credential-types",
@@ -9440,6 +9441,7 @@ dependencies = [
  "tantivy",
  "tempfile",
  "thiserror 2.0.18",
+ "time",
  "tokio",
  "tokio-rustls 0.26.4",
  "tokio-stream",
