@@ -17,7 +17,7 @@ use std::collections::binary_heap::PeekMut;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::num::NonZeroUsize;
 use std::ops::Bound;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -45,7 +45,7 @@ use quickwit_query::query_ast::{
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
     BundleStorage, ByteRangeCache, CountingStorage, MemorySizedCache, OwnedBytes, SearchSplitCache,
-    Storage, StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
+    Storage, StorageGetSlice, StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
 };
 use tantivy::aggregation::AggContextParams;
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
@@ -124,8 +124,8 @@ fn greedy_batch_split<T>(
     batches
 }
 
-async fn get_split_footer_from_cache_or_fetch(
-    index_storage: Arc<dyn Storage>,
+async fn get_split_footer_from_cache_or_fetch<T: StorageGetSlice>(
+    storage: &T,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     footer_cache: &MemorySizedCache<String>,
 ) -> anyhow::Result<OwnedBytes> {
@@ -136,8 +136,8 @@ async fn get_split_footer_from_cache_or_fetch(
         }
     }
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
-    let footer_data_opt = index_storage
-        .get_slice(
+    let footer_data_opt = storage
+        .get_slice_unboxed(
             &split_file,
             split_and_footer_offsets.split_footer_start as usize
                 ..split_and_footer_offsets.split_footer_end as usize,
@@ -146,7 +146,7 @@ async fn get_split_footer_from_cache_or_fetch(
         .with_context(|| {
             format!(
                 "failed to fetch hotcache and footer from {} for split `{}`",
-                index_storage.uri(),
+                storage.uri(),
                 split_and_footer_offsets.split_id
             )
         })?;
@@ -159,55 +159,50 @@ async fn get_split_footer_from_cache_or_fetch(
     Ok(footer_data_opt)
 }
 
-/// Returns hotcache_bytes and the split directory (`BundleStorage`) with cache layer:
+/// A split bundle with an optional split-cache layer, kept as a concrete enum so the cache branch
+/// does not force an inner `Arc<dyn Storage>`.
+pub(crate) enum OpenedSplitBundle<T> {
+    WithoutCache(BundleStorage<T>),
+    WithCache(BundleStorage<quickwit_storage::StorageWithCache<T>>),
+}
+
+impl<T: StorageGetSlice> OpenedSplitBundle<T> {
+    pub(crate) async fn get_all(&self, path: &Path) -> quickwit_storage::StorageResult<OwnedBytes> {
+        match self {
+            Self::WithoutCache(storage) => storage.get_all(path).await,
+            Self::WithCache(storage) => storage.get_all(path).await,
+        }
+    }
+}
+
+/// Returns hotcache bytes and the split bundle with its optional cache layer:
 /// - A split footer cache given by `SearcherContext.split_footer_cache`.
-pub(crate) async fn open_split_bundle(
+pub(crate) async fn open_split_bundle<T: StorageGetSlice>(
     searcher_context: &SearcherContext,
-    index_storage: Arc<dyn Storage>,
+    storage: T,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
-) -> anyhow::Result<(OwnedBytes, BundleStorage)> {
+) -> anyhow::Result<(OwnedBytes, OpenedSplitBundle<T>)> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
     let footer_data = get_split_footer_from_cache_or_fetch(
-        index_storage.clone(),
+        &storage,
         split_and_footer_offsets,
         &searcher_context.split_footer_cache,
     )
     .await?;
 
-    // We wrap the top-level storage with the split cache.
-    // This is before the bundle storage: at this point, this storage is reading `.split` files.
-    let index_storage_with_split_cache =
-        if let Some(split_cache) = searcher_context.split_cache_opt.as_ref() {
-            SearchSplitCache::wrap_storage(split_cache.clone(), index_storage.clone())
-        } else {
-            index_storage.clone()
-        };
-
-    let (bundle_storage, hotcache_bytes) = BundleStorage::open_from_split_bytes(
-        index_storage_with_split_cache,
-        split_file,
-        footer_data,
-    )?;
-
-    Ok((hotcache_bytes, bundle_storage))
-}
-
-/// Add a storage proxy to retry `get_slice` requests if they are taking too long,
-/// if configured in the searcher config.
-///
-/// The goal here is too ensure a low latency.
-fn configure_storage_retries(
-    searcher_context: &SearcherContext,
-    index_storage: Arc<dyn Storage>,
-) -> Arc<dyn Storage> {
-    if let Some(storage_timeout_policy) = &searcher_context.searcher_config.storage_timeout_policy {
-        Arc::new(TimeoutAndRetryStorage::new(
-            index_storage,
-            storage_timeout_policy.clone(),
-        ))
-    } else {
-        index_storage
+    // The split cache sits before the bundle storage because it reads complete `.split` files.
+    if let Some(split_cache) = searcher_context.split_cache_opt.clone() {
+        let storage = SearchSplitCache::wrap_storage(split_cache, storage);
+        let (bundle_storage, hotcache_bytes) =
+            BundleStorage::open_from_split_bytes(storage, split_file, footer_data)?;
+        return Ok((hotcache_bytes, OpenedSplitBundle::WithCache(bundle_storage)));
     }
+    let (bundle_storage, hotcache_bytes) =
+        BundleStorage::open_from_split_bytes(storage, split_file, footer_data)?;
+    Ok((
+        hotcache_bytes,
+        OpenedSplitBundle::WithoutCache(bundle_storage),
+    ))
 }
 
 /// Opens a `tantivy::Index` for the given split with several cache layers:
@@ -215,28 +210,85 @@ fn configure_storage_retries(
 /// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
 /// - An ephemeral unbounded cache directory (whose lifetime is tied to the returned `Index` if no
 ///   `ByteRangeCache` is provided).
-pub(crate) async fn open_index_with_caches(
+pub(crate) async fn open_index_with_caches<T: StorageGetSlice + Clone>(
     searcher_context: &SearcherContext,
-    index_storage: Arc<dyn Storage>,
+    storage: T,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     tokenizer_manager: Option<&TokenizerManager>,
     ephemeral_unbounded_cache: Option<ByteRangeCache>,
 ) -> anyhow::Result<(Index, HotDirectory)> {
-    let index_storage_with_retry_on_timeout =
-        configure_storage_retries(searcher_context, index_storage);
-
-    let (hotcache_bytes, bundle_storage) = open_split_bundle(
+    if let Some(storage_timeout_policy) = searcher_context.searcher_config.storage_timeout_policy {
+        let storage = TimeoutAndRetryStorage::new(storage, storage_timeout_policy);
+        return open_index_with_split_cache(
+            searcher_context,
+            storage,
+            split_and_footer_offsets,
+            tokenizer_manager,
+            ephemeral_unbounded_cache,
+        )
+        .await;
+    }
+    open_index_with_split_cache(
         searcher_context,
-        index_storage_with_retry_on_timeout,
+        storage,
         split_and_footer_offsets,
+        tokenizer_manager,
+        ephemeral_unbounded_cache,
+    )
+    .await
+}
+
+async fn open_index_with_split_cache<T: StorageGetSlice + Clone>(
+    searcher_context: &SearcherContext,
+    storage: T,
+    split_and_footer_offsets: &SplitIdAndFooterOffsets,
+    tokenizer_manager: Option<&TokenizerManager>,
+    ephemeral_unbounded_cache: Option<ByteRangeCache>,
+) -> anyhow::Result<(Index, HotDirectory)> {
+    let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
+    let footer_data = get_split_footer_from_cache_or_fetch(
+        &storage,
+        split_and_footer_offsets,
+        &searcher_context.split_footer_cache,
     )
     .await?;
 
-    let bundle_storage_with_cache = wrap_storage_with_cache(
-        searcher_context.fast_fields_cache.clone(),
-        Arc::new(bundle_storage),
-    );
+    if let Some(split_cache) = searcher_context.split_cache_opt.clone() {
+        let storage = SearchSplitCache::wrap_storage(split_cache, storage);
+        return open_index_from_split_storage(
+            searcher_context,
+            storage,
+            split_file,
+            footer_data,
+            tokenizer_manager,
+            ephemeral_unbounded_cache,
+        );
+    }
+    open_index_from_split_storage(
+        searcher_context,
+        storage,
+        split_file,
+        footer_data,
+        tokenizer_manager,
+        ephemeral_unbounded_cache,
+    )
+}
 
+fn open_index_from_split_storage<T: StorageGetSlice + Clone>(
+    searcher_context: &SearcherContext,
+    storage: T,
+    split_file: PathBuf,
+    footer_data: OwnedBytes,
+    tokenizer_manager: Option<&TokenizerManager>,
+    ephemeral_unbounded_cache: Option<ByteRangeCache>,
+) -> anyhow::Result<(Index, HotDirectory)> {
+    let (bundle_storage, hotcache_bytes) =
+        BundleStorage::open_from_split_bytes(storage, split_file, footer_data)?;
+    let bundle_storage_with_cache =
+        wrap_storage_with_cache(searcher_context.fast_fields_cache.clone(), bundle_storage);
+
+    // Keep the complete storage stack concrete. Tantivy erases the `FileHandle` once when the
+    // directory is opened; `get_slice` remains statically dispatched below that boundary.
     let directory = StorageDirectory::new(bundle_storage_with_cache);
 
     let hot_directory = if let Some(cache) = ephemeral_unbounded_cache {
@@ -652,10 +704,10 @@ pub(crate) fn term_absence_cache_key(term: &Term) -> String {
 }
 
 /// Apply a leaf search on a single split.
-async fn leaf_search_single_split(
+async fn leaf_search_single_split<T: StorageGetSlice + Clone>(
     search_request: SearchRequest,
     ctx: Arc<LeafSearchContext>,
-    storage: Arc<dyn Storage>,
+    storage: T,
     split: SplitIdAndFooterOffsets,
     search_permit: &mut SearchPermit,
 ) -> crate::Result<Option<LeafSearchResponse>> {
@@ -1945,10 +1997,10 @@ async fn schedule_search_tasks(
 /// [PartialHit] candidates. The root will be in
 /// charge to consolidate, identify the actual final top hits to display, and
 /// fetch the actual documents to convert the partial hits into actual Hits.
-pub async fn single_doc_mapping_leaf_search(
+pub async fn single_doc_mapping_leaf_search<T: StorageGetSlice + Clone>(
     searcher_context: Arc<SearcherContext>,
     request: Arc<SearchRequest>,
-    index_storage: Arc<dyn Storage>,
+    storage: T,
     splits: Vec<SplitIdAndFooterOffsets>,
     doc_mapper: Arc<DocMapper>,
 ) -> Result<LeafSearchResponse, SearchError> {
@@ -2000,7 +2052,7 @@ pub async fn single_doc_mapping_leaf_search(
         &searcher_context,
         &request,
         &doc_mapper,
-        index_storage.uri().clone(),
+        storage.uri().clone(),
         offloaded_search_tasks,
         &incremental_merge_collector_arc,
     );
@@ -2015,7 +2067,7 @@ pub async fn single_doc_mapping_leaf_search(
     });
     let run_local_search_tasks_fut = run_local_search_tasks(
         local_search_tasks,
-        index_storage,
+        storage,
         split_filter_arc,
         leaf_search_context,
     );
@@ -2067,9 +2119,9 @@ pub async fn single_doc_mapping_leaf_search(
     Ok(leaf_search_response)
 }
 
-async fn run_local_search_tasks(
+async fn run_local_search_tasks<T: StorageGetSlice + Clone>(
     local_search_tasks: Vec<LocalSearchTask>,
-    index_storage: Arc<dyn Storage + 'static>,
+    storage: T,
     split_filter_arc: Arc<RwLock<CanSplitDoBetter>>,
     leaf_search_context: Arc<LeafSearchContext>,
 ) {
@@ -2108,7 +2160,7 @@ async fn run_local_search_tasks(
             leaf_search_single_split_wrapper(
                 simplified_search_request,
                 leaf_search_context.clone(),
-                index_storage.clone(),
+                storage.clone(),
                 split.clone(),
                 leaf_split_search_permit,
             )
@@ -2263,10 +2315,10 @@ struct LeafSearchContext {
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
 }
 
-async fn leaf_search_single_split_wrapper(
+async fn leaf_search_single_split_wrapper<T: StorageGetSlice + Clone>(
     request: SearchRequest,
     ctx: Arc<LeafSearchContext>,
-    index_storage: Arc<dyn Storage>,
+    storage: T,
     split: SplitIdAndFooterOffsets,
     mut search_permit: SearchPermit,
 ) {
@@ -2275,7 +2327,7 @@ async fn leaf_search_single_split_wrapper(
         leaf_search_single_split(
             request,
             ctx.clone(),
-            index_storage,
+            storage,
             split.clone(),
             &mut search_permit,
         )

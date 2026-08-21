@@ -30,7 +30,7 @@ pub use storage_with_cache::StorageWithCache;
 
 pub use self::byte_range_cache::{ByteRangeCache, FileByteRangeCache};
 pub use self::memory_sized_cache::MemorySizedCache;
-use crate::{OwnedBytes, Storage};
+use crate::{OwnedBytes, StorageGetSlice};
 
 /// Wraps the given directory with a slice cache that is actually global
 /// to quickwit.
@@ -39,14 +39,14 @@ use crate::{OwnedBytes, Storage};
 /// - it uses a global
 /// - it relies on the idea that all of the files we attempt to cache have universally unique names.
 ///   It happens to be true today, but this might be very error prone in the future.
-pub fn wrap_storage_with_cache(
+pub fn wrap_storage_with_cache<T: StorageGetSlice>(
     long_term_cache: Arc<dyn StorageCache>,
-    storage: Arc<dyn Storage>,
-) -> Arc<dyn Storage> {
-    Arc::new(StorageWithCache {
+    storage: T,
+) -> StorageWithCache<T> {
+    StorageWithCache {
         storage,
         cache: long_term_cache,
-    })
+    }
 }
 
 /// The `StorageCache` trait is the abstraction used to describe the caching logic

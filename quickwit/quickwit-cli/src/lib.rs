@@ -34,7 +34,7 @@ use quickwit_metastore::{IndexMetadataResponseExt, MetastoreResolver};
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_rest_client::models::Timeout;
 use quickwit_rest_client::rest_client::{DEFAULT_BASE_URL, QuickwitClient, QuickwitClientBuilder};
-use quickwit_storage::{StorageResolver, load_file};
+use quickwit_storage::{Storage, StorageResolver, load_file};
 use reqwest::Url;
 use tabled::settings::object::Rows;
 use tabled::settings::panel::Header;

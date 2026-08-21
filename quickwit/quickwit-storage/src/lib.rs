@@ -36,7 +36,7 @@ pub use debouncer::AsyncDebouncer;
 pub(crate) use debouncer::DebouncedStorage;
 
 pub use self::payload::PutPayload;
-pub use self::storage::{ListObjectsStream, ObjectMetadata, Storage};
+pub use self::storage::{ListObjectsStream, ObjectMetadata, Storage, StorageGetSlice};
 
 mod bundle_storage;
 mod error;
@@ -67,7 +67,7 @@ pub use self::bundle_storage::{
 pub use self::cache::MockStorageCache;
 pub use self::cache::{
     ByteRangeCache, FileByteRangeCache, MemorySizedCache, QuickwitCache, StorageCache,
-    wrap_storage_with_cache,
+    StorageWithCache, wrap_storage_with_cache,
 };
 pub use self::counting_storage::{CountingStorage, DownloadCounters};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
@@ -84,9 +84,7 @@ pub use self::ram_storage::{RamStorage, RamStorageBuilder};
 pub use self::split::{SplitPayload, SplitPayloadBuilder};
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::storage::MockStorage;
-#[cfg(any(test, feature = "testsuite"))]
-pub use self::storage_factory::MockStorageFactory;
-pub use self::storage_factory::{StorageFactory, UnsupportedStorage};
+pub use self::storage_factory::{ResolvedStorage, StorageFactory, UnsupportedStorage};
 pub use self::storage_resolver::StorageResolver;
 #[cfg(feature = "integration-testsuite")]
 pub use self::test_suite::{

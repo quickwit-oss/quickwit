@@ -13,7 +13,7 @@
 // limitations under the License.
 
 mod base;
-use base::OpendalStorage;
+pub(crate) use base::OpendalStorage;
 
 mod google_cloud_storage;
 

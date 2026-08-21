@@ -14,17 +14,16 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
+use std::future::Future;
 use std::io::{ErrorKind, SeekFrom};
 use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::StreamExt;
 use futures::future::{BoxFuture, FutureExt};
 use quickwit_common::ignore_error_kind;
 use quickwit_common::uri::Uri;
-use quickwit_config::StorageBackend;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tracing::warn;
 
@@ -32,7 +31,7 @@ use crate::metrics::object_storage_get_slice_in_flight_guards;
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, DebouncedStorage, DeleteFailure, OwnedBytes, Storage, StorageError,
-    StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
+    StorageErrorKind, StorageGetSlice, StorageResolverError, StorageResult,
 };
 
 /// File system compatible storage implementation.
@@ -90,6 +89,30 @@ impl LocalFileStorage {
         let full_path = self.full_path(relative_path)?;
         ignore_error_kind!(ErrorKind::NotFound, tokio::fs::remove_file(full_path).await)?;
         Ok(())
+    }
+
+    #[tracing::instrument(name = "storage.local_file.get_slice", skip(self), level = "debug")]
+    async fn get_slice_impl(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
+        let full_path = self.full_path(path)?;
+        tokio::task::spawn_blocking(move || {
+            use std::io::{Read, Seek};
+            // We run these IO operations in a blocking task so there is no scheduling delay
+            // between them, as there would be when using a Tokio file.
+            let mut file = std::fs::File::open(full_path)?;
+            file.seek(SeekFrom::Start(range.start as u64))?;
+            let _in_flight_guards = object_storage_get_slice_in_flight_guards(range.len());
+            let mut content_bytes: Vec<u8> = Vec::with_capacity(range.len());
+            #[allow(clippy::uninit_vec)]
+            unsafe {
+                content_bytes.set_len(range.len());
+            }
+            file.read_exact(&mut content_bytes)?;
+            Ok(OwnedBytes::new(content_bytes))
+        })
+        .await
+        .map_err(|_| {
+            StorageErrorKind::Internal.with_error(anyhow::anyhow!("reading file panicked"))
+        })?
     }
 }
 
@@ -212,28 +235,8 @@ impl Storage for LocalFileStorage {
         Ok(())
     }
 
-    #[tracing::instrument(name = "storage.local_file.get_slice", skip(self), level = "debug")]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
-        let full_path = self.full_path(path)?;
-        tokio::task::spawn_blocking(move || {
-            use std::io::{Read, Seek};
-            // we run these io in a spawn_blocking so there is no scheduling delay between each
-            // step, as there would be if using tokio async File.
-            let mut file = std::fs::File::open(full_path)?;
-            file.seek(SeekFrom::Start(range.start as u64))?;
-            let _in_flight_guards = object_storage_get_slice_in_flight_guards(range.len());
-            let mut content_bytes: Vec<u8> = Vec::with_capacity(range.len());
-            #[allow(clippy::uninit_vec)]
-            unsafe {
-                content_bytes.set_len(range.len());
-            }
-            file.read_exact(&mut content_bytes)?;
-            Ok(OwnedBytes::new(content_bytes))
-        })
-        .await
-        .map_err(|_| {
-            StorageErrorKind::Internal.with_error(anyhow::anyhow!("reading file panicked"))
-        })?
+        self.get_slice_impl(path, range).await
     }
 
     #[tracing::instrument(
@@ -364,19 +367,27 @@ impl Storage for LocalFileStorage {
     }
 }
 
+impl StorageGetSlice for LocalFileStorage {
+    fn get_slice_unboxed(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> impl Future<Output = StorageResult<OwnedBytes>> + Send {
+        self.get_slice_impl(path, range)
+    }
+}
+
 /// A File storage resolver
 #[derive(Clone, Debug, Default)]
 pub struct LocalFileStorageFactory;
 
-#[async_trait]
-impl StorageFactory for LocalFileStorageFactory {
-    fn backend(&self) -> StorageBackend {
-        StorageBackend::File
-    }
-
-    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+impl LocalFileStorageFactory {
+    pub(crate) fn resolve(
+        &self,
+        uri: &Uri,
+    ) -> Result<DebouncedStorage<LocalFileStorage>, StorageResolverError> {
         let storage = LocalFileStorage::from_uri(uri)?;
-        Ok(Arc::new(DebouncedStorage::new(storage)))
+        Ok(DebouncedStorage::new(storage))
     }
 }
 
@@ -422,19 +433,17 @@ mod tests {
         let index_uri =
             Uri::from_str(&format!("file://{}/foo/bar", temp_dir.path().display())).unwrap();
         let local_file_storage_factory = LocalFileStorageFactory;
-        let local_file_storage = local_file_storage_factory.resolve(&index_uri).await?;
+        let local_file_storage = local_file_storage_factory.resolve(&index_uri)?;
         assert_eq!(local_file_storage.uri(), &index_uri);
 
         let err = local_file_storage_factory
             .resolve(&Uri::for_test("s3://foo/bar"))
-            .await
             .err()
             .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
         let err = local_file_storage_factory
             .resolve(&Uri::for_test("s3://"))
-            .await
             .err()
             .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));

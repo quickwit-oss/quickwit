@@ -13,9 +13,11 @@
 // limitations under the License.
 
 use std::fmt;
+use std::future::Future;
 use std::io::{self};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
@@ -77,10 +79,11 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
     ///
     /// See also `copy_to_file`.
     ///
-    /// async_trait Expansion of
-    /// async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()>;
+    /// `async_trait` expansion of:
+    /// `async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()>;`
     ///
-    /// Just putting the async form is breaking mockall.
+    /// The expanded form is required because `mockall` cannot generate a matching implementation
+    /// for the async form when the method borrows multiple arguments.
     fn copy_to<'life0, 'life1, 'life2, 'async_trait>(
         &'life0 self,
         path: &'life1 Path,
@@ -171,6 +174,113 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
 
     /// Returns an URI identifying the storage
     fn uri(&self) -> &Uri;
+}
+
+/// Statically dispatched counterpart of [`Storage::get_slice`].
+///
+/// `async_trait` keeps [`Storage`] object-safe by boxing the future returned by every async
+/// method. Generic storage wrappers use this companion trait internally so composing several
+/// layers does not allocate one boxed future per layer. Type erasure can still happen once at the
+/// outermost boundary, where a single boxed future is unavoidable.
+pub trait StorageGetSlice: Storage {
+    /// Downloads a slice without boxing the returned future.
+    fn get_slice_unboxed(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> impl Future<Output = StorageResult<OwnedBytes>> + Send;
+}
+
+impl<S: StorageGetSlice> StorageGetSlice for Arc<S> {
+    fn get_slice_unboxed(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> impl Future<Output = StorageResult<OwnedBytes>> + Send {
+        (**self).get_slice_unboxed(path, range)
+    }
+}
+
+// A storage that was already erased cannot recover static dispatch. This adapter lets generic
+// code accept an existing `Arc<dyn Storage>` while returning its one already-boxed future directly.
+impl StorageGetSlice for Arc<dyn Storage> {
+    async fn get_slice_unboxed(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> StorageResult<OwnedBytes> {
+        Storage::get_slice(self.as_ref(), path, range).await
+    }
+}
+
+#[cfg(any(test, feature = "testsuite"))]
+impl StorageGetSlice for MockStorage {
+    async fn get_slice_unboxed(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> StorageResult<OwnedBytes> {
+        Storage::get_slice(self, path, range).await
+    }
+}
+
+#[async_trait]
+impl<S: Storage + ?Sized> Storage for Arc<S> {
+    async fn check_connectivity(&self) -> anyhow::Result<()> {
+        (**self).check_connectivity().await
+    }
+
+    async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()> {
+        (**self).put(path, payload).await
+    }
+
+    async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
+        (**self).copy_to(path, output).await
+    }
+
+    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<u64> {
+        (**self).copy_to_file(path, output_path).await
+    }
+
+    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
+        (**self).get_slice(path, range).await
+    }
+
+    async fn get_slice_stream(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
+        (**self).get_slice_stream(path, range).await
+    }
+
+    async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
+        (**self).get_all(path).await
+    }
+
+    async fn delete(&self, path: &Path) -> StorageResult<()> {
+        (**self).delete(path).await
+    }
+
+    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        (**self).bulk_delete(paths).await
+    }
+
+    fn list(&self, prefix: &Path) -> ListObjectsStream {
+        (**self).list(prefix)
+    }
+
+    async fn exists(&self, path: &Path) -> StorageResult<bool> {
+        (**self).exists(path).await
+    }
+
+    async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
+        (**self).file_num_bytes(path).await
+    }
+
+    fn uri(&self) -> &Uri {
+        (**self).uri()
+    }
 }
 
 async fn default_copy_to_file<S: Storage + ?Sized>(

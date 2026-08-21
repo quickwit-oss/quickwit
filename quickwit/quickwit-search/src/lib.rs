@@ -13,6 +13,7 @@
 // limitations under the License.
 
 //! This projects implements quickwit's search API.
+#![recursion_limit = "256"]
 #![warn(missing_docs)]
 #![allow(clippy::bool_assert_comparison)]
 #![deny(clippy::disallowed_methods)]

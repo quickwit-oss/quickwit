@@ -13,10 +13,11 @@
 // limitations under the License.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::num::NonZeroU32;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 use std::{fmt, io};
 
 use async_trait::async_trait;
@@ -34,7 +35,7 @@ use md5::Digest;
 use quickwit_common::retry::{RetryParams, Retryable, retry};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, ignore_error_kind, into_u64_range};
-use quickwit_config::{AzureStorageConfig, StorageBackend};
+use quickwit_config::AzureStorageConfig;
 use quickwit_metrics::HistogramTimer;
 use regex::Regex;
 use tantivy::directory::OwnedBytes;
@@ -50,7 +51,7 @@ use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, Storage, StorageError,
-    StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
+    StorageErrorKind, StorageGetSlice, StorageResolverError, StorageResult,
 };
 
 /// Azure object storage resolver.
@@ -65,15 +66,13 @@ impl AzureBlobStorageFactory {
     }
 }
 
-#[async_trait]
-impl StorageFactory for AzureBlobStorageFactory {
-    fn backend(&self) -> StorageBackend {
-        StorageBackend::Azure
-    }
-
-    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+impl AzureBlobStorageFactory {
+    pub(crate) fn resolve(
+        &self,
+        uri: &Uri,
+    ) -> Result<DebouncedStorage<AzureBlobStorage>, StorageResolverError> {
         let storage = AzureBlobStorage::from_uri(&self.storage_config, uri)?;
-        Ok(Arc::new(DebouncedStorage::new(storage)))
+        Ok(DebouncedStorage::new(storage))
     }
 }
 
@@ -338,6 +337,23 @@ impl AzureBlobStorage {
     }
 }
 
+impl AzureBlobStorage {
+    #[instrument(name = "storage.azure.get_slice", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
+    async fn get_slice_impl(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
+        self.get_to_bytes(path, Some(range.clone()))
+            .await
+            .map(into_owned_bytes)
+            .map_err(|err| {
+                err.add_context(format!(
+                    "failed to fetch slice {:?} for object: {}/{}",
+                    range,
+                    self.uri,
+                    path.display(),
+                ))
+            })
+    }
+}
+
 #[async_trait]
 impl Storage for AzureBlobStorage {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
@@ -455,19 +471,8 @@ impl Storage for AzureBlobStorage {
         }
     }
 
-    #[instrument(name = "storage.azure.get_slice", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
-        self.get_to_bytes(path, Some(range.clone()))
-            .await
-            .map(into_owned_bytes)
-            .map_err(|err| {
-                err.add_context(format!(
-                    "failed to fetch slice {:?} for object: {}/{}",
-                    range,
-                    self.uri,
-                    path.display(),
-                ))
-            })
+        self.get_slice_impl(path, range).await
     }
 
     #[instrument(name = "storage.azure.get_slice_stream", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
@@ -544,6 +549,16 @@ impl Storage for AzureBlobStorage {
 
     fn uri(&self) -> &Uri {
         &self.uri
+    }
+}
+
+impl StorageGetSlice for AzureBlobStorage {
+    fn get_slice_unboxed(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> impl Future<Output = StorageResult<OwnedBytes>> + Send {
+        self.get_slice_impl(path, range)
     }
 }
 

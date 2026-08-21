@@ -23,7 +23,9 @@ use tantivy::directory::OwnedBytes;
 use tokio::io::AsyncRead;
 
 use crate::storage::SendableAsync;
-use crate::{BulkDeleteError, ListObjectsStream, PutPayload, Storage, StorageResult};
+use crate::{
+    BulkDeleteError, ListObjectsStream, PutPayload, Storage, StorageGetSlice, StorageResult,
+};
 
 /// Per-request download counters tracked by [`CountingStorage`].
 ///
@@ -56,41 +58,39 @@ impl DownloadCounters {
 ///
 /// Wrap a base `Storage` with this proxy at the entry point of a request to
 /// observe the per-request download volume. Cached layers (split cache, footer
-/// cache, hotcache, byte-range cache) live BELOW this wrapper, so reads served
+/// cache, hotcache, byte-range cache) live above this wrapper, so reads served
 /// from cache do NOT contribute to the counters — that is the desired behavior
 /// for a "downloaded from object storage" measurement.
 ///
 /// Write methods (`put`, `delete`, `bulk_delete`) and metadata methods
 /// (`exists`, `file_num_bytes`, `check_connectivity`) are passed through
 /// without counting; we only record reads that materialise data.
-#[derive(Debug)]
-pub struct CountingStorage {
-    inner: Arc<dyn Storage>,
+#[derive(Clone, Debug)]
+pub struct CountingStorage<T> {
+    storage: T,
     counters: Arc<DownloadCounters>,
 }
 
-impl CountingStorage {
+impl<T> CountingStorage<T> {
     /// Wrap a storage object to count for download request and downloaded bytes.
-    pub fn instrument_storage(
-        inner: Arc<dyn Storage>,
-    ) -> (Arc<dyn Storage>, Arc<DownloadCounters>) {
+    pub fn instrument_storage(storage: T) -> (Self, Arc<DownloadCounters>) {
         let counters = Arc::new(DownloadCounters::default());
         let instrumented_storage = Self {
-            inner,
+            storage,
             counters: counters.clone(),
         };
-        (Arc::new(instrumented_storage), counters)
+        (instrumented_storage, counters)
     }
 }
 
 #[async_trait]
-impl Storage for CountingStorage {
+impl<T: StorageGetSlice> Storage for CountingStorage<T> {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
-        self.inner.check_connectivity().await
+        self.storage.check_connectivity().await
     }
 
     async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()> {
-        self.inner.put(path, payload).await
+        self.storage.put(path, payload).await
     }
 
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
@@ -99,19 +99,17 @@ impl Storage for CountingStorage {
         // hot path of leaf search (only `get_slice` is), so this approximation
         // is acceptable.
         self.counters.requests.fetch_add(1, Ordering::Relaxed);
-        self.inner.copy_to(path, output).await
+        self.storage.copy_to(path, output).await
     }
 
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<u64> {
-        let num_bytes = self.inner.copy_to_file(path, output_path).await?;
+        let num_bytes = self.storage.copy_to_file(path, output_path).await?;
         self.counters.record_read(num_bytes);
         Ok(num_bytes)
     }
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
-        let bytes = self.inner.get_slice(path, range).await?;
-        self.counters.record_read(bytes.len() as u64);
-        Ok(bytes)
+        self.get_slice_unboxed(path, range).await
     }
 
     async fn get_slice_stream(
@@ -123,39 +121,51 @@ impl Storage for CountingStorage {
         // The stream may yield fewer bytes if the caller drops it early, but
         // that is rare and the over-count is bounded by the requested range.
         let range_len = range.len() as u64;
-        let stream = self.inner.get_slice_stream(path, range).await?;
+        let stream = self.storage.get_slice_stream(path, range).await?;
         self.counters.record_read(range_len);
         Ok(stream)
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
-        let bytes = self.inner.get_all(path).await?;
+        let bytes = self.storage.get_all(path).await?;
         self.counters.record_read(bytes.len() as u64);
         Ok(bytes)
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
-        self.inner.delete(path).await
+        self.storage.delete(path).await
     }
 
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
-        self.inner.bulk_delete(paths).await
+        self.storage.bulk_delete(paths).await
     }
 
     fn list(&self, prefix: &Path) -> ListObjectsStream {
-        self.inner.list(prefix)
+        self.storage.list(prefix)
     }
 
     async fn exists(&self, path: &Path) -> StorageResult<bool> {
-        self.inner.exists(path).await
+        self.storage.exists(path).await
     }
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
-        self.inner.file_num_bytes(path).await
+        self.storage.file_num_bytes(path).await
     }
 
     fn uri(&self) -> &Uri {
-        self.inner.uri()
+        self.storage.uri()
+    }
+}
+
+impl<T: StorageGetSlice> StorageGetSlice for CountingStorage<T> {
+    async fn get_slice_unboxed(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> StorageResult<OwnedBytes> {
+        let bytes = self.storage.get_slice_unboxed(path, range).await?;
+        self.counters.record_read(bytes.len() as u64);
+        Ok(bytes)
     }
 }
 
@@ -166,10 +176,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_counting_storage_counts_get_slice() {
-        let inner = RamStorageBuilder::default()
+        let ram_storage = RamStorageBuilder::default()
             .put("foo", b"hello world")
             .build();
-        let (storage, counters) = CountingStorage::instrument_storage(Arc::new(inner));
+        let (storage, counters) = CountingStorage::instrument_storage(Arc::new(ram_storage));
 
         let bytes = storage.get_slice(Path::new("foo"), 0..5).await.unwrap();
         assert_eq!(bytes.as_slice(), b"hello");
@@ -184,8 +194,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_counting_storage_counts_get_all() {
-        let inner = RamStorageBuilder::default().put("foo", b"hello").build();
-        let (storage, counters) = CountingStorage::instrument_storage(Arc::new(inner));
+        let ram_storage = RamStorageBuilder::default().put("foo", b"hello").build();
+        let (storage, counters) = CountingStorage::instrument_storage(Arc::new(ram_storage));
 
         let bytes = storage.get_all(Path::new("foo")).await.unwrap();
         assert_eq!(bytes.as_slice(), b"hello");
@@ -197,8 +207,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_counting_storage_does_not_count_metadata() {
-        let inner = RamStorageBuilder::default().put("foo", b"hello").build();
-        let (storage, counters) = CountingStorage::instrument_storage(Arc::new(inner));
+        let ram_storage = RamStorageBuilder::default().put("foo", b"hello").build();
+        let (storage, counters) = CountingStorage::instrument_storage(Arc::new(ram_storage));
 
         assert!(storage.exists(Path::new("foo")).await.unwrap());
         assert_eq!(storage.file_num_bytes(Path::new("foo")).await.unwrap(), 5);

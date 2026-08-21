@@ -23,22 +23,27 @@ use tokio::io::AsyncRead;
 
 use crate::cache::StorageCache;
 use crate::storage::SendableAsync;
-use crate::{BulkDeleteError, ListObjectsStream, OwnedBytes, Storage, StorageResult};
+use crate::{
+    BulkDeleteError, ListObjectsStream, OwnedBytes, Storage, StorageGetSlice, StorageResult,
+};
 
 /// Use with care, StorageWithCache is read-only.
-pub struct StorageWithCache {
-    pub storage: Arc<dyn Storage>,
+#[derive(Clone)]
+pub struct StorageWithCache<T> {
+    /// Wrapped storage.
+    pub storage: T,
+    /// Slice cache consulted before the wrapped storage.
     pub cache: Arc<dyn StorageCache>,
 }
 
-impl fmt::Debug for StorageWithCache {
+impl<T> fmt::Debug for StorageWithCache<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StorageWithCache").finish()
     }
 }
 
 #[async_trait]
-impl Storage for StorageWithCache {
+impl<T: StorageGetSlice> Storage for StorageWithCache<T> {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         self.storage.check_connectivity().await
     }
@@ -56,15 +61,7 @@ impl Storage for StorageWithCache {
     }
 
     async fn get_slice(&self, path: &Path, byte_range: Range<usize>) -> StorageResult<OwnedBytes> {
-        if let Some(bytes) = self.cache.get(path, byte_range.clone()).await {
-            Ok(bytes)
-        } else {
-            let bytes = self.storage.get_slice(path, byte_range.clone()).await?;
-            self.cache
-                .put(path.to_owned(), byte_range, bytes.clone())
-                .await;
-            Ok(bytes)
-        }
+        self.get_slice_unboxed(path, byte_range).await
     }
 
     async fn get_slice_stream(
@@ -110,6 +107,26 @@ impl Storage for StorageWithCache {
 
     fn uri(&self) -> &Uri {
         self.storage.uri()
+    }
+}
+
+impl<T: StorageGetSlice> StorageGetSlice for StorageWithCache<T> {
+    async fn get_slice_unboxed(
+        &self,
+        path: &Path,
+        byte_range: Range<usize>,
+    ) -> StorageResult<OwnedBytes> {
+        if let Some(bytes) = self.cache.get(path, byte_range.clone()).await {
+            return Ok(bytes);
+        }
+        let bytes = self
+            .storage
+            .get_slice_unboxed(path, byte_range.clone())
+            .await?;
+        self.cache
+            .put(path.to_owned(), byte_range, bytes.clone())
+            .await;
+        Ok(bytes)
     }
 }
 

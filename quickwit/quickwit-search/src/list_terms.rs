@@ -29,7 +29,7 @@ use quickwit_proto::search::{
     SplitIdAndFooterOffsets, SplitSearchError,
 };
 use quickwit_proto::types::IndexUid;
-use quickwit_storage::{ByteRangeCache, Storage};
+use quickwit_storage::{ByteRangeCache, StorageGetSlice};
 use tantivy::schema::{Field, FieldType};
 use tantivy::{ReloadPolicy, Term};
 use tracing::{debug, error, info, instrument};
@@ -208,10 +208,10 @@ pub fn jobs_to_leaf_requests(
 /// Apply a leaf list terms on a single split.
 #[instrument(skip_all, fields(split_id = split.split_id))]
 #[allow(deprecated)]
-async fn leaf_list_terms_single_split(
+async fn leaf_list_terms_single_split<T: StorageGetSlice + Clone>(
     searcher_context: &SearcherContext,
     search_request: &ListTermsRequest,
-    storage: Arc<dyn Storage>,
+    storage: T,
     split: SplitIdAndFooterOffsets,
 ) -> crate::Result<LeafListTermsResponse> {
     let cache = ByteRangeCache::with_infinite_capacity();
@@ -319,10 +319,10 @@ fn term_to_data(field: Field, field_type: &FieldType, field_value: &[u8]) -> Vec
 
 /// `leaf` step of list terms.
 #[instrument(skip_all)]
-pub async fn leaf_list_terms(
+pub async fn leaf_list_terms<T: StorageGetSlice + Clone>(
     searcher_context: Arc<SearcherContext>,
     request: &ListTermsRequest,
-    index_storage: Arc<dyn Storage>,
+    storage: T,
     splits: &[SplitIdAndFooterOffsets],
 ) -> Result<LeafListTermsResponse, SearchError> {
     info!(split_offsets = ?PrettySample::new(splits, 5));
@@ -353,7 +353,7 @@ pub async fn leaf_list_terms(
         .iter()
         .zip(permits.into_iter())
         .map(|(split, search_permit_recv)| {
-            let index_storage_clone = index_storage.clone();
+            let storage_clone = storage.clone();
             let searcher_context_clone = searcher_context.clone();
             async move {
                 let leaf_split_search_permit = search_permit_recv.await;
@@ -363,7 +363,7 @@ pub async fn leaf_list_terms(
                 let leaf_search_single_split_res = leaf_list_terms_single_split(
                     &searcher_context_clone,
                     request,
-                    index_storage_clone,
+                    storage_clone,
                     split.clone(),
                 )
                 .await;
