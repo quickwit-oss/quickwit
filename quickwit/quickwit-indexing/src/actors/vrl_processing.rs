@@ -40,14 +40,17 @@ impl VrlDoc {
 
 pub(super) struct VrlProgram {
     program: Program,
-    timezone: TimeZone,
     runtime: Runtime,
+    timezone: TimeZone,
+    drop_on_abort: bool,
     metadata: VrlValue,
     secrets: VrlSecrets,
 }
 
 impl VrlProgram {
-    pub fn transform_doc(&mut self, vrl_doc: VrlDoc) -> Result<VrlDoc, DocProcessorError> {
+    pub fn transform_doc(&mut self, vrl_doc: VrlDoc) -> Result<Option<VrlDoc>, DocProcessorError> {
+        let drop_on_abort = self.drop_on_abort;
+
         let VrlDoc {
             mut vrl_value,
             num_bytes,
@@ -58,20 +61,25 @@ impl VrlProgram {
             metadata: &mut self.metadata,
             secrets: &mut self.secrets,
         };
-        let runtime_res = self
+
+        let runtime_result = self
             .runtime
-            .resolve(&mut target, &self.program, &self.timezone)
-            .map_err(|transform_error| {
-                warn!(transform_error=?transform_error);
-                DocProcessorError::Transform(transform_error)
-            });
+            .resolve(&mut target, &self.program, &self.timezone);
 
         if let VrlValue::Object(metadata) = target.metadata {
             metadata.clear();
         }
         self.runtime.clear();
 
-        runtime_res.map(|vrl_value| VrlDoc::new(vrl_value, num_bytes))
+        match runtime_result {
+            Err(VrlTerminate::Abort(_)) if drop_on_abort => Ok(None),
+            runtime_result => runtime_result
+                .map(|vrl_value| Some(VrlDoc::new(vrl_value, num_bytes)))
+                .map_err(|transform_error| {
+                    warn!(transform_error=?transform_error);
+                    DocProcessorError::Transform(transform_error)
+                }),
+        }
     }
 
     pub fn try_from_transform_config(transform_config: TransformConfig) -> anyhow::Result<Self> {
@@ -83,6 +91,7 @@ impl VrlProgram {
             program,
             runtime,
             timezone,
+            drop_on_abort: transform_config.drop_on_abort,
             metadata: VrlValue::Object(BTreeMap::new()),
             secrets: VrlSecrets::default(),
         })
