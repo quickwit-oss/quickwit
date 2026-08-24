@@ -168,9 +168,9 @@ pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     // Somehow, localstack keeps returning the full checksum on range request, which
     // causes error.
     s3_config.set_response_checksum_validation(Some(ResponseChecksumValidation::WhenRequired));
-    if s3_storage_config.checksum_algorithm.is_disabled() {
-        s3_config.set_request_checksum_calculation(Some(RequestChecksumCalculation::WhenRequired));
-    }
+    s3_config.set_request_checksum_calculation(Some(request_checksum_calculation(
+        s3_storage_config.checksum_algorithm,
+    )));
 
     if let Some(endpoint) = s3_storage_config.endpoint() {
         info!(endpoint=%endpoint, "using S3 endpoint defined in storage config or environment variable");
@@ -269,6 +269,21 @@ fn aws_checksum_algorithm(
         quickwit_config::ChecksumAlgorithm::Crc32c => Some(ChecksumAlgorithm::Crc32C),
         quickwit_config::ChecksumAlgorithm::Md5 | quickwit_config::ChecksumAlgorithm::Disabled => {
             None
+        }
+    }
+}
+
+/// Returns the SDK-level automatic request-checksum mode for the configured [`ChecksumAlgorithm`].
+///
+/// Some legacy S3-compatible stores reject trailing checksums that are still computed
+/// by the SDK for streaming bodies, even when manual checksum with md5 is set.
+fn request_checksum_calculation(
+    checksum_algorithm: quickwit_config::ChecksumAlgorithm,
+) -> RequestChecksumCalculation {
+    match checksum_algorithm {
+        quickwit_config::ChecksumAlgorithm::Crc32c => RequestChecksumCalculation::WhenSupported,
+        quickwit_config::ChecksumAlgorithm::Md5 | quickwit_config::ChecksumAlgorithm::Disabled => {
+            RequestChecksumCalculation::WhenRequired
         }
     }
 }
@@ -1721,6 +1736,7 @@ mod tests {
             .region(Some(Region::new("us-east-1")))
             .http_client(client)
             .credentials_provider(credentials)
+            .request_checksum_calculation(request_checksum_calculation(checksum_algorithm))
             .build();
         S3CompatibleObjectStorage {
             s3_client: S3Client::from_conf(config),
@@ -1764,6 +1780,69 @@ mod tests {
             .expect("Content-MD5 header must be present for md5 checksum algorithm");
         let expected = BASE64_STANDARD.encode(md5::compute(&payload).0);
         assert_eq!(content_md5, expected.as_str());
+    }
+
+    /// Fake a stream payload, to verify that even with streaming the
+    /// SDK does not emit a trailing checksum.
+    #[derive(Clone)]
+    struct StreamingPayload(Vec<u8>);
+
+    #[async_trait]
+    impl crate::PutPayload for StreamingPayload {
+        fn len(&self) -> u64 {
+            self.0.len() as u64
+        }
+
+        async fn range_byte_stream(&self, range: Range<u64>) -> io::Result<ByteStream> {
+            let bytes = Bytes::copy_from_slice(&self.0[range.start as usize..range.end as usize]);
+            let frame_stream =
+                stream::iter(vec![Ok::<_, io::Error>(hyper::body::Frame::data(bytes))]);
+            let stream_body = http_body_util::StreamBody::new(frame_stream);
+            Ok(ByteStream::new(SdkBody::from_body_1_x(stream_body)))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_md5_algorithm_streaming_upload_has_no_sdk_checksum_trailer() {
+        let client = StaticReplayClient::new(vec![ok_put_response()]);
+        let s3_storage =
+            make_s3_storage_with_replay(client.clone(), quickwit_config::ChecksumAlgorithm::Md5);
+        let payload_bytes: Vec<u8> = b"hello world".to_vec();
+        s3_storage
+            .put(
+                Path::new("test-key"),
+                Box::new(StreamingPayload(payload_bytes.clone())),
+            )
+            .await
+            .unwrap();
+
+        let requests = client.actual_requests().collect::<Vec<_>>();
+        assert_eq!(requests.len(), 1);
+        let headers = requests[0].headers();
+        let content_md5 = headers
+            .get("content-md5")
+            .expect("Content-MD5 header must be present for md5 checksum algorithm");
+        let expected = BASE64_STANDARD.encode(md5::compute(&payload_bytes).0);
+        assert_eq!(content_md5, expected.as_str());
+        // Some S3-compatible stores reject trailing checksums,
+        // so the SDK must not inject its automatic CRC32 on top of Content-MD5.
+        assert!(
+            headers.get("x-amz-trailer").is_none(),
+            "the SDK must not announce a trailing checksum for md5 checksum algorithm"
+        );
+        assert!(
+            headers
+                .iter()
+                .all(|(name, _value)| !name.starts_with("x-amz-checksum-")),
+            "the SDK must not add x-amz-checksum-* headers for md5 checksum algorithm"
+        );
+        assert!(
+            !headers
+                .get("content-encoding")
+                .unwrap_or_default()
+                .contains("aws-chunked"),
+            "the body must not use aws-chunked encoding for md5 checksum algorithm"
+        );
     }
 
     #[tokio::test]
