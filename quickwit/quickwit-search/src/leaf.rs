@@ -50,7 +50,6 @@ use quickwit_storage::{
 use tantivy::aggregation::AggContextParams;
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 use tantivy::collector::Collector;
-use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::index::SegmentId;
 use tantivy::schema::Field;
@@ -166,7 +165,7 @@ pub(crate) async fn open_split_bundle(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
-) -> anyhow::Result<(FileSlice, BundleStorage)> {
+) -> anyhow::Result<(OwnedBytes, BundleStorage)> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
     let footer_data = get_split_footer_from_cache_or_fetch(
         index_storage.clone(),
@@ -184,10 +183,10 @@ pub(crate) async fn open_split_bundle(
             index_storage.clone()
         };
 
-    let (hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data(
+    let (bundle_storage, hotcache_bytes) = BundleStorage::open_from_split_bytes(
         index_storage_with_split_cache,
         split_file,
-        FileSlice::new(Arc::new(footer_data)),
+        footer_data,
     )?;
 
     Ok((hotcache_bytes, bundle_storage))
@@ -242,9 +241,9 @@ pub(crate) async fn open_index_with_caches(
 
     let hot_directory = if let Some(cache) = ephemeral_unbounded_cache {
         let caching_directory = CachingDirectory::new(Arc::new(directory), cache);
-        HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?
+        HotDirectory::open(caching_directory, hotcache_bytes)?
     } else {
-        HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
+        HotDirectory::open(directory, hotcache_bytes)?
     };
 
     let mut index = Index::open(hot_directory.clone())?;
@@ -300,7 +299,6 @@ async fn run_cancellable(
 ///
 /// Returns whether the query is provably empty in this split (i.e. `on_absent` fired and
 /// warmup was short-circuited).
-#[instrument(skip_all)]
 pub(crate) async fn warmup(
     searcher: &Searcher,
     warmup_info: &WarmupInfo,
@@ -687,8 +685,7 @@ async fn leaf_search_single_split(
     }
 
     let split_id = split.split_id.to_string();
-    let byte_range_cache =
-        ByteRangeCache::with_infinite_capacity(&quickwit_storage::metrics::SHORTLIVED_CACHE);
+    let byte_range_cache = ByteRangeCache::with_infinite_capacity();
     // Wrap storage at request scope so we observe per-split download volume.
     // Cache layers (split cache, footer cache, hotcache, byte-range cache) live
     // ABOVE this wrapper, so reads served from cache do not contribute to the
@@ -701,7 +698,11 @@ async fn leaf_search_single_split(
         Some(ctx.doc_mapper.tokenizer_manager()),
         Some(byte_range_cache.clone()),
     )
-    .await?;
+    .await
+    .inspect_err(|_| {
+        leaf_search_state_guard
+            .set_state(SplitSearchState::Error(SplitSearchErrorKind::CreateReader))
+    })?;
 
     let index_size = compute_index_size(&hot_directory);
     if index_size < search_permit.memory_allocation() {
@@ -711,7 +712,11 @@ async fn leaf_search_single_split(
     let searcher = index
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
-        .try_into()?
+        .try_into()
+        .inspect_err(|_| {
+            leaf_search_state_guard
+                .set_state(SplitSearchState::Error(SplitSearchErrorKind::CreateReader))
+        })?
         .searcher();
 
     let agg_context_params = AggContextParams {
@@ -746,6 +751,12 @@ async fn leaf_search_single_split(
     warmup_info.simplify();
 
     let warmup_start = Instant::now();
+    // Baseline the counters so the span attributes cover warmup only. This matters for
+    // `download_counters`: opening the index fetches the footer and hotcache through the same
+    // counted storage on a cold footer cache. The byte-range cache is usually still empty at
+    // this point, since index-open reads are served by the hotcache above it.
+    let cache_bytes_before_warmup = byte_range_cache.get_num_bytes();
+    let downloaded_bytes_before_warmup = download_counters.snapshot().0;
     leaf_search_state_guard.set_state(SplitSearchState::WarmUp);
     // Negative cache: a split is provably empty for this query if any required term has
     // previously been proven absent here. Absence is an immutable, query- and
@@ -779,7 +790,40 @@ async fn leaf_search_single_split(
                 HitSet::empty(),
             );
         };
-        warmup(&searcher, &warmup_info, &record_absence).await?
+        // `downloaded_mb` is what warmup actually fetched from blob storage; `total_mb` adds the
+        // part served from the fast-field cache, since the byte-range cache sits above it and
+        // records every miss it has to resolve below. Both are deltas since `warmup_start`, so
+        // index-open reads are not attributed here, and are recorded after warmup, before the
+        // search adds to either.
+        const BYTES_PER_MB: f64 = 1_000_000.0;
+        let warmup_span = info_span!(
+            "warmup",
+            downloaded_mb = tracing::field::Empty,
+            total_mb = tracing::field::Empty
+        );
+        let provably_empty = warmup(&searcher, &warmup_info, &record_absence)
+            .instrument(warmup_span.clone())
+            .await
+            .inspect_err(|_| {
+                leaf_search_state_guard
+                    .set_state(SplitSearchState::Error(SplitSearchErrorKind::Warmup))
+            })?;
+        warmup_span.record(
+            "downloaded_mb",
+            download_counters
+                .snapshot()
+                .0
+                .saturating_sub(downloaded_bytes_before_warmup) as f64
+                / BYTES_PER_MB,
+        );
+        warmup_span.record(
+            "total_mb",
+            byte_range_cache
+                .get_num_bytes()
+                .saturating_sub(cache_bytes_before_warmup) as f64
+                / BYTES_PER_MB,
+        );
+        provably_empty
     };
     let warmup_end = Instant::now();
     let warmup_duration: Duration = warmup_end.duration_since(warmup_start);
@@ -841,7 +885,10 @@ async fn leaf_search_single_split(
     }
 
     let split_num_docs = split.num_docs;
-    let span = info_span!("tantivy_search");
+    // Spans the CPU-pool queue wait: created here (right after warmup) and closed when the
+    // closure starts executing on a pool thread. `tantivy_search` is created inside the
+    // closure so it covers only the CPU execution, not this wait.
+    let cpu_wait_span = info_span!("wait_for_thread_pool");
 
     let split_clone = split.clone();
 
@@ -852,9 +899,12 @@ async fn leaf_search_single_split(
     let search_request_and_result: Option<(SearchRequest, LeafSearchResponse)> =
         crate::search_thread_pool()
             .run_cpu_intensive(move || {
+                // The CPU-pool queue wait ends as this closure starts executing.
+                drop(cpu_wait_span);
                 leaf_search_state_guard.set_state(SplitSearchState::Cpu);
                 let cpu_start = Instant::now();
                 let cpu_thread_pool_wait_microsecs = cpu_start.duration_since(warmup_end);
+                let span = info_span!("tantivy_search");
                 let _span_guard = span.enter();
                 // Our search execution has been scheduled, let's check if we can improve the
                 // request based on the results of the preceding searches
@@ -869,10 +919,18 @@ async fn leaf_search_single_split(
                     if is_metadata_count_request_with_ast(&query_ast, &simplified_search_request) {
                         get_leaf_resp_from_count(searcher.num_docs())
                     } else if collector.is_count_only() {
-                        let count = query.count(&searcher)? as u64;
+                        let count = query.count(&searcher).inspect_err(|_| {
+                            leaf_search_state_guard.set_state(SplitSearchState::Error(
+                                SplitSearchErrorKind::TantivySearch,
+                            ))
+                        })? as u64;
                         get_leaf_resp_from_count(count)
                     } else {
-                        searcher.search(&query, &collector)?
+                        searcher.search(&query, &collector).inspect_err(|_| {
+                            leaf_search_state_guard.set_state(SplitSearchState::Error(
+                                SplitSearchErrorKind::TantivySearch,
+                            ))
+                        })?
                     };
                 let (download_num_bytes, download_num_requests) =
                     download_counters_clone.snapshot();
@@ -1545,7 +1603,7 @@ pub async fn multi_index_leaf_search(
         let searcher_context = searcher_context.clone();
         let search_request = search_request.clone();
 
-        leaf_request_futures.spawn({
+        leaf_request_futures.spawn(
             async move {
                 let storage = storage_resolver.resolve(&index_uri).await?;
                 single_doc_mapping_leaf_search(
@@ -1555,10 +1613,10 @@ pub async fn multi_index_leaf_search(
                     leaf_search_request_ref.split_offsets,
                     doc_mapper,
                 )
-                .in_current_span()
                 .await
             }
-        });
+            .instrument(Span::current()),
+        );
     }
 
     // Creates a collector which merges responses into one
@@ -1723,12 +1781,15 @@ async fn run_offloaded_search_tasks(
             }],
         };
         let invoker = lambda_invoker.clone();
-        lambda_tasks_joinset.spawn(async move {
-            (
-                batch_split_ids,
-                invoker.invoke_leaf_search(leaf_request).await,
-            )
-        });
+        lambda_tasks_joinset.spawn(
+            async move {
+                (
+                    batch_split_ids,
+                    invoker.invoke_leaf_search(leaf_request).await,
+                )
+            }
+            .in_current_span(),
+        );
     }
 
     while let Some(join_res) = lambda_tasks_joinset.join_next().await {
@@ -2021,9 +2082,15 @@ async fn run_local_search_tasks(
         search_permit_future,
     } in local_search_tasks
     {
-        let leaf_split_search_permit = search_permit_future
-            .instrument(info_span!("waiting_for_leaf_search_split_semaphore"))
-            .await;
+        // Per-split span covering both the permit wait and the search, so each split is a
+        // single subtree (wait + warmup + tantivy) rather than flat siblings.
+        let split_span = info_span!(
+            "leaf_search_single_split",
+            split_id = split.split_id,
+            num_docs = split.num_docs
+        );
+        let wait_span = info_span!(parent: &split_span, "acquire_leaf_search_single_split_permit");
+        let leaf_split_search_permit = search_permit_future.instrument(wait_span).await;
 
         // We run simplify search request again: as we push split into the merge collector,
         // we may have discovered that we won't find any better candidates for top hits in this
@@ -2045,7 +2112,7 @@ async fn run_local_search_tasks(
                 split.clone(),
                 leaf_split_search_permit,
             )
-            .in_current_span(),
+            .instrument(split_span),
         );
         task_id_to_split_id_map.insert(handle.id(), split_id);
     }
@@ -2112,6 +2179,14 @@ fn process_partial_result_cache(
 }
 
 #[derive(Copy, Clone)]
+enum SplitSearchErrorKind {
+    CreateReader,
+    Warmup,
+    TantivySearch,
+    Panic,
+}
+
+#[derive(Copy, Clone)]
 enum SplitSearchState {
     Start,
     CacheHit,
@@ -2121,6 +2196,8 @@ enum SplitSearchState {
     PrunedAfterWarmup,
     CpuQueue,
     Cpu,
+    // Reserved for infrastructure and search-execution failures, not invalid user requests.
+    Error(SplitSearchErrorKind),
     Success,
 }
 
@@ -2135,6 +2212,14 @@ impl SplitSearchState {
             SplitSearchState::PrunedAfterWarmup => counters.pruned_after_warmup.inc(),
             SplitSearchState::CpuQueue => counters.cancel_cpu_queue.inc(),
             SplitSearchState::Cpu => counters.cancel_cpu.inc(),
+            SplitSearchState::Error(SplitSearchErrorKind::CreateReader) => {
+                counters.error_create_reader.inc()
+            }
+            SplitSearchState::Error(SplitSearchErrorKind::Warmup) => counters.error_warmup.inc(),
+            SplitSearchState::Error(SplitSearchErrorKind::TantivySearch) => {
+                counters.error_tantivy_search.inc()
+            }
+            SplitSearchState::Error(SplitSearchErrorKind::Panic) => counters.error_panic.inc(),
             SplitSearchState::Success => counters.success.inc(),
         }
     }
@@ -2142,9 +2227,13 @@ impl SplitSearchState {
 
 impl Drop for SplitSearchStateGuard {
     fn drop(&mut self) {
-        self.state.increment(&SPLIT_SEARCH_OUTCOME_TOTAL);
-        self.state
-            .increment(&self.local_split_search_outcome_counters);
+        let state = if std::thread::panicking() {
+            SplitSearchState::Error(SplitSearchErrorKind::Panic)
+        } else {
+            self.state
+        };
+        state.increment(&SPLIT_SEARCH_OUTCOME_TOTAL);
+        state.increment(&self.local_split_search_outcome_counters);
     }
 }
 
@@ -2174,7 +2263,6 @@ struct LeafSearchContext {
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
 }
 
-#[instrument(skip_all, fields(split_id = split.split_id, num_docs = split.num_docs))]
 async fn leaf_search_single_split_wrapper(
     request: SearchRequest,
     ctx: Arc<LeafSearchContext>,
@@ -2247,6 +2335,42 @@ mod tests {
 
     use super::*;
     use crate::LambdaLeafSearchInvoker;
+
+    #[test]
+    fn test_split_search_state_guard_records_errors_by_kind() {
+        let counters = Arc::new(SplitSearchOutcomeCounters::default());
+        for error_kind in [
+            SplitSearchErrorKind::CreateReader,
+            SplitSearchErrorKind::Warmup,
+            SplitSearchErrorKind::TantivySearch,
+            SplitSearchErrorKind::Panic,
+        ] {
+            let mut leaf_guard = SplitSearchStateGuard::new(counters.clone());
+            leaf_guard.set_state(SplitSearchState::Error(error_kind));
+            drop(leaf_guard);
+        }
+
+        assert_eq!(counters.error_create_reader.get(), 1);
+        assert_eq!(counters.error_warmup.get(), 1);
+        assert_eq!(counters.error_tantivy_search.get(), 1);
+        assert_eq!(counters.error_panic.get(), 1);
+        assert_eq!(counters.cancel_warmup.get(), 0);
+    }
+
+    #[test]
+    fn test_split_search_state_guard_preserves_cancellation_state() {
+        let counters = Arc::new(SplitSearchOutcomeCounters::default());
+        let mut leaf_guard = SplitSearchStateGuard::new(counters.clone());
+        leaf_guard.set_state(SplitSearchState::WarmUp);
+
+        drop(leaf_guard);
+
+        assert_eq!(counters.error_create_reader.get(), 0);
+        assert_eq!(counters.error_warmup.get(), 0);
+        assert_eq!(counters.error_tantivy_search.get(), 0);
+        assert_eq!(counters.error_panic.get(), 0);
+        assert_eq!(counters.cancel_warmup.get(), 1);
+    }
 
     fn bool_filter(ast: impl Into<QueryAst>) -> QueryAst {
         BoolQuery {

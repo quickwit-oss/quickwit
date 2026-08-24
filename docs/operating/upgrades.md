@@ -21,7 +21,7 @@ No migration is done if `otel-traces-v0_7` already exists. If you want `service_
 
 ## Migration from 0.8 to 0.9
 
-Quickwit 0.9 introduces a new ingestion service to to power the ingest and bulk APIs (v2). The new ingest is enabled and used by default, even though the legacy one (v1) remains enabled to finish indexing residual data in the legacy write ahead logs. Note that `ingest_api.max_queue_disk_usage` is enforced on both ingest versions separately, which means that the cumulated disk usage might be up to twice this limit.
+Quickwit 0.9 introduces a new ingestion service to power the ingest and bulk APIs (v2). The new ingest is enabled and used by default, even though the legacy one (v1) remains enabled to finish indexing residual data in the legacy write ahead logs. Note that `ingest_api.max_queue_disk_usage` is enforced on both ingest versions separately, which means that the cumulated disk usage might be up to twice this limit.
 
 When upgrading to 0.9, we recommend to perform a full cluster restart.
 

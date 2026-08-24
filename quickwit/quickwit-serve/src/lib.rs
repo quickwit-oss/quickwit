@@ -152,7 +152,7 @@ const READINESS_FAILURE_THRESHOLD: usize = 3;
 const COMPACTION_SERVICE_DISCOVERY_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(100)
 } else {
-    Duration::from_secs(300)
+    Duration::from_mins(5)
 };
 
 const DISABLE_DELETE_TASK_SERVICE_ENV_KEY: &str = "QW_DISABLE_DELETE_TASK_SERVICE";
@@ -241,8 +241,8 @@ async fn balance_channel_for_service(
                 ClusterChange::Add(node) if node.is_service_enabled(service) => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
                         "adding node `{}` to {} pool",
                         chitchat_id.node_id,
                         service.as_str().replace('_', " "),
@@ -252,8 +252,8 @@ async fn balance_channel_for_service(
                 ClusterChange::Remove(node) if node.is_service_enabled(service) => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
                         "removing node `{}` from {} pool",
                         chitchat_id.node_id,
                         service.as_str().replace('_', " "),
@@ -459,7 +459,7 @@ async fn start_control_plane_if_needed(
             info!("connecting to control plane");
 
             if !balance_channel
-                .wait_for(Duration::from_secs(300), |connections| {
+                .wait_for(Duration::from_mins(5), |connections| {
                     !connections.is_empty()
                 })
                 .await
@@ -489,7 +489,7 @@ fn start_shard_positions_service(
     // the `ShardPositionsService`. If we don't, all the events we emit too early will be dismissed.
     tokio::spawn(async move {
         if let Some(ingester) = &ingester_opt
-            && wait_for_ingester_status(ingester, IngesterStatus::Ready, Duration::from_secs(300))
+            && wait_for_ingester_status(ingester, IngesterStatus::Ready, Duration::from_mins(5))
                 .await
                 .is_err()
         {
@@ -509,7 +509,9 @@ async fn shutdown_signal_handler(
     shutdown_signal: BoxFutureInfaillible<()>,
     universe: Universe,
     ingester_opt: Option<Ingester>,
+    ingester_decommission_timeout: Duration,
     compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
+    compactor_decommission_timeout: Duration,
     grpc_shutdown_trigger_tx: oneshot::Sender<()>,
     rest_shutdown_trigger_tx: oneshot::Sender<()>,
     health_shutdown_trigger_tx_opt: Option<oneshot::Sender<()>>,
@@ -526,8 +528,8 @@ async fn shutdown_signal_handler(
             None
         });
     let (ingester_result, compactor_result) = tokio::join!(
-        wait_for_ingester_decommission(ingester_opt.as_ref(), Duration::from_secs(300)),
-        wait_for_compactor_decommission(compactor_status_rx_opt, Duration::from_secs(300)),
+        wait_for_ingester_decommission(ingester_opt.as_ref(), ingester_decommission_timeout),
+        wait_for_compactor_decommission(compactor_status_rx_opt, compactor_decommission_timeout),
     );
     if let Err(error) = ingester_result {
         error!("failed to decommission ingester gracefully: {:?}", error);
@@ -908,6 +910,8 @@ pub async fn serve_quickwit(
 
     let grpc_listen_addr = node_config.grpc_listen_addr;
     let rest_listen_addr = node_config.rest_config.listen_addr;
+    let ingester_decommission_timeout = node_config.ingest_api_config.decommission_timeout();
+    let compactor_decommission_timeout = node_config.compactor_config.decommission_timeout();
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
         node_config: Arc::new(node_config),
         cluster: cluster.clone(),
@@ -1030,7 +1034,9 @@ pub async fn serve_quickwit(
         shutdown_signal,
         universe,
         ingester_opt,
+        ingester_decommission_timeout,
         compactor_supervisor_opt,
+        compactor_decommission_timeout,
         grpc_shutdown_trigger_tx,
         rest_shutdown_trigger_tx,
         health_shutdown_trigger_tx_opt,
@@ -1115,7 +1121,6 @@ fn ingester_service_layer_stack(
                 CIRCUIT_BREAK_TOTAL.clone(),
             ),
         )
-        .stack_open_replication_stream_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_init_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_retain_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_truncate_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
@@ -1133,11 +1138,6 @@ async fn setup_ingest_v2(
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().to_owned();
     let grpc_compression_encoding_opt = node_config.ingest_api_config.grpc_compression_encoding();
-    let replication_factor = node_config
-        .ingest_api_config
-        .replication_factor()
-        .expect("replication factor should have been validated")
-        .get();
 
     // Any node can serve ingest requests, so we always instantiate an ingest router.
     // TODO: I'm not sure that's such a good idea.
@@ -1145,7 +1145,6 @@ async fn setup_ingest_v2(
         self_node_id.clone(),
         control_plane.clone(),
         ingester_pool.clone(),
-        replication_factor,
         event_broker.clone(),
         node_config.availability_zone.clone(),
     );
@@ -1177,12 +1176,10 @@ async fn setup_ingest_v2(
         let ingester = Ingester::try_new(
             cluster.clone(),
             control_plane,
-            ingester_pool.clone(),
             &wal_dir_path,
             node_config.ingest_api_config.max_queue_disk_usage,
             node_config.ingest_api_config.max_queue_memory_usage,
             rate_limiter_settings,
-            replication_factor,
             idle_shard_timeout,
         )
         .await?;
@@ -1219,8 +1216,8 @@ fn setup_ingester_pool(
                 ClusterChange::Add(node) if node.is_indexer() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
                         "adding node `{}` with ingester status `{}` to ingester pool",
                         chitchat_id.node_id,
                         node.ingester_status,
@@ -1282,8 +1279,8 @@ fn build_ingester_insert_change(
 fn build_ingester_remove_change(node: &ClusterNode) -> Change<NodeId, IngesterPoolEntry> {
     let chitchat_id = node.chitchat_id();
     info!(
-        node_id = %chitchat_id.node_id,
-        generation_id = chitchat_id.generation_id,
+        remote_node_id = %chitchat_id.node_id,
+        generation_id = %chitchat_id.generation_id,
         "removing node `{}` from ingester pool",
         chitchat_id.node_id,
     );
@@ -1346,8 +1343,8 @@ async fn setup_searcher(
                 ClusterChange::Add(node) if node.is_searcher() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
                         "adding node `{}` to searcher pool",
                         chitchat_id.node_id,
                     );
@@ -1370,8 +1367,8 @@ async fn setup_searcher(
                 ClusterChange::Remove(node) if node.is_searcher() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
                         "removing node `{}` from searcher pool",
                         chitchat_id.node_id,
                     );
@@ -1398,15 +1395,10 @@ async fn setup_control_plane(
     ingest_api_config: &IngestApiConfig,
 ) -> anyhow::Result<Mailbox<ControlPlane>> {
     let cluster_id = cluster.cluster_id().to_string();
-    let replication_factor = ingest_api_config
-        .replication_factor()
-        .expect("replication factor should have been validated")
-        .get();
     let cluster_config = ClusterConfig {
         cluster_id,
         auto_create_indexes: true,
         default_index_root_uri,
-        replication_factor,
         shard_throughput_limit: ingest_api_config.shard_throughput_limit,
         shard_scale_up_factor: ingest_api_config.shard_scale_up_factor,
     };
@@ -1427,7 +1419,7 @@ async fn setup_control_plane(
         .forever();
 
     tokio::time::timeout(
-        Duration::from_secs(300),
+        Duration::from_mins(5),
         readiness_rx.wait_for(|readiness| *readiness),
     )
     .await
@@ -1451,8 +1443,8 @@ fn setup_indexer_pool(
                 ClusterChange::Add(node) if node.is_indexer() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
                         "adding node `{}` with ingester status `{}` to indexer pool",
                         chitchat_id.node_id,
                         node.ingester_status
@@ -1516,8 +1508,8 @@ fn build_indexer_insert_change(
 fn build_indexer_remove_change(node: &ClusterNode) -> Change<NodeId, IndexerNodeInfo> {
     let chitchat_id = node.chitchat_id();
     info!(
-        node_id = %chitchat_id.node_id,
-        generation_id = chitchat_id.generation_id,
+        remote_node_id = %chitchat_id.node_id,
+        generation_id = %chitchat_id.generation_id,
         "removing node `{}` from indexer pool",
         chitchat_id.node_id,
     );
@@ -1828,6 +1820,7 @@ mod tests {
                     let message = ObservationMessage {
                         node_id: "test-node".to_string(),
                         status: status as i32,
+                        ..Default::default()
                     };
                     Ok(message)
                 });

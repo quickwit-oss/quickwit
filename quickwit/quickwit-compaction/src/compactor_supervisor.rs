@@ -15,12 +15,13 @@
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, SpawnContext};
 use quickwit_common::io::{self, Limiter};
+use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::uri::Uri;
@@ -44,7 +45,10 @@ use tokio::sync::{Semaphore, watch};
 use tracing::{error, info};
 
 use crate::compaction_pipeline::{CompactionPipeline, PipelineStatus, PipelineStatusUpdate};
-use crate::metrics::{AVAILABLE_SLOTS, COMPACTIONS_IN_PROGRESS, SOURCE_UID_MERGE_LEVEL};
+use crate::metrics::{
+    AVAILABLE_SLOTS, COMPACTIONS_IN_PROGRESS, DECOMMISSION_FAILED, DECOMMISSION_SUCCEEDED,
+    SOURCE_UID_MERGE_LEVEL,
+};
 use crate::source_uid_metrics_label;
 
 const CHECK_PIPELINE_STATUSES_INTERVAL: Duration = Duration::from_secs(1);
@@ -107,6 +111,7 @@ impl CompactorSupervisor {
             pipeline_slots_per_merge_execution,
             max_concurrent_split_uploads,
             max_merge_write_throughput,
+            ..
         } = compactor_config;
         let num_pipeline_slots =
             max_concurrent_merge_executions.get() * pipeline_slots_per_merge_execution.get();
@@ -421,11 +426,15 @@ pub async fn notify_compactor_decommission(
     let Some(compactor_mailbox) = compactor_mailbox_opt else {
         return Ok(None);
     };
-    let status_rx = compactor_mailbox
-        .send_message_with_high_priority(Decommission)
-        .context("failed to initiate compactor decommission")?
-        .await
-        .context("compactor dropped decommission reply")?;
+    let status_rx = async {
+        compactor_mailbox
+            .send_message_with_high_priority(Decommission)
+            .context("failed to initiate compactor decommission")?
+            .await
+            .context("compactor dropped decommission reply")
+    }
+    .await
+    .inspect_err(|_| DECOMMISSION_FAILED.inc())?;
     Ok(Some(status_rx))
 }
 
@@ -437,15 +446,48 @@ pub async fn wait_for_compactor_decommission(
     let Some(mut status_rx) = status_rx_opt else {
         return Ok(());
     };
-    tokio::time::timeout(
-        timeout_after,
-        status_rx.wait_for(|status| *status == CompactorStatus::Decommissioned),
-    )
-    .await
-    .context("timed out waiting for compactor to finish decommissioning")?
-    .context("compactor status channel closed")?;
-    info!("compactor decommissioned successfully");
-    Ok(())
+    let now = Instant::now();
+
+    let sleep = tokio::time::sleep(timeout_after);
+    tokio::pin!(sleep);
+
+    tokio::select! {
+        result = status_rx.wait_for(|status| *status == CompactorStatus::Decommissioned) => {
+            match result {
+                Ok(_) => {
+                    DECOMMISSION_SUCCEEDED.inc();
+                    info!(
+                        "compactor decommissioned successfully in {}",
+                        now.elapsed().pretty_display()
+                    );
+                    Ok(())
+                }
+                Err(error) => {
+                    DECOMMISSION_FAILED.inc();
+                    error!(
+                        %error,
+                        "failed to decommission compactor after {}",
+                        timeout_after.pretty_display()
+                    );
+                    Err(anyhow::anyhow!(
+                        "failed to decommission compactor after {}",
+                        timeout_after.pretty_display()
+                    ))
+                }
+            }
+        }
+        _ = &mut sleep => {
+            DECOMMISSION_FAILED.inc();
+            error!(
+                "timed out after {} while waiting for compactor to finish decommissioning",
+                timeout_after.pretty_display()
+            );
+            Err(anyhow::anyhow!(
+                "timed out after {} while waiting for compactor to finish decommissioning",
+                timeout_after.pretty_display()
+            ))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -471,11 +513,10 @@ mod tests {
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
         let compaction_client =
             CompactionPlannerServiceClient::from_mock(MockCompactionPlannerService::new());
-        let compactor_config = CompactorConfig {
-            max_concurrent_merge_executions: NonZeroUsize::new(max_concurrent_merge_executions)
-                .expect("max_concurrent_merge_executions must be non-zero"),
-            ..CompactorConfig::for_test()
-        };
+        let mut compactor_config = CompactorConfig::for_test();
+        compactor_config.max_concurrent_merge_executions =
+            NonZeroUsize::new(max_concurrent_merge_executions)
+                .expect("max_concurrent_merge_executions must be non-zero");
         CompactorSupervisor::new(
             NodeId::from_str("test-node"),
             compaction_client,
@@ -701,10 +742,8 @@ mod tests {
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
         let client = CompactionPlannerServiceClient::from_mock(mock);
         // 3 merge-executions → 6 pipeline slots
-        let compactor_config = CompactorConfig {
-            max_concurrent_merge_executions: NonZeroUsize::new(3).unwrap(),
-            ..CompactorConfig::for_test()
-        };
+        let mut compactor_config = CompactorConfig::for_test();
+        compactor_config.max_concurrent_merge_executions = NonZeroUsize::new(3).unwrap();
         let mut supervisor = CompactorSupervisor::new(
             NodeId::from_str("test-node"),
             client,
@@ -865,10 +904,8 @@ mod tests {
         });
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
         let client = CompactionPlannerServiceClient::from_mock(mock);
-        let compactor_config = CompactorConfig {
-            max_concurrent_merge_executions: NonZeroUsize::new(2).unwrap(),
-            ..CompactorConfig::for_test()
-        };
+        let mut compactor_config = CompactorConfig::for_test();
+        compactor_config.max_concurrent_merge_executions = NonZeroUsize::new(2).unwrap();
         let supervisor = CompactorSupervisor::new(
             NodeId::from_str("test-node"),
             client,

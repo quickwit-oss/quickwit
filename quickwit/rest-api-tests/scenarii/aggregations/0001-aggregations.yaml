@@ -170,13 +170,12 @@ expected:
   aggregations:
     names:
       buckets:
-        # There are 3 documents with name "Fritz" but we only get 2. One does not get passed to the
-        # root node, because it gets cut off due to the split_size parameter set to 1.
-        # We also get doc_count_error_upper_bound: 2, which signals that the result is approximate.
+        # There are 3 documents with name "Fritz", but split-level pruning omits one of them.
+        # The two split cutoffs and the merged leaf cutoff each contribute 1 to the error bound.
       - doc_count: 2
         key: "Fritz"
       sum_other_doc_count: 8
-      doc_count_error_upper_bound: 2
+      doc_count_error_upper_bound: 3
 ---
 # Test term aggs with shard_size
 # segment_size is an alias to shard_size
@@ -196,13 +195,12 @@ expected:
   aggregations:
     names:
       buckets:
-        # There are 3 documents with name "Fritz" but we only get 2. One does not get passed to the
-        # root node, because it gets cut off due to the split_size parameter set to 1.
-        # We also get doc_count_error_upper_bound: 2, which signals that the result is approximate.
+        # There are 3 documents with name "Fritz", but split-level pruning omits one of them.
+        # The two split cutoffs and the merged leaf cutoff each contribute 1 to the error bound.
       - doc_count: 2
         key: "Fritz"
       sum_other_doc_count: 8
-      doc_count_error_upper_bound: 2
+      doc_count_error_upper_bound: 3
 ---
 # Test term aggs with shard_size
 method: [GET]
@@ -221,13 +219,12 @@ expected:
   aggregations:
     names:
       buckets:
-        # There are 3 documents with name "Fritz" but we only get 2. One does not get passed to the
-        # root node, because it gets cut off due to the split_size parameter set to 1.
-        # We also get doc_count_error_upper_bound: 2, which signals that the result is approximate.
+        # There are 3 documents with name "Fritz", but split-level pruning omits one of them.
+        # The two split cutoffs and the merged leaf cutoff each contribute 1 to the error bound.
       - doc_count: 2
         key: "Fritz"
       sum_other_doc_count: 8
-      doc_count_error_upper_bound: 2
+      doc_count_error_upper_bound: 3
 ---
 # Test term aggs with split_size
 # Here we increase split_size to 5, so we will get the 3 documents with name "Fritz"
@@ -247,12 +244,12 @@ expected:
   aggregations:
     names:
       buckets:
-        # We get all 3 documents with name "Fritz"
-        # We also get doc_count_error_upper_bound: 0, to the result is exact.
+        # We get all 3 documents with name "Fritz". Merging the split results creates 8 unique
+        # terms, so pruning the merged leaf result to 5 contributes 1 to the error bound.
       - doc_count: 3
         key: "Fritz"
       sum_other_doc_count: 7
-      doc_count_error_upper_bound: 0
+      doc_count_error_upper_bound: 1
 ---
 # Test date histogram + percentiles sub-aggregation
 method: [GET]

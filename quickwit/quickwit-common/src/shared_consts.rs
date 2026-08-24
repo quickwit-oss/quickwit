@@ -21,8 +21,8 @@ use tracing::warn;
 /// Field name reserved for storing the dynamically indexed fields.
 pub const FIELD_PRESENCE_FIELD_NAME: &str = "_field_presence";
 
-pub const MINIMUM_DELETION_GRACE_PERIOD: Duration = Duration::from_secs(5 * 60); // 5mn
-const MAXIMUM_DELETION_GRACE_PERIOD: Duration = Duration::from_secs(2 * 24 * 3600); // 2 days
+pub const MINIMUM_DELETION_GRACE_PERIOD: Duration = Duration::from_mins(5);
+const MAXIMUM_DELETION_GRACE_PERIOD: Duration = Duration::from_hours(48); // 2 days
 
 /// We cannot safely delete splits right away as a:
 /// - in-flight queries could actually have selected this split,
@@ -33,7 +33,7 @@ const MAXIMUM_DELETION_GRACE_PERIOD: Duration = Duration::from_secs(2 * 24 * 360
 /// that all queries involving this split have terminated, we effectively delete the split.
 /// This duration is controlled by `DELETION_GRACE_PERIOD`.
 pub fn split_deletion_grace_period() -> Duration {
-    const DEFAULT_DELETION_GRACE_PERIOD: Duration = Duration::from_secs(60 * 32); // 32 min
+    const DEFAULT_DELETION_GRACE_PERIOD: Duration = Duration::from_mins(32);
 
     static SPLIT_DELETION_GRACE_PERIOD_SECS_LOCK: LazyLock<Duration> = LazyLock::new(|| {
         let deletion_grace_period_secs: u64 = crate::get_from_env(
@@ -61,8 +61,11 @@ pub fn split_deletion_grace_period() -> Duration {
 /// being requested.
 pub const SCROLL_BATCH_LEN: usize = 1_000;
 
-/// Key prefix used in chitchat to broadcast the list of primary shards hosted by a leader.
-pub const INGESTER_PRIMARY_SHARDS_PREFIX: &str = "ingester.primary_shards:";
+/// Key prefix used in chitchat to broadcast the list of shards hosted by an ingester.
+///
+/// The concept of primary shard vs replica shard no longer exists, but the legacy key prefix is
+/// retained for backward compatibility.
+pub const INGESTER_SHARDS_PREFIX: &str = "ingester.primary_shards:";
 
 /// Key used in chitchat to broadcast the status of an ingester.
 pub const INGESTER_STATUS_KEY: &str = "ingester.status";
@@ -72,6 +75,9 @@ pub const INGESTER_CAPACITY_SCORE_PREFIX: &str = "ingester.capacity_score:";
 
 /// File name for the encoded list of fields in the split
 pub const SPLIT_FIELDS_FILE_NAME: &str = "split_fields";
+
+/// Name of the recovery metadata entry embedded in split bundles.
+pub const SPLIT_RECOVERY_METADATA_FILE_NAME: &str = "split_recovery_metadata";
 
 /// More or less the indexing throughput of a core
 /// i.e. PIPELINE_THROUGHPUT / PIPELINE_FULL_CAPACITY

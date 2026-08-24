@@ -25,7 +25,6 @@ mod mrecord;
 mod mrecordlog_utils;
 mod publish_tracker;
 mod rate_meter;
-mod replication;
 mod router;
 mod routing_table;
 mod state;
@@ -99,15 +98,11 @@ pub type IngesterPool = Pool<NodeId, IngesterPoolEntry>;
 /// Identifies an ingester client, typically a source, for logging and debugging purposes.
 pub type ClientId = String;
 
-pub type LeaderId = NodeId;
-
-pub type FollowerId = NodeId;
-
 pub type OpenShardCounts = Vec<(IndexUid, SourceId, usize)>;
 
 const IDLE_SHARD_TIMEOUT_ENV_KEY: &str = "QW_IDLE_SHARD_TIMEOUT_SECS";
 
-const DEFAULT_IDLE_SHARD_TIMEOUT: Duration = Duration::from_secs(15 * 60); // 15 minutes
+const DEFAULT_IDLE_SHARD_TIMEOUT: Duration = Duration::from_mins(15);
 
 pub fn get_idle_shard_timeout() -> Duration {
     env::var(IDLE_SHARD_TIMEOUT_ENV_KEY)

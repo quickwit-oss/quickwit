@@ -28,8 +28,9 @@ use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
-use super::{GrpcConfig, HealthConfig, RestConfig};
+use super::{GrpcConfig, HealthConfig, MAX_GOSSIP_PROTOCOL_VERSION, RestConfig};
 use crate::config_value::ConfigValue;
+use crate::docs_clustering::DocsClusteringConfigBuilder;
 use crate::qw_env_vars::*;
 use crate::serde_utils::HumanDuration;
 use crate::service::QuickwitService;
@@ -49,6 +50,8 @@ pub const DEFAULT_GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "tests
 } else {
     Duration::from_secs(1)
 };
+
+const DEFAULT_GOSSIP_PROTOCOL_VERSION: u8 = 0;
 
 // Default config values in the order they appear in [`NodeConfigBuilder`].
 fn default_cluster_id() -> ConfigValue<String, QW_CLUSTER_ID> {
@@ -195,6 +198,8 @@ struct NodeConfigBuilder {
     grpc_listen_port: ConfigValue<u16, QW_GRPC_LISTEN_PORT>,
     gossip_interval_ms: ConfigValue<u32, QW_GOSSIP_INTERVAL_MS>,
     #[serde(default)]
+    gossip_protocol_version: ConfigValue<u8, QW_GOSSIP_PROTOCOL_VERSION>,
+    #[serde(default)]
     peer_seeds: ConfigValue<List, QW_PEER_SEEDS>,
     #[serde(rename = "data_dir")]
     #[serde(default = "default_data_dir_uri")]
@@ -235,6 +240,9 @@ struct NodeConfigBuilder {
     #[serde(rename = "compactor")]
     #[serde(default)]
     compactor_config: CompactorConfig,
+    #[serde(rename = "docs_clustering")]
+    #[serde(default)]
+    docs_clustering_config: Option<DocsClusteringConfigBuilder>,
 }
 
 impl NodeConfigBuilder {
@@ -250,6 +258,8 @@ impl NodeConfigBuilder {
         let availability_zone = self.availability_zone.resolve_optional(env_vars)?;
 
         let enable_standalone_compactors = self.enable_standalone_compactors.resolve(env_vars)?;
+        let docs_clustering_config =
+            DocsClusteringConfigBuilder::build_optional(self.docs_clustering_config, env_vars)?;
 
         let resolved_enabled_services: HashSet<QuickwitService> =
             if let Some(enabled_services) = enabled_services {
@@ -342,6 +352,15 @@ impl NodeConfigBuilder {
             .resolve_optional(env_vars)?
             .map(|gossip_interval_ms| Duration::from_millis(gossip_interval_ms as u64))
             .unwrap_or(DEFAULT_GOSSIP_INTERVAL);
+        let gossip_protocol_version = self
+            .gossip_protocol_version
+            .resolve_optional(env_vars)?
+            .unwrap_or(DEFAULT_GOSSIP_PROTOCOL_VERSION);
+        ensure!(
+            gossip_protocol_version <= MAX_GOSSIP_PROTOCOL_VERSION,
+            "gossip protocol version must be between 0 and {MAX_GOSSIP_PROTOCOL_VERSION}, got \
+             `{gossip_protocol_version}`"
+        );
 
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
@@ -353,6 +372,7 @@ impl NodeConfigBuilder {
             gossip_advertise_addr,
             grpc_advertise_addr,
             gossip_interval,
+            gossip_protocol_version,
             peer_seeds: self.peer_seeds.resolve(env_vars)?.0,
             data_dir_path,
             metastore_uri,
@@ -369,6 +389,7 @@ impl NodeConfigBuilder {
             jaeger_config: self.jaeger_config,
             compactor_config: self.compactor_config,
             enable_standalone_compactors,
+            docs_clustering_config,
         };
 
         validate(&node_config)?;
@@ -495,6 +516,7 @@ impl Default for NodeConfigBuilder {
             gossip_listen_port: ConfigValue::none(),
             grpc_listen_port: ConfigValue::none(),
             gossip_interval_ms: ConfigValue::none(),
+            gossip_protocol_version: ConfigValue::none(),
             advertise_address: ConfigValue::none(),
             peer_seeds: ConfigValue::with_default(List::default()),
             data_dir_uri: default_data_dir_uri(),
@@ -512,6 +534,7 @@ impl Default for NodeConfigBuilder {
             ingest_api_config: IngestApiConfig::default(),
             jaeger_config: JaegerConfig::default(),
             compactor_config: CompactorConfig::default(),
+            docs_clustering_config: None,
         }
     }
 }
@@ -646,6 +669,7 @@ pub fn node_config_for_tests_from_ports(
         gossip_listen_addr,
         grpc_listen_addr,
         gossip_interval: Duration::from_millis(25u64),
+        gossip_protocol_version: DEFAULT_GOSSIP_PROTOCOL_VERSION,
         peer_seeds: Vec::new(),
         data_dir_path,
         metastore_uri,
@@ -662,6 +686,7 @@ pub fn node_config_for_tests_from_ports(
         jaeger_config: JaegerConfig::default(),
         compactor_config: CompactorConfig::default(),
         enable_standalone_compactors: false,
+        docs_clustering_config: None,
     }
 }
 
@@ -765,6 +790,7 @@ mod tests {
             config.gossip_listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 2222)
         );
+        assert_eq!(config.gossip_protocol_version, 1);
         assert_eq!(
             config.grpc_listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 3333)
@@ -824,11 +850,11 @@ mod tests {
         );
         assert_eq!(
             postgres_config.idle_connection_timeout_opt().unwrap(),
-            Some(Duration::from_secs(1800))
+            Some(Duration::from_mins(30))
         );
         assert_eq!(
             postgres_config.max_connection_lifetime_opt().unwrap(),
-            Some(Duration::from_secs(3600))
+            Some(Duration::from_hours(1))
         );
 
         assert_eq!(
@@ -848,7 +874,7 @@ mod tests {
         assert_eq!(
             config.ingest_api_config,
             IngestApiConfig {
-                replication_factor: 2,
+                _replication_factor: Some(serde::de::IgnoredAny),
                 ..Default::default()
             }
         );
@@ -986,7 +1012,7 @@ mod tests {
                 env::current_dir().unwrap().display()
             )
         );
-        assert_eq!(config.ingest_api_config.replication_factor, 1);
+        assert!(config.ingest_api_config._replication_factor.is_none());
     }
 
     #[tokio::test]
@@ -1004,6 +1030,7 @@ mod tests {
         env_vars.insert("QW_REST_LISTEN_PORT".to_string(), "1234".to_string());
         env_vars.insert("QW_HEALTH_LISTEN_PORT".to_string(), "3456".to_string());
         env_vars.insert("QW_GOSSIP_LISTEN_PORT".to_string(), "5678".to_string());
+        env_vars.insert("QW_GOSSIP_PROTOCOL_VERSION".to_string(), "1".to_string());
         env_vars.insert("QW_GRPC_LISTEN_PORT".to_string(), "9012".to_string());
         env_vars.insert(
             "QW_PEER_SEEDS".to_string(),
@@ -1065,6 +1092,7 @@ mod tests {
             config.grpc_advertise_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 0, 0, 13)), 9012)
         );
+        assert_eq!(config.gossip_protocol_version, 1);
         assert_eq!(
             config.peer_seeds,
             vec![
@@ -1081,6 +1109,41 @@ mod tests {
             "postgresql://test-user:test-password@test-host:4321/test-db"
         );
         assert_eq!(config.default_index_root_uri, "s3://quickwit-indexes/prod");
+    }
+
+    #[tokio::test]
+    async fn test_node_config_rejects_malformed_gossip_protocol_version() {
+        let config_yaml = "version: 0.8";
+        let env_vars = HashMap::from([(
+            "QW_GOSSIP_PROTOCOL_VERSION".to_string(),
+            "invalid".to_string(),
+        )]);
+        let error =
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
+                .await
+                .unwrap_err();
+        assert!(
+            error.to_string().contains("QW_GOSSIP_PROTOCOL_VERSION"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_node_config_rejects_unsupported_gossip_protocol_version() {
+        let config_yaml = "version: 0.8";
+        let unsupported_protocol_version = MAX_GOSSIP_PROTOCOL_VERSION + 1;
+        let env_vars = HashMap::from([(
+            "QW_GOSSIP_PROTOCOL_VERSION".to_string(),
+            unsupported_protocol_version.to_string(),
+        )]);
+        let error =
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars, None)
+                .await
+                .unwrap_err();
+        assert!(
+            error.to_string().contains("gossip protocol version"),
+            "unexpected error: {error}"
+        );
     }
 
     #[tokio::test]
@@ -1292,6 +1355,15 @@ mod tests {
         .await
         .unwrap();
         assert!(node_config.is_service_enabled(QuickwitService::Compactor));
+    }
+
+    #[tokio::test]
+    async fn test_docs_clustering_config_is_absent_by_default() {
+        let node_config = NodeConfigBuilder::default()
+            .build_and_validate(&HashMap::new(), None)
+            .await
+            .unwrap();
+        assert!(node_config.docs_clustering_config.is_none());
     }
 
     #[tokio::test]
@@ -1687,36 +1759,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_node_config_validates_ingest_config() {
-        let ingest_config = IngestApiConfig {
-            replication_factor: 0,
-            ..Default::default()
-        };
-        let error_message = ingest_config.validate().unwrap_err().to_string();
-        assert!(error_message.contains("either 1 or 2, got `0`"));
-
-        let ingest_config = IngestApiConfig {
-            replication_factor: 3,
-            ..Default::default()
-        };
-        let error_message = ingest_config.validate().unwrap_err().to_string();
-        assert!(error_message.contains("either 1 or 2, got `3`"));
-
+    async fn test_node_config_accepts_deprecated_replication_factor() {
         let node_config_yaml = r#"
             version: 0.8
             ingest_api:
-              replication_factor: 0
+              replication_factor: 1
         "#;
-        let error_message = load_node_config_with_env(
+        let config = load_node_config_with_env(
             ConfigFormat::Yaml,
             node_config_yaml.as_bytes(),
             &Default::default(),
             None,
         )
         .await
-        .unwrap_err()
-        .to_string();
-        assert!(error_message.contains("replication factor"));
+        .unwrap();
+        assert!(config.ingest_api_config._replication_factor.is_some());
     }
 
     #[tokio::test]

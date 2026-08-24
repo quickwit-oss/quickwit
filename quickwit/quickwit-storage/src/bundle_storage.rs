@@ -20,8 +20,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, io};
 
-use anyhow::Context;
+use anyhow::{Context, bail, ensure};
 use async_trait::async_trait;
+use bytes::{Buf, BufMut};
 use quickwit_common::chunk_range;
 use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
@@ -36,74 +37,180 @@ use crate::{
 };
 
 /// BundleStorage bundles together multiple files into a single file.
-/// with some metadata
 pub struct BundleStorage {
     storage: Arc<dyn Storage>,
     /// The file path of the bundle in the storage.
     bundle_filepath: PathBuf,
-    metadata: BundleStorageFileOffsets,
+    file_ranges: BundleFileRanges,
 }
 
 impl BundleStorage {
-    /// Opens a BundleStorage.
+    /// Opens a split bundle by locating its footer directly from object storage.
     ///
-    /// The provided data must include the footer_bytes at the end of the slice, but it can have
-    /// more up front.
-    ///
-    /// Returns (Hotcache, Self)
-    pub fn open_from_split_data_with_owned_bytes(
+    /// New splits expose the footer start in a fixed-size trailer. Legacy splits are supported by
+    /// walking backward through the hotcache and bundle-metadata length fields.
+    pub async fn open_from_storage(
         storage: Arc<dyn Storage>,
         bundle_filepath: PathBuf,
-        split_data: OwnedBytes,
-    ) -> anyhow::Result<(FileSlice, Self)> {
-        Self::open_from_split_data(
-            storage,
-            bundle_filepath,
-            FileSlice::new(Arc::new(split_data)),
-        )
+    ) -> anyhow::Result<(Self, OwnedBytes, Range<u64>)> {
+        let split_len = storage.file_num_bytes(&bundle_filepath).await?;
+        let split_footer_range =
+            locate_split_footer_range(storage.as_ref(), &bundle_filepath, split_len).await?;
+        let split_footer_start = usize::try_from(split_footer_range.start)?;
+        let split_footer_end = usize::try_from(split_footer_range.end)?;
+        let split_footer_range_usize = split_footer_start..split_footer_end;
+        let split_footer_bytes = storage
+            .get_slice(&bundle_filepath, split_footer_range_usize)
+            .await?;
+        let (bundle_storage, hotcache) =
+            Self::open_from_split_bytes(storage, bundle_filepath, split_footer_bytes)?;
+        Ok((bundle_storage, hotcache, split_footer_range))
     }
+
     /// Opens a BundleStorage.
     ///
-    /// The provided data must include the footer_bytes at the end of the slice, but it can have
+    /// The provided bytes must include the footer bytes at the end of the slice, but they can have
     /// more up front.
     ///
-    /// Returns (Hotcache, Self)
-    pub fn open_from_split_data(
+    /// Returns (Self, Hotcache)
+    pub fn open_from_split_bytes(
         storage: Arc<dyn Storage>,
         bundle_filepath: PathBuf,
-        split_data: FileSlice,
-    ) -> anyhow::Result<(FileSlice, Self)> {
-        let (hotcache, metadata) = BundleStorageFileOffsets::open_from_split_data(split_data)?;
+        split_bytes: OwnedBytes,
+    ) -> anyhow::Result<(Self, OwnedBytes)> {
+        let (file_ranges, hotcache) = BundleFileRanges::open_from_split_bytes(split_bytes)?;
         Ok((
-            hotcache,
             BundleStorage {
                 storage,
                 bundle_filepath,
-                metadata,
+                file_ranges,
             },
+            hotcache,
         ))
     }
 
     /// Returns Iterator over files contained in the bundle.
     pub fn iter_files(&self) -> impl Iterator<Item = &PathBuf> {
-        self.metadata.files.keys()
+        self.file_ranges.files.keys()
     }
 }
 
-const SPLIT_HOTBYTES_FOOTER_LENGTH_NUM_BYTES: usize = std::mem::size_of::<u32>();
-const BUNDLE_METADATA_LENGTH_NUM_BYTES: usize = std::mem::size_of::<u32>();
+const HOTCACHE_LEN_NUM_BYTES: usize = std::mem::size_of::<u32>();
+const BUNDLE_METADATA_LEN_NUM_BYTES: usize = std::mem::size_of::<u32>();
+const SPLIT_FOOTER_TRAILER_MAGIC: &[u8; 4] = b"QWFT";
+const SPLIT_FOOTER_TRAILER_VERSION: u32 = 1;
+const SPLIT_FOOTER_START_NUM_BYTES: usize = std::mem::size_of::<u64>();
+const SPLIT_FOOTER_TRAILER_VERSION_NUM_BYTES: usize = std::mem::size_of::<u32>();
+pub(crate) const SPLIT_FOOTER_TRAILER_NUM_BYTES: usize = SPLIT_FOOTER_START_NUM_BYTES
+    + SPLIT_FOOTER_TRAILER_VERSION_NUM_BYTES
+    + SPLIT_FOOTER_TRAILER_MAGIC.len();
+
+pub(crate) fn serialize_split_footer_trailer(
+    footer_start_inclusive: u64,
+) -> [u8; SPLIT_FOOTER_TRAILER_NUM_BYTES] {
+    let mut trailer = [0u8; SPLIT_FOOTER_TRAILER_NUM_BYTES];
+    let mut writer = trailer.as_mut_slice();
+    writer.put_u64_le(footer_start_inclusive);
+    writer.put_u32_le(SPLIT_FOOTER_TRAILER_VERSION);
+    writer.put_slice(SPLIT_FOOTER_TRAILER_MAGIC);
+    debug_assert!(!writer.has_remaining_mut());
+    trailer
+}
+
+fn deserialize_split_footer_trailer(trailer: &[u8]) -> anyhow::Result<Option<u64>> {
+    if trailer.len() != SPLIT_FOOTER_TRAILER_NUM_BYTES {
+        return Ok(None);
+    }
+    let mut reader = trailer;
+    let footer_start_inclusive = reader.get_u64_le();
+    let version = reader.get_u32_le();
+
+    if reader != SPLIT_FOOTER_TRAILER_MAGIC {
+        return Ok(None);
+    }
+    ensure!(
+        version == SPLIT_FOOTER_TRAILER_VERSION,
+        "unsupported split footer trailer version {version}"
+    );
+    Ok(Some(footer_start_inclusive))
+}
+
+/// Locates a split footer range using its fixed trailer, with support for legacy split layouts.
+pub async fn locate_split_footer_range(
+    storage: &dyn Storage,
+    split_path: &Path,
+    split_len: u64,
+) -> anyhow::Result<Range<u64>> {
+    ensure!(
+        split_len >= SPLIT_FOOTER_TRAILER_NUM_BYTES as u64,
+        "split is too short to contain a footer"
+    );
+    let trailer_start = split_len - SPLIT_FOOTER_TRAILER_NUM_BYTES as u64;
+    let trailer = storage
+        .get_slice(
+            split_path,
+            usize::try_from(trailer_start)?..usize::try_from(split_len)?,
+        )
+        .await?;
+    if let Some(footer_start_inclusive) = deserialize_split_footer_trailer(&trailer)? {
+        ensure!(
+            footer_start_inclusive <= trailer_start,
+            "split footer starts after its trailer"
+        );
+        return Ok(footer_start_inclusive..split_len);
+    }
+
+    // Legacy split layout:
+    // [body][bundle metadata][metadata len][hotcache][hotcache len]
+    let hotcache_len = u32::from_le_bytes(trailer[12..].try_into().unwrap()) as u64;
+    let bundle_metadata_len_offset = split_len
+        .checked_sub(HOTCACHE_LEN_NUM_BYTES as u64)
+        .and_then(|offset| offset.checked_sub(hotcache_len))
+        .and_then(|offset| offset.checked_sub(BUNDLE_METADATA_LEN_NUM_BYTES as u64))
+        .ok_or_else(|| anyhow::anyhow!("invalid legacy split footer lengths"))?;
+    let bundle_metadata_len_bytes = storage
+        .get_slice(
+            split_path,
+            usize::try_from(bundle_metadata_len_offset)?
+                ..usize::try_from(
+                    bundle_metadata_len_offset + BUNDLE_METADATA_LEN_NUM_BYTES as u64,
+                )?,
+        )
+        .await?;
+    let bundle_metadata_len =
+        u32::from_le_bytes(bundle_metadata_len_bytes.as_ref().try_into().unwrap()) as u64;
+    let footer_start_inclusive = bundle_metadata_len_offset
+        .checked_sub(bundle_metadata_len)
+        .ok_or_else(|| anyhow::anyhow!("invalid legacy split metadata length"))?;
+    Ok(footer_start_inclusive..split_len)
+}
+
+/// Removes the fixed split footer trailer when it is present.
+pub fn strip_split_footer_trailer(split_slice: FileSlice) -> anyhow::Result<FileSlice> {
+    if split_slice.len() < SPLIT_FOOTER_TRAILER_NUM_BYTES {
+        return Ok(split_slice);
+    }
+    let (split_slice_without_trailer, trailer) = split_slice
+        .clone()
+        .split_from_end(SPLIT_FOOTER_TRAILER_NUM_BYTES);
+    if deserialize_split_footer_trailer(trailer.read_bytes()?.as_ref())?.is_some() {
+        Ok(split_slice_without_trailer)
+    } else {
+        Ok(split_slice)
+    }
+}
 
 #[derive(Copy, Clone, Default)]
 #[repr(u32)]
-pub enum BundleStorageFileOffsetsVersions {
+pub enum BundleFileRangesVersions {
     #[default]
     V1 = 1,
 }
 
-impl VersionedComponent for BundleStorageFileOffsetsVersions {
+impl VersionedComponent for BundleFileRangesVersions {
     const MAGIC_NUMBER: u32 = 403_881_646u32;
 
-    type Component = BundleStorageFileOffsets;
+    type Component = BundleFileRanges;
 
     fn to_version_code(self) -> u32 {
         self as u32
@@ -116,69 +223,65 @@ impl VersionedComponent for BundleStorageFileOffsetsVersions {
         }
     }
 
-    fn serialize_impl(component: &BundleStorageFileOffsets, output: &mut Vec<u8>) {
-        let metadata_json = serde_json::to_string(component).unwrap();
-        output.extend_from_slice(metadata_json.as_bytes());
+    fn serialize_impl(component: &BundleFileRanges, output: &mut Vec<u8>) {
+        let file_ranges_json = serde_json::to_string(component).unwrap();
+        output.extend_from_slice(file_ranges_json.as_bytes());
     }
 
     fn deserialize_impl(&self, bytes: &mut OwnedBytes) -> anyhow::Result<Self::Component> {
-        serde_json::from_reader(bytes).context("deserializing bundle storage file offsets failed")
+        serde_json::from_reader(bytes).context("deserializing bundle file ranges failed")
     }
 }
 
-/// Returns the file offsets in the file bundle.
+/// Maps files in a bundle to their byte ranges.
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
-pub struct BundleStorageFileOffsets {
-    /// The files and their offsets in the body
+pub struct BundleFileRanges {
+    /// The files and their byte ranges in the bundle body.
     pub files: HashMap<PathBuf, Range<u64>>,
 }
 
-impl BundleStorageFileOffsets {
+impl BundleFileRanges {
     /// File need to include split data (with hotcache at the end).
     /// See docs/internals/split-format.md
-    /// [Files, FileMetadata, FileMetadata Len, HotCache, HotCache Len]
-    /// Returns (Hotcache, Self)
-    fn open_from_split_data(file: FileSlice) -> anyhow::Result<(FileSlice, Self)> {
-        let (bundle_and_hotcache_bytes, hotcache_num_bytes_data) =
-            file.split_from_end(SPLIT_HOTBYTES_FOOTER_LENGTH_NUM_BYTES);
-        let hotcache_num_bytes: u32 = u32::from_le_bytes(
-            hotcache_num_bytes_data
-                .read_bytes()?
-                .as_ref()
-                .try_into()
-                .unwrap(),
-        );
-        let (bundle, hotcache) =
-            bundle_and_hotcache_bytes.split_from_end(hotcache_num_bytes as usize);
-        Ok((hotcache, Self::open(bundle)?))
+    /// [Files, BundleFileRanges, BundleMetadata Len, HotCache, HotCache Len, Split Footer Trailer]
+    /// Returns (Self, Hotcache)
+    fn open_from_split_bytes(split_bytes: OwnedBytes) -> anyhow::Result<(Self, OwnedBytes)> {
+        let split_slice = FileSlice::new(Arc::new(split_bytes));
+        let split_slice = strip_split_footer_trailer(split_slice)?;
+        let (bundle_and_hotcache_bytes, hotcache_len_data) =
+            split_slice.split_from_end(HOTCACHE_LEN_NUM_BYTES);
+        let hotcache_len: u32 =
+            u32::from_le_bytes(hotcache_len_data.read_bytes()?.as_ref().try_into().unwrap());
+        let (bundle, hotcache) = bundle_and_hotcache_bytes.split_from_end(hotcache_len as usize);
+        Ok((Self::open(bundle)?, hotcache.read_bytes()?))
     }
 
     /// FileSlice needs to end with the bundle (without hotcache from the split at the end).
     /// See docs/internals/split-format.md
-    /// [Files, FileMetadata, FileMetadata Len]
+    /// [Files, BundleFileRanges, BundleMetadata Len]
     pub fn open(file: FileSlice) -> anyhow::Result<Self> {
-        let (tantivy_files_data, num_bytes_file_metadata) =
-            file.split_from_end(BUNDLE_METADATA_LENGTH_NUM_BYTES);
-        let footer_num_bytes: u32 = u32::from_le_bytes(
-            num_bytes_file_metadata
+        let (bundle_and_metadata, bundle_metadata_len_data) =
+            file.split_from_end(BUNDLE_METADATA_LEN_NUM_BYTES);
+        let bundle_metadata_len: u32 = u32::from_le_bytes(
+            bundle_metadata_len_data
                 .read_bytes()?
                 .as_slice()
                 .try_into()
                 .unwrap(),
         );
 
-        let mut bundle_storage_file_offsets_data = tantivy_files_data
-            .slice_from_end(footer_num_bytes as usize)
+        let mut bundle_metadata_data = bundle_and_metadata
+            .slice_from_end(bundle_metadata_len as usize)
             .read_bytes()?;
-        BundleStorageFileOffsetsVersions::try_read_component(&mut bundle_storage_file_offsets_data)
+        BundleFileRangesVersions::try_read_component(&mut bundle_metadata_data)
     }
 
-    /// Returns file offsets for given path.
+    /// Returns the byte range for a given path.
     pub fn get(&self, path: &Path) -> Option<Range<u64>> {
         self.files.get(path).cloned()
     }
 
-    /// Returns whether file exists in metadata.
+    /// Returns whether the bundle contains a file at the given path.
     pub fn exists(&self, path: &Path) -> bool {
         self.files.contains_key(path)
     }
@@ -193,7 +296,7 @@ impl Storage for BundleStorage {
             .await
             .unwrap_or(false)
         {
-            anyhow::bail!("`{}` not found in storage", self.bundle_filepath.display())
+            bail!("`{}` not found in storage", self.bundle_filepath.display())
         }
         Ok(())
     }
@@ -211,9 +314,9 @@ impl Storage for BundleStorage {
         path: &Path,
         output: &mut dyn SendableAsync,
     ) -> crate::StorageResult<()> {
-        let file_num_bytes = self.file_num_bytes(path).await? as usize;
+        let file_len = self.file_num_bytes(path).await? as usize;
         let block_size = 100_000_000;
-        for block in chunk_range(0..file_num_bytes, block_size) {
+        for block in chunk_range(0..file_len, block_size) {
             let file_content = self.get_slice(path, block).await?;
             output.write_all(&file_content).await?;
         }
@@ -226,12 +329,12 @@ impl Storage for BundleStorage {
         path: &Path,
         range: Range<usize>,
     ) -> crate::StorageResult<OwnedBytes> {
-        let file_offsets = self.metadata.get(path).ok_or_else(|| {
+        let file_range = self.file_ranges.get(path).ok_or_else(|| {
             crate::StorageErrorKind::NotFound
                 .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
         })?;
         let new_range =
-            file_offsets.start as usize + range.start..file_offsets.start as usize + range.end;
+            file_range.start as usize + range.start..file_range.start as usize + range.end;
         self.storage
             .get_slice(&self.bundle_filepath, new_range)
             .await
@@ -246,14 +349,14 @@ impl Storage for BundleStorage {
     }
 
     async fn get_all(&self, path: &Path) -> crate::StorageResult<OwnedBytes> {
-        let file_offsets = self.metadata.get(path).ok_or_else(|| {
+        let file_range = self.file_ranges.get(path).ok_or_else(|| {
             crate::StorageErrorKind::NotFound
                 .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
         })?;
         self.storage
             .get_slice(
                 &self.bundle_filepath,
-                file_offsets.start as usize..file_offsets.end as usize,
+                file_range.start as usize..file_range.end as usize,
             )
             .await
     }
@@ -271,11 +374,11 @@ impl Storage for BundleStorage {
 
     async fn exists(&self, path: &Path) -> crate::StorageResult<bool> {
         // also check if self.bundle_file_name exists ?
-        Ok(self.metadata.exists(path))
+        Ok(self.file_ranges.exists(path))
     }
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
-        let file_range = self.metadata.get(path).ok_or_else(|| {
+        let file_range = self.file_ranges.get(path).ok_or_else(|| {
             crate::StorageErrorKind::NotFound
                 .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
         })?;
@@ -298,7 +401,7 @@ impl fmt::Debug for BundleStorage {
         write!(
             f,
             "BundleStorage({:?}, files={:?})",
-            &self.bundle_filepath, self.metadata
+            &self.bundle_filepath, self.file_ranges
         )
     }
 }
@@ -318,7 +421,54 @@ mod tests {
     use crate::{PutPayload, RamStorageBuilder, SplitPayloadBuilder};
 
     #[tokio::test]
-    async fn bundle_storage_file_offsets() -> anyhow::Result<()> {
+    async fn bundle_storage_locates_footer_from_object_storage() {
+        let mut split_payload_builder = SplitPayloadBuilder::default();
+        split_payload_builder.add_payload("fields".to_string(), Box::new(b"fields".to_vec()));
+        let split_payload = split_payload_builder
+            .finalize_with_footer_trailer(b"hotcache", true)
+            .unwrap();
+        let expected_footer_range = split_payload.footer_range.clone();
+        let split_bytes = split_payload.read_all().await.unwrap();
+        let split_path = PathBuf::from("split");
+        let storage = Arc::new(
+            RamStorageBuilder::default()
+                .put(&split_path.to_string_lossy(), &split_bytes)
+                .build(),
+        );
+
+        let (_bundle_storage, hotcache, footer_range) =
+            BundleStorage::open_from_storage(storage, split_path)
+                .await
+                .unwrap();
+
+        assert_eq!(hotcache.as_ref(), b"hotcache");
+        assert_eq!(footer_range, expected_footer_range);
+    }
+
+    #[tokio::test]
+    async fn bundle_storage_locates_legacy_footer_from_object_storage() {
+        let split_payload =
+            SplitPayloadBuilder::get_split_payload(&[], b"fields", None, b"hotcache").unwrap();
+        let expected_footer_range = split_payload.footer_range.clone();
+        let split_bytes = split_payload.read_all().await.unwrap();
+        let split_path = PathBuf::from("legacy-split");
+        let storage = Arc::new(
+            RamStorageBuilder::default()
+                .put(&split_path.to_string_lossy(), &split_bytes)
+                .build(),
+        );
+
+        let (_bundle_storage, hotcache, footer_range) =
+            BundleStorage::open_from_storage(storage, split_path)
+                .await
+                .unwrap();
+
+        assert_eq!(hotcache.as_ref(), b"hotcache");
+        assert_eq!(footer_range, expected_footer_range);
+    }
+
+    #[tokio::test]
+    async fn bundle_file_ranges() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let test_filepath1 = temp_dir.path().join("f1");
         let test_filepath2 = temp_dir.path().join("f2");
@@ -332,22 +482,21 @@ mod tests {
         let buffer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
             &[],
+            None,
             &[5, 5, 5],
         )?
         .read_all()
         .await?;
 
         let bundle_filepath = Path::new("bundle");
-        let bundle_file_slice = FileSlice::new(Arc::new(buffer.clone()));
-        let (hotcache, metadata) =
-            BundleStorageFileOffsets::open_from_split_data(bundle_file_slice)?;
-        assert_eq!(hotcache.read_bytes().unwrap().as_ref(), &[5, 5, 5]);
+        let (file_ranges, hotcache) = BundleFileRanges::open_from_split_bytes(buffer.clone())?;
+        assert_eq!(hotcache.as_ref(), &[5, 5, 5]);
         let ram_storage = RamStorageBuilder::default()
             .put(&bundle_filepath.to_string_lossy(), &buffer)
             .build();
 
         let bundle_storage = BundleStorage {
-            metadata,
+            file_ranges,
             bundle_filepath: bundle_filepath.to_path_buf(),
             storage: Arc::new(ram_storage),
         };
@@ -374,14 +523,14 @@ mod tests {
         let buffer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
             &[],
+            None,
             &[1, 3, 3, 7],
         )?
         .read_all()
         .await?;
 
-        let (hotcache, metadata) =
-            BundleStorageFileOffsets::open_from_split_data(FileSlice::from(buffer.to_vec()))?;
-        assert_eq!(hotcache.read_bytes().unwrap().as_ref(), &[1, 3, 3, 7]);
+        let (file_ranges, hotcache) = BundleFileRanges::open_from_split_bytes(buffer.clone())?;
+        assert_eq!(hotcache.as_ref(), &[1, 3, 3, 7]);
 
         let bundle_filepath = Path::new("bundle");
         let ram_storage = RamStorageBuilder::default()
@@ -389,7 +538,7 @@ mod tests {
             .build();
 
         let bundle_storage = BundleStorage {
-            metadata,
+            file_ranges,
             bundle_filepath: bundle_filepath.to_path_buf(),
             storage: Arc::new(ram_storage),
         };
@@ -411,19 +560,18 @@ mod tests {
 
     #[tokio::test]
     async fn bundlestorage_test_empty() -> anyhow::Result<()> {
-        let buffer = SplitPayloadBuilder::get_split_payload(&[], &[], &[])?
+        let buffer = SplitPayloadBuilder::get_split_payload(&[], &[], None, &[])?
             .read_all()
             .await?;
 
-        let (_hotcache, metadata) =
-            BundleStorageFileOffsets::open_from_split_data(FileSlice::from(buffer.to_vec()))?;
+        let (file_ranges, _hotcache) = BundleFileRanges::open_from_split_bytes(buffer.clone())?;
 
         let bundle_filepath = PathBuf::from("bundle");
         let ram_storage = RamStorageBuilder::default()
             .put(&bundle_filepath.to_string_lossy(), &buffer)
             .build();
         let bundle_storage = BundleStorage {
-            metadata,
+            file_ranges,
             bundle_filepath,
             storage: Arc::new(ram_storage),
         };

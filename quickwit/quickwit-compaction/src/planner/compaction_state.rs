@@ -28,7 +28,7 @@ use crate::planner::metrics::{SOURCE_UID, SPLITS_NEEDING_COMPACTION, TIMED_OUT_O
 use crate::planner::{PendingMerge, PendingOperations};
 use crate::{TaskId, source_uid_metrics_label};
 
-const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(60);
+const HEARTBEAT_TIMEOUT: Duration = Duration::from_mins(1);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CompactionPartitionKey {
@@ -192,7 +192,7 @@ impl CompactionState {
 
         for task_id in timed_out_task_ids {
             if let Some(inflight) = self.in_flight.remove(&task_id) {
-                error!(%task_id, node_id=%inflight.node_id, "compaction task timed out");
+                error!(%task_id, remote_node_id=%inflight.node_id, "compaction task timed out");
                 TIMED_OUT_OPERATIONS.inc();
                 for split_id in &inflight.split_ids {
                     // these splits will be picked up again on the next metastore scan.
@@ -290,7 +290,7 @@ mod tests {
             num_docs: 1000,
             create_timestamp: time::OffsetDateTime::now_utc().unix_timestamp(),
             maturity: quickwit_metastore::SplitMaturity::Immature {
-                maturation_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_hours(1),
             },
             ..Default::default()
         }
