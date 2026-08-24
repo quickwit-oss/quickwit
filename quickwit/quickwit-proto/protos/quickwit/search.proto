@@ -273,6 +273,13 @@ message SearchRequest {
   // When true, skip finalization of aggregation results and return
   // the raw IntermediateAggregationResults bytes instead.
   bool skip_aggregation_finalization = 19;
+
+  // Field 20 is intentionally reserved for wire compatibility with a downstream fork.
+  reserved 20;
+
+  // Scheduling priority for leaf search execution. Negative values are allowed,
+  // and lower values have higher priority. Callers that omit it get priority 0.
+  int32 priority = 21;
 }
 
 enum CountHits {
