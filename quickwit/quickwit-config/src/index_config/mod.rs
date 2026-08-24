@@ -330,6 +330,7 @@ pub struct RetentionPolicy {
     /// If unset, a default jitter of `min(1 hour, next_next_evaluation - next_evaluation)` is
     /// applied. Said otherwise, an operation may start any time between the next time it's
     /// scheduled, and the time after that, but no later than 1h after the scheduled time.
+    #[schema(value_type = Option<String>)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evaluation_schedule_jitter: Option<HumanDuration>,
 }
