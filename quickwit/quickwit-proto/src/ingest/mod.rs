@@ -20,10 +20,10 @@ use quickwit_common::rate_limited_error;
 use quickwit_common::tower::MakeLoadShedError;
 use serde::{Deserialize, Serialize};
 
-use self::ingester::{PersistFailureReason, ReplicateFailureReason};
+use self::ingester::PersistFailureReason;
 use self::router::IngestFailureReason;
 use super::GrpcServiceError;
-use crate::types::{DocUid, NodeIdRef, Position, QueueId, ShardId, SourceUid, queue_id};
+use crate::types::{DocUid, Position, QueueId, ShardId, SourceUid, queue_id};
 use crate::{ServiceError, ServiceErrorCode};
 
 pub mod ingester;
@@ -125,14 +125,6 @@ impl MakeLoadShedError for IngestV2Error {
 }
 
 impl Shard {
-    /// List of nodes that are storing the shard (the leader, and optionally the follower).
-    pub fn ingesters(&self) -> impl Iterator<Item = &NodeIdRef> + '_ {
-        [Some(&self.leader_id), self.follower_id.as_ref()]
-            .into_iter()
-            .flatten()
-            .map(|node_id| NodeIdRef::from_str(node_id))
-    }
-
     pub fn source_uid(&self) -> SourceUid {
         SourceUid {
             index_uid: self.index_uid().clone(),
@@ -328,17 +320,6 @@ impl From<PersistFailureReason> for IngestFailureReason {
     }
 }
 
-impl From<ReplicateFailureReason> for PersistFailureReason {
-    fn from(reason: ReplicateFailureReason) -> Self {
-        match reason {
-            ReplicateFailureReason::Unspecified => PersistFailureReason::Unspecified,
-            ReplicateFailureReason::ShardNotFound => PersistFailureReason::NoShardsAvailable,
-            ReplicateFailureReason::ShardClosed => PersistFailureReason::NoShardsAvailable,
-            ReplicateFailureReason::WalFull => PersistFailureReason::WalFull,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,5 +343,26 @@ mod tests {
         assert_eq!(shard_state, ShardState::Closed);
 
         assert!(ShardState::from_json_str_name("unknown").is_none());
+    }
+
+    #[test]
+    fn test_shard_ingester_id_json_backward_compatibility() {
+        let shard = Shard {
+            ingester_id: "test-ingester".to_string(),
+            ..Default::default()
+        };
+
+        let mut shard_json = serde_json::to_value(&shard).unwrap();
+        assert_eq!(shard_json["leader_id"], "test-ingester");
+        assert!(shard_json.get("ingester_id").is_none());
+
+        let deserialized_shard: Shard = serde_json::from_value(shard_json.clone()).unwrap();
+        assert_eq!(deserialized_shard.ingester_id, "test-ingester");
+
+        let shard_object = shard_json.as_object_mut().unwrap();
+        let ingester_id = shard_object.remove("leader_id").unwrap();
+        shard_object.insert("ingester_id".to_string(), ingester_id);
+        let deserialized_shard: Shard = serde_json::from_value(shard_json).unwrap();
+        assert_eq!(deserialized_shard.ingester_id, "test-ingester");
     }
 }

@@ -112,7 +112,7 @@ mod tests {
         let now = Instant::now();
 
         let index_uid = IndexUid::for_test("test-index", 0);
-        let shard_01 = IngesterShard::new_solo(
+        let shard_01 = IngesterShard::builder(
             index_uid.clone(),
             "test-source".to_string(),
             ShardId::from(1),
@@ -122,7 +122,7 @@ mod tests {
         let queue_id_01 = shard_01.queue_id();
         state_guard.shards.insert(queue_id_01.clone(), shard_01);
 
-        let shard_02 = IngesterShard::new_solo(
+        let shard_02 = IngesterShard::builder(
             index_uid.clone(),
             "test-source".to_string(),
             ShardId::from(2),

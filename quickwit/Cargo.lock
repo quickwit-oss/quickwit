@@ -9420,6 +9420,7 @@ dependencies = [
  "mockall",
  "opendal",
  "opendal-http-transport-reqwest",
+ "percent-encoding",
  "pin-project",
  "proptest",
  "quick_cache",

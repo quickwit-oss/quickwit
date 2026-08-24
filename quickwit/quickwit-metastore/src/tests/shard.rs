@@ -93,7 +93,7 @@ pub async fn test_metastore_open_shards<
     //     subrequests: vec![OpenShardSubrequest {
     //         index_uid: "index-does-not-exist:0".to_string(),
     //         source_id: test_index.source_id.clone(),
-    //         leader_id: "test-ingester-foo".to_string(),
+    //         ingester_id: "test-ingester-foo".to_string(),
     //         ..Default::default()
     //     }],
     // };
@@ -110,7 +110,7 @@ pub async fn test_metastore_open_shards<
     //     subrequests: vec![OpenShardSubrequest {
     //         index_uid: Some(test_index.index_uid.clone()),
     //         source_id: "source-does-not-exist".to_string(),
-    //         leader_id: "test-ingester-foo".to_string(),
+    //         ingester_id: "test-ingester-foo".to_string(),
     //         ..Default::default()
     //     }],
     // };
@@ -129,8 +129,7 @@ pub async fn test_metastore_open_shards<
             index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(1)),
-            leader_id: "test-ingester-foo".to_string(),
-            follower_id: Some("test-ingester-bar".to_string()),
+            ingester_id: "test-ingester-foo".to_string(),
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_token: None,
         }],
@@ -146,8 +145,7 @@ pub async fn test_metastore_open_shards<
     assert_eq!(shard.source_id, test_index.source_id);
     assert_eq!(shard.shard_id(), ShardId::from(1));
     assert_eq!(shard.shard_state(), ShardState::Open);
-    assert_eq!(shard.leader_id, "test-ingester-foo");
-    assert_eq!(shard.follower_id(), "test-ingester-bar");
+    assert_eq!(shard.ingester_id, "test-ingester-foo");
     assert_eq!(shard.doc_mapping_uid(), DocMappingUid::default(),);
     assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
     let shard_ts = shard.update_timestamp;
@@ -162,8 +160,7 @@ pub async fn test_metastore_open_shards<
             index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(1)),
-            leader_id: "test-ingester-foo".to_string(),
-            follower_id: Some("test-ingester-bar".to_string()),
+            ingester_id: "test-ingester-foo".to_string(),
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_token: Some("publish-token-baz".to_string()),
         }],
@@ -179,8 +176,7 @@ pub async fn test_metastore_open_shards<
     assert_eq!(shard.source_id, test_index.source_id);
     assert_eq!(shard.shard_id(), ShardId::from(1));
     assert_eq!(shard.shard_state(), ShardState::Open);
-    assert_eq!(shard.leader_id, "test-ingester-foo");
-    assert_eq!(shard.follower_id(), "test-ingester-bar");
+    assert_eq!(shard.ingester_id, "test-ingester-foo");
     assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
     assert_eq!(shard.update_timestamp, shard_ts);
     assert!(shard.publish_token.is_none());
@@ -192,8 +188,7 @@ pub async fn test_metastore_open_shards<
             index_uid: Some(test_index.index_uid.clone()),
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(2)),
-            leader_id: "test-ingester-foo".to_string(),
-            follower_id: None,
+            ingester_id: "test-ingester-foo".to_string(),
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_token: Some("publish-token-open".to_string()),
         }],
@@ -209,8 +204,7 @@ pub async fn test_metastore_open_shards<
     assert_eq!(shard.source_id, test_index.source_id);
     assert_eq!(shard.shard_id(), ShardId::from(2));
     assert_eq!(shard.shard_state(), ShardState::Open);
-    assert_eq!(shard.leader_id, "test-ingester-foo");
-    assert!(shard.follower_id.is_none());
+    assert_eq!(shard.ingester_id, "test-ingester-foo");
     assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
     assert_eq!(shard.publish_token(), "publish-token-open");
 
@@ -247,8 +241,7 @@ pub async fn test_metastore_acquire_shards<
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Closed as i32,
-            leader_id: "test-ingester-foo".to_string(),
-            follower_id: Some("test-ingester-bar".to_string()),
+            ingester_id: "test-ingester-foo".to_string(),
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::Beginning),
             publish_token: Some(TOKEN.to_string()),
@@ -259,8 +252,7 @@ pub async fn test_metastore_acquire_shards<
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(2)),
             shard_state: ShardState::Open as i32,
-            leader_id: "test-ingester-bar".to_string(),
-            follower_id: Some("test-ingester-qux".to_string()),
+            ingester_id: "test-ingester-bar".to_string(),
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::Beginning),
             publish_token: None,
@@ -271,8 +263,7 @@ pub async fn test_metastore_acquire_shards<
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(3)),
             shard_state: ShardState::Open as i32,
-            leader_id: "test-ingester-qux".to_string(),
-            follower_id: Some("test-ingester-baz".to_string()),
+            ingester_id: "test-ingester-qux".to_string(),
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::Beginning),
             publish_token: Some(LEGACY_TOKEN.to_string()),
@@ -283,8 +274,7 @@ pub async fn test_metastore_acquire_shards<
             source_id: test_index.source_id.clone(),
             shard_id: Some(ShardId::from(4)),
             shard_state: ShardState::Open as i32,
-            leader_id: "test-ingester-baz".to_string(),
-            follower_id: Some("test-ingester-tux".to_string()),
+            ingester_id: "test-ingester-baz".to_string(),
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_position_inclusive: Some(Position::Beginning),
             publish_token: Some(TOKEN.to_string()),
@@ -325,8 +315,7 @@ pub async fn test_metastore_acquire_shards<
     assert_eq!(shard.source_id, test_index.source_id);
     assert_eq!(shard.shard_id(), ShardId::from(1));
     assert_eq!(shard.shard_state(), ShardState::Closed);
-    assert_eq!(shard.leader_id, "test-ingester-foo");
-    assert_eq!(shard.follower_id(), "test-ingester-bar");
+    assert_eq!(shard.ingester_id, "test-ingester-foo");
     assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
     assert_eq!(shard.publish_token(), TOKEN);
 
@@ -443,8 +432,7 @@ pub async fn test_metastore_list_shards<
                 source_id: test_index.source_id.clone(),
                 shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
-                leader_id: "test-ingester-foo".to_string(),
-                follower_id: Some("test-ingester-bar".to_string()),
+                ingester_id: "test-ingester-foo".to_string(),
                 doc_mapping_uid: Some(DocMappingUid::default()),
                 publish_position_inclusive: Some(Position::Beginning),
                 publish_token: Some("test-publish-token-foo".to_string()),
@@ -455,8 +443,7 @@ pub async fn test_metastore_list_shards<
                 source_id: test_index.source_id.clone(),
                 shard_id: Some(ShardId::from(2)),
                 shard_state: ShardState::Closed as i32,
-                leader_id: "test-ingester-bar".to_string(),
-                follower_id: Some("test-ingester-qux".to_string()),
+                ingester_id: "test-ingester-bar".to_string(),
                 doc_mapping_uid: Some(DocMappingUid::default()),
                 publish_position_inclusive: Some(Position::Beginning),
                 publish_token: Some("test-publish-token-bar".to_string()),
@@ -505,8 +492,7 @@ pub async fn test_metastore_list_shards<
         assert_eq!(shard.source_id, test_index.source_id);
         assert_eq!(shard.shard_id(), ShardId::from(1));
         assert_eq!(shard.shard_state(), ShardState::Open);
-        assert_eq!(shard.leader_id, "test-ingester-foo");
-        assert_eq!(shard.follower_id(), "test-ingester-bar");
+        assert_eq!(shard.ingester_id, "test-ingester-foo");
         assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
         assert_eq!(shard.publish_token(), "test-publish-token-foo");
         assert_eq!(shard.update_timestamp, 1724158996);
@@ -516,8 +502,7 @@ pub async fn test_metastore_list_shards<
         assert_eq!(shard.source_id, test_index.source_id);
         assert_eq!(shard.shard_id(), ShardId::from(2));
         assert_eq!(shard.shard_state(), ShardState::Closed);
-        assert_eq!(shard.leader_id, "test-ingester-bar");
-        assert_eq!(shard.follower_id(), "test-ingester-qux");
+        assert_eq!(shard.ingester_id, "test-ingester-bar");
         assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
         assert_eq!(shard.publish_token(), "test-publish-token-bar");
         assert_eq!(shard.update_timestamp, 1724158997);

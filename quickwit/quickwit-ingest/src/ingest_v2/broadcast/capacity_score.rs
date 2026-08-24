@@ -236,7 +236,7 @@ mod tests {
             IngesterState::for_test_with_disk_capacity(cluster.clone(), ByteSize::b(1000)).await;
         let index_uid = IndexUid::for_test("test-index", 0);
         let mut state_guard = state.lock_partially("test").await.unwrap();
-        let shard = IngesterShard::new_solo(
+        let shard = IngesterShard::builder(
             index_uid.clone(),
             SourceId::from("test-source"),
             ShardId::from(0),
