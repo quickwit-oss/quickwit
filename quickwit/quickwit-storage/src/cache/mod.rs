@@ -14,6 +14,7 @@
 
 mod base_cache;
 mod byte_range_cache;
+mod mem_usage;
 mod memory_sized_cache;
 mod quickwit_cache;
 mod slice_address;
@@ -29,6 +30,7 @@ pub use quickwit_cache::QuickwitCache;
 pub use storage_with_cache::StorageWithCache;
 
 pub use self::byte_range_cache::{ByteRangeCache, FileByteRangeCache};
+pub use self::mem_usage::{MemUsage, owned_mem_usage};
 pub use self::memory_sized_cache::MemorySizedCache;
 use crate::{OwnedBytes, Storage};
 

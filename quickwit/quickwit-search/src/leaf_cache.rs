@@ -19,7 +19,7 @@ use quickwit_config::CacheConfig;
 use quickwit_proto::search::{
     CountHits, LeafResourceStats, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
 };
-use quickwit_storage::{MemorySizedCache, OwnedBytes};
+use quickwit_storage::{MemUsage, MemorySizedCache, OwnedBytes, owned_mem_usage};
 use tantivy::index::SegmentId;
 
 /// A cache to memoize `leaf_search_single_split` results.
@@ -115,6 +115,14 @@ impl CacheKey {
             request: search_request,
             merged_time_range,
         }
+    }
+}
+
+impl MemUsage for CacheKey {
+    fn mem_usage(&self) -> usize {
+        // `SearchRequest` cannot easily implement `MemUsage`, but `encoded_len()` is a good proxy
+        // for its memory footprint.
+        size_of::<Self>() + owned_mem_usage(&self.split_id) + self.request.encoded_len()
     }
 }
 
@@ -249,7 +257,45 @@ mod tests {
         SplitIdAndFooterOffsets,
     };
 
-    use super::LeafSearchCache;
+    use super::{CacheKey, LeafSearchCache, MemUsage};
+
+    #[test]
+    fn test_cache_key_mem_usage_accounts_the_request() {
+        let split_info = SplitIdAndFooterOffsets {
+            split_id: "01H4V2E9K7XQZ8N3M5P6R7S8T9".to_string(),
+            split_footer_start: 0,
+            split_footer_end: 100,
+            timestamp_start: None,
+            timestamp_end: None,
+            num_docs: 0,
+        };
+        let short_request = SearchRequest {
+            index_id_patterns: vec!["test-idx".to_string()],
+            query_ast: "short".to_string(),
+            max_hits: 10,
+            ..Default::default()
+        };
+        let padding = "x".repeat(10_000);
+        let long_request = SearchRequest {
+            query_ast: format!("short{padding}"),
+            ..short_request.clone()
+        };
+
+        let short_key = CacheKey::from_split_meta_and_request(split_info.clone(), short_request);
+        let long_key = CacheKey::from_split_meta_and_request(split_info, long_request);
+
+        // The split id and the request are both owned outside the struct itself.
+        assert!(short_key.mem_usage() > size_of::<CacheKey>());
+        // A longer query AST is charged for, roughly byte for byte. `encoded_len` is a proxy, so
+        // only the order of magnitude is pinned here: the extra length must show up, and must not
+        // be wildly over-counted.
+        let delta = long_key.mem_usage() - short_key.mem_usage();
+        assert!(
+            delta >= padding.len() && delta <= padding.len() + 16,
+            "a {} byte longer query AST grew the key by {delta} bytes",
+            padding.len()
+        );
+    }
 
     #[test]
     fn test_leaf_search_cache_no_timestamp() {
