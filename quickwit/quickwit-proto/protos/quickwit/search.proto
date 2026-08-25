@@ -200,9 +200,84 @@ enum ListFieldsType {
     BYTES = 7;
     IP_ADDR = 8;
     JSON = 9;
+    CUSTOM = 10;
 }
 
 // -- Search -------------------
+
+// A predicate expression evaluated against fast-field values on each leaf
+// segment. The expression is lowered to tantivy::query::CalculatedPredicateQuery
+// by the search leaf.
+message CalculatedPredicate {
+  CalculatedPredicateExpr expr = 1;
+}
+
+message CalculatedPredicateExpr {
+  oneof node {
+    CalculatedPredicateLiteral literal = 1;
+    // Fast-field name read by the calculated predicate query.
+    string variable = 2;
+    CalculatedPredicateFuncCall func_call = 3;
+  }
+}
+
+message CalculatedPredicateLiteral {
+  oneof value {
+    int64 int_value = 1;
+    uint64 uint_value = 2;
+    // IEEE-754 bits for an f64 literal. This keeps SearchRequest Eq/Hash-safe.
+    fixed64 double_value_bits = 3;
+    string string_value = 4;
+    bool bool_value = 5;
+  }
+}
+
+message CalculatedPredicateFuncCall {
+  enum Function {
+    FUNCTION_UNSPECIFIED = 0;
+    FUNCTION_ABS = 1;
+    FUNCTION_AND = 2;
+    FUNCTION_CEIL = 3;
+    FUNCTION_CONCAT = 4;
+    FUNCTION_ADD = 5;
+    FUNCTION_DIVIDE = 6;
+    FUNCTION_EQ = 7;
+    FUNCTION_FLOOR = 8;
+    FUNCTION_GT = 9;
+    FUNCTION_GT_EQ = 10;
+    FUNCTION_IF = 11;
+    FUNCTION_INT_MOD = 12;
+    FUNCTION_LEFT = 13;
+    FUNCTION_LT = 14;
+    FUNCTION_LT_EQ = 15;
+    FUNCTION_IS_NOT_NULL = 16;
+    FUNCTION_IS_NULL = 17;
+    FUNCTION_LOWER = 18;
+    FUNCTION_MAX = 19;
+    FUNCTION_MIN = 20;
+    FUNCTION_MULTIPLY = 21;
+    FUNCTION_NEQ = 22;
+    FUNCTION_NOT = 23;
+    FUNCTION_OR = 24;
+    FUNCTION_POW = 25;
+    FUNCTION_SQRT = 26;
+    FUNCTION_REGEXP_EXTRACT = 27;
+    FUNCTION_REGEXP_LIKE = 28;
+    FUNCTION_RIGHT = 29;
+    FUNCTION_ROUND = 30;
+    FUNCTION_SPLIT_AFTER = 31;
+    FUNCTION_SPLIT_BEFORE = 32;
+    FUNCTION_SUBTRACT = 33;
+    FUNCTION_SUBSTRING = 34;
+    FUNCTION_SUBSTRING_COUNT = 35;
+    FUNCTION_TEXT_JOIN = 36;
+    FUNCTION_TRIM = 37;
+    FUNCTION_UPPER = 38;
+  }
+
+  Function function = 1;
+  repeated CalculatedPredicateExpr args = 2;
+}
 
 message SearchRequest {
   // Index ID patterns
@@ -280,6 +355,9 @@ message SearchRequest {
   // Scheduling priority for leaf search execution. Negative values are allowed,
   // and lower values have higher priority. Callers that omit it get priority 0.
   int32 priority = 21;
+
+  // Predicate expression evaluated by Tantivy against fast fields on each leaf.
+  optional CalculatedPredicate calculated_predicate = 22;
 }
 
 enum CountHits {

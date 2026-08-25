@@ -28,7 +28,7 @@ use quickwit_directories::write_hotcache;
 use quickwit_doc_mapper::NamedField;
 use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
 use quickwit_proto::search::{ListFieldsEntry, ListFieldsMetadata, ListFieldsType};
-use tantivy::index::FieldMetadata;
+use tantivy::index::{FieldMetadata, SegmentComponent};
 use tantivy::schema::{FieldType, Type};
 use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentMeta};
 use tokio::runtime::Handle;
@@ -187,15 +187,24 @@ fn list_split_files(
     scratch_directory: &TempDirectory,
 ) -> io::Result<Vec<PathBuf>> {
     let mut split_files = vec![scratch_directory.path().join("meta.json")];
+    let segment_components = [
+        SegmentComponent::Postings,
+        SegmentComponent::Positions,
+        SegmentComponent::Terms,
+        SegmentComponent::Store,
+        SegmentComponent::FastFields,
+        SegmentComponent::FieldNorms,
+        SegmentComponent::Delete,
+    ];
 
     // list the segment files
     for segment_meta in segment_metas {
-        for relative_path in segment_meta.list_files() {
+        for segment_component in &segment_components {
+            let relative_path = segment_meta.relative_path(segment_component.clone());
             let filepath = scratch_directory.path().join(relative_path);
             if filepath.try_exists()? {
                 // If the file is missing, this is fine.
-                // segment_meta.list_files() may actually returns files that
-                // may not exist.
+                // Segment metadata may reference optional files that do not exist.
                 split_files.push(filepath);
             }
         }
@@ -361,6 +370,7 @@ fn tantivy_type_to_list_field_type(typ: Type) -> ListFieldsType {
         Type::Json => ListFieldsType::Json,
         Type::Str => ListFieldsType::Str,
         Type::U64 => ListFieldsType::U64,
+        Type::Custom => ListFieldsType::Custom,
     }
 }
 

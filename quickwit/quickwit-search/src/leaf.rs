@@ -52,12 +52,14 @@ use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 use tantivy::collector::Collector;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::index::SegmentId;
+use tantivy::query::{BooleanQuery, Occur, Query};
 use tantivy::schema::Field;
 use tantivy::{DateTime, Index, ReloadPolicy, Searcher, TantivyError, Term};
 use tokio::task::{JoinError, JoinSet};
 use tokio_util::sync::CancellationToken;
 use tracing::*;
 
+use crate::calculated_predicate::calculated_predicate_query;
 use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
 use crate::leaf_cache::LeafSearchCache;
 use crate::metrics::{
@@ -739,12 +741,31 @@ async fn leaf_search_single_split(
         ))
     };
     let split_schema = index.schema();
-    let (query, mut warmup_info) = ctx.doc_mapper.query(
+    let (mut query, mut warmup_info) = ctx.doc_mapper.query(
         split_schema.clone(),
         query_ast.clone(),
         false,
         predicate_cache,
     )?;
+    if let Some(calculated_predicate) = search_request.calculated_predicate.as_ref() {
+        let (predicate_query, predicate_variables) =
+            calculated_predicate_query(calculated_predicate)
+                .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
+        warmup_info
+            .fast_fields
+            .extend(
+                predicate_variables
+                    .into_iter()
+                    .map(|name| FastFieldWarmupInfo {
+                        name,
+                        with_subfields: false,
+                    }),
+            );
+        query = Box::new(BooleanQuery::new(vec![
+            (Occur::Must, query),
+            (Occur::Must, Box::new(predicate_query) as Box<dyn Query>),
+        ]));
+    }
 
     let collector_warmup_info = collector.warmup_info();
     warmup_info.merge(collector_warmup_info);

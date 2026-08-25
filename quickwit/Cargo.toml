@@ -426,7 +426,8 @@ quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-transport = { path = "quickwit-transport" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "86641f7", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "c661f6a", default-features = false, features = [
+  "jitexpr",
   "lz4-compression",
   "mmap",
   "quickwit",

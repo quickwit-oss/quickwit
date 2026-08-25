@@ -212,6 +212,7 @@ pub fn tantivy_value_to_json(value: TantivyValue) -> JsonValue {
             .expect("Invalid datetime is not allowed."),
         TantivyValue::Facet(facet) => JsonValue::String(facet.to_string()),
         TantivyValue::Bytes(bytes) => BinaryFormat::Base64.format_to_json(&bytes),
+        TantivyValue::Custom(bytes) => BinaryFormat::Base64.format_to_json(&bytes),
         TantivyValue::IpAddr(ip_v6) => {
             let ip_str = if let Some(ip_v4) = ip_v6.to_ipv4_mapped() {
                 ip_v4.to_string()

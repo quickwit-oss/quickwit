@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{FileHandle, FileSlice, OwnedBytes};
 use tantivy::error::DataCorruption;
+use tantivy::index::SegmentComponent;
 use tantivy::{Directory, HasLen, Index, IndexReader, ReloadPolicy, TantivyError};
 
 use crate::{CachingDirectory, DebugProxyDirectory};
@@ -459,11 +460,24 @@ impl Directory for HotDirectory {
 
 fn list_index_files(index: &Index) -> tantivy::Result<HashSet<PathBuf>> {
     let index_meta = index.load_metas()?;
-    let mut files: HashSet<PathBuf> = index_meta
-        .segments
-        .into_iter()
-        .flat_map(|segment_meta| segment_meta.list_files())
-        .collect();
+    let segment_components = [
+        SegmentComponent::Postings,
+        SegmentComponent::Positions,
+        SegmentComponent::Terms,
+        SegmentComponent::Store,
+        SegmentComponent::FastFields,
+        SegmentComponent::FieldNorms,
+        SegmentComponent::Delete,
+    ];
+    let mut files = HashSet::new();
+    for segment_meta in index_meta.segments {
+        for segment_component in &segment_components {
+            let path = segment_meta.relative_path(segment_component.clone());
+            if index.directory().exists(&path)? {
+                files.insert(path);
+            }
+        }
+    }
     files.insert(Path::new("meta.json").to_path_buf());
     files.insert(Path::new(".managed.json").to_path_buf());
     Ok(files)

@@ -377,6 +377,7 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
         ignore_missing_indexes: req.ignore_missing_indexes,
         skip_aggregation_finalization: false,
         priority: req.priority,
+        calculated_predicate: req.calculated_predicate.clone(),
     })
 }
 
@@ -683,6 +684,9 @@ pub fn is_metadata_count_request_with_ast(query_ast: &QueryAst, request: &Search
         return false;
     }
     if request.aggregation_request.is_some() || !request.snippet_fields.is_empty() {
+        return false;
+    }
+    if request.calculated_predicate.is_some() {
         return false;
     }
     true
@@ -1919,13 +1923,34 @@ mod tests {
         MockMetastoreService,
     };
     use quickwit_proto::search::{
-        ScrollRequest, SortByValue, SortOrder, SortValue, SplitSearchError,
+        CalculatedPredicate, ScrollRequest, SortByValue, SortOrder, SortValue, SplitSearchError,
     };
     use quickwit_query::query_ast::{qast_helper, qast_json_helper, query_ast_from_user_text};
     use tantivy::schema::{FAST, STORED, TEXT};
 
     use super::*;
     use crate::{MockSearchService, searcher_pool_for_test};
+
+    #[test]
+    fn test_metadata_count_request_with_calculated_predicate() {
+        let query_ast = QueryAst::MatchAll;
+        let mut search_request = SearchRequest {
+            query_ast: serde_json::to_string(&query_ast).unwrap(),
+            ..Default::default()
+        };
+        assert!(is_metadata_count_request_with_ast(
+            &query_ast,
+            &search_request
+        ));
+
+        search_request.calculated_predicate = Some(CalculatedPredicate { expr: None });
+
+        assert!(!is_metadata_count_request_with_ast(
+            &query_ast,
+            &search_request
+        ));
+        assert!(!is_metadata_count_request(&search_request));
+    }
 
     #[track_caller]
     fn check_snippet_fields_validation(snippet_fields: &[String]) -> anyhow::Result<()> {
