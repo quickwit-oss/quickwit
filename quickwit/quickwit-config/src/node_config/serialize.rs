@@ -37,8 +37,9 @@ use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::templating::render_config;
 use crate::{
-    CompactorConfig, ConfigFormat, IndexerConfig, IngestApiConfig, JaegerConfig, MetastoreConfigs,
-    NodeConfig, SearcherConfig, TlsConfig, validate_identifier, validate_node_id,
+    CompactionPlannerConfig, CompactorConfig, ConfigFormat, IndexerConfig, IngestApiConfig,
+    JaegerConfig, MetastoreConfigs, NodeConfig, SearcherConfig, TlsConfig, validate_identifier,
+    validate_node_id,
 };
 
 pub const DEFAULT_CLUSTER_ID: &str = "quickwit-default-cluster";
@@ -240,6 +241,9 @@ struct NodeConfigBuilder {
     #[serde(rename = "compactor")]
     #[serde(default)]
     compactor_config: CompactorConfig,
+    #[serde(rename = "compaction_planner")]
+    #[serde(default)]
+    compaction_planner_config: CompactionPlannerConfig,
     #[serde(rename = "docs_clustering")]
     #[serde(default)]
     docs_clustering_config: Option<DocsClusteringConfigBuilder>,
@@ -388,6 +392,7 @@ impl NodeConfigBuilder {
             ingest_api_config: self.ingest_api_config,
             jaeger_config: self.jaeger_config,
             compactor_config: self.compactor_config,
+            compaction_planner_config: self.compaction_planner_config,
             enable_standalone_compactors,
             docs_clustering_config,
         };
@@ -534,6 +539,7 @@ impl Default for NodeConfigBuilder {
             ingest_api_config: IngestApiConfig::default(),
             jaeger_config: JaegerConfig::default(),
             compactor_config: CompactorConfig::default(),
+            compaction_planner_config: CompactionPlannerConfig::default(),
             docs_clustering_config: None,
         }
     }
@@ -685,6 +691,7 @@ pub fn node_config_for_tests_from_ports(
         ingest_api_config: IngestApiConfig::default(),
         jaeger_config: JaegerConfig::default(),
         compactor_config: CompactorConfig::default(),
+        compaction_planner_config: CompactionPlannerConfig::default(),
         enable_standalone_compactors: false,
         docs_clustering_config: None,
     }
@@ -1192,6 +1199,10 @@ mod tests {
         assert_eq!(config.searcher_config, SearcherConfig::default());
         assert_eq!(config.ingest_api_config, IngestApiConfig::default());
         assert_eq!(config.jaeger_config, JaegerConfig::default());
+        assert_eq!(
+            config.compaction_planner_config,
+            CompactionPlannerConfig::default()
+        );
     }
 
     #[tokio::test]

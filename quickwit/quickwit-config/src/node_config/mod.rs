@@ -377,6 +377,43 @@ impl Default for CompactorConfig {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct CompactionPlannerConfig {
+    /// Maximum number of splits fetched from the metastore per scan.
+    scan_page_size: usize,
+    /// Interval between compaction planner scan-and-plan cycles.
+    scan_and_plan_interval: HumanDuration,
+    /// Maximum number of split IDs excluded from a metastore scan because they are already
+    /// tracked.
+    max_excluded_split_ids: usize,
+}
+
+impl CompactionPlannerConfig {
+    pub fn scan_page_size(&self) -> usize {
+        self.scan_page_size
+    }
+
+    pub fn scan_and_plan_interval(&self) -> Duration {
+        Duration::from(self.scan_and_plan_interval.clone())
+    }
+
+    pub fn max_excluded_split_ids(&self) -> usize {
+        self.max_excluded_split_ids
+    }
+}
+
+impl Default for CompactionPlannerConfig {
+    fn default() -> Self {
+        Self {
+            scan_page_size: 5_000,
+            scan_and_plan_interval: HumanDuration::try_from("5s".to_string())
+                .expect("`5s` should be a valid human duration"),
+            max_excluded_split_ids: 50_000,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SplitCacheLimits {
@@ -943,6 +980,7 @@ pub struct NodeConfig {
     pub ingest_api_config: IngestApiConfig,
     pub jaeger_config: JaegerConfig,
     pub compactor_config: CompactorConfig,
+    pub compaction_planner_config: CompactionPlannerConfig,
     #[serde(skip_serializing)]
     pub enable_standalone_compactors: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1195,6 +1233,30 @@ mod tests {
         )
         .unwrap();
         assert_eq!(yaml_config.decommission_timeout(), Duration::from_mins(2));
+    }
+
+    #[test]
+    fn test_compaction_planner_config() {
+        let default_config: CompactionPlannerConfig = serde_yaml::from_str("").unwrap();
+        assert_eq!(default_config, CompactionPlannerConfig::default());
+        assert_eq!(default_config.scan_page_size(), 5_000);
+        assert_eq!(
+            default_config.scan_and_plan_interval(),
+            Duration::from_secs(5)
+        );
+        assert_eq!(default_config.max_excluded_split_ids(), 50_000);
+
+        let yaml_config: CompactionPlannerConfig = serde_yaml::from_str(
+            r#"
+                scan_page_size: 10000
+                scan_and_plan_interval: 2s
+                max_excluded_split_ids: 100000
+            "#,
+        )
+        .unwrap();
+        assert_eq!(yaml_config.scan_page_size(), 10_000);
+        assert_eq!(yaml_config.scan_and_plan_interval(), Duration::from_secs(2));
+        assert_eq!(yaml_config.max_excluded_split_ids(), 100_000);
     }
 
     #[track_caller]
