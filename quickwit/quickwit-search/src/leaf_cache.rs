@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::mem::size_of;
 use std::ops::{Bound, RangeBounds};
 
 use prost::Message;
@@ -20,7 +19,7 @@ use quickwit_config::CacheConfig;
 use quickwit_proto::search::{
     CountHits, LeafResourceStats, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
 };
-use quickwit_storage::{MemUsage, MemorySizedCache, OwnedBytes, owned_mem_usage};
+use quickwit_storage::{MemUsage, MemorySizedCache, OwnedBytes};
 use tantivy::index::SegmentId;
 
 /// A cache to memoize `leaf_search_single_split` results.
@@ -120,10 +119,10 @@ impl CacheKey {
 }
 
 impl MemUsage for CacheKey {
-    fn mem_usage(&self) -> usize {
+    fn heap_mem_usage(&self) -> usize {
         // `SearchRequest` cannot easily implement `MemUsage`, but `encoded_len()` is a good proxy
         // for its memory footprint.
-        size_of::<Self>() + owned_mem_usage(&self.split_id) + self.request.encoded_len()
+        self.split_id.heap_mem_usage() + self.request.encoded_len()
     }
 }
 

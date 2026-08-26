@@ -14,11 +14,10 @@
 
 use std::borrow::Borrow;
 use std::hash::{Hash, Hasher};
-use std::mem::size_of;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use crate::cache::mem_usage::{MemUsage, owned_mem_usage};
+use crate::cache::mem_usage::MemUsage;
 
 #[derive(Hash, Clone, Debug, Eq, PartialEq)]
 pub struct SliceAddress {
@@ -27,8 +26,8 @@ pub struct SliceAddress {
 }
 
 impl MemUsage for SliceAddress {
-    fn mem_usage(&self) -> usize {
-        size_of::<Self>() + owned_mem_usage(&self.path)
+    fn heap_mem_usage(&self) -> usize {
+        self.path.heap_mem_usage()
     }
 }
 

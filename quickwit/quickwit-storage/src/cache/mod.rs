@@ -30,7 +30,7 @@ pub use quickwit_cache::QuickwitCache;
 pub use storage_with_cache::StorageWithCache;
 
 pub use self::byte_range_cache::{ByteRangeCache, FileByteRangeCache};
-pub use self::mem_usage::{MemUsage, owned_mem_usage};
+pub use self::mem_usage::MemUsage;
 pub use self::memory_sized_cache::MemorySizedCache;
 use crate::{OwnedBytes, Storage};
 
