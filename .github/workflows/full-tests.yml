@@ -55,7 +55,7 @@ jobs:
             });
 
   full-tests:
-    name: All-features tests + failpoints (make test-all)
+    name: make test-all
     needs: prepare
     runs-on: ubuntu-24.04
     timeout-minutes: 60
