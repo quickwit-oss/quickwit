@@ -13,15 +13,18 @@
 // limitations under the License.
 
 use std::pin::Pin;
+use std::time::Duration;
 
 use bytes::Buf;
-use tokio::io::{AsyncWrite, AsyncWriteExt};
+use tokio::io::AsyncWrite;
 
 use crate::error::HttpError;
+use crate::io::write_all_timeout;
 
 pub async fn write_request<W, B>(
     stream: &mut W,
     request: &mut http::Request<B>,
+    write_timeout: Duration,
 ) -> Result<(), HttpError>
 where
     W: AsyncWrite + Unpin,
@@ -47,7 +50,7 @@ where
         head.extend_from_slice(b"\r\n");
     }
     head.extend_from_slice(b"\r\n");
-    stream.write_all(&head).await?;
+    write_all_timeout(stream, &head, write_timeout).await?;
 
     loop {
         let frame = std::future::poll_fn(|ctx| Pin::new(request.body_mut()).poll_frame(ctx)).await;
@@ -57,7 +60,7 @@ where
                 if let Some(data) = frame.data_mut() {
                     while data.remaining() > 0 {
                         let chunk = data.chunk();
-                        stream.write_all(chunk).await?;
+                        write_all_timeout(stream, chunk, write_timeout).await?;
                         let n = chunk.len();
                         data.advance(n);
                     }
@@ -68,7 +71,6 @@ where
             Some(Err(err)) => return Err(err.into()),
         }
     }
-    stream.flush().await?;
     Ok(())
 }
 
@@ -85,7 +87,9 @@ mod tests {
         B::Error: Into<HttpError>,
     {
         let mut writer = Vec::new();
-        write_request(&mut writer, &mut request).await.unwrap();
+        write_request(&mut writer, &mut request, Duration::from_secs(5))
+            .await
+            .unwrap();
         String::from_utf8(writer).unwrap()
     }
 
@@ -146,5 +150,29 @@ mod tests {
             text.ends_with("\r\n\r\nhello world"),
             "body not drained: {text:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn write_times_out_when_peer_stops_draining() {
+        use tokio::io::AsyncReadExt;
+        // A duplex with a tiny buffer and no reader: the write blocks once the
+        // buffer fills, and the per-write idle timeout (20 ms) fires.
+        let (mut client, mut server) = tokio::io::duplex(16);
+        let mut request = http::Request::builder()
+            .method("POST")
+            .uri("/big")
+            .header("host", "example.com")
+            .body(http_body_util::Full::new(bytes::Bytes::from(vec![
+                b'x';
+                1024
+            ])))
+            .unwrap();
+        let err = write_request(&mut client, &mut request, Duration::from_millis(20))
+            .await
+            .unwrap_err();
+        assert!(err.is_timeout(), "expected a timeout, got {err:?}");
+        // Drain to avoid a broken-pipe panic on drop.
+        let mut buf = vec![0u8; 1024];
+        let _ = server.read(&mut buf).await;
     }
 }

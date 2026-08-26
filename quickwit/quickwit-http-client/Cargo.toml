@@ -21,6 +21,7 @@ rustls-native-certs = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

@@ -300,6 +300,7 @@ tokio-metrics = { version = "0.5", features = ["rt"] }
 tokio-rustls = { version = "0.26", default-features = false }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", default-features = false, features = [
+  "codec",
   "compat",
   "io-util",
 ] }

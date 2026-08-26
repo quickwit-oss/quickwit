@@ -36,18 +36,23 @@
 //! - basic HTTP/1.1 framing only; Transfer-Encoding-over-Content-Length precedence, 101-not-pooled,
 //!   and HTTP/1.0+TE rejection will come later
 
+pub mod body;
 pub mod connection;
 pub mod dns;
 pub mod endpoint;
 pub mod error;
+pub mod exchange;
+pub mod io;
 pub mod request;
 pub mod response;
 pub mod tls;
 
+pub use body::{BufferHint, DEFAULT_READ_TIMEOUT, ResponseBody};
 pub use connection::{ConnStream, connect};
 pub use dns::{DefaultDnsResolver, DnsResolver, ResolveFuture};
 pub use endpoint::Endpoint;
 pub use error::HttpError;
+pub use exchange::exchange;
 pub use request::write_request;
 pub use response::{BodyStrategy, ResponseHead, read_head};
 pub use tls::default_client_config;

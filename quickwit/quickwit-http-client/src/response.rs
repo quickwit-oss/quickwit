@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Duration;
+
 use bytes::{Buf, Bytes, BytesMut};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
@@ -57,8 +59,13 @@ const MAX_HEADERS: usize = 128;
 /// head is available, then parses it. Informational 1xx responses (100 Continue,
 /// 103 Early Hints, ...) are consumed and skipped; the final response is
 /// returned. `101 Switching Protocols` is terminal and is returned as-is.
-pub async fn read_head<R>(stream: &mut R) -> Result<ResponseHead, HttpError>
-where R: AsyncRead + Unpin {
+pub async fn read_head<R>(
+    stream: &mut R,
+    read_timeout: Duration,
+) -> Result<ResponseHead, HttpError>
+where
+    R: AsyncRead + Unpin,
+{
     let mut buf = BytesMut::with_capacity(8192);
     loop {
         if buf.len() > MAX_HEAD_SIZE {
@@ -84,7 +91,15 @@ where R: AsyncRead + Unpin {
                 if buf.capacity() - buf.len() < 1024 {
                     buf.reserve(8192);
                 }
-                let n = stream.read_buf(&mut buf).await?;
+                let n = match tokio::time::timeout(read_timeout, stream.read_buf(&mut buf)).await {
+                    Ok(res) => res?,
+                    Err(_) => {
+                        return Err(HttpError::Timeout(
+                            read_timeout,
+                            "response head read".to_string(),
+                        ));
+                    }
+                };
                 if n == 0 {
                     return Err(HttpError::UnexpectedEof {
                         read: buf.len(),
@@ -214,11 +229,15 @@ mod tests {
     use super::*;
 
     async fn read_head_from(raw: &[u8]) -> ResponseHead {
-        read_head(&mut &raw[..]).await.unwrap()
+        read_head(&mut &raw[..], Duration::from_secs(5))
+            .await
+            .unwrap()
     }
 
     async fn read_head_from_err(raw: &[u8]) -> HttpError {
-        read_head(&mut &raw[..]).await.unwrap_err()
+        read_head(&mut &raw[..], Duration::from_secs(5))
+            .await
+            .unwrap_err()
     }
 
     #[tokio::test]
@@ -310,5 +329,16 @@ mod tests {
         // this works because we read on a large buffer from an in memory buffer, on an actual
         // socket we might get less bytes
         assert_eq!(head.leftover, Bytes::from_static(b"abcEXTRA"));
+    }
+
+    #[tokio::test]
+    async fn read_head_times_out_when_no_bytes_arrive() {
+        // The head never arrives: the write side stays open so reads stay
+        // pending; the per-read idle timeout (20 ms) fires.
+        let (_client, mut server) = tokio::io::duplex(1024);
+        let err = read_head(&mut server, Duration::from_millis(20))
+            .await
+            .unwrap_err();
+        assert!(err.is_timeout(), "expected a timeout, got {err:?}");
     }
 }
