@@ -21,18 +21,33 @@
 //!
 //! Some limitations at the moment (which may or may not be improved in the future):
 //! - no support for HTTP/2
-//! - no support for connection upgaged (websocket)
+//! - no support for connection upgrade (websocket)
 //! - focus more on cpu usage and TTLB than TTFB
 //! - no support for proxy yet
+//! - `write_request` serializes any method and drains/sends body frames, but does not synthesize
+//!   request framing (`Content-Length` / `Transfer-Encoding: chunked`); the caller must set those
+//!   headers and do the framing
+//! - request trailers are dropped, not serialized (no chunked transfer-encoding is synthesized on
+//!   requests, so there is no wire slot for them)
+//! - the client/pool layer and the single-buffer optimization target GET downloads; other methods
+//!   are not exercised yet
+//! - the `Host` header is not derived yet
+//! - response head parsing has no per-read timeout yet
+//! - basic HTTP/1.1 framing only; Transfer-Encoding-over-Content-Length precedence, 101-not-pooled,
+//!   and HTTP/1.0+TE rejection will come later
 
 pub mod connection;
 pub mod dns;
 pub mod endpoint;
 pub mod error;
+pub mod request;
+pub mod response;
 pub mod tls;
 
 pub use connection::{ConnStream, connect};
 pub use dns::{DefaultDnsResolver, DnsResolver, ResolveFuture};
 pub use endpoint::Endpoint;
 pub use error::HttpError;
+pub use request::write_request;
+pub use response::{BodyStrategy, ResponseHead, read_head};
 pub use tls::default_client_config;

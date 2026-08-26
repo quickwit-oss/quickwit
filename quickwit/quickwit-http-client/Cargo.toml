@@ -10,7 +10,12 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+bytes = { workspace = true }
+futures = { workspace = true }
 http = { workspace = true }
+http-body = { workspace = true }
+http-body-util = { workspace = true }
+httparse = { workspace = true }
 rustls = { workspace = true }
 rustls-native-certs = { workspace = true }
 thiserror = { workspace = true }

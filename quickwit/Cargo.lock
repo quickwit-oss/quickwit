@@ -8751,7 +8751,12 @@ dependencies = [
 name = "quickwit-http-client"
 version = "0.9.0"
 dependencies = [
+ "bytes",
+ "futures",
  "http 1.4.2",
+ "http-body 1.0.1",
+ "http-body-util",
+ "httparse",
  "rustls 0.23.41",
  "rustls-native-certs",
  "rustls-pemfile",

@@ -156,6 +156,7 @@ http = "1.4"
 http-body = "1.0"
 http-body-util = "0.1"
 http-serde = "2.1"
+httparse = "1.10"
 humantime = "2.3"
 hyper = { version = "1.9", features = ["client", "http1", "http2", "server"] }
 hyper-rustls = "0.27"

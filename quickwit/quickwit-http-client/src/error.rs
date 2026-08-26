@@ -29,6 +29,28 @@ pub enum HttpError {
     #[error("invalid request URI: {0}")]
     InvalidUri(String),
 
+    /// The response head did not fit within the configured maximum head size.
+    /// Not retryable.
+    #[error("response head exceeded {0} bytes")]
+    HeadTooLarge(usize),
+
+    /// The response could not be parsed as HTTP/1.1.
+    #[error("malformed HTTP/1.1 response: {0}")]
+    Parse(#[from] httparse::Error),
+
+    /// The response announced a body length we could not interpret
+    /// (e.g. a negative `Content-Range`, a malformed `Content-Length`).
+    #[error("invalid response length: {0}")]
+    InvalidLength(String),
+
+    /// The body ended before the expected number of bytes arrived.
+    #[error("unexpected end of response body: read {read} of {expected} bytes")]
+    UnexpectedEof { read: usize, expected: usize },
+
+    /// A body frame produced by the request's `http_body::Body` failed.
+    #[error("request body error: {0}")]
+    Body(String),
+
     /// DNS error before sending the request. It's safe to retry a non idempotent
     /// operation after this error.
     #[error("dns resolution failed for `{host}`: {message}")]
@@ -37,6 +59,12 @@ pub enum HttpError {
     /// A TLS error
     #[error("tls error: {0}")]
     Tls(String),
+}
+
+impl From<std::convert::Infallible> for HttpError {
+    fn from(err: std::convert::Infallible) -> Self {
+        match err {}
+    }
 }
 
 impl HttpError {
