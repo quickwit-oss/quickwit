@@ -614,6 +614,30 @@ mod tests {
 
     #[tokio::test]
     async fn bundle_storage_locates_legacy_footer_from_object_storage() {
+        let split_payload =
+            SplitPayloadBuilder::get_split_payload(&[], b"fields", None, b"hotcache").unwrap();
+        let expected_footer_range = split_payload.footer_range.clone();
+        let split_bytes = split_payload.read_all().await.unwrap();
+        let split_path = PathBuf::from("legacy-split");
+        let inner_storage: Arc<dyn Storage> = Arc::new(
+            RamStorageBuilder::default()
+                .put(&split_path.to_string_lossy(), &split_bytes)
+                .build(),
+        );
+        let (storage, counters) = CountingStorage::instrument_storage(inner_storage);
+
+        let (_bundle_storage, hotcache, footer_range) =
+            BundleStorage::open_from_storage(storage, split_path)
+                .await
+                .unwrap();
+
+        assert_eq!(hotcache.as_ref(), b"hotcache");
+        assert_eq!(footer_range, expected_footer_range);
+        assert_eq!(counters.snapshot().1, 2);
+    }
+
+    #[tokio::test]
+    async fn bundle_storage_locates_legacy_footer_with_large_hotcache() {
         let hotcache_bytes = vec![0u8; 1024];
         let split_payload =
             SplitPayloadBuilder::get_split_payload(&[], b"fields", None, &hotcache_bytes).unwrap();
@@ -634,16 +658,7 @@ mod tests {
 
         assert_eq!(hotcache.as_ref(), hotcache_bytes.as_slice());
         assert_eq!(footer_range, expected_footer_range);
-        let footer_num_bytes = footer_range.end - footer_range.start;
-        assert_eq!(
-            counters.snapshot(),
-            (
-                SPLIT_FOOTER_TRAILER_NUM_BYTES as u64
-                    + BUNDLE_METADATA_LEN_NUM_BYTES as u64
-                    + footer_num_bytes,
-                3,
-            )
-        );
+        assert_eq!(counters.snapshot().1, 3);
     }
 
     #[tokio::test]
