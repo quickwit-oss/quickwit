@@ -14,12 +14,15 @@
 
 use std::io::Cursor;
 use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
 use http_body_util::BodyExt;
 use tokio::io::{AsyncRead, AsyncWriteExt, ReadBuf};
 
+use super::decoder::{MAX_CHUNK_SIZE_LINE_SIZE, MAX_TRAILER_SECTION_SIZE};
 use super::*;
 
 struct FragmentedReader {
@@ -83,6 +86,8 @@ fn body<R: AsyncRead + Unpin>(
         leftover.into(),
         BufferHint { target },
         Duration::from_secs(5),
+        None,
+        false,
     )
 }
 
@@ -124,26 +129,6 @@ async fn known_length_coalesces_to_at_least_target_sized_frames() {
             .all(|frame| frame.len() >= target)
     );
     assert_eq!(concat(&frames), expected);
-}
-
-#[test]
-fn known_decoder_includes_read_ahead_in_frame() {
-    let mut decoder = HttpBodyDecoder::new(BodyStrategy::Known(2_000), 1_000, 0);
-    let mut src = BytesMut::from(&[b'x'; 1_200][..]);
-
-    let Some(DecodedItem::Data { bytes, end_stream }) = decoder.decode(&mut src).unwrap() else {
-        panic!("expected a data frame");
-    };
-    assert_eq!(bytes.len(), 1_200);
-    assert!(!end_stream);
-    assert!(src.is_empty());
-
-    src.extend_from_slice(&[b'x'; 800]);
-    let Some(DecodedItem::Data { bytes, end_stream }) = decoder.decode(&mut src).unwrap() else {
-        panic!("expected the final data frame");
-    };
-    assert_eq!(bytes.len(), 800);
-    assert!(end_stream);
 }
 
 #[tokio::test]
@@ -274,6 +259,8 @@ async fn per_read_timeout_fires() {
         Bytes::new(),
         BufferHint { target: 8 * 1024 },
         Duration::from_millis(20),
+        None,
+        false,
     );
 
     let error = body.frame().await.unwrap().unwrap_err();
@@ -297,6 +284,8 @@ async fn read_timeout_resets_when_bytes_keep_arriving() {
         Bytes::new(),
         BufferHint { target: 8 * 1024 },
         Duration::from_secs(5),
+        None,
+        false,
     );
 
     let frames = collect_body(&mut body).await.unwrap();
@@ -312,4 +301,33 @@ async fn empty_body_is_already_complete() {
     assert!(body.is_end_stream());
     assert_eq!(body.size_hint().exact(), Some(0));
     assert!(body.frame().await.is_none());
+}
+
+#[tokio::test]
+async fn until_close_clean_eos_is_not_pooled() {
+    let reader = Cursor::new(b"abc".to_vec());
+    let pooled = Arc::new(AtomicUsize::new(0));
+    let pooled_for_hook = pooled.clone();
+    let pool_hook: Option<Box<dyn FnOnce(_) + Send + 'static>> = Some(Box::new(move |_| {
+        pooled_for_hook.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }));
+    let mut body = ResponseBody::new(
+        reader,
+        BodyStrategy::UntilClose,
+        Bytes::new(),
+        BufferHint { target: 8 * 1024 },
+        Duration::from_secs(5),
+        pool_hook,
+        true, // keep-alive held in the head, but UntilClose is still not poolable
+    );
+
+    let frames = collect_body(&mut body).await.unwrap();
+    assert_eq!(&concat(&frames), b"abc");
+    assert!(body.is_end_stream(), "reached a clean EOS");
+    drop(body);
+    assert_eq!(
+        pooled.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "UntilClose EOS is a TCP close; the pool hook must not fire"
+    );
 }

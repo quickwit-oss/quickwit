@@ -17,15 +17,18 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::Bytes;
 use futures::Stream;
 use http_body::{Body, Frame, SizeHint};
 use tokio::io::{AsyncRead, AsyncReadExt, Chain, ReadBuf};
 use tokio::time::Sleep;
-use tokio_util::codec::{Decoder, FramedRead};
+use tokio_util::codec::FramedRead;
 
 use crate::error::HttpError;
 use crate::response::BodyStrategy;
+
+mod decoder;
+use decoder::{DecodedItem, HttpBodyDecoder};
 
 /// Frame coalescing target. Read-ahead can make frames larger than `target`,
 /// while a known body no larger than `target` is yielded in one frame.
@@ -43,8 +46,6 @@ impl BufferHint {
 pub const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 const MIN_TARGET: usize = 8 * 1024;
-const MAX_CHUNK_SIZE_LINE_SIZE: usize = 8 * 1024;
-const MAX_TRAILER_SECTION_SIZE: usize = 64 * 1024;
 
 type PrefixedReader<R> = Chain<Cursor<Bytes>, R>;
 type BodyFramedReader<R> = FramedRead<IdleTimeoutReader<PrefixedReader<R>>, HttpBodyDecoder>;
@@ -72,6 +73,12 @@ impl<R> IdleTimeoutReader<R> {
             .as_mut()
             .reset(tokio::time::Instant::now() + self.timeout);
         self.sleep_armed = true;
+    }
+
+    /// Reclaims the underlying reader. Used by the pool-return `Drop` to get
+    /// the `ConnStream` back after a clean EOS.
+    pub(crate) fn into_inner(self) -> R {
+        self.inner
     }
 }
 
@@ -110,296 +117,27 @@ impl<R: AsyncRead + Unpin> AsyncRead for IdleTimeoutReader<R> {
     }
 }
 
-#[derive(Debug)]
-enum DecodeState {
-    Known { expected: usize, remaining: usize },
-    Chunked(ChunkedState),
-    UntilClose,
-    Done,
-    Invalid(Option<HttpError>),
-}
-
-#[derive(Debug)]
-enum ChunkedState {
-    Size,
-    Data { remaining: usize },
-    AfterCrlf,
-    Trailers,
-}
-
-enum DecodedItem {
-    Data { bytes: Bytes, end_stream: bool },
-    End,
-}
-
-#[derive(Debug)]
-struct HttpBodyDecoder {
-    state: DecodeState,
-    target: usize,
-    chunk_buf: BytesMut,
-    chunk_decoded: usize,
-    trailer_bytes: usize,
-}
-
-impl HttpBodyDecoder {
-    fn new(strategy: BodyStrategy, target: usize, leftover_len: usize) -> Self {
-        let state = match strategy {
-            BodyStrategy::Known(expected) if leftover_len > expected => DecodeState::Invalid(Some(
-                HttpError::InvalidLength("body longer than Content-Length".to_string()),
-            )),
-            BodyStrategy::Known(expected) => DecodeState::Known {
-                expected,
-                remaining: expected,
-            },
-            BodyStrategy::Chunked => DecodeState::Chunked(ChunkedState::Size),
-            BodyStrategy::UntilClose => DecodeState::UntilClose,
-            BodyStrategy::Empty => DecodeState::Done,
-        };
-        Self {
-            state,
-            target,
-            chunk_buf: BytesMut::new(),
-            chunk_decoded: 0,
-            trailer_bytes: 0,
-        }
-    }
-
-    fn initial_capacity(&self) -> usize {
-        match self.state {
-            DecodeState::Known { remaining, .. } => remaining.min(self.target),
-            DecodeState::UntilClose => self.target,
-            DecodeState::Chunked(_) => MAX_CHUNK_SIZE_LINE_SIZE,
-            DecodeState::Done | DecodeState::Invalid(_) => 1,
-        }
-    }
-
-    fn known_remaining(&self) -> Option<usize> {
-        match self.state {
-            DecodeState::Known { remaining, .. } => Some(remaining),
-            DecodeState::Done => Some(0),
-            _ => None,
-        }
-    }
-
-    fn decode_known(&mut self, src: &mut BytesMut) -> Result<Option<DecodedItem>, HttpError> {
-        let DecodeState::Known { remaining, .. } = &mut self.state else {
-            unreachable!();
-        };
-        if src.len() > *remaining {
-            return Err(HttpError::InvalidLength(
-                "body longer than Content-Length".to_string(),
-            ));
-        }
-        let minimum_frame_len = (*remaining).min(self.target);
-        if src.len() < minimum_frame_len {
-            src.reserve(minimum_frame_len - src.len());
-            return Ok(None);
-        }
-
-        // Transfer read-ahead too, leaving no partial frame to copy on reserve.
-        let bytes = std::mem::take(src).freeze();
-        *remaining -= bytes.len();
-        let end_stream = *remaining == 0;
-        if end_stream {
-            self.state = DecodeState::Done;
-        }
-        Ok(Some(DecodedItem::Data { bytes, end_stream }))
-    }
-
-    fn decode_until_close(&mut self, src: &mut BytesMut) -> Option<DecodedItem> {
-        if src.len() < self.target {
-            src.reserve(self.target - src.len());
-            return None;
-        }
-        Some(DecodedItem::Data {
-            bytes: src.split_to(self.target).freeze(),
-            end_stream: false,
-        })
-    }
-
-    fn take_chunk_frame(&mut self, end_stream: bool) -> DecodedItem {
-        let bytes = self.chunk_buf.split().freeze();
-        self.chunk_decoded += bytes.len();
-        DecodedItem::Data { bytes, end_stream }
-    }
-
-    fn decode_chunked(&mut self, src: &mut BytesMut) -> Result<Option<DecodedItem>, HttpError> {
-        loop {
-            match &mut self.state {
-                DecodeState::Chunked(ChunkedState::Size) => match httparse::parse_chunk_size(src) {
-                    Ok(httparse::Status::Complete((line_len, chunk_size))) => {
-                        if line_len > MAX_CHUNK_SIZE_LINE_SIZE {
-                            return Err(chunk_size_line_too_large());
-                        }
-                        let chunk_size = usize::try_from(chunk_size).map_err(|_| {
-                            HttpError::InvalidLength("chunk size does not fit in usize".to_string())
-                        })?;
-                        src.advance(line_len);
-                        self.state = if chunk_size == 0 {
-                            DecodeState::Chunked(ChunkedState::Trailers)
-                        } else {
-                            DecodeState::Chunked(ChunkedState::Data {
-                                remaining: chunk_size,
-                            })
-                        };
-                    }
-                    Ok(httparse::Status::Partial) => {
-                        if src.len() > MAX_CHUNK_SIZE_LINE_SIZE {
-                            return Err(chunk_size_line_too_large());
-                        }
-                        return Ok(None);
-                    }
-                    Err(error) => {
-                        return Err(HttpError::InvalidLength(format!(
-                            "invalid chunk size: {error}"
-                        )));
-                    }
-                },
-                DecodeState::Chunked(ChunkedState::Data { remaining }) => {
-                    let output_space = self.target - self.chunk_buf.len();
-                    let take = src.len().min(*remaining).min(output_space);
-                    // TODO we could try to avoid this copy, it's not on the main path though
-                    self.chunk_buf.extend_from_slice(&src[..take]);
-                    src.advance(take);
-                    *remaining -= take;
-
-                    if self.chunk_buf.len() == self.target {
-                        return Ok(Some(self.take_chunk_frame(false)));
-                    }
-                    if *remaining == 0 {
-                        self.state = DecodeState::Chunked(ChunkedState::AfterCrlf);
-                        continue;
-                    }
-                    return Ok(None);
-                }
-                DecodeState::Chunked(ChunkedState::AfterCrlf) => {
-                    if src.len() < 2 {
-                        return Ok(None);
-                    }
-                    if &src[..2] != b"\r\n" {
-                        return Err(HttpError::InvalidLength(format!(
-                            "expected CRLF after chunk, got {:?}",
-                            &src[..2]
-                        )));
-                    }
-                    src.advance(2);
-                    self.state = DecodeState::Chunked(ChunkedState::Size);
-                }
-                DecodeState::Chunked(ChunkedState::Trailers) => {
-                    let Some(line_len) = find_crlf(src) else {
-                        if src.len() > MAX_TRAILER_SECTION_SIZE - self.trailer_bytes {
-                            return Err(trailer_section_too_large());
-                        }
-                        return Ok(None);
-                    };
-                    let encoded_line_len = line_len + 2;
-                    if encoded_line_len > MAX_TRAILER_SECTION_SIZE - self.trailer_bytes {
-                        return Err(trailer_section_too_large());
-                    }
-                    self.trailer_bytes += encoded_line_len;
-                    src.advance(encoded_line_len);
-                    if line_len != 0 {
-                        continue;
-                    }
-                    self.state = DecodeState::Done;
-                    return if self.chunk_buf.is_empty() {
-                        Ok(Some(DecodedItem::End))
-                    } else {
-                        Ok(Some(self.take_chunk_frame(true)))
-                    };
-                }
-                _ => unreachable!(),
-            }
-        }
-    }
-
-    fn unexpected_chunked_eof(&self) -> HttpError {
-        let buffered = self.chunk_decoded + self.chunk_buf.len();
-        let expected = match self.state {
-            DecodeState::Chunked(ChunkedState::Data { remaining }) => buffered + remaining,
-            _ => 0,
-        };
-        HttpError::UnexpectedEof {
-            read: buffered,
-            expected,
-        }
-    }
-}
-
-impl Decoder for HttpBodyDecoder {
-    type Item = DecodedItem;
-    type Error = HttpError;
-
-    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        match self.state {
-            DecodeState::Known { .. } => self.decode_known(src),
-            DecodeState::Chunked(_) => self.decode_chunked(src),
-            DecodeState::UntilClose => Ok(self.decode_until_close(src)),
-            DecodeState::Done => Ok(Some(DecodedItem::End)),
-            DecodeState::Invalid(ref mut error) => Err(error
-                .take()
-                .unwrap_or_else(|| HttpError::InvalidLength("invalid body state".to_string()))),
-        }
-    }
-
-    fn decode_eof(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        if let Some(item) = self.decode(src)? {
-            return Ok(Some(item));
-        }
-        match self.state {
-            DecodeState::Known {
-                expected,
-                remaining,
-            } => Err(HttpError::UnexpectedEof {
-                read: expected - remaining + src.len(),
-                expected,
-            }),
-            DecodeState::Chunked(_) => Err(self.unexpected_chunked_eof()),
-            DecodeState::UntilClose => {
-                self.state = DecodeState::Done;
-                if src.is_empty() {
-                    Ok(Some(DecodedItem::End))
-                } else {
-                    Ok(Some(DecodedItem::Data {
-                        bytes: src.split().freeze(),
-                        end_stream: true,
-                    }))
-                }
-            }
-            DecodeState::Done => Ok(Some(DecodedItem::End)),
-            DecodeState::Invalid(_) => unreachable!("decode returned the invalid-state error"),
-        }
-    }
-}
-
-fn find_crlf(src: &[u8]) -> Option<usize> {
-    src.windows(2).position(|window| window == b"\r\n")
-}
-
-fn chunk_size_line_too_large() -> HttpError {
-    HttpError::InvalidLength(format!(
-        "chunk-size line exceeded {MAX_CHUNK_SIZE_LINE_SIZE} bytes"
-    ))
-}
-
-fn trailer_section_too_large() -> HttpError {
-    HttpError::InvalidLength(format!(
-        "trailer section exceeded {MAX_TRAILER_SECTION_SIZE} bytes"
-    ))
-}
-
-pub struct ResponseBody<R> {
-    framed: BodyFramedReader<R>,
+pub struct ResponseBody<R: AsyncRead + 'static> {
+    // Always Some(_), an Option<> just so it can be taken out during Drop and
+    // sent through `pool_hook`
+    framed: Option<BodyFramedReader<R>>,
+    pool_hook: Option<Box<dyn FnOnce(R) + Send + 'static>>,
+    // Whether the response head allowed keep-alive *and* the body strategy
+    // ends on a protocol boundary.
+    poolable: bool,
+    // Whether the request ended cleanly and might be reusable
+    // it might not be if keep-alive is forbiden, this must be checked alongside poolable
+    clean_eos: bool,
     read_timeout: Duration,
     consumed: usize,
     done: bool,
 }
 
-impl<R> std::fmt::Debug for ResponseBody<R> {
+impl<R: AsyncRead + 'static> std::fmt::Debug for ResponseBody<R> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("ResponseBody")
-            .field("decoder", self.framed.decoder())
+            .field("decoder", &self.framed.as_ref().map(|f| f.decoder()))
             .field("read_timeout", &self.read_timeout)
             .field("consumed", &self.consumed)
             .field("done", &self.done)
@@ -407,15 +145,19 @@ impl<R> std::fmt::Debug for ResponseBody<R> {
     }
 }
 
-impl<R: AsyncRead + Unpin> ResponseBody<R> {
+impl<R: AsyncRead + Unpin + 'static> ResponseBody<R> {
     /// Builds the body from a parsed head and the reader that produced it.
     /// `leftover` contains body bytes that arrived with the response head.
+    ///
+    /// `pool_hook`, receives the reclaimed reader if it's reusable.
     pub(crate) fn new(
         reader: R,
         strategy: BodyStrategy,
         leftover: Bytes,
         buffer_hint: BufferHint,
         read_timeout: Duration,
+        pool_hook: Option<Box<dyn FnOnce(R) + Send + 'static>>,
+        keep_alive: bool,
     ) -> Self {
         let target = buffer_hint.target.max(MIN_TARGET);
         let leftover_len = leftover.len();
@@ -426,8 +168,13 @@ impl<R: AsyncRead + Unpin> ResponseBody<R> {
         let framed = FramedRead::with_capacity(timeout_reader, decoder, initial_capacity);
         let done = matches!(strategy, BodyStrategy::Empty)
             || matches!(strategy, BodyStrategy::Known(0) if leftover_len == 0);
+        // `UntilClose` ends on a peer EOF, so definitely not reusable
+        let poolable = keep_alive && !matches!(strategy, BodyStrategy::UntilClose);
         Self {
-            framed,
+            framed: Some(framed),
+            pool_hook,
+            poolable,
+            clean_eos: done,
             read_timeout,
             consumed: 0,
             done,
@@ -449,7 +196,7 @@ impl<R: AsyncRead + Unpin> ResponseBody<R> {
     }
 }
 
-impl<R: AsyncRead + Unpin> Body for ResponseBody<R> {
+impl<R: AsyncRead + Unpin + 'static> Body for ResponseBody<R> {
     type Data = Bytes;
     type Error = HttpError;
 
@@ -461,17 +208,28 @@ impl<R: AsyncRead + Unpin> Body for ResponseBody<R> {
         if this.done {
             return Poll::Ready(None);
         }
-        match Pin::new(&mut this.framed).poll_next(cx) {
+        // `framed` is only taken by `Drop`; while the body is live it is always
+        // `Some` here.
+        let Some(framed) = this.framed.as_mut() else {
+            return Poll::Ready(None);
+        };
+        match Pin::new(framed).poll_next(cx) {
             Poll::Ready(Some(Ok(DecodedItem::Data { bytes, end_stream }))) => {
                 this.consumed += bytes.len();
                 this.done = end_stream;
+                if end_stream {
+                    this.clean_eos = true;
+                }
                 Poll::Ready(Some(Ok(Frame::data(bytes))))
             }
             Poll::Ready(Some(Ok(DecodedItem::End))) | Poll::Ready(None) => {
                 this.done = true;
+                this.clean_eos = true;
                 Poll::Ready(None)
             }
             Poll::Ready(Some(Err(error))) => {
+                // An error leaves the connection state suspect: drop, do not
+                // pool. `clean_eos` stays `false`.
                 this.done = true;
                 Poll::Ready(Some(Err(this.normalize_error(error))))
             }
@@ -488,10 +246,32 @@ impl<R: AsyncRead + Unpin> Body for ResponseBody<R> {
             return SizeHint::with_exact(0);
         }
         self.framed
-            .decoder()
-            .known_remaining()
+            .as_ref()
+            .and_then(|framed| framed.decoder().known_remaining())
             .map(|remaining| SizeHint::with_exact(remaining as u64))
             .unwrap_or_default()
+    }
+}
+
+/// Returns a pooled connection to its pool on a clean, poolable EOS.
+impl<R: AsyncRead + 'static> Drop for ResponseBody<R> {
+    fn drop(&mut self) {
+        if !self.clean_eos || !self.poolable {
+            return;
+        }
+        let Some(hook) = self.pool_hook.take() else {
+            return;
+        };
+        let Some(framed) = self.framed.take() else {
+            return;
+        };
+        // Dismantle the framed reader and extract the underlying Reader.
+        // Any read ahead we might have is lost, but we should have none because
+        // we don't pipeline.
+        let idle_reader = framed.into_inner();
+        let chain = idle_reader.into_inner();
+        let (_leftover, reader) = chain.into_inner();
+        hook(reader);
     }
 }
 

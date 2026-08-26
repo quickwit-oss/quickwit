@@ -21,10 +21,22 @@ use tokio::io::AsyncWrite;
 use crate::error::HttpError;
 use crate::io::write_all_timeout;
 
-pub async fn write_request<W, B>(
+/// How far [`write_request`] got.
+#[derive(Debug, Default)]
+pub(crate) struct WriteState {
+    /// The entire head was sent, this makes body-less non-idempotent queries
+    /// non re-tryable.
+    pub(crate) head_sent: bool,
+    /// We read part of the request (not response) body: we definitely cannot replay
+    /// the query anymore
+    pub(crate) body_touched: bool,
+}
+
+pub(crate) async fn write_request<W, B>(
     stream: &mut W,
     request: &mut http::Request<B>,
     write_timeout: Duration,
+    state: &mut WriteState,
 ) -> Result<(), HttpError>
 where
     W: AsyncWrite + Unpin,
@@ -51,12 +63,15 @@ where
     }
     head.extend_from_slice(b"\r\n");
     write_all_timeout(stream, &head, write_timeout).await?;
+    // TODO should we not write the last CRLF, flush, mark head_sent, and then push that CRLF?
+    state.head_sent = true;
 
     loop {
         let frame = std::future::poll_fn(|ctx| Pin::new(request.body_mut()).poll_frame(ctx)).await;
         match frame {
             None => break,
             Some(Ok(mut frame)) => {
+                state.body_touched = true;
                 if let Some(data) = frame.data_mut() {
                     while data.remaining() > 0 {
                         let chunk = data.chunk();
@@ -87,9 +102,14 @@ mod tests {
         B::Error: Into<HttpError>,
     {
         let mut writer = Vec::new();
-        write_request(&mut writer, &mut request, Duration::from_secs(5))
-            .await
-            .unwrap();
+        write_request(
+            &mut writer,
+            &mut request,
+            Duration::from_secs(5),
+            &mut WriteState::default(),
+        )
+        .await
+        .unwrap();
         String::from_utf8(writer).unwrap()
     }
 
@@ -167,9 +187,14 @@ mod tests {
                 1024
             ])))
             .unwrap();
-        let err = write_request(&mut client, &mut request, Duration::from_millis(20))
-            .await
-            .unwrap_err();
+        let err = write_request(
+            &mut client,
+            &mut request,
+            Duration::from_millis(20),
+            &mut WriteState::default(),
+        )
+        .await
+        .unwrap_err();
         assert!(err.is_timeout(), "expected a timeout, got {err:?}");
         // Drain to avoid a broken-pipe panic on drop.
         let mut buf = vec![0u8; 1024];

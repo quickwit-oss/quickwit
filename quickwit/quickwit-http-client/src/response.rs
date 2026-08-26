@@ -59,8 +59,12 @@ const MAX_HEADERS: usize = 128;
 /// head is available, then parses it. Informational 1xx responses (100 Continue,
 /// 103 Early Hints, ...) are consumed and skipped; the final response is
 /// returned. `101 Switching Protocols` is terminal and is returned as-is.
+///
+/// `request_method` is needed to detect HEAD queries, which don't have a body despite
+/// their possible content-length.
 pub async fn read_head<R>(
     stream: &mut R,
+    request_method: &http::Method,
     read_timeout: Duration,
 ) -> Result<ResponseHead, HttpError>
 where
@@ -82,7 +86,7 @@ where
                     buf.advance(head_len);
                     continue;
                 }
-                let mut head = build_head(&resp)?;
+                let mut head = build_head(&resp, request_method)?;
                 let _ = buf.split_to(head_len);
                 head.leftover = buf.freeze();
                 return Ok(head);
@@ -112,7 +116,10 @@ where
     }
 }
 
-fn build_head(resp: &httparse::Response<'_, '_>) -> Result<ResponseHead, HttpError> {
+fn build_head(
+    resp: &httparse::Response<'_, '_>,
+    request_method: &http::Method,
+) -> Result<ResponseHead, HttpError> {
     let status = resp.code.ok_or(HttpError::Parse(httparse::Error::Token))?;
     let version = resp.version.unwrap_or(0); // 1 for HTTP/1.1, 0 for HTTP/1.0
 
@@ -175,8 +182,14 @@ fn build_head(resp: &httparse::Response<'_, '_>) -> Result<ResponseHead, HttpErr
         connection_keepalive
     };
 
-    // 1xx other than 101 are handled in read_head
-    let body = if status == 101 || status == 204 || status == 304 {
+    // 1xx other than 101 are handled in read_head.
+    // `HEAD` and  `304 Not Modified` may have headers suggesting content, but they
+    // *never* have an actual body.
+    let body = if status == 101
+        || status == 204
+        || status == 304
+        || request_method == http::Method::HEAD
+    {
         BodyStrategy::Empty
     } else if transfer_encoding_chunked {
         BodyStrategy::Chunked
@@ -229,15 +242,21 @@ mod tests {
     use super::*;
 
     async fn read_head_from(raw: &[u8]) -> ResponseHead {
-        read_head(&mut &raw[..], Duration::from_secs(5))
+        read_head(&mut &raw[..], &http::Method::GET, Duration::from_secs(5))
             .await
             .unwrap()
     }
 
     async fn read_head_from_err(raw: &[u8]) -> HttpError {
-        read_head(&mut &raw[..], Duration::from_secs(5))
+        read_head(&mut &raw[..], &http::Method::GET, Duration::from_secs(5))
             .await
             .unwrap_err()
+    }
+
+    async fn read_head_from_method(raw: &[u8], method: http::Method) -> ResponseHead {
+        read_head(&mut &raw[..], &method, Duration::from_secs(5))
+            .await
+            .unwrap()
     }
 
     #[tokio::test]
@@ -336,9 +355,31 @@ mod tests {
         // The head never arrives: the write side stays open so reads stay
         // pending; the per-read idle timeout (20 ms) fires.
         let (_client, mut server) = tokio::io::duplex(1024);
-        let err = read_head(&mut server, Duration::from_millis(20))
+        let err = read_head(&mut server, &http::Method::GET, Duration::from_millis(20))
             .await
             .unwrap_err();
         assert!(err.is_timeout(), "expected a timeout, got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn head_response_with_content_length_is_empty_body() {
+        let head = read_head_from_method(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 12345\r\n\r\n",
+            http::Method::HEAD,
+        )
+        .await;
+        assert_eq!(head.body, BodyStrategy::Empty);
+        assert!(head.keep_alive);
+        assert_eq!(head.parts.headers.get("content-length").unwrap(), "12345");
+    }
+
+    #[tokio::test]
+    async fn head_response_with_chunked_is_empty_body() {
+        let head = read_head_from_method(
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n",
+            http::Method::HEAD,
+        )
+        .await;
+        assert_eq!(head.body, BodyStrategy::Empty);
     }
 }

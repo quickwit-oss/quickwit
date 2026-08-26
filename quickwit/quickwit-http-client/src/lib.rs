@@ -37,6 +37,7 @@
 //!   and HTTP/1.0+TE rejection will come later
 
 pub mod body;
+pub mod client;
 pub mod connection;
 pub mod dns;
 pub mod endpoint;
@@ -49,12 +50,11 @@ pub mod response;
 pub mod tls;
 
 pub use body::{BufferHint, DEFAULT_READ_TIMEOUT, ResponseBody};
+pub use client::{DEFAULT_CONNECT_TIMEOUT, DEFAULT_WRITE_TIMEOUT, HttpClient, HttpClientBuilder};
 pub use connection::{ConnStream, connect};
 pub use dns::{DefaultDnsResolver, DnsResolver, ResolveFuture};
 pub use endpoint::Endpoint;
 pub use error::HttpError;
-pub use exchange::exchange;
 pub use pool::{ConnectionPool, DEFAULT_IDLE_TIMEOUT, DEFAULT_MAX_IDLE_PER_HOST};
-pub use request::write_request;
 pub use response::{BodyStrategy, ResponseHead, read_head};
 pub use tls::default_client_config;
