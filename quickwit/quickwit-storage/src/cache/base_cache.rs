@@ -211,7 +211,7 @@ impl<K: Hash + Eq + MemUsage, V: ValueLen + Clone> Lru<K, V> {
                     capacity_in_bytes = ?self.capacity,
                     len = bytes.len(),
                     key_mem_usage,
-                    "Downloaded a byte slice larger than the cache capacity."
+                    "Downloaded a cache entry (key + value) larger than the cache capacity."
                 );
             }
             return;
@@ -354,7 +354,7 @@ impl<K: Hash + Eq + MemUsage, V: ValueLen + Clone> S3Fifo<K, V> {
                     capacity_in_bytes = ?self.capacity,
                     len = value.len(),
                     key_mem_usage,
-                    "Downloaded a byte slice larger than the cache capacity."
+                    "Downloaded a cache entry (key + value) larger than the cache capacity."
                 );
             }
             return;
@@ -475,7 +475,7 @@ impl<K: Hash + Eq + MemUsage + Send + Sync + 'static, V: ValueLen + Clone + Send
                     capacity_in_bytes = ?self.capacity,
                     len = value.len(),
                     key_mem_usage,
-                    "Downloaded a byte slice larger than the cache capacity."
+                    "Downloaded a cache entry (key + value) larger than the cache capacity."
                 );
             }
             return;

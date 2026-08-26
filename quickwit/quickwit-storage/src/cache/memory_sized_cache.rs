@@ -145,6 +145,8 @@ impl MemorySizedCache<SliceAddress> {
 
 #[cfg(test)]
 mod tests {
+    use std::mem::size_of;
+
     use bytesize::ByteSize;
     use quickwit_config::CachePolicy;
 

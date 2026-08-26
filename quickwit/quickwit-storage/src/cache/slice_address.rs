@@ -14,6 +14,7 @@
 
 use std::borrow::Borrow;
 use std::hash::{Hash, Hasher};
+use std::mem::size_of;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::mem::size_of;
 use std::path::PathBuf;
 
 /// Total number of bytes a value occupies in memory.
@@ -92,7 +93,10 @@ mod tests {
     #[test]
     fn test_path_buf_mem_usage() {
         let path_buf = PathBuf::from("/tmp/split.split");
-        assert_eq!(path_buf.mem_usage(), size_of::<PathBuf>() + 16);
+        assert_eq!(
+            path_buf.mem_usage(),
+            size_of::<PathBuf>() + path_buf.capacity()
+        );
     }
 
     #[test]
