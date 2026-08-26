@@ -1,0 +1,23 @@
+[package]
+name = "quickwit-http-client"
+description = "A fast HTTP/1.1 client for Quickwit object storage"
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+http = { workspace = true }
+rustls = { workspace = true }
+rustls-native-certs = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+rustls-pemfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

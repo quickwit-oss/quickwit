@@ -17,6 +17,7 @@ members = [
   "quickwit-directories",
   "quickwit-doc-mapper",
   "quickwit-dst",
+  "quickwit-http-client",
   "quickwit-index-management",
   "quickwit-indexing",
   "quickwit-ingest",
@@ -64,6 +65,7 @@ default-members = [
   "quickwit-datetime",
   "quickwit-directories",
   "quickwit-doc-mapper",
+  "quickwit-http-client",
   "quickwit-index-management",
   "quickwit-indexing",
   "quickwit-ingest",
@@ -253,6 +255,7 @@ reqwest-retry = "0.8"
 rust-embed = "8.11"
 rustc-hash = "2.1"
 rustls = "0.23"
+rustls-native-certs = "0.8"
 rustls-pemfile = "2.2"
 sea-query = { version = "0.32" }
 sea-query-binder = { version = "0.7", features = [
@@ -403,6 +406,7 @@ quickwit-df-core = { path = "quickwit-df-core" }
 quickwit-directories = { path = "quickwit-directories" }
 quickwit-doc-mapper = { path = "quickwit-doc-mapper" }
 quickwit-dst = { path = "quickwit-dst" }
+quickwit-http-client = { path = "quickwit-http-client" }
 quickwit-index-management = { path = "quickwit-index-management" }
 quickwit-indexing = { path = "quickwit-indexing" }
 quickwit-ingest = { path = "quickwit-ingest" }

@@ -8748,6 +8748,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-http-client"
+version = "0.9.0"
+dependencies = [
+ "http 1.4.2",
+ "rustls 0.23.41",
+ "rustls-native-certs",
+ "rustls-pemfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-rustls 0.26.4",
+ "tracing",
+]
+
+[[package]]
 name = "quickwit-index-management"
 version = "0.9.0"
 dependencies = [
