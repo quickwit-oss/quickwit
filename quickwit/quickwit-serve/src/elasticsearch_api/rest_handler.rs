@@ -581,6 +581,7 @@ fn build_request_for_es_api(
             count_hits,
             ignore_missing_indexes,
             skip_aggregation_finalization: false,
+            ..Default::default()
         },
         has_doc_id_field,
     ))

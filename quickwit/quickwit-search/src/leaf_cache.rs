@@ -107,6 +107,8 @@ impl CacheKey {
         // it doesn't matter whether or not we count all hits at the scale of a
         // single split: either we did process it and got everything, or we didn't.
         search_request.count_hits = CountHits::CountAll.into();
+        // Priority only affects scheduling, not search results.
+        search_request.priority = 0;
 
         CacheKey {
             split_id: split_info.split_id,
@@ -435,5 +437,31 @@ mod tests {
         cache.put(split_3.clone(), query_2bis.clone(), result);
         assert!(cache.get(split_3.clone(), query_2).is_none());
         assert!(cache.get(split_3, query_2bis).is_some());
+    }
+
+    #[test]
+    fn test_leaf_search_cache_ignores_priority() {
+        let cache = LeafSearchCache::new(&ByteSize::mb(64).into());
+        let split = SplitIdAndFooterOffsets {
+            split_id: "split".to_string(),
+            ..Default::default()
+        };
+        let high_priority_request = SearchRequest {
+            priority: -10,
+            ..Default::default()
+        };
+        let low_priority_request = SearchRequest {
+            priority: 10,
+            ..Default::default()
+        };
+
+        cache.put(
+            split.clone(),
+            high_priority_request,
+            LeafSearchResponse::default(),
+        );
+
+        // the two requests differ only in priority, so it should be a cache-hit
+        assert!(cache.get(split, low_priority_request).is_some());
     }
 }
