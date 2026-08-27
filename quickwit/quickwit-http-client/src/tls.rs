@@ -41,10 +41,12 @@ pub fn default_client_config() -> Result<Arc<rustls::ClientConfig>, HttpError> {
         );
     }
 
-    let config = rustls::ClientConfig::builder_with_provider(provider)
+    let mut config = rustls::ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .map_err(|err| HttpError::Tls(format!("unsupported TLS protocol versions: {err}")))?
         .with_root_certificates(roots)
         .with_no_client_auth();
+    // Force HTTP/1.1 ALPN so the server cannot negotiate HTTP/2
+    config.alpn_protocols = vec![b"http/1.1".to_vec()];
     Ok(Arc::new(config))
 }

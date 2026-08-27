@@ -50,11 +50,24 @@ where
 {
     write_request(&mut conn, request, write_timeout, write_state).await?;
     let head = read_head(&mut conn, request.method(), read_timeout).await?;
-    let pool_hook = pool_hook.map(|(pool, endpoint)| {
-        Box::new(move |conn: ConnStream| {
-            pool.release(&endpoint, conn);
-        }) as Box<dyn FnOnce(ConnStream) + Send + 'static>
-    });
+    // Withhold the hook if the query explicitly asked to close the connection.
+    let request_close = request
+        .headers()
+        .get_all(http::header::CONNECTION)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(','))
+        .map(str::trim)
+        .any(|tok| tok.eq_ignore_ascii_case("close"));
+    let pool_hook = if request_close {
+        None
+    } else {
+        pool_hook.map(|(pool, endpoint)| {
+            Box::new(move |conn: ConnStream| {
+                pool.release(&endpoint, conn);
+            }) as Box<dyn FnOnce(ConnStream) + Send + 'static>
+        })
+    };
     let body = ResponseBody::new(
         conn,
         head.body,

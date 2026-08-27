@@ -58,7 +58,7 @@ const MAX_HEADERS: usize = 128;
 /// Reads bytes from `stream` until a complete (non-informational) response
 /// head is available, then parses it. Informational 1xx responses (100 Continue,
 /// 103 Early Hints, ...) are consumed and skipped; the final response is
-/// returned. `101 Switching Protocols` is terminal and is returned as-is.
+/// returned. `101 Switching Protocols` is rejected as unsupported.
 ///
 /// `request_method` is needed to detect HEAD queries, which don't have a body despite
 /// their possible content-length.
@@ -80,9 +80,12 @@ where
         match resp.parse(&buf) {
             Ok(httparse::Status::Complete(head_len)) => {
                 let status = resp.code.ok_or(HttpError::Parse(httparse::Error::Token))?;
-                // discard 1xx (they are informational) and followed by an actual status,
-                // except for 101 (switching protocol)
-                if (100..200).contains(&status) && status != 101 {
+                // discard 1xx (they are informational) and followed by an actual
+                // status. 101 Switching Protocols is not supported.
+                if (100..200).contains(&status) {
+                    if status == 101 {
+                        return Err(HttpError::Parse(httparse::Error::Version));
+                    }
                     buf.advance(head_len);
                     continue;
                 }
@@ -185,11 +188,8 @@ fn build_head(
     // 1xx other than 101 are handled in read_head.
     // `HEAD` and  `304 Not Modified` may have headers suggesting content, but they
     // *never* have an actual body.
-    let body = if status == 101
-        || status == 204
-        || status == 304
-        || request_method == http::Method::HEAD
-    {
+    // 204, 304, and HEAD responses have no body despite any Content-Length.
+    let body = if status == 204 || status == 304 || request_method == http::Method::HEAD {
         BodyStrategy::Empty
     } else if transfer_encoding_chunked {
         BodyStrategy::Chunked
@@ -224,12 +224,11 @@ fn build_head(
 }
 
 fn parse_usize(value: &[u8]) -> Result<Option<usize>, HttpError> {
-    let Ok(s) = std::str::from_utf8(value) else {
-        return Ok(None);
-    };
+    let s = std::str::from_utf8(value)
+        .map_err(|err| HttpError::InvalidLength(format!("non-UTF-8 Content-Length: {err}")))?;
     let trimmed = s.trim();
     if trimmed.is_empty() {
-        return Ok(None);
+        return Err(HttpError::InvalidLength("empty Content-Length".to_string()));
     }
     trimmed
         .parse::<usize>()

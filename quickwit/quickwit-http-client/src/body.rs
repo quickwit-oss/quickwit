@@ -381,8 +381,12 @@ enum BodyKind<R: AsyncRead + Send + 'static> {
     Fast(FastBody<R>),
     /// Transfer-Encoding: chunked path
     Chunked(ChunkedBody<R>),
-    /// Empty body/finished path
-    Complete,
+    /// Empty body / zero-length body
+    Complete {
+        reader: Option<R>,
+        pool_hook: Option<Box<dyn FnOnce(R) + Send + 'static>>,
+        poolable: bool,
+    },
 }
 
 impl<R: AsyncRead + Send + 'static> std::fmt::Debug for ResponseBody<R> {
@@ -410,11 +414,16 @@ impl<R: AsyncRead + Unpin + Send + 'static> ResponseBody<R> {
         let leftover_len = leftover.len();
         // `UntilClose` ends on a peer EOF, connection isn't reusable.
         let poolable = keep_alive && !matches!(strategy, BodyStrategy::UntilClose);
-
         let kind = match strategy {
-            BodyStrategy::Empty => BodyKind::Complete,
-            // if leftover not empty, we'll error somewhere in the fast path
-            BodyStrategy::Known(0) if leftover_len == 0 => BodyKind::Complete,
+            BodyStrategy::Empty | BodyStrategy::Known(0) => {
+                // An empty body with non-empty leftover means protocol desync,
+                // mark it non poolable so we close the connection
+                BodyKind::Complete {
+                    reader: Some(reader),
+                    pool_hook,
+                    poolable: poolable && leftover_len == 0,
+                }
+            }
             BodyStrategy::Known(len) => BodyKind::Fast(FastBody {
                 reader: Some(reader),
                 read_fut: None,
@@ -454,7 +463,7 @@ impl<R: AsyncRead + Unpin + Send + 'static> ResponseBody<R> {
                 })
             }
         };
-        let done = matches!(kind, BodyKind::Complete);
+        let done = matches!(kind, BodyKind::Complete { .. });
         Self {
             kind,
             read_timeout,
@@ -491,7 +500,7 @@ impl<R: AsyncRead + Unpin + Send + 'static> Body for ResponseBody<R> {
             return Poll::Ready(None);
         }
         match &mut this.kind {
-            BodyKind::Complete => {
+            BodyKind::Complete { .. } => {
                 this.done = true;
                 Poll::Ready(None)
             }
@@ -564,7 +573,7 @@ impl<R: AsyncRead + Unpin + Send + 'static> Body for ResponseBody<R> {
                 .and_then(|framed| framed.decoder().known_remaining())
                 .map(|remaining| SizeHint::with_exact(remaining as u64))
                 .unwrap_or_default(),
-            BodyKind::Complete => SizeHint::with_exact(0),
+            BodyKind::Complete { .. } => SizeHint::with_exact(0),
         }
     }
 }
@@ -581,7 +590,15 @@ impl<R: AsyncRead + Send + 'static> Drop for ResponseBody<R> {
                     chunked.release_to_pool();
                 }
             }
-            BodyKind::Complete => {}
+            BodyKind::Complete {
+                reader,
+                pool_hook,
+                poolable,
+            } => {
+                if *poolable && let (Some(hook), Some(reader)) = (pool_hook.take(), reader.take()) {
+                    hook(reader);
+                }
+            }
         }
     }
 }

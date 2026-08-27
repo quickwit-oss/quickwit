@@ -81,7 +81,10 @@ impl SingleBufferHttp1HttpClientBuilder {
         self.inner = self.inner.dns_resolver(resolver);
         self
     }
-    /// Overrides the TLS client config.
+
+    /// Overrides the TLS client config used for HTTPS endpoints.
+    ///
+    /// The caller is responsible for setting ALPN to HTTP/1.1.
     pub fn tls_config(mut self, config: Arc<rustls::ClientConfig>) -> Self {
         self.inner = self.inner.tls_config(config);
         self
@@ -136,6 +139,7 @@ impl SingleBufferHttp1HttpClient {
             .write_timeout(self.default_write_timeout)
             .tls_config(self.tls_config.clone())
             .buffer_hint(self.template.buffer_hint())
+            .dns_resolver(self.template.dns_resolver())
             .shared_pool(self.template.pool())
             .build()
             .expect("tls config was provided explicitly")
@@ -209,9 +213,11 @@ async fn convert_response(
     for (name, value) in &parts.headers {
         sdk_response
             .headers_mut()
-            .try_insert(
+            .try_append(
                 name.as_str().to_string(),
-                value.to_str().unwrap_or("").to_string(),
+                std::str::from_utf8(value.as_bytes())
+                    .map_err(|err| ConnectorError::other(err.into(), None))?
+                    .to_string(),
             )
             .map_err(|err| ConnectorError::other(err.into(), None))?;
     }
@@ -223,7 +229,7 @@ fn to_connector_error(err: HttpError) -> ConnectorError {
     let is_io = err.is_io()
         || matches!(
             err,
-            HttpError::UnexpectedEof { .. } | HttpError::InvalidLength(_)
+            HttpError::UnexpectedEof { .. } | HttpError::InvalidLength(_) | HttpError::Dns { .. }
         );
     if err.is_timeout() {
         ConnectorError::timeout(err.into())

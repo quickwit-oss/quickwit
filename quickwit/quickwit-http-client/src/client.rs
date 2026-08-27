@@ -76,6 +76,11 @@ impl HttpClient {
         self.inner.buffer_hint
     }
 
+    /// Returns the DNS resolver configured on this `HttpClient`.
+    pub fn dns_resolver(&self) -> Arc<dyn DnsResolver> {
+        self.inner.dns.clone()
+    }
+
     /// Performs one request/response exchange and returns the streaming
     /// response.
     pub async fn execute<B>(
@@ -219,6 +224,8 @@ impl HttpClientBuilder {
     }
 
     /// Overrides the TLS client config used for HTTPS endpoints.
+    ///
+    /// The caller is responsible for setting ALPN to HTTP/1.1.
     pub fn tls_config(mut self, config: Arc<rustls::ClientConfig>) -> Self {
         self.tls_config = Some(config);
         self
