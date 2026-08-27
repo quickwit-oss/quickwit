@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::hash::Hash;
 use std::ops::{Bound, RangeBounds};
 
 use prost::Message;
@@ -20,11 +21,51 @@ use quickwit_proto::search::{
     CountHits, LeafResourceStats, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
 };
 use quickwit_storage::{MemorySizedCache, OwnedBytes};
+use siphasher::sip128::{Hasher128, SipHasher13};
 use tantivy::index::SegmentId;
+use tracing::warn;
+
+/// SipHash keys: arbitrary, but fixed. The caches they key are process-local and in memory, so
+/// these need neither to be secret nor to stay stable across releases.
+const CACHE_KEY_HASH_SEEDS: (u64, u64) = (0x1f8a_c9d3_5e47_b061, 0x93b5_20fe_7c14_a8d2);
+
+/// A 128-bit hash of a cache key, stored in place of the key itself.
+///
+/// The caches in this file are keyed by large values — a whole `SearchRequest` including its
+/// query AST, or a serialized query AST — with one entry per split. [`MemorySizedCache`] only
+/// charges the *value* against its capacity, so keeping those keys around left hundreds of
+/// megabytes of key data outside of the configured budget (issue #6719).
+///
+/// Hash collision can happen with a probability of 1e-27 for the default 64MB cache.
+/// To prevent returning data from an unrelated index, we're checking that the hits served belong to
+/// the split they were requested for. That doesn't prevent hash collisions within the same split to
+/// occur, but these would be less problematic from a data-isolation standpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct CacheKeyHash(u128);
+
+impl CacheKeyHash {
+    fn of<K: Hash + ?Sized>(key: &K) -> CacheKeyHash {
+        let mut hasher = SipHasher13::new_with_keys(CACHE_KEY_HASH_SEEDS.0, CACHE_KEY_HASH_SEEDS.1);
+        key.hash(&mut hasher);
+        CacheKeyHash(hasher.finish128().as_u128())
+    }
+}
+
+/// Whether every hit of `response` belongs to `split_id`.
+///
+/// Because the keys of this cache are hashed, this invariant will limit the cache collision
+/// consequences. We would never return hits belonging to another index. Worse case scenario, we
+/// would return incorrect document ids from the same split.
+fn hits_belong_to_split(response: &LeafSearchResponse, split_id: &str) -> bool {
+    response
+        .partial_hits
+        .iter()
+        .all(|partial_hit| partial_hit.split_id == split_id)
+}
 
 /// A cache to memoize `leaf_search_single_split` results.
 pub struct LeafSearchCache {
-    content: MemorySizedCache<CacheKey>,
+    content: MemorySizedCache<CacheKeyHash>,
 }
 
 // TODO we could be smarter about search_after. If we have a cached request with a search_after
@@ -57,9 +98,28 @@ impl LeafSearchCache {
         search_request: SearchRequest,
     ) -> Option<LeafSearchResponse> {
         let key = CacheKey::from_split_meta_and_request(split_info, search_request);
-        let encoded_result = self.content.get(&key)?;
-        // this should never fail
-        LeafSearchResponse::decode(&*encoded_result).ok()
+        let encoded_result = self.content.get(&CacheKeyHash::of(&key))?;
+        let response = match LeafSearchResponse::decode(&*encoded_result) {
+            Ok(response) => response,
+            Err(error) => {
+                warn!(
+                    error = %error,
+                    split_id = %key.split_id,
+                    "failed to decode a cached leaf search response"
+                );
+                return None;
+            }
+        };
+        if !hits_belong_to_split(&response, &key.split_id) {
+            // The entry was computed for another split, so the key hash collided. Serving it
+            // would return documents of an unrelated query: report a miss instead.
+            warn!(
+                split_id = %key.split_id,
+                "discarding a cached leaf search response holding hits from another split"
+            );
+            return None;
+        }
+        Some(response)
     }
 
     pub fn put(
@@ -76,8 +136,13 @@ impl LeafSearchCache {
             ..Default::default()
         });
         let key = CacheKey::from_split_meta_and_request(split_info, search_request);
+        debug_assert!(
+            hits_belong_to_split(&result, &key.split_id),
+            "search response contains hits from another split"
+        );
         let encoded_result = result.encode_to_vec();
-        self.content.put(key, OwnedBytes::new(encoded_result));
+        self.content
+            .put(CacheKeyHash::of(&key), OwnedBytes::new(encoded_result));
     }
 }
 
@@ -197,7 +262,7 @@ impl RangeBounds<i64> for HalfOpenRange {
 }
 
 pub struct PredicateCacheImpl {
-    content: MemorySizedCache<(String, String)>,
+    content: MemorySizedCache<CacheKeyHash>,
 }
 
 impl PredicateCacheImpl {
@@ -217,7 +282,8 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
         split_id: String,
         query_ast_json: String,
     ) -> Option<(SegmentId, quickwit_query::query_ast::HitSet)> {
-        let encoded_result = self.content.get(&(split_id, query_ast_json))?;
+        let key = CacheKeyHash::of(&(split_id.as_str(), query_ast_json.as_str()));
+        let encoded_result = self.content.get(&key)?;
         let (segment_id_bytes, hits_buffer) = encoded_result.split(32);
         let segment_id =
             SegmentId::from_uuid_string(str::from_utf8(&segment_id_bytes).ok()?).ok()?;
@@ -236,20 +302,40 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
         let mut buffer = Vec::with_capacity(32 + hits_buffer.len());
         buffer.extend_from_slice(segment.uuid_string().as_bytes());
         buffer.extend_from_slice(&hits_buffer);
-        self.content
-            .put((split_id, query_ast_json), OwnedBytes::new(buffer));
+        let key = CacheKeyHash::of(&(split_id.as_str(), query_ast_json.as_str()));
+        self.content.put(key, OwnedBytes::new(buffer));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use bytesize::ByteSize;
+    use prost::Message;
     use quickwit_proto::search::{
         LeafResourceStats, LeafSearchResponse, PartialHit, SearchRequest, SortValue,
         SplitIdAndFooterOffsets,
     };
+    use quickwit_storage::OwnedBytes;
 
-    use super::LeafSearchCache;
+    use super::{CacheKey, CacheKeyHash, LeafSearchCache};
+
+    fn leaf_search_response_for_split(split_id: &str) -> LeafSearchResponse {
+        LeafSearchResponse {
+            failed_splits: Vec::new(),
+            intermediate_aggregation_result: None,
+            num_attempted_splits: 1,
+            num_successful_splits: 1,
+            num_hits: 1234,
+            partial_hits: vec![PartialHit {
+                doc_id: 1,
+                segment_ord: 0,
+                sort_value: Some(SortValue::U64(0u64).into()),
+                sort_value2: None,
+                split_id: split_id.to_string(),
+            }],
+            resource_stats: Some(LeafResourceStats::default()),
+        }
+    }
 
     #[test]
     fn test_leaf_search_cache_no_timestamp() {
@@ -293,21 +379,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = LeafSearchResponse {
-            failed_splits: Vec::new(),
-            intermediate_aggregation_result: None,
-            num_attempted_splits: 1,
-            num_successful_splits: 1,
-            num_hits: 1234,
-            partial_hits: vec![PartialHit {
-                doc_id: 1,
-                segment_ord: 0,
-                sort_value: Some(SortValue::U64(0u64).into()),
-                sort_value2: None,
-                split_id: "split_1".to_string(),
-            }],
-            resource_stats: None,
-        };
+        let result = leaf_search_response_for_split("split_1");
 
         assert!(cache.get(split_1.clone(), query_1.clone()).is_none());
 
@@ -397,46 +469,184 @@ mod tests {
             ..Default::default()
         };
 
-        let result = LeafSearchResponse {
-            failed_splits: Vec::new(),
-            intermediate_aggregation_result: None,
-            num_attempted_splits: 1,
-            num_successful_splits: 1,
-            num_hits: 1234,
-            partial_hits: vec![PartialHit {
-                doc_id: 1,
-                segment_ord: 0,
-                sort_value: Some(SortValue::U64(0).into()),
-                sort_value2: None,
-                split_id: "split_1".to_string(),
-            }],
-            resource_stats: Some(LeafResourceStats::default()),
-        };
-
         // for split_1, 1 and 1bis cover different timestamp ranges
-        cache.put(split_1.clone(), query_1.clone(), result.clone());
+        cache.put(
+            split_1.clone(),
+            query_1.clone(),
+            leaf_search_response_for_split("split_1"),
+        );
         assert!(cache.get(split_1.clone(), query_1.clone()).is_some());
         assert!(cache.get(split_1.clone(), query_1bis.clone()).is_none());
 
         // for split_2, both 1 and 1bis cover everything, so it should cache-hit
-        cache.put(split_2.clone(), query_1.clone(), result.clone());
+        cache.put(
+            split_2.clone(),
+            query_1.clone(),
+            leaf_search_response_for_split("split_2"),
+        );
         assert!(cache.get(split_2.clone(), query_1).is_some());
         assert!(cache.get(split_2.clone(), query_1bis).is_some());
 
         // for split_1, both 1 and 1bis cover everything, so it should cache-hit
-        cache.put(split_1.clone(), query_2.clone(), result.clone());
+        cache.put(
+            split_1.clone(),
+            query_2.clone(),
+            leaf_search_response_for_split("split_1"),
+        );
         assert!(cache.get(split_1.clone(), query_2.clone()).is_some());
         assert!(cache.get(split_1, query_2bis.clone()).is_some());
 
         // for split_2, 2 covers everything, but 2bis cover only a subrange
-        cache.put(split_2.clone(), query_2.clone(), result.clone());
+        cache.put(
+            split_2.clone(),
+            query_2.clone(),
+            leaf_search_response_for_split("split_2"),
+        );
         assert!(cache.get(split_2.clone(), query_2.clone()).is_some());
         assert!(cache.get(split_2, query_2bis.clone()).is_none());
 
         // same for split_3, but we try caching the bounded request and query for the unbounded one
-        cache.put(split_3.clone(), query_2bis.clone(), result);
+        cache.put(
+            split_3.clone(),
+            query_2bis.clone(),
+            leaf_search_response_for_split("split_3"),
+        );
         assert!(cache.get(split_3.clone(), query_2).is_none());
         assert!(cache.get(split_3, query_2bis).is_some());
+    }
+
+    #[test]
+    fn test_leaf_search_cache_discards_response_from_another_split() {
+        // Simulates a collision of the 128 bit key hash: the entry stored under `split_1`'s key
+        // was computed for `split_2`. Serving it would return documents of an unrelated query.
+        let cache = LeafSearchCache::new(&ByteSize::mb(64).into());
+        let split_1 = SplitIdAndFooterOffsets {
+            split_id: "split_1".to_string(),
+            ..Default::default()
+        };
+        let request = SearchRequest {
+            index_id_patterns: vec!["test-idx".to_string()],
+            query_ast: "test".to_string(),
+            max_hits: 10,
+            ..Default::default()
+        };
+
+        let key = CacheKey::from_split_meta_and_request(split_1.clone(), request.clone());
+        let foreign_response = leaf_search_response_for_split("split_2");
+        cache.content.put(
+            CacheKeyHash::of(&key),
+            OwnedBytes::new(foreign_response.encode_to_vec()),
+        );
+
+        assert!(cache.get(split_1, request).is_none());
+    }
+
+    #[test]
+    fn test_leaf_search_cache_zerohits_response() {
+        // zero-hits responses carry no hit to validate.
+        let cache = LeafSearchCache::new(&ByteSize::mb(64).into());
+        let split = SplitIdAndFooterOffsets {
+            split_id: "split_1".to_string(),
+            num_docs: 100,
+            ..Default::default()
+        };
+        let zero_hits_request = SearchRequest {
+            index_id_patterns: vec!["test-idx".to_string()],
+            query_ast: "test".to_string(),
+            max_hits: 0,
+            ..Default::default()
+        };
+        let zero_hits_response = LeafSearchResponse {
+            num_hits: 0,
+            num_attempted_splits: 1,
+            num_successful_splits: 1,
+            ..Default::default()
+        };
+
+        cache.put(
+            split.clone(),
+            zero_hits_request.clone(),
+            zero_hits_response.clone(),
+        );
+
+        let cached_response = cache.get(split.clone(), zero_hits_request).unwrap();
+        assert_eq!(cached_response.num_hits, zero_hits_response.num_hits);
+        assert_eq!(
+            cached_response.resource_stats,
+            Some(LeafResourceStats {
+                partial_result_cache_num_splits: 1,
+                partial_result_cache_num_docs: split.num_docs,
+                ..Default::default()
+            })
+        );
+    }
+
+    #[test]
+    fn test_cache_key_hash_is_stable() {
+        let split = SplitIdAndFooterOffsets {
+            split_id: "split_1".to_string(),
+            ..Default::default()
+        };
+        let request = SearchRequest {
+            index_id_patterns: vec!["test-idx".to_string()],
+            query_ast: "test".to_string(),
+            max_hits: 10,
+            ..Default::default()
+        };
+        let key = CacheKey::from_split_meta_and_request(split.clone(), request.clone());
+        let same_key = CacheKey::from_split_meta_and_request(split, request);
+
+        assert_eq!(CacheKeyHash::of(&key), CacheKeyHash::of(&same_key));
+    }
+
+    #[test]
+    fn test_cache_key_hash_covers_request_fields() {
+        let split = SplitIdAndFooterOffsets {
+            split_id: "split_1".to_string(),
+            ..Default::default()
+        };
+        let request = SearchRequest {
+            index_id_patterns: vec!["test-idx".to_string()],
+            query_ast: "test".to_string(),
+            max_hits: 10,
+            ..Default::default()
+        };
+        let hash_of = |split: &SplitIdAndFooterOffsets, request: &SearchRequest| {
+            CacheKeyHash::of(&CacheKey::from_split_meta_and_request(
+                split.clone(),
+                request.clone(),
+            ))
+        };
+        let reference_hash = hash_of(&split, &request);
+
+        // A change anywhere in the request, however nested, must change the hash.
+        for altered_request in [
+            SearchRequest {
+                query_ast: "test2".to_string(),
+                ..request.clone()
+            },
+            SearchRequest {
+                max_hits: 11,
+                ..request.clone()
+            },
+            SearchRequest {
+                snippet_fields: vec!["body".to_string()],
+                ..request.clone()
+            },
+            SearchRequest {
+                index_id_patterns: vec!["other-idx".to_string()],
+                ..request.clone()
+            },
+        ] {
+            assert_ne!(reference_hash, hash_of(&split, &altered_request));
+        }
+
+        // And so must a change of split.
+        let other_split = SplitIdAndFooterOffsets {
+            split_id: "split_2".to_string(),
+            ..Default::default()
+        };
+        assert_ne!(reference_hash, hash_of(&other_split, &request));
     }
 
     #[test]
