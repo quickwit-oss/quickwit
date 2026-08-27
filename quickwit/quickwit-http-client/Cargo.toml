@@ -9,6 +9,10 @@ repository.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[features]
+# enable s3 adaptor
+s3 = ["dep:aws-smithy-runtime-api", "dep:aws-smithy-types"]
+
 [dependencies]
 bytes = { workspace = true }
 futures = { workspace = true }
@@ -21,8 +25,11 @@ rustls-native-certs = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
-tokio-util = { workspace = true }
+tokio-util = { workspace = true, features = ["rt"] }
 tracing = { workspace = true }
+
+aws-smithy-runtime-api = { workspace = true, features = ["client", "http-1x"], optional = true }
+aws-smithy-types = { workspace = true, optional = true }
 
 [dev-dependencies]
 rustls-pemfile = { workspace = true }

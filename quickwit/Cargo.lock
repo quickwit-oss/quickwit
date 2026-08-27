@@ -8751,6 +8751,8 @@ dependencies = [
 name = "quickwit-http-client"
 version = "0.9.0"
 dependencies = [
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
  "bytes",
  "futures",
  "http 1.4.2",
@@ -12273,6 +12275,7 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

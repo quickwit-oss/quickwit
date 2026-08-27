@@ -67,6 +67,13 @@ impl From<std::convert::Infallible> for HttpError {
     }
 }
 
+// we need this to accept request body from s3 sdk
+impl From<Box<dyn std::error::Error + Send + Sync + 'static>> for HttpError {
+    fn from(err: Box<dyn std::error::Error + Send + Sync + 'static>) -> Self {
+        HttpError::Body(err.to_string())
+    }
+}
+
 impl HttpError {
     /// Returns `true` if the error represents a timeout.
     pub fn is_timeout(&self) -> bool {

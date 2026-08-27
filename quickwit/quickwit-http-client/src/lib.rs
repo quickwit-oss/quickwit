@@ -49,9 +49,17 @@ pub mod request;
 pub mod response;
 pub mod tls;
 
+#[cfg(feature = "s3")]
+pub mod connector;
+
 pub use body::{BufferHint, DEFAULT_READ_TIMEOUT, ResponseBody};
 pub use client::{DEFAULT_CONNECT_TIMEOUT, DEFAULT_WRITE_TIMEOUT, HttpClient, HttpClientBuilder};
 pub use connection::{ConnStream, connect};
+#[cfg(feature = "s3")]
+pub use connector::{
+    SingleBufferHttp1Connector, SingleBufferHttp1HttpClient, SingleBufferHttp1HttpClientBuilder,
+    shared_http_client,
+};
 pub use dns::{DefaultDnsResolver, DnsResolver, ResolveFuture};
 pub use endpoint::Endpoint;
 pub use error::HttpError;

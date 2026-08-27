@@ -48,7 +48,23 @@ pub struct HttpClient {
     inner: Arc<HttpClientInner>,
 }
 
+impl std::fmt::Debug for HttpClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpClient")
+            .field("connect_timeout", &self.inner.connect_timeout)
+            .field("read_timeout", &self.inner.read_timeout)
+            .field("write_timeout", &self.inner.write_timeout)
+            .field("buffer_hint", &self.inner.buffer_hint)
+            .finish_non_exhaustive()
+    }
+}
+
 impl HttpClient {
+    /// Returns a handle to the shared connection pool.
+    pub fn pool(&self) -> ConnectionPool {
+        self.inner.pool.clone()
+    }
+
     /// Performs one request/response exchange and returns the streaming
     /// response.
     pub async fn execute<B>(
@@ -165,6 +181,8 @@ pub struct HttpClientBuilder {
     max_idle_per_host: usize,
     idle_timeout: Duration,
     buffer_hint: BufferHint,
+    // When `Some`, `build` reuses this pool instead of creating a new one
+    shared_pool: Option<ConnectionPool>,
 }
 
 impl HttpClientBuilder {
@@ -179,6 +197,7 @@ impl HttpClientBuilder {
             max_idle_per_host: crate::pool::DEFAULT_MAX_IDLE_PER_HOST,
             idle_timeout: crate::pool::DEFAULT_IDLE_TIMEOUT,
             buffer_hint: BufferHint::DEFAULT,
+            shared_pool: None,
         }
     }
 
@@ -227,6 +246,12 @@ impl HttpClientBuilder {
         self
     }
 
+    /// Reuses `pool` instead of creating a new one.
+    pub fn shared_pool(mut self, pool: ConnectionPool) -> Self {
+        self.shared_pool = Some(pool);
+        self
+    }
+
     /// Builds the client.
     pub fn build(self) -> Result<HttpClient, HttpError> {
         let tls_config = match self.tls_config {
@@ -234,7 +259,9 @@ impl HttpClientBuilder {
             None => crate::tls::default_client_config()?,
         };
         let tls_connector = Some(TlsConnector::from(tls_config));
-        let pool = ConnectionPool::new(self.max_idle_per_host, self.idle_timeout);
+        let pool = self
+            .shared_pool
+            .unwrap_or_else(|| ConnectionPool::new(self.max_idle_per_host, self.idle_timeout));
         Ok(HttpClient {
             inner: Arc::new(HttpClientInner {
                 pool,
@@ -246,6 +273,21 @@ impl HttpClientBuilder {
                 buffer_hint: self.buffer_hint,
             }),
         })
+    }
+
+    /// Returns the configured connect timeout.
+    pub fn configured_connect_timeout(&self) -> Duration {
+        self.connect_timeout
+    }
+
+    /// Returns the configured read timeout.
+    pub fn configured_read_timeout(&self) -> Duration {
+        self.read_timeout
+    }
+
+    /// Returns the configured write timeout.
+    pub fn configured_write_timeout(&self) -> Duration {
+        self.write_timeout
     }
 }
 
