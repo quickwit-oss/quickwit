@@ -16,26 +16,28 @@ use bytes::{Buf, Bytes, BytesMut};
 use tokio_util::codec::Decoder;
 
 use crate::error::HttpError;
-use crate::response::BodyStrategy;
 
 pub(super) const MAX_CHUNK_SIZE_LINE_SIZE: usize = 8 * 1024;
 pub(super) const MAX_TRAILER_SECTION_SIZE: usize = 64 * 1024;
 
 #[derive(Debug)]
-pub(super) enum DecodeState {
-    Known { expected: usize, remaining: usize },
-    Chunked(ChunkedState),
-    UntilClose,
-    Done,
-    Invalid(Option<HttpError>),
+enum ChunkedState {
+    /// Reading the next chunk-size line.
+    Size,
+    /// Reading chunk data; `remaining` bytes left in the current chunk.
+    Data { remaining: usize },
+    /// Expecting the CRLF after a chunk's data.
+    AfterCrlf,
+    /// Reading the trailer section (after the `0`-sized chunk).
+    Trailers,
 }
 
 #[derive(Debug)]
-pub(super) enum ChunkedState {
-    Size,
-    Data { remaining: usize },
-    AfterCrlf,
-    Trailers,
+enum State {
+    /// Actively decoding chunks.
+    Chunked(ChunkedState),
+    /// The terminal `0` chunk's trailers have been fully consumed.
+    Done,
 }
 
 pub(super) enum DecodedItem {
@@ -45,7 +47,7 @@ pub(super) enum DecodedItem {
 
 #[derive(Debug)]
 pub(super) struct HttpBodyDecoder {
-    state: DecodeState,
+    state: State,
     target: usize,
     chunk_buf: BytesMut,
     chunk_decoded: usize,
@@ -53,21 +55,11 @@ pub(super) struct HttpBodyDecoder {
 }
 
 impl HttpBodyDecoder {
-    pub(super) fn new(strategy: BodyStrategy, target: usize, leftover_len: usize) -> Self {
-        let state = match strategy {
-            BodyStrategy::Known(expected) if leftover_len > expected => DecodeState::Invalid(Some(
-                HttpError::InvalidLength("body longer than Content-Length".to_string()),
-            )),
-            BodyStrategy::Known(expected) => DecodeState::Known {
-                expected,
-                remaining: expected,
-            },
-            BodyStrategy::Chunked => DecodeState::Chunked(ChunkedState::Size),
-            BodyStrategy::UntilClose => DecodeState::UntilClose,
-            BodyStrategy::Empty => DecodeState::Done,
-        };
+    /// Creates a decoder for a `Transfer-Encoding: chunked` body. `target`
+    /// is the frame coalescing size from [`super::BufferHint`].
+    pub(super) fn new(target: usize) -> Self {
         Self {
-            state,
+            state: State::Chunked(ChunkedState::Size),
             target,
             chunk_buf: BytesMut::new(),
             chunk_decoded: 0,
@@ -77,55 +69,9 @@ impl HttpBodyDecoder {
 
     pub(super) fn initial_capacity(&self) -> usize {
         match self.state {
-            DecodeState::Known { remaining, .. } => remaining.min(self.target),
-            DecodeState::UntilClose => self.target,
-            DecodeState::Chunked(_) => MAX_CHUNK_SIZE_LINE_SIZE,
-            DecodeState::Done | DecodeState::Invalid(_) => 1,
+            State::Chunked(_) => MAX_CHUNK_SIZE_LINE_SIZE,
+            State::Done => 1,
         }
-    }
-
-    pub(super) fn known_remaining(&self) -> Option<usize> {
-        match self.state {
-            DecodeState::Known { remaining, .. } => Some(remaining),
-            DecodeState::Done => Some(0),
-            _ => None,
-        }
-    }
-
-    fn decode_known(&mut self, src: &mut BytesMut) -> Result<Option<DecodedItem>, HttpError> {
-        let DecodeState::Known { remaining, .. } = &mut self.state else {
-            unreachable!();
-        };
-        if src.len() > *remaining {
-            return Err(HttpError::InvalidLength(
-                "body longer than Content-Length".to_string(),
-            ));
-        }
-        let minimum_frame_len = (*remaining).min(self.target);
-        if src.len() < minimum_frame_len {
-            src.reserve(minimum_frame_len - src.len());
-            return Ok(None);
-        }
-
-        // Transfer read-ahead too, leaving no partial frame to copy on reserve.
-        let bytes = std::mem::take(src).freeze();
-        *remaining -= bytes.len();
-        let end_stream = *remaining == 0;
-        if end_stream {
-            self.state = DecodeState::Done;
-        }
-        Ok(Some(DecodedItem::Data { bytes, end_stream }))
-    }
-
-    fn decode_until_close(&mut self, src: &mut BytesMut) -> Option<DecodedItem> {
-        if src.len() < self.target {
-            src.reserve(self.target - src.len());
-            return None;
-        }
-        Some(DecodedItem::Data {
-            bytes: src.split_to(self.target).freeze(),
-            end_stream: false,
-        })
     }
 
     fn take_chunk_frame(&mut self, end_stream: bool) -> DecodedItem {
@@ -137,7 +83,7 @@ impl HttpBodyDecoder {
     fn decode_chunked(&mut self, src: &mut BytesMut) -> Result<Option<DecodedItem>, HttpError> {
         loop {
             match &mut self.state {
-                DecodeState::Chunked(ChunkedState::Size) => match httparse::parse_chunk_size(src) {
+                State::Chunked(ChunkedState::Size) => match httparse::parse_chunk_size(src) {
                     Ok(httparse::Status::Complete((line_len, chunk_size))) => {
                         if line_len > MAX_CHUNK_SIZE_LINE_SIZE {
                             return Err(chunk_size_line_too_large());
@@ -147,9 +93,9 @@ impl HttpBodyDecoder {
                         })?;
                         src.advance(line_len);
                         self.state = if chunk_size == 0 {
-                            DecodeState::Chunked(ChunkedState::Trailers)
+                            State::Chunked(ChunkedState::Trailers)
                         } else {
-                            DecodeState::Chunked(ChunkedState::Data {
+                            State::Chunked(ChunkedState::Data {
                                 remaining: chunk_size,
                             })
                         };
@@ -166,7 +112,7 @@ impl HttpBodyDecoder {
                         )));
                     }
                 },
-                DecodeState::Chunked(ChunkedState::Data { remaining }) => {
+                State::Chunked(ChunkedState::Data { remaining }) => {
                     let output_space = self.target - self.chunk_buf.len();
                     let take = src.len().min(*remaining).min(output_space);
                     // TODO we could try to avoid this copy, it's not on the main path though
@@ -178,12 +124,12 @@ impl HttpBodyDecoder {
                         return Ok(Some(self.take_chunk_frame(false)));
                     }
                     if *remaining == 0 {
-                        self.state = DecodeState::Chunked(ChunkedState::AfterCrlf);
+                        self.state = State::Chunked(ChunkedState::AfterCrlf);
                         continue;
                     }
                     return Ok(None);
                 }
-                DecodeState::Chunked(ChunkedState::AfterCrlf) => {
+                State::Chunked(ChunkedState::AfterCrlf) => {
                     if src.len() < 2 {
                         return Ok(None);
                     }
@@ -194,9 +140,9 @@ impl HttpBodyDecoder {
                         )));
                     }
                     src.advance(2);
-                    self.state = DecodeState::Chunked(ChunkedState::Size);
+                    self.state = State::Chunked(ChunkedState::Size);
                 }
-                DecodeState::Chunked(ChunkedState::Trailers) => {
+                State::Chunked(ChunkedState::Trailers) => {
                     let Some(line_len) = find_crlf(src) else {
                         if src.len() > MAX_TRAILER_SECTION_SIZE - self.trailer_bytes {
                             return Err(trailer_section_too_large());
@@ -212,22 +158,22 @@ impl HttpBodyDecoder {
                     if line_len != 0 {
                         continue;
                     }
-                    self.state = DecodeState::Done;
+                    self.state = State::Done;
                     return if self.chunk_buf.is_empty() {
                         Ok(Some(DecodedItem::End))
                     } else {
                         Ok(Some(self.take_chunk_frame(true)))
                     };
                 }
-                _ => unreachable!(),
+                State::Done => return Ok(Some(DecodedItem::End)),
             }
         }
     }
 
     fn unexpected_chunked_eof(&self) -> HttpError {
         let buffered = self.chunk_decoded + self.chunk_buf.len();
-        let expected = match self.state {
-            DecodeState::Chunked(ChunkedState::Data { remaining }) => buffered + remaining,
+        let expected = match &self.state {
+            State::Chunked(ChunkedState::Data { remaining }) => buffered + remaining,
             _ => 0,
         };
         HttpError::UnexpectedEof {
@@ -242,15 +188,7 @@ impl Decoder for HttpBodyDecoder {
     type Error = HttpError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        match self.state {
-            DecodeState::Known { .. } => self.decode_known(src),
-            DecodeState::Chunked(_) => self.decode_chunked(src),
-            DecodeState::UntilClose => Ok(self.decode_until_close(src)),
-            DecodeState::Done => Ok(Some(DecodedItem::End)),
-            DecodeState::Invalid(ref mut error) => Err(error
-                .take()
-                .unwrap_or_else(|| HttpError::InvalidLength("invalid body state".to_string()))),
-        }
+        self.decode_chunked(src)
     }
 
     fn decode_eof(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
@@ -258,27 +196,8 @@ impl Decoder for HttpBodyDecoder {
             return Ok(Some(item));
         }
         match self.state {
-            DecodeState::Known {
-                expected,
-                remaining,
-            } => Err(HttpError::UnexpectedEof {
-                read: expected - remaining + src.len(),
-                expected,
-            }),
-            DecodeState::Chunked(_) => Err(self.unexpected_chunked_eof()),
-            DecodeState::UntilClose => {
-                self.state = DecodeState::Done;
-                if src.is_empty() {
-                    Ok(Some(DecodedItem::End))
-                } else {
-                    Ok(Some(DecodedItem::Data {
-                        bytes: src.split().freeze(),
-                        end_stream: true,
-                    }))
-                }
-            }
-            DecodeState::Done => Ok(Some(DecodedItem::End)),
-            DecodeState::Invalid(_) => unreachable!("decode returned the invalid-state error"),
+            State::Chunked(_) => Err(self.unexpected_chunked_eof()),
+            State::Done => Ok(Some(DecodedItem::End)),
         }
     }
 }
@@ -305,27 +224,39 @@ mod tests {
     use tokio_util::codec::Decoder;
 
     use super::*;
-    use crate::response::BodyStrategy;
 
     #[test]
-    fn known_decoder_includes_read_ahead_in_frame() {
-        let mut decoder = HttpBodyDecoder::new(BodyStrategy::Known(2_000), 1_000, 0);
-        let mut src = BytesMut::from(&[b'x'; 1_200][..]);
-
-        let Some(DecodedItem::Data { bytes, end_stream }) = decoder.decode(&mut src).unwrap()
-        else {
-            panic!("expected a data frame");
+    fn chunked_decodes_single_chunk() {
+        let mut decoder = HttpBodyDecoder::new(4);
+        let mut src = BytesMut::new();
+        // One chunk of 4 bytes, then a terminating 0 chunk.
+        src.extend_from_slice(b"4\r\nwiki\r\n0\r\n\r\n");
+        let item = decoder.decode(&mut src).unwrap().unwrap();
+        let DecodedItem::Data { bytes, end_stream } = item else {
+            panic!("expected data");
         };
-        assert_eq!(bytes.len(), 1_200);
+        assert_eq!(&*bytes, b"wiki");
         assert!(!end_stream);
-        assert!(src.is_empty());
+        let item = decoder.decode(&mut src).unwrap().unwrap();
+        assert!(matches!(item, DecodedItem::End));
+    }
 
-        src.extend_from_slice(&[b'x'; 800]);
-        let Some(DecodedItem::Data { bytes, end_stream }) = decoder.decode(&mut src).unwrap()
-        else {
-            panic!("expected the final data frame");
+    #[test]
+    fn chunked_coalesces_across_chunks() {
+        let mut decoder = HttpBodyDecoder::new(8 * 1024);
+        let mut src = BytesMut::new();
+        // 16 bytes in 4-byte chunks, should coalesce into one 8K frame.
+        for _ in 0..4 {
+            src.extend_from_slice(b"4\r\nwiki\r\n");
+        }
+        src.extend_from_slice(b"0\r\n\r\n");
+        let item = decoder.decode(&mut src).unwrap().unwrap();
+        let DecodedItem::Data { bytes, end_stream } = item else {
+            panic!("expected data");
         };
-        assert_eq!(bytes.len(), 800);
+        assert_eq!(bytes.len(), 16);
         assert!(end_stream);
+        let item = decoder.decode(&mut src).unwrap().unwrap();
+        assert!(matches!(item, DecodedItem::End));
     }
 }

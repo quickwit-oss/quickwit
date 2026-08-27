@@ -450,7 +450,7 @@ impl<R: AsyncRead + Unpin + Send + 'static> ResponseBody<R> {
                 consumed: 0,
             }),
             BodyStrategy::Chunked => {
-                let decoder = HttpBodyDecoder::new(strategy, target, leftover_len);
+                let decoder = HttpBodyDecoder::new(target);
                 let initial_capacity = decoder.initial_capacity();
                 let prefixed_reader = AsyncReadExt::chain(Cursor::new(leftover), reader);
                 let timeout_reader = IdleTimeoutReader::new(prefixed_reader, read_timeout);
@@ -566,13 +566,9 @@ impl<R: AsyncRead + Unpin + Send + 'static> Body for ResponseBody<R> {
                 Some(FastState::Known(k)) => SizeHint::with_exact(k.remaining as u64),
                 _ => SizeHint::default(),
             },
-            // in practice this returns something only after the last chunk
-            BodyKind::Chunked(chunked) => chunked
-                .framed
-                .as_ref()
-                .and_then(|framed| framed.decoder().known_remaining())
-                .map(|remaining| SizeHint::with_exact(remaining as u64))
-                .unwrap_or_default(),
+            // Chunked: we don't know the total length until the terminal
+            // 0 chunk, so no exact hint.
+            BodyKind::Chunked(_) => SizeHint::default(),
             BodyKind::Complete { .. } => SizeHint::with_exact(0),
         }
     }
