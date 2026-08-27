@@ -36,6 +36,7 @@ struct HttpClientInner {
     pool: ConnectionPool,
     dns: Arc<dyn DnsResolver>,
     tls_connector: Option<TlsConnector>,
+    tls_config: Option<Arc<rustls::ClientConfig>>,
     connect_timeout: Duration,
     read_timeout: Duration,
     write_timeout: Duration,
@@ -63,6 +64,16 @@ impl HttpClient {
     /// Returns a handle to the shared connection pool.
     pub fn pool(&self) -> ConnectionPool {
         self.inner.pool.clone()
+    }
+
+    /// Returns the TLS client config, if one was configured.
+    pub fn tls_config(&self) -> Option<Arc<rustls::ClientConfig>> {
+        self.inner.tls_config.clone()
+    }
+
+    /// Returns the default `BufferHint` configured on this HttpClient.
+    pub fn buffer_hint(&self) -> BufferHint {
+        self.inner.buffer_hint
     }
 
     /// Performs one request/response exchange and returns the streaming
@@ -258,7 +269,7 @@ impl HttpClientBuilder {
             Some(config) => config,
             None => crate::tls::default_client_config()?,
         };
-        let tls_connector = Some(TlsConnector::from(tls_config));
+        let tls_connector = Some(TlsConnector::from(tls_config.clone()));
         let pool = self
             .shared_pool
             .unwrap_or_else(|| ConnectionPool::new(self.max_idle_per_host, self.idle_timeout));
@@ -267,6 +278,7 @@ impl HttpClientBuilder {
                 pool,
                 dns: self.dns,
                 tls_connector,
+                tls_config: Some(tls_config),
                 connect_timeout: self.connect_timeout,
                 read_timeout: self.read_timeout,
                 write_timeout: self.write_timeout,

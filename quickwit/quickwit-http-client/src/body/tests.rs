@@ -54,7 +54,7 @@ impl AsyncRead for FragmentedReader {
     }
 }
 
-async fn collect_body<R: AsyncRead + Unpin>(
+async fn collect_body<R: AsyncRead + Unpin + Send>(
     body: &mut ResponseBody<R>,
 ) -> Result<Vec<Bytes>, HttpError> {
     let mut frames = Vec::new();
@@ -74,7 +74,7 @@ fn concat(frames: &[Bytes]) -> Vec<u8> {
     bytes
 }
 
-fn body<R: AsyncRead + Unpin>(
+fn body<R: AsyncRead + Unpin + Send>(
     reader: R,
     strategy: BodyStrategy,
     leftover: impl Into<Bytes>,

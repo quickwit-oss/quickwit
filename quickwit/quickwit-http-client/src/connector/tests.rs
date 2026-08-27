@@ -94,10 +94,7 @@ async fn s3_adapter_returns_single_segment_sdk_body() {
     let response = connector.call(request).await.unwrap();
     assert_eq!(response.status().as_u16(), 200);
 
-    let body_bytes = response
-        .body()
-        .bytes()
-        .expect("expected a single buffer");
+    let body_bytes = response.body().bytes().expect("expected a single buffer");
     assert_eq!(body_bytes.len(), body.len());
     assert_eq!(body_bytes, body.as_slice());
 

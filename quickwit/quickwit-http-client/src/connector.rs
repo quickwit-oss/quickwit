@@ -34,6 +34,7 @@ use crate::error::HttpError;
 pub struct SingleBufferHttp1HttpClient {
     // A template client whose pool is shared across per-call connectors.
     template: HttpClient,
+    tls_config: Arc<rustls::ClientConfig>,
     default_connect_timeout: Duration,
     default_read_timeout: Duration,
     default_write_timeout: Duration,
@@ -95,11 +96,15 @@ impl SingleBufferHttp1HttpClientBuilder {
         let default_read_timeout = self.inner.configured_read_timeout();
         let default_write_timeout = self.inner.configured_write_timeout();
         let template = self.inner.build()?;
+        let tls_config = template
+            .tls_config()
+            .expect("build always sets a TLS config");
         Ok(SingleBufferHttp1HttpClient {
             default_connect_timeout,
             default_read_timeout,
             default_write_timeout,
             template,
+            tls_config,
         })
     }
 }
@@ -129,9 +134,11 @@ impl SingleBufferHttp1HttpClient {
             .connect_timeout(connect_timeout)
             .read_timeout(read_timeout)
             .write_timeout(self.default_write_timeout)
+            .tls_config(self.tls_config.clone())
+            .buffer_hint(self.template.buffer_hint())
             .shared_pool(self.template.pool())
             .build()
-            .expect("tls config loads from native roots")
+            .expect("tls config was provided explicitly")
     }
 }
 
@@ -202,7 +209,10 @@ async fn convert_response(
     for (name, value) in &parts.headers {
         sdk_response
             .headers_mut()
-            .try_insert(name.as_str().to_string(), value.to_str().unwrap_or("").to_string())
+            .try_insert(
+                name.as_str().to_string(),
+                value.to_str().unwrap_or("").to_string(),
+            )
             .map_err(|err| ConnectorError::other(err.into(), None))?;
     }
     Ok(sdk_response)

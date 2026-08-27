@@ -12,12 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! One HTTP/1.1 exchange: write the request, read the response head, and
-//! assemble an `http::Response<ResponseBody>` that streams the body.
-//!
-//! The connection is moved into the `ResponseBody`, which owns it for the
-//! duration of the body read.
-
 use std::time::Duration;
 
 use http_body::Body;
