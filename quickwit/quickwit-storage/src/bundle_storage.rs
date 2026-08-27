@@ -56,9 +56,8 @@ impl BundleStorage {
         let split_len = storage.file_num_bytes(&bundle_filepath).await?;
         let split_footer_range =
             locate_split_footer_range(storage.as_ref(), &bundle_filepath, split_len).await?;
-        let split_footer_start = usize::try_from(split_footer_range.start)?;
-        let split_footer_end = usize::try_from(split_footer_range.end)?;
-        let split_footer_range_usize = split_footer_start..split_footer_end;
+        let split_footer_range_usize =
+            split_footer_range.start as usize..split_footer_range.end as usize;
         let split_footer_bytes = storage
             .get_slice(&bundle_filepath, split_footer_range_usize)
             .await?;
@@ -137,12 +136,12 @@ impl BundleStorage {
         // If the initial tail also contains the file, reuse it and complete in one GET (at least).
         // Otherwise, fetch the file with an additional GET.
         let file_bytes = if file_range.start >= tail_start {
-            let relative_start = usize::try_from(file_range.start - tail_start)?;
-            let relative_end = usize::try_from(file_range.end - tail_start)?;
+            let relative_start = (file_range.start - tail_start) as usize;
+            let relative_end = (file_range.end - tail_start) as usize;
             split_bytes.slice(relative_start..relative_end)
         } else {
-            let relative_start = usize::try_from(file_range.start)?;
-            let relative_end = usize::try_from(file_range.end)?;
+            let relative_start = file_range.start as usize;
+            let relative_end = file_range.end as usize;
             storage
                 .get_slice(split_path, relative_start..relative_end)
                 .await?
@@ -202,15 +201,14 @@ pub async fn locate_split_footer_range(
         split_len >= SPLIT_FOOTER_TRAILER_NUM_BYTES as u64,
         "split is too short to contain a footer"
     );
-    let tail_start = split_len - SPLIT_FOOTER_TRAILER_NUM_BYTES as u64;
-    let start = usize::try_from(tail_start)?;
-    let end = usize::try_from(split_len)?;
+    let end = split_len as usize;
+    let start = end - SPLIT_FOOTER_TRAILER_NUM_BYTES;
     let tail_bytes = storage.get_slice(split_path, start..end).await?;
     match locate_split_footer_range_in_tail(split_len, &tail_bytes)? {
         FooterLocation::Located(footer_range) => Ok(footer_range),
         FooterLocation::ReadBundleMetadataLen(bundle_metadata_len_range) => {
-            let start = usize::try_from(bundle_metadata_len_range.start)?;
-            let end = usize::try_from(bundle_metadata_len_range.end)?;
+            let start = bundle_metadata_len_range.start as usize;
+            let end = bundle_metadata_len_range.end as usize;
             let bundle_metadata_len_bytes = storage.get_slice(split_path, start..end).await?;
             locate_split_footer_range_from_metadata_len(
                 split_len,
@@ -279,8 +277,8 @@ fn locate_split_footer_range_in_tail(
         ));
     }
 
-    let relative_start = usize::try_from(bundle_metadata_len_start - tail_start)?;
-    let relative_end = usize::try_from(bundle_metadata_len_end - tail_start)?;
+    let relative_start = (bundle_metadata_len_start - tail_start) as usize;
+    let relative_end = (bundle_metadata_len_end - tail_start) as usize;
     let footer_range = locate_split_footer_range_from_metadata_len(
         split_len,
         bundle_metadata_len_start,
@@ -321,8 +319,8 @@ async fn fetch_split_tail(
     // Read the tail in a loop until we find the footer.
     let (tail_bytes, footer_range) = loop {
         let tail_start = split_len - tail_window_num_bytes;
-        let start = usize::try_from(tail_start)?;
-        let end = usize::try_from(split_len)?;
+        let start = tail_start as usize;
+        let end = split_len as usize;
         let tail_bytes = storage.get_slice(split_path, start..end).await?;
         let required_tail_num_bytes =
             match locate_split_footer_range_in_tail(split_len, &tail_bytes)? {
