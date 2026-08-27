@@ -39,7 +39,7 @@ jobs:
     permissions:
       statuses: write
     steps:
-      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           STATUS_SHA: ${{ inputs.head_sha }}
         with:
@@ -66,7 +66,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.merge_sha }}
           persist-credentials: false
@@ -79,12 +79,12 @@ jobs:
       # apt's protobuf-compiler is too old for proto3 optional fields required
       # by the substrait crate enabled through the datafusion feature.
       - name: Install protoc
-        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
+        uses: taiki-e/install-action@b6ff580856c41316412a0b9b60540fbc6f8c82cc
         with:
           tool: protoc
 
       - name: Setup stable Rust Toolchain
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
           toolchain: stable
 
@@ -92,14 +92,14 @@ jobs:
       # branch cache scope, so writes could poison trusted workflows. Reuse the
       # trusted `quickwit-cargo` key read-only.
       - name: Setup cache (read-only)
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: "./quickwit -> target"
           shared-key: "quickwit-cargo"
           save-if: false
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
+        uses: taiki-e/install-action@b6ff580856c41316412a0b9b60540fbc6f8c82cc
         with:
           tool: cargo-nextest
 
@@ -115,7 +115,7 @@ jobs:
     permissions:
       statuses: write
     steps:
-      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           TEST_SHA: ${{ inputs.merge_sha }}
           STATUS_SHA: ${{ inputs.head_sha }}
