@@ -48,7 +48,7 @@ updates:
 
   # NPM dependencies
   - package-ecosystem: npm
-    directory: "/"
+    directory: "/quickwit/quickwit-ui"
     schedule:
       interval: "monthly"
     groups:
