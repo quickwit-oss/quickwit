@@ -9,6 +9,10 @@ updates:
       rust-dependencies:
         patterns:
           - "*"
+      rust-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
     open-pull-requests-limit: 10
     ignore:
       - dependency-name: "*"
@@ -34,17 +38,25 @@ updates:
       github-actions:
         patterns:
           - "*"
+      github-actions-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
     open-pull-requests-limit: 10
     cooldown:
       default-days: 2
 
   # NPM dependencies
   - package-ecosystem: npm
-    directory: "/"
+    directory: "/quickwit/quickwit-ui"
     schedule:
       interval: "monthly"
     groups:
       npm-dependencies:
+        patterns:
+          - "*"
+      npm-security:
+        applies-to: security-updates
         patterns:
           - "*"
     open-pull-requests-limit: 10
