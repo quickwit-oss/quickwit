@@ -306,46 +306,60 @@ async fn fetch_split_tail(
         split_len >= SPLIT_FOOTER_TRAILER_NUM_BYTES as u64,
         "split is too short to contain a footer"
     );
-    ensure!(
-        initial_tail_window_num_bytes > 0,
-        "split tail window must be positive"
-    );
 
-    // The tail always covers the fixed trailer so that footer parsing has a lower bound to work
-    // with, even when the caller asks for a very small window.
-    let mut tail_window_num_bytes = initial_tail_window_num_bytes
+    // Start with the requested window, but always cover the fixed trailer and never read before
+    // the beginning of the split.
+    let initial_tail_num_bytes = initial_tail_window_num_bytes
         .max(SPLIT_FOOTER_TRAILER_NUM_BYTES as u64)
         .min(split_len);
-    // Read the tail in a loop until we find the footer.
-    let (tail_bytes, footer_range) = loop {
-        let tail_start = split_len - tail_window_num_bytes;
-        let start = tail_start as usize;
-        let end = split_len as usize;
-        let tail_bytes = storage.get_slice(split_path, start..end).await?;
-        let required_tail_num_bytes =
-            match locate_split_footer_range_in_tail(split_len, &tail_bytes)? {
-                FooterLocation::Located(footer_range) => {
-                    let footer_num_bytes = footer_range.end - footer_range.start;
-                    if tail_bytes.len() as u64 >= footer_num_bytes {
-                        break (tail_bytes, footer_range);
-                    }
-                    footer_num_bytes
+    let mut tail_bytes =
+        read_split_tail(storage, split_path, split_len, initial_tail_num_bytes).await?;
+
+    // Locate the footer range.
+    let footer_range = match locate_split_footer_range_in_tail(split_len, &tail_bytes)? {
+        FooterLocation::Located(footer_range) => {
+            // The range is known, but the initial tail may not contain the complete footer.
+            footer_range
+        }
+        FooterLocation::ReadBundleMetadataLen(bundle_metadata_len_range) => {
+            // Extend the tail through the legacy bundle-metadata length field, then use that
+            // length to locate the beginning of the footer.
+            let required_tail_num_bytes = split_len - bundle_metadata_len_range.start;
+            let metadata_len_tail_bytes =
+                read_split_tail(storage, split_path, split_len, required_tail_num_bytes).await?;
+            match locate_split_footer_range_in_tail(split_len, &metadata_len_tail_bytes)? {
+                FooterLocation::Located(footer_range) => footer_range,
+                FooterLocation::ReadBundleMetadataLen(_) => {
+                    bail!("failed to locate split footer after reading bundle metadata length");
                 }
-                FooterLocation::ReadBundleMetadataLen(bundle_metadata_len_range) => {
-                    split_len - bundle_metadata_len_range.start
-                }
-            };
-        ensure!(
-            required_tail_num_bytes > tail_window_num_bytes,
-            "failed to locate split footer"
-        );
-        ensure!(
-            required_tail_num_bytes <= split_len,
-            "split footer exceeds split length"
-        );
-        tail_window_num_bytes = required_tail_num_bytes;
+            }
+        }
     };
+
+    // If the initial tail does not contain the entire footer, fetch the exact footer range now
+    // that its boundaries are known.
+    let footer_num_bytes = footer_range.end - footer_range.start;
+    if (tail_bytes.len() as u64) < footer_num_bytes {
+        tail_bytes = read_split_tail(storage, split_path, split_len, footer_num_bytes).await?;
+    }
     Ok((tail_bytes, footer_range))
+}
+
+async fn read_split_tail(
+    storage: &dyn Storage,
+    split_path: &Path,
+    split_len: u64,
+    tail_num_bytes: u64,
+) -> anyhow::Result<OwnedBytes> {
+    ensure!(
+        tail_num_bytes <= split_len,
+        "split tail exceeds split length"
+    );
+    let start = (split_len - tail_num_bytes) as usize;
+    let tail_bytes = storage
+        .get_slice(split_path, start..split_len as usize)
+        .await?;
+    Ok(tail_bytes)
 }
 
 /// Removes the fixed split footer trailer when it is present.
