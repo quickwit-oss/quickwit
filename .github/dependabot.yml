@@ -6,9 +6,28 @@ updates:
     schedule:
       interval: "monthly"
     groups:
-      rust-dependencies:
+      arrow-datafusion:
+        applies-to: version-updates
         patterns:
-          - "*"
+          - "arrow"
+          - "datafusion"
+          - "datafusion-*"
+          - "object_store"
+          - "parquet"
+          - "thrift"
+      aws:
+        applies-to: version-updates
+        patterns:
+          - "aws-*"
+      google-cloud:
+        applies-to: version-updates
+        patterns:
+          - "google-cloud-*"
+      reqwest:
+        applies-to: version-updates
+        patterns:
+          - "reqwest"
+          - "reqwest-*"
       rust-security:
         applies-to: security-updates
         patterns:
