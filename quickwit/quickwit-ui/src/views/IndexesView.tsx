@@ -89,6 +89,7 @@ function IndexesView() {
           <Button
             variant="contained"
             disableElevation
+            disabled={loading}
             startIcon={<AddIcon />}
             onClick={() => setCreateDialogOpen(true)}
           >
