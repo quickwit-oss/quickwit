@@ -106,6 +106,23 @@ export class Client {
     return this.fetch(`${this.apiRoot()}indexes`, {});
   }
 
+  // Creates an index from a raw index config expressed in YAML. The config is
+  // sent as-is: the server selects its parser from the `content-type` subtype
+  // and reports validation errors, so no client-side YAML parsing is done here.
+  async createIndex(indexConfigYaml: string): Promise<IndexMetadata> {
+    return this.fetch(
+      `${this.apiRoot()}indexes`,
+      {
+        headers: {
+          "content-type": "application/yaml",
+          Accept: "application/json",
+        },
+        mode: "cors",
+      },
+      indexConfigYaml,
+    );
+  }
+
   async fetch<T>(
     url: string,
     params: RequestInit,
@@ -114,20 +131,37 @@ export class Client {
     if (body !== null) {
       params.method = "POST";
       params.body = body;
+      // The caller's `content-type` wins: callers that do not set one default
+      // to JSON.
       params.headers = {
-        ...params.headers,
         "content-type": "application/json",
+        ...params.headers,
       };
     }
     const response = await fetch(url, params);
     if (response.ok) {
       return response.json() as Promise<T>;
     }
-    const message = await response.text();
     return await Promise.reject({
-      message: message,
+      message: await this.extractErrorMessage(response),
       status: response.status,
     });
+  }
+
+  // Quickwit reports errors as a `{"message": "..."}` JSON envelope. Anything
+  // else (a proxy error page, for instance) is surfaced verbatim so failures
+  // are never hidden.
+  private async extractErrorMessage(response: Response): Promise<string> {
+    const rawBody = await response.text();
+    try {
+      const parsedBody = JSON.parse(rawBody);
+      if (typeof parsedBody?.message === "string") {
+        return parsedBody.message;
+      }
+    } catch {
+      // Not a JSON error envelope.
+    }
+    return rawBody;
   }
 
   private defaultGetRequestParams(): RequestInit {

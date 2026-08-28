@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Box, Typography } from "@mui/material";
-import { useEffect, useMemo, useState } from "react";
+import AddIcon from "@mui/icons-material/Add";
+import { Box, Button, Typography } from "@mui/material";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ApiUrlFooter from "../components/ApiUrlFooter";
+import CreateIndexDialog from "../components/CreateIndexDialog";
 import IndexesTable from "../components/IndexesTable";
 import {
   FullBoxContainer,
@@ -32,6 +34,7 @@ function IndexesView() {
     null,
   );
   const [indexesMetadata, setIndexesMetadata] = useState<IndexMetadata[]>();
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const quickwitClient = useMemo(() => new Client(), []);
 
   const renderFetchIndexesResult = () => {
@@ -51,7 +54,7 @@ function IndexesView() {
     return <Box>You have no index registered in your metastore.</Box>;
   };
 
-  useEffect(() => {
+  const fetchIndexes = useCallback(() => {
     setLoading(true);
     quickwitClient.listIndexes().then(
       (indexesMetadata) => {
@@ -66,14 +69,42 @@ function IndexesView() {
     );
   }, [quickwitClient]);
 
+  useEffect(() => {
+    fetchIndexes();
+  }, [fetchIndexes]);
+
   return (
     <ViewUnderAppBarBox>
       <FullBoxContainer>
-        <QBreadcrumbs aria-label="breadcrumb">
-          <Typography color="text.primary">Indexes</Typography>
-        </QBreadcrumbs>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <QBreadcrumbs aria-label="breadcrumb">
+            <Typography color="text.primary">Indexes</Typography>
+          </QBreadcrumbs>
+          <Button
+            variant="contained"
+            disableElevation
+            startIcon={<AddIcon />}
+            onClick={() => setCreateDialogOpen(true)}
+          >
+            Create index
+          </Button>
+        </Box>
         {renderFetchIndexesResult()}
       </FullBoxContainer>
+      <CreateIndexDialog
+        open={createDialogOpen}
+        onClose={() => setCreateDialogOpen(false)}
+        onIndexCreated={() => {
+          setCreateDialogOpen(false);
+          fetchIndexes();
+        }}
+      />
       {ApiUrlFooter("api/v1/indexes")}
     </ViewUnderAppBarBox>
   );
