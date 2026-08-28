@@ -213,6 +213,10 @@ pub struct IndexerConfig {
     pub enable_otlp_endpoint: bool,
     #[serde(default = "IndexerConfig::default_enable_cooperative_indexing")]
     pub enable_cooperative_indexing: bool,
+    /// Spreads the indexing pipelines of a node uniformly in time, so that they don't all use
+    /// the same resources at the same time. Implied by `enable_cooperative_indexing`.
+    #[serde(default = "IndexerConfig::default_enable_spread_indexing_pipelines")]
+    pub enable_spread_indexing_pipelines: bool,
     #[serde(default = "IndexerConfig::default_cpu_capacity")]
     pub cpu_capacity: CpuCapacity,
     /// If true, run Parquet merges through the streaming column-major engine
@@ -229,6 +233,10 @@ pub struct IndexerConfig {
 
 impl IndexerConfig {
     fn default_enable_cooperative_indexing() -> bool {
+        false
+    }
+
+    fn default_enable_spread_indexing_pipelines() -> bool {
         false
     }
 
@@ -272,6 +280,7 @@ impl IndexerConfig {
         use quickwit_proto::indexing::PIPELINE_FULL_CAPACITY;
         let indexer_config = IndexerConfig {
             enable_cooperative_indexing: false,
+            enable_spread_indexing_pipelines: false,
             enable_otlp_endpoint: true,
             split_store_max_num_bytes: ByteSize::mb(1),
             split_store_max_num_splits: 3,
@@ -289,6 +298,7 @@ impl Default for IndexerConfig {
     fn default() -> Self {
         Self {
             enable_cooperative_indexing: Self::default_enable_cooperative_indexing(),
+            enable_spread_indexing_pipelines: Self::default_enable_spread_indexing_pipelines(),
             enable_otlp_endpoint: Self::default_enable_otlp_endpoint(),
             split_store_max_num_bytes: Self::default_split_store_max_num_bytes(),
             split_store_max_num_splits: Self::default_split_store_max_num_splits(),

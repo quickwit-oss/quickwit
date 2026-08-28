@@ -51,7 +51,7 @@ use tracing::{Span, debug, info_span, warn};
 use ulid::Ulid;
 
 use super::IndexSerializer;
-use super::cooperative_indexing::{CooperativeIndexingCycle, CooperativeIndexingPeriod};
+use super::indexing_cycle::{IndexingCycle, IndexingPeriod};
 use crate::docs_clustering::{DocIdClusterer, Fingerprinter};
 use crate::metrics::SPLIT_BUILDERS;
 use crate::models::{
@@ -84,7 +84,8 @@ pub struct IndexerCounters {
     pub num_doc_batches_in_workbench: u64,
 
     /// Metrics describing the load and indexing performance of the
-    /// pipeline. This is only updated for cooperative indexers.
+    /// pipeline. This is only updated for cooperative indexers or
+    /// when indexing pipeline spreading is enabled.
     pub pipeline_metrics_opt: Option<PipelineMetrics>,
 }
 
@@ -100,7 +101,7 @@ struct IndexerState {
     tokenizer_manager: TokenizerManager,
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
-    cooperative_indexing_opt: Option<CooperativeIndexingCycle>,
+    indexing_cycle_opt: Option<IndexingCycle>,
 }
 
 impl IndexerState {
@@ -199,15 +200,11 @@ impl IndexerState {
             workbench_id=%workbench_id,
         );
         let indexing_span = info_span!(parent: batch_parent_span.id(), "indexer");
-        let cooperative_indexing_period =
-            if let Some(cooperative_indexing) = &self.cooperative_indexing_opt {
-                Some(
-                    ctx.protect_future(cooperative_indexing.cooperative_indexing_period())
-                        .await,
-                )
-            } else {
-                None
-            };
+        let indexing_period_opt = if let Some(indexing_cycle) = &self.indexing_cycle_opt {
+            Some(ctx.protect_future(indexing_cycle.indexing_period()).await)
+        } else {
+            None
+        };
 
         let last_delete_opstamp_request = LastDeleteOpstampRequest {
             index_uid: Some(self.pipeline_id.index_uid.clone()),
@@ -239,7 +236,7 @@ impl IndexerState {
             publish_lock,
             last_delete_opstamp,
             memory_usage: GaugeGuard::new(&IN_FLIGHT_INDEX_WRITER, 0.0),
-            cooperative_indexing_period,
+            indexing_period_opt,
             split_builders_guard,
         };
         Ok(workbench)
@@ -290,7 +287,7 @@ impl IndexerState {
             .get_or_create_workbench(indexing_workbench_opt, ctx)
             .await?;
         if publish_lock.is_dead() {
-            // Release indexing permit early.
+            // Release indexing permit early if there is one.
             indexing_workbench_opt.take();
             return Ok(());
         }
@@ -366,7 +363,7 @@ struct IndexingWorkbench {
     // Number of bytes declared as used by tantivy.
     memory_usage: GaugeGuard,
     split_builders_guard: GaugeGuard,
-    cooperative_indexing_period: Option<CooperativeIndexingPeriod>,
+    indexing_period_opt: Option<IndexingPeriod>,
 }
 
 pub struct Indexer {
@@ -402,8 +399,8 @@ impl Actor for Indexer {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        if let Some(cooperative_indexing_cycle) = &self.indexer_state.cooperative_indexing_opt {
-            let initial_sleep_duration = cooperative_indexing_cycle.initial_sleep_duration();
+        if let Some(indexing_cycle) = &self.indexer_state.indexing_cycle_opt {
+            let initial_sleep_duration = indexing_cycle.initial_sleep_duration();
             ctx.pause();
             ctx.schedule_self_msg(initial_sleep_duration, Command::Resume);
         }
@@ -418,9 +415,7 @@ impl Actor for Indexer {
             return Ok(());
         };
 
-        let Some(cooperative_indexing_period) =
-            indexing_workbench.cooperative_indexing_period.take()
-        else {
+        let Some(indexing_period) = indexing_workbench.indexing_period_opt.take() else {
             return Ok(());
         };
 
@@ -430,9 +425,9 @@ impl Actor for Indexer {
             .map(|split| split.split_attrs.uncompressed_docs_size_in_bytes)
             .sum::<u64>();
 
-        // This also drops the indexing permit.
+        // This also drops the indexing permit, if any.
         let (sleep_duration, pipeline_metrics) =
-            cooperative_indexing_period.end_of_work(uncompressed_num_bytes);
+            indexing_period.end_of_work(uncompressed_num_bytes);
 
         self.counters.pipeline_metrics_opt = Some(pipeline_metrics);
 
@@ -532,6 +527,7 @@ impl Indexer {
         indexing_directory: TempDirectory,
         indexing_settings: IndexingSettings,
         cooperative_indexing_permits_opt: Option<Arc<Semaphore>>,
+        spread_indexing_pipelines: bool,
         index_serializer_mailbox: Mailbox<IndexSerializer>,
         fingerprinter_opt: Option<Fingerprinter>,
     ) -> Self {
@@ -548,12 +544,12 @@ impl Indexer {
             // A configured fingerprinter supplies the mapping when the split is finalized.
             manual_doc_id_mapping: fingerprinter_opt.is_some(),
         };
-        let cooperative_indexing_opt: Option<CooperativeIndexingCycle> =
-            cooperative_indexing_permits_opt.map(|cooperative_indexing_permits| {
-                CooperativeIndexingCycle::new(
+        let indexing_cycle_opt: Option<IndexingCycle> =
+            (spread_indexing_pipelines || cooperative_indexing_permits_opt.is_some()).then(|| {
+                IndexingCycle::new(
                     &pipeline_id,
                     indexing_settings.commit_timeout(),
-                    cooperative_indexing_permits,
+                    cooperative_indexing_permits_opt,
                 )
             });
         Self {
@@ -569,7 +565,7 @@ impl Indexer {
                 tokenizer_manager: tokenizer_manager.tantivy_manager().clone(),
                 index_settings,
                 max_num_partitions: doc_mapper.max_num_partitions(),
-                cooperative_indexing_opt,
+                indexing_cycle_opt,
             },
             index_serializer_mailbox,
             indexing_workbench_opt: None,
@@ -778,6 +774,7 @@ mod tests {
             indexing_directory,
             indexing_settings,
             None,
+            false,
             index_serializer_mailbox,
             None,
         );
@@ -919,6 +916,7 @@ mod tests {
             indexing_directory,
             indexing_settings,
             None,
+            false,
             index_serializer_mailbox,
             None,
         );
@@ -997,6 +995,7 @@ mod tests {
             indexing_directory,
             indexing_settings,
             None,
+            false,
             index_serializer_mailbox,
             None,
         );
@@ -1081,6 +1080,7 @@ mod tests {
             indexing_directory,
             indexing_settings,
             Some(Arc::new(Semaphore::new(1))),
+            false,
             index_serializer_mailbox,
             None,
         );
@@ -1170,6 +1170,7 @@ mod tests {
             indexing_directory,
             indexing_settings,
             None,
+            false,
             index_serializer_mailbox,
             None,
         );
@@ -1238,6 +1239,7 @@ mod tests {
             TempDirectory::for_test(),
             IndexingSettings::for_test(),
             None,
+            false,
             index_serializer_mailbox,
             Some(Fingerprinter::new(
                 &serde_json::from_value::<DocsClusteringConfig>(serde_json::json!([
@@ -1374,6 +1376,7 @@ mod tests {
             indexing_directory,
             indexing_settings,
             None,
+            false,
             index_serializer_mailbox,
             None,
         );
@@ -1473,6 +1476,7 @@ mod tests {
             indexing_directory,
             indexing_settings,
             None,
+            false,
             index_serializer_mailbox,
             None,
         );
@@ -1546,6 +1550,7 @@ mod tests {
             indexing_directory,
             indexing_settings,
             None,
+            false,
             index_serializer_mailbox,
             None,
         );
@@ -1620,6 +1625,7 @@ mod tests {
             indexing_directory,
             indexing_settings,
             None,
+            false,
             index_serializer_mailbox,
             None,
         );
@@ -1686,6 +1692,7 @@ mod tests {
             indexing_directory,
             indexing_settings,
             None,
+            false,
             index_serializer_mailbox,
             None,
         );
@@ -1756,6 +1763,7 @@ mod tests {
             indexing_directory,
             indexing_settings,
             None,
+            false,
             index_serializer_mailbox,
             None,
         );
