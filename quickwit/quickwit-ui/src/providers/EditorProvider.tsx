@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import * as monacoEditor from "monaco-editor/esm/vs/editor/editor.api";
+import type * as monacoEditor from "monaco-editor";
 import {
   createContext,
   MutableRefObject,
