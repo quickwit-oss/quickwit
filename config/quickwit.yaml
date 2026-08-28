@@ -227,6 +227,7 @@ indexer:
 #     buffer_pool_size: 2G
 #     submit_queue_size_threshold: 3G
 #     reclaimers: 8
+#     clean_block_threshold: 16
 # -------------------------------- Jaeger settings --------------------------------
 
 jaeger:

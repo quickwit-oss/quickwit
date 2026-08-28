@@ -50,6 +50,7 @@ fn range_cache_config(path: impl AsRef<Path>) -> SplitRangeDiskCacheConfig {
         max_entry_size: ByteSize::mb(2),
         flushers: 1,
         reclaimers: 1,
+        clean_block_threshold: 16,
     }
 }
 

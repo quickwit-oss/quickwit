@@ -452,9 +452,15 @@ pub struct SplitRangeDiskCacheConfig {
     pub max_entry_size: ByteSize,
     pub flushers: usize,
     pub reclaimers: usize,
+    #[serde(default = "SplitRangeDiskCacheConfig::default_clean_block_threshold")]
+    pub clean_block_threshold: usize,
 }
 
 impl SplitRangeDiskCacheConfig {
+    fn default_clean_block_threshold() -> usize {
+        16
+    }
+
     fn validate(&self) -> anyhow::Result<()> {
         if self.path.as_os_str().is_empty() {
             bail!("split_range_disk_cache.path must not be empty");
@@ -474,8 +480,11 @@ impl SplitRangeDiskCacheConfig {
         if self.memory_eviction_policy != CachePolicy::S3Fifo {
             bail!("split_range_disk_cache.memory_eviction_policy must be s3-fifo in phase 1");
         }
-        if self.flushers == 0 || self.reclaimers == 0 {
-            bail!("split range disk cache flushers and reclaimers must be positive");
+        if self.flushers == 0 || self.reclaimers == 0 || self.clean_block_threshold == 0 {
+            bail!(
+                "split range disk cache flushers, reclaimers, and clean block threshold must be \
+                 positive"
+            );
         }
         Ok(())
     }
@@ -496,6 +505,7 @@ impl SplitRangeDiskCacheConfig {
             max_entry_size: ByteSize::mb(15),
             flushers: 4,
             reclaimers: 4,
+            clean_block_threshold: Self::default_clean_block_threshold(),
         }
     }
 }
@@ -1546,6 +1556,9 @@ split_range_disk_cache:
 "#;
         let config: SearcherConfig = serde_yaml::from_str(yaml).unwrap();
         let disk_cache = config.split_range_disk_cache.as_ref().unwrap();
+        let serialized_disk_cache = serde_yaml::to_string(disk_cache).unwrap();
+        assert!(serialized_disk_cache.contains("clean_block_threshold: 16"));
+        assert_eq!(disk_cache.clean_block_threshold, 16);
         assert_eq!(
             disk_cache.path,
             PathBuf::from("/var/cache/quickwit/split-range-v1")
@@ -1560,10 +1573,7 @@ split_range_disk_cache:
         // Round-trip the nested cache config. SearcherConfig's other ByteSize
         // fields serialize as display strings and do not round-trip exactly.
         assert_eq!(
-            serde_yaml::from_str::<SplitRangeDiskCacheConfig>(
-                &serde_yaml::to_string(disk_cache).unwrap()
-            )
-            .unwrap(),
+            serde_yaml::from_str::<SplitRangeDiskCacheConfig>(&serialized_disk_cache).unwrap(),
             *disk_cache
         );
     }
@@ -1606,6 +1616,22 @@ split_range_disk_cache:
             error
                 .to_string()
                 .contains("max_entry_size must be smaller than block_size")
+        );
+    }
+
+    #[test]
+    fn test_split_range_disk_cache_rejects_zero_clean_block_threshold() {
+        let mut disk_cache = SplitRangeDiskCacheConfig::for_test();
+        disk_cache.clean_block_threshold = 0;
+        let config = SearcherConfig {
+            split_range_disk_cache: Some(disk_cache),
+            ..Default::default()
+        };
+        let error = config.validate().unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("clean block threshold must be positive")
         );
     }
 }

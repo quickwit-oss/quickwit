@@ -343,6 +343,7 @@ This section contains the configuration options for the process-wide on-disk cac
 | `max_entry_size` | Maximum uncompressed payload stored as one disk entry. Larger ranges stay in memory only. | |
 | `flushers` | Number of flush worker threads. Must be positive. | |
 | `reclaimers` | Number of reclaim worker threads. Must be positive. | |
+| `clean_block_threshold` | Clean disk block count at or below which reclaimers start working. Must be positive. | `16` |
 
 Example:
 
@@ -369,6 +370,7 @@ searcher:
     buffer_pool_size: 2G
     submit_queue_size_threshold: 3G
     reclaimers: 8
+    clean_block_threshold: 16
 ```
 
 ## Jaeger configuration

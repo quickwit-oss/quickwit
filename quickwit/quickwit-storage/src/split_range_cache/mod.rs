@@ -149,6 +149,7 @@ fn build_block_engine(
         .with_block_size(bytesize_to_usize(config.block_size, "block_size")?)
         .with_flushers(config.flushers)
         .with_reclaimers(config.reclaimers)
+        .with_clean_block_threshold(config.clean_block_threshold)
         .with_buffer_pool_size(bytesize_to_usize(
             config.buffer_pool_size,
             "buffer_pool_size",
@@ -184,5 +185,6 @@ pub(crate) fn config_for_test(path: impl AsRef<Path>) -> SplitRangeDiskCacheConf
         max_entry_size: ByteSize::mb(2),
         flushers: 1,
         reclaimers: 1,
+        clean_block_threshold: 16,
     }
 }
