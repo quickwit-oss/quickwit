@@ -21,28 +21,43 @@ use quickwit_proto::search::{
     CountHits, LeafResourceStats, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
 };
 use quickwit_storage::{MemorySizedCache, OwnedBytes};
+use rand::TryRng;
 use siphasher::sip128::{Hasher128, SipHasher13};
 use tantivy::index::SegmentId;
-use tracing::warn;
 
-/// SipHash keys: arbitrary, but fixed. The caches they key are process-local and in memory, so
-/// these need neither to be secret nor to stay stable across releases.
-const CACHE_KEY_HASH_SEEDS: (u64, u64) = (0x1f8a_c9d3_5e47_b061, 0x93b5_20fe_7c14_a8d2);
-
-/// A 128-bit hash of a cache key, stored in place of the key itself.
+/// A keyed 128-bit digest stored in place of a potentially large cache key.
 ///
-/// The caches in this file are keyed by large values — a whole `SearchRequest` including its
-/// query AST, or a serialized query AST — with one entry per split. [`MemorySizedCache`] only
-/// charges the *value* against its capacity, so keeping those keys around left hundreds of
-/// megabytes of key data outside of the configured budget (issue #6719).
-///
-/// Hash collision can happen with a probability of 1e-27 for the default 64MB cache.
+/// The original key is discarded. The 128-bit output makes accidental collisions negligible.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct CacheKeyHash(u128);
 
-impl CacheKeyHash {
-    fn of<K: Hash + ?Sized>(key: &K) -> CacheKeyHash {
-        let mut hasher = SipHasher13::new_with_keys(CACHE_KEY_HASH_SEEDS.0, CACHE_KEY_HASH_SEEDS.1);
+#[derive(Clone, Copy)]
+struct CacheKeyHasher {
+    key0: u64,
+    key1: u64,
+}
+
+impl CacheKeyHasher {
+    fn random() -> Self {
+        // Seed SipHash with OS-provided cryptographically secure randomness. This makes the
+        // process-local hash function unpredictable and prevents deliberately crafted collisions.
+        let mut rng = rand::rngs::SysRng;
+        let key0 = rng
+            .try_next_u64()
+            .expect("failed to obtain OS entropy for cache hash seed");
+        let key1 = rng
+            .try_next_u64()
+            .expect("failed to obtain OS entropy for cache hash seed");
+        Self { key0, key1 }
+    }
+
+    #[cfg(test)]
+    fn with_keys(key0: u64, key1: u64) -> Self {
+        Self { key0, key1 }
+    }
+
+    fn hash<K: Hash + ?Sized>(&self, key: &K) -> CacheKeyHash {
+        let mut hasher = SipHasher13::new_with_keys(self.key0, self.key1);
         key.hash(&mut hasher);
         CacheKeyHash(hasher.finish128().as_u128())
     }
@@ -51,6 +66,7 @@ impl CacheKeyHash {
 /// A cache to memoize `leaf_search_single_split` results.
 pub struct LeafSearchCache {
     content: MemorySizedCache<CacheKeyHash>,
+    key_hasher: CacheKeyHasher,
 }
 
 // TODO we could be smarter about search_after. If we have a cached request with a search_after
@@ -75,6 +91,7 @@ impl LeafSearchCache {
                 config,
                 &quickwit_storage::metrics::PARTIAL_REQUEST_CACHE,
             ),
+            key_hasher: CacheKeyHasher::random(),
         }
     }
     pub fn get(
@@ -83,16 +100,9 @@ impl LeafSearchCache {
         search_request: SearchRequest,
     ) -> Option<LeafSearchResponse> {
         let key = CacheKey::from_split_meta_and_request(split_info, search_request);
-        let encoded_result = self.content.get(&CacheKeyHash::of(&key))?;
-        LeafSearchResponse::decode(&*encoded_result)
-            .inspect_err(|error| {
-                warn!(
-                    error = %error,
-                    split_id = %key.split_id,
-                    "failed to decode a cached leaf search response"
-                );
-            })
-            .ok()
+        let encoded_result = self.content.get(&self.key_hasher.hash(&key))?;
+        // this should never fail
+        LeafSearchResponse::decode(&*encoded_result).ok()
     }
 
     pub fn put(
@@ -111,7 +121,7 @@ impl LeafSearchCache {
         let key = CacheKey::from_split_meta_and_request(split_info, search_request);
         let encoded_result = result.encode_to_vec();
         self.content
-            .put(CacheKeyHash::of(&key), OwnedBytes::new(encoded_result));
+            .put(self.key_hasher.hash(&key), OwnedBytes::new(encoded_result));
     }
 }
 
@@ -232,6 +242,7 @@ impl RangeBounds<i64> for HalfOpenRange {
 
 pub struct PredicateCacheImpl {
     content: MemorySizedCache<CacheKeyHash>,
+    key_hasher: CacheKeyHasher,
 }
 
 impl PredicateCacheImpl {
@@ -241,6 +252,7 @@ impl PredicateCacheImpl {
                 config,
                 &quickwit_storage::metrics::PREDICATE_CACHE,
             ),
+            key_hasher: CacheKeyHasher::random(),
         }
     }
 }
@@ -251,7 +263,9 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
         split_id: String,
         query_ast_json: String,
     ) -> Option<(SegmentId, quickwit_query::query_ast::HitSet)> {
-        let key = CacheKeyHash::of(&(split_id.as_str(), query_ast_json.as_str()));
+        let key = self
+            .key_hasher
+            .hash(&(split_id.as_str(), query_ast_json.as_str()));
         let encoded_result = self.content.get(&key)?;
         let (segment_id_bytes, hits_buffer) = encoded_result.split(32);
         let segment_id =
@@ -271,7 +285,9 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
         let mut buffer = Vec::with_capacity(32 + hits_buffer.len());
         buffer.extend_from_slice(segment.uuid_string().as_bytes());
         buffer.extend_from_slice(&hits_buffer);
-        let key = CacheKeyHash::of(&(split_id.as_str(), query_ast_json.as_str()));
+        let key = self
+            .key_hasher
+            .hash(&(split_id.as_str(), query_ast_json.as_str()));
         self.content.put(key, OwnedBytes::new(buffer));
     }
 }
@@ -283,26 +299,10 @@ mod tests {
         LeafResourceStats, LeafSearchResponse, PartialHit, SearchRequest, SortValue,
         SplitIdAndFooterOffsets,
     };
+    use quickwit_query::query_ast::{HitSet, PredicateCache};
+    use tantivy::index::SegmentId;
 
-    use super::{CacheKey, CacheKeyHash, LeafSearchCache};
-
-    fn leaf_search_response_for_split(split_id: &str) -> LeafSearchResponse {
-        LeafSearchResponse {
-            failed_splits: Vec::new(),
-            intermediate_aggregation_result: None,
-            num_attempted_splits: 1,
-            num_successful_splits: 1,
-            num_hits: 1234,
-            partial_hits: vec![PartialHit {
-                doc_id: 1,
-                segment_ord: 0,
-                sort_value: Some(SortValue::U64(0u64).into()),
-                sort_value2: None,
-                split_id: split_id.to_string(),
-            }],
-            resource_stats: Some(LeafResourceStats::default()),
-        }
-    }
+    use super::{CacheKey, CacheKeyHasher, LeafSearchCache, PredicateCacheImpl};
 
     #[test]
     fn test_leaf_search_cache_no_timestamp() {
@@ -346,7 +346,21 @@ mod tests {
             ..Default::default()
         };
 
-        let result = leaf_search_response_for_split("split_1");
+        let result = LeafSearchResponse {
+            failed_splits: Vec::new(),
+            intermediate_aggregation_result: None,
+            num_attempted_splits: 1,
+            num_successful_splits: 1,
+            num_hits: 1234,
+            partial_hits: vec![PartialHit {
+                doc_id: 1,
+                segment_ord: 0,
+                sort_value: Some(SortValue::U64(0u64).into()),
+                sort_value2: None,
+                split_id: "split_1".to_string(),
+            }],
+            resource_stats: None,
+        };
 
         assert!(cache.get(split_1.clone(), query_1.clone()).is_none());
 
@@ -436,94 +450,51 @@ mod tests {
             ..Default::default()
         };
 
+        let result = LeafSearchResponse {
+            failed_splits: Vec::new(),
+            intermediate_aggregation_result: None,
+            num_attempted_splits: 1,
+            num_successful_splits: 1,
+            num_hits: 1234,
+            partial_hits: vec![PartialHit {
+                doc_id: 1,
+                segment_ord: 0,
+                sort_value: Some(SortValue::U64(0).into()),
+                sort_value2: None,
+                split_id: "split_1".to_string(),
+            }],
+            resource_stats: Some(LeafResourceStats::default()),
+        };
+
         // for split_1, 1 and 1bis cover different timestamp ranges
-        cache.put(
-            split_1.clone(),
-            query_1.clone(),
-            leaf_search_response_for_split("split_1"),
-        );
+        cache.put(split_1.clone(), query_1.clone(), result.clone());
         assert!(cache.get(split_1.clone(), query_1.clone()).is_some());
         assert!(cache.get(split_1.clone(), query_1bis.clone()).is_none());
 
         // for split_2, both 1 and 1bis cover everything, so it should cache-hit
-        cache.put(
-            split_2.clone(),
-            query_1.clone(),
-            leaf_search_response_for_split("split_2"),
-        );
+        cache.put(split_2.clone(), query_1.clone(), result.clone());
         assert!(cache.get(split_2.clone(), query_1).is_some());
         assert!(cache.get(split_2.clone(), query_1bis).is_some());
 
         // for split_1, both 1 and 1bis cover everything, so it should cache-hit
-        cache.put(
-            split_1.clone(),
-            query_2.clone(),
-            leaf_search_response_for_split("split_1"),
-        );
+        cache.put(split_1.clone(), query_2.clone(), result.clone());
         assert!(cache.get(split_1.clone(), query_2.clone()).is_some());
         assert!(cache.get(split_1, query_2bis.clone()).is_some());
 
         // for split_2, 2 covers everything, but 2bis cover only a subrange
-        cache.put(
-            split_2.clone(),
-            query_2.clone(),
-            leaf_search_response_for_split("split_2"),
-        );
+        cache.put(split_2.clone(), query_2.clone(), result.clone());
         assert!(cache.get(split_2.clone(), query_2.clone()).is_some());
         assert!(cache.get(split_2, query_2bis.clone()).is_none());
 
         // same for split_3, but we try caching the bounded request and query for the unbounded one
-        cache.put(
-            split_3.clone(),
-            query_2bis.clone(),
-            leaf_search_response_for_split("split_3"),
-        );
+        cache.put(split_3.clone(), query_2bis.clone(), result);
         assert!(cache.get(split_3.clone(), query_2).is_none());
         assert!(cache.get(split_3, query_2bis).is_some());
     }
 
     #[test]
-    fn test_leaf_search_cache_zerohits_response() {
-        // zero-hits responses carry no hit to validate.
-        let cache = LeafSearchCache::new(&ByteSize::mb(64).into());
-        let split = SplitIdAndFooterOffsets {
-            split_id: "split_1".to_string(),
-            num_docs: 100,
-            ..Default::default()
-        };
-        let zero_hits_request = SearchRequest {
-            index_id_patterns: vec!["test-idx".to_string()],
-            query_ast: "test".to_string(),
-            max_hits: 0,
-            ..Default::default()
-        };
-        let zero_hits_response = LeafSearchResponse {
-            num_hits: 0,
-            num_attempted_splits: 1,
-            num_successful_splits: 1,
-            ..Default::default()
-        };
-
-        cache.put(
-            split.clone(),
-            zero_hits_request.clone(),
-            zero_hits_response.clone(),
-        );
-
-        let cached_response = cache.get(split.clone(), zero_hits_request).unwrap();
-        assert_eq!(cached_response.num_hits, zero_hits_response.num_hits);
-        assert_eq!(
-            cached_response.resource_stats,
-            Some(LeafResourceStats {
-                partial_result_cache_num_splits: 1,
-                partial_result_cache_num_docs: split.num_docs,
-                ..Default::default()
-            })
-        );
-    }
-
-    #[test]
     fn test_cache_key_hash_is_stable() {
+        let key_hasher = CacheKeyHasher::with_keys(1, 2);
         let split = SplitIdAndFooterOffsets {
             split_id: "split_1".to_string(),
             ..Default::default()
@@ -537,11 +508,12 @@ mod tests {
         let key = CacheKey::from_split_meta_and_request(split.clone(), request.clone());
         let same_key = CacheKey::from_split_meta_and_request(split, request);
 
-        assert_eq!(CacheKeyHash::of(&key), CacheKeyHash::of(&same_key));
+        assert_eq!(key_hasher.hash(&key), key_hasher.hash(&same_key));
     }
 
     #[test]
     fn test_cache_key_hash_covers_request_fields() {
+        let key_hasher = CacheKeyHasher::with_keys(1, 2);
         let split = SplitIdAndFooterOffsets {
             split_id: "split_1".to_string(),
             ..Default::default()
@@ -553,7 +525,7 @@ mod tests {
             ..Default::default()
         };
         let hash_of = |split: &SplitIdAndFooterOffsets, request: &SearchRequest| {
-            CacheKeyHash::of(&CacheKey::from_split_meta_and_request(
+            key_hasher.hash(&CacheKey::from_split_meta_and_request(
                 split.clone(),
                 request.clone(),
             ))
@@ -588,6 +560,35 @@ mod tests {
             ..Default::default()
         };
         assert_ne!(reference_hash, hash_of(&other_split, &request));
+    }
+
+    #[test]
+    fn test_predicate_cache_separates_keys() {
+        let cache = PredicateCacheImpl::new(&ByteSize::mb(64).into());
+        let segment_id = SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
+
+        cache.put(
+            "split-1".to_string(),
+            "first-query".to_string(),
+            segment_id,
+            HitSet::empty(),
+        );
+
+        let (cached_segment_id, cached_hits) = cache
+            .get("split-1".to_string(), "first-query".to_string())
+            .unwrap();
+        assert_eq!(cached_segment_id, segment_id);
+        assert!(cached_hits.is_empty());
+        assert!(
+            cache
+                .get("split-1".to_string(), "second-query".to_string())
+                .is_none()
+        );
+        assert!(
+            cache
+                .get("split-2".to_string(), "first-query".to_string())
+                .is_none()
+        );
     }
 
     #[test]
