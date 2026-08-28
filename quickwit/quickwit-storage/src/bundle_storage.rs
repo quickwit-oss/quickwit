@@ -309,9 +309,8 @@ async fn fetch_split_tail(
 
     // Start with the requested window, but always cover the fixed trailer and never read before
     // the beginning of the split.
-    let initial_tail_num_bytes = initial_tail_window_num_bytes
-        .max(SPLIT_FOOTER_TRAILER_NUM_BYTES as u64)
-        .min(split_len);
+    let initial_tail_num_bytes =
+        initial_tail_window_num_bytes.clamp(SPLIT_FOOTER_TRAILER_NUM_BYTES as u64, split_len);
     let mut tail_bytes =
         read_split_tail(storage, split_path, split_len, initial_tail_num_bytes).await?;
 
