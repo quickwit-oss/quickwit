@@ -15,9 +15,6 @@
 import { BeforeMount, Editor } from "@monaco-editor/react";
 import { EDITOR_THEME } from "../utils/theme";
 
-// Editable YAML editor. Unlike `JsonEditor`, it works on a raw string and lets
-// the caller own the value, and it does not size itself: the caller must give
-// it a container with a definite height.
 export function YamlEditor({
   value,
   onChange,
