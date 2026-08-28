@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::hash::{Hash, Hasher};
 use std::ops::{Bound, RangeBounds};
 
 use prost::Message;
@@ -21,6 +22,8 @@ use quickwit_proto::search::{
 };
 use quickwit_storage::{MemorySizedCache, OwnedBytes};
 use tantivy::index::SegmentId;
+
+use crate::metrics::LEAF_SEARCH_CACHE_RETAINED_KEY_PAYLOAD_BYTES;
 
 /// A cache to memoize `leaf_search_single_split` results.
 pub struct LeafSearchCache {
@@ -56,7 +59,7 @@ impl LeafSearchCache {
         split_info: SplitIdAndFooterOffsets,
         search_request: SearchRequest,
     ) -> Option<LeafSearchResponse> {
-        let key = CacheKey::from_split_meta_and_request(split_info, search_request);
+        let key = CacheKey::for_lookup(split_info, search_request);
         let encoded_result = self.content.get(&key)?;
         // this should never fail
         LeafSearchResponse::decode(&*encoded_result).ok()
@@ -75,14 +78,14 @@ impl LeafSearchCache {
             partial_result_cache_num_docs: split_info.num_docs,
             ..Default::default()
         });
-        let key = CacheKey::from_split_meta_and_request(split_info, search_request);
+        let key = CacheKey::for_insert(split_info, search_request);
         let encoded_result = result.encode_to_vec();
         self.content.put(key, OwnedBytes::new(encoded_result));
     }
 }
 
 /// A key inside a [`LeafSearchCache`].
-#[derive(Debug, Hash, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 struct CacheKey {
     /// The split this entry refers to
     split_id: String,
@@ -91,12 +94,24 @@ struct CacheKey {
     /// The effective time range of the request, that is, the intersection of the timerange
     /// requested, and the timerange covered by the split.
     merged_time_range: HalfOpenRange,
+    /// Tracks the payload retained by this key when it belongs to the real cache.
+    /// Lookup keys and keys cloned into virtual caches do not carry a tracker.
+    _retained_payload: Option<RetainedKeyPayload>,
 }
 
 impl CacheKey {
+    fn for_lookup(split_info: SplitIdAndFooterOffsets, search_request: SearchRequest) -> Self {
+        Self::from_split_meta_and_request(split_info, search_request, false)
+    }
+
+    fn for_insert(split_info: SplitIdAndFooterOffsets, search_request: SearchRequest) -> Self {
+        Self::from_split_meta_and_request(split_info, search_request, true)
+    }
+
     fn from_split_meta_and_request(
         split_info: SplitIdAndFooterOffsets,
         mut search_request: SearchRequest,
+        track_retained_payload: bool,
     ) -> Self {
         let split_time_range = HalfOpenRange::from_bounds(split_info.time_range());
         let request_time_range = HalfOpenRange::from_bounds(search_request.time_range());
@@ -110,11 +125,65 @@ impl CacheKey {
         // Priority only affects scheduling, not search results.
         search_request.priority = 0;
 
+        let retained_payload_num_bytes = split_info.split_id.len() + search_request.encoded_len();
         CacheKey {
             split_id: split_info.split_id,
             request: search_request,
             merged_time_range,
+            _retained_payload: track_retained_payload
+                .then(|| RetainedKeyPayload::new(retained_payload_num_bytes)),
         }
+    }
+}
+
+impl Clone for CacheKey {
+    fn clone(&self) -> Self {
+        CacheKey {
+            split_id: self.split_id.clone(),
+            request: self.request.clone(),
+            merged_time_range: self.merged_time_range,
+            // `MemorySizedCache` clones the insertion key into experimental virtual caches before
+            // moving the original into the real cache. Only the real cache is in scope here.
+            _retained_payload: None,
+        }
+    }
+}
+
+impl PartialEq for CacheKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.split_id == other.split_id
+            && self.request == other.request
+            && self.merged_time_range == other.merged_time_range
+    }
+}
+
+impl Eq for CacheKey {}
+
+impl Hash for CacheKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.split_id.hash(state);
+        self.request.hash(state);
+        self.merged_time_range.hash(state);
+    }
+}
+
+#[derive(Debug)]
+struct RetainedKeyPayload {
+    num_bytes: u64,
+}
+
+impl RetainedKeyPayload {
+    fn new(num_bytes: usize) -> Self {
+        LEAF_SEARCH_CACHE_RETAINED_KEY_PAYLOAD_BYTES.inc_by(num_bytes as f64);
+        RetainedKeyPayload {
+            num_bytes: num_bytes as u64,
+        }
+    }
+}
+
+impl Drop for RetainedKeyPayload {
+    fn drop(&mut self) {
+        LEAF_SEARCH_CACHE_RETAINED_KEY_PAYLOAD_BYTES.dec_by(self.num_bytes as f64);
     }
 }
 
@@ -244,12 +313,45 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
 #[cfg(test)]
 mod tests {
     use bytesize::ByteSize;
+    use prost::Message;
     use quickwit_proto::search::{
         LeafResourceStats, LeafSearchResponse, PartialHit, SearchRequest, SortValue,
         SplitIdAndFooterOffsets,
     };
 
-    use super::LeafSearchCache;
+    use super::{CacheKey, LeafSearchCache};
+
+    #[test]
+    fn test_leaf_search_cache_retained_key_payload_metric() {
+        let split = SplitIdAndFooterOffsets {
+            split_id: "split-with-a-measurable-id".to_string(),
+            split_footer_start: 0,
+            split_footer_end: 100,
+            timestamp_start: None,
+            timestamp_end: None,
+            num_docs: 0,
+        };
+        let request = SearchRequest {
+            index_id_patterns: vec!["index-one".to_string(), "index-two".to_string()],
+            query_ast: r#"{"type":"match_all"}"#.to_string(),
+            aggregation_request: Some(r#"{"metric":{"avg":{"field":"latency"}}}"#.to_string()),
+            ..Default::default()
+        };
+        let insertion_key = CacheKey::for_insert(split, request);
+        let expected_payload_num_bytes =
+            insertion_key.split_id.len() + insertion_key.request.encoded_len();
+        assert_eq!(
+            insertion_key
+                ._retained_payload
+                .as_ref()
+                .map(|tracker| tracker.num_bytes),
+            Some(expected_payload_num_bytes as u64)
+        );
+        assert!(
+            insertion_key.clone()._retained_payload.is_none(),
+            "keys cloned into virtual caches must not affect the real-cache metric",
+        );
+    }
 
     #[test]
     fn test_leaf_search_cache_no_timestamp() {

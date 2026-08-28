@@ -81,6 +81,7 @@ PostgreSQL-backed metastores also expose connection pool gauges:
 | --------- | ----------- | ----------- | ---- |
 | `quickwit_search` | `split_search_outcome` | Number of local leaf split search outcomes by `category` (`success`, operational `error`, cache/pruning, or cancellation phase). Operational errors are classified by `error` (`create_reader`, `warmup`, `tantivy_search`, or `panic`). Retries are counted separately | `counter` |
 | `quickwit_search` | `leaf_search_split_duration_secs` | Number of seconds required to run a leaf search over a single split. The timer starts after the semaphore is obtained | `histogram` |
+| `quickwit_search` | `leaf_search_cache_retained_key_payload_bytes` | Search request protobuf payload and split ID bytes retained by keys in the real partial request cache. Virtual cache keys and hash table overhead are excluded. | `gauge` |
 | `quickwit_search` | `active_search_threads_count` | Number of threads in use in the CPU thread pool | `gauge` |
 
 ## Storage Metrics

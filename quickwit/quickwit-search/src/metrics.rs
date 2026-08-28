@@ -180,6 +180,12 @@ pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING: LazyGauge =
 pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_TASKS_PENDING: LazyGauge =
     lazy_gauge!(parent: LEAF_SEARCH_SINGLE_SPLIT_TASKS_BASE, "status" => "pending");
 
+pub(crate) static LEAF_SEARCH_CACHE_RETAINED_KEY_PAYLOAD_BYTES: LazyGauge = lazy_gauge!(
+    name: "leaf_search_cache_retained_key_payload_bytes",
+    description: "Number of SearchRequest protobuf payload and split ID bytes retained by keys in the real partial request cache. Virtual cache keys and hash table overhead are excluded.",
+    subsystem: "search",
+);
+
 static ROOT_SEARCH_REQUESTS_TOTAL_BASE: LazyCounter = lazy_counter!(
         name: "root_search_requests_total",
         description: "Total number of root search gRPC requests processed.",
