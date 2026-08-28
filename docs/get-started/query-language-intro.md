@@ -36,7 +36,7 @@ Quickwit support various types of clauses to express different kinds of conditio
 | phrase prefix | `field:"sequence of tokens"*` | `title:"how to m"*` | A phrase prefix clause tests the existence of a sequence of tokens, the last one used like in a prefix clause | yes |
 | all | `*` | `*` | A match-all clause will match every document | no |
 | exist | `field:*` | `error:*` | An exist clause tests the existence of any value for the field, it will match only if the field exists | no |
-| range | `field:bounds` |`duration:[0 TO 1000}` <br/> `last_name:[banner TO miller]` | A term clause tests the existence of a token between the provided bounds | no |
+| range | `field:bounds` |`duration:[0 TO 1000]` <br/> `last_name:[banner TO miller]` | A term clause tests the existence of a token between the provided bounds | no |
 
 ## Queries
 
