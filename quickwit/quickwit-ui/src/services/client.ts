@@ -106,9 +106,6 @@ export class Client {
     return this.fetch(`${this.apiRoot()}indexes`, {});
   }
 
-  // Creates an index from a raw index config expressed in YAML. The config is
-  // sent as-is: the server selects its parser from the `content-type` subtype
-  // and reports validation errors, so no client-side YAML parsing is done here.
   async createIndex(indexConfigYaml: string): Promise<IndexMetadata> {
     return this.fetch(
       `${this.apiRoot()}indexes`,
@@ -148,9 +145,6 @@ export class Client {
     });
   }
 
-  // Quickwit reports errors as a `{"message": "..."}` JSON envelope. Anything
-  // else (a proxy error page, for instance) is surfaced verbatim so failures
-  // are never hidden.
   private async extractErrorMessage(response: Response): Promise<string> {
     const rawBody = await response.text();
     try {
