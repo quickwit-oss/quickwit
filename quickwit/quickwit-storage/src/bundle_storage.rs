@@ -239,7 +239,7 @@ fn locate_split_footer_range_from_metadata_len(
 
 fn locate_split_footer_range_in_tail(
     split_len: u64,
-    tail_bytes: &OwnedBytes,
+    tail_bytes: &[u8],
 ) -> anyhow::Result<FooterLocation> {
     // Legacy split layout:
     // [body][bundle metadata][metadata len][hotcache][hotcache len]
@@ -247,12 +247,11 @@ fn locate_split_footer_range_in_tail(
         tail_bytes.len() as u64 <= split_len,
         "split tail is longer than the split itself"
     );
-    let bytes = tail_bytes.as_slice();
-    let trailer_start = bytes
+    let trailer_start = tail_bytes
         .len()
         .checked_sub(SPLIT_FOOTER_TRAILER_NUM_BYTES)
         .context("split tail is too short to contain a footer trailer")?;
-    if let Some(footer_start) = deserialize_split_footer_trailer(&bytes[trailer_start..])? {
+    if let Some(footer_start) = deserialize_split_footer_trailer(&tail_bytes[trailer_start..])? {
         ensure!(
             footer_start <= split_len - SPLIT_FOOTER_TRAILER_NUM_BYTES as u64,
             "split footer starts after its trailer"
@@ -261,7 +260,8 @@ fn locate_split_footer_range_in_tail(
     }
 
     let hotcache_len =
-        u32::from_le_bytes(bytes[bytes.len() - HOTCACHE_LEN_NUM_BYTES..].try_into()?) as u64;
+        u32::from_le_bytes(tail_bytes[tail_bytes.len() - HOTCACHE_LEN_NUM_BYTES..].try_into()?)
+            as u64;
     let bundle_metadata_len_end = split_len
         .checked_sub(HOTCACHE_LEN_NUM_BYTES as u64)
         .and_then(|offset| offset.checked_sub(hotcache_len))
@@ -282,7 +282,7 @@ fn locate_split_footer_range_in_tail(
     let footer_range = locate_split_footer_range_from_metadata_len(
         split_len,
         bundle_metadata_len_start,
-        &bytes[relative_start..relative_end],
+        &tail_bytes[relative_start..relative_end],
     )?;
     Ok(FooterLocation::Located(footer_range))
 }
