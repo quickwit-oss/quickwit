@@ -176,12 +176,7 @@ pub(crate) async fn start_rest_server(
         .boxed();
 
     // `/health/*` routes.
-    let health_check_routes = health_check_handlers(
-        quickwit_services.cluster.clone(),
-        quickwit_services.indexing_service_opt.clone(),
-        quickwit_services.janitor_service_opt.clone(),
-    )
-    .boxed();
+    let health_check_routes = health_check_handlers(quickwit_services.clone()).boxed();
 
     // `/metrics` route.
     let metrics_routes = warp::path("metrics")
@@ -274,13 +269,9 @@ pub(crate) async fn start_health_check_server(
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<()> {
-    let health_check_routes = health_check_handlers(
-        quickwit_services.cluster.clone(),
-        quickwit_services.indexing_service_opt.clone(),
-        quickwit_services.janitor_service_opt.clone(),
-    )
-    .recover(recover_fn_final)
-    .boxed();
+    let health_check_routes = health_check_handlers(quickwit_services.clone())
+        .recover(recover_fn_final)
+        .boxed();
     // No TLS: the whole point of this server is to offer a plaintext probe surface that bypasses
     // the mTLS configured on the main REST server.
     serve_warp_routes(
