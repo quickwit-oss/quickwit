@@ -223,7 +223,7 @@ will be decided by the control plane.
 
 :::info
 
-Note that distributing the indexing load of partitioned sources like Kafka is done by assigning the different partitions to different pipelines. As a result, it is important to ensure that the number of partitions is a multiple of `num_pipelines`.
+Note that distributing the indexing load of partitioned sources like Kafka and Pulsar is done by assigning the different partitions to different pipelines. As a result, it is important to ensure that the number of partitions is a multiple of `num_pipelines`. For Pulsar specifically, the topic(s) must be partitioned: a non-partitioned Pulsar topic is served by a single active consumer, so extra pipelines stay idle and provide no parallelism.
 
 Also, assuming you are only indexing a single Kafka source in your Quickwit cluster, you should set the number of pipelines to a multiple of the number of indexers. Finally, if your indexing throughput is high, you should provision between 2 and 4 vCPUs per pipeline.
 
