@@ -175,6 +175,11 @@ The parse failure objects contain the following fields:
 
 ## Index API
 
+All index API endpoints accept `indices` as an alias for `indexes`. For example,
+`GET api/v1/indices/<index id>` is equivalent to
+`GET api/v1/indexes/<index id>`. The examples below use the canonical `indexes`
+spelling.
+
 ### Create an index
 
 ```
