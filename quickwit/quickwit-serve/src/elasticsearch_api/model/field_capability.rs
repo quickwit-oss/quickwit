@@ -160,6 +160,7 @@ pub fn convert_to_es_field_capabilities_response(
             ListFieldsType::Date => vec![FieldCapabilityEntryType::DateNanos],
             ListFieldsType::Facet => continue,
             ListFieldsType::Json => continue,
+            ListFieldsType::Custom => continue,
             ListFieldsType::Bytes => vec![FieldCapabilityEntryType::Binary],
             ListFieldsType::IpAddr => vec![FieldCapabilityEntryType::Ip],
         };

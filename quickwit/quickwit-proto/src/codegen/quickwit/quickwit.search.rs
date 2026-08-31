@@ -152,6 +152,225 @@ pub struct ListFieldsEntry {
     #[prost(uint64, tag = "8")]
     pub num_splits: u64,
 }
+/// A predicate expression evaluated against fast-field values on each leaf
+/// segment. The expression is lowered to tantivy::query::CalculatedPredicateQuery
+/// by the search leaf.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Hash, Eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CalculatedPredicate {
+    #[prost(message, optional, tag = "1")]
+    pub expr: ::core::option::Option<CalculatedPredicateExpr>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Hash, Eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CalculatedPredicateExpr {
+    #[prost(oneof = "calculated_predicate_expr::Node", tags = "1, 2, 3")]
+    pub node: ::core::option::Option<calculated_predicate_expr::Node>,
+}
+/// Nested message and enum types in `CalculatedPredicateExpr`.
+pub mod calculated_predicate_expr {
+    #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+    #[derive(Hash, Eq)]
+    #[serde(rename_all = "snake_case")]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Node {
+        #[prost(message, tag = "1")]
+        Literal(super::CalculatedPredicateLiteral),
+        /// Fast-field name read by the calculated predicate query.
+        #[prost(string, tag = "2")]
+        Variable(::prost::alloc::string::String),
+        #[prost(message, tag = "3")]
+        FuncCall(super::CalculatedPredicateFuncCall),
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CalculatedPredicateLiteral {
+    #[prost(oneof = "calculated_predicate_literal::Value", tags = "1, 2, 3, 4, 5")]
+    pub value: ::core::option::Option<calculated_predicate_literal::Value>,
+}
+/// Nested message and enum types in `CalculatedPredicateLiteral`.
+pub mod calculated_predicate_literal {
+    #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+    #[serde(rename_all = "snake_case")]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Value {
+        #[prost(int64, tag = "1")]
+        IntValue(i64),
+        #[prost(uint64, tag = "2")]
+        UintValue(u64),
+        /// IEEE-754 bits for an f64 literal. This keeps SearchRequest Eq/Hash-safe.
+        #[prost(fixed64, tag = "3")]
+        DoubleValueBits(u64),
+        #[prost(string, tag = "4")]
+        StringValue(::prost::alloc::string::String),
+        #[prost(bool, tag = "5")]
+        BoolValue(bool),
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Hash, Eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CalculatedPredicateFuncCall {
+    #[prost(enumeration = "calculated_predicate_func_call::Function", tag = "1")]
+    pub function: i32,
+    #[prost(message, repeated, tag = "2")]
+    pub args: ::prost::alloc::vec::Vec<CalculatedPredicateExpr>,
+}
+/// Nested message and enum types in `CalculatedPredicateFuncCall`.
+pub mod calculated_predicate_func_call {
+    #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+    #[serde(rename_all = "snake_case")]
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
+    #[repr(i32)]
+    pub enum Function {
+        Unspecified = 0,
+        Abs = 1,
+        And = 2,
+        Ceil = 3,
+        Concat = 4,
+        Add = 5,
+        Divide = 6,
+        Eq = 7,
+        Floor = 8,
+        Gt = 9,
+        GtEq = 10,
+        If = 11,
+        IntMod = 12,
+        Left = 13,
+        Lt = 14,
+        LtEq = 15,
+        IsNotNull = 16,
+        IsNull = 17,
+        Lower = 18,
+        Max = 19,
+        Min = 20,
+        Multiply = 21,
+        Neq = 22,
+        Not = 23,
+        Or = 24,
+        Pow = 25,
+        Sqrt = 26,
+        RegexpExtract = 27,
+        RegexpLike = 28,
+        Right = 29,
+        Round = 30,
+        SplitAfter = 31,
+        SplitBefore = 32,
+        Subtract = 33,
+        Substring = 34,
+        SubstringCount = 35,
+        TextJoin = 36,
+        Trim = 37,
+        Upper = 38,
+    }
+    impl Function {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                Self::Unspecified => "FUNCTION_UNSPECIFIED",
+                Self::Abs => "FUNCTION_ABS",
+                Self::And => "FUNCTION_AND",
+                Self::Ceil => "FUNCTION_CEIL",
+                Self::Concat => "FUNCTION_CONCAT",
+                Self::Add => "FUNCTION_ADD",
+                Self::Divide => "FUNCTION_DIVIDE",
+                Self::Eq => "FUNCTION_EQ",
+                Self::Floor => "FUNCTION_FLOOR",
+                Self::Gt => "FUNCTION_GT",
+                Self::GtEq => "FUNCTION_GT_EQ",
+                Self::If => "FUNCTION_IF",
+                Self::IntMod => "FUNCTION_INT_MOD",
+                Self::Left => "FUNCTION_LEFT",
+                Self::Lt => "FUNCTION_LT",
+                Self::LtEq => "FUNCTION_LT_EQ",
+                Self::IsNotNull => "FUNCTION_IS_NOT_NULL",
+                Self::IsNull => "FUNCTION_IS_NULL",
+                Self::Lower => "FUNCTION_LOWER",
+                Self::Max => "FUNCTION_MAX",
+                Self::Min => "FUNCTION_MIN",
+                Self::Multiply => "FUNCTION_MULTIPLY",
+                Self::Neq => "FUNCTION_NEQ",
+                Self::Not => "FUNCTION_NOT",
+                Self::Or => "FUNCTION_OR",
+                Self::Pow => "FUNCTION_POW",
+                Self::Sqrt => "FUNCTION_SQRT",
+                Self::RegexpExtract => "FUNCTION_REGEXP_EXTRACT",
+                Self::RegexpLike => "FUNCTION_REGEXP_LIKE",
+                Self::Right => "FUNCTION_RIGHT",
+                Self::Round => "FUNCTION_ROUND",
+                Self::SplitAfter => "FUNCTION_SPLIT_AFTER",
+                Self::SplitBefore => "FUNCTION_SPLIT_BEFORE",
+                Self::Subtract => "FUNCTION_SUBTRACT",
+                Self::Substring => "FUNCTION_SUBSTRING",
+                Self::SubstringCount => "FUNCTION_SUBSTRING_COUNT",
+                Self::TextJoin => "FUNCTION_TEXT_JOIN",
+                Self::Trim => "FUNCTION_TRIM",
+                Self::Upper => "FUNCTION_UPPER",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "FUNCTION_UNSPECIFIED" => Some(Self::Unspecified),
+                "FUNCTION_ABS" => Some(Self::Abs),
+                "FUNCTION_AND" => Some(Self::And),
+                "FUNCTION_CEIL" => Some(Self::Ceil),
+                "FUNCTION_CONCAT" => Some(Self::Concat),
+                "FUNCTION_ADD" => Some(Self::Add),
+                "FUNCTION_DIVIDE" => Some(Self::Divide),
+                "FUNCTION_EQ" => Some(Self::Eq),
+                "FUNCTION_FLOOR" => Some(Self::Floor),
+                "FUNCTION_GT" => Some(Self::Gt),
+                "FUNCTION_GT_EQ" => Some(Self::GtEq),
+                "FUNCTION_IF" => Some(Self::If),
+                "FUNCTION_INT_MOD" => Some(Self::IntMod),
+                "FUNCTION_LEFT" => Some(Self::Left),
+                "FUNCTION_LT" => Some(Self::Lt),
+                "FUNCTION_LT_EQ" => Some(Self::LtEq),
+                "FUNCTION_IS_NOT_NULL" => Some(Self::IsNotNull),
+                "FUNCTION_IS_NULL" => Some(Self::IsNull),
+                "FUNCTION_LOWER" => Some(Self::Lower),
+                "FUNCTION_MAX" => Some(Self::Max),
+                "FUNCTION_MIN" => Some(Self::Min),
+                "FUNCTION_MULTIPLY" => Some(Self::Multiply),
+                "FUNCTION_NEQ" => Some(Self::Neq),
+                "FUNCTION_NOT" => Some(Self::Not),
+                "FUNCTION_OR" => Some(Self::Or),
+                "FUNCTION_POW" => Some(Self::Pow),
+                "FUNCTION_SQRT" => Some(Self::Sqrt),
+                "FUNCTION_REGEXP_EXTRACT" => Some(Self::RegexpExtract),
+                "FUNCTION_REGEXP_LIKE" => Some(Self::RegexpLike),
+                "FUNCTION_RIGHT" => Some(Self::Right),
+                "FUNCTION_ROUND" => Some(Self::Round),
+                "FUNCTION_SPLIT_AFTER" => Some(Self::SplitAfter),
+                "FUNCTION_SPLIT_BEFORE" => Some(Self::SplitBefore),
+                "FUNCTION_SUBTRACT" => Some(Self::Subtract),
+                "FUNCTION_SUBSTRING" => Some(Self::Substring),
+                "FUNCTION_SUBSTRING_COUNT" => Some(Self::SubstringCount),
+                "FUNCTION_TEXT_JOIN" => Some(Self::TextJoin),
+                "FUNCTION_TRIM" => Some(Self::Trim),
+                "FUNCTION_UPPER" => Some(Self::Upper),
+                _ => None,
+            }
+        }
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Hash, Eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -216,6 +435,9 @@ pub struct SearchRequest {
     #[prost(int32, tag = "21")]
     #[serde(default)]
     pub priority: i32,
+    /// Predicate expression evaluated by Tantivy against fast fields on each leaf.
+    #[prost(message, optional, tag = "22")]
+    pub calculated_predicate: ::core::option::Option<CalculatedPredicate>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -789,6 +1011,7 @@ pub enum ListFieldsType {
     Bytes = 7,
     IpAddr = 8,
     Json = 9,
+    Custom = 10,
 }
 impl ListFieldsType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -807,6 +1030,7 @@ impl ListFieldsType {
             Self::Bytes => "BYTES",
             Self::IpAddr => "IP_ADDR",
             Self::Json => "JSON",
+            Self::Custom => "CUSTOM",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -822,6 +1046,7 @@ impl ListFieldsType {
             "BYTES" => Some(Self::Bytes),
             "IP_ADDR" => Some(Self::IpAddr),
             "JSON" => Some(Self::Json),
+            "CUSTOM" => Some(Self::Custom),
             _ => None,
         }
     }

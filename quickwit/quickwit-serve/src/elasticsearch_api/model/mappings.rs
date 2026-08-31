@@ -159,7 +159,7 @@ fn es_type_from_list_field_type(field_type: ListFieldsType) -> Option<&'static s
         ListFieldsType::Date => Some("date"),
         ListFieldsType::Bytes => Some("binary"),
         ListFieldsType::IpAddr => Some("ip"),
-        ListFieldsType::Facet | ListFieldsType::Json => None,
+        ListFieldsType::Facet | ListFieldsType::Json | ListFieldsType::Custom => None,
     }
 }
 

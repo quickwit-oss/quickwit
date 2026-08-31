@@ -273,6 +273,12 @@ impl BuildTantivyAst for RangeQuery {
                 )
                 .into()
             }
+            tantivy::schema::FieldType::Custom(_) => {
+                return Err(InvalidQuery::RangeQueryNotSupportedForField {
+                    value_type: "custom",
+                    field_name: field_entry.name().to_string(),
+                });
+            }
         })
     }
 }

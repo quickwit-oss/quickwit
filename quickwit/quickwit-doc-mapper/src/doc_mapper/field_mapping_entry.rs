@@ -783,6 +783,7 @@ fn deserialize_mapping_type(
             let json_options: QuickwitJsonOptions = serde_json::from_value(json)?;
             Ok(FieldMappingType::Json(json_options, cardinality))
         }
+        Type::Custom => bail!("custom fields are not supported in quickwit yet."),
     }
 }
 

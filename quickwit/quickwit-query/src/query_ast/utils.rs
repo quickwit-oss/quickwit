@@ -192,6 +192,9 @@ fn compute_query_with_field(
             let term = Term::from_field_bytes(field, &buffer[..]);
             Ok(make_term_query(term))
         }
+        FieldType::Custom(_) => Err(InvalidQuery::SchemaError(
+            "custom fields are not supported in Quickwit queries".to_string(),
+        )),
     }
 }
 
