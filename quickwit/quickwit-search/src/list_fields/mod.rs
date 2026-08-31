@@ -36,7 +36,7 @@ pub use crate::list_fields::root::root_list_fields;
 /// a JSON type with random field names. Retaining the most common fields bounds
 /// response memory while pruning the long tail of rare fields.
 fn field_list_size_limit() -> usize {
-    quickwit_common::get_from_env_cached!(usize, "QW_FIELD_LIST_SIZE_LIMIT", 100_000, false)
+    quickwit_common::get_from_env_cached!(usize, "QW_FIELD_LIST_SIZE_LIMIT", 10_000, false)
 }
 
 // Sorts and deduplicates the list of fields.
