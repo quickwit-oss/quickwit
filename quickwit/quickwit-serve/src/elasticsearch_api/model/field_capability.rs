@@ -42,6 +42,9 @@ pub struct FieldCapabilityQueryParams {
     pub fields: Option<Vec<String>>,
     #[serde(default)]
     pub ignore_unavailable: Option<bool>,
+    /// Non-ES parameter. Overrides `QW_FIELD_LIST_SIZE_LIMIT` for this request.
+    #[serde(default)]
+    pub limit: Option<u32>,
     /// Non-ES Parameter. If set, restricts splits to documents with a `time_range.start >=
     /// start_timestamp`.
     pub start_timestamp: Option<i64>,
@@ -229,6 +232,7 @@ pub fn build_list_field_request_for_es_api(
         start_timestamp: search_params.start_timestamp,
         end_timestamp: search_params.end_timestamp,
         query_ast: query_ast_json,
+        limit: search_params.limit,
     })
 }
 
@@ -349,6 +353,7 @@ mod tests {
             fields: Some(vec!["field1".to_string(), "field2".to_string()]),
             start_timestamp: Some(1000),
             end_timestamp: Some(2000),
+            limit: Some(123),
             ..Default::default()
         };
 
@@ -370,6 +375,7 @@ mod tests {
         );
         assert_eq!(result.start_timestamp, Some(1000));
         assert_eq!(result.end_timestamp, Some(2000));
+        assert_eq!(result.limit, Some(123));
         assert!(result.query_ast.is_some());
     }
 

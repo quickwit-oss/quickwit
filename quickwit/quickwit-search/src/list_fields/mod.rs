@@ -28,16 +28,18 @@ use tracing::instrument;
 pub use crate::list_fields::leaf::leaf_list_fields;
 pub use crate::list_fields::root::root_list_fields;
 
-/// QW_FIELD_LIST_SIZE_LIMIT defines a hard limit on the number of fields that
-/// can be returned. When the limit is exceeded, the fields present in the most
-/// splits are retained.
+/// QW_FIELD_LIST_SIZE_LIMIT defines the default limit on the number of fields
+/// that can be returned. A request-specific limit takes precedence. When the
+/// limit is exceeded, the fields present in the most splits are retained.
 ///
 /// Having many fields can happen when a user is creating fields dynamically in
 /// a JSON type with random field names. Retaining the most common fields bounds
 /// response memory while pruning the long tail of rare fields. The default is
 /// 10,000 because responses with 100,000 fields may exceed gRPC message size limits.
-fn field_list_size_limit() -> usize {
-    quickwit_common::get_from_env_cached!(usize, "QW_FIELD_LIST_SIZE_LIMIT", 10_000, false)
+fn field_list_size_limit(limit: Option<u32>) -> usize {
+    limit.map(|limit| limit as usize).unwrap_or_else(|| {
+        quickwit_common::get_from_env_cached!(usize, "QW_FIELD_LIST_SIZE_LIMIT", 10_000, false)
+    })
 }
 
 // Sorts and deduplicates the list of fields.
@@ -64,10 +66,18 @@ fn sort_and_dedup(entries: &mut Vec<ListFieldsEntry>) {
     });
 }
 
+#[cfg(test)]
 fn merge_entries(entry_groups: Vec<Vec<ListFieldsEntry>>) -> crate::Result<Vec<ListFieldsEntry>> {
+    merge_entries_with_limit_override(entry_groups, None)
+}
+
+fn merge_entries_with_limit_override(
+    entry_groups: Vec<Vec<ListFieldsEntry>>,
+    limit: Option<u32>,
+) -> crate::Result<Vec<ListFieldsEntry>> {
     Ok(merge_entries_with_limit(
         entry_groups,
-        field_list_size_limit(),
+        field_list_size_limit(limit),
     ))
 }
 
@@ -204,6 +214,11 @@ mod tests {
     use quickwit_proto::search::{ListFieldsEntry, ListFieldsType};
 
     use super::*;
+
+    #[test]
+    fn request_limit_overrides_configured_limit() {
+        assert_eq!(field_list_size_limit(Some(123)), 123);
+    }
 
     #[test]
     fn merge_leaf_list_fields_identical_test() {

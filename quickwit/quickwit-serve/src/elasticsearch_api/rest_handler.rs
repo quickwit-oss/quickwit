@@ -224,6 +224,7 @@ pub(crate) async fn es_compat_index_mapping(
         start_timestamp: params.start_timestamp,
         end_timestamp: params.end_timestamp,
         query_ast: None,
+        limit: params.limit,
     };
     let list_fields_response = match search_service.root_list_fields(list_fields_request).await {
         Ok(response) => Some(response),
