@@ -21,7 +21,6 @@ use quickwit_proto::search::{
     CountHits, LeafResourceStats, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
 };
 use quickwit_storage::{MemorySizedCache, OwnedBytes};
-use rand::TryRng;
 use siphasher::sip128::{Hasher128, SipHasher13};
 use tantivy::index::SegmentId;
 
@@ -39,15 +38,10 @@ struct CacheKeyHasher {
 
 impl CacheKeyHasher {
     fn random() -> Self {
-        // Seed SipHash with OS-provided cryptographically secure randomness. This makes the
-        // process-local hash function unpredictable and prevents deliberately crafted collisions.
-        let mut rng = rand::rngs::SysRng;
-        let key0 = rng
-            .try_next_u64()
-            .expect("failed to obtain OS entropy for cache hash seed");
-        let key1 = rng
-            .try_next_u64()
-            .expect("failed to obtain OS entropy for cache hash seed");
+        // Seed SipHash from a cryptographically secure thread-local RNG initialized from OS
+        // entropy. This makes the process-local hash function unpredictable and prevents
+        // deliberately crafted collisions.
+        let (key0, key1) = rand::random();
         Self { key0, key1 }
     }
 
