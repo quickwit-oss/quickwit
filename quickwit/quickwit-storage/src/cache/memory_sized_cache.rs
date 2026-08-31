@@ -84,6 +84,11 @@ impl<K: Hash + Eq + Clone + Send + Sync + 'static> CacheState<K> {
 
         self.cache.put(key, bytes)
     }
+
+    #[cfg(feature = "cache-memory-benchmark")]
+    fn settle(&mut self) {
+        self.cache.settle();
+    }
 }
 
 /// A simple in-resident memory slice cache.
@@ -121,6 +126,12 @@ impl<K: Hash + Eq + Clone + Send + Sync + 'static> MemorySizedCache<K> {
     /// capacity.
     pub fn put(&self, val: K, bytes: OwnedBytes) {
         self.inner.lock().unwrap().put(val, bytes);
+    }
+
+    /// Completes deferred cache-policy maintenance before a memory benchmark snapshot.
+    #[cfg(feature = "cache-memory-benchmark")]
+    pub fn settle_for_memory_benchmark(&self) {
+        self.inner.lock().unwrap().settle();
     }
 }
 

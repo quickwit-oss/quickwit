@@ -26,6 +26,7 @@ mini-moka = { workspace = true }
 mockall = { workspace = true, optional = true }
 percent-encoding = { workspace = true }
 pin-project = { workspace = true }
+prost = { workspace = true, optional = true }
 quick_cache = { workspace = true }
 regex = { workspace = true }
 rustc-hash = { workspace = true }
@@ -35,6 +36,8 @@ stable_deref_trait = { workspace = true }
 tantivy = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
+tikv-jemalloc-ctl = { workspace = true, optional = true }
+tikv-jemallocator = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["test-util"] }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
@@ -103,3 +106,13 @@ integration-testsuite = [
   "dep:reqwest",
 ]
 testsuite = ["mockall"]
+cache-memory-benchmark = [
+  "dep:prost",
+  "dep:tikv-jemalloc-ctl",
+  "dep:tikv-jemallocator",
+]
+
+[[bin]]
+name = "cache-memory"
+path = "src/bin/cache_memory.rs"
+required-features = ["cache-memory-benchmark"]

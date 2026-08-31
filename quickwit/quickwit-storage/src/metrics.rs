@@ -212,6 +212,18 @@ impl CacheMetrics {
         }
     }
 
+    #[cfg(feature = "cache-memory-benchmark")]
+    /// Returns the current number of entries for a cache memory benchmark.
+    pub fn in_cache_count(&self) -> f64 {
+        self.cache_metrics.in_cache_count.get()
+    }
+
+    #[cfg(feature = "cache-memory-benchmark")]
+    /// Returns the current reported byte size for a cache memory benchmark.
+    pub fn in_cache_num_bytes(&self) -> f64 {
+        self.cache_metrics.in_cache_num_bytes.get()
+    }
+
     /// Returns metrics for a virtual sub-cache identified by `config`.
     ///
     /// Virtual caches share the same parent component but add `capacity` and

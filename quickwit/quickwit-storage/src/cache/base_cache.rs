@@ -20,6 +20,8 @@ use std::time::Duration;
 use bytesize::ByteSize;
 use lru::LruCache;
 use mini_moka::sync::Cache as MokaCache;
+#[cfg(feature = "cache-memory-benchmark")]
+use mini_moka::sync::ConcurrentCacheExt;
 use quick_cache::unsync::Cache as QuickCache;
 use quickwit_config::CachePolicy;
 use tokio::time::Instant;
@@ -118,6 +120,13 @@ impl<K: Hash + Eq + Send + Sync + 'static, V: ValueLen + Clone + Send + Sync + '
             AnyCache::Lru(lru) => lru.put(key, value),
             AnyCache::S3Fifo(s3fifo) => s3fifo.put(key, value),
             AnyCache::TinyLfu(tiny_lfu) => tiny_lfu.put(key, value),
+        }
+    }
+
+    #[cfg(feature = "cache-memory-benchmark")]
+    pub fn settle(&mut self) {
+        if let AnyCache::TinyLfu(tiny_lfu) = self {
+            tiny_lfu.cache.sync();
         }
     }
 }
