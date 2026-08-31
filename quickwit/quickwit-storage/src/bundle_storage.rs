@@ -100,6 +100,9 @@ impl BundleStorage {
     ///
     /// The split length is provided by the caller (e.g. from object listing metadata) to avoid a
     /// separate metadata request.
+    ///
+    /// Returns a `(file_bytes, footer_range)` tuple: `file_bytes` holds the contents of
+    /// `bundle_filepath`, and `footer_range` is the split footer's byte range in `split_path`.
     pub async fn fetch_file_from_split(
         storage: Arc<dyn Storage>,
         bundle_filepath: PathBuf,
