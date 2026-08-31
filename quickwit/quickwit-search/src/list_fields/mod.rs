@@ -34,7 +34,8 @@ pub use crate::list_fields::root::root_list_fields;
 ///
 /// Having many fields can happen when a user is creating fields dynamically in
 /// a JSON type with random field names. Retaining the most common fields bounds
-/// response memory while pruning the long tail of rare fields.
+/// response memory while pruning the long tail of rare fields. The default is
+/// 10,000 because responses with 100,000 fields may exceed gRPC message size limits.
 fn field_list_size_limit() -> usize {
     quickwit_common::get_from_env_cached!(usize, "QW_FIELD_LIST_SIZE_LIMIT", 10_000, false)
 }
