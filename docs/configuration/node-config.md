@@ -313,11 +313,6 @@ This section contains the configuration options for a Searcher.
 | `request_timeout_secs` | The time before a search request is cancelled. This should match the timeout of the stack calling into quickwit if there is one set.  | `30` |
 | `use_metastore_read_replica` | If true, routes read-only metastore requests from searchers, including DataFusion when enabled, to nodes running the `metastore_read_replica` service. Searchers require at least one `metastore_read_replica` node at startup and do not fall back to the primary metastore. | `false` |
 
-These in-memory cache capacities bound the memory held by cached entries, keys included, not just
-the size of the cached values. `partial_request_cache_capacity` is the most affected by this, since
-its keys embed the search request itself: at an unchanged setting it holds somewhat fewer entries
-than a value-only budget would suggest.
-
 ### Searcher split cache configuration
 
 This section contains the configuration options for the on-disk searcher split cache. Files are stored in the data directory under `searcher-split-cache/`.
