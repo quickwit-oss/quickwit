@@ -18,7 +18,7 @@ use quickwit_actors::{Actor, Handler, Healthz, Mailbox};
 use quickwit_cluster::Cluster;
 use quickwit_compaction::CompactorService;
 use quickwit_indexing::IndexingService;
-use quickwit_ingest::{Ingester, try_get_ingester_status};
+use quickwit_ingest::Ingester;
 use quickwit_janitor::JanitorService;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use tokio::time::timeout;
@@ -73,14 +73,14 @@ fn liveness_handler(
         .recover(recover_fn)
 }
 
-async fn is_actor_healthy<A>(mailbox_opt: Option<Mailbox<A>>) -> bool
+async fn is_actor_unhealthy<A>(mailbox_opt: Option<Mailbox<A>>) -> bool
 where A: Actor + Handler<Healthz, Reply = bool> {
     let Some(mailbox) = mailbox_opt else {
-        return true;
+        return false;
     };
     match timeout(HEALTH_CHECK_ASK_TIMEOUT, mailbox.ask(Healthz)).await {
-        Ok(healthz_result) => healthz_result.unwrap_or(false),
-        Err(_elapsed) => false,
+        Ok(healthz_result) => !healthz_result.unwrap_or(false),
+        Err(_elapsed) => true,
     }
 }
 
@@ -114,29 +114,22 @@ async fn get_liveness(
 ) -> impl warp::Reply {
     let mut is_live = true;
 
-    if !is_actor_healthy(indexer_service_opt).await {
+    if is_actor_unhealthy(indexer_service_opt).await {
         error!("indexer service is unhealthy");
         is_live = false;
     }
-    if !is_actor_healthy(janitor_service_opt).await {
+    if is_actor_unhealthy(janitor_service_opt).await {
         error!("janitor service is unhealthy");
         is_live = false;
     }
-    if !is_actor_healthy(compactor_service_opt).await {
+    if is_actor_unhealthy(compactor_service_opt).await {
         error!("compactor service is unhealthy");
         is_live = false;
     }
     if let Some(ingester) = ingester_opt {
-        match try_get_ingester_status(&ingester).await {
-            Ok(IngesterStatus::Failed) => {
-                error!("ingester failed");
-                is_live = false;
-            }
-            Ok(_) => {}
-            Err(error) => {
-                error!(%error, "failed to get ingester status");
-                is_live = false;
-            }
+        if ingester.status() == IngesterStatus::Failed {
+            error!("ingester failed");
+            is_live = false;
         }
     }
     let status_code = if is_live {
