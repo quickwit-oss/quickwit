@@ -123,6 +123,7 @@ pub use quickwit_telemetry_exporters::{EnvFilterReloadFn, do_nothing_env_filter_
 pub use quickwit_transport::reload_tls_cert;
 use tcp_listener::TcpListenerResolver;
 use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 use tonic::codec::CompressionEncoding;
 use tonic_health::ServingStatus;
 use tonic_health::server::HealthReporter;
@@ -163,6 +164,11 @@ static INGEST_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
     LazyLock::new(|| GrpcMetricsLayer::new("ingest", "client"));
 static INGEST_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
     LazyLock::new(|| GrpcMetricsLayer::new("ingest", "server"));
+
+static COMPACTION_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("compaction", "client"));
+static COMPACTION_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("compaction", "server"));
 
 static GRPC_INGESTER_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
 static GRPC_INDEXING_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -290,6 +296,7 @@ async fn get_compaction_planner_client_if_needed(
         let (mailbox, handle) = universe.spawn_builder().spawn(planner);
         info!("compaction planner actor started on janitor node");
         let planner_client = CompactionPlannerServiceClient::tower()
+            .stack_layer(COMPACTION_GRPC_SERVER_METRICS_LAYER.clone())
             .stack_layer(TimeoutLayer::new(GRPC_COMPACTION_PLANNER_SERVICE_TIMEOUT))
             .build_from_mailbox(mailbox);
         return Ok((Some(planner_client), Some(handle)));
@@ -306,6 +313,7 @@ async fn get_compaction_planner_client_if_needed(
     }
     info!("remote compaction planner detected on janitor node");
     let planner_client = CompactionPlannerServiceClient::tower()
+        .stack_layer(COMPACTION_GRPC_CLIENT_METRICS_LAYER.clone())
         .stack_layer(TimeoutLayer::new(GRPC_COMPACTION_PLANNER_SERVICE_TIMEOUT))
         .build_from_balance_channel(
             balance_channel,
@@ -492,14 +500,15 @@ fn start_shard_positions_service(
     });
 }
 
-/// Waits for the shutdown signal and notifies all other services when it
-/// occurs.
+/// Waits for an external shutdown signal or for the server supervisor to exit, then notifies all
+/// other services.
 ///
 /// Usually called when receiving a SIGTERM signal, e.g. k8s trying to
 /// decomission a pod.
 #[allow(clippy::too_many_arguments)] // Will go away when we remove ingest v1.
 async fn shutdown_signal_handler(
     shutdown_signal: BoxFutureInfaillible<()>,
+    shutdown_token: CancellationToken,
     universe: Universe,
     ingester_opt: Option<Ingester>,
     ingester_decommission_timeout: Duration,
@@ -510,7 +519,14 @@ async fn shutdown_signal_handler(
     health_shutdown_trigger_tx_opt: Option<oneshot::Sender<()>>,
     cluster: Cluster,
 ) -> HashMap<String, ActorExitStatus> {
-    shutdown_signal.await;
+    tokio::select! {
+        _ = shutdown_signal => {
+            shutdown_token.cancel();
+        }
+        _ = shutdown_token.cancelled() => {
+            error!("server supervisor exited; initiating shutdown");
+        }
+    }
     if let Err(error) = notify_ingester_decommission(ingester_opt.as_ref()).await {
         error!("failed to initiate ingester decommission: {:?}", error);
     }
@@ -1012,8 +1028,10 @@ pub async fn serve_quickwit(
         health_reporter,
     );
 
+    let shutdown_token = CancellationToken::new();
     let shutdown_handle = tokio::spawn(shutdown_signal_handler(
         shutdown_signal,
+        shutdown_token.clone(),
         universe,
         ingester_opt,
         ingester_decommission_timeout,
@@ -1027,21 +1045,21 @@ pub async fn serve_quickwit(
     let grpc_join_handle = async move {
         spawn_named_task(grpc_server, "grpc_server")
             .await
-            .expect("tasks running the gRPC server should not panic or be cancelled")
+            .context("gRPC server task failed")?
             .context("gRPC server failed")
     };
 
     let rest_join_handle = async move {
         spawn_named_task(rest_server, "rest_server")
             .await
-            .expect("tasks running the REST server should not panic or be cancelled")
+            .context("REST server task failed")?
             .context("REST server failed")
     };
 
     let health_join_handle = async move {
         spawn_named_task(health_server_fut, "health_server")
             .await
-            .expect("tasks running the health check server should not panic or be cancelled")
+            .context("health check server task failed")?
             .context("health check server failed")
     };
 
@@ -1055,6 +1073,13 @@ pub async fn serve_quickwit(
         readiness_reporting_fut
     ) {
         error!(?error, "server failed");
+        shutdown_token.cancel();
+        if let Err(shutdown_error) = shutdown_handle.await {
+            error!(
+                ?shutdown_error,
+                "failed to gracefully shut down services after server failure"
+            );
+        }
         return Err(error);
     }
 
