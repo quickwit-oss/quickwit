@@ -28,9 +28,6 @@ pub struct IndexMappingQueryParams {
     pub start_timestamp: Option<i64>,
     #[serde(default)]
     pub end_timestamp: Option<i64>,
-    /// Overrides `QW_FIELD_LIST_SIZE_LIMIT` for this request.
-    #[serde(default)]
-    pub limit: Option<u32>,
     /// Accepts both `field_patterns` (Quickwit) and `fields` (ES-compatible).
     #[serde(default, alias = "fields", deserialize_with = "empty_string_as_none")]
     pub field_patterns: Option<String>,
@@ -73,14 +70,7 @@ mod tests {
         let params: IndexMappingQueryParams = serde_qs::from_str("").unwrap();
         assert!(params.start_timestamp.is_none());
         assert!(params.end_timestamp.is_none());
-        assert!(params.limit.is_none());
         assert!(params.field_patterns.is_none());
-    }
-
-    #[test]
-    fn limit_param_present() {
-        let params: IndexMappingQueryParams = serde_qs::from_str("limit=123").unwrap();
-        assert_eq!(params.limit, Some(123));
     }
 
     #[test]

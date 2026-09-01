@@ -144,8 +144,7 @@ message ListFieldsRequest {
   // Maximum number of fields to return. Overrides QW_FIELD_LIST_SIZE_LIMIT.
   optional uint32 limit = 6;
 
-  // Control if the request will fail if split_ids contains a split that does not exist.
-  // optional bool fail_on_missing_index = 7;
+  reserved 7;
 }
 
 message LeafListFieldsRequest {

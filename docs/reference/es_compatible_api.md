@@ -391,11 +391,8 @@ The [field capabilities API](https://www.elastic.co/guide/en/elasticsearch/refer
 | `allow_no_indices`    | `Boolean`  | If `true`, missing or closed indices are not an error.                          | (Optional)    |
 | `expand_wildcards`    | `String`   | Controls what kind of indices that wildcard patterns can match.                 | (Optional)    |
 | `ignore_unavailable`  | `Boolean`  | If `true`, unavailable indices are ignored.                                    | (Optional)    |
-| `limit`               | `Integer`  | *(Quickwit-specific)* Maximum number of fields to return. Overrides `QW_FIELD_LIST_SIZE_LIMIT` for this request. | (Optional) |
 | `start_timestamp`     | `Integer`  | *(Quickwit-specific)* If set, restricts splits to documents with a timestamp range start >= `start_timestamp` (seconds since epoch). | (Optional) |
 | `end_timestamp`       | `Integer`  | *(Quickwit-specific)* If set, restricts splits to documents with a timestamp range end < `end_timestamp` (seconds since epoch). | (Optional) |
-
-The Quickwit-specific `limit` parameter is also supported by the `_mapping` and `_mappings` APIs.
 
 #### Supported Request Body parameters
 
