@@ -126,11 +126,11 @@ async fn get_liveness(
         error!("compactor service is unhealthy");
         is_live = false;
     }
-    if let Some(ingester) = ingester_opt {
-        if ingester.status() == IngesterStatus::Failed {
-            error!("ingester failed");
-            is_live = false;
-        }
+    if let Some(ingester) = ingester_opt
+        && ingester.status() == IngesterStatus::Failed
+    {
+        error!("ingester failed");
+        is_live = false;
     }
     let status_code = if is_live {
         StatusCode::OK
