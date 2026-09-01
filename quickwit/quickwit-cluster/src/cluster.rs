@@ -60,6 +60,7 @@ const INDEXING_TASK_PREFIX: &str = "indexer.task:";
 #[derive(Clone)]
 pub struct Cluster {
     cluster_id: String,
+    additional_acceptable_cluster_ids: Vec<String>,
     self_chitchat_id: ChitchatId,
     /// Socket address (UDP) the node listens on for receiving gossip messages.
     pub gossip_listen_addr: SocketAddr,
@@ -147,6 +148,14 @@ impl Cluster {
         &self.cluster_id
     }
 
+    pub(crate) fn accepts_cluster_id(&self, cluster_id: &str) -> bool {
+        cluster_id == self.cluster_id
+            || self
+                .additional_acceptable_cluster_ids
+                .iter()
+                .any(|acceptable_cluster_id| acceptable_cluster_id == cluster_id)
+    }
+
     pub fn self_chitchat_id(&self) -> &ChitchatId {
         &self.self_chitchat_id
     }
@@ -166,6 +175,7 @@ impl Cluster {
     #[allow(clippy::too_many_arguments)]
     pub async fn join(
         cluster_id: String,
+        additional_acceptable_cluster_ids: Vec<String>,
         self_node: ClusterMember,
         gossip_listen_addr: SocketAddr,
         peer_seed_addrs: Vec<String>,
@@ -264,6 +274,7 @@ impl Cluster {
         };
         let cluster = Cluster {
             cluster_id,
+            additional_acceptable_cluster_ids,
             self_chitchat_id: self_node.chitchat_id(),
             gossip_listen_addr,
             gossip_interval,
@@ -727,6 +738,31 @@ pub async fn create_cluster_for_test_with_id(
     transport: &dyn Transport,
     self_node_readiness: bool,
 ) -> anyhow::Result<Cluster> {
+    create_cluster_for_test_with_id_and_acceptable_cluster_ids(
+        node_id,
+        gossip_advertise_port,
+        cluster_id,
+        Vec::new(),
+        peer_seed_addrs,
+        enabled_services,
+        transport,
+        self_node_readiness,
+    )
+    .await
+}
+
+#[cfg(any(test, feature = "testsuite"))]
+#[allow(clippy::too_many_arguments)]
+pub async fn create_cluster_for_test_with_id_and_acceptable_cluster_ids(
+    node_id: NodeId,
+    gossip_advertise_port: u16,
+    cluster_id: String,
+    additional_acceptable_cluster_ids: Vec<String>,
+    peer_seed_addrs: Vec<String>,
+    enabled_services: &HashSet<quickwit_config::service::QuickwitService>,
+    transport: &dyn Transport,
+    self_node_readiness: bool,
+) -> anyhow::Result<Cluster> {
     use quickwit_proto::indexing::PIPELINE_FULL_CAPACITY;
     use quickwit_proto::ingest::ingester::IngesterStatus;
     let gossip_advertise_addr: SocketAddr = ([127, 0, 0, 1], gossip_advertise_port).into();
@@ -746,6 +782,7 @@ pub async fn create_cluster_for_test_with_id(
     let failure_detector_config = create_failure_detector_config_for_test();
     let cluster = Cluster::join(
         cluster_id,
+        additional_acceptable_cluster_ids,
         self_node,
         gossip_advertise_addr,
         peer_seed_addrs,
@@ -809,6 +846,9 @@ mod tests {
     use std::net::SocketAddr;
     use std::time::Duration;
 
+    use async_trait::async_trait;
+    use chitchat::ChitchatEnvelope;
+    use chitchat::transport::{RecvOutcome, SendOutcome, Socket};
     use itertools::Itertools;
     use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_config::MAX_GOSSIP_PROTOCOL_VERSION;
@@ -819,6 +859,56 @@ mod tests {
 
     use super::*;
     use crate::ChitchatTransport;
+
+    #[derive(Clone)]
+    struct AcceptableClusterIdChannelTransport {
+        transport: ChitchatTransport,
+        cluster_id: String,
+        additional_acceptable_cluster_ids: Vec<String>,
+    }
+
+    struct AcceptableClusterIdChannelSocket {
+        socket: Box<dyn Socket>,
+        cluster_id: String,
+        additional_acceptable_cluster_ids: Vec<String>,
+    }
+
+    #[async_trait]
+    impl Socket for AcceptableClusterIdChannelSocket {
+        fn local_addr(&self) -> anyhow::Result<SocketAddr> {
+            self.socket.local_addr()
+        }
+
+        async fn send(
+            &mut self,
+            to: SocketAddr,
+            envelope: ChitchatEnvelope,
+        ) -> anyhow::Result<SendOutcome> {
+            self.socket.send(to, envelope).await
+        }
+
+        async fn recv(&mut self) -> anyhow::Result<RecvOutcome> {
+            let mut outcome = self.socket.recv().await?;
+            crate::normalize_acceptable_syn_cluster_id(
+                &mut outcome.envelope,
+                &self.cluster_id,
+                &self.additional_acceptable_cluster_ids,
+            );
+            Ok(outcome)
+        }
+    }
+
+    #[async_trait]
+    impl Transport for AcceptableClusterIdChannelTransport {
+        async fn open(&self, listen_addr: SocketAddr) -> anyhow::Result<Box<dyn Socket>> {
+            let socket = self.transport.open(listen_addr).await?;
+            Ok(Box::new(AcceptableClusterIdChannelSocket {
+                socket,
+                cluster_id: self.cluster_id.clone(),
+                additional_acceptable_cluster_ids: self.additional_acceptable_cluster_ids.clone(),
+            }))
+        }
+    }
 
     #[test]
     fn test_max_gossip_protocol_version_matches_chitchat() {
@@ -1319,6 +1409,87 @@ mod tests {
             vec![cluster2a.gossip_listen_addr, cluster2b.gossip_listen_addr];
         expected_members_b.sort();
         assert_eq!(members_b, expected_members_b);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_cluster_id_can_be_rolled_without_splitting_the_cluster() -> anyhow::Result<()> {
+        let channel_transport = ChitchatTransport::default();
+        // Phase 1: roll out compatibility while all nodes still use the old cluster ID.
+        let old_transport = AcceptableClusterIdChannelTransport {
+            transport: channel_transport.clone(),
+            cluster_id: "old-cluster".to_string(),
+            additional_acceptable_cluster_ids: vec!["new-cluster".to_string()],
+        };
+        let old_cluster = create_cluster_for_test_with_id_and_acceptable_cluster_ids(
+            NodeId::from_str("old-node"),
+            31,
+            "old-cluster".to_string(),
+            vec!["new-cluster".to_string()],
+            Vec::new(),
+            &HashSet::new(),
+            &old_transport,
+            true,
+        )
+        .await?;
+
+        // Phase 2: roll nodes from the old ID to the new ID while retaining compatibility.
+        let compatible_new_transport = AcceptableClusterIdChannelTransport {
+            transport: channel_transport.clone(),
+            cluster_id: "new-cluster".to_string(),
+            additional_acceptable_cluster_ids: vec!["old-cluster".to_string()],
+        };
+        let compatible_new_cluster = create_cluster_for_test_with_id_and_acceptable_cluster_ids(
+            NodeId::from_str("compatible-new-node"),
+            32,
+            "new-cluster".to_string(),
+            vec!["old-cluster".to_string()],
+            vec![old_cluster.gossip_listen_addr.to_string()],
+            &HashSet::new(),
+            &compatible_new_transport,
+            true,
+        )
+        .await?;
+
+        let wait_duration = Duration::from_secs(10);
+        old_cluster
+            .wait_for_ready_members(|members| members.len() == 2, wait_duration)
+            .await?;
+        compatible_new_cluster
+            .wait_for_ready_members(|members| members.len() == 2, wait_duration)
+            .await?;
+
+        old_cluster.initiate_shutdown().await?;
+        compatible_new_cluster
+            .wait_for_ready_members(|members| members.len() == 1, wait_duration)
+            .await?;
+
+        // Phase 3: remove compatibility after every remaining node uses the new cluster ID.
+        let strict_new_transport = AcceptableClusterIdChannelTransport {
+            transport: channel_transport,
+            cluster_id: "new-cluster".to_string(),
+            additional_acceptable_cluster_ids: Vec::new(),
+        };
+        let strict_new_cluster = create_cluster_for_test_with_id_and_acceptable_cluster_ids(
+            NodeId::from_str("strict-new-node"),
+            33,
+            "new-cluster".to_string(),
+            Vec::new(),
+            vec![compatible_new_cluster.gossip_listen_addr.to_string()],
+            &HashSet::new(),
+            &strict_new_transport,
+            true,
+        )
+        .await?;
+        strict_new_cluster
+            .wait_for_ready_members(|members| members.len() >= 2, wait_duration)
+            .await?;
+
+        compatible_new_cluster.initiate_shutdown().await?;
+        strict_new_cluster
+            .wait_for_ready_members(|members| members.len() == 1, wait_duration)
+            .await?;
 
         Ok(())
     }

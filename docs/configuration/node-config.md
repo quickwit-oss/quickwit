@@ -21,6 +21,7 @@ A commented example is available here: [quickwit.yaml](https://github.com/quickw
 | --- | --- | --- | --- |
 | `version` | Config file version. `0.7` is the only available value with a retro compatibility on `0.5` and `0.4`. | | |
 | `cluster_id` | Unique identifier of the cluster the node will be joining. Clusters sharing the same network should use distinct cluster IDs.| `QW_CLUSTER_ID` | `quickwit-default-cluster` |
+| `additional_acceptable_cluster_ids` | Allows nodes to communicate with peers using another cluster ID. This can be used to update `cluster_id` without downtime. The environment variable accepts a comma-separated list of IDs. | `QW_ADDITIONAL_ACCEPTABLE_CLUSTER_IDS` | `[]` |
 | `node_id` | Unique identifier of the node. It must be distinct from the node IDs of its cluster peers. Searchers hash this ID for split affinity, so keep it stable across restarts (for example a StatefulSet pod name) if the same splits should keep landing on the same node. Defaults to the instance's short hostname if not set. | `QW_NODE_ID` | short hostname |
 | `enabled_services` | Enabled services (control_plane, indexer, janitor, metastore, metastore_read_replica, searcher) | `QW_ENABLED_SERVICES` | all services except metastore_read_replica |
 | `listen_address` | The IP address or hostname that Quickwit service binds to for starting REST and GRPC server and connecting this node to other nodes. By default, Quickwit binds itself to 127.0.0.1 (localhost). This default is not valid when trying to form a cluster. | `QW_LISTEN_ADDRESS` | `127.0.0.1` |

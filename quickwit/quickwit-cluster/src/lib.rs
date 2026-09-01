@@ -26,9 +26,9 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use chitchat::ChitchatEnvelope;
 pub use chitchat::transport::ChannelTransport as ChitchatTransport;
 use chitchat::transport::{RecvOutcome, SendOutcome, Socket, Transport, UdpSocket};
+use chitchat::{ChitchatEnvelope, ChitchatMessage};
 pub use chitchat::{FailureDetectorConfig, KeyChangeEvent, ListenerHandle};
 pub use grpc_service::cluster_grpc_server;
 use quickwit_config::NodeConfig;
@@ -44,7 +44,9 @@ pub use crate::change::{ClusterChange, ClusterChangeStream};
 pub use crate::cluster::{Cluster, ClusterSnapshot, NodeIdSchema};
 #[cfg(any(test, feature = "testsuite"))]
 pub use crate::cluster::{
-    create_cluster_for_test, create_cluster_for_test_with_id, grpc_addr_from_listen_addr_for_test,
+    create_cluster_for_test, create_cluster_for_test_with_id,
+    create_cluster_for_test_with_id_and_acceptable_cluster_ids,
+    grpc_addr_from_listen_addr_for_test,
 };
 pub use crate::member::{ClusterMember, INDEXING_CPU_CAPACITY_KEY};
 use crate::metrics::{
@@ -72,10 +74,46 @@ impl From<u64> for GenerationId {
     }
 }
 
-struct CountingUdpTransport;
+struct CountingUdpTransport {
+    cluster_id: String,
+    additional_acceptable_cluster_ids: Vec<String>,
+}
 
 struct CountingUdpSocket {
     socket: UdpSocket,
+    cluster_id: String,
+    additional_acceptable_cluster_ids: Vec<String>,
+}
+
+fn normalize_acceptable_syn_cluster_id(
+    envelope: &mut ChitchatEnvelope,
+    cluster_id: &str,
+    additional_acceptable_cluster_ids: &[String],
+) {
+    let ChitchatMessage::Syn {
+        cluster_id: incoming_cluster_id,
+        ..
+    } = &mut envelope.message
+    else {
+        return;
+    };
+    normalize_acceptable_cluster_id(
+        incoming_cluster_id,
+        cluster_id,
+        additional_acceptable_cluster_ids,
+    );
+}
+
+fn normalize_acceptable_cluster_id(
+    incoming_cluster_id: &mut String,
+    cluster_id: &str,
+    additional_acceptable_cluster_ids: &[String],
+) {
+    if incoming_cluster_id != cluster_id
+        && additional_acceptable_cluster_ids.contains(incoming_cluster_id)
+    {
+        *incoming_cluster_id = cluster_id.to_string();
+    }
 }
 
 #[async_trait]
@@ -96,7 +134,12 @@ impl Socket for CountingUdpSocket {
     }
 
     async fn recv(&mut self) -> anyhow::Result<RecvOutcome> {
-        let outcome = self.socket.recv().await?;
+        let mut outcome = self.socket.recv().await?;
+        normalize_acceptable_syn_cluster_id(
+            &mut outcome.envelope,
+            &self.cluster_id,
+            &self.additional_acceptable_cluster_ids,
+        );
         GOSSIP_RECV_MESSAGES_TOTAL.inc();
         GOSSIP_RECV_BYTES_TOTAL.inc_by(outcome.num_bytes_received as u64);
         Ok(outcome)
@@ -107,7 +150,11 @@ impl Socket for CountingUdpSocket {
 impl Transport for CountingUdpTransport {
     async fn open(&self, listen_addr: SocketAddr) -> anyhow::Result<Box<dyn Socket>> {
         let socket = UdpSocket::open(listen_addr).await?;
-        Ok(Box::new(CountingUdpSocket { socket }))
+        Ok(Box::new(CountingUdpSocket {
+            socket,
+            cluster_id: self.cluster_id.clone(),
+            additional_acceptable_cluster_ids: self.additional_acceptable_cluster_ids.clone(),
+        }))
     }
 }
 
@@ -143,15 +190,20 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         ..Default::default()
     };
     let channel_factory = ChannelFactory::for_grpc(&node_config.grpc_config)?;
+    let transport = CountingUdpTransport {
+        cluster_id: cluster_id.clone(),
+        additional_acceptable_cluster_ids: node_config.additional_acceptable_cluster_ids.clone(),
+    };
     let cluster = Cluster::join(
         cluster_id,
+        node_config.additional_acceptable_cluster_ids.clone(),
         self_node,
         gossip_listen_addr,
         peer_seed_addrs,
         node_config.gossip_interval,
         node_config.gossip_protocol_version,
         failure_detector_config,
-        &CountingUdpTransport,
+        &transport,
         channel_factory,
     )
     .await?;
@@ -164,4 +216,30 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
             .await;
     }
     Ok(cluster)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_acceptable_cluster_id() {
+        let additional_acceptable_cluster_ids = vec!["old-cluster".to_string()];
+
+        let mut old_cluster_id = "old-cluster".to_string();
+        normalize_acceptable_cluster_id(
+            &mut old_cluster_id,
+            "new-cluster",
+            &additional_acceptable_cluster_ids,
+        );
+        assert_eq!(old_cluster_id, "new-cluster");
+
+        let mut unrelated_cluster_id = "unrelated-cluster".to_string();
+        normalize_acceptable_cluster_id(
+            &mut unrelated_cluster_id,
+            "new-cluster",
+            &additional_acceptable_cluster_ids,
+        );
+        assert_eq!(unrelated_cluster_id, "unrelated-cluster");
+    }
 }

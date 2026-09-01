@@ -915,6 +915,8 @@ impl Default for JaegerConfig {
 #[derive(Clone, Debug, Serialize)]
 pub struct NodeConfig {
     pub cluster_id: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub additional_acceptable_cluster_ids: Vec<String>,
     pub node_id: NodeId,
     pub availability_zone: Option<String>,
     pub enabled_services: HashSet<QuickwitService>,

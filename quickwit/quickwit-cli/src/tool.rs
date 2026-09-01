@@ -1026,6 +1026,7 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
     let channel_factory = ChannelFactory::for_grpc(&config.grpc_config)?;
     let cluster = Cluster::join(
         config.cluster_id.clone(),
+        config.additional_acceptable_cluster_ids.clone(),
         self_node,
         config.gossip_advertise_addr,
         Vec::new(),
