@@ -344,6 +344,7 @@ This section contains the configuration options for the process-wide on-disk cac
 | `flushers` | Number of flush worker threads. Must be positive. | |
 | `reclaimers` | Number of reclaim worker threads. Must be positive. | |
 | `clean_block_threshold` | Clean disk block count at or below which reclaimers start working. Must be positive. | `16` |
+| `write_throughput` | Maximum disk-cache write throughput in bytes per second. Must be positive. | `500MiB` |
 
 Example:
 
@@ -371,6 +372,7 @@ searcher:
     submit_queue_size_threshold: 3G
     reclaimers: 8
     clean_block_threshold: 16
+    write_throughput: 500MiB
 ```
 
 ## Jaeger configuration

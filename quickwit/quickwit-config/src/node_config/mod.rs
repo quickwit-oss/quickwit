@@ -454,11 +454,20 @@ pub struct SplitRangeDiskCacheConfig {
     pub reclaimers: usize,
     #[serde(default = "SplitRangeDiskCacheConfig::default_clean_block_threshold")]
     pub clean_block_threshold: usize,
+    #[serde(
+        default = "SplitRangeDiskCacheConfig::default_write_throughput",
+        with = "crate::serde_utils::bytesize_serde"
+    )]
+    pub write_throughput: ByteSize,
 }
 
 impl SplitRangeDiskCacheConfig {
     fn default_clean_block_threshold() -> usize {
         16
+    }
+
+    fn default_write_throughput() -> ByteSize {
+        ByteSize::mib(500)
     }
 
     fn validate(&self) -> anyhow::Result<()> {
@@ -486,6 +495,9 @@ impl SplitRangeDiskCacheConfig {
                  positive"
             );
         }
+        if self.write_throughput.as_u64() == 0 {
+            bail!("split_range_disk_cache.write_throughput must be positive");
+        }
         Ok(())
     }
 
@@ -506,6 +518,7 @@ impl SplitRangeDiskCacheConfig {
             flushers: 4,
             reclaimers: 4,
             clean_block_threshold: Self::default_clean_block_threshold(),
+            write_throughput: Self::default_write_throughput(),
         }
     }
 }
@@ -1551,7 +1564,9 @@ split_range_disk_cache:
         let disk_cache = config.split_range_disk_cache.as_ref().unwrap();
         let serialized_disk_cache = serde_yaml::to_string(disk_cache).unwrap();
         assert!(serialized_disk_cache.contains("clean_block_threshold: 16"));
+        assert!(serialized_disk_cache.contains("write_throughput: 524288000"));
         assert_eq!(disk_cache.clean_block_threshold, 16);
+        assert_eq!(disk_cache.write_throughput, ByteSize::mib(500));
         assert_eq!(
             disk_cache.path,
             PathBuf::from("/var/cache/quickwit/split-range-v1")
@@ -1625,6 +1640,22 @@ split_range_disk_cache:
             error
                 .to_string()
                 .contains("clean block threshold must be positive")
+        );
+    }
+
+    #[test]
+    fn test_split_range_disk_cache_rejects_zero_write_throughput() {
+        let mut disk_cache = SplitRangeDiskCacheConfig::for_test();
+        disk_cache.write_throughput = ByteSize::b(0);
+        let config = SearcherConfig {
+            split_range_disk_cache: Some(disk_cache),
+            ..Default::default()
+        };
+        let error = config.validate().unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("write_throughput must be positive")
         );
     }
 }

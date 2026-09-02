@@ -60,7 +60,10 @@ pub(crate) fn admission_bypass_reason(
     // `block_size - blob index` after header, key, and page alignment.
     let encoded_len = FOYER_ENTRY_HEADER_SIZE + key_size + Bytes::estimated_size(value);
     let aligned_len = encoded_len.div_ceil(FOYER_PAGE_SIZE) * FOYER_PAGE_SIZE;
-    if aligned_len > block_size - FOYER_BLOB_INDEX_SIZE {
+    let Some(available_block_size) = block_size.checked_sub(FOYER_BLOB_INDEX_SIZE) else {
+        return Some(AdmissionBypass::EncodedTooLarge);
+    };
+    if aligned_len > available_block_size {
         return Some(AdmissionBypass::EncodedTooLarge);
     }
     None
@@ -300,6 +303,19 @@ mod tests {
                 &Bytes::from(vec![0; 5 * 1024]),
                 7 * 1024,
                 8 * 1024
+            ),
+            Some(AdmissionBypass::EncodedTooLarge)
+        );
+    }
+
+    #[test]
+    fn test_admission_bypasses_block_smaller_than_blob_index() {
+        assert_eq!(
+            admission_bypass_reason(
+                1,
+                &Bytes::from_static(b"value"),
+                usize::MAX,
+                FOYER_BLOB_INDEX_SIZE - 1,
             ),
             Some(AdmissionBypass::EncodedTooLarge)
         );

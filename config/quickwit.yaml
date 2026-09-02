@@ -228,6 +228,7 @@ indexer:
 #     submit_queue_size_threshold: 3G
 #     reclaimers: 8
 #     clean_block_threshold: 16
+#     write_throughput: 500MiB
 # -------------------------------- Jaeger settings --------------------------------
 
 jaeger:

@@ -18,6 +18,7 @@ mod storage;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
 use std::path::Path;
 use std::sync::Arc;
 
@@ -54,10 +55,7 @@ impl FoyerSplitRangeCache {
                     config.path.display()
                 )
             })?;
-        let device = build_foyer_fs_device(
-            &config.path,
-            bytesize_to_usize(config.disk_capacity, "disk_capacity")?,
-        )?;
+        let device = build_foyer_fs_device(config)?;
         let engine = build_block_engine(config, device)?;
         let memory_capacity = bytesize_to_usize(config.memory_capacity, "memory_capacity")?;
         let cache = foyer::HybridCacheBuilder::new()
@@ -129,13 +127,21 @@ fn foyer_memory_eviction_config(policy: CachePolicy) -> anyhow::Result<foyer::S3
     }
 }
 
+fn foyer_throttle(config: &SplitRangeDiskCacheConfig) -> anyhow::Result<foyer::Throttle> {
+    Ok(
+        foyer::Throttle::default().with_write_throughput(bytesize_to_usize(
+            config.write_throughput,
+            "write_throughput",
+        )?),
+    )
+}
+
 fn build_foyer_fs_device(
-    path: &Path,
-    disk_capacity: usize,
+    config: &SplitRangeDiskCacheConfig,
 ) -> anyhow::Result<Arc<dyn foyer::Device>> {
-    let device = foyer::FsDeviceBuilder::new(path)
-        .with_capacity(disk_capacity)
-        .with_throttle(foyer::Throttle::default())
+    let device = foyer::FsDeviceBuilder::new(&config.path)
+        .with_capacity(bytesize_to_usize(config.disk_capacity, "disk_capacity")?)
+        .with_throttle(foyer_throttle(config)?)
         .build()?;
     Ok(device)
 }
@@ -186,5 +192,6 @@ pub(crate) fn config_for_test(path: impl AsRef<Path>) -> SplitRangeDiskCacheConf
         flushers: 1,
         reclaimers: 1,
         clean_block_threshold: 16,
+        write_throughput: ByteSize::mib(500),
     }
 }

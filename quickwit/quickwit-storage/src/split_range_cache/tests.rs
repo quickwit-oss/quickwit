@@ -46,6 +46,16 @@ fn test_flush_on_close_pairs_with_write_policy() {
     ));
 }
 
+#[test]
+fn test_foyer_throttle_uses_configured_write_throughput() {
+    let config = config_for_test("/tmp/quickwit-split-range-cache-throttle");
+    let throttle = foyer_throttle(&config).unwrap();
+    assert_eq!(
+        throttle.write_throughput,
+        std::num::NonZeroUsize::new(ByteSize::mib(500).as_u64() as usize)
+    );
+}
+
 #[tokio::test]
 async fn test_split_range_cache_builder_uses_configured_policy_and_throttle() {
     let temp_dir = tempfile::tempdir().unwrap();

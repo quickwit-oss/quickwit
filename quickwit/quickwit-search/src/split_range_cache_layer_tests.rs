@@ -51,6 +51,7 @@ fn range_cache_config(path: impl AsRef<Path>) -> SplitRangeDiskCacheConfig {
         flushers: 1,
         reclaimers: 1,
         clean_block_threshold: 16,
+        write_throughput: ByteSize::mib(500),
     }
 }
 
@@ -68,7 +69,7 @@ async fn build_split() -> SplitBundle {
     let body_path = temp_dir.path().join(BODY_FILE);
     std::fs::write(&body_path, BODY_BYTES).unwrap();
     let payload =
-        SplitPayloadBuilder::get_split_payload(&[body_path], &[], HOTCACHE_BYTES).unwrap();
+        SplitPayloadBuilder::get_split_payload(&[body_path], &[], None, HOTCACHE_BYTES).unwrap();
     let footer_range = payload.footer_range.clone();
     let split_bytes = payload.read_all().await.unwrap();
     SplitBundle {
