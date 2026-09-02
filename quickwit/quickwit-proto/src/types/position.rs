@@ -308,6 +308,10 @@ mod tests {
 
         assert!(Position::offset(0u64) < Position::offset(1u64));
 
+        assert!(Position::offset(0u64) < Position::Eof(None));
+        assert!(Position::offset(1u64) < Position::eof(1u64));
+        assert!(Position::offset(1u64) < Position::eof(0u64)); //< this should not happen, but let's test it still.
+
         assert!(Position::Eof(None) < Position::eof(0u64));
         assert!(Position::eof(0u64) < Position::eof(1u64));
     }

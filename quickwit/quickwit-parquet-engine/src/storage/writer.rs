@@ -533,6 +533,8 @@ impl ParquetWriter {
         writer.write(&prepared.sorted_batch)?;
         let bytes = writer.into_inner()?.into_inner();
 
+        assert_indexing_prefix_alignment(&bytes, split_metadata, &self.sort_fields_string)?;
+
         debug!(bytes_written = bytes.len(), "completed write to bytes");
         Ok((bytes, (prepared.row_keys_proto, prepared.zonemap_regexes)))
     }
@@ -555,12 +557,88 @@ impl ParquetWriter {
         writer.write(&prepared.sorted_batch)?;
 
         let bytes_written = writer.into_inner()?.metadata()?.len();
+        assert_indexing_prefix_alignment_on_file(path, split_metadata, &self.sort_fields_string)?;
         debug!(bytes_written, "completed write to file");
         Ok((
             bytes_written,
             (prepared.row_keys_proto, prepared.zonemap_regexes),
         ))
     }
+}
+
+/// Verify the just-written parquet bytes have no two row groups
+/// sharing the same composite prefix key. No-op when split metadata
+/// is absent or `rg_partition_prefix_len == 0` (no alignment claim).
+///
+/// Mirrors the read-path check in
+/// `merge::streaming::region_grouping::extract_regions_from_metadata`
+/// and the merge-output check in `streaming::output::finalize_output`
+/// — see `assert_unique_rg_prefix_keys` for the rationale.
+fn assert_indexing_prefix_alignment(
+    bytes: &[u8],
+    split_metadata: Option<&ParquetSplitMetadata>,
+    fallback_sort_fields: &str,
+) -> Result<(), ParquetWriteError> {
+    let Some(meta) = split_metadata else {
+        return Ok(());
+    };
+    if meta.rg_partition_prefix_len == 0 {
+        return Ok(());
+    }
+    let sort_fields = if meta.sort_fields.is_empty() {
+        fallback_sort_fields
+    } else {
+        meta.sort_fields.as_str()
+    };
+    let bytes_owned = bytes::Bytes::copy_from_slice(bytes);
+    let reader = parquet::file::reader::SerializedFileReader::new(bytes_owned).map_err(|e| {
+        ParquetWriteError::SchemaValidation(format!(
+            "post-write prefix alignment re-parse failed: {e}"
+        ))
+    })?;
+    use parquet::file::reader::FileReader;
+    crate::merge::streaming::region_grouping::assert_unique_rg_prefix_keys(
+        reader.metadata(),
+        sort_fields,
+        meta.rg_partition_prefix_len,
+        "indexing write_to_bytes",
+    )
+    .map_err(|e| ParquetWriteError::SchemaValidation(e.to_string()))
+}
+
+/// File-backed counterpart to `assert_indexing_prefix_alignment` —
+/// re-opens the just-written file and verifies the same invariant.
+fn assert_indexing_prefix_alignment_on_file(
+    path: &Path,
+    split_metadata: Option<&ParquetSplitMetadata>,
+    fallback_sort_fields: &str,
+) -> Result<(), ParquetWriteError> {
+    let Some(meta) = split_metadata else {
+        return Ok(());
+    };
+    if meta.rg_partition_prefix_len == 0 {
+        return Ok(());
+    }
+    let sort_fields = if meta.sort_fields.is_empty() {
+        fallback_sort_fields
+    } else {
+        meta.sort_fields.as_str()
+    };
+    let file = File::open(path)?;
+    let reader = parquet::file::reader::SerializedFileReader::new(file).map_err(|e| {
+        ParquetWriteError::SchemaValidation(format!(
+            "post-write prefix alignment re-open failed for {}: {e}",
+            path.display()
+        ))
+    })?;
+    use parquet::file::reader::FileReader;
+    crate::merge::streaming::region_grouping::assert_unique_rg_prefix_keys(
+        reader.metadata(),
+        sort_fields,
+        meta.rg_partition_prefix_len,
+        &format!("indexing write_to_file {}", path.display()),
+    )
+    .map_err(|e| ParquetWriteError::SchemaValidation(e.to_string()))
 }
 
 /// Parse a sort fields string and resolve column names to physical `ParquetField`s.
@@ -1498,5 +1576,104 @@ mod tests {
         );
 
         std::fs::remove_file(&path).ok();
+    }
+
+    /// Indexing-path strong invariant: when the writer is asked to
+    /// emit a file with `rg_partition_prefix_len > 0`, no two row
+    /// groups may share the same composite prefix key. Forcing a
+    /// small row_group_size on a batch where every row has the same
+    /// metric_name produces multi-RG output with all RGs sharing the
+    /// prefix value — and `write_to_bytes` must reject the result
+    /// rather than land a corrupt file. Mirrors the merge-read-side
+    /// check in `extract_regions_from_metadata`.
+    #[test]
+    fn test_write_to_bytes_rejects_duplicate_rg_prefix_when_claimed_aligned() {
+        use crate::split::{ParquetSplitId, TimeRange};
+
+        let config = ParquetWriterConfig::default().with_row_group_size(3);
+        let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
+
+        // 9 rows of cpu.usage at 3 rows per RG → 3 RGs, all with the
+        // same metric_name. Claiming rg_partition_prefix_len = 1 makes
+        // every RG share the prefix key, which must fail.
+        let batch = create_test_batch_with_tags(9, &["service", "env"]);
+        let split_metadata = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new("dup-prefix-rejection-test"))
+            .index_uid("test-index:00000000000000000000000000")
+            .time_range(TimeRange::new(100, 200))
+            .sort_fields("metric_name|service|env|timeseries_id|timestamp_secs/V2")
+            .rg_partition_prefix_len(1)
+            .build();
+
+        let err = writer
+            .write_to_bytes(&batch, Some(&split_metadata))
+            .expect_err("must reject duplicate prefix RGs at indexing write");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("shares a prefix key with an earlier row group"),
+            "expected duplicate-prefix error, got: {msg}",
+        );
+        assert!(
+            msg.contains("indexing"),
+            "error should mention the indexing context, got: {msg}",
+        );
+    }
+
+    /// File-backed counterpart: `write_to_file_with_metadata` must
+    /// fire the same check. The output file exists on disk by the
+    /// time we re-parse, but the writer surfaces the violation rather
+    /// than reporting success.
+    #[test]
+    fn test_write_to_file_rejects_duplicate_rg_prefix_when_claimed_aligned() {
+        use crate::split::{ParquetSplitId, TimeRange};
+
+        let config = ParquetWriterConfig::default().with_row_group_size(3);
+        let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
+
+        let batch = create_test_batch_with_tags(9, &["service", "env"]);
+        let split_metadata = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new("dup-prefix-rejection-file-test"))
+            .index_uid("test-index:00000000000000000000000000")
+            .time_range(TimeRange::new(100, 200))
+            .sort_fields("metric_name|service|env|timeseries_id|timestamp_secs/V2")
+            .rg_partition_prefix_len(1)
+            .build();
+
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_dup_prefix_rejection.parquet");
+        let err = writer
+            .write_to_file_with_metadata(&batch, &path, Some(&split_metadata))
+            .expect_err("must reject duplicate prefix RGs at indexing write_to_file");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("shares a prefix key with an earlier row group"),
+            "expected duplicate-prefix error, got: {msg}",
+        );
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    /// Companion to the duplicate-rejection tests: a single-RG file
+    /// vacuously satisfies any prefix_len claim. The writer must
+    /// accept it without raising the duplicate-prefix error.
+    #[test]
+    fn test_write_to_bytes_accepts_single_rg_with_prefix_len_one() {
+        use crate::split::{ParquetSplitId, TimeRange};
+
+        let config = ParquetWriterConfig::default();
+        let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
+
+        let batch = create_test_batch_with_tags(20, &["service", "env"]);
+        let split_metadata = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new("single-rg-test"))
+            .index_uid("test-index:00000000000000000000000000")
+            .time_range(TimeRange::new(100, 200))
+            .sort_fields("metric_name|service|env|timeseries_id|timestamp_secs/V2")
+            .rg_partition_prefix_len(1)
+            .build();
+
+        writer
+            .write_to_bytes(&batch, Some(&split_metadata))
+            .expect("single-RG must pass the prefix-alignment check");
     }
 }

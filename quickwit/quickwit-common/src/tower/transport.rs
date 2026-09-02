@@ -16,7 +16,6 @@ use std::collections::HashSet;
 use std::convert::Infallible;
 use std::fmt;
 use std::hash::Hash;
-use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -25,8 +24,7 @@ use futures::stream::once;
 use futures::{Stream, StreamExt};
 use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tonic::transport::channel::ClientTlsConfig;
-use tonic::transport::{Channel, Endpoint, Uri};
+use tonic::transport::Channel;
 use tower::balance::p2c::Balance;
 use tower::buffer::Buffer;
 use tower::discover::Change as TowerChange;
@@ -191,53 +189,6 @@ where K: Hash + Eq + Clone + Send + Sync + 'static
             .field("num_connections", &self.num_connections())
             .finish()
     }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct KeepAliveConfig {
-    pub interval: Duration,
-    pub timeout: Duration,
-}
-
-#[derive(Clone, Default)]
-pub struct ClientGrpcConfig {
-    pub keep_alive_opt: Option<KeepAliveConfig>,
-    pub tls_config_opt: Option<ClientTlsConfig>,
-}
-
-/// Creates a channel from a socket address.
-///
-/// The function is marked as `async` because it requires an executor (`connect_lazy`).
-pub async fn make_channel(
-    socket_addr: SocketAddr,
-    client_grpc_config: ClientGrpcConfig,
-) -> Channel {
-    let ClientGrpcConfig {
-        keep_alive_opt,
-        tls_config_opt,
-    } = client_grpc_config;
-    let scheme = if tls_config_opt.is_some() {
-        "https"
-    } else {
-        "http"
-    };
-    let uri = Uri::builder()
-        .scheme(scheme)
-        .authority(socket_addr.to_string())
-        .path_and_query("/")
-        .build()
-        .expect("provided arguments should be valid");
-    let mut endpoint = Endpoint::from(uri).connect_timeout(Duration::from_secs(5));
-    if let Some(tls_config) = tls_config_opt {
-        endpoint = endpoint.tls_config(tls_config).expect("sadness TODO");
-    }
-    if let Some(keep_alive) = keep_alive_opt {
-        endpoint = endpoint
-            .keep_alive_while_idle(true)
-            .http2_keep_alive_interval(keep_alive.interval)
-            .keep_alive_timeout(keep_alive.timeout);
-    }
-    endpoint.connect_lazy()
 }
 
 /// Forces a channel to initiate the underlying HTTP connection. Calling this function only makes

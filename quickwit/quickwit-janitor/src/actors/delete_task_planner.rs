@@ -26,6 +26,7 @@ use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_indexing::actors::{MergeSchedulerService, MergeSplitDownloader, schedule_merge};
 use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_metastore::{ListSplitsResponseExt, Split, split_tag_filter, split_time_range_filter};
+use quickwit_metrics::gauge;
 use quickwit_proto::metastore::{
     DeleteTask, LastDeleteOpstampRequest, ListDeleteTasksRequest, ListStaleSplitsRequest,
     MetastoreResult, MetastoreService, MetastoreServiceClient, UpdateSplitsDeleteOpstampRequest,
@@ -37,9 +38,9 @@ use serde::Serialize;
 use tantivy::Inventory;
 use tracing::{debug, info};
 
-use crate::metrics::JANITOR_METRICS;
+use crate::metrics::ONGOING_NUM_DELETE_OPERATIONS_TOTAL;
 
-const PLANNER_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+const PLANNER_REFRESH_INTERVAL: Duration = Duration::from_mins(1);
 const NUM_STALE_SPLITS_TO_FETCH: usize = 1000;
 
 /// The `DeleteTaskPlanner` plans delete operations on splits for a given index.
@@ -205,11 +206,13 @@ impl DeleteTaskPlanner {
                 )
                 .await?;
                 let index_label =
-                    quickwit_common::metrics::index_label(self.index_uid.index_id.as_str());
-                JANITOR_METRICS
-                    .ongoing_num_delete_operations_total
-                    .with_label_values([index_label])
-                    .set(self.ongoing_delete_operations_inventory.list().len() as i64);
+                    quickwit_common::metrics::index_label(self.index_uid.index_id.as_str())
+                        .to_string();
+                gauge!(
+                    parent: ONGOING_NUM_DELETE_OPERATIONS_TOTAL,
+                    "index" => index_label,
+                )
+                .set(self.ongoing_delete_operations_inventory.list().len() as f64);
             }
         }
 
@@ -421,7 +424,7 @@ impl Handler<PlanDeleteLoop> for DeleteTaskPlanner {
 mod tests {
     use quickwit_config::build_doc_mapper;
     use quickwit_indexing::TestSandbox;
-    use quickwit_indexing::merge_policy::MergeTask;
+    use quickwit_indexing::merge_policy::MergeSource;
     use quickwit_metastore::{
         IndexMetadataResponseExt, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt,
         SplitMetadata,
@@ -513,7 +516,7 @@ mod tests {
 
         // We have 2 delete tasks. Each one will trigger a leaf request for each
         // of the 3 splits. This makes 6 requests.
-        let split_id_with_doc_to_delete = split_metas[2].split_id().to_string();
+        let split_id_with_doc_to_delete = split_metas[2].split_id.to_string();
         mock_search_service.expect_leaf_search().times(6).returning(
             move |request: LeafSearchRequest| {
                 // Search on body:delete should return one hit only on the last split
@@ -551,11 +554,11 @@ mod tests {
             .spawn_builder()
             .spawn(delete_planner);
         delete_planner_handle.process_pending_and_observe().await;
-        let downloader_msgs: Vec<MergeTask> = merge_split_downloader_inbox.drain_for_test_typed();
+        let downloader_msgs: Vec<MergeSource> = merge_split_downloader_inbox.drain_for_test_typed();
         assert_eq!(downloader_msgs.len(), 1);
         // The last split will undergo a delete operation.
         assert_eq!(
-            downloader_msgs[0].splits[0].split_id(),
+            downloader_msgs[0].as_operation().splits[0].split_id(),
             split_metas[2].split_id()
         );
         // Check planner state is inline.
@@ -587,10 +590,11 @@ mod tests {
             .ask(PlanDeleteOperations)
             .await
             .unwrap();
-        let downloader_last_msgs = merge_split_downloader_inbox.drain_for_test_typed::<MergeTask>();
+        let downloader_last_msgs =
+            merge_split_downloader_inbox.drain_for_test_typed::<MergeSource>();
         assert_eq!(downloader_last_msgs.len(), 1);
         assert_eq!(
-            downloader_last_msgs[0].splits[0].split_id(),
+            downloader_last_msgs[0].as_operation().splits[0].split_id(),
             split_metas[2].split_id()
         );
         // The other splits has just their delete opstamps updated to the last opstamps which is 2

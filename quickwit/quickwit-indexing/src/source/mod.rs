@@ -92,7 +92,11 @@ pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 #[cfg(feature = "sqs")]
 pub use queue_sources::sqs_queue;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::metrics::{
+    IN_FLIGHT_FILE_SOURCE, IN_FLIGHT_INGEST_SOURCE, IN_FLIGHT_KAFKA_SOURCE,
+    IN_FLIGHT_KINESIS_SOURCE, IN_FLIGHT_OTHER_SOURCE, IN_FLIGHT_PUBSUB_SOURCE,
+    IN_FLIGHT_PULSAR_SOURCE,
+};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{
@@ -101,6 +105,7 @@ use quickwit_config::{
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
+use quickwit_metrics::GaugeGuard;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{
     IndexMetadataRequest, MetastoreError, MetastoreResult, MetastoreService,
@@ -118,7 +123,7 @@ pub use void_source::{VoidSource, VoidSourceFactory};
 
 use self::doc_file_reader::dir_and_filename;
 use self::stdin_source::StdinSourceFactory;
-use crate::models::RawDocBatch;
+use crate::models::{RawDocBatch, SharedPublishToken};
 use crate::source::ingest::IngestSourceFactory;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
 
@@ -161,6 +166,7 @@ pub struct SourceRuntime {
     pub storage_resolver: StorageResolver,
     pub event_broker: EventBroker,
     pub indexing_setting: IndexingSettings,
+    pub publish_token: SharedPublishToken,
 }
 
 impl SourceRuntime {
@@ -261,7 +267,7 @@ pub trait Source: Send + 'static {
     /// plane.
     async fn assign_shards(
         &mut self,
-        _shard_ids: BTreeSet<ShardId>,
+        _assignment: Assignment,
         _source_sink: &SourceSink,
         _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
@@ -332,6 +338,8 @@ struct Loop;
 #[derive(Debug)]
 pub struct Assignment {
     pub shard_ids: BTreeSet<ShardId>,
+    /// ULID of the originating indexing plan, used as the publish token when (re)acquiring shards.
+    pub indexing_plan_id: String,
 }
 
 #[derive(Debug)]
@@ -397,9 +405,9 @@ impl Handler<AssignShards> for SourceActor {
         assign_shards_message: AssignShards,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
-        let AssignShards(Assignment { shard_ids }) = assign_shards_message;
+        let AssignShards(assignment) = assign_shards_message;
         self.source
-            .assign_shards(shard_ids, &self.source_sink, ctx)
+            .assign_shards(assignment, &self.source_sink, ctx)
             .await?;
         Ok(())
     }
@@ -519,7 +527,7 @@ pub(super) struct BatchBuilder {
     num_bytes: u64,
     checkpoint_delta: SourceCheckpointDelta,
     force_commit: bool,
-    gauge_guard: GaugeGuard<'static>,
+    gauge_guard: GaugeGuard,
 }
 
 impl BatchBuilder {
@@ -529,15 +537,15 @@ impl BatchBuilder {
 
     pub fn with_capacity(capacity: usize, source_type: SourceType) -> Self {
         let gauge = match source_type {
-            SourceType::File => MEMORY_METRICS.in_flight.file(),
-            SourceType::IngestV2 => MEMORY_METRICS.in_flight.ingest(),
-            SourceType::Kafka => MEMORY_METRICS.in_flight.kafka(),
-            SourceType::Kinesis => MEMORY_METRICS.in_flight.kinesis(),
-            SourceType::PubSub => MEMORY_METRICS.in_flight.pubsub(),
-            SourceType::Pulsar => MEMORY_METRICS.in_flight.pulsar(),
-            _ => MEMORY_METRICS.in_flight.other(),
+            SourceType::File => &IN_FLIGHT_FILE_SOURCE,
+            SourceType::IngestV2 => &IN_FLIGHT_INGEST_SOURCE,
+            SourceType::Kafka => &IN_FLIGHT_KAFKA_SOURCE,
+            SourceType::Kinesis => &IN_FLIGHT_KINESIS_SOURCE,
+            SourceType::PubSub => &IN_FLIGHT_PUBSUB_SOURCE,
+            SourceType::Pulsar => &IN_FLIGHT_PULSAR_SOURCE,
+            _ => &IN_FLIGHT_OTHER_SOURCE,
         };
-        let gauge_guard = GaugeGuard::from_gauge(gauge);
+        let gauge_guard = GaugeGuard::new(gauge, 0.0);
 
         Self {
             docs: Vec::with_capacity(capacity),
@@ -551,8 +559,8 @@ impl BatchBuilder {
     pub fn add_doc(&mut self, doc: Bytes) {
         let num_bytes = doc.len();
         self.docs.push(doc);
-        self.gauge_guard.add(num_bytes as i64);
         self.num_bytes += num_bytes as u64;
+        self.gauge_guard.increment(num_bytes as f64);
     }
 
     pub fn force_commit(&mut self) {
@@ -567,7 +575,7 @@ impl BatchBuilder {
     pub fn clear(&mut self) {
         self.docs.clear();
         self.checkpoint_delta = SourceCheckpointDelta::default();
-        self.gauge_guard.sub(self.num_bytes as i64);
+        self.gauge_guard.decrement(self.num_bytes as f64);
         self.num_bytes = 0;
     }
 }
@@ -614,7 +622,7 @@ mod tests {
 
             SourceRuntime {
                 pipeline_id: IndexingPipelineId {
-                    node_id: NodeId::from("test-node"),
+                    node_id: NodeId::from_str("test-node"),
                     index_uid: self.index_uid,
                     source_id: self.source_config.source_id.clone(),
                     pipeline_uid: PipelineUid::for_test(0u128),
@@ -626,6 +634,7 @@ mod tests {
                 storage_resolver: StorageResolver::for_test(),
                 event_broker: EventBroker::default(),
                 indexing_setting: IndexingSettings::default(),
+                publish_token: SharedPublishToken::default(),
             }
         }
 
@@ -757,10 +766,9 @@ mod test_setup_helper {
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, PartitionId};
     use quickwit_metastore::{CreateIndexRequestExt, SplitMetadata, StageSplitsRequestExt};
     use quickwit_proto::metastore::{CreateIndexRequest, PublishSplitsRequest, StageSplitsRequest};
-    use quickwit_proto::types::Position;
+    use quickwit_proto::types::{Position, SplitId};
 
     use super::*;
-    use crate::new_split_id;
 
     pub async fn setup_index(
         metastore: MetastoreServiceClient,
@@ -785,7 +793,7 @@ mod test_setup_helper {
         if partition_deltas.is_empty() {
             return index_uid;
         }
-        let split_id = new_split_id();
+        let split_id = SplitId::new();
         let split_metadata = SplitMetadata::for_test(split_id.clone());
         let stage_splits_request =
             StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata)
@@ -806,7 +814,7 @@ mod test_setup_helper {
         let publish_splits_request = PublishSplitsRequest {
             index_uid: Some(index_uid.clone()),
             index_checkpoint_delta_json_opt: Some(checkpoint_delta_json),
-            staged_split_ids: vec![split_id.clone()],
+            staged_split_ids: vec![split_id.to_string()],
             replaced_split_ids: Vec::new(),
             publish_token_opt: None,
         };

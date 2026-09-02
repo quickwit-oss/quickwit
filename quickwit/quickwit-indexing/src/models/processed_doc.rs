@@ -14,13 +14,17 @@
 
 use std::fmt;
 
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::metrics::IN_FLIGHT_INDEXER_MAILBOX;
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
+use quickwit_metrics::GaugeGuard;
 use tantivy::{DateTime, TantivyDocument};
+
+use crate::docs_clustering::Fingerprint;
 
 pub struct ProcessedDoc {
     pub doc: TantivyDocument,
     pub timestamp_opt: Option<DateTime>,
+    pub fingerprint_opt: Option<Fingerprint>,
     pub partition: u64,
     pub num_bytes: usize,
 }
@@ -29,6 +33,7 @@ impl fmt::Debug for ProcessedDoc {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProcessedDoc")
             .field("timestamp_opt", &self.timestamp_opt)
+            .field("fingerprint_opt", &self.fingerprint_opt)
             .field("partition", &self.partition)
             .field("num_bytes", &self.num_bytes)
             .finish()
@@ -41,7 +46,7 @@ pub struct ProcessedDocBatch {
     pub docs: Vec<ProcessedDoc>,
     pub checkpoint_delta: SourceCheckpointDelta,
     pub force_commit: bool,
-    _gauge_guard: GaugeGuard<'static>,
+    _gauge_guard: GaugeGuard,
 }
 
 impl ProcessedDocBatch {
@@ -51,8 +56,7 @@ impl ProcessedDocBatch {
         force_commit: bool,
     ) -> Self {
         let delta = docs.iter().map(|doc| doc.num_bytes as i64).sum::<i64>();
-        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.indexer_mailbox);
-        gauge_guard.add(delta);
+        let gauge_guard = GaugeGuard::new(&IN_FLIGHT_INDEXER_MAILBOX, delta as f64);
         Self {
             docs,
             checkpoint_delta,

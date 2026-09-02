@@ -18,7 +18,7 @@ use std::{env, fmt};
 
 use anyhow::ensure;
 use itertools::Itertools;
-use quickwit_common::get_bool_from_env;
+use quickwit_common::{get_bool_from_env, get_from_env_opt};
 use serde::{Deserialize, Serialize};
 use serde_with::{EnumMap, serde_as};
 
@@ -36,6 +36,26 @@ pub enum StorageBackend {
     Ram,
     /// Amazon S3 or S3-compatible storage
     S3,
+}
+
+/// Strategy used to checksum object-storage uploads.
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChecksumAlgorithm {
+    /// CRC32C, computed and validated by the AWS SDK. Native S3 default.
+    #[default]
+    Crc32c,
+    /// MD5 (Content-MD5 header), computed client-side. Used by S3-compatible
+    /// implementations that predate the SDK's `x-amz-checksum-*` headers.
+    Md5,
+    /// No upload checksum is sent and no response checksum is validated.
+    Disabled,
+}
+
+impl ChecksumAlgorithm {
+    pub fn is_md5(&self) -> bool {
+        matches!(self, Self::Md5)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -265,12 +285,24 @@ pub struct AzureStorageConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub access_key: Option<String>,
+    /// Custom blob service endpoint URL, e.g. `https://myaccount.blob.core.usgovcloudapi.net`.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    /// Blob service endpoint suffix for sovereign clouds, e.g. `core.usgovcloudapi.net`.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint_suffix: Option<String>,
 }
 
 impl AzureStorageConfig {
     pub const AZURE_STORAGE_ACCOUNT_ENV_VAR: &'static str = "QW_AZURE_STORAGE_ACCOUNT";
 
     pub const AZURE_STORAGE_ACCESS_KEY_ENV_VAR: &'static str = "QW_AZURE_STORAGE_ACCESS_KEY";
+
+    pub const AZURE_ENDPOINT_ENV_VAR: &'static str = "QW_AZURE_ENDPOINT";
+
+    pub const AZURE_ENDPOINT_SUFFIX_ENV_VAR: &'static str = "QW_AZURE_ENDPOINT_SUFFIX";
 
     /// Redacts the access key.
     pub fn redact(&mut self) {
@@ -282,17 +314,44 @@ impl AzureStorageConfig {
     /// Attempts to find the storage account name in the environment variable
     /// `QW_AZURE_STORAGE_ACCOUNT` or node config.
     pub fn resolve_account_name(&self) -> Option<String> {
-        env::var(Self::AZURE_STORAGE_ACCOUNT_ENV_VAR)
-            .ok()
+        get_from_env_opt(Self::AZURE_STORAGE_ACCOUNT_ENV_VAR, false)
             .or_else(|| self.account_name.clone())
     }
 
     /// Attempts to find the storage account access key in the environment variable
     /// `QW_AZURE_STORAGE_ACCESS_KEY` or node config.
     pub fn resolve_access_key(&self) -> Option<String> {
-        env::var(Self::AZURE_STORAGE_ACCESS_KEY_ENV_VAR)
-            .ok()
+        get_from_env_opt(Self::AZURE_STORAGE_ACCESS_KEY_ENV_VAR, true)
             .or_else(|| self.access_key.clone())
+    }
+
+    /// Attempts to find the blob service endpoint URL in the environment variable
+    /// `QW_AZURE_ENDPOINT` or node config.
+    pub fn endpoint(&self) -> Option<String> {
+        get_from_env_opt(Self::AZURE_ENDPOINT_ENV_VAR, false).or_else(|| self.endpoint.clone())
+    }
+
+    /// Attempts to find the blob service endpoint suffix in the environment variable
+    /// `QW_AZURE_ENDPOINT_SUFFIX` or node config.
+    pub fn endpoint_suffix(&self) -> Option<String> {
+        get_from_env_opt(Self::AZURE_ENDPOINT_SUFFIX_ENV_VAR, false)
+            .or_else(|| self.endpoint_suffix.clone())
+    }
+
+    /// Builds the blob service URI when `endpoint` or `endpoint_suffix` is configured.
+    ///
+    /// When both are set, `endpoint` takes precedence.
+    pub fn resolve_blob_service_uri(&self, account_name: &str) -> Option<String> {
+        if let Some(endpoint) = self.endpoint() {
+            return Some(endpoint);
+        }
+        let endpoint_suffix = self.endpoint_suffix()?;
+        let uri = if endpoint_suffix.starts_with("blob.") {
+            format!("https://{account_name}.{endpoint_suffix}")
+        } else {
+            format!("https://{account_name}.blob.{endpoint_suffix}")
+        };
+        Some(uri)
     }
 }
 
@@ -304,6 +363,8 @@ impl fmt::Debug for AzureStorageConfig {
                 "access_key",
                 &self.access_key.as_ref().map(|_| "***redacted***"),
             )
+            .field("endpoint", &self.endpoint)
+            .field("endpoint_suffix", &self.endpoint_suffix)
             .finish()
     }
 }
@@ -330,6 +391,9 @@ pub struct S3StorageConfig {
     #[serde(default)]
     pub disable_multipart_upload: bool,
     #[serde(default)]
+    pub checksum_algorithm: ChecksumAlgorithm,
+    /// Deprecated: applies into `checksum_algorithm: disabled`.
+    #[serde(default, skip_serializing)]
     pub disable_checksums: bool,
     #[serde(default)]
     pub disable_stalled_stream_protection_upload: bool,
@@ -343,24 +407,26 @@ impl S3StorageConfig {
             Some(StorageBackendFlavor::DigitalOcean) => {
                 self.force_path_style_access = true;
                 self.disable_multi_object_delete = true;
-                self.disable_checksums = true;
             }
             Some(StorageBackendFlavor::Garage) => {
                 self.region = Some("garage".to_string());
                 self.force_path_style_access = true;
-                self.disable_checksums = true;
             }
             Some(StorageBackendFlavor::Gcs) => {
                 self.disable_multi_object_delete = true;
                 self.disable_multipart_upload = true;
-                self.disable_checksums = true;
+                // doesnt support CRC32C via the S3 SDK
+                self.checksum_algorithm = ChecksumAlgorithm::Disabled;
             }
             Some(StorageBackendFlavor::MinIO) => {
                 self.region = Some("minio".to_string());
                 self.force_path_style_access = true;
-                self.disable_checksums = true;
             }
             _ => {}
+        }
+        // Legacy: honor `disable_checksums: true` from older configs.
+        if self.disable_checksums {
+            self.checksum_algorithm = ChecksumAlgorithm::Disabled;
         }
     }
 
@@ -404,7 +470,7 @@ impl fmt::Debug for S3StorageConfig {
                 &self.disable_multi_object_delete,
             )
             .field("disable_multipart_upload", &self.disable_multipart_upload)
-            .field("disable_checksums", &self.disable_checksums)
+            .field("checksum_algorithm", &self.checksum_algorithm)
             .field(
                 "disable_stalled_stream_protection_upload",
                 &self.disable_stalled_stream_protection_upload,
@@ -601,9 +667,62 @@ mod tests {
             let expected_azure_config = AzureStorageConfig {
                 account_name: Some("test-account".to_string()),
                 access_key: Some("test-access-key".to_string()),
+                ..Default::default()
             };
             assert_eq!(azure_storage_config, expected_azure_config);
         }
+        {
+            let azure_storage_config_yaml = r#"
+                account: test-account
+                endpoint: https://test-account.blob.core.usgovcloudapi.net
+                endpoint_suffix: core.chinacloudapi.cn
+            "#;
+            let azure_storage_config: AzureStorageConfig =
+                serde_yaml::from_str(azure_storage_config_yaml).unwrap();
+
+            let expected_azure_config = AzureStorageConfig {
+                account_name: Some("test-account".to_string()),
+                endpoint: Some("https://test-account.blob.core.usgovcloudapi.net".to_string()),
+                endpoint_suffix: Some("core.chinacloudapi.cn".to_string()),
+                ..Default::default()
+            };
+            assert_eq!(azure_storage_config, expected_azure_config);
+        }
+    }
+
+    #[test]
+    fn test_storage_azure_config_resolve_blob_service_uri() {
+        let config = AzureStorageConfig {
+            account_name: Some("my-account".to_string()),
+            endpoint: Some("https://custom.example.com".to_string()),
+            endpoint_suffix: Some("core.usgovcloudapi.net".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.resolve_blob_service_uri("my-account").as_deref(),
+            Some("https://custom.example.com")
+        );
+
+        let config = AzureStorageConfig {
+            endpoint_suffix: Some("core.usgovcloudapi.net".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.resolve_blob_service_uri("my-account").as_deref(),
+            Some("https://my-account.blob.core.usgovcloudapi.net")
+        );
+
+        let config = AzureStorageConfig {
+            endpoint_suffix: Some("blob.core.chinacloudapi.cn".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.resolve_blob_service_uri("my-account").as_deref(),
+            Some("https://my-account.blob.core.chinacloudapi.cn")
+        );
+
+        let config = AzureStorageConfig::default();
+        assert!(config.resolve_blob_service_uri("my-account").is_none());
     }
 
     #[test]
@@ -647,7 +766,7 @@ mod tests {
                 force_path_style_access: true
                 disable_multi_object_delete_requests: true
                 disable_multipart_upload: true
-                disable_checksums: true
+                checksum_algorithm: disabled
                 disable_stalled_stream_protection_upload: true
                 disable_stalled_stream_protection_download: true
             "#;
@@ -660,7 +779,7 @@ mod tests {
                 force_path_style_access: true,
                 disable_multi_object_delete: true,
                 disable_multipart_upload: true,
-                disable_checksums: true,
+                checksum_algorithm: ChecksumAlgorithm::Disabled,
                 disable_stalled_stream_protection_upload: true,
                 disable_stalled_stream_protection_download: true,
                 ..Default::default()

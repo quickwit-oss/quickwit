@@ -16,6 +16,8 @@
 
 mod config;
 pub mod inspect;
+pub(crate) mod legacy_adapter;
+pub(crate) mod page_decoder;
 pub(crate) mod split_writer;
 pub(crate) mod streaming_reader;
 pub(crate) mod streaming_writer;
@@ -26,7 +28,13 @@ pub use inspect::{
     ColumnReport, PageReport, ParquetPageStatsReport, RowGroupReport, inspect_parquet_page_stats,
     verify_partition_prefix,
 };
+pub use legacy_adapter::{LegacyAdapterError, LegacyInputAdapter};
+pub use page_decoder::{PageDecodeError, StreamDecoder};
 pub use split_writer::ParquetSplitWriter;
+pub use streaming_reader::{
+    ColumnPageStream, Page, ParquetReadError, RemoteByteSource, StreamingParquetReader,
+    StreamingReaderConfig,
+};
 // Re-export metadata constants for use by the merge module and tests.
 pub(crate) use writer::{
     PARQUET_META_NUM_MERGE_OPS, PARQUET_META_RG_PARTITION_PREFIX_LEN, PARQUET_META_ROW_KEYS,

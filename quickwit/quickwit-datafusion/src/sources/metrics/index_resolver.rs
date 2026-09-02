@@ -85,7 +85,6 @@ impl MetricsIndexResolver for MetastoreIndexResolver {
 
         let response = self
             .metastore
-            .clone()
             .index_metadata(IndexMetadataRequest::for_index_id(index_name.to_string()))
             .await
             .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
@@ -111,7 +110,6 @@ impl MetricsIndexResolver for MetastoreIndexResolver {
     async fn list_index_names(&self) -> DFResult<Vec<String>> {
         let response = self
             .metastore
-            .clone()
             .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await
             .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;

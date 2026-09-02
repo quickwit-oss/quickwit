@@ -20,7 +20,6 @@ env:
   AWS_SECRET_ACCESS_KEY: "placeholder"
   CARGO_INCREMENTAL: 0
   PUBSUB_EMULATOR_HOST: "localhost:8681"
-  QW_DISABLE_TELEMETRY: 1
   QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
   QW_S3_FORCE_PATH_STYLE_ACCESS: 1
   QW_TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev
@@ -155,7 +154,8 @@ jobs:
         run: DOCKER_SERVICES=pulsar make docker-compose-up
 
       - name: Install Rust
-        run: rustup update stable
+        run: rustup toolchain install
+        working-directory: ./quickwit
 
       - name: Install cargo-llvm-cov, cargo-nextest, and protoc
         uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1 # v2.75.27

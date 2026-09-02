@@ -23,10 +23,26 @@ use aws_sdk_s3::operation::delete_object::DeleteObjectError;
 use aws_sdk_s3::operation::delete_objects::DeleteObjectsError;
 use aws_sdk_s3::operation::get_object::GetObjectError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
+use aws_sdk_s3::operation::list_objects_v2::ListObjectsV2Error;
 use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_s3::operation::upload_part::UploadPartError;
+use aws_smithy_types::retry::ErrorKind;
 
 use crate::retry::AwsRetryable;
+
+/// Extracts the `x-amz-retry-after` header from an SDK error response, if present.
+/// The header value is in milliseconds.
+pub fn retry_after_from_sdk_error<E>(error: &SdkError<E>) -> Option<std::time::Duration> {
+    let headers = match error {
+        SdkError::ServiceError(e) => e.raw().headers(),
+        SdkError::ResponseError(e) => e.raw().headers(),
+        _ => return None,
+    };
+    headers
+        .get("x-amz-retry-after")
+        .and_then(|v| v.parse::<u64>().ok())
+        .map(std::time::Duration::from_millis)
+}
 
 impl<E> AwsRetryable for SdkError<E>
 where E: AwsRetryable
@@ -35,11 +51,26 @@ where E: AwsRetryable
         match self {
             SdkError::ConstructionFailure(_) => false,
             SdkError::TimeoutError(_) => true,
-            SdkError::DispatchFailure(_) => false,
+            SdkError::DispatchFailure(failure) => {
+                failure.is_io()
+                    || failure.is_timeout()
+                    || matches!(
+                        failure.as_other(),
+                        Some(
+                            ErrorKind::TransientError
+                                | ErrorKind::ThrottlingError
+                                | ErrorKind::ServerError
+                        )
+                    )
+            }
             SdkError::ResponseError(_) => true,
             SdkError::ServiceError(error) => error.err().is_retryable(),
             _ => false,
         }
+    }
+
+    fn retry_after(&self) -> Option<std::time::Duration> {
+        retry_after_from_sdk_error(self)
     }
 }
 
@@ -103,6 +134,12 @@ impl AwsRetryable for PutObjectError {
 }
 
 impl AwsRetryable for HeadObjectError {
+    fn is_retryable(&self) -> bool {
+        is_retryable(self.meta())
+    }
+}
+
+impl AwsRetryable for ListObjectsV2Error {
     fn is_retryable(&self) -> bool {
         is_retryable(self.meta())
     }

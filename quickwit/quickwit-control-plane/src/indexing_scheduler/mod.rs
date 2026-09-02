@@ -25,20 +25,24 @@ use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
 use quickwit_common::is_parquet_pipeline_index;
 use quickwit_common::pretty::PrettySample;
-use quickwit_config::{FileSourceParams, SourceParams, indexing_pipeline_params_fingerprint};
+use quickwit_config::{
+    FileSourceParams, SourceParams, disable_ingest_v1, indexing_pipeline_params_fingerprint,
+};
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
     PIPELINE_THROUGHPUT,
 };
+use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::types::NodeId;
 use scheduling::{SourceToSchedule, SourceToScheduleType};
 use serde::Serialize;
 use tracing::{debug, info, warn};
+use ulid::Ulid;
 
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotifier};
 use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
-use crate::metrics::ShardLocalityMetrics;
+use crate::metrics::{APPLY_PLAN_TOTAL, SCHEDULE_TOTAL, ShardLocalityMetrics};
 use crate::model::{ControlPlaneModel, ShardEntry, ShardLocations};
 use crate::{IndexerNodeInfo, IndexerPool};
 
@@ -50,6 +54,12 @@ pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
     } else {
         Duration::from_secs(30)
     };
+
+pub(crate) const APPLY_INDEXING_PLAN_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(10)
+} else {
+    Duration::from_secs(2)
+};
 
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct IndexingSchedulerState {
@@ -182,18 +192,22 @@ fn compute_load_per_shard(shard_entries: &[&ShardEntry]) -> NonZeroU32 {
 }
 
 fn get_default_load_per_shard() -> NonZeroU32 {
-    static DEFAULT_LOAD_PER_SHARD: LazyLock<NonZeroU32> = LazyLock::new(|| {
-        let default_load_per_shard = quickwit_common::get_from_env(
-            "QW_DEFAULT_LOAD_PER_SHARD",
-            PIPELINE_FULL_CAPACITY.cpu_millis() / 4,
-            false,
-        );
-        NonZeroU32::new(default_load_per_shard).unwrap()
-    });
-    *DEFAULT_LOAD_PER_SHARD
+    let default_load_per_shard = quickwit_common::get_from_env_cached!(
+        u32,
+        "QW_DEFAULT_LOAD_PER_SHARD",
+        PIPELINE_FULL_CAPACITY.cpu_millis() / 4,
+        false
+    );
+    NonZeroU32::new(default_load_per_shard).unwrap()
 }
 
-fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
+fn get_sources_to_schedule(
+    model: &ControlPlaneModel,
+    disable_ingest_v1: bool,
+) -> Vec<SourceToSchedule> {
+    if disable_ingest_v1 {
+        debug!("skipping scheduling of ingest API sources because ingest v1 is disabled");
+    }
     let mut sources = Vec::new();
 
     for (source_uid, source_config) in model.source_configs() {
@@ -215,6 +229,9 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
             }
 
             SourceParams::IngestApi => {
+                if disable_ingest_v1 {
+                    continue;
+                }
                 // Metrics indexes should use IngestV2 only, not IngestV1.
                 // The ParquetSourceLoader doesn't support IngestV1.
                 if is_parquet_pipeline_index(&source_uid.index_uid.index_id) {
@@ -295,13 +312,13 @@ impl IndexingScheduler {
     // Prefer not calling this method directly, and instead call
     // `ControlPlane::rebuild_indexing_plan_debounced`.
     pub(crate) fn rebuild_plan(&mut self, model: &ControlPlaneModel) {
-        crate::metrics::CONTROL_PLANE_METRICS.schedule_total.inc();
+        SCHEDULE_TOTAL.inc();
 
         let notify_on_drop = self.next_rebuild_tracker.start_rebuild();
 
-        let sources = get_sources_to_schedule(model);
+        let sources = get_sources_to_schedule(model, disable_ingest_v1());
 
-        let indexers: Vec<IndexerNodeInfo> = self.get_indexers_from_indexer_pool();
+        let indexers: Vec<IndexerNodeInfo> = self.select_available_indexers_for_scheduling();
 
         let indexer_id_to_cpu_capacities: FnvHashMap<String, CpuCapacity> = indexers
             .iter()
@@ -330,7 +347,7 @@ impl IndexingScheduler {
         );
         let shard_locality_metrics =
             get_shard_locality_metrics(&new_physical_plan, &shard_locations);
-        crate::metrics::CONTROL_PLANE_METRICS.set_shard_locality_metrics(shard_locality_metrics);
+        shard_locality_metrics.publish();
         if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
             let plans_diff = get_indexing_plans_diff(
                 last_applied_plan.indexing_tasks_per_indexer(),
@@ -341,7 +358,7 @@ impl IndexingScheduler {
                 return;
             }
         }
-        self.apply_physical_indexing_plan(&indexers, new_physical_plan, Some(notify_on_drop));
+        self.apply_physical_indexing_plan(new_physical_plan, Some(notify_on_drop));
         self.state.num_schedule_indexing_plan += 1;
     }
 
@@ -366,7 +383,7 @@ impl IndexingScheduler {
         {
             return;
         }
-        let indexers: Vec<IndexerNodeInfo> = self.get_indexers_from_indexer_pool();
+        let indexers: Vec<IndexerNodeInfo> = self.select_available_indexers_for_scheduling();
         let running_indexing_tasks_by_node_id: FnvHashMap<String, Vec<IndexingTask>> = indexers
             .iter()
             .map(|indexer| (indexer.node_id.to_string(), indexer.indexing_tasks.clone()))
@@ -382,50 +399,100 @@ impl IndexingScheduler {
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
             info!(plans_diff=?indexing_plans_diff, "running tasks and last applied tasks differ: reapply last plan");
-            self.apply_physical_indexing_plan(&indexers, last_applied_plan.clone(), None);
+            self.apply_physical_indexing_plan(last_applied_plan.clone(), None);
         }
     }
 
-    fn get_indexers_from_indexer_pool(&self) -> Vec<IndexerNodeInfo> {
-        self.indexer_pool.values()
+    fn select_available_indexers_for_scheduling(&self) -> Vec<IndexerNodeInfo> {
+        let (ready, retiring): (Vec<IndexerNodeInfo>, Vec<IndexerNodeInfo>) = self
+            .indexer_pool
+            .values()
+            .into_iter()
+            .filter(|indexer| {
+                matches!(
+                    indexer.ingester_status,
+                    IngesterStatus::Ready | IngesterStatus::Retiring
+                )
+            })
+            .partition(|indexer| indexer.ingester_status == IngesterStatus::Ready);
+
+        if ready.is_empty() {
+            // Allow scheduling on retiring indexers to drain shards
+            // and avoid decommission timeouts (e.g. single-node cluster).
+            warn!(
+                "no ready indexer available, falling back to retiring indexers for shard draining"
+            );
+            retiring
+        } else {
+            ready
+        }
     }
 
     fn apply_physical_indexing_plan(
         &mut self,
-        indexers: &[IndexerNodeInfo],
         new_physical_plan: PhysicalIndexingPlan,
         notify_on_drop: Option<Arc<NotifyChangeOnDrop>>,
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
-        crate::metrics::CONTROL_PLANE_METRICS.apply_plan_total.inc();
-        for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_indexer() {
-            // We don't want to block on a slow indexer so we apply this change asynchronously
-            // TODO not blocking is cool, but we need to make sure there is not accumulation
-            // possible here.
+        APPLY_PLAN_TOTAL.inc();
+        // The indexing plan ID is a monotonically increasing time based ID that's used as the
+        // publish token for indexers, which ensures indexing plans and shard acquisition are always
+        // informed by the most recent plan.
+        let indexing_plan_id = Ulid::new().to_string();
+
+        // Retiring and decommissioning indexers still receive the plan so they can gracefully shut
+        // down dropped pipelines; other states (initializing, decommissioned, failed) are skipped.
+        for indexer in self.indexer_pool.values().into_iter().filter(|indexer| {
+            matches!(
+                indexer.ingester_status,
+                IngesterStatus::Ready | IngesterStatus::Retiring | IngesterStatus::Decommissioning
+            )
+        }) {
+            let indexing_tasks = new_physical_plan
+                .indexer(indexer.node_id.as_str())
+                .unwrap_or(&[])
+                .to_vec();
+
+            // We don't want to block on a slow indexer so we apply this change asynchronously.
+            // Retiring/decommissioning indexers are time-bound, so a slow or unreachable
+            // draining node can't hold the notify guard. Ready indexers get no timeout.
+            let apply_deadline = matches!(
+                indexer.ingester_status,
+                IngesterStatus::Retiring | IngesterStatus::Decommissioning
+            )
+            .then_some(APPLY_INDEXING_PLAN_TIMEOUT);
+
             let notify_on_drop = notify_on_drop.clone();
-            tokio::spawn({
-                let indexer = indexers
-                    .iter()
-                    .find(|indexer| indexer.node_id == *node_id)
-                    .expect("This should never happen as the plan was built from these indexers.")
-                    .clone();
-                let indexing_tasks = indexing_tasks.clone();
-                async move {
-                    if let Err(error) = indexer
-                        .client
-                        .clone()
-                        .apply_indexing_plan(ApplyIndexingPlanRequest { indexing_tasks })
-                        .await
-                    {
+            let indexing_plan_id = indexing_plan_id.clone();
+            tokio::spawn(async move {
+                let client = indexer.client.clone();
+                let apply_plan_fut = client.apply_indexing_plan(ApplyIndexingPlanRequest {
+                    indexing_tasks,
+                    indexing_plan_id,
+                });
+                let apply_result = match apply_deadline {
+                    Some(timeout) => tokio::time::timeout(timeout, apply_plan_fut).await,
+                    None => Ok(apply_plan_fut.await),
+                };
+                match apply_result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => {
                         warn!(
                             %error,
-                            node_id=%indexer.node_id,
-                            generation_id=indexer.generation_id,
+                            remote_node_id=%indexer.node_id,
+                            generation_id=%indexer.generation_id,
                             "failed to apply indexing plan to indexer"
                         );
                     }
-                    drop(notify_on_drop);
+                    Err(_elapsed) => {
+                        warn!(
+                            remote_node_id=%indexer.node_id,
+                            generation_id=%indexer.generation_id,
+                            "timed out applying indexing plan to indexer"
+                        );
+                    }
                 }
+                drop(notify_on_drop);
             });
         }
         self.state.num_applied_physical_indexing_plan += 1;
@@ -972,8 +1039,19 @@ mod tests {
             ..Default::default()
         };
         model.insert_shards(&index_uid, &"ingest_v2".to_string(), vec![shard]);
-        let shards: Vec<SourceToSchedule> = get_sources_to_schedule(&model);
-        assert_eq!(shards.len(), 3);
+
+        let disable_ingest_v1 = false;
+        let sources: Vec<SourceToSchedule> = get_sources_to_schedule(&model, disable_ingest_v1);
+        assert_eq!(sources.len(), 3);
+
+        let disable_ingest_v1 = true;
+        let sources: Vec<SourceToSchedule> = get_sources_to_schedule(&model, disable_ingest_v1);
+        assert_eq!(sources.len(), 2);
+
+        let contains_any_ingest_v1_source = sources
+            .iter()
+            .any(|source| matches!(source.source_type, SourceToScheduleType::IngestV1));
+        assert!(!contains_any_ingest_v1_source);
     }
 
     #[test]
@@ -1078,7 +1156,7 @@ mod tests {
                 model.add_source(index_uid, source_config.clone()).unwrap();
             }
 
-            let sources: Vec<SourceToSchedule> = get_sources_to_schedule(&model);
+            let sources: Vec<SourceToSchedule> = get_sources_to_schedule(&model, false);
             let mut indexer_max_loads = FnvHashMap::default();
             for i in 0..num_indexers {
                 let indexer_id = format!("indexer-{i}");
@@ -1090,8 +1168,283 @@ mod tests {
     }
 
     use quickwit_config::SourceInputFormat;
-    use quickwit_proto::indexing::mcpu;
+    use quickwit_proto::indexing::{
+        ApplyIndexingPlanResponse, CpuCapacity, IndexingServiceClient, MockIndexingService, mcpu,
+    };
     use quickwit_proto::ingest::{Shard, ShardState};
+
+    fn mock_indexer_node_info(node_id: &str, status: IngesterStatus) -> IndexerNodeInfo {
+        let mock_indexer = MockIndexingService::new();
+        let client = IndexingServiceClient::from_mock(mock_indexer);
+        IndexerNodeInfo {
+            node_id: NodeId::from_str(node_id),
+            generation_id: 0,
+            client,
+            indexing_tasks: Vec::new(),
+            indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+            ingester_status: status,
+        }
+    }
+
+    #[test]
+    fn test_select_available_indexers_returns_only_ready_when_available() {
+        let indexer_pool = IndexerPool::default();
+        let ready_indexer = mock_indexer_node_info("indexer-ready-1", IngesterStatus::Ready);
+        let ready_indexer_2 = mock_indexer_node_info("indexer-ready-2", IngesterStatus::Ready);
+        let retiring_indexer = mock_indexer_node_info("indexer-retiring", IngesterStatus::Retiring);
+        indexer_pool.insert(ready_indexer.node_id.clone(), ready_indexer);
+        indexer_pool.insert(ready_indexer_2.node_id.clone(), ready_indexer_2);
+        indexer_pool.insert(retiring_indexer.node_id.clone(), retiring_indexer);
+
+        let scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool,
+        );
+        let selected = scheduler.select_available_indexers_for_scheduling();
+
+        assert_eq!(selected.len(), 2);
+        assert!(
+            selected
+                .iter()
+                .all(|i| i.ingester_status == IngesterStatus::Ready)
+        );
+    }
+
+    #[test]
+    fn test_select_available_indexers_falls_back_to_retiring_when_no_ready() {
+        let indexer_pool = IndexerPool::default();
+        let retiring_1 = mock_indexer_node_info("indexer-retiring-1", IngesterStatus::Retiring);
+        let retiring_2 = mock_indexer_node_info("indexer-retiring-2", IngesterStatus::Retiring);
+        let decommissioned_1 =
+            mock_indexer_node_info("indexer-decommissioned-1", IngesterStatus::Decommissioned);
+        let decommissioning_1 =
+            mock_indexer_node_info("indexer-decommissioning-1", IngesterStatus::Decommissioning);
+        let initializing_1 =
+            mock_indexer_node_info("indexer-initializing-1", IngesterStatus::Initializing);
+
+        indexer_pool.insert(retiring_1.node_id.clone(), retiring_1);
+        indexer_pool.insert(retiring_2.node_id.clone(), retiring_2);
+        indexer_pool.insert(decommissioned_1.node_id.clone(), decommissioned_1);
+        indexer_pool.insert(decommissioning_1.node_id.clone(), decommissioning_1);
+        indexer_pool.insert(initializing_1.node_id.clone(), initializing_1);
+
+        let scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool,
+        );
+        let selected = scheduler.select_available_indexers_for_scheduling();
+
+        assert_eq!(selected.len(), 2);
+        assert!(
+            selected
+                .iter()
+                .all(|i| i.ingester_status == IngesterStatus::Retiring)
+        );
+    }
+
+    #[test]
+    fn test_select_available_indexers_returns_empty_when_pool_is_empty() {
+        let indexer_pool = IndexerPool::default();
+        let scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool,
+        );
+        let selected = scheduler.select_available_indexers_for_scheduling();
+        assert!(selected.is_empty());
+    }
+
+    // Only ready, retiring, and decommissioning indexers receive a plan; indexers in any other
+    // state must be skipped entirely. See `apply_physical_indexing_plan`.
+    #[tokio::test]
+    async fn test_apply_plan_skips_non_eligible_indexers() {
+        let indexer_pool = IndexerPool::default();
+        let eligible_indexers = [
+            asserting_indexer_node_info("indexer-ready", IngesterStatus::Ready, true),
+            asserting_indexer_node_info("indexer-retiring", IngesterStatus::Retiring, true),
+            asserting_indexer_node_info(
+                "indexer-decommissioning",
+                IngesterStatus::Decommissioning,
+                true,
+            ),
+        ];
+        let skipped_indexers = [
+            never_applied_indexer_node_info("indexer-unspecified", IngesterStatus::Unspecified),
+            never_applied_indexer_node_info("indexer-initializing", IngesterStatus::Initializing),
+            never_applied_indexer_node_info(
+                "indexer-decommissioned",
+                IngesterStatus::Decommissioned,
+            ),
+            never_applied_indexer_node_info("indexer-failed", IngesterStatus::Failed),
+        ];
+        for indexer in eligible_indexers.into_iter().chain(skipped_indexers) {
+            indexer_pool.insert(indexer.node_id.clone(), indexer);
+        }
+
+        let mut scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool,
+        );
+        let physical_plan = PhysicalIndexingPlan::with_indexer_ids(&[]);
+        let waiter = scheduler.next_rebuild_tracker.next_rebuild_waiter();
+        let notify_on_drop = scheduler.next_rebuild_tracker.start_rebuild();
+        scheduler.apply_physical_indexing_plan(physical_plan, Some(notify_on_drop));
+        waiter.await;
+    }
+
+    // A node the planner dropped from the plan (e.g. a retiring indexer) must still receive an
+    // empty plan so it shuts down its now-orphaned pipelines.
+    #[tokio::test]
+    async fn test_apply_plan_sends_empty_plan_to_dropped_indexer() {
+        let indexer_pool = IndexerPool::default();
+        let ready_indexer =
+            asserting_indexer_node_info("indexer-ready", IngesterStatus::Ready, false);
+        // Dropped from the plan (retiring): must receive an empty plan.
+        let retiring_indexer =
+            asserting_indexer_node_info("indexer-retiring", IngesterStatus::Retiring, true);
+        indexer_pool.insert(ready_indexer.node_id.clone(), ready_indexer);
+        indexer_pool.insert(retiring_indexer.node_id.clone(), retiring_indexer);
+
+        let mut scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool,
+        );
+
+        let index_uid = IndexUid::from_str("index-1:11111111111111111111111111").unwrap();
+        let task = IndexingTask {
+            pipeline_uid: Some(PipelineUid::for_test(1u128)),
+            index_uid: Some(index_uid),
+            source_id: "source-1".to_string(),
+            shard_ids: Vec::new(),
+            params_fingerprint: 0,
+        };
+        let mut physical_plan =
+            PhysicalIndexingPlan::with_indexer_ids(&["indexer-ready".to_string()]);
+        physical_plan.add_indexing_task("indexer-ready", task);
+
+        // `apply_physical_indexing_plan` dispatches the RPCs on spawned tasks; the rebuild waiter
+        // resolves once every spawned task has dropped its `notify_on_drop` clone, i.e. after all
+        // `apply_indexing_plan` calls have completed.
+        let waiter = scheduler.next_rebuild_tracker.next_rebuild_waiter();
+        let notify_on_drop = scheduler.next_rebuild_tracker.start_rebuild();
+        scheduler.apply_physical_indexing_plan(physical_plan, Some(notify_on_drop));
+        waiter.await;
+    }
+
+    // Builds an `IndexerNodeInfo` whose client asserts the exact `ApplyIndexingPlanRequest` it
+    // receives (via `withf`) and that it is called exactly once (via `times(1)`, verified on drop).
+    fn asserting_indexer_node_info(
+        node_id: &str,
+        status: IngesterStatus,
+        expect_empty_plan: bool,
+    ) -> IndexerNodeInfo {
+        let mut mock_indexer = MockIndexingService::new();
+        mock_indexer
+            .expect_apply_indexing_plan()
+            .times(1)
+            .withf(move |request| request.indexing_tasks.is_empty() == expect_empty_plan)
+            .returning(|_| Ok(ApplyIndexingPlanResponse {}));
+        let client = IndexingServiceClient::from_mock(mock_indexer);
+        IndexerNodeInfo {
+            node_id: NodeId::from_str(node_id),
+            generation_id: 0,
+            client,
+            indexing_tasks: Vec::new(),
+            indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+            ingester_status: status,
+        }
+    }
+
+    // Builds an `IndexerNodeInfo` whose client asserts it is never asked to apply a plan (via
+    // `never()`, verified on drop). The shared mock is `Arc`-cloned across the client, so a wrong
+    // call from a spawned task is seen when the pool's copy drops on the main thread.
+    fn never_applied_indexer_node_info(node_id: &str, status: IngesterStatus) -> IndexerNodeInfo {
+        let mut mock_indexer = MockIndexingService::new();
+        mock_indexer.expect_apply_indexing_plan().never();
+        let client = IndexingServiceClient::from_mock(mock_indexer);
+        IndexerNodeInfo {
+            node_id: NodeId::from_str(node_id),
+            generation_id: 0,
+            client,
+            indexing_tasks: Vec::new(),
+            indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+            ingester_status: status,
+        }
+    }
+
+    // An `IndexingService` whose apply RPC never returns, so the spawned apply task can only
+    // finish if a timeout cancels it.
+    #[derive(Debug)]
+    struct HangingIndexingService;
+
+    #[async_trait::async_trait]
+    impl IndexingService for HangingIndexingService {
+        async fn apply_indexing_plan(
+            &self,
+            _request: ApplyIndexingPlanRequest,
+        ) -> quickwit_proto::indexing::IndexingResult<ApplyIndexingPlanResponse> {
+            std::future::pending().await
+        }
+    }
+
+    fn hanging_indexer_node_info(status: IngesterStatus) -> IndexerNodeInfo {
+        let client = IndexingServiceClient::tower().build(HangingIndexingService);
+        IndexerNodeInfo {
+            node_id: NodeId::from_str("indexer"),
+            generation_id: 0,
+            client,
+            indexing_tasks: Vec::new(),
+            indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+            ingester_status: status,
+        }
+    }
+
+    // Applies a plan to a single indexer whose apply RPC hangs forever, then reports whether the
+    // apply task finished within `observe` — i.e. whether a timeout cancelled it.
+    async fn hanging_apply_is_cancelled_within(status: IngesterStatus, observe: Duration) -> bool {
+        let indexer_pool = IndexerPool::default();
+        let indexer = hanging_indexer_node_info(status);
+        indexer_pool.insert(indexer.node_id.clone(), indexer);
+        let mut scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool,
+        );
+        let physical_plan = PhysicalIndexingPlan::with_indexer_ids(&[]);
+        let waiter = scheduler.next_rebuild_tracker.next_rebuild_waiter();
+        let notify_on_drop = scheduler.next_rebuild_tracker.start_rebuild();
+        scheduler.apply_physical_indexing_plan(physical_plan, Some(notify_on_drop));
+        // The waiter resolves only once the spawned apply task drops its `notify_on_drop`, which
+        // for a hanging RPC happens only if a timeout fires.
+        tokio::time::timeout(observe, waiter).await.is_ok()
+    }
+
+    #[tokio::test]
+    async fn test_apply_plan_times_out_only_for_draining_indexers() {
+        // A ready indexer is unbounded: the hanging apply is never cancelled, so its task never
+        // finishes (a wrongly-applied timeout would fire well within 500ms and flip this).
+        assert!(
+            !hanging_apply_is_cancelled_within(IngesterStatus::Ready, Duration::from_millis(500))
+                .await
+        );
+        // Retiring/decommissioning indexers are bounded, so the hanging apply is cancelled and the
+        // task finishes (resolves in ~APPLY_INDEXING_PLAN_TIMEOUT, far within the window).
+        assert!(
+            hanging_apply_is_cancelled_within(IngesterStatus::Retiring, Duration::from_secs(5))
+                .await
+        );
+        assert!(
+            hanging_apply_is_cancelled_within(
+                IngesterStatus::Decommissioning,
+                Duration::from_secs(5)
+            )
+            .await
+        );
+    }
 
     fn kafka_source_params_for_test() -> SourceParams {
         SourceParams::Kafka(KafkaSourceParams {

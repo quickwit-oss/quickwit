@@ -26,29 +26,31 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use async_trait::async_trait;
-pub use chitchat::transport::ChannelTransport;
-use chitchat::transport::{Socket, Transport, UdpSocket};
-use chitchat::{ChitchatMessage, Serializable};
+use chitchat::ChitchatEnvelope;
+pub use chitchat::transport::ChannelTransport as ChitchatTransport;
+use chitchat::transport::{RecvOutcome, SendOutcome, Socket, Transport, UdpSocket};
 pub use chitchat::{FailureDetectorConfig, KeyChangeEvent, ListenerHandle};
 pub use grpc_service::cluster_grpc_server;
-use quickwit_common::metrics::IntCounter;
-use quickwit_common::tower::ClientGrpcConfig;
+use quickwit_config::NodeConfig;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{GrpcConfig, NodeConfig, TlsConfig};
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::tonic::transport::{Certificate, ClientTlsConfig, Identity};
+use quickwit_transport::ChannelFactory;
 use time::OffsetDateTime;
 
 #[cfg(any(test, feature = "testsuite"))]
 pub use crate::change::for_test::*;
-pub use crate::change::{ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory};
+pub use crate::change::{ClusterChange, ClusterChangeStream};
 pub use crate::cluster::{Cluster, ClusterSnapshot, NodeIdSchema};
 #[cfg(any(test, feature = "testsuite"))]
 pub use crate::cluster::{
     create_cluster_for_test, create_cluster_for_test_with_id, grpc_addr_from_listen_addr_for_test,
 };
 pub use crate::member::{ClusterMember, INDEXING_CPU_CAPACITY_KEY};
+use crate::metrics::{
+    GOSSIP_RECV_BYTES_TOTAL, GOSSIP_RECV_MESSAGES_TOTAL, GOSSIP_SENT_BYTES_TOTAL,
+    GOSSIP_SENT_MESSAGES_TOTAL,
+};
 pub use crate::node::ClusterNode;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -74,28 +76,30 @@ struct CountingUdpTransport;
 
 struct CountingUdpSocket {
     socket: UdpSocket,
-    gossip_recv: IntCounter,
-    gossip_recv_bytes: IntCounter,
-    gossip_send: IntCounter,
-    gossip_send_bytes: IntCounter,
 }
 
 #[async_trait]
 impl Socket for CountingUdpSocket {
-    async fn send(&mut self, to: SocketAddr, msg: ChitchatMessage) -> anyhow::Result<()> {
-        let msg_len = msg.serialized_len() as u64;
-        self.socket.send(to, msg).await?;
-        self.gossip_send.inc();
-        self.gossip_send_bytes.inc_by(msg_len);
-        Ok(())
+    fn local_addr(&self) -> anyhow::Result<SocketAddr> {
+        self.socket.local_addr()
     }
 
-    async fn recv(&mut self) -> anyhow::Result<(SocketAddr, ChitchatMessage)> {
-        let (socket_addr, msg) = self.socket.recv().await?;
-        self.gossip_recv.inc();
-        let msg_len = msg.serialized_len() as u64;
-        self.gossip_recv_bytes.inc_by(msg_len);
-        Ok((socket_addr, msg))
+    async fn send(
+        &mut self,
+        to: SocketAddr,
+        envelope: ChitchatEnvelope,
+    ) -> anyhow::Result<SendOutcome> {
+        let outcome = self.socket.send(to, envelope).await?;
+        GOSSIP_SENT_MESSAGES_TOTAL.inc();
+        GOSSIP_SENT_BYTES_TOTAL.inc_by(outcome.num_bytes_sent as u64);
+        Ok(outcome)
+    }
+
+    async fn recv(&mut self) -> anyhow::Result<RecvOutcome> {
+        let outcome = self.socket.recv().await?;
+        GOSSIP_RECV_MESSAGES_TOTAL.inc();
+        GOSSIP_RECV_BYTES_TOTAL.inc_by(outcome.num_bytes_received as u64);
+        Ok(outcome)
     }
 }
 
@@ -103,21 +107,7 @@ impl Socket for CountingUdpSocket {
 impl Transport for CountingUdpTransport {
     async fn open(&self, listen_addr: SocketAddr) -> anyhow::Result<Box<dyn Socket>> {
         let socket = UdpSocket::open(listen_addr).await?;
-        Ok(Box::new(CountingUdpSocket {
-            socket,
-            gossip_recv: crate::metrics::CLUSTER_METRICS
-                .gossip_recv_messages_total
-                .clone(),
-            gossip_recv_bytes: crate::metrics::CLUSTER_METRICS
-                .gossip_recv_bytes_total
-                .clone(),
-            gossip_send: crate::metrics::CLUSTER_METRICS
-                .gossip_sent_messages_total
-                .clone(),
-            gossip_send_bytes: crate::metrics::CLUSTER_METRICS
-                .gossip_sent_bytes_total
-                .clone(),
-        }))
+        Ok(Box::new(CountingUdpSocket { socket }))
     }
 }
 
@@ -146,21 +136,23 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         indexing_cpu_capacity,
         ingester_status: IngesterStatus::default(),
         availability_zone: node_config.availability_zone.clone(),
+        enable_standalone_compactors: node_config.enable_standalone_compactors,
     };
     let failure_detector_config = FailureDetectorConfig {
-        dead_node_grace_period: Duration::from_secs(2 * 60 * 60), // 2 hours
+        dead_node_grace_period: Duration::from_mins(15),
         ..Default::default()
     };
-    let client_grpc_config = make_client_grpc_config(&node_config.grpc_config)?;
+    let channel_factory = ChannelFactory::for_grpc(&node_config.grpc_config)?;
     let cluster = Cluster::join(
         cluster_id,
         self_node,
         gossip_listen_addr,
         peer_seed_addrs,
         node_config.gossip_interval,
+        node_config.gossip_protocol_version,
         failure_detector_config,
         &CountingUdpTransport,
-        client_grpc_config,
+        channel_factory,
     )
     .await?;
     if node_config
@@ -172,34 +164,4 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
             .await;
     }
     Ok(cluster)
-}
-
-pub fn make_client_grpc_config(grpc_config: &GrpcConfig) -> anyhow::Result<ClientGrpcConfig> {
-    let tls_config_opt = grpc_config
-        .tls
-        .as_ref()
-        .map(make_client_tls_config)
-        .transpose()?;
-    Ok(ClientGrpcConfig {
-        keep_alive_opt: grpc_config.keep_alive.clone().map(Into::into),
-        tls_config_opt,
-    })
-}
-
-fn make_client_tls_config(tls_config: &TlsConfig) -> anyhow::Result<ClientTlsConfig> {
-    let pem = std::fs::read_to_string(&tls_config.ca_path)?;
-    let ca = Certificate::from_pem(pem);
-    let mut tls = ClientTlsConfig::new().ca_certificate(ca);
-
-    if tls_config.validate_client {
-        let cert = std::fs::read_to_string(&tls_config.cert_path)?;
-        let key = std::fs::read_to_string(&tls_config.key_path)?;
-        let identity = Identity::from_pem(cert, key);
-        tls = tls.identity(identity);
-    }
-    if let Some(expected_name) = &tls_config.expected_name {
-        tls = tls.domain_name(expected_name);
-    }
-
-    Ok(tls)
 }

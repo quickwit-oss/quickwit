@@ -33,7 +33,6 @@ use tantivy::TrackedObject;
 use tracing::{Span, info_span};
 
 use crate::actors::MergePermit;
-use crate::new_split_id;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum MergeOperationType {
@@ -64,6 +63,28 @@ impl MergeTask {
     }
 }
 
+/// Carries either a scheduled merge task (old pipeline, with RAII permit + inventory tracking)
+/// or a bare operation (compactor pipeline, which manages concurrency and dedup independently).
+pub enum MergeSource {
+    Task(MergeTask),
+    Operation(MergeOperation),
+}
+
+impl MergeSource {
+    pub fn as_operation(&self) -> &MergeOperation {
+        match self {
+            MergeSource::Task(task) => task,
+            MergeSource::Operation(op) => op,
+        }
+    }
+}
+
+impl fmt::Debug for MergeSource {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.as_operation().fmt(f)
+    }
+}
+
 impl fmt::Debug for MergeTask {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.merge_operation.as_ref().fmt(f)
@@ -89,7 +110,7 @@ pub struct MergeOperation {
 
 impl MergeOperation {
     pub fn new_merge_operation(splits: Vec<SplitMetadata>) -> Self {
-        let merge_split_id = new_split_id();
+        let merge_split_id = SplitId::new();
         let split_ids = splits.iter().map(|split| split.split_id()).collect_vec();
         let merge_parent_span = info_span!("merge", merge_split_id=%merge_split_id, split_ids=?split_ids, typ=%MergeOperationType::Merge);
         Self {
@@ -108,7 +129,7 @@ impl MergeOperation {
     }
 
     pub fn new_delete_and_merge_operation(split: SplitMetadata) -> Self {
-        let merge_split_id = new_split_id();
+        let merge_split_id = SplitId::new();
         let merge_parent_span = info_span!("delete", merge_split_id=%merge_split_id, split_ids=?split.split_id(), typ=%MergeOperationType::DeleteAndMerge);
         Self {
             merge_parent_span,
@@ -121,6 +142,31 @@ impl MergeOperation {
     pub fn splits_as_slice(&self) -> &[SplitMetadata] {
         self.splits.as_slice()
     }
+
+    pub fn merge_level(&self) -> usize {
+        self.splits
+            .iter()
+            .map(|s| s.num_merge_ops)
+            .max()
+            .unwrap_or(0)
+    }
+}
+
+// The higher, the sooner we will execute the merge operation.
+// A good merge operation:
+// - strongly reduces the number of splits
+// - is light.
+pub fn compute_merge_score(num_splits: usize, total_num_bytes: u64) -> u64 {
+    if total_num_bytes == 0 {
+        // Silly corner case that should never happen.
+        return u64::MAX;
+    }
+    // We will remove num_splits and add 1 merge split.
+    let delta_num_splits = num_splits.saturating_sub(1) as u64;
+    // Integer arithmetic to avoid `f64 are not ordered` silliness.
+    (delta_num_splits << 48)
+        .checked_div(total_num_bytes)
+        .unwrap_or(1u64)
 }
 
 impl fmt::Debug for MergeOperation {
@@ -237,7 +283,7 @@ pub mod tests {
 
     use std::collections::hash_map::DefaultHasher;
     use std::collections::{BTreeSet, HashMap};
-    use std::hash::Hasher;
+    use std::hash::{Hash as _, Hasher};
     use std::ops::RangeInclusive;
 
     use proptest::prelude::*;
@@ -253,6 +299,21 @@ pub mod tests {
         merge_split_attrs,
     };
     use crate::models::{NewSplits, create_split_metadata};
+
+    #[test]
+    fn test_score() {
+        // Lighter merge at the same split count scores higher.
+        assert!(compute_merge_score(10, 100_000_000) < compute_merge_score(10, 9_999_990));
+        // More splits removed at the same total bytes scores higher.
+        assert!(compute_merge_score(10, 100_000_000) > compute_merge_score(9, 100_000_000));
+        // Equal `(delta_splits / total_bytes)` ratios yield equal scores.
+        assert_eq!(
+            // delta=8, 90M bytes.
+            compute_merge_score(9, 90_000_000),
+            // delta=4, 45M bytes (same 8/90M ratio).
+            compute_merge_score(5, 45_000_000),
+        );
+    }
 
     fn pow_of_10(n: usize) -> usize {
         10usize.pow(n as u32)
@@ -274,11 +335,10 @@ pub mod tests {
     prop_compose! {
       fn split_strategy()
         (num_merge_ops in 0usize..5usize, start_timestamp in 1_664_000_000i64..1_665_000_000i64, average_time_delta in 100i64..120i64, delta_creation_date in 0u64..100_000u64, num_docs in num_docs_strategy()) -> SplitMetadata {
-        let split_id = crate::new_split_id();
         let end_timestamp = start_timestamp + average_time_delta * pow_of_10(num_merge_ops) as i64;
         let create_timestamp: i64 = (end_timestamp as u64 + delta_creation_date) as i64;
         SplitMetadata {
-            split_id,
+            split_id: SplitId::new(),
             time_range: Some(start_timestamp..=end_timestamp),
             num_docs,
             create_timestamp,
@@ -312,7 +372,7 @@ pub mod tests {
                 let create_timestamp = OffsetDateTime::now_utc().unix_timestamp();
                 let time_to_maturity = merge_policy.split_maturity(num_docs, 0);
                 SplitMetadata {
-                    split_id: format!("split_{split_ord:02}"),
+                    split_id: format!("split_{split_ord:02}").into(),
                     num_docs,
                     time_range: Some(time_range),
                     create_timestamp,
@@ -330,7 +390,7 @@ pub mod tests {
         let mut checksum = 0u64;
         for split in op.splits_as_slice() {
             let mut hasher = DefaultHasher::default();
-            hasher.write(split.split_id.as_bytes());
+            split.split_id.hash(&mut hasher);
             checksum ^= hasher.finish();
         }
         checksum
@@ -404,10 +464,10 @@ pub mod tests {
 
     fn fake_merge(merge_policy: &Arc<dyn MergePolicy>, splits: &[SplitMetadata]) -> SplitMetadata {
         assert!(!splits.is_empty(), "Split list should not be empty.");
-        let merged_split_id = new_split_id();
+        let merged_split_id = SplitId::new();
         let tags = merge_tags(splits);
         let pipeline_id = MergePipelineId {
-            node_id: NodeId::from("test_node"),
+            node_id: NodeId::from_str("test_node"),
             index_uid: IndexUid::new_with_random_ulid("test_index"),
             source_id: "test_source".to_string(),
         };
@@ -421,7 +481,7 @@ pub mod tests {
         merge_op: &MergeOperation,
     ) -> SplitMetadata {
         for split in merge_op.splits_as_slice() {
-            assert!(split_index.remove(split.split_id()).is_some());
+            assert!(split_index.remove(split.split_id().as_str()).is_some());
         }
         let merged_split = fake_merge(merge_policy, merge_op.splits_as_slice());
         split_index.insert(merged_split.split_id().to_string(), merged_split.clone());
@@ -439,7 +499,7 @@ pub mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
-            node_id: NodeId::from("test-node"),
+            node_id: NodeId::from_str("test-node"),
             pipeline_uid: PipelineUid::default(),
         };
         let merge_planner = MergePlanner::new(
@@ -463,13 +523,15 @@ pub mod tests {
             loop {
                 let obs = merge_planner_handler.process_pending_and_observe().await;
                 assert_eq!(obs.obs_type, quickwit_actors::ObservationType::Alive);
-                let merge_tasks = merge_task_inbox.drain_for_test_typed::<MergeTask>();
-                if merge_tasks.is_empty() {
+                let merge_sources = merge_task_inbox.drain_for_test_typed::<MergeSource>();
+                if merge_sources.is_empty() {
                     break;
                 }
-                let new_splits: Vec<SplitMetadata> = merge_tasks
+                let new_splits: Vec<SplitMetadata> = merge_sources
                     .into_iter()
-                    .map(|merge_op| apply_merge(&merge_policy, &mut split_index, &merge_op))
+                    .map(|source| {
+                        apply_merge(&merge_policy, &mut split_index, source.as_operation())
+                    })
                     .collect();
                 merge_planner_mailbox
                     .send_message(NewSplits { new_splits })
@@ -487,9 +549,9 @@ pub mod tests {
         let obs = merge_planner_handler.process_pending_and_observe().await;
         assert_eq!(obs.obs_type, quickwit_actors::ObservationType::PostMortem);
 
-        let merge_tasks = merge_task_inbox.drain_for_test_typed::<MergeTask>();
-        for merge_task in merge_tasks {
-            apply_merge(&merge_policy, &mut split_index, &merge_task);
+        let merge_sources = merge_task_inbox.drain_for_test_typed::<MergeSource>();
+        for source in merge_sources {
+            apply_merge(&merge_policy, &mut split_index, source.as_operation());
         }
 
         let split_metadatas: Vec<SplitMetadata> = split_index.values().cloned().collect();
@@ -505,7 +567,7 @@ pub mod tests {
         maturity: SplitMaturity,
     ) -> SplitMetadata {
         SplitMetadata {
-            split_id: crate::new_split_id(),
+            split_id: SplitId::new(),
             partition_id: 3u64,
             num_docs: num_docs as usize,
             uncompressed_docs_size_in_bytes: 256u64 * num_docs,

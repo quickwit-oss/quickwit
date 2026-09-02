@@ -28,7 +28,7 @@ use async_trait::async_trait;
 pub use quickwit_cache::QuickwitCache;
 pub use storage_with_cache::StorageWithCache;
 
-pub use self::byte_range_cache::ByteRangeCache;
+pub use self::byte_range_cache::{ByteRangeCache, FileByteRangeCache};
 pub use self::memory_sized_cache::MemorySizedCache;
 use crate::{OwnedBytes, Storage};
 

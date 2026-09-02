@@ -21,6 +21,7 @@ pub(crate) mod model;
 
 use quickwit_common::tower::Pool;
 use quickwit_proto::indexing::{CpuCapacity, IndexingServiceClient, IndexingTask};
+use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::types::NodeId;
 
 /// Indexer-node specific information stored in the pool of available indexer nodes
@@ -31,6 +32,7 @@ pub struct IndexerNodeInfo {
     pub client: IndexingServiceClient,
     pub indexing_tasks: Vec<IndexingTask>,
     pub indexing_capacity: CpuCapacity,
+    pub ingester_status: IngesterStatus,
 }
 
 pub type IndexerPool = Pool<NodeId, IndexerNodeInfo>;

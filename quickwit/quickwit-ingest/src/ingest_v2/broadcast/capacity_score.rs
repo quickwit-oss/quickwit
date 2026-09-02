@@ -182,7 +182,7 @@ pub async fn setup_ingester_capacity_update_listener(
                 warn!("failed to parse ingester capacity `{}`", event.value);
                 return;
             };
-            let node_id: NodeId = event.node.node_id.clone().into();
+            let node_id: NodeId = NodeId::from_str(&event.node.node_id);
             event_broker.publish(IngesterCapacityScoreUpdate {
                 node_id,
                 source_uid,
@@ -198,7 +198,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_proto::types::{IndexUid, ShardId, SourceId};
 
     use super::*;
@@ -207,7 +207,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_snapshot_state_dropped() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -225,7 +225,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_broadcast_ingester_capacity() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -236,7 +236,7 @@ mod tests {
             IngesterState::for_test_with_disk_capacity(cluster.clone(), ByteSize::b(1000)).await;
         let index_uid = IndexUid::for_test("test-index", 0);
         let mut state_guard = state.lock_partially("test").await.unwrap();
-        let shard = IngesterShard::new_solo(
+        let shard = IngesterShard::builder(
             index_uid.clone(),
             SourceId::from("test-source"),
             ShardId::from(0),
@@ -292,7 +292,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_removed_source_broadcasts_zero_with_ttl() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();

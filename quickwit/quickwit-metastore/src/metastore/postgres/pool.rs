@@ -14,23 +14,53 @@
 
 use futures::future::BoxFuture;
 use futures::stream::BoxStream;
-use quickwit_common::metrics::GaugeGuard;
+use quickwit_metrics::{Gauge, GaugeGuard, gauge, labels};
 use sqlx::pool::PoolConnection;
 use sqlx::pool::maybe::MaybePoolConnection;
 use sqlx::{
     Acquire, Database, Describe, Either, Error, Execute, Executor, Pool, Postgres, Transaction,
 };
 
-use super::metrics::POSTGRES_METRICS;
+use super::metrics::{
+    ACQUIRE_CONNECTIONS, ACTIVE_CONNECTIONS, IDLE_CONNECTIONS, MAX_CONNECTIONS, MetastoreKind,
+};
+
+#[derive(Clone, Debug)]
+struct TrackedPoolMetrics {
+    acquire_connections: Gauge,
+    active_connections: Gauge,
+    idle_connections: Gauge,
+    max_connections: Gauge,
+}
+
+impl TrackedPoolMetrics {
+    fn new(kind: MetastoreKind) -> Self {
+        let kind_label = labels!("metastore_kind" => kind.as_str());
+        Self {
+            acquire_connections: gauge!(parent: ACQUIRE_CONNECTIONS, labels: [kind_label]),
+            active_connections: gauge!(parent: ACTIVE_CONNECTIONS, labels: [kind_label]),
+            idle_connections: gauge!(parent: IDLE_CONNECTIONS, labels: [kind_label]),
+            max_connections: gauge!(parent: MAX_CONNECTIONS, labels: [kind_label]),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub(super) struct TrackedPool<DB: Database> {
     inner_pool: Pool<DB>,
+    metrics: TrackedPoolMetrics,
 }
 
 impl TrackedPool<Postgres> {
-    pub fn new(inner_pool: Pool<Postgres>) -> Self {
-        Self { inner_pool }
+    pub fn new(inner_pool: Pool<Postgres>, kind: MetastoreKind) -> Self {
+        let metrics = TrackedPoolMetrics::new(kind);
+        metrics
+            .max_connections
+            .set(inner_pool.options().get_max_connections() as f64);
+        Self {
+            inner_pool,
+            metrics,
+        }
     }
 }
 
@@ -38,6 +68,7 @@ impl<DB: Database> Clone for TrackedPool<DB> {
     fn clone(&self) -> Self {
         Self {
             inner_pool: self.inner_pool.clone(),
+            metrics: self.metrics.clone(),
         }
     }
 }
@@ -50,16 +81,16 @@ impl<'a, DB: Database> Acquire<'a> for &TrackedPool<DB> {
     fn acquire(self) -> BoxFuture<'static, Result<Self::Connection, Error>> {
         let acquire_conn_fut = self.inner_pool.acquire();
 
-        POSTGRES_METRICS
+        self.metrics
             .active_connections
-            .set(self.inner_pool.size() as i64);
-        POSTGRES_METRICS
+            .set(self.inner_pool.size() as f64);
+        self.metrics
             .idle_connections
-            .set(self.inner_pool.num_idle() as i64);
+            .set(self.inner_pool.num_idle() as f64);
+        let acquire_connections = self.metrics.acquire_connections.clone();
 
         Box::pin(async move {
-            let mut gauge_guard = GaugeGuard::from_gauge(&POSTGRES_METRICS.acquire_connections);
-            gauge_guard.add(1);
+            let _gauge_guard = GaugeGuard::new(&acquire_connections, 1.0);
 
             let conn = acquire_conn_fut.await?;
             Ok(conn)

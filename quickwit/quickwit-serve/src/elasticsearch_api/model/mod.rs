@@ -17,6 +17,7 @@ mod bulk_query_params;
 mod cat_indices;
 mod error;
 mod field_capability;
+mod index_mapping_query_params;
 mod mappings;
 mod multi_search;
 mod scroll;
@@ -36,6 +37,7 @@ pub use field_capability::{
     FieldCapabilityQueryParams, FieldCapabilityRequestBody, FieldCapabilityResponse,
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
 };
+pub use index_mapping_query_params::IndexMappingQueryParams;
 pub(crate) use mappings::ElasticsearchMappingsResponse;
 pub use multi_search::{
     MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse, MultiSearchSingleResponse,

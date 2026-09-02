@@ -40,6 +40,8 @@ pub(crate) const READINESS_VALUE_NOT_READY: &str = "NOT_READY";
 
 pub(crate) const AVAILABILITY_ZONE_KEY: &str = "availability_zone";
 
+pub(crate) const STANDALONE_COMPACTORS_KEY: &str = "standalone_compactors";
+
 pub const INDEXING_CPU_CAPACITY_KEY: &str = "indexing_cpu_capacity";
 
 pub(crate) trait NodeStateExt {
@@ -52,6 +54,8 @@ pub(crate) trait NodeStateExt {
     fn ingester_status(&self) -> IngesterStatus;
 
     fn availability_zone(&self) -> Option<String>;
+
+    fn enable_standalone_compactors(&self) -> bool;
 }
 
 impl NodeStateExt for NodeState {
@@ -92,6 +96,10 @@ impl NodeStateExt for NodeState {
     fn availability_zone(&self) -> Option<String> {
         self.get(AVAILABILITY_ZONE_KEY).map(|az| az.to_string())
     }
+
+    fn enable_standalone_compactors(&self) -> bool {
+        matches!(self.get(STANDALONE_COMPACTORS_KEY), Some(value) if value == "true")
+    }
 }
 
 /// Cluster member.
@@ -125,15 +133,33 @@ pub struct ClusterMember {
     pub is_ready: bool,
     /// Availability zone the node is running in, if enabled.
     pub availability_zone: Option<String>,
+    /// Whether the node was started with standalone compactors enabled.
+    pub enable_standalone_compactors: bool,
 }
 
 impl ClusterMember {
     pub fn chitchat_id(&self) -> ChitchatId {
         ChitchatId::new(
-            self.node_id.clone().into(),
+            self.node_id.clone(),
             self.generation_id.as_u64(),
             self.gossip_advertise_addr,
         )
+    }
+
+    pub fn is_service_enabled(&self, service: QuickwitService) -> bool {
+        self.enabled_services.contains(&service)
+    }
+
+    pub fn is_indexer(&self) -> bool {
+        self.is_service_enabled(QuickwitService::Indexer)
+    }
+
+    pub fn is_ingester(&self) -> bool {
+        self.is_service_enabled(QuickwitService::Indexer)
+    }
+
+    pub fn is_searcher(&self) -> bool {
+        self.is_service_enabled(QuickwitService::Searcher)
     }
 }
 
@@ -178,9 +204,10 @@ pub(crate) fn build_cluster_member(
     let indexing_cpu_capacity = parse_indexing_cpu_capacity(node_state);
     let ingester_status = node_state.ingester_status();
     let availability_zone = node_state.availability_zone();
+    let enable_standalone_compactors = node_state.enable_standalone_compactors();
 
     let member = ClusterMember {
-        node_id: chitchat_id.node_id.into(),
+        node_id: NodeId::from_arc_str(chitchat_id.node_id.clone()),
         generation_id: chitchat_id.generation_id.into(),
         is_ready,
         enabled_services,
@@ -190,6 +217,7 @@ pub(crate) fn build_cluster_member(
         indexing_cpu_capacity,
         ingester_status,
         availability_zone,
+        enable_standalone_compactors,
     };
     Ok(member)
 }
@@ -205,7 +233,7 @@ fn parse_enabled_services_str(
             Ok(service) => Some(service),
             Err(_) => {
                 warn!(
-                    node_id=%node_id,
+                    remote_node_id=%node_id,
                     service=%service_str,
                     "Found unknown service enabled on node."
                 );
@@ -215,7 +243,7 @@ fn parse_enabled_services_str(
         .collect();
     if enabled_services.is_empty() {
         warn!(
-            node_id=%node_id,
+            remote_node_id=%node_id,
             "Node has no enabled services."
         )
     }
@@ -227,11 +255,25 @@ mod tests {
     use chitchat::NodeState;
     use quickwit_proto::ingest::ingester::IngesterStatus;
 
-    use super::NodeStateExt;
+    use super::{NodeStateExt, STANDALONE_COMPACTORS_KEY};
 
     #[test]
     fn test_ingester_status_defaults_to_ready_when_key_absent() {
         let node_state = NodeState::for_test();
         assert_eq!(node_state.ingester_status(), IngesterStatus::Ready);
+    }
+
+    #[test]
+    fn test_enable_standalone_compactors_parsing() {
+        let absent = NodeState::for_test();
+        assert!(!absent.enable_standalone_compactors());
+
+        let mut enabled = NodeState::for_test();
+        enabled.set(STANDALONE_COMPACTORS_KEY, "true");
+        assert!(enabled.enable_standalone_compactors());
+
+        let mut disabled = NodeState::for_test();
+        disabled.set(STANDALONE_COMPACTORS_KEY, "false");
+        assert!(!disabled.enable_standalone_compactors());
     }
 }

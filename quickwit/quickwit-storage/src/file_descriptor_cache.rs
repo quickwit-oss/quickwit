@@ -19,14 +19,14 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use quickwit_proto::types::SplitId;
 use tantivy::directory::OwnedBytes;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-use ulid::Ulid;
 
-use crate::metrics::SingleCacheMetrics;
+use crate::metrics::{FD_CACHE_METRICS, SingleCacheMetrics};
 
 pub struct FileDescriptorCache {
-    fd_cache: Mutex<lru::LruCache<Ulid, SplitFile>>,
+    fd_cache: Mutex<lru::LruCache<SplitId, SplitFile>>,
     fd_semaphore: Arc<Semaphore>,
     fd_cache_metrics: SingleCacheMetrics,
 }
@@ -41,7 +41,7 @@ struct SplitFileInner {
     _fd_semaphore_guard: OwnedSemaphorePermit,
 }
 
-fn get_split_file_path(root_path: &Path, split_id: Ulid) -> PathBuf {
+fn get_split_file_path(root_path: &Path, split_id: &SplitId) -> PathBuf {
     let split_filename = quickwit_common::split_file(split_id);
     root_path.join(split_filename)
 }
@@ -88,35 +88,32 @@ impl FileDescriptorCache {
         Self::new(
             NonZeroU32::new(max_fd_limit).unwrap(),
             fd_cache_capacity,
-            crate::STORAGE_METRICS
-                .fd_cache_metrics
-                .cache_metrics
-                .clone(),
+            FD_CACHE_METRICS.cache_metrics.clone(),
         )
     }
 
-    fn get_split_file(&self, split_id: Ulid) -> Option<SplitFile> {
-        self.fd_cache.lock().unwrap().get(&split_id).cloned()
+    fn get_split_file(&self, split_id: &SplitId) -> Option<SplitFile> {
+        self.fd_cache.lock().unwrap().get(split_id).cloned()
     }
 
-    fn put_split_file(&self, split_id: Ulid, split_file: SplitFile) {
+    fn put_split_file(&self, split_id: SplitId, split_file: SplitFile) {
         let mut fd_cache_lock = self.fd_cache.lock().unwrap();
         fd_cache_lock.push(split_id, split_file);
         self.fd_cache_metrics
             .in_cache_count
-            .set(fd_cache_lock.len() as i64);
+            .set(fd_cache_lock.len() as f64);
     }
 
     /// Evicts the given list of split ids from the file descriptor cache.
     /// This method does NOT remove the actual files.
-    pub fn evict_split_files(&self, split_ids: &[Ulid]) {
+    pub fn evict_split_files(&self, split_ids: &[SplitId]) {
         let mut fd_cache_lock = self.fd_cache.lock().unwrap();
         for split_id in split_ids {
             fd_cache_lock.pop(split_id);
         }
         self.fd_cache_metrics
             .in_cache_count
-            .set(fd_cache_lock.len() as i64);
+            .set(fd_cache_lock.len() as f64);
         self.fd_cache_metrics
             .evict_num_items
             .inc_by(split_ids.len() as u64);
@@ -125,16 +122,16 @@ impl FileDescriptorCache {
     pub async fn get_or_open_split_file(
         &self,
         root_path: &Path,
-        split_id: Ulid,
+        split_id: SplitId,
         num_bytes: u64,
     ) -> std::io::Result<SplitFile> {
-        if let Some(split_file) = self.get_split_file(split_id) {
+        if let Some(split_file) = self.get_split_file(&split_id) {
             self.fd_cache_metrics.hits_num_items.inc();
             return Ok(split_file);
         } else {
             self.fd_cache_metrics.misses_num_items.inc();
         }
-        let split_path = get_split_file_path(root_path, split_id);
+        let split_path = get_split_file_path(root_path, &split_id);
         let fd_semaphore_guard = Semaphore::acquire_owned(self.fd_semaphore.clone())
             .await
             .expect("fd_semaphore acquire failed. please report");
@@ -180,11 +177,16 @@ impl SplitFile {
 mod tests {
     use std::num::NonZeroU32;
 
+    use quickwit_proto::types::SplitId;
     use tokio::fs;
     use ulid::Ulid;
 
     use super::FileDescriptorCache;
     use crate::metrics::CacheMetrics;
+
+    fn new_test_split_id() -> SplitId {
+        SplitId::from(Ulid::new().to_string())
+    }
 
     #[tokio::test]
     async fn test_fd_cache_big_cache() {
@@ -195,32 +197,34 @@ mod tests {
             cache_metrics.clone(),
         );
         let tempdir = tempfile::tempdir().unwrap();
-        let split_ids: Vec<Ulid> = std::iter::repeat_with(Ulid::new).take(100).collect();
-        for &split_id in &split_ids {
+        let split_ids: Vec<SplitId> = std::iter::repeat_with(new_test_split_id)
+            .take(100)
+            .collect();
+        for split_id in &split_ids {
             let split_filepath = super::get_split_file_path(tempdir.path(), split_id);
             let content = split_id.to_string();
             assert_eq!(content.len(), 26);
             fs::write(split_filepath, content.as_bytes()).await.unwrap();
         }
-        for &split_id in &split_ids[0..10] {
+        for split_id in &split_ids[0..10] {
             fd_cache
-                .get_or_open_split_file(tempdir.path(), split_id, 26)
+                .get_or_open_split_file(tempdir.path(), split_id.clone(), 26)
                 .await
                 .unwrap();
         }
-        for &split_id in &split_ids[0..10] {
+        for split_id in &split_ids[0..10] {
             fd_cache
-                .get_or_open_split_file(tempdir.path(), split_id, 26)
+                .get_or_open_split_file(tempdir.path(), split_id.clone(), 26)
                 .await
                 .unwrap();
         }
-        for &split_id in &split_ids[0..10] {
+        for split_id in &split_ids[0..10] {
             fd_cache
-                .get_or_open_split_file(tempdir.path(), split_id, 26)
+                .get_or_open_split_file(tempdir.path(), split_id.clone(), 26)
                 .await
                 .unwrap();
         }
-        assert_eq!(cache_metrics.in_cache_count.get(), 10);
+        assert_eq!(cache_metrics.in_cache_count.get(), 10.0);
         assert_eq!(cache_metrics.hits_num_items.get(), 20);
         assert_eq!(cache_metrics.misses_num_items.get(), 10);
     }
@@ -237,22 +241,24 @@ mod tests {
             cache_metrics.clone(),
         );
         let tempdir = tempfile::tempdir().unwrap();
-        let split_ids: Vec<Ulid> = std::iter::repeat_with(Ulid::new).take(100).collect();
-        for &split_id in &split_ids {
+        let split_ids: Vec<SplitId> = std::iter::repeat_with(new_test_split_id)
+            .take(100)
+            .collect();
+        for split_id in &split_ids {
             let split_filepath = super::get_split_file_path(tempdir.path(), split_id);
             let content = split_id.to_string();
             assert_eq!(content.len(), 26);
             fs::write(split_filepath, content.as_bytes()).await.unwrap();
         }
-        for &split_id in &split_ids[0..100] {
+        for split_id in &split_ids[0..100] {
             for _ in 0..10 {
                 fd_cache
-                    .get_or_open_split_file(tempdir.path(), split_id, 26)
+                    .get_or_open_split_file(tempdir.path(), split_id.clone(), 26)
                     .await
                     .unwrap();
             }
         }
-        assert_eq!(cache_metrics.in_cache_count.get(), 10);
+        assert_eq!(cache_metrics.in_cache_count.get(), 10.0);
         assert_eq!(cache_metrics.hits_num_items.get(), 100 * 9);
         assert_eq!(cache_metrics.misses_num_items.get(), 100);
     }
@@ -261,8 +267,8 @@ mod tests {
     async fn test_split_file() {
         let fd_cache = FileDescriptorCache::with_fd_cache_capacity(NonZeroU32::new(20).unwrap());
         let tempdir = tempfile::tempdir().unwrap();
-        let split_id: Ulid = Ulid::new();
-        let split_filepath = super::get_split_file_path(tempdir.path(), split_id);
+        let split_id: SplitId = new_test_split_id();
+        let split_filepath = super::get_split_file_path(tempdir.path(), &split_id);
         let content = split_id.to_string();
         assert_eq!(content.len(), 26);
         fs::write(split_filepath, content.as_bytes()).await.unwrap();

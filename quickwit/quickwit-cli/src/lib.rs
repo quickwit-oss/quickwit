@@ -49,8 +49,9 @@ pub mod cli;
 pub mod index;
 #[cfg(feature = "jemalloc")]
 pub mod jemalloc;
-pub mod logger;
 pub mod metrics;
+#[cfg(target_os = "linux")]
+pub mod proc_io;
 pub mod service;
 pub mod source;
 pub mod split;
@@ -59,11 +60,6 @@ pub mod tool;
 
 /// Throughput calculation window size.
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
-
-pub const QW_ENABLE_TOKIO_CONSOLE_ENV_KEY: &str = "QW_ENABLE_TOKIO_CONSOLE";
-
-pub const QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY: &str =
-    "QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER";
 
 fn config_cli_arg() -> Arg {
     Arg::new("config")
@@ -225,6 +221,7 @@ pub fn start_actor_runtimes(
     if services.contains(&QuickwitService::Indexer)
         || services.contains(&QuickwitService::Janitor)
         || services.contains(&QuickwitService::ControlPlane)
+        || services.contains(&QuickwitService::Compactor)
     {
         quickwit_common::runtimes::initialize_runtimes(runtimes_config)
             .context("failed to start actor runtimes")?;
@@ -233,14 +230,21 @@ pub fn start_actor_runtimes(
 }
 
 /// Loads a node config located at `config_uri` with the default storage configuration.
-async fn load_node_config(config_uri: &Uri) -> anyhow::Result<NodeConfig> {
+async fn load_node_config(
+    config_uri: &Uri,
+    enabled_services: Option<&HashSet<QuickwitService>>,
+) -> anyhow::Result<NodeConfig> {
     let config_content = load_file(&StorageResolver::unconfigured(), config_uri)
         .await
         .context("failed to load node config")?;
     let config_format = ConfigFormat::sniff_from_uri(config_uri)?;
-    let config = NodeConfig::load(config_format, config_content.as_slice())
-        .await
-        .with_context(|| format!("failed to parse node config `{config_uri}`"))?;
+    let config = NodeConfig::load_with_enabled_services(
+        config_format,
+        config_content.as_slice(),
+        enabled_services,
+    )
+    .await
+    .with_context(|| format!("failed to parse node config `{config_uri}`"))?;
     info!(config_uri=%config_uri, config=?config, "loaded node config");
     Ok(config)
 }
@@ -354,7 +358,7 @@ pub mod busy_detector {
 
     use tracing::debug;
 
-    use crate::metrics::CLI_METRICS;
+    use crate::metrics::THREAD_UNPARK_DURATION_MICROSECONDS;
 
     // we need that time reference to use an atomic and not a mutex for LAST_UNPARK
     static TIME_REF: LazyLock<Instant> = LazyLock::new(Instant::now);
@@ -393,10 +397,7 @@ pub mod busy_detector {
                 .unwrap_or_default();
             let now = now.as_micros() as u64;
             let delta = now - time.load(Ordering::Relaxed);
-            CLI_METRICS
-                .thread_unpark_duration_microseconds
-                .with_label_values([])
-                .observe(delta as f64);
+            THREAD_UNPARK_DURATION_MICROSECONDS.observe(delta as f64);
             if delta > ALLOWED_DELAY_MICROS {
                 emit_debug(delta, now);
             }

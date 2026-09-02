@@ -15,7 +15,6 @@
 use std::sync::Arc;
 
 use bitpacking::{BitPacker, BitPacker1x};
-use quickwit_proto::types::SplitId;
 use serde::{Deserialize, Serialize};
 
 use super::{BuildTantivyAst, BuildTantivyAstContext, TantivyQueryAst};
@@ -212,9 +211,14 @@ pub struct HitSet {
 const INCOMPLETE_BLOCK_MARKER: u8 = 0x80;
 
 impl HitSet {
-    #[cfg(test)]
-    fn empty() -> Self {
+    /// An empty hit set, matching no document.
+    pub fn empty() -> Self {
         Self::from_buffer(OwnedBytes::new(vec![0, 0, 0, 0]))
+    }
+
+    /// Returns true if this hit set matches no document.
+    pub fn is_empty(&self) -> bool {
+        self.size_hint() == 0
     }
 
     /// Build a HitSet from its serialized form.
@@ -480,9 +484,9 @@ impl crate::query_ast::QueryAstTransformer for PredicateCacheInjector {
 
 // we use a trait to dodge circular dependancies with quickwit-storage
 pub trait PredicateCache: Send + Sync + 'static {
-    fn get(&self, split_id: SplitId, query_ast_json: String) -> Option<(SegmentId, HitSet)>;
+    fn get(&self, split_id: String, query_ast_json: String) -> Option<(SegmentId, HitSet)>;
 
-    fn put(&self, split_id: SplitId, query_ast_json: String, segment: SegmentId, results: HitSet);
+    fn put(&self, split_id: String, query_ast_json: String, segment: SegmentId, results: HitSet);
 }
 
 #[cfg(test)]
@@ -499,8 +503,8 @@ mod tests {
         BuildTantivyAstContext, QueryAstTransformer, QueryAstVisitor, TermQuery,
     };
 
-    impl PredicateCache for Mutex<HashMap<(SplitId, String), (SegmentId, HitSet)>> {
-        fn get(&self, split_id: SplitId, query_ast_json: String) -> Option<(SegmentId, HitSet)> {
+    impl PredicateCache for Mutex<HashMap<(String, String), (SegmentId, HitSet)>> {
+        fn get(&self, split_id: String, query_ast_json: String) -> Option<(SegmentId, HitSet)> {
             self.lock()
                 .unwrap()
                 .get(&(split_id, query_ast_json))
@@ -509,7 +513,7 @@ mod tests {
 
         fn put(
             &self,
-            split_id: SplitId,
+            split_id: String,
             query_ast_json: String,
             segment: SegmentId,
             results: HitSet,

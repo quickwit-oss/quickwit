@@ -20,11 +20,11 @@ use anyhow::{Context, bail};
 use async_trait::async_trait;
 use bytes::Bytes;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
-use quickwit_common::metrics::IntCounter;
 use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceInputFormat, TransformConfig};
 use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
+use quickwit_metrics::{Counter, counter, labels};
 use quickwit_opentelemetry::otlp::{
     JsonLogIterator, JsonSpanIterator, OtlpLogsError, OtlpTracesError, parse_otlp_logs_json,
     parse_otlp_logs_protobuf, parse_otlp_spans_json, parse_otlp_spans_protobuf,
@@ -40,12 +40,11 @@ use tokio::runtime::Handle;
 #[cfg(feature = "vrl")]
 use super::vrl_processing::*;
 use crate::actors::Indexer;
-use crate::models::{
-    NewPublishLock, NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch,
-};
+use crate::docs_clustering::Fingerprinter;
+use crate::metrics::{PROCESSED_BYTES, PROCESSED_DOCS_TOTAL};
+use crate::models::{NewPublishLock, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch};
 
 const PLAIN_TEXT: &str = "plain_text";
-
 pub(super) struct JsonDoc {
     json_obj: JsonObject,
     num_bytes: usize,
@@ -270,8 +269,8 @@ impl From<Result<JsonSpanIterator, OtlpTracesError>> for JsonDocIterator {
 #[derive(Debug)]
 pub struct DocProcessorCounter {
     pub num_docs: AtomicU64,
-    pub num_docs_metric: IntCounter,
-    pub num_bytes_metric: IntCounter,
+    pub num_docs_metric: Counter,
+    pub num_bytes_metric: Counter,
 }
 
 impl Serialize for DocProcessorCounter {
@@ -282,17 +281,18 @@ impl Serialize for DocProcessorCounter {
 }
 
 impl DocProcessorCounter {
-    fn for_index_and_doc_processor_outcome(index: &str, outcome: &str) -> DocProcessorCounter {
-        let index_label = quickwit_common::metrics::index_label(index);
-        let labels = [index_label, outcome];
+    fn for_index_and_doc_processor_outcome(
+        index: &str,
+        outcome: &'static str,
+    ) -> DocProcessorCounter {
+        let labels = labels!(
+            "index" => quickwit_common::metrics::index_label(index).to_string(),
+            "docs_processed_status" => outcome
+        );
         DocProcessorCounter {
             num_docs: Default::default(),
-            num_docs_metric: crate::metrics::INDEXER_METRICS
-                .processed_docs_total
-                .with_label_values(labels),
-            num_bytes_metric: crate::metrics::INDEXER_METRICS
-                .processed_bytes
-                .with_label_values(labels),
+            num_docs_metric: counter!(parent: PROCESSED_DOCS_TOTAL, labels: [labels]),
+            num_bytes_metric: counter!(parent: PROCESSED_BYTES, labels: [labels]),
         }
     }
 
@@ -407,6 +407,7 @@ pub struct DocProcessor {
     doc_mapper: Arc<DocMapper>,
     indexer_mailbox: Mailbox<Indexer>,
     timestamp_field_opt: Option<Field>,
+    fingerprinter_opt: Option<Fingerprinter>,
     counters: Arc<DocProcessorCounters>,
     publish_lock: PublishLock,
     #[cfg(feature = "vrl")]
@@ -422,6 +423,7 @@ impl DocProcessor {
         indexer_mailbox: Mailbox<Indexer>,
         transform_config_opt: Option<TransformConfig>,
         input_format: SourceInputFormat,
+        fingerprinter_opt: Option<Fingerprinter>,
     ) -> anyhow::Result<Self> {
         let timestamp_field_opt = extract_timestamp_field(&doc_mapper)?;
         if cfg!(not(feature = "vrl")) && transform_config_opt.is_some() {
@@ -431,6 +433,7 @@ impl DocProcessor {
             doc_mapper,
             indexer_mailbox,
             timestamp_field_opt,
+            fingerprinter_opt,
             counters: Arc::new(DocProcessorCounters::new(index_id, source_id)),
             publish_lock: PublishLock::default(),
             #[cfg(feature = "vrl")]
@@ -493,13 +496,21 @@ impl DocProcessor {
 
     fn process_json_doc(&self, json_doc: JsonDoc) -> Result<ProcessedDoc, DocProcessorError> {
         let num_bytes = json_doc.num_bytes;
-
+        let json_value = JsonValue::Object(json_doc.json_obj);
+        let fingerprint_opt = self
+            .fingerprinter_opt
+            .as_ref()
+            .map(|fingerprinter| fingerprinter.fingerprint(&json_value));
+        let JsonValue::Object(json_obj) = json_value else {
+            unreachable!("document JSON value is always an object")
+        };
         let (partition, doc) = self
             .doc_mapper
-            .doc_from_json_obj(json_doc.json_obj, json_doc.num_bytes as u64)?;
+            .doc_from_json_obj(json_obj, num_bytes as u64)?;
         let timestamp_opt = self.extract_timestamp(&doc)?;
         Ok(ProcessedDoc {
             doc,
+            fingerprint_opt,
             timestamp_opt,
             partition,
             num_bytes,
@@ -606,20 +617,6 @@ impl Handler<NewPublishLock> for DocProcessor {
     }
 }
 
-#[async_trait]
-impl Handler<NewPublishToken> for DocProcessor {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        message: NewPublishToken,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
-        ctx.send_message(&self.indexer_mailbox, message).await?;
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -627,7 +624,7 @@ mod tests {
     use prost::Message;
     use quickwit_actors::Universe;
     use quickwit_common::uri::Uri;
-    use quickwit_config::{SearchSettings, build_doc_mapper};
+    use quickwit_config::{DocsClusteringConfig, SearchSettings, build_doc_mapper};
     use quickwit_doc_mapper::{DocMapper, default_doc_mapper_for_test};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
@@ -644,6 +641,31 @@ mod tests {
     use super::*;
     use crate::models::{PublishLock, RawDocBatch};
 
+    fn raw_body_fingerprinter_for_test() -> Fingerprinter {
+        let docs_clustering_config =
+            serde_json::from_value::<DocsClusteringConfig>(serde_json::json!([
+                {
+                    "fingerprint": [{
+                        "kind": "structure"
+                    }]
+                },
+                {
+                    "fingerprint": [{
+                        "path": "body",
+                        "kind": "raw"
+                    }]
+                },
+                {
+                    "fingerprint": [{
+                        "path": "body",
+                        "kind": "tokenized"
+                    }]
+                }
+            ]))
+            .unwrap();
+        Fingerprinter::new(&docs_clustering_config)
+    }
+
     #[tokio::test]
     async fn test_doc_processor_simple() {
         let index_id = "my-index";
@@ -658,6 +680,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::Json,
+            None,
         )
         .unwrap();
         let (doc_processor_mailbox, doc_processor_handle) =
@@ -722,6 +745,39 @@ mod tests {
         universe.assert_quit().await;
     }
 
+    #[tokio::test]
+    async fn test_doc_processor_computes_configured_fingerprint() {
+        let universe = Universe::with_accelerated_time();
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
+        let doc_processor = DocProcessor::try_new(
+            "test-index".to_string(),
+            "test-source".to_string(),
+            doc_mapper,
+            indexer_mailbox,
+            None,
+            SourceInputFormat::Json,
+            Some(raw_body_fingerprinter_for_test()),
+        )
+        .unwrap();
+        let (doc_processor_mailbox, doc_processor_handle) =
+            universe.spawn_builder().spawn(doc_processor);
+        doc_processor_mailbox
+            .send_message(RawDocBatch::for_test(
+                &[br#"{"body":"happy","timestamp":1628837062}"#],
+                0..1,
+            ))
+            .await
+            .unwrap();
+        doc_processor_handle.process_pending_and_observe().await;
+
+        let output_messages: Vec<ProcessedDocBatch> = indexer_inbox.drain_for_test_typed();
+        assert_eq!(output_messages.len(), 1);
+        let fingerprint = output_messages[0].docs[0].fingerprint_opt.as_ref().unwrap();
+        assert_eq!(fingerprint.len(), 3);
+        universe.assert_quit().await;
+    }
+
     const DOCMAPPER_WITH_PARTITION_JSON: &str = r#"
         {
             "tag_fields": ["tenant"],
@@ -745,6 +801,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::Json,
+            None,
         )
         .unwrap();
         let (doc_processor_mailbox, doc_processor_handle) =
@@ -793,6 +850,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::Json,
+            None,
         )
         .unwrap();
         let (doc_processor_mailbox, doc_processor_handle) =
@@ -825,6 +883,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::Json,
+            None,
         )
         .unwrap();
         let (doc_processor_mailbox, doc_processor_handle) =
@@ -871,6 +930,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::OtlpLogsJson,
+            None,
         )
         .unwrap();
 
@@ -948,6 +1008,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::OtlpLogsProtobuf,
+            None,
         )
         .unwrap();
 
@@ -1027,6 +1088,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::OtlpTracesJson,
+            None,
         )
         .unwrap();
 
@@ -1100,6 +1162,7 @@ mod tests {
             indexer_mailbox,
             None,
             SourceInputFormat::OtlpTracesProtobuf,
+            None,
         )
         .unwrap();
 
@@ -1186,6 +1249,7 @@ mod tests_vrl {
             indexer_mailbox,
             Some(transform_config),
             SourceInputFormat::Json,
+            None,
         )
         .unwrap();
         let (doc_processor_mailbox, doc_processor_handle) =
@@ -1277,6 +1341,7 @@ mod tests_vrl {
             indexer_mailbox,
             Some(transform_config),
             SourceInputFormat::PlainText,
+            None,
         )
         .unwrap();
         let (doc_processor_mailbox, doc_processor_handle) =

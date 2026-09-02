@@ -43,7 +43,7 @@ use crate::metrics::SingleCacheMetrics;
 /// On the other hand, for very large queries involving enough data to saturate the cache,
 /// we are facing a scanning pattern. If variations of this  query is repeated over and over
 /// a regular LRU eviction policy would yield a hit rate of 0.
-pub(crate) const LRU_MIN_TIME_SINCE_LAST_ACCESS: Duration = Duration::from_secs(60);
+pub(crate) const LRU_MIN_TIME_SINCE_LAST_ACCESS: Duration = Duration::from_mins(1);
 
 // A fake entry inside a cache, which the cache believe to be of the given size
 #[derive(Clone)]
@@ -133,10 +133,12 @@ pub struct Lru<K: Hash + Eq, V> {
 impl<K: Hash + Eq, V> Drop for Lru<K, V> {
     fn drop(&mut self) {
         // we don't count this toward evicted entries, as we are clearing the whole cache
-        self.cache_metrics.in_cache_count.sub(self.num_items as i64);
+        self.cache_metrics
+            .in_cache_count
+            .dec_by(self.num_items as f64);
         self.cache_metrics
             .in_cache_num_bytes
-            .sub(self.num_bytes as i64);
+            .dec_by(self.num_bytes as f64);
     }
 }
 
@@ -159,14 +161,18 @@ impl<K: Hash + Eq, V: ValueLen + Clone> Lru<K, V> {
         self.num_items += 1;
         self.num_bytes += num_bytes;
         self.cache_metrics.in_cache_count.inc();
-        self.cache_metrics.in_cache_num_bytes.add(num_bytes as i64);
+        self.cache_metrics
+            .in_cache_num_bytes
+            .inc_by(num_bytes as f64);
     }
 
     fn drop_item(&mut self, num_bytes: u64) {
         self.num_items -= 1;
         self.num_bytes -= num_bytes;
         self.cache_metrics.in_cache_count.dec();
-        self.cache_metrics.in_cache_num_bytes.sub(num_bytes as i64);
+        self.cache_metrics
+            .in_cache_num_bytes
+            .dec_by(num_bytes as f64);
         self.cache_metrics.evict_num_items.inc();
         self.cache_metrics.evict_num_bytes.inc_by(num_bytes);
     }
@@ -252,10 +258,10 @@ impl<K: Hash + Eq, V: ValueLen> Drop for S3Fifo<K, V> {
         // we don't count this toward evicted entries, as we are clearing the whole cache
         self.cache_metrics
             .in_cache_count
-            .sub(self.cache.len() as i64);
+            .dec_by(self.cache.len() as f64);
         self.cache_metrics
             .in_cache_num_bytes
-            .sub(self.cache.weight() as i64);
+            .dec_by(self.cache.weight() as f64);
     }
 }
 
@@ -275,9 +281,6 @@ struct QuickCacheQueryEffect {
 impl<K, V: ValueLen> quick_cache::Lifecycle<K, V> for QuickCacheLifecycle {
     type RequestState = QuickCacheQueryEffect;
 
-    fn begin_request(&self) -> Self::RequestState {
-        QuickCacheQueryEffect::default()
-    }
     fn on_evict(&self, state: &mut Self::RequestState, _key: K, val: V) {
         state.count += 1;
         state.bytes += val.len() as u64;
@@ -292,7 +295,7 @@ impl<K: Hash + Eq, V: ValueLen + Clone> S3Fifo<K, V> {
                 (capacity / (128 * 1024)) as usize,
                 capacity,
                 QuickCacheWeighter,
-                quick_cache::DefaultHashBuilder::new(),
+                quick_cache::DefaultHashBuilder::default(),
                 QuickCacheLifecycle,
             ),
             capacity,
@@ -335,12 +338,15 @@ impl<K: Hash + Eq, V: ValueLen + Clone> S3Fifo<K, V> {
         self.cache_metrics.in_cache_count.inc();
         self.cache_metrics
             .in_cache_num_bytes
-            .add(value.len() as i64);
-        let evicted = self.cache.insert_with_lifecycle(key, value);
-        self.cache_metrics.in_cache_count.sub(evicted.count as i64);
+            .inc_by(value.len() as f64);
+        let mut evicted = QuickCacheQueryEffect::default();
+        self.cache.insert_with_lifecycle(key, value, &mut evicted);
+        self.cache_metrics
+            .in_cache_count
+            .dec_by(evicted.count as f64);
         self.cache_metrics
             .in_cache_num_bytes
-            .sub(evicted.bytes as i64);
+            .dec_by(evicted.bytes as f64);
         self.cache_metrics.evict_num_items.inc_by(evicted.count);
         self.cache_metrics.evict_num_bytes.inc_by(evicted.bytes);
     }
@@ -356,7 +362,9 @@ impl<V: ValueLen> Drop for CapacityTracker<V> {
     fn drop(&mut self) {
         if let Some(cache_metrics) = self.cache_metrics.upgrade() {
             cache_metrics.in_cache_count.dec();
-            cache_metrics.in_cache_num_bytes.sub(self.item.len() as i64);
+            cache_metrics
+                .in_cache_num_bytes
+                .dec_by(self.item.len() as f64);
             cache_metrics.evict_num_items.inc();
             cache_metrics.evict_num_bytes.inc_by(self.item.len() as u64);
         }
@@ -380,10 +388,10 @@ impl<K: Hash + Eq, V: ValueLen> Drop for TinyLfu<K, V> {
         // we don't count this toward evicted entries, as we are clearing the whole cache
         self.cache_metrics
             .in_cache_count
-            .sub(self.cache.entry_count() as i64);
+            .dec_by(self.cache.entry_count() as f64);
         self.cache_metrics
             .in_cache_num_bytes
-            .sub(self.cache.weighted_size() as i64);
+            .dec_by(self.cache.weighted_size() as f64);
     }
 }
 
@@ -441,7 +449,7 @@ impl<K: Hash + Eq + Send + Sync + 'static, V: ValueLen + Clone + Send + Sync + '
         self.cache_metrics.in_cache_count.inc();
         self.cache_metrics
             .in_cache_num_bytes
-            .add(value.len() as i64);
+            .inc_by(value.len() as f64);
         self.cache.insert(
             key,
             CapacityTracker {

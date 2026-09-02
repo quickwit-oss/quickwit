@@ -58,9 +58,9 @@ use super::model::{
     CatIndexQueryParams, DeleteQueryParams, ElasticsearchCatIndexResponse, ElasticsearchError,
     ElasticsearchResolveIndexEntryResponse, ElasticsearchResolveIndexResponse,
     ElasticsearchResponse, ElasticsearchStatsResponse, FieldCapabilityQueryParams,
-    FieldCapabilityRequestBody, FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams,
-    MultiSearchResponse, MultiSearchSingleResponse, ScrollQueryParams, SearchBody,
-    SearchQueryParams, SearchQueryParamsCount, StatsResponseEntry,
+    FieldCapabilityRequestBody, FieldCapabilityResponse, IndexMappingQueryParams,
+    MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse, MultiSearchSingleResponse,
+    ScrollQueryParams, SearchBody, SearchQueryParams, SearchQueryParamsCount, StatsResponseEntry,
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
 };
 use super::{TrackTotalHits, make_elastic_api_response};
@@ -192,21 +192,24 @@ async fn get_index_metadata(
     metastore: MetastoreServiceClient,
 ) -> Result<IndexMetadata, SearchError> {
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id);
-    let index_metadata = metastore
-        .index_metadata(index_metadata_request)
+    let index_metadata = MetastoreService::index_metadata(&metastore, index_metadata_request)
         .await?
         .deserialize_index_metadata()?;
     Ok(index_metadata)
 }
 
+/// `_mapping(s)` handler. Pushes `field_patterns`, `start_timestamp`, and
+/// `end_timestamp` down to `root_list_fields` so splits can be pruned and
+/// dynamic fields filtered at the leaves.
 pub(crate) async fn es_compat_index_mapping(
     index_id: String,
-    mut metastore: MetastoreServiceClient,
+    params: IndexMappingQueryParams,
+    metastore: MetastoreServiceClient,
     search_service: Arc<dyn SearchService>,
 ) -> Result<ElasticsearchMappingsResponse, ElasticsearchError> {
     let indexes_metadata = if index_id.contains('*') || index_id.contains(',') {
         let patterns: Vec<String> = index_id.split(',').map(|s| s.trim().to_string()).collect();
-        resolve_index_patterns(&patterns, &mut metastore).await?
+        resolve_index_patterns(&patterns, &metastore).await?
     } else {
         vec![get_index_metadata(index_id.clone(), metastore).await?]
     };
@@ -214,17 +217,24 @@ pub(crate) async fn es_compat_index_mapping(
         .iter()
         .map(|m| m.index_id().to_string())
         .collect();
+
     let list_fields_request = quickwit_proto::search::ListFieldsRequest {
         index_id_patterns,
-        fields: Vec::new(),
-        start_timestamp: None,
-        end_timestamp: None,
+        field_patterns: params.field_patterns(),
+        start_timestamp: params.start_timestamp,
+        end_timestamp: params.end_timestamp,
         query_ast: None,
+        limit: None,
     };
-    let list_fields_response = search_service
-        .root_list_fields(list_fields_request)
-        .await
-        .ok();
+    let list_fields_response = match search_service.root_list_fields(list_fields_request).await {
+        Ok(response) => Some(response),
+        // Bad field pattern supplied by the caller — surface as 400.
+        Err(err @ SearchError::InvalidArgument(_)) => {
+            return Err(ElasticsearchError::from(err));
+        }
+        // Infrastructure / timeout failures degrade gracefully.
+        Err(_) => None,
+    };
     let response = ElasticsearchMappingsResponse::from_doc_mapping(
         indexes_metadata,
         list_fields_response.as_ref(),
@@ -572,6 +582,7 @@ fn build_request_for_es_api(
             count_hits,
             ignore_missing_indexes,
             skip_aggregation_finalization: false,
+            ..Default::default()
         },
         has_doc_id_field,
     ))
@@ -726,9 +737,9 @@ async fn es_compat_stats(
 
 pub(crate) async fn es_compat_index_stats(
     index_id_patterns: Vec<String>,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> Result<ElasticsearchStatsResponse, ElasticsearchError> {
-    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &mut metastore).await?;
+    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &metastore).await?;
 
     // Index uid to index id mapping
     let index_uid_to_index_id: HashMap<IndexUid, String> = indexes_metadata
@@ -741,7 +752,7 @@ pub(crate) async fn es_compat_index_stats(
         .map(|index_metadata| index_metadata.index_uid)
         .collect_vec();
     // calling into the search module is not necessary, but reuses established patterns
-    let splits_metadata = list_all_splits(index_uids, &mut metastore).await?;
+    let splits_metadata = list_all_splits(index_uids, &metastore).await?;
 
     let search_response_rest: ElasticsearchStatsResponse =
         convert_to_es_stats_response(index_uid_to_index_id, splits_metadata);
@@ -759,10 +770,10 @@ pub(crate) async fn es_compat_cat_indices(
 pub(crate) async fn es_compat_index_cat_indices(
     index_id_patterns: Vec<String>,
     query_params: CatIndexQueryParams,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> Result<Vec<serde_json::Value>, ElasticsearchError> {
     query_params.validate()?;
-    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &mut metastore).await?;
+    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &metastore).await?;
     let mut index_id_to_resp: HashMap<IndexUid, ElasticsearchCatIndexResponse> = indexes_metadata
         .iter()
         .map(|metadata| (metadata.index_uid.to_owned(), metadata.clone().into()))
@@ -775,7 +786,7 @@ pub(crate) async fn es_compat_index_cat_indices(
             .collect_vec();
 
         // calling into the search module is not necessary, but reuses established patterns
-        list_all_splits(index_uids, &mut metastore).await?
+        list_all_splits(index_uids, &metastore).await?
     };
 
     let search_response_rest: Vec<ElasticsearchCatIndexResponse> =
@@ -805,9 +816,9 @@ pub(crate) async fn es_compat_index_cat_indices(
 
 pub(crate) async fn es_compat_resolve_index(
     index_id_patterns: Vec<String>,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> Result<ElasticsearchResolveIndexResponse, ElasticsearchError> {
-    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &mut metastore).await?;
+    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &metastore).await?;
     let mut indices: Vec<ElasticsearchResolveIndexEntryResponse> = indexes_metadata
         .into_iter()
         .map(|metadata| metadata.into())

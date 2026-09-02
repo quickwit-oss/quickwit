@@ -20,7 +20,7 @@ use warp::{Filter, Rejection};
 
 use super::model::{
     CatIndexQueryParams, DeleteQueryParams, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
-    MultiSearchQueryParams, SearchQueryParamsCount,
+    IndexMappingQueryParams, MultiSearchQueryParams, SearchQueryParamsCount,
 };
 use crate::Body;
 use crate::decompression::get_body_bytes;
@@ -285,9 +285,10 @@ pub(crate) fn elastic_aliases_filter() -> impl Filter<Extract = (), Error = Reje
 }
 
 pub(crate) fn elastic_index_mapping_filter()
--> impl Filter<Extract = (String,), Error = Rejection> + Clone {
+-> impl Filter<Extract = (String, IndexMappingQueryParams), Error = Rejection> + Clone {
     warp::path!("_elastic" / String / "_mapping")
         .or(warp::path!("_elastic" / String / "_mappings"))
         .unify()
         .and(warp::get())
+        .and(warp::query())
 }

@@ -169,6 +169,7 @@ pub fn write_merge_outputs(
             path: output_path,
             num_rows: sorted_batch.num_rows(),
             num_row_groups: written.num_row_groups,
+            output_rg_partition_prefix_len: output_prefix_len,
             size_bytes: written.size_bytes,
             row_keys_proto,
             zonemap_regexes,
@@ -185,7 +186,7 @@ pub fn write_merge_outputs(
 ///
 /// Takes the relevant row ranges from each input according to the merge runs,
 /// concatenates into a single batch, and applies the permutation via `take`.
-fn apply_merge_permutation(
+pub(super) fn apply_merge_permutation(
     inputs: &[RecordBatch],
     union_schema: &SchemaRef,
     runs: &[MergeRun],
@@ -219,7 +220,7 @@ fn apply_merge_permutation(
 
     // Concatenate all inputs into one batch.
     let all_batches: Vec<&RecordBatch> = inputs.iter().collect();
-    let concatenated = arrow::compute::concat_batches(union_schema, all_batches.into_iter())
+    let concatenated = arrow::compute::concat_batches(union_schema, all_batches)
         .context("concatenating inputs for merge")?;
 
     // Apply permutation. Use UInt64 indices to support >4B row merges.
@@ -254,7 +255,7 @@ fn predict_num_row_groups(num_rows: usize, row_group_size: usize) -> usize {
 /// `qh.rg_partition_prefix_len` KV — caller computes this based on
 /// whether the file is going to be single-RG (preserve input prefix)
 /// or multi-RG (must be 0).
-fn build_merge_kv_metadata(
+pub(super) fn build_merge_kv_metadata(
     input_meta: &InputMetadata,
     row_keys_proto: &Option<Vec<u8>>,
     zonemap_regexes: &std::collections::HashMap<String, String>,
@@ -324,7 +325,10 @@ fn build_merge_kv_metadata(
 }
 
 /// Build `SortingColumn` entries for Parquet file metadata.
-fn build_sorting_columns(batch: &RecordBatch, sort_fields_str: &str) -> Result<Vec<SortingColumn>> {
+pub(super) fn build_sorting_columns(
+    batch: &RecordBatch,
+    sort_fields_str: &str,
+) -> Result<Vec<SortingColumn>> {
     let sort_schema = parse_sort_fields(sort_fields_str)?;
     let schema = batch.schema();
 
@@ -347,7 +351,7 @@ fn build_sorting_columns(batch: &RecordBatch, sort_fields_str: &str) -> Result<V
 
 /// Resolve sort field names from the sort schema string.
 /// Normalizes legacy names (e.g. "timestamp" → "timestamp_secs").
-fn resolve_sort_field_names(sort_fields_str: &str) -> Result<Vec<String>> {
+pub(super) fn resolve_sort_field_names(sort_fields_str: &str) -> Result<Vec<String>> {
     let sort_schema = parse_sort_fields(sort_fields_str)?;
     Ok(sort_schema
         .column
@@ -361,7 +365,7 @@ fn resolve_sort_field_names(sort_fields_str: &str) -> Result<Vec<String>> {
 ///
 /// Checks that sorted_series values are non-decreasing, and within equal
 /// sorted_series values, timestamp_secs respects the schema's sort direction.
-fn verify_sort_order(batch: &RecordBatch, sort_fields_str: &str) {
+pub(super) fn verify_sort_order(batch: &RecordBatch, sort_fields_str: &str) {
     if batch.num_rows() <= 1 {
         return;
     }

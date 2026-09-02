@@ -43,10 +43,6 @@ pub struct TestSandbox {
 
 impl TestSandbox {
     pub async fn start() -> Self {
-        // SAFETY: tests are single-threaded by default; setting env before the
-        // first metastore resolve is fine.
-        unsafe { std::env::set_var("QW_DISABLE_TELEMETRY", "1") };
-
         let metastore_dir = tempfile::tempdir().expect("metastore tempdir");
         let data_dir = tempfile::tempdir().expect("data tempdir");
 

@@ -29,7 +29,8 @@ use tracing::error;
 use super::MergeSplitDownloader;
 #[cfg(feature = "metrics")]
 use super::parquet_pipeline::{ParquetMergeSplitDownloader, ParquetMergeTask};
-use crate::merge_policy::{MergeOperation, MergeTask};
+use crate::merge_policy::{MergeOperation, MergeSource, MergeTask, compute_merge_score};
+use crate::metrics::{ONGOING_MERGE_OPERATIONS, PENDING_MERGE_BYTES, PENDING_MERGE_OPERATIONS};
 
 pub struct MergePermit {
     _semaphore_permit: Option<OwnedSemaphorePermit>,
@@ -226,13 +227,9 @@ impl MergeSchedulerService {
                 _merge_permit: merge_permit,
             };
             self.pending_merge_bytes -= merge_task.merge_operation.total_num_bytes();
-            crate::metrics::INDEXER_METRICS
-                .pending_merge_operations
-                .set(self.pending_merge_queue.len() as i64);
-            crate::metrics::INDEXER_METRICS
-                .pending_merge_bytes
-                .set(self.pending_merge_bytes as i64);
-            match split_downloader_mailbox.try_send_message(merge_task) {
+            PENDING_MERGE_OPERATIONS.set(self.pending_merge_queue.len() as f64);
+            PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
+            match split_downloader_mailbox.try_send_message(MergeSource::Task(merge_task)) {
                 Ok(_) => {}
                 Err(quickwit_actors::TrySendError::Full(_)) => {
                     // The split downloader mailbox has an unbounded queue capacity,
@@ -273,15 +270,10 @@ impl MergeSchedulerService {
                 merge_permit,
             };
             self.pending_merge_bytes -= parquet_merge_task.merge_operation.total_size_bytes();
-            crate::metrics::INDEXER_METRICS
-                .pending_merge_operations
-                .set(
-                    self.pending_merge_queue.len() as i64
-                        + self.pending_parquet_merge_queue.len() as i64,
-                );
-            crate::metrics::INDEXER_METRICS
-                .pending_merge_bytes
-                .set(self.pending_merge_bytes as i64);
+            PENDING_MERGE_OPERATIONS.set(
+                (self.pending_merge_queue.len() + self.pending_parquet_merge_queue.len()) as f64,
+            );
+            PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
             match split_downloader_mailbox.try_send_message(parquet_merge_task) {
                 Ok(_) => {}
                 Err(quickwit_actors::TrySendError::Full(_)) => {
@@ -295,9 +287,7 @@ impl MergeSchedulerService {
 
         let num_merges =
             self.merge_concurrency as i64 - self.merge_semaphore.available_permits() as i64;
-        crate::metrics::INDEXER_METRICS
-            .ongoing_merge_operations
-            .set(num_merges);
+        ONGOING_MERGE_OPERATIONS.set(num_merges as f64);
     }
 }
 
@@ -319,36 +309,17 @@ struct ScheduleMerge {
     split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
 }
 
-/// Scores a merge operation for priority scheduling.
-///
-/// Higher score = scheduled sooner. Prefers merges that strongly reduce
-/// split count relative to their total byte cost. Used by both Tantivy
-/// and Parquet merge scheduling.
-fn score_merge(num_splits: usize, total_num_bytes: u64) -> u64 {
-    if total_num_bytes == 0 {
-        return u64::MAX;
-    }
-    // We will remove num_splits and add 1 merged split.
-    let delta_num_splits = (num_splits - 1) as u64;
-    // Integer arithmetic to avoid `f64 are not ordered` silliness.
-    (delta_num_splits << 48)
-        .checked_div(total_num_bytes)
-        .unwrap_or(1u64)
-}
-
-fn score_merge_operation(merge_operation: &MergeOperation) -> u64 {
-    score_merge(
-        merge_operation.splits.len(),
-        merge_operation.total_num_bytes(),
-    )
-}
-
 impl ScheduleMerge {
     pub fn new(
         merge_operation: TrackedObject<MergeOperation>,
         split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     ) -> ScheduleMerge {
-        let score = score_merge_operation(&merge_operation);
+        let total_num_bytes: u64 = merge_operation
+            .splits
+            .iter()
+            .map(|split| split.footer_offsets.end)
+            .sum();
+        let score = compute_merge_score(merge_operation.splits.len(), total_num_bytes);
         ScheduleMerge {
             score,
             merge_operation,
@@ -381,12 +352,8 @@ impl Handler<ScheduleMerge> for MergeSchedulerService {
         };
         self.pending_merge_bytes += scheduled_merge.merge_operation.total_num_bytes();
         self.pending_merge_queue.push(scheduled_merge);
-        crate::metrics::INDEXER_METRICS
-            .pending_merge_operations
-            .set(self.pending_merge_queue.len() as i64);
-        crate::metrics::INDEXER_METRICS
-            .pending_merge_bytes
-            .set(self.pending_merge_bytes as i64);
+        PENDING_MERGE_OPERATIONS.set(self.pending_merge_queue.len() as f64);
+        PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
         self.schedule_pending_merges(ctx);
         Ok(())
     }
@@ -413,7 +380,7 @@ impl Handler<PermitReleased> for MergeSchedulerService {
 
 #[cfg(feature = "metrics")]
 fn score_parquet_merge_operation(merge_operation: &ParquetMergeOperation) -> u64 {
-    score_merge(
+    compute_merge_score(
         merge_operation.splits.len(),
         merge_operation.total_size_bytes(),
     )
@@ -467,15 +434,9 @@ impl Handler<ScheduleParquetMerge> for MergeSchedulerService {
         };
         self.pending_merge_bytes += scheduled.merge_operation.total_size_bytes();
         self.pending_parquet_merge_queue.push(scheduled);
-        crate::metrics::INDEXER_METRICS
-            .pending_merge_operations
-            .set(
-                self.pending_merge_queue.len() as i64
-                    + self.pending_parquet_merge_queue.len() as i64,
-            );
-        crate::metrics::INDEXER_METRICS
-            .pending_merge_bytes
-            .set(self.pending_merge_bytes as i64);
+        PENDING_MERGE_OPERATIONS
+            .set((self.pending_merge_queue.len() + self.pending_parquet_merge_queue.len()) as f64);
+        PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
         self.schedule_pending_merges(ctx);
         Ok(())
     }
@@ -491,7 +452,7 @@ mod tests {
     use tokio::time::timeout;
 
     use super::*;
-    use crate::merge_policy::{MergeOperation, MergeTask};
+    use crate::merge_policy::{MergeOperation, MergeSource};
 
     fn build_merge_operation(num_splits: usize, num_bytes_per_split: u64) -> MergeOperation {
         let splits: Vec<SplitMetadata> = std::iter::repeat_with(|| SplitMetadata {
@@ -501,24 +462,6 @@ mod tests {
         .take(num_splits)
         .collect();
         MergeOperation::new_merge_operation(splits)
-    }
-
-    #[test]
-    fn test_score_merge_operation() {
-        let score_merge_operation_aux = |num_splits, num_bytes_per_split| {
-            let merge_operation = build_merge_operation(num_splits, num_bytes_per_split);
-            score_merge_operation(&merge_operation)
-        };
-        assert!(score_merge_operation_aux(10, 10_000_000) < score_merge_operation_aux(10, 999_999));
-        assert!(
-            score_merge_operation_aux(10, 10_000_000) > score_merge_operation_aux(9, 10_000_000)
-        );
-        assert_eq!(
-            // 9 - 1 = 8 splits removed.
-            score_merge_operation_aux(9, 10_000_000),
-            // 5 - 1  = 4 splits removed.
-            score_merge_operation_aux(5, 10_000_000 * 9 / 10)
-        );
     }
 
     #[tokio::test]
@@ -587,58 +530,58 @@ mod tests {
             .unwrap();
         }
         {
-            let merge_task: MergeTask = merge_split_downloader_inbox
-                .recv_typed_message::<MergeTask>()
+            let merge_source = merge_split_downloader_inbox
+                .recv_typed_message::<MergeSource>()
                 .await
                 .unwrap();
             assert_eq!(
-                merge_task.merge_operation.splits[0].footer_offsets.end,
+                merge_source.as_operation().splits[0].footer_offsets.end,
                 4_000_000
             );
-            let merge_task2: MergeTask = merge_split_downloader_inbox
-                .recv_typed_message::<MergeTask>()
+            let merge_source2 = merge_split_downloader_inbox
+                .recv_typed_message::<MergeSource>()
                 .await
                 .unwrap();
             assert_eq!(
-                merge_task2.merge_operation.splits[0].footer_offsets.end,
+                merge_source2.as_operation().splits[0].footer_offsets.end,
                 3_000_000
             );
             assert!(
                 timeout(
                     Duration::from_millis(200),
-                    merge_split_downloader_inbox.recv_typed_message::<MergeTask>()
+                    merge_split_downloader_inbox.recv_typed_message::<MergeSource>()
                 )
                 .await
                 .is_err()
             );
         }
         {
-            let merge_task: MergeTask = merge_split_downloader_inbox
-                .recv_typed_message::<MergeTask>()
+            let merge_source = merge_split_downloader_inbox
+                .recv_typed_message::<MergeSource>()
                 .await
                 .unwrap();
             assert_eq!(
-                merge_task.merge_operation.splits[0].footer_offsets.end,
+                merge_source.as_operation().splits[0].footer_offsets.end,
                 1_000_000
             );
         }
         {
-            let merge_task: MergeTask = merge_split_downloader_inbox
-                .recv_typed_message::<MergeTask>()
+            let merge_source = merge_split_downloader_inbox
+                .recv_typed_message::<MergeSource>()
                 .await
                 .unwrap();
             assert_eq!(
-                merge_task.merge_operation.splits[0].footer_offsets.end,
+                merge_source.as_operation().splits[0].footer_offsets.end,
                 2_000_000
             );
         }
         {
-            let merge_task: MergeTask = merge_split_downloader_inbox
-                .recv_typed_message::<MergeTask>()
+            let merge_source = merge_split_downloader_inbox
+                .recv_typed_message::<MergeSource>()
                 .await
                 .unwrap();
             assert_eq!(
-                merge_task.merge_operation.splits[0].footer_offsets.end,
+                merge_source.as_operation().splits[0].footer_offsets.end,
                 5_000_000
             );
         }

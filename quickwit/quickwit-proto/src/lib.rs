@@ -21,6 +21,7 @@
 use std::cmp::Ordering;
 
 pub mod cluster;
+pub mod compaction;
 pub mod control_plane;
 pub use bytes;
 pub use tonic;
@@ -130,7 +131,7 @@ impl search::SortOrder {
         }
     }
 
-    pub fn compare<T: Ord>(&self, this: &T, other: &T) -> Ordering {
+    pub fn compare<T: Ord + ?Sized>(&self, this: &T, other: &T) -> Ordering {
         if self == &search::SortOrder::Desc {
             this.cmp(other)
         } else {

@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use base64::Engine;
@@ -26,7 +28,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::retry::search::LeafSearchRetryPolicy;
 use crate::retry::{DefaultRetryPolicy, RetryPolicy, retry_client};
-use crate::{SearchJobPlacer, SearchServiceClient, merge_resource_stats_it};
+use crate::{SearchJobPlacer, SearchServiceClient, merge_leaf_stats_it};
 
 /// Maximum number of put requests emitted to perform a replicated given PUT KV.
 const MAX_PUT_KV_ATTEMPTS: usize = 6;
@@ -77,12 +79,17 @@ impl ClusterClient {
     }
 
     /// Leaf search with retry on another node client.
+    ///
+    /// Returns the response and increases `leaf_search_call_count`
+    /// with the number of leaf search calls done (including retries).
     pub async fn leaf_search(
         &self,
         request: LeafSearchRequest,
         mut client: SearchServiceClient,
+        leaf_search_call_count: Arc<AtomicU64>,
     ) -> crate::Result<LeafSearchResponse> {
-        let mut response_res = client.leaf_search(request.clone()).await;
+        leaf_search_call_count.fetch_add(1u64, std::sync::atomic::Ordering::Relaxed);
+        let response_res = client.leaf_search(request.clone()).await;
         let retry_policy = LeafSearchRetryPolicy {};
         // We retry only once.
         let Some(retry_request) = retry_policy.retry_request(request, &response_res) else {
@@ -112,9 +119,9 @@ impl ClusterClient {
             "Leaf search response error: `{:?}`. Retry once to execute {:?} with {:?}",
             response_res, retry_request, client
         );
+        leaf_search_call_count.fetch_add(1u64, std::sync::atomic::Ordering::Relaxed);
         let retry_result = client.leaf_search(retry_request).await;
-        response_res = merge_original_with_retry_leaf_search_results(response_res, retry_result);
-        response_res
+        merge_original_with_retry_leaf_search_results(response_res, retry_result)
     }
 
     /// Leaf search with retry on another node client.
@@ -260,7 +267,7 @@ fn merge_original_with_retry_leaf_search_response(
         (Some(left), None) => Some(left),
         (None, None) => None,
     };
-    let resource_stats = merge_resource_stats_it([
+    let resource_stats = merge_leaf_stats_it([
         &original_response.resource_stats,
         &retry_response.resource_stats,
     ]);
@@ -296,16 +303,44 @@ fn merge_original_with_retry_leaf_search_results(
 mod tests {
     use std::collections::HashSet;
     use std::net::SocketAddr;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
+    use quickwit_common::rendezvous_hasher::node_affinity;
     use quickwit_proto::search::{
         LeafRequestRef, PartialHit, SearchRequest, SortValue, SplitIdAndFooterOffsets,
         SplitSearchError,
     };
+    use quickwit_proto::types::NodeId;
     use quickwit_query::query_ast::qast_json_helper;
 
     use super::*;
     use crate::root::SearchJob;
-    use crate::{MockSearchService, SearchError, searcher_pool_for_test};
+    use crate::{
+        MockSearchService, SearchError, SearchServiceClient, SearcherNode, SearcherPool,
+        searcher_pool_for_test,
+    };
+
+    fn affinity_ordered_ports(key: &[u8], ports: &[u16]) -> Vec<u16> {
+        let mut nodes: Vec<(NodeId, u16)> = ports
+            .iter()
+            .copied()
+            .map(|port| (NodeId::from_str(&format!("node-{port}")), port))
+            .collect();
+        nodes
+            .sort_by_cached_key(|(node_id, _port)| std::cmp::Reverse(node_affinity(node_id, &key)));
+        nodes.into_iter().map(|(_node_id, port)| port).collect()
+    }
+
+    fn searcher_pool_from_port_mocks(
+        mocks: impl IntoIterator<Item = (u16, MockSearchService)>,
+    ) -> SearcherPool {
+        SearcherPool::from_iter(mocks.into_iter().map(|(port, mock_search_service)| {
+            let grpc_addr = SocketAddr::from(([127, 0, 0, 1], port));
+            let client =
+                SearchServiceClient::from_service(Arc::new(mock_search_service), grpc_addr);
+            (grpc_addr, SearcherNode::for_test(client))
+        }))
+    }
 
     fn mock_partial_hit(split_id: &str, sort_value: u64, doc_id: u32) -> PartialHit {
         PartialHit {
@@ -412,7 +447,7 @@ mod tests {
             ("127.0.0.1:1002", mock_search_service_2),
         ]);
         let first_client_addr: SocketAddr = "127.0.0.1:1001".parse().unwrap();
-        let first_client = searcher_pool.get(&first_client_addr).unwrap();
+        let first_client = searcher_pool.get(&first_client_addr).unwrap().client;
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer);
         let fetch_docs_response = cluster_client
@@ -433,7 +468,7 @@ mod tests {
         );
         let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
         let first_client_addr: SocketAddr = "127.0.0.1:1001".parse().unwrap();
-        let first_client = searcher_pool.get(&first_client_addr).unwrap();
+        let first_client = searcher_pool.get(&first_client_addr).unwrap().client;
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer);
         let search_error = cluster_client
@@ -462,11 +497,13 @@ mod tests {
             .await
             .unwrap();
         let cluster_client = ClusterClient::new(search_job_placer);
+        let call_count: Arc<AtomicU64> = Default::default();
         let leaf_search_response = cluster_client
-            .leaf_search(request, first_client)
+            .leaf_search(request, first_client, call_count.clone())
             .await
             .unwrap();
         assert_eq!(leaf_search_response.num_attempted_splits, 1);
+        assert_eq!(call_count.load(Ordering::Relaxed), 1);
     }
 
     #[tokio::test]
@@ -510,10 +547,14 @@ mod tests {
             .assign_job(SearchJob::for_test("split_1", 0), &HashSet::new())
             .await
             .unwrap();
+        let call_count: Arc<AtomicU64> = Default::default();
         let cluster_client = ClusterClient::new(search_job_placer);
-        let result = cluster_client.leaf_search(request, first_client).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().num_hits, 2);
+        let response = cluster_client
+            .leaf_search(request, first_client, call_count.clone())
+            .await
+            .unwrap();
+        assert_eq!(response.num_hits, 2);
+        assert_eq!(call_count.load(Ordering::Relaxed), 2);
     }
 
     #[test]
@@ -588,44 +629,37 @@ mod tests {
 
     #[tokio::test]
     async fn test_put_kv_happy_path() {
-        // 3 servers 1, 2, 3
-        // Targeted key has affinity [2, 3, 1].
-        //
-        // Put on 2 and 3 is successful
-        // Get succeeds on 2.
-        let mock_search_service_1 = MockSearchService::new();
-        let mut mock_search_service_2 = MockSearchService::new();
-        mock_search_service_2.expect_put_kv().once().returning(
+        // Put on the two highest-affinity nodes; get succeeds on the first.
+        let ordered_ports = affinity_ordered_ports(b"my_key", &[1001, 1002, 1003]);
+        let mut mock_first = MockSearchService::new();
+        mock_first.expect_put_kv().once().returning(
             |put_req: quickwit_proto::search::PutKvRequest| {
                 assert_eq!(put_req.key, b"my_key");
                 assert_eq!(put_req.payload, b"my_payload");
             },
         );
-        mock_search_service_2.expect_get_kv().once().returning(
+        mock_first.expect_get_kv().once().returning(
             |get_req: quickwit_proto::search::GetKvRequest| {
                 assert_eq!(get_req.key, b"my_key");
                 Some(b"my_payload".to_vec())
             },
         );
-        let mut mock_search_service_3 = MockSearchService::new();
+        let mut mock_second = MockSearchService::new();
         // Due to the buffered call it is possible for the
-        // put request to 3 to be emitted too.
-        mock_search_service_3
+        // put request to the second node to be emitted too.
+        mock_second
             .expect_put_kv()
             .returning(|_put_req: quickwit_proto::search::PutKvRequest| {});
-        let searcher_pool = searcher_pool_for_test([
-            ("127.0.0.1:1001", mock_search_service_1),
-            ("127.0.0.1:1002", mock_search_service_2),
-            ("127.0.0.1:1003", mock_search_service_3),
+        let mock_third = MockSearchService::new();
+        let searcher_pool = searcher_pool_from_port_mocks([
+            (ordered_ports[0], mock_first),
+            (ordered_ports[1], mock_second),
+            (ordered_ports[2], mock_third),
         ]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer);
         cluster_client
-            .put_kv(
-                &b"my_key"[..],
-                &b"my_payload"[..],
-                Duration::from_secs(10 * 60),
-            )
+            .put_kv(&b"my_key"[..], &b"my_payload"[..], Duration::from_mins(10))
             .await;
         let result = cluster_client.get_kv(&b"my_key"[..]).await;
         assert_eq!(result, Some(b"my_payload".to_vec()))
@@ -633,52 +667,45 @@ mod tests {
 
     #[tokio::test]
     async fn test_put_kv_failing_get() {
-        // 3 servers 1, 2, 3
-        // Targeted key has affinity [2, 3, 1].
-        //
-        // Put on 2 and 3 is successful
-        // Get fails on 2.
-        // Get succeeds on 3.
-        let mock_search_service_1 = MockSearchService::new();
-        let mut mock_search_service_2 = MockSearchService::new();
-        mock_search_service_2.expect_put_kv().once().returning(
+        // Put on the two highest-affinity nodes.
+        // Get fails on the first and succeeds on the second.
+        let ordered_ports = affinity_ordered_ports(b"my_key", &[1001, 1002, 1003]);
+        let mock_third = MockSearchService::new();
+        let mut mock_first = MockSearchService::new();
+        mock_first.expect_put_kv().once().returning(
             |put_req: quickwit_proto::search::PutKvRequest| {
                 assert_eq!(put_req.key, b"my_key");
                 assert_eq!(put_req.payload, b"my_payload");
             },
         );
-        mock_search_service_2.expect_get_kv().once().returning(
+        mock_first.expect_get_kv().once().returning(
             |get_req: quickwit_proto::search::GetKvRequest| {
                 assert_eq!(get_req.key, b"my_key");
                 None
             },
         );
-        let mut mock_search_service_3 = MockSearchService::new();
-        mock_search_service_3.expect_put_kv().once().returning(
+        let mut mock_second = MockSearchService::new();
+        mock_second.expect_put_kv().once().returning(
             |put_req: quickwit_proto::search::PutKvRequest| {
                 assert_eq!(put_req.key, b"my_key");
                 assert_eq!(put_req.payload, b"my_payload");
             },
         );
-        mock_search_service_3.expect_get_kv().once().returning(
+        mock_second.expect_get_kv().once().returning(
             |get_req: quickwit_proto::search::GetKvRequest| {
                 assert_eq!(get_req.key, b"my_key");
                 Some(b"my_payload".to_vec())
             },
         );
-        let searcher_pool = searcher_pool_for_test([
-            ("127.0.0.1:1001", mock_search_service_1),
-            ("127.0.0.1:1002", mock_search_service_2),
-            ("127.0.0.1:1003", mock_search_service_3),
+        let searcher_pool = searcher_pool_from_port_mocks([
+            (ordered_ports[0], mock_first),
+            (ordered_ports[1], mock_second),
+            (ordered_ports[2], mock_third),
         ]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer);
         cluster_client
-            .put_kv(
-                &b"my_key"[..],
-                &b"my_payload"[..],
-                Duration::from_secs(10 * 60),
-            )
+            .put_kv(&b"my_key"[..], &b"my_payload"[..], Duration::from_mins(10))
             .await;
         let result = cluster_client.get_kv(&b"my_key"[..]).await;
         assert_eq!(result, Some(b"my_payload".to_vec()))

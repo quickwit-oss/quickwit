@@ -61,13 +61,19 @@ mod parquet_merge_pipeline_trace_conformance_test;
 #[allow(clippy::disallowed_methods)]
 mod parquet_merge_pipeline_sketch_test;
 
+#[cfg(test)]
+#[allow(clippy::disallowed_methods)]
+mod parquet_merge_pipeline_multi_metric_test;
+
 pub use parquet_doc_processor::{
     ParquetDocProcessor, ParquetDocProcessorCounters, ParquetDocProcessorError, is_arrow_ipc,
 };
 pub use parquet_indexer::{ParquetIndexer, ParquetIndexerCounters, ParquetSplitBatch};
 pub use parquet_merge_executor::ParquetMergeExecutor;
 pub use parquet_merge_messages::{ParquetMergeScratch, ParquetMergeTask, ParquetNewSplits};
-pub use parquet_merge_pipeline::{ParquetMergePipeline, ParquetMergePipelineParams};
+pub use parquet_merge_pipeline::{
+    PARQUET_MERGE_SKIP_INITIAL_SEED_ENV_KEY, ParquetMergePipeline, ParquetMergePipelineParams,
+};
 pub use parquet_merge_planner::ParquetMergePlanner;
 pub use parquet_merge_split_downloader::ParquetMergeSplitDownloader;
 pub use parquet_packager::{ParquetBatchForPackager, ParquetPackager, ParquetPackagerCounters};

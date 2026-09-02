@@ -25,19 +25,18 @@ use quickwit_proto::search::{
     FetchDocsRequest, FetchDocsResponse, GetKvRequest, Hit, LeafListFieldsRequest,
     LeafListTermsRequest, LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse,
     ListFieldsRequest, ListFieldsResponse, ListTermsRequest, ListTermsResponse, PutKvRequest,
-    ReportSplitsRequest, ReportSplitsResponse, ScrollRequest, SearchPlanResponse, SearchRequest,
-    SearchResponse, SnippetRequest,
+    ReportSplitsRequest, ReportSplitsResponse, RootResourceStats, ScrollRequest,
+    SearchPlanResponse, SearchRequest, SearchResponse, SnippetRequest,
 };
 use quickwit_storage::{
-    MemorySizedCache, QuickwitCache, SplitCache, StorageCache, StorageResolver,
+    MemorySizedCache, QuickwitCache, SearchSplitCache, StorageCache, StorageResolver,
 };
 use tantivy::aggregation::AggregationLimitsGuard;
 
 use crate::invoker::LambdaLeafSearchInvoker;
 use crate::leaf::multi_index_leaf_search;
 use crate::leaf_cache::{LeafSearchCache, PredicateCacheImpl};
-use crate::list_fields::{leaf_list_fields, root_list_fields};
-use crate::list_fields_cache::ListFieldsCache;
+use crate::list_fields::{ListFieldsCache, leaf_list_fields, root_list_fields};
 use crate::list_terms::{leaf_list_terms, root_list_terms};
 use crate::metrics_trackers::LeafSearchMetricsFuture;
 use crate::root::fetch_docs_phase;
@@ -133,6 +132,10 @@ pub trait SearchService: 'static + Send + Sync {
 
     /// Describe how a search would be processed.
     async fn search_plan(&self, request: SearchRequest) -> crate::Result<SearchPlanResponse>;
+
+    /// Returns the current load of this searcher node, expressed as the sum of job costs
+    /// across all queued and active tasks in the SearchPermitProvider.
+    async fn get_load(&self) -> usize;
 }
 
 impl SearchServiceImpl {
@@ -167,7 +170,7 @@ impl SearchService for SearchServiceImpl {
         let search_result = root_search(
             &self.searcher_context,
             search_request,
-            self.metastore.clone(),
+            &self.metastore,
             &self.cluster_client,
         )
         .await?;
@@ -228,12 +231,8 @@ impl SearchService for SearchServiceImpl {
         &self,
         list_terms_request: ListTermsRequest,
     ) -> crate::Result<ListTermsResponse> {
-        let search_result = root_list_terms(
-            &list_terms_request,
-            self.metastore.clone(),
-            &self.cluster_client,
-        )
-        .await?;
+        let search_result =
+            root_list_terms(&list_terms_request, &self.metastore, &self.cluster_client).await?;
 
         Ok(search_result)
     }
@@ -252,7 +251,7 @@ impl SearchService for SearchServiceImpl {
         let leaf_search_response = leaf_list_terms(
             self.searcher_context.clone(),
             &search_request,
-            storage.clone(),
+            storage,
             &split_ids[..],
         )
         .await?;
@@ -287,12 +286,7 @@ impl SearchService for SearchServiceImpl {
         &self,
         list_fields_req: ListFieldsRequest,
     ) -> crate::Result<ListFieldsResponse> {
-        root_list_fields(
-            list_fields_req,
-            &self.cluster_client,
-            self.metastore.clone(),
-        )
-        .await
+        root_list_fields(list_fields_req, &self.cluster_client, &self.metastore).await
     }
 
     async fn leaf_list_fields(
@@ -305,10 +299,11 @@ impl SearchService for SearchServiceImpl {
         let split_ids = list_fields_req.split_offsets;
         leaf_list_fields(
             index_id,
+            &list_fields_req.field_patterns,
+            split_ids,
+            list_fields_req.limit,
+            self.searcher_context.clone(),
             storage,
-            &self.searcher_context,
-            &split_ids[..],
-            &list_fields_req.fields,
         )
         .await
     }
@@ -317,8 +312,12 @@ impl SearchService for SearchServiceImpl {
         &self,
         search_request: SearchRequest,
     ) -> crate::Result<SearchPlanResponse> {
-        let search_plan = search_plan(search_request, self.metastore.clone()).await?;
+        let search_plan = search_plan(search_request, &self.metastore).await?;
         Ok(search_plan)
+    }
+
+    async fn get_load(&self) -> usize {
+        self.searcher_context.search_permit_provider.get_load()
     }
 }
 
@@ -343,6 +342,7 @@ pub(crate) async fn scroll(
 
     let mut partial_hits = Vec::new();
     let mut scroll_context_modified = false;
+    let mut resource_stats: Option<RootResourceStats> = None;
 
     let cached_results = scroll_context.get_cached_partial_hits(start_doc..end_doc);
     partial_hits.extend_from_slice(cached_results);
@@ -352,7 +352,7 @@ pub(crate) async fn scroll(
             .cloned()
             .unwrap_or_else(|| current_scroll.search_after.clone());
         let cursor = start_doc + partial_hits.len() as u64;
-        scroll_context
+        resource_stats = scroll_context
             .load_batch_starting_at(cursor, search_after, cluster_client, searcher_context)
             .await?;
         partial_hits.extend_from_slice(scroll_context.get_cached_partial_hits(cursor..end_doc));
@@ -394,6 +394,10 @@ pub(crate) async fn scroll(
         aggregation_postcard: None,
         failed_splits: scroll_context.failed_splits,
         num_successful_splits: scroll_context.num_successful_splits,
+        // Populated only when this scroll page triggered an inner
+        // `search_partial_hits_phase`. Pure cache hits (served entirely from
+        // the scroll context) carry `None` because no leaf search ran.
+        resource_stats,
     })
 }
 /// [`SearcherContext`] provides a common set of variables
@@ -413,8 +417,8 @@ pub struct SearcherContext {
     /// Per-split and per-predicate cache.
     pub predicate_cache: Arc<PredicateCacheImpl>,
     /// Search split cache. `None` if no split cache is configured.
-    pub split_cache_opt: Option<Arc<SplitCache>>,
-    /// List fields cache. Caches the list fields response for a given split.
+    pub split_cache_opt: Option<Arc<SearchSplitCache>>,
+    /// List fields cache. Caches the raw fields-metadata blob for a given split.
     pub list_fields_cache: ListFieldsCache,
     /// The aggregation limits are passed to limit the memory usage.
     /// This object is shared across all request.
@@ -442,7 +446,7 @@ impl SearcherContext {
     /// Creates a new searcher context without a lambda invoker.
     pub fn new_without_invoker(
         searcher_config: SearcherConfig,
-        split_cache_opt: Option<Arc<SplitCache>>,
+        split_cache_opt: Option<Arc<SearchSplitCache>>,
     ) -> Self {
         Self::new(
             searcher_config,
@@ -454,12 +458,12 @@ impl SearcherContext {
     /// Creates a new searcher context, given a searcher config, and an optional `SplitCache`.
     pub fn new(
         searcher_config: SearcherConfig,
-        split_cache_opt: Option<Arc<SplitCache>>,
+        split_cache_opt: Option<Arc<SearchSplitCache>>,
         lambda_invoker: Option<impl LambdaLeafSearchInvoker + 'static>,
     ) -> Self {
         let global_split_footer_cache = MemorySizedCache::from_config(
             &searcher_config.split_footer_cache,
-            &quickwit_storage::STORAGE_METRICS.split_footer_cache,
+            &quickwit_storage::metrics::SPLIT_FOOTER_CACHE,
         );
         let leaf_search_split_semaphore = SearchPermitProvider::new(
             searcher_config.max_num_concurrent_split_searches,

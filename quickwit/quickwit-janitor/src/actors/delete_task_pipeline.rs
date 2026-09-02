@@ -31,6 +31,7 @@ use quickwit_indexing::actors::{
     PublisherCounters, Uploader, UploaderCounters, UploaderType,
 };
 use quickwit_indexing::merge_policy::merge_policy_from_settings;
+use quickwit_indexing::models::SharedPublishToken;
 use quickwit_indexing::{IndexingSplitStore, SplitsUpdateMailbox};
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::MergePipelineId;
@@ -50,7 +51,7 @@ const OBSERVE_PIPELINE_INTERVAL: Duration = if cfg!(any(test, feature = "testsui
 } else {
     // 1 minute.
     // This is only for observation purpose, not supervision.
-    Duration::from_secs(60)
+    Duration::from_mins(1)
 };
 
 struct DeletePipelineHandle {
@@ -167,6 +168,7 @@ impl DeleteTaskPipeline {
             self.metastore.clone(),
             None,
             None,
+            SharedPublishToken::default(),
         );
         let (publisher_mailbox, publisher_supervisor_handler) =
             ctx.spawn_actor().supervise(publisher);
@@ -191,7 +193,7 @@ impl DeleteTaskPipeline {
         let packager = Packager::new("MergePackager", tag_fields, uploader_mailbox);
         let (packager_mailbox, packager_supervisor_handler) = ctx.spawn_actor().supervise(packager);
         let pipeline_id = MergePipelineId {
-            node_id: NodeId::from("unknown"),
+            node_id: NodeId::from_str("unknown"),
             index_uid: self.index_uid.clone(),
             source_id: "unknown".to_string(),
         };
@@ -207,6 +209,7 @@ impl DeleteTaskPipeline {
             doc_mapper.clone(),
             delete_executor_io_controls,
             packager_mailbox,
+            None,
         );
         let (delete_executor_mailbox, task_executor_supervisor_handler) =
             ctx.spawn_actor().supervise(delete_executor);

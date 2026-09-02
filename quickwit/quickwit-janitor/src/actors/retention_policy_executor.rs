@@ -32,7 +32,7 @@ use crate::retention_policy_execution::{
     run_execute_parquet_retention_policy, run_execute_retention_policy,
 };
 
-const RUN_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hours
+const RUN_INTERVAL: Duration = Duration::from_hours(1);
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct RetentionPolicyExecutorCounters {
@@ -274,7 +274,7 @@ mod tests {
     use mockall::Sequence;
     use quickwit_actors::Universe;
     use quickwit_common::ServiceStream;
-    use quickwit_config::RetentionPolicy;
+    use quickwit_config::{HumanDuration, RetentionPolicy};
     use quickwit_metastore::{
         IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitMetadata,
         SplitState,
@@ -327,6 +327,9 @@ mod tests {
             index.retention_policy_opt = Some(RetentionPolicy {
                 retention_period: retention_period.to_string(),
                 evaluation_schedule: EVALUATION_SCHEDULE.to_string(),
+                evaluation_schedule_jitter: Some(
+                    HumanDuration::try_from("0s".to_string()).unwrap(),
+                ),
             })
         }
         index
@@ -343,7 +346,7 @@ mod tests {
     fn make_split(split_id: &str, time_range: Option<RangeInclusive<i64>>) -> Split {
         Split {
             split_metadata: SplitMetadata {
-                split_id: split_id.to_string(),
+                split_id: split_id.into(),
                 footer_offsets: 5..20,
                 time_range,
                 ..Default::default()
@@ -360,6 +363,7 @@ mod tests {
         let scheduler = RetentionPolicy {
             retention_period: "".to_string(),
             evaluation_schedule: EVALUATION_SCHEDULE.to_string(),
+            evaluation_schedule_jitter: Some(HumanDuration::try_from("0s".to_string()).unwrap()),
         };
 
         scheduler.duration_until_next_evaluation().unwrap() + Duration::from_secs(1)
