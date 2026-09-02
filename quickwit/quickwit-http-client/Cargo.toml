@@ -22,6 +22,7 @@ http-body-util = { workspace = true }
 httparse = { workspace = true }
 rustls = { workspace = true }
 rustls-native-certs = { workspace = true }
+socket2 = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
