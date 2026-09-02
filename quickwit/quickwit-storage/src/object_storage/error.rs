@@ -22,6 +22,7 @@ use aws_sdk_s3::operation::delete_object::DeleteObjectError;
 use aws_sdk_s3::operation::delete_objects::DeleteObjectsError;
 use aws_sdk_s3::operation::get_object::GetObjectError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
+use aws_sdk_s3::operation::list_objects_v2::ListObjectsV2Error;
 use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_s3::operation::upload_part::UploadPartError;
 use quickwit_aws::error::retry_after_from_sdk_error;
@@ -141,5 +142,29 @@ impl ToStorageErrorKind for HeadObjectError {
             HeadObjectError::NotFound(_) => StorageErrorKind::NotFound,
             _ => StorageErrorKind::Service,
         }
+    }
+}
+
+impl ToStorageErrorKind for ListObjectsV2Error {
+    fn to_storage_error_kind(&self) -> StorageErrorKind {
+        match self {
+            ListObjectsV2Error::NoSuchBucket(_) => StorageErrorKind::NotFound,
+            _ => StorageErrorKind::Service,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+
+    use super::*;
+
+    #[test]
+    fn test_list_objects_v2_timeout_error_is_preserved() {
+        let sdk_error = SdkError::<ListObjectsV2Error>::timeout_error(io::Error::other("timeout"));
+        let storage_error = StorageError::from(sdk_error);
+
+        assert_eq!(storage_error.kind(), StorageErrorKind::Timeout);
     }
 }
