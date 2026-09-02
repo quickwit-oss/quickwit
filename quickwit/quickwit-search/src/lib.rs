@@ -138,7 +138,7 @@ pub type SearcherPool = Pool<SocketAddr, SearcherNode>;
 
 fn search_thread_pool() -> &'static ThreadPoolWithPriority {
     static SEARCH_THREAD_POOL: LazyLock<ThreadPoolWithPriority> =
-        LazyLock::new(|| ThreadPoolWithPriority::new("search", None));
+        LazyLock::new(|| ThreadPoolWithPriority::new("search", Some(quickwit_common::num_cpus())));
     &SEARCH_THREAD_POOL
 }
 
