@@ -21,11 +21,11 @@
 //!
 //! ```text
 //! incoming docs in indexing order:
-//!     doc 0 -> schema A, grouping X
-//!     doc 1 -> schema A, grouping Y
-//!     doc 2 -> schema B, grouping X
+//!     doc 0 -> hashes [A, X]
+//!     doc 1 -> hashes [A, Y]
+//!     doc 2 -> hashes [B, X]
 //!     doc 3 -> no fingerprint
-//!     doc 4 -> schema A, grouping X
+//!     doc 4 -> hashes [A, X]
 //!
 //! sort groups:
 //!     A:
@@ -39,19 +39,20 @@
 //!     [0, 4, 1, 2, 3]
 //! ```
 //!
-//! Schema groups are emitted largest first, and grouping sort groups within each schema are also
-//! emitted largest first. Documents without a fingerprint are kept in insertion order after the
-//! fingerprinted sort groups.
+//! Groups are emitted largest first at every fingerprint level. Documents without a fingerprint are
+//! kept in insertion order after the fingerprinted sort groups.
 
 use std::cmp::Reverse;
 use std::mem;
 
 use fnv::FnvHashMap;
+use quickwit_metrics::{Labels, histogram};
 use smallvec::SmallVec;
 use tantivy::DocId;
 use tantivy::indexer::DocIdMapping;
 
 use super::Fingerprint;
+use crate::metrics::DOCS_CLUSTER_GROUP_SIZE;
 
 // We inline as many DocIds as possible to avoid heap allocations.
 // This is done by calculating the inline capacity based on the size of the Vec<DocId> and the
@@ -64,66 +65,81 @@ const _: () = assert!(mem::size_of::<ClusterDocIds>() == mem::size_of::<Vec<DocI
 
 #[derive(Default)]
 pub struct DocIdClusterer {
-    docs_by_schema_fingerprint: FnvHashMap<u64, SchemaCluster>,
-    unsorted_docs: ClusterDocIds,
+    root: ClusterGroup,
+    unclustered_docs: ClusterDocIds,
 }
 
+/// A group of documents that share the same fingerprint prefix.
+///
+/// The root contains all documents. Each successive tree level groups them by the next hash in
+/// their fingerprint.
 #[derive(Default)]
-struct SchemaCluster {
+struct ClusterGroup {
     num_docs: usize,
-    docs_by_grouping_fingerprint: FnvHashMap<u64, ClusterDocIds>,
+    doc_ids: ClusterDocIds,
+    children: FnvHashMap<u64, ClusterGroup>,
 }
 
 impl DocIdClusterer {
     pub fn push(&mut self, fingerprint_opt: Option<Fingerprint>, doc_id: DocId) {
         match fingerprint_opt {
-            Some(fingerprint) => {
-                let schema_group = self
-                    .docs_by_schema_fingerprint
-                    .entry(fingerprint.schema)
-                    .or_default();
-                schema_group
-                    .docs_by_grouping_fingerprint
-                    .entry(fingerprint.grouping)
-                    .or_default()
-                    .push(doc_id);
-                schema_group.num_docs += 1;
-            }
-            None => self.unsorted_docs.push(doc_id),
+            Some(fingerprint) => self.root.push(&fingerprint, doc_id),
+            None => self.unclustered_docs.push(doc_id),
         }
     }
 
-    pub fn sort_group_sizes(&self) -> impl Iterator<Item = usize> + '_ {
-        self.docs_by_schema_fingerprint
-            .values()
-            .flat_map(|schema_group| schema_group.docs_by_grouping_fingerprint.values())
-            .map(ClusterDocIds::len)
-    }
-
-    pub fn into_doc_id_mapping(self, num_docs: u64) -> anyhow::Result<DocIdMapping> {
+    pub fn into_doc_id_mapping(self) -> anyhow::Result<DocIdMapping> {
         let doc_ids = self.into_sorted_doc_ids();
-        debug_assert_eq!(doc_ids.len(), num_docs as usize);
         let doc_id_mapping = DocIdMapping::new_permutation(doc_ids)?;
         Ok(doc_id_mapping)
     }
 
-    fn into_sorted_doc_ids(self) -> Vec<DocId> {
-        let mut schema_groups: Vec<SchemaCluster> =
-            self.docs_by_schema_fingerprint.into_values().collect();
-        schema_groups.sort_unstable_by_key(|schema_group| Reverse(schema_group.num_docs));
+    pub(crate) fn observe_cluster_group_sizes<const N: usize>(&self, labels: Labels<N>) {
+        let h = histogram!(parent: DOCS_CLUSTER_GROUP_SIZE, labels: [labels]);
+        self.root.for_each_leaf(&mut |cluster_group_doc_ids| {
+            h.observe(cluster_group_doc_ids.len() as f64);
+        });
+    }
 
-        schema_groups
-            .into_iter()
-            .flat_map(|schema_group| {
-                let mut sort_groups: Vec<ClusterDocIds> = schema_group
-                    .docs_by_grouping_fingerprint
-                    .into_values()
-                    .collect();
-                sort_groups.sort_unstable_by_key(|sort_group| Reverse(sort_group.len()));
-                sort_groups.into_iter().flatten()
-            })
-            .chain(self.unsorted_docs)
-            .collect()
+    fn into_sorted_doc_ids(self) -> Vec<DocId> {
+        let mut doc_ids = Vec::with_capacity(self.root.num_docs + self.unclustered_docs.len());
+        self.root.append_sorted_doc_ids(&mut doc_ids);
+        doc_ids.extend_from_slice(&self.unclustered_docs);
+        doc_ids
+    }
+}
+
+impl ClusterGroup {
+    fn push(&mut self, fingerprint: &[u64], doc_id: DocId) {
+        self.num_docs += 1;
+        match fingerprint.split_first() {
+            Some((fingerprint_hash, rest)) => {
+                self.children
+                    .entry(*fingerprint_hash)
+                    .or_default()
+                    .push(rest, doc_id);
+            }
+            None => self.doc_ids.push(doc_id),
+        }
+    }
+
+    fn append_sorted_doc_ids(self, doc_ids: &mut Vec<DocId>) {
+        doc_ids.extend_from_slice(&self.doc_ids);
+        let mut children: Vec<ClusterGroup> = self.children.into_values().collect();
+        // Larger groups are emitted first.
+        children.sort_unstable_by_key(|child| Reverse(child.num_docs));
+        for child in children {
+            child.append_sorted_doc_ids(doc_ids);
+        }
+    }
+
+    fn for_each_leaf(&self, f: &mut impl FnMut(&[DocId])) {
+        if !self.doc_ids.is_empty() {
+            f(&self.doc_ids);
+        }
+        for child in self.children.values() {
+            child.for_each_leaf(f);
+        }
     }
 }
 
@@ -131,21 +147,18 @@ impl DocIdClusterer {
 mod tests {
     use super::{DocIdClusterer, Fingerprint};
 
-    fn fingerprint(schema_fingerprint: u64, grouping_fingerprint: u64) -> Fingerprint {
-        Fingerprint {
-            schema: schema_fingerprint,
-            grouping: grouping_fingerprint,
-        }
+    fn fingerprint<const N: usize>(hashes: [u64; N]) -> Fingerprint {
+        Fingerprint::new(hashes)
     }
 
     #[test]
     fn emits_largest_schema_groups_first() {
         let mut clusterer = DocIdClusterer::default();
-        clusterer.push(Some(fingerprint(1, 1)), 0);
-        clusterer.push(Some(fingerprint(2, 1)), 1);
-        clusterer.push(Some(fingerprint(1, 2)), 2);
-        clusterer.push(Some(fingerprint(2, 1)), 3);
-        clusterer.push(Some(fingerprint(1, 1)), 4);
+        clusterer.push(Some(fingerprint([1, 1])), 0);
+        clusterer.push(Some(fingerprint([2, 1])), 1);
+        clusterer.push(Some(fingerprint([1, 2])), 2);
+        clusterer.push(Some(fingerprint([2, 1])), 3);
+        clusterer.push(Some(fingerprint([1, 1])), 4);
 
         assert_eq!(clusterer.into_sorted_doc_ids(), [0, 4, 2, 1, 3]);
     }
@@ -153,22 +166,50 @@ mod tests {
     #[test]
     fn emits_largest_sort_groups_first_within_schema() {
         let mut clusterer = DocIdClusterer::default();
-        clusterer.push(Some(fingerprint(1, 1)), 0);
-        clusterer.push(Some(fingerprint(1, 2)), 1);
-        clusterer.push(Some(fingerprint(1, 2)), 2);
-        clusterer.push(Some(fingerprint(1, 1)), 3);
-        clusterer.push(Some(fingerprint(1, 2)), 4);
+        clusterer.push(Some(fingerprint([1, 1])), 0);
+        clusterer.push(Some(fingerprint([1, 2])), 1);
+        clusterer.push(Some(fingerprint([1, 2])), 2);
+        clusterer.push(Some(fingerprint([1, 1])), 3);
+        clusterer.push(Some(fingerprint([1, 2])), 4);
 
         assert_eq!(clusterer.into_sorted_doc_ids(), [1, 2, 4, 0, 3]);
+    }
+
+    #[test]
+    fn emits_largest_groups_first_with_one_fingerprint_level() {
+        let mut clusterer = DocIdClusterer::default();
+        clusterer.push(Some(fingerprint([1])), 0);
+        clusterer.push(Some(fingerprint([2])), 1);
+        clusterer.push(Some(fingerprint([1])), 2);
+        clusterer.push(Some(fingerprint([3])), 3);
+        clusterer.push(Some(fingerprint([3])), 4);
+        clusterer.push(Some(fingerprint([3])), 5);
+
+        assert_eq!(clusterer.into_sorted_doc_ids(), [3, 4, 5, 0, 2, 1]);
+    }
+
+    #[test]
+    fn emits_largest_groups_first_at_each_fingerprint_level() {
+        let mut clusterer = DocIdClusterer::default();
+        clusterer.push(Some(fingerprint([1, 1, 1])), 0);
+        clusterer.push(Some(fingerprint([1, 1, 2])), 1);
+        clusterer.push(Some(fingerprint([1, 2, 1])), 2);
+        clusterer.push(Some(fingerprint([1, 2, 1])), 3);
+        clusterer.push(Some(fingerprint([2, 1, 1])), 4);
+        clusterer.push(Some(fingerprint([1, 2, 2])), 5);
+        clusterer.push(Some(fingerprint([1, 2, 1])), 6);
+        clusterer.push(Some(fingerprint([1, 1, 1])), 7);
+
+        assert_eq!(clusterer.into_sorted_doc_ids(), [2, 3, 6, 5, 0, 7, 1, 4]);
     }
 
     #[test]
     fn appends_unsorted_docs_in_insertion_order() {
         let mut clusterer = DocIdClusterer::default();
         clusterer.push(None, 0);
-        clusterer.push(Some(fingerprint(1, 1)), 1);
+        clusterer.push(Some(fingerprint([1, 1])), 1);
         clusterer.push(None, 2);
-        clusterer.push(Some(fingerprint(1, 1)), 3);
+        clusterer.push(Some(fingerprint([1, 1])), 3);
         clusterer.push(None, 4);
 
         assert_eq!(clusterer.into_sorted_doc_ids(), [1, 3, 0, 2, 4]);
@@ -187,25 +228,12 @@ mod tests {
     #[test]
     fn preserves_split_doc_ids_across_batches() {
         let mut clusterer = DocIdClusterer::default();
-        clusterer.push(Some(fingerprint(1, 1)), 0);
-        clusterer.push(Some(fingerprint(2, 1)), 1);
+        clusterer.push(Some(fingerprint([1, 1])), 0);
+        clusterer.push(Some(fingerprint([2, 1])), 1);
         // Simulate a second batch appended to the same split: doc IDs must keep increasing.
-        clusterer.push(Some(fingerprint(1, 1)), 2);
+        clusterer.push(Some(fingerprint([1, 1])), 2);
         clusterer.push(None, 3);
 
         assert_eq!(clusterer.into_sorted_doc_ids(), [0, 2, 1, 3]);
-    }
-
-    #[test]
-    fn reports_leaf_grouping_sort_group_sizes() {
-        let mut clusterer = DocIdClusterer::default();
-        clusterer.push(Some(fingerprint(1, 1)), 0);
-        clusterer.push(Some(fingerprint(1, 2)), 1);
-        clusterer.push(Some(fingerprint(1, 2)), 2);
-        clusterer.push(Some(fingerprint(2, 1)), 3);
-
-        let mut sort_group_sizes = clusterer.sort_group_sizes().collect::<Vec<_>>();
-        sort_group_sizes.sort_unstable();
-        assert_eq!(sort_group_sizes, [1, 1, 2]);
     }
 }

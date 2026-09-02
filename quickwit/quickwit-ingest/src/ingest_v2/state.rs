@@ -37,10 +37,9 @@ use tracing::{error, info, instrument};
 
 use super::models::IngesterShard;
 use super::rate_meter::RateMeter;
-use super::replication::{ReplicationStreamTaskHandle, ReplicationTaskHandle};
 use super::wal_capacity_tracker::WalCapacityTracker;
+use crate::OpenShardCounts;
 use crate::mrecordlog_async::MultiRecordLogAsync;
-use crate::{FollowerId, LeaderId, OpenShardCounts};
 
 /// Stores the state of the ingester and attempts to prevent deadlocks by exposing an API that
 /// guarantees that the internal data structures are always locked in the same order.
@@ -59,10 +58,6 @@ pub(super) struct IngesterState {
 pub(super) struct InnerIngesterState {
     pub shards: HashMap<QueueId, IngesterShard>,
     pub doc_mappers: HashMap<DocMappingUid, Weak<DocMapper>>,
-    // Replication stream opened with followers.
-    pub replication_streams: HashMap<FollowerId, ReplicationStreamTaskHandle>,
-    // Replication tasks running for each replication stream opened with leaders.
-    pub replication_tasks: HashMap<LeaderId, ReplicationTaskHandle>,
     cluster: Cluster,
     pub wal_capacity_tracker: WalCapacityTracker,
     disk_capacity: ByteSize,
@@ -75,8 +70,13 @@ impl InnerIngesterState {
         *self.status_tx.borrow()
     }
 
-    pub async fn set_status(&mut self, status: IngesterStatus) {
+    /// Sets the status and notifies observation streams, even if the status has not changed.
+    fn set_status_and_notify(&self, status: IngesterStatus) {
         self.status_tx.send(status).expect("channel should be open");
+    }
+
+    pub async fn set_status(&mut self, status: IngesterStatus) {
+        self.set_status_and_notify(status);
         self.cluster
             .set_self_key_value(INGESTER_STATUS_KEY, status.as_json_str_name())
             .await;
@@ -97,6 +97,8 @@ impl InnerIngesterState {
 
         if is_decommissioned {
             self.set_status(IngesterStatus::Decommissioned).await;
+        } else {
+            self.set_status_and_notify(IngesterStatus::Decommissioning);
         }
     }
 
@@ -116,13 +118,12 @@ impl InnerIngesterState {
             .map(|(_, shard)| shard)
     }
 
-    /// Returns per-source open shard counts and closed shard IDs for all advertisable,
-    /// non-replica shards.
+    /// Returns per-source open shard counts and closed shard IDs for all advertisable shards.
     pub fn get_shard_snapshot(&self) -> (OpenShardCounts, Vec<ShardIds>) {
         let grouped = self
             .shards
             .values()
-            .filter(|shard| shard.is_advertisable && !shard.is_replica())
+            .filter(|shard| shard.is_advertisable)
             .map(|shard| ((shard.index_uid.clone(), shard.source_id.clone()), shard))
             .into_group_map();
 
@@ -160,8 +161,6 @@ impl IngesterState {
         let mut inner = InnerIngesterState {
             shards: Default::default(),
             doc_mappers: Default::default(),
-            replication_streams: Default::default(),
-            replication_tasks: Default::default(),
             cluster,
             wal_capacity_tracker: WalCapacityTracker::new(disk_capacity, memory_capacity),
             disk_capacity,
@@ -307,8 +306,8 @@ impl IngesterState {
             let rate_limiter = RateLimiter::from_settings(rate_limiter_settings);
             let rate_meter = RateMeter::default();
 
-            let solo_shard =
-                IngesterShard::new_solo(index_uid.clone(), source_id.clone(), shard_id.clone())
+            let shard =
+                IngesterShard::builder(index_uid.clone(), source_id.clone(), shard_id.clone())
                     .with_state(ShardState::Closed)
                     .with_replication_position_inclusive(replication_position_inclusive)
                     .with_truncation_position_inclusive(truncation_position_inclusive)
@@ -317,7 +316,7 @@ impl IngesterState {
                     .with_last_write(now)
                     .advertisable() // We want to advertise the shard as read-only right away.
                     .build();
-            inner_guard.shards.insert(queue_id.clone(), solo_shard);
+            inner_guard.shards.insert(queue_id.clone(), shard);
 
             num_closed_shards += 1;
         }
@@ -696,7 +695,7 @@ mod tests {
     use bytesize::ByteSize;
     use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_config::service::QuickwitService;
-    use quickwit_proto::types::{NodeId, ShardId, SourceId, queue_id};
+    use quickwit_proto::types::{ShardId, SourceId, queue_id};
     use tokio::time::timeout;
 
     use super::*;
@@ -853,7 +852,7 @@ mod tests {
         shard_state: ShardState,
         used_capacity: ByteSize,
     ) {
-        let mut shard = IngesterShard::new_solo(index_uid, source_id, shard_id)
+        let mut shard = IngesterShard::builder(index_uid, source_id, shard_id)
             .with_state(shard_state)
             .build();
         shard.rate_limiter.acquire_bytes(used_capacity);
@@ -1021,23 +1020,10 @@ mod tests {
         assert_eq!(status, IngesterStatus::Failed);
     }
 
-    fn open_shard(
-        index_uid: IndexUid,
-        source_id: SourceId,
-        shard_id: ShardId,
-        is_replica: bool,
-    ) -> IngesterShard {
-        let builder = if is_replica {
-            IngesterShard::new_replica(
-                index_uid,
-                source_id,
-                shard_id,
-                NodeId::from_str("test-leader"),
-            )
-        } else {
-            IngesterShard::new_solo(index_uid, source_id, shard_id)
-        };
-        builder.advertisable().build()
+    fn open_shard(index_uid: IndexUid, source_id: SourceId, shard_id: ShardId) -> IngesterShard {
+        IngesterShard::builder(index_uid, source_id, shard_id)
+            .advertisable()
+            .build()
     }
 
     #[tokio::test]
@@ -1048,40 +1034,28 @@ mod tests {
 
         let index_uid = IndexUid::for_test("test-index", 0);
 
-        // source-a: 2 open shards + 1 closed shard + 1 replica (ignored).
-        let s = open_shard(
-            index_uid.clone(),
-            "source-a".into(),
-            ShardId::from(1),
-            false,
-        );
-        state_guard.shards.insert(s.queue_id(), s);
-        let s = open_shard(
-            index_uid.clone(),
-            "source-a".into(),
-            ShardId::from(2),
-            false,
-        );
-        state_guard.shards.insert(s.queue_id(), s);
-        let s = IngesterShard::new_solo(index_uid.clone(), "source-a".into(), ShardId::from(3))
+        // source-a: 2 open shards + 1 closed shard.
+        let shard = open_shard(index_uid.clone(), "source-a".into(), ShardId::from(1));
+        state_guard.shards.insert(shard.queue_id(), shard);
+        let shard = open_shard(index_uid.clone(), "source-a".into(), ShardId::from(2));
+        state_guard.shards.insert(shard.queue_id(), shard);
+        let shard = IngesterShard::builder(index_uid.clone(), "source-a".into(), ShardId::from(3))
             .with_state(ShardState::Closed)
             .advertisable()
             .build();
-        state_guard.shards.insert(s.queue_id(), s);
-        let s = open_shard(index_uid.clone(), "source-a".into(), ShardId::from(4), true);
-        state_guard.shards.insert(s.queue_id(), s);
+        state_guard.shards.insert(shard.queue_id(), shard);
 
         // source-b: 2 closed shards, no open shards.
-        let s = IngesterShard::new_solo(index_uid.clone(), "source-b".into(), ShardId::from(5))
+        let shard = IngesterShard::builder(index_uid.clone(), "source-b".into(), ShardId::from(5))
             .with_state(ShardState::Closed)
             .advertisable()
             .build();
-        state_guard.shards.insert(s.queue_id(), s);
-        let s = IngesterShard::new_solo(index_uid.clone(), "source-b".into(), ShardId::from(6))
+        state_guard.shards.insert(shard.queue_id(), shard);
+        let shard = IngesterShard::builder(index_uid.clone(), "source-b".into(), ShardId::from(6))
             .with_state(ShardState::Closed)
             .advertisable()
             .build();
-        state_guard.shards.insert(s.queue_id(), s);
+        state_guard.shards.insert(shard.queue_id(), shard);
 
         let (mut open_counts, mut closed_shards) = state_guard.get_shard_snapshot();
 
@@ -1145,12 +1119,12 @@ mod tests {
             .unwrap();
 
         let shard_01 =
-            IngesterShard::new_solo(index_uid.clone(), source_id.clone(), ShardId::from(1))
+            IngesterShard::builder(index_uid.clone(), source_id.clone(), ShardId::from(1))
                 .with_state(ShardState::Closed)
                 .build();
         state_guard.shards.insert(queue_id_01.clone(), shard_01);
         let shard_02 =
-            IngesterShard::new_solo(index_uid.clone(), source_id.clone(), ShardId::from(2))
+            IngesterShard::builder(index_uid.clone(), source_id.clone(), ShardId::from(2))
                 .with_state(ShardState::Closed)
                 .with_replication_position_inclusive(Position::offset(1u64))
                 .build();

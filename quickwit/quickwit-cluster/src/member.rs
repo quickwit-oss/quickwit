@@ -233,7 +233,7 @@ fn parse_enabled_services_str(
             Ok(service) => Some(service),
             Err(_) => {
                 warn!(
-                    node_id=%node_id,
+                    remote_node_id=%node_id,
                     service=%service_str,
                     "Found unknown service enabled on node."
                 );
@@ -243,7 +243,7 @@ fn parse_enabled_services_str(
         .collect();
     if enabled_services.is_empty() {
         warn!(
-            node_id=%node_id,
+            remote_node_id=%node_id,
             "Node has no enabled services."
         )
     }

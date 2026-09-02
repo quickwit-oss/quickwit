@@ -42,7 +42,7 @@ mod templating;
 
 pub use cluster_config::ClusterConfig;
 pub use docs_clustering::{
-    ClusteringField, ClusteringPolicy, DocsClusteringConfig, FingerprintPolicy,
+    ClusteringMethod, ClusteringPolicy, DocsClusteringConfig, FingerprintPolicy, JsonPath,
 };
 // We export that one for backward compatibility.
 // See #2048
@@ -79,8 +79,8 @@ pub use crate::metastore_config::{
 pub use crate::node_config::{
     CacheConfig, CachePolicy, CompactorConfig, DEFAULT_QW_CONFIG_PATH, GrpcConfig, HealthConfig,
     IndexerConfig, IngestApiConfig, JaegerConfig, KeepAliveConfig, LambdaConfig,
-    LambdaDeployConfig, NodeConfig, RestConfig, SearcherConfig, SplitCacheLimits,
-    StorageTimeoutPolicy, TlsConfig,
+    LambdaDeployConfig, MAX_GOSSIP_PROTOCOL_VERSION, NodeConfig, RestConfig, SearcherConfig,
+    SplitCacheLimits, StorageTimeoutPolicy, TlsConfig,
 };
 pub use crate::serde_utils::HumanDuration;
 use crate::source_config::serialize::{SourceConfigV0_7, SourceConfigV0_8, VersionedSourceConfig};

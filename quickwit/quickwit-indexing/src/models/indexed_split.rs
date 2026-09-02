@@ -19,7 +19,7 @@ use quickwit_common::io::IoControls;
 use quickwit_common::metrics::index_label;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_metrics::{GaugeGuard, histogram, label_values};
+use quickwit_metrics::{GaugeGuard, label_values};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::types::{DocMappingUid, IndexUid, SplitId};
 use tantivy::IndexBuilder;
@@ -29,7 +29,7 @@ use tracing::{Span, error, instrument};
 use crate::controlled_directory::ControlledDirectory;
 use crate::docs_clustering::DocIdClusterer;
 use crate::merge_policy::MergeTask;
-use crate::metrics::{DOCS_SORT_GROUP_SIZE, INDEX_SOURCE};
+use crate::metrics::INDEX_SOURCE;
 use crate::models::{PublishLock, SplitAttrs};
 
 pub struct IndexedSplitBuilder {
@@ -147,14 +147,11 @@ impl IndexedSplitBuilder {
                 INDEX_SOURCE => index_label.to_string(),
                 split_attrs.source_id.to_string()
             );
-            for sort_group_size in doc_id_clusterer.sort_group_sizes() {
-                histogram!(parent: DOCS_SORT_GROUP_SIZE, labels: [labels.clone()])
-                    .observe(sort_group_size as f64);
-            }
+            doc_id_clusterer.observe_cluster_group_sizes(labels);
 
             // Finalize the index with the doc id mapping.
             let doc_id_mapping = doc_id_clusterer
-                .into_doc_id_mapping(split_attrs.num_docs)
+                .into_doc_id_mapping()
                 .inspect_err(|error| {
                     error!(?error, "failed to create doc id mapping");
                 })?;

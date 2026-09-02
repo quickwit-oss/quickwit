@@ -114,7 +114,7 @@ bitpacking = "0.9"
 bytes = { version = "1", features = ["serde"] }
 bytesize = { version = "2.4", features = ["serde"] }
 bytestring = "1.5"
-chitchat = "0.11.2"
+chitchat = "0.13.0"
 chrono = { version = "0.4", default-features = false, features = [
   "clock",
   "std",
@@ -267,7 +267,7 @@ serde_json_borrow = "0.9"
 serde_qs = { version = "1.1" }
 serde_with = "3.21"
 serde_yaml = "0.9"
-serial_test = { version = "3.5", features = ["file_locks"] }
+serial_test = { version = "4.0", features = ["file_locks"] }
 sha2 = "0.11"
 siphasher = "1.0"
 stable_deref_trait = "1.2"
@@ -366,7 +366,7 @@ aws-smithy-http-client = { version = "1.2", features = [
   "default-client",
   "rustls-aws-lc",
 ] }
-aws-smithy-mocks = "0.2"
+aws-smithy-mocks = "0.3"
 aws-smithy-runtime = "1.12"
 aws-smithy-runtime-api = "1.13"
 aws-smithy-types = { version = "1.6", features = [
@@ -384,7 +384,7 @@ azure_storage_blobs = { version = "0.21", default-features = false, features = [
   "enable_reqwest_rustls",
 ] }
 
-opendal = { version = "0.57", default-features = false, features = ["reqwest-rustls-tls"] }
+opendal = { version = "0.58", default-features = false, features = ["http-transport-reqwest"] }
 reqsign = { version = "0.18", default-features = false, features = ["google", "default-context"] }
 
 quickwit-actors = { path = "quickwit-actors" }
@@ -426,7 +426,7 @@ quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-transport = { path = "quickwit-transport" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "70f0b03", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "86641f7", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",

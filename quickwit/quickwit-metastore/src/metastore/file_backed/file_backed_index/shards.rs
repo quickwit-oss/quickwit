@@ -140,8 +140,7 @@ impl Shards {
                     source_id: self.source_id.clone(),
                     shard_id: Some(shard_id.clone()),
                     shard_state: ShardState::Open as i32,
-                    leader_id: subrequest.leader_id,
-                    follower_id: subrequest.follower_id,
+                    ingester_id: subrequest.ingester_id,
                     doc_mapping_uid: subrequest.doc_mapping_uid,
                     publish_position_inclusive: Some(Position::Beginning),
                     publish_token: subrequest.publish_token.clone(),
@@ -154,8 +153,7 @@ impl Shards {
                     index_uid=%self.index_uid,
                     source_id=%self.source_id,
                     %shard_id,
-                    leader_id=%shard.leader_id,
-                    follower_id=?shard.follower_id,
+                    ingester_id=%shard.ingester_id,
                     "opened shard"
                 );
                 shard
@@ -395,8 +393,7 @@ mod tests {
             index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
-            leader_id: "leader_id".to_string(),
-            follower_id: None,
+            ingester_id: "ingester_id".to_string(),
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_token: None,
         };
@@ -411,8 +408,7 @@ mod tests {
         assert_eq!(shard.source_id, source_id);
         assert_eq!(shard.shard_id(), ShardId::from(1));
         assert_eq!(shard.shard_state(), ShardState::Open);
-        assert_eq!(shard.leader_id, "leader_id");
-        assert_eq!(shard.follower_id, None);
+        assert_eq!(shard.ingester_id, "ingester_id");
         assert_eq!(shard.publish_token, None);
         assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
 
@@ -429,8 +425,7 @@ mod tests {
             index_uid: Some(index_uid.clone()),
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(2)),
-            leader_id: "leader_id".to_string(),
-            follower_id: Some("follower_id".to_string()),
+            ingester_id: "ingester_id".to_string(),
             doc_mapping_uid: Some(DocMappingUid::default()),
             publish_token: Some("publish_token".to_string()),
         };
@@ -444,8 +439,7 @@ mod tests {
         assert_eq!(shard.source_id, source_id);
         assert_eq!(shard.shard_id(), ShardId::from(2));
         assert_eq!(shard.shard_state(), ShardState::Open);
-        assert_eq!(shard.leader_id, "leader_id");
-        assert_eq!(shard.follower_id.as_ref().unwrap(), "follower_id");
+        assert_eq!(shard.ingester_id, "ingester_id");
         assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
 
         assert_eq!(shards.shards.get(&ShardId::from(2)).unwrap(), shard);

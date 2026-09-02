@@ -44,6 +44,9 @@ use crate::{ConfigFormat, MetastoreConfigs};
 
 pub const DEFAULT_QW_CONFIG_PATH: &str = "config/quickwit.yaml";
 
+/// Highest Chitchat protocol version accepted by Quickwit configuration.
+pub const MAX_GOSSIP_PROTOCOL_VERSION: u8 = 1;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RestConfig {
@@ -727,7 +730,9 @@ pub struct IngestApiConfig {
     pub max_queue_memory_usage: ByteSize,
     /// Maximum disk space taken by the ingest WAL
     pub max_queue_disk_usage: ByteSize,
-    replication_factor: usize,
+    /// Deprecated: ingest replication is no longer supported.
+    #[serde(default, rename = "replication_factor", skip_serializing)]
+    _replication_factor: Option<serde::de::IgnoredAny>,
     pub content_length_limit: ByteSize,
     /// (hidden) Targeted throughput for each shard
     pub shard_throughput_limit: ByteSize,
@@ -752,7 +757,7 @@ impl Default for IngestApiConfig {
         Self {
             max_queue_memory_usage: ByteSize::gib(2),
             max_queue_disk_usage: ByteSize::gib(4),
-            replication_factor: 1,
+            _replication_factor: None,
             content_length_limit: ByteSize::mib(10),
             shard_throughput_limit: DEFAULT_SHARD_THROUGHPUT_LIMIT,
             shard_burst_limit: DEFAULT_SHARD_BURST_LIMIT,
@@ -765,27 +770,18 @@ impl Default for IngestApiConfig {
 }
 
 impl IngestApiConfig {
-    /// Returns the replication factor, as defined in environment variable or in the configuration
-    /// in that order (the environment variable can overrides the configuration).
-    pub fn replication_factor(&self) -> anyhow::Result<NonZeroUsize> {
-        if let Ok(replication_factor_str) = env::var("QW_INGEST_REPLICATION_FACTOR") {
-            let replication_factor = match replication_factor_str.trim() {
-                "1" => 1,
-                "2" => 2,
-                _ => bail!(
-                    "replication factor must be either 1 or 2, got `{replication_factor_str}`"
-                ),
-            };
-            return Ok(NonZeroUsize::new(replication_factor)
-                .expect("replication factor should be either 1 or 2"));
+    fn warn_if_replication_factor_is_set(&self) {
+        if env::var_os("QW_INGEST_REPLICATION_FACTOR").is_some() {
+            warn!(
+                "ignoring environment variable `QW_INGEST_REPLICATION_FACTOR`: ingest replication \
+                 is no longer supported"
+            );
+        } else if self._replication_factor.is_some() {
+            warn!(
+                "ignoring ingest config parameter `ingest_api.replication_factor`: ingest \
+                 replication is no longer supported"
+            );
         }
-        ensure!(
-            self.replication_factor >= 1 && self.replication_factor <= 2,
-            "replication factor must be either 1 or 2, got `{}`",
-            self.replication_factor
-        );
-        Ok(NonZeroUsize::new(self.replication_factor)
-            .expect("replication factor should be either 1 or 2"))
     }
 
     /// Returns the ingester decommission timeout, as defined in the environment variable or in
@@ -807,7 +803,7 @@ impl IngestApiConfig {
     }
 
     fn validate(&self) -> anyhow::Result<()> {
-        self.replication_factor()?;
+        self.warn_if_replication_factor_is_set();
         ensure!(
             self.max_queue_disk_usage > ByteSize::mib(256),
             "max_queue_disk_usage must be at least 256 MiB, got `{}`",
@@ -927,6 +923,7 @@ pub struct NodeConfig {
     pub gossip_advertise_addr: SocketAddr,
     pub grpc_advertise_addr: SocketAddr,
     pub gossip_interval: Duration,
+    pub gossip_protocol_version: u8,
     pub peer_seeds: Vec<String>,
     pub data_dir_path: PathBuf,
     pub metastore_uri: Uri,

@@ -148,6 +148,8 @@ index_uri: s3://logs-bucket-eu/logs-eu
 | --- | --- | --- |
 | `account` | The Azure storage account name. | |
 | `access_key` | The Azure storage account access key. | |
+| `endpoint` | Custom blob service endpoint URL. | SDK default (`https://<account>.blob.core.windows.net`) |
+| `endpoint_suffix` | Blob service endpoint suffix for sovereign clouds. Ignored when `endpoint` is set. | SDK default (`core.windows.net`) |
 
 #### Environment variables
 
@@ -155,6 +157,8 @@ index_uri: s3://logs-bucket-eu/logs-eu
 | --- | --- |
 | `QW_AZURE_STORAGE_ACCOUNT` | Azure Blob Storage account name. |
 | `QW_AZURE_STORAGE_ACCESS_KEY` | Azure Blob Storage account access key. |
+| `QW_AZURE_ENDPOINT` | Custom blob service endpoint URL. |
+| `QW_AZURE_ENDPOINT_SUFFIX` | Blob service endpoint suffix for sovereign clouds. |
 
 Example of a storage configuration for Azure in YAML format:
 
@@ -163,6 +167,24 @@ storage:
   azure:
     account: your-azure-account-name
     access_key: your-azure-access-key
+```
+
+Example for Azure US Government:
+
+```yaml
+storage:
+  azure:
+    account: your-azure-account-name
+    endpoint_suffix: core.usgovcloudapi.net
+```
+
+Example for Azure China:
+
+```yaml
+storage:
+  azure:
+    account: your-azure-account-name
+    endpoint_suffix: core.chinacloudapi.cn
 ```
 
 ## Storage configuration examples for various object storage providers

@@ -116,8 +116,8 @@ use quickwit_proto::metastore::{
 use quickwit_proto::search::ReportSplitsRequest;
 use quickwit_proto::types::NodeId;
 use quickwit_search::{
-    SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext, SearcherPool,
-    create_search_client_from_channel, start_searcher_service,
+    SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext, SearcherNode,
+    SearcherPool, create_search_client_from_channel, start_searcher_service,
 };
 use quickwit_storage::{SearchSplitCache, StorageResolver};
 pub use quickwit_telemetry_exporters::{EnvFilterReloadFn, do_nothing_env_filter_reload_fn};
@@ -241,8 +241,8 @@ async fn balance_channel_for_service(
                 ClusterChange::Add(node) if node.is_service_enabled(service) => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
                         "adding node `{}` to {} pool",
                         chitchat_id.node_id,
                         service.as_str().replace('_', " "),
@@ -252,8 +252,8 @@ async fn balance_channel_for_service(
                 ClusterChange::Remove(node) if node.is_service_enabled(service) => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
                         "removing node `{}` from {} pool",
                         chitchat_id.node_id,
                         service.as_str().replace('_', " "),
@@ -1121,7 +1121,6 @@ fn ingester_service_layer_stack(
                 CIRCUIT_BREAK_TOTAL.clone(),
             ),
         )
-        .stack_open_replication_stream_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_init_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_retain_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_truncate_shards_layer(quickwit_common::tower::OneTaskPerCallLayer)
@@ -1139,11 +1138,6 @@ async fn setup_ingest_v2(
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().to_owned();
     let grpc_compression_encoding_opt = node_config.ingest_api_config.grpc_compression_encoding();
-    let replication_factor = node_config
-        .ingest_api_config
-        .replication_factor()
-        .expect("replication factor should have been validated")
-        .get();
 
     // Any node can serve ingest requests, so we always instantiate an ingest router.
     // TODO: I'm not sure that's such a good idea.
@@ -1151,7 +1145,6 @@ async fn setup_ingest_v2(
         self_node_id.clone(),
         control_plane.clone(),
         ingester_pool.clone(),
-        replication_factor,
         event_broker.clone(),
         node_config.availability_zone.clone(),
     );
@@ -1183,12 +1176,10 @@ async fn setup_ingest_v2(
         let ingester = Ingester::try_new(
             cluster.clone(),
             control_plane,
-            ingester_pool.clone(),
             &wal_dir_path,
             node_config.ingest_api_config.max_queue_disk_usage,
             node_config.ingest_api_config.max_queue_memory_usage,
             rate_limiter_settings,
-            replication_factor,
             idle_shard_timeout,
         )
         .await?;
@@ -1225,8 +1216,8 @@ fn setup_ingester_pool(
                 ClusterChange::Add(node) if node.is_indexer() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
                         "adding node `{}` with ingester status `{}` to ingester pool",
                         chitchat_id.node_id,
                         node.ingester_status,
@@ -1288,8 +1279,8 @@ fn build_ingester_insert_change(
 fn build_ingester_remove_change(node: &ClusterNode) -> Change<NodeId, IngesterPoolEntry> {
     let chitchat_id = node.chitchat_id();
     info!(
-        node_id = %chitchat_id.node_id,
-        generation_id = chitchat_id.generation_id,
+        remote_node_id = %chitchat_id.node_id,
+        generation_id = %chitchat_id.generation_id,
         "removing node `{}` from ingester pool",
         chitchat_id.node_id,
     );
@@ -1352,32 +1343,35 @@ async fn setup_searcher(
                 ClusterChange::Add(node) if node.is_searcher() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
                         "adding node `{}` to searcher pool",
                         chitchat_id.node_id,
                     );
                     let grpc_addr = node.grpc_advertise_addr;
-
-                    if node.is_self_node() {
-                        let search_client =
-                            SearchServiceClient::from_service(search_service_clone, grpc_addr);
-                        Some(Change::Insert(grpc_addr, search_client))
+                    let client = if node.is_self_node() {
+                        SearchServiceClient::from_service(search_service_clone, grpc_addr)
                     } else {
                         let timeout_channel = Timeout::new(node.channel(), request_timeout);
-                        let search_client = create_search_client_from_channel(
+                        create_search_client_from_channel(
                             grpc_addr,
                             timeout_channel,
                             max_message_size,
-                        );
-                        Some(Change::Insert(grpc_addr, search_client))
-                    }
+                        )
+                    };
+                    Some(Change::Insert(
+                        grpc_addr,
+                        SearcherNode {
+                            node_id: node.node_id.clone(),
+                            client,
+                        },
+                    ))
                 }
                 ClusterChange::Remove(node) if node.is_searcher() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
                         "removing node `{}` from searcher pool",
                         chitchat_id.node_id,
                     );
@@ -1404,15 +1398,10 @@ async fn setup_control_plane(
     ingest_api_config: &IngestApiConfig,
 ) -> anyhow::Result<Mailbox<ControlPlane>> {
     let cluster_id = cluster.cluster_id().to_string();
-    let replication_factor = ingest_api_config
-        .replication_factor()
-        .expect("replication factor should have been validated")
-        .get();
     let cluster_config = ClusterConfig {
         cluster_id,
         auto_create_indexes: true,
         default_index_root_uri,
-        replication_factor,
         shard_throughput_limit: ingest_api_config.shard_throughput_limit,
         shard_scale_up_factor: ingest_api_config.shard_scale_up_factor,
     };
@@ -1457,8 +1446,8 @@ fn setup_indexer_pool(
                 ClusterChange::Add(node) if node.is_indexer() => {
                     let chitchat_id = node.chitchat_id();
                     info!(
-                        node_id = %chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
+                        remote_node_id = %chitchat_id.node_id,
+                        generation_id = %chitchat_id.generation_id,
                         "adding node `{}` with ingester status `{}` to indexer pool",
                         chitchat_id.node_id,
                         node.ingester_status
@@ -1522,8 +1511,8 @@ fn build_indexer_insert_change(
 fn build_indexer_remove_change(node: &ClusterNode) -> Change<NodeId, IndexerNodeInfo> {
     let chitchat_id = node.chitchat_id();
     info!(
-        node_id = %chitchat_id.node_id,
-        generation_id = chitchat_id.generation_id,
+        remote_node_id = %chitchat_id.node_id,
+        generation_id = %chitchat_id.generation_id,
         "removing node `{}` from indexer pool",
         chitchat_id.node_id,
     );
@@ -1834,6 +1823,7 @@ mod tests {
                     let message = ObservationMessage {
                         node_id: "test-node".to_string(),
                         status: status as i32,
+                        ..Default::default()
                     };
                     Ok(message)
                 });

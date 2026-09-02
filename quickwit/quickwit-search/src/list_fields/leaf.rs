@@ -27,7 +27,7 @@ use tracing::{Span, instrument};
 
 use crate::leaf::open_split_bundle;
 use crate::list_fields::patterns::FieldPatterns;
-use crate::list_fields::{merge_entries, sort_and_dedup};
+use crate::list_fields::{merge_entries_with_limit_override, sort_and_dedup};
 use crate::search_thread_pool;
 use crate::service::SearcherContext;
 
@@ -45,6 +45,7 @@ pub async fn leaf_list_fields(
     index_id: IndexId,
     field_patterns_strs: &[String],
     split_footers: Vec<SplitIdAndFooterOffsets>,
+    limit: Option<u32>,
     searcher_ctx: Arc<SearcherContext>,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<ListFieldsResponse> {
@@ -62,7 +63,7 @@ pub async fn leaf_list_fields(
     )
     .await?;
 
-    let merged_entries: Vec<ListFieldsEntry> = merge_fields_metadata(all_entries).await?;
+    let merged_entries: Vec<ListFieldsEntry> = merge_fields_metadata(all_entries, limit).await?;
 
     let response = ListFieldsResponse {
         entries: merged_entries,
@@ -189,6 +190,9 @@ fn deserialize_fields_metadata(
             return false;
         }
         list_field_entry.index_ids = vec![index_id.to_string()];
+        // On-disk entries describe exactly one split. The count is initialized while reading so
+        // the split metadata wire format remains compatible with existing splits.
+        list_field_entry.num_splits = 1;
 
         if list_field_entry
             .field_name
@@ -226,10 +230,13 @@ fn filter_fields_metadata(
 #[instrument(skip_all, fields(num_splits = all_entries.len()))]
 async fn merge_fields_metadata(
     all_entries: Vec<Vec<ListFieldsEntry>>,
+    limit: Option<u32>,
 ) -> crate::Result<Vec<ListFieldsEntry>> {
     let parent_span = Span::current();
     search_thread_pool()
-        .run_cpu_intensive(move || parent_span.in_scope(|| merge_entries(all_entries)))
+        .run_cpu_intensive(move || {
+            parent_span.in_scope(|| merge_entries_with_limit_override(all_entries, limit))
+        })
         .await
         .context("failed to merge single split list fields")?
 }
@@ -253,6 +260,7 @@ mod tests {
             non_searchable_index_ids: Vec::new(),
             non_aggregatable_index_ids: Vec::new(),
             index_ids: Vec::new(),
+            num_splits: 0,
         }
     }
 

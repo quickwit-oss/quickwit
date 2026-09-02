@@ -14,13 +14,17 @@
 
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, anyhow, bail};
+use anyhow::{Context, anyhow};
+use bytesize::ByteSize;
 use futures::StreamExt;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_proto::ingest::ingester::{
-    DecommissionRequest, IngesterService, IngesterStatus, OpenObservationStreamRequest,
+    DecommissionRequest, IngesterService, IngesterStatus, ObservationMessage,
+    OpenObservationStreamRequest,
 };
-use tracing::info;
+use tracing::{error, info};
+
+use super::metrics::{DECOMMISSION_FAILED, DECOMMISSION_SUCCEEDED};
 
 /// Tries to get the current status of an ingester by opening an observation stream
 /// and reading the first message.
@@ -65,47 +69,9 @@ pub async fn wait_for_ingester_status(
     status: IngesterStatus,
     timeout_after: Duration,
 ) -> anyhow::Result<()> {
-    debug_assert!(
-        timeout_after > Duration::ZERO,
-        "timeout_after should be greater than zero"
-    );
-    tokio::time::timeout(
-        timeout_after,
-        wait_for_ingester_status_inner(ingester, status),
-    )
-    .await
-    .with_context(|| {
-        format!(
-            "timed out waiting for ingester to transition to status {status} after {}",
-            timeout_after.pretty_display(),
-        )
-    })?
-}
-
-async fn wait_for_ingester_status_inner(
-    ingester: &impl IngesterService,
-    status: IngesterStatus,
-) -> anyhow::Result<()> {
-    let mut observation_stream = ingester
-        .open_observation_stream(OpenObservationStreamRequest {})
+    wait_for_ingester_status_inner(ingester, status, timeout_after)
         .await
-        .context("failed to open observation stream")?;
-
-    loop {
-        match observation_stream.next().await {
-            Some(Ok(observation_message)) => {
-                if observation_message.status() == status {
-                    return Ok(());
-                }
-            }
-            Some(Err(error)) => {
-                return Err(anyhow!(error).context("observation stream failed"));
-            }
-            None => {
-                bail!("observation stream ended");
-            }
-        }
-    }
+        .map_err(|(error, _last_observation)| error)
 }
 
 /// Initiates decommission of an ingester, if one is present. Returns an error if the decommission
@@ -133,13 +99,101 @@ pub async fn wait_for_ingester_decommission(
     };
     let now = Instant::now();
 
-    wait_for_ingester_status(ingester, IngesterStatus::Decommissioned, timeout_after).await?;
+    match wait_for_ingester_status_inner(ingester, IngesterStatus::Decommissioned, timeout_after)
+        .await
+    {
+        Ok(()) => {
+            DECOMMISSION_SUCCEEDED.inc();
+            info!(
+                "successfully decommissioned ingester in {}",
+                now.elapsed().pretty_display()
+            );
+            Ok(())
+        }
+        Err((error, last_observation)) => {
+            DECOMMISSION_FAILED.inc();
+            let error = error.context(format!(
+                "failed to decommission ingester after {}",
+                timeout_after.pretty_display()
+            ));
+            log_ingester_decommission_failure(&error, &last_observation);
+            Err(error)
+        }
+    }
+}
 
-    info!(
-        "successfully decommissioned ingester in {}",
-        now.elapsed().pretty_display()
+async fn wait_for_ingester_status_inner(
+    ingester: &impl IngesterService,
+    status: IngesterStatus,
+    timeout_after: Duration,
+) -> Result<(), (anyhow::Error, Option<ObservationMessage>)> {
+    debug_assert!(
+        timeout_after > Duration::ZERO,
+        "timeout_after should be greater than zero"
     );
-    Ok(())
+    let mut last_observation: Option<ObservationMessage> = None;
+
+    let sleep = tokio::time::sleep(timeout_after);
+    tokio::pin!(sleep);
+
+    let mut observation_stream = tokio::select! {
+        result = ingester.open_observation_stream(OpenObservationStreamRequest {}) => {
+            result
+                .context("failed to open observation stream")
+                .map_err(|error| (error, None))?
+        }
+        _ = &mut sleep => {
+            let error = anyhow!(
+                "timed out while waiting for ingester to transition to status {status} after {}",
+                timeout_after.pretty_display(),
+            );
+            return Err((error, None));
+        }
+    };
+    loop {
+        tokio::select! {
+            observation = observation_stream.next() => {
+                match observation {
+                    Some(Ok(observation_message)) => {
+                        if observation_message.status() == status {
+                            return Ok(());
+                        }
+                        last_observation = Some(observation_message);
+                    }
+                    Some(Err(error)) => {
+                        let error = anyhow!(error).context("observation stream failed");
+                        return Err((error, last_observation));
+                    }
+                    None => {
+                        return Err((anyhow!("observation stream ended"), last_observation));
+                    }
+                }
+            }
+            _ = &mut sleep => {
+                let error = anyhow!(
+                    "timed out while waiting for ingester to transition to status {status} after {}",
+                    timeout_after.pretty_display(),
+                );
+                return Err((error, last_observation));
+            }
+        }
+    }
+}
+
+fn log_ingester_decommission_failure(
+    error: &anyhow::Error,
+    last_observation: &Option<ObservationMessage>,
+) {
+    match last_observation {
+        Some(observation_message) => error!(
+            %error,
+            "{} record(s) remaining in WAL, using {} of memory and {} of disk",
+            observation_message.wal_num_records,
+            ByteSize(observation_message.wal_memory_used_bytes),
+            ByteSize(observation_message.wal_disk_used_bytes),
+        ),
+        None => error!(%error, "failed to decommission ingester"),
+    }
 }
 
 #[cfg(test)]
@@ -165,6 +219,7 @@ mod tests {
                 let message = ObservationMessage {
                     node_id: "test-ingester".to_string(),
                     status: IngesterStatus::Initializing as i32,
+                    ..Default::default()
                 };
                 service_stream_tx.try_send(Ok(message)).unwrap();
                 Ok(service_stream)
@@ -185,12 +240,14 @@ mod tests {
                 let message = ObservationMessage {
                     node_id: "test-ingester".to_string(),
                     status: IngesterStatus::Initializing as i32,
+                    ..Default::default()
                 };
                 service_stream_tx.try_send(Ok(message)).unwrap();
 
                 let message = ObservationMessage {
                     node_id: "test-ingester".to_string(),
                     status: IngesterStatus::Ready as i32,
+                    ..Default::default()
                 };
                 service_stream_tx.try_send(Ok(message)).unwrap();
                 Ok(service_stream)
@@ -215,6 +272,7 @@ mod tests {
                     let message = ObservationMessage {
                         node_id: "test-ingester".to_string(),
                         status: IngesterStatus::Decommissioned as i32,
+                        ..Default::default()
                     };
                     service_stream_tx.try_send(Ok(message)).unwrap();
                 });
@@ -242,18 +300,21 @@ mod tests {
                 let message = ObservationMessage {
                     node_id: "test-ingester".to_string(),
                     status: IngesterStatus::Ready as i32,
+                    ..Default::default()
                 };
                 service_stream_tx.try_send(Ok(message)).unwrap();
 
                 let message = ObservationMessage {
                     node_id: "test-ingester".to_string(),
                     status: IngesterStatus::Decommissioning as i32,
+                    ..Default::default()
                 };
                 service_stream_tx.try_send(Ok(message)).unwrap();
 
                 let message = ObservationMessage {
                     node_id: "test-ingester".to_string(),
                     status: IngesterStatus::Decommissioned as i32,
+                    ..Default::default()
                 };
                 service_stream_tx.try_send(Ok(message)).unwrap();
                 Ok(service_stream)

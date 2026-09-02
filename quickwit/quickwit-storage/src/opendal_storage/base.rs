@@ -59,7 +59,8 @@ impl OpendalStorage {
         uri: Uri,
         cfg: opendal::services::Gcs,
     ) -> Result<Self, StorageResolverError> {
-        let op = Operator::new(cfg)?.finish();
+        opendal::install_default();
+        let op = Operator::new(cfg)?;
         Ok(Self::from_operator(uri, op))
     }
 
@@ -75,14 +76,13 @@ impl OpendalStorage {
     #[cfg(test)]
     // Lets local HTTPS tests trust a private CA without changing global trust,
     // while still using Quickwit's GCS storage construction and read path.
-    pub(super) fn new_google_cloud_storage_with_http_client_for_test(
+    pub(super) fn new_google_cloud_storage_with_http_transport_for_test(
         uri: Uri,
         cfg: opendal::services::Gcs,
-        http_client: opendal::raw::HttpClient,
+        http_transport: opendal::HttpTransporter,
     ) -> Result<Self, StorageResolverError> {
         let op = Operator::new(cfg)?
-            .layer(opendal::layers::HttpClientLayer::new(http_client))
-            .finish();
+            .with_context(opendal::OperationContext::new().with_http_transport(http_transport));
         Ok(Self::from_operator(uri, op))
     }
 
