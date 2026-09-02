@@ -21,7 +21,7 @@
 //!
 //! Some limitations at the moment (which may or may not be improved in the future):
 //! - no support for HTTP/2
-//! - no support for connection upgrade (websocket)
+//! - no support for connection upgrade (websocket); `101 Switching Protocols` is rejected
 //! - focus more on cpu usage and TTLB than TTFB
 //! - no support for proxy yet
 //! - `write_request` serializes any method and drains/sends body frames, but does not synthesize
@@ -30,11 +30,9 @@
 //! - request trailers are dropped, not serialized (no chunked transfer-encoding is synthesized on
 //!   requests, so there is no wire slot for them)
 //! - the client/pool layer and the single-buffer optimization target GET downloads; other methods
-//!   are not exercised yet
-//! - the `Host` header is not derived yet
-//! - response head parsing has no per-read timeout yet
-//! - basic HTTP/1.1 framing only; Transfer-Encoding-over-Content-Length precedence, 101-not-pooled,
-//!   and HTTP/1.0+TE rejection will come later
+//!   are not really exercised yet
+//! - basic HTTP/1.1 framing only; Transfer-Encoding-over-Content-Length precedence, and HTTP/1.0+TE
+//!   rejection will come later
 
 pub mod body;
 pub mod client;

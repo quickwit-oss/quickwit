@@ -13,18 +13,21 @@
 // limitations under the License.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::future::Future;
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
+use tokio::sync::oneshot;
 use tokio::time::Instant;
 
 use crate::connection::ConnStream;
 use crate::endpoint::Endpoint;
+use crate::error::HttpError;
 
 /// Default per-host idle connection cap.
 pub const DEFAULT_MAX_IDLE_PER_HOST: usize = 32;
 /// Default idle timeout: an idle connection older than this is dropped on the
-/// next acquire/release rather than reused.
+/// next acquire/release (and by the background reaper) rather than reused.
 pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// An idle connection and the instant it entered the pool.
@@ -33,8 +36,49 @@ struct IdleConn {
     idle_since: Instant,
 }
 
+/// Per-host pool state
+#[derive(Default)]
+struct HostState {
+    /// Idle connections, ordered oldest (front) to newest (back).
+    idle: VecDeque<IdleConn>,
+    /// Checkouts waiting for a connection to be returned.
+    waiters: VecDeque<oneshot::Sender<ConnStream>>,
+}
+
+impl HostState {
+    fn purge_expired(&mut self, idle_timeout: Duration) {
+        let now = Instant::now();
+        if let Some(newest) = self.idle.back()
+            && now.duration_since(newest.idle_since) >= idle_timeout
+        {
+            self.idle.clear();
+        } else {
+            while let Some(oldest) = self.idle.front() {
+                if now.duration_since(oldest.idle_since) >= idle_timeout {
+                    self.idle.pop_front();
+                } else {
+                    break;
+                }
+            }
+        }
+        while let Some(front) = self.waiters.front() {
+            if front.is_closed() {
+                self.waiters.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+/// A per-host entry, shared via `Arc` so the top-level map only needs a brief
+/// lookup lock; the deque work happens under this per-host lock.
+struct HostEntry {
+    state: Mutex<HostState>,
+}
+
 struct PoolInner {
-    idle: Mutex<HashMap<Endpoint, VecDeque<IdleConn>>>,
+    hosts: Mutex<HashMap<Endpoint, Arc<HostEntry>>>,
     max_idle_per_host: usize,
     idle_timeout: Duration,
 }
@@ -49,15 +93,30 @@ impl ConnectionPool {
     /// Creates a pool with the given per-host idle cap and idle timeout.
     ///
     /// `max_idle_per_host = 0` disables pooling entirely: [`Self::release`]
-    /// drops every connection and [`Self::acquire`] always returns `None`.
+    /// drops every connection and [`Self::acquire`] always connects fresh.
+    ///
+    /// Must be called within a Tokio runtime: this spawns a background reaper
+    /// task that periodically evicts expired idle connections. The task holds
+    /// a [`Weak`] handle to this pool and exits when the pool is dropped.
+    /// Lazy eviction on [`Self::acquire`] and [`Self::release`] keeps the
+    /// pool correct even if the reaper never runs.
     pub fn new(max_idle_per_host: usize, idle_timeout: Duration) -> Self {
-        Self {
-            inner: Arc::new(PoolInner {
-                idle: Mutex::new(HashMap::new()),
-                max_idle_per_host,
-                idle_timeout,
-            }),
-        }
+        Self::new_with_reaper_handle(max_idle_per_host, idle_timeout).0
+    }
+
+    /// Like [`Self::new`], but also returns the background reaper task's
+    /// [`JoinHandle`].
+    pub fn new_with_reaper_handle(
+        max_idle_per_host: usize,
+        idle_timeout: Duration,
+    ) -> (Self, tokio::task::JoinHandle<()>) {
+        let inner = Arc::new(PoolInner {
+            hosts: Mutex::new(HashMap::new()),
+            max_idle_per_host,
+            idle_timeout,
+        });
+        let reaper = spawn_reaper(Arc::downgrade(&inner), idle_timeout);
+        (Self { inner }, reaper)
     }
 
     /// Creates a pool with [`DEFAULT_MAX_IDLE_PER_HOST`] and
@@ -66,50 +125,126 @@ impl ConnectionPool {
         Self::new(DEFAULT_MAX_IDLE_PER_HOST, DEFAULT_IDLE_TIMEOUT)
     }
 
-    /// Takes an idle connection for `endpoint` out of the pool, or returns
-    /// `None` when none is available.
-    pub fn acquire(&self, endpoint: &Endpoint) -> Option<ConnStream> {
-        let mut idle = self.inner.idle.lock().unwrap();
-        let queue = idle.get_mut(endpoint)?;
-        purge_expired(queue, self.inner.idle_timeout);
-        queue.pop_front().map(|entry| entry.conn)
+    fn entry(&self, endpoint: &Endpoint) -> Arc<HostEntry> {
+        let mut hosts = self.inner.hosts.lock().unwrap();
+        hosts
+            .entry(endpoint.clone())
+            .or_insert_with(|| {
+                Arc::new(HostEntry {
+                    state: Mutex::new(HostState::default()),
+                })
+            })
+            .clone()
     }
 
-    /// Returns a connection to the pool for later reuse.
+    /// Takes an idle connection for `endpoint` out of the pool (MRU: the
+    /// most recently returned one first), or races a fresh `connect` against a
+    /// connection being returned by a concurrent [`Self::release`].
+    ///
+    /// Returns the connection along with `was_reused`: `true` when it came
+    /// from the pool (either an idle entry or a waiter hand-off). Reused connections
+    /// might have died without it being noticed yet, one failing early should
+    /// cause a retry rather than a query failure.
+    pub async fn acquire<F>(
+        &self,
+        endpoint: &Endpoint,
+        connect: F,
+    ) -> Result<(ConnStream, bool), HttpError>
+    where
+        F: Future<Output = Result<ConnStream, HttpError>> + Send,
+    {
+        let entry = self.entry(endpoint);
+        let mut rx = {
+            let mut state = entry.state.lock().unwrap();
+            if let Some(conn) = state.idle.pop_back().map(|entry| entry.conn) {
+                return Ok((conn, true));
+            }
+            let (tx, rx) = oneshot::channel();
+            state.waiters.push_back(tx);
+            rx
+        };
+        let mut connect = Box::pin(connect);
+        tokio::select! {
+            conn = &mut rx => match conn {
+                Ok(conn) => Ok((conn, true)),
+                // The sender was dropped without sending. This shouldn't happen.
+                // Fall back to connecting.
+                Err(_) => {
+                    let conn = connect.as_mut().await?;
+                    Ok((conn, false))
+                }
+            },
+            conn = connect.as_mut() => {
+                // leave our oneshot sender alone, next call to release() that tries to send it a
+                // connection will clean it up
+                Ok((conn?, false))
+            }
+        }
+    }
+
+    /// Returns a connection to the pool for later reuse, handing it to the
+    /// oldest live waiter first if one is waiting.
     pub fn release(&self, endpoint: &Endpoint, conn: ConnStream) {
         if self.inner.max_idle_per_host == 0 {
             return;
         }
-        let mut idle = self.inner.idle.lock().unwrap();
-        let queue = idle.entry(endpoint.clone()).or_default();
-        purge_expired(queue, self.inner.idle_timeout);
-        if queue.len() >= self.inner.max_idle_per_host {
-            return;
+        let entry = self.entry(endpoint);
+        let mut state = entry.state.lock().unwrap();
+        // Hand the connection to the oldest live waiter, or park the connection.
+        let mut conn = conn;
+        while let Some(sender) = state.waiters.pop_front() {
+            match sender.send(conn) {
+                Ok(()) => return,
+                Err(returned) => conn = returned,
+            }
         }
-        queue.push_back(IdleConn {
+        state.idle.push_back(IdleConn {
             conn,
             idle_since: Instant::now(),
         });
-    }
-}
-
-impl Default for ConnectionPool {
-    fn default() -> Self {
-        Self::with_defaults()
-    }
-}
-
-/// Drops entries from the front of `queue` whose idle age has reached
-/// `idle_timeout`.
-fn purge_expired(queue: &mut VecDeque<IdleConn>, idle_timeout: Duration) {
-    let now = Instant::now();
-    while let Some(front) = queue.front() {
-        if now.duration_since(front.idle_since) >= idle_timeout {
-            queue.pop_front();
-        } else {
-            break;
+        if state.idle.len() > self.inner.max_idle_per_host {
+            state.idle.pop_front();
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn idle_count(&self, endpoint: &Endpoint) -> usize {
+        let entry = self.entry(endpoint);
+        entry.state.lock().unwrap().idle.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn waiter_count(&self, endpoint: &Endpoint) -> usize {
+        let entry = self.entry(endpoint);
+        entry.state.lock().unwrap().waiters.len()
+    }
+}
+
+/// Background task that periodically evicts expired idle connections and
+/// reclaims stale waiters across all hosts, keeping the idle set honest
+/// without an acquire happening. Holds a [`Weak`] handle so it exits as soon
+/// as the pool is dropped.
+fn spawn_reaper(weak: Weak<PoolInner>, idle_timeout: Duration) -> tokio::task::JoinHandle<()> {
+    let tick = (idle_timeout / 2).max(Duration::from_secs(2));
+    // enforce this is run only from a runtime so we can actually spawn the task
+    let handle = tokio::runtime::Handle::try_current()
+        .expect("ConnectionPool::new must be called within a Tokio runtime");
+    handle.spawn(async move {
+        loop {
+            tokio::time::sleep(tick).await;
+            let Some(inner) = weak.upgrade() else {
+                return;
+            };
+            // Collect handles under the top-level lock, then purge each host
+            // under its own lock so the map lock is held as little as possible.
+            let entries: Vec<Arc<HostEntry>> =
+                inner.hosts.lock().unwrap().values().cloned().collect();
+            for entry in entries {
+                let mut state = entry.state.lock().unwrap();
+                state.purge_expired(inner.idle_timeout);
+            }
+        }
+    })
 }
 
 #[cfg(test)]
@@ -156,12 +291,21 @@ mod tests {
         }
     }
 
+    fn pending_connect() -> std::future::Pending<Result<ConnStream, HttpError>> {
+        std::future::pending()
+    }
+
+    async fn fresh_connect(port: u16) -> Result<ConnStream, HttpError> {
+        Ok(make_conn(port).await)
+    }
+
     #[tokio::test]
-    async fn acquire_returns_none_when_empty() {
+    async fn acquire_on_empty_pool_connects_fresh() {
         let pool = ConnectionPool::with_defaults();
         let port = holding_server_port().await;
         let ep = endpoint(port);
-        assert!(pool.acquire(&ep).is_none());
+        let (_conn, was_reused) = pool.acquire(&ep, fresh_connect(port)).await.unwrap();
+        assert!(!was_reused, "empty pool must connect fresh");
     }
 
     #[tokio::test]
@@ -172,16 +316,14 @@ mod tests {
         let conn = make_conn(port).await;
         let expected_port = local_port(&conn);
         pool.release(&ep, conn);
-        let reused = pool.acquire(&ep).expect("pooled connection");
+        let (reused, was_reused) = pool.acquire(&ep, pending_connect()).await.unwrap();
+        assert!(was_reused, "should reuse the pooled connection");
         assert_eq!(local_port(&reused), expected_port);
-        // The pool is drained after the acquire.
-        assert!(pool.acquire(&ep).is_none());
+        assert_eq!(pool.idle_count(&ep), 0, "acquire drained the pool");
     }
 
     #[tokio::test]
     async fn one_connection_serves_sequential_acquires() {
-        // The point of the pool: a single connection, repeatedly released and
-        // reacquired, serves a sequence of requests without opening new ones.
         let pool = ConnectionPool::with_defaults();
         let port = holding_server_port().await;
         let ep = endpoint(port);
@@ -190,32 +332,44 @@ mod tests {
 
         for _ in 0..3 {
             pool.release(&ep, conn);
-            conn = pool.acquire(&ep).expect("reused the pooled connection");
+            let (c, was_reused) = pool.acquire(&ep, pending_connect()).await.unwrap();
+            assert!(was_reused, "should reuse the pooled connection");
+            conn = c;
             assert_eq!(local_port(&conn), identity, "reused the same connection");
         }
-        // After the loop the pool holds one connection again.
-        assert!(pool.acquire(&ep).is_none(), "acquire drained the pool");
+        // After the loop the pool holds no connection (the last acquire took it).
+        assert_eq!(pool.idle_count(&ep), 0, "acquire drained the pool");
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn idle_connection_expires_after_idle_timeout() {
-        let idle_timeout = Duration::from_secs(10);
-        let pool = ConnectionPool::new(8, idle_timeout);
+    #[tokio::test]
+    async fn acquire_is_mru_most_recent_first() {
+        let pool = ConnectionPool::with_defaults();
         let port = holding_server_port().await;
         let ep = endpoint(port);
-        let conn = make_conn(port).await;
-        pool.release(&ep, conn);
-        // Still fresh immediately.
-        assert!(pool.acquire(&ep).is_some(), "should reuse before timeout");
-        // Put it back and advance past the idle timeout.
-        let conn = make_conn(port).await;
-        pool.release(&ep, conn);
-        tokio::time::sleep(idle_timeout + Duration::from_secs(1)).await;
-        assert!(pool.acquire(&ep).is_none(), "should have expired");
+
+        let c1 = make_conn(port).await;
+        let c2 = make_conn(port).await;
+        let p1 = local_port(&c1);
+        let p2 = local_port(&c2);
+
+        pool.release(&ep, c1);
+        pool.release(&ep, c2);
+
+        let (first, _) = pool
+            .acquire(&ep, pending_connect())
+            .await
+            .expect("first pooled");
+        let (second, _) = pool
+            .acquire(&ep, pending_connect())
+            .await
+            .expect("second pooled");
+        assert_eq!(local_port(&first), p2, "most-recently-returned first");
+        assert_eq!(local_port(&second), p1, "then the older one");
+        assert_eq!(pool.idle_count(&ep), 0, "pool drained");
     }
 
     #[tokio::test(start_paused = true)]
-    async fn idle_cap_drops_excess_connections() {
+    async fn idle_cap_evicts_oldest_connection() {
         let pool = ConnectionPool::new(2, Duration::from_secs(90));
         let port = holding_server_port().await;
         let ep = endpoint(port);
@@ -223,19 +377,26 @@ mod tests {
         let c1 = make_conn(port).await;
         let c2 = make_conn(port).await;
         let c3 = make_conn(port).await;
-        let p1 = local_port(&c1);
         let p2 = local_port(&c2);
+        let p3 = local_port(&c3);
 
         pool.release(&ep, c1);
         pool.release(&ep, c2);
-        // Queue is at the cap (2); the third release will be dropped.
+        // Queue is at the cap (2); the third release evicts c1 (oldest).
         pool.release(&ep, c3);
 
-        let got1 = pool.acquire(&ep).expect("first pooled");
-        let got2 = pool.acquire(&ep).expect("second pooled");
-        assert!(pool.acquire(&ep).is_none(), "third was dropped");
-        assert_eq!(local_port(&got1), p1);
-        assert_eq!(local_port(&got2), p2);
+        let (got1, _) = pool
+            .acquire(&ep, pending_connect())
+            .await
+            .expect("first pooled");
+        let (got2, _) = pool
+            .acquire(&ep, pending_connect())
+            .await
+            .expect("second pooled");
+        // c1 (the oldest) was evicted when c3 was released.
+        assert_eq!(pool.idle_count(&ep), 0, "pool drained");
+        assert_eq!(local_port(&got1), p3, "MRU: c3 (newest) first");
+        assert_eq!(local_port(&got2), p2, "then c2");
     }
 
     #[tokio::test]
@@ -245,6 +406,186 @@ mod tests {
         let ep = endpoint(port);
         let conn = make_conn(port).await;
         pool.release(&ep, conn);
-        assert!(pool.acquire(&ep).is_none());
+        let (_, was_reused) = pool.acquire(&ep, fresh_connect(port)).await.unwrap();
+        assert!(!was_reused, "pooling disabled: must connect fresh");
+        assert_eq!(pool.idle_count(&ep), 0, "nothing parked");
+    }
+
+    #[tokio::test]
+    async fn distinct_endpoints_do_not_share_connections() {
+        let pool = ConnectionPool::with_defaults();
+        let port_a = holding_server_port().await;
+        let port_b = holding_server_port().await;
+        let ep_a = endpoint(port_a);
+        let ep_b = endpoint(port_b);
+
+        let conn_a = make_conn(port_a).await;
+        let p_a = local_port(&conn_a);
+        pool.release(&ep_a, conn_a);
+        let (_, was_reused_b) = pool.acquire(&ep_b, fresh_connect(port_b)).await.unwrap();
+        assert!(!was_reused_b, "ep_b must connect fresh");
+        let (got_a, was_reused_a) = pool.acquire(&ep_a, pending_connect()).await.unwrap();
+        assert!(was_reused_a, "ep_a still has its connection");
+        assert_eq!(local_port(&got_a), p_a);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn acquire_races_connect_and_hands_off_to_waiter() {
+        let pool = ConnectionPool::with_defaults();
+        let port = holding_server_port().await;
+        let ep = endpoint(port);
+
+        let mut acquire_fut = std::pin::pin!(pool.acquire(&ep, pending_connect()));
+
+        // Poll the acquire once: it must register its waiter and then park
+        // on the race (Pending), since neither the pending connect nor a
+        // hand-off has resolved.
+        let waker = futures::task::noop_waker();
+        let mut context = std::task::Context::from_waker(&waker);
+        assert!(
+            matches!(
+                acquire_fut.as_mut().poll(&mut context),
+                std::task::Poll::Pending
+            ),
+            "acquire should park waiting for a connection"
+        );
+        assert_eq!(pool.waiter_count(&ep), 1, "acquire should be waiting");
+
+        // A separate connection is returned; release must hand it to the
+        // waiter rather than parking it idle.
+        let donated = make_conn(port).await;
+        let donated_port = local_port(&donated);
+        pool.release(&ep, donated);
+        assert_eq!(pool.idle_count(&ep), 0, "released conn went to the waiter");
+
+        let (got, was_reused) = acquire_fut.await.expect("acquire ok");
+        assert!(was_reused, "should reuse the donated connection");
+        assert_eq!(local_port(&got), donated_port);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn stale_waiter_is_cleaned_up_by_release() {
+        let pool = ConnectionPool::with_defaults();
+        let port = holding_server_port().await;
+        let ep = endpoint(port);
+
+        let (_fresh, was_reused) = pool
+            .acquire(&ep, fresh_connect(port))
+            .await
+            .expect("acquire ok");
+        assert!(!was_reused);
+        // The stale sender is still in the waiters queue until release touches it.
+        assert_eq!(pool.waiter_count(&ep), 1, "stale sender not cleaned yet");
+
+        let conn = make_conn(port).await;
+        let identity = local_port(&conn);
+        pool.release(&ep, conn);
+        // The stale sender was popped (send failed), and the connection was
+        // parked idle rather than lost.
+        assert_eq!(pool.waiter_count(&ep), 0, "stale sender cleaned up");
+        assert_eq!(pool.idle_count(&ep), 1, "connection parked idle");
+        let (reused, _) = pool
+            .acquire(&ep, pending_connect())
+            .await
+            .expect("parked connection");
+        assert_eq!(local_port(&reused), identity);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn reaper_evicts_expired_idle_connections_without_an_acquire() {
+        let idle_timeout = Duration::from_secs(10);
+        let pool = ConnectionPool::new(8, idle_timeout);
+        let port = holding_server_port().await;
+        let ep = endpoint(port);
+
+        let conn = make_conn(port).await;
+        pool.release(&ep, conn);
+        assert_eq!(pool.idle_count(&ep), 1, "parked");
+
+        // Advance past the idle timeout; the connection is now expired.
+        tokio::time::sleep(idle_timeout + Duration::from_millis(50)).await;
+        let mut evicted = false;
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+            if pool.idle_count(&ep) == 0 {
+                evicted = true;
+                break;
+            }
+            // Nudge time forward past the next tick if needed.
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(evicted, "reaper should have evicted the expired connection");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn reaper_reclaims_stale_waiters_for_unpooled_host() {
+        // For a host whose connections are never pooled (e.g. HTTP/1.0
+        // read-until-close, which withholds the pool hook), `release` is
+        // never called. Each acquire whose racing connect wins leaves a stale
+        // waiter (its receiver was dropped). The reaper must reclaim those on
+        // its background tick, otherwise they accumulate without bound.
+        let idle_timeout = Duration::from_secs(10);
+        let pool = ConnectionPool::new(8, idle_timeout);
+        let port = holding_server_port().await;
+        let ep = endpoint(port);
+
+        for _ in 0..3 {
+            let (_conn, _was_reused) = pool.acquire(&ep, fresh_connect(port)).await.unwrap();
+        }
+        assert_eq!(
+            pool.waiter_count(&ep),
+            3,
+            "each connect-won acquire leaves a stale waiter"
+        );
+
+        tokio::time::sleep(idle_timeout + Duration::from_millis(50)).await;
+        let mut reclaimed = false;
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+            if pool.waiter_count(&ep) == 0 {
+                reclaimed = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(reclaimed, "reaper should have reclaimed the stale waiters");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn reaper_keeps_fresh_connections() {
+        let idle_timeout = Duration::from_secs(10);
+        let pool = ConnectionPool::new(8, idle_timeout);
+        let port = holding_server_port().await;
+        let ep = endpoint(port);
+
+        let conn = make_conn(port).await;
+        pool.release(&ep, conn);
+        // Advance less than the idle timeout, then let the reaper tick: the
+        // connection is still fresh and must be retained.
+        tokio::time::sleep(idle_timeout / 2 + Duration::from_millis(50)).await;
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+        assert_eq!(pool.idle_count(&ep), 1, "fresh connection retained");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn reaper_exits_when_pool_is_dropped() {
+        let idle_timeout = Duration::from_secs(10);
+        let (pool, reaper) = ConnectionPool::new_with_reaper_handle(8, idle_timeout);
+        let port = holding_server_port().await;
+        let ep = endpoint(port);
+        let conn = make_conn(port).await;
+        pool.release(&ep, conn);
+        assert!(!reaper.is_finished(), "reaper runs while the pool lives");
+
+        drop(pool);
+        // Advance past one reaper tick so the task wakes
+        let tick = idle_timeout / 2;
+        tokio::time::sleep(tick + Duration::from_millis(50)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            reaper.is_finished(),
+            "reaper should have exited after the pool was dropped"
+        );
     }
 }

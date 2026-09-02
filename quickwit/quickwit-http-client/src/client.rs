@@ -101,10 +101,11 @@ impl HttpClient {
             .unwrap_or(self.inner.buffer_hint);
         let pool_hook = Some((self.inner.pool.clone(), endpoint.clone()));
 
-        let (conn, was_reused) = match self.inner.pool.acquire(&endpoint) {
-            Some(conn) => (conn, true),
-            None => (self.connect(&endpoint).await?, false),
-        };
+        let (conn, was_reused) = self
+            .inner
+            .pool
+            .acquire(&endpoint, self.connect(&endpoint))
+            .await?;
 
         let mut write_state = WriteState::default();
         match exchange(
