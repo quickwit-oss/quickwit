@@ -1216,18 +1216,6 @@ fn min_bound<T: Ord + Copy>(left: Bound<T>, right: Bound<T>) -> Bound<T> {
     }
 }
 
-/// remove timestamp range that would be present both in QueryAst and SearchRequest
-///
-/// this can save us from doing double the work in some cases, and help with the partial request
-/// cache.
-fn remove_redundant_timestamp_range(
-    search_request: &mut SearchRequest,
-    split: &SplitIdAndFooterOffsets,
-    timestamp_field: &str,
-) {
-    normalize_timestamp_range(search_request, split, timestamp_field, false);
-}
-
 fn normalize_timestamp_range(
     search_request: &mut SearchRequest,
     split: &SplitIdAndFooterOffsets,
