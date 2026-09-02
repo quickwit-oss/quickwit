@@ -444,6 +444,8 @@ mod tests {
         server.await.unwrap();
     }
 
+    // this test need 127.0.0.2 to be a thing, which it isn't on many other OSes
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn tls_handshake_failure_tries_next_ip() {
         // try to install a crypto provider, might fail if another test already ran in the same

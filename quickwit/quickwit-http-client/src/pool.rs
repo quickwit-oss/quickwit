@@ -546,12 +546,21 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn reaper_reclaims_stale_waiters_for_unpooled_host() {
         let idle_timeout = Duration::from_secs(10);
-        let pool = ConnectionPool::new(8, idle_timeout);
         let port = holding_server_port().await;
         let ep = endpoint(port);
 
+        // Establish all connections before starting the reaper to make the test more
+        // deterministic. Mixing real socket I/O with paused tokio leads to skipped time.
+        let mut connections = Vec::new();
         for _ in 0..3 {
-            let (_conn, _was_reused) = pool.acquire(&ep, fresh_connect(port)).await.unwrap();
+            connections.push(make_conn(port).await);
+        }
+
+        let pool = ConnectionPool::new(8, idle_timeout);
+        for conn in connections {
+            let connect = std::future::ready(Ok::<ConnStream, HttpError>(conn));
+            let (_conn, was_reused) = pool.acquire(&ep, connect).await.unwrap();
+            assert!(!was_reused);
         }
         assert_eq!(
             pool.waiter_count(&ep),
