@@ -96,6 +96,8 @@ impl<T: AsyncRead + Send + Unpin> AsyncRead for S3AsyncRead<T> {
 /// S3-compatible object storage implementation.
 pub struct S3CompatibleObjectStorage {
     s3_client: S3Client,
+    // client to use for GetObject, sometime distinct from s3_client
+    get_s3_client: S3Client,
     uri: Uri,
     bucket: String,
     prefix: PathBuf,
@@ -282,8 +284,15 @@ impl S3CompatibleObjectStorage {
         let retry_params = RetryParams::aggressive();
         let disable_multi_object_delete = s3_storage_config.disable_multi_object_delete;
         let disable_multipart_upload = s3_storage_config.disable_multipart_upload;
+        let get_s3_client =
+            if quickwit_common::get_bool_from_env_cached!("QW_S3_USE_FULL_BODY_CLIENT", false) {
+                create_s3_full_body_client(s3_storage_config).await
+            } else {
+                s3_client.clone()
+            };
         Ok(Self {
             s3_client,
+            get_s3_client,
             uri: uri.clone(),
             bucket,
             prefix,
@@ -302,6 +311,7 @@ impl S3CompatibleObjectStorage {
     pub fn with_prefix(self, prefix: PathBuf) -> Self {
         Self {
             s3_client: self.s3_client,
+            get_s3_client: self.get_s3_client,
             uri: self.uri,
             bucket: self.bucket,
             prefix,
@@ -784,7 +794,7 @@ impl S3CompatibleObjectStorage {
         crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
         let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
 
-        self.s3_client
+        self.get_s3_client
             .get_object()
             .bucket(self.bucket.clone())
             .key(key)
@@ -1403,7 +1413,8 @@ mod tests {
         let prefix = PathBuf::new();
 
         let mut s3_storage = S3CompatibleObjectStorage {
-            s3_client,
+            s3_client: s3_client.clone(),
+            get_s3_client: s3_client,
             uri,
             bucket,
             prefix,
@@ -1519,8 +1530,10 @@ mod tests {
             .http_client(client.clone())
             .credentials_provider(credentials)
             .build();
+        let s3_client = S3Client::from_conf(config);
         let storage = DebouncedStorage::new(S3CompatibleObjectStorage {
-            s3_client: S3Client::from_conf(config),
+            s3_client: s3_client.clone(),
+            get_s3_client: s3_client,
             uri: Uri::for_test("s3://bucket/indexes"),
             bucket: "bucket".to_string(),
             prefix: PathBuf::from("indexes"),
@@ -1577,7 +1590,8 @@ mod tests {
         let prefix = PathBuf::new();
 
         let s3_storage = S3CompatibleObjectStorage {
-            s3_client,
+            s3_client: s3_client.clone(),
+            get_s3_client: s3_client,
             uri,
             bucket,
             prefix,
@@ -1615,7 +1629,8 @@ mod tests {
         let prefix = PathBuf::new();
 
         let s3_storage = S3CompatibleObjectStorage {
-            s3_client,
+            s3_client: s3_client.clone(),
+            get_s3_client: s3_client,
             uri,
             bucket,
             prefix,
@@ -1698,7 +1713,8 @@ mod tests {
         let prefix = PathBuf::new();
 
         let s3_storage = S3CompatibleObjectStorage {
-            s3_client,
+            s3_client: s3_client.clone(),
+            get_s3_client: s3_client,
             uri,
             bucket,
             prefix,
@@ -1790,7 +1806,8 @@ mod tests {
         let prefix = PathBuf::new();
 
         let s3_storage = S3CompatibleObjectStorage {
-            s3_client,
+            s3_client: s3_client.clone(),
+            get_s3_client: s3_client,
             uri,
             bucket,
             prefix,
@@ -1818,8 +1835,10 @@ mod tests {
             .credentials_provider(credentials)
             .request_checksum_calculation(request_checksum_calculation(checksum_algorithm))
             .build();
+        let s3_client = S3Client::from_conf(config);
         S3CompatibleObjectStorage {
-            s3_client: S3Client::from_conf(config),
+            s3_client: s3_client.clone(),
+            get_s3_client: s3_client,
             uri: Uri::for_test("s3://bucket/"),
             bucket: "bucket".to_string(),
             prefix: PathBuf::new(),

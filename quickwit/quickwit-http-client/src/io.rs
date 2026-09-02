@@ -12,12 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::pin::Pin;
-use std::task::{Context, Poll};
 use std::time::Duration;
 
 use tokio::io::{AsyncWrite, AsyncWriteExt};
-use tokio::time::Sleep;
 
 use crate::error::HttpError;
 
