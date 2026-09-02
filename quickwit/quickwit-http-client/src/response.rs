@@ -129,7 +129,7 @@ fn build_head(
     let mut header_map = http::HeaderMap::with_capacity(resp.headers.len());
     let mut connection_close = false;
     let mut connection_keepalive = false;
-    let mut transfer_encoding_chunked = false;
+    let mut transfer_encoding_chunked: Option<bool> = None;
     let mut content_length: Option<usize> = None;
 
     for header in resp.headers.iter() {
@@ -148,11 +148,11 @@ fn build_head(
                 }
             }
         } else if name.eq_ignore_ascii_case("transfer-encoding") {
-            if std::str::from_utf8(value)
-                .unwrap_or("")
-                .eq_ignore_ascii_case("chunked")
-            {
-                transfer_encoding_chunked = true;
+            let value_str = std::str::from_utf8(value).unwrap_or("");
+            for tok in value_str.split(',').map(str::trim) {
+                if !tok.is_empty() {
+                    transfer_encoding_chunked = Some(tok.eq_ignore_ascii_case("chunked"));
+                }
             }
         } else if name.eq_ignore_ascii_case("content-length") {
             let Some(parsed) = parse_usize(value)? else {
@@ -191,8 +191,21 @@ fn build_head(
     // 204, 304, and HEAD responses have no body despite any Content-Length.
     let body = if status == 204 || status == 304 || request_method == http::Method::HEAD {
         BodyStrategy::Empty
-    } else if transfer_encoding_chunked {
-        BodyStrategy::Chunked
+    } else if let Some(chunked) = transfer_encoding_chunked {
+        // Transfer-Encoding takes precedence over Content-Length.
+        // HTTP/1.0 + TE is invalid
+        if version == 0 {
+            return Err(HttpError::InvalidLength(
+                "HTTP/1.0 response with Transfer-Encoding is invalid".to_string(),
+            ));
+        }
+        // The final encoding determines framing: `chunked` -> Chunked,
+        // anything else -> UntilClose (Content-Length is ignored).
+        if chunked {
+            BodyStrategy::Chunked
+        } else {
+            BodyStrategy::UntilClose
+        }
     } else if let Some(len) = content_length {
         BodyStrategy::Known(len)
     } else {
@@ -380,5 +393,62 @@ mod tests {
         )
         .await;
         assert_eq!(head.body, BodyStrategy::Empty);
+    }
+
+    #[tokio::test]
+    async fn transfer_encoding_non_chunked_is_until_close() {
+        // Any Transfer-Encoding takes precedence over Content-Length. A
+        // non-final `chunked` (or no `chunked` at all) means the body is
+        // delimited by close, not by Content-Length.
+        let head = read_head_from(
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\nContent-Length: 5\r\n\r\n",
+        )
+        .await;
+        assert_eq!(head.body, BodyStrategy::UntilClose);
+    }
+
+    #[tokio::test]
+    async fn transfer_encoding_chunked_final_is_chunked() {
+        let head =
+            read_head_from(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip, chunked\r\n\r\n").await;
+        assert_eq!(head.body, BodyStrategy::Chunked);
+    }
+
+    #[tokio::test]
+    async fn transfer_encoding_chunked_not_final_is_until_close() {
+        let head =
+            read_head_from(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked, gzip\r\n\r\n").await;
+        assert_eq!(head.body, BodyStrategy::UntilClose);
+    }
+
+    #[tokio::test]
+    async fn transfer_encoding_multiple_headers_combined() {
+        // determines framing.
+        let head = read_head_from(
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\nTransfer-Encoding: chunked\r\n\r\n",
+        )
+        .await;
+        assert_eq!(head.body, BodyStrategy::Chunked);
+    }
+
+    #[tokio::test]
+    async fn http10_with_transfer_encoding_errors() {
+        let err =
+            read_head_from_err(b"HTTP/1.0 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n").await;
+        assert!(
+            matches!(err, HttpError::InvalidLength(_)),
+            "expected an error for HTTP/1.0 + TE, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn transfer_encoding_ignores_content_length() {
+        let head = read_head_from(
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\nContent-Length: 5\r\n\r\n",
+        )
+        .await;
+        assert_eq!(head.body, BodyStrategy::UntilClose);
+        // Content-Length is still surfaced in the headers.
+        assert_eq!(head.parts.headers.get("content-length").unwrap(), "5");
     }
 }

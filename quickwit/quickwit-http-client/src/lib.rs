@@ -31,8 +31,6 @@
 //!   requests, so there is no wire slot for them)
 //! - the client/pool layer and the single-buffer optimization target GET downloads; other methods
 //!   are not really exercised yet
-//! - basic HTTP/1.1 framing only; Transfer-Encoding-over-Content-Length precedence, and HTTP/1.0+TE
-//!   rejection will come later
 
 pub mod body;
 pub mod client;
