@@ -729,15 +729,15 @@ async fn leaf_search_single_split(
         agg_context_params,
     )?;
 
-    let predicate_cache = if collector.requires_scoring() {
-        // at the moment the predicate cache doesn't support scoring
-        None
-    } else {
-        Some((
-            ctx.searcher_context.predicate_cache.clone() as Arc<dyn PredicateCache>,
-            split.split_id.clone(),
-        ))
-    };
+    let predicate_cache =
+        if collector.requires_scoring() || !ctx.searcher_context.predicate_cache.is_enabled() {
+            None
+        } else {
+            Some((
+                ctx.searcher_context.predicate_cache.clone() as Arc<dyn PredicateCache>,
+                split.split_id.clone(),
+            ))
+        };
     let predicate_cache_miss_ast = predicate_cache
         .as_ref()
         .and_then(|(cache, cache_split_id)| {
