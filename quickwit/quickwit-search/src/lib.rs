@@ -59,6 +59,7 @@ use tantivy::schema::NamedFieldDocument;
 /// Refer to this as `crate::Result<T>`.
 pub type Result<T> = std::result::Result<T, SearchError>;
 
+use std::hash::{Hash, Hasher};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::{Arc, LazyLock};
 
@@ -74,7 +75,7 @@ use quickwit_proto::search::{
     LeafResourceStats, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
     SplitResourceStats,
 };
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexUid, NodeId};
 use quickwit_storage::StorageResolver;
 pub use service::SearcherContext;
 use tantivy::DocAddress;
@@ -96,12 +97,50 @@ pub use crate::search_response_rest::{
 };
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 
-/// A pool of searcher clients identified by their gRPC socket address.
-pub type SearcherPool = Pool<SocketAddr, SearchServiceClient>;
+/// A searcher pool entry: stable cluster identity plus the client used to dial it.
+///
+/// The pool stays keyed by gRPC address so RPC routing is unchanged. Rendezvous
+/// hashing uses [`Self::node_id`] (`node_id` / `QW_NODE_ID`) so a restart that
+/// keeps the same node ID keeps the same split affinity even if the listen
+/// address changes.
+#[derive(Clone, Debug)]
+pub struct SearcherNode {
+    /// Cluster node ID used for split affinity. Must stay unique and stable
+    /// across restarts.
+    pub node_id: NodeId,
+    /// Client used to send search RPCs to this node.
+    pub client: SearchServiceClient,
+}
+
+impl Hash for SearcherNode {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.node_id.hash(state);
+    }
+}
+
+#[cfg(any(test, feature = "testsuite"))]
+impl SearcherNode {
+    /// Wraps a client with a deterministic test node ID derived from its gRPC
+    /// port (`node-{port}`).
+    pub fn for_test(client: SearchServiceClient) -> Self {
+        let grpc_addr = client.grpc_addr();
+        Self {
+            node_id: NodeId::from_str(&format!("node-{}", grpc_addr.port())),
+            client,
+        }
+    }
+}
+
+/// A pool of searchers identified by their gRPC socket address.
+///
+/// Affinity hashing uses the value's [`SearcherNode::node_id`], not the address
+/// key, so placement survives listen-address changes when `QW_NODE_ID` is
+/// stable.
+pub type SearcherPool = Pool<SocketAddr, SearcherNode>;
 
 fn search_thread_pool() -> &'static ThreadPoolWithPriority {
     static SEARCH_THREAD_POOL: LazyLock<ThreadPoolWithPriority> =
-        LazyLock::new(|| ThreadPoolWithPriority::new("search", None));
+        LazyLock::new(|| ThreadPoolWithPriority::new("search", Some(quickwit_common::num_cpus())));
     &SEARCH_THREAD_POOL
 }
 
@@ -304,7 +343,13 @@ pub async fn single_node_search(
     ));
     let search_service_client =
         SearchServiceClient::from_service(search_service.clone(), socket_addr);
-    searcher_pool.insert(socket_addr, search_service_client);
+    searcher_pool.insert(
+        socket_addr,
+        SearcherNode {
+            node_id: NodeId::from_str("single-node"),
+            client: search_service_client,
+        },
+    );
     root_search(
         &searcher_context,
         search_request,
@@ -348,7 +393,7 @@ pub fn searcher_pool_for_test(
                     .expect("The gRPC address should be valid socket address.");
                 let client =
                     SearchServiceClient::from_service(Arc::new(mock_search_service), grpc_addr);
-                (grpc_addr, client)
+                (grpc_addr, SearcherNode::for_test(client))
             }),
     )
 }

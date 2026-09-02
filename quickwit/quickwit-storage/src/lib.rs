@@ -36,7 +36,7 @@ pub use debouncer::AsyncDebouncer;
 pub(crate) use debouncer::DebouncedStorage;
 
 pub use self::payload::PutPayload;
-pub use self::storage::Storage;
+pub use self::storage::{ListObjectsStream, ObjectMetadata, Storage};
 
 mod bundle_storage;
 mod error;
@@ -64,7 +64,9 @@ pub use split_range_cache::{
 pub use tantivy::directory::OwnedBytes;
 pub use versioned_component::VersionedComponent;
 
-pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
+pub use self::bundle_storage::{
+    BundleFileRanges, BundleStorage, locate_split_footer_range, strip_split_footer_trailer,
+};
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::cache::MockStorageCache;
 pub use self::cache::{

@@ -111,9 +111,8 @@ message Shard {
   string source_id = 2;
   ShardId shard_id = 3;
   // The node ID of the ingester to which all the write requests for this shard should be sent to.
-  string leader_id = 4;
-  // The node ID of the ingester holding a copy of the data.
-  optional string follower_id = 5;
+  string ingester_id = 4;
+  reserved 5;
 
   // Mutable fields
   ShardState shard_state = 8;

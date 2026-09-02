@@ -302,6 +302,7 @@ impl SearchService for SearchServiceImpl {
             index_id,
             &list_fields_req.field_patterns,
             split_ids,
+            list_fields_req.limit,
             self.searcher_context.clone(),
             storage,
         )

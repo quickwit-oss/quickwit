@@ -27,6 +27,7 @@ metrics = { workspace = true }
 mini-moka = { workspace = true }
 mixtrics = { workspace = true }
 mockall = { workspace = true, optional = true }
+percent-encoding = { workspace = true }
 pin-project = { workspace = true }
 quick_cache = { workspace = true }
 regex = { workspace = true }

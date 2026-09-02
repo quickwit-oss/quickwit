@@ -51,7 +51,6 @@ use quickwit_storage::{
 use tantivy::aggregation::AggContextParams;
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 use tantivy::collector::Collector;
-use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::index::SegmentId;
 use tantivy::schema::Field;
@@ -166,7 +165,7 @@ pub(crate) async fn open_split_bundle(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
-) -> anyhow::Result<(FileSlice, BundleStorage)> {
+) -> anyhow::Result<(OwnedBytes, BundleStorage)> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
     let foyer_storage: Arc<dyn Storage> = match &searcher_context.split_range_disk_cache_opt {
         Some(cache) => wrap_storage_with_split_range_cache(cache.clone(), index_storage.clone()),
@@ -188,10 +187,10 @@ pub(crate) async fn open_split_bundle(
             foyer_storage
         };
 
-    let (hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data(
+    let (bundle_storage, hotcache_bytes) = BundleStorage::open_from_split_bytes(
         index_storage_with_split_cache,
         split_file,
-        FileSlice::new(Arc::new(footer_data)),
+        footer_data,
     )?;
 
     Ok((hotcache_bytes, bundle_storage))
@@ -246,9 +245,9 @@ pub(crate) async fn open_index_with_caches(
 
     let hot_directory = if let Some(cache) = ephemeral_unbounded_cache {
         let caching_directory = CachingDirectory::new(Arc::new(directory), cache);
-        HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?
+        HotDirectory::open(caching_directory, hotcache_bytes)?
     } else {
-        HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
+        HotDirectory::open(directory, hotcache_bytes)?
     };
 
     let mut index = Index::open(hot_directory.clone())?;
@@ -1895,7 +1894,11 @@ async fn schedule_search_tasks(
     mut splits: Vec<(SplitIdAndFooterOffsets, SearchRequest)>,
     searcher_context: &SearcherContext,
 ) -> ScheduleSearchTaskResult {
-    let task_metadata: Vec<crate::search_permit_provider::SplitSearchTaskMetadata> = splits
+    let priority = splits
+        .first()
+        .map(|(_, search_request)| search_request.priority)
+        .unwrap_or_default();
+    let split_metadatas = splits
         .iter()
         .map(|(split, _)| {
             let memory_allocation = compute_initial_memory_allocation(
@@ -1911,6 +1914,10 @@ async fn schedule_search_tasks(
             }
         })
         .collect();
+    let task_metadata = crate::search_permit_provider::LeafSearchTaskMetadata {
+        priority,
+        splits: split_metadatas,
+    };
 
     let offload_threshold: usize = if searcher_context.lambda_invoker.is_some()
         && let Some(lambda_config) = &searcher_context.searcher_config.lambda

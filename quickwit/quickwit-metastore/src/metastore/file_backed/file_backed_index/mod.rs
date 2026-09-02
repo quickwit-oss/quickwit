@@ -135,8 +135,7 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
-            leader_id: "leader-ingester".to_string(),
-            follower_id: Some("follower-ingester".to_string()),
+            ingester_id: "ingester".to_string(),
             doc_mapping_uid: Some(DocMappingUid::for_test(1)),
             publish_position_inclusive: Some(Position::Beginning),
             update_timestamp: 1724240908,
@@ -1227,6 +1226,22 @@ impl Debug for Stamper {
 }
 
 fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
+    if !query.included_split_ids.is_empty()
+        && !query
+            .included_split_ids
+            .contains(&split.split_metadata.split_id)
+    {
+        return false;
+    }
+
+    if !query.excluded_split_ids.is_empty()
+        && query
+            .excluded_split_ids
+            .contains(&split.split_metadata.split_id)
+    {
+        return false;
+    }
+
     if !split_tag_filter(&split.split_metadata, query.tags.as_ref()) {
         return false;
     }
@@ -1289,13 +1304,6 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
         {
             return false;
         }
-    }
-
-    if query
-        .excluded_split_ids
-        .contains(&split.split_metadata.split_id)
-    {
-        return false;
     }
 
     true
