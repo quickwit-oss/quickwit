@@ -149,7 +149,7 @@ struct FastReadOutcome<R> {
 // which we can manipulate without boxes, but as is i think it would either cost
 // us a zero-initialization of a buffer, or some unsafe to interact with AsyncRead
 // efficiently
-async fn read_frame_fast<R: AsyncRead + Unpin + Send>(
+async fn read_frame_fast<R: AsyncRead + Unpin + Send + Sync>(
     mut reader: R,
     want: usize,
     leftover: Bytes,
@@ -217,22 +217,22 @@ async fn read_frame_fast<R: AsyncRead + Unpin + Send>(
 }
 
 /// Fast path, when body is not chunked
-struct FastBody<R: AsyncRead + Send + 'static> {
+struct FastBody<R: AsyncRead + Send + Sync + 'static> {
     // None only when lend it to read_frame_fast to please the borrowchecker
     reader: Option<R>,
     // In-progress frame read. Only None when reader is Some, and Some when reader is None.
-    read_fut: Option<Pin<Box<dyn Future<Output = FastReadOutcome<R>> + Send>>>,
+    read_fut: Option<Pin<Box<dyn Future<Output = FastReadOutcome<R>> + Send + Sync>>>,
     read_timeout: Duration,
     target: usize,
     // `None` once the body has reached EOS.
     state: Option<FastState>,
-    pool_hook: Option<Box<dyn FnOnce(R) + Send + 'static>>,
+    pool_hook: Option<Box<dyn FnOnce(R) + Send + Sync + 'static>>,
     poolable: bool,
     clean_eos: bool,
     consumed: usize,
 }
 
-impl<R: AsyncRead + Unpin + Send + 'static> FastBody<R> {
+impl<R: AsyncRead + Unpin + Send + Sync + 'static> FastBody<R> {
     fn poll_frame(
         &mut self,
         cx: &mut Context<'_>,
@@ -338,7 +338,7 @@ impl<R: AsyncRead + Unpin + Send + 'static> FastBody<R> {
     }
 }
 
-impl<R: AsyncRead + Send + 'static> FastBody<R> {
+impl<R: AsyncRead + Send + Sync + 'static> FastBody<R> {
     fn release_to_pool(&mut self) {
         if self.clean_eos
             && self.poolable
@@ -349,14 +349,14 @@ impl<R: AsyncRead + Send + 'static> FastBody<R> {
     }
 }
 
-struct ChunkedBody<R: AsyncRead + Send + 'static> {
+struct ChunkedBody<R: AsyncRead + Send + Sync + 'static> {
     framed: Option<BodyFramedReader<R>>,
-    pool_hook: Option<Box<dyn FnOnce(R) + Send + 'static>>,
+    pool_hook: Option<Box<dyn FnOnce(R) + Send + Sync + 'static>>,
     poolable: bool,
     clean_eos: bool,
 }
 
-impl<R: AsyncRead + Send + 'static> ChunkedBody<R> {
+impl<R: AsyncRead + Send + Sync + 'static> ChunkedBody<R> {
     fn release_to_pool(&mut self) {
         if self.poolable
             && let (Some(hook), Some(framed)) = (self.pool_hook.take(), self.framed.take())
@@ -369,14 +369,14 @@ impl<R: AsyncRead + Send + 'static> ChunkedBody<R> {
     }
 }
 
-pub struct ResponseBody<R: AsyncRead + Send + 'static> {
+pub struct ResponseBody<R: AsyncRead + Send + Sync + 'static> {
     kind: BodyKind<R>,
     read_timeout: Duration,
     consumed: usize,
     done: bool,
 }
 
-enum BodyKind<R: AsyncRead + Send + 'static> {
+enum BodyKind<R: AsyncRead + Send + Sync + 'static> {
     /// Fast pass for unframed body (content-lenght or until EOS)
     Fast(FastBody<R>),
     /// Transfer-Encoding: chunked path
@@ -384,12 +384,12 @@ enum BodyKind<R: AsyncRead + Send + 'static> {
     /// Empty body / zero-length body
     Complete {
         reader: Option<R>,
-        pool_hook: Option<Box<dyn FnOnce(R) + Send + 'static>>,
+        pool_hook: Option<Box<dyn FnOnce(R) + Send + Sync + 'static>>,
         poolable: bool,
     },
 }
 
-impl<R: AsyncRead + Send + 'static> std::fmt::Debug for ResponseBody<R> {
+impl<R: AsyncRead + Send + Sync + 'static> std::fmt::Debug for ResponseBody<R> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("ResponseBody")
@@ -400,14 +400,14 @@ impl<R: AsyncRead + Send + 'static> std::fmt::Debug for ResponseBody<R> {
     }
 }
 
-impl<R: AsyncRead + Unpin + Send + 'static> ResponseBody<R> {
+impl<R: AsyncRead + Unpin + Send + Sync + 'static> ResponseBody<R> {
     pub(crate) fn new(
         reader: R,
         strategy: BodyStrategy,
         leftover: Bytes,
         buffer_hint: BufferHint,
         read_timeout: Duration,
-        pool_hook: Option<Box<dyn FnOnce(R) + Send + 'static>>,
+        pool_hook: Option<Box<dyn FnOnce(R) + Send + Sync + 'static>>,
         keep_alive: bool,
     ) -> Self {
         let target = buffer_hint.target.max(MIN_TARGET);
@@ -487,7 +487,7 @@ impl<R: AsyncRead + Unpin + Send + 'static> ResponseBody<R> {
     }
 }
 
-impl<R: AsyncRead + Unpin + Send + 'static> Body for ResponseBody<R> {
+impl<R: AsyncRead + Unpin + Send + Sync + 'static> Body for ResponseBody<R> {
     type Data = Bytes;
     type Error = HttpError;
 
@@ -574,7 +574,7 @@ impl<R: AsyncRead + Unpin + Send + 'static> Body for ResponseBody<R> {
     }
 }
 
-impl<R: AsyncRead + Send + 'static> Drop for ResponseBody<R> {
+impl<R: AsyncRead + Send + Sync + 'static> Drop for ResponseBody<R> {
     fn drop(&mut self) {
         match &mut self.kind {
             BodyKind::Fast(fast) => {

@@ -22,7 +22,6 @@ use aws_smithy_runtime_api::client::http::{
 use aws_smithy_runtime_api::client::result::ConnectorError;
 use aws_smithy_runtime_api::http::{Request as SdkRequest, Response as SdkResponse, StatusCode};
 use aws_smithy_types::body::SdkBody;
-use http_body_util::BodyExt;
 use tokio_util::task::AbortOnDropHandle;
 
 use crate::body::{BufferHint, ResponseBody};
@@ -189,7 +188,7 @@ impl HttpConnector for SingleBufferHttp1Connector {
                     .execute(http_request)
                     .await
                     .map_err(to_connector_error)?;
-                convert_response(response).await
+                convert_response(response)
             }));
             driver
                 .await
@@ -200,16 +199,13 @@ impl HttpConnector for SingleBufferHttp1Connector {
 
 /// Converts the core client's streaming `http::Response<ResponseBody>` into
 /// the SDK's `Response<SdkBody>`.
-async fn convert_response(
+fn convert_response(
     response: http::Response<ResponseBody<ConnStream>>,
 ) -> Result<SdkResponse<SdkBody>, ConnectorError> {
     let (parts, body) = response.into_parts();
     let status = StatusCode::try_from(parts.status.as_u16())
         .map_err(|err| ConnectorError::other(err.into(), None))?;
-    let bytes = body.collect().await.map_err(to_connector_error)?.to_bytes();
-    let mut sdk_response = SdkResponse::new(status, SdkBody::from(bytes));
-    // we borrow to get a (&Name, &Value) iterator, otherwise we get a (Option<Name>, Value)
-    // iterator (multiple headers can have the same name)
+    let mut sdk_response = SdkResponse::new(status, SdkBody::from_body_1_x(body));
     for (name, value) in &parts.headers {
         sdk_response
             .headers_mut()

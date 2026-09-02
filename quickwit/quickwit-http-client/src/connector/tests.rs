@@ -17,6 +17,7 @@ use std::time::Duration;
 use aws_smithy_runtime_api::client::http::HttpConnector;
 use aws_smithy_runtime_api::http::Request as SdkRequest;
 use aws_smithy_types::body::SdkBody;
+use http_body_util::BodyExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -53,7 +54,7 @@ fn sdk_get_request(uri: &str, host: &str) -> SdkRequest<SdkBody> {
 }
 
 #[tokio::test]
-async fn s3_adapter_returns_single_segment_sdk_body() {
+async fn s3_adapter_preserves_body_content() {
     // A few MB so a streaming client would necessarily receive it as many
     // chunks; a recognizable pattern verifies integrity over the whole body.
     let body: Vec<u8> = {
@@ -94,7 +95,12 @@ async fn s3_adapter_returns_single_segment_sdk_body() {
     let response = connector.call(request).await.unwrap();
     assert_eq!(response.status().as_u16(), 200);
 
-    let body_bytes = response.body().bytes().expect("expected a single buffer");
+    let body_bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body collect")
+        .to_bytes();
     assert_eq!(body_bytes.len(), body.len());
     assert_eq!(body_bytes, body.as_slice());
 

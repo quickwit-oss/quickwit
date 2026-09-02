@@ -164,7 +164,13 @@ fn derive_host<B>(request: &mut http::Request<B>) {
     let Some(authority) = request.uri().authority() else {
         return;
     };
-    if let Ok(value) = authority.as_str().parse::<http::HeaderValue>() {
+    // Strip any credentials (`user:pass@`), the Host header is just host[:port]
+    let host = authority.host();
+    let host_value = match authority.port_u16() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_string(),
+    };
+    if let Ok(value) = host_value.parse::<http::HeaderValue>() {
         request.headers_mut().insert(HOST, value);
     }
 }

@@ -65,7 +65,7 @@ where
         pool_hook.map(|(pool, endpoint)| {
             Box::new(move |conn: ConnStream| {
                 pool.release(&endpoint, conn);
-            }) as Box<dyn FnOnce(ConnStream) + Send + 'static>
+            }) as Box<dyn FnOnce(ConnStream) + Send + Sync + 'static>
         })
     };
     let body = ResponseBody::new(

@@ -218,6 +218,11 @@ impl ConnectionPool {
         let entry = self.entry(endpoint);
         entry.state.lock().unwrap().waiters.len()
     }
+
+    #[cfg(test)]
+    pub(crate) fn host_count(&self) -> usize {
+        self.inner.hosts.lock().unwrap().len()
+    }
 }
 
 /// Background task that periodically evicts expired idle connections and
@@ -237,11 +242,32 @@ fn spawn_reaper(weak: Weak<PoolInner>, idle_timeout: Duration) -> tokio::task::J
             };
             // Collect handles under the top-level lock, then purge each host
             // under its own lock so the map lock is held as little as possible.
-            let entries: Vec<Arc<HostEntry>> =
-                inner.hosts.lock().unwrap().values().cloned().collect();
-            for entry in entries {
+            let entries: Vec<(Endpoint, Arc<HostEntry>)> = inner
+                .hosts
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(ep, entry)| (ep.clone(), entry.clone()))
+                .collect();
+            for (endpoint, entry) in entries {
                 let mut state = entry.state.lock().unwrap();
                 state.purge_expired(inner.idle_timeout);
+                // remove empty entries so they don't accumulate
+                // there are races where we end up dropping a state that's being interacted with,
+                // so that someone adds an idle conn or a waiter, just after we removed it from
+                // the map. This only means we sometime don't reuse a connection when we could,
+                // not ideal, not horrible
+                if state.idle.is_empty() && state.waiters.is_empty() {
+                    drop(state);
+                    let mut hosts = inner.hosts.lock().unwrap();
+                    if let Some(stale) = hosts.get(&endpoint) {
+                        let stale_state = stale.state.lock().unwrap();
+                        if stale_state.idle.is_empty() && stale_state.waiters.is_empty() {
+                            drop(stale_state);
+                            hosts.remove(&endpoint);
+                        }
+                    }
+                }
             }
         }
     })
@@ -519,11 +545,6 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn reaper_reclaims_stale_waiters_for_unpooled_host() {
-        // For a host whose connections are never pooled (e.g. HTTP/1.0
-        // read-until-close, which withholds the pool hook), `release` is
-        // never called. Each acquire whose racing connect wins leaves a stale
-        // waiter (its receiver was dropped). The reaper must reclaim those on
-        // its background tick, otherwise they accumulate without bound.
         let idle_timeout = Duration::from_secs(10);
         let pool = ConnectionPool::new(8, idle_timeout);
         let port = holding_server_port().await;
@@ -549,6 +570,36 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
         assert!(reclaimed, "reaper should have reclaimed the stale waiters");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn reaper_evicts_empty_host_entries() {
+        // A host whose connections all expire (or whose waiters all get
+        // reclaimed) should have its `HostEntry` removed from the map, not
+        // linger forever. Without this, the map accumulates one entry per
+        // endpoint ever contacted.
+        let idle_timeout = Duration::from_secs(10);
+        let (pool, _reaper) = ConnectionPool::new_with_reaper_handle(8, idle_timeout);
+        let port = holding_server_port().await;
+        let ep = endpoint(port);
+
+        let conn = make_conn(port).await;
+        pool.release(&ep, conn);
+        assert_eq!(pool.host_count(), 1, "host entry created on release");
+
+        // Advance past the idle timeout; the reaper purges the expired
+        // connection and then evicts the now-empty host entry.
+        tokio::time::sleep(idle_timeout + Duration::from_millis(50)).await;
+        let mut evicted = false;
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+            if pool.host_count() == 0 {
+                evicted = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(evicted, "reaper should have evicted the empty host entry");
     }
 
     #[tokio::test(start_paused = true)]

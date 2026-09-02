@@ -54,7 +54,7 @@ impl AsyncRead for FragmentedReader {
     }
 }
 
-async fn collect_body<R: AsyncRead + Unpin + Send>(
+async fn collect_body<R: AsyncRead + Unpin + Send + Sync>(
     body: &mut ResponseBody<R>,
 ) -> Result<Vec<Bytes>, HttpError> {
     let mut frames = Vec::new();
@@ -74,7 +74,7 @@ fn concat(frames: &[Bytes]) -> Vec<u8> {
     bytes
 }
 
-fn body<R: AsyncRead + Unpin + Send>(
+fn body<R: AsyncRead + Unpin + Send + Sync>(
     reader: R,
     strategy: BodyStrategy,
     leftover: impl Into<Bytes>,
@@ -308,7 +308,7 @@ async fn until_close_clean_eos_is_not_pooled() {
     let reader = Cursor::new(b"abc".to_vec());
     let pooled = Arc::new(AtomicUsize::new(0));
     let pooled_for_hook = pooled.clone();
-    let pool_hook: Option<Box<dyn FnOnce(_) + Send + 'static>> = Some(Box::new(move |_| {
+    let pool_hook: Option<Box<dyn FnOnce(_) + Send + Sync + 'static>> = Some(Box::new(move |_| {
         pooled_for_hook.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }));
     let mut body = ResponseBody::new(

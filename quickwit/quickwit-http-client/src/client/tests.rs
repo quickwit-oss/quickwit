@@ -248,6 +248,29 @@ async fn explicit_host_header_is_preserved() {
     assert_eq!(host, "example.invalid");
 }
 
+#[tokio::test]
+async fn host_header_strips_userinfo() {
+    let (port, _conn_count, mut host_rx) = spawn_server(b"h", true).await;
+    let client = http_client().await;
+    let uri = format!("http://user:pass@127.0.0.1:{port}/g");
+
+    let request = http::Request::builder()
+        .method("GET")
+        .uri(&uri)
+        .body(Empty::<Bytes>::new())
+        .unwrap();
+    let _ = collect(client.execute(request).await.unwrap()).await;
+
+    let host = host_rx
+        .try_recv()
+        .expect("server should have received a Host");
+    assert_eq!(
+        host,
+        format!("127.0.0.1:{port}"),
+        "userinfo must be stripped"
+    );
+}
+
 mod retry_safety {
     use crate::client::retry_is_safe;
     use crate::request::WriteState;
