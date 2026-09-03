@@ -123,10 +123,17 @@ impl<'a> IdToOrdMap<'a> {
     }
 }
 
+#[derive(Clone, Copy)]
+enum ShardCountPolicy {
+    All,
+    CurrentSourceOnly,
+}
+
 fn convert_physical_plan_to_solution(
     plan: &PhysicalIndexingPlan,
     id_to_ord_map: &IdToOrdMap,
     solution: &mut SchedulingSolution,
+    shard_count_policy: ShardCountPolicy,
 ) {
     for (indexer_id, indexing_tasks) in plan.indexing_tasks_per_indexer() {
         if let Some(indexer_ord) = id_to_ord_map.indexer_ord(indexer_id) {
@@ -138,9 +145,16 @@ fn convert_physical_plan_to_solution(
                 };
                 if let Some((source_ord, source)) = id_to_ord_map.source(&source_uid) {
                     match &source.source_type {
-                        SourceToScheduleType::Sharded { .. } => {
-                            indexer_assignment
-                                .add_shards(source_ord, indexing_task.shard_ids.len() as u32);
+                        SourceToScheduleType::Sharded { shard_ids, .. } => {
+                            let num_shards = match shard_count_policy {
+                                ShardCountPolicy::All => indexing_task.shard_ids.len(),
+                                ShardCountPolicy::CurrentSourceOnly => indexing_task
+                                    .shard_ids
+                                    .iter()
+                                    .filter(|shard_id| shard_ids.contains(shard_id))
+                                    .count(),
+                            };
+                            indexer_assignment.add_shards(source_ord, num_shards as u32);
                         }
                         SourceToScheduleType::NonSharded { .. } => {
                             // For non-sharded sources like Kafka, one pipeline = one shard in the
@@ -669,7 +683,12 @@ fn assert_post_condition_physical_plan_match_solution(
     assert_eq!(num_indexers, solution.indexer_assignments.len());
     assert_eq!(num_indexers, id_to_ord_map.indexer_ids.len());
     let mut reconstructed_solution = SchedulingSolution::with_num_indexers(num_indexers);
-    convert_physical_plan_to_solution(physical_plan, id_to_ord_map, &mut reconstructed_solution);
+    convert_physical_plan_to_solution(
+        physical_plan,
+        id_to_ord_map,
+        &mut reconstructed_solution,
+        ShardCountPolicy::All,
+    );
     assert_eq!(
         solution.indexer_assignments,
         reconstructed_solution.indexer_assignments
@@ -796,7 +815,15 @@ pub fn build_physical_indexing_plan(
     // Populate the previous solution, if any.
     let mut previous_solution = problem.new_solution();
     if let Some(previous_plan) = previous_plan_opt {
-        convert_physical_plan_to_solution(previous_plan, &id_to_ord_map, &mut previous_solution);
+        // Fully indexed shards disappear from the current source before they disappear from the
+        // previous physical plan. They must not contribute stale logical capacity on their old
+        // indexer: the logical solver cannot otherwise know which node's count to remove.
+        convert_physical_plan_to_solution(
+            previous_plan,
+            &id_to_ord_map,
+            &mut previous_solution,
+            ShardCountPolicy::CurrentSourceOnly,
+        );
     }
 
     // Compute the new scheduling solution using a heuristic.
@@ -988,7 +1015,12 @@ pub(crate) fn build_physical_indexing_plan_with_seed_choice(
     if seed_solution_from_previous_plan
         && let Some(previous_plan) = previous_plan_opt
     {
-        convert_physical_plan_to_solution(previous_plan, &id_to_ord_map, &mut previous_solution);
+        convert_physical_plan_to_solution(
+            previous_plan,
+            &id_to_ord_map,
+            &mut previous_solution,
+            ShardCountPolicy::CurrentSourceOnly,
+        );
     }
     let new_solution = scheduling_logic::solve(problem, previous_solution);
     let new_physical_plan = convert_scheduling_solution_to_physical_plan(
@@ -1662,6 +1694,79 @@ mod tests {
             &shard_locations,
         );
         assert_eq!(plan, replanned);
+    }
+
+    #[test]
+    fn test_previous_solution_seed_ignores_completed_shards() {
+        let completed_shard = ShardId::from(0);
+        let current_shard0 = ShardId::from(1);
+        let current_shard1 = ShardId::from(2);
+        let source_uid = source_id();
+        let source = SourceToSchedule {
+            source_uid: source_uid.clone(),
+            source_type: SourceToScheduleType::Sharded {
+                shard_ids: vec![current_shard0.clone(), current_shard1.clone()],
+                load_per_shard: NonZeroU32::new(1_000).unwrap(),
+            },
+            params_fingerprint: 0,
+        };
+
+        let old_host = NodeId::from_str("indexer1");
+        let current_host = NodeId::from_str("indexer2");
+        let mut indexer_infos = FnvHashMap::default();
+        indexer_infos.insert(
+            old_host.clone(),
+            indexer_info_in_az(mcpu(16_000), "az-a", Eligibility::Any),
+        );
+        indexer_infos.insert(
+            current_host.clone(),
+            indexer_info_in_az(mcpu(16_000), "az-a", Eligibility::Any),
+        );
+
+        let mut shard_locations = ShardLocations::default();
+        shard_locations.add_location(&current_shard0, &current_host);
+        shard_locations.add_location(&current_shard1, &current_host);
+
+        let current_pipeline_uid = PipelineUid::for_test(2u128);
+        let mut previous_plan =
+            PhysicalIndexingPlan::with_indexer_ids(&[old_host.clone(), current_host.clone()]);
+        previous_plan.add_indexing_task(
+            &old_host,
+            IndexingTask {
+                index_uid: Some(source_uid.index_uid.clone()),
+                source_id: source_uid.source_id.clone(),
+                pipeline_uid: Some(PipelineUid::for_test(1u128)),
+                shard_ids: vec![completed_shard],
+                params_fingerprint: 0,
+            },
+        );
+        previous_plan.add_indexing_task(
+            &current_host,
+            IndexingTask {
+                index_uid: Some(source_uid.index_uid.clone()),
+                source_id: source_uid.source_id.clone(),
+                pipeline_uid: Some(current_pipeline_uid),
+                shard_ids: vec![current_shard0.clone(), current_shard1.clone()],
+                params_fingerprint: 0,
+            },
+        );
+
+        let plan = build_physical_indexing_plan(
+            &[source],
+            &indexer_infos,
+            true,
+            Some(&previous_plan),
+            &shard_locations,
+        );
+
+        assert!(shard_ids_for_indexer(&plan, &old_host).is_empty());
+        assert_eq!(
+            shard_ids_for_indexer(&plan, &current_host),
+            vec![current_shard0.clone(), current_shard1.clone()]
+        );
+        let current_tasks = plan.indexer(&current_host).unwrap();
+        assert_eq!(current_tasks.len(), 1);
+        assert_eq!(current_tasks[0].pipeline_uid(), current_pipeline_uid);
     }
 
     #[tokio::test]
