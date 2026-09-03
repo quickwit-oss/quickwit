@@ -348,12 +348,18 @@ impl IngestController {
             &local_shards_update.source_uid,
             &local_shards_update.shard_infos,
         );
-        let min_shards = model
+        // The index may have been deleted between the ingester emitting this update and the
+        // control plane handling it. The update is stale, there is nothing left to scale.
+        let Some(min_shards) = model
             .index_metadata(&local_shards_update.source_uid.index_uid)
-            .expect("index should exist")
-            .index_config
-            .ingest_settings
-            .min_shards;
+            .map(|index_metadata| index_metadata.index_config.ingest_settings.min_shards)
+        else {
+            warn!(
+                index_uid=%local_shards_update.source_uid.index_uid,
+                "ignoring local shards update for a deleted index"
+            );
+            return Ok(());
+        };
 
         let Some(scaling_mode) = self.scaling_arbiter.should_scale(shard_stats, min_shards) else {
             return Ok(());
