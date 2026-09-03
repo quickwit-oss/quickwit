@@ -40,7 +40,7 @@
     "react-router": "7.13.1",
     "styled-components": "6.1.19",
     "styled-icons": "10.47.1",
-    "swagger-ui-react": "5.32.0",
+    "swagger-ui-react": "5.32.14",
     "typescript": "5.9.3",
     "vite": "7.3.1"
   },
