@@ -27,8 +27,7 @@ pub struct ShardLocalityMetrics {
 impl ShardLocalityMetrics {
     /// Share of shards indexed without crossing an availability zone, as a percentage.
     pub fn locality_percent(self) -> u32 {
-        let num_shards =
-            self.num_local_shards + self.num_nearby_shards + self.num_remote_shards;
+        let num_shards = self.num_local_shards + self.num_nearby_shards + self.num_remote_shards;
         if num_shards == 0 {
             return 100;
         }

@@ -82,7 +82,7 @@ use quickwit_compaction::{
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig, disable_ingest_v1};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
-use quickwit_control_plane::{IndexerPoolEntry, IndexerPool};
+use quickwit_control_plane::{IndexerPool, IndexerPoolEntry};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
 use quickwit_indexing::actors::{IndexingService, MergeSchedulerService};
 use quickwit_indexing::models::ShardPositionsService;

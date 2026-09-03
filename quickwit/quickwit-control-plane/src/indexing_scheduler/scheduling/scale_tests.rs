@@ -476,9 +476,7 @@ fn load_per_indexer(plan: &PhysicalIndexingPlan, sources: &[SourceToSchedule]) -
 fn num_idle_indexers(plan: &PhysicalIndexingPlan, indexer_specs: &[IndexerSpec]) -> usize {
     indexer_specs
         .iter()
-        .filter(|indexer_spec| {
-            shard_ids_for_indexer(plan, &indexer_spec.node_id).is_empty()
-        })
+        .filter(|indexer_spec| shard_ids_for_indexer(plan, &indexer_spec.node_id).is_empty())
         .count()
 }
 
@@ -550,8 +548,7 @@ fn assert_locality_of_hosted_shards_is_stable(
         "{} shards were indexed on their host before the replan and {} after",
         metrics_before.num_local_shards, metrics_after.num_local_shards
     );
-    let num_displaced_before =
-        metrics_before.num_nearby_shards + metrics_before.num_remote_shards;
+    let num_displaced_before = metrics_before.num_nearby_shards + metrics_before.num_remote_shards;
     let num_displaced_after = metrics_after.num_nearby_shards + metrics_after.num_remote_shards;
     assert_eq!(num_displaced_before, num_displaced_after);
 }

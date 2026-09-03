@@ -554,8 +554,7 @@ pub(crate) fn is_shard_nearby(
     shard_locations: &ShardLocations,
     indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
 ) -> bool {
-    let availability_zone =
-        shard_availability_zone(shard_id, shard_locations, indexer_infos);
+    let availability_zone = shard_availability_zone(shard_id, shard_locations, indexer_infos);
     availability_zone.is_some()
         && availability_zone == indexer_availability_zone(indexer, indexer_infos)
 }
@@ -568,9 +567,7 @@ fn find_nearby_indexer(
 ) -> Option<NodeId> {
     remaining_num_shards_per_node
         .iter()
-        .filter(|(node_id, _)| {
-            is_shard_nearby(node_id, shard_id, shard_locations, indexer_infos)
-        })
+        .filter(|(node_id, _)| is_shard_nearby(node_id, shard_id, shard_locations, indexer_infos))
         // Fill up the nearly-full indexers first. Ties break on node id, for determinism.
         .min_by_key(|(node_id, num_remaining_shards)| (**num_remaining_shards, *node_id))
         .map(|(node_id, _)| node_id.clone())
@@ -1012,9 +1009,7 @@ pub(crate) fn build_physical_indexing_plan_with_seed_choice(
     let (id_to_ord_map, problem) =
         convert_to_simplified_problem(indexer_infos, locality_aware, sources, shard_locations);
     let mut previous_solution = problem.new_solution();
-    if seed_solution_from_previous_plan
-        && let Some(previous_plan) = previous_plan_opt
-    {
+    if seed_solution_from_previous_plan && let Some(previous_plan) = previous_plan_opt {
         convert_physical_plan_to_solution(
             previous_plan,
             &id_to_ord_map,
@@ -1595,9 +1590,7 @@ mod tests {
 
             let mut shard_counts: Vec<usize> = indexer_specs
                 .iter()
-                .map(|indexer_spec| {
-                    shard_ids_for_indexer(&plan, &indexer_spec.node_id).len()
-                })
+                .map(|indexer_spec| shard_ids_for_indexer(&plan, &indexer_spec.node_id).len())
                 .collect();
             shard_counts.sort();
             let mut legacy_shard_counts: Vec<usize> = indexer_specs
@@ -1610,7 +1603,8 @@ mod tests {
             let fair_share = NUM_SHARDS.div_ceil(num_indexers);
             let max_shard_count = *shard_counts.last().unwrap();
             println!(
-                "{num_indexers} indexers hold {shard_counts:?}, legacy holds {legacy_shard_counts:?}"
+                "{num_indexers} indexers hold {shard_counts:?}, legacy holds \
+                 {legacy_shard_counts:?}"
             );
             assert_eq!(shard_counts.iter().sum::<usize>(), NUM_SHARDS);
             assert_eq!(shard_counts, legacy_shard_counts);
@@ -2050,10 +2044,8 @@ mod tests {
         // It should not be assigned any task despite being present in shard locations.
         let node_missing = NodeId::from_str("node_missing");
         let mut remaining_num_shards_per_node = HashMap::default();
-        remaining_num_shards_per_node
-            .insert(node1.clone(), NonZeroU32::new(3).unwrap());
-        remaining_num_shards_per_node
-            .insert(node2.clone(), NonZeroU32::new(1).unwrap());
+        remaining_num_shards_per_node.insert(node1.clone(), NonZeroU32::new(3).unwrap());
+        remaining_num_shards_per_node.insert(node2.clone(), NonZeroU32::new(1).unwrap());
 
         let mut indexer_infos = FnvHashMap::default();
         indexer_infos.insert(node1.clone(), IndexerInfo::for_test(mcpu(4_000)));

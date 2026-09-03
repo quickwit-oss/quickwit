@@ -185,8 +185,7 @@ impl ChurnWorld {
             }
             let num_shards = shard_ids_of_source(&self.sources[source_ord]).len();
             if growing && num_shards_in_cluster < CHURN_MAX_SHARDS {
-                let target_num_shards =
-                    (num_shards as f32 * CHURN_SCALE_UP_FACTOR).ceil() as usize;
+                let target_num_shards = (num_shards as f32 * CHURN_SCALE_UP_FACTOR).ceil() as usize;
                 self.open_shards(source_ord, target_num_shards - num_shards, rng);
             } else if !growing {
                 let target_num_shards =
