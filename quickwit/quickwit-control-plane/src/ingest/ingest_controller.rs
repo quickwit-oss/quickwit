@@ -2338,6 +2338,67 @@ mod tests {
             .unwrap();
     }
 
+    // A shard update sent by an ingester can reach the control plane after the index it refers
+    // to was deleted. The update is stale, and must not panic the control plane.
+    #[tokio::test]
+    async fn test_ingest_controller_handle_local_shards_update_for_deleted_index() {
+        // No metastore expectation: the mock fails the test if the handler attempts to scale the
+        // deleted index.
+        let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
+        let ingester_pool = IngesterPool::default();
+
+        let mut controller = IngestController::new(
+            metastore,
+            ingester_pool,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
+        );
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id: SourceId = "test-source".to_string();
+        let mut index_metadata = IndexMetadata::for_test("test-index", "ram://indexes/test-index");
+        index_metadata.sources.insert(
+            source_id.clone(),
+            SourceConfig::for_test(&source_id, quickwit_config::SourceParams::void()),
+        );
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: source_id.clone(),
+        };
+        let mut model = ControlPlaneModel::default();
+        model.add_index(index_metadata);
+
+        let shards = vec![Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            shard_id: Some(ShardId::from(1)),
+            ingester_id: "test-ingester".to_string(),
+            shard_state: ShardState::Open as i32,
+            ..Default::default()
+        }];
+        model.insert_shards(&index_uid, &source_id, shards);
+
+        // The control plane handles the index deletion first, see `Handler<DeleteIndexRequest>`.
+        model.delete_index(&index_uid);
+
+        // The ingestion rates are above the scale up threshold on purpose.
+        let shard_infos = BTreeSet::from_iter([ShardInfo {
+            shard_id: ShardId::from(1),
+            shard_state: ShardState::Open,
+            short_term_ingestion_rate: RateMibPerSec(10),
+            long_term_ingestion_rate: RateMibPerSec(10),
+        }]);
+        let local_shards_update = LocalShardsUpdate {
+            ingester_id: NodeId::from_str("test-ingester"),
+            source_uid,
+            shard_infos,
+        };
+        controller
+            .handle_local_shards_update(local_shards_update, &mut model, &Progress::default())
+            .await
+            .unwrap();
+    }
+
     #[tokio::test]
     async fn test_ingest_controller_disable_validation_when_vrl() {
         let mut mock_metastore = MockMetastoreService::new();
