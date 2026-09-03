@@ -159,12 +159,6 @@ impl DeployWorld {
         &self.indexer_specs[pod_ord].node_id
     }
 
-    fn pod_ord(&self, node_id: &NodeId) -> usize {
-        (0..NUM_PODS)
-            .find(|&pod_ord| self.node_id(pod_ord) == node_id)
-            .expect("node should be a known pod")
-    }
-
     /// Mirrors `IngestController::compute_shards_to_rebalance` followed by `allocate_shards`: every
     /// open shard on a pod that is not ready must move, then open shard counts are levelled across
     /// ready pods within the tolerance. Moving a shard means closing it and opening a new one on
@@ -222,8 +216,7 @@ impl DeployWorld {
         for shard_index in shard_indexes_to_move {
             let source_ord = self.shards[shard_index].source_ord;
             let host_ord = self.shards[shard_index].host_ord;
-            let target_pod_ord =
-                pick_emptiest_ready_pod(&open_shard_counts, &self.pod_states, rng);
+            let target_pod_ord = pick_emptiest_ready_pod(&open_shard_counts, &self.pod_states, rng);
             open_shard_counts[target_pod_ord] += 1;
             open_shard_counts[host_ord] -= 1;
             self.open_shard(source_ord, target_pod_ord);
@@ -244,7 +237,8 @@ impl DeployWorld {
     }
 
     fn sources(&self) -> Vec<SourceToSchedule> {
-        let mut shard_ids_per_source: Vec<Vec<ShardId>> = vec![Vec::new(); SOURCE_SHARD_COUNTS.len()];
+        let mut shard_ids_per_source: Vec<Vec<ShardId>> =
+            vec![Vec::new(); SOURCE_SHARD_COUNTS.len()];
         for shard in &self.shards {
             shard_ids_per_source[shard.source_ord].push(shard.shard_id.clone());
         }
@@ -445,15 +439,15 @@ fn locality_is_feasible(world: &DeployWorld) -> bool {
     max_hosted_shards as f32 <= HEADROOM_RATIO * mean_hosted_shards
 }
 
-/// Replays a StatefulSet rolling update: every pod replaced in turn, highest ordinal first, one at a
-/// time, each taking 60s of wall clock which the control plane's 5s loop turns into 12 rebuilds.
+/// Replays a StatefulSet rolling update: every pod replaced in turn, highest ordinal first, one at
+/// a time, each taking 60s of wall clock which the control plane's 5s loop turns into 12 rebuilds.
 /// Ingest keeps the shard population flat, hosted through the same rebalancing rules the ingest
 /// controller uses.
 ///
-/// Three plans are built from the same events. The first is what we ship. The second differs only in
-/// that the solver starts from an empty solution instead of the previous plan, while the physical
-/// conversion still receives the previous plan so pipeline identity survives. The third is the
-/// pre-locality behaviour, where draining pods are left out of the plan entirely.
+/// Three plans are built from the same events. The first is what we ship. The second differs only
+/// in that the solver starts from an empty solution instead of the previous plan, while the
+/// physical conversion still receives the previous plan so pipeline identity survives. The third is
+/// the pre-locality behaviour, where draining pods are left out of the plan entirely.
 #[test]
 fn test_rolling_deployment_churn_and_drain_invariants() {
     let mut rng = StdRng::seed_from_u64(SEED);
@@ -498,8 +492,8 @@ fn test_rolling_deployment_churn_and_drain_invariants() {
             }
             let sources = world.sources();
             let shard_locations = world.shard_locations();
-            let last_round = pod_index == NUM_DEPLOYMENTS * NUM_PODS - 1
-                && round == REBUILDS_PER_POD - 1;
+            let last_round =
+                pod_index == NUM_DEPLOYMENTS * NUM_PODS - 1 && round == REBUILDS_PER_POD - 1;
 
             for path_ord in 0..3 {
                 let locality_aware = path_ord != 2;
@@ -583,10 +577,13 @@ fn test_rolling_deployment_churn_and_drain_invariants() {
         num_feasible_rounds,
         num_rebuilds
     );
-    for (path_ord, label) in ["incremental", "empty seed", "legacy"].into_iter().enumerate() {
+    for (path_ord, label) in ["incremental", "empty seed", "legacy"]
+        .into_iter()
+        .enumerate()
+    {
         println!(
-            "  {label:12} moved {} ({:.3}%), worst rebuild {:.1}%, resets {} from moves + {} \
-             from repacking, final misplaced {} of {} ({}% local or nearby)",
+            "  {label:12} moved {} ({:.3}%), worst rebuild {:.1}%, resets {} from moves + {} from \
+             repacking, final misplaced {} of {} ({}% local or nearby)",
             tallies[path_ord].num_moved_shards,
             tallies[path_ord].moved_percent(),
             tallies[path_ord].max_moved_percent,

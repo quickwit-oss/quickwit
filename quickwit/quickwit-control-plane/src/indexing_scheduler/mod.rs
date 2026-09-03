@@ -46,7 +46,7 @@ use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotif
 use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
 use crate::metrics::{APPLY_PLAN_TOTAL, SCHEDULE_TOTAL, ShardLocalityMetrics};
 use crate::model::{ControlPlaneModel, ShardEntry, ShardLocations};
-use crate::{IndexerPoolEntry, IndexerPool};
+use crate::{IndexerPool, IndexerPoolEntry};
 
 const DEFAULT_ENABLE_VARIABLE_SHARD_LOAD: bool = false;
 
@@ -435,8 +435,10 @@ impl IndexingScheduler {
     }
 
     /// An indexing plan built incrementally from the previous plan can lose locality over time but
-    /// never regain it. Below a certain locality threshold, we try to rebuild the plan from scratch to improve locality (equivalent to restarting the control plane).
-    /// We expect a plan built from scratch to have better locality. There is a long cooldown to prevent churning indexing too frequently.
+    /// never regain it. Below a certain locality threshold, we try to rebuild the plan from scratch
+    /// to improve locality (equivalent to restarting the control plane). We expect a plan built
+    /// from scratch to have better locality. There is a long cooldown to prevent churning indexing
+    /// too frequently.
     fn build_new_plan(
         &mut self,
         sources: &[SourceToSchedule],
@@ -479,7 +481,10 @@ impl IndexingScheduler {
         if locality_from_scratch.locality_percent() <= locality_incremental.locality_percent() {
             // The plan from scratch yielded worse locality than the incremental plan, so we apply
             // the incremental plan. We don't really expect this.
-            info!("indexing plan rebuilt from scratch had worse locality than plan built incrementally; returning incremental plan");
+            info!(
+                "indexing plan rebuilt from scratch had worse locality than plan built \
+                 incrementally; returning incremental plan"
+            );
             return (new_plan_incremental, locality_incremental);
         }
         info!(
@@ -738,7 +743,10 @@ impl fmt::Debug for IndexingPlansDiff<'_> {
             write!(
                 formatter,
                 "missing_node_ids={:?}",
-                PrettySample::new(self.missing_node_ids.iter().map(|node_id| node_id.as_str()), 10)
+                PrettySample::new(
+                    self.missing_node_ids.iter().map(|node_id| node_id.as_str()),
+                    10
+                )
             )?;
             separator = ", "
         }
@@ -747,7 +755,9 @@ impl fmt::Debug for IndexingPlansDiff<'_> {
                 formatter,
                 "{separator}unplanned_node_ids={:?}",
                 PrettySample::new(
-                    self.unplanned_node_ids.iter().map(|node_id| node_id.as_str()),
+                    self.unplanned_node_ids
+                        .iter()
+                        .map(|node_id| node_id.as_str()),
                     10
                 )
             )?;
@@ -864,9 +874,7 @@ fn get_indexing_plans_diff<'a>(
     last_applied_ingester_statuses: &'a FnvHashMap<NodeId, IngesterStatus>,
 ) -> IndexingPlansDiff<'a> {
     // Nodes diff.
-    let running_node_ids: FnvHashSet<&NodeId> = running_plan
-        .keys()
-        .collect();
+    let running_node_ids: FnvHashSet<&NodeId> = running_plan.keys().collect();
     let planned_node_ids: FnvHashSet<&NodeId> = last_applied_plan.keys().collect();
     let missing_node_ids: FnvHashSet<&NodeId> = planned_node_ids
         .difference(&running_node_ids)
@@ -1261,12 +1269,8 @@ mod tests {
         let locality_aware = false;
 
         scheduler.state.last_applied_physical_plan = Some(swapped_plan());
-        let (plan, metrics) = scheduler.build_new_plan(
-            &sources,
-            &indexer_infos,
-            locality_aware,
-            &shard_locations,
-        );
+        let (plan, metrics) =
+            scheduler.build_new_plan(&sources, &indexer_infos, locality_aware, &shard_locations);
         assert_eq!(metrics.locality_percent(), 100);
         assert_eq!(
             shard_ids_for_indexer(&plan, &indexer1),
@@ -1274,22 +1278,14 @@ mod tests {
         );
 
         scheduler.state.last_applied_physical_plan = Some(swapped_plan());
-        let (_, metrics_in_cooldown) = scheduler.build_new_plan(
-            &sources,
-            &indexer_infos,
-            locality_aware,
-            &shard_locations,
-        );
+        let (_, metrics_in_cooldown) =
+            scheduler.build_new_plan(&sources, &indexer_infos, locality_aware, &shard_locations);
         assert_eq!(metrics_in_cooldown.locality_percent(), 0);
 
         scheduler.state.next_plan_from_scratch_timestamp = None;
         scheduler.state.last_applied_physical_plan = Some(plan);
-        let (_, metrics_above_threshold) = scheduler.build_new_plan(
-            &sources,
-            &indexer_infos,
-            locality_aware,
-            &shard_locations,
-        );
+        let (_, metrics_above_threshold) =
+            scheduler.build_new_plan(&sources, &indexer_infos, locality_aware, &shard_locations);
         assert_eq!(metrics_above_threshold.locality_percent(), 100);
         assert!(scheduler.state.next_plan_from_scratch_timestamp.is_none());
     }
@@ -1710,8 +1706,7 @@ mod tests {
         {
             let mut ready = mock_indexer_node_info("indexer-ready", IngesterStatus::Ready);
             ready.availability_zone = Some("az-a".to_string());
-            let mut retiring =
-                mock_indexer_node_info("indexer-retiring", IngesterStatus::Retiring);
+            let mut retiring = mock_indexer_node_info("indexer-retiring", IngesterStatus::Retiring);
             retiring.availability_zone = Some("az-b".to_string());
             let indexers = vec![ready, retiring];
             let locality_unaware = false;

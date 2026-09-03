@@ -293,10 +293,7 @@ fn assert_enforce_nodes_cpu_capacity_post_condition(
 
 /// Strips non-local shards off retiring/decommissioning indexers, which are only eligible to index
 /// their own shards.
-fn strip_self_hosted_only_indexers(
-    problem: &SchedulingProblem,
-    solution: &mut SchedulingSolution,
-) {
+fn strip_self_hosted_only_indexers(problem: &SchedulingProblem, solution: &mut SchedulingSolution) {
     for indexer_ord in 0..problem.num_indexers() {
         if problem.is_eligible_for_foreign_shards(indexer_ord) {
             continue;
@@ -309,8 +306,7 @@ fn strip_self_hosted_only_indexers(
         for source_ord in assigned_source_ords {
             let num_foreign_shards =
                 num_foreign_shards_on_indexer(source_ord, indexer_ord, problem, solution);
-            solution.indexer_assignments[indexer_ord]
-                .remove_shards(source_ord, num_foreign_shards);
+            solution.indexer_assignments[indexer_ord].remove_shards(source_ord, num_foreign_shards);
         }
     }
 }
@@ -1176,7 +1172,8 @@ mod tests {
         num_indexers: usize,
         num_groups: usize,
     ) -> impl Strategy<Value = Vec<Option<LocalityGroup>>> {
-        let group_strat = (0..num_groups).prop_map(|group_ord| Some(LocalityGroup::from_ord(group_ord)));
+        let group_strat =
+            (0..num_groups).prop_map(|group_ord| Some(LocalityGroup::from_ord(group_ord)));
         let every_indexer_in_a_zone = proptest::collection::vec(group_strat, num_indexers);
         let no_indexer_in_a_zone = Just(vec![None; num_indexers]);
         prop_oneof![
@@ -1235,27 +1232,23 @@ mod tests {
             eligibilities_strat,
             sources_strat,
         )
-            .prop_map(
-                |(cpu_capacities, groups, mut eligibilities, sources)| {
-                    eligibilities[0] = Eligibility::Any;
-                    let indexer_localities: Vec<IndexerLocality> = groups
-                        .into_iter()
-                        .zip(eligibilities)
-                        .map(|(group, eligibility)| IndexerLocality { group, eligibility })
-                        .collect();
-                    let mut problem = SchedulingProblem::with_indexer_localities(
-                        cpu_capacities,
-                        indexer_localities,
-                    );
-                    for (num_shards, load_per_shard, hosting_indexer_ords) in sources {
-                        let source_ord = problem.add_source(num_shards, load_per_shard);
-                        for hosting_indexer_ord in hosting_indexer_ords {
-                            problem.inc_affinity(source_ord, hosting_indexer_ord);
-                        }
+            .prop_map(|(cpu_capacities, groups, mut eligibilities, sources)| {
+                eligibilities[0] = Eligibility::Any;
+                let indexer_localities: Vec<IndexerLocality> = groups
+                    .into_iter()
+                    .zip(eligibilities)
+                    .map(|(group, eligibility)| IndexerLocality { group, eligibility })
+                    .collect();
+                let mut problem =
+                    SchedulingProblem::with_indexer_localities(cpu_capacities, indexer_localities);
+                for (num_shards, load_per_shard, hosting_indexer_ords) in sources {
+                    let source_ord = problem.add_source(num_shards, load_per_shard);
+                    for hosting_indexer_ord in hosting_indexer_ords {
+                        problem.inc_affinity(source_ord, hosting_indexer_ord);
                     }
-                    problem
-                },
-            )
+                }
+                problem
+            })
     }
 
     fn locality_problem_solution_strategy()
