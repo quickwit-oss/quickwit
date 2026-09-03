@@ -14,15 +14,40 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex, Weak};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
+use tokio::io::{AsyncRead, ReadBuf};
 use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use crate::connection::ConnStream;
 use crate::endpoint::Endpoint;
 use crate::error::HttpError;
+
+/// Probes a connection with a single non-blocking poll_read.
+///
+/// We don't await, Pending means the connection looks healty,
+/// anything else means it's not:
+/// - Ready(Err): there's an error
+/// - Ready(Ok(0)): end of stream (the connection is half closed)
+/// - Ready(Ok(n)): protocol desync
+///
+/// This costs a non-blocking syscall
+fn probe_healthy(conn: &mut ConnStream) -> bool {
+    let waker = std::task::Waker::noop();
+    let mut context = Context::from_waker(waker);
+    let mut buf = [0u8; 1];
+    let mut read_buf = ReadBuf::new(&mut buf);
+    match Pin::new(conn).poll_read(&mut context, &mut read_buf) {
+        Poll::Pending => true,
+        Poll::Ready(Ok(())) => false,
+        Poll::Ready(Err(_)) => false,
+    }
+}
 
 /// Default per-host idle connection cap.
 pub const DEFAULT_MAX_IDLE_PER_HOST: usize = 32;
@@ -109,7 +134,7 @@ impl ConnectionPool {
     pub fn new_with_reaper_handle(
         max_idle_per_host: usize,
         idle_timeout: Duration,
-    ) -> (Self, tokio::task::JoinHandle<()>) {
+    ) -> (Self, JoinHandle<()>) {
         let inner = Arc::new(PoolInner {
             hosts: Mutex::new(HashMap::new()),
             max_idle_per_host,
@@ -156,8 +181,12 @@ impl ConnectionPool {
         let entry = self.entry(endpoint);
         let mut rx = {
             let mut state = entry.state.lock().unwrap();
-            if let Some(conn) = state.idle.pop_back().map(|entry| entry.conn) {
-                return Ok((conn, true));
+            while let Some(mut conn) = state.idle.pop_back().map(|entry| entry.conn) {
+                if probe_healthy(&mut conn) {
+                    return Ok((conn, true));
+                } else {
+                    drop(conn);
+                }
             }
             let (tx, rx) = oneshot::channel();
             state.waiters.push_back(tx);
@@ -453,6 +482,60 @@ mod tests {
         let (got_a, was_reused_a) = pool.acquire(&ep_a, pending_connect()).await.unwrap();
         assert!(was_reused_a, "ep_a still has its connection");
         assert_eq!(local_port(&got_a), p_a);
+    }
+
+    #[tokio::test]
+    async fn acquire_probes_and_drops_fully_closed_connection() {
+        let pool = ConnectionPool::with_defaults();
+        let port = holding_server_port().await;
+        let ep = endpoint(port);
+
+        let closing_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let closing_port = closing_listener.local_addr().unwrap().port();
+        // The server accepts, and drops it immediately.
+        let server = tokio::spawn(async move {
+            let (sock, _) = closing_listener.accept().await.unwrap();
+            drop(sock);
+        });
+        let dead_conn = make_conn(closing_port).await;
+        // Wait for the server to accept and close its end.
+        server.await.unwrap();
+
+        pool.release(&ep, dead_conn);
+        let (_got, was_reused) = pool.acquire(&ep, fresh_connect(port)).await.unwrap();
+        assert!(
+            !was_reused,
+            "fully-closed conn should be dropped, not reused"
+        );
+    }
+
+    #[tokio::test]
+    async fn acquire_probes_and_drops_half_closed_connection() {
+        let pool = ConnectionPool::with_defaults();
+        let port = holding_server_port().await;
+        let ep = endpoint(port);
+
+        let half_close_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let half_close_port = half_close_listener.local_addr().unwrap().port();
+        // The server accepts, shuts down its write side, and keeps the
+        // socket alive to keep the connection half-open.
+        let server = tokio::spawn(async move {
+            let (mut sock, _) = half_close_listener.accept().await.unwrap();
+            use tokio::io::AsyncWriteExt;
+            sock.shutdown().await.unwrap();
+            std::future::pending::<()>().await;
+        });
+        let half_closed_conn = make_conn(half_close_port).await;
+        // Give the server time to accept and shut down its write side.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        pool.release(&ep, half_closed_conn);
+        let (_got, was_reused) = pool.acquire(&ep, fresh_connect(port)).await.unwrap();
+        assert!(
+            !was_reused,
+            "half-closed conn should be dropped, not reused"
+        );
+        server.abort();
     }
 
     #[tokio::test(start_paused = true)]
