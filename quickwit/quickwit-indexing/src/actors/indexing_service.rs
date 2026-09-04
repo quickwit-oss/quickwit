@@ -592,12 +592,12 @@ impl IndexingService {
                     }
                 }
             });
+
         // Draining pipelines exit on their own, reap the
-        // detached ones and complete the `DrainAllPipelines` replies whose
-        // pipelines are all gone.
+        // detached ones and complete the `DrainAllPipelines` replies if all
+        // of their pipelines are gone.
         self.draining_pipelines
             .retain(|pipeline_handle| !pipeline_handle.state().is_exit());
-        // Are we waiting for a global drain?
         if !self.drain_all_waiters.is_empty() {
             let drain_all_waiters = std::mem::take(&mut self.drain_all_waiters);
             for (mut pipeline_uids, reply) in drain_all_waiters {
