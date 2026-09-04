@@ -5,7 +5,7 @@
   "private": true,
   "packageManager": "yarn@1.22.22",
   "dependencies": {
-    "@babel/core": "7.29.0",
+    "@babel/core": "7.29.6",
     "@babel/runtime": "7.28.6",
     "@biomejs/biome": "2.4.4",
     "@dr.pogodin/babel-plugin-transform-assets": "1.2.6",
@@ -37,12 +37,12 @@
     "react-app-polyfill": "3.0.0",
     "react-dom": "19.2.4",
     "react-number-format": "5.4.4",
-    "react-router": "7.13.1",
+    "react-router": "7.18.2",
     "styled-components": "6.1.19",
     "styled-icons": "10.47.1",
     "swagger-ui-react": "5.32.14",
     "typescript": "5.9.3",
-    "vite": "7.3.1"
+    "vite": "7.3.5"
   },
   "resolutions": {
     "@types/react": "19.2.14",
