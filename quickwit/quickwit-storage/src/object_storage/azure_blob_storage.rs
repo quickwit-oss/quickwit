@@ -60,13 +60,8 @@ use crate::{
 
 /// Formats the block id of one part of an upload.
 ///
-/// Uncommitted blocks are keyed by blob name and block id, so ids derived from the part index
-/// alone let two concurrent uploads of the same object stage over each other: the first commit
-/// publishes the second upload's bytes and consumes the block the second commit still names.
-/// Scoping the ids to a ULID minted once per upload keeps the two independent.
-///
-/// Every id this produces is the same length, which Azure requires of the block ids within a
-/// single blob, and the zero padded part number keeps the ids of one upload sortable as strings.
+/// The per-upload ULID stops two concurrent uploads of the same blob staging over each other's
+/// blocks. Fixed length, which Azure requires within a blob, and sortable by part.
 fn format_block_id(upload_id: Ulid, part_num: usize) -> String {
     format!("{upload_id}:{part_num:05}")
 }
@@ -334,16 +329,14 @@ impl AzureBlobStorage {
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(payload.len());
         let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_PUT_OBJECT_DURATION);
-        // Minted outside the retry closure so a retry re-stages over its own block rather than
-        // leaving an orphan behind for the seven days an uncommitted block lives.
+        // Minted outside the retry closure so a retry re-stages over its own block.
         let block_id = format_block_id(Ulid::new(), 0);
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
             let block_blob_client = self.container_client.blob_client(name).block_blob_client();
             if data.is_empty() {
-                // `stage_block` rejects a zero length block with `InvalidHeaderValue`, so an
-                // empty object is written as a commit of no blocks at all. Azurite accepts the
-                // empty block, which is why only a real account shows this.
+                // `stage_block` rejects a zero length block, so an empty object commits no
+                // blocks. Azurite accepts the empty block, which is why the suite missed it.
                 let block_list_content = RequestContent::try_from(BlockLookupList::default())
                     .map_err(AzureErrorWrapper::from)?;
                 block_blob_client
