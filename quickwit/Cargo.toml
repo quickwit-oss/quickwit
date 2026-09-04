@@ -101,7 +101,7 @@ license = "Apache-2.0"
 ahash = "0.8"
 anyhow = "1"
 arc-swap = "1.9"
-arrow = { version = "58", default-features = false, features = ["ipc"] }
+arrow = { version = "59", default-features = false, features = ["ipc"] }
 assert-json-diff = "2"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
@@ -204,7 +204,7 @@ opentelemetry-otlp = { version = "0.32", default-features = false, features = [
     "trace",
 ] }
 ouroboros = "0.18"
-parquet = { version = "58", default-features = false, features = ["arrow", "experimental", "snap", "variant_experimental", "zstd"] }
+parquet = { version = "59", default-features = false, features = ["arrow", "experimental", "snap", "variant_experimental", "zstd"] }
 percent-encoding = "2.3"
 pin-project = "1.1"
 pnet = { version = "0.35", features = ["std"] }
