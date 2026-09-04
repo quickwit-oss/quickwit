@@ -113,7 +113,7 @@ pub struct IndexingService {
     pub(crate) storage_resolver: StorageResolver,
     indexing_pipelines: HashMap<PipelineUid, BoxedPipelineHandle>,
     /// Detached pipelines draining before their teardown. They exit on their
-    /// own (see `DrainPipeline`) and are reaped by the supervise loop.
+    /// own and are reaped by the supervise loop.
     draining_pipelines: Vec<BoxedPipelineHandle>,
     /// Pending `DrainAllPipelines` replies, completed by the supervise loop
     /// once the tracked pipelines have exited.
@@ -592,12 +592,12 @@ impl IndexingService {
                     }
                 }
             });
-        // Draining pipelines exit on their own (see `DrainPipeline`): reap the
+        // Draining pipelines exit on their own, reap the
         // detached ones and complete the `DrainAllPipelines` replies whose
-        // pipelines are all gone. A paused pipeline is still alive, hence the
-        // `is_exit` checks rather than `is_running`.
+        // pipelines are all gone.
         self.draining_pipelines
             .retain(|pipeline_handle| !pipeline_handle.state().is_exit());
+        // Are we waiting for a global drain?
         if !self.drain_all_waiters.is_empty() {
             let drain_all_waiters = std::mem::take(&mut self.drain_all_waiters);
             for (mut pipeline_uids, reply) in drain_all_waiters {
@@ -1026,12 +1026,9 @@ impl IndexingService {
                 }
             }
         }
-        // Pipelines are drained before their teardown so their in-flight
-        // batches are flushed, published, and settled (acknowledged for
-        // acknowledgment-based sources) instead of dropped (see
-        // `DrainPipeline`). A drain can take up to the commit timeout, so it
-        // is not awaited here: the draining pipeline exits on its own and the
-        // supervise loop reaps its handle.
+
+        // Keep a handle to the pipeline that are being drained so that in case of
+        // global shutdown we still wait for these ones.
         for pipeline_handle in detached_pipeline_handles {
             pipeline_handle.start_drain().await;
             self.draining_pipelines.push(pipeline_handle);
@@ -1134,11 +1131,10 @@ impl IndexingService {
     }
 }
 
-/// Drains every running indexing pipeline (see `DrainPipeline`): it is meant
+/// Drains every running indexing pipeline: it is meant
 /// to run right before the universe is torn down on node shutdown, so planned
 /// shutdowns publish and settle their in-flight batches instead of dropping
-/// them. The reply is deferred until the drained pipelines — including ones a
-/// plan change already detached and started draining — have all exited,
+/// them. The reply is deferred until the drained pipelines have all exited,
 /// without blocking the service.
 #[derive(Debug)]
 pub struct DrainAllPipelines;
@@ -1158,6 +1154,8 @@ impl DeferableReplyHandler<DrainAllPipelines> for IndexingService {
             pipeline_handle.start_drain().await;
             pipeline_uids.push(*pipeline_uid);
         }
+        // Some pipelines were potentially already draining when shutting down, e.g. in case
+        // of new indexing plans.
         for pipeline_handle in &self.draining_pipelines {
             if !pipeline_handle.state().is_exit() {
                 pipeline_uids.push(pipeline_handle.indexing_pipeline_id().pipeline_uid);
