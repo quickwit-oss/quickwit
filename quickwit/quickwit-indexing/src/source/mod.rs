@@ -296,6 +296,15 @@ pub trait Source: Send + 'static {
         Ok(())
     }
 
+    /// Whether tearing down the pipeline must go through a drain ([`Drain`])
+    /// rather than a plain kill. Only acknowledgment-based sources should opt
+    /// in: killing them loses the acknowledgments of their in-flight messages,
+    /// which are then redelivered and indexed again after the broker's ack
+    /// timeout.
+    fn should_be_drained(&self) -> bool {
+        false
+    }
+
     /// Once the source is draining (see [`Drain`]), reports whether every
     /// message it delivered has been durably accounted for, i.e. published
     /// and, for acknowledgment-based sources, acknowledged.

@@ -58,6 +58,9 @@ use crate::split_store::IndexingSplitStore;
 struct IndexingPipelineHandles {
     source_mailbox: Mailbox<SourceActor>,
     source_handle: ActorHandle<SourceActor>,
+    /// Captured from [`crate::source::Source::should_be_drained`] at spawn:
+    /// a teardown drains the pipeline when true, kills it otherwise.
+    source_should_be_drained: bool,
     doc_processor: ActorHandle<DocProcessor>,
     indexer: ActorHandle<Indexer>,
     index_serializer: ActorHandle<IndexSerializer>,
@@ -417,6 +420,7 @@ impl IndexingPipeline {
         let source = ctx
             .protect_future(quickwit_supported_sources().load_source(source_runtime))
             .await?;
+        let source_should_be_drained = source.should_be_drained();
         let actor_source = SourceActor::new(source, doc_processor_mailbox);
         let (source_mailbox, source_handle) = ctx
             .spawn_actor()
@@ -435,6 +439,7 @@ impl IndexingPipeline {
         self.handles_opt = Some(IndexingPipelineHandles {
             source_mailbox,
             source_handle,
+            source_should_be_drained,
             doc_processor: doc_processor_handle,
             indexer: indexer_handle,
             index_serializer: index_serializer_handle,
@@ -537,6 +542,12 @@ impl Handler<DrainPipeline> for IndexingPipeline {
             // Nothing is running, so nothing is in flight.
             return Err(ActorExitStatus::Success);
         };
+        if !handles.source_should_be_drained {
+            // The source settles nothing on a drain: tear the pipeline down
+            // right away, exactly as a kill would.
+            self.terminate().await;
+            return Err(ActorExitStatus::Success);
+        }
         self.drain_state
             .start(
                 &handles.source_mailbox,
