@@ -62,7 +62,7 @@ use super::pipeline_shared::{ActorPipeline, PipelineHandle};
 use super::{FinishPendingMergesAndShutdownPipeline, MergePlanner, MergeSchedulerService};
 use crate::docs_clustering::Fingerprinter;
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
-use crate::source::{AssignShards, Assignment, source_needs_drain};
+use crate::source::{AssignShards, Assignment};
 use crate::split_store::IndexingSplitCache;
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
 
@@ -421,7 +421,6 @@ impl IndexingService {
             );
         }
 
-        let needs_drain = source_needs_drain(&source_config.source_params);
         let pipeline_params = IndexingPipelineParams {
             pipeline_id: indexing_pipeline_id.clone(),
             metastore: self.metastore.clone(),
@@ -450,7 +449,6 @@ impl IndexingService {
             pipeline_id: indexing_pipeline_id,
             mailbox,
             handle,
-            needs_drain,
         }))
     }
 
@@ -561,6 +559,18 @@ impl IndexingService {
         Ok(per_merge_pipeline_immature_splits)
     }
 
+    /// Whether the pipeline is still alive, attached or draining. A missing
+    /// pipeline counts as exited.
+    fn is_pipeline_alive(&self, pipeline_uid: PipelineUid) -> bool {
+        if let Some(pipeline_handle) = self.indexing_pipelines.get(&pipeline_uid) {
+            return !pipeline_handle.state().is_exit();
+        }
+        self.draining_pipelines.iter().any(|pipeline_handle| {
+            pipeline_handle.indexing_pipeline_id().pipeline_uid == pipeline_uid
+                && !pipeline_handle.state().is_exit()
+        })
+    }
+
     async fn handle_supervise(&mut self) -> Result<(), ActorExitStatus> {
         self.indexing_pipelines
             .retain(|pipeline_uid, pipeline_handle| {
@@ -584,18 +594,14 @@ impl IndexingService {
             });
         // Draining pipelines exit on their own (see `DrainPipeline`): reap the
         // detached ones and complete the `DrainAllPipelines` replies whose
-        // pipelines are all gone.
+        // pipelines are all gone. A paused pipeline is still alive, hence the
+        // `is_exit` checks rather than `is_running`.
         self.draining_pipelines
-            .retain(|pipeline_handle| pipeline_handle.state().is_running());
+            .retain(|pipeline_handle| !pipeline_handle.state().is_exit());
         if !self.drain_all_waiters.is_empty() {
             let drain_all_waiters = std::mem::take(&mut self.drain_all_waiters);
             for (mut pipeline_uids, reply) in drain_all_waiters {
-                pipeline_uids.retain(|pipeline_uid| {
-                    self.indexing_pipelines
-                        .get(pipeline_uid)
-                        .map(|pipeline_handle| pipeline_handle.state().is_running())
-                        .unwrap_or(false)
-                });
+                pipeline_uids.retain(|pipeline_uid| self.is_pipeline_alive(*pipeline_uid));
                 if pipeline_uids.is_empty() {
                     reply(());
                 } else {
@@ -604,9 +610,12 @@ impl IndexingService {
             }
         }
 
+        // Draining pipelines may still publish splits until they exit: their
+        // merge pipelines must survive them.
         let merge_pipelines_to_retain: HashSet<MergePipelineId> = self
             .indexing_pipelines
             .values()
+            .chain(self.draining_pipelines.iter())
             .map(|pipeline_handle| pipeline_handle.indexing_pipeline_id().merge_pipeline_id())
             .collect();
 
@@ -654,6 +663,7 @@ impl IndexingService {
             let parquet_index_uids_to_retain: HashSet<IndexUid> = self
                 .indexing_pipelines
                 .values()
+                .chain(self.draining_pipelines.iter())
                 .filter(|h| {
                     quickwit_common::is_parquet_pipeline_index(
                         &h.indexing_pipeline_id().index_uid.index_id,
@@ -1016,23 +1026,21 @@ impl IndexingService {
                 }
             }
         }
-        // Acknowledgment-based sources are drained before their teardown so
-        // their in-flight messages are published and acknowledged instead of
-        // redelivered (see `DrainPipeline`). A drain can take up to the commit
-        // timeout, so it is not awaited here: the draining pipeline exits on
-        // its own and the supervise loop reaps its handle.
+        // Pipelines are drained before their teardown so their in-flight
+        // batches are flushed, published, and settled (acknowledged for
+        // acknowledgment-based sources) instead of dropped (see
+        // `DrainPipeline`). A drain can take up to the commit timeout, so it
+        // is not awaited here: the draining pipeline exits on its own and the
+        // supervise loop reaps its handle.
         for pipeline_handle in detached_pipeline_handles {
-            if pipeline_handle.needs_drain() {
-                pipeline_handle.start_drain().await;
-                self.draining_pipelines.push(pipeline_handle);
-            } else {
-                // Killing the pipeline ensures that all the pipeline actors will stop.
-                pipeline_handle.kill().await;
-            }
+            pipeline_handle.start_drain().await;
+            self.draining_pipelines.push(pipeline_handle);
         }
         // If at least one ingest source has been removed, the related index has possibly been
         // deleted. Thus we run a garbage collect to remove queues of potentially deleted
-        // indexes.
+        // indexes. The GC only removes queues of deleted indexes: a pipeline
+        // still draining such an index fails its publish and exits without
+        // respawning.
         if should_gc_ingest_api_queues && let Err(error) = self.run_ingest_api_queues_gc().await {
             warn!(
                 %error,
@@ -1126,11 +1134,12 @@ impl IndexingService {
     }
 }
 
-/// Drains every running indexing pipeline whose source needs it (see
-/// `DrainPipeline`): it is meant to run right before the universe is torn down
-/// on node shutdown, so planned shutdowns publish and settle their in-flight
-/// batches instead of dropping them. The reply is deferred until the drained
-/// pipelines have all exited, without blocking the service.
+/// Drains every running indexing pipeline (see `DrainPipeline`): it is meant
+/// to run right before the universe is torn down on node shutdown, so planned
+/// shutdowns publish and settle their in-flight batches instead of dropping
+/// them. The reply is deferred until the drained pipelines — including ones a
+/// plan change already detached and started draining — have all exited,
+/// without blocking the service.
 #[derive(Debug)]
 pub struct DrainAllPipelines;
 
@@ -1146,9 +1155,12 @@ impl DeferableReplyHandler<DrainAllPipelines> for IndexingService {
     ) -> Result<(), ActorExitStatus> {
         let mut pipeline_uids: Vec<PipelineUid> = Vec::new();
         for (pipeline_uid, pipeline_handle) in &self.indexing_pipelines {
-            if pipeline_handle.needs_drain() {
-                pipeline_handle.start_drain().await;
-                pipeline_uids.push(*pipeline_uid);
+            pipeline_handle.start_drain().await;
+            pipeline_uids.push(*pipeline_uid);
+        }
+        for pipeline_handle in &self.draining_pipelines {
+            if !pipeline_handle.state().is_exit() {
+                pipeline_uids.push(pipeline_handle.indexing_pipeline_id().pipeline_uid);
             }
         }
         if pipeline_uids.is_empty() {

@@ -46,15 +46,15 @@ use tracing::{debug, error, info, instrument, warn};
 
 use super::{ParquetDocProcessor, ParquetIndexer, ParquetPackager, ParquetUploader};
 use crate::actors::pipeline_shared::{
-    DRAIN_GRACE_MARGIN, DrainPipeline, SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn,
-    SuperviseLoop, wait_duration_before_retry,
+    DrainPipeline, DrainState, SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn, SuperviseLoop,
+    wait_duration_before_retry,
 };
 use crate::actors::sequencer::Sequencer;
 use crate::actors::{Publisher, UploaderType};
 use crate::metrics::INDEXING_PIPELINES;
 use crate::models::{IndexingStatistics, SharedPublishToken};
 use crate::source::{
-    AssignShards, Assignment, Drain, SourceActor, SourceRuntime, quickwit_supported_sources,
+    AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
 };
 
 struct MetricsPipelineHandles {
@@ -114,10 +114,7 @@ pub struct MetricsPipeline {
     statistics: IndexingStatistics,
     handles_opt: Option<MetricsPipelineHandles>,
     kill_switch: KillSwitch,
-    // Set when the pipeline is draining (see `DrainPipeline`): the pipeline is
-    // shutting down and must never respawn; past the deadline it gives up and
-    // kills whatever is left.
-    drain_deadline_opt: Option<Instant>,
+    drain_state: DrainState,
     shard_ids: BTreeSet<ShardId>,
     // Id of the last indexing plan assigned to this pipeline. Kept here, like `shard_ids`, so it
     // can be re-sent to the source on respawn; the source adopts it as its publish token.
@@ -167,7 +164,7 @@ impl MetricsPipeline {
             previous_generations_statistics: Default::default(),
             handles_opt: None,
             kill_switch: KillSwitch::default(),
-            drain_deadline_opt: None,
+            drain_state: DrainState::default(),
             statistics: IndexingStatistics {
                 params_fingerprint,
                 ..Default::default()
@@ -293,7 +290,7 @@ impl MetricsPipeline {
             Health::Healthy => {}
             Health::FailureOrUnhealthy => {
                 self.terminate().await;
-                if self.drain_deadline_opt.is_some() {
+                if self.drain_state.is_draining() {
                     // A draining pipeline is never respawned: whatever could
                     // not be settled is redelivered (see `DrainPipeline`).
                     warn!(
@@ -514,9 +511,7 @@ impl Handler<SuperviseLoop> for MetricsPipeline {
     ) -> Result<(), ActorExitStatus> {
         self.perform_observe(ctx);
         self.perform_health_check(ctx).await?;
-        if let Some(drain_deadline) = self.drain_deadline_opt
-            && Instant::now() >= drain_deadline
-        {
+        if self.drain_state.is_deadline_exceeded() {
             warn!(
                 pipeline_id=?self.params.pipeline_id,
                 "metrics pipeline could not be drained before the deadline"
@@ -538,7 +533,7 @@ impl Handler<Spawn> for MetricsPipeline {
         spawn: Spawn,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if self.drain_deadline_opt.is_some() {
+        if self.drain_state.is_draining() {
             // A draining pipeline is shutting down: never respawn it.
             return Ok(());
         }
@@ -575,19 +570,19 @@ impl Handler<DrainPipeline> for MetricsPipeline {
         _drain: DrainPipeline,
         _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if self.drain_deadline_opt.is_some() {
+        if self.drain_state.is_draining() {
             return Ok(());
         }
         let Some(handles) = &self.handles_opt else {
             // Nothing is running, so nothing is in flight.
             return Err(ActorExitStatus::Success);
         };
-        self.drain_deadline_opt = Some(
-            Instant::now() + self.params.indexing_settings.commit_timeout() + DRAIN_GRACE_MARGIN,
-        );
-        // If the source is already dead, the health check terminates the
-        // draining pipeline instead of respawning it.
-        let _ = handles.source_mailbox.send_message(Drain).await;
+        self.drain_state
+            .start(
+                &handles.source_mailbox,
+                self.params.indexing_settings.commit_timeout(),
+            )
+            .await;
         Ok(())
     }
 }

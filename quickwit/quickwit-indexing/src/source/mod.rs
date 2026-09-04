@@ -428,18 +428,6 @@ impl Handler<Drain> for SourceActor {
     }
 }
 
-/// Whether tearing down a pipeline for this source must go through a drain
-/// ([`Drain`]) rather than a plain kill. Only acknowledgment-based
-/// sources benefit: killing them loses the acknowledgments of their in-flight
-/// messages, which are then redelivered and indexed again after the broker's
-/// ack timeout. Checkpoint-based sources resume from their last checkpoint, so
-/// a drain buys them nothing.
-pub(crate) fn source_needs_drain(_source_params: &SourceParams) -> bool {
-    // No built-in source opts in yet: acknowledgment-based sources add their
-    // variant here as they land.
-    false
-}
-
 #[async_trait]
 impl Handler<Loop> for SourceActor {
     type Reply = ();

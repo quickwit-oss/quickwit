@@ -65,9 +65,45 @@ pub struct DrainPipeline;
 /// covering the upload and publication of the final splits.
 pub(crate) const DRAIN_GRACE_MARGIN: Duration = Duration::from_secs(30);
 
+/// Drain progress of a pipeline supervisor (see [`DrainPipeline`]): both
+/// pipeline flavors share the deadline bookkeeping so they cannot diverge.
+#[derive(Default)]
+pub(crate) struct DrainState {
+    deadline_opt: Option<Instant>,
+}
+
+impl DrainState {
+    /// Whether a drain was initiated. A draining pipeline must never respawn.
+    pub(crate) fn is_draining(&self) -> bool {
+        self.deadline_opt.is_some()
+    }
+
+    /// Records the drain deadline and asks the source to drain. If the source
+    /// is already dead, the pipeline health check terminates the draining
+    /// pipeline instead of respawning it.
+    pub(crate) async fn start(
+        &mut self,
+        source_mailbox: &Mailbox<SourceActor>,
+        commit_timeout: Duration,
+    ) {
+        self.deadline_opt = Some(Instant::now() + commit_timeout + DRAIN_GRACE_MARGIN);
+        let _ = source_mailbox.send_message(Drain).await;
+    }
+
+    /// Whether the draining pipeline ran out of time to settle: the caller
+    /// kills whatever is left and exits.
+    pub(crate) fn is_deadline_exceeded(&self) -> bool {
+        self.deadline_opt
+            .map(|deadline| Instant::now() >= deadline)
+            .unwrap_or(false)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Pipeline trait — type-erased handle for any indexing pipeline actor
 // ---------------------------------------------------------------------------
+
+use std::time::Instant;
 
 use async_trait::async_trait;
 use quickwit_actors::{
@@ -77,7 +113,7 @@ use quickwit_actors::{
 use quickwit_proto::indexing::IndexingPipelineId;
 
 use crate::models::IndexingStatistics;
-use crate::source::AssignShards;
+use crate::source::{AssignShards, Drain, SourceActor};
 
 /// Trait that abstracts over the concrete pipeline actor type
 /// (`IndexingPipeline` or `MetricsPipeline`). This allows `PipelineHandle`
@@ -92,9 +128,6 @@ pub trait PipelineHandle: Send + Sync {
     async fn send_assign_shards(&self, message: AssignShards) -> Result<(), SendError>;
     /// See [`DrainPipeline`]. Fire-and-forget: the pipeline exits on its own.
     async fn start_drain(&self);
-    /// Whether a teardown must drain before killing
-    /// (see [`crate::source::source_needs_drain`]).
-    fn needs_drain(&self) -> bool;
     async fn observe(&self) -> Observation<IndexingStatistics>;
     async fn join(self: Box<Self>) -> (ActorExitStatus, IndexingStatistics);
     async fn quit(self: Box<Self>) -> (ActorExitStatus, IndexingStatistics);
@@ -107,7 +140,6 @@ pub(crate) struct ActorPipeline<A: Actor<ObservableState = IndexingStatistics>> 
     pub pipeline_id: IndexingPipelineId,
     pub mailbox: Mailbox<A>,
     pub handle: ActorHandle<A>,
-    pub needs_drain: bool,
 }
 
 #[async_trait]
@@ -145,10 +177,6 @@ where A: Actor<ObservableState = IndexingStatistics>
         // The pipeline mailbox is unbounded, so this should not block; a send
         // error means the pipeline is already dead, hence already settled.
         let _ = self.mailbox.send_message(DrainPipeline).await;
-    }
-
-    fn needs_drain(&self) -> bool {
-        self.needs_drain
     }
 
     async fn observe(&self) -> Observation<IndexingStatistics> {
