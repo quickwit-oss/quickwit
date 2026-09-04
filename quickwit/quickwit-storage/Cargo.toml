@@ -24,9 +24,11 @@ lru = { workspace = true }
 md5 = { workspace = true }
 mini-moka = { workspace = true }
 mockall = { workspace = true, optional = true }
+percent-encoding = { workspace = true }
 pin-project = { workspace = true }
 quick_cache = { workspace = true }
 regex = { workspace = true }
+rustc-hash = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 stable_deref_trait = { workspace = true }

@@ -59,9 +59,6 @@ pub static IN_FLIGHT_INGEST_ROUTER: LazyGauge =
 pub static IN_FLIGHT_INGESTER_PERSIST: LazyGauge =
     LazyGauge::new(|| in_flight_data_gauge("ingester_persist"));
 
-pub static IN_FLIGHT_INGESTER_REPLICATE: LazyGauge =
-    LazyGauge::new(|| in_flight_data_gauge("ingester_replicate"));
-
 pub static IN_FLIGHT_WAL: LazyGauge = LazyGauge::new(|| in_flight_data_gauge("wal"));
 
 pub static IN_FLIGHT_FETCH_STREAM: LazyGauge =
