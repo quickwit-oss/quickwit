@@ -14,9 +14,18 @@
 
 //! Shared infrastructure for indexing pipeline supervisors (logs and metrics).
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use async_trait::async_trait;
+use quickwit_actors::{
+    Actor, ActorExitStatus, ActorHandle, ActorState, DeferableReplyHandler, Health, Mailbox,
+    Observation, SendError, Supervisable,
+};
+use quickwit_proto::indexing::IndexingPipelineId;
 use tokio::sync::Semaphore;
+
+use crate::models::IndexingStatistics;
+use crate::source::{AssignShards, Drain, SourceActor};
 
 pub(crate) const SUPERVISE_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -68,10 +77,24 @@ pub struct DrainPipeline;
 pub(crate) const DRAIN_GRACE_MARGIN: Duration = Duration::from_secs(30);
 
 /// Drain progress of a pipeline supervisor (see [`DrainPipeline`]): both
-/// pipeline flavors share the deadline bookkeeping so they cannot diverge.
+/// pipeline flavors share the deadline bookkeeping and the drain-request
+/// handling so they cannot diverge.
 #[derive(Default)]
 pub(crate) struct DrainState {
     deadline_opt: Option<Instant>,
+}
+
+/// Follow-up required from the pipeline supervisor after
+/// [`DrainState::on_drain_request`]. Killing the actors is only possible from
+/// the supervisor itself, so it is returned as data instead of being executed
+/// here.
+pub(crate) enum DrainAction {
+    /// The drain is now (or was already) in progress: keep supervising.
+    KeepRunning,
+    /// Nothing left to settle: exit successfully.
+    Exit,
+    /// The source cannot drain: kill the actors, then exit.
+    TerminateAndExit,
 }
 
 impl DrainState {
@@ -80,16 +103,25 @@ impl DrainState {
         self.deadline_opt.is_some()
     }
 
-    /// Records the drain deadline and asks the source to drain. If the source
-    /// is already dead, the pipeline health check terminates the draining
-    /// pipeline instead of respawning it.
-    pub(crate) async fn start(
+    pub(crate) async fn on_drain_request(
         &mut self,
-        source_mailbox: &Mailbox<SourceActor>,
+        running_source_opt: Option<(&Mailbox<SourceActor>, bool)>,
         commit_timeout: Duration,
-    ) {
+    ) -> DrainAction {
+        if self.is_draining() {
+            return DrainAction::KeepRunning;
+        }
+        let Some((source_mailbox, source_should_be_drained)) = running_source_opt else {
+            return DrainAction::Exit;
+        };
+        if !source_should_be_drained {
+            // The source settles nothing on a drain: tearing the pipeline down
+            // right away is no worse than a kill.
+            return DrainAction::TerminateAndExit;
+        }
         self.deadline_opt = Some(Instant::now() + commit_timeout + DRAIN_GRACE_MARGIN);
         let _ = source_mailbox.send_message(Drain).await;
+        DrainAction::KeepRunning
     }
 
     /// Whether the draining pipeline ran out of time to settle: the caller
@@ -104,18 +136,6 @@ impl DrainState {
 // ---------------------------------------------------------------------------
 // Pipeline trait — type-erased handle for any indexing pipeline actor
 // ---------------------------------------------------------------------------
-
-use std::time::Instant;
-
-use async_trait::async_trait;
-use quickwit_actors::{
-    Actor, ActorExitStatus, ActorHandle, ActorState, DeferableReplyHandler, Health, Mailbox,
-    Observation, SendError, Supervisable,
-};
-use quickwit_proto::indexing::IndexingPipelineId;
-
-use crate::models::IndexingStatistics;
-use crate::source::{AssignShards, Drain, SourceActor};
 
 /// Trait that abstracts over the concrete pipeline actor type
 /// (`IndexingPipeline` or `MetricsPipeline`). This allows `PipelineHandle`
@@ -146,9 +166,10 @@ pub(crate) struct ActorPipeline<A: Actor<ObservableState = IndexingStatistics>> 
 
 #[async_trait]
 impl<A> PipelineHandle for ActorPipeline<A>
-where A: Actor<ObservableState = IndexingStatistics>
+where
+    A: Actor<ObservableState = IndexingStatistics>
         + DeferableReplyHandler<AssignShards>
-        + DeferableReplyHandler<DrainPipeline, Reply = ()>
+        + DeferableReplyHandler<DrainPipeline, Reply = ()>,
 {
     fn indexing_pipeline_id(&self) -> &IndexingPipelineId {
         &self.pipeline_id
