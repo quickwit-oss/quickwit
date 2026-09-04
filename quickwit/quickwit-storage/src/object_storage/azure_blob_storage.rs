@@ -44,6 +44,7 @@ use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWriteExt, BufReader};
 use tokio_util::io::StreamReader;
 use tracing::{instrument, warn};
+use ulid::Ulid;
 
 use crate::debouncer::DebouncedStorage;
 use crate::metrics::object_storage_get_slice_in_flight_guards;
@@ -57,11 +58,18 @@ use crate::{
     StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
 };
 
-/// Block id used by the single part upload path.
+/// Formats the block id of one part of an upload.
 ///
-/// Zero padded like the multipart ids so that a blob written by either path carries a block
-/// list of the same shape.
-const SINGLE_PART_BLOCK_ID: &[u8] = b"block:00000";
+/// Uncommitted blocks are keyed by blob name and block id, so ids derived from the part index
+/// alone let two concurrent uploads of the same object stage over each other: the first commit
+/// publishes the second upload's bytes and consumes the block the second commit still names.
+/// Scoping the ids to a ULID minted once per upload keeps the two independent.
+///
+/// Every id this produces is the same length, which Azure requires of the block ids within a
+/// single blob, and the zero padded part number keeps the ids of one upload sortable as strings.
+fn format_block_id(upload_id: Ulid, part_num: usize) -> String {
+    format!("{upload_id}:{part_num:05}")
+}
 
 /// Azure object storage resolver.
 pub struct AzureBlobStorageFactory {
@@ -326,6 +334,9 @@ impl AzureBlobStorage {
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(payload.len());
         let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_PUT_OBJECT_DURATION);
+        // Minted outside the retry closure so a retry re-stages over its own block rather than
+        // leaving an orphan behind for the seven days an uncommitted block lives.
+        let block_id = format_block_id(Ulid::new(), 0);
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
             let digest = md5::compute(&data[..]);
@@ -344,16 +355,17 @@ impl AzureBlobStorage {
             // `RequestContent::from` is an inherent function over `Vec<u8>`, which shadows
             // the `From<Bytes>` impl, so go through `Into` to keep the `Bytes` as is.
             let content: RequestContent<Bytes, NoFormat> = data.into();
+            // The SDK base64 encodes the block id, so it takes the raw bytes.
             block_blob_client
                 .stage_block(
-                    SINGLE_PART_BLOCK_ID,
+                    block_id.as_bytes(),
                     content_length,
                     content,
                     Some(stage_block_options),
                 )
                 .await?;
             let block_lookup_list = BlockLookupList {
-                uncommitted: Some(vec![SINGLE_PART_BLOCK_ID.to_vec()]),
+                uncommitted: Some(vec![block_id.as_bytes().to_vec()]),
                 ..Default::default()
             };
             let block_list_content =
@@ -380,6 +392,7 @@ impl AzureBlobStorage {
             chunk_range(0..total_len as usize, part_len as usize).map(into_u64_range);
 
         let block_blob_client = self.container_client.blob_client(name).block_blob_client();
+        let upload_id = Ulid::new();
         let upload_blocks_stream = tokio_stream::iter(multipart_ranges.enumerate())
             .map(|(num, range)| {
                 // `BlockBlobClient` is not `Clone` in the 1.0 SDK, so each part builds its
@@ -394,8 +407,7 @@ impl AzureBlobStorage {
                     let _timer =
                         HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_UPLOAD_PART_DURATION);
                     retry(&self.retry_params, || async {
-                        // zero pad block ids to make them sortable as strings
-                        let block_id = format!("block:{:05}", num);
+                        let block_id = format_block_id(upload_id, num);
                         let (data, hash_digest) =
                             extract_range_data_and_hash(moved_payload.box_clone(), range.clone())
                                 .await?;
