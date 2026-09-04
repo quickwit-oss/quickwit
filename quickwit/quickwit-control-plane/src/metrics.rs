@@ -12,7 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use quickwit_metrics::{LabelNames, LazyCounter, LazyGauge, label_names, lazy_counter, lazy_gauge};
+use fnv::FnvHashMap;
+use quickwit_metrics::{
+    LabelNames, LazyCounter, LazyGauge, gauge, label_names, label_values, lazy_counter, lazy_gauge,
+};
+use quickwit_proto::types::{NodeId, PipelineUid, ShardId};
+
+use crate::indexing_plan::PhysicalIndexingPlan;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ShardLocalityMetrics {
@@ -74,6 +80,156 @@ pub(crate) static NEARBY_SHARDS: LazyGauge =
 
 pub(crate) static REMOTE_SHARDS: LazyGauge =
     lazy_gauge!(parent: INDEXED_SHARDS, "locality" => "remote");
+
+const INDEXER_ID_NUM_SHARDS_LABEL_NAMES: LabelNames<2> =
+    label_names!("indexer_id", "num_shards");
+
+static INDEXING_PIPELINES: LazyGauge = lazy_gauge!(
+        name: "indexing_pipelines",
+        description: "Number of pipelines in the latest applied indexing plan, grouped by indexer and assigned shard count.",
+        subsystem: "control_plane",
+);
+
+static INDEXING_PIPELINE_RESETS_TOTAL: LazyCounter = lazy_counter!(
+        name: "indexing_pipeline_resets_total",
+        description: "Number of running pipelines whose live shard assignment was reset by an indexing plan change.",
+        subsystem: "control_plane",
+);
+
+static INDEXING_PIPELINE_RESETS_FROM_MOVES: LazyCounter =
+    lazy_counter!(parent: INDEXING_PIPELINE_RESETS_TOTAL, "reason" => "shard_moved");
+
+static INDEXING_PIPELINE_RESETS_FROM_REPACKING: LazyCounter =
+    lazy_counter!(parent: INDEXING_PIPELINE_RESETS_TOTAL, "reason" => "pipeline_repacked");
+
+static INDEXING_SHARD_MOVES_TOTAL: LazyCounter = lazy_counter!(
+        name: "indexing_shard_moves_total",
+        description: "Number of live shards moved to another indexer by an indexing plan change.",
+        subsystem: "control_plane",
+);
+
+#[derive(Default)]
+struct IndexingPlanChurn {
+    num_moved_shards: usize,
+    num_pipeline_resets_from_moves: usize,
+    num_pipeline_resets_from_repacking: usize,
+}
+
+type PipelineKey = (NodeId, PipelineUid);
+
+fn pipeline_counts_by_indexer_and_shard_count(
+    plan: &PhysicalIndexingPlan,
+) -> FnvHashMap<(NodeId, usize), usize> {
+    let mut pipeline_counts = FnvHashMap::default();
+    for (indexer_id, tasks) in plan.indexing_tasks_per_indexer() {
+        for task in tasks {
+            *pipeline_counts
+                .entry((indexer_id.clone(), task.shard_ids.len()))
+                .or_default() += 1;
+        }
+    }
+    pipeline_counts
+}
+
+fn plan_assignments(
+    plan: &PhysicalIndexingPlan,
+) -> (
+    FnvHashMap<PipelineKey, Vec<ShardId>>,
+    FnvHashMap<ShardId, PipelineKey>,
+) {
+    let mut shards_per_pipeline: FnvHashMap<PipelineKey, Vec<ShardId>> = FnvHashMap::default();
+    let mut pipeline_per_shard = FnvHashMap::default();
+    for (indexer_id, tasks) in plan.indexing_tasks_per_indexer() {
+        for task in tasks {
+            let pipeline = (indexer_id.clone(), task.pipeline_uid());
+            shards_per_pipeline
+                .entry(pipeline.clone())
+                .or_default()
+                .extend(task.shard_ids.iter().cloned());
+            for shard_id in &task.shard_ids {
+                pipeline_per_shard.insert(shard_id.clone(), pipeline.clone());
+            }
+        }
+    }
+    (shards_per_pipeline, pipeline_per_shard)
+}
+
+fn compute_indexing_plan_churn(
+    previous_plan: &PhysicalIndexingPlan,
+    new_plan: &PhysicalIndexingPlan,
+) -> IndexingPlanChurn {
+    let (previous_shards_per_pipeline, previous_pipeline_per_shard) =
+        plan_assignments(previous_plan);
+    let (_, new_pipeline_per_shard) = plan_assignments(new_plan);
+    let mut churn = IndexingPlanChurn::default();
+
+    for (shard_id, new_pipeline) in &new_pipeline_per_shard {
+        if previous_pipeline_per_shard
+            .get(shard_id)
+            .is_some_and(|previous_pipeline| previous_pipeline.0 != new_pipeline.0)
+        {
+            churn.num_moved_shards += 1;
+        }
+    }
+
+    for (previous_pipeline, previous_shards) in previous_shards_per_pipeline {
+        let mut lost_shard_to_another_indexer = false;
+        let mut lost_shard_to_another_pipeline = false;
+        for shard_id in previous_shards {
+            let Some(new_pipeline) = new_pipeline_per_shard.get(&shard_id) else {
+                // Completed and deleted shards leave the plan without resetting their pipeline.
+                continue;
+            };
+            if new_pipeline == &previous_pipeline {
+                continue;
+            }
+            lost_shard_to_another_pipeline = true;
+            if new_pipeline.0 != previous_pipeline.0 {
+                lost_shard_to_another_indexer = true;
+                break;
+            }
+        }
+        if lost_shard_to_another_indexer {
+            churn.num_pipeline_resets_from_moves += 1;
+        } else if lost_shard_to_another_pipeline {
+            churn.num_pipeline_resets_from_repacking += 1;
+        }
+    }
+    churn
+}
+
+fn set_pipeline_count(indexer_id: &NodeId, num_shards: usize, num_pipelines: usize) {
+    let labels = label_values!(
+        INDEXER_ID_NUM_SHARDS_LABEL_NAMES =>
+        indexer_id.to_string(),
+        num_shards.to_string()
+    );
+    gauge!(parent: INDEXING_PIPELINES, labels: [labels]).set(num_pipelines as f64);
+}
+
+pub(crate) fn publish_indexing_plan_metrics(
+    previous_plan: Option<&PhysicalIndexingPlan>,
+    new_plan: &PhysicalIndexingPlan,
+) {
+    if let Some(previous_plan) = previous_plan {
+        for ((indexer_id, num_shards), _) in
+            pipeline_counts_by_indexer_and_shard_count(previous_plan)
+        {
+            set_pipeline_count(&indexer_id, num_shards, 0);
+        }
+        let churn = compute_indexing_plan_churn(previous_plan, new_plan);
+        INDEXING_SHARD_MOVES_TOTAL.inc_by(churn.num_moved_shards as u64);
+        INDEXING_PIPELINE_RESETS_FROM_MOVES
+            .inc_by(churn.num_pipeline_resets_from_moves as u64);
+        INDEXING_PIPELINE_RESETS_FROM_REPACKING
+            .inc_by(churn.num_pipeline_resets_from_repacking as u64);
+    }
+    for ((indexer_id, num_shards), num_pipelines) in
+        pipeline_counts_by_indexer_and_shard_count(new_plan)
+    {
+        set_pipeline_count(&indexer_id, num_shards, num_pipelines);
+    }
+}
 
 pub(crate) static APPLY_PLAN_TOTAL: LazyCounter = lazy_counter!(
         name: "apply_plan_total",

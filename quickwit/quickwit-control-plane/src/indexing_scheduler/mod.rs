@@ -44,7 +44,9 @@ use ulid::Ulid;
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotifier};
 use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
-use crate::metrics::{APPLY_PLAN_TOTAL, SCHEDULE_TOTAL, ShardLocalityMetrics};
+use crate::metrics::{
+    APPLY_PLAN_TOTAL, SCHEDULE_TOTAL, ShardLocalityMetrics, publish_indexing_plan_metrics,
+};
 use crate::model::{ControlPlaneModel, ShardEntry, ShardLocations};
 use crate::{IndexerPool, IndexerPoolEntry};
 
@@ -539,6 +541,10 @@ impl IndexingScheduler {
         notify_on_drop: Option<Arc<NotifyChangeOnDrop>>,
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
+        publish_indexing_plan_metrics(
+            self.state.last_applied_physical_plan.as_ref(),
+            &new_physical_plan,
+        );
         APPLY_PLAN_TOTAL.inc();
         // The indexing plan ID is a monotonically increasing time based ID that's used as the
         // publish token for indexers, which ensures indexing plans and shard acquisition are always
