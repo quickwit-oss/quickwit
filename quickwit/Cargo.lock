@@ -8748,6 +8748,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-http-client"
+version = "0.9.0"
+dependencies = [
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "bytes",
+ "futures",
+ "http 1.4.2",
+ "http-body 1.0.1",
+ "http-body-util",
+ "httparse",
+ "rustls 0.23.41",
+ "rustls-native-certs",
+ "rustls-pemfile",
+ "socket2 0.6.4",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-rustls 0.26.4",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "quickwit-index-management"
 version = "0.9.0"
 dependencies = [
@@ -9404,6 +9427,7 @@ dependencies = [
  "aws-credential-types",
  "aws-sdk-s3",
  "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
  "aws-smithy-types",
  "azure_core",
  "azure_identity",
@@ -9429,6 +9453,7 @@ dependencies = [
  "quickwit-aws",
  "quickwit-common",
  "quickwit-config",
+ "quickwit-http-client",
  "quickwit-metrics",
  "quickwit-proto",
  "regex",
@@ -12266,6 +12291,7 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]
