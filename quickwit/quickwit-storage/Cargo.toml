@@ -17,12 +17,15 @@ async-trait = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
+foyer = { workspace = true }
 futures = { workspace = true }
 http-body-util = { workspace = true}
 hyper = { workspace = true }
 lru = { workspace = true }
 md5 = { workspace = true }
+metrics = { workspace = true }
 mini-moka = { workspace = true }
+mixtrics = { workspace = true }
 mockall = { workspace = true, optional = true }
 percent-encoding = { workspace = true }
 pin-project = { workspace = true }
@@ -35,6 +38,7 @@ stable_deref_trait = { workspace = true }
 tantivy = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
+fail = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
@@ -62,6 +66,7 @@ reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
 http = { workspace = true }
+metrics-util = { workspace = true }
 mockall = { workspace = true }
 proptest = { workspace = true }
 # Match OpenDAL's internal reqwest major. `default-features = false` is
@@ -95,6 +100,7 @@ azure = [
 ]
 gcs = ["dep:opendal", "opendal/services-gcs"]
 ci-test = []
+failpoints = ["fail/failpoints"]
 integration-testsuite = [
   "azure",
   "azure_core/azurite_workaround",
