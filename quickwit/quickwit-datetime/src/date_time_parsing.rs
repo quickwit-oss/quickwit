@@ -120,6 +120,13 @@ pub fn parse_timestamp_str(timestamp_str: &str) -> Option<TantivyDateTime> {
         if subsecond_digits_str.is_empty() {
             return parse_timestamp_str(timestamp_secs_str);
         }
+        // `i64::from_str` accepts a leading `+` or `-`, which is not a subsecond digit. Without
+        // this check, `1700000000.-1` parses as ten milliseconds *before* the whole second, and
+        // the sign also occupies one of the nine digit slots, so `1700000000.+5` yields 0.05s
+        // rather than 0.5s. Both are silently wrong instants rather than parse errors.
+        if !subsecond_digits_str.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
         if let Ok(timestamp_secs @ MIN_TIMESTAMP_SECONDS..=MAX_TIMESTAMP_SECONDS) =
             timestamp_secs_str.parse::<i64>()
         {
@@ -452,6 +459,24 @@ mod tests {
 
         let date_time = parse_timestamp_str("123456789.1000000011").unwrap();
         assert_eq!(date_time.into_timestamp_nanos(), 123456789100000001);
+    }
+
+    #[test]
+    fn test_parse_timestamp_str_rejects_signed_subseconds() {
+        // A sign is not a subsecond digit. These used to parse: `.-1` landed ten
+        // milliseconds before the whole second, and `.+5` gave 0.05s rather than 0.5s
+        // because the sign consumed one of the nine digit slots.
+        for timestamp_str in [
+            "123456789.-1",
+            "123456789.+5",
+            "123456789.-999999999",
+            "123456789.+999999999",
+        ] {
+            assert!(
+                parse_timestamp_str(timestamp_str).is_none(),
+                "expected `{timestamp_str}` to be rejected"
+            );
+        }
     }
 
     #[test]
