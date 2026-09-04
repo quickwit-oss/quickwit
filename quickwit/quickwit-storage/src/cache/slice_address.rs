@@ -17,10 +17,18 @@ use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use crate::cache::mem_usage::MemUsage;
+
 #[derive(Hash, Clone, Debug, Eq, PartialEq)]
 pub struct SliceAddress {
     pub path: PathBuf,
     pub byte_range: Range<usize>,
+}
+
+impl MemUsage for SliceAddress {
+    fn heap_mem_usage(&self) -> usize {
+        self.path.heap_mem_usage()
+    }
 }
 
 // ------------------------------------------------------------

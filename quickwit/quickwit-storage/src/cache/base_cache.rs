@@ -26,7 +26,8 @@ use tokio::time::Instant;
 use tracing::{error, warn};
 
 use crate::OwnedBytes;
-use crate::cache::stored_item::{StoredItem, ValueLen};
+use crate::cache::mem_usage::MemUsage;
+use crate::cache::stored_item::{KeyedEntry, StoredItem, ValueLen};
 use crate::metrics::SingleCacheMetrics;
 
 /// We do not evict anything that has been accessed in the last 60s.
@@ -76,7 +77,7 @@ pub(crate) enum AnyCache<K: Hash + Eq, V: ValueLen = OwnedBytes> {
     TinyLfu(TinyLfu<K, V>),
 }
 
-impl<K: Hash + Eq + Send + Sync + 'static, V: ValueLen + Clone + Send + Sync + 'static>
+impl<K: Hash + Eq + MemUsage + Send + Sync + 'static, V: ValueLen + Clone + Send + Sync + 'static>
     AnyCache<K, V>
 {
     pub fn from_policy_and_capacity(
@@ -142,7 +143,7 @@ impl<K: Hash + Eq, V> Drop for Lru<K, V> {
     }
 }
 
-impl<K: Hash + Eq, V: ValueLen + Clone> Lru<K, V> {
+impl<K: Hash + Eq + MemUsage, V: ValueLen + Clone> Lru<K, V> {
     /// Creates a new NeedMutSliceCache with the given capacity.
     fn with_capacity(capacity: Capacity, cache_metrics: SingleCacheMetrics) -> Self {
         Lru {
@@ -185,7 +186,11 @@ impl<K: Hash + Eq, V: ValueLen + Clone> Lru<K, V> {
         let item_opt = self.lru_cache.get_mut(cache_key);
         if let Some(item) = item_opt {
             self.cache_metrics.hits_num_items.inc();
-            self.cache_metrics.hits_num_bytes.inc_by(item.len() as u64);
+            // Hits are measured in payload bytes: this counts what the caller got instead of
+            // going to storage, so the key is deliberately excluded.
+            self.cache_metrics
+                .hits_num_bytes
+                .inc_by(item.payload_num_bytes() as u64);
             Some(item.payload())
         } else {
             self.cache_metrics.misses_num_items.inc();
@@ -194,28 +199,31 @@ impl<K: Hash + Eq, V: ValueLen + Clone> Lru<K, V> {
     }
 
     /// Attempt to put the given amount of data in the cache.
-    /// This may fail silently if the owned_bytes slice is larger than the cache
-    /// capacity.
+    /// This may fail silently if the key and the owned_bytes slice together are larger than the
+    /// cache capacity.
     fn put(&mut self, key: K, bytes: V) {
-        if self.capacity.exceeds_capacity(bytes.len()) {
-            // The value does not fit in the cache. We simply don't store it.
+        let key_mem_usage = key.mem_usage();
+        let entry_num_bytes = key_mem_usage + bytes.len();
+        if self.capacity.exceeds_capacity(entry_num_bytes) {
+            // The entry does not fit in the cache. We simply don't store it.
             if self.capacity != Capacity::InBytes(0) {
                 warn!(
                     capacity_in_bytes = ?self.capacity,
                     len = bytes.len(),
-                    "Downloaded a byte slice larger than the cache capacity."
+                    key_mem_usage,
+                    "Downloaded a cache entry (key + value) larger than the cache capacity."
                 );
             }
             return;
         }
         if let Some(previous_data) = self.lru_cache.pop(&key) {
-            self.drop_item(previous_data.len() as u64);
+            self.drop_item(previous_data.entry_num_bytes() as u64);
         }
 
         let now = Instant::now();
         while self
             .capacity
-            .exceeds_capacity(self.num_bytes as usize + bytes.len())
+            .exceeds_capacity(self.num_bytes as usize + entry_num_bytes)
         {
             if let Some((_, candidate_for_eviction)) = self.lru_cache.peek_lru() {
                 let time_since_last_access =
@@ -227,8 +235,8 @@ impl<K: Hash + Eq, V: ValueLen + Clone> Lru<K, V> {
                     return;
                 }
             }
-            if let Some((_, bytes)) = self.lru_cache.pop_lru() {
-                self.drop_item(bytes.len() as u64);
+            if let Some((_, stored_item)) = self.lru_cache.pop_lru() {
+                self.drop_item(stored_item.entry_num_bytes() as u64);
             } else {
                 error!(
                     "Logical error. Even after removing all of the items in the cache the \
@@ -238,8 +246,9 @@ impl<K: Hash + Eq, V: ValueLen + Clone> Lru<K, V> {
                 return;
             }
         }
-        self.record_item(bytes.len() as u64);
-        self.lru_cache.put(key, StoredItem::new(bytes, now));
+        self.record_item(entry_num_bytes as u64);
+        self.lru_cache
+            .put(key, StoredItem::new(bytes, key_mem_usage, now));
     }
 }
 
@@ -247,8 +256,13 @@ impl<K: Hash + Eq, V: ValueLen + Clone> Lru<K, V> {
 // readme says. While both are clearly distinct (one being clock-based, the other being fifo
 // based), they are not too disimilar in term of strenght/weaknesses.
 pub struct S3Fifo<K: Hash + Eq, V: ValueLen> {
-    cache:
-        QuickCache<K, V, QuickCacheWeighter, quick_cache::DefaultHashBuilder, QuickCacheLifecycle>,
+    cache: QuickCache<
+        K,
+        KeyedEntry<V>,
+        QuickCacheWeighter,
+        quick_cache::DefaultHashBuilder,
+        QuickCacheLifecycle,
+    >,
     capacity: u64,
     cache_metrics: SingleCacheMetrics,
 }
@@ -266,9 +280,12 @@ impl<K: Hash + Eq, V: ValueLen> Drop for S3Fifo<K, V> {
 }
 
 struct QuickCacheWeighter;
-impl<K, V: ValueLen> quick_cache::Weighter<K, V> for QuickCacheWeighter {
-    fn weight(&self, _key: &K, value: &V) -> u64 {
-        value.len() as u64
+impl<K, V: ValueLen> quick_cache::Weighter<K, KeyedEntry<V>> for QuickCacheWeighter {
+    // The key footprint is carried by the entry itself, so the key is not needed here. This also
+    // keeps `Weighter` free of a `K: MemUsage` bound, which `Drop for S3Fifo` would otherwise have
+    // to carry all the way up to `MemorySizedCache`'s declaration.
+    fn weight(&self, _key: &K, entry: &KeyedEntry<V>) -> u64 {
+        entry.entry_num_bytes() as u64
     }
 }
 
@@ -278,16 +295,16 @@ struct QuickCacheQueryEffect {
     count: u64,
     bytes: u64,
 }
-impl<K, V: ValueLen> quick_cache::Lifecycle<K, V> for QuickCacheLifecycle {
+impl<K, V: ValueLen> quick_cache::Lifecycle<K, KeyedEntry<V>> for QuickCacheLifecycle {
     type RequestState = QuickCacheQueryEffect;
 
-    fn on_evict(&self, state: &mut Self::RequestState, _key: K, val: V) {
+    fn on_evict(&self, state: &mut Self::RequestState, _key: K, entry: KeyedEntry<V>) {
         state.count += 1;
-        state.bytes += val.len() as u64;
+        state.bytes += entry.entry_num_bytes() as u64;
     }
 }
 
-impl<K: Hash + Eq, V: ValueLen + Clone> S3Fifo<K, V> {
+impl<K: Hash + Eq + MemUsage, V: ValueLen + Clone> S3Fifo<K, V> {
     /// Creates a new NeedMutSliceCache with the given capacity.
     fn with_capacity(capacity: u64, cache_metrics: SingleCacheMetrics) -> Self {
         S3Fifo {
@@ -308,11 +325,15 @@ impl<K: Hash + Eq, V: ValueLen + Clone> S3Fifo<K, V> {
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let item_opt = self.cache.get(cache_key);
-        if let Some(item) = item_opt {
+        let entry_opt = self.cache.get(cache_key);
+        if let Some(entry) = entry_opt {
             self.cache_metrics.hits_num_items.inc();
-            self.cache_metrics.hits_num_bytes.inc_by(item.len() as u64);
-            Some(item.clone())
+            // Hits are measured in payload bytes: this counts what the caller got instead of
+            // going to storage, so the key is deliberately excluded.
+            self.cache_metrics
+                .hits_num_bytes
+                .inc_by(entry.payload_num_bytes() as u64);
+            Some(entry.value().clone())
         } else {
             self.cache_metrics.misses_num_items.inc();
             None
@@ -320,16 +341,20 @@ impl<K: Hash + Eq, V: ValueLen + Clone> S3Fifo<K, V> {
     }
 
     /// Attempt to put the given amount of data in the cache.
-    /// This may fail silently if the owned_bytes slice is larger than the cache
-    /// capacity.
+    /// This may fail silently if the key and the owned_bytes slice together are larger than the
+    /// cache capacity.
     fn put(&mut self, key: K, value: V) {
-        if self.capacity < value.len() as u64 {
-            // The value does not fit in the cache. We simply don't store it.
+        // Measured before `key` is moved into the cache below.
+        let key_mem_usage = key.mem_usage();
+        let entry_num_bytes = (key_mem_usage + value.len()) as u64;
+        if self.capacity < entry_num_bytes {
+            // The entry does not fit in the cache. We simply don't store it.
             if self.capacity != 0 {
                 warn!(
                     capacity_in_bytes = ?self.capacity,
                     len = value.len(),
-                    "Downloaded a byte slice larger than the cache capacity."
+                    key_mem_usage,
+                    "Downloaded a cache entry (key + value) larger than the cache capacity."
                 );
             }
             return;
@@ -338,9 +363,10 @@ impl<K: Hash + Eq, V: ValueLen + Clone> S3Fifo<K, V> {
         self.cache_metrics.in_cache_count.inc();
         self.cache_metrics
             .in_cache_num_bytes
-            .inc_by(value.len() as f64);
+            .inc_by(entry_num_bytes as f64);
         let mut evicted = QuickCacheQueryEffect::default();
-        self.cache.insert_with_lifecycle(key, value, &mut evicted);
+        self.cache
+            .insert_with_lifecycle(key, KeyedEntry::new(value, key_mem_usage), &mut evicted);
         self.cache_metrics
             .in_cache_count
             .dec_by(evicted.count as f64);
@@ -354,19 +380,21 @@ impl<K: Hash + Eq, V: ValueLen + Clone> S3Fifo<K, V> {
 
 // We don't make this value Clone to ensure each item is dropped only once
 struct CapacityTracker<V: ValueLen> {
-    item: V,
+    // Moka hands us no key on drop, hence the memorized key footprint inside `KeyedEntry`.
+    entry: KeyedEntry<V>,
     cache_metrics: Weak<SingleCacheMetrics>,
 }
 
 impl<V: ValueLen> Drop for CapacityTracker<V> {
     fn drop(&mut self) {
         if let Some(cache_metrics) = self.cache_metrics.upgrade() {
+            let entry_num_bytes = self.entry.entry_num_bytes();
             cache_metrics.in_cache_count.dec();
             cache_metrics
                 .in_cache_num_bytes
-                .dec_by(self.item.len() as f64);
+                .dec_by(entry_num_bytes as f64);
             cache_metrics.evict_num_items.inc();
-            cache_metrics.evict_num_bytes.inc_by(self.item.len() as u64);
+            cache_metrics.evict_num_bytes.inc_by(entry_num_bytes as u64);
         }
     }
 }
@@ -395,7 +423,7 @@ impl<K: Hash + Eq, V: ValueLen> Drop for TinyLfu<K, V> {
     }
 }
 
-impl<K: Hash + Eq + Send + Sync + 'static, V: ValueLen + Clone + Send + Sync + 'static>
+impl<K: Hash + Eq + MemUsage + Send + Sync + 'static, V: ValueLen + Clone + Send + Sync + 'static>
     TinyLfu<K, V>
 {
     /// Creates a new NeedMutSliceCache with the given capacity.
@@ -403,8 +431,9 @@ impl<K: Hash + Eq + Send + Sync + 'static, V: ValueLen + Clone + Send + Sync + '
         TinyLfu {
             cache: MokaCache::builder()
                 .max_capacity(capacity)
+                // The key footprint is carried by the entry itself, so the key is not needed here.
                 .weigher(|_k, v: &Arc<CapacityTracker<V>>| {
-                    v.item.len().try_into().unwrap_or(u32::MAX)
+                    v.entry.entry_num_bytes().try_into().unwrap_or(u32::MAX)
                 })
                 .build(),
             capacity,
@@ -420,10 +449,12 @@ impl<K: Hash + Eq + Send + Sync + 'static, V: ValueLen + Clone + Send + Sync + '
         let item_opt = self.cache.get(cache_key);
         if let Some(item) = item_opt {
             self.cache_metrics.hits_num_items.inc();
+            // Hits are measured in payload bytes: this counts what the caller got instead of
+            // going to storage, so the key is deliberately excluded.
             self.cache_metrics
                 .hits_num_bytes
-                .inc_by(item.item.len() as u64);
-            Some(item.item.clone())
+                .inc_by(item.entry.payload_num_bytes() as u64);
+            Some(item.entry.value().clone())
         } else {
             self.cache_metrics.misses_num_items.inc();
             None
@@ -431,16 +462,20 @@ impl<K: Hash + Eq + Send + Sync + 'static, V: ValueLen + Clone + Send + Sync + '
     }
 
     /// Attempt to put the given amount of data in the cache.
-    /// This may fail silently if the owned_bytes slice is larger than the cache
-    /// capacity.
+    /// This may fail silently if the key and the owned_bytes slice together are larger than the
+    /// cache capacity.
     fn put(&mut self, key: K, value: V) {
-        if self.capacity < value.len() as u64 {
-            // The value does not fit in the cache. We simply don't store it.
+        // Measured before `key` is moved into the cache below.
+        let key_mem_usage = key.mem_usage();
+        let entry_num_bytes = (key_mem_usage + value.len()) as u64;
+        if self.capacity < entry_num_bytes {
+            // The entry does not fit in the cache. We simply don't store it.
             if self.capacity != 0 {
                 warn!(
                     capacity_in_bytes = ?self.capacity,
                     len = value.len(),
-                    "Downloaded a byte slice larger than the cache capacity."
+                    key_mem_usage,
+                    "Downloaded a cache entry (key + value) larger than the cache capacity."
                 );
             }
             return;
@@ -449,11 +484,11 @@ impl<K: Hash + Eq + Send + Sync + 'static, V: ValueLen + Clone + Send + Sync + '
         self.cache_metrics.in_cache_count.inc();
         self.cache_metrics
             .in_cache_num_bytes
-            .inc_by(value.len() as f64);
+            .inc_by(entry_num_bytes as f64);
         self.cache.insert(
             key,
             CapacityTracker {
-                item: value,
+                entry: KeyedEntry::new(value, key_mem_usage),
                 cache_metrics: Arc::downgrade(&self.cache_metrics),
             }
             .into(),
