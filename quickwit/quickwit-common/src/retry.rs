@@ -142,6 +142,7 @@ impl MockableSleep for TokioSleep {
 
 pub async fn retry_with_mockable_sleep<U, E, Fut>(
     retry_params: &RetryParams,
+    request_name: &'static str,
     f: impl Fn() -> Fut,
     mockable_sleep: impl MockableSleep,
 ) -> Result<U, E>
@@ -167,8 +168,10 @@ where
 
         if num_attempts >= retry_params.max_attempts {
             warn!(
+                request=%request_name,
                 num_attempts=%num_attempts,
-                "request failed"
+                error=?error,
+                "request failed after exhausting retries"
             );
             return Err(error);
         }
@@ -177,6 +180,7 @@ where
             None => retry_params.compute_delay(num_attempts),
         };
         debug!(
+            request=%request_name,
             num_attempts=%num_attempts,
             delay_ms=%delay.as_millis(),
             error=?error,
@@ -186,17 +190,22 @@ where
     }
 }
 
-pub async fn retry<U, E, Fut>(retry_params: &RetryParams, f: impl Fn() -> Fut) -> Result<U, E>
+pub async fn retry<U, E, Fut>(
+    request_name: &'static str,
+    retry_params: &RetryParams,
+    f: impl Fn() -> Fut,
+) -> Result<U, E>
 where
     Fut: Future<Output = Result<U, E>>,
     E: Retryable + Debug + 'static,
 {
-    retry_with_mockable_sleep(retry_params, f, TokioSleep).await
+    retry_with_mockable_sleep(retry_params, request_name, f, TokioSleep).await
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::RwLock;
+    use std::io::Write;
+    use std::sync::{Arc, Mutex, RwLock};
     use std::time::Duration;
 
     use futures::future::ready;
@@ -220,6 +229,19 @@ mod tests {
 
     struct NoopSleep;
 
+    struct TestWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for TestWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
     #[async_trait::async_trait]
     impl MockableSleep for NoopSleep {
         async fn sleep(&self, _duration: Duration) {
@@ -236,6 +258,7 @@ mod tests {
                 max_delay: Duration::from_millis(2),
                 max_attempts: 30,
             },
+            "test.retry",
             || ready(values_it.write().unwrap().next().unwrap()),
             noop_mock,
         )
@@ -282,6 +305,33 @@ mod tests {
             .chain(Some(Ok(())))
             .collect();
         assert_eq!(simulate_retries(retry_sequence).await, Ok(()));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_retry_failure_log_includes_request_name_and_error() {
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let writer_output = output.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .without_time()
+            .with_writer(move || TestWriter(writer_output.clone()))
+            .finish();
+        let _subscriber_guard = tracing::subscriber::set_default(subscriber);
+
+        let result: Result<(), Retry<usize>> = retry_with_mockable_sleep(
+            &RetryParams::no_retries(),
+            "s3.get_object",
+            || ready(Err(Retry::Transient(42))),
+            NoopSleep,
+        )
+        .await;
+
+        assert_eq!(result, Err(Retry::Transient(42)));
+        let logs = String::from_utf8(output.lock().unwrap().clone()).unwrap();
+        assert!(logs.contains("request failed after exhausting retries"));
+        assert!(logs.contains("request=s3.get_object"));
+        assert!(logs.contains("error=Transient(42)"));
+        assert!(logs.contains("num_attempts=1"));
     }
 
     fn test_retry_delay_does_not_overflow_aux(retry_params: RetryParams) {
