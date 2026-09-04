@@ -76,7 +76,7 @@ impl<K: Hash + Eq + Clone + Send + Sync + 'static> CacheState<K> {
         self.cache.get(cache_key)
     }
 
-    fn put(&mut self, key: K, bytes: OwnedBytes) {
+    fn put(&mut self, key: K, bytes: OwnedBytes) -> bool {
         for virtual_cache in &mut self.virtual_caches {
             // we simulate an access on all virtual caches
             virtual_cache.put(key.clone(), FakeCacheEntry(bytes.len()));
@@ -120,7 +120,12 @@ impl<K: Hash + Eq + Clone + Send + Sync + 'static> MemorySizedCache<K> {
     /// This may fail silently if the owned_bytes slice is larger than the cache
     /// capacity.
     pub fn put(&self, val: K, bytes: OwnedBytes) {
-        self.inner.lock().unwrap().put(val, bytes);
+        self.try_put(val, bytes);
+    }
+
+    /// Attempts to put the data in the cache and returns whether it was admitted.
+    pub fn try_put(&self, val: K, bytes: OwnedBytes) -> bool {
+        self.inner.lock().unwrap().put(val, bytes)
     }
 }
 
@@ -169,14 +174,14 @@ mod tests {
         }
         {
             let data = OwnedBytes::new(&b"fghij"[..]);
-            cache.put("5".to_string(), data);
+            assert!(!cache.try_put("5".to_string(), data));
             // Eviction should not happen, because all items in cache are too young.
             assert!(cache.get(&"5".to_string()).is_none());
         }
         tokio::time::advance(LRU_MIN_TIME_SINCE_LAST_ACCESS.mul_f32(1.1f32)).await;
         {
             let data = OwnedBytes::new(&b"fghij"[..]);
-            cache.put("5".to_string(), data);
+            assert!(cache.try_put("5".to_string(), data));
             assert_eq!(cache.get(&"5".to_string()).unwrap(), &b"fghij"[..]);
             // our two first entries should have be removed from the cache
             assert!(cache.get(&"2".to_string()).is_none());
@@ -185,7 +190,7 @@ mod tests {
         tokio::time::advance(LRU_MIN_TIME_SINCE_LAST_ACCESS.mul_f32(1.1f32)).await;
         {
             let data = OwnedBytes::new(&b"klmnop"[..]);
-            cache.put("6".to_string(), data);
+            assert!(!cache.try_put("6".to_string(), data));
             // The entry put should have been dismissed as it is too large for the cache
             assert!(cache.get(&"6".to_string()).is_none());
             // The previous entry should however be remaining.
@@ -225,7 +230,7 @@ mod tests {
             MemorySizedCache::from_config(&CacheConfig::no_cache(), &CACHE_METRICS_FOR_TESTS);
         assert!(cache.get(&"hello.seg").is_none());
         let data = OwnedBytes::new(&b"werwer"[..]);
-        cache.put("hello.seg", data);
+        assert!(!cache.try_put("hello.seg", data));
         assert!(cache.get(&"hello.seg").is_none());
     }
 }

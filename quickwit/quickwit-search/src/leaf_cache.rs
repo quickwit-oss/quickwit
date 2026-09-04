@@ -237,6 +237,7 @@ impl RangeBounds<i64> for HalfOpenRange {
 pub struct PredicateCacheImpl {
     content: MemorySizedCache<CacheKeyHash>,
     key_hasher: CacheKeyHasher,
+    enabled: bool,
 }
 
 impl PredicateCacheImpl {
@@ -247,7 +248,12 @@ impl PredicateCacheImpl {
                 &quickwit_storage::metrics::PREDICATE_CACHE,
             ),
             key_hasher: CacheKeyHasher::random(),
+            enabled: config.capacity().as_u64() > 0,
         }
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
     }
 }
 
@@ -257,6 +263,9 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
         split_id: String,
         query_ast_json: String,
     ) -> Option<(SegmentId, quickwit_query::query_ast::HitSet)> {
+        if !self.enabled {
+            return None;
+        }
         let key = self
             .key_hasher
             .hash(&(split_id.as_str(), query_ast_json.as_str()));
@@ -275,6 +284,9 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
         segment: SegmentId,
         hits: quickwit_query::query_ast::HitSet,
     ) {
+        if !self.enabled {
+            return;
+        }
         let hits_buffer = hits.into_buffer();
         let mut buffer = Vec::with_capacity(32 + hits_buffer.len());
         buffer.extend_from_slice(segment.uuid_string().as_bytes());
@@ -282,7 +294,15 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
         let key = self
             .key_hasher
             .hash(&(split_id.as_str(), query_ast_json.as_str()));
-        self.content.put(key, OwnedBytes::new(buffer));
+        let entry_num_bytes = buffer.len();
+        if !self.content.try_put(key, OwnedBytes::new(buffer)) {
+            quickwit_common::rate_limited_warn!(
+                limit_per_min = 10,
+                split_id,
+                entry_num_bytes,
+                "predicate cache rejected an entry"
+            );
+        }
     }
 }
 

@@ -113,7 +113,7 @@ impl<K: Hash + Eq + Send + Sync + 'static, V: ValueLen + Clone + Send + Sync + '
             AnyCache::TinyLfu(tiny_lfu) => tiny_lfu.get(cache_key),
         }
     }
-    pub fn put(&mut self, key: K, value: V) {
+    pub fn put(&mut self, key: K, value: V) -> bool {
         match self {
             AnyCache::Lru(lru) => lru.put(key, value),
             AnyCache::S3Fifo(s3fifo) => s3fifo.put(key, value),
@@ -196,7 +196,7 @@ impl<K: Hash + Eq, V: ValueLen + Clone> Lru<K, V> {
     /// Attempt to put the given amount of data in the cache.
     /// This may fail silently if the owned_bytes slice is larger than the cache
     /// capacity.
-    fn put(&mut self, key: K, bytes: V) {
+    fn put(&mut self, key: K, bytes: V) -> bool {
         if self.capacity.exceeds_capacity(bytes.len()) {
             // The value does not fit in the cache. We simply don't store it.
             if self.capacity != Capacity::InBytes(0) {
@@ -206,7 +206,7 @@ impl<K: Hash + Eq, V: ValueLen + Clone> Lru<K, V> {
                     "Downloaded a byte slice larger than the cache capacity."
                 );
             }
-            return;
+            return false;
         }
         if let Some(previous_data) = self.lru_cache.pop(&key) {
             self.drop_item(previous_data.len() as u64);
@@ -224,7 +224,7 @@ impl<K: Hash + Eq, V: ValueLen + Clone> Lru<K, V> {
                     // It is not worth doing an eviction.
                     // TODO: It is sub-optimal that we might have needlessly evicted items in this
                     // loop before just returning.
-                    return;
+                    return false;
                 }
             }
             if let Some((_, bytes)) = self.lru_cache.pop_lru() {
@@ -235,11 +235,12 @@ impl<K: Hash + Eq, V: ValueLen + Clone> Lru<K, V> {
                      capacity is insufficient. This case is guarded against and should never \
                      happen."
                 );
-                return;
+                return false;
             }
         }
         self.record_item(bytes.len() as u64);
         self.lru_cache.put(key, StoredItem::new(bytes, now));
+        true
     }
 }
 
@@ -322,7 +323,7 @@ impl<K: Hash + Eq, V: ValueLen + Clone> S3Fifo<K, V> {
     /// Attempt to put the given amount of data in the cache.
     /// This may fail silently if the owned_bytes slice is larger than the cache
     /// capacity.
-    fn put(&mut self, key: K, value: V) {
+    fn put(&mut self, key: K, value: V) -> bool {
         if self.capacity < value.len() as u64 {
             // The value does not fit in the cache. We simply don't store it.
             if self.capacity != 0 {
@@ -332,7 +333,7 @@ impl<K: Hash + Eq, V: ValueLen + Clone> S3Fifo<K, V> {
                     "Downloaded a byte slice larger than the cache capacity."
                 );
             }
-            return;
+            return false;
         }
 
         self.cache_metrics.in_cache_count.inc();
@@ -349,6 +350,7 @@ impl<K: Hash + Eq, V: ValueLen + Clone> S3Fifo<K, V> {
             .dec_by(evicted.bytes as f64);
         self.cache_metrics.evict_num_items.inc_by(evicted.count);
         self.cache_metrics.evict_num_bytes.inc_by(evicted.bytes);
+        true
     }
 }
 
@@ -433,7 +435,7 @@ impl<K: Hash + Eq + Send + Sync + 'static, V: ValueLen + Clone + Send + Sync + '
     /// Attempt to put the given amount of data in the cache.
     /// This may fail silently if the owned_bytes slice is larger than the cache
     /// capacity.
-    fn put(&mut self, key: K, value: V) {
+    fn put(&mut self, key: K, value: V) -> bool {
         if self.capacity < value.len() as u64 {
             // The value does not fit in the cache. We simply don't store it.
             if self.capacity != 0 {
@@ -443,7 +445,7 @@ impl<K: Hash + Eq + Send + Sync + 'static, V: ValueLen + Clone + Send + Sync + '
                     "Downloaded a byte slice larger than the cache capacity."
                 );
             }
-            return;
+            return false;
         }
 
         self.cache_metrics.in_cache_count.inc();
@@ -458,5 +460,6 @@ impl<K: Hash + Eq + Send + Sync + 'static, V: ValueLen + Clone + Send + Sync + '
             }
             .into(),
         );
+        true
     }
 }

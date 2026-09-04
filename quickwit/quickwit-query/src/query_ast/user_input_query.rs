@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Bound;
 
 use anyhow::bail;
@@ -164,7 +164,7 @@ fn convert_user_input_ast_to_query_ast(
                 if field_names.is_empty() {
                     anyhow::bail!("set query need to target a specific field");
                 }
-                let mut terms_per_field: HashMap<String, BTreeSet<String>> = Default::default();
+                let mut terms_per_field: BTreeMap<String, BTreeSet<String>> = Default::default();
                 let terms: BTreeSet<String> = elements.into_iter().collect();
                 for field in field_names {
                     terms_per_field.insert(field.to_string(), terms.clone());

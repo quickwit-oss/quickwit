@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use serde::{Deserialize, Serialize};
 use tantivy::Term;
@@ -28,7 +28,7 @@ use crate::query_ast::{
 /// The text will be used as is, untokenized.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct TermSetQuery {
-    pub terms_per_field: HashMap<String, BTreeSet<String>>,
+    pub terms_per_field: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl TermSetQuery {
@@ -130,7 +130,7 @@ impl From<TermSetQuery> for QueryAst {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeSet, HashMap};
+    use std::collections::{BTreeMap, BTreeSet};
 
     use tantivy::schema::{FAST, INDEXED, Schema};
 
@@ -143,7 +143,7 @@ mod tests {
         schema_builder.add_u64_field("fast_field", FAST);
         let schema = schema_builder.build();
 
-        let terms_per_field = HashMap::from([(
+        let terms_per_field = BTreeMap::from([(
             "fast_field".to_string(),
             BTreeSet::from(["1".to_string(), "2".to_string()]),
         )]);
@@ -168,7 +168,7 @@ mod tests {
         schema_builder.add_u64_field("indexed_field", FAST | INDEXED);
         let schema = schema_builder.build();
 
-        let terms_per_field = HashMap::from([(
+        let terms_per_field = BTreeMap::from([(
             "indexed_field".to_string(),
             BTreeSet::from(["1".to_string(), "2".to_string()]),
         )]);
