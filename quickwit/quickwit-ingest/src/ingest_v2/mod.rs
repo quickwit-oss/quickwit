@@ -57,8 +57,7 @@ use workbench::pending_subrequests;
 
 pub use self::fetch::{FetchStreamError, MultiFetchStream};
 pub use self::helpers::{
-    notify_ingester_decommission, try_get_ingester_status, wait_for_ingester_decommission,
-    wait_for_ingester_status,
+    notify_ingester_decommission, wait_for_ingester_decommission, wait_for_ingester_status,
 };
 pub use self::ingester::Ingester;
 use self::mrecord::MRECORD_HEADER_LEN;
