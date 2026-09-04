@@ -85,9 +85,9 @@ pub use crate::node_config::{
 pub use crate::serde_utils::HumanDuration;
 use crate::source_config::serialize::{SourceConfigV0_7, SourceConfigV0_8, VersionedSourceConfig};
 pub use crate::storage_config::{
-    AzureStorageConfig, ChecksumAlgorithm, FileStorageConfig, GoogleCloudStorageConfig,
-    RamStorageConfig, S3StorageConfig, StorageBackend, StorageBackendFlavor, StorageConfig,
-    StorageConfigs,
+    AzureNationalCloud, AzureStorageConfig, ChecksumAlgorithm, FileStorageConfig,
+    GoogleCloudStorageConfig, RamStorageConfig, S3StorageConfig, StorageBackend,
+    StorageBackendFlavor, StorageConfig, StorageConfigs,
 };
 
 /// Returns true if the ingest API v2 is enabled.
