@@ -73,9 +73,7 @@ pub struct DrainPipeline {
     pub drain_timeout: Duration,
 }
 
-/// Drain progress of a pipeline supervisor (see [`DrainPipeline`]): both
-/// pipeline flavors share the deadline bookkeeping and the drain-request
-/// handling so they cannot diverge.
+/// Drain progress of a pipeline supervisor (see [`DrainPipeline`]).
 #[derive(Default)]
 pub(crate) struct DrainState {
     deadline_opt: Option<Instant>,
@@ -141,7 +139,6 @@ pub trait PipelineHandle: Send + Sync {
     fn last_observation(&self) -> IndexingStatistics;
     fn check_health(&self, check_for_progress: bool) -> Health;
     async fn send_assign_shards(&self, message: AssignShards) -> Result<(), SendError>;
-    /// See [`DrainPipeline`]. Fire-and-forget: the pipeline exits on its own.
     async fn start_drain(&self, drain_timeout: Duration);
     async fn observe(&self) -> Observation<IndexingStatistics>;
     async fn join(self: Box<Self>) -> (ActorExitStatus, IndexingStatistics);
