@@ -116,8 +116,8 @@ use quickwit_proto::metastore::{
 use quickwit_proto::search::ReportSplitsRequest;
 use quickwit_proto::types::NodeId;
 use quickwit_search::{
-    SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext, SearcherPool,
-    create_search_client_from_channel, start_searcher_service,
+    SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext, SearcherNode,
+    SearcherPool, create_search_client_from_channel, start_searcher_service,
 };
 use quickwit_storage::{SearchSplitCache, StorageResolver};
 pub use quickwit_telemetry_exporters::{EnvFilterReloadFn, do_nothing_env_filter_reload_fn};
@@ -1349,20 +1349,23 @@ async fn setup_searcher(
                         chitchat_id.node_id,
                     );
                     let grpc_addr = node.grpc_advertise_addr;
-
-                    if node.is_self_node() {
-                        let search_client =
-                            SearchServiceClient::from_service(search_service_clone, grpc_addr);
-                        Some(Change::Insert(grpc_addr, search_client))
+                    let client = if node.is_self_node() {
+                        SearchServiceClient::from_service(search_service_clone, grpc_addr)
                     } else {
                         let timeout_channel = Timeout::new(node.channel(), request_timeout);
-                        let search_client = create_search_client_from_channel(
+                        create_search_client_from_channel(
                             grpc_addr,
                             timeout_channel,
                             max_message_size,
-                        );
-                        Some(Change::Insert(grpc_addr, search_client))
-                    }
+                        )
+                    };
+                    Some(Change::Insert(
+                        grpc_addr,
+                        SearcherNode {
+                            node_id: node.node_id.clone(),
+                            client,
+                        },
+                    ))
                 }
                 ClusterChange::Remove(node) if node.is_searcher() => {
                     let chitchat_id = node.chitchat_id();
