@@ -1063,7 +1063,7 @@ mod tests {
         CLI_SOURCE_ID, INGEST_V2_SOURCE_ID, IndexConfig, KafkaSourceParams, SourceParams,
     };
     use quickwit_indexing::IndexingService;
-    use quickwit_ingest::IngesterPoolEntry;
+    use quickwit_ingest::{IngesterPoolEntry, RateMibPerSec, ShardInfo};
     use quickwit_metastore::{
         CreateIndexRequestExt, IndexMetadata, ListIndexesMetadataResponseExt,
     };
@@ -2252,6 +2252,95 @@ mod tests {
             .ask(DeleteIndexRequest {
                 index_uid: Some(index_0.index_uid),
             })
+            .await
+            .unwrap()
+            .unwrap();
+
+        universe.assert_quit().await;
+    }
+
+    // Same race as `test_ingest_controller_handle_local_shards_update_for_deleted_index`, but
+    // going through the real delete handler, so that the state the unit test builds by hand is
+    // proven reachable. When the stale update panics the control plane, its supervisor only
+    // respawns it at the next health check, and every ingest that needs a shard opened in the
+    // meantime hangs or returns 503.
+    #[tokio::test]
+    async fn test_control_plane_survives_local_shards_update_for_deleted_index() {
+        quickwit_common::setup_logging_for_tests();
+        // Real time on purpose: with accelerated time, the supervisor could respawn a panicked
+        // control plane and hide the failure.
+        let universe = Universe::default();
+        let node_id = NodeId::from_str("test-control-plane");
+        let indexer_pool = IndexerPool::default();
+        // The ingester is left out of the pool: the control plane merely logs that it cannot sync
+        // with it.
+        let ingester_pool = IngesterPool::default();
+
+        let mut index = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
+        let mut source = SourceConfig::ingest_v2();
+        source.enabled = true;
+        index.add_source(source).unwrap();
+        let index_uid = index.index_uid.clone();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        // The startup calls are not bounded with `times(1)`: a panicked control plane is
+        // respawned and reloads its state, which would fail the mock instead of the assertions.
+        let index_clone = index.clone();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .returning(move |_| {
+                Ok(ListIndexesMetadataResponse::for_test(vec![
+                    index_clone.clone(),
+                ]))
+            });
+        mock_metastore.expect_list_shards().returning(|_| {
+            Ok(ListShardsResponse {
+                subresponses: Vec::new(),
+            })
+        });
+        let index_uid_clone = index_uid.clone();
+        mock_metastore.expect_delete_index().times(1).returning(
+            move |delete_index_request: DeleteIndexRequest| {
+                assert_eq!(delete_index_request.index_uid(), &index_uid_clone);
+                Ok(EmptyResponse {})
+            },
+        );
+
+        let cluster_config = ClusterConfig::for_test();
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
+            &universe,
+            cluster_config,
+            node_id,
+            indexer_pool,
+            ingester_pool,
+            MetastoreServiceClient::from_mock(mock_metastore),
+        );
+        control_plane_mailbox
+            .ask(DeleteIndexRequest {
+                index_uid: Some(index_uid.clone()),
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
+        // The stale shard update lands after the deletion.
+        let local_shards_update = LocalShardsUpdate {
+            ingester_id: NodeId::from_str("test-ingester"),
+            source_uid: SourceUid {
+                index_uid,
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
+            },
+            shard_infos: BTreeSet::from_iter([ShardInfo {
+                shard_id: ShardId::from(15),
+                shard_state: ShardState::Open,
+                short_term_ingestion_rate: RateMibPerSec(10),
+                long_term_ingestion_rate: RateMibPerSec(10),
+            }]),
+        };
+        // A panicking handler kills the actor mid-message and drops the reply channel, so this
+        // `ask` fails with `AskError::ProcessMessageError`.
+        control_plane_mailbox
+            .ask(local_shards_update)
             .await
             .unwrap()
             .unwrap();
