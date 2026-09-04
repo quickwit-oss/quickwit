@@ -60,8 +60,6 @@ use crate::source::{
 struct MetricsPipelineHandles {
     source_mailbox: Mailbox<SourceActor>,
     source_handle: ActorHandle<SourceActor>,
-    /// Captured from [`crate::source::Source::should_be_drained`] at spawn:
-    /// a teardown drains the pipeline when true, kills it otherwise.
     source_should_be_drained: bool,
     doc_processor: ActorHandle<ParquetDocProcessor>,
     indexer: ActorHandle<ParquetIndexer>,
