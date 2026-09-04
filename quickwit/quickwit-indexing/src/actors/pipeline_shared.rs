@@ -84,10 +84,6 @@ pub(crate) struct DrainState {
     deadline_opt: Option<Instant>,
 }
 
-/// Follow-up required from the pipeline supervisor after
-/// [`DrainState::on_drain_request`]. Killing the actors is only possible from
-/// the supervisor itself, so it is returned as data instead of being executed
-/// here.
 pub(crate) enum DrainAction {
     /// The drain is now (or was already) in progress: keep supervising.
     KeepRunning,
@@ -116,7 +112,7 @@ impl DrainState {
         };
         if !source_should_be_drained {
             // The source settles nothing on a drain: tearing the pipeline down
-            // right away is no worse than a kill.
+            // right away.
             return DrainAction::TerminateAndExit;
         }
         self.deadline_opt = Some(Instant::now() + commit_timeout + DRAIN_GRACE_MARGIN);
