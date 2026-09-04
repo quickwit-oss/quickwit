@@ -232,7 +232,7 @@ pub struct IndexerConfig {
     /// overridden with the `QW_INDEXER_SHUTDOWN_DRAIN_TIMEOUT` environment
     /// variable.
     #[serde(default = "IndexerConfig::default_shutdown_drain_timeout")]
-    shutdown_drain_timeout: HumanDuration,
+    pub shutdown_drain_timeout: HumanDuration,
 }
 
 impl IndexerConfig {
@@ -609,7 +609,9 @@ impl CacheConfig {
     fn deserialize_with_default<'de, D, const DEFAULT_CAPACITY: u64>(
         deserializer: D,
     ) -> Result<CacheConfig, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         use serde_with::{DeserializeAs, FromInto, PickFirst, Same};
 
         let mut cache_config: CacheConfig =
