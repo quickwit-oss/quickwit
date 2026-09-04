@@ -1035,9 +1035,7 @@ impl IndexingService {
         }
         // If at least one ingest source has been removed, the related index has possibly been
         // deleted. Thus we run a garbage collect to remove queues of potentially deleted
-        // indexes. The GC only removes queues of deleted indexes: a pipeline
-        // still draining such an index fails its publish and exits without
-        // respawning.
+        // indexes.
         if should_gc_ingest_api_queues && let Err(error) = self.run_ingest_api_queues_gc().await {
             warn!(
                 %error,

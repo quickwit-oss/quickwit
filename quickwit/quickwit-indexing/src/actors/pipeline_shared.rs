@@ -52,17 +52,14 @@ pub(crate) struct Spawn {
 
 /// Asks a pipeline to drain and shut itself down: the source stops emitting,
 /// and once the in-flight batches are flushed, published, and settled
-/// (acknowledged), the source — and with it the whole pipeline — exits with
-/// success on its own. Past the drain deadline (commit timeout +
+/// (acknowledged), the source exits on its own. Past the drain deadline (commit timeout +
 /// [`DRAIN_GRACE_MARGIN`]), the pipeline gives up, kills its actors, and
 /// still exits: delivery degrades to at-least-once. A draining pipeline is
-/// never respawned. Fire-and-forget: watch the pipeline actor's state to know
-/// when it is done.
+/// never respawned.
 ///
 /// Only sources opting in through
 /// [`crate::source::Source::should_be_drained`] actually drain: for the
-/// others the pipeline kills its actors and exits immediately, keeping the
-/// exact teardown semantics they had before drains existed.
+/// others the pipeline kills its actors and exits immediately.
 #[derive(Debug)]
 pub struct DrainPipeline;
 
@@ -149,9 +146,10 @@ pub(crate) struct ActorPipeline<A: Actor<ObservableState = IndexingStatistics>> 
 
 #[async_trait]
 impl<A> PipelineHandle for ActorPipeline<A>
-where A: Actor<ObservableState = IndexingStatistics>
+where
+    A: Actor<ObservableState = IndexingStatistics>
         + DeferableReplyHandler<AssignShards>
-        + DeferableReplyHandler<DrainPipeline, Reply = ()>
+        + DeferableReplyHandler<DrainPipeline, Reply = ()>,
 {
     fn indexing_pipeline_id(&self) -> &IndexingPipelineId {
         &self.pipeline_id
