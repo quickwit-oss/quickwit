@@ -16,14 +16,15 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
 use futures::TryStreamExt;
 use itertools::Itertools;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Healthz, Mailbox,
-    Observation,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, DeferableReplyHandler, Handler,
+    Healthz, Mailbox, Observation,
 };
 use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::EventBroker;
@@ -92,6 +93,10 @@ struct ParquetMergePipelineHandle {
 
 pub type BoxedPipelineHandle = Box<dyn PipelineHandle>;
 
+/// Reply callback of a pending `DrainAllPipelines` request, along with the
+/// pipelines it still waits on.
+type DrainAllWaiter = (Vec<PipelineUid>, Box<dyn FnOnce(()) + Send + Sync>);
+
 /// The indexing service is (single) actor service running on indexer and in charge
 /// of executing the indexing plans received from the control plane.
 ///
@@ -108,6 +113,13 @@ pub struct IndexingService {
     pub(crate) ingester_pool: IngesterPool,
     pub(crate) storage_resolver: StorageResolver,
     indexing_pipelines: HashMap<PipelineUid, BoxedPipelineHandle>,
+    /// Detached pipelines draining before their teardown. They exit on their
+    /// own and are reaped by the supervise loop.
+    draining_pipelines: Vec<BoxedPipelineHandle>,
+    /// Pending `DrainAllPipelines` replies, completed by the supervise loop
+    /// once the tracked pipelines have exited.
+    drain_all_waiters: Vec<DrainAllWaiter>,
+    drain_timeout: Duration,
     latest_indexing_plan_id: IndexingPlanId,
     counters: IndexingServiceCounters,
     pub(crate) max_concurrent_split_uploads: usize,
@@ -178,6 +190,9 @@ impl IndexingService {
             storage_resolver,
             split_cache,
             indexing_pipelines: Default::default(),
+            draining_pipelines: Vec::new(),
+            drain_all_waiters: Vec::new(),
+            drain_timeout: indexer_config.shutdown_drain_timeout(),
             latest_indexing_plan_id: String::new(),
             counters: Default::default(),
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
@@ -547,6 +562,18 @@ impl IndexingService {
         Ok(per_merge_pipeline_immature_splits)
     }
 
+    /// Whether the pipeline is still alive, attached or draining. A missing
+    /// pipeline counts as exited.
+    fn is_pipeline_alive(&self, pipeline_uid: PipelineUid) -> bool {
+        if let Some(pipeline_handle) = self.indexing_pipelines.get(&pipeline_uid) {
+            return !pipeline_handle.state().is_exit();
+        }
+        self.draining_pipelines.iter().any(|pipeline_handle| {
+            pipeline_handle.indexing_pipeline_id().pipeline_uid == pipeline_uid
+                && !pipeline_handle.state().is_exit()
+        })
+    }
+
     async fn handle_supervise(&mut self) -> Result<(), ActorExitStatus> {
         self.indexing_pipelines
             .retain(|pipeline_uid, pipeline_handle| {
@@ -568,9 +595,30 @@ impl IndexingService {
                     }
                 }
             });
+
+        // Draining pipelines exit on their own, reap the
+        // detached ones and complete the `DrainAllPipelines` replies if all
+        // of their pipelines are gone.
+        self.draining_pipelines
+            .retain(|pipeline_handle| !pipeline_handle.state().is_exit());
+        if !self.drain_all_waiters.is_empty() {
+            let drain_all_waiters = std::mem::take(&mut self.drain_all_waiters);
+            for (mut pipeline_uids, reply) in drain_all_waiters {
+                pipeline_uids.retain(|pipeline_uid| self.is_pipeline_alive(*pipeline_uid));
+                if pipeline_uids.is_empty() {
+                    reply(());
+                } else {
+                    self.drain_all_waiters.push((pipeline_uids, reply));
+                }
+            }
+        }
+
+        // Draining pipelines may still publish splits until they exit: their
+        // merge pipelines must survive them.
         let merge_pipelines_to_retain: HashSet<MergePipelineId> = self
             .indexing_pipelines
             .values()
+            .chain(self.draining_pipelines.iter())
             .map(|pipeline_handle| pipeline_handle.indexing_pipeline_id().merge_pipeline_id())
             .collect();
 
@@ -618,6 +666,7 @@ impl IndexingService {
             let parquet_index_uids_to_retain: HashSet<IndexUid> = self
                 .indexing_pipelines
                 .values()
+                .chain(self.draining_pipelines.iter())
                 .filter(|h| {
                     quickwit_common::is_parquet_pipeline_index(
                         &h.indexing_pipeline_id().index_uid.index_id,
@@ -965,12 +1014,10 @@ impl IndexingService {
                 pipeline_handle.indexing_pipeline_id().source_id == INGEST_API_SOURCE_ID
             });
 
+        let mut detached_pipeline_handles: Vec<BoxedPipelineHandle> = Vec::new();
         for pipeline_to_shutdown in pipelines_to_shutdown {
             match self.detach_indexing_pipeline(pipeline_to_shutdown).await {
-                Ok(pipeline_handle) => {
-                    // Killing the pipeline ensures that all the pipeline actors will stop.
-                    pipeline_handle.kill().await;
-                }
+                Ok(pipeline_handle) => detached_pipeline_handles.push(pipeline_handle),
                 Err(error) => {
                     // Just log the detach error, it can only come from a missing pipeline in the
                     // `indexing_pipeline_handles`.
@@ -981,6 +1028,13 @@ impl IndexingService {
                     );
                 }
             }
+        }
+
+        // Keep a handle to the pipeline that are being drained so that in case of
+        // global shutdown we still wait for these ones.
+        for pipeline_handle in detached_pipeline_handles {
+            pipeline_handle.start_drain(self.drain_timeout).await;
+            self.draining_pipelines.push(pipeline_handle);
         }
         // If at least one ingest source has been removed, the related index has possibly been
         // deleted. Thus we run a garbage collect to remove queues of potentially deleted
@@ -1074,6 +1128,50 @@ impl IndexingService {
                 self.counters.num_deleted_queues += 1;
             }
         }
+        Ok(())
+    }
+}
+
+/// Drains every running indexing pipeline: it is meant
+/// to run right before the universe is torn down on node shutdown, so planned
+/// shutdowns publish and settle their in-flight batches instead of dropping
+/// them. The reply is deferred until the drained pipelines have all exited,
+/// without blocking the service.
+#[derive(Debug)]
+pub struct DrainAllPipelines;
+
+#[async_trait]
+impl DeferableReplyHandler<DrainAllPipelines> for IndexingService {
+    type Reply = ();
+
+    async fn handle_message(
+        &mut self,
+        _msg: DrainAllPipelines,
+        reply: impl FnOnce(()) + Send + Sync + 'static,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        let mut pipeline_uids: Vec<PipelineUid> = Vec::new();
+        for (pipeline_uid, pipeline_handle) in &self.indexing_pipelines {
+            pipeline_handle.start_drain(self.drain_timeout).await;
+            pipeline_uids.push(*pipeline_uid);
+        }
+        // Some pipelines were potentially already draining when shutting down, e.g. in case
+        // of new indexing plans.
+        for pipeline_handle in &self.draining_pipelines {
+            if !pipeline_handle.state().is_exit() {
+                pipeline_uids.push(pipeline_handle.indexing_pipeline_id().pipeline_uid);
+            }
+        }
+        if pipeline_uids.is_empty() {
+            reply(());
+            return Ok(());
+        }
+        info!(
+            num_pipelines = pipeline_uids.len(),
+            "draining indexing pipelines"
+        );
+        self.drain_all_waiters
+            .push((pipeline_uids, Box::new(reply)));
         Ok(())
     }
 }

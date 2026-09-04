@@ -42,11 +42,12 @@ use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 use quickwit_proto::types::ShardId;
 use quickwit_storage::{Storage, StorageResolver};
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 use super::{ParquetDocProcessor, ParquetIndexer, ParquetPackager, ParquetUploader};
 use crate::actors::pipeline_shared::{
-    SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn, SuperviseLoop, wait_duration_before_retry,
+    DrainAction, DrainPipeline, DrainState, SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn,
+    SuperviseLoop, wait_duration_before_retry,
 };
 use crate::actors::sequencer::Sequencer;
 use crate::actors::{Publisher, UploaderType};
@@ -59,6 +60,7 @@ use crate::source::{
 struct MetricsPipelineHandles {
     source_mailbox: Mailbox<SourceActor>,
     source_handle: ActorHandle<SourceActor>,
+    source_should_be_drained: bool,
     doc_processor: ActorHandle<ParquetDocProcessor>,
     indexer: ActorHandle<ParquetIndexer>,
     packager: ActorHandle<ParquetPackager>,
@@ -113,6 +115,7 @@ pub struct MetricsPipeline {
     statistics: IndexingStatistics,
     handles_opt: Option<MetricsPipelineHandles>,
     kill_switch: KillSwitch,
+    drain_state: DrainState,
     shard_ids: BTreeSet<ShardId>,
     // Id of the last indexing plan assigned to this pipeline. Kept here, like `shard_ids`, so it
     // can be re-sent to the source on respawn; the source adopts it as its publish token.
@@ -162,6 +165,7 @@ impl MetricsPipeline {
             previous_generations_statistics: Default::default(),
             handles_opt: None,
             kill_switch: KillSwitch::default(),
+            drain_state: DrainState::default(),
             statistics: IndexingStatistics {
                 params_fingerprint,
                 ..Default::default()
@@ -287,6 +291,15 @@ impl MetricsPipeline {
             Health::Healthy => {}
             Health::FailureOrUnhealthy => {
                 self.terminate().await;
+                if self.drain_state.is_draining() {
+                    // A draining pipeline is never respawned: whatever could
+                    // not be settled is redelivered (see `DrainPipeline`).
+                    warn!(
+                        pipeline_id=?self.params.pipeline_id,
+                        "draining metrics pipeline failed; exiting"
+                    );
+                    return Err(ActorExitStatus::Success);
+                }
                 let first_retry_delay = wait_duration_before_retry(0);
                 ctx.schedule_self_msg(first_retry_delay, Spawn { retry_count: 0 });
             }
@@ -447,6 +460,7 @@ impl MetricsPipeline {
         let source = ctx
             .protect_future(quickwit_supported_sources().load_source(source_runtime))
             .await?;
+        let source_should_be_drained = source.should_be_drained();
         let actor_source = SourceActor::new(source, doc_processor_mailbox);
         let (source_mailbox, source_handle) = ctx
             .spawn_actor()
@@ -464,6 +478,7 @@ impl MetricsPipeline {
         self.handles_opt = Some(MetricsPipelineHandles {
             source_mailbox,
             source_handle,
+            source_should_be_drained,
             doc_processor: doc_processor_handle,
             indexer: indexer_handle,
             packager: packager_handle,
@@ -499,6 +514,14 @@ impl Handler<SuperviseLoop> for MetricsPipeline {
     ) -> Result<(), ActorExitStatus> {
         self.perform_observe(ctx);
         self.perform_health_check(ctx).await?;
+        if self.drain_state.is_deadline_exceeded() {
+            warn!(
+                pipeline_id=?self.params.pipeline_id,
+                "metrics pipeline could not be drained before the deadline"
+            );
+            self.terminate().await;
+            return Err(ActorExitStatus::Success);
+        }
         ctx.schedule_self_msg(SUPERVISE_INTERVAL, supervise_loop_token);
         Ok(())
     }
@@ -513,6 +536,10 @@ impl Handler<Spawn> for MetricsPipeline {
         spawn: Spawn,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        if self.drain_state.is_draining() {
+            // A draining pipeline is shutting down: never respawn it.
+            return Ok(());
+        }
         if self.handles_opt.is_some() {
             return Ok(());
         }
@@ -534,6 +561,34 @@ impl Handler<Spawn> for MetricsPipeline {
             );
         }
         Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<DrainPipeline> for MetricsPipeline {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        drain: DrainPipeline,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        let running_source_opt = self
+            .handles_opt
+            .as_ref()
+            .map(|handles| (&handles.source_mailbox, handles.source_should_be_drained));
+        match self
+            .drain_state
+            .on_drain_request(running_source_opt, drain.drain_timeout)
+            .await
+        {
+            DrainAction::KeepRunning => Ok(()),
+            DrainAction::Exit => Err(ActorExitStatus::Success),
+            DrainAction::TerminateAndExit => {
+                self.terminate().await;
+                Err(ActorExitStatus::Success)
+            }
+        }
     }
 }
 
