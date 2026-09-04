@@ -294,7 +294,15 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
         let key = self
             .key_hasher
             .hash(&(split_id.as_str(), query_ast_json.as_str()));
-        self.content.put(key, OwnedBytes::new(buffer));
+        let entry_num_bytes = buffer.len();
+        if !self.content.try_put(key, OwnedBytes::new(buffer)) {
+            quickwit_common::rate_limited_warn!(
+                limit_per_min = 10,
+                split_id,
+                entry_num_bytes,
+                "predicate cache rejected an entry"
+            );
+        }
     }
 }
 
