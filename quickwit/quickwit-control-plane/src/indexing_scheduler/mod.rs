@@ -52,11 +52,6 @@ const DEFAULT_ENABLE_VARIABLE_SHARD_LOAD: bool = false;
 
 const DEFAULT_ENABLE_LOCALITY_AWARE_SCHEDULING: bool = false;
 
-const DEFAULT_MIN_SHARD_LOCALITY_PERCENT: u32 = 30;
-
-/// Minimum period before being able to rebuild the plan from scratch.
-const PLAN_FROM_SCRATCH_COOLDOWN_PERIOD: Duration = Duration::from_mins(30);
-
 pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
     if cfg!(any(test, feature = "testsuite")) {
         Duration::from_millis(50)
@@ -79,8 +74,6 @@ pub struct IndexingSchedulerState {
     pub last_applied_indexer_statuses: FnvHashMap<NodeId, IngesterStatus>,
     #[serde(skip)]
     pub last_applied_plan_timestamp: Option<Instant>,
-    #[serde(skip)]
-    pub next_plan_from_scratch_timestamp: Option<Instant>,
 }
 
 /// The [`IndexingScheduler`] is responsible for listing indexing tasks and assigning them to
@@ -434,11 +427,6 @@ impl IndexingScheduler {
         self.state.num_schedule_indexing_plan += 1;
     }
 
-    /// An indexing plan built incrementally from the previous plan can lose locality over time but
-    /// never regain it. Below a certain locality threshold, we try to rebuild the plan from scratch
-    /// to improve locality (equivalent to restarting the control plane). We expect a plan built
-    /// from scratch to have better locality. There is a long cooldown to prevent churning indexing
-    /// too frequently.
     fn build_new_plan(
         &mut self,
         sources: &[SourceToSchedule],
@@ -446,54 +434,15 @@ impl IndexingScheduler {
         locality_aware: bool,
         shard_locations: &ShardLocations,
     ) -> (PhysicalIndexingPlan, ShardLocalityMetrics) {
-        // Build the plan normally, seeded with the existing plan.
-        let new_plan_incremental = build_physical_indexing_plan(
+        let new_plan = build_physical_indexing_plan(
             sources,
             indexer_infos,
             locality_aware,
             self.state.last_applied_physical_plan.as_ref(),
             shard_locations,
         );
-        let locality_incremental =
-            get_shard_locality_metrics(&new_plan_incremental, shard_locations, indexer_infos);
-        if locality_incremental.locality_percent() >= min_shard_locality_percent() {
-            return (new_plan_incremental, locality_incremental);
-        }
-        let now = Instant::now();
-        if let Some(next_plan_from_scratch_timestamp) = self.state.next_plan_from_scratch_timestamp
-            && now < next_plan_from_scratch_timestamp
-        {
-            // The cooldown for applying a new plan from scratch is still active, so we return the
-            // incremental plan.
-            return (new_plan_incremental, locality_incremental);
-        }
-        // Locality on the incremental plan has degraded; let's see if building the plan from
-        // scratch will yield a more optimal plan.
-        let new_plan_from_scratch = build_physical_indexing_plan(
-            sources,
-            indexer_infos,
-            locality_aware,
-            None,
-            shard_locations,
-        );
-        let locality_from_scratch =
-            get_shard_locality_metrics(&new_plan_from_scratch, shard_locations, indexer_infos);
-        if locality_from_scratch.locality_percent() <= locality_incremental.locality_percent() {
-            // The plan from scratch yielded worse locality than the incremental plan, so we apply
-            // the incremental plan. We don't really expect this.
-            info!(
-                "indexing plan rebuilt from scratch had worse locality than plan built \
-                 incrementally; returning incremental plan"
-            );
-            return (new_plan_incremental, locality_incremental);
-        }
-        info!(
-            locality_percent = locality_incremental.locality_percent(),
-            locality_percent_from_scratch = locality_from_scratch.locality_percent(),
-            "rebuilt the indexing plan from scratch to restore shard locality"
-        );
-        self.state.next_plan_from_scratch_timestamp = Some(now + PLAN_FROM_SCRATCH_COOLDOWN_PERIOD);
-        (new_plan_from_scratch, locality_from_scratch)
+        let locality = get_shard_locality_metrics(&new_plan, shard_locations, indexer_infos);
+        (new_plan, locality)
     }
 
     /// Checks if the last applied plan corresponds to the running indexing tasks present in the
@@ -689,15 +638,6 @@ impl IndexingPlansDiff<'_> {
     pub fn is_empty(&self) -> bool {
         self.has_same_nodes() && self.has_same_tasks()
     }
-}
-
-fn min_shard_locality_percent() -> u32 {
-    quickwit_common::get_from_env_cached!(
-        u32,
-        "QW_MIN_SHARD_LOCALITY_PERCENT",
-        DEFAULT_MIN_SHARD_LOCALITY_PERCENT,
-        false
-    )
 }
 
 fn get_shard_locality_metrics(
@@ -1268,7 +1208,8 @@ mod tests {
         );
         let locality_aware = false;
 
-        scheduler.state.last_applied_physical_plan = Some(swapped_plan());
+        // With no previous plan, the build starts from scratch: affinity-based placement gives
+        // each indexer its own hosted shard.
         let (plan, metrics) =
             scheduler.build_new_plan(&sources, &indexer_infos, locality_aware, &shard_locations);
         assert_eq!(metrics.locality_percent(), 100);
@@ -1277,17 +1218,16 @@ mod tests {
             vec![shard1.clone()]
         );
 
+        // Seeded with a valid but non-local plan, the next build retains it rather than
+        // rebuilding from scratch to restore locality.
         scheduler.state.last_applied_physical_plan = Some(swapped_plan());
-        let (_, metrics_in_cooldown) =
+        let (retained_plan, metrics_retained) =
             scheduler.build_new_plan(&sources, &indexer_infos, locality_aware, &shard_locations);
-        assert_eq!(metrics_in_cooldown.locality_percent(), 0);
-
-        scheduler.state.next_plan_from_scratch_timestamp = None;
-        scheduler.state.last_applied_physical_plan = Some(plan);
-        let (_, metrics_above_threshold) =
-            scheduler.build_new_plan(&sources, &indexer_infos, locality_aware, &shard_locations);
-        assert_eq!(metrics_above_threshold.locality_percent(), 100);
-        assert!(scheduler.state.next_plan_from_scratch_timestamp.is_none());
+        assert_eq!(metrics_retained.locality_percent(), 0);
+        assert_eq!(
+            shard_ids_for_indexer(&retained_plan, &indexer1),
+            vec![shard2.clone()]
+        );
     }
 
     #[test]

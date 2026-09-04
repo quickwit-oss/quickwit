@@ -64,6 +64,7 @@ pub struct Source {
     /// and `affinity(source, indexer) <= num shard of source on indexer`
     pub affinities: BTreeMap<IndexerOrd, u32>,
     pub num_shards: u32,
+    pub max_num_shards_per_pipeline: NonZeroU32,
 }
 
 impl Source {
@@ -189,13 +190,19 @@ impl SchedulingProblem {
         self.sources.iter().cloned()
     }
 
-    pub fn add_source(&mut self, num_shards: u32, load_per_shard: NonZeroU32) -> SourceOrd {
+    pub fn add_source(
+        &mut self,
+        num_shards: u32,
+        load_per_shard: NonZeroU32,
+        max_num_shards_per_pipeline: NonZeroU32,
+    ) -> SourceOrd {
         let source_ord = self.sources.len() as SourceOrd;
         self.sources.push(Source {
             source_ord,
             num_shards,
             load_per_shard,
             affinities: Default::default(),
+            max_num_shards_per_pipeline,
         });
         source_ord
     }
@@ -374,6 +381,7 @@ mod tests {
             load_per_shard: NonZeroU32::new(1000u32).unwrap(),
             affinities,
             num_shards: 2 + 3,
+            max_num_shards_per_pipeline: NonZeroU32::MIN,
         }
     }
 

@@ -68,14 +68,18 @@ fn populate_problem(
             load_per_shard,
         } => {
             let num_shards = shard_ids.len() as u32;
-            let source_ord = problem.add_source(num_shards, *load_per_shard);
+            let max_num_shards_per_pipeline =
+                compute_max_num_shards_per_pipeline(&source.source_type);
+            let source_ord =
+                problem.add_source(num_shards, *load_per_shard, max_num_shards_per_pipeline);
             Some(source_ord)
         }
         SourceToScheduleType::NonSharded {
             num_pipelines,
             load_per_pipeline,
         } => {
-            let source_ord = problem.add_source(*num_pipelines, *load_per_pipeline);
+            let source_ord =
+                problem.add_source(*num_pipelines, *load_per_pipeline, NonZeroU32::MIN);
             Some(source_ord)
         }
     }
