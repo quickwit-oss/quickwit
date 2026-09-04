@@ -84,7 +84,7 @@ use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig, disable_ingest
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
-use quickwit_indexing::actors::{IndexingService, MergeSchedulerService};
+use quickwit_indexing::actors::{DrainAllPipelines, IndexingService, MergeSchedulerService};
 use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::{IndexingSplitCache, start_indexing_service};
 use quickwit_ingest::{
@@ -508,6 +508,7 @@ fn start_shard_positions_service(
 async fn shutdown_signal_handler(
     shutdown_signal: BoxFutureInfaillible<()>,
     universe: Universe,
+    indexing_service_opt: Option<Mailbox<IndexingService>>,
     ingester_opt: Option<Ingester>,
     ingester_decommission_timeout: Duration,
     compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
@@ -536,6 +537,15 @@ async fn shutdown_signal_handler(
     }
     if let Err(error) = compactor_result {
         error!("failed to decommission compactor gracefully: {:?}", error);
+    }
+    // Drain the indexing pipelines only after the ingester decommission: it
+    // waits for the persisted shard data to be indexed, which requires the
+    // pipelines to still be consuming. Draining publishes and settles the
+    // in-flight batches before the universe teardown drops them.
+    if let Some(indexing_service) = &indexing_service_opt
+        && let Err(error) = indexing_service.ask(DrainAllPipelines).await
+    {
+        error!("failed to drain indexing pipelines gracefully: {:?}", error);
     }
     let actor_exit_statuses = universe.quit().await;
 
@@ -1033,6 +1043,7 @@ pub async fn serve_quickwit(
     let shutdown_handle = tokio::spawn(shutdown_signal_handler(
         shutdown_signal,
         universe,
+        quickwit_services.indexing_service_opt.clone(),
         ingester_opt,
         ingester_decommission_timeout,
         compactor_supervisor_opt,

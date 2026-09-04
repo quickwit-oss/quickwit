@@ -26,6 +26,7 @@ use quickwit_proto::indexing::{IndexingError, IndexingPipelineId};
 
 use crate::actors::pipeline_shared::ActorPipeline;
 use crate::actors::{MetricsPipeline, MetricsPipelineParams};
+use crate::source::source_needs_drain;
 use crate::{BoxedPipelineHandle, IndexingService};
 
 impl IndexingService {
@@ -86,6 +87,7 @@ impl IndexingService {
             ctx,
         )?;
 
+        let needs_drain = source_needs_drain(&source_config.source_params);
         let pipeline_params = MetricsPipelineParams {
             pipeline_id: indexing_pipeline_id.clone(),
             metastore: self.metastore.clone(),
@@ -111,6 +113,7 @@ impl IndexingService {
             pipeline_id: indexing_pipeline_id,
             mailbox,
             handle,
+            needs_drain,
         }))
     }
 
