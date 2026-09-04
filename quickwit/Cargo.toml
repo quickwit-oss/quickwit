@@ -213,7 +213,7 @@ postcard = { version = "1.1", features = [
 ], default-features = false }
 pprof = { version = "0.15", features = ["flamegraph"] }
 predicates = "3"
-prettyplease = "0.2"
+prettyplease = "0.3"
 proc-macro2 = "1.0"
 prometheus = { version = "0.14", default-features = false, features = ["process"] }
 procfs = { version = "0.18", default-features = false }
