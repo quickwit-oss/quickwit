@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 use tracing::info;
 use warp::{Filter, Rejection};
 
+use super::indexes_path_segment;
 use super::rest_handler::log_failure;
 use crate::format::{extract_config_format, extract_format_from_qs};
 use crate::rest_api_response::into_rest_api_response;
@@ -42,7 +43,8 @@ use crate::with_arg;
 pub fn get_index_metadata_handler(
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String)
+    indexes_path_segment()
+        .and(warp::path!(String))
         .and(warp::get())
         .and(with_arg(metastore))
         .then(get_index_metadata)
@@ -78,7 +80,8 @@ pub struct ListIndexesQueryParams {
 pub fn list_indexes_metadata_handler(
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes")
+    indexes_path_segment()
+        .and(warp::path::end())
         .and(warp::get())
         .and(warp::query())
         .and(with_arg(metastore))
@@ -177,7 +180,8 @@ pub async fn describe_index(
 pub fn describe_index_handler(
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "describe")
+    indexes_path_segment()
+        .and(warp::path!(String / "describe"))
         .and(warp::get())
         .and(with_arg(metastore))
         .then(describe_index)
@@ -235,7 +239,8 @@ pub fn create_index_handler(
     index_service: IndexService,
     node_config: Arc<NodeConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes")
+    indexes_path_segment()
+        .and(warp::path::end())
         .and(warp::post())
         .and(warp::query())
         .and(extract_config_format())
@@ -300,7 +305,8 @@ pub fn update_index_handler(
     index_service: IndexService,
     node_config: Arc<NodeConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String)
+    indexes_path_segment()
+        .and(warp::path!(String))
         .and(warp::put())
         .and(extract_config_format())
         .and(update_index_qp())
@@ -400,7 +406,8 @@ pub async fn update_index(
 pub fn clear_index_handler(
     index_service: IndexService,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "clear")
+    indexes_path_segment()
+        .and(warp::path!(String / "clear"))
         .and(warp::put())
         .and(with_arg(index_service))
         .then(clear_index)
@@ -440,7 +447,8 @@ pub struct DeleteIndexQueryParam {
 pub fn delete_index_handler(
     index_service: IndexService,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String)
+    indexes_path_segment()
+        .and(warp::path!(String))
         .and(warp::delete())
         .and(warp::query())
         .and(with_arg(index_service))

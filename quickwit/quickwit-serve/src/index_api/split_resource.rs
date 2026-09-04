@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use tracing::info;
 use warp::{Filter, Rejection};
 
+use super::indexes_path_segment;
 use super::rest_handler::json_body;
 use crate::format::extract_format_from_qs;
 use crate::rest_api_response::into_rest_api_response;
@@ -139,7 +140,8 @@ pub async fn list_splits(
 pub fn list_splits_handler(
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "splits")
+    indexes_path_segment()
+        .and(warp::path!(String / "splits"))
         .and(warp::get())
         .and(warp::query())
         .and(with_arg(metastore))
@@ -196,7 +198,8 @@ pub async fn mark_splits_for_deletion(
 pub fn mark_splits_for_deletion_handler(
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "splits" / "mark-for-deletion")
+    indexes_path_segment()
+        .and(warp::path!(String / "splits" / "mark-for-deletion"))
         .and(warp::put())
         .and(json_body())
         .and(with_arg(metastore))
