@@ -339,9 +339,20 @@ impl AzureBlobStorage {
         let block_id = format_block_id(Ulid::new(), 0);
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
+            let block_blob_client = self.container_client.blob_client(name).block_blob_client();
+            if data.is_empty() {
+                // `stage_block` rejects a zero length block with `InvalidHeaderValue`, so an
+                // empty object is written as a commit of no blocks at all. Azurite accepts the
+                // empty block, which is why only a real account shows this.
+                let block_list_content = RequestContent::try_from(BlockLookupList::default())
+                    .map_err(AzureErrorWrapper::from)?;
+                block_blob_client
+                    .commit_block_list(block_list_content, None)
+                    .await?;
+                return Result::<(), AzureErrorWrapper>::Ok(());
+            }
             let digest = md5::compute(&data[..]);
             let content_length = data.len() as u64;
-            let block_blob_client = self.container_client.blob_client(name).block_blob_client();
             // Staged and committed rather than uploaded in one shot, because `upload()`
             // only exposes `blob_content_md5`, which the service stores without checking it
             // against the body. `stage_block` takes a transactional checksum, so a corrupted
