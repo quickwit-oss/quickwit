@@ -572,17 +572,16 @@ impl Handler<DrainPipeline> for MetricsPipeline {
 
     async fn handle(
         &mut self,
-        _drain: DrainPipeline,
+        drain: DrainPipeline,
         _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         let running_source_opt = self
             .handles_opt
             .as_ref()
             .map(|handles| (&handles.source_mailbox, handles.source_should_be_drained));
-        let commit_timeout = self.params.indexing_settings.commit_timeout();
         match self
             .drain_state
-            .on_drain_request(running_source_opt, commit_timeout)
+            .on_drain_request(running_source_opt, drain.drain_timeout)
             .await
         {
             DrainAction::KeepRunning => Ok(()),

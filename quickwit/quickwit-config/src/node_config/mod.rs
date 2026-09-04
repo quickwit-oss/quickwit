@@ -225,12 +225,6 @@ pub struct IndexerConfig {
     /// can't handle mixed prefix lengths.
     #[serde(default = "IndexerConfig::default_parquet_merge_use_streaming_engine")]
     pub parquet_merge_use_streaming_engine: bool,
-    /// Maximum amount of time to wait for the indexing pipelines to drain
-    /// gracefully on shutdown before giving up. Must exceed the largest commit
-    /// timeout plus the time to upload and publish the final splits, and the
-    /// deployment's shutdown grace period must exceed it in turn. Can be
-    /// overridden with the `QW_INDEXER_SHUTDOWN_DRAIN_TIMEOUT` environment
-    /// variable.
     #[serde(default = "IndexerConfig::default_shutdown_drain_timeout")]
     pub shutdown_drain_timeout: HumanDuration,
 }
@@ -609,7 +603,9 @@ impl CacheConfig {
     fn deserialize_with_default<'de, D, const DEFAULT_CAPACITY: u64>(
         deserializer: D,
     ) -> Result<CacheConfig, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         use serde_with::{DeserializeAs, FromInto, PickFirst, Same};
 
         let mut cache_config: CacheConfig =

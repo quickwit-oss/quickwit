@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -118,6 +119,7 @@ pub struct IndexingService {
     /// Pending `DrainAllPipelines` replies, completed by the supervise loop
     /// once the tracked pipelines have exited.
     drain_all_waiters: Vec<DrainAllWaiter>,
+    drain_timeout: Duration,
     latest_indexing_plan_id: IndexingPlanId,
     counters: IndexingServiceCounters,
     pub(crate) max_concurrent_split_uploads: usize,
@@ -190,6 +192,7 @@ impl IndexingService {
             indexing_pipelines: Default::default(),
             draining_pipelines: Vec::new(),
             drain_all_waiters: Vec::new(),
+            drain_timeout: indexer_config.shutdown_drain_timeout(),
             latest_indexing_plan_id: String::new(),
             counters: Default::default(),
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
@@ -1030,7 +1033,7 @@ impl IndexingService {
         // Keep a handle to the pipeline that are being drained so that in case of
         // global shutdown we still wait for these ones.
         for pipeline_handle in detached_pipeline_handles {
-            pipeline_handle.start_drain().await;
+            pipeline_handle.start_drain(self.drain_timeout).await;
             self.draining_pipelines.push(pipeline_handle);
         }
         // If at least one ingest source has been removed, the related index has possibly been
@@ -1149,7 +1152,7 @@ impl DeferableReplyHandler<DrainAllPipelines> for IndexingService {
     ) -> Result<(), ActorExitStatus> {
         let mut pipeline_uids: Vec<PipelineUid> = Vec::new();
         for (pipeline_uid, pipeline_handle) in &self.indexing_pipelines {
-            pipeline_handle.start_drain().await;
+            pipeline_handle.start_drain(self.drain_timeout).await;
             pipeline_uids.push(*pipeline_uid);
         }
         // Some pipelines were potentially already draining when shutting down, e.g. in case
