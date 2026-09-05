@@ -945,6 +945,9 @@ impl MappingTree {
                 mapping_leaf.validate_from_json(json_value, field_path)
             }
             MappingTree::Node(mapping_node) => {
+                if json_value.is_null() {
+                    return Ok(());
+                }
                 if let Some(json_obj) = json_value.as_object() {
                     mapping_node.validate_from_json(json_obj, strict_mode, field_path)
                 } else {
@@ -970,6 +973,9 @@ impl MappingTree {
                 mapping_leaf.doc_from_json(json_value, document, path)
             }
             MappingTree::Node(mapping_node) => {
+                if json_value.is_null() {
+                    return Ok(());
+                }
                 if let JsonValue::Object(json_obj) = json_value {
                     mapping_node.doc_from_json(json_obj, mode, document, path, dynamic_json_obj)
                 } else {
