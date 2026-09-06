@@ -215,6 +215,9 @@ pub struct StageSplitsRequest {
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "2")]
     pub split_metadata_list_serialized_json: ::prost::alloc::string::String,
+    /// Create-only mode: insert missing rows without upserting an existing split row.
+    #[prost(bool, tag = "3")]
+    pub create_only: bool,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
