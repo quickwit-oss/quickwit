@@ -46,8 +46,8 @@ use tracing::{debug, error, info, instrument, warn};
 
 use super::{ParquetDocProcessor, ParquetIndexer, ParquetPackager, ParquetUploader};
 use crate::actors::pipeline_shared::{
-    DrainPipeline, DrainState, SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn, SuperviseLoop,
-    wait_duration_before_retry,
+    DrainAction, DrainPipeline, DrainState, SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn,
+    SuperviseLoop, wait_duration_before_retry,
 };
 use crate::actors::sequencer::Sequencer;
 use crate::actors::{Publisher, UploaderType};
@@ -60,6 +60,7 @@ use crate::source::{
 struct MetricsPipelineHandles {
     source_mailbox: Mailbox<SourceActor>,
     source_handle: ActorHandle<SourceActor>,
+    source_should_be_drained: bool,
     doc_processor: ActorHandle<ParquetDocProcessor>,
     indexer: ActorHandle<ParquetIndexer>,
     packager: ActorHandle<ParquetPackager>,
@@ -459,6 +460,7 @@ impl MetricsPipeline {
         let source = ctx
             .protect_future(quickwit_supported_sources().load_source(source_runtime))
             .await?;
+        let source_should_be_drained = source.should_be_drained();
         let actor_source = SourceActor::new(source, doc_processor_mailbox);
         let (source_mailbox, source_handle) = ctx
             .spawn_actor()
@@ -476,6 +478,7 @@ impl MetricsPipeline {
         self.handles_opt = Some(MetricsPipelineHandles {
             source_mailbox,
             source_handle,
+            source_should_be_drained,
             doc_processor: doc_processor_handle,
             indexer: indexer_handle,
             packager: packager_handle,
@@ -567,23 +570,25 @@ impl Handler<DrainPipeline> for MetricsPipeline {
 
     async fn handle(
         &mut self,
-        _drain: DrainPipeline,
+        drain: DrainPipeline,
         _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if self.drain_state.is_draining() {
-            return Ok(());
+        let running_source_opt = self
+            .handles_opt
+            .as_ref()
+            .map(|handles| (&handles.source_mailbox, handles.source_should_be_drained));
+        match self
+            .drain_state
+            .on_drain_request(running_source_opt, drain.drain_timeout)
+            .await
+        {
+            DrainAction::KeepRunning => Ok(()),
+            DrainAction::Exit => Err(ActorExitStatus::Success),
+            DrainAction::TerminateAndExit => {
+                self.terminate().await;
+                Err(ActorExitStatus::Success)
+            }
         }
-        let Some(handles) = &self.handles_opt else {
-            // Nothing is running, so nothing is in flight.
-            return Err(ActorExitStatus::Success);
-        };
-        self.drain_state
-            .start(
-                &handles.source_mailbox,
-                self.params.indexing_settings.commit_timeout(),
-            )
-            .await;
-        Ok(())
     }
 }
 
