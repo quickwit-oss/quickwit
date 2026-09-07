@@ -6611,7 +6611,7 @@ version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51e219e79014df21a225b1860a479e2dcd7cbd9130f4defd4bd0e191ea31d67d"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.21.7",
  "chrono",
  "getrandom 0.2.17",
  "http 1.4.2",
@@ -8714,7 +8714,7 @@ version = "0.9.0"
 dependencies = [
  "anyhow",
  "arrow",
- "base64 0.22.1",
+ "base64 0.23.0",
  "binggan",
  "fnv",
  "hex",
@@ -9000,7 +9000,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-lambda",
  "aws-smithy-mocks",
- "base64 0.22.1",
+ "base64 0.23.0",
  "bytesize",
  "md5",
  "prost 0.14.4",
@@ -9023,7 +9023,7 @@ name = "quickwit-lambda-server"
 version = "0.9.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
+ "base64 0.23.0",
  "bytesize",
  "lambda_runtime",
  "openssl",
@@ -9155,7 +9155,7 @@ dependencies = [
  "anyhow",
  "arrow",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.23.0",
  "bytes",
  "chrono",
  "parquet",
@@ -9222,7 +9222,7 @@ name = "quickwit-query"
 version = "0.9.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
+ "base64 0.23.0",
  "bitpacking",
  "criterion",
  "hex",
@@ -9275,7 +9275,7 @@ dependencies = [
  "anyhow",
  "assert-json-diff",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.23.0",
  "bytes",
  "bytesize",
  "fnv",
@@ -9321,7 +9321,7 @@ dependencies = [
  "anyhow",
  "assert-json-diff",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.23.0",
  "bytes",
  "bytesize",
  "elasticsearch-dsl",
@@ -9409,7 +9409,7 @@ dependencies = [
  "azure_identity",
  "azure_storage",
  "azure_storage_blobs",
- "base64 0.22.1",
+ "base64 0.23.0",
  "bytes",
  "bytesize",
  "futures",
