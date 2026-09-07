@@ -357,7 +357,7 @@ fn tantivy_type_to_list_field_type(typ: Type) -> ListFieldsType {
         Type::Str => ListFieldsType::Str,
         Type::U64 => ListFieldsType::U64,
         // Packaged fields originate from Quickwit mappings, which cannot define custom types.
-        Type::Custom => unreachable!("custom fields are not supported in Quickwit"),
+        Type::Custom => unimplemented!("custom fields are not supported in Quickwit"),
     }
 }
 
