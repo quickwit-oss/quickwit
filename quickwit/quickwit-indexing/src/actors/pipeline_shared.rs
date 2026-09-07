@@ -156,9 +156,10 @@ pub(crate) struct ActorPipeline<A: Actor<ObservableState = IndexingStatistics>> 
 
 #[async_trait]
 impl<A> PipelineHandle for ActorPipeline<A>
-where A: Actor<ObservableState = IndexingStatistics>
+where
+    A: Actor<ObservableState = IndexingStatistics>
         + DeferableReplyHandler<AssignShards>
-        + DeferableReplyHandler<DrainPipeline, Reply = ()>
+        + DeferableReplyHandler<DrainPipeline, Reply = ()>,
 {
     fn indexing_pipeline_id(&self) -> &IndexingPipelineId {
         &self.pipeline_id
@@ -186,12 +187,11 @@ where A: Actor<ObservableState = IndexingStatistics>
     }
 
     async fn start_drain(&self, drain_timeout: Duration) {
-        // The pipeline mailbox is unbounded, so this should not block; a send
-        // error means the pipeline is already dead, hence already settled.
-        let _ = self
-            .mailbox
-            .send_message(DrainPipeline { drain_timeout })
-            .await;
+        // await for the DrainPipeline handler so when the source does not opt into
+        // draining, the immediate teardown completes before replacement
+        // pipelines can spawn and overlap its consumers. Opted-in pipelines
+        // reply as soon as the drain is initiated.
+        let _ = self.mailbox.ask(DrainPipeline { drain_timeout }).await;
     }
 
     async fn observe(&self) -> Observation<IndexingStatistics> {
