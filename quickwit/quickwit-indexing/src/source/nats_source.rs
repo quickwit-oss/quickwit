@@ -297,15 +297,8 @@ impl Source for NatsSource {
         _exit_status: &ActorExitStatus,
         _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
-        // The durable consumer itself is left untouched. Any ack still pending
-        // at this point was not settled by a drain: its message is redelivered
-        // after the consumer's `ack_wait`.
-        //
-        // Messages the client prefetched but that were never processed are
-        // negatively acknowledged so the server redelivers them right after
-        // this connection is gone, instead of after `ack_wait`. Only what is
-        // already buffered is NAK'd: the loop stops at the first pending poll,
-        // so a refill in flight cannot keep it alive.
+        // Any ack still pending at this point was not completed by a drain:
+        // its message is redelivered after the consumer's `ack_wait`.
         while let Some(Some(message_res)) = self.message_stream.next().now_or_never() {
             let Ok(message) = message_res else {
                 continue;
@@ -367,13 +360,6 @@ fn is_transient_stream_error(error: &MessagesError) -> bool {
 
 /// Sends server-confirmed acknowledgments ("double acks") for the messages up
 /// to `published_up_to`.
-///
-/// Entries only leave the pending map once the server confirmed their ack, so
-/// `is_drained` never reports progress that could still be lost: a
-/// fire-and-forget ack can be dropped by a reconnection even after a
-/// successful client-side flush. A retried ack for a message the server
-/// already saw acknowledged is simply confirmed again. Whatever could not be
-/// acknowledged is redelivered after the consumer's `ack_wait`.
 async fn ack_up_to(
     nats_client: &async_nats::Client,
     pending_acks: &mut BTreeMap<u64, Subject>,
@@ -415,7 +401,6 @@ async fn ack_up_to(
     debug!(num_acks, "acked published messages");
 }
 
-/// Fetches the pre-provisioned durable consumer.
 async fn fetch_durable_consumer(
     jetstream_stream: &jetstream::stream::Stream,
     consumer_name: &str,
@@ -510,8 +495,6 @@ async fn connect_nats(params: &NatsSourceParams) -> anyhow::Result<async_nats::C
     Ok(client)
 }
 
-/// Connects to the NATS servers and binds to the JetStream stream's
-/// pre-provisioned durable consumer.
 async fn connect_and_fetch_consumer(
     params: &NatsSourceParams,
 ) -> anyhow::Result<(async_nats::Client, PullConsumer)> {
@@ -525,8 +508,6 @@ async fn connect_and_fetch_consumer(
     Ok((nats_client, consumer))
 }
 
-/// Checks whether we can connect to the NATS servers and find the JetStream
-/// stream and the pre-provisioned consumer.
 pub(crate) async fn check_connectivity(params: &NatsSourceParams) -> anyhow::Result<()> {
     connect_and_fetch_consumer(params).await?;
     Ok(())
