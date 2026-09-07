@@ -30,7 +30,7 @@ use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
 use quickwit_proto::search::{ListFieldsEntry, ListFieldsMetadata, ListFieldsType};
 use tantivy::index::FieldMetadata;
 use tantivy::schema::{FieldType, Type};
-use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentMeta};
+use tantivy::{IndexMeta, InvertedIndexReader, ReloadPolicy};
 use tokio::runtime::Handle;
 use tracing::{debug, info, instrument, warn};
 
@@ -83,10 +83,9 @@ impl Packager {
         split: IndexedSplit,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<PackagedSplit> {
-        let segment_metas = split.index.searchable_segment_metas()?;
-        assert_eq!(segment_metas.len(), 1);
-        let packaged_split =
-            create_packaged_split(&segment_metas[..], split, &self.tag_fields, ctx)?;
+        let index_meta = split.index.load_metas()?;
+        assert_eq!(index_meta.segments.len(), 1);
+        let packaged_split = create_packaged_split(&index_meta, split, &self.tag_fields, ctx)?;
         Ok(packaged_split)
     }
 }
@@ -183,21 +182,17 @@ impl Handler<EmptySplit> for Packager {
 }
 
 fn list_split_files(
-    segment_metas: &[SegmentMeta],
+    index_meta: &IndexMeta,
     scratch_directory: &TempDirectory,
 ) -> io::Result<Vec<PathBuf>> {
     let mut split_files = vec![scratch_directory.path().join("meta.json")];
 
-    // list the segment files
-    for segment_meta in segment_metas {
-        for relative_path in segment_meta.list_files() {
-            let filepath = scratch_directory.path().join(relative_path);
-            if filepath.try_exists()? {
-                // If the file is missing, this is fine.
-                // segment_meta.list_files() may actually returns files that
-                // may not exist.
-                split_files.push(filepath);
-            }
+    for relative_path in index_meta.list_segment_files() {
+        let filepath = scratch_directory.path().join(relative_path);
+        // Tantivy lists candidate component paths, including optional files
+        // that may not exist.
+        if filepath.try_exists()? {
+            split_files.push(filepath);
         }
     }
     split_files.sort();
@@ -266,13 +261,13 @@ fn try_extract_terms(
 }
 
 fn create_packaged_split(
-    segment_metas: &[SegmentMeta],
+    index_meta: &IndexMeta,
     split: IndexedSplit,
     tag_fields: &[NamedField],
     ctx: &ActorContext<Packager>,
 ) -> anyhow::Result<PackagedSplit> {
     debug!(split_id = %split.split_id(), "create-packaged-split");
-    let split_files = list_split_files(segment_metas, &split.split_scratch_directory)?;
+    let split_files = list_split_files(index_meta, &split.split_scratch_directory)?;
 
     // Extracts tag values from inverted indexes only when a field cardinality is less
     // than `MAX_VALUES_PER_TAG_FIELD`.
@@ -361,6 +356,8 @@ fn tantivy_type_to_list_field_type(typ: Type) -> ListFieldsType {
         Type::Json => ListFieldsType::Json,
         Type::Str => ListFieldsType::Str,
         Type::U64 => ListFieldsType::U64,
+        // Packaged fields originate from Quickwit mappings, which cannot define custom types.
+        Type::Custom => unreachable!("custom fields are not supported in Quickwit"),
     }
 }
 

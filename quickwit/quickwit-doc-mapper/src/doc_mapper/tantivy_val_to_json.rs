@@ -191,6 +191,9 @@ pub fn tantivy_object_to_json_value(object: Vec<(String, TantivyValue)>) -> Json
 /// Converts Tantivy::Value into Json Value.
 ///
 /// Formatting by defaults, e.g. Rfc3339 for dates.
+///
+/// Values must originate from a Quickwit-supported schema: custom plugin values have no
+/// supported JSON representation and violate this invariant.
 pub fn tantivy_value_to_json(value: TantivyValue) -> JsonValue {
     match value {
         TantivyValue::Null => JsonValue::Null,
@@ -212,6 +215,9 @@ pub fn tantivy_value_to_json(value: TantivyValue) -> JsonValue {
             .expect("Invalid datetime is not allowed."),
         TantivyValue::Facet(facet) => JsonValue::String(facet.to_string()),
         TantivyValue::Bytes(bytes) => BinaryFormat::Base64.format_to_json(&bytes),
+        TantivyValue::Custom(_) => {
+            unreachable!("custom values cannot originate from a Quickwit-supported schema")
+        }
         TantivyValue::IpAddr(ip_v6) => {
             let ip_str = if let Some(ip_v4) = ip_v6.to_ipv4_mapped() {
                 ip_v4.to_string()
