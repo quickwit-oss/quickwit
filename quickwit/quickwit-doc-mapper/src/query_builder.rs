@@ -25,7 +25,6 @@ use quickwit_query::query_ast::{
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{InvalidQuery, find_field_or_hit_dynamic};
 use tantivy::Term;
-use tantivy::jitexpr::ast::UntypedExpr;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
 use tracing::error;
@@ -52,34 +51,19 @@ struct CalcFieldQueryFastFields<'f> {
     fields: &'f mut HashSet<FastFieldWarmupInfo>,
 }
 
-impl CalcFieldQueryFastFields<'_> {
-    fn visit_expression(&mut self, expression: &UntypedExpr) {
-        match expression {
-            UntypedExpr::Variable(field_name) => {
-                // Preserve the name: warmup and JitExprPredicate use the same Tantivy
-                // fast-field resolver, including JSON paths and dynamic-field fallback.
-                // Loading a whole column also loads its string dictionary. A variable
-                // refers to an exact column path, not all of its JSON descendants.
-                self.fields.insert(FastFieldWarmupInfo {
-                    name: field_name.to_string(),
-                    with_subfields: false,
-                });
-            }
-            UntypedExpr::Call { args, .. } => {
-                for argument in args {
-                    self.visit_expression(argument);
-                }
-            }
-            UntypedExpr::Literal(_) => {}
-        }
-    }
-}
-
 impl<'a> QueryAstVisitor<'a> for CalcFieldQueryFastFields<'_> {
     type Err = Infallible;
 
     fn visit_calc_field(&mut self, query: &'a CalcFieldQuery) -> Result<(), Infallible> {
-        self.visit_expression(&query.expression);
+        let Ok(inferred_types) = tantivy::jitexpr::ast::infer_types(&query.expression) else {
+            return Ok(());
+        };
+        for (field_name, _inferred_type_set) in inferred_types {
+            self.fields.insert(FastFieldWarmupInfo {
+                name: field_name.to_string(),
+                with_subfields: false,
+            });
+        }
         Ok(())
     }
 }
@@ -475,25 +459,94 @@ fn extract_prefix_term_ranges_and_automaton(
 }
 
 #[cfg(test)]
-mod calc_field_tests;
-
-#[cfg(test)]
 mod test {
+    use std::collections::HashSet;
     use std::ops::Bound;
 
     use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
     use quickwit_query::query_ast::{
-        BuildTantivyAstContext, FullTextMode, FullTextParams, PhrasePrefixQuery, QueryAstVisitor,
-        UserInputQuery, query_ast_from_user_text,
+        BoolQuery, BuildTantivyAstContext, CacheNode, CalcFieldQuery, FullTextMode, FullTextParams,
+        PhrasePrefixQuery, QueryAst, QueryAstVisitor, UserInputQuery, query_ast_from_user_text,
     };
     use quickwit_query::{
         BooleanOperand, MatchAllOrNone, create_default_quickwit_tokenizer_manager,
     };
     use tantivy::Term;
+    use tantivy::jitexpr::ast::deserialize;
     use tantivy::schema::{DateOptions, DateTimePrecision, FAST, INDEXED, STORED, Schema, TEXT};
 
     use super::{ExtractPrefixTermRanges, build_query};
-    use crate::{DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME, TermRange};
+    use crate::{
+        DYNAMIC_FIELD_NAME, FastFieldWarmupInfo, SOURCE_FIELD_NAME, TermRange, WarmupInfo,
+    };
+
+    fn calc_field(expression: &str) -> QueryAst {
+        CalcFieldQuery {
+            expression: deserialize(expression).unwrap(),
+        }
+        .into()
+    }
+
+    fn expected_fast_fields(names: &[&str]) -> HashSet<FastFieldWarmupInfo> {
+        let mut fields = HashSet::with_capacity(names.len());
+        for name in names {
+            fields.insert(FastFieldWarmupInfo {
+                name: (*name).to_string(),
+                with_subfields: false,
+            });
+        }
+        fields
+    }
+
+    fn warmup_info(query: QueryAst) -> WarmupInfo {
+        // Input names are resolved per segment by Tantivy, not filtered by the builder's schema.
+        let schema = Schema::builder().build();
+        let context = BuildTantivyAstContext::for_test(&schema);
+        build_query(query, &context, None).unwrap().1
+    }
+
+    #[test]
+    fn test_calc_field_warmup_collects_nested_inputs_and_deduplicates() {
+        let query = calc_field(
+            "(AND (GT (ADD duration duration) #computed) (EQ (LOWER custom.label) \
+             \"ignored.field\"))",
+        );
+        assert_eq!(
+            warmup_info(query),
+            WarmupInfo {
+                fast_fields: expected_fast_fields(&["duration", "#computed", "custom.label"]),
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn test_calc_field_warmup_constants_need_no_fields() {
+        for expression in ["true", "false", "(EQ 1i64 1i64)"] {
+            assert_eq!(warmup_info(calc_field(expression)), WarmupInfo::default());
+        }
+    }
+
+    #[test]
+    fn test_calc_field_warmup_visits_boolean_boost_and_uninitialized_cache_nodes() {
+        let query: QueryAst = BoolQuery {
+            must: vec![calc_field("must_field")],
+            must_not: vec![calc_field("must_not_field")],
+            should: vec![calc_field("should_field").boost(Some(2.0f32.try_into().unwrap()))],
+            filter: vec![CacheNode::new(calc_field("filter_field")).into()],
+            ..Default::default()
+        }
+        .into();
+        assert_eq!(
+            warmup_info(query).fast_fields,
+            expected_fast_fields(&[
+                "must_field",
+                "must_not_field",
+                "should_field",
+                "filter_field"
+            ])
+        );
+    }
 
     enum TestExpectation<'a> {
         Err(&'a str),

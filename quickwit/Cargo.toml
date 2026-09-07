@@ -427,7 +427,7 @@ quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-transport = { path = "quickwit-transport" }
 
 # This is the tip of paul.masurel/jitexpr-docpredicate.
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "f1413a4dcfd1386a22df7d960a754b4bcfb1c3b4", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "8db9ce92cc4d3da709c2d11f929f9bf5aee859db", default-features = false, features = [
   "jitexpr",
   "lz4-compression",
   "mmap",
