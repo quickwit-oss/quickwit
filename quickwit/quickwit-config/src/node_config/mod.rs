@@ -561,6 +561,14 @@ impl CacheConfig {
         }
     }
 
+    pub fn with_capacity_and_policy(capacity: ByteSize, policy: CachePolicy) -> Self {
+        CacheConfig {
+            capacity: Some(capacity),
+            policy: Some(policy),
+            virtual_caches: Vec::new(),
+        }
+    }
+
     pub fn capacity(&self) -> ByteSize {
         // this should always be there
         self.capacity.unwrap_or_default()
