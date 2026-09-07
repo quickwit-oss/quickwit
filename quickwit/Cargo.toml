@@ -387,6 +387,7 @@ azure_storage_blobs = { version = "0.21", default-features = false, features = [
 opendal = { version = "0.58", default-features = false, features = [
   "http-transport-reqwest",
   "layers-retry",
+  "layers-concurrent-limit",
 ] }
 reqsign = { version = "0.18", default-features = false, features = ["google", "default-context"] }
 
