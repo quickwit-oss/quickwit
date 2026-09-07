@@ -52,24 +52,20 @@ pub mod type_map;
 pub mod uri;
 
 mod metrics_specific;
-pub use env::{
-    get_bool_from_env, get_bool_from_env_opt, get_duration_from_env, get_from_env,
-    get_from_env_opt, parse_bool_lenient,
-};
-pub use metrics_specific::*;
-
-mod socket_addr_legacy_hash;
-
 use std::fmt::Display;
 use std::future::Future;
 use std::ops::{Range, RangeInclusive};
 
 pub use coolid::new_coolid;
 pub use cpus::num_cpus;
+pub use env::{
+    get_bool_from_env, get_bool_from_env_opt, get_duration_from_env, get_from_env,
+    get_from_env_opt, parse_bool_lenient,
+};
 pub use kill_switch::KillSwitch;
+pub use metrics_specific::*;
 pub use path_hasher::PathHasher;
 pub use progress::{Progress, ProtectedZoneGuard};
-pub use socket_addr_legacy_hash::SocketAddrLegacyHash;
 pub use stream_utils::{BoxStream, ServiceStream};
 
 /// Returns true at compile time. This function is mostly used with serde to initialize boolean
