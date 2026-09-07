@@ -60,7 +60,7 @@ use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
-use super::pipeline_shared::{ActorPipeline, PipelineHandle};
+use super::pipeline_shared::{ActorPipeline, PipelineHandle, SUPERVISE_INTERVAL};
 use super::{FinishPendingMergesAndShutdownPipeline, MergePlanner, MergeSchedulerService};
 use crate::docs_clustering::Fingerprinter;
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
@@ -1170,7 +1170,7 @@ impl DeferableReplyHandler<DrainAllPipelines> for IndexingService {
         &mut self,
         _msg: DrainAllPipelines,
         reply: impl FnOnce(()) + Send + Sync + 'static,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.draining = true;
 
@@ -1194,8 +1194,40 @@ impl DeferableReplyHandler<DrainAllPipelines> for IndexingService {
             num_pipelines = pipeline_uids.len(),
             "draining indexing pipelines"
         );
+
+        // Does a drain request was already sent?
+        let start_drain_supervise_loop = self.drain_all_waiters.is_empty();
         self.drain_all_waiters
             .push((pipeline_uids, Box::new(reply)));
+        // The normal supervise loop only ticks every `HEARTBEAT` (30s in
+        // production), which would delay the reply, and thus the node
+        // shutdown. Tick faster while waiters are pending.
+        if start_drain_supervise_loop {
+            ctx.schedule_self_msg(SUPERVISE_INTERVAL, DrainSuperviseLoop);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct DrainSuperviseLoop;
+
+#[async_trait]
+impl Handler<DrainSuperviseLoop> for IndexingService {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _message: DrainSuperviseLoop,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        if self.drain_all_waiters.is_empty() {
+            return Ok(());
+        }
+        self.handle_supervise().await?;
+        if !self.drain_all_waiters.is_empty() {
+            ctx.schedule_self_msg(SUPERVISE_INTERVAL, DrainSuperviseLoop);
+        }
         Ok(())
     }
 }
@@ -1336,7 +1368,7 @@ mod tests {
     use std::path::Path;
     use std::time::Duration;
 
-    use quickwit_actors::{HEARTBEAT, Health, ObservationType, Universe};
+    use quickwit_actors::{AskError, HEARTBEAT, Health, ObservationType, Universe};
     use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_common::ServiceStream;
     use quickwit_common::rand::append_random_suffix;
@@ -1493,6 +1525,85 @@ mod tests {
         let observation = indexing_service_handle.process_pending_and_observe().await;
         assert_eq!(observation.num_running_pipelines, 0);
         assert_eq!(observation.num_running_merge_pipelines, 0);
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_indexing_service_drain_all_pipelines() {
+        quickwit_common::setup_logging_for_tests();
+        let transport = ChitchatTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        let metastore = metastore_for_test();
+
+        let index_id = append_random_suffix("test-indexing-service");
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+        let index_uid: IndexUid = metastore
+            .create_index(create_index_request)
+            .await
+            .unwrap()
+            .index_uid()
+            .clone();
+        let source_config = SourceConfig {
+            source_id: "test-indexing-service--source".to_string(),
+            num_pipelines: NonZeroUsize::MIN,
+            enabled: true,
+            source_params: SourceParams::void(),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
+        let add_source_request =
+            AddSourceRequest::try_from_source_config(index_uid, &source_config).unwrap();
+        metastore.add_source(add_source_request).await.unwrap();
+
+        let universe = Universe::with_accelerated_time();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let (indexing_service, indexing_service_handle) =
+            spawn_indexing_service_for_test(temp_dir.path(), &universe, metastore, cluster).await;
+        indexing_service
+            .ask_for_res(SpawnPipeline {
+                index_id: index_id.clone(),
+                source_config: source_config.clone(),
+                pipeline_uid: PipelineUid::for_test(0u128),
+            })
+            .await
+            .unwrap();
+
+        // The reply is deferred until the pipeline has exited. The void source
+        // does not opt into draining, so the pipeline is torn down right away.
+        indexing_service.ask(DrainAllPipelines).await.unwrap();
+        let observation = indexing_service_handle.observe().await;
+        assert_eq!(observation.num_running_pipelines, 0);
+        assert_eq!(observation.num_successful_pipelines, 1);
+
+        // A draining service accepts neither new pipelines nor indexing plans.
+        let spawn_error = indexing_service
+            .ask_for_res(SpawnPipeline {
+                index_id,
+                source_config,
+                pipeline_uid: PipelineUid::for_test(1u128),
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            spawn_error,
+            AskError::ErrorReply(IndexingError::Unavailable(_))
+        ));
+        let apply_plan_error = indexing_service
+            .ask_for_res(ApplyIndexingPlanRequest {
+                indexing_tasks: Vec::new(),
+                indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FA1".to_string(),
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            apply_plan_error,
+            AskError::ErrorReply(IndexingError::Unavailable(_))
+        ));
         universe.assert_quit().await;
     }
 
