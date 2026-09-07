@@ -384,7 +384,10 @@ azure_storage_blobs = { version = "0.21", default-features = false, features = [
   "enable_reqwest_rustls",
 ] }
 
-opendal = { version = "0.58", default-features = false, features = ["http-transport-reqwest"] }
+opendal = { version = "0.58", default-features = false, features = [
+  "http-transport-reqwest",
+  "layers-retry",
+] }
 reqsign = { version = "0.18", default-features = false, features = ["google", "default-context"] }
 
 quickwit-actors = { path = "quickwit-actors" }

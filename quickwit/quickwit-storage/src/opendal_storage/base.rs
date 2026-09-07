@@ -14,10 +14,12 @@
 
 use std::ops::Range;
 use std::path::Path;
+use std::time::Duration;
 use std::{fmt, io};
 
 use async_trait::async_trait;
 use futures::AsyncWriteExt as FuturesAsyncWriteExt;
+use opendal::layers::RetryLayer;
 use opendal::{DeleteInput, IntoDeleteInput, Operator};
 use quickwit_common::uri::Uri;
 use quickwit_metrics::HistogramTimer;
@@ -60,7 +62,7 @@ impl OpendalStorage {
         cfg: opendal::services::Gcs,
     ) -> Result<Self, StorageResolverError> {
         opendal::install_default();
-        let op = Operator::new(cfg)?;
+        let op = Operator::new(cfg)?.layer(gcs_retry_layer());
         Ok(Self::from_operator(uri, op))
     }
 
@@ -82,7 +84,8 @@ impl OpendalStorage {
         http_transport: opendal::HttpTransporter,
     ) -> Result<Self, StorageResolverError> {
         let op = Operator::new(cfg)?
-            .with_context(opendal::OperationContext::new().with_http_transport(http_transport));
+            .with_context(opendal::OperationContext::new().with_http_transport(http_transport))
+            .layer(gcs_retry_layer());
         Ok(Self::from_operator(uri, op))
     }
 
@@ -90,6 +93,18 @@ impl OpendalStorage {
     pub fn set_policy(&mut self, multipart_policy: MultiPartPolicy) {
         self.multipart_policy = multipart_policy;
     }
+}
+
+/// Builds the retry layer applied to the GCS operator.
+///
+/// matches the `RetryParams::aggressive()` used for s3/azure blob.
+fn gcs_retry_layer() -> RetryLayer {
+    RetryLayer::new()
+        .with_jitter()
+        .with_factor(2.0)
+        .with_min_delay(Duration::from_millis(250))
+        .with_max_delay(Duration::from_secs(20))
+        .with_max_times(4)
 }
 
 /// We spotted a ever growing usage of RAM in the opendal GCS implementation.
