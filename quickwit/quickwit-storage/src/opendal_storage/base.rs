@@ -14,6 +14,7 @@
 
 use std::ops::Range;
 use std::path::Path;
+use std::sync::LazyLock;
 use std::time::Duration;
 use std::{fmt, io};
 
@@ -65,7 +66,7 @@ impl OpendalStorage {
         opendal::install_default();
         let op = Operator::new(cfg)?
             .layer(gcs_retry_layer())
-            .layer(gcs_concurrent_limit_layer());
+            .layer(GCS_CONCURRENT_LIMIT_LAYER.clone());
         Ok(Self::from_operator(uri, op))
     }
 
@@ -89,7 +90,7 @@ impl OpendalStorage {
         let op = Operator::new(cfg)?
             .with_context(opendal::OperationContext::new().with_http_transport(http_transport))
             .layer(gcs_retry_layer())
-            .layer(gcs_concurrent_limit_layer());
+            .layer(GCS_CONCURRENT_LIMIT_LAYER.clone());
         Ok(Self::from_operator(uri, op))
     }
 
@@ -111,12 +112,12 @@ fn gcs_retry_layer() -> RetryLayer {
         .with_max_times(4)
 }
 
-fn gcs_concurrent_limit_layer() -> ConcurrentLimitLayer {
+static GCS_CONCURRENT_LIMIT_LAYER: LazyLock<ConcurrentLimitLayer> = LazyLock::new(|| {
     // not S3, but using the same environment variable makes sense
     let max_concurrency: usize =
         get_from_env_cached!(usize, "QW_S3_MAX_CONCURRENCY", 10_000, false);
     ConcurrentLimitLayer::new(max_concurrency)
-}
+});
 
 /// We spotted a ever growing usage of RAM in the opendal GCS implementation.
 /// We are using the same fix as
