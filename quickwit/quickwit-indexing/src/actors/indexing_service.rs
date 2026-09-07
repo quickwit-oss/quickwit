@@ -42,6 +42,7 @@ use quickwit_metastore::{
     ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt,
     SplitMetadata, SplitState,
 };
+use quickwit_proto::GrpcServiceError;
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, IndexingError, IndexingPipelineId,
     IndexingTask, MergePipelineId, PipelineMetrics,
@@ -120,6 +121,9 @@ pub struct IndexingService {
     /// once the tracked pipelines have exited.
     drain_all_waiters: Vec<DrainAllWaiter>,
     drain_timeout: Duration,
+    /// Whether the whole service is draining ahead of shutdown: no new
+    /// pipeline may be spawned, whatever the requester.
+    draining: bool,
     latest_indexing_plan_id: IndexingPlanId,
     counters: IndexingServiceCounters,
     pub(crate) max_concurrent_split_uploads: usize,
@@ -193,6 +197,7 @@ impl IndexingService {
             draining_pipelines: Vec::new(),
             drain_all_waiters: Vec::new(),
             drain_timeout: indexer_config.shutdown_drain_timeout(),
+            draining: false,
             latest_indexing_plan_id: String::new(),
             counters: Default::default(),
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
@@ -257,6 +262,14 @@ impl IndexingService {
         source_config: SourceConfig,
         pipeline_uid: PipelineUid,
     ) -> Result<IndexingPipelineId, IndexingError> {
+        if self.draining {
+            return Err(IndexingError::new_unavailable(
+                "indexing service and all of its pipelines are being drained, won't spawn new \
+                 pipelines"
+                    .to_string(),
+            ));
+        }
+
         let index_metadata = self.index_metadata(ctx, &index_id).await?;
         let pipeline_id = IndexingPipelineId {
             index_uid: index_metadata.index_uid.clone(),
@@ -860,6 +873,15 @@ impl IndexingService {
         plan_request: ApplyIndexingPlanRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<(), IndexingError> {
+        if self.draining {
+            // Reapplied plans would otherwise respawn the pipelines that just
+            // drained and exited, defeating the drain.
+            return Err(IndexingError::new_unavailable(
+                "indexing service and all of its pipelines are being drained, ignoring indexing \
+                 plan"
+                    .to_string(),
+            ));
+        }
         // Plan ids are ULIDs
         if plan_request.indexing_plan_id < self.latest_indexing_plan_id {
             info!(
@@ -1150,6 +1172,8 @@ impl DeferableReplyHandler<DrainAllPipelines> for IndexingService {
         reply: impl FnOnce(()) + Send + Sync + 'static,
         _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        self.draining = true;
+
         let mut pipeline_uids: Vec<PipelineUid> = Vec::new();
         for (pipeline_uid, pipeline_handle) in &self.indexing_pipelines {
             pipeline_handle.start_drain(self.drain_timeout).await;
