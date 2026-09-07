@@ -116,8 +116,14 @@ mod tests {
             searcher_grpc_addr_2,
         );
         let searcher_pool = SearcherPool::from_iter([
-            (searcher_grpc_addr_1, searcher_client_1),
-            (searcher_grpc_addr_2, searcher_client_2),
+            (
+                searcher_grpc_addr_1,
+                crate::SearcherNode::for_test(searcher_client_1),
+            ),
+            (
+                searcher_grpc_addr_2,
+                crate::SearcherNode::for_test(searcher_client_2),
+            ),
         ]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let _first_grpc_addr: SocketAddr = "127.0.0.1:1000".parse()?;
