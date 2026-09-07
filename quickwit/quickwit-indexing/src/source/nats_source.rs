@@ -15,20 +15,9 @@
 //! A source consuming a NATS JetStream stream through a pre-provisioned
 //! durable consumer.
 //!
-//! The consumer is only ever fetched — never created, updated, nor deleted —
-//! so its lifecycle, subject filters, deliver policy, and ack tuning
-//! (`ack_wait`, `max_ack_pending`) belong to whoever provisioned it. The
-//! consumer must use the explicit ack policy: each message is acknowledged —
-//! with a server-confirmed ack — once the split containing it is published.
-//! On a planned teardown (node shutdown, pipeline reassignment) the pipeline
-//! is drained first: the in-flight messages are published and acknowledged,
-//! and the prefetched but unprocessed ones are negatively acknowledged for
-//! immediate redelivery — so delivery is exactly-once. A crash degrades it to
-//! at-least-once: the unacknowledged messages — including ones whose split
-//! ends up published — are redelivered after the consumer's `ack_wait` and
-//! indexed again. The consumer's ack floor is the resume point; the metastore
-//! checkpoint only carries synthetic positions used to correlate published
-//! batches with the acknowledgments they release.
+//! The consumer is only ever fetched so its lifecycle, subject filters,
+//! deliver policy, and ack tuning (`ack_wait`, `max_ack_pending`) belong to
+//! whoever provisioned it.
 //!
 //! Several indexing pipelines can share the consumer: NATS load-balances the
 //! messages across them, so scaling is a plain `num_pipelines` update. Being
@@ -98,26 +87,6 @@ pub struct NatsSourceState {
     pub num_invalid_messages: u64,
 }
 
-/// Source flavor binding to a pre-provisioned durable consumer.
-///
-/// The consumer is only ever fetched — never created, updated, nor deleted —
-/// so its lifecycle, subject filters, deliver policy, and ack tuning
-/// (`ack_wait`, `max_ack_pending`) belong to whoever provisioned it. Each
-/// message is acknowledged once the split containing it is published
-/// ([`Source::suggest_truncate`]); see the module documentation for the
-/// delivery semantics.
-///
-/// The metastore checkpoint only carries synthetic positions (a per-pipeline
-/// partition and a delivery counter) used to correlate published batches with
-/// the acknowledgments they release; the resume point is the consumer's ack
-/// floor, not the checkpoint.
-///
-/// The source acknowledges inline in [`Source::suggest_truncate`], so once a
-/// drain reports completion (see [`Source::is_drained`]) every ack has been
-/// confirmed by the server. If the source actor is instead killed with batches
-/// still in the pipeline, their `suggest_truncate` notifications are lost and
-/// the unacknowledged messages — including ones whose split ends up published —
-/// are redelivered after the consumer's `ack_wait`.
 pub struct NatsSource {
     source_runtime: SourceRuntime,
     source_params: NatsSourceParams,
@@ -308,6 +277,10 @@ impl Source for NatsSource {
         Ok(())
     }
 
+    fn should_be_drained(&self) -> bool {
+        true
+    }
+
     fn is_drained(&self) -> bool {
         // Every delivered message is pending from `process_message` until the
         // server confirmed its ack: an empty map means everything delivered so
@@ -442,8 +415,7 @@ async fn ack_up_to(
     debug!(num_acks, "acked published messages");
 }
 
-/// Fetches the pre-provisioned durable consumer. Read-only by contract: the
-/// consumer is never created nor updated.
+/// Fetches the pre-provisioned durable consumer.
 async fn fetch_durable_consumer(
     jetstream_stream: &jetstream::stream::Stream,
     consumer_name: &str,
@@ -901,7 +873,12 @@ mod nats_broker_tests {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
 
-        pipeline_mailbox.send_message(DrainPipeline).await.unwrap();
+        pipeline_mailbox
+            .send_message(DrainPipeline {
+                drain_timeout: Duration::from_secs(60),
+            })
+            .await
+            .unwrap();
         // The pipeline exits on its own once the in-flight batches are
         // published and their acks flushed.
         let (exit_status, _statistics) = pipeline_handle.join().await;
