@@ -18,12 +18,14 @@ use std::ops::Bound;
 use std::sync::Arc;
 
 use quickwit_query::query_ast::{
-    BuildTantivyAstContext, FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery, QueryAst,
-    QueryAstTransformer, QueryAstVisitor, RangeQuery, RegexQuery, TermSetQuery, WildcardQuery,
+    BuildTantivyAstContext, CalcFieldQuery, FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery,
+    QueryAst, QueryAstTransformer, QueryAstVisitor, RangeQuery, RegexQuery, TermSetQuery,
+    WildcardQuery,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{InvalidQuery, find_field_or_hit_dynamic};
 use tantivy::Term;
+use tantivy::jitexpr::ast::UntypedExpr;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
 use tracing::error;
@@ -42,6 +44,42 @@ impl<'a> QueryAstVisitor<'a> for RangeQueryFields {
     fn visit_range(&mut self, range_query: &'a RangeQuery) -> Result<(), Infallible> {
         self.range_query_field_names
             .insert(range_query.field.to_string());
+        Ok(())
+    }
+}
+
+struct CalcFieldQueryFastFields<'f> {
+    fields: &'f mut HashSet<FastFieldWarmupInfo>,
+}
+
+impl CalcFieldQueryFastFields<'_> {
+    fn visit_expression(&mut self, expression: &UntypedExpr) {
+        match expression {
+            UntypedExpr::Variable(field_name) => {
+                // Preserve the name: warmup and JitExprPredicate use the same Tantivy
+                // fast-field resolver, including JSON paths and dynamic-field fallback.
+                // Loading a whole column also loads its string dictionary. A variable
+                // refers to an exact column path, not all of its JSON descendants.
+                self.fields.insert(FastFieldWarmupInfo {
+                    name: field_name.to_string(),
+                    with_subfields: false,
+                });
+            }
+            UntypedExpr::Call { args, .. } => {
+                for argument in args {
+                    self.visit_expression(argument);
+                }
+            }
+            UntypedExpr::Literal(_) => {}
+        }
+    }
+}
+
+impl<'a> QueryAstVisitor<'a> for CalcFieldQueryFastFields<'_> {
+    type Err = Infallible;
+
+    fn visit_calc_field(&mut self, query: &'a CalcFieldQuery) -> Result<(), Infallible> {
+        self.visit_expression(&query.expression);
         Ok(())
     }
 }
@@ -192,6 +230,13 @@ pub(crate) fn build_query(
     let Ok(_) = ExistsQueryFastFields {
         fields: &mut fast_fields,
         schema: context.schema.clone(),
+    }
+    .visit(&query_ast);
+
+    // Visit after cache injection: cache hits do not evaluate the underlying predicate,
+    // while uninitialized cache nodes and cache misses still need their input columns.
+    let Ok(_) = CalcFieldQueryFastFields {
+        fields: &mut fast_fields,
     }
     .visit(&query_ast);
 
@@ -428,6 +473,9 @@ fn extract_prefix_term_ranges_and_automaton(
         visitor.automatons_to_warm_up,
     ))
 }
+
+#[cfg(test)]
+mod calc_field_tests;
 
 #[cfg(test)]
 mod test {

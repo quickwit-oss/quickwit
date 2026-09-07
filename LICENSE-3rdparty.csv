@@ -23,6 +23,7 @@ anstyle-parse,https://github.com/rust-cli/anstyle,MIT OR Apache-2.0,The anstyle-
 anstyle-query,https://github.com/rust-cli/anstyle,MIT OR Apache-2.0,The anstyle-query Authors
 anstyle-wincon,https://github.com/rust-cli/anstyle,MIT OR Apache-2.0,The anstyle-wincon Authors
 anyhow,https://github.com/dtolnay/anyhow,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
+arbitrary,https://github.com/rust-fuzz/arbitrary,MIT OR Apache-2.0,"The Rust-Fuzz Project Developers, Nick Fitzgerald <fitzgen@gmail.com>, Manish Goregaokar <manishsmail@gmail.com>, Simonas Kazlauskas <arbitrary@kazlauskas.me>, Brian L. Troutwine <brian@troutwine.us>, Corey Farwell <coreyf@rwell.org>"
 arc-swap,https://github.com/vorner/arc-swap,MIT OR Apache-2.0,Michal 'vorner' Vaner <vorner@vorner.cz>
 arrayref,https://github.com/droundy/arrayref,BSD-2-Clause,David Roundy <roundyd@physics.oregonstate.edu>
 arrayvec,https://github.com/bluss/arrayvec,MIT OR Apache-2.0,bluss
@@ -188,6 +189,20 @@ core-foundation,https://github.com/servo/core-foundation-rs,MIT OR Apache-2.0,Th
 core-foundation-sys,https://github.com/servo/core-foundation-rs,MIT OR Apache-2.0,The Servo Project Developers
 cpp_demangle,https://github.com/gimli-rs/cpp_demangle,MIT OR Apache-2.0,"Nick Fitzgerald <fitzgen@gmail.com>, Jim Blandy <jimb@red-bean.com>, Kyle Huey <khuey@kylehuey.com>"
 cpufeatures,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
+cranelift,https://github.com/bytecodealliance/wasmtime,Apache-2.0 WITH LLVM-exception,The Cranelift Project Developers
+cranelift-assembler-x64,https://github.com/bytecodealliance/wasmtime,Apache-2.0 WITH LLVM-exception,The cranelift-assembler-x64 Authors
+cranelift-assembler-x64-meta,https://github.com/bytecodealliance/wasmtime,Apache-2.0 WITH LLVM-exception,The cranelift-assembler-x64-meta Authors
+cranelift-bforest,https://github.com/bytecodealliance/wasmtime,Apache-2.0 WITH LLVM-exception,The Cranelift Project Developers
+cranelift-bitset,https://github.com/bytecodealliance/wasmtime,Apache-2.0 WITH LLVM-exception,The Cranelift Project Developers
+cranelift-codegen,https://github.com/bytecodealliance/wasmtime,Apache-2.0 WITH LLVM-exception,The Cranelift Project Developers
+cranelift-codegen-shared,https://github.com/bytecodealliance/wasmtime,Apache-2.0 WITH LLVM-exception,The Cranelift Project Developers
+cranelift-control,https://github.com/bytecodealliance/wasmtime,Apache-2.0 WITH LLVM-exception,The Cranelift Project Developers
+cranelift-entity,https://github.com/bytecodealliance/wasmtime,Apache-2.0 WITH LLVM-exception,The Cranelift Project Developers
+cranelift-frontend,https://github.com/bytecodealliance/wasmtime,Apache-2.0 WITH LLVM-exception,The Cranelift Project Developers
+cranelift-jit,https://github.com/bytecodealliance/wasmtime,Apache-2.0 WITH LLVM-exception,The Cranelift Project Developers
+cranelift-module,https://github.com/bytecodealliance/wasmtime,Apache-2.0 WITH LLVM-exception,The Cranelift Project Developers
+cranelift-native,https://github.com/bytecodealliance/wasmtime,Apache-2.0 WITH LLVM-exception,The Cranelift Project Developers
+cranelift-srcgen,https://github.com/bytecodealliance/wasmtime,Apache-2.0 WITH LLVM-exception,The Wasmtime Project Developers
 crc,https://github.com/mrhooray/crc-rs,MIT OR Apache-2.0,"Rui Hu <code@mrhooray.com>, Akhil Velagapudi <4@4khil.com>"
 crc-catalog,https://github.com/akhilles/crc-catalog,MIT OR Apache-2.0,Akhil Velagapudi <akhilvelagapudi@gmail.com>
 crc-fast,https://github.com/awesomized/crc-fast-rust,MIT OR Apache-2.0,Don MacAskill
@@ -420,6 +435,7 @@ jiff,https://github.com/BurntSushi/jiff,Unlicense OR MIT,Andrew Gallant <jamslam
 jiff-static,https://github.com/BurntSushi/jiff,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 jiff-tzdb,https://github.com/BurntSushi/jiff,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 jiff-tzdb-platform,https://github.com/BurntSushi/jiff,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
+jitexpr,https://github.com/quickwit-oss/tantivy/tree/main/jitexpr,MIT,The jitexpr Authors
 jni,https://github.com/jni-rs/jni-rs,MIT OR Apache-2.0,jni team
 jni-macros,https://github.com/jni-rs/jni-rs,MIT OR Apache-2.0,The jni-macros Authors
 jni-sys,https://github.com/jni-rs/jni-sys,MIT OR Apache-2.0,"Steven Fackler <sfackler@gmail.com>, Robert Bragg <robert@sixbynine.org>"
@@ -465,6 +481,7 @@ lru-slab,https://github.com/Ralith/lru-slab,MIT OR Apache-2.0 OR Zlib,Benjamin S
 lz4,https://github.com/10xGenomics/lz4-rs,MIT,"Jens Heyens <jens.heyens@ewetel.net>, Artem V. Navrotskiy <bozaro@buzzsoft.ru>, Patrick Marks <pmarks@gmail.com>"
 lz4-sys,https://github.com/10xGenomics/lz4-rs,MIT,"Jens Heyens <jens.heyens@ewetel.net>, Artem V. Navrotskiy <bozaro@buzzsoft.ru>, Patrick Marks <pmarks@gmail.com>"
 lz4_flex,https://github.com/pseitz/lz4_flex,MIT,"Pascal Seitz <pascal.seitz@gmail.com>, Arthur Silva <arthurprs@gmail.com>, ticki <Ticki@users.noreply.github.com>"
+mach2,https://github.com/JohnTitor/mach2,BSD-2-Clause OR MIT OR Apache-2.0,The mach2 Authors
 matchers,https://github.com/hawkw/matchers,MIT,Eliza Weisman <eliza@buoyant.io>
 matchit,https://github.com/ibraheemdev/matchit,MIT AND BSD-3-Clause,Ibraheem Ahmed <ibraheem@ibraheem.ca>
 md-5,https://github.com/RustCrypto/hashes,MIT OR Apache-2.0,RustCrypto Developers
@@ -677,11 +694,13 @@ redox_syscall,https://gitlab.redox-os.org/redox-os/syscall,MIT,Jeremy Soller <ja
 ref-cast,https://github.com/dtolnay/ref-cast,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 ref-cast-impl,https://github.com/dtolnay/ref-cast,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 referencing,https://github.com/Stranger6667/jsonschema,MIT,Dmitry Dygalo <dmitry@dygalo.dev>
+regalloc2,https://github.com/bytecodealliance/regalloc2,Apache-2.0 WITH LLVM-exception,"Chris Fallin <chris@cfallin.org>, Mozilla SpiderMonkey Developers"
 regex,https://github.com/rust-lang/regex,MIT OR Apache-2.0,"The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>"
 regex-automata,https://github.com/rust-lang/regex,MIT OR Apache-2.0,"The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>"
 regex-filtered,https://github.com/ua-parser/uap-rust,BSD-3-Clause,The regex-filtered Authors
 regex-lite,https://github.com/rust-lang/regex,MIT OR Apache-2.0,"The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>"
 regex-syntax,https://github.com/rust-lang/regex,MIT OR Apache-2.0,"The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>"
+region,https://github.com/darfink/region-rs,MIT,Elliott Linder <elliott.darfink@gmail.com>
 regress,https://github.com/ridiculousfish/regress,MIT OR Apache-2.0,ridiculousfish <corydoras@ridiculousfish.com>
 relative-path,https://github.com/udoprog/relative-path,MIT OR Apache-2.0,John-John Tedro <udoprog@tedro.se>
 reqsign-aws-core,https://github.com/apache/opendal-reqsign,Apache-2.0,The reqsign-aws-core Authors
@@ -827,6 +846,7 @@ tantivy-query-grammar,https://github.com/quickwit-oss/tantivy,MIT,Paul Masurel <
 tantivy-sstable,https://github.com/quickwit-oss/tantivy,MIT,The tantivy-sstable Authors
 tantivy-stacker,https://github.com/quickwit-oss/tantivy,MIT,The tantivy-stacker Authors
 tantivy-tokenizer-api,https://github.com/quickwit-oss/tantivy,MIT,The tantivy-tokenizer-api Authors
+target-lexicon,https://github.com/bytecodealliance/target-lexicon,Apache-2.0 WITH LLVM-exception,Dan Gohman <sunfish@mozilla.com>
 tempfile,https://github.com/Stebalien/tempfile,MIT OR Apache-2.0,"Steven Allen <steven@stebalien.com>, The Rust Project Developers, Ashley Mannix <ashleymannix@live.com.au>, Jason White <me@jasonwhite.io>"
 term,https://github.com/Stebalien/term,MIT OR Apache-2.0,"The Rust Project Developers, Steven Allen"
 termcolor,https://github.com/BurntSushi/termcolor,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
@@ -939,6 +959,8 @@ wasm-bindgen-macro,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crat
 wasm-bindgen-macro-support,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro-support,MIT OR Apache-2.0,The wasm-bindgen Developers
 wasm-bindgen-shared,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/shared,MIT OR Apache-2.0,The wasm-bindgen Developers
 wasm-streams,https://github.com/MattiasBuelens/wasm-streams,MIT OR Apache-2.0,Mattias Buelens <mattias@buelens.com>
+wasmtime-internal-core,https://github.com/bytecodealliance/wasmtime,Apache-2.0 WITH LLVM-exception,The Wasmtime Project Developers
+wasmtime-internal-jit-icache-coherence,https://github.com/bytecodealliance/wasmtime,Apache-2.0 WITH LLVM-exception,The Wasmtime Project Developers
 wasmtimer,https://github.com/whizsid/wasmtimer-rs,MIT,"WhizSid <whizsid@aol.com>, Pierre Krieger <pierre.krieger1708@gmail.com>"
 web-sys,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/web-sys,MIT OR Apache-2.0,The wasm-bindgen Developers
 web-time,https://github.com/daxpedda/web-time,MIT OR Apache-2.0,The web-time Authors
