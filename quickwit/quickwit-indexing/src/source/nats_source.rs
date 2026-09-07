@@ -518,7 +518,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_trace_context_from_headers() {
+    fn extract_trace_context_from_headers() {
         use opentelemetry::propagation::TextMapPropagator;
         use opentelemetry_sdk::propagation::TraceContextPropagator;
 
@@ -551,6 +551,32 @@ mod tests {
             .clone();
         assert!(!span_context.is_valid());
     }
+
+    #[test]
+    fn transient_stream_error_classification() {
+        let transient_kinds = [
+            MessagesErrorKind::MissingHeartbeat,
+            MessagesErrorKind::Pull,
+            MessagesErrorKind::NoResponders,
+        ];
+        for kind in transient_kinds {
+            assert!(
+                is_transient_stream_error(&MessagesError::new(kind)),
+                "`{kind:?}` should be retried, not kill the pipeline"
+            );
+        }
+        let terminal_kinds = [
+            MessagesErrorKind::ConsumerDeleted,
+            MessagesErrorKind::PushBasedConsumer,
+            MessagesErrorKind::Other,
+        ];
+        for kind in terminal_kinds {
+            assert!(
+                !is_transient_stream_error(&MessagesError::new(kind)),
+                "`{kind:?}` should kill the pipeline"
+            );
+        }
+    }
 }
 
 #[cfg(all(test, feature = "nats-broker-tests"))]
@@ -562,6 +588,7 @@ mod nats_broker_tests {
     use bytes::Bytes;
     use quickwit_actors::{ActorHandle, Inbox, Universe};
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
+    use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_metastore::metastore_for_test;
     use quickwit_proto::metastore::MetastoreServiceClient;
     use quickwit_proto::types::IndexUid;
@@ -636,10 +663,15 @@ mod nats_broker_tests {
         (source_handle, doc_processor_inbox)
     }
 
+    /// Waits until the source reports at least `num_expected` processed
+    /// messages, panicking past `timeout` — kept tight where the delivery
+    /// delay itself is the assertion (NAK vs `ack_wait` redelivery).
     async fn wait_for_processed_messages(
         source_handle: &ActorHandle<SourceActor>,
         num_expected: u64,
+        timeout: Duration,
     ) {
+        let deadline = Instant::now() + timeout;
         loop {
             let observation = source_handle.observe().await;
             let num_messages_processed = observation
@@ -651,8 +683,34 @@ mod nats_broker_tests {
             if num_messages_processed >= num_expected {
                 return;
             }
+            assert!(
+                Instant::now() < deadline,
+                "source did not process {num_expected} messages within {timeout:?}"
+            );
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
+    }
+
+    /// Waits until the consumer reports the expected ack state, panicking
+    /// after ~10s.
+    async fn wait_for_consumer_ack_state(
+        consumer: &mut PullConsumer,
+        expected_num_ack_pending: usize,
+        expected_ack_floor: u64,
+    ) {
+        for _ in 0..100 {
+            let consumer_info = consumer.info().await.unwrap();
+            if consumer_info.num_ack_pending == expected_num_ack_pending
+                && consumer_info.ack_floor.stream_sequence == expected_ack_floor
+            {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!(
+            "consumer never reached {expected_num_ack_pending} pending acks with ack floor \
+             {expected_ack_floor}"
+        );
     }
 
     fn merge_doc_batches(batches: Vec<RawDocBatch>) -> RawDocBatch {
@@ -688,10 +746,11 @@ mod nats_broker_tests {
 
     /// Provisions the durable consumer the way an operator would: the source
     /// itself only ever fetches it.
-    async fn provision_durable_consumer(
+    async fn provision_durable_consumer_with_ack_wait(
         jetstream_ctx: &jetstream::Context,
         stream: &str,
         consumer_name: &str,
+        ack_wait: Duration,
     ) {
         jetstream_ctx
             .create_consumer_on_stream(
@@ -699,8 +758,7 @@ mod nats_broker_tests {
                     name: Some(consumer_name.to_string()),
                     durable_name: Some(consumer_name.to_string()),
                     ack_policy: AckPolicy::Explicit,
-                    // Long enough for the tests to never hit a redelivery.
-                    ack_wait: Duration::from_secs(300),
+                    ack_wait,
                     ..Default::default()
                 },
                 stream,
@@ -709,8 +767,23 @@ mod nats_broker_tests {
             .unwrap();
     }
 
+    async fn provision_durable_consumer(
+        jetstream_ctx: &jetstream::Context,
+        stream: &str,
+        consumer_name: &str,
+    ) {
+        // An `ack_wait` long enough for the test to never hit a redelivery.
+        provision_durable_consumer_with_ack_wait(
+            jetstream_ctx,
+            stream,
+            consumer_name,
+            Duration::from_secs(300),
+        )
+        .await;
+    }
+
     #[tokio::test]
-    async fn test_durable_mode_ingestion_and_ack() {
+    async fn durable_mode_ingestion_and_ack() {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let stream = append_random_suffix("test-nats-source--durable--stream");
@@ -728,7 +801,7 @@ mod nats_broker_tests {
         let (source_handle, doc_processor_inbox) =
             create_source_actor(&universe, metastore, index_uid, source_config).await;
 
-        wait_for_processed_messages(&source_handle, 10).await;
+        wait_for_processed_messages(&source_handle, 10, Duration::from_secs(60)).await;
 
         let batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         let batch = merge_doc_batches(batches);
@@ -750,17 +823,7 @@ mod nats_broker_tests {
             .get_consumer_from_stream(consumer_name, stream.as_str())
             .await
             .unwrap();
-        let mut acked = false;
-        for _ in 0..100 {
-            let consumer_info = consumer.info().await.unwrap();
-            if consumer_info.num_ack_pending == 0 {
-                assert_eq!(consumer_info.ack_floor.stream_sequence, 10);
-                acked = true;
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-        assert!(acked, "messages should be acked after truncation");
+        wait_for_consumer_ack_state(&mut consumer, 0, 10).await;
 
         source_handle.quit().await;
         jetstream_ctx.delete_stream(&stream).await.unwrap();
@@ -771,7 +834,7 @@ mod nats_broker_tests {
     /// must publish the in-flight batches and flush their acks BEFORE the
     /// drain replies — the exactly-once guarantee on planned teardowns.
     #[tokio::test]
-    async fn test_durable_mode_graceful_drain_acks_before_teardown() {
+    async fn durable_mode_graceful_drain_acks_before_teardown() {
         use quickwit_actors::Universe;
         use quickwit_common::temp_dir::TempDirectory;
         use quickwit_config::IndexingSettings;
@@ -880,7 +943,7 @@ mod nats_broker_tests {
     }
 
     #[tokio::test]
-    async fn test_durable_mode_load_balancing() {
+    async fn durable_mode_load_balancing() {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let stream = append_random_suffix("test-nats-source--durable-lb--stream");
@@ -950,7 +1013,256 @@ mod nats_broker_tests {
     }
 
     #[tokio::test]
-    async fn test_durable_mode_missing_consumer() {
+    async fn durable_mode_crash_redelivery_after_ack_wait() {
+        let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let stream = append_random_suffix("test-nats-source--durable-crash--stream");
+        let jetstream_ctx = setup_nats_stream(&stream).await;
+        let consumer_name = "durable-crash-consumer";
+        provision_durable_consumer_with_ack_wait(
+            &jetstream_ctx,
+            &stream,
+            consumer_name,
+            Duration::from_secs(3),
+        )
+        .await;
+
+        let subject = format!("{stream}.logs");
+        let expected_docs = publish_docs(&jetstream_ctx, &subject, 0..10).await;
+
+        let index_id = append_random_suffix("test-nats-source--durable-crash--index");
+        let source_config = get_durable_source_config(&stream, consumer_name);
+        let index_uid = setup_index(metastore.clone(), &index_id, &source_config, &[]).await;
+
+        let (source_handle_1, _doc_processor_inbox_1) = create_source_actor(
+            &universe,
+            metastore.clone(),
+            index_uid.clone(),
+            source_config.clone(),
+        )
+        .await;
+        wait_for_processed_messages(&source_handle_1, 10, Duration::from_secs(60)).await;
+        // No `SuggestTruncate` was sent: quitting here loses the acks of the
+        // processed messages, like a crash would.
+        source_handle_1.quit().await;
+
+        let (source_handle_2, doc_processor_inbox_2) =
+            create_source_actor(&universe, metastore, index_uid, source_config).await;
+        wait_for_processed_messages(&source_handle_2, 10, Duration::from_secs(30)).await;
+
+        let batches: Vec<RawDocBatch> = doc_processor_inbox_2.drain_for_test_typed();
+        // A message can be redelivered more than once if the test straddles
+        // several `ack_wait` windows.
+        let mut redelivered_docs = merge_doc_batches(batches).docs;
+        redelivered_docs.dedup();
+        assert_eq!(redelivered_docs, expected_docs);
+
+        source_handle_2.quit().await;
+        jetstream_ctx.delete_stream(&stream).await.unwrap();
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn durable_mode_nak_redelivers_prefetched_messages_promptly() {
+        let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let stream = append_random_suffix("test-nats-source--durable-nak--stream");
+        let jetstream_ctx = setup_nats_stream(&stream).await;
+        let consumer_name = "durable-nak-consumer";
+        // The `ack_wait` is much longer than the test: only a NAK can explain
+        // a prompt redelivery.
+        provision_durable_consumer(&jetstream_ctx, &stream, consumer_name).await;
+
+        let index_id = append_random_suffix("test-nats-source--durable-nak--index");
+        let source_config = get_durable_source_config(&stream, consumer_name);
+        let index_uid = setup_index(metastore.clone(), &index_id, &source_config, &[]).await;
+
+        // The source is driven by hand rather than through a `SourceActor`:
+        // an idle actor keeps polling, so it would process the messages
+        // instead of leaving them prefetched.
+        let source_runtime = SourceRuntimeBuilder::new(index_uid.clone(), source_config.clone())
+            .with_metastore(metastore.clone())
+            .build();
+        let mut source = quickwit_supported_sources()
+            .load_source(source_runtime)
+            .await
+            .unwrap();
+        let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
+        let (doc_processor_mailbox, _doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
+        let source_sink = SourceSink::from(doc_processor_mailbox);
+        let (observable_state_tx, _observable_state_rx) =
+            tokio::sync::watch::channel(JsonValue::Null);
+        let ctx: SourceContext =
+            quickwit_actors::ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
+
+        // A first empty emit issues the pull request: the messages published
+        // next are prefetched into the client buffer but never processed.
+        source.emit_batches(&source_sink, &ctx).await.unwrap();
+        let subject = format!("{stream}.logs");
+        let expected_docs = publish_docs(&jetstream_ctx, &subject, 0..10).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(
+            source
+                .observable_state()
+                .get("num_messages_processed")
+                .unwrap(),
+            &json!(0),
+            "the messages must be prefetched, not processed"
+        );
+
+        source.finalize(&ActorExitStatus::Quit, &ctx).await.unwrap();
+        drop(source);
+
+        let (source_handle_2, doc_processor_inbox_2) =
+            create_source_actor(&universe, metastore, index_uid, source_config).await;
+        wait_for_processed_messages(&source_handle_2, 10, Duration::from_secs(20)).await;
+
+        let batches: Vec<RawDocBatch> = doc_processor_inbox_2.drain_for_test_typed();
+        assert_eq!(merge_doc_batches(batches).docs, expected_docs);
+
+        source_handle_2.quit().await;
+        jetstream_ctx.delete_stream(&stream).await.unwrap();
+        universe.assert_quit().await;
+    }
+
+    /// A truncate covering only part of the delivered messages must ack
+    /// exactly up to its position and leave the rest pending.
+    #[tokio::test]
+    async fn durable_mode_partial_truncate_acks_up_to_position() {
+        let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let stream = append_random_suffix("test-nats-source--durable-partial--stream");
+        let jetstream_ctx = setup_nats_stream(&stream).await;
+        let consumer_name = "durable-partial-consumer";
+        provision_durable_consumer(&jetstream_ctx, &stream, consumer_name).await;
+
+        let subject = format!("{stream}.logs");
+        publish_docs(&jetstream_ctx, &subject, 0..10).await;
+
+        let index_id = append_random_suffix("test-nats-source--durable-partial--index");
+        let source_config = get_durable_source_config(&stream, consumer_name);
+        let index_uid = setup_index(metastore.clone(), &index_id, &source_config, &[]).await;
+
+        let (source_handle, doc_processor_inbox) =
+            create_source_actor(&universe, metastore, index_uid, source_config).await;
+        wait_for_processed_messages(&source_handle, 10, Duration::from_secs(60)).await;
+
+        let batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
+        let batch = merge_doc_batches(batches);
+        let partition_id = batch.checkpoint_delta.partitions().next().unwrap().clone();
+
+        // Sequential publishes on a single pipeline: delivery counters map
+        // one-to-one to stream sequences, so truncating up to position 5 must
+        // ack stream sequences 1 to 5.
+        let partial_checkpoint = SourceCheckpointDelta::from_partition_delta(
+            partition_id,
+            Position::Beginning,
+            Position::offset(5u64),
+        )
+        .unwrap()
+        .get_source_checkpoint();
+        source_handle
+            .mailbox()
+            .send_message(SuggestTruncate(partial_checkpoint))
+            .await
+            .unwrap();
+
+        let mut consumer: PullConsumer = jetstream_ctx
+            .get_consumer_from_stream(consumer_name, stream.as_str())
+            .await
+            .unwrap();
+        wait_for_consumer_ack_state(&mut consumer, 5, 5).await;
+        let observation = source_handle.observe().await;
+        assert_eq!(
+            observation.state.get("num_pending_acks").unwrap(),
+            &json!(5)
+        );
+
+        // The remainder is released by the next truncate.
+        let full_checkpoint = batch.checkpoint_delta.get_source_checkpoint();
+        source_handle
+            .mailbox()
+            .send_message(SuggestTruncate(full_checkpoint))
+            .await
+            .unwrap();
+        wait_for_consumer_ack_state(&mut consumer, 0, 10).await;
+
+        source_handle.quit().await;
+        jetstream_ctx.delete_stream(&stream).await.unwrap();
+        universe.assert_quit().await;
+    }
+
+    /// An empty payload is counted invalid and skipped from the batch, but
+    /// its message must still be acknowledged on truncate: a poison message
+    /// must not wedge the consumer nor a drain.
+    #[tokio::test]
+    async fn durable_mode_empty_message_acked_and_counted_invalid() {
+        let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let stream = append_random_suffix("test-nats-source--durable-empty--stream");
+        let jetstream_ctx = setup_nats_stream(&stream).await;
+        let consumer_name = "durable-empty-consumer";
+        provision_durable_consumer(&jetstream_ctx, &stream, consumer_name).await;
+
+        let subject = format!("{stream}.logs");
+        let valid_docs = [
+            json!({ "id": 0, "subject": subject }).to_string(),
+            json!({ "id": 2, "subject": subject }).to_string(),
+        ];
+        for payload in [
+            Bytes::from(valid_docs[0].clone()),
+            Bytes::new(),
+            Bytes::from(valid_docs[1].clone()),
+        ] {
+            jetstream_ctx
+                .publish(subject.clone(), payload)
+                .await
+                .unwrap()
+                .await
+                .unwrap();
+        }
+
+        let index_id = append_random_suffix("test-nats-source--durable-empty--index");
+        let source_config = get_durable_source_config(&stream, consumer_name);
+        let index_uid = setup_index(metastore.clone(), &index_id, &source_config, &[]).await;
+
+        let (source_handle, doc_processor_inbox) =
+            create_source_actor(&universe, metastore, index_uid, source_config).await;
+        wait_for_processed_messages(&source_handle, 3, Duration::from_secs(60)).await;
+
+        let observation = source_handle.observe().await;
+        assert_eq!(
+            observation.state.get("num_invalid_messages").unwrap(),
+            &json!(1)
+        );
+
+        let batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
+        let batch = merge_doc_batches(batches);
+        assert_eq!(batch.docs, valid_docs);
+
+        // The checkpoint covers the empty message too, and truncating acks it
+        // along with the valid ones.
+        source_handle
+            .mailbox()
+            .send_message(SuggestTruncate(
+                batch.checkpoint_delta.get_source_checkpoint(),
+            ))
+            .await
+            .unwrap();
+        let mut consumer: PullConsumer = jetstream_ctx
+            .get_consumer_from_stream(consumer_name, stream.as_str())
+            .await
+            .unwrap();
+        wait_for_consumer_ack_state(&mut consumer, 0, 3).await;
+
+        source_handle.quit().await;
+        jetstream_ctx.delete_stream(&stream).await.unwrap();
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn durable_mode_missing_consumer() {
         let metastore = metastore_for_test();
         let stream = append_random_suffix("test-nats-source--durable-missing--stream");
         let jetstream_ctx = setup_nats_stream(&stream).await;
