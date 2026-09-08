@@ -52,7 +52,7 @@ use tracing::{Span, debug, error, info, info_span, instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::cluster_client::ClusterClient;
-use crate::collector::{QuickwitAggregations, make_merge_collector};
+use crate::collector::{MergeLevel, QuickwitAggregations, make_merge_collector};
 use crate::cost::{compute_query_complexity_factor, compute_split_query_cost};
 use crate::metrics_trackers::{RootSearchMetricsFuture, RootSearchMetricsStep};
 use crate::scroll_context::{ScrollContext, ScrollKeyAndStartOffset};
@@ -1047,8 +1047,11 @@ pub(crate) async fn search_partial_hits_phase(
 
     let root_resource_stats = progress.resource_stats();
 
-    let merge_collector =
-        make_merge_collector(search_request, searcher_context.get_aggregation_limits())?;
+    let merge_collector = make_merge_collector(
+        search_request,
+        searcher_context.get_aggregation_limits(),
+        MergeLevel::Root,
+    )?;
 
     // Merging is a cpu-bound task. Prioritize it over queued split searches to avoid delaying the
     // final response once all leaf responses are available.
@@ -1670,7 +1673,8 @@ pub async fn search_plan(
         true,
         None,
     )?;
-    let merge_collector = make_merge_collector(&search_request, Default::default())?;
+    let merge_collector =
+        make_merge_collector(&search_request, Default::default(), MergeLevel::Root)?;
     warmup_info.merge(merge_collector.warmup_info());
     warmup_info.simplify();
 
