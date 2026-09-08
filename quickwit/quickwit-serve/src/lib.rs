@@ -1272,6 +1272,7 @@ fn build_ingester_insert_change(
         client: ingester_service,
         status: node.ingester_status,
         availability_zone: node.availability_zone().map(|az| az.to_string()),
+        generation_id: node.generation_id,
     };
     Change::Insert(node_id, pool_entry)
 }
