@@ -131,12 +131,14 @@ The NATS source consumes a JetStream stream through a durable consumer, so messa
 
 ```bash
 nats stream add stackoverflow --subjects "stackoverflow.posts" --defaults
-nats consumer add stackoverflow quickwit-consumer --pull --deliver all --ack explicit --wait 5m --defaults
+nats consumer add stackoverflow quickwit-consumer --pull --deliver all --ack all --max-pending=-1 --wait 5m --defaults
 ```
 
 :::info
 
-The consumer must use the explicit ack policy: the source acknowledges each message once it is durably indexed, and the consumer's ack floor is the resume point. The subject filters, the deliver policy, and the ack tuning are properties of the consumer, not of the Quickwit source; the ack wait must exceed the indexing commit timeout. See the [NATS source reference](../configuration/source-config.md#nats-source) for details.
+The consumer must use the `all` or the `explicit` ack policy: the source acknowledges messages once they are durably indexed, and the consumer's ack floor is the resume point. The subject filters, the deliver policy, and the ack tuning are properties of the consumer, not of the Quickwit source; the ack wait must exceed the indexing commit timeout.
+
+`--ack all` is used here because this source runs a single pipeline. One acknowledgment then covers every message up to it, so a commit costs one acknowledgment instead of one per message — the same shape as a Kafka offset commit, and the difference between the two is what bounds throughput on small messages. It is only safe with a single puller, so a consumer shared by several pipelines needs `--ack explicit` instead; see [Ack policy](../configuration/source-config.md#ack-policy) and [Scaling](../configuration/source-config.md#scaling) for how to grow past one pipeline.
 
 :::
 

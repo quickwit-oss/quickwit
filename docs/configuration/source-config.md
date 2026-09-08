@@ -189,15 +189,36 @@ A NATS source reads data from a [NATS JetStream](https://docs.nats.io/nats-conce
 
 A tutorial is available [here](/docs/ingest-data/nats.md).
 
-The durable consumer is provisioned externally — Quickwit only ever fetches it, and never creates, updates, nor deletes it — so its lifecycle, subject filters, deliver policy, and ack tuning (`ack_wait`, `max_ack_pending`) belong to whoever provisioned it. The consumer must use the **explicit ack policy**: the source acknowledges each message once the split containing it is published, and the consumer's ack floor is the resume point.
+The durable consumer is provisioned externally — Quickwit only ever fetches it, and never creates, updates, nor deletes it — so its lifecycle, subject filters, deliver policy, and ack tuning (`ack_wait`, `max_ack_pending`) belong to whoever provisioned it. The consumer must use either the **explicit** or the **all** ack policy: the source acknowledges messages once the split containing them is published, and the consumer's ack floor is the resume point. Which of the two to pick is a throughput decision, covered in [Ack policy](#ack-policy) below.
 
-Delivery is **exactly-once on planned teardowns and at-least-once on crashes**. On a planned teardown (node shutdown, pipeline reassignment on a `num_pipelines` change), the pipeline is drained first: the source stops pulling, the in-flight messages are committed, published, and acknowledged before the pipeline stops, so nothing is indexed twice. Messages the pipeline had prefetched but not processed are negatively acknowledged so the remaining pipelines pick them up immediately. The drain runs under a time budget, the indexer's [`shutdown_drain_timeout`](node-config.md#indexer-configuration). A drain that cannot finish within it (e.g. the object storage or the metastore is unavailable) is abandoned and delivery degrades to at-least-once, as on a crash. After a crash, the unacknowledged messages are redelivered after `ack_wait` and indexed again, as duplicates. `ack_wait` must exceed the end-to-end publish latency (roughly the commit timeout plus the upload time), otherwise messages are redelivered while they are still being indexed. `max_ack_pending` bounds the messages in flight across all pipelines of the consumer, and therefore the aggregate throughput.
+Delivery is **exactly-once on planned teardowns and at-least-once on crashes**. On a planned teardown (node shutdown, pipeline reassignment on a `num_pipelines` change), the pipeline is drained first: the source stops pulling, the in-flight messages are committed, published, and acknowledged before the pipeline stops, so nothing is indexed twice. Messages the pipeline had prefetched but not processed are negatively acknowledged so the remaining pipelines pick them up immediately. The drain runs under a time budget, the indexer's [`shutdown_drain_timeout`](node-config.md#indexer-configuration). A drain that cannot finish within it (e.g. the object storage or the metastore is unavailable) is abandoned and delivery degrades to at-least-once, as on a crash. After a crash, the unacknowledged messages are redelivered after `ack_wait` and indexed again, as duplicates. `ack_wait` must exceed the end-to-end publish latency (roughly the commit timeout plus the upload time), otherwise messages are redelivered while they are still being indexed.
 
-**Scaling**
+#### Ack policy
 
-Multiple indexing pipelines can share the consumer: NATS load-balances the messages across them, so scaling up or down is a plain `num_pipelines` update, and the control plane places the pipelines across the indexers of the cluster.
+The ack policy decides how many acknowledgments a corpus costs, and at small message sizes that is what bounds the source's throughput. JetStream delivery is cheap; per-message acknowledgment is not.
 
-**Monitoring**
+- **`explicit`** — one acknowledgment per message. Required whenever several pipelines share the consumer, because acknowledging a message under the `all` policy would also acknowledge the messages a sibling pipeline is still indexing.
+- **`all`** — one acknowledgment covers every message up to it, so the source sends a single acknowledgment per commit instead of one per message, the same shape as a Kafka offset commit. Quickwit rejects a source configured with `num_pipelines` greater than 1 on such a consumer, since it is only sound when the consumer has a **single puller**.
+
+Prefer `all`, and get parallelism from partitioning rather than from several pipelines on one consumer. On a 16 vCPU host indexing 1 KiB messages, moving one pipeline from `explicit` to `all` cut broker CPU by 56 % and total CPU per indexed GiB by 31 %; the gain is larger the smaller the messages, and negligible above a few hundred KiB, where the message rate is low enough that acknowledgments no longer matter.
+
+#### Scaling
+
+There are two ways to spread a stream over several pipelines, and they do not perform alike.
+
+**One stream per pipeline** (recommended). Partition the data into one stream per pipeline — the equivalent of Kafka partitions — give each stream its own consumer, and add one Quickwit source with `num_pipelines: 1` per stream. Each consumer then has a single puller, which is what makes the `all` ack policy usable, and no consumer reads a message it does not own. This is the only shape that scales: on the host above, sixteen streams indexed the same 1 KiB corpus 2.7 times faster than sixteen pipelines sharing one consumer.
+
+**One shared consumer** (simplest). Several pipelines bind to the same consumer and NATS load-balances the messages across them, so scaling is a plain `num_pipelines` update and the control plane places the pipelines across the indexers of the cluster. This requires the `explicit` policy, and the resulting per-message acknowledgments cap the aggregate throughput regardless of how many pipelines are added — adding pipelines beyond a handful buys close to nothing at small message sizes.
+
+:::warning
+
+Do not partition a single stream by giving each pipeline a subject-filtered consumer. Unless a subject's messages happen to be contiguous in the stream, every consumer scans past the messages it does not own, and the broker saturates: sixteen subject-filtered consumers over sixteen interleaved subjects were 5.5 times *slower* than one shared consumer, with the broker pinned and the indexers idle.
+
+:::
+
+`max_ack_pending` bounds the messages in flight and therefore the achievable throughput. Leave it unlimited (`-1`) unless there is a reason to bound the source's memory: nothing is acknowledged until a split is published, so a whole commit window is always ack-pending, and a low value stalls the pipelines waiting on commits. Under the `all` policy the window is acknowledged by a single message, so the bound has to cover the entire window rather than a sliding fraction of it.
+
+#### Monitoring
 
 Being durable, the consumer is observable through NATS's own monitoring (`nats consumer info`, exporters): `num_pending` is the indexing lag and `num_ack_pending` the in-flight window, both available even while the pipelines are down. The source also reports `num_pending_acks` (messages indexed but whose split is not published yet) in its observable state.
 
@@ -261,7 +282,7 @@ EOF
 
 ## Number of pipelines
 
-The `num_pipelines` parameter is only available for distributed sources like Kafka, GCP PubSub, and Pulsar.
+The `num_pipelines` parameter is only available for distributed sources like Kafka, GCP PubSub, NATS, and Pulsar.
 
 It defines the number of pipelines to run on a cluster for the source. The actual placement of these pipelines on the different indexer
 will be decided by the control plane.
