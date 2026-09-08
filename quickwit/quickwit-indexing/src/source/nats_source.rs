@@ -22,9 +22,7 @@
 //! Several indexing pipelines can share the consumer: NATS load-balances the
 //! messages across them, so scaling is a plain `num_pipelines` update. That
 //! shape requires `AckPolicy::Explicit`, which costs one acknowledgment per
-//! message and is what bounds throughput on small messages; a consumer with a
-//! single puller can use `AckPolicy::All` instead and spend one acknowledgment
-//! per commit. See `ack_up_to` and `docs/configuration/source-config.md`.
+//! message and is what bounds throughput on small messages.
 //!
 //! Being durable, the consumer is observable through NATS's own monitoring
 //! even while the pipelines are down.
@@ -104,23 +102,9 @@ pub struct NatsSource {
     /// Messages delivered but not published yet, keyed by delivery counter.
     /// Bounded by the consumer's `max_ack_pending`: the server stops delivering
     /// when too many messages are unacknowledged.
-    pending_acks: BTreeMap<u64, PendingAck>,
-    /// How the consumer wants its messages acknowledged, read off the consumer
-    /// at startup. `All` collapses a whole checkpoint range into a single ack,
-    /// `Explicit` costs one ack per message. See `ack_up_to`.
-    ack_policy: AckPolicy,
-    state: NatsSourceState,
-}
+    pending_acks: BTreeMap<u64, Subject>,
 
-/// A delivered message waiting to be published, and what it takes to ack it.
-///
-/// The stream sequence is kept because `AckPolicy::All` acknowledges *by stream
-/// sequence*: acking one message acks every message at or below its sequence.
-/// Delivery order and stream order only coincide while nothing is redelivered,
-/// so the sequence has to be carried rather than inferred from the map's key.
-struct PendingAck {
-    ack_subject: Subject,
-    stream_sequence: u64,
+    state: NatsSourceState,
 }
 
 impl fmt::Debug for NatsSource {
@@ -152,12 +136,7 @@ impl NatsSource {
             "starting NATS source"
         );
 
-        let (nats_client, consumer) = connect_and_fetch_consumer(
-            &source_params,
-            source_runtime.source_config.num_pipelines.get(),
-        )
-        .await?;
-        let ack_policy = consumer.cached_info().config.ack_policy;
+        let (nats_client, consumer) = connect_and_fetch_consumer(&source_params).await?;
         let message_stream = consumer
             .stream()
             .max_messages_per_batch(pull_max_messages_per_batch())
@@ -185,7 +164,6 @@ impl NatsSource {
             partition_id,
             delivery_counter: 0,
             pending_acks: BTreeMap::new(),
-            ack_policy,
             state: NatsSourceState::default(),
         })
     }
@@ -227,18 +205,56 @@ impl NatsSource {
                 Position::offset(self.delivery_counter),
             )
             .context("failed to record partition delta")?;
-        self.pending_acks.insert(
-            self.delivery_counter,
-            PendingAck {
-                ack_subject,
-                stream_sequence,
-            },
-        );
+        self.pending_acks.insert(self.delivery_counter, ack_subject);
 
         self.state.num_bytes_processed += num_bytes;
         self.state.num_messages_processed += 1;
 
         Ok(())
+    }
+
+    /// Sends server-confirmed acknowledgments ("double acks") for the messages up
+    /// to `published_up_to`.
+    async fn ack_up_to(&mut self, published_up_to: u64) {
+        let acks: Vec<(u64, Subject)> = self
+            .pending_acks
+            .range(..=published_up_to)
+            .map(|(delivery_counter, pending_ack)| (*delivery_counter, pending_ack.clone()))
+            .collect();
+        if acks.is_empty() {
+            return;
+        }
+        let mut ack_results = futures::stream::iter(acks)
+            .map(async |(delivery_counter, ack_subject)| {
+                // Mirrors `jetstream::Message::double_ack()`, but through the
+                // client's muxed inbox rather than a subscription per message.
+                let ack_result = self
+                    .nats_client
+                    .request(ack_subject, AckKind::Ack.into())
+                    .await;
+                (delivery_counter, ack_result)
+            })
+            .buffer_unordered(MAX_CONCURRENT_ACK_REQUESTS);
+
+        let mut num_acks = 0usize;
+        let mut num_failed_acks = 0usize;
+        let mut last_ack_error = None;
+        while let Some((delivery_counter, ack_result)) = ack_results.next().await {
+            match ack_result {
+                Ok(_ack_reply) => {
+                    self.pending_acks.remove(&delivery_counter);
+                    num_acks += 1;
+                }
+                Err(error) => {
+                    num_failed_acks += 1;
+                    last_ack_error = Some(error);
+                }
+            }
+        }
+        if let Some(error) = last_ack_error {
+            warn!(%error, num_failed_acks, "failed to ack NATS messages");
+        }
+        debug!(num_acks, "acked published messages");
     }
 }
 
@@ -312,13 +328,7 @@ impl Source for NatsSource {
         let Some(published_up_to) = position.as_u64() else {
             return Ok(());
         };
-        ctx.protect_future(ack_up_to(
-            &self.nats_client,
-            &mut self.pending_acks,
-            published_up_to,
-            self.ack_policy,
-        ))
-        .await;
+        ctx.protect_future(self.ack_up_to(published_up_to)).await;
         Ok(())
     }
 
@@ -469,110 +479,9 @@ fn is_transient_stream_error(error: &MessagesError) -> bool {
 /// messages: 1024 is indistinguishable from 128, and 8192 is 20 % slower.
 const MAX_CONCURRENT_ACK_REQUESTS: usize = 128;
 
-/// Sends server-confirmed acknowledgments ("double acks") for the messages up
-/// to `published_up_to`.
-async fn ack_up_to(
-    nats_client: &async_nats::Client,
-    pending_acks: &mut BTreeMap<u64, PendingAck>,
-    published_up_to: u64,
-    ack_policy: AckPolicy,
-) {
-    if ack_policy == AckPolicy::All {
-        ack_all_up_to(nats_client, pending_acks, published_up_to).await;
-        return;
-    }
-    let acks: Vec<(u64, Subject)> = pending_acks
-        .range(..=published_up_to)
-        .map(|(delivery_counter, pending_ack)| (*delivery_counter, pending_ack.ack_subject.clone()))
-        .collect();
-    if acks.is_empty() {
-        return;
-    }
-    let mut ack_results = futures::stream::iter(acks)
-        .map(|(delivery_counter, ack_subject)| async move {
-            // Mirrors `jetstream::Message::double_ack()`, but through the
-            // client's muxed inbox rather than a subscription per message.
-            let ack_result = nats_client.request(ack_subject, AckKind::Ack.into()).await;
-            (delivery_counter, ack_result)
-        })
-        .buffer_unordered(MAX_CONCURRENT_ACK_REQUESTS);
-    let mut num_acks = 0usize;
-    let mut num_failed_acks = 0usize;
-    let mut last_ack_error = None;
-    while let Some((delivery_counter, ack_result)) = ack_results.next().await {
-        match ack_result {
-            Ok(_ack_reply) => {
-                pending_acks.remove(&delivery_counter);
-                num_acks += 1;
-            }
-            Err(error) => {
-                num_failed_acks += 1;
-                last_ack_error = Some(error);
-            }
-        }
-    }
-    if let Some(error) = last_ack_error {
-        warn!(%error, num_failed_acks, "failed to ack NATS messages");
-    }
-    debug!(num_acks, "acked published messages");
-}
-
-/// Acks the whole published range with a single request.
-///
-/// `AckPolicy::All` makes the server treat one ack as an ack of every message at
-/// or below that message's stream sequence, so the ack of the highest published
-/// sequence stands in for the entire range. It requires that num_pipeline = 1,
-/// otherwise this is unsound.
-///
-/// Nothing is dropped from `pending_acks` unless the server confirmed the ack,
-/// so a failure leaves the range pending and the next `suggest_truncate` retries
-/// it. `is_drained` therefore still reports the truth.
-async fn ack_all_up_to(
-    nats_client: &async_nats::Client,
-    pending_acks: &mut BTreeMap<u64, PendingAck>,
-    published_up_to: u64,
-) {
-    // A redelivery is delivered late but carries its original, lower stream
-    // sequence, so delivery order and stream order can disagree. Acking the
-    // highest published sequence would then also ack a redelivered message that
-    // is still waiting to be published, and a crash would lose it. The highest
-    // sequence that is safe to ack is therefore the highest published one that
-    // is still below every unpublished one.
-    let first_unpublished_sequence = pending_acks
-        .range(published_up_to.saturating_add(1)..)
-        .map(|(_, pending_ack)| pending_ack.stream_sequence)
-        .min()
-        .unwrap_or(u64::MAX);
-    let Some((_, highest_safe_ack)) = pending_acks
-        .range(..=published_up_to)
-        .filter(|(_, pending_ack)| pending_ack.stream_sequence < first_unpublished_sequence)
-        .max_by_key(|(_, pending_ack)| pending_ack.stream_sequence)
-    else {
-        return;
-    };
-    let ack_subject = highest_safe_ack.ack_subject.clone();
-    let stream_sequence = highest_safe_ack.stream_sequence;
-    if let Err(error) = nats_client.request(ack_subject, AckKind::Ack.into()).await {
-        warn!(%error, stream_sequence, "failed to ack NATS messages up to a stream sequence");
-        return;
-    }
-    // Only the messages the server actually acked are dropped. A published
-    // message above `stream_sequence` stays pending and is covered by the next
-    // call, which keeps `is_drained` honest either way.
-    let num_pending_before = pending_acks.len();
-    pending_acks.retain(|delivery_counter, pending_ack| {
-        *delivery_counter > published_up_to || pending_ack.stream_sequence > stream_sequence
-    });
-    debug!(
-        num_acked = num_pending_before - pending_acks.len(),
-        stream_sequence, "acked published messages up to a stream sequence"
-    );
-}
-
 async fn fetch_durable_consumer(
     jetstream_stream: &jetstream::stream::Stream,
     consumer_name: &str,
-    num_pipelines: usize,
 ) -> anyhow::Result<PullConsumer> {
     let consumer: PullConsumer = jetstream_stream
         .get_consumer(consumer_name)
@@ -580,19 +489,9 @@ async fn fetch_durable_consumer(
         .map_err(|error| anyhow!("failed to find NATS consumer `{consumer_name}`: {error}"))?;
     let ack_policy = consumer.cached_info().config.ack_policy;
     ensure!(
-        matches!(ack_policy, AckPolicy::Explicit | AckPolicy::All),
-        "NATS consumer `{consumer_name}` must use the explicit or all ack policy, got \
+        ack_policy == AckPolicy::Explicit,
+        "NATS consumer `{consumer_name}` must use the explicit ack policy, got \
          `{ack_policy:?}`"
-    );
-    // `AckPolicy::All` acks by stream sequence, so one pipeline's ack would also
-    // ack the lower-sequenced messages its siblings are still indexing, and a
-    // crash would lose them. Sharing a consumer requires per-message acks.
-    ensure!(
-        ack_policy == AckPolicy::Explicit || num_pipelines == 1,
-        "NATS consumer `{consumer_name}` uses the all ack policy, which acknowledges every \
-         message up to the acked one and is only safe with a single puller, but the source is \
-         configured with {num_pipelines} pipelines: use the explicit ack policy, or one consumer \
-         per pipeline"
     );
     Ok(consumer)
 }
@@ -677,7 +576,6 @@ async fn connect_nats(params: &NatsSourceParams) -> anyhow::Result<async_nats::C
 
 async fn connect_and_fetch_consumer(
     params: &NatsSourceParams,
-    num_pipelines: usize,
 ) -> anyhow::Result<(async_nats::Client, PullConsumer)> {
     let nats_client = connect_nats(params).await?;
     let jetstream_ctx = jetstream::new(nats_client.clone());
@@ -685,15 +583,12 @@ async fn connect_and_fetch_consumer(
         .get_stream(&params.stream)
         .await
         .with_context(|| format!("failed to find NATS JetStream stream `{}`", params.stream))?;
-    let consumer =
-        fetch_durable_consumer(&jetstream_stream, &params.consumer, num_pipelines).await?;
+    let consumer = fetch_durable_consumer(&jetstream_stream, &params.consumer).await?;
     Ok((nats_client, consumer))
 }
 
 pub(crate) async fn check_connectivity(params: &NatsSourceParams) -> anyhow::Result<()> {
-    // Connectivity only: a single pipeline is the permissive case, so this never
-    // rejects a consumer the source itself would accept.
-    connect_and_fetch_consumer(params, 1).await?;
+    connect_and_fetch_consumer(params).await?;
     Ok(())
 }
 
