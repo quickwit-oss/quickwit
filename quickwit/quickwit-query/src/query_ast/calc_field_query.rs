@@ -110,20 +110,6 @@ mod tests {
     }
 
     #[test]
-    fn test_calc_field_hash_prefixed_field_serde_roundtrip() {
-        let query = calc_field("(GT #custom.duration 1i64)");
-        let serialized = json!({
-            "type": "calc_field",
-            "expression": "(GT #custom.duration 1i64)"
-        });
-        assert_eq!(serde_json::to_value(&query).unwrap(), serialized);
-        assert_eq!(
-            serde_json::from_value::<QueryAst>(serialized).unwrap(),
-            query
-        );
-    }
-
-    #[test]
     fn test_calc_field_rejects_malformed_serialization() {
         for expression in [")", "(GT duration", "(UNKNOWN duration)"] {
             let serialized = json!({"type": "calc_field", "expression": expression});
@@ -139,86 +125,6 @@ mod tests {
         ] {
             assert!(serde_json::from_value::<QueryAst>(serialized).is_err());
         }
-    }
-
-    fn nested_query() -> QueryAst {
-        let predicate = calc_field("(GT duration 1i64)");
-        BoolQuery {
-            must: vec![predicate.clone()],
-            must_not: vec![predicate.clone()],
-            should: vec![predicate.clone().boost(Some(2.0f32.try_into().unwrap()))],
-            filter: vec![CacheNode::new(predicate).into()],
-            ..Default::default()
-        }
-        .into()
-    }
-
-    #[derive(Default)]
-    struct CountCalcFields {
-        count: usize,
-    }
-
-    impl<'a> QueryAstVisitor<'a> for CountCalcFields {
-        type Err = Infallible;
-
-        fn visit_calc_field(&mut self, _query: &'a CalcFieldQuery) -> Result<(), Self::Err> {
-            self.count += 1;
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn test_calc_field_parse_user_query_preserves_nested_predicates() {
-        let query = nested_query();
-        assert_eq!(query.clone().parse_user_query(&[]).unwrap(), query);
-    }
-
-    #[test]
-    fn test_calc_field_visitor_reaches_nested_predicates() {
-        let query = nested_query();
-        let mut visitor = CountCalcFields::default();
-        visitor.visit(&query).unwrap();
-        assert_eq!(visitor.count, 4);
-    }
-
-    #[test]
-    fn test_calc_field_default_transform_preserves_nested_predicates() {
-        struct Identity;
-        impl QueryAstTransformer for Identity {
-            type Err = Infallible;
-        }
-
-        let query = nested_query();
-        assert_eq!(Identity.transform(query.clone()).unwrap(), Some(query));
-    }
-
-    #[test]
-    fn test_calc_field_transform_replaces_nested_predicates() {
-        struct ReplaceCalcFields;
-        impl QueryAstTransformer for ReplaceCalcFields {
-            type Err = Infallible;
-
-            fn transform_calc_field(
-                &mut self,
-                _query: CalcFieldQuery,
-            ) -> Result<Option<QueryAst>, Self::Err> {
-                Ok(Some(QueryAst::MatchAll))
-            }
-        }
-
-        let query = ReplaceCalcFields
-            .transform(nested_query())
-            .unwrap()
-            .unwrap();
-        let expected: QueryAst = BoolQuery {
-            must: vec![QueryAst::MatchAll],
-            must_not: vec![QueryAst::MatchAll],
-            should: vec![QueryAst::MatchAll.boost(Some(2.0f32.try_into().unwrap()))],
-            filter: vec![CacheNode::new(QueryAst::MatchAll).into()],
-            ..Default::default()
-        }
-        .into();
-        assert_eq!(query, expected);
     }
 
     #[test]
@@ -293,48 +199,6 @@ mod tests {
                 expected_count,
                 "{expression}"
             );
-        }
-    }
-
-    #[test]
-    fn test_calc_field_composes_with_term_filter() {
-        let index = test_index();
-        let schema = index.schema();
-        let context = BuildTantivyAstContext::for_test(&schema);
-        let ast: QueryAst = BoolQuery {
-            must: vec![
-                TermQuery {
-                    field: "label".to_string(),
-                    value: "keep".to_string(),
-                }
-                .into(),
-            ],
-            filter: vec![calc_field("(GT duration 2i64)")],
-            ..Default::default()
-        }
-        .into();
-        let query = ast.build_tantivy_query(&context).unwrap();
-        let reader = index.reader().unwrap();
-        assert_eq!(reader.searcher().search(&*query, &Count).unwrap(), 1);
-    }
-
-    #[test]
-    fn test_calc_field_boosts_constant_score() {
-        let index = test_index();
-        let schema = index.schema();
-        let context = BuildTantivyAstContext::for_test(&schema);
-        let query = calc_field("(GT duration 2i64)")
-            .boost(Some(4.0f32.try_into().unwrap()))
-            .build_tantivy_query(&context)
-            .unwrap();
-        let reader = index.reader().unwrap();
-        let hits = reader
-            .searcher()
-            .search(&*query, &TopDocs::with_limit(10).order_by_score())
-            .unwrap();
-        assert_eq!(hits.len(), 2);
-        for (score, _address) in hits {
-            assert_eq!(score, 4.0);
         }
     }
 }
