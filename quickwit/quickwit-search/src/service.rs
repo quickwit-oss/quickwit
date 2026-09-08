@@ -29,7 +29,8 @@ use quickwit_proto::search::{
     SearchPlanResponse, SearchRequest, SearchResponse, SnippetRequest,
 };
 use quickwit_storage::{
-    MemorySizedCache, QuickwitCache, SearchSplitCache, StorageCache, StorageResolver,
+    FoyerSplitRangeCache, MemorySizedCache, QuickwitCache, SearchSplitCache, StorageCache,
+    StorageResolver,
 };
 use tantivy::aggregation::AggregationLimitsGuard;
 
@@ -418,6 +419,8 @@ pub struct SearcherContext {
     pub predicate_cache: Arc<PredicateCacheImpl>,
     /// Search split cache. `None` if no split cache is configured.
     pub split_cache_opt: Option<Arc<SearchSplitCache>>,
+    /// Process-wide split range disk cache. `None` if not configured.
+    pub split_range_disk_cache_opt: Option<Arc<FoyerSplitRangeCache>>,
     /// List fields cache. Caches the raw fields-metadata blob for a given split.
     pub list_fields_cache: ListFieldsCache,
     /// The aggregation limits are passed to limit the memory usage.
@@ -440,17 +443,19 @@ impl SearcherContext {
     #[cfg(test)]
     pub fn for_test() -> SearcherContext {
         let searcher_config = SearcherConfig::default();
-        SearcherContext::new_without_invoker(searcher_config, None)
+        SearcherContext::new_without_invoker(searcher_config, None, None)
     }
 
     /// Creates a new searcher context without a lambda invoker.
     pub fn new_without_invoker(
         searcher_config: SearcherConfig,
         split_cache_opt: Option<Arc<SearchSplitCache>>,
+        split_range_disk_cache_opt: Option<Arc<FoyerSplitRangeCache>>,
     ) -> Self {
         Self::new(
             searcher_config,
             split_cache_opt,
+            split_range_disk_cache_opt,
             None::<Box<dyn LambdaLeafSearchInvoker>>,
         )
     }
@@ -459,6 +464,7 @@ impl SearcherContext {
     pub fn new(
         searcher_config: SearcherConfig,
         split_cache_opt: Option<Arc<SearchSplitCache>>,
+        split_range_disk_cache_opt: Option<Arc<FoyerSplitRangeCache>>,
         lambda_invoker: Option<impl LambdaLeafSearchInvoker + 'static>,
     ) -> Self {
         let global_split_footer_cache = MemorySizedCache::from_config(
@@ -469,8 +475,12 @@ impl SearcherContext {
             searcher_config.max_num_concurrent_split_searches,
             searcher_config.warmup_memory_budget,
         );
-        let storage_long_term_cache =
-            Arc::new(QuickwitCache::new(&searcher_config.fast_field_cache));
+        let fast_field_cache = searcher_config.resolved_fast_field_cache();
+        let storage_long_term_cache = if fast_field_cache.capacity().as_u64() == 0 {
+            Arc::new(QuickwitCache::empty())
+        } else {
+            Arc::new(QuickwitCache::new(&fast_field_cache))
+        };
         let leaf_search_cache = LeafSearchCache::new(&searcher_config.partial_request_cache);
         let predicate_cache = PredicateCacheImpl::new(&searcher_config.predicate_cache);
         let list_fields_cache = ListFieldsCache::new(&searcher_config.partial_request_cache);
@@ -491,6 +501,7 @@ impl SearcherContext {
             leaf_search_cache,
             list_fields_cache,
             split_cache_opt,
+            split_range_disk_cache_opt,
             aggregation_limit,
             lambda_invoker,
         }
@@ -499,5 +510,54 @@ impl SearcherContext {
     /// Returns the shared instance to track the aggregation memory usage.
     pub fn get_aggregation_limits(&self) -> AggregationLimitsGuard {
         self.aggregation_limit.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use quickwit_config::{CacheConfig, SearcherConfig};
+    use quickwit_storage::OwnedBytes;
+
+    use super::SearcherContext;
+
+    #[tokio::test]
+    async fn test_zero_capacity_fast_field_cache_does_not_retain_entries() {
+        let mut searcher_config = SearcherConfig::default();
+        searcher_config.fast_field_cache = Some(CacheConfig::no_cache());
+        let searcher_context = SearcherContext::new_without_invoker(searcher_config, None, None);
+        let path = PathBuf::from("segment.fast");
+        searcher_context
+            .fast_fields_cache
+            .put(path.clone(), 0..3, OwnedBytes::new(&b"abc"[..]))
+            .await;
+        assert!(
+            searcher_context
+                .fast_fields_cache
+                .get(path.as_path(), 0..3)
+                .await
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_nonzero_fast_field_cache_retains_entries() {
+        let searcher_context =
+            SearcherContext::new_without_invoker(SearcherConfig::default(), None, None);
+        let path = PathBuf::from("segment.fast");
+        searcher_context
+            .fast_fields_cache
+            .put(path.clone(), 0..3, OwnedBytes::new(&b"abc"[..]))
+            .await;
+        assert_eq!(
+            searcher_context
+                .fast_fields_cache
+                .get(path.as_path(), 0..3)
+                .await
+                .unwrap()
+                .as_slice(),
+            b"abc"
+        );
     }
 }

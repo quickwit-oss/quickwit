@@ -54,6 +54,7 @@ quickwit-storage = { workspace = true }
 assert-json-diff = { workspace = true }
 proptest = { workspace = true }
 serde_json = { workspace = true }
+tempfile = { workspace = true }
 
 quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
