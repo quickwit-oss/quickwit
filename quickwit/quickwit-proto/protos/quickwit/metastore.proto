@@ -39,6 +39,31 @@ enum SourceType {
   SOURCE_TYPE_STDIN = 13;
 }
 
+// Immutable metadata embedded directly in a split so that the metastore split metadata can be
+// reconstructed if the metastore database is lost.
+message SplitRecoveryMetadata {
+  string split_id = 1;
+  quickwit.common.IndexUid index_uid = 2;
+  string source_id = 3;
+  string node_id = 4;
+  quickwit.common.DocMappingUid doc_mapping_uid = 5;
+  uint64 partition_id = 6;
+  uint64 num_docs = 7;
+  uint64 uncompressed_docs_size_bytes = 8;
+  optional int64 time_range_start_inclusive = 9;
+  optional int64 time_range_end_inclusive = 10;
+  int64 create_timestamp = 11;
+  repeated string tags = 12;
+  uint64 delete_opstamp = 13;
+  uint64 num_merge_ops = 14;
+
+  // Split IDs directly replaced when this split was published.
+  repeated string parent_split_ids = 15;
+
+  // None means the split is mature; otherwise, this is its maturation period in milliseconds.
+  optional uint64 maturation_period_millis = 16;
+}
+
 // Metastore meant to manage Quickwit's indexes, their splits and delete tasks.
 //
 // I. Index and splits management.

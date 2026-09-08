@@ -27,16 +27,18 @@ use quickwit_common::pubsub::EventBroker;
 use quickwit_common::spawn_named_task;
 use quickwit_config::RetentionPolicy;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_metastore::{SplitMetadata, StageSplitsRequestExt};
+use quickwit_metastore::{SplitMaturity, SplitMetadata, StageSplitsRequestExt};
 use quickwit_metrics::{gauge, label_values};
-use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, StageSplitsRequest};
+use quickwit_proto::metastore::{
+    MetastoreService, MetastoreServiceClient, SplitRecoveryMetadata, StageSplitsRequest,
+};
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
 use quickwit_proto::types::IndexUid;
-use quickwit_storage::SplitPayloadBuilder;
+use quickwit_storage::{SplitPayload, SplitPayloadBuilder};
 use serde::Serialize;
 use tokio::sync::oneshot::Sender;
 use tokio::sync::{Semaphore, SemaphorePermit, oneshot};
-use tracing::{Instrument, Span, debug, info, instrument, warn};
+use tracing::{Instrument, Span, debug, error, info, instrument, warn};
 
 use crate::actors::Publisher;
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
@@ -129,7 +131,7 @@ impl SplitsUpdateSender {
         if let SplitsUpdateSender::Sequencer(split_uploader_tx) = self
             && split_uploader_tx.send(SequencerCommand::Discard).is_err()
         {
-            bail!("failed to send cancel command to sequencer. the sequencer is probably dead");
+            bail!("failed to send cancel command to sequencer: it is probably dead");
         }
         Ok(())
     }
@@ -304,85 +306,90 @@ impl Handler<PackagedSplitBatch> for Uploader {
                 fail_point!("uploader:intask:before");
 
                 let mut split_metadata_list = Vec::with_capacity(batch.splits.len());
+                let mut split_payloads = Vec::with_capacity(batch.splits.len());
                 let mut report_splits: Vec<ReportSplit> = Vec::with_capacity(batch.splits.len());
 
                 for packaged_split in batch.splits.iter() {
                     if batch.publish_lock.is_dead() {
                         // TODO: Remove the junk right away?
                         info!("splits' publish lock is dead");
-                        if let Err(e) = split_update_sender.discard() {
-                            warn!(cause=?e, "could not discard split");
+
+                        if let Err(error) = split_update_sender.discard() {
+                            error!(?error, "failed to discard split");
                         }
                         return;
                     }
 
-                    let split_streamer = match SplitPayloadBuilder::get_split_payload(
-                        &packaged_split.split_files,
-                        &packaged_split.serialized_split_fields,
-                        &packaged_split.hotcache_bytes,
+                    let (split_metadata, split_payload) = match prepare_split_for_upload(
+                        packaged_split,
+                        &merge_policy,
+                        retention_policy.as_ref(),
                     ) {
-                        Ok(split_streamer) => split_streamer,
-                        Err(e) => {
-                            warn!(cause=?e, split_id=packaged_split.split_id_str(), "could not create split streamer");
+                        Ok(prepared_split) => prepared_split,
+                        Err(error) => {
+                            error!(
+                                ?error,
+                                split_id = packaged_split.split_id(),
+                                "failed to prepare split for upload"
+                            );
                             return;
                         }
                     };
-                    let split_metadata = create_split_metadata(
-                        &merge_policy,
-                        retention_policy.as_ref(),
-                        &packaged_split.split_attrs,
-                        packaged_split.tags.clone(),
-                        split_streamer.footer_range.start..split_streamer.footer_range.end,
-                    );
 
                     report_splits.push(ReportSplit {
                         storage_uri: split_store.remote_uri().to_string(),
-                        split_id: packaged_split.split_id_str().to_string(),
+                        split_id: packaged_split.split_id().to_string(),
                     });
 
                     split_metadata_list.push(split_metadata);
-
+                    split_payloads.push(split_payload);
                 }
 
-                let stage_splits_request = match StageSplitsRequest::try_from_splits_metadata(index_uid.clone(), split_metadata_list.clone()) {
+                let stage_splits_request = match StageSplitsRequest::try_from_splits_metadata(
+                    index_uid.clone(),
+                    split_metadata_list.clone(),
+                ) {
                     Ok(stage_splits_request) => stage_splits_request,
-                    Err(e) => {
-                        warn!(cause=?e, "could not create stage splits request");
+                    Err(error) => {
+                        error!(?error, "failed to create stage splits request");
                         return;
                     }
                 };
-                if let Err(e) = metastore
-                    .clone()
-                    .stage_splits(stage_splits_request)
-                    .await
-                {
-                    warn!(cause=?e, "failed to stage splits");
+                if let Err(error) = metastore.stage_splits(stage_splits_request).await {
+                    error!(?error, "failed to stage splits");
                     return;
                 };
 
-                counters.num_staged_splits.fetch_add(split_metadata_list.len() as u64, Ordering::SeqCst);
+                counters
+                    .num_staged_splits
+                    .fetch_add(split_metadata_list.len() as u64, Ordering::Relaxed);
 
                 let mut packaged_splits_and_metadata = Vec::with_capacity(batch.splits.len());
 
                 event_broker.publish(ReportSplitsRequest { report_splits });
 
-                for (packaged_split, metadata) in batch.splits.into_iter().zip(split_metadata_list) {
+                for ((packaged_split, metadata), split_payload) in batch
+                    .splits
+                    .into_iter()
+                    .zip(split_metadata_list)
+                    .zip(split_payloads)
+                {
                     let upload_result = upload_split(
                         &packaged_split,
                         &metadata,
+                        split_payload,
                         &split_store,
                         counters.clone(),
                     )
                     .await;
 
-                    if let Err(cause) = upload_result {
-                        kill_switch.kill_with_fault(cause.context(format!(
-                            "Uploader failed to upload split {}",
-                            packaged_split.split_id_str()
+                    if let Err(error) = upload_result {
+                        kill_switch.kill_with_fault(error.context(format!(
+                            "failed to upload split `{}`",
+                            packaged_split.split_id()
                         )));
                         return;
                     }
-
                     packaged_splits_and_metadata.push((packaged_split, metadata));
                 }
 
@@ -399,8 +406,8 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     SplitsUpdateSender::Sequencer(_) => "sequencer",
                     SplitsUpdateSender::Publisher(_) => "publisher",
                 };
-                if let Err(e) = split_update_sender.send(splits_update, &ctx_clone).await {
-                    warn!(cause=?e, target, "failed to send uploaded split");
+                if let Err(error) = split_update_sender.send(splits_update, &ctx_clone).await {
+                    error!(?error, "failed to send splits update to {target}");
                     return;
                 }
                 // We explicitly drop it in order to force move the permit guard into the async
@@ -408,11 +415,86 @@ impl Handler<PackagedSplitBatch> for Uploader {
                 mem::drop(permit_guard);
             }
             .instrument(Span::current()),
-            "upload_single_task"
+            "upload_single_task",
         );
         fail_point!("uploader:intask:after");
         Ok(())
     }
+}
+
+fn create_split_recovery_metadata(
+    split_metadata: &SplitMetadata,
+    parent_split_ids: &[quickwit_proto::types::SplitId],
+) -> SplitRecoveryMetadata {
+    let time_range = split_metadata.time_range.as_ref();
+    let time_range_start_inclusive = time_range.map(|range| *range.start());
+    let time_range_end_inclusive = time_range.map(|range| *range.end());
+
+    let parent_split_ids = parent_split_ids
+        .iter()
+        .map(|split_id| split_id.to_string())
+        .collect();
+
+    let maturation_period_millis = match split_metadata.maturity {
+        SplitMaturity::Mature => None,
+        SplitMaturity::Immature { maturation_period } => Some(
+            maturation_period
+                .as_millis()
+                .try_into()
+                .expect("maturation period should fit in u64 milliseconds"),
+        ),
+    };
+    SplitRecoveryMetadata {
+        split_id: split_metadata.split_id.to_string(),
+        index_uid: Some(split_metadata.index_uid.clone()),
+        source_id: split_metadata.source_id.clone(),
+        node_id: split_metadata.node_id.clone(),
+        doc_mapping_uid: Some(split_metadata.doc_mapping_uid),
+        partition_id: split_metadata.partition_id,
+        num_docs: split_metadata.num_docs as u64,
+        uncompressed_docs_size_bytes: split_metadata.uncompressed_docs_size_in_bytes,
+        time_range_start_inclusive,
+        time_range_end_inclusive,
+        create_timestamp: split_metadata.create_timestamp,
+        tags: split_metadata.tags.iter().cloned().collect(),
+        delete_opstamp: split_metadata.delete_opstamp,
+        num_merge_ops: split_metadata.num_merge_ops as u64,
+        parent_split_ids,
+        maturation_period_millis,
+    }
+}
+
+fn prepare_split_for_upload(
+    packaged_split: &PackagedSplit,
+    merge_policy: &Arc<dyn MergePolicy>,
+    retention_policy: Option<&RetentionPolicy>,
+) -> anyhow::Result<(SplitMetadata, SplitPayload)> {
+    // Footer offsets are unknown at this point, so we use default values.
+    let footer_offsets = Default::default();
+
+    let split_metadata = create_split_metadata(
+        merge_policy,
+        retention_policy,
+        &packaged_split.split_attrs,
+        packaged_split.tags.clone(),
+        footer_offsets,
+    );
+    let recovery_metadata = create_split_recovery_metadata(
+        &split_metadata,
+        &packaged_split.split_attrs.replaced_split_ids,
+    );
+    let serialized_recovery_metadata = recovery_metadata.serialize();
+    let split_payload = SplitPayloadBuilder::get_split_payload(
+        &packaged_split.split_files,
+        &packaged_split.serialized_split_fields,
+        Some(&serialized_recovery_metadata),
+        &packaged_split.hotcache_bytes,
+    )?;
+    let split_metadata = SplitMetadata {
+        footer_offsets: split_payload.footer_range.clone(),
+        ..split_metadata
+    };
+    Ok((split_metadata, split_payload))
 }
 
 #[async_trait]
@@ -484,20 +566,15 @@ fn make_publish_operation(
 async fn upload_split(
     packaged_split: &PackagedSplit,
     split_metadata: &SplitMetadata,
+    split_payload: SplitPayload,
     split_store: &IndexingSplitStore,
     counters: UploaderCounters,
 ) -> anyhow::Result<()> {
-    let split_streamer = SplitPayloadBuilder::get_split_payload(
-        &packaged_split.split_files,
-        &packaged_split.serialized_split_fields,
-        &packaged_split.hotcache_bytes,
-    )?;
-
     split_store
         .store_split(
             split_metadata,
             packaged_split.split_scratch_directory.path(),
-            Box::new(split_streamer),
+            Box::new(split_payload),
         )
         .await?;
     counters.num_uploaded_splits.fetch_add(1, Ordering::SeqCst);
@@ -522,6 +599,30 @@ mod tests {
     use super::*;
     use crate::merge_policy::{NopMergePolicy, default_merge_policy};
     use crate::models::{SplitAttrs, SplitsUpdate};
+
+    #[test]
+    fn test_split_recovery_metadata_preserves_maturity() {
+        let split_metadata = SplitMetadata {
+            maturity: SplitMaturity::Immature {
+                maturation_period: Duration::from_millis(1_500),
+            },
+            ..Default::default()
+        };
+
+        let recovery_metadata = create_split_recovery_metadata(&split_metadata, &[]);
+        assert_eq!(recovery_metadata.maturation_period_millis, Some(1_500));
+
+        let (recovered_metadata, _parent_split_ids) =
+            SplitMetadata::try_from_recovery_metadata(recovery_metadata, 1..2).unwrap();
+        assert_eq!(recovered_metadata.maturity, split_metadata.maturity);
+
+        let mature_split_metadata = SplitMetadata::default();
+        let mature_recovery_metadata = create_split_recovery_metadata(&mature_split_metadata, &[]);
+        assert_eq!(mature_recovery_metadata.maturation_period_millis, None);
+        let (recovered_mature_metadata, _parent_split_ids) =
+            SplitMetadata::try_from_recovery_metadata(mature_recovery_metadata, 1..2).unwrap();
+        assert_eq!(recovered_mature_metadata.maturity, SplitMaturity::Mature);
+    }
 
     #[tokio::test]
     async fn test_uploader_with_sequencer() -> anyhow::Result<()> {

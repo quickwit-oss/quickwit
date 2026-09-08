@@ -40,7 +40,7 @@ use quickwit_datafusion::{
     QuickwitWorkerResolver, build_worker,
 };
 use quickwit_proto::metastore::MetastoreServiceClient;
-use quickwit_search::{SearchServiceClient, SearcherPool, create_search_client_from_grpc_addr};
+use quickwit_search::{SearcherNode, SearcherPool, create_search_client_from_grpc_addr};
 use quickwit_storage::StorageResolver;
 use tokio::time::timeout;
 use tonic::transport::server::Router;
@@ -112,7 +112,7 @@ fn setup_datafusion_worker_pool(
 async fn datafusion_worker_changes(
     cluster_change: ClusterChange,
     max_message_size: ByteSize,
-) -> Vec<Change<SocketAddr, SearchServiceClient>> {
+) -> Vec<Change<SocketAddr, SearcherNode>> {
     match cluster_change {
         ClusterChange::Add(node) if is_datafusion_worker_node(&node).await => {
             vec![insert_datafusion_worker(&node, max_message_size)]
@@ -172,11 +172,14 @@ async fn exposes_datafusion_service(node: &ClusterNode) -> bool {
 fn insert_datafusion_worker(
     node: &ClusterNode,
     max_message_size: ByteSize,
-) -> Change<SocketAddr, SearchServiceClient> {
+) -> Change<SocketAddr, SearcherNode> {
     let grpc_addr = node.grpc_advertise_addr;
     Change::Insert(
         grpc_addr,
-        create_search_client_from_grpc_addr(grpc_addr, max_message_size),
+        SearcherNode {
+            node_id: node.node_id.clone(),
+            client: create_search_client_from_grpc_addr(grpc_addr, max_message_size),
+        },
     )
 }
 

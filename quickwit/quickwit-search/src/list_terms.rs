@@ -326,7 +326,7 @@ pub async fn leaf_list_terms(
     splits: &[SplitIdAndFooterOffsets],
 ) -> Result<LeafListTermsResponse, SearchError> {
     info!(split_offsets = ?PrettySample::new(splits, 5));
-    let task_metadata: Vec<crate::search_permit_provider::SplitSearchTaskMetadata> = splits
+    let split_metadatas = splits
         .iter()
         .map(|split| {
             let memory_allocation = compute_initial_memory_allocation(
@@ -342,6 +342,10 @@ pub async fn leaf_list_terms(
             }
         })
         .collect();
+    let task_metadata = crate::search_permit_provider::LeafSearchTaskMetadata {
+        priority: 0,
+        splits: split_metadatas,
+    };
     // We have added offloading leaf search to lambdas, but not for list_terms yet.
     // TODO (Add it)
     // https://github.com/quickwit-oss/quickwit/issues/6150

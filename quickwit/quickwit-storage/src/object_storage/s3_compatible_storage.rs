@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::LazyLock;
 use std::task::{Context, Poll};
+use std::time::SystemTime;
 use std::{fmt, io};
 
 use anyhow::{Context as AnyhhowContext, anyhow};
@@ -35,11 +37,14 @@ use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
 use aws_sdk_s3::primitives::{AggregatedBytes, ByteStream};
 use aws_sdk_s3::types::builders::ObjectIdentifierBuilder;
 use aws_sdk_s3::types::{
-    ChecksumAlgorithm, CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier,
+    ChecksumAlgorithm, CompletedMultipartUpload, CompletedPart, Delete, EncodingType,
+    ObjectIdentifier,
 };
 use base64::prelude::{BASE64_STANDARD, Engine};
 use bytes::Bytes;
+use bytesize::ByteSize;
 use futures::{StreamExt, stream};
+use percent_encoding::percent_decode_str;
 use quickwit_aws::retry::{AwsRetryable, aws_retry};
 use quickwit_aws::{aws_behavior_version, get_aws_config};
 use quickwit_common::retry::{Retry, RetryParams};
@@ -51,15 +56,15 @@ use quickwit_metrics::{HistogramTimer, counter, label_values};
 use regex::Regex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
-use tracing::{info, instrument, warn};
+use tracing::{Instrument, info, instrument, warn};
 
 use crate::metrics::{ERROR_CLASS, object_storage_get_slice_in_flight_guards};
 use crate::object_storage::MultiPartPolicy;
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DeleteFailure, OwnedBytes, Storage, StorageError, StorageErrorKind,
-    StorageResolverError, StorageResult,
+    BulkDeleteError, DeleteFailure, ListObjectsStream, ObjectMetadata, OwnedBytes, Storage,
+    StorageError, StorageErrorKind, StorageResolverError, StorageResult,
 };
 
 /// Semaphore to limit the number of concurrent requests to the object store. Some object stores
@@ -163,9 +168,9 @@ pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     // Somehow, localstack keeps returning the full checksum on range request, which
     // causes error.
     s3_config.set_response_checksum_validation(Some(ResponseChecksumValidation::WhenRequired));
-    if s3_storage_config.checksum_algorithm.is_disabled() {
-        s3_config.set_request_checksum_calculation(Some(RequestChecksumCalculation::WhenRequired));
-    }
+    s3_config.set_request_checksum_calculation(Some(request_checksum_calculation(
+        s3_storage_config.checksum_algorithm,
+    )));
 
     if let Some(endpoint) = s3_storage_config.endpoint() {
         info!(endpoint=%endpoint, "using S3 endpoint defined in storage config or environment variable");
@@ -268,6 +273,21 @@ fn aws_checksum_algorithm(
     }
 }
 
+/// Returns the SDK-level automatic request-checksum mode for the configured [`ChecksumAlgorithm`].
+///
+/// Some legacy S3-compatible stores reject trailing checksums that are still computed
+/// by the SDK for streaming bodies, even when manual checksum with md5 is set.
+fn request_checksum_calculation(
+    checksum_algorithm: quickwit_config::ChecksumAlgorithm,
+) -> RequestChecksumCalculation {
+    match checksum_algorithm {
+        quickwit_config::ChecksumAlgorithm::Crc32c => RequestChecksumCalculation::WhenSupported,
+        quickwit_config::ChecksumAlgorithm::Md5 | quickwit_config::ChecksumAlgorithm::Disabled => {
+            RequestChecksumCalculation::WhenRequired
+        }
+    }
+}
+
 /// Coarse classification of an SDK error, used as a counter label.
 /// timeout, io, throttling, transient, or other.
 fn classify_sdk_error<E>(error: &SdkError<E>) -> &'static str
@@ -352,16 +372,24 @@ impl Part {
 impl S3CompatibleObjectStorage {
     fn key(&self, relative_path: &Path) -> String {
         // FIXME: This may not work on Windows.
-        let key_path = self.prefix.join(relative_path);
-        key_path.to_string_lossy().to_string()
+        let prefix = self.prefix.to_string_lossy();
+        let relative_path = relative_path.to_string_lossy();
+        if prefix.is_empty() {
+            relative_path.to_string()
+        } else if relative_path.is_empty() {
+            prefix.to_string()
+        } else if prefix.ends_with('/') {
+            format!("{prefix}{relative_path}")
+        } else {
+            format!("{prefix}/{relative_path}")
+        }
     }
 
     fn relative_path(&self, key: &str) -> PathBuf {
         // FIXME: This may not work on Windows.
-        Path::new(key)
-            .strip_prefix(&self.prefix)
-            .expect("The prefix should have been prepended to the key before this method call.")
-            .to_path_buf()
+        let relative_key = strip_storage_prefix(key, &self.prefix)
+            .expect("The prefix should have been prepended to the key before this method call.");
+        PathBuf::from(relative_key)
     }
 
     async fn put_single_part_single_try<'a>(
@@ -958,6 +986,103 @@ impl Storage for S3CompatibleObjectStorage {
         }
     }
 
+    #[instrument(name = "storage.s3.list", level = "debug", skip(self), fields(prefix = %prefix.display()))]
+    fn list(&self, prefix: &Path) -> ListObjectsStream {
+        let s3_client = self.s3_client.clone();
+        let bucket = self.bucket.clone();
+        let key_prefix = self.key(prefix);
+        let storage_prefix = self.prefix.clone();
+        let retry_params = self.retry_params;
+        let list_span = tracing::Span::current();
+
+        enum ListPosition {
+            First,
+            Middle(String),
+            Last,
+        }
+        type ListState = (
+            S3Client,
+            String,
+            String,
+            PathBuf,
+            RetryParams,
+            ListPosition,
+            tracing::Span,
+        );
+        let initial_state: ListState = (
+            s3_client,
+            bucket,
+            key_prefix,
+            storage_prefix,
+            retry_params,
+            ListPosition::First,
+            list_span,
+        );
+        stream::try_unfold(
+            initial_state,
+            |(
+                s3_client,
+                bucket,
+                key_prefix,
+                storage_prefix,
+                retry_params,
+                list_position,
+                list_span,
+            ): ListState| async move {
+                let mut list_position = list_position;
+                loop {
+                    let continuation_token_opt = match list_position {
+                        ListPosition::First => None,
+                        ListPosition::Middle(token) => Some(token),
+                        ListPosition::Last => return Ok(None),
+                    };
+
+                    let _permit = REQUEST_SEMAPHORE.acquire().await;
+                    let list_objects_span =
+                        tracing::debug_span!(parent: &list_span, "storage.s3.list_objects_v2");
+                    let response = aws_retry(&retry_params, || {
+                        let mut list_request = s3_client
+                            .list_objects_v2()
+                            .bucket(&bucket)
+                            .encoding_type(EncodingType::Url)
+                            .prefix(&key_prefix);
+                        if let Some(continuation_token) = &continuation_token_opt {
+                            list_request = list_request.continuation_token(continuation_token);
+                        }
+                        list_request.send()
+                    })
+                    .instrument(list_objects_span)
+                    .await
+                    .map_err(|error| {
+                        StorageError::from(error).add_context("failed to list objects")
+                    })?;
+
+                    let objects = convert_list_objects(response.contents(), &storage_prefix)?;
+                    let next_list_position = response
+                        .next_continuation_token
+                        .map(ListPosition::Middle)
+                        .unwrap_or(ListPosition::Last);
+                    if objects.is_empty() {
+                        list_position = next_list_position;
+                        continue;
+                    }
+
+                    let state = (
+                        s3_client,
+                        bucket,
+                        key_prefix,
+                        storage_prefix,
+                        retry_params,
+                        next_list_position,
+                        list_span,
+                    );
+                    return Ok(Some((objects, state)));
+                }
+            },
+        )
+        .boxed()
+    }
+
     #[instrument(name = "storage.s3.get_slice", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
@@ -1037,6 +1162,88 @@ impl Storage for S3CompatibleObjectStorage {
     }
 }
 
+/// Converts S3 object metadata to paths relative to the configured storage root.
+fn convert_list_objects(
+    objects: &[aws_sdk_s3::types::Object],
+    storage_prefix: &Path,
+) -> StorageResult<Vec<ObjectMetadata>> {
+    let mut object_metadata = Vec::with_capacity(objects.len());
+    for object in objects {
+        let Some(encoded_key) = object.key() else {
+            warn!("listed object has no key, skipping");
+            continue;
+        };
+        let key = decode_list_object_key(encoded_key)?;
+        let Some(relative_key) = strip_storage_prefix(&key, storage_prefix) else {
+            continue;
+        };
+        if relative_key.is_empty() && key != storage_prefix.to_string_lossy() {
+            // The key `<storage-prefix>/` collides with `<storage-prefix>` after relativization.
+            continue;
+        }
+        let relative_path = PathBuf::from(relative_key);
+        let size_bytes = match object.size() {
+            Some(size) => match u64::try_from(size) {
+                Ok(size) => size,
+                Err(error) => {
+                    warn!("listed object size conversion failed, skipping: {error}");
+                    continue;
+                }
+            },
+            None => {
+                warn!("listed object has no size, skipping");
+                continue;
+            }
+        };
+        let last_modified = match object.last_modified() {
+            Some(modified) => match SystemTime::try_from(*modified) {
+                Ok(last_modified) => last_modified,
+                Err(error) => {
+                    warn!("listed object last modified time conversion failed, skipping: {error}");
+                    continue;
+                }
+            },
+            None => {
+                warn!("listed object has no last modified time, skipping");
+                continue;
+            }
+        };
+        object_metadata.push(ObjectMetadata {
+            path: relative_path,
+            size: ByteSize(size_bytes),
+            last_modified,
+        });
+    }
+    Ok(object_metadata)
+}
+
+fn decode_list_object_key(encoded_key: &str) -> StorageResult<Cow<'_, str>> {
+    percent_decode_str(encoded_key)
+        .decode_utf8()
+        .map_err(|error| {
+            StorageErrorKind::Internal.with_error(anyhow::anyhow!(
+                "failed to URL-decode listed object key `{encoded_key}`: {error}"
+            ))
+        })
+}
+
+/// Strips a storage prefix from an S3 key without interpreting it as a filesystem path.
+fn strip_storage_prefix<'a>(key: &'a str, storage_prefix: &Path) -> Option<&'a str> {
+    let prefix = storage_prefix.to_string_lossy();
+    if prefix.is_empty() {
+        return Some(key);
+    }
+    if key == prefix {
+        return Some("");
+    }
+    if prefix.ends_with('/') {
+        key.strip_prefix(prefix.as_ref())
+    } else {
+        let prefix_with_separator = format!("{prefix}/");
+        key.strip_prefix(&prefix_with_separator)
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -1045,13 +1252,14 @@ mod tests {
     use aws_sdk_s3::config::{Credentials, Region};
     use aws_sdk_s3::primitives::SdkBody;
     use aws_smithy_runtime::client::http::test_util::{ReplayEvent, StaticReplayClient};
+    use futures::TryStreamExt;
     use hyper::http;
     use quickwit_aws::aws_behavior_version;
     use quickwit_common::chunk_range;
     use quickwit_common::uri::Uri;
 
     use super::*;
-    use crate::{MultiPartPolicy, S3CompatibleObjectStorage};
+    use crate::{DebouncedStorage, MultiPartPolicy, S3CompatibleObjectStorage};
 
     #[tokio::test]
     async fn test_md5_calc() -> std::io::Result<()> {
@@ -1136,6 +1344,132 @@ mod tests {
             s3_storage.relative_path("indexes/foo"),
             PathBuf::from("foo")
         );
+        let relative_path = s3_storage.relative_path("indexes/./foo");
+        assert_eq!(relative_path.to_string_lossy(), "./foo");
+        assert_eq!(s3_storage.key(&relative_path), "indexes/./foo");
+
+        let relative_path = s3_storage.relative_path("indexes//foo");
+        assert_eq!(relative_path.to_string_lossy(), "/foo");
+        assert_eq!(s3_storage.key(&relative_path), "indexes//foo");
+
+        s3_storage.prefix = PathBuf::from("indexes/");
+        assert_eq!(s3_storage.key(Path::new("foo")), "indexes/foo");
+        assert_eq!(
+            s3_storage.relative_path("indexes/foo"),
+            PathBuf::from("foo")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_s3_compatible_storage_list_streams_all_pages() {
+        let first_page = r#"<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Name>bucket</Name>
+  <Prefix>indexes</Prefix>
+  <KeyCount>4</KeyCount>
+  <MaxKeys>1000</MaxKeys>
+  <EncodingType>url</EncodingType>
+  <IsTruncated>true</IsTruncated>
+  <Contents>
+    <Key>indexes</Key>
+    <LastModified>2026-08-14T09:58:00.000Z</LastModified>
+    <ETag>&quot;etag-root&quot;</ETag>
+    <Size>3</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+  <Contents>
+    <Key>indexes%2F</Key>
+    <LastModified>2026-08-14T09:59:00.000Z</LastModified>
+    <ETag>&quot;etag-trailing-slash-root&quot;</ETag>
+    <Size>4</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+  <Contents>
+    <Key>indexes-old%2Fobject</Key>
+    <LastModified>2026-08-14T09:59:00.000Z</LastModified>
+    <ETag>&quot;etag-sibling&quot;</ETag>
+    <Size>4</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+  <Contents>
+    <Key>indexes%2Fsplits%2F.%2Fa%25.split</Key>
+    <LastModified>2026-08-14T10:00:00.000Z</LastModified>
+    <ETag>&quot;etag-a&quot;</ETag>
+    <Size>5</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+  <NextContinuationToken>next-token</NextContinuationToken>
+</ListBucketResult>"#;
+        let second_page = r#"<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Name>bucket</Name>
+  <Prefix>indexes</Prefix>
+  <KeyCount>1</KeyCount>
+  <MaxKeys>1000</MaxKeys>
+  <EncodingType>url</EncodingType>
+  <IsTruncated>false</IsTruncated>
+  <Contents>
+    <Key>indexes%2Fsplits%2F%2Fb.split</Key>
+    <LastModified>2026-08-14T10:01:00.000Z</LastModified>
+    <ETag>&quot;etag-b&quot;</ETag>
+    <Size>7</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+</ListBucketResult>"#;
+        let client = StaticReplayClient::new(vec![
+            ReplayEvent::new(
+                http::Request::builder().body(SdkBody::empty()).unwrap(),
+                http::Response::builder()
+                    .status(200)
+                    .body(SdkBody::from(first_page))
+                    .unwrap(),
+            ),
+            ReplayEvent::new(
+                http::Request::builder().body(SdkBody::empty()).unwrap(),
+                http::Response::builder()
+                    .status(200)
+                    .body(SdkBody::from(second_page))
+                    .unwrap(),
+            ),
+        ]);
+        let credentials = Credentials::new("mock_key", "mock_secret", None, None, "mock_provider");
+        let config = aws_sdk_s3::Config::builder()
+            .behavior_version(aws_behavior_version())
+            .region(Some(Region::new("Foo")))
+            .http_client(client.clone())
+            .credentials_provider(credentials)
+            .build();
+        let storage = DebouncedStorage::new(S3CompatibleObjectStorage {
+            s3_client: S3Client::from_conf(config),
+            uri: Uri::for_test("s3://bucket/indexes"),
+            bucket: "bucket".to_string(),
+            prefix: PathBuf::from("indexes"),
+            multipart_policy: MultiPartPolicy::default(),
+            retry_params: RetryParams::for_test(),
+            disable_multi_object_delete: false,
+            disable_multipart_upload: false,
+            checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
+        });
+
+        let pages: Vec<Vec<ObjectMetadata>> =
+            storage.list(Path::new("")).try_collect().await.unwrap();
+
+        let num_objects: usize = pages.iter().map(Vec::len).sum();
+        assert_eq!(num_objects, 3);
+        assert_eq!(pages.len(), 2);
+        assert_eq!(pages[0].len(), 2);
+        assert_eq!(pages[0][0].path, Path::new(""));
+        assert_eq!(pages[0][0].size, ByteSize(3));
+        assert_eq!(pages[0][1].path.to_string_lossy(), "splits/./a%.split");
+        assert_eq!(pages[0][1].size, ByteSize(5));
+        assert_eq!(pages[1].len(), 1);
+        assert_eq!(pages[1][0].path.to_string_lossy(), "splits//b.split");
+        assert_eq!(pages[1][0].size, ByteSize(7));
+        let requests: Vec<_> = client.actual_requests().collect();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[0].uri().contains("encoding-type=url"));
+        assert!(requests[0].uri().contains("prefix=indexes"));
+        assert!(requests[1].uri().contains("continuation-token=next-token"));
     }
 
     #[tokio::test]
@@ -1402,6 +1736,7 @@ mod tests {
             .region(Some(Region::new("us-east-1")))
             .http_client(client)
             .credentials_provider(credentials)
+            .request_checksum_calculation(request_checksum_calculation(checksum_algorithm))
             .build();
         S3CompatibleObjectStorage {
             s3_client: S3Client::from_conf(config),
@@ -1445,6 +1780,69 @@ mod tests {
             .expect("Content-MD5 header must be present for md5 checksum algorithm");
         let expected = BASE64_STANDARD.encode(md5::compute(&payload).0);
         assert_eq!(content_md5, expected.as_str());
+    }
+
+    /// Fake a stream payload, to verify that even with streaming the
+    /// SDK does not emit a trailing checksum.
+    #[derive(Clone)]
+    struct StreamingPayload(Vec<u8>);
+
+    #[async_trait]
+    impl crate::PutPayload for StreamingPayload {
+        fn len(&self) -> u64 {
+            self.0.len() as u64
+        }
+
+        async fn range_byte_stream(&self, range: Range<u64>) -> io::Result<ByteStream> {
+            let bytes = Bytes::copy_from_slice(&self.0[range.start as usize..range.end as usize]);
+            let frame_stream =
+                stream::iter(vec![Ok::<_, io::Error>(hyper::body::Frame::data(bytes))]);
+            let stream_body = http_body_util::StreamBody::new(frame_stream);
+            Ok(ByteStream::new(SdkBody::from_body_1_x(stream_body)))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_md5_algorithm_streaming_upload_has_no_sdk_checksum_trailer() {
+        let client = StaticReplayClient::new(vec![ok_put_response()]);
+        let s3_storage =
+            make_s3_storage_with_replay(client.clone(), quickwit_config::ChecksumAlgorithm::Md5);
+        let payload_bytes: Vec<u8> = b"hello world".to_vec();
+        s3_storage
+            .put(
+                Path::new("test-key"),
+                Box::new(StreamingPayload(payload_bytes.clone())),
+            )
+            .await
+            .unwrap();
+
+        let requests = client.actual_requests().collect::<Vec<_>>();
+        assert_eq!(requests.len(), 1);
+        let headers = requests[0].headers();
+        let content_md5 = headers
+            .get("content-md5")
+            .expect("Content-MD5 header must be present for md5 checksum algorithm");
+        let expected = BASE64_STANDARD.encode(md5::compute(&payload_bytes).0);
+        assert_eq!(content_md5, expected.as_str());
+        // Some S3-compatible stores reject trailing checksums,
+        // so the SDK must not inject its automatic CRC32 on top of Content-MD5.
+        assert!(
+            headers.get("x-amz-trailer").is_none(),
+            "the SDK must not announce a trailing checksum for md5 checksum algorithm"
+        );
+        assert!(
+            headers
+                .iter()
+                .all(|(name, _value)| !name.starts_with("x-amz-checksum-")),
+            "the SDK must not add x-amz-checksum-* headers for md5 checksum algorithm"
+        );
+        assert!(
+            !headers
+                .get("content-encoding")
+                .unwrap_or_default()
+                .contains("aws-chunked"),
+            "the body must not use aws-chunked encoding for md5 checksum algorithm"
+        );
     }
 
     #[tokio::test]

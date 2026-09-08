@@ -34,11 +34,11 @@ use crate::metrics::{
 
 /// Distributor of permits to perform split search operation.
 ///
-/// Requests are served in order. Each permit initially reserves a slot for the
-/// warmup (limit concurrent downloads) and a pessimistic amount of memory. Once
-/// the warmup is completed, the actual memory usage is set and the warmup slot
-/// is released. Once the search is completed and the permit is dropped, the
-/// remaining memory is also released.
+/// Requests are served by priority, then by fewest remaining splits. Each permit initially
+/// reserves a slot for the warmup (limit concurrent downloads) and a pessimistic amount of
+/// memory. Once the warmup is completed, the actual memory usage is set and the warmup slot is
+/// released. Once the search is completed and the permit is dropped, the remaining memory is also
+/// released.
 #[derive(Clone)]
 pub struct SearchPermitProvider {
     message_sender: mpsc::UnboundedSender<SearchPermitMessage>,
@@ -58,9 +58,16 @@ pub(crate) struct SplitSearchTaskMetadata {
     pub job_cost: usize,
 }
 
+/// Metadata for a leaf search task.
+pub(crate) struct LeafSearchTaskMetadata {
+    /// Lower values have higher priority.
+    pub priority: i32,
+    pub splits: Vec<SplitSearchTaskMetadata>,
+}
+
 pub enum SearchPermitMessage {
     RequestWithOffload {
-        task_metadata: Vec<SplitSearchTaskMetadata>,
+        task_metadata: LeafSearchTaskMetadata,
         /// Maximum number of pending requests. If granting all
         /// requested permits would cause the number of pending requests to exceed this threshold,
         /// some permits will be offloaded to Lambda.
@@ -153,9 +160,10 @@ impl SearchPermitProvider {
     /// The returned futures are guaranteed to resolve in order.
     pub(crate) async fn get_permits(
         &self,
-        splits: Vec<SplitSearchTaskMetadata>,
+        task_metadata: LeafSearchTaskMetadata,
     ) -> Vec<SearchPermitFuture> {
-        self.get_permits_with_offload(splits, usize::MAX).await
+        self.get_permits_with_offload(task_metadata, usize::MAX)
+            .await
     }
 
     /// Returns permits for local splits and a list of split indices to offload.
@@ -170,17 +178,17 @@ impl SearchPermitProvider {
     /// If `offload_threshold` is usize::MAX, all splits are processed locally.
     pub(crate) async fn get_permits_with_offload(
         &self,
-        splits: Vec<SplitSearchTaskMetadata>,
+        task_metadata: LeafSearchTaskMetadata,
         offload_threshold: usize,
     ) -> Vec<SearchPermitFuture> {
-        if splits.is_empty() {
+        if task_metadata.splits.is_empty() {
             return Vec::new();
         }
         let (permit_sender, permit_receiver) = oneshot::channel();
         self.message_sender
             .send(SearchPermitMessage::RequestWithOffload {
                 permit_resp_tx: permit_sender,
-                task_metadata: splits,
+                task_metadata,
                 offload_threshold,
             })
             .expect("Receiver lives longer than sender");
@@ -219,19 +227,23 @@ struct SingleSplitPermitRequest {
 }
 
 struct LeafPermitRequest {
+    /// Lower values have higher priority.
+    priority: i32,
     /// Single split permit requests for this leaf search.
     single_split_permit_requests: std::vec::IntoIter<SingleSplitPermitRequest>,
 }
 
 impl Ord for LeafPermitRequest {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // we compare other with self and not the other way arround because we want a min-heap and
+        // we compare other with self and not the other way around because we want a min-heap and
         // Rust's is a max-heap
-        other
-            .single_split_permit_requests
-            .as_slice()
-            .len()
-            .cmp(&self.single_split_permit_requests.as_slice().len())
+        other.priority.cmp(&self.priority).then_with(|| {
+            other
+                .single_split_permit_requests
+                .as_slice()
+                .len()
+                .cmp(&self.single_split_permit_requests.as_slice().len())
+        })
     }
 }
 
@@ -252,30 +264,32 @@ impl Eq for LeafPermitRequest {}
 impl LeafPermitRequest {
     // `task_metadata` must not be empty.
     fn from_task_metadata(
-        task_metadata: Vec<SplitSearchTaskMetadata>,
+        task_metadata: LeafSearchTaskMetadata,
     ) -> (Self, Vec<SearchPermitFuture>) {
-        assert!(!task_metadata.is_empty(), "task_metadata must not be empty");
+        let LeafSearchTaskMetadata { priority, splits } = task_metadata;
+        assert!(!splits.is_empty(), "task_metadata must not be empty");
         // Stamped on every `SingleSplitPermitRequest` we're about to enqueue.
         // The actor will compute `requested_at.elapsed()` at grant time to
         // report the permit's acquisition latency.
         let requested_at = Instant::now();
-        let mut permits = Vec::with_capacity(task_metadata.len());
-        let mut single_split_permit_requests = Vec::with_capacity(task_metadata.len());
-        for meta in task_metadata {
+        let mut permits = Vec::with_capacity(splits.len());
+        let mut single_split_permit_requests = Vec::with_capacity(splits.len());
+        for split in splits {
             let (tx, rx) = oneshot::channel();
             // we keep our internal list of permits and the returned wait handles in the
             // same order to make sure we emit each permit in the right order. Doing otherwise
             // may cause deadlocks
             single_split_permit_requests.push(SingleSplitPermitRequest {
                 permit_sender: tx,
-                permit_size: meta.memory_allocation.as_u64(),
-                job_cost: meta.job_cost,
+                permit_size: split.memory_allocation.as_u64(),
+                job_cost: split.job_cost,
                 requested_at,
             });
             permits.push(SearchPermitFuture(rx));
         }
         (
             LeafPermitRequest {
+                priority,
                 single_split_permit_requests: single_split_permit_requests.into_iter(),
             },
             permits,
@@ -321,18 +335,18 @@ impl SearchPermitActor {
 
                 // If this indeed truncates the task_metadata vector, other splits will be
                 // offloaded to lambdas.
-                task_metadata.truncate(local_capacity);
+                task_metadata.splits.truncate(local_capacity);
 
                 // We special case here in order to avoid pushing empty request in the queue.
                 // (they would never be removed)
-                if task_metadata.is_empty() {
+                if task_metadata.splits.is_empty() {
                     let _ = permit_sender.send(Vec::new());
                     return;
                 }
 
                 // Increment total_job_cost for all tasks entering the queue (both pending and
                 // those that will be granted immediately by assign_available_permits below).
-                let added: usize = task_metadata.iter().map(|m| m.job_cost).sum();
+                let added: usize = task_metadata.splits.iter().map(|m| m.job_cost).sum();
                 // fetch_add returns the previous value, so add `added` to get the new total.
                 let new_load = self.total_job_cost.fetch_add(added, Ordering::Relaxed) + added;
                 SEARCHER_NODE_LOAD.set(new_load as f64);
@@ -523,13 +537,75 @@ mod tests {
 
     use super::*;
 
-    fn make_splits(memory_mb: u64, count: usize) -> Vec<SplitSearchTaskMetadata> {
-        (0..count)
-            .map(|_| SplitSearchTaskMetadata {
-                memory_allocation: ByteSize::mb(memory_mb),
-                job_cost: 5,
-            })
-            .collect()
+    fn make_splits(memory_mb: u64, count: usize) -> LeafSearchTaskMetadata {
+        make_splits_with_priority(memory_mb, count, 0)
+    }
+
+    fn make_splits_with_priority(
+        memory_mb: u64,
+        count: usize,
+        priority: i32,
+    ) -> LeafSearchTaskMetadata {
+        LeafSearchTaskMetadata {
+            priority,
+            splits: (0..count)
+                .map(|_| SplitSearchTaskMetadata {
+                    memory_allocation: ByteSize::mb(memory_mb),
+                    job_cost: 5,
+                })
+                .collect(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_search_permit_priority_precedes_remaining_splits() {
+        let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100));
+        let blocker = permit_provider
+            .get_permits(make_splits(10, 1))
+            .await
+            .pop()
+            .unwrap()
+            .await;
+
+        let negative_priority = permit_provider
+            .get_permits(make_splits_with_priority(10, 3, -10))
+            .await;
+        let default_priority = permit_provider.get_permits(make_splits(10, 1)).await;
+        let positive_priority = permit_provider
+            .get_permits(make_splits_with_priority(10, 1, 10))
+            .await;
+
+        let mut join_set = JoinSet::new();
+        for (request, permit_futures) in [
+            ("negative", negative_priority),
+            ("default", default_priority),
+            ("positive", positive_priority),
+        ] {
+            for (split_idx, permit_future) in permit_futures.into_iter().enumerate() {
+                join_set.spawn(async move {
+                    let permit = permit_future.await;
+                    (request, split_idx, permit)
+                });
+            }
+        }
+
+        drop(blocker);
+
+        let mut execution_order = Vec::new();
+        while let Some(result) = join_set.join_next().await {
+            let (request, split_idx, _permit) = result.unwrap();
+            execution_order.push((request, split_idx));
+        }
+        assert_eq!(
+            execution_order,
+            vec![
+                ("negative", 0),
+                ("negative", 1),
+                ("negative", 2),
+                ("default", 0),
+                ("positive", 0),
+            ]
+        );
     }
 
     #[tokio::test]
@@ -829,21 +905,24 @@ mod tests {
 
         assert_eq!(permit_provider.get_load(), 0);
 
-        let splits = vec![
-            SplitSearchTaskMetadata {
-                memory_allocation: ByteSize::mb(10),
-                job_cost: 7,
-            },
-            SplitSearchTaskMetadata {
-                memory_allocation: ByteSize::mb(10),
-                job_cost: 3,
-            },
-            SplitSearchTaskMetadata {
-                memory_allocation: ByteSize::mb(10),
-                job_cost: 5,
-            },
-        ];
-        let mut permit_futs = permit_provider.get_permits(splits).await;
+        let task_metadata = LeafSearchTaskMetadata {
+            priority: 0,
+            splits: vec![
+                SplitSearchTaskMetadata {
+                    memory_allocation: ByteSize::mb(10),
+                    job_cost: 7,
+                },
+                SplitSearchTaskMetadata {
+                    memory_allocation: ByteSize::mb(10),
+                    job_cost: 3,
+                },
+                SplitSearchTaskMetadata {
+                    memory_allocation: ByteSize::mb(10),
+                    job_cost: 5,
+                },
+            ],
+        };
+        let mut permit_futs = permit_provider.get_permits(task_metadata).await;
 
         assert_eq!(permit_provider.get_load(), 15);
 

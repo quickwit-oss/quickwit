@@ -376,6 +376,7 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
         count_hits: quickwit_proto::search::CountHits::Underestimate as i32,
         ignore_missing_indexes: req.ignore_missing_indexes,
         skip_aggregation_finalization: false,
+        priority: req.priority,
     })
 }
 
@@ -1321,6 +1322,7 @@ pub async fn root_search(
         max_hits = search_request.max_hits,
         num_docs = num_docs,
         num_splits = num_splits,
+        priority = search_request.priority,
         "root_search"
     );
 

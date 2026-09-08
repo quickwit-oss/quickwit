@@ -224,6 +224,7 @@ pub(crate) async fn es_compat_index_mapping(
         start_timestamp: params.start_timestamp,
         end_timestamp: params.end_timestamp,
         query_ast: None,
+        limit: None,
     };
     let list_fields_response = match search_service.root_list_fields(list_fields_request).await {
         Ok(response) => Some(response),
@@ -581,6 +582,7 @@ fn build_request_for_es_api(
             count_hits,
             ignore_missing_indexes,
             skip_aggregation_finalization: false,
+            ..Default::default()
         },
         has_doc_id_field,
     ))

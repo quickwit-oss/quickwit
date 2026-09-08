@@ -1226,6 +1226,22 @@ impl Debug for Stamper {
 }
 
 fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
+    if !query.included_split_ids.is_empty()
+        && !query
+            .included_split_ids
+            .contains(&split.split_metadata.split_id)
+    {
+        return false;
+    }
+
+    if !query.excluded_split_ids.is_empty()
+        && query
+            .excluded_split_ids
+            .contains(&split.split_metadata.split_id)
+    {
+        return false;
+    }
+
     if !split_tag_filter(&split.split_metadata, query.tags.as_ref()) {
         return false;
     }
@@ -1288,13 +1304,6 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
         {
             return false;
         }
-    }
-
-    if query
-        .excluded_split_ids
-        .contains(&split.split_metadata.split_id)
-    {
-        return false;
     }
 
     true

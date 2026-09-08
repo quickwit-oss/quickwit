@@ -813,12 +813,9 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
         .deserialize_index_metadata()?;
     let index_storage = storage_resolver.resolve(index_metadata.index_uri()).await?;
     let split_file = PathBuf::from(format!("{}.split", args.split_id));
-    let split_data = index_storage.get_all(split_file.as_path()).await?;
-    let (_hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data_with_owned_bytes(
-        index_storage,
-        split_file,
-        split_data,
-    )?;
+    let split_bytes = index_storage.get_all(split_file.as_path()).await?;
+    let (bundle_storage, _hotcache_bytes) =
+        BundleStorage::open_from_split_bytes(index_storage, split_file, split_bytes)?;
     std::fs::create_dir_all(&args.target_dir)?;
     for path in bundle_storage.iter_files() {
         let mut out_path = args.target_dir.to_owned();

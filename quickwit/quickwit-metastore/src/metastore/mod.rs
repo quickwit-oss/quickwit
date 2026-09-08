@@ -1077,6 +1077,15 @@ pub struct ListSplitsQuery {
     /// Only return splits whose (index_uid, split_id) are lexicographically after this split
     pub after_split: Option<(IndexUid, SplitId)>,
 
+    /// Include only splits whose `split_id` appears in this set. An empty set means no inclusion
+    /// filter.
+    ///
+    /// `#[serde(default)]` keeps this field optional on the wire: the query crosses nodes as JSON,
+    /// so during a rolling upgrade an older caller serializes it without this key and an upgraded
+    /// metastore must still deserialize the query (an absent set defaults to an empty set).
+    #[serde(default, skip_serializing_if = "HashSet::is_empty")]
+    pub included_split_ids: HashSet<SplitId>,
+
     /// Exclude any split whose `split_id` appears in this set. Empty means no
     /// exclusion.
     ///
@@ -1161,6 +1170,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            included_split_ids: HashSet::new(),
             excluded_split_ids: HashSet::new(),
         }
     }
@@ -1186,6 +1196,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            included_split_ids: HashSet::new(),
             excluded_split_ids: HashSet::new(),
         })
     }
@@ -1207,6 +1218,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            included_split_ids: HashSet::new(),
             excluded_split_ids: HashSet::new(),
         }
     }
@@ -1408,6 +1420,12 @@ impl ListSplitsQuery {
     /// compaction planner to skip splits it is already tracking locally.
     pub fn with_excluded_split_ids(mut self, excluded_split_ids: HashSet<SplitId>) -> Self {
         self.excluded_split_ids = excluded_split_ids;
+        self
+    }
+
+    /// Includes only splits whose `split_id` is in the provided set.
+    pub fn with_included_split_ids(mut self, included_split_ids: HashSet<SplitId>) -> Self {
+        self.included_split_ids = included_split_ids;
         self
     }
 }
@@ -1654,5 +1672,31 @@ mod tests {
         };
         let deserialized = request.deserialize_list_splits_query().unwrap();
         assert!(deserialized.excluded_split_ids.is_empty());
+    }
+
+    #[test]
+    fn test_list_splits_query_included_split_ids_backward_compatible_serde() {
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
+        let query = ListSplitsQuery::for_index(index_uid)
+            .with_included_split_ids(HashSet::from([SplitId::new()]));
+
+        let mut query_value: serde_json::Value =
+            serde_json::from_str(&serde_utils::to_json_str(&query).unwrap()).unwrap();
+        query_value
+            .as_object_mut()
+            .unwrap()
+            .remove("included_split_ids")
+            .expect("freshly serialized query should contain the field before removal");
+
+        let request = ListSplitsRequest {
+            query_json: query_value.to_string(),
+        };
+        let deserialized = request.deserialize_list_splits_query().unwrap();
+        assert!(deserialized.included_split_ids.is_empty());
+
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"));
+        let query_value: serde_json::Value =
+            serde_json::from_str(&serde_utils::to_json_str(&query).unwrap()).unwrap();
+        assert!(query_value.get("included_split_ids").is_none());
     }
 }

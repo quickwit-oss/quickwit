@@ -46,6 +46,8 @@ pub mod merge_policy;
 mod metrics;
 pub mod models;
 pub mod source;
+#[cfg(test)]
+mod split_recovery_tests;
 mod split_store;
 #[cfg(any(test, feature = "testsuite"))]
 mod test_utils;

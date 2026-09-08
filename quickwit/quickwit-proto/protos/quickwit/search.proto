@@ -141,8 +141,10 @@ message ListFieldsRequest {
   // When provided, only fields from documents matching this query are returned.
   optional string query_ast = 5;
 
-  // Control if the request will fail if split_ids contains a split that does not exist.
-  // optional bool fail_on_missing_index = 6;
+  // Maximum number of fields to return. Overrides QW_FIELD_LIST_SIZE_LIMIT.
+  optional uint32 limit = 6;
+
+  reserved 7;
 }
 
 message LeafListFieldsRequest {
@@ -157,6 +159,9 @@ message LeafListFieldsRequest {
   // Optional limit query to a list of fields
   // Wildcard expressions are supported.
   repeated string field_patterns = 4;
+
+  // Maximum number of fields to return. Overrides QW_FIELD_LIST_SIZE_LIMIT.
+  optional uint32 limit = 5;
 }
 
 /// Message returned by leaf and root list fields requests.
@@ -273,6 +278,13 @@ message SearchRequest {
   // When true, skip finalization of aggregation results and return
   // the raw IntermediateAggregationResults bytes instead.
   bool skip_aggregation_finalization = 19;
+
+  // Field 20 is intentionally reserved for wire compatibility with a downstream fork.
+  reserved 20;
+
+  // Scheduling priority for leaf search execution. Negative values are allowed,
+  // and lower values have higher priority. Callers that omit it get priority 0.
+  int32 priority = 21;
 }
 
 enum CountHits {

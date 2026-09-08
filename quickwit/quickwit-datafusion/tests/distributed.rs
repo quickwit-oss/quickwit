@@ -34,7 +34,8 @@ use quickwit_datafusion::test_utils::make_batch;
 use quickwit_datafusion::{
     DataFusionSessionBuilder, QuickwitObjectStoreRegistry, QuickwitWorkerResolver,
 };
-use quickwit_search::{SearcherPool, create_search_client_from_grpc_addr};
+use quickwit_proto::types::NodeId;
+use quickwit_search::{SearcherNode, SearcherPool, create_search_client_from_grpc_addr};
 
 mod common;
 mod metrics_splits;
@@ -104,12 +105,15 @@ async fn test_distributed_tasks_not_shuffles() {
     let worker_b = spawn_df_worker(make_builder()).await;
 
     // Populate the pool with the real worker gRPC addresses.
-    // Pool value is a SearchServiceClient — only the key (addr) matters for
+    // Pool value is a SearcherNode — only the key (addr) matters for
     // QuickwitWorkerResolver, which calls pool.keys() to get URLs.
     for addr in [worker_a.addr, worker_b.addr] {
         pool.insert(
             addr,
-            create_search_client_from_grpc_addr(addr, bytesize::ByteSize::mib(20)),
+            SearcherNode {
+                node_id: NodeId::from_str(&format!("worker-{}", addr.port())),
+                client: create_search_client_from_grpc_addr(addr, bytesize::ByteSize::mib(20)),
+            },
         );
     }
 

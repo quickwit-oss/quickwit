@@ -3617,6 +3617,20 @@ mod tests {
     }
 
     #[test]
+    fn test_list_splits_query_included_split_ids() {
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
+
+        let query = ListSplitsQuery::for_all_indexes()
+            .with_included_split_ids(HashSet::from([SplitId::from("s1"), SplitId::from("s2")]));
+        append_query_filters_and_order_by(sql, query);
+        assert_eq!(
+            sql.to_string(PostgresQueryBuilder),
+            r#"SELECT * FROM "splits" WHERE split_id = ANY(ARRAY ['s1','s2']::text[])"#
+        );
+    }
+
+    #[test]
     fn test_index_id_pattern_like_query() {
         assert_eq!(
             &build_index_id_patterns_sql_query(&["*-index-*-last*".to_string()]).unwrap(),

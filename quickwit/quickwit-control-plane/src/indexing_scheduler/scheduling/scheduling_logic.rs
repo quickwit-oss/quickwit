@@ -38,6 +38,10 @@ fn check_contract_conditions(problem: &SchedulingProblem, solution: &SchedulingS
 /// 1.2^30 is about 240. If we reach 30 attempts we are certain to have a logical bug.
 const MAX_INFLATION_ATTEMPTS: u32 = 30;
 
+/// One inflation attempt is expected from normal bin-packing fragmentation. Two attempts increase
+/// the virtual capacity by 44%, which warrants operator attention.
+const MIN_INFLATION_ATTEMPT_FOR_WARNING: u32 = 2;
+
 pub fn solve(
     mut problem: SchedulingProblem,
     previous_solution: SchedulingSolution,
@@ -88,9 +92,13 @@ pub fn solve(
         }
     }
 
-    if best_attempt > 0 {
-        // the higher the attempt number, the more unbalanced the solution
+    if best_attempt >= MIN_INFLATION_ATTEMPT_FOR_WARNING {
         tracing::warn!(
+            attempt_number = best_attempt,
+            "capacity re-scaled, scheduling solution likely unbalanced"
+        );
+    } else if best_attempt > 0 {
+        tracing::info!(
             attempt_number = best_attempt,
             "capacity re-scaled, scheduling solution likely unbalanced"
         );

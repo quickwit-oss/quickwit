@@ -14,7 +14,7 @@ The Quickwit installer automatically picks the correct binary archive for your e
 This method works only for [some OS/architectures](installation.md#download), and you will also need to install some [external dependencies](installation.md#note-on-external-dependencies).
 
 ```bash
-curl -L https://install.quickwit.io | sh
+curl -L https://raw.githubusercontent.com/quickwit-oss/quickwit/main/install.sh | sh
 ```
 
 ```bash

@@ -19,6 +19,7 @@ use std::time::Duration;
 
 use quickwit_common::uri::Uri;
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
+use quickwit_proto::types::SplitId;
 use sea_query::{ArrayType, Expr, Func, Order, SelectStatement, Value, any};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{ConnectOptions, Postgres};
@@ -217,23 +218,16 @@ pub(super) fn append_query_filters_and_order_by(sql: &mut SelectStatement, query
         );
     }
 
+    if !query.included_split_ids.is_empty() {
+        let included_array = split_ids_to_array(query.included_split_ids);
+        sql.cond_where(Expr::cust_with_values(
+            "split_id = ANY($1::text[])",
+            [included_array],
+        ));
+    }
+
     if !query.excluded_split_ids.is_empty() {
-        // One bind regardless of set size: avoids postgres' 65535 param
-        // ceiling and keeps parse-time O(1) in the exclude size. The `$1` is
-        // postgres' placeholder; sea-query substitutes it with the next bind
-        // slot at build time.
-        let mut excluded_split_ids: Vec<String> = query
-            .excluded_split_ids
-            .into_iter()
-            .map(|split_id| split_id.to_string())
-            .collect();
-        // HashSet iteration order is randomized; keep query rendering deterministic.
-        excluded_split_ids.sort_unstable();
-        let excluded_split_ids: Vec<Value> = excluded_split_ids
-            .into_iter()
-            .map(|split_id| Value::String(Some(Box::new(split_id))))
-            .collect();
-        let excluded_array = Value::Array(ArrayType::String, Some(Box::new(excluded_split_ids)));
+        let excluded_array = split_ids_to_array(query.excluded_split_ids);
         sql.cond_where(Expr::cust_with_values(
             "split_id <> ALL($1::text[])",
             [excluded_array],
@@ -264,6 +258,23 @@ pub(super) fn append_query_filters_and_order_by(sql: &mut SelectStatement, query
         sql.order_by(Splits::SplitId, Order::Asc)
             .offset(offset as u64);
     }
+}
+
+// One bind regardless of set size: avoids PostgreSQL's 65535 parameter ceiling and keeps
+// parse-time O(1) in the number of split IDs. The `$1` placeholder in the callers is replaced
+// with the next bind slot by sea-query.
+fn split_ids_to_array(split_ids: impl IntoIterator<Item = SplitId>) -> Value {
+    let mut split_ids: Vec<String> = split_ids
+        .into_iter()
+        .map(|split_id| split_id.to_string())
+        .collect();
+    // HashSet iteration order is randomized; keep query rendering deterministic.
+    split_ids.sort_unstable();
+    let split_ids: Vec<Value> = split_ids
+        .into_iter()
+        .map(|split_id| Value::String(Some(Box::new(split_id))))
+        .collect();
+    Value::Array(ArrayType::String, Some(Box::new(split_ids)))
 }
 
 /// Returns the unix timestamp at which the split becomes mature.
