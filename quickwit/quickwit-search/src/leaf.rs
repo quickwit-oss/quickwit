@@ -58,7 +58,9 @@ use tokio::task::{JoinError, JoinSet};
 use tokio_util::sync::CancellationToken;
 use tracing::*;
 
-use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
+use crate::collector::{
+    IncrementalCollector, MergeLevel, make_collector_for_split, make_merge_collector,
+};
 use crate::leaf_cache::LeafSearchCache;
 use crate::metrics::{
     LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES, LEAF_SEARCH_SPLIT_DURATION_SECS,
@@ -1620,8 +1622,11 @@ pub async fn multi_index_leaf_search(
     }
 
     // Creates a collector which merges responses into one
-    let merge_collector =
-        make_merge_collector(&search_request, searcher_context.get_aggregation_limits())?;
+    let merge_collector = make_merge_collector(
+        &search_request,
+        searcher_context.get_aggregation_limits(),
+        MergeLevel::Leaf,
+    )?;
     let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
 
     while let Some(leaf_response_join_result) = leaf_request_futures.join_next().await {
@@ -1978,8 +1983,11 @@ pub async fn single_doc_mapping_leaf_search(
     }
     let split_filter_arc: Arc<RwLock<CanSplitDoBetter>> = Arc::new(RwLock::new(split_filter));
 
-    let merge_collector =
-        make_merge_collector(&request, searcher_context.get_aggregation_limits())?;
+    let merge_collector = make_merge_collector(
+        &request,
+        searcher_context.get_aggregation_limits(),
+        MergeLevel::Leaf,
+    )?;
     let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
 
     let split_outcome_counters = Arc::new(SplitSearchOutcomeCounters::default());
