@@ -355,7 +355,8 @@ impl Source for NatsSource {
             };
             let Some(ack_subject) = message.message.reply else {
                 warn!(
-                    "prefetched NATS message carries no reply subject to negatively acknowledge it on"
+                    "prefetched NATS message carries no reply subject to negatively acknowledge \
+                     it on"
                 );
                 continue;
             };
