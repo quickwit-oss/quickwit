@@ -33,8 +33,11 @@ impl LambdaSearcherContext {
         info!("initializing lambda searcher context");
 
         let searcher_config = try_searcher_config_from_env()?;
-        let searcher_context =
-            Arc::new(SearcherContext::new_without_invoker(searcher_config, None));
+        let searcher_context = Arc::new(SearcherContext::new_without_invoker(
+            searcher_config,
+            None,
+            None,
+        ));
         let storage_resolver = StorageResolver::configured(&Default::default());
 
         Ok(Self {
