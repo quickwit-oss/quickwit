@@ -136,6 +136,7 @@ fail = "0.5"
 flate2 = "1.1"
 flume = "0.12"
 fnv = "1"
+foyer = { version = "=0.22.3", default-features = false, features = ["runtime-tokio"] }
 futures = "0.3"
 futures-util = { version = "0.3", default-features = false }
 glob = "0.3"
@@ -180,6 +181,7 @@ metrics-exporter-prometheus = { version = "0.18", default-features = false }
 metrics-util = "0.20"
 mime_guess = "2.0"
 mini-moka = "0.10"
+mixtrics = "=0.2.5"
 mockall = "0.14"
 mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "3b3562ef" }
 new_string_template = "1.5"
