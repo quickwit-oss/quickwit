@@ -14,7 +14,7 @@ Quickwit currently supports four types of storage providers:
 ## Storage URIs
 
 Storage URIs refer to different storage providers identified by a URI "protocol" or "scheme". Quickwit supports the following storage URI protocols:
-- `s3://` for Amazon S3 and S3-compatible
+- `s3://` for Amazon S3 and S3-compatible (per-bucket overrides via `storage.s3.profiles`, see [Per-bucket S3 profiles](#per-bucket-s3-profiles))
 - `azure://` for Azure Blob Storage
 - `file://` for local file systems
 - `gs://` for Google Cloud Storage
@@ -102,6 +102,44 @@ storage:
     flavor: gcs
     region: us-east1
     endpoint: https://storage.googleapis.com
+```
+
+#### Per-bucket S3 profiles
+
+In addition to the primary `s3:` block, you can declare per-bucket overrides under `storage.s3.profiles`. The map key is the bucket name; when an `s3://<bucket>/...` URI is resolved, an exact match supplies that bucket's own endpoint, credentials, region, and flags. Any bucket not listed falls back to the fields on the primary `s3:` block. URIs stay canonical `s3://` — routing is by bucket name, so nothing extra is persisted in the index metadata.
+
+Each profile accepts the same fields as the primary `s3:` block, *except* `profiles` itself (no recursion). If `access_key_id` / `secret_access_key` are omitted on a profile, the global AWS SDK credential chain is used (env vars, instance metadata, etc.).
+
+Profiles are self-contained: the process-wide `QW_S3_ENDPOINT` and `QW_S3_FORCE_PATH_STYLE_ACCESS` overrides apply to the primary `s3:` backend only. A profile always uses its own `endpoint` and `force_path_style_access` values.
+
+> Because routing keys on bucket name, a given bucket name maps to exactly one backend. If you need the *same* bucket name on two different endpoints, give the buckets distinct names.
+
+```yaml
+storage:
+  s3:
+    # Primary backend — used for any bucket not listed under `profiles`.
+    endpoint: https://s3.us-east-1.amazonaws.com
+    region: us-east-1
+    profiles:
+      # Buckets named `logs-bucket-eu` resolve to this endpoint.
+      logs-bucket-eu:
+        endpoint: https://s3.eu-west-3.amazonaws.com
+        region: eu-west-3
+        access_key_id: ${SECONDARY_S3_ACCESS_KEY_ID}
+        secret_access_key: ${SECONDARY_S3_SECRET_ACCESS_KEY}
+      # Buckets named `seaweed-logs` resolve here. Falls back to the global AWS
+      # SDK credentials when keys are omitted.
+      seaweed-logs:
+        endpoint: http://seaweedfs-s3:8333
+        region: us-east-1
+        force_path_style_access: true
+```
+
+An index simply points at the bucket by its canonical URI; the matching profile is applied automatically:
+
+```yaml
+index_id: logs-eu
+index_uri: s3://logs-bucket-eu/logs-eu
 ```
 
 ### Azure storage configuration
