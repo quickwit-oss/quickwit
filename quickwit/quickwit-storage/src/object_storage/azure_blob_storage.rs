@@ -44,6 +44,7 @@ use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tokio_util::io::StreamReader;
 use tracing::{info, instrument, warn};
 
+use super::azure_workload_identity::RefreshingWorkloadIdentityCredential;
 use crate::debouncer::DebouncedStorage;
 use crate::metrics::object_storage_get_slice_in_flight_guards;
 use crate::stable_deref_bytes::into_owned_bytes;
@@ -184,6 +185,11 @@ impl AzureBlobStorage {
             azure_storage_config.resolve_access_key()
         {
             StorageCredentials::access_key(storage_account_name.clone(), access_key)
+        } else if let Some(credential) = RefreshingWorkloadIdentityCredential::from_env() {
+            // `azure_identity` 0.21 caches the federated token file contents for the process
+            // lifetime, which breaks workload identity ~24h after startup. See the module docs
+            // of `azure_workload_identity`.
+            StorageCredentials::token_credential(Arc::new(credential))
         } else if let Ok(credential) = azure_identity::create_credential() {
             StorageCredentials::token_credential(credential)
         } else {
