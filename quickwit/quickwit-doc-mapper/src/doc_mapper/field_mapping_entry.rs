@@ -772,6 +772,7 @@ fn deserialize_mapping_type(
             Ok(FieldMappingType::DateTime(date_time_options, cardinality))
         }
         Type::Facet => unimplemented!("Facet are not supported in quickwit yet."),
+        Type::Custom => bail!("custom fields are not supported in Quickwit"),
         Type::Bytes => {
             let numeric_options: QuickwitBytesOptions = serde_json::from_value(json)?;
             if numeric_options.fast && cardinality == Cardinality::MultiValued {
