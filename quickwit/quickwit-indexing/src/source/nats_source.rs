@@ -47,6 +47,7 @@ use async_nats::jetstream::consumer::{AckPolicy, PullConsumer};
 use async_nats::jetstream::message::AckKind;
 use async_nats::{ConnectOptions, Subject, jetstream};
 use async_trait::async_trait;
+use bytesize::ByteSize;
 use futures::{FutureExt, StreamExt};
 use opentelemetry::propagation::Extractor;
 use opentelemetry::trace::TraceContextExt;
@@ -160,11 +161,9 @@ impl NatsSource {
         let message_stream = consumer
             .stream()
             .max_messages_per_batch(pull_max_messages_per_batch())
-            .max_bytes_per_batch(pull_max_bytes_per_batch())
-            // `stream()` defaults the heartbeat to zero, i.e. disabled, unlike
-            // `messages()`. It has to be set back, or a stalled subscription is
-            // never reported and `is_transient_stream_error` has nothing to act
-            // on.
+            .max_bytes_per_batch(pull_max_bytes_per_batch().0 as usize)
+            // default heartbeat that is disabled when using manual builder,
+            // required for transient conn errors.
             .heartbeat(PULL_IDLE_HEARTBEAT)
             .expires(PULL_EXPIRES)
             .messages()
@@ -245,6 +244,7 @@ impl NatsSource {
 
 #[async_trait]
 impl Source for NatsSource {
+    #[tracing::instrument(skip(source_sink, ctx))]
     async fn emit_batches(
         &mut self,
         source_sink: &SourceSink,
@@ -300,6 +300,7 @@ impl Source for NatsSource {
         Ok(wait_before_next_batch)
     }
 
+    #[tracing::instrument(skip(checkpoint, ctx))]
     async fn suggest_truncate(
         &mut self,
         checkpoint: SourceCheckpoint,
@@ -353,7 +354,9 @@ impl Source for NatsSource {
                 }
             };
             let Some(ack_subject) = message.message.reply else {
-                warn!("prefetched NATS message carries no reply subject to negatively acknowledge it on");
+                warn!(
+                    "prefetched NATS message carries no reply subject to negatively acknowledge it on"
+                );
                 continue;
             };
             if let Err(error) = self
@@ -366,11 +369,7 @@ impl Source for NatsSource {
             }
             num_naks += 1;
         }
-        // The negative acknowledgments above are plain publishes, and `drain`
-        // returns as soon as its command is queued rather than once the
-        // connection has been written out. Without this flush they can be lost
-        // with the connection, and their messages then wait a full `ack_wait`
-        // instead of being redelivered to a surviving pipeline immediately.
+
         if let Err(error) = self.nats_client.flush().await {
             warn!(%error, num_naks, "failed to flush NATS negative acknowledgments");
         }
@@ -397,7 +396,6 @@ impl Source for NatsSource {
 
 /// Bounds the concurrent server-confirmed ack requests: enough to hide the
 /// round-trip latency without flooding the connection.
-/// Caps a pull batch in bytes, which the message-count cap alone cannot do.
 ///
 /// The server buffers a pull response on the connection's outbound queue, and a
 /// connection that exceeds `max_pending` (64 MiB by default) is declared a slow
@@ -408,18 +406,12 @@ impl Source for NatsSource {
 ///
 /// The value is bounded on both sides. It must stay well below the server's
 /// `max_pending`, since several pull requests can be outstanding at once, and it
-/// must stay *above* the server's `max_payload`: the server answers a pull whose
-/// `max_bytes` is smaller than the next message with `409 Message Size Exceeds
-/// MaxBytes` and delivers nothing, which turns an intermittent stall into a
-/// permanent one. 10 MiB clears the 8 MiB `max_payload` ceiling a server can be
-/// configured with in practice, and leaves a six-fold margin against the default
-/// `max_pending`.
-/// Overridable while the value is being tuned against real message sizes.
-const DEFAULT_PULL_MAX_BYTES_PER_BATCH: usize = 10 * 1024 * 1024;
+/// must stay *above* the server's `max_payload`.
+const DEFAULT_PULL_MAX_BYTES_PER_BATCH: ByteSize = ByteSize::mib(10);
 
-fn pull_max_bytes_per_batch() -> usize {
+fn pull_max_bytes_per_batch() -> ByteSize {
     quickwit_common::get_from_env_cached!(
-        usize,
+        ByteSize,
         "QW_NATS_PULL_MAX_BYTES_PER_BATCH",
         DEFAULT_PULL_MAX_BYTES_PER_BATCH,
         false
@@ -442,8 +434,8 @@ fn pull_max_messages_per_batch() -> usize {
     )
 }
 
-/// Both kept at the `Consumer::messages` defaults, so switching to the builder
-/// changes the batch bounds and nothing else.
+// Both kept at the `Consumer::messages` defaults, so switching to the builder
+// changes the batch bounds and nothing else.
 const PULL_IDLE_HEARTBEAT: Duration = Duration::from_secs(15);
 const PULL_EXPIRES: Duration = Duration::from_secs(30);
 
@@ -478,16 +470,6 @@ const MAX_CONCURRENT_ACK_REQUESTS: usize = 128;
 
 /// Sends server-confirmed acknowledgments ("double acks") for the messages up
 /// to `published_up_to`.
-///
-/// The confirmation is not for error reporting: it is what holds a message in
-/// `pending_acks` long enough for [`Source::is_drained`] to still be false when
-/// `Drain` arrives. `Drain` queues its force-commit batch and then checks
-/// `is_drained` immediately, so a source that reports itself drained at that
-/// instant exits before the in-flight documents are published, and they are
-/// redelivered as duplicates. Replacing these requests with plain publishes was
-/// measured at 37 % less broker CPU and 40 % more throughput at four pipelines,
-/// and it broke exactly-once on `num_pipelines` reassignment (+91 581 duplicates
-/// on a 2 000 000 document corpus), which is why they are requests.
 async fn ack_up_to(
     nats_client: &async_nats::Client,
     pending_acks: &mut BTreeMap<u64, PendingAck>,
@@ -500,9 +482,7 @@ async fn ack_up_to(
     }
     let acks: Vec<(u64, Subject)> = pending_acks
         .range(..=published_up_to)
-        .map(|(delivery_counter, pending_ack)| {
-            (*delivery_counter, pending_ack.ack_subject.clone())
-        })
+        .map(|(delivery_counter, pending_ack)| (*delivery_counter, pending_ack.ack_subject.clone()))
         .collect();
     if acks.is_empty() {
         return;
@@ -540,15 +520,8 @@ async fn ack_up_to(
 ///
 /// `AckPolicy::All` makes the server treat one ack as an ack of every message at
 /// or below that message's stream sequence, so the ack of the highest published
-/// sequence stands in for the entire range. That is the same shape as a Kafka
-/// offset commit, and it takes the per-message ack off the hot path: a broker
-/// that serves ~400 000 messages/s of pure delivery only serves ~60 000/s once
-/// every message needs its own acknowledgment.
-///
-/// The hidden contract is that the consumer must have a single puller. Acking by
-/// sequence also acks the messages a sibling pipeline holds but has not
-/// published, so `fetch_durable_consumer` refuses this policy for a source with
-/// more than one pipeline.
+/// sequence stands in for the entire range. It requires that num_pipeline = 1,
+/// otherwise this is unsound.
 ///
 /// Nothing is dropped from `pending_acks` unless the server confirmed the ack,
 /// so a failure leaves the range pending and the next `suggest_truncate` retries
