@@ -126,11 +126,22 @@ impl NatsSource {
             source_id=%source_runtime.source_id(),
             stream=%source_params.stream,
             %consumer_name,
+            pull_max_bytes_per_batch=%pull_max_bytes_per_batch(),
+            pull_max_messages_per_batch=%pull_max_messages_per_batch(),
             "starting NATS source"
         );
 
         let (nats_client, consumer) = connect_and_fetch_consumer(&source_params).await?;
         let message_stream = consumer
+            .stream()
+            .max_messages_per_batch(pull_max_messages_per_batch())
+            .max_bytes_per_batch(pull_max_bytes_per_batch())
+            // `stream()` defaults the heartbeat to zero, i.e. disabled, unlike
+            // `messages()`. It has to be set back, or a stalled subscription is
+            // never reported and `is_transient_stream_error` has nothing to act
+            // on.
+            .heartbeat(PULL_IDLE_HEARTBEAT)
+            .expires(PULL_EXPIRES)
             .messages()
             .await
             .context("failed to subscribe to NATS consumer messages")?;
@@ -299,19 +310,40 @@ impl Source for NatsSource {
     ) -> anyhow::Result<()> {
         // Any ack still pending at this point was not completed by a drain:
         // its message is redelivered after the consumer's `ack_wait`.
+        let mut num_naks = 0usize;
         while let Some(Some(message_res)) = self.message_stream.next().now_or_never() {
-            let Ok(message) = message_res else {
-                continue;
+            let message = match message_res {
+                Ok(message) => message,
+                Err(error) => {
+                    warn!(%error, "failed to pull a prefetched NATS message to negatively acknowledge it");
+                    continue;
+                }
             };
             let Some(ack_subject) = message.message.reply else {
+                warn!("prefetched NATS message carries no reply subject to negatively acknowledge it on");
                 continue;
             };
-            let _ = self
+            if let Err(error) = self
                 .nats_client
                 .publish(ack_subject, AckKind::Nak(Some(NAK_REDELIVERY_DELAY)).into())
-                .await;
+                .await
+            {
+                warn!(%error, "failed to negatively acknowledge a prefetched NATS message");
+                continue;
+            }
+            num_naks += 1;
         }
-        let _ = self.nats_client.drain().await;
+        // The negative acknowledgments above are plain publishes, and `drain`
+        // returns as soon as its command is queued rather than once the
+        // connection has been written out. Without this flush they can be lost
+        // with the connection, and their messages then wait a full `ack_wait`
+        // instead of being redelivered to a surviving pipeline immediately.
+        if let Err(error) = self.nats_client.flush().await {
+            warn!(%error, num_naks, "failed to flush NATS negative acknowledgments");
+        }
+        if let Err(error) = self.nats_client.drain().await {
+            warn!(%error, "failed to drain the NATS connection");
+        }
         Ok(())
     }
 
@@ -332,7 +364,55 @@ impl Source for NatsSource {
 
 /// Bounds the concurrent server-confirmed ack requests: enough to hide the
 /// round-trip latency without flooding the connection.
-const MAX_CONCURRENT_ACK_REQUESTS: usize = 128;
+/// Caps a pull batch in bytes, which the message-count cap alone cannot do.
+///
+/// The server buffers a pull response on the connection's outbound queue, and a
+/// connection that exceeds `max_pending` (64 MiB by default) is declared a slow
+/// consumer and closed. Messages already written to it are lost while still
+/// counted as delivered, so they only come back after `ack_wait` expires: with
+/// 1 MiB messages, an uncapped batch of 200 asks the server for 200 MiB and the
+/// source stalls for a whole `ack_wait` at a time.
+///
+/// The value is bounded on both sides. It must stay well below the server's
+/// `max_pending`, since several pull requests can be outstanding at once, and it
+/// must stay *above* the server's `max_payload`: the server answers a pull whose
+/// `max_bytes` is smaller than the next message with `409 Message Size Exceeds
+/// MaxBytes` and delivers nothing, which turns an intermittent stall into a
+/// permanent one. 10 MiB clears the 8 MiB `max_payload` ceiling a server can be
+/// configured with in practice, and leaves a six-fold margin against the default
+/// `max_pending`.
+/// Overridable while the value is being tuned against real message sizes.
+const DEFAULT_PULL_MAX_BYTES_PER_BATCH: usize = 10 * 1024 * 1024;
+
+fn pull_max_bytes_per_batch() -> usize {
+    quickwit_common::get_from_env_cached!(
+        usize,
+        "QW_NATS_PULL_MAX_BYTES_PER_BATCH",
+        DEFAULT_PULL_MAX_BYTES_PER_BATCH,
+        false
+    )
+}
+
+/// Messages per pull batch. The byte cap above is what actually bounds a batch;
+/// this only binds for small messages, where it caps a pull far below the byte
+/// budget (200 messages of 1 KiB is under 200 KiB against a 10 MiB budget) and
+/// costs a round-trip per 200 messages. Left high so the byte cap is the single
+/// thing deciding batch size, and overridable for the same reason as above.
+const DEFAULT_PULL_MAX_MESSAGES_PER_BATCH: usize = 100_000;
+
+fn pull_max_messages_per_batch() -> usize {
+    quickwit_common::get_from_env_cached!(
+        usize,
+        "QW_NATS_PULL_MAX_MESSAGES_PER_BATCH",
+        DEFAULT_PULL_MAX_MESSAGES_PER_BATCH,
+        false
+    )
+}
+
+/// Both kept at the `Consumer::messages` defaults, so switching to the builder
+/// changes the batch bounds and nothing else.
+const PULL_IDLE_HEARTBEAT: Duration = Duration::from_secs(15);
+const PULL_EXPIRES: Duration = Duration::from_secs(30);
 
 /// Pause before pulling again after a transient stream error, to avoid a hot
 /// error loop while the connection recovers. `SuggestTruncate` is still
@@ -358,8 +438,20 @@ fn is_transient_stream_error(error: &MessagesError) -> bool {
     )
 }
 
-/// Sends server-confirmed acknowledgments ("double acks") for the messages up
-/// to `published_up_to`.
+/// Acknowledges the messages up to `published_up_to`.
+///
+/// The acknowledgments are plain publishes, not requests: a request per message
+/// would put a server round-trip on the source actor's own task, which is the
+/// task that also pulls, and the actor handles one message at a time. What makes
+/// that safe is that the connection is only ever torn down through `finalize`,
+/// which flushes before draining it, so an acknowledgment queued here is written
+/// out before the connection goes away.
+///
+/// The consequence for [`Source::is_drained`] is worth being explicit about: a
+/// message leaves `pending_acks` once its acknowledgment is queued on the
+/// connection rather than once the server has answered for it. A drain therefore
+/// declares itself finished on "queued and about to be flushed" instead of
+/// "server has it", and it is `finalize`'s flush that closes that gap.
 async fn ack_up_to(
     nats_client: &async_nats::Client,
     pending_acks: &mut BTreeMap<u64, Subject>,
@@ -372,20 +464,12 @@ async fn ack_up_to(
     if acks.is_empty() {
         return;
     }
-    let mut ack_results = futures::stream::iter(acks)
-        .map(|(delivery_counter, ack_subject)| async move {
-            // Mirrors `jetstream::Message::double_ack()`: a request instead of
-            // a plain publish, so the server's reply confirms the ack.
-            let ack_result = nats_client.request(ack_subject, AckKind::Ack.into()).await;
-            (delivery_counter, ack_result)
-        })
-        .buffer_unordered(MAX_CONCURRENT_ACK_REQUESTS);
     let mut num_acks = 0usize;
     let mut num_failed_acks = 0usize;
     let mut last_ack_error = None;
-    while let Some((delivery_counter, ack_result)) = ack_results.next().await {
-        match ack_result {
-            Ok(_ack_reply) => {
+    for (delivery_counter, ack_subject) in acks {
+        match nats_client.publish(ack_subject, AckKind::Ack.into()).await {
+            Ok(()) => {
                 pending_acks.remove(&delivery_counter);
                 num_acks += 1;
             }
@@ -396,6 +480,8 @@ async fn ack_up_to(
         }
     }
     if let Some(error) = last_ack_error {
+        // The messages stay in `pending_acks`, so the next truncate retries them
+        // and a drain keeps waiting rather than declaring itself finished.
         warn!(%error, num_failed_acks, "failed to ack NATS messages");
     }
     debug!(num_acks, "acked published messages");
