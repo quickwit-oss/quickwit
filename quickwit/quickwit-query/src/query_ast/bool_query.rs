@@ -30,7 +30,7 @@ use crate::query_ast::QueryAst;
 ///
 /// If all clauses are empty, then the full set of documents is returned.
 /// Adding a match all must clause does not change the result of a boolean query.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 pub struct BoolQuery {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub must: Vec<QueryAst>,

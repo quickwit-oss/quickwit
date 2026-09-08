@@ -18,8 +18,9 @@ use std::ops::Bound;
 use std::sync::Arc;
 
 use quickwit_query::query_ast::{
-    BuildTantivyAstContext, FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery, QueryAst,
-    QueryAstTransformer, QueryAstVisitor, RangeQuery, RegexQuery, TermSetQuery, WildcardQuery,
+    BuildTantivyAstContext, CalcFieldQuery, FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery,
+    QueryAst, QueryAstTransformer, QueryAstVisitor, RangeQuery, RegexQuery, TermSetQuery,
+    WildcardQuery,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{InvalidQuery, find_field_or_hit_dynamic};
@@ -31,45 +32,48 @@ use tracing::error;
 use crate::doc_mapper::FastFieldWarmupInfo;
 use crate::{Automaton, QueryParserError, TermRange, WarmupInfo};
 
-#[derive(Default)]
-struct RangeQueryFields {
-    range_query_field_names: HashSet<String>,
+/// Collects fast fields needed to evaluate the query, including optional and negated clauses.
+/// Unlike `WarmupInfo::required_terms`, these are not logically required matches.
+struct GetRequiredFastFieldsVisitor<'a> {
+    schema: &'a Schema,
+    fields: HashSet<FastFieldWarmupInfo>,
 }
 
-impl<'a> QueryAstVisitor<'a> for RangeQueryFields {
-    type Err = Infallible;
-
-    fn visit_range(&mut self, range_query: &'a RangeQuery) -> Result<(), Infallible> {
-        self.range_query_field_names
-            .insert(range_query.field.to_string());
-        Ok(())
+impl GetRequiredFastFieldsVisitor<'_> {
+    /// Term queries read columns only when the field is fast but not indexed.
+    fn add_columnar_term_field(&mut self, field_name: &str) {
+        let Some((_field, field_entry, path)) = find_field_or_hit_dynamic(field_name, self.schema)
+        else {
+            return;
+        };
+        if !field_entry.is_fast() || field_entry.is_indexed() {
+            return;
+        }
+        self.fields.insert(FastFieldWarmupInfo {
+            name: if path.is_empty() {
+                field_entry.name().to_string()
+            } else {
+                format!("{}.{}", field_entry.name(), path)
+            },
+            with_subfields: false,
+        });
     }
 }
 
-/// Term Queries on fields which are fast but not indexed.
-struct TermSearchOnColumnar<'f> {
-    fields: &'f mut HashSet<FastFieldWarmupInfo>,
-    schema: Schema,
-}
-impl<'a, 'f> QueryAstVisitor<'a> for TermSearchOnColumnar<'f> {
+impl<'a> QueryAstVisitor<'a> for GetRequiredFastFieldsVisitor<'_> {
     type Err = Infallible;
+
+    fn visit_range(&mut self, range_query: &'a RangeQuery) -> Result<(), Infallible> {
+        self.fields.insert(FastFieldWarmupInfo {
+            name: range_query.field.to_string(),
+            with_subfields: false,
+        });
+        Ok(())
+    }
 
     fn visit_term_set(&mut self, term_set_query: &'a TermSetQuery) -> Result<(), Infallible> {
         for field in term_set_query.terms_per_field.keys() {
-            if let Some((_field, field_entry, path)) =
-                find_field_or_hit_dynamic(field, &self.schema)
-                && field_entry.is_fast()
-                && !field_entry.is_indexed()
-            {
-                self.fields.insert(FastFieldWarmupInfo {
-                    name: if path.is_empty() {
-                        field_entry.name().to_string()
-                    } else {
-                        format!("{}.{}", field_entry.name(), path)
-                    },
-                    with_subfields: false,
-                });
-            }
+            self.add_columnar_term_field(field);
         }
         Ok(())
     }
@@ -78,76 +82,59 @@ impl<'a, 'f> QueryAstVisitor<'a> for TermSearchOnColumnar<'f> {
         &mut self,
         term_query: &'a quickwit_query::query_ast::TermQuery,
     ) -> Result<(), Infallible> {
-        if let Some((_field, field_entry, path)) =
-            find_field_or_hit_dynamic(&term_query.field, &self.schema)
-            && field_entry.is_fast()
-            && !field_entry.is_indexed()
-        {
-            self.fields.insert(FastFieldWarmupInfo {
-                name: if path.is_empty() {
-                    field_entry.name().to_string()
-                } else {
-                    format!("{}.{}", field_entry.name(), path)
-                },
-                with_subfields: false,
-            });
-        }
+        self.add_columnar_term_field(&term_query.field);
         Ok(())
     }
-    /// We also need to visit full text queries because they can be converted to term queries
-    /// on fast fields. We only care about the field being fast and not indexed AND the tokenizer
-    /// being `raw` or None.
+
     fn visit_full_text(&mut self, full_text_query: &'a FullTextQuery) -> Result<(), Infallible> {
-        if let Some((_field, field_entry, path)) =
-            find_field_or_hit_dynamic(&full_text_query.field, &self.schema)
-            && field_entry.is_fast()
-            && !field_entry.is_indexed()
-            && (full_text_query.params.tokenizer.is_none()
-                || full_text_query.params.tokenizer.as_deref() == Some("raw"))
-        {
-            self.fields.insert(FastFieldWarmupInfo {
-                name: if path.is_empty() {
-                    field_entry.name().to_string()
-                } else {
-                    format!("{}.{}", field_entry.name(), path)
-                },
-                with_subfields: false,
-            });
+        // Only a raw or unspecified tokenizer permits a full-text query to use columns.
+        if !matches!(
+            full_text_query.params.tokenizer.as_deref(),
+            None | Some("raw")
+        ) {
+            return Ok(());
         }
+        self.add_columnar_term_field(&full_text_query.field);
         Ok(())
     }
-}
-
-struct ExistsQueryFastFields<'f> {
-    fields: &'f mut HashSet<FastFieldWarmupInfo>,
-    schema: Schema,
-}
-
-impl<'a, 'f> QueryAstVisitor<'a> for ExistsQueryFastFields<'f> {
-    type Err = Infallible;
 
     fn visit_exists(&mut self, exists_query: &'a FieldPresenceQuery) -> Result<(), Infallible> {
-        let fields = exists_query.find_field_and_subfields(&self.schema);
+        let fields = exists_query.find_field_and_subfields(self.schema);
         for (_, field_entry, path) in fields {
-            if field_entry.is_fast() {
-                if field_entry.field_type().is_json() {
-                    let full_path = format!("{}.{}", field_entry.name(), path);
-                    self.fields.insert(FastFieldWarmupInfo {
-                        name: full_path,
-                        with_subfields: true,
-                    });
-                } else if path.is_empty() {
-                    self.fields.insert(FastFieldWarmupInfo {
-                        name: field_entry.name().to_string(),
-                        with_subfields: false,
-                    });
-                } else {
-                    error!(
-                        field_entry = field_entry.name(),
-                        path, "only JSON type supports subfields"
-                    );
-                }
+            if !field_entry.is_fast() {
+                continue;
             }
+            if field_entry.field_type().is_json() {
+                let full_path = format!("{}.{}", field_entry.name(), path);
+                self.fields.insert(FastFieldWarmupInfo {
+                    name: full_path,
+                    with_subfields: true,
+                });
+            } else if path.is_empty() {
+                self.fields.insert(FastFieldWarmupInfo {
+                    name: field_entry.name().to_string(),
+                    with_subfields: false,
+                });
+            } else {
+                error!(
+                    field_entry = field_entry.name(),
+                    path, "only JSON type supports subfields"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn visit_calc_field(&mut self, query: &'a CalcFieldQuery) -> Result<(), Infallible> {
+        let Ok(inferred_types) = tantivy::jitexpr::ast::infer_types(&query.expression) else {
+            // Query construction handles invalid expressions after warmup collection.
+            return Ok(());
+        };
+        for (field_name, _inferred_type_set) in inferred_types {
+            self.fields.insert(FastFieldWarmupInfo {
+                name: field_name.to_string(),
+                with_subfields: false,
+            });
         }
         Ok(())
     }
@@ -159,8 +146,6 @@ pub(crate) fn build_query(
     context: &BuildTantivyAstContext,
     cache_context: Option<(Arc<dyn quickwit_query::query_ast::PredicateCache>, String)>,
 ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
-    let mut fast_fields: HashSet<FastFieldWarmupInfo> = HashSet::new();
-
     let query_ast = if let Some((cache, split_id)) = cache_context {
         let Ok(query_ast) = quickwit_query::query_ast::PredicateCacheInjector { cache, split_id }
             .transform(query_ast);
@@ -170,30 +155,14 @@ pub(crate) fn build_query(
         query_ast
     };
 
-    let mut range_query_fields = RangeQueryFields::default();
+    // Visit after cache injection: cache hits do not evaluate the underlying predicate,
+    // while uninitialized cache nodes and cache misses still need their input columns.
+    let mut fast_fields_visitor = GetRequiredFastFieldsVisitor {
+        schema: context.schema,
+        fields: HashSet::new(),
+    };
     // This cannot fail. The error type is Infallible.
-    let Ok(_) = range_query_fields.visit(&query_ast);
-    let range_query_fast_fields =
-        range_query_fields
-            .range_query_field_names
-            .into_iter()
-            .map(|name| FastFieldWarmupInfo {
-                name,
-                with_subfields: false,
-            });
-    fast_fields.extend(range_query_fast_fields);
-
-    let Ok(_) = TermSearchOnColumnar {
-        fields: &mut fast_fields,
-        schema: context.schema.clone(),
-    }
-    .visit(&query_ast);
-
-    let Ok(_) = ExistsQueryFastFields {
-        fields: &mut fast_fields,
-        schema: context.schema.clone(),
-    }
-    .visit(&query_ast);
+    let Ok(_) = fast_fields_visitor.visit(&query_ast);
 
     let (query, required_terms) = query_ast.build_tantivy_query_and_required_terms(context)?;
 
@@ -222,7 +191,7 @@ pub(crate) fn build_query(
         term_dict_fields: term_set_query_fields,
         terms_grouped_by_field,
         term_ranges_grouped_by_field,
-        fast_fields,
+        fast_fields: fast_fields_visitor.fields,
         automatons_grouped_by_field,
         required_terms,
         ..WarmupInfo::default()
@@ -431,21 +400,228 @@ fn extract_prefix_term_ranges_and_automaton(
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashSet;
     use std::ops::Bound;
 
     use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
     use quickwit_query::query_ast::{
-        BuildTantivyAstContext, FullTextMode, FullTextParams, PhrasePrefixQuery, QueryAstVisitor,
-        UserInputQuery, query_ast_from_user_text,
+        BoolQuery, BuildTantivyAstContext, CacheNode, CalcFieldQuery, FullTextMode, FullTextParams,
+        PhrasePrefixQuery, QueryAst, QueryAstVisitor, UserInputQuery, query_ast_from_user_text,
     };
     use quickwit_query::{
         BooleanOperand, MatchAllOrNone, create_default_quickwit_tokenizer_manager,
     };
     use tantivy::Term;
+    use tantivy::jitexpr::ast::deserialize;
     use tantivy::schema::{DateOptions, DateTimePrecision, FAST, INDEXED, STORED, Schema, TEXT};
 
     use super::{ExtractPrefixTermRanges, build_query};
-    use crate::{DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME, TermRange};
+    use crate::{
+        DYNAMIC_FIELD_NAME, FastFieldWarmupInfo, SOURCE_FIELD_NAME, TermRange, WarmupInfo,
+    };
+
+    fn calc_field(expression: &str) -> QueryAst {
+        CalcFieldQuery {
+            expression: deserialize(expression).unwrap(),
+        }
+        .into()
+    }
+
+    fn expected_fast_fields(names: &[&str]) -> HashSet<FastFieldWarmupInfo> {
+        let mut fields = HashSet::with_capacity(names.len());
+        for name in names {
+            fields.insert(FastFieldWarmupInfo {
+                name: (*name).to_string(),
+                with_subfields: false,
+            });
+        }
+        fields
+    }
+
+    fn warmup_info(query: QueryAst) -> WarmupInfo {
+        // Input names are resolved per segment by Tantivy, not filtered by the builder's schema.
+        let schema = Schema::builder().build();
+        let context = BuildTantivyAstContext::for_test(&schema);
+        build_query(query, &context, None).unwrap().1
+    }
+
+    #[test]
+    fn test_calc_field_warmup_collects_nested_inputs_and_deduplicates() {
+        let query = calc_field(
+            "(AND (GT (ADD duration duration) #computed) (EQ (LOWER custom.label) \
+             \"ignored.field\"))",
+        );
+        assert_eq!(
+            warmup_info(query),
+            WarmupInfo {
+                fast_fields: expected_fast_fields(&["duration", "#computed", "custom.label"]),
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn test_calc_field_warmup_constants_need_no_fields() {
+        for expression in ["true", "false", "(EQ 1i64 1i64)"] {
+            assert_eq!(warmup_info(calc_field(expression)), WarmupInfo::default());
+        }
+    }
+
+    #[test]
+    fn test_calc_field_warmup_visits_boolean_boost_and_uninitialized_cache_nodes() {
+        let query: QueryAst = BoolQuery {
+            must: vec![calc_field("must_field")],
+            must_not: vec![calc_field("must_not_field")],
+            should: vec![calc_field("should_field").boost(Some(2.0f32.try_into().unwrap()))],
+            filter: vec![CacheNode::new(calc_field("filter_field")).into()],
+            ..Default::default()
+        }
+        .into();
+        assert_eq!(
+            warmup_info(query).fast_fields,
+            expected_fast_fields(&[
+                "must_field",
+                "must_not_field",
+                "should_field",
+                "filter_field"
+            ])
+        );
+    }
+
+    fn full_text_query_for_warmup(field: &str, tokenizer: Option<&str>) -> QueryAst {
+        quickwit_query::query_ast::FullTextQuery {
+            field: field.to_string(),
+            text: "keep".to_string(),
+            params: FullTextParams {
+                tokenizer: tokenizer.map(str::to_string),
+                mode: FullTextMode::Bool {
+                    operator: BooleanOperand::And,
+                },
+                zero_terms_query: MatchAllOrNone::MatchNone,
+            },
+            lenient: false,
+        }
+        .into()
+    }
+
+    #[test]
+    fn test_required_fast_fields_mixed_query() {
+        use std::collections::{BTreeSet, HashMap};
+
+        use quickwit_query::query_ast::{FieldPresenceQuery, RangeQuery, TermQuery, TermSetQuery};
+
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_i64_field(FIELD_PRESENCE_FIELD_NAME, INDEXED);
+        schema_builder.add_i64_field("value", FAST);
+        schema_builder.add_i64_field("set_value", FAST);
+        schema_builder.add_json_field("payload", FAST);
+        schema_builder.add_text_field("columnar_text", FAST);
+        schema_builder.add_text_field("default_text", FAST);
+        schema_builder.add_text_field("indexed", TEXT | FAST);
+        schema_builder.add_bool_field("present", FAST);
+        let schema = schema_builder.build();
+        let context = BuildTantivyAstContext::for_test(&schema);
+        let query: QueryAst = BoolQuery {
+            must: vec![
+                RangeQuery {
+                    field: "value".to_string(),
+                    lower_bound: Bound::Unbounded,
+                    upper_bound: Bound::Unbounded,
+                }
+                .into(),
+                TermQuery {
+                    field: "value".to_string(),
+                    value: "1".to_string(),
+                }
+                .into(),
+            ],
+            should: vec![
+                full_text_query_for_warmup("columnar_text", Some("raw")),
+                full_text_query_for_warmup("default_text", None),
+            ],
+            must_not: vec![
+                FieldPresenceQuery {
+                    field: "payload.nested".to_string(),
+                }
+                .into(),
+                FieldPresenceQuery {
+                    field: "present".to_string(),
+                }
+                .into(),
+            ],
+            filter: vec![
+                TermSetQuery {
+                    terms_per_field: HashMap::from([
+                        ("set_value".to_string(), BTreeSet::from(["1".to_string()])),
+                        ("indexed".to_string(), BTreeSet::from(["keep".to_string()])),
+                    ]),
+                }
+                .into(),
+                QueryAst::from(CacheNode::new(calc_field("(GT value 0i64)")))
+                    .boost(Some(2.0f32.try_into().unwrap())),
+            ],
+            ..Default::default()
+        }
+        .into();
+        let (_, warmup) = build_query(query, &context, None).unwrap();
+        let mut expected = expected_fast_fields(&[
+            "value",
+            "set_value",
+            "columnar_text",
+            "default_text",
+            "present",
+        ]);
+        expected.insert(FastFieldWarmupInfo {
+            name: "payload.nested".to_string(),
+            with_subfields: true,
+        });
+        assert_eq!(warmup.fast_fields, expected);
+    }
+
+    #[test]
+    fn test_required_fast_fields_skips_ineligible_queries_and_preserves_existing_fields() {
+        use quickwit_query::query_ast::{FieldPresenceQuery, TermQuery};
+
+        use super::GetRequiredFastFieldsVisitor;
+
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_text_field("columnar_text", FAST);
+        schema_builder.add_text_field("indexed", TEXT | FAST);
+        schema_builder.add_text_field("stored", STORED);
+        let schema = schema_builder.build();
+        let query: QueryAst = BoolQuery {
+            must: vec![
+                full_text_query_for_warmup("columnar_text", Some("default")),
+                TermQuery {
+                    field: "indexed".to_string(),
+                    value: "keep".to_string(),
+                }
+                .into(),
+                TermQuery {
+                    field: "stored".to_string(),
+                    value: "keep".to_string(),
+                }
+                .into(),
+                TermQuery {
+                    field: "missing".to_string(),
+                    value: "keep".to_string(),
+                }
+                .into(),
+                FieldPresenceQuery {
+                    field: "stored".to_string(),
+                }
+                .into(),
+            ],
+            ..Default::default()
+        }
+        .into();
+        let mut visitor = GetRequiredFastFieldsVisitor {
+            schema: &schema,
+            fields: expected_fast_fields(&["already_collected"]),
+        };
+        visitor.visit(&query).unwrap();
+        assert_eq!(visitor.fields, expected_fast_fields(&["already_collected"]));
+    }
 
     enum TestExpectation<'a> {
         Err(&'a str),
