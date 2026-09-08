@@ -222,7 +222,7 @@ impl AzureBlobStorage {
     ) -> StorageResult<Bytes> {
         let name = self.blob_name(path);
         let capacity = range_opt.as_ref().map(Range::len).unwrap_or(0);
-        retry(&self.retry_params, || async {
+        retry("azure.get", &self.retry_params, || async {
             let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
             let (mut response_stream, _in_flight_guards) = if let Some(range) = range_opt.as_ref() {
                 let stream = self
@@ -254,7 +254,7 @@ impl AzureBlobStorage {
         crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(payload.len());
         let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_PUT_OBJECT_DURATION);
-        retry(&self.retry_params, || async {
+        retry("azure.put", &self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
             let hash = azure_storage_blobs::prelude::Hash::from(md5::compute(&data[..]).0);
             self.container_client
@@ -291,7 +291,7 @@ impl AzureBlobStorage {
                 async move {
                     let _timer =
                         HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_UPLOAD_PART_DURATION);
-                    retry(&self.retry_params, || async {
+                    retry("azure.put", &self.retry_params, || async {
                         // zero pad block ids to make them sortable as strings
                         let block_id = format!("block:{:05}", num);
                         let (data, hash_digest) =
@@ -476,7 +476,7 @@ impl Storage for AzureBlobStorage {
         path: &Path,
         range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        retry(&self.retry_params, || async {
+        retry("azure.get", &self.retry_params, || async {
             let range = range.clone();
             let name = self.blob_name(path);
             let page_stream = self
