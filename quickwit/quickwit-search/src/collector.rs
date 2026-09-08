@@ -682,7 +682,10 @@ impl QuickwitIncrementalAggregations {
         }
     }
 
-    fn finalize(self, merge_level: MergeLevel) -> tantivy::Result<Option<Vec<u8>>> {
+    fn finalize(
+        self,
+        intermediate_pruning: IntermediatePruning,
+    ) -> tantivy::Result<Option<Vec<u8>>> {
         match self {
             QuickwitIncrementalAggregations::FindTraceIdsAggregation(collector, mut state) => {
                 let merged_fruit = if state.len() > 1 {
@@ -697,7 +700,7 @@ impl QuickwitIncrementalAggregations {
                 merge_intermediate_aggregation_result(
                     &Some(QuickwitAggregations::TantivyAggregations(aggregation)),
                     state.iter().map(|vec| vec.as_slice()),
-                    merge_level,
+                    intermediate_pruning,
                 )
             }
             QuickwitIncrementalAggregations::NoAggregation => Ok(None),
@@ -705,16 +708,19 @@ impl QuickwitIncrementalAggregations {
     }
 }
 
-/// Where in the search tree a collector is merging results.
+/// Whether a merge prunes its intermediate results back to `segment_size`.
 ///
-/// Leaf merges are followed by more merging upstream, so their intermediate results are
-/// pruned back to `segment_size` to bound what crosses the network. A root merge has no
-/// such consumer: finalization prunes it to the requested `size` anyway, and pruning it
-/// twice only widens `doc_count_error_upper_bound`.
+/// Pruning bounds what the merged result costs to carry, so it is worth paying whenever
+/// something downstream still has to receive or merge that result: a leaf sending to the
+/// root, or a root answering a caller that asked to skip finalization.
+///
+/// It is pure loss when finalization runs next. Finalization prunes to the requested
+/// `size` on its own, so cutting the candidate set beforehand only discards counts it
+/// could have used, which shows up as a wider `doc_count_error_upper_bound`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MergeLevel {
-    Leaf,
-    Root,
+pub(crate) enum IntermediatePruning {
+    Apply,
+    Skip,
 }
 
 /// The quickwit collector is the tantivy Collector used in Quickwit.
@@ -729,7 +735,7 @@ pub(crate) struct QuickwitCollector {
     pub sort_by: SortByPair,
     pub aggregation: Option<QuickwitAggregations>,
     pub agg_context_params: AggContextParams,
-    pub merge_level: MergeLevel,
+    pub intermediate_pruning: IntermediatePruning,
     search_after: Option<PartialHit>,
 }
 
@@ -860,7 +866,7 @@ impl Collector for QuickwitCollector {
             sort_order1,
             sort_order2,
             num_hits,
-            self.merge_level,
+            self.intermediate_pruning,
         )?;
         // ... and drop the first [..start_offsets) hits.
         // note that self.start_offset is 0 when merging from leaf_search, and is only set when
@@ -885,7 +891,7 @@ fn map_error(error: postcard::Error) -> TantivyError {
 fn merge_intermediate_aggregation_result<'a>(
     aggregations_opt: &Option<QuickwitAggregations>,
     intermediate_aggregation_results: impl Iterator<Item = &'a [u8]>,
-    merge_level: MergeLevel,
+    intermediate_pruning: IntermediatePruning,
 ) -> tantivy::Result<Option<Vec<u8>>> {
     let merged_intermediate_aggregation_result = match aggregations_opt {
         Some(QuickwitAggregations::FindTraceIdsAggregation(collector)) => {
@@ -924,7 +930,7 @@ fn merge_intermediate_aggregation_result<'a>(
             // the requested `size`, and cutting the candidate set here as well only discards
             // counts that finalization could still have used, inflating
             // `doc_count_error_upper_bound`.
-            if merge_level == MergeLevel::Leaf {
+            if intermediate_pruning == IntermediatePruning::Apply {
                 merged.prune_intermediate_results(aggregations, PruneMode::Intermediate)?;
             }
             let serialized = postcard::to_allocvec(&merged).map_err(map_error)?;
@@ -943,7 +949,7 @@ fn merge_leaf_responses(
     sort_order1: SortOrder,
     sort_order2: SortOrder,
     max_hits: usize,
-    merge_level: MergeLevel,
+    intermediate_pruning: IntermediatePruning,
 ) -> tantivy::Result<LeafSearchResponse> {
     // Optimization: No merging needed if there is only one result.
     if leaf_responses.len() == 1 {
@@ -961,7 +967,7 @@ fn merge_leaf_responses(
             leaf_responses.iter().filter_map(|leaf_response| {
                 leaf_response.intermediate_aggregation_result.as_deref()
             }),
-            merge_level,
+            intermediate_pruning,
         )?;
     let num_attempted_splits = leaf_responses
         .iter()
@@ -1075,7 +1081,7 @@ pub(crate) fn make_collector_for_split(
         sort_by,
         aggregation,
         agg_context_params,
-        merge_level: MergeLevel::Leaf,
+        intermediate_pruning: IntermediatePruning::Apply,
         search_after: search_request.search_after.clone(),
     })
 }
@@ -1084,7 +1090,7 @@ pub(crate) fn make_collector_for_split(
 pub(crate) fn make_merge_collector(
     search_request: &SearchRequest,
     agg_limits: AggregationLimitsGuard,
-    merge_level: MergeLevel,
+    intermediate_pruning: IntermediatePruning,
 ) -> crate::Result<QuickwitCollector> {
     // Note: at this point the tokenizer manager is not used anymore by aggregations (filter query),
     // so we can create an empty one. So if it will ever be used, it would panic.
@@ -1105,7 +1111,7 @@ pub(crate) fn make_merge_collector(
         sort_by,
         aggregation,
         agg_context_params,
-        merge_level,
+        intermediate_pruning,
         search_after: search_request.search_after.clone(),
     })
 }
@@ -1232,7 +1238,7 @@ pub(crate) struct IncrementalCollector {
     num_successful_splits: u64,
     start_offset: usize,
     resource_stats: Option<LeafResourceStats>,
-    merge_level: MergeLevel,
+    intermediate_pruning: IntermediatePruning,
 }
 
 impl IncrementalCollector {
@@ -1243,7 +1249,7 @@ impl IncrementalCollector {
             .as_ref()
             .map(QuickwitAggregations::maybe_incremental_aggregator)
             .unwrap_or(QuickwitIncrementalAggregations::NoAggregation);
-        let merge_level = collector.merge_level;
+        let intermediate_pruning = collector.intermediate_pruning;
         let (order1, order2) = collector.sort_by.sort_orders();
         let sort_key_mapper = HitSortingMapper { order1, order2 };
         IncrementalCollector {
@@ -1255,7 +1261,7 @@ impl IncrementalCollector {
             num_attempted_splits: 0,
             num_successful_splits: 0,
             resource_stats: None,
-            merge_level,
+            intermediate_pruning,
         }
     }
 
@@ -1329,8 +1335,9 @@ impl IncrementalCollector {
 
     /// Finalize the merge, creating a LeafSearchResponse.
     pub(crate) fn finalize(self) -> tantivy::Result<LeafSearchResponse> {
-        let intermediate_aggregation_result =
-            self.incremental_aggregation.finalize(self.merge_level)?;
+        let intermediate_aggregation_result = self
+            .incremental_aggregation
+            .finalize(self.intermediate_pruning)?;
         let mut partial_hits = self.top_k_hits.finalize();
         if self.start_offset != 0 {
             partial_hits.drain(0..self.start_offset.min(partial_hits.len()));
@@ -1363,7 +1370,9 @@ mod tests {
 
     use super::{IncrementalCollector, make_merge_collector};
     use crate::QuickwitAggregations;
-    use crate::collector::{MergeLevel, merge_intermediate_aggregation_result, top_k_partial_hits};
+    use crate::collector::{
+        IntermediatePruning, merge_intermediate_aggregation_result, top_k_partial_hits,
+    };
 
     #[test]
     fn test_merge_partial_hits_no_tie() {
@@ -1811,7 +1820,7 @@ mod tests {
         results: Vec<LeafSearchResponse>,
     ) -> LeafSearchResponse {
         let collector =
-            make_merge_collector(request, Default::default(), MergeLevel::Leaf).unwrap();
+            make_merge_collector(request, Default::default(), IntermediatePruning::Apply).unwrap();
         let mut incremental_collector = IncrementalCollector::new(collector.clone());
 
         let result = collector
@@ -2097,9 +2106,12 @@ mod tests {
 
     #[test]
     fn test_merge_empty_intermediate_aggregation_result() {
-        let merged =
-            merge_intermediate_aggregation_result(&None, std::iter::empty(), MergeLevel::Leaf)
-                .unwrap();
+        let merged = merge_intermediate_aggregation_result(
+            &None,
+            std::iter::empty(),
+            IntermediatePruning::Apply,
+        )
+        .unwrap();
         assert!(merged.is_none());
 
         let aggregations_json = r#"{
@@ -2110,7 +2122,7 @@ mod tests {
         let serialized = merge_intermediate_aggregation_result(
             &Some(qw_aggregations),
             std::iter::empty(),
-            MergeLevel::Leaf,
+            IntermediatePruning::Apply,
         )
         .unwrap()
         .unwrap();
@@ -2122,19 +2134,19 @@ mod tests {
     fn test_merge_intermediate_terms_prunes_to_segment_size() {
         // Nine distinct terms are merged, and leaf pruning cuts them down to `segment_size`,
         // keeping more candidates than the final `size` for the root to choose between.
-        assert_eq!(merged_terms_bucket_count(MergeLevel::Leaf), 4);
+        assert_eq!(merged_terms_bucket_count(IntermediatePruning::Apply), 4);
     }
 
-    /// The root has no downstream consumer to bound: finalization prunes to the requested
-    /// `size` on its own. Pruning here as well would throw away counts that finalization
-    /// could still have used, which shows up as an inflated `doc_count_error_upper_bound`.
+    /// When finalization runs next it prunes to the requested `size` on its own, so the
+    /// merge keeps every candidate. Pruning here as well would throw away counts that
+    /// finalization could have used, inflating `doc_count_error_upper_bound`.
     #[test]
-    fn test_merge_intermediate_terms_does_not_prune_at_root() {
-        assert_eq!(merged_terms_bucket_count(MergeLevel::Root), 9);
+    fn test_merge_intermediate_terms_kept_when_finalization_follows() {
+        assert_eq!(merged_terms_bucket_count(IntermediatePruning::Skip), 9);
     }
 
     /// Merges three disjoint three-term fruits and reports how many term buckets survive.
-    fn merged_terms_bucket_count(merge_level: MergeLevel) -> usize {
+    fn merged_terms_bucket_count(intermediate_pruning: IntermediatePruning) -> usize {
         use tantivy::Index;
         use tantivy::aggregation::DistributedAggregationCollector;
         use tantivy::aggregation::intermediate_agg_result::{
@@ -2186,7 +2198,7 @@ mod tests {
         let serialized = merge_intermediate_aggregation_result(
             &Some(quickwit_aggregations),
             serialized_fruits.iter().map(Vec::as_slice),
-            merge_level,
+            intermediate_pruning,
         )
         .unwrap()
         .unwrap();

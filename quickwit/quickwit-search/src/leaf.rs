@@ -59,7 +59,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::*;
 
 use crate::collector::{
-    IncrementalCollector, MergeLevel, make_collector_for_split, make_merge_collector,
+    IncrementalCollector, IntermediatePruning, make_collector_for_split, make_merge_collector,
 };
 use crate::leaf_cache::LeafSearchCache;
 use crate::metrics::{
@@ -1625,7 +1625,7 @@ pub async fn multi_index_leaf_search(
     let merge_collector = make_merge_collector(
         &search_request,
         searcher_context.get_aggregation_limits(),
-        MergeLevel::Leaf,
+        IntermediatePruning::Apply,
     )?;
     let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
 
@@ -1986,7 +1986,7 @@ pub async fn single_doc_mapping_leaf_search(
     let merge_collector = make_merge_collector(
         &request,
         searcher_context.get_aggregation_limits(),
-        MergeLevel::Leaf,
+        IntermediatePruning::Apply,
     )?;
     let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
 

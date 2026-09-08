@@ -51,7 +51,7 @@ use tracing::{Span, debug, error, info, info_span, instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::cluster_client::ClusterClient;
-use crate::collector::{MergeLevel, QuickwitAggregations, make_merge_collector};
+use crate::collector::{IntermediatePruning, QuickwitAggregations, make_merge_collector};
 use crate::metrics_trackers::{RootSearchMetricsFuture, RootSearchMetricsStep};
 use crate::scroll_context::{ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_job_placer::{Job, group_by, group_jobs_by_index_id};
@@ -843,7 +843,7 @@ pub(crate) async fn search_partial_hits_phase(
     let merge_collector = make_merge_collector(
         search_request,
         searcher_context.get_aggregation_limits(),
-        MergeLevel::Root,
+        root_intermediate_pruning(search_request),
     )?;
 
     // Merging is a cpu-bound task. Prioritize it over queued split searches to avoid delaying the
@@ -1154,6 +1154,20 @@ fn finalize_aggregation(
     Ok(Some(merge_aggregation_result))
 }
 
+/// Whether the root merge has to bound its own intermediate results.
+///
+/// [`finalize_aggregation_if_any`] hands the merged bytes back untouched when the caller
+/// asked to skip finalization, which makes the root merge the last place able to bound
+/// them. When finalization does run it prunes to the requested `size` on its own, and
+/// pruning beforehand would only widen `doc_count_error_upper_bound`.
+fn root_intermediate_pruning(search_request: &SearchRequest) -> IntermediatePruning {
+    if search_request.skip_aggregation_finalization {
+        IntermediatePruning::Apply
+    } else {
+        IntermediatePruning::Skip
+    }
+}
+
 fn finalize_aggregation_if_any(
     search_request: &SearchRequest,
     intermediate_aggregation_result_bytes_opt: Option<Vec<u8>>,
@@ -1427,8 +1441,11 @@ pub async fn search_plan(
         true,
         None,
     )?;
-    let merge_collector =
-        make_merge_collector(&search_request, Default::default(), MergeLevel::Root)?;
+    let merge_collector = make_merge_collector(
+        &search_request,
+        Default::default(),
+        IntermediatePruning::Apply,
+    )?;
     warmup_info.merge(merge_collector.warmup_info());
     warmup_info.simplify();
 
@@ -5740,6 +5757,30 @@ mod tests {
         .unwrap_err();
         assert!(matches!(search_error, SearchError::InvalidArgument { .. }));
         Ok(())
+    }
+
+    #[test]
+    fn test_root_intermediate_pruning_follows_finalization() {
+        // Finalization prunes to the requested `size`, so the merge keeps every candidate.
+        let finalizing = SearchRequest {
+            skip_aggregation_finalization: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            root_intermediate_pruning(&finalizing),
+            IntermediatePruning::Skip
+        );
+
+        // Without finalization the merged bytes go back to the caller as they are, so this
+        // merge has to bound them itself.
+        let skipping = SearchRequest {
+            skip_aggregation_finalization: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            root_intermediate_pruning(&skipping),
+            IntermediatePruning::Apply
+        );
     }
 
     #[tokio::test]
