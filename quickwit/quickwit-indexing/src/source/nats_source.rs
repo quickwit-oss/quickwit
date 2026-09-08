@@ -24,9 +24,6 @@
 //! shape requires `AckPolicy::Explicit`, which costs one acknowledgment per
 //! message and is what bounds throughput on small messages.
 //!
-//! Being durable, the consumer is observable through NATS's own monitoring
-//! even while the pipelines are down.
-//!
 //! When a message carries a W3C `traceparent` header, the source stitches the
 //! processing of the message into the publisher's distributed trace.
 
@@ -490,8 +487,7 @@ async fn fetch_durable_consumer(
     let ack_policy = consumer.cached_info().config.ack_policy;
     ensure!(
         ack_policy == AckPolicy::Explicit,
-        "NATS consumer `{consumer_name}` must use the explicit ack policy, got \
-         `{ack_policy:?}`"
+        "NATS consumer `{consumer_name}` must use the explicit ack policy, got `{ack_policy:?}`"
     );
     Ok(consumer)
 }
