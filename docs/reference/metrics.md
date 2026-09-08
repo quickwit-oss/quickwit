@@ -91,3 +91,9 @@ PostgreSQL-backed metastores also expose connection pool gauges:
 | `quickwit_storage` | `object_storage_puts_total` | Number of objects uploaded. May differ from object_storage_requests_parts due to multipart upload | `counter` |
 | `quickwit_storage` | `object_storage_puts_parts` | Number of object parts uploaded | `counter` |
 | `quickwit_storage` | `object_storage_download_num_bytes` | Amount of data downloaded from an object storage | `counter` |
+| `quickwit_storage` | `split_range_disk_cache_requests_total` | Split range disk cache requests by `result` (`memory`, `disk`, `miss`, or `error`) | `counter` |
+| `quickwit_storage` | `split_range_disk_cache_requested_bytes_total` | Requested bytes by `result` | `counter` |
+| `quickwit_storage` | `split_range_disk_cache_admission_bypasses_total` | Entries kept memory-only, labeled by `reason` (`max_entry_size` or `encoded_too_large`) | `counter` |
+| `quickwit_storage` | `split_range_disk_cache_fail_open_total` | Foyer failures served from object storage | `counter` |
+
+Foyer also exports its own hybrid-cache metrics on `/metrics` when `split_range_disk_cache` is enabled, including `foyer_memory_op_total`, `foyer_memory_usage`, `foyer_memory_entries`, `foyer_storage_op_total`, and `foyer_storage_disk_io_bytes_total`, labeled by cache `name` (`split-range-v1`). Object-storage GET counters cover actual remote fetches on a cache miss.

@@ -9638,6 +9638,7 @@ dependencies = [
  "lru 0.18.4",
  "md5",
  "metrics",
+ "metrics-util",
  "mini-moka",
  "mixtrics",
  "mockall",

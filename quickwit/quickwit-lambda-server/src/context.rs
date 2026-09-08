@@ -65,7 +65,7 @@ fn try_searcher_config_from_env() -> anyhow::Result<SearcherConfig> {
     let mut searcher_config = SearcherConfig::default();
     searcher_config.max_num_concurrent_split_searches = 20;
     searcher_config.warmup_memory_budget = warmup_memory_budget;
-    searcher_config.fast_field_cache = CacheConfig::no_cache();
+    searcher_config.fast_field_cache = Some(CacheConfig::no_cache());
     searcher_config.split_footer_cache = CacheConfig::no_cache();
     searcher_config.predicate_cache = CacheConfig::no_cache();
     searcher_config.partial_request_cache = CacheConfig::no_cache();

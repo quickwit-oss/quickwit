@@ -883,7 +883,7 @@ mod tests {
             SearcherConfig {
                 aggregation_memory_limit: ByteSize::gb(1),
                 aggregation_bucket_limit: 500_000,
-                fast_field_cache: CacheConfig::default_with_capacity(ByteSize::gb(10)),
+                fast_field_cache: Some(CacheConfig::default_with_capacity(ByteSize::gb(10))),
                 split_footer_cache: CacheConfig::default_with_capacity(ByteSize::gb(1)),
                 partial_request_cache: CacheConfig::default_with_capacity(ByteSize::mb(64)),
                 predicate_cache: CacheConfig::default_with_capacity(ByteSize::mb(256)),
