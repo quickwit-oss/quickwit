@@ -20,6 +20,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt};
+use quickwit_cluster::GenerationId;
 use quickwit_common::metrics::IN_FLIGHT_INGEST_ROUTER;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::{rate_limited_error, rate_limited_warn};
@@ -259,6 +260,7 @@ impl IngestRouter {
 
         for success in response.successes {
             state_guard.routing_table.merge_from_shards(
+                &self.ingester_pool,
                 success.index_uid().clone(),
                 success.source_id,
                 success.open_shards,
@@ -311,6 +313,7 @@ impl IngestRouter {
                         for shard_update in routing_update.source_shard_updates {
                             state_guard.routing_table.apply_capacity_update(
                                 ingester_id.clone(),
+                                persist_summary.generation_id,
                                 shard_update.index_uid().clone(),
                                 shard_update.source_id,
                                 routing_update.capacity_score as usize,
@@ -403,12 +406,14 @@ impl IngestRouter {
                 .iter()
                 .map(|subrequest| subrequest.subrequest_id)
                 .collect();
-            let Some(ingester) = self.ingester_pool.get(&ingester_id).map(|h| h.client) else {
+            let Some(pool_entry) = self.ingester_pool.get(&ingester_id) else {
                 no_shards_available_subrequest_ids.extend(subrequest_ids);
                 continue;
             };
+            let ingester = pool_entry.client;
             let persist_summary = PersistRequestSummary {
                 ingester_id: ingester_id.clone(),
+                generation_id: pool_entry.generation_id,
                 subrequest_ids,
             };
             let persist_request = PersistRequest {
@@ -603,6 +608,7 @@ impl EventSubscriber<IngesterCapacityScoreUpdate> for WeakRouterState {
         let mut state_guard = state.lock().await;
         state_guard.routing_table.apply_capacity_update(
             update.node_id,
+            update.generation_id,
             update.source_uid.index_uid,
             update.source_uid.source_id,
             update.capacity_score,
@@ -613,6 +619,7 @@ impl EventSubscriber<IngesterCapacityScoreUpdate> for WeakRouterState {
 
 pub(super) struct PersistRequestSummary {
     pub ingester_id: NodeId,
+    pub generation_id: GenerationId,
     pub subrequest_ids: Vec<SubrequestId>,
 }
 

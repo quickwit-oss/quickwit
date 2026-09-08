@@ -16,6 +16,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
+use quickwit_cluster::GenerationId;
 use quickwit_proto::ingest::Shard;
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, SourceId};
 use rand::rng;
@@ -29,6 +30,7 @@ use crate::IngesterPool;
 #[derive(Debug, Clone)]
 pub(super) struct IngesterNode {
     pub node_id: NodeId,
+    pub generation_id: GenerationId,
     pub index_uid: IndexUid,
     /// Score from 0-10. Higher means more available capacity.
     pub capacity_score: usize,
@@ -49,15 +51,14 @@ impl IngesterNode {
         if unavailable_ingesters.contains(&self.node_id) {
             return false;
         }
-        let is_ready = ingester_pool
+        let Some(ingester) = ingester_pool
             .get(&self.node_id)
-            .map(|ingester| ingester.status.is_ready())
-            .unwrap_or(false);
-
-        if !is_ready {
+            .filter(|ingester| ingester.status.is_ready())
+        else {
             unavailable_ingesters.insert(self.node_id.clone());
-        }
-        is_ready
+            return false;
+        };
+        ingester.generation_id == self.generation_id
     }
 }
 
@@ -104,6 +105,20 @@ fn pick_from(candidates: Vec<&IngesterNode>) -> Option<&IngesterNode> {
     }
 }
 
+fn is_ingester_eligible(
+    node: &IngesterNode,
+    ingester_pool: &IngesterPool,
+    unavailable_ingesters: &HashSet<NodeId>,
+) -> bool {
+    node.capacity_score > 0
+        && node.open_shard_count > 0
+        && ingester_pool
+            .get(&node.node_id)
+            .map(|entry| entry.status.is_ready() && entry.generation_id == node.generation_id)
+            .unwrap_or(false)
+        && !unavailable_ingesters.contains(&node.node_id)
+}
+
 impl RoutingEntry {
     /// Pick an ingester node to persist the request to. Uses power of two choices based on reported
     /// ingester capacity, if more than one eligible node exists. Prefers nodes in the same
@@ -117,15 +132,7 @@ impl RoutingEntry {
         let (local_ingesters, remote_ingesters): (Vec<&IngesterNode>, Vec<&IngesterNode>) = self
             .nodes
             .values()
-            .filter(|node| {
-                node.capacity_score > 0
-                    && node.open_shard_count > 0
-                    && ingester_pool
-                        .get(&node.node_id)
-                        .map(|entry| entry.status.is_ready())
-                        .unwrap_or(false)
-                    && !unavailable_ingesters.contains(&node.node_id)
-            })
+            .filter(|node| is_ingester_eligible(node, ingester_pool, unavailable_ingesters))
             .partition(|node| {
                 let node_az = ingester_pool
                     .get(&node.node_id)
@@ -242,6 +249,7 @@ impl RoutingTable {
     pub fn apply_capacity_update(
         &mut self,
         node_id: NodeId,
+        generation_id: GenerationId,
         index_uid: IndexUid,
         source_id: SourceId,
         capacity_score: usize,
@@ -264,8 +272,15 @@ impl RoutingTable {
             Ordering::Greater => return,
             Ordering::Equal => {}
         }
+        if let Some(existing) = entry.nodes.get(&node_id)
+            && existing.generation_id.as_u64() > generation_id.as_u64()
+        {
+            // drop a capacity update from an older incarantion of an ingester.
+            return;
+        }
         let ingester_node = IngesterNode {
             node_id: node_id.clone(),
+            generation_id,
             index_uid,
             capacity_score,
             open_shard_count,
@@ -279,6 +294,7 @@ impl RoutingTable {
     /// New nodes get a default capacity_score of 5.
     pub fn merge_from_shards(
         &mut self,
+        ingester_pool: &IngesterPool,
         index_uid: IndexUid,
         source_id: SourceId,
         shards: Vec<Shard>,
@@ -310,12 +326,18 @@ impl RoutingTable {
             .sum();
 
         for (node_id, open_shard_count) in per_ingester_count {
+            let Some(generation_id) = ingester_pool.get(&node_id).map(|entry| entry.generation_id)
+            else {
+                // TODO: decide what you want to do here exactly. This might be important
+                continue;
+            };
             entry
                 .nodes
                 .entry(node_id.clone())
                 .and_modify(|node| node.open_shard_count = open_shard_count)
                 .or_insert_with(|| IngesterNode {
                     node_id,
+                    generation_id,
                     index_uid: index_uid.clone(),
                     capacity_score: 5,
                     open_shard_count,
