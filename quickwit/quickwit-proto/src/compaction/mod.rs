@@ -14,7 +14,7 @@
 
 use quickwit_actors::AskError;
 use quickwit_common::rate_limited_error;
-use quickwit_common::tower::MakeLoadShedError;
+use quickwit_common::tower::{MakeLoadShedError, TimeoutExceeded};
 use serde::{Deserialize, Serialize};
 
 use crate::GrpcServiceError;
@@ -38,6 +38,12 @@ pub enum CompactionError {
     TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
+}
+
+impl From<TimeoutExceeded> for CompactionError {
+    fn from(_timeout_exceeded: TimeoutExceeded) -> Self {
+        Self::Timeout("tower layer timeout".to_string())
+    }
 }
 
 impl ServiceError for CompactionError {

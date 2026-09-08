@@ -92,7 +92,9 @@ We advise changing the default value of 20 MiB only if you encounter the followi
 
 ## Health check configuration
 
-This section configures an optional, **plaintext (no TLS)** HTTP server that exposes only the health endpoints `/health/livez` (liveness) and `/health/readyz` (readiness). Its purpose is to let liveness/readiness probes (for example from Kubernetes or a load balancer) reach the node even when the main REST API is put behind [TLS or mTLS](#tls-configuration), which a simple HTTP probe cannot negotiate.
+This section configures an optional, **plaintext (no TLS)** HTTP server that exposes only the health endpoints `/health/livez` (liveness) and `/health/startupz` (startup completion), plus `/health/readyz`, a deprecated alias for `/health/startupz`. Its purpose is to let liveness and startup probes (for example from Kubernetes or a load balancer) reach the node even when the main REST API is put behind [TLS or mTLS](#tls-configuration), which a simple HTTP probe cannot negotiate.
+
+`/health/startupz` reports whether the node has finished starting up. It latches once and never returns to a not-started state, so it is suited to a Kubernetes **startup probe** rather than a readiness probe. There is no readiness endpoint: a node that is up but degraded is restarted, not removed from rotation.
 
 The health server is **disabled by default**. It starts only when `listen_port` is set (or the `QW_HEALTH_LISTEN_PORT` environment variable is provided). The same `/health/*` endpoints always remain available on the main REST API as well.
 

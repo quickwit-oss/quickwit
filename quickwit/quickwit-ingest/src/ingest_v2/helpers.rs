@@ -26,32 +26,6 @@ use tracing::{error, info};
 
 use super::metrics::{DECOMMISSION_FAILED, DECOMMISSION_SUCCEEDED};
 
-/// Tries to get the current status of an ingester by opening an observation stream
-/// and reading the first message.
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - The observation stream fails to open
-/// - The stream ends without producing a message
-/// - The stream ends after returning an error
-pub async fn try_get_ingester_status(
-    ingester: &impl IngesterService,
-) -> anyhow::Result<IngesterStatus> {
-    let mut observation_stream = ingester
-        .open_observation_stream(OpenObservationStreamRequest {})
-        .await
-        .context("failed to open observation stream")?;
-
-    let next_observation_message = observation_stream
-        .next()
-        .await
-        .context("observation stream ended")?
-        .context("observation stream failed")?;
-
-    Ok(next_observation_message.status())
-}
-
 /// Waits for an ingester to reach a specific status by monitoring its observation stream.
 ///
 /// This function continuously polls the observation stream until the ingester reaches
@@ -207,27 +181,6 @@ mod tests {
     };
 
     use super::*;
-
-    #[tokio::test]
-    async fn test_try_get_ingester_status() {
-        let mut mock_ingester = MockIngesterService::new();
-        mock_ingester
-            .expect_open_observation_stream()
-            .once()
-            .returning(|_| {
-                let (service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
-                let message = ObservationMessage {
-                    node_id: "test-ingester".to_string(),
-                    status: IngesterStatus::Initializing as i32,
-                    ..Default::default()
-                };
-                service_stream_tx.try_send(Ok(message)).unwrap();
-                Ok(service_stream)
-            });
-        let ingester = IngesterServiceClient::from_mock(mock_ingester);
-        let status = try_get_ingester_status(&ingester).await.unwrap();
-        assert_eq!(status, IngesterStatus::Initializing);
-    }
 
     #[tokio::test]
     async fn test_wait_for_ingester_status() {

@@ -67,10 +67,10 @@ pub struct RestConfig {
 
 /// Configuration for the optional plaintext health-check HTTP server.
 ///
-/// This server exposes only the `/health/livez` and `/health/readyz` endpoints over plain HTTP
-/// (no TLS). It lets liveness/readiness probes reach the node even when the main REST API is put
-/// behind mTLS. It is disabled unless `health.listen_port` (or the `QW_HEALTH_LISTEN_PORT`
-/// environment variable) is set.
+/// This server exposes only the `/health/livez` and `/health/startupz` endpoints over plain HTTP
+/// (no TLS), plus `/health/readyz`, a deprecated alias for `startupz`. It lets liveness and startup
+/// probes reach the node even when the main REST API is put behind mTLS. It is disabled unless
+/// `health.listen_port` (or the `QW_HEALTH_LISTEN_PORT` environment variable) is set.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HealthConfig {
