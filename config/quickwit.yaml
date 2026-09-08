@@ -190,6 +190,14 @@ indexer:
 # compactor:
 #   decommission_timeout: 300s
 #
+# -------------------------- Compaction planner settings ----------------------------
+# https://quickwit.io/docs/configuration/node-config#compaction-planner-configuration
+#
+# compaction_planner:
+#   scan_page_size: 5000
+#   scan_and_plan_interval: 5s
+#   max_excluded_split_ids: 50000
+#
 # -------------------------------- Searcher settings --------------------------------
 # https://quickwit.io/docs/configuration/node-config#searcher-configuration
 #

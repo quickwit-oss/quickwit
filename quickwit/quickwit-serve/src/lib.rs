@@ -293,7 +293,17 @@ async fn get_compaction_planner_client_if_needed(
         return Ok((None, None));
     }
     if is_janitor {
-        let planner = CompactionPlanner::new(metastore_client.clone(), cluster.clone());
+        let planner = CompactionPlanner::new(
+            metastore_client.clone(),
+            cluster.clone(),
+            node_config.compaction_planner_config.scan_page_size(),
+            node_config
+                .compaction_planner_config
+                .scan_and_plan_interval(),
+            node_config
+                .compaction_planner_config
+                .max_excluded_split_ids(),
+        );
         let (mailbox, handle) = universe.spawn_builder().spawn(planner);
         info!("compaction planner actor started on janitor node");
         return Ok((

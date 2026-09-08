@@ -297,6 +297,26 @@ compactor:
   decommission_timeout: 300s
 ```
 
+## Compaction planner configuration
+
+This section contains the configuration options for the compaction planner running on janitor
+nodes when standalone compactors are enabled.
+
+| Property | Description | Default value |
+| --- | --- | --- |
+| `scan_page_size` | Maximum number of splits fetched from the metastore per scan. | `5000` |
+| `scan_and_plan_interval` | Interval between compaction planner scan-and-plan cycles. | `5s` |
+| `max_excluded_split_ids` | Maximum number of split IDs excluded from a metastore scan because they are already tracked. | `50000` |
+
+Example:
+
+```yaml
+compaction_planner:
+  scan_page_size: 10000
+  scan_and_plan_interval: 2s
+  max_excluded_split_ids: 100000
+```
+
 ## Searcher configuration
 
 This section contains the configuration options for a Searcher.

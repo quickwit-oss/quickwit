@@ -40,28 +40,16 @@ use super::compaction_state::CompactionState;
 use super::index_config_metastore::{IndexConfigMetastore, IndexEntry};
 use crate::planner::metrics::{METASTORE_ERRORS, NEW_SPLITS_SCANNED, OPERATION, SOURCE_UID};
 
-/// Cap on splits fetched per tick. Every tick, the planner re-scans the immature published set,
-/// sorted by `maturity_timestamp` ASC so the most-urgent splits are processed first when a backlog
-/// exists. Splits beyond this cap aren't lost -- they bubble into range as the front of the queue
-/// is merged off.
-const SCAN_PAGE_SIZE: usize = 5_000;
-
-/// Cap on the size of the `excluded_split_ids` list we send to the metastore.
-/// It's a sanity max rather than some invariant.
-const MAX_EXCLUDED_SPLIT_IDS: usize = 50_000;
-
 #[derive(Debug)]
 pub struct CompactionPlanner {
     state: CompactionState,
     index_config_metastore: IndexConfigMetastore,
     metastore: MetastoreServiceClient,
     cluster: Cluster,
+    scan_page_size: usize,
+    scan_and_plan_interval: Duration,
+    max_excluded_split_ids: usize,
 }
-
-const SCAN_AND_PLAN_INTERVAL: Duration = Duration::from_secs(5);
-/// On initialization, we want to wait for two intervals to allow any in-progress workers to report
-/// their progress, preventing us from frivolously rescheduling work.
-const INITIAL_SCAN_AND_PLAN_INTERVAL: Duration = SCAN_AND_PLAN_INTERVAL.saturating_mul(2);
 
 #[derive(Debug)]
 struct ScanAndPlan;
@@ -80,11 +68,14 @@ impl Actor for CompactionPlanner {
     fn observable_state(&self) -> Self::ObservableState {}
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+        // On initialization, wait for two intervals to allow any in-progress workers to report
+        // their progress, preventing us from frivolously rescheduling work.
+        let initial_scan_and_plan_interval = self.scan_and_plan_interval.saturating_mul(2);
         info!(
             "initializing compaction planner, waiting for indexers to hand off compaction in {}",
-            INITIAL_SCAN_AND_PLAN_INTERVAL.pretty_display()
+            initial_scan_and_plan_interval.pretty_display()
         );
-        ctx.schedule_self_msg(INITIAL_SCAN_AND_PLAN_INTERVAL, AwaitIndexersMigrated);
+        ctx.schedule_self_msg(initial_scan_and_plan_interval, AwaitIndexersMigrated);
         Ok(())
     }
 }
@@ -102,7 +93,7 @@ impl Handler<ScanAndPlan> for CompactionPlanner {
             error!(%error, "failed to scan metastore and/or plan merges");
         }
         self.state.check_heartbeat_timeouts();
-        ctx.schedule_self_msg(SCAN_AND_PLAN_INTERVAL, ScanAndPlan);
+        ctx.schedule_self_msg(self.scan_and_plan_interval, ScanAndPlan);
         Ok(())
     }
 }
@@ -127,7 +118,7 @@ impl Handler<AwaitIndexersMigrated> for CompactionPlanner {
                 "waiting for indexers to report standalone compactors enabled before planning \
                  merges"
             );
-            ctx.schedule_self_msg(SCAN_AND_PLAN_INTERVAL, AwaitIndexersMigrated);
+            ctx.schedule_self_msg(self.scan_and_plan_interval, AwaitIndexersMigrated);
         }
         Ok(())
     }
@@ -152,12 +143,21 @@ impl Handler<ReportStatusRequest> for CompactionPlanner {
 }
 
 impl CompactionPlanner {
-    pub fn new(metastore: MetastoreServiceClient, cluster: Cluster) -> Self {
+    pub fn new(
+        metastore: MetastoreServiceClient,
+        cluster: Cluster,
+        scan_page_size: usize,
+        scan_and_plan_interval: Duration,
+        max_excluded_split_ids: usize,
+    ) -> Self {
         CompactionPlanner {
             state: CompactionState::default(),
             index_config_metastore: IndexConfigMetastore::new(metastore.clone()),
             metastore,
             cluster,
+            scan_page_size,
+            scan_and_plan_interval,
+            max_excluded_split_ids,
         }
     }
 
@@ -194,12 +194,12 @@ impl CompactionPlanner {
     }
 
     async fn scan_metastore(&self) -> Result<Vec<Split>> {
-        let excluded_split_ids = self.state.tracked_split_ids(MAX_EXCLUDED_SPLIT_IDS);
+        let excluded_split_ids = self.state.tracked_split_ids(self.max_excluded_split_ids);
         let query = ListSplitsQuery::for_all_indexes()
             .with_split_state(SplitState::Published)
             .retain_immature(OffsetDateTime::now_utc())
             .sort_by_maturity_timestamp()
-            .with_limit(SCAN_PAGE_SIZE)
+            .with_limit(self.scan_page_size)
             .with_excluded_split_ids(excluded_split_ids);
         let request = ListSplitsRequest::try_from_list_splits_query(&query)?;
         let splits = self
@@ -315,10 +315,10 @@ mod tests {
     use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_common::ServiceStream;
     use quickwit_common::test_utils::wait_until_predicate;
-    use quickwit_config::IndexingSettings;
     use quickwit_config::merge_policy_config::{
         ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig,
     };
+    use quickwit_config::{CompactionPlannerConfig, IndexingSettings};
     use quickwit_metastore::{
         IndexMetadata, IndexMetadataResponseExt, ListSplitsRequestExt, ListSplitsResponseExt,
         SortBy, Split, SplitMaturity, SplitMetadata, SplitState,
@@ -385,6 +385,17 @@ mod tests {
             .unwrap()
     }
 
+    fn planner_for_test(metastore: MetastoreServiceClient, cluster: Cluster) -> CompactionPlanner {
+        let config = CompactionPlannerConfig::default();
+        CompactionPlanner::new(
+            metastore,
+            cluster,
+            config.scan_page_size(),
+            config.scan_and_plan_interval(),
+            config.max_excluded_split_ids(),
+        )
+    }
+
     #[tokio::test]
     async fn test_scan_metastore_query_shape_and_passthrough() {
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -400,7 +411,10 @@ mod tests {
             let query = req.deserialize_list_splits_query().unwrap();
 
             assert_eq!(query.split_states, vec![SplitState::Published]);
-            assert_eq!(query.limit, Some(SCAN_PAGE_SIZE));
+            assert_eq!(
+                query.limit,
+                Some(CompactionPlannerConfig::default().scan_page_size())
+            );
             assert_eq!(query.sort_by, SortBy::MaturityTimestamp);
 
             let Bound::Excluded(mature_at) = query.mature else {
@@ -421,7 +435,7 @@ mod tests {
             Ok(ServiceStream::from(vec![Ok(response)]))
         });
 
-        let planner = CompactionPlanner::new(
+        let planner = planner_for_test(
             MetastoreServiceClient::from_mock(mock),
             test_cluster().await,
         );
@@ -448,7 +462,7 @@ mod tests {
             Ok(ServiceStream::from(vec![Ok(response)]))
         });
 
-        let mut planner = CompactionPlanner::new(
+        let mut planner = planner_for_test(
             MetastoreServiceClient::from_mock(mock),
             test_cluster().await,
         );
@@ -480,7 +494,7 @@ mod tests {
         mock.expect_index_metadata()
             .returning(move |_| Ok(response.clone()));
 
-        let mut planner = CompactionPlanner::new(
+        let mut planner = planner_for_test(
             MetastoreServiceClient::from_mock(mock),
             test_cluster().await,
         );
@@ -518,7 +532,7 @@ mod tests {
             })
         });
 
-        let mut planner = CompactionPlanner::new(
+        let mut planner = planner_for_test(
             MetastoreServiceClient::from_mock(mock),
             test_cluster().await,
         );
@@ -538,7 +552,7 @@ mod tests {
             })
         });
 
-        let mut planner = CompactionPlanner::new(
+        let mut planner = planner_for_test(
             MetastoreServiceClient::from_mock(mock),
             test_cluster().await,
         );
@@ -567,7 +581,7 @@ mod tests {
         mock.expect_index_metadata()
             .returning(move |_| Ok(index_metadata_response.clone()));
 
-        let mut planner = CompactionPlanner::new(
+        let mut planner = planner_for_test(
             MetastoreServiceClient::from_mock(mock),
             test_cluster().await,
         );
@@ -601,7 +615,7 @@ mod tests {
         mock.expect_index_metadata()
             .returning(move |_| Ok(index_metadata_response.clone()));
 
-        let mut planner = CompactionPlanner::new(
+        let mut planner = planner_for_test(
             MetastoreServiceClient::from_mock(mock),
             test_cluster().await,
         );
@@ -646,7 +660,7 @@ mod tests {
             )]))
         });
 
-        let mut planner = CompactionPlanner::new(
+        let mut planner = planner_for_test(
             MetastoreServiceClient::from_mock(mock),
             test_cluster().await,
         );
@@ -763,7 +777,7 @@ mod tests {
             .await
             .unwrap();
         let seeds = vec![janitor_cluster.gossip_listen_addr.to_string()];
-        let planner = CompactionPlanner::new(
+        let planner = planner_for_test(
             MetastoreServiceClient::from_mock(MockMetastoreService::new()),
             janitor_cluster.clone(),
         );
