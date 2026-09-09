@@ -22,7 +22,8 @@ use quickwit_metrics::{
 pub(crate) const ACTOR_NAME: LabelNames<1> = label_names!("actor_name");
 pub(crate) const COMPONENT: LabelNames<1> = label_names!("component");
 pub(crate) const INDEX_SOURCE: LabelNames<2> = label_names!("index", "source");
-pub(crate) const PUBLISHED_SPLIT: LabelNames<3> = label_names!("index", "source", "merge_ops");
+pub(crate) const PUBLISHED_SPLIT: LabelNames<4> =
+    label_names!("index", "source", "merge_ops", "publication_type");
 
 pub(crate) static PROCESSED_DOCS_TOTAL: LazyCounter = lazy_counter!(
         name: "processed_docs_total",
@@ -78,13 +79,18 @@ pub(crate) static PUBLISHED_SPLIT_SIZE_BYTES: LazyHistogram = lazy_histogram!(
 ///
 /// All metrics deliberately use the same labels so ratios computed over a time
 /// window describe the same set of splits.
-pub(crate) fn record_published_split(index_id: &str, split: &SplitMetadata) {
+pub(crate) fn record_published_split(
+    index_id: &str,
+    split: &SplitMetadata,
+    publication_type: &'static str,
+) {
     let index = quickwit_common::metrics::index_label(index_id);
     let labels = label_values!(
         PUBLISHED_SPLIT =>
         index.to_string(),
         split.source_id.to_string(),
-        split.num_merge_ops.to_string()
+        split.num_merge_ops.to_string(),
+        publication_type
     );
     let split_size_bytes = split.footer_offsets.end;
 
