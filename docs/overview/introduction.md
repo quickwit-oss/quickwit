@@ -45,7 +45,7 @@ Check out our guides to see how you can use Quickwit:
 
 ### Enterprise-grade features
 
-- Multiple [data sources](../ingest-data/index.md) Kafka / Kinesis / Pulsar native
+- Multiple [data sources](../ingest-data/index.md) Kafka / Kinesis / Pulsar / NATS / GCP Pub/Sub native
 - Multi-tenancy: indexing with many indexes and partitioning
 - Retention policies
 - Delete tasks (for GRPR use cases)

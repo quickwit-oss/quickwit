@@ -34,21 +34,19 @@ use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, anyhow, bail, ensure};
-use async_nats::header::{HeaderMap, HeaderName};
+use async_nats::connection::State;
+use async_nats::header::HeaderMap;
 use async_nats::jetstream::consumer::pull::{
     MessagesError, MessagesErrorKind, Stream as DurableMessageStream,
 };
 use async_nats::jetstream::consumer::{AckPolicy, PullConsumer};
 use async_nats::jetstream::message::AckKind;
-use async_nats::{ConnectOptions, Subject, jetstream};
+use async_nats::{ConnectOptions, HeaderName, Subject, jetstream};
 use async_trait::async_trait;
 use bytesize::ByteSize;
 use futures::{FutureExt, StreamExt};
-use opentelemetry::propagation::Extractor;
-use opentelemetry::trace::TraceContextExt;
-use opentelemetry::{Context as OtelContext, global};
 use quickwit_actors::ActorExitStatus;
-use quickwit_common::rand::append_random_suffix;
+use quickwit_common::tracing_utils::{self, Extractor};
 use quickwit_config::{NatsSourceAuth, NatsSourceParams};
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
@@ -56,7 +54,6 @@ use quickwit_proto::types::Position;
 use serde_json::{Value as JsonValue, json};
 use tokio::time;
 use tracing::{Span, debug, info, warn};
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::source::{
     BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
@@ -122,22 +119,30 @@ impl NatsSource {
         source_params: NatsSourceParams,
     ) -> anyhow::Result<Self> {
         let consumer_name = source_params.consumer.clone();
+        let pull_max_bytes_per_batch = pull_max_bytes_per_batch();
 
         info!(
             index_id=%source_runtime.index_id(),
             source_id=%source_runtime.source_id(),
             stream=%source_params.stream,
             %consumer_name,
-            pull_max_bytes_per_batch=%pull_max_bytes_per_batch(),
+            %pull_max_bytes_per_batch,
             pull_max_messages_per_batch=%pull_max_messages_per_batch(),
             "starting NATS source"
         );
 
         let (nats_client, consumer) = connect_and_fetch_consumer(&source_params).await?;
+        warn_on_incompatible_pull_settings(
+            &nats_client,
+            &consumer.cached_info().config,
+            pull_max_bytes_per_batch,
+            pull_max_messages_per_batch(),
+        );
+
         let message_stream = consumer
             .stream()
             .max_messages_per_batch(pull_max_messages_per_batch())
-            .max_bytes_per_batch(pull_max_bytes_per_batch().0 as usize)
+            .max_bytes_per_batch(pull_max_bytes_per_batch.0 as usize)
             // default heartbeat that is disabled when using manual builder,
             // required for transient conn errors.
             .heartbeat(PULL_IDLE_HEARTBEAT)
@@ -146,11 +151,23 @@ impl NatsSource {
             .await
             .context("failed to subscribe to NATS consumer messages")?;
 
-        // A fresh partition per pipeline: durable-mode positions are delivery
-        // counters local to this instance, and pipelines sharing the consumer
-        // must not collide on a partition.
-        let partition_id =
-            PartitionId::from(append_random_suffix(&format!("nats-{consumer_name}")));
+        // One partition per pipeline: positions are delivery counters local to
+        // this pipeline, and pipelines sharing the consumer must not collide on
+        // a partition. The pipeline uid is stable across respawns, so a respawn
+        // resumes the counter from the checkpoint instead of opening a new
+        // partition.
+        let partition_id = PartitionId::from(format!(
+            "nats-{consumer_name}-{}",
+            source_runtime.pipeline_uid()
+        ));
+        let checkpoint = source_runtime
+            .fetch_checkpoint()
+            .await
+            .context("failed to fetch the source checkpoint")?;
+        let delivery_counter = checkpoint
+            .position_for_partition(&partition_id)
+            .and_then(Position::as_u64)
+            .unwrap_or(0);
 
         Ok(NatsSource {
             source_runtime,
@@ -159,7 +176,7 @@ impl NatsSource {
             message_stream,
             consumer_name,
             partition_id,
-            delivery_counter: 0,
+            delivery_counter,
             pending_acks: BTreeMap::new(),
             state: NatsSourceState::default(),
         })
@@ -221,14 +238,10 @@ impl NatsSource {
         if acks.is_empty() {
             return;
         }
+        let nats_client = &self.nats_client;
         let mut ack_results = futures::stream::iter(acks)
             .map(async |(delivery_counter, ack_subject)| {
-                // Mirrors `jetstream::Message::double_ack()`, but through the
-                // client's muxed inbox rather than a subscription per message.
-                let ack_result = self
-                    .nats_client
-                    .request(ack_subject, AckKind::Ack.into())
-                    .await;
+                let ack_result = send_ack(nats_client, ack_subject).await;
                 (delivery_counter, ack_result)
             })
             .buffer_unordered(MAX_CONCURRENT_ACK_REQUESTS);
@@ -238,7 +251,7 @@ impl NatsSource {
         let mut last_ack_error = None;
         while let Some((delivery_counter, ack_result)) = ack_results.next().await {
             match ack_result {
-                Ok(_ack_reply) => {
+                Ok(()) => {
                     self.pending_acks.remove(&delivery_counter);
                     num_acks += 1;
                 }
@@ -252,6 +265,38 @@ impl NatsSource {
             warn!(%error, num_failed_acks, "failed to ack NATS messages");
         }
         debug!(num_acks, "acked published messages");
+    }
+
+    /// Negatively acknowledges the messages the client prefetched, so a
+    /// surviving pipeline picks them up promptly instead of after `ack_wait`.
+    async fn nak_prefetched_messages(&mut self) {
+        let mut num_naks = 0usize;
+        while let Some(Some(message_res)) = self.message_stream.next().now_or_never() {
+            let message = match message_res {
+                Ok(message) => message,
+                Err(error) => {
+                    warn!(%error, "failed to pull a prefetched NATS message to negatively acknowledge it");
+                    continue;
+                }
+            };
+            let Some(ack_subject) = message.message.reply else {
+                warn!(
+                    "prefetched NATS message carries no reply subject to negatively acknowledge \
+                     it on"
+                );
+                continue;
+            };
+            if let Err(error) = self
+                .nats_client
+                .publish(ack_subject, AckKind::Nak(Some(NAK_REDELIVERY_DELAY)).into())
+                .await
+            {
+                warn!(%error, "failed to negatively acknowledge a prefetched NATS message");
+                continue;
+            }
+            num_naks += 1;
+        }
+        debug!(num_naks, "negatively acknowledged prefetched messages");
     }
 }
 
@@ -277,7 +322,7 @@ impl Source for NatsSource {
                     let message = match message_res {
                         Ok(message) => message,
                         Err(error) if is_transient_stream_error(&error) => {
-                            warn!(%error, "transient NATS message stream error");
+                            warn!(%error, "transient NATS message stream error, retrying");
                             wait_before_next_batch = TRANSIENT_STREAM_ERROR_BACKOFF;
                             break;
                         }
@@ -351,38 +396,21 @@ impl Source for NatsSource {
     ) -> anyhow::Result<()> {
         // Any ack still pending at this point was not completed by a drain:
         // its message is redelivered after the consumer's `ack_wait`.
-        let mut num_naks = 0usize;
-        while let Some(Some(message_res)) = self.message_stream.next().now_or_never() {
-            let message = match message_res {
-                Ok(message) => message,
-                Err(error) => {
-                    warn!(%error, "failed to pull a prefetched NATS message to negatively acknowledge it");
-                    continue;
-                }
-            };
-            let Some(ack_subject) = message.message.reply else {
-                warn!(
-                    "prefetched NATS message carries no reply subject to negatively acknowledge \
-                     it on"
-                );
-                continue;
-            };
-            if let Err(error) = self
-                .nats_client
-                .publish(ack_subject, AckKind::Nak(Some(NAK_REDELIVERY_DELAY)).into())
-                .await
-            {
-                warn!(%error, "failed to negatively acknowledge a prefetched NATS message");
-                continue;
+        //
+        // Bounded for the same reason as `ACK_REQUEST_TIMEOUT`: a dead server
+        // must not hold the pipeline teardown, and node shutdown with it. Past
+        // the deadline, `ack_wait` redelivery takes over.
+        let teardown = async {
+            self.nak_prefetched_messages().await;
+            if let Err(error) = self.nats_client.flush().await {
+                warn!(%error, "failed to flush NATS negative acknowledgments");
             }
-            num_naks += 1;
-        }
-
-        if let Err(error) = self.nats_client.flush().await {
-            warn!(%error, num_naks, "failed to flush NATS negative acknowledgments");
-        }
-        if let Err(error) = self.nats_client.drain().await {
-            warn!(%error, "failed to drain the NATS connection");
+            if let Err(error) = self.nats_client.drain().await {
+                warn!(%error, "failed to drain the NATS connection");
+            }
+        };
+        if time::timeout(FINALIZE_TIMEOUT, teardown).await.is_err() {
+            warn!("timed out negatively acknowledging prefetched NATS messages");
         }
         Ok(())
     }
@@ -400,6 +428,25 @@ impl Source for NatsSource {
             "num_pending_acks": num_pending_acks,
         })
     }
+}
+
+/// Server-confirmed acknowledgment ("double ack"). Mirrors
+/// `jetstream::Message::double_ack()`, but through the client's muxed inbox
+/// rather than a subscription per message.
+async fn send_ack(nats_client: &async_nats::Client, ack_subject: Subject) -> anyhow::Result<()> {
+    // Nothing drains the client's outbound queue while it reconnects, so a
+    // request issued now would only sit there. Unconfirmed acks stay pending
+    // and are retried by the next `SuggestTruncate`.
+    ensure!(
+        nats_client.connection_state() == State::Connected,
+        "NATS connection is down"
+    );
+    let request = nats_client.request(ack_subject, AckKind::Ack.into());
+    let ack_reply_res = time::timeout(ACK_REQUEST_TIMEOUT, request)
+        .await
+        .context("ack request timed out")?;
+    ack_reply_res.context("ack request failed")?;
+    Ok(())
 }
 
 /// Bounds the concurrent server-confirmed ack requests: enough to hide the
@@ -426,6 +473,70 @@ fn pull_max_bytes_per_batch() -> ByteSize {
     )
 }
 
+/// Warns about pull settings the server or the consumer would reject, or that
+/// lose messages. The consumer's limits belong to whoever provisioned it, so
+/// the source reports them rather than refusing to start.
+fn warn_on_incompatible_pull_settings(
+    nats_client: &async_nats::Client,
+    consumer_config: &jetstream::consumer::Config,
+    pull_max_bytes_per_batch: ByteSize,
+    pull_max_messages_per_batch: usize,
+) {
+    let pull_max_bytes = pull_max_bytes_per_batch.as_u64();
+    if pull_max_bytes < BATCH_NUM_BYTES_LIMIT {
+        warn!(
+            %pull_max_bytes_per_batch,
+            indexing_batch_num_bytes=BATCH_NUM_BYTES_LIMIT,
+            "`QW_NATS_PULL_MAX_BYTES_PER_BATCH` is below the indexing batch size: every batch \
+             costs several pull round trips"
+        );
+    }
+    let max_payload = nats_client.server_info().max_payload as u64;
+    if max_payload > 0 && pull_max_bytes < max_payload {
+        warn!(
+            %pull_max_bytes_per_batch,
+            max_payload,
+            "`QW_NATS_PULL_MAX_BYTES_PER_BATCH` is below the server's `max_payload`: messages \
+             larger than it can never be delivered"
+        );
+    }
+    let consumer_max_bytes = consumer_config.max_bytes;
+    if consumer_max_bytes > 0 && pull_max_bytes > consumer_max_bytes as u64 {
+        warn!(
+            %pull_max_bytes_per_batch,
+            consumer_max_bytes,
+            "`QW_NATS_PULL_MAX_BYTES_PER_BATCH` exceeds the consumer's `max_bytes`: the server \
+             rejects every pull request"
+        );
+    }
+    let consumer_max_batch = consumer_config.max_batch;
+    if consumer_max_batch > 0 && pull_max_messages_per_batch as i64 > consumer_max_batch {
+        warn!(
+            pull_max_messages_per_batch,
+            consumer_max_batch,
+            "`QW_NATS_PULL_MAX_MESSAGES_PER_BATCH` exceeds the consumer's `max_batch`: the server \
+             rejects every pull request"
+        );
+    }
+    let consumer_max_expires = consumer_config.max_expires;
+    if !consumer_max_expires.is_zero() && PULL_EXPIRES > consumer_max_expires {
+        warn!(
+            ?consumer_max_expires,
+            pull_expires=?PULL_EXPIRES,
+            "the consumer's `max_expires` is below the source's pull expiry: the server \
+             rejects every pull request"
+        );
+    }
+    let consumer_max_deliver = consumer_config.max_deliver;
+    if consumer_max_deliver > 0 {
+        warn!(
+            consumer_max_deliver,
+            "the consumer's `max_deliver` is finite: a message that exhausts it is never \
+             redelivered, so a crash or a lost delivery can leave it unindexed"
+        );
+    }
+}
+
 /// Messages per pull batch. The byte cap above is what actually bounds a batch;
 /// this only binds for small messages, where it caps a pull far below the byte
 /// budget (200 messages of 1 KiB is under 200 KiB against a 10 MiB budget) and
@@ -441,6 +552,15 @@ fn pull_max_messages_per_batch() -> usize {
         false
     )
 }
+
+/// Capacity of the client's per-subscription channel, in pull batches. The
+/// connection handler drops a message that finds the channel full, and the
+/// server already counts it as delivered, so it only comes back after
+/// `ack_wait`. The client keeps up to 1.5 batches outstanding and re-pulls a
+/// full batch every 35 s while the source is not polling (e.g. during a
+/// drain), so the channel must hold several. Memory is bounded by the byte
+/// cap rather than by this: eight batches are at most 80 MiB by default.
+const SUBSCRIPTION_CAPACITY_IN_PULL_BATCHES: usize = 8;
 
 // Both kept at the `Consumer::messages` defaults, so switching to the builder
 // changes the batch bounds and nothing else.
@@ -476,6 +596,12 @@ fn is_transient_stream_error(error: &MessagesError) -> bool {
 /// messages: 1024 is indistinguishable from 128, and 8192 is 20 % slower.
 const MAX_CONCURRENT_ACK_REQUESTS: usize = 128;
 
+/// Bounds an ack request end to end, enqueueing included.
+const ACK_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Bounds the NAK sweep and connection drain at teardown.
+const FINALIZE_TIMEOUT: Duration = Duration::from_secs(10);
+
 async fn fetch_durable_consumer(
     jetstream_stream: &jetstream::stream::Stream,
     consumer_name: &str,
@@ -492,8 +618,8 @@ async fn fetch_durable_consumer(
     Ok(consumer)
 }
 
-/// W3C trace context extraction from NATS message headers, following the
-/// pattern of `quickwit_common::tracing_utils` for gRPC metadata.
+/// Lets `quickwit_common::tracing_utils` read the W3C trace context from
+/// NATS message headers.
 struct NatsHeaderExtractor<'a>(&'a HeaderMap);
 
 impl Extractor for NatsHeaderExtractor<'_> {
@@ -507,10 +633,6 @@ impl Extractor for NatsHeaderExtractor<'_> {
     }
 }
 
-fn extract_remote_context(headers: &HeaderMap) -> OtelContext {
-    global::get_text_map_propagator(|propagator| propagator.extract(&NatsHeaderExtractor(headers)))
-}
-
 /// Builds a span parented on the publisher's trace when the message carries
 /// a W3C `traceparent` header, stitching the processing of the message into
 /// the publisher's distributed trace. Messages without a propagated context
@@ -521,10 +643,7 @@ fn remote_parented_span(
     source_runtime: &SourceRuntime,
 ) -> Option<Span> {
     let headers = message.headers.as_ref()?;
-    let parent_context = extract_remote_context(headers);
-    if !parent_context.span().span_context().is_valid() {
-        return None;
-    }
+    let parent_context = tracing_utils::extract_remote_context(&NatsHeaderExtractor(headers))?;
     let span = tracing::info_span!(
         "process_nats_message",
         index_id = %source_runtime.index_id(),
@@ -532,12 +651,14 @@ fn remote_parented_span(
         subject = %message.subject,
         stream_sequence,
     );
-    let _ = span.set_parent(parent_context);
+    tracing_utils::set_span_parent(&span, parent_context);
     Some(span)
 }
 
 async fn connect_nats(params: &NatsSourceParams) -> anyhow::Result<async_nats::Client> {
-    let mut connect_options = ConnectOptions::new();
+    let subscription_capacity =
+        SUBSCRIPTION_CAPACITY_IN_PULL_BATCHES * pull_max_messages_per_batch();
+    let mut connect_options = ConnectOptions::new().subscription_capacity(subscription_capacity);
     match params.authentication.clone() {
         None => {}
         Some(NatsSourceAuth::UserPassword { user, password }) => {
@@ -595,6 +716,7 @@ mod tests {
     #[test]
     fn extract_trace_context_from_headers() {
         use opentelemetry::propagation::TextMapPropagator;
+        use opentelemetry::trace::TraceContextExt;
         use opentelemetry_sdk::propagation::TraceContextPropagator;
 
         // The global propagator is not installed in tests, so the extractor
@@ -617,6 +739,19 @@ mod tests {
             "4bf92f3577b34da6a3ce929d0e0e4736"
         );
         assert_eq!(span_context.span_id().to_string(), "00f067aa0ba902b7");
+
+        // Go publishers canonicalize the header name.
+        let mut capitalized_headers = HeaderMap::new();
+        capitalized_headers.insert(
+            "Traceparent",
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        );
+        let span_context = propagator
+            .extract(&NatsHeaderExtractor(&capitalized_headers))
+            .span()
+            .span_context()
+            .clone();
+        assert!(span_context.is_valid());
 
         let empty_headers = HeaderMap::new();
         let span_context = propagator
@@ -662,11 +797,12 @@ mod nats_broker_tests {
 
     use bytes::Bytes;
     use quickwit_actors::{ActorHandle, Inbox, Universe};
+    use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
-    use quickwit_metastore::checkpoint::SourceCheckpointDelta;
+    use quickwit_metastore::checkpoint::{PartitionDelta, SourceCheckpointDelta};
     use quickwit_metastore::metastore_for_test;
     use quickwit_proto::metastore::MetastoreServiceClient;
-    use quickwit_proto::types::IndexUid;
+    use quickwit_proto::types::{IndexUid, PipelineUid};
 
     use super::*;
     use crate::actors::DocProcessor;
@@ -1133,6 +1269,64 @@ mod nats_broker_tests {
         assert_eq!(redelivered_docs, expected_docs);
 
         source_handle_2.quit().await;
+        jetstream_ctx.delete_stream(&stream).await.unwrap();
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn durable_mode_respawn_resumes_partition_from_checkpoint() {
+        let universe = Universe::with_accelerated_time();
+        let metastore = metastore_for_test();
+        let stream = append_random_suffix("test-nats-source--durable-resume--stream");
+        let jetstream_ctx = setup_nats_stream(&stream).await;
+        let consumer_name = "durable-resume-consumer";
+        provision_durable_consumer(&jetstream_ctx, &stream, consumer_name).await;
+
+        let index_id = append_random_suffix("test-nats-source--durable-resume--index");
+        let source_config = get_durable_source_config(&stream, consumer_name);
+        // The partition of the pipeline the test runtime builds, as left by a
+        // previous incarnation that published 7 messages.
+        let partition_id = PartitionId::from(format!(
+            "nats-{consumer_name}-{}",
+            PipelineUid::for_test(0u128)
+        ));
+        let index_uid = setup_index(
+            metastore.clone(),
+            &index_id,
+            &source_config,
+            &[(
+                partition_id.clone(),
+                Position::Beginning,
+                Position::offset(7u64),
+            )],
+        )
+        .await;
+
+        let (source_handle, doc_processor_inbox) =
+            create_source_actor(&universe, metastore, index_uid, source_config).await;
+        let subject = format!("{stream}.logs");
+        publish_docs(&jetstream_ctx, &subject, 0..3).await;
+        wait_for_processed_messages(&source_handle, 3, Duration::from_secs(30)).await;
+        source_handle.quit().await;
+
+        let batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
+        let checkpoint_delta = merge_doc_batches(batches).checkpoint_delta;
+        let partition_deltas: Vec<(PartitionId, PartitionDelta)> =
+            checkpoint_delta.iter().collect();
+        // Same partition, counter continued from the checkpoint: the delta
+        // chains onto the published position instead of opening a new
+        // partition from the beginning.
+        assert_eq!(
+            partition_deltas,
+            vec![(
+                partition_id,
+                PartitionDelta {
+                    from: Position::offset(7u64),
+                    to: Position::offset(10u64),
+                }
+            )]
+        );
+
         jetstream_ctx.delete_stream(&stream).await.unwrap();
         universe.assert_quit().await;
     }

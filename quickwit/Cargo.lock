@@ -8869,7 +8869,6 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
- "tracing-opentelemetry",
  "ulid",
  "unicode-segmentation",
  "utoipa",

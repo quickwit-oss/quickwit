@@ -32,7 +32,6 @@ itertools = { workspace = true }
 libz-sys = { workspace = true, optional = true }
 oneshot = { workspace = true }
 openssl = { workspace = true, optional = true }
-opentelemetry = { workspace = true, optional = true }
 percent-encoding = { workspace = true }
 pulsar = { workspace = true, optional = true }
 quickwit-query = { workspace = true }
@@ -47,7 +46,6 @@ thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-tracing-opentelemetry = { workspace = true, optional = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
 vrl = { workspace = true, optional = true }
@@ -86,7 +84,7 @@ kinesis = [
   "quickwit-aws/kinesis",
 ]
 kinesis-localstack-tests = []
-nats = ["dep:async-nats", "dep:opentelemetry", "dep:tracing-opentelemetry"]
+nats = ["dep:async-nats"]
 nats-broker-tests = ["nats"]
 pulsar = ["dep:pulsar"]
 pulsar-broker-tests = []
@@ -122,6 +120,7 @@ ci-test = []
 bytes = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 mockall = { workspace = true }
+opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 parquet = { workspace = true }
 proptest = { workspace = true }

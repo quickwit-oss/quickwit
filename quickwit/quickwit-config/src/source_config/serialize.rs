@@ -132,7 +132,7 @@ impl SourceConfigForSerialization {
             _ => {
                 if self.num_pipelines > 1 {
                     bail!(
-                        "Quickwit currently supports multiple pipelines only for GCP PubSub, Kafka, or NATS sources.\
+                        "Quickwit currently supports multiple pipelines only for GCP PubSub, Kafka, or NATS sources. \
                         open an issue https://github.com/quickwit-oss/quickwit/issues if you need the feature for other source types"
                     );
                 }

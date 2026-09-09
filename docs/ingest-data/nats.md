@@ -131,8 +131,19 @@ The NATS source consumes a JetStream stream through a durable consumer, so messa
 
 ```bash
 nats stream add stackoverflow --subjects "stackoverflow.posts" --defaults
-nats consumer add stackoverflow quickwit-consumer --pull --deliver all --ack explicit --max-pending=-1 --wait 5m --defaults
+cat > quickwit-consumer.json <<EOF
+{
+  "durable_name": "quickwit-consumer",
+  "deliver_policy": "all",
+  "ack_policy": "explicit",
+  "ack_wait": 300000000000,
+  "max_ack_pending": -1
+}
+EOF
+nats consumer add stackoverflow quickwit-consumer --config quickwit-consumer.json
 ```
+
+The consumer is described in a JSON file because the `nats` CLI cannot express an unbounded `max_ack_pending` through its `--max-pending` flag. Durations in the file are in nanoseconds, so `300000000000` is the 5 minute `ack_wait`.
 
 :::info
 
@@ -140,8 +151,8 @@ The consumer must use the explicit ack policy: the source acknowledges each mess
 
 Two of those settings decide whether indexing works at all, and neither is checked when the source is created:
 
-- `--wait` (`ack_wait`) must outlast the whole path from delivery to acknowledgment — the commit timeout, plus the split upload and publish, plus the acknowledgment round trip. Shorter than that and NATS redelivers messages that are still being indexed, which duplicates them. `5m` against this tutorial's 10 s commit timeout is a wide margin. It is also the recovery time from a lost delivery, so it should not be arbitrarily large either.
-- `--max-pending=-1` leaves the in-flight window unbounded. The source acknowledges only once a split is published, so a whole commit window is always ack-pending and a bounded value is a hard throughput cap of roughly `max_ack_pending / commit_timeout` documents per second.
+- `ack_wait` must outlast the whole path from delivery to acknowledgment — the commit timeout, plus the split upload and publish, plus the acknowledgment round trip. Shorter than that and NATS redelivers messages that are still being indexed, which duplicates them. `5m` against this tutorial's 10 s commit timeout is a wide margin. It is also the recovery time from a lost delivery, so it should not be arbitrarily large either.
+- `max_ack_pending: -1` leaves the in-flight window unbounded. The source acknowledges only once a split is published, so a whole commit window is always ack-pending and a bounded value is a hard throughput cap of roughly `max_ack_pending / commit_timeout` documents per second.
 
 See [Consumer invariants](../configuration/source-config.md#consumer-invariants) for the details, and [Scaling](../configuration/source-config.md#scaling) for how to grow past one pipeline.
 

@@ -683,8 +683,8 @@ impl NatsSourceParams {
 )]
 #[serde(deny_unknown_fields)]
 pub struct NatsSourceTls {
-    /// Path to a PEM file whose root certificates are trusted in addition to
-    /// the system ones (e.g. a private CA).
+    /// Path to a PEM file whose root certificates are trusted instead of the
+    /// system ones (e.g. a private CA).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ca_certificates_path: Option<String>,
     /// Path to the client certificate PEM file, for mutual TLS. Requires

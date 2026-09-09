@@ -23,7 +23,7 @@ The source ID is a string that uniquely identifies the source within an index. I
 
 ## Source type
 
-The source type designates the kind of source being configured. As of version 0.5, available source types are `ingest-api`, `kafka`, `kinesis`, and `pulsar`. The `file` type is also supported but only for local ingestion from [the CLI](/docs/reference/cli.md#tool-local-ingest).
+The source type designates the kind of source being configured. Available source types are `ingest-api`, `kafka`, `kinesis`, `nats`, `pubsub`, and `pulsar`. The `file` type is also supported but only for local ingestion from [the CLI](/docs/reference/cli.md#tool-local-ingest).
 
 ## Source parameters
 
@@ -193,9 +193,11 @@ The durable consumer is provisioned externally so its lifecycle, subject filters
 
 Delivery is **exactly-once on planned teardowns and at-least-once on crashes**. On a planned teardown (node shutdown, pipeline reassignment on a `num_pipelines` change), the pipeline is drained first: the source stops pulling, the in-flight messages are committed, published, and acknowledged before the pipeline stops, so nothing is indexed twice. Messages the pipeline had prefetched but not processed are negatively acknowledged so the remaining pipelines pick them up immediately. The drain runs under a time budget, the indexer's [`shutdown_drain_timeout`](node-config.md#indexer-configuration). A drain that cannot finish within it (e.g. the object storage or the metastore is unavailable) is abandoned and delivery degrades to at-least-once, as on a crash. After a crash, the unacknowledged messages are redelivered after `ack_wait` and indexed again, as duplicates.
 
+The source never waits on unreachable NATS servers: acknowledgments and the negative acknowledgments sent at teardown are bounded by a 10 s timeout, unconfirmed acknowledgments stay pending and are retried at the next split publication, and a pipeline can still be stopped or reassigned during an outage.
+
 #### Consumer invariants
 
-These are properties of the consumer, not of the source. Only the ack policy is enforced when the source is created; the rest are not checked, and getting them wrong looks like Quickwit being slow or duplicating rather than like a consumer misconfiguration.
+These are properties of the consumer, not of the source. Only the ack policy is enforced when the source is created. The pull limits and `max_deliver` are checked when a pipeline starts and only produce a warning in the indexer logs. The rest are not checked at all, and getting them wrong looks like Quickwit being slow or duplicating rather than like a consumer misconfiguration.
 
 **`ack_policy` must be `explicit`.** The source acknowledges each message individually once the split containing it is published, and waits for the server to confirm the acknowledgment — the confirmation is what tells the drain that the pipeline is empty. The consumer's ack floor is therefore the resume point, and it is the only progress state that matters. Any other policy is rejected when the source is created.
 
@@ -217,6 +219,12 @@ achievable rate ≈ max_ack_pending / commit_timeout   documents per second
 
 Measured at four pipelines with a 10 s commit timeout: `1000` gave 97 documents per second where the formula predicts 100, and `20000` gave 2,115 where it predicts 2,000. A bound that looks generous for an ordinary queue consumer throttles indexing. If the in-flight window has to be bounded, size it above `throughput × commit_timeout` rather than at a small absolute number, and note the trade: unlimited also makes the crash-replay window the whole delivered span above the ack floor rather than a bounded slice.
 
+**`max_deliver` should stay unlimited (`-1`).** Redelivery is what recovers from a crash or a lost delivery. A finite value turns it into data loss: a message that exhausts it is never delivered again and is silently skipped. The source warns at start when it is finite.
+
+**`max_batch`, `max_bytes` and `max_expires` must not be below what the source pulls.** Each pull request asks for up to `QW_NATS_PULL_MAX_MESSAGES_PER_BATCH` messages and `QW_NATS_PULL_MAX_BYTES_PER_BATCH` bytes with a 30 s expiry. A consumer limit below any of those makes the server reject every pull request and the pipeline idles. The source warns at start.
+
+**The consumer must outlive the source.** Deleting it, or letting an `inactive_threshold` expire, while a source is bound to it does not stop the pipelines: the server answers their pull requests with "no responders", which is also what a JetStream outage produces, so the source retries indefinitely and warns. Recreate the consumer under the same name to resume, or disable the source.
+
 **`deliver_policy`** is usually `all`, so a new consumer indexes the stream from the start.
 
 **Give each consumer a single `filter_subject`.** A consumer configured with several filters through NATS 2.10's multi-filter `filter_subjects` appears to take a much slower path in the broker: on a stream whose subjects are interleaved, sixteen multi-filter consumers took 7.5 times longer than the same sixteen consumers with one filter each, with the broker saturated and the indexers idle.
@@ -227,8 +235,8 @@ Measured at four pipelines with a 10 s commit timeout: `1000` gave 97 documents 
 | --- | --- | --- |
 | `num_pipelines` | source config | Pipelines bound to the consumer. Scales cleanly on large messages: 52 → 147 MiB/s from one to four pipelines at 512 KiB. On small messages the acknowledgment path caps the aggregate, and it is worth only about 1.15× from one to sixteen — there, parallelism has to come from more consumers. |
 | [`commit_timeout_secs`](index-config.md#indexing-settings) | index config | Sets the size of the always-ack-pending window, so it interacts with `max_ack_pending` and with `ack_wait`. |
-| `QW_NATS_PULL_MAX_BYTES_PER_BATCH` | env, default 10 MiB | Bounds the bytes the server may push per pull request. It must stay well under the server's per-connection `max_pending` (64 MiB by default), or the server declares a slow consumer and closes the connection; the messages are already counted as delivered, so the pipeline then idles for a full `ack_wait`. 10 MiB and 20 MiB measure identically. |
-| `QW_NATS_PULL_MAX_MESSAGES_PER_BATCH` | env, default 100,000 | Messages per pull request. Can be used along `QW_NATS_PULL_MAX_BYTES_PER_BATCH` to limit a batch if there is too much contention around acknowledgements |
+| `QW_NATS_PULL_MAX_BYTES_PER_BATCH` | env, default 10 MiB | Bounds the bytes the server may push per pull request. It must stay well under the server's per-connection `max_pending` (64 MiB by default), or the server declares a slow consumer and closes the connection; the messages are already counted as delivered, so the pipeline then idles for a full `ack_wait`. It must also stay above the server's `max_payload`, or larger messages are never delivered, and at or below the consumer's `max_bytes`; the source warns at start otherwise. 10 MiB and 20 MiB measure identically. |
+| `QW_NATS_PULL_MAX_MESSAGES_PER_BATCH` | env, default 100,000 | Messages per pull request. Can be used along `QW_NATS_PULL_MAX_BYTES_PER_BATCH` to limit a batch if there is too much contention around acknowledgements. The client buffers eight such batches per subscription; messages beyond that are dropped client-side and come back after `ack_wait`. |
 
 #### Scaling
 
@@ -252,7 +260,7 @@ Being durable, the consumer is observable through NATS's own monitoring (`nats c
 | `uris` | List of NATS server URIs (e.g. `nats://localhost:4222`). | required |
 | `stream` | Name of the JetStream stream to consume. | required |
 | `consumer` | Name of the pre-provisioned durable consumer to bind to. | required |
-| `tls` | TLS options: `ca_certificates_path` (PEM file whose root certificates are trusted in addition to the system ones), and `client_certificate_path` + `client_key_path` (PEM files, set together) for mutual TLS. TLS itself is enabled by connecting to `tls://` URIs. The files are read by the indexer nodes when the connection is established. | optional |
+| `tls` | TLS options: `ca_certificates_path` (PEM file whose root certificates are trusted instead of the system ones), and `client_certificate_path` + `client_key_path` (PEM files, set together) for mutual TLS. TLS itself is enabled by connecting to `tls://` URIs. The files are read when a connection is established: by the indexer nodes running the source, and by the node serving the source creation or update, which checks connectivity. | optional |
 | `authentication` | Authentication parameters: either `user_password` (with `user` and `password`) or `token`. | optional |
 
 *Adding a NATS source to an index with the [CLI](../reference/cli.md#source)*
