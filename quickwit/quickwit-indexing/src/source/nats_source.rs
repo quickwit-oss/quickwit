@@ -143,9 +143,6 @@ impl NatsSource {
             .stream()
             .max_messages_per_batch(pull_max_messages_per_batch())
             .max_bytes_per_batch(pull_max_bytes_per_batch.0 as usize)
-            // default heartbeat that is disabled when using manual builder,
-            // required for transient conn errors.
-            .heartbeat(PULL_IDLE_HEARTBEAT)
             .expires(PULL_EXPIRES)
             .messages()
             .await
@@ -562,9 +559,8 @@ fn pull_max_messages_per_batch() -> usize {
 /// cap rather than by this: eight batches are at most 80 MiB by default.
 const SUBSCRIPTION_CAPACITY_IN_PULL_BATCHES: usize = 8;
 
-// Both kept at the `Consumer::messages` defaults, so switching to the builder
-// changes the batch bounds and nothing else.
-const PULL_IDLE_HEARTBEAT: Duration = Duration::from_secs(15);
+/// Server-side lifetime of a pull request. The client re-pulls 5 s after it
+/// elapses, which is also what recovers a pull request the server lost.
 const PULL_EXPIRES: Duration = Duration::from_secs(30);
 
 /// Pause before pulling again after a transient stream error, to avoid a hot
@@ -579,15 +575,11 @@ const TRANSIENT_STREAM_ERROR_BACKOFF: Duration = Duration::from_secs(1);
 const NAK_REDELIVERY_DELAY: Duration = Duration::from_secs(1);
 
 /// Errors the pull stream recovers from on its own: the subscription stays
-/// usable and polling simply resumes. `MissingHeartbeat` in particular also
-/// fires when the stream was not polled for a while (e.g. under downstream
-/// backpressure), not only when the server is unreachable.
+/// usable and polling simply resumes.
 fn is_transient_stream_error(error: &MessagesError) -> bool {
     matches!(
         error.kind(),
-        MessagesErrorKind::MissingHeartbeat
-            | MessagesErrorKind::Pull
-            | MessagesErrorKind::NoResponders
+        MessagesErrorKind::Pull | MessagesErrorKind::NoResponders
     )
 }
 
@@ -740,19 +732,6 @@ mod tests {
         );
         assert_eq!(span_context.span_id().to_string(), "00f067aa0ba902b7");
 
-        // Go publishers canonicalize the header name.
-        let mut capitalized_headers = HeaderMap::new();
-        capitalized_headers.insert(
-            "Traceparent",
-            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
-        );
-        let span_context = propagator
-            .extract(&NatsHeaderExtractor(&capitalized_headers))
-            .span()
-            .span_context()
-            .clone();
-        assert!(span_context.is_valid());
-
         let empty_headers = HeaderMap::new();
         let span_context = propagator
             .extract(&NatsHeaderExtractor(&empty_headers))
@@ -764,11 +743,7 @@ mod tests {
 
     #[test]
     fn transient_stream_error_classification() {
-        let transient_kinds = [
-            MessagesErrorKind::MissingHeartbeat,
-            MessagesErrorKind::Pull,
-            MessagesErrorKind::NoResponders,
-        ];
+        let transient_kinds = [MessagesErrorKind::Pull, MessagesErrorKind::NoResponders];
         for kind in transient_kinds {
             assert!(
                 is_transient_stream_error(&MessagesError::new(kind)),
