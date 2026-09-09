@@ -189,31 +189,84 @@ A NATS source reads data from a [NATS JetStream](https://docs.nats.io/nats-conce
 
 A tutorial is available [here](/docs/ingest-data/nats.md).
 
-The durable consumer is provisioned externally — Quickwit only ever fetches it, and never creates, updates, nor deletes it — so its lifecycle, subject filters, deliver policy, and ack tuning (`ack_wait`, `max_ack_pending`) belong to whoever provisioned it. The consumer must use the **explicit ack policy**: the source acknowledges each message once the split containing it is published, and the consumer's ack floor is the resume point.
+The durable consumer is provisioned externally — Quickwit only ever fetches it, and never creates, updates, nor deletes it — so its lifecycle, subject filters, deliver policy, and ack tuning belong to whoever provisioned it.
 
-Delivery is **exactly-once on planned teardowns and at-least-once on crashes**. On a planned teardown (node shutdown, pipeline reassignment on a `num_pipelines` change), the pipeline is drained first: the source stops pulling, the in-flight messages are committed, published, and acknowledged before the pipeline stops, so nothing is indexed twice. Messages the pipeline had prefetched but not processed are negatively acknowledged so the remaining pipelines pick them up immediately. The drain runs under a time budget, the indexer's [`shutdown_drain_timeout`](node-config.md#indexer-configuration). A drain that cannot finish within it (e.g. the object storage or the metastore is unavailable) is abandoned and delivery degrades to at-least-once, as on a crash. After a crash, the unacknowledged messages are redelivered after `ack_wait` and indexed again, as duplicates. `ack_wait` must exceed the end-to-end publish latency (roughly the commit timeout plus the upload time), otherwise messages are redelivered while they are still being indexed.
+Delivery is **exactly-once on planned teardowns and at-least-once on crashes**. On a planned teardown (node shutdown, pipeline reassignment on a `num_pipelines` change), the pipeline is drained first: the source stops pulling, the in-flight messages are committed, published, and acknowledged before the pipeline stops, so nothing is indexed twice. Messages the pipeline had prefetched but not processed are negatively acknowledged so the remaining pipelines pick them up immediately. The drain runs under a time budget, the indexer's [`shutdown_drain_timeout`](node-config.md#indexer-configuration). A drain that cannot finish within it (e.g. the object storage or the metastore is unavailable) is abandoned and delivery degrades to at-least-once, as on a crash. After a crash, the unacknowledged messages are redelivered after `ack_wait` and indexed again, as duplicates.
 
-#### Acknowledgment cost
+#### Consumer invariants
 
-The source acknowledges every message individually and waits for the server to confirm each one — that confirmation is what tells the drain the pipeline is empty — so indexing a corpus costs one confirmed acknowledgment per document. At small message sizes that, rather than the indexer, is what bounds throughput. Measured on a 16 vCPU host across sixteen per-tenant consumers of 1 KiB documents: 72 MiB/s, with the broker spending 5.1 of its cores on the acknowledgment path against Quickwit's 4.7 on indexing, roughly ten times the broker CPU per document that an equivalent Kafka source spends on periodic offset commits.
+These are properties of the consumer, not of the source. Only the ack policy is enforced when the source is created; the rest are not checked, and getting them wrong looks like Quickwit being slow or duplicating rather than like a consumer misconfiguration.
 
-The cost is per *message*, so it amortises as messages get larger and is negligible above a few hundred KiB, where the message rate is only a few hundred per second. Batching many log records into one message and letting an `otlp_*` input format expand them is the shape that gets that benefit.
+**`ack_policy` must be `explicit`.** The source acknowledges each message individually once the split containing it is published, and waits for the server to confirm the acknowledgment — the confirmation is what tells the drain that the pipeline is empty. The consumer's ack floor is therefore the resume point, and it is the only progress state that matters. Any other policy is rejected when the source is created.
+
+**`ack_wait` must exceed the end-to-end publish latency.** The timer starts at delivery and has to outlast three terms:
+
+```
+ack_wait > commit_timeout + split upload and publish + ack round trip
+```
+
+Shorter than their sum, and NATS redelivers messages that are still being indexed; they are then indexed twice. 5 minutes with a 60 s `commit_timeout` leaves a wide margin.
+
+It is also the *recovery* time from a lost delivery, so it should not be arbitrarily large either. If a message is delivered but never arrives — a dropped connection, a slow-consumer disconnect — nothing brings it back until the timer expires and the pipeline simply idles. The same injected fault idled a run for 278 s at `ack_wait=300s` and 23.2 s at `30s`.
+
+**`max_ack_pending` should be `-1`.** Nothing is acknowledged until a split is published, so a whole commit window is always ack-pending. That makes the setting a hard throughput cap rather than a safety valve:
+
+```
+achievable rate ≈ max_ack_pending / commit_timeout   documents per second
+```
+
+Measured at four pipelines with a 10 s commit timeout: `1000` gave 97 documents per second where the formula predicts 100, and `20000` gave 2,115 where it predicts 2,000. A bound that looks generous for an ordinary queue consumer throttles indexing to a trickle here. If the in-flight window has to be bounded, size it above `throughput × commit_timeout` rather than at a small absolute number, and note the trade: unlimited also makes the crash-replay window the whole delivered span above the ack floor rather than a bounded slice.
+
+**`deliver_policy`** is usually `all`, so a new consumer indexes the stream from the start.
+
+**Give each consumer a single `filter_subject`.** A consumer configured with several filters through NATS 2.10's multi-filter `filter_subjects` appears to take a much slower path in the broker: on a stream whose subjects are interleaved, sixteen multi-filter consumers took 7.5 times longer than the same sixteen consumers with one filter each, with the broker saturated and the indexers idle.
+
+#### What can be tuned on the Quickwit side
+
+| Setting | Where | Effect |
+| --- | --- | --- |
+| `num_pipelines` | source config | Pipelines bound to the consumer. Scales cleanly on large messages: 52 → 147 MiB/s from one to four pipelines at 512 KiB. On small messages the acknowledgment path caps the aggregate, and it is worth only about 1.15× from one to sixteen — there, parallelism has to come from more consumers. |
+| [`commit_timeout_secs`](index-config.md#indexing-settings) | index config | Sets the size of the always-ack-pending window, so it interacts with `max_ack_pending` and with `ack_wait`. It is also the length of the cooperative-indexing cycle. |
+| [`docstore_compression_level`](index-config.md#indexing-settings) | index config | Defaults to zstd 8, which is what limits a single pipeline on small documents: the dedicated docstore thread saturates and back-pressures the indexer. Level 1 or 3 measured 21.1 s against 31.2 s on a 1.5 GiB corpus of 1 KiB documents. Not NATS-specific. |
+| [`enable_cooperative_indexing`](node-config.md#indexer-configuration) | node config | See below. |
+| `QW_NATS_PULL_MAX_BYTES_PER_BATCH` | env, default 10 MiB | Bounds the bytes the server may push per pull request. It must stay well under the server's per-connection `max_pending` (64 MiB by default), or the server declares a slow consumer and closes the connection; the messages are already counted as delivered, so the pipeline then idles for a full `ack_wait`. 10 MiB and 20 MiB measure identically. |
+| `QW_NATS_PULL_MAX_MESSAGES_PER_BATCH` | env, default 100,000 | Messages per pull request. Does not bind at these message sizes — 200 and 100,000 measured identically — because the byte cap is what bounds a batch. |
 
 #### Scaling
 
-There are two ways to spread a stream over several pipelines, and they do not perform alike.
+**One consumer per partition of the data** (recommended). Give each partition — a tenant, a subject, whatever the natural unit is — its own durable consumer with a single `filter_subject`, and add one Quickwit source with `num_pipelines: 1` per consumer. The partitions then scale and fail independently, and each gets its own checkpoint.
 
-**One consumer per partition of the data** (recommended). Give each partition — a tenant, a subject, whatever the natural unit is — its own durable consumer with a single `filter_subject`, and add one Quickwit source with `num_pipelines: 1` per consumer. The partitions then scale and fail independently, and each gets its own checkpoint. Splitting the same corpus over one shared stream with a consumer per partition and over a stream per partition measured 21.28 s and 21.26 s, so partition whichever way suits the producers. Adding pipelines *within* a consumer does not help: sixteen consumers with two pipelines each measured 23.5 s against 21.3 s with one.
+**One shared consumer** (simplest). Several pipelines bind to the same consumer and NATS load-balances the messages across them, so scaling is a plain `num_pipelines` update and the control plane places the pipelines across the indexers of the cluster.
 
-**One shared consumer** (simplest). Several pipelines bind to the same consumer and NATS load-balances the messages across them, so scaling is a plain `num_pipelines` update and the control plane places the pipelines across the indexers of the cluster. Because the acknowledgment cost is per message rather than per pipeline, adding pipelines to one consumer does not raise the aggregate throughput much at small message sizes: on the host above it was worth 1.15× between one and sixteen pipelines, against 1.4× for splitting the same work over sixteen consumers.
+At 512 KiB per message the two shapes are equivalent — 52.1, 91.3 and 146.6 MiB/s at one, two and four units either way — and so is partitioning across separate streams instead of subjects. At 1 KiB they diverge: a shared consumer stops gaining past a couple of pipelines while per-tenant consumers keep scaling, because the acknowledgment cost is per message rather than per pipeline. The per-consumer shape is therefore the safe default: never worse, and better on small documents.
 
-:::warning
+#### Acknowledgment cost
 
-Give each consumer **one** subject filter, not several. A consumer configured with `filter_subjects` (NATS 2.10's multi-filter) uses a different server path than one configured with a single `filter_subject`, and on a stream whose subjects are interleaved it is dramatically slower: sixteen multi-filter consumers over sixteen interleaved subjects took 7.5 times longer than the same sixteen consumers with one filter each, with the broker saturated and the indexers idle.
+One confirmed acknowledgment per message is the source's dominant broker cost, and it is what decides whether the source or the indexer is the bottleneck.
 
-:::
+- At **512 KiB** per message it is invisible. The NATS and Kafka sources measured within a percent of each other across the whole pipeline sweep, and broker CPU stayed at 0.5–0.9 cores for both, which is the host's floor. Priced on the broker alone, a confirmed acknowledgment per message still leaves 1,138 MiB/s — several times what one indexer consumes.
+- At **1 KiB** it is the ceiling. Sixteen per-tenant consumers reached 72 MiB/s while an equivalent Kafka source reached 150, and the broker spent 5.1 of the host's cores on acknowledgments against Quickwit's 4.7 on indexing — about ten times the broker CPU per document that a periodic offset commit costs. Priced on the broker alone, acknowledgment divides throughput by 6.5 at this size.
 
-`max_ack_pending` bounds the messages in flight and therefore the achievable throughput: nothing is acknowledged until a split is published, so a whole commit window is always ack-pending and the achievable rate is `max_ack_pending / commit_timeout` documents per second. Measured at four pipelines with a 10 s commit timeout, 1,000 gave 97 documents per second and 20,000 gave 2,115. Leave it unlimited (`-1`) unless there is a reason to bound the source's memory, and note the trade: unlimited also makes the replay window after a crash the whole delivered span above the ack floor rather than a bounded slice of it.
+The cost is per *message*, so the message rate is what matters. Batching many log records into one message and letting an `otlp_*` input format expand them into separate documents is what moves a workload from the second case to the first: one acknowledgment then covers the whole batch.
+
+#### Cooperative indexing
+
+[`enable_cooperative_indexing`](node-config.md#indexer-configuration) is a **node-level** switch, off by default. It cannot be set per index or per source: one semaphore per indexer, sized to the node's blocking-thread count, is shared by every pipeline that node runs.
+
+With it off, an indexer cuts a split when the commit timeout fires or the split hits its size limits, and every pipeline indexes whenever it has work. With it on, a pipeline first sleeps a phase offset derived from a hash of its pipeline id, spread over `[0, commit_timeout)`; it then takes a semaphore permit, cuts its split as soon as *its own mailbox drains* rather than waiting for the commit timeout, releases the permit, and sleeps out the rest of a `commit_timeout`-long cycle. So a bounded number of pipelines hold an `IndexWriter` at any instant, and their CPU, disk and network spikes are spread across the commit window instead of landing together.
+
+What it costs and buys, measured on a 4.75 GiB corpus with a 10 s commit timeout:
+
+| | throughput, coop off → on | first published split, off → on |
+| --- | --- | --- |
+| 512 KiB messages, 1 pipeline | 52.1 → 52.1 MiB/s | — |
+| 512 KiB messages, 16 pipelines | 177.8 → 209.5 MiB/s | 13.2 s → 3.0 s |
+| ~1 KiB messages, 1 pipeline | 33.6 → 24.2 MiB/s | — |
+| ~1 KiB messages, 16 pipelines | 38.6 → 36.7 MiB/s | 13.2 s → 3.0 s |
+
+At 512 KiB it costs nothing measurable and still makes the first split searchable 4.4× sooner. On small documents it costs up to 28 % for a single busy pipeline, shrinking to a few percent by sixteen — the penalty is worst for one pipeline with a lot to do, which is the opposite of what the setting is for. Enable it when a node runs many pipelines that are each mostly idle, which is also when its bound on concurrent `IndexWriter`s is what keeps the node inside its memory budget.
+
+One caveat: the initial phase sleep is up to one full `commit_timeout`, so with a 60 s commit timeout a pipeline can sit idle for up to a minute after a restart or reassignment before it indexes anything. That is a ramp after each deploy rather than an ongoing cost; shorten the commit timeout if it matters.
 
 #### Monitoring
 

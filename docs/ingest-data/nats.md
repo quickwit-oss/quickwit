@@ -136,9 +136,14 @@ nats consumer add stackoverflow quickwit-consumer --pull --deliver all --ack exp
 
 :::info
 
-The consumer must use the explicit ack policy: the source acknowledges each message once it is durably indexed, and the consumer's ack floor is the resume point. The subject filters, the deliver policy, and the ack tuning are properties of the consumer, not of the Quickwit source; the ack wait must exceed the indexing commit timeout.
+The consumer must use the explicit ack policy: the source acknowledges each message once it is durably indexed, and the consumer's ack floor is the resume point. The subject filters, the deliver policy, and the ack tuning are properties of the consumer, not of the Quickwit source.
 
-`--max-pending=-1` leaves the in-flight window unbounded: the source acknowledges only once a split is published, so a whole commit window is always ack-pending and a small bound throttles indexing. See the [NATS source reference](../configuration/source-config.md#nats-source) for the rest, and [Scaling](../configuration/source-config.md#scaling) for how to grow past one pipeline.
+Two of those settings decide whether indexing works at all, and neither is checked when the source is created:
+
+- `--wait` (`ack_wait`) must outlast the whole path from delivery to acknowledgment — the commit timeout, plus the split upload and publish, plus the acknowledgment round trip. Shorter than that and NATS redelivers messages that are still being indexed, which duplicates them. `5m` against this tutorial's 10 s commit timeout is a wide margin. It is also the recovery time from a lost delivery, so it should not be arbitrarily large either.
+- `--max-pending=-1` leaves the in-flight window unbounded. The source acknowledges only once a split is published, so a whole commit window is always ack-pending and a bounded value is a hard throughput cap of roughly `max_ack_pending / commit_timeout` documents per second.
+
+See [Consumer invariants](../configuration/source-config.md#consumer-invariants) for the details, and [Scaling](../configuration/source-config.md#scaling) for how to grow past one pipeline.
 
 :::
 
@@ -242,8 +247,10 @@ Let's delete the files and resources created for the purpose of this tutorial.
 ```bash
 # Delete quickwit index.
 ./quickwit index delete --index stackoverflow --yes
-# Delete NATS stream.
+# Delete NATS stream, and with it the consumer it holds.
 nats stream rm -f stackoverflow
 ```
+
+Note that deleting a Quickwit source does **not** delete its consumer: the consumer is provisioned outside of Quickwit and outlives the source. Here the stream is deleted too, which removes it. Deleting only the source would leave the consumer behind, still holding its position.
 
 This concludes the tutorial. If you have any questions regarding Quickwit or encounter any issues, don't hesitate to ask a [question](https://github.com/quickwit-oss/quickwit/discussions) or open an [issue](https://github.com/quickwit-oss/quickwit/issues) on [GitHub](https://github.com/quickwit-oss/quickwit) or contact us directly on [Discord](https://discord.com/invite/MT27AG5EVE).
