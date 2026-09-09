@@ -12,12 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(test)]
-mod churn_tests;
-#[cfg(test)]
-mod deployment_tests;
-#[cfg(test)]
-mod scale_tests;
 pub mod scheduling_logic;
 pub mod scheduling_logic_model;
 

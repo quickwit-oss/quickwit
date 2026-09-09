@@ -91,52 +91,118 @@ fn fire_and_forget(
     });
 }
 
-/// Pick an ingester from `ingester_ids_by_num_shards`.
-/// We prioritize ingesters with the least number of shards and break ties randomly.
-///
-/// Once an ingester has been found, we update `ingester_ids_by_num_shards` to reflect the new
-/// state. In particular, the ingester node is moved from its previous num_shards level to its new
-/// num_shards level. In particular, a num_shards entry that is empty should be removed from the
-/// BTreeMap.
-fn pick_least_loaded_ingester<'a>(
-    ingester_ids_by_num_shards: &mut BTreeMap<usize, Vec<&'a NodeId>>,
+struct EligibleIngester {
+    node_id: NodeId,
+    availability_zone: Option<String>,
+    num_open_shards: usize,
+}
+
+fn pick_least_loaded(
+    mut candidates: Vec<&EligibleIngester>,
     rng: &mut ThreadRng,
-) -> Option<&'a NodeId> {
-    let (&num_shards, ingester_ids) = ingester_ids_by_num_shards.iter_mut().next()?;
-    let position = rng.random_range(0..ingester_ids.len());
+) -> Option<NodeId> {
+    let min_load = candidates.iter().map(|ing| ing.num_open_shards).min()?;
+    candidates.retain(|ing| ing.num_open_shards == min_load);
+    candidates.choose(rng).map(|ing| ing.node_id.clone())
+}
 
-    let ingester_id = ingester_ids.swap_remove(position);
-    let new_num_shards = num_shards + 1;
-    let should_remove_entry = ingester_ids.is_empty();
+/// Pick an ingester from the list of eligible ingesters.
+/// We prioritize ingesters with the least load from the same AZ, if AZ awareness is enabled.
+/// If it isn't, or no such ingester is eligible, we fall back to cross-AZ. When multiple
+/// ingesters have the same load, we tiebreak randomly.  
+fn pick_least_loaded_ingester(
+    eligible_ingesters: &mut [EligibleIngester],
+    requested_az: Option<&str>,
+    rng: &mut ThreadRng,
+) -> Option<NodeId> {
+    let (same_az_ingesters, cross_az_ingesters): (Vec<_>, Vec<_>) = eligible_ingesters
+        .iter()
+        .partition(|ingester| {
+            requested_az.is_some() && ingester.availability_zone.as_deref() == requested_az
+        });
+    // Try to pick an ingester from the same AZ. If none exists, or if AZ awareness is disabled,
+    // pick from the remaining ingesters.
+    let picked_ingester_id = pick_least_loaded(same_az_ingesters, rng).or_else(|| pick_least_loaded(cross_az_ingesters, rng))?;
+    let ingester = eligible_ingesters
+        .iter_mut()
+        .find(|ing| ing.node_id == picked_ingester_id)
+        .expect("Picked ingester came from this list of ready nodes");
+    ingester.num_open_shards += 1;
+    Some(picked_ingester_id)
+}
 
-    if should_remove_entry {
-        ingester_ids_by_num_shards.remove(&num_shards);
+fn eligible_ingesters(
+    ingester_pool: &IngesterPool,
+    unavailable_ingesters: &FnvHashSet<NodeId>,
+    model: &ControlPlaneModel,
+) -> Vec<EligibleIngester> {
+    let mut num_open_shards_by_ingester_id: HashMap<String, usize> = HashMap::new();
+    for shard in model.all_shards() {
+        if shard.is_open() {
+            *num_open_shards_by_ingester_id
+                .entry(shard.ingester_id.clone())
+                .or_default() += 1;
+        }
     }
-    ingester_ids_by_num_shards
-        .entry(new_num_shards)
-        .or_default()
-        .push(ingester_id);
-    Some(ingester_id)
+    ingester_pool
+        .keys_values()
+        .into_iter()
+        .filter(|(id, ingester)| {
+            ingester.status.is_ready() && !unavailable_ingesters.contains(id)
+        })
+        .map(|(node_id, ingester)| EligibleIngester {
+            num_open_shards: num_open_shards_by_ingester_id
+                .get(node_id.as_str())
+                .copied()
+                .unwrap_or(0),
+            node_id,
+            availability_zone: ingester.availability_zone,
+        })
+        .collect()
 }
 
 fn allocate_shards(
-    num_shards_by_ingester_id: &HashMap<NodeId, usize>,
-    num_shards: usize,
-) -> Option<Vec<&NodeId>> {
-    let mut ingester_ids_by_num_shards: BTreeMap<usize, Vec<&NodeId>> = BTreeMap::default();
-    for (ingester_id, &num_shards) in num_shards_by_ingester_id {
-        ingester_ids_by_num_shards
-            .entry(num_shards)
-            .or_default()
-            .push(ingester_id);
-    }
+    eligible_ingesters: &mut [EligibleIngester],
+    shards_to_allocate: &[(Option<String>, usize)],
+) -> Option<Vec<NodeId>> {
     let mut rng = rng();
-    let mut ingester_ids = Vec::with_capacity(num_shards);
-    for _ in 0..num_shards {
-        let ingester_id = pick_least_loaded_ingester(&mut ingester_ids_by_num_shards, &mut rng)?;
-        ingester_ids.push(ingester_id);
+    let total: usize = shards_to_allocate.iter().map(|(_, count)| *count).sum();
+    let mut ingester_ids = Vec::with_capacity(total);
+    for (requested_az, count) in shards_to_allocate {
+        for _ in 0..*count {
+            let ingester_id =
+                pick_least_loaded_ingester(eligible_ingesters, requested_az.as_deref(), &mut rng)?;
+            ingester_ids.push(ingester_id);
+        }
     }
     Some(ingester_ids)
+}
+
+/// Divides `num_to_open` shards evenly across the AZs of eligible ingesters. When no
+/// eligible ingester advertises an AZ, returns a single un-preferenced entry so the
+/// allocator falls back to the globally least-loaded pick (pre-AZ-aware behavior).
+fn derive_balancing_azs(
+    num_to_open: usize,
+    eligible_ingesters: &[EligibleIngester],
+) -> HashMap<Option<String>, usize> {
+    if num_to_open == 0 {
+        return HashMap::new();
+    }
+    let mut known_azs: Vec<&String> = eligible_ingesters
+        .iter()
+        .filter_map(|ingester| ingester.availability_zone.as_ref())
+        .unique()
+        .collect();
+    if known_azs.is_empty() {
+        return HashMap::from([(None, num_to_open)]);
+    }
+    known_azs.shuffle(&mut rng());
+    known_azs
+        .iter()
+        .cycle()
+        .take(num_to_open)
+        .map(|az| Some((*az).clone()))
+        .counts()
 }
 
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
@@ -493,51 +559,23 @@ impl IngestController {
         Ok(response)
     }
 
-    /// Allocates and assigns new shards to ingesters.
+    /// Allocates and assigns new shards to ingesters, honoring each requested AZ
+    /// preference when a same-AZ eligible ingester exists and falling back cross-AZ
+    /// otherwise.
     fn allocate_shards(
         &self,
-        num_shards_to_allocate: usize,
+        shards_to_allocate: &[(Option<String>, usize)],
         unavailable_ingesters: &FnvHashSet<NodeId>,
         model: &ControlPlaneModel,
     ) -> Option<Vec<NodeId>> {
-        // Count of open shards per available ingester node (including the ingester with 0 open
-        // shards).
-        let mut num_open_shards_by_ingester_id: HashMap<NodeId, usize> = self
-            .ingester_pool
-            .keys_values()
-            .into_iter()
-            .filter(|(ingester_id, ingester)| {
-                ingester.status.is_ready() && !unavailable_ingesters.contains(ingester_id)
-            })
-            .map(|(ingester_id, _)| (ingester_id, 0))
-            .collect();
-
-        let num_ingesters = num_open_shards_by_ingester_id.len();
-
-        if num_ingesters == 0 {
-            warn!("failed to allocate {num_shards_to_allocate} shards: no ingesters available");
+        let mut eligible_ingesters =
+            eligible_ingesters(&self.ingester_pool, unavailable_ingesters, model);
+        if eligible_ingesters.is_empty() {
+            let total: usize = shards_to_allocate.iter().map(|(_, count)| *count).sum();
+            warn!("failed to allocate {total} shards: no ingesters available");
             return None;
         }
-
-        for shard in model.all_shards() {
-            if shard.is_open() && !unavailable_ingesters.contains(shard.ingester_id.as_str()) {
-                if let Some(num_shards) =
-                    num_open_shards_by_ingester_id.get_mut(shard.ingester_id.as_str())
-                {
-                    *num_shards += 1;
-                } else {
-                    // The shard is not present in `num_open_shards_by_ingester_id`.
-                    // This is normal. It just means an ingester is temporarily unavailable,
-                    // either from the control plane view (not present in the indexer pool,
-                    // because as a result of information from chitchat), or because it is in the
-                    // unavailable ingesters map.
-                }
-            }
-        }
-
-        let ingester_ids =
-            allocate_shards(&num_open_shards_by_ingester_id, num_shards_to_allocate)?;
-        Some(ingester_ids.into_iter().cloned().collect())
+        allocate_shards(&mut eligible_ingesters, shards_to_allocate)
     }
 
     /// Calls init shards on the ingesters hosting newly opened shards.
@@ -681,6 +719,30 @@ impl IngestController {
         }
     }
 
+    /// Opens `num_shards` for each source, auto-balancing across the AZs of eligible
+    /// ingesters. Delegates to [`Self::try_open_shards_by_az`] once the AZ preferences
+    /// have been derived.
+    async fn try_open_shards(
+        &mut self,
+        num_shards_by_source: HashMap<SourceUid, usize>,
+        model: &mut ControlPlaneModel,
+        unavailable_ingesters: &FnvHashSet<NodeId>,
+        progress: &Progress,
+    ) -> MetastoreResult<HashMap<(SourceUid, Option<String>), usize>> {
+        let eligible_ingesters =
+            eligible_ingesters(&self.ingester_pool, unavailable_ingesters, model);
+        let shards_to_open: HashMap<(SourceUid, Option<String>), usize> = num_shards_by_source
+            .into_iter()
+            .flat_map(|(source_uid, num_shards)| {
+                derive_balancing_azs(num_shards, &eligible_ingesters)
+                    .into_iter()
+                    .map(move |(az, count)| ((source_uid.clone(), az), count))
+            })
+            .collect();
+        self.try_open_shards_by_az(shards_to_open, model, unavailable_ingesters, progress)
+            .await
+    }
+
     /// Attempts to open shards for different sources
     /// The values in `num_shards_to_open_by_source` specify how many shards to open for each
     /// source.
@@ -698,31 +760,38 @@ impl IngestController {
     /// plane model.
     ///
     /// The number of successfully open shards is returned.
-    async fn try_open_shards(
+    async fn try_open_shards_by_az(
         &mut self,
-        num_shards_to_open_by_source: HashMap<SourceUid, usize>,
+        shards_to_open: HashMap<(SourceUid, Option<String>), usize>,
         model: &mut ControlPlaneModel,
         unavailable_ingesters: &FnvHashSet<NodeId>,
         progress: &Progress,
-    ) -> MetastoreResult<HashMap<SourceUid, usize>> {
-        let total_num_shards_to_open: usize = num_shards_to_open_by_source.values().sum();
+    ) -> MetastoreResult<HashMap<(SourceUid, Option<String>), usize>> {
+        let total_num_shards_to_open: usize = shards_to_open.values().sum();
 
         if total_num_shards_to_open == 0 {
             return Ok(HashMap::new());
         }
+        let shards_to_allocate: Vec<(Option<String>, usize)> = shards_to_open
+            .iter()
+            .map(|((_, az), count)| (az.clone(), *count))
+            .collect();
         let Some(ingester_ids) =
-            self.allocate_shards(total_num_shards_to_open, unavailable_ingesters, model)
+            self.allocate_shards(&shards_to_allocate, unavailable_ingesters, model)
         else {
             return Ok(HashMap::new());
         };
-        let source_uids_with_multiplicity = num_shards_to_open_by_source
-            .iter()
-            .flat_map(|(source_uid, &num_shards)| std::iter::repeat_n(source_uid, num_shards));
+        let source_az_with_multiplicity = shards_to_open.iter().flat_map(
+            |((source_uid, requested_az), &num_shards)| {
+                std::iter::repeat_n((source_uid, requested_az), num_shards)
+            },
+        );
 
         let mut init_shard_subrequests: Vec<InitShardSubrequest> = Vec::new();
+        let mut requested_az_by_subrequest_id: Vec<Option<String>> = Vec::new();
 
-        for (subrequest_id, (source_uid, ingester_id)) in
-            source_uids_with_multiplicity.zip(ingester_ids).enumerate()
+        for (subrequest_id, ((source_uid, requested_az), ingester_id)) in
+            source_az_with_multiplicity.zip(ingester_ids).enumerate()
         {
             let shard_id = ShardId::from(Ulid::new());
 
@@ -758,6 +827,7 @@ impl IngestController {
                 validate_docs,
             };
             init_shard_subrequests.push(init_shard_subrequest);
+            requested_az_by_subrequest_id.push(requested_az.clone());
         }
 
         // Let's first attempt to initialize these shards.
@@ -766,12 +836,11 @@ impl IngestController {
         let open_shard_subrequests = init_shards_response
             .successes
             .into_iter()
-            .enumerate()
-            .map(|(subrequest_id, init_shard_success)| {
+            .map(|init_shard_success| {
                 let shard = init_shard_success.shard();
 
                 OpenShardSubrequest {
-                    subrequest_id: subrequest_id as u32,
+                    subrequest_id: init_shard_success.subrequest_id,
                     index_uid: shard.index_uid.clone(),
                     source_id: shard.source_id.clone(),
                     shard_id: shard.shard_id.clone(),
@@ -791,11 +860,17 @@ impl IngestController {
             ))
             .await?;
 
-        let mut num_opened_shards_by_source: HashMap<SourceUid, usize> = HashMap::new();
+        let mut num_opened_shards_by_source: HashMap<(SourceUid, Option<String>), usize> =
+            HashMap::new();
 
         for open_shard_subresponse in open_shards_response.subresponses {
             let source_uid = open_shard_subresponse.open_shard().source_uid();
-            *num_opened_shards_by_source.entry(source_uid).or_default() += 1;
+            let requested_az = requested_az_by_subrequest_id
+                .get(open_shard_subresponse.subrequest_id as usize)
+                .expect("subrequest_id was assigned from this vec");
+            *num_opened_shards_by_source
+                .entry((source_uid, requested_az.clone()))
+                .or_default() += 1;
         }
 
         Ok(num_opened_shards_by_source)
