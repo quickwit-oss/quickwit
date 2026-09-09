@@ -128,7 +128,6 @@ services:
         retries: 100
 
   nats:
-    # 2.10 is the oldest version supporting multiple consumer filter subjects.
     image: nats:${NATS_VERSION:-2.10-alpine}
     container_name: nats
     command: --jetstream --http_port 8222

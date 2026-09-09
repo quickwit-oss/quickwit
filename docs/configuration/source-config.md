@@ -219,9 +219,9 @@ achievable rate ≈ max_ack_pending / commit_timeout   documents per second
 
 Measured at four pipelines with a 10 s commit timeout: `1000` gave 97 documents per second where the formula predicts 100, and `20000` gave 2,115 where it predicts 2,000. A bound that looks generous for an ordinary queue consumer throttles indexing. If the in-flight window has to be bounded, size it above `throughput × commit_timeout` rather than at a small absolute number, and note the trade: unlimited also makes the crash-replay window the whole delivered span above the ack floor rather than a bounded slice.
 
-**`max_deliver` should stay unlimited (`-1`).** Redelivery is what recovers from a crash or a lost delivery. A finite value turns it into data loss: a message that exhausts it is never delivered again and is silently skipped. The source warns at start when it is finite.
+**`max_deliver` should stay unlimited (`-1`).** Redelivery is what recovers from a crash or a lost delivery. A finite value turns it into data loss: a message that exhausts it is never delivered again and is silently skipped.
 
-**`max_batch`, `max_bytes` and `max_expires` must not be below what the source pulls.** Each pull request asks for up to `QW_NATS_PULL_MAX_MESSAGES_PER_BATCH` messages and `QW_NATS_PULL_MAX_BYTES_PER_BATCH` bytes with a 30 s expiry. A consumer limit below any of those makes the server reject every pull request and the pipeline idles. The source warns at start.
+**`max_batch`, `max_bytes` must not be below what the source pulls.** Each pull request asks for up to `QW_NATS_PULL_MAX_MESSAGES_PER_BATCH` messages and `QW_NATS_PULL_MAX_BYTES_PER_BATCH` bytes. A consumer limit below any of those makes the server reject every pull request and the pipeline idles. The source warns at start.
 
 **The consumer must outlive the source.** Deleting it, or letting an `inactive_threshold` expire, while a source is bound to it does not stop the pipelines: the server answers their pull requests with "no responders", which is also what a JetStream outage produces, so the source retries indefinitely and warns. Recreate the consumer under the same name to resume, or disable the source.
 
@@ -233,7 +233,7 @@ Measured at four pipelines with a 10 s commit timeout: `1000` gave 97 documents 
 
 | Setting | Where | Effect |
 | --- | --- | --- |
-| `num_pipelines` | source config | Pipelines bound to the consumer. Scales cleanly on large messages: 52 → 147 MiB/s from one to four pipelines at 512 KiB. On small messages the acknowledgment path caps the aggregate, and it is worth only about 1.15× from one to sixteen — there, parallelism has to come from more consumers. |
+| `num_pipelines` | source config | Pipelines bound to the consumer. Scales cleanly on large messages: 52 → 147 MiB/s from one to four pipelines at 512 KiB. On small messages (1 KiB) the acknowledgment path caps the aggregate, and it is worth only about 1.15× from one to sixteen — there, parallelism has to come from more consumers. |
 | [`commit_timeout_secs`](index-config.md#indexing-settings) | index config | Sets the size of the always-ack-pending window, so it interacts with `max_ack_pending` and with `ack_wait`. |
 | `QW_NATS_PULL_MAX_BYTES_PER_BATCH` | env, default 10 MiB | Bounds the bytes the server may push per pull request. It must stay well under the server's per-connection `max_pending` (64 MiB by default), or the server declares a slow consumer and closes the connection; the messages are already counted as delivered, so the pipeline then idles for a full `ack_wait`. It must also stay above the server's `max_payload`, or larger messages are never delivered, and at or below the consumer's `max_bytes`; the source warns at start otherwise. 10 MiB and 20 MiB measure identically. |
 | `QW_NATS_PULL_MAX_MESSAGES_PER_BATCH` | env, default 100,000 | Messages per pull request. Can be used along `QW_NATS_PULL_MAX_BYTES_PER_BATCH` to limit a batch if there is too much contention around acknowledgements. The client buffers eight such batches per subscription; messages beyond that are dropped client-side and come back after `ack_wait`. |
