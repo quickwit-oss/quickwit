@@ -44,6 +44,7 @@ pub use broadcast::{
 use bytes::buf::Writer;
 use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
+use quickwit_cluster::GenerationId;
 use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::{IngesterServiceClient, IngesterStatus};
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
@@ -71,6 +72,7 @@ pub struct IngesterPoolEntry {
     pub client: IngesterServiceClient,
     pub status: IngesterStatus,
     pub availability_zone: Option<String>,
+    pub generation_id: GenerationId,
 }
 
 impl IngesterPoolEntry {
@@ -80,6 +82,7 @@ impl IngesterPoolEntry {
             client,
             status: IngesterStatus::Ready,
             availability_zone: None,
+            generation_id: GenerationId::from(1u64),
         }
     }
 
@@ -89,6 +92,7 @@ impl IngesterPoolEntry {
             client: IngesterServiceClient::mocked(),
             status: IngesterStatus::Ready,
             availability_zone: None,
+            generation_id: GenerationId::from(1u64),
         }
     }
 }

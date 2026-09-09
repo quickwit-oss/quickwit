@@ -1272,6 +1272,7 @@ fn build_ingester_insert_change(
         client: ingester_service,
         status: node.ingester_status,
         availability_zone: node.availability_zone().map(|az| az.to_string()),
+        generation_id: node.generation_id,
     };
     Change::Insert(node_id, pool_entry)
 }
@@ -1722,7 +1723,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use anyhow::{bail, ensure};
-    use quickwit_cluster::{ChitchatTransport, ClusterNode, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, ClusterNode, GenerationId, create_cluster_for_test};
     use quickwit_common::uri::Uri;
     use quickwit_common::{ServiceStream, assert_eventually};
     use quickwit_config::SearcherConfig;
@@ -2181,6 +2182,7 @@ mod tests {
             .get(&NodeId::from_str("test-ingester-node"))
             .unwrap();
         assert_eq!(pool_entry.status, IngesterStatus::Initializing);
+        assert_eq!(pool_entry.generation_id, GenerationId::from(0u64));
 
         // Update the node: ingester status transitions from Initializing to Ready.
         let updated_node = ClusterNode::for_test(
