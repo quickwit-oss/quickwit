@@ -89,7 +89,10 @@ pub(crate) fn spawn_sequencer_for_test(
     universe: &quickwit_actors::Universe,
     publisher_mailbox: quickwit_actors::Mailbox<crate::actors::Publisher>,
 ) -> quickwit_actors::Mailbox<crate::actors::Sequencer<crate::actors::Publisher>> {
-    let sequencer = crate::actors::Sequencer::new(publisher_mailbox);
+    let sequencer = crate::actors::Sequencer::new(
+        publisher_mailbox,
+        quickwit_actors::QueueCapacity::Bounded(2),
+    );
     let (sequencer_mailbox, _sequencer_handle) = universe.spawn_builder().spawn(sequencer);
     sequencer_mailbox
 }

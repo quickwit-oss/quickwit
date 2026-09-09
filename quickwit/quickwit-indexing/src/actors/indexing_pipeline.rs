@@ -321,7 +321,10 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "publisher")]))
             .spawn(publisher);
 
-        let sequencer = Sequencer::new(publisher_mailbox);
+        let sequencer = Sequencer::new(
+            publisher_mailbox,
+            QueueCapacity::Bounded(self.params.max_concurrent_split_uploads_index),
+        );
         let (sequencer_mailbox, sequencer_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "sequencer")]))
