@@ -82,6 +82,7 @@ impl IngesterPoolEntry {
             client,
             status: IngesterStatus::Ready,
             availability_zone: None,
+            generation_id: GenerationId::from(1u64),
         }
     }
 
@@ -91,6 +92,7 @@ impl IngesterPoolEntry {
             client: IngesterServiceClient::mocked(),
             status: IngesterStatus::Ready,
             availability_zone: None,
+            generation_id: GenerationId::from(1u64),
         }
     }
 }

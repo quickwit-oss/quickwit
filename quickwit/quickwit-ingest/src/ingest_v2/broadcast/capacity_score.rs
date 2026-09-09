@@ -270,6 +270,7 @@ mod tests {
             assert_eq!(event.source_uid.source_id, "test-source");
             assert_eq!(event.capacity_score, 6);
             assert_eq!(event.open_shard_count, 1);
+            assert_eq!(event.generation_id, GenerationId::from(1u64));
         });
 
         let _listener =

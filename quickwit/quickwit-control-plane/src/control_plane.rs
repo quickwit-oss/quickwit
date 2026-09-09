@@ -1782,6 +1782,7 @@ mod tests {
                 client: IngesterServiceClient::from_mock(mock_retiring_ingester),
                 status: IngesterStatus::Retiring,
                 availability_zone: None,
+                generation_id: quickwit_cluster::GenerationId::from(1u64),
             },
         );
         ingester_pool.insert(
