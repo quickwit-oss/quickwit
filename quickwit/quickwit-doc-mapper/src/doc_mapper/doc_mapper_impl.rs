@@ -1943,7 +1943,7 @@ mod tests {
             }"#,
             "concat",
             r#"{"some_text": "this is a text", "other_text": "this is a text too"}"#,
-            vec!["this is a text".into(), "this is a text too".into()],
+            vec!["this is a text too".into(), "this is a text".into()],
         );
     }
 

@@ -26,7 +26,7 @@ use quickwit_common::thread_pool::with_priority::Priority;
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
 use quickwit_doc_mapper::DYNAMIC_FIELD_NAME;
-use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
+use quickwit_doc_mapper::tag_pruning::{MaybeAst, extract_tags_from_query};
 use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt, SplitMetadata};
 use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
@@ -1235,7 +1235,11 @@ async fn refine_and_list_matches(
             &mut search_request.end_timestamp,
         );
     }
-    let tag_filter_ast = extract_tags_from_query(query_ast_resolved);
+    let tag_filter_ast = match extract_tags_from_query(query_ast_resolved) {
+        MaybeAst::Ast(ast) => Some(ast),
+        MaybeAst::MaybeMatch => None,
+        MaybeAst::NoMatch => return Ok(Vec::new()), // nothing matches
+    };
 
     // TODO if search after is set, we sort by timestamp and we don't want to count all results,
     // we can refine more here. Same if we sort by _shard_doc

@@ -32,10 +32,10 @@ pub fn match_tag_field_name(field_name: &str, tag: &str) -> bool {
 /// If the predicate evaluates to false for a given set of tags
 /// associated with a split, we are guaranteed that no documents
 /// in the split matches the query.
-pub fn extract_tags_from_query(query_ast: QueryAst) -> Option<TagFilterAst> {
+pub fn extract_tags_from_query(query_ast: QueryAst) -> MaybeAst<TagFilterAst> {
     let unsimplified_tag_filter_ast = extract_unsimplified_tags_filter_ast(query_ast);
-    let term_filters_ast = simplify_ast(unsimplified_tag_filter_ast)?;
-    Some(expand_to_tag_ast(term_filters_ast))
+    let term_filters_ast = simplify_ast(unsimplified_tag_filter_ast);
+    term_filters_ast.map(expand_to_tag_ast)
 }
 
 fn extract_unsimplified_tags_filter_ast(query_ast: QueryAst) -> UnsimplifiedTagFilterAst {
@@ -61,7 +61,8 @@ fn extract_unsimplified_tags_filter_ast(query_ast: QueryAst) -> UnsimplifiedTagF
             field: term_query.field,
             value: term_query.value,
         },
-        QueryAst::MatchAll | QueryAst::MatchNone => UnsimplifiedTagFilterAst::Uninformative,
+        QueryAst::MatchAll => UnsimplifiedTagFilterAst::Uninformative,
+        QueryAst::MatchNone => UnsimplifiedTagFilterAst::NoMatch,
         QueryAst::Range(_) => {
             // We could technically add support for range over some quantitive tag value (like we do
             // for timestamps). This is not supported at this point.
@@ -124,6 +125,35 @@ enum UnsimplifiedTagFilterAst {
     /// Any subnode of the `UserInputAST` can be
     /// replaced by `Uninformative` while still being correct.
     Uninformative,
+    NoMatch,
+}
+
+/// Result of simplifying a tag filter AST, once uninformative
+/// and always-true/always-false leaves have been pruned away.
+#[derive(Debug, PartialEq, Clone)]
+pub enum MaybeAst<T> {
+    /// A simplified, informative AST remains.
+    Ast(T),
+    /// The predicate carries no information: the split may or may not match.
+    MaybeMatch,
+    /// The predicate can never be satisfied: the split cannot match.
+    NoMatch,
+}
+
+impl<T> MaybeAst<T> {
+    fn map<U>(self, f: impl FnOnce(T) -> U) -> MaybeAst<U> {
+        match self {
+            MaybeAst::Ast(ast) => MaybeAst::Ast(f(ast)),
+            MaybeAst::MaybeMatch => MaybeAst::MaybeMatch,
+            MaybeAst::NoMatch => MaybeAst::NoMatch,
+        }
+    }
+}
+
+impl<T> From<T> for MaybeAst<T> {
+    fn from(ast: T) -> Self {
+        Self::Ast(ast)
+    }
 }
 
 /// Represents a tag filter used for split pruning.
@@ -220,28 +250,46 @@ impl TagFilterAst {
 // The resulting AST does not contain any uninformative leaves.
 //
 // Returning None here, is to be interpreted as returning `True`.
-fn simplify_ast(ast: UnsimplifiedTagFilterAst) -> Option<TermFilterAst> {
+fn simplify_ast(ast: UnsimplifiedTagFilterAst) -> MaybeAst<TermFilterAst> {
     match ast {
         UnsimplifiedTagFilterAst::And(conditions) => {
-            let mut pruned_conditions: Vec<TermFilterAst> =
-                conditions.into_iter().filter_map(simplify_ast).collect();
-            match pruned_conditions.len() {
-                0 => None,
-                1 => pruned_conditions.pop().unwrap().into(),
-                _ => TermFilterAst::And(pruned_conditions).into(),
+            let simplified_conditions: Vec<MaybeAst<TermFilterAst>> =
+                conditions.into_iter().map(simplify_ast).collect();
+            // an empty And before MaybeMatch filtering matches nothing
+            if simplified_conditions.is_empty() {
+                return MaybeAst::NoMatch;
+            }
+            let mut prunned_conditions: Vec<TermFilterAst> =
+                Vec::with_capacity(simplified_conditions.len());
+            for condition in simplified_conditions {
+                match condition {
+                    MaybeAst::NoMatch => return MaybeAst::NoMatch,
+                    MaybeAst::MaybeMatch => continue,
+                    MaybeAst::Ast(ast) => prunned_conditions.push(ast),
+                }
+            }
+            match prunned_conditions.len() {
+                0 => MaybeAst::MaybeMatch,
+                1 => prunned_conditions.pop().unwrap().into(),
+                _ => TermFilterAst::And(prunned_conditions).into(),
             }
         }
         UnsimplifiedTagFilterAst::Or(conditions) => {
-            let mut pruned_conditions: Vec<TermFilterAst> = Vec::new();
-            for condition in conditions {
-                // If we get None as part of the condition here, we return None
-                // directly. (Remember None means True).
-                pruned_conditions.push(simplify_ast(condition)?);
+            let simplified_conditions: Vec<MaybeAst<TermFilterAst>> =
+                conditions.into_iter().map(simplify_ast).collect();
+            let mut prunned_conditions: Vec<TermFilterAst> =
+                Vec::with_capacity(simplified_conditions.len());
+            for condition in simplified_conditions {
+                match condition {
+                    MaybeAst::NoMatch => continue,
+                    MaybeAst::MaybeMatch => return MaybeAst::MaybeMatch,
+                    MaybeAst::Ast(ast) => prunned_conditions.push(ast),
+                }
             }
-            match pruned_conditions.len() {
-                0 => None,
-                1 => pruned_conditions.pop().unwrap().into(),
-                _ => TermFilterAst::Or(pruned_conditions).into(),
+            match prunned_conditions.len() {
+                0 => MaybeAst::NoMatch,
+                1 => prunned_conditions.pop().unwrap().into(),
+                _ => TermFilterAst::Or(prunned_conditions).into(),
             }
         }
         UnsimplifiedTagFilterAst::Tag {
@@ -250,17 +298,18 @@ fn simplify_ast(ast: UnsimplifiedTagFilterAst) -> Option<TermFilterAst> {
             value,
         } => {
             if is_present {
-                Some(TermFilterAst::Term { field, value })
+                TermFilterAst::Term { field, value }.into()
             } else {
                 // we can't do tag pruning on negative filters. If `field` can be one of 1 or 2,
                 // and we search for not(1), we don't want to remove a split where
                 // tags=[1,2] (which is_present: false does). It's even more problematic if some
                 // documents have `field` unset, because we don't record that at all, so can't
                 // even reject a split based on it having tags=[1].
-                None
+                MaybeAst::MaybeMatch
             }
         }
-        UnsimplifiedTagFilterAst::Uninformative => None,
+        UnsimplifiedTagFilterAst::Uninformative => MaybeAst::MaybeMatch,
+        UnsimplifiedTagFilterAst::NoMatch => MaybeAst::NoMatch,
     }
 }
 
@@ -353,6 +402,10 @@ fn negate_ast(clause: UnsimplifiedTagFilterAst) -> UnsimplifiedTagFilterAst {
             value,
         },
         UnsimplifiedTagFilterAst::Uninformative => UnsimplifiedTagFilterAst::Uninformative,
+        // TODO we could convert into an "Always Match". This could make some query lighter on the
+        // metastore we'd need a query with a double negation to actually prune more splits with
+        // that
+        UnsimplifiedTagFilterAst::NoMatch => UnsimplifiedTagFilterAst::Uninformative,
     }
 }
 
@@ -377,9 +430,9 @@ mod test {
     use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 
     use super::extract_tags_from_query;
-    use crate::tag_pruning::TagFilterAst;
+    use crate::tag_pruning::{MaybeAst, TagFilterAst};
 
-    fn extract_tags_from_query_helper(user_query: &str) -> Option<TagFilterAst> {
+    fn extract_tags_from_query_helper(user_query: &str) -> MaybeAst<TagFilterAst> {
         let query_ast: QueryAst = UserInputQuery {
             user_text: user_query.to_string(),
             default_fields: None,
@@ -391,22 +444,39 @@ mod test {
         extract_tags_from_query(parsed_query_ast)
     }
 
+    fn unwrap_ast(maybe_ast: MaybeAst<TagFilterAst>) -> TagFilterAst {
+        match maybe_ast {
+            MaybeAst::Ast(ast) => ast,
+            MaybeAst::MaybeMatch => panic!("expected an Ast, got MaybeMatch"),
+            MaybeAst::NoMatch => panic!("expected an Ast, got NoMatch"),
+        }
+    }
+
     #[test]
     fn test_extract_tags_from_query_all() {
-        assert_eq!(extract_tags_from_query_helper("*"), None);
+        assert_eq!(extract_tags_from_query_helper("*"), MaybeAst::MaybeMatch);
+    }
+
+    #[test]
+    fn test_extract_tags_from_query_none() {
+        assert_eq!(
+            extract_tags_from_query(QueryAst::MatchNone),
+            MaybeAst::NoMatch
+        );
     }
 
     #[test]
     fn test_extract_tags_from_query_range_query() {
-        assert_eq!(extract_tags_from_query_helper("title:>foo lang:fr"), None);
+        assert_eq!(
+            extract_tags_from_query_helper("title:>foo lang:fr"),
+            MaybeAst::MaybeMatch
+        );
     }
 
     #[test]
     fn test_extract_tags_from_query_range_query_conjunction() {
         assert_eq!(
-            &extract_tags_from_query_helper("title:>foo AND lang:fr")
-                .unwrap()
-                .to_string(),
+            &unwrap_ast(extract_tags_from_query_helper("title:>foo AND lang:fr")).to_string(),
             "(¬lang! ∨ lang:fr)"
         );
     }
@@ -414,9 +484,10 @@ mod test {
     #[test]
     fn test_extract_tags_from_query_mixed_disjunction() -> anyhow::Result<()> {
         assert_eq!(
-            &extract_tags_from_query_helper("title:foo user:bart lang:fr")
-                .unwrap()
-                .to_string(),
+            &unwrap_ast(extract_tags_from_query_helper(
+                "title:foo user:bart lang:fr"
+            ))
+            .to_string(),
             "((¬title! ∨ title:foo) ∨ (¬user! ∨ user:bart) ∨ (¬lang! ∨ lang:fr))"
         );
         Ok(())
@@ -425,9 +496,10 @@ mod test {
     #[test]
     fn test_extract_tags_from_query_and_or() -> anyhow::Result<()> {
         assert_eq!(
-            &extract_tags_from_query_helper("title:foo AND (user:bart OR lang:fr)")
-                .unwrap()
-                .to_string(),
+            &unwrap_ast(extract_tags_from_query_helper(
+                "title:foo AND (user:bart OR lang:fr)"
+            ))
+            .to_string(),
             "(¬title! ∨ title:foo) ∧ ((¬user! ∨ user:bart) ∨ (¬lang! ∨ lang:fr))"
         );
         Ok(())
@@ -436,9 +508,7 @@ mod test {
     #[test]
     fn test_conjunction_of_tags() {
         assert_eq!(
-            &extract_tags_from_query_helper("(user:bart AND lang:fr)")
-                .unwrap()
-                .to_string(),
+            &unwrap_ast(extract_tags_from_query_helper("(user:bart AND lang:fr)")).to_string(),
             "(¬user! ∨ user:bart) ∧ (¬lang! ∨ lang:fr)"
         );
     }
@@ -446,9 +516,7 @@ mod test {
     #[test]
     fn test_disjunction_of_tags() {
         assert_eq!(
-            &extract_tags_from_query_helper("(user:bart OR lang:fr)")
-                .unwrap()
-                .to_string(),
+            &unwrap_ast(extract_tags_from_query_helper("(user:bart OR lang:fr)")).to_string(),
             "((¬user! ∨ user:bart) ∨ (¬lang! ∨ lang:fr))"
         );
     }
@@ -456,16 +524,17 @@ mod test {
     #[test]
     fn test_disjunction_of_tag_disjunction_with_not_clause() {
         // ORed negative tags make the result inconclusive. See simplify_ast() for details
-        assert!(extract_tags_from_query_helper("(user:bart -lang:fr)").is_none());
+        assert_eq!(
+            extract_tags_from_query_helper("(user:bart -lang:fr)"),
+            MaybeAst::MaybeMatch
+        );
     }
 
     #[test]
     fn test_disjunction_of_tag_conjunction_with_not_clause() {
         // negative tags are removed from AND clauses. See simplify_ast() for details
         assert_eq!(
-            &extract_tags_from_query_helper("user:bart AND NOT lang:fr")
-                .unwrap()
-                .to_string(),
+            &unwrap_ast(extract_tags_from_query_helper("user:bart AND NOT lang:fr")).to_string(),
             "(¬user! ∨ user:bart)"
         );
     }
@@ -473,9 +542,7 @@ mod test {
     #[test]
     fn test_disjunction_of_tag_must_should() {
         assert_eq!(
-            &extract_tags_from_query_helper("(+user:bart lang:fr)")
-                .unwrap()
-                .to_string(),
+            &unwrap_ast(extract_tags_from_query_helper("(+user:bart lang:fr)")).to_string(),
             "(¬user! ∨ user:bart)"
         );
     }
