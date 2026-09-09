@@ -20,10 +20,11 @@
 
 use std::str::FromStr;
 
+pub use opentelemetry::Context;
+use opentelemetry::global;
 pub use opentelemetry::propagation::Extractor;
 use opentelemetry::propagation::Injector;
 use opentelemetry::trace::TraceContextExt;
-use opentelemetry::{Context, global};
 use tonic::Status;
 use tonic::metadata::{KeyAndValueRef, MetadataKey, MetadataMap, MetadataValue};
 use tonic::service::Interceptor;
@@ -100,6 +101,19 @@ pub fn extract_remote_context(extractor: &impl Extractor) -> Option<Context> {
 /// [`extract_remote_context`].
 pub fn set_span_parent(span: &Span, parent_context: Context) {
     let _ = span.set_parent(parent_context);
+}
+
+/// The OpenTelemetry context of `span`, to parent or link spans created
+/// later, possibly after `span` closed.
+pub fn span_context(span: &Span) -> Context {
+    span.context()
+}
+
+/// Links `span` to `linked_span`: a causal relation that is not a
+/// parent/child one, e.g. a batch and each message it carries. No-op when
+/// `linked_span` has no OpenTelemetry context.
+pub fn link_span(span: &Span, linked_span: &Span) {
+    span.add_link(linked_span.context().span().span_context().clone());
 }
 
 /// Extracts a W3C trace context from incoming gRPC request metadata and

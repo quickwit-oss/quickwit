@@ -253,6 +253,8 @@ One confirmed acknowledgment per message is the source's dominant broker cost, a
 
 Being durable, the consumer is observable through NATS's own monitoring (`nats consumer info`, exporters): `num_pending` is the indexing lag and `num_ack_pending` the in-flight window, both available even while the pipelines are down. The source also reports `num_pending_acks` (messages indexed but whose split is not published yet) in its observable state.
 
+When a message carries a W3C `traceparent` header and the indexers export their traces (see [distributed tracing](../distributed-tracing/plug-quickwit-to-jaeger.md)), the publisher's trace extends to Quickwit: a `process_nats_message` span covers the message's processing until it is acknowledged.
+
 **NATS source parameters**
 
 | Property | Description | Default value |

@@ -25,7 +25,9 @@
 //! message and is what bounds throughput on small messages.
 //!
 //! When a message carries a W3C `traceparent` header, the source stitches the
-//! processing of the message into the publisher's distributed trace.
+//! processing and the acknowledgment of the message into the publisher's
+//! distributed trace, and links the processing span to the batch that
+//! carried the message.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -46,14 +48,14 @@ use async_trait::async_trait;
 use bytesize::ByteSize;
 use futures::{FutureExt, StreamExt};
 use quickwit_actors::ActorExitStatus;
-use quickwit_common::tracing_utils::{self, Extractor};
+use quickwit_common::tracing_utils::{self, Context as TraceContext, Extractor};
 use quickwit_config::{NatsSourceAuth, NatsSourceParams};
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::Position;
 use serde_json::{Value as JsonValue, json};
 use tokio::time;
-use tracing::{Span, debug, info, warn};
+use tracing::{Instrument, Span, debug, info, warn};
 
 use crate::source::{
     BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
@@ -96,9 +98,18 @@ pub struct NatsSource {
     /// Messages delivered but not published yet, keyed by delivery counter.
     /// Bounded by the consumer's `max_ack_pending`: the server stops delivering
     /// when too many messages are unacknowledged.
-    pending_acks: BTreeMap<u64, Subject>,
+    pending_acks: BTreeMap<u64, PendingAck>,
 
     state: NatsSourceState,
+}
+
+/// A delivered message whose split is not published yet.
+#[derive(Clone)]
+struct PendingAck {
+    ack_subject: Subject,
+    /// Context of the message's processing span, when the publisher propagated
+    /// a trace: the ack is reported as its child.
+    trace_context: Option<TraceContext>,
 }
 
 impl fmt::Debug for NatsSource {
@@ -187,8 +198,11 @@ impl NatsSource {
             .info()
             .map_err(|error| anyhow!("failed to parse NATS message metadata: {error}"))?
             .stream_sequence;
-        let _span_guard = remote_parented_span(&message, stream_sequence, &self.source_runtime)
-            .map(Span::entered);
+        let batch_span = Span::current();
+        let message_span =
+            remote_parented_span(&message, stream_sequence, &self.source_runtime, &batch_span);
+        let trace_context = message_span.as_ref().map(tracing_utils::span_context);
+        let _span_guard = message_span.map(Span::entered);
         let Some(ack_subject) = message.message.reply else {
             bail!("NATS message carries no reply subject to acknowledge it on");
         };
@@ -215,7 +229,11 @@ impl NatsSource {
                 Position::offset(self.delivery_counter),
             )
             .context("failed to record partition delta")?;
-        self.pending_acks.insert(self.delivery_counter, ack_subject);
+        let pending_ack = PendingAck {
+            ack_subject,
+            trace_context,
+        };
+        self.pending_acks.insert(self.delivery_counter, pending_ack);
 
         self.state.num_bytes_processed += num_bytes;
         self.state.num_messages_processed += 1;
@@ -226,7 +244,7 @@ impl NatsSource {
     /// Sends server-confirmed acknowledgments ("double acks") for the messages up
     /// to `published_up_to`.
     async fn ack_up_to(&mut self, published_up_to: u64) {
-        let acks: Vec<(u64, Subject)> = self
+        let acks: Vec<(u64, PendingAck)> = self
             .pending_acks
             .range(..=published_up_to)
             .map(|(delivery_counter, pending_ack)| (*delivery_counter, pending_ack.clone()))
@@ -235,9 +253,17 @@ impl NatsSource {
             return;
         }
         let nats_client = &self.nats_client;
+        let source_runtime = &self.source_runtime;
         let mut ack_results = futures::stream::iter(acks)
-            .map(async |(delivery_counter, ack_subject)| {
-                let ack_result = send_ack(nats_client, ack_subject).await;
+            .map(async |(delivery_counter, pending_ack)| {
+                let ack_span = ack_span(pending_ack.trace_context, source_runtime);
+                let ack_result = send_ack(nats_client, pending_ack.ack_subject)
+                    .instrument(ack_span.clone())
+                    .await;
+                if let Err(error) = &ack_result {
+                    ack_span.record("otel.status_code", "ERROR");
+                    ack_span.record("otel.status_description", tracing::field::display(error));
+                }
                 (delivery_counter, ack_result)
             })
             .buffer_unordered(MAX_CONCURRENT_ACK_REQUESTS);
@@ -612,12 +638,14 @@ impl Extractor for NatsHeaderExtractor<'_> {
 
 /// Builds a span parented on the publisher's trace when the message carries
 /// a W3C `traceparent` header, stitching the processing of the message into
-/// the publisher's distributed trace. Messages without a propagated context
-/// cost nothing: no span is created.
+/// the publisher's distributed trace, and links it to `batch_span`, the
+/// batch carrying the message. Messages without a propagated context cost
+/// nothing: no span is created.
 fn remote_parented_span(
     message: &jetstream::Message,
     stream_sequence: u64,
     source_runtime: &SourceRuntime,
+    batch_span: &Span,
 ) -> Option<Span> {
     let headers = message.headers.as_ref()?;
     let parent_context = tracing_utils::extract_remote_context(&NatsHeaderExtractor(headers))?;
@@ -629,7 +657,26 @@ fn remote_parented_span(
         stream_sequence,
     );
     tracing_utils::set_span_parent(&span, parent_context);
+    tracing_utils::link_span(&span, batch_span);
     Some(span)
+}
+
+/// Reports the ack of a message as a child of its processing span, so the
+/// publisher's trace extends to durability. Disabled when the publisher
+/// propagated no trace.
+fn ack_span(trace_context: Option<TraceContext>, source_runtime: &SourceRuntime) -> Span {
+    let Some(trace_context) = trace_context else {
+        return Span::none();
+    };
+    let span = tracing::info_span!(
+        "ack_nats_message",
+        index_id = %source_runtime.index_id(),
+        source_id = %source_runtime.source_id(),
+        otel.status_code = tracing::field::Empty,
+        otel.status_description = tracing::field::Empty,
+    );
+    tracing_utils::set_span_parent(&span, trace_context);
+    span
 }
 
 async fn connect_nats(params: &NatsSourceParams) -> anyhow::Result<async_nats::Client> {
