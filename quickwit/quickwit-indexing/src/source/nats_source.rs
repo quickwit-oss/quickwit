@@ -143,7 +143,6 @@ impl NatsSource {
             .stream()
             .max_messages_per_batch(pull_max_messages_per_batch())
             .max_bytes_per_batch(pull_max_bytes_per_batch.0 as usize)
-            .expires(PULL_EXPIRES)
             .messages()
             .await
             .context("failed to subscribe to NATS consumer messages")?;
@@ -266,8 +265,8 @@ impl NatsSource {
 
     /// Negatively acknowledges the messages the client prefetched, so a
     /// surviving pipeline picks them up promptly instead of after `ack_wait`.
-    async fn nak_prefetched_messages(&mut self) {
-        let mut num_naks = 0usize;
+    async fn nak_prefetched_messages(&mut self) -> usize {
+        let mut num_naks: usize = 0;
         while let Some(Some(message_res)) = self.message_stream.next().now_or_never() {
             let message = match message_res {
                 Ok(message) => message,
@@ -293,7 +292,8 @@ impl NatsSource {
             }
             num_naks += 1;
         }
-        debug!(num_naks, "negatively acknowledged prefetched messages");
+
+        num_naks
     }
 }
 
@@ -398,7 +398,13 @@ impl Source for NatsSource {
         // must not hold the pipeline teardown, and node shutdown with it. Past
         // the deadline, `ack_wait` redelivery takes over.
         let teardown = async {
-            self.nak_prefetched_messages().await;
+            let naks_count = self.nak_prefetched_messages().await;
+            info!(
+                naks_count,
+                "sending negative acks to nats, they will be redelivered in {}s",
+                ACK_REQUEST_TIMEOUT.as_secs()
+            );
+
             if let Err(error) = self.nats_client.flush().await {
                 warn!(%error, "failed to flush NATS negative acknowledgments");
             }
@@ -515,23 +521,6 @@ fn warn_on_incompatible_pull_settings(
              rejects every pull request"
         );
     }
-    let consumer_max_expires = consumer_config.max_expires;
-    if !consumer_max_expires.is_zero() && PULL_EXPIRES > consumer_max_expires {
-        warn!(
-            ?consumer_max_expires,
-            pull_expires=?PULL_EXPIRES,
-            "the consumer's `max_expires` is below the source's pull expiry: the server \
-             rejects every pull request"
-        );
-    }
-    let consumer_max_deliver = consumer_config.max_deliver;
-    if consumer_max_deliver > 0 {
-        warn!(
-            consumer_max_deliver,
-            "the consumer's `max_deliver` is finite: a message that exhausts it is never \
-             redelivered, so a crash or a lost delivery can leave it unindexed"
-        );
-    }
 }
 
 /// Messages per pull batch. The byte cap above is what actually bounds a batch;
@@ -558,10 +547,6 @@ fn pull_max_messages_per_batch() -> usize {
 /// drain), so the channel must hold several. Memory is bounded by the byte
 /// cap rather than by this: eight batches are at most 80 MiB by default.
 const SUBSCRIPTION_CAPACITY_IN_PULL_BATCHES: usize = 8;
-
-/// Server-side lifetime of a pull request. The client re-pulls 5 s after it
-/// elapses, which is also what recovers a pull request the server lost.
-const PULL_EXPIRES: Duration = Duration::from_secs(30);
 
 /// Pause before pulling again after a transient stream error, to avoid a hot
 /// error loop while the connection recovers. `SuggestTruncate` is still
