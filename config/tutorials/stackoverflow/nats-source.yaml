@@ -1,0 +1,11 @@
+#
+# NATS source config file.
+#
+version: 0.8
+source_id: nats-source
+source_type: nats
+params:
+  uris:
+    - nats://localhost:4222
+  stream: stackoverflow
+  consumer: quickwit-consumer

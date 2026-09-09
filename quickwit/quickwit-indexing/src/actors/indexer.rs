@@ -591,6 +591,15 @@ impl Indexer {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         fail_point!("indexer:batch:before");
+        // An empty batch can only flush an existing workbench (drain path);
+        // without one there is nothing to commit and creating a workbench
+        // just to consume it empty would needlessly hit the metastore.
+        if batch.docs.is_empty()
+            && batch.checkpoint_delta.is_empty()
+            && self.indexing_workbench_opt.is_none()
+        {
+            return Ok(());
+        }
         let force_commit = batch.force_commit;
         self.indexer_state
             .index_batch(

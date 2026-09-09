@@ -104,6 +104,11 @@ arc-swap = "1.9"
 arrow = { version = "58", default-features = false, features = ["ipc"] }
 assert-json-diff = "2"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
+async-nats = { version = "0.50", default-features = false, features = [
+  "jetstream",
+  "ring",
+  "server_2_10",
+] }
 async-speed-limit = "0.4"
 async-trait = "0.1"
 atomic_float = "1.1"

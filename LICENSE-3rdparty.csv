@@ -48,6 +48,7 @@ async-channel,https://github.com/smol-rs/async-channel,Apache-2.0 OR MIT,Stjepan
 async-compression,https://github.com/Nullus157/async-compression,MIT OR Apache-2.0,"Wim Looman <wim@nemo157.com>, Allen Bui <fairingrey@gmail.com>"
 async-io,https://github.com/smol-rs/async-io,Apache-2.0 OR MIT,Stjepan Glavina <stjepang@gmail.com>
 async-lock,https://github.com/smol-rs/async-lock,Apache-2.0 OR MIT,Stjepan Glavina <stjepang@gmail.com>
+async-nats,https://github.com/nats-io/nats.rs,Apache-2.0,"Tomasz Pietrek <tomasz@nats.io>, Casper Beyer <caspervonb@pm.me>"
 async-process,https://github.com/smol-rs/async-process,Apache-2.0 OR MIT,Stjepan Glavina <stjepang@gmail.com>
 async-recursion,https://github.com/dcchut/async-recursion,MIT OR Apache-2.0,Robert Usher <266585+dcchut@users.noreply.github.com>
 async-signal,https://github.com/smol-rs/async-signal,Apache-2.0 OR MIT,John Nunley <dev@notgull.net>
@@ -751,9 +752,11 @@ serde_derive,https://github.com/serde-rs/serde,MIT OR Apache-2.0,"Erick Tryzelaa
 serde_derive_internals,https://github.com/serde-rs/serde,MIT OR Apache-2.0,"Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>"
 serde_json,https://github.com/serde-rs/json,MIT OR Apache-2.0,"Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>"
 serde_json_borrow,https://github.com/PSeitz/serde_json_borrow,MIT,Pascal Seitz <pascal.seitz@gmail.com>
+serde_nanos,https://github.com/caspervonb/serde_nanos,MIT OR Apache-2.0,Casper Beyer <caspervonb@pm.me>
 serde_path_to_error,https://github.com/dtolnay/path-to-error,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 serde_plain,https://github.com/mitsuhiko/serde-plain,MIT OR Apache-2.0,Armin Ronacher <armin.ronacher@active-4.com>
 serde_qs,https://github.com/samscott89/serde_qs,MIT OR Apache-2.0,Sam Scott <sam@osohq.com>
+serde_repr,https://github.com/dtolnay/serde-repr,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 serde_spanned,https://github.com/toml-rs/toml,MIT OR Apache-2.0,The serde_spanned Authors
 serde_tokenstream,https://github.com/oxidecomputer/serde_tokenstream,Apache-2.0,The serde_tokenstream Authors
 serde_urlencoded,https://github.com/nox/serde_urlencoded,MIT OR Apache-2.0,Anthony Ramine <n.oxyde@gmail.com>
@@ -861,6 +864,7 @@ tokio-retry2,https://github.com/naomijub/tokio-retry,MIT,"Julia Naomi <jnboeira@
 tokio-rustls,https://github.com/rustls/tokio-rustls,MIT OR Apache-2.0,The tokio-rustls Authors
 tokio-stream,https://github.com/tokio-rs/tokio,MIT,Tokio Contributors <team@tokio.rs>
 tokio-util,https://github.com/tokio-rs/tokio,MIT,Tokio Contributors <team@tokio.rs>
+tokio-websockets,https://github.com/Gelbpunkt/tokio-websockets,MIT,The tokio-websockets Authors
 toml,https://github.com/toml-rs/toml,MIT OR Apache-2.0,The toml Authors
 toml_datetime,https://github.com/toml-rs/toml,MIT OR Apache-2.0,The toml_datetime Authors
 toml_edit,https://github.com/toml-rs/toml,MIT OR Apache-2.0,The toml_edit Authors
@@ -886,6 +890,7 @@ tracing-serde,https://github.com/tokio-rs/tracing,MIT,Tokio Contributors <team@t
 tracing-subscriber,https://github.com/tokio-rs/tracing,MIT,"Eliza Weisman <eliza@buoyant.io>, David Barsky <me@davidbarsky.com>, Tokio Contributors <team@tokio.rs>"
 triomphe,https://github.com/Manishearth/triomphe,MIT OR Apache-2.0,"Manish Goregaokar <manishsmail@gmail.com>, The Servo Project Developers"
 try-lock,https://github.com/seanmonstar/try-lock,MIT,Sean McArthur <sean@seanmonstar.com>
+tryhard,https://github.com/EmbarkStudios/tryhard,MIT OR Apache-2.0,Embark <opensource@embark-studios.com>
 ttl_cache,https://github.com/stusmall/ttl_cache,MIT OR Apache-2.0,Stu Small <stuart.alan.small@gmail.com>
 twox-hash,https://github.com/shepmaster/twox-hash,MIT,Jake Goulding <jake.goulding@gmail.com>
 typeid,https://github.com/dtolnay/typeid,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
