@@ -313,7 +313,10 @@ impl ParquetMergePipeline {
 
         // 2. Sequencer — ensures merged splits are published in the order they were uploaded, even
         //    if uploads complete out of order.
-        let sequencer = Sequencer::new(merge_publisher_mailbox.clone());
+        let sequencer = Sequencer::new(
+            merge_publisher_mailbox.clone(),
+            QueueCapacity::Bounded(self.params.max_concurrent_split_uploads),
+        );
         let (sequencer_mailbox, _sequencer_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())

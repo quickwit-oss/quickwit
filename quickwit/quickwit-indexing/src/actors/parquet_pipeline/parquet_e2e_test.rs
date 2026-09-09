@@ -521,7 +521,7 @@ async fn test_sketch_pipeline_e2e() {
     );
     let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
-    let sequencer = Sequencer::new(publisher_mailbox);
+    let sequencer = Sequencer::new(publisher_mailbox, QueueCapacity::Bounded(4));
     let (sequencer_mailbox, _sequencer_handle) = universe.spawn_builder().spawn(sequencer);
 
     let uploader = ParquetUploader::new(

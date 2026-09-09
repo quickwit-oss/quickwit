@@ -705,7 +705,7 @@ mod tests {
         let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
 
         // Create sequencer that forwards to publisher
-        let sequencer = Sequencer::new(publisher_mailbox);
+        let sequencer = Sequencer::new(publisher_mailbox, QueueCapacity::Bounded(4));
         let (sequencer_mailbox, _sequencer_handle) = universe.spawn_builder().spawn(sequencer);
 
         let mut mock_metastore = MockMetastoreService::new();
