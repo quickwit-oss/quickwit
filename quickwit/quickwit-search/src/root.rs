@@ -1226,6 +1226,11 @@ async fn refine_and_list_matches(
     // convert search_after datetime values from input datetime format to nanos.
     convert_search_after_datetime_values(search_request, &sort_fields_is_datetime)?;
 
+    // Keep request validation and empty-result finalization, but do not search any splits.
+    if query_ast_resolved == QueryAst::MatchNone {
+        return Ok(Vec::new());
+    }
+
     // update_search_after_datetime_in_nanos(&mut search_request)?;
     if let Some(timestamp_field) = &timestamp_field_opt {
         refine_start_end_timestamp_from_ast(
@@ -4397,6 +4402,23 @@ mod tests {
         .unwrap();
         assert_eq!(search_response.num_hits, 1);
         assert_eq!(search_response.hits.len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_refine_and_list_matches_match_none() -> anyhow::Result<()> {
+        let mut metastore = MockMetastoreService::new();
+        metastore.expect_list_splits().never();
+        let splits = refine_and_list_matches(
+            &MetastoreServiceClient::from_mock(metastore),
+            &mut SearchRequest::default(),
+            vec![IndexMetadata::for_test("test-index", "ram:///test-index")],
+            QueryAst::MatchNone,
+            HashMap::new(),
+            None,
+        )
+        .await?;
+        assert!(splits.is_empty());
         Ok(())
     }
 
