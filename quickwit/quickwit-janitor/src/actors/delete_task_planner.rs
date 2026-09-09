@@ -22,7 +22,7 @@ use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::extract_time_range;
 use quickwit_common::uri::Uri;
-use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
+use quickwit_doc_mapper::tag_pruning::{MaybeAst, extract_tags_from_query};
 use quickwit_indexing::actors::{MergeSchedulerService, MergeSplitDownloader, schedule_merge};
 use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_metastore::{ListSplitsResponseExt, Split, split_tag_filter, split_time_range_filter};
@@ -254,7 +254,11 @@ impl DeleteTaskPlanner {
                     // TODO: validate the query at the beginning and return an appropriate error.
                     let delete_query_ast = serde_json::from_str(&delete_query.query_ast)
                         .expect("Failed to deserialize query_ast json");
-                    let tags_filter = extract_tags_from_query(delete_query_ast);
+                    let tags_filter = match extract_tags_from_query(delete_query_ast) {
+                        MaybeAst::NoMatch => return false,
+                        MaybeAst::MaybeMatch => None,
+                        MaybeAst::Ast(ast) => Some(ast),
+                    };
                     split_time_range_filter(&stale_split.split_metadata, time_range.as_ref())
                         && split_tag_filter(&stale_split.split_metadata, tags_filter.as_ref())
                 })
