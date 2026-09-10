@@ -116,6 +116,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::path::Path;
     use std::sync::Arc;
+    use std::time::Duration;
 
     use base64::Engine;
     use opendal::HttpTransporter;
@@ -213,6 +214,58 @@ mod tests {
         let bytes = storage.get_slice(Path::new("hello.txt"), 0..2).await?;
         assert_eq!(bytes.as_slice(), b"ok");
         server_task.await??;
+        Ok(())
+    }
+
+    /// A TCP server that accepts connections but never writes a response
+    async fn start_stalling_gcs_server() -> anyhow::Result<(String, JoinHandle<()>)> {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
+        let endpoint = format!("http://127.0.0.1:{}", listener.local_addr()?.port());
+        let server_task = tokio::spawn(async move {
+            let mut held_streams = Vec::new();
+            while let Ok((stream, _)) = listener.accept().await {
+                held_streams.push(stream);
+            }
+            drop(held_streams);
+        });
+        Ok((endpoint, server_task))
+    }
+
+    #[tokio::test]
+    async fn test_gcs_storage_get_slice_errors_on_stalled_connection() -> anyhow::Result<()> {
+        let (endpoint, server_task) = start_stalling_gcs_server().await?;
+
+        let reqwest_client = reqwest_013::Client::builder().no_proxy().build()?;
+        let cfg = opendal::services::Gcs::default()
+            .bucket("quickwit-test-bucket")
+            .endpoint(&endpoint)
+            .skip_signature()
+            .disable_config_load()
+            .disable_vm_metadata();
+        let storage =
+            OpendalStorage::new_google_cloud_storage_with_http_transport_and_io_timeout_for_test(
+                Uri::for_test("gs://quickwit-test-bucket"),
+                cfg,
+                HttpTransporter::new(ReqwestTransport::new(reqwest_client)),
+                // Tight IO timeout so the test resolves in well under a second
+                // per attempt rather than the production 5s budget.
+                Duration::from_millis(200),
+            )?;
+
+        let result = tokio::time::timeout(
+            // high because we have arround 7s of retries in total
+            Duration::from_secs(15),
+            storage.get_slice(Path::new("stalled.txt"), 0..1),
+        )
+        .await
+        .expect("get_slice on a stalled GCS connection must not hang indefinitely");
+
+        assert!(
+            result.is_err(),
+            "a stalled GCS connection should surface as a storage error, not succeed"
+        );
+
+        server_task.abort();
         Ok(())
     }
 
