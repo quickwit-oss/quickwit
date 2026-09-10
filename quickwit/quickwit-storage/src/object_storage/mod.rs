@@ -15,7 +15,9 @@
 mod error;
 
 mod s3_compatible_storage;
-pub use self::s3_compatible_storage::S3CompatibleObjectStorage;
+pub use self::s3_compatible_storage::{
+    S3CompatibleObjectStorage, create_s3_client, create_s3_full_body_client,
+};
 pub use self::s3_compatible_storage_resolver::S3CompatibleObjectStorageFactory;
 
 mod policy;

@@ -96,6 +96,8 @@ impl<T: AsyncRead + Send + Unpin> AsyncRead for S3AsyncRead<T> {
 /// S3-compatible object storage implementation.
 pub struct S3CompatibleObjectStorage {
     s3_client: S3Client,
+    // client to use for GetObject, sometime distinct from s3_client
+    get_s3_client: S3Client,
     uri: Uri,
     bucket: String,
     prefix: PathBuf,
@@ -140,6 +142,7 @@ fn get_region(s3_storage_config: &S3StorageConfig) -> Option<Region> {
     })
 }
 
+/// Build a Hyper based `S3Client`
 pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     let aws_config = get_aws_config().await;
     let credentials_provider =
@@ -179,6 +182,85 @@ pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     S3Client::from_conf(s3_config.build())
 }
 
+// Small adapter so we can use our custom resolver inside our custom http client
+struct CachingDnsResolverBridge(quickwit_aws::dns::CachingDnsResolver);
+
+impl quickwit_http_client::DnsResolver for CachingDnsResolverBridge {
+    fn resolve<'a>(
+        &'a self,
+        host: &'a str,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<Vec<std::net::IpAddr>, quickwit_http_client::HttpError>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        use aws_smithy_runtime_api::client::dns::ResolveDns;
+        Box::pin(async move {
+            self.0
+                .resolve_dns(host)
+                .await
+                .map_err(|err| quickwit_http_client::HttpError::Io(std::io::Error::other(err)))
+        })
+    }
+}
+
+/// Build a `S3Client` based on a custom HTTP client, which should be faster on
+/// single-body, mostly through less wakeup and returning bodies as a single
+/// ready to use buffer, instead of multiple buffers needing to be concatenated.
+pub async fn create_s3_full_body_client(s3_storage_config: &S3StorageConfig) -> S3Client {
+    let aws_config = get_aws_config().await;
+    let credentials_provider =
+        get_credentials_provider(s3_storage_config).or(aws_config.credentials_provider());
+    let region = get_region(s3_storage_config).or(aws_config.region().cloned());
+    let mut s3_config = aws_sdk_s3::Config::builder()
+        .behavior_version(aws_behavior_version())
+        .region(region);
+
+    if let Some(identity_cache) = aws_config.identity_cache() {
+        s3_config.set_identity_cache(identity_cache);
+    }
+    s3_config.set_credentials_provider(credentials_provider);
+    s3_config.set_force_path_style(s3_storage_config.force_path_style_access());
+    let connector = quickwit_http_client::SingleBufferHttp1HttpClient::builder()
+        .buffer_hint(quickwit_http_client::BufferHint {
+            target: 512 * 1024 * 1024,
+        })
+        .dns_resolver(std::sync::Arc::new(CachingDnsResolverBridge(
+            quickwit_aws::dns::CachingDnsResolver::default(),
+        )))
+        .build()
+        .map_err(|err| {
+            tracing::warn!(error = ?err, "failed to build single-buffer HTTP client");
+            err
+        })
+        .ok();
+    s3_config.set_http_client(
+        connector
+            .map(quickwit_http_client::shared_http_client)
+            .or_else(|| aws_config.http_client()),
+    );
+    s3_config.set_retry_config(aws_config.retry_config().cloned());
+    s3_config.set_sleep_impl(aws_config.sleep_impl());
+    // stalled stream protection doesn't work with our client, but it implement something similar
+    // by itself
+    s3_config.set_stalled_stream_protection(Some(StalledStreamProtectionConfig::disabled()));
+    s3_config.set_timeout_config(aws_config.timeout_config().cloned());
+
+    s3_config.set_response_checksum_validation(Some(ResponseChecksumValidation::WhenRequired));
+    s3_config.set_request_checksum_calculation(Some(request_checksum_calculation(
+        s3_storage_config.checksum_algorithm,
+    )));
+
+    if let Some(endpoint) = s3_storage_config.endpoint() {
+        info!(endpoint=%endpoint, "using S3 endpoint defined in storage config or environment variable");
+        s3_config.set_endpoint_url(Some(endpoint));
+    }
+    S3Client::from_conf(s3_config.build())
+}
+
 impl S3CompatibleObjectStorage {
     /// Creates an object storage given a region and an uri.
     pub async fn from_uri(
@@ -202,8 +284,15 @@ impl S3CompatibleObjectStorage {
         let retry_params = RetryParams::aggressive();
         let disable_multi_object_delete = s3_storage_config.disable_multi_object_delete;
         let disable_multipart_upload = s3_storage_config.disable_multipart_upload;
+        let get_s3_client =
+            if quickwit_common::get_bool_from_env_cached!("QW_S3_USE_FULL_BODY_CLIENT", false) {
+                create_s3_full_body_client(s3_storage_config).await
+            } else {
+                s3_client.clone()
+            };
         Ok(Self {
             s3_client,
+            get_s3_client,
             uri: uri.clone(),
             bucket,
             prefix,
@@ -222,6 +311,7 @@ impl S3CompatibleObjectStorage {
     pub fn with_prefix(self, prefix: PathBuf) -> Self {
         Self {
             s3_client: self.s3_client,
+            get_s3_client: self.get_s3_client,
             uri: self.uri,
             bucket: self.bucket,
             prefix,
@@ -704,7 +794,7 @@ impl S3CompatibleObjectStorage {
         crate::metrics::OBJECT_STORAGE_GET_TOTAL.inc();
         let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
 
-        self.s3_client
+        self.get_s3_client
             .get_object()
             .bucket(self.bucket.clone())
             .key(key)
@@ -1323,7 +1413,8 @@ mod tests {
         let prefix = PathBuf::new();
 
         let mut s3_storage = S3CompatibleObjectStorage {
-            s3_client,
+            s3_client: s3_client.clone(),
+            get_s3_client: s3_client,
             uri,
             bucket,
             prefix,
@@ -1439,8 +1530,10 @@ mod tests {
             .http_client(client.clone())
             .credentials_provider(credentials)
             .build();
+        let s3_client = S3Client::from_conf(config);
         let storage = DebouncedStorage::new(S3CompatibleObjectStorage {
-            s3_client: S3Client::from_conf(config),
+            s3_client: s3_client.clone(),
+            get_s3_client: s3_client,
             uri: Uri::for_test("s3://bucket/indexes"),
             bucket: "bucket".to_string(),
             prefix: PathBuf::from("indexes"),
@@ -1497,7 +1590,8 @@ mod tests {
         let prefix = PathBuf::new();
 
         let s3_storage = S3CompatibleObjectStorage {
-            s3_client,
+            s3_client: s3_client.clone(),
+            get_s3_client: s3_client,
             uri,
             bucket,
             prefix,
@@ -1535,7 +1629,8 @@ mod tests {
         let prefix = PathBuf::new();
 
         let s3_storage = S3CompatibleObjectStorage {
-            s3_client,
+            s3_client: s3_client.clone(),
+            get_s3_client: s3_client,
             uri,
             bucket,
             prefix,
@@ -1618,7 +1713,8 @@ mod tests {
         let prefix = PathBuf::new();
 
         let s3_storage = S3CompatibleObjectStorage {
-            s3_client,
+            s3_client: s3_client.clone(),
+            get_s3_client: s3_client,
             uri,
             bucket,
             prefix,
@@ -1710,7 +1806,8 @@ mod tests {
         let prefix = PathBuf::new();
 
         let s3_storage = S3CompatibleObjectStorage {
-            s3_client,
+            s3_client: s3_client.clone(),
+            get_s3_client: s3_client,
             uri,
             bucket,
             prefix,
@@ -1738,8 +1835,10 @@ mod tests {
             .credentials_provider(credentials)
             .request_checksum_calculation(request_checksum_calculation(checksum_algorithm))
             .build();
+        let s3_client = S3Client::from_conf(config);
         S3CompatibleObjectStorage {
-            s3_client: S3Client::from_conf(config),
+            s3_client: s3_client.clone(),
+            get_s3_client: s3_client,
             uri: Uri::for_test("s3://bucket/"),
             bucket: "bucket".to_string(),
             prefix: PathBuf::new(),

@@ -45,6 +45,7 @@ aws-config = { workspace = true }
 aws-credential-types = { workspace = true }
 aws-sdk-s3 = { workspace = true }
 aws-smithy-types = { workspace = true }
+aws-smithy-runtime-api = { workspace = true, features = ["client"] }
 
 azure_core = { workspace = true, optional = true }
 azure_identity = { workspace = true, optional = true }
@@ -56,6 +57,7 @@ quickwit-common = { workspace = true }
 quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-proto = { workspace = true }
+quickwit-http-client = { path = "../quickwit-http-client", features = ["s3"] }
 
 opendal = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
