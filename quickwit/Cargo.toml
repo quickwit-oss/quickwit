@@ -108,7 +108,7 @@ async-speed-limit = "0.4"
 async-trait = "0.1"
 atomic_float = "1.1"
 backtrace = "0.3"
-base64 = "0.22"
+base64 = "0.23"
 binggan = { version = "0.17" }
 bitpacking = "0.9"
 bytes = { version = "1", features = ["serde"] }
@@ -384,7 +384,11 @@ azure_storage_blobs = { version = "0.21", default-features = false, features = [
   "enable_reqwest_rustls",
 ] }
 
-opendal = { version = "0.58", default-features = false, features = ["http-transport-reqwest"] }
+opendal = { version = "0.58", default-features = false, features = [
+  "http-transport-reqwest",
+  "layers-retry",
+  "layers-concurrent-limit",
+] }
 reqsign = { version = "0.18", default-features = false, features = ["google", "default-context"] }
 
 quickwit-actors = { path = "quickwit-actors" }
@@ -426,7 +430,7 @@ quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-transport = { path = "quickwit-transport" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "86641f7", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "1020eba2b9c20c422c6d061528f08aeda3e5a3e0", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",
