@@ -253,7 +253,8 @@ mod tests {
             )?;
 
         let result = tokio::time::timeout(
-            Duration::from_secs(5),
+            // high because we have arround 7s of retries in total
+            Duration::from_secs(15),
             storage.get_slice(Path::new("stalled.txt"), 0..1),
         )
         .await
