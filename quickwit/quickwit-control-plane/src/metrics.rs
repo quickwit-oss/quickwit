@@ -81,8 +81,7 @@ pub(crate) static NEARBY_SHARDS: LazyGauge =
 pub(crate) static REMOTE_SHARDS: LazyGauge =
     lazy_gauge!(parent: INDEXED_SHARDS, "locality" => "remote");
 
-const INDEXER_ID_NUM_SHARDS_LABEL_NAMES: LabelNames<2> =
-    label_names!("indexer_id", "num_shards");
+const INDEXER_ID_NUM_SHARDS_LABEL_NAMES: LabelNames<2> = label_names!("indexer_id", "num_shards");
 
 static INDEXING_PIPELINES: LazyGauge = lazy_gauge!(
         name: "indexing_pipelines",
@@ -219,8 +218,7 @@ pub(crate) fn publish_indexing_plan_metrics(
         }
         let churn = compute_indexing_plan_churn(previous_plan, new_plan);
         INDEXING_SHARD_MOVES_TOTAL.inc_by(churn.num_moved_shards as u64);
-        INDEXING_PIPELINE_RESETS_FROM_MOVES
-            .inc_by(churn.num_pipeline_resets_from_moves as u64);
+        INDEXING_PIPELINE_RESETS_FROM_MOVES.inc_by(churn.num_pipeline_resets_from_moves as u64);
         INDEXING_PIPELINE_RESETS_FROM_REPACKING
             .inc_by(churn.num_pipeline_resets_from_repacking as u64);
     }

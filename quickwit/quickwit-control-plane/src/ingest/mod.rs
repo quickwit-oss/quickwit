@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod az_aware_fresh_placement;
+mod az_aware_placement;
+#[cfg(test)]
+mod az_aware_placement_tests;
+#[cfg(test)]
+mod az_aware_rollout_tests;
 pub(crate) mod ingest_controller;
 mod scaling_arbiter;
 mod wait_handle;

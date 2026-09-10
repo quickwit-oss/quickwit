@@ -133,8 +133,8 @@ fn attempt_solve(
         // If locality awareness is disabled, we directly assign sources to indexers that have some
         // affinity with them (provided they have the capacity.)
         place_unassigned_shards_with_affinity(problem, &mut solution);
-        // Finally we assign the remaining shards, regardess of whether they have affinity or locality
-        // or not.
+        // Finally we assign the remaining shards, regardess of whether they have affinity or
+        // locality or not.
         place_unassigned_shards_ignoring_affinity(problem, &mut solution)?;
     }
     Ok(solution)
@@ -475,17 +475,12 @@ fn place_self_hosted_shards_on_draining_indexers(
             .filter(|&indexer_ord| !problem.is_eligible_for_foreign_shards(indexer_ord))
             .collect();
         for indexer_ord in draining_indexer_ords {
-            let num_shards_wanted = num_self_hosted_shards_that_fit(
-                source,
-                indexer_ord,
-                problem,
-                solution,
-            );
+            let num_shards_wanted =
+                num_self_hosted_shards_that_fit(source, indexer_ord, problem, solution);
             if num_shards_wanted == 0 {
                 continue;
             }
-            let num_shards_to_reclaim =
-                num_shards_wanted.saturating_sub(num_unaccounted_shards);
+            let num_shards_to_reclaim = num_shards_wanted.saturating_sub(num_unaccounted_shards);
             let num_shards_reclaimed = reclaim_self_hosted_shards_from_peers(
                 source,
                 num_shards_to_reclaim,
@@ -541,7 +536,8 @@ fn max_shards_in_next_pipeline(
     solution: &SchedulingSolution,
 ) -> u32 {
     let available_capacity = available_cpu_capacity(indexer_ord, problem, solution);
-    let max_shards_from_remaining_cpu_capacity = available_capacity.cpu_millis() / source.load_per_shard.get();
+    let max_shards_from_remaining_cpu_capacity =
+        available_capacity.cpu_millis() / source.load_per_shard.get();
     source
         .num_shards
         .min(max_shards_from_remaining_cpu_capacity)
@@ -603,13 +599,13 @@ fn find_indexer_density_preferred(
         .filter(|&indexer_ord| has_open_pipeline_slot(source, indexer_ord, solution))
         .collect();
     if !partial_candidates.is_empty() {
-        return partial_candidates
-            .into_iter()
-            .min_by(|&left, &right| compare_partial_candidates(source, left, right, problem, solution));
+        return partial_candidates.into_iter().min_by(|&left, &right| {
+            compare_partial_candidates(source, left, right, problem, solution)
+        });
     }
-    candidates
-        .into_iter()
-        .min_by(|&left, &right| compare_new_pipeline_candidates(source, left, right, problem, solution))
+    candidates.into_iter().min_by(|&left, &right| {
+        compare_new_pipeline_candidates(source, left, right, problem, solution)
+    })
 }
 
 fn place_unassigned_shards_density_first(
@@ -1209,7 +1205,8 @@ mod tests {
                 let mut problem =
                     SchedulingProblem::with_indexer_localities(cpu_capacities, indexer_localities);
                 for (num_shards, load_per_shard, hosting_indexer_ords) in sources {
-                    let source_ord = problem.add_source(num_shards, load_per_shard, NonZeroU32::MIN);
+                    let source_ord =
+                        problem.add_source(num_shards, load_per_shard, NonZeroU32::MIN);
                     for hosting_indexer_ord in hosting_indexer_ords {
                         problem.inc_affinity(source_ord, hosting_indexer_ord);
                     }
