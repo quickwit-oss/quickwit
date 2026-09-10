@@ -2185,6 +2185,17 @@ fn test_time_bounded_predicate_cache_eligibility_after_split_normalization() {
     };
     leaf::rewrite_request(&mut partial_request, &split, Some("ts"));
     let partial_ast: QueryAst = serde_json::from_str(&partial_request.query_ast).unwrap();
+    let QueryAst::Bool(partial_bool_query) = &partial_ast else {
+        panic!("expected a bool combining the cached predicate and timestamp range");
+    };
+    assert_eq!(
+        partial_bool_query.filter,
+        vec![QueryAst::from(RangeQuery {
+            field: "ts".to_string(),
+            lower_bound: Bound::Included(120_000_000_000i64.into()),
+            upper_bound: Bound::Excluded(180_000_000_000i64.into()),
+        })]
+    );
     let partial_predicate = time_bounded_cached_predicate(&partial_ast, "ts")
         .expect("a partial range should install a cached predicate");
 
