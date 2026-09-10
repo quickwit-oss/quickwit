@@ -2240,6 +2240,38 @@ fn test_time_bounded_predicate_cache_eligibility_after_split_normalization() {
         assert!(time_bounded_cached_predicate(&time_only_ast, "ts").is_none());
     }
 
+    let bool_wrapped_time_range = QueryAst::from(BoolQuery {
+        filter: vec![QueryAst::from(RangeQuery {
+            field: "ts".to_string(),
+            lower_bound: Bound::Included(120i64.into()),
+            upper_bound: Bound::Excluded(180i64.into()),
+        })],
+        ..Default::default()
+    });
+    let mut bool_wrapped_time_only_request = SearchRequest {
+        query_ast: serde_json::to_string(&bool_wrapped_time_range).unwrap(),
+        ..Default::default()
+    };
+    leaf::rewrite_request(&mut bool_wrapped_time_only_request, &split, Some("ts"));
+    let bool_wrapped_time_only_ast: QueryAst =
+        serde_json::from_str(&bool_wrapped_time_only_request.query_ast).unwrap();
+    assert!(time_bounded_cached_predicate(&bool_wrapped_time_only_ast, "ts").is_none());
+
+    let mut bool_wrapped_match_none_request = SearchRequest {
+        query_ast: serde_json::to_string(&QueryAst::from(BoolQuery {
+            must: vec![QueryAst::MatchNone],
+            ..Default::default()
+        }))
+        .unwrap(),
+        start_timestamp: Some(120),
+        end_timestamp: Some(180),
+        ..Default::default()
+    };
+    leaf::rewrite_request(&mut bool_wrapped_match_none_request, &split, Some("ts"));
+    let bool_wrapped_match_none_ast: QueryAst =
+        serde_json::from_str(&bool_wrapped_match_none_request.query_ast).unwrap();
+    assert!(time_bounded_cached_predicate(&bool_wrapped_match_none_ast, "ts").is_none());
+
     let user_semantic_time_range = QueryAst::from(RangeQuery {
         field: "ts".to_string(),
         lower_bound: Bound::Included(130i64.into()),

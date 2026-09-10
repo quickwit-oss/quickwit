@@ -1167,8 +1167,6 @@ fn normalize_timestamp_range(
         (query_bound, None) => query_bound,
     };
     if is_time_bounded && !matches!(&new_ast, QueryAst::MatchAll | QueryAst::MatchNone) {
-        // CacheFillerWeight exhausts the predicate when creating its scorer, before the outer
-        // timestamp filter is applied. No separate execution is needed to populate the cache.
         new_ast = BoolQuery {
             must: vec![QueryAst::from(CacheNode::new(new_ast))],
             ..Default::default()
@@ -1275,6 +1273,27 @@ impl QueryAstTransformer for RemoveTimestampRange<'_> {
             .into_iter()
             .filter_map(|query_ast| self.transform(query_ast).transpose())
             .collect::<Result<Vec<_>, _>>()?;
+
+        if bool_query
+            .must
+            .iter()
+            .chain(&bool_query.filter)
+            .any(|query_ast| matches!(query_ast, QueryAst::MatchNone))
+        {
+            return Ok(Some(QueryAst::MatchNone));
+        }
+        let only_matches_all = bool_query
+            .must
+            .iter()
+            .chain(&bool_query.filter)
+            .all(|query_ast| matches!(query_ast, QueryAst::MatchAll));
+        if only_matches_all
+            && bool_query.should.is_empty()
+            && bool_query.must_not.is_empty()
+            && bool_query.minimum_should_match.unwrap_or(0) == 0
+        {
+            return Ok(Some(QueryAst::MatchAll));
+        }
 
         Ok(Some(QueryAst::Bool(bool_query)))
     }
