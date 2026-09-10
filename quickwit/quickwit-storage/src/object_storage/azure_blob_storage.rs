@@ -34,7 +34,7 @@ use md5::Digest;
 use quickwit_common::retry::{RetryParams, Retryable, retry};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, ignore_error_kind, into_u64_range};
-use quickwit_config::{AzureStorageConfig, StorageBackend};
+use quickwit_config::{AzureNationalCloud, AzureStorageConfig, StorageBackend};
 use quickwit_metrics::HistogramTimer;
 use regex::Regex;
 use tantivy::directory::OwnedBytes;
@@ -185,7 +185,7 @@ impl AzureBlobStorage {
         {
             StorageCredentials::access_key(storage_account_name.clone(), access_key)
         } else if let Ok(credential) = azure_identity::create_credential() {
-            StorageCredentials::token_credential(credential)
+            build_azure_token_credentials(azure_storage_config, credential)?
         } else {
             return Err(StorageResolverError::InvalidConfig(
                 "could not find Azure storage account credentials using the following credential \
@@ -563,6 +563,36 @@ async fn extract_range_data_and_hash(
     Ok((data, hash))
 }
 
+fn build_azure_token_credentials(
+    azure_storage_config: &AzureStorageConfig,
+    credential: Arc<dyn azure_core::auth::TokenCredential>,
+) -> Result<StorageCredentials, StorageResolverError> {
+    if azure_storage_config.endpoint_uses_non_https_transport() {
+        return Err(StorageResolverError::InvalidConfig(
+            "Azure token credentials require an HTTPS endpoint".to_string(),
+        ));
+    }
+    let national_cloud = azure_storage_config.resolve_national_cloud();
+    if national_cloud == AzureNationalCloud::Custom
+        && azure_storage_config.uses_custom_blob_endpoint()
+    {
+        return Err(StorageResolverError::InvalidConfig(
+            "custom Azure blob endpoints require an access key when using token-based \
+             authentication; managed identity is only supported for public Azure, Azure \
+             Government, and Azure China endpoints"
+                .to_string(),
+        ));
+    }
+    if national_cloud != AzureNationalCloud::Public {
+        info!(
+            national_cloud = ?national_cloud,
+            "using Azure blob storage endpoint for sovereign cloud; ensure AZURE_AUTHORITY_HOST \
+             is configured for token acquisition when using managed identity"
+        );
+    }
+    Ok(StorageCredentials::token_credential(credential))
+}
+
 fn build_container_client(
     storage_account_name: String,
     storage_credentials: StorageCredentials,
@@ -690,9 +720,34 @@ impl From<AzureErrorWrapper> for StorageError {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_common::uri::Uri;
+    use std::sync::Arc;
 
-    use crate::object_storage::azure_blob_storage::parse_azure_uri;
+    use azure_core::auth::TokenCredential;
+    use quickwit_common::uri::Uri;
+    use quickwit_config::AzureStorageConfig;
+
+    use crate::StorageResolverError;
+    use crate::object_storage::azure_blob_storage::{
+        build_azure_token_credentials, parse_azure_uri,
+    };
+
+    #[derive(Debug)]
+    struct MockTokenCredential;
+
+    #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+    impl TokenCredential for MockTokenCredential {
+        async fn get_token(
+            &self,
+            _scopes: &[&str],
+        ) -> azure_core::Result<azure_core::auth::AccessToken> {
+            unimplemented!("mock credential should not request tokens in these unit tests")
+        }
+
+        async fn clear_cache(&self) -> azure_core::Result<()> {
+            Ok(())
+        }
+    }
 
     #[test]
     fn test_parse_azure_uri() {
@@ -712,5 +767,72 @@ mod tests {
             parse_azure_uri(&Uri::for_test("azure://test-container/indexes")).unwrap();
         assert_eq!(container, "test-container");
         assert_eq!(prefix.to_str().unwrap(), "indexes");
+    }
+
+    #[test]
+    fn test_build_azure_token_credentials_rejects_unknown_custom_endpoint() {
+        let azure_storage_config = AzureStorageConfig {
+            endpoint: Some("https://storage.example.com".to_string()),
+            ..Default::default()
+        };
+        let credential = Arc::new(MockTokenCredential) as Arc<dyn TokenCredential>;
+
+        let error = build_azure_token_credentials(&azure_storage_config, credential)
+            .expect_err("custom endpoint with token auth should fail");
+
+        assert!(matches!(error, StorageResolverError::InvalidConfig(_)));
+    }
+
+    #[test]
+    fn test_build_azure_token_credentials_rejects_unparseable_endpoint() {
+        let azure_storage_config = AzureStorageConfig {
+            endpoint: Some("https://user@storage.example.com".to_string()),
+            endpoint_suffix: Some("core.usgovcloudapi.net".to_string()),
+            ..Default::default()
+        };
+        let credential = Arc::new(MockTokenCredential) as Arc<dyn TokenCredential>;
+
+        let error = build_azure_token_credentials(&azure_storage_config, credential)
+            .expect_err("unparseable endpoint with token auth should fail");
+
+        assert!(matches!(error, StorageResolverError::InvalidConfig(_)));
+    }
+
+    #[test]
+    fn test_build_azure_token_credentials_rejects_http_azure_endpoint() {
+        let azure_storage_config = AzureStorageConfig {
+            endpoint: Some("http://my-account.blob.core.windows.net".to_string()),
+            ..Default::default()
+        };
+        let credential = Arc::new(MockTokenCredential) as Arc<dyn TokenCredential>;
+
+        let error = build_azure_token_credentials(&azure_storage_config, credential)
+            .expect_err("HTTP Azure endpoint with token auth should fail");
+
+        assert!(matches!(error, StorageResolverError::InvalidConfig(message) if message.contains("HTTPS")));
+    }
+
+    #[test]
+    fn test_build_azure_token_credentials_accepts_azure_government_endpoint() {
+        let azure_storage_config = AzureStorageConfig {
+            endpoint_suffix: Some("core.usgovcloudapi.net".to_string()),
+            ..Default::default()
+        };
+        let credential = Arc::new(MockTokenCredential) as Arc<dyn TokenCredential>;
+
+        build_azure_token_credentials(&azure_storage_config, credential)
+            .expect("Azure Government endpoint with token auth should succeed");
+    }
+
+    #[test]
+    fn test_build_azure_token_credentials_accepts_azure_china_endpoint() {
+        let azure_storage_config = AzureStorageConfig {
+            endpoint_suffix: Some("core.chinacloudapi.cn".to_string()),
+            ..Default::default()
+        };
+        let credential = Arc::new(MockTokenCredential) as Arc<dyn TokenCredential>;
+
+        build_azure_token_credentials(&azure_storage_config, credential)
+            .expect("Azure China endpoint with token auth should succeed");
     }
 }
