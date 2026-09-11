@@ -20,11 +20,20 @@ use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::{GoogleCloudStorageConfig, StorageBackend};
 use regex::Regex;
+use reqsign_core::{Context, ProvideCredential, ProvideCredentialChain};
+use reqsign_google::{
+    Credential, DefaultCredentialProvider, FileCredentialProvider,
+    ServiceAccountTokenCredentialProvider,
+};
 use tracing::info;
 
 use super::OpendalStorage;
 use crate::debouncer::DebouncedStorage;
 use crate::{Storage, StorageFactory, StorageResolverError};
+
+// Matches opendal's DEFAULT_GCS_SCOPE, which is more restrictive than `cloud-platform` used by
+// default in reqsign_google
+const GCS_SCOPE: &str = "https://www.googleapis.com/auth/devstorage.read_write";
 
 /// Google cloud storage resolver.
 pub struct GoogleCloudStorageFactory {
@@ -89,6 +98,54 @@ pub mod test_config_helpers {
     }
 }
 
+// this struct implements a ProvideCredential which calls the usual chain of credential providers.
+// if that chain returns service-account details, but no token, we lower ourselves the
+// service-account to a token, which can get cached by our caller
+//
+// before this, our caller would cache the service-account details, but SA to token conversion would
+// happen per-request instead of once every hour
+#[derive(Debug)]
+struct ServiceAccountTokenExchanger {
+    inner: ProvideCredentialChain<Credential>,
+    scope: String,
+}
+
+impl ServiceAccountTokenExchanger {
+    fn new(credential_path: Option<String>, scope: String) -> Self {
+        let mut chain = ProvideCredentialChain::new().push(DefaultCredentialProvider::new());
+        if let Some(path) = credential_path {
+            chain = chain.push_front(FileCredentialProvider::new(path).with_scope(&scope));
+        }
+        Self {
+            inner: chain,
+            scope,
+        }
+    }
+}
+
+impl ProvideCredential for ServiceAccountTokenExchanger {
+    type Credential = Credential;
+
+    async fn provide_credential(
+        &self,
+        ctx: &Context,
+    ) -> reqsign_core::Result<Option<Self::Credential>> {
+        let Some(cred) = self.inner.provide_credential(ctx).await? else {
+            return Ok(None);
+        };
+        match (&cred.service_account, &cred.token) {
+            (Some(sa), None) => {
+                // service account but no token: fetch a token
+                ServiceAccountTokenCredentialProvider::new(sa.clone())
+                    .with_scope(&self.scope)
+                    .provide_credential(ctx)
+                    .await
+            }
+            _ => Ok(Some(cred)),
+        }
+    }
+}
+
 fn from_uri(
     google_cloud_storage_config: &GoogleCloudStorageConfig,
     uri: &Uri,
@@ -102,10 +159,16 @@ fn from_uri(
         .bucket(&bucket_name)
         .root(&prefix.to_string_lossy());
 
-    if let Some(credential_path) = google_cloud_storage_config.resolve_credential_path() {
+    let credential_path = google_cloud_storage_config.resolve_credential_path();
+    if let Some(credential_path) = credential_path.as_ref() {
         info!(path=%credential_path, "fetching google cloud storage credentials from path");
-        cfg = cfg.credential_path(&credential_path);
     }
+
+    cfg = cfg.credential_provider(ServiceAccountTokenExchanger::new(
+        credential_path,
+        GCS_SCOPE.to_string(),
+    ));
+
     let store = OpendalStorage::new_google_cloud_storage(uri.clone(), cfg)?;
     Ok(store)
 }
