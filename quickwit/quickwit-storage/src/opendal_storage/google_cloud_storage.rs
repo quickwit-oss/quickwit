@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
@@ -28,12 +29,18 @@ use crate::{Storage, StorageFactory, StorageResolverError};
 /// Google cloud storage resolver.
 pub struct GoogleCloudStorageFactory {
     storage_config: GoogleCloudStorageConfig,
+    // this is technically an unbounded cache, the bound is the number of indexes that have existed
+    // since node start, which should be low enough this isn't catastrophic
+    storage_cache: Mutex<HashMap<Uri, Arc<DebouncedStorage<OpendalStorage>>>>,
 }
 
 impl GoogleCloudStorageFactory {
     /// Create a new google cloud storage factory via config.
     pub fn new(storage_config: GoogleCloudStorageConfig) -> Self {
-        Self { storage_config }
+        Self {
+            storage_config,
+            storage_cache: Mutex::new(HashMap::new()),
+        }
     }
 }
 
@@ -44,8 +51,17 @@ impl StorageFactory for GoogleCloudStorageFactory {
     }
 
     async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let storage = from_uri(&self.storage_config, uri)?;
-        Ok(Arc::new(DebouncedStorage::new(storage)))
+        let storage = {
+            let mut cache = self.storage_cache.lock().expect("lock poisoned");
+            if let Some(storage) = cache.get(uri) {
+                storage.clone()
+            } else {
+                let storage = Arc::new(DebouncedStorage::new(from_uri(&self.storage_config, uri)?));
+                cache.insert(uri.clone(), storage.clone());
+                storage
+            }
+        };
+        Ok(storage)
     }
 }
 

@@ -279,7 +279,7 @@ impl Storage for OpendalStorage {
         // Let's fallback to delete one by one in this case.
         #[cfg(feature = "integration-testsuite")]
         {
-            let storage_info = self.op.info();
+            let storage_info = self.op_read.info();
             if storage_info.name().starts_with("sample-bucket") && storage_info.scheme() == "gcs" {
                 let mut bulk_error = BulkDeleteError::default();
                 for (index, path) in paths.iter().enumerate() {
@@ -287,7 +287,10 @@ impl Storage for OpendalStorage {
                     let _timer = HistogramTimer::new(
                         &crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION,
                     );
-                    let result = self.op.delete(&path.as_os_str().to_string_lossy()).await;
+                    let result = self
+                        .op_read
+                        .delete(&path.as_os_str().to_string_lossy())
+                        .await;
                     if let Err(err) = result {
                         let storage_error_kind = err.kind();
                         let storage_error: StorageError = err.into();
