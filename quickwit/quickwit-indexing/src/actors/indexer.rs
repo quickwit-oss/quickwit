@@ -100,6 +100,7 @@ struct IndexerState {
     tokenizer_manager: TokenizerManager,
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
+    use_unsynced_directory: bool,
     cooperative_indexing_opt: Option<CooperativeIndexingCycle>,
 }
 
@@ -139,6 +140,7 @@ impl IndexerState {
             index_builder,
             io_controls,
             doc_id_clusterer_opt,
+            self.use_unsynced_directory,
         )?;
         debug!(
             split_id=%indexed_split.split_id(),
@@ -568,6 +570,7 @@ impl Indexer {
                 doc_mapping_uid: doc_mapper.doc_mapping_uid(),
                 tokenizer_manager: tokenizer_manager.tantivy_manager().clone(),
                 index_settings,
+                use_unsynced_directory: false,
                 max_num_partitions: doc_mapper.max_num_partitions(),
                 cooperative_indexing_opt,
             },
@@ -575,6 +578,12 @@ impl Indexer {
             indexing_workbench_opt: None,
             counters: IndexerCounters::default(),
         }
+    }
+
+    /// Uses a filesystem directory that does not synchronize its writes to disk.
+    pub(crate) fn use_unsynced_directory(mut self) -> Self {
+        self.indexer_state.use_unsynced_directory = true;
+        self
     }
 
     fn memory_usage(&self) -> ByteSize {

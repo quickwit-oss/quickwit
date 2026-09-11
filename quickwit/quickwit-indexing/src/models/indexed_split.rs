@@ -18,12 +18,13 @@ use std::path::Path;
 use quickwit_common::io::IoControls;
 use quickwit_common::metrics::index_label;
 use quickwit_common::temp_dir::TempDirectory;
+use quickwit_directories::UnsyncedMmapDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metrics::{GaugeGuard, label_values};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::types::{DocMappingUid, IndexUid, SplitId};
-use tantivy::IndexBuilder;
 use tantivy::directory::MmapDirectory;
+use tantivy::{Directory, IndexBuilder};
 use tracing::{Span, error, instrument};
 
 use crate::controlled_directory::ControlledDirectory;
@@ -87,6 +88,7 @@ impl IndexedSplitBuilder {
         index_builder: IndexBuilder,
         io_controls: IoControls,
         doc_id_clusterer_opt: Option<DocIdClusterer>,
+        use_unsynced_directory: bool,
     ) -> anyhow::Result<Self> {
         // We avoid intermediary merge, and instead merge all segments in the packager.
         // The benefit is that we don't have to wait for potentially existing merges,
@@ -95,10 +97,13 @@ impl IndexedSplitBuilder {
         let split_scratch_directory_prefix = format!("split-{split_id}-");
         let split_scratch_directory =
             scratch_directory.named_temp_child(&split_scratch_directory_prefix)?;
-        let mmap_directory = MmapDirectory::open(split_scratch_directory.path())?;
-        let box_mmap_directory = Box::new(mmap_directory);
+        let directory: Box<dyn Directory> = if use_unsynced_directory {
+            Box::new(UnsyncedMmapDirectory::open(split_scratch_directory.path())?)
+        } else {
+            Box::new(MmapDirectory::open(split_scratch_directory.path())?)
+        };
 
-        let controlled_directory = ControlledDirectory::new(box_mmap_directory, io_controls);
+        let controlled_directory = ControlledDirectory::new(directory, io_controls);
 
         let index_writer =
             index_builder.single_segment_index_writer(controlled_directory.clone(), 15_000_000)?;

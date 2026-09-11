@@ -371,6 +371,13 @@ impl IndexingPipeline {
             index_serializer_mailbox,
             self.params.fingerprinter_opt.clone(),
         );
+        // Without a local merge planner, the split scratch directory is only needed until the
+        // split is uploaded to remote storage. This is the standalone compactor configuration.
+        let indexer = if self.params.merge_planner_mailbox_opt.is_none() {
+            indexer.use_unsynced_directory()
+        } else {
+            indexer
+        };
         let (indexer_mailbox, indexer_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "indexer")]))
