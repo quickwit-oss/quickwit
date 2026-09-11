@@ -43,7 +43,7 @@ use ulid::Ulid;
 
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotifier};
-use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
+use crate::indexing_scheduler::scheduling::{build_physical_indexing_plan, improve_shard_locality};
 use crate::metrics::{
     APPLY_PLAN_TOTAL, SCHEDULE_TOTAL, ShardLocalityMetrics, publish_indexing_plan_metrics,
 };
@@ -403,15 +403,32 @@ impl IndexingScheduler {
         };
 
         let shard_locations = model.shard_locations();
-        let (new_physical_plan, shard_locality_metrics) = self.build_new_plan(
+        let (mut new_physical_plan, mut shard_locality_metrics) = self.build_new_plan(
             &sources,
             &indexer_infos,
             is_locality_aware,
             &shard_locations,
         );
+        let indexer_statuses = build_indexer_statuses(&indexers);
+        let running_indexer_tasks = build_indexer_tasks(&indexers);
+        if is_locality_aware
+            && self.is_stable_for_locality_repair(
+                &new_physical_plan,
+                &running_indexer_tasks,
+                &indexer_statuses,
+            )
+            && improve_shard_locality(
+                &mut new_physical_plan,
+                &sources,
+                &shard_locations,
+                &indexer_infos,
+            )
+        {
+            shard_locality_metrics =
+                get_shard_locality_metrics(&new_physical_plan, &shard_locations, &indexer_infos);
+        }
         shard_locality_metrics.publish();
 
-        let indexer_statuses = build_indexer_statuses(&indexers);
         if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
             let plans_diff = get_indexing_plans_diff(
                 last_applied_plan.indexing_tasks_per_indexer(),
@@ -427,6 +444,42 @@ impl IndexingScheduler {
         self.state.last_applied_indexer_statuses = indexer_statuses;
         self.apply_physical_indexing_plan(new_physical_plan, Some(notify_on_drop));
         self.state.num_schedule_indexing_plan += 1;
+    }
+
+    /// Optional locality repair must be the only desired-plan change in this rebuild, and the
+    /// previously applied plan must already be running. Otherwise, repeated model events could
+    /// stack repairs while indexers are still converging on an earlier plan.
+    fn is_stable_for_locality_repair(
+        &self,
+        ordinary_plan: &PhysicalIndexingPlan,
+        running_indexer_tasks: &FnvHashMap<NodeId, Vec<IndexingTask>>,
+        current_indexer_statuses: &FnvHashMap<NodeId, IngesterStatus>,
+    ) -> bool {
+        if current_indexer_statuses
+            .values()
+            .any(|status| *status != IngesterStatus::Ready)
+        {
+            return false;
+        }
+        let Some(last_applied_plan) = self.state.last_applied_physical_plan.as_ref() else {
+            return false;
+        };
+        let ordinary_plan_diff = get_indexing_plans_diff(
+            ordinary_plan.indexing_tasks_per_indexer(),
+            last_applied_plan.indexing_tasks_per_indexer(),
+            current_indexer_statuses,
+            &self.state.last_applied_indexer_statuses,
+        );
+        if !ordinary_plan_diff.is_empty() {
+            return false;
+        }
+        let running_plan_diff = get_indexing_plans_diff(
+            running_indexer_tasks,
+            last_applied_plan.indexing_tasks_per_indexer(),
+            current_indexer_statuses,
+            &self.state.last_applied_indexer_statuses,
+        );
+        running_plan_diff.is_empty()
     }
 
     fn build_new_plan(
@@ -1159,6 +1212,69 @@ mod tests {
                 mirrored_plans_diff.nodes_with_changed_ingester_status,
                 FnvHashSet::from_iter([&indexer_1])
             );
+        }
+    }
+
+    #[test]
+    fn test_locality_repair_requires_a_stable_ready_plan() {
+        let indexer_id = NodeId::from_str("indexer-1");
+        let mut plan = PhysicalIndexingPlan::with_indexer_ids(std::slice::from_ref(&indexer_id));
+        plan.add_indexing_task(
+            &indexer_id,
+            IndexingTask {
+                pipeline_uid: Some(PipelineUid::for_test(1u128)),
+                index_uid: Some(IndexUid::for_test("test-index", 0)),
+                source_id: "test-source".to_string(),
+                shard_ids: vec![ShardId::from(1)],
+                params_fingerprint: 0,
+            },
+        );
+        let ready_statuses = FnvHashMap::from_iter([(indexer_id.clone(), IngesterStatus::Ready)]);
+        let running_tasks = plan.indexing_tasks_per_indexer().clone();
+        let mut scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            IndexerPool::default(),
+        );
+
+        // Initial planning never performs optional repair.
+        assert!(!scheduler.is_stable_for_locality_repair(&plan, &running_tasks, &ready_statuses));
+
+        scheduler.state.last_applied_physical_plan = Some(plan.clone());
+        scheduler.state.last_applied_indexer_statuses = ready_statuses.clone();
+        assert!(scheduler.is_stable_for_locality_repair(&plan, &running_tasks, &ready_statuses));
+
+        let running_tasks_not_converged = FnvHashMap::from_iter([(indexer_id.clone(), Vec::new())]);
+        assert!(!scheduler.is_stable_for_locality_repair(
+            &plan,
+            &running_tasks_not_converged,
+            &ready_statuses,
+        ));
+
+        let mut changed_plan = plan.clone();
+        changed_plan.add_indexing_task(
+            &indexer_id,
+            IndexingTask {
+                pipeline_uid: Some(PipelineUid::for_test(2u128)),
+                index_uid: Some(IndexUid::for_test("another-index", 0)),
+                source_id: "another-source".to_string(),
+                shard_ids: vec![ShardId::from(2)],
+                params_fingerprint: 0,
+            },
+        );
+        assert!(!scheduler.is_stable_for_locality_repair(
+            &changed_plan,
+            &running_tasks,
+            &ready_statuses,
+        ));
+
+        for draining_status in [IngesterStatus::Retiring, IngesterStatus::Decommissioning] {
+            let draining_statuses = FnvHashMap::from_iter([(indexer_id.clone(), draining_status)]);
+            assert!(!scheduler.is_stable_for_locality_repair(
+                &plan,
+                &running_tasks,
+                &draining_statuses,
+            ));
         }
     }
 

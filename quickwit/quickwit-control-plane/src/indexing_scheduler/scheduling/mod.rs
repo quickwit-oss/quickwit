@@ -757,6 +757,25 @@ fn improve_shard_locality_once<R: Rng + ?Sized>(
     false
 }
 
+/// Attempts one optional physical-plan locality repair.
+///
+/// The caller must first establish that ordinary scheduling is an exact no-op, every indexer is
+/// Ready, and the previously applied plan is already running.
+pub(super) fn improve_shard_locality(
+    physical_plan: &mut PhysicalIndexingPlan,
+    sources: &[SourceToSchedule],
+    shard_locations: &ShardLocations,
+    indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
+) -> bool {
+    improve_shard_locality_once(
+        physical_plan,
+        sources,
+        shard_locations,
+        indexer_infos,
+        &mut rng(),
+    )
+}
+
 pub(crate) fn is_shard_nearby(
     indexer: &NodeId,
     shard_id: &ShardId,
@@ -1036,7 +1055,7 @@ pub fn build_physical_indexing_plan(
     let new_solution = scheduling_logic::solve(problem, previous_solution);
 
     // Convert the new scheduling solution back to a physical plan.
-    let mut new_physical_plan = convert_scheduling_solution_to_physical_plan(
+    let new_physical_plan = convert_scheduling_solution_to_physical_plan(
         &new_solution,
         &id_to_ord_map,
         sources,
@@ -1044,15 +1063,6 @@ pub fn build_physical_indexing_plan(
         shard_locations,
         indexer_infos,
     );
-    if locality_aware {
-        improve_shard_locality_once(
-            &mut new_physical_plan,
-            sources,
-            shard_locations,
-            indexer_infos,
-            &mut rng(),
-        );
-    }
 
     assert_post_condition_physical_plan_match_solution(
         &new_physical_plan,

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::cmp::{Ordering, Reverse};
+use std::cmp::Reverse;
 use std::collections::BTreeMap;
 
 use itertools::Itertools;
@@ -128,7 +128,9 @@ fn attempt_solve(
         // Then, we place shards that are hosted on the indexers, reclaiming a draining
         // indexer's own shards from its peers so that it gets priority to them.
         place_self_hosted_shards_on_draining_indexers(problem, &mut solution);
-        place_unassigned_shards_density_first(problem, &mut solution)?;
+        place_unassigned_shards_with_locality(problem, &mut solution);
+        place_unassigned_shards_with_affinity(problem, &mut solution);
+        place_unassigned_shards_ignoring_affinity(problem, &mut solution)?;
     } else {
         // If locality awareness is disabled, we directly assign sources to indexers that have some
         // affinity with them (provided they have the capacity.)
@@ -394,6 +396,7 @@ fn place_unassigned_shards_with_affinity(
             .affinities
             .iter()
             .filter(|&(_, &affinity)| affinity != 0u32)
+            .filter(|&(&indexer_ord, _)| problem.is_eligible_for_foreign_shards(indexer_ord))
             .map(|(&indexer_ord, affinity)| {
                 let available_capacity =
                     solution.indexer_assignments[indexer_ord].indexer_available_capacity(problem);
@@ -499,130 +502,81 @@ fn place_self_hosted_shards_on_draining_indexers(
     }
 }
 
-fn matching_affinity_indexer(
-    source: &Source,
-    indexer_ord: IndexerOrd,
-    problem: &SchedulingProblem,
-) -> Option<IndexerOrd> {
-    if let Some(locality_group) = problem.indexer_locality_group(indexer_ord) {
-        return source
-            .affinities
-            .iter()
-            .find(|&(&affinity_indexer_ord, &affinity)| {
-                affinity != 0
-                    && problem.indexer_locality_group(affinity_indexer_ord) == Some(locality_group)
-            })
-            .map(|(&affinity_indexer_ord, _)| affinity_indexer_ord);
-    }
-    if source.affinities.get(&indexer_ord).copied().unwrap_or(0) != 0 {
-        return Some(indexer_ord);
-    }
-    None
-}
-
-fn has_open_pipeline_slot(
-    source: &Source,
-    indexer_ord: IndexerOrd,
-    solution: &SchedulingSolution,
-) -> bool {
-    let assigned_shards = solution.indexer_assignments[indexer_ord].num_shards(source.source_ord);
-    assigned_shards % source.max_num_shards_per_pipeline.get() != 0
-}
-
-fn max_shards_in_next_pipeline(
-    source: &Source,
-    indexer_ord: IndexerOrd,
-    problem: &SchedulingProblem,
-    solution: &SchedulingSolution,
-) -> u32 {
-    let available_capacity = available_cpu_capacity(indexer_ord, problem, solution);
-    let max_shards_from_remaining_cpu_capacity =
-        available_capacity.cpu_millis() / source.load_per_shard.get();
-    source
-        .num_shards
-        .min(max_shards_from_remaining_cpu_capacity)
-        .min(source.max_num_shards_per_pipeline.get())
-}
-
-fn compare_partial_candidates(
-    source: &Source,
-    left: IndexerOrd,
-    right: IndexerOrd,
-    problem: &SchedulingProblem,
-    solution: &SchedulingSolution,
-) -> Ordering {
-    let left_has_locality_match = matching_affinity_indexer(source, left, problem).is_some();
-    let right_has_locality_match = matching_affinity_indexer(source, right, problem).is_some();
-    if left_has_locality_match != right_has_locality_match {
-        return right_has_locality_match.cmp(&left_has_locality_match);
-    }
-    let left_load = solution.indexer_assignments[left].total_cpu_load(problem);
-    let right_load = solution.indexer_assignments[right].total_cpu_load(problem);
-    if left_load != right_load {
-        return left_load.cmp(&right_load);
-    }
-    left.cmp(&right)
-}
-
-fn compare_new_pipeline_candidates(
-    source: &Source,
-    left: IndexerOrd,
-    right: IndexerOrd,
-    problem: &SchedulingProblem,
-    solution: &SchedulingSolution,
-) -> Ordering {
-    let left_max_shards = max_shards_in_next_pipeline(source, left, problem, solution);
-    let right_max_shards = max_shards_in_next_pipeline(source, right, problem, solution);
-    if left_max_shards != right_max_shards {
-        return right_max_shards.cmp(&left_max_shards);
-    }
-    compare_partial_candidates(source, left, right, problem, solution)
-}
-
-fn find_indexer_density_preferred(
-    source: &Source,
-    problem: &SchedulingProblem,
-    solution: &SchedulingSolution,
-) -> Option<IndexerOrd> {
-    // All indexers that are able to accept foreign shards, and have capacity for at least one shard
-    let candidates: Vec<IndexerOrd> = (0..problem.num_indexers())
-        .filter(|&indexer_ord| problem.is_eligible_for_foreign_shards(indexer_ord))
-        .filter(|&indexer_ord| {
-            let available_capacity = available_cpu_capacity(indexer_ord, problem, solution);
-            available_capacity.cpu_millis() / source.load_per_shard.get() >= 1
-        })
-        .collect();
-    // All indexers that have a running pipeline that is only partially filled.
-    let partial_candidates: Vec<IndexerOrd> = candidates
-        .iter()
-        .copied()
-        .filter(|&indexer_ord| has_open_pipeline_slot(source, indexer_ord, solution))
-        .collect();
-    if !partial_candidates.is_empty() {
-        return partial_candidates.into_iter().min_by(|&left, &right| {
-            compare_partial_candidates(source, left, right, problem, solution)
-        });
-    }
-    candidates.into_iter().min_by(|&left, &right| {
-        compare_new_pipeline_candidates(source, left, right, problem, solution)
-    })
-}
-
-fn place_unassigned_shards_density_first(
+/// Places each source up to its immutable physical-shard quota in every known locality group.
+///
+/// `compute_unassigned_sources` reduces affinity as logical assignments consume shards, so it
+/// cannot be used to derive the quota. The hosted count deliberately comes from the original
+/// problem while the assigned count comes from the current, post-reclamation solution. Existing
+/// group surpluses are left untouched; only deficits are filled here.
+fn place_unassigned_shards_with_locality(
     problem: &SchedulingProblem,
     solution: &mut SchedulingSolution,
-) -> Result<(), NotEnoughCapacity> {
+) {
     let unassigned_sources: Vec<Source> = compute_unassigned_sources(problem, solution);
     for mut source in unassigned_sources {
-        while source.num_shards > 0 {
-            let indexer_ord = find_indexer_density_preferred(&source, problem, solution)
-                .ok_or(NotEnoughCapacity)?;
-            let matching_affinity = matching_affinity_indexer(&source, indexer_ord, problem);
-            solution.indexer_assignments[indexer_ord].add_shards(source.source_ord, 1);
-            source.remove_shards(matching_affinity.unwrap_or(indexer_ord), 1);
+        for locality_group_ord in 0..problem.num_locality_groups() {
+            if source.num_shards == 0 {
+                break;
+            }
+            let locality_group = LocalityGroup::from_ord(locality_group_ord);
+            let num_hosted_shards: u32 = (0..problem.num_indexers())
+                .filter(|&indexer_ord| {
+                    problem.indexer_locality_group(indexer_ord) == Some(locality_group)
+                })
+                .map(|indexer_ord| problem.source_affinity(source.source_ord, indexer_ord))
+                .sum();
+            let num_assigned_shards: u32 = solution
+                .indexer_assignments
+                .iter()
+                .filter(|assignment| {
+                    problem.indexer_locality_group(assignment.indexer_ord) == Some(locality_group)
+                })
+                .map(|assignment| assignment.num_shards(source.source_ord))
+                .sum();
+            let num_shards_to_place = num_hosted_shards
+                .saturating_sub(num_assigned_shards)
+                .min(source.num_shards);
+            if num_shards_to_place == 0 {
+                continue;
+            }
+
+            let candidates: Vec<(IndexerOrd, CpuCapacity)> =
+                compute_indexer_available_capacity(problem, solution)
+                    .filter(|&(indexer_ord, _)| {
+                        problem.is_eligible_for_foreign_shards(indexer_ord)
+                            && problem.indexer_locality_group(indexer_ord) == Some(locality_group)
+                    })
+                    .sorted_by_key(|(indexer_ord, capacity)| {
+                        let affinity = source
+                            .affinities
+                            .get(indexer_ord)
+                            .copied()
+                            .unwrap_or_default();
+                        Reverse((affinity, *capacity, *indexer_ord))
+                    })
+                    .collect();
+            let num_assigned_before: u32 = solution
+                .indexer_assignments
+                .iter()
+                .map(|assignment| assignment.num_shards(source.source_ord))
+                .sum();
+            let source_for_group = Source {
+                num_shards: num_shards_to_place,
+                ..source.clone()
+            };
+            let _ = place_unassigned_shards_single_source(
+                &source_for_group,
+                candidates.into_iter(),
+                solution,
+            );
+            let num_assigned_after: u32 = solution
+                .indexer_assignments
+                .iter()
+                .map(|assignment| assignment.num_shards(source.source_ord))
+                .sum();
+            source.num_shards -= num_assigned_after - num_assigned_before;
         }
     }
-    Ok(())
 }
 
 /// Places the still-unassigned shards onto the indexers with the most available
