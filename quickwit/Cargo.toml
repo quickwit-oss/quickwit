@@ -388,6 +388,7 @@ opendal = { version = "0.58", default-features = false, features = [
   "http-transport-reqwest",
   "layers-retry",
   "layers-concurrent-limit",
+  "layers-timeout",
 ] }
 reqsign = { version = "0.18", default-features = false, features = ["google", "default-context"] }
 
