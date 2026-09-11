@@ -20,7 +20,7 @@ use std::{fmt, io};
 
 use async_trait::async_trait;
 use futures::AsyncWriteExt as FuturesAsyncWriteExt;
-use opendal::layers::{ConcurrentLimitLayer, RetryLayer};
+use opendal::layers::{ConcurrentLimitLayer, RetryLayer, TimeoutLayer};
 use opendal::{DeleteInput, IntoDeleteInput, Operator};
 use quickwit_common::get_from_env_cached;
 use quickwit_common::uri::Uri;
@@ -37,14 +37,22 @@ use crate::{
     StorageErrorKind, StorageResolverError, StorageResult,
 };
 
+const GCS_CONTROL_OP_TIMEOUT: Duration = Duration::from_secs(3);
+const GCS_READ_IO_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// OpenDAL based storage implementation.
 /// # TODO
 ///
-/// - Implement REQUEST_SEMAPHORE to control the concurrency.
 /// - Implement object storage metrics.
 pub struct OpendalStorage {
     uri: Uri,
-    op: Operator,
+    // this operator carries a timeout, which is not suitable for uploading large chunks at
+    // once (if we provide a 1GB contiguous buffer, it must be written in one timeout period
+    // or gets killed. Large reads end up in many non-contiguous buffers and so don't suffer
+    // from this issue)
+    op_read: Operator,
+    // same as op, but without any timeout, which makes it suitable to upload large bodies
+    op_write: Operator,
     multipart_policy: MultiPartPolicy,
 }
 
@@ -52,7 +60,8 @@ impl fmt::Debug for OpendalStorage {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("OpendalStorage")
-            .field("operator", &self.op.info())
+            .field("op_read", &self.op_read.info())
+            .field("op_write", &self.op_write.info())
             .finish()
     }
 }
@@ -64,16 +73,23 @@ impl OpendalStorage {
         cfg: opendal::services::Gcs,
     ) -> Result<Self, StorageResolverError> {
         opendal::install_default();
-        let op = Operator::new(cfg)?
+        let base = Operator::new(cfg)?;
+        let op_write = base
+            .clone()
             .layer(gcs_retry_layer())
             .layer(GCS_CONCURRENT_LIMIT_LAYER.clone());
-        Ok(Self::from_operator(uri, op))
+        let op_read = base
+            .layer(gcs_timeout_layer())
+            .layer(gcs_retry_layer())
+            .layer(GCS_CONCURRENT_LIMIT_LAYER.clone());
+        Ok(Self::from_operators(uri, op_read, op_write))
     }
 
-    fn from_operator(uri: Uri, op: Operator) -> Self {
+    fn from_operators(uri: Uri, op_read: Operator, op_write: Operator) -> Self {
         Self {
             uri,
-            op,
+            op_read,
+            op_write,
             // limits are the same as on S3
             multipart_policy: MultiPartPolicy::default(),
         }
@@ -87,11 +103,17 @@ impl OpendalStorage {
         cfg: opendal::services::Gcs,
         http_transport: opendal::HttpTransporter,
     ) -> Result<Self, StorageResolverError> {
-        let op = Operator::new(cfg)?
-            .with_context(opendal::OperationContext::new().with_http_transport(http_transport))
+        let ctx = opendal::OperationContext::new().with_http_transport(http_transport);
+        let base = Operator::new(cfg)?.with_context(ctx);
+        let op_write = base
+            .clone()
             .layer(gcs_retry_layer())
             .layer(GCS_CONCURRENT_LIMIT_LAYER.clone());
-        Ok(Self::from_operator(uri, op))
+        let op = base
+            .layer(gcs_timeout_layer())
+            .layer(gcs_retry_layer())
+            .layer(GCS_CONCURRENT_LIMIT_LAYER.clone());
+        Ok(Self::from_operators(uri, op, op_write))
     }
 
     #[cfg(feature = "integration-testsuite")]
@@ -118,6 +140,12 @@ static GCS_CONCURRENT_LIMIT_LAYER: LazyLock<ConcurrentLimitLayer> = LazyLock::ne
         get_from_env_cached!(usize, "QW_S3_MAX_CONCURRENCY", 10_000, false);
     ConcurrentLimitLayer::new(max_concurrency)
 });
+
+fn gcs_timeout_layer() -> TimeoutLayer {
+    TimeoutLayer::new()
+        .with_timeout(GCS_CONTROL_OP_TIMEOUT)
+        .with_io_timeout(GCS_READ_IO_TIMEOUT)
+}
 
 /// We spotted a ever growing usage of RAM in the opendal GCS implementation.
 /// We are using the same fix as
@@ -153,7 +181,7 @@ where
 #[async_trait]
 impl Storage for OpendalStorage {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
-        self.op.check().await?;
+        self.op_read.check().await?;
         Ok(())
     }
 
@@ -165,7 +193,7 @@ impl Storage for OpendalStorage {
         let mut payload_reader = payload.byte_stream().await?.into_async_read();
 
         let mut storage_writer = self
-            .op
+            .op_write
             .writer_with(&path)
             .chunk(self.multipart_policy.part_num_bytes(payload.len()) as usize)
             .await?
@@ -182,7 +210,7 @@ impl Storage for OpendalStorage {
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let path = path.as_os_str().to_string_lossy();
         let mut storage_reader = self
-            .op
+            .op_read
             .reader(&path)
             .await?
             .into_futures_async_read(..)
@@ -207,7 +235,7 @@ impl Storage for OpendalStorage {
         // `Buffer::to_bytes` is zero-copy when the underlying buffer is contiguous, and coalesces
         // into a single `Bytes` otherwise — avoiding the extra `Vec<u8>` round-trip `to_vec` would
         // perform.
-        let storage_content = self.op.read_with(&path).range(range).await?.to_bytes();
+        let storage_content = self.op_read.read_with(&path).range(range).await?.to_bytes();
         Ok(into_owned_bytes(storage_content))
     }
 
@@ -220,7 +248,7 @@ impl Storage for OpendalStorage {
         let path = path.as_os_str().to_string_lossy();
         let range = range.start as u64..range.end as u64;
         let storage_reader = self
-            .op
+            .op_read
             .reader_with(&path)
             .await?
             .into_futures_async_read(range)
@@ -232,7 +260,7 @@ impl Storage for OpendalStorage {
     #[instrument(name = "storage.gcs.get_all", level = "debug", skip(self))]
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let path = path.as_os_str().to_string_lossy();
-        let storage_content = self.op.read(&path).await?.to_bytes();
+        let storage_content = self.op_read.read(&path).await?.to_bytes();
         Ok(into_owned_bytes(storage_content))
     }
 
@@ -241,7 +269,7 @@ impl Storage for OpendalStorage {
         let path = path.as_os_str().to_string_lossy();
         crate::metrics::OBJECT_STORAGE_DELETE_REQUESTS_TOTAL.inc();
         let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_DELETE_REQUEST_DURATION);
-        self.op.delete(&path).await?;
+        self.op_read.delete(&path).await?;
         Ok(())
     }
 
@@ -293,7 +321,7 @@ impl Storage for OpendalStorage {
             .map(|path| path.as_os_str().to_string_lossy().into_delete_input())
             .collect();
 
-        self.op
+        self.op_read
             .delete_iter(delete_inputs)
             .await
             .map_err(|error| BulkDeleteError {
@@ -306,7 +334,7 @@ impl Storage for OpendalStorage {
     #[instrument(name = "storage.gcs.file_num_bytes", level = "debug", skip(self))]
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
         let path = path.as_os_str().to_string_lossy();
-        let meta = self.op.stat(&path).await?;
+        let meta = self.op_read.stat(&path).await?;
         Ok(meta.content_length())
     }
 
@@ -321,6 +349,11 @@ impl From<opendal::Error> for StorageError {
             opendal::ErrorKind::NotFound => StorageErrorKind::NotFound.with_error(err),
             opendal::ErrorKind::PermissionDenied => StorageErrorKind::Unauthorized.with_error(err),
             opendal::ErrorKind::ConfigInvalid => StorageErrorKind::Service.with_error(err),
+            opendal::ErrorKind::Unexpected
+                if err.is_temporary() && err.message().contains("timeout") =>
+            {
+                StorageErrorKind::Timeout.with_error(err)
+            }
             _ => StorageErrorKind::Io.with_error(err),
         }
     }

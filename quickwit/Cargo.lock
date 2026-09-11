@@ -6790,6 +6790,7 @@ dependencies = [
  "opendal-http-transport-reqwest",
  "opendal-layer-concurrent-limit",
  "opendal-layer-retry",
+ "opendal-layer-timeout",
  "opendal-service-gcs",
 ]
 
@@ -6854,6 +6855,16 @@ dependencies = [
  "backon",
  "log",
  "opendal-core",
+]
+
+[[package]]
+name = "opendal-layer-timeout"
+version = "0.58.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a704141924500f3803c05ed871b53305d2a2f11cb5ef20160c3ee688a1857f66"
+dependencies = [
+ "opendal-core",
+ "tokio",
 ]
 
 [[package]]
