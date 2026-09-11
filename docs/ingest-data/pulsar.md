@@ -158,6 +158,29 @@ As soon as the Pulsar source is created, Quickwit control plane will ask an inde
 INFO spawn_pipeline{index=stackoverflow gen=0}:pulsar-consumer{subscription_name="quickwit-stackoverflow-pulsar-source" params=PulsarSourceParams { topics: ["stackoverflow"], address: "pulsar://localhost:6650", consumer_name: "quickwit", authentication: None } current_positions={}}: quickwit_indexing::source::pulsar_source: Seeking to last checkpoint positions. positions={}
 ```
 
+### Distributed indexing
+
+To parallelize indexing across several pipelines (and indexers), set `num_pipelines` on the source config to the number of pipelines you want:
+
+```yaml
+version: 0.8
+source_id: pulsar-source
+source_type: pulsar
+num_pipelines: 4
+params:
+  topics:
+    - stackoverflow
+  address: pulsar://localhost:6650
+```
+
+The pipelines share a single Pulsar `Failover` subscription, and the broker assigns each topic partition to exactly one active pipeline — so each partition is indexed by a single pipeline, with no duplicates and no loss. When a pipeline dies, Pulsar promotes another and it resumes from the subscription cursor.
+
+:::info
+
+Distribution happens **per partition**, so the topic(s) must be partitioned. A non-partitioned topic is served by a single active consumer: extra pipelines stay idle as standbys and provide no parallelism. For balanced load, make the number of partitions a multiple of `num_pipelines`.
+
+:::
+
 ## Create and populate a Pulsar topic
 
 We will use the Pulsar's default tenant/namespace `public/default`. To populate the topic, we will use a python script:
