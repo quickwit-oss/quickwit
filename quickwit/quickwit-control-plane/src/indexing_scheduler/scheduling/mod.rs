@@ -776,6 +776,68 @@ pub(super) fn improve_shard_locality(
     )
 }
 
+/// Merges one compatible pair of underfilled pipelines.
+///
+/// Both pipelines belong to the same source on the same indexer, so this preserves the logical
+/// scheduling solution and shard locality. At most one surviving pipeline is reset and one
+/// pipeline is removed.
+pub(super) fn improve_pipeline_density(
+    physical_plan: &mut PhysicalIndexingPlan,
+    sources: &[SourceToSchedule],
+) -> bool {
+    let mut candidate: Option<(NodeId, usize, usize)> = None;
+
+    'sources: for source in sources {
+        if !matches!(source.source_type, SourceToScheduleType::Sharded { .. }) {
+            continue;
+        }
+        let max_num_shards = compute_max_num_shards_per_pipeline(&source.source_type).get() as usize;
+
+        for (indexer_id, indexing_tasks) in physical_plan.indexing_tasks_per_indexer() {
+            let mut matching_pipeline_ords: Vec<usize> = indexing_tasks
+                .iter()
+                .enumerate()
+                .filter(|(_, task)| {
+                    task.index_uid.as_ref() == Some(&source.source_uid.index_uid)
+                        && task.source_id == source.source_uid.source_id
+                        && task.params_fingerprint == source.params_fingerprint
+                })
+                .map(|(task_ord, _)| task_ord)
+                .collect();
+            matching_pipeline_ords.sort_by_key(|&task_ord| {
+                (indexing_tasks[task_ord].shard_ids.len(), task_ord)
+            });
+            if matching_pipeline_ords.len() < 2 {
+                continue;
+            }
+            let donor_task_ord = matching_pipeline_ords[0];
+            let receiver_task_ord = matching_pipeline_ords[1];
+            let combined_num_shards = indexing_tasks[donor_task_ord].shard_ids.len()
+                + indexing_tasks[receiver_task_ord].shard_ids.len();
+            if combined_num_shards > max_num_shards {
+                continue;
+            }
+            candidate = Some((indexer_id.clone(), donor_task_ord, receiver_task_ord));
+            break 'sources;
+        }
+    }
+
+    let Some((indexer_id, donor_task_ord, receiver_task_ord)) = candidate else {
+        return false;
+    };
+    let indexing_tasks = physical_plan
+        .indexing_tasks_per_indexer_mut()
+        .get_mut(&indexer_id)
+        .expect("density repair candidate indexer disappeared");
+    let donor_shard_ids = std::mem::take(&mut indexing_tasks[donor_task_ord].shard_ids);
+    indexing_tasks[receiver_task_ord]
+        .shard_ids
+        .extend(donor_shard_ids);
+    indexing_tasks.remove(donor_task_ord);
+    physical_plan.normalize();
+    true
+}
+
 pub(crate) fn is_shard_nearby(
     indexer: &NodeId,
     shard_id: &ShardId,
@@ -1356,8 +1418,8 @@ mod tests {
         Eligibility, IndexerInfo, IndexerSpec, SourceToSchedule, SourceToScheduleType,
         build_physical_indexing_plan, build_physical_indexing_plan_without_locality,
         convert_scheduling_solution_to_physical_plan_single_node_single_source,
-        convert_to_simplified_problem, improve_shard_locality_once, is_foreign_shard,
-        shard_ids_for_indexer,
+        convert_to_simplified_problem, improve_pipeline_density, improve_shard_locality_once,
+        is_foreign_shard, shard_ids_for_indexer,
     };
     use crate::indexing_plan::PhysicalIndexingPlan;
     use crate::indexing_scheduler::get_shard_locality_metrics;
@@ -1800,6 +1862,90 @@ mod tests {
             num_foreign_shards_for_source(&plan, &source1, &shard_locations, &indexer_infos)
                 + num_foreign_shards_for_source(&plan, &source2, &shard_locations, &indexer_infos);
         assert_eq!(remaining_foreign, 2);
+    }
+
+    #[test]
+    fn test_pipeline_density_repair_merges_one_compatible_pair() {
+        let source_uid = source_id();
+        let indexer = NodeId::from_str("indexer-a");
+        let mut plan = PhysicalIndexingPlan::with_indexer_ids(std::slice::from_ref(&indexer));
+        add_test_pipeline(
+            &mut plan,
+            &indexer,
+            &source_uid,
+            1,
+            vec![ShardId::from(1)],
+        );
+        add_test_pipeline(
+            &mut plan,
+            &indexer,
+            &source_uid,
+            2,
+            vec![ShardId::from(2), ShardId::from(3)],
+        );
+        add_test_pipeline(
+            &mut plan,
+            &indexer,
+            &source_uid,
+            3,
+            vec![ShardId::from(4)],
+        );
+        let source = sharded_source(
+            source_uid,
+            vec![
+                ShardId::from(1),
+                ShardId::from(2),
+                ShardId::from(3),
+                ShardId::from(4),
+            ],
+        );
+
+        assert!(improve_pipeline_density(&mut plan, &[source]));
+
+        let tasks = plan.indexer(&indexer).unwrap();
+        assert_eq!(tasks.len(), 2);
+        assert!(tasks.iter().any(|task| {
+            task.pipeline_uid == Some(PipelineUid::for_test(2))
+                && task.shard_ids == vec![ShardId::from(2), ShardId::from(3)]
+        }));
+        assert!(tasks.iter().any(|task| {
+            task.pipeline_uid == Some(PipelineUid::for_test(3))
+                && task.shard_ids == vec![ShardId::from(1), ShardId::from(4)]
+        }));
+    }
+
+    #[test]
+    fn test_pipeline_density_repair_does_not_overfill_pipeline() {
+        let source_uid = source_id();
+        let indexer = NodeId::from_str("indexer-a");
+        let mut plan = PhysicalIndexingPlan::with_indexer_ids(std::slice::from_ref(&indexer));
+        add_test_pipeline(
+            &mut plan,
+            &indexer,
+            &source_uid,
+            1,
+            vec![ShardId::from(1), ShardId::from(2)],
+        );
+        add_test_pipeline(
+            &mut plan,
+            &indexer,
+            &source_uid,
+            2,
+            vec![ShardId::from(3), ShardId::from(4)],
+        );
+        let source = sharded_source(
+            source_uid,
+            vec![
+                ShardId::from(1),
+                ShardId::from(2),
+                ShardId::from(3),
+                ShardId::from(4),
+            ],
+        );
+        let original_plan = plan.clone();
+
+        assert!(!improve_pipeline_density(&mut plan, &[source]));
+        assert_eq!(plan, original_plan);
     }
 
     #[test]
