@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(test)]
-use std::collections::BTreeMap;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::fmt;
 use std::future::Future;
 use std::num::NonZeroUsize;
@@ -24,6 +23,7 @@ use std::time::Duration;
 use fnv::FnvHashSet;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
+use itertools::{Itertools as _, MinMaxResult};
 use quickwit_actors::Mailbox;
 use quickwit_common::Progress;
 use quickwit_common::pretty::PrettySample;
@@ -34,7 +34,7 @@ use quickwit_proto::control_plane::{
     GetOrCreateOpenShardsSuccess,
 };
 use quickwit_proto::ingest::ingester::{
-    CloseShardsRequest, CloseShardsResponse, IngesterService, InitShardFailure,
+    CloseShardsRequest, CloseShardsResponse, IngesterService, IngesterStatus, InitShardFailure,
     InitShardSubrequest, InitShardsRequest, InitShardsResponse, RetainShardsForSource,
     RetainShardsRequest,
 };
@@ -42,18 +42,19 @@ use quickwit_proto::ingest::{
     Shard, ShardIdPosition, ShardIdPositions, ShardIds, ShardPKey, ShardState,
 };
 use quickwit_proto::metastore::{
-    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient, OpenShardSubrequest,
+    MetastoreResult, MetastoreService, MetastoreServiceClient, OpenShardSubrequest,
     OpenShardsRequest, OpenShardsResponse, serde_utils,
 };
 use quickwit_proto::types::{IndexUid, NodeId, Position, ShardId, SourceUid};
 use rand::prelude::IndexedRandom;
+use rand::rngs::ThreadRng;
+use rand::seq::SliceRandom;
 use rand::{Rng, rng};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{Level, debug, enabled, error, info, instrument, warn};
 use ulid::Ulid;
 
-use super::az_aware_placement::{PlacementState, PlannedOpen};
 use super::scaling_arbiter::ScalingArbiter;
 use crate::control_plane::ControlPlane;
 use crate::ingest::wait_handle::WaitHandle;
@@ -91,42 +92,147 @@ fn fire_and_forget(
     });
 }
 
-// Compatibility helpers for pre-existing allocator tests. Production placement goes through the
-// projected-state planner above; these preserve the old all-global primitive's test surface.
-#[cfg(test)]
-fn pick_least_loaded_ingester<'a>(
-    ingester_ids_by_num_shards: &mut BTreeMap<usize, Vec<&'a NodeId>>,
-    _rng: &mut rand::rngs::ThreadRng,
-) -> Option<&'a NodeId> {
-    let (&num_shards, ingester_ids) = ingester_ids_by_num_shards.iter_mut().next()?;
-    let ingester_id = ingester_ids.pop().unwrap();
-    let remove_entry = ingester_ids.is_empty();
-    if remove_entry {
-        ingester_ids_by_num_shards.remove(&num_shards);
-    }
-    ingester_ids_by_num_shards
-        .entry(num_shards + 1)
-        .or_default()
-        .push(ingester_id);
-    Some(ingester_id)
+type Zone = String;
+
+type SourceShardCount = HashMap<SourceUid, usize>;
+
+fn total_shards(source_shard_counts: &SourceShardCount) -> usize {
+    source_shard_counts.values().sum()
 }
 
-#[cfg(test)]
+/// In some cases, it could be advantageous to prefer to place shards in a specific zone (such as
+/// when rebalancing the shards of a decommissioned ingester). Otherwise, the default is to spread
+/// new shards evenly.
+enum ShardPlacement {
+    Balanced(SourceShardCount),
+    Zoned(HashMap<Option<Zone>, SourceShardCount>),
+}
+
+struct EligibleIngester {
+    node_id: NodeId,
+    zone: Option<Zone>,
+    num_open_shards: AtomicUsize,
+}
+
+/// Picks the least-loaded ingester from `candidates`, breaking ties randomly.
+fn pick_least_loaded<'a>(
+    eligible_ingesters: &'a [EligibleIngester],
+    requested_zone: Option<&Zone>,
+    rng: &mut ThreadRng,
+) -> Option<&'a EligibleIngester> {
+    let min_load = eligible_ingesters
+        .iter()
+        .map(|ingester| ingester.num_open_shards.load(Ordering::Relaxed))
+        .min()?;
+    let minima: Vec<&EligibleIngester> = eligible_ingesters
+        .iter()
+        .filter(|ingester| ingester.num_open_shards.load(Ordering::Relaxed) == min_load)
+        .collect();
+    let same_zone_minima: Vec<&EligibleIngester> = minima
+        .iter()
+        .copied()
+        .filter(|ingester| requested_zone.is_some() && ingester.zone.as_ref() == requested_zone)
+        .collect();
+    let candidates = if !same_zone_minima.is_empty() {
+        same_zone_minima
+    } else {
+        minima
+    };
+    candidates.choose(rng).copied()
+}
+
+fn eligible_ingesters(
+    ingester_pool: &IngesterPool,
+    unavailable_ingesters: &FnvHashSet<NodeId>,
+    model: &ControlPlaneModel,
+) -> Vec<EligibleIngester> {
+    let mut num_open_shards_by_ingester_id: HashMap<String, usize> = HashMap::new();
+    for shard in model.all_shards() {
+        if shard.is_open() {
+            *num_open_shards_by_ingester_id
+                .entry(shard.ingester_id.clone())
+                .or_default() += 1;
+        }
+    }
+    ingester_pool
+        .keys_values()
+        .into_iter()
+        .filter(|(id, ingester)| {
+            ingester.status.is_ready() && !unavailable_ingesters.contains(id)
+        })
+        .map(|(node_id, ingester)| EligibleIngester {
+            num_open_shards: AtomicUsize::new(
+                num_open_shards_by_ingester_id
+                    .get(node_id.as_str())
+                    .copied()
+                    .unwrap_or(0),
+            ),
+            node_id,
+            zone: ingester.availability_zone,
+        })
+        .collect()
+}
+
 fn allocate_shards(
-    num_shards_by_ingester_id: &HashMap<NodeId, usize>,
+    eligible_ingesters: &[EligibleIngester],
+    requested_zone: Option<Zone>,
     num_shards: usize,
-) -> Option<Vec<&NodeId>> {
-    if num_shards_by_ingester_id.is_empty() && num_shards > 0 {
+) -> Option<Vec<NodeId>> {
+    if eligible_ingesters.is_empty() {
         return None;
     }
-    let mut by_load: BTreeMap<usize, Vec<&NodeId>> = BTreeMap::new();
-    for (node_id, load) in num_shards_by_ingester_id {
-        by_load.entry(*load).or_default().push(node_id);
-    }
     let mut rng = rng();
-    (0..num_shards)
-        .map(|_| pick_least_loaded_ingester(&mut by_load, &mut rng))
-        .collect()
+    let mut ingester_ids = Vec::with_capacity(num_shards);
+    for _ in 0..num_shards {
+        let picked = pick_least_loaded(eligible_ingesters, requested_zone.as_ref(), &mut rng)
+            .expect("eligible ingesters non-empty");
+        picked.num_open_shards.fetch_add(1, Ordering::Relaxed);
+        ingester_ids.push(picked.node_id.clone());
+    }
+    Some(ingester_ids)
+}
+
+fn derive_balancing_azs(
+    num_to_open: usize,
+    known_azs: &[Zone],
+) -> HashMap<Option<Zone>, usize> {
+    if num_to_open == 0 {
+        return HashMap::new();
+    }
+    if known_azs.is_empty() {
+        return HashMap::from([(None, num_to_open)]);
+    }
+    let mut shuffled: Vec<&Zone> = known_azs.iter().collect();
+    shuffled.shuffle(&mut rng());
+    shuffled
+        .iter()
+        .cycle()
+        .take(num_to_open)
+        .map(|az| Some((*az).clone()))
+        .counts()
+}
+
+/// For each source's requested count, derive the AZ balancing and regroup by AZ.
+fn group_shards_by_zone(
+    source_shard_counts: SourceShardCount,
+    eligible_ingesters: &[EligibleIngester],
+) -> HashMap<Option<Zone>, SourceShardCount> {
+    let known_azs: Vec<Zone> = eligible_ingesters
+        .iter()
+        .filter_map(|ingester| ingester.zone.as_ref())
+        .unique()
+        .cloned()
+        .collect();
+    let mut num_shards_by_source_by_az: HashMap<Option<Zone>, SourceShardCount> = HashMap::new();
+    for (source_uid, num_shards) in source_shard_counts {
+        for (az, count) in derive_balancing_azs(num_shards, &known_azs) {
+            num_shards_by_source_by_az
+                .entry(az)
+                .or_default()
+                .insert(source_uid.clone(), count);
+        }
+    }
+    num_shards_by_source_by_az
 }
 
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
@@ -180,13 +286,6 @@ async fn open_shards_on_metastore_and_model(
         }
     }
     Ok(open_shards_response)
-}
-
-fn placement_protocol_error(message: String) -> MetastoreError {
-    MetastoreError::Internal {
-        message,
-        cause: "invalid shard-opening subrequest correlation".to_string(),
-    }
 }
 
 /// Returns `true` if the ingester is available, i.e. in the ingester pool and ready to serve
@@ -250,26 +349,6 @@ impl IngestController {
                 shard_scale_up_factor,
             ),
         }
-    }
-
-    #[cfg(test)]
-    fn allocate_shards(
-        &self,
-        num_shards: usize,
-        unavailable_ingesters: &FnvHashSet<NodeId>,
-        model: &ControlPlaneModel,
-    ) -> Option<Vec<NodeId>> {
-        let (mut placement_state, _) =
-            PlacementState::from_model(&self.ingester_pool, unavailable_ingesters, model);
-        if placement_state.nodes.is_empty() {
-            return None;
-        }
-        let test_source = SourceUid {
-            index_uid: IndexUid::for_test("allocator-test", 0),
-            source_id: "allocator-test".to_string(),
-        };
-        let plan = placement_state.plan_fresh_openings(HashMap::from([(test_source, num_shards)]));
-        Some(plan.into_iter().map(|item| item.target_node_id).collect())
     }
 
     /// Sends a retain shard request to the given list of ingesters.
@@ -422,7 +501,7 @@ impl IngestController {
         let mut get_or_create_open_shards_successes = Vec::with_capacity(num_subrequests);
         let mut get_or_create_open_shards_failures = Vec::new();
 
-        let mut num_shards_to_open_by_source = HashMap::new();
+        let mut num_shards_to_open_by_source = SourceShardCount::new();
 
         let unavailable_ingesters: FnvHashSet<NodeId> = get_open_shards_request
             .unavailable_ingesters
@@ -463,7 +542,7 @@ impl IngestController {
 
         if let Err(metastore_error) = self
             .try_open_shards(
-                num_shards_to_open_by_source,
+                ShardPlacement::Balanced(num_shards_to_open_by_source),
                 model,
                 &unavailable_ingesters,
                 progress,
@@ -603,22 +682,20 @@ impl IngestController {
             return Ok(());
         }
         let new_num_open_shards = shard_stats.num_open_shards + num_shards_to_open;
-        let num_shards_to_open_by_source: HashMap<SourceUid, usize> =
+        let num_shards_to_open_by_source: SourceShardCount =
             HashMap::from_iter([(source_uid.clone(), num_shards_to_open)]);
-        let num_opened_shards_by_source_result = self
+        let try_open_shards_result = self
             .try_open_shards(
-                num_shards_to_open_by_source,
+                ShardPlacement::Balanced(num_shards_to_open_by_source),
                 model,
                 &Default::default(),
                 progress,
             )
             .await;
 
-        match num_opened_shards_by_source_result {
-            Ok(num_opened_shards_by_source) => {
-                assert!(num_opened_shards_by_source.len() <= 1);
-
-                if num_opened_shards_by_source.is_empty() {
+        match try_open_shards_result {
+            Ok(opened_shards) => {
+                if opened_shards.is_empty() {
                     // We did not manage to create the shard.
                     // We can release our permit.
                     model.release_scaling_permits(&source_uid, ScalingMode::Up(num_shards_to_open));
@@ -651,51 +728,112 @@ impl IngestController {
         }
     }
 
-    /// Opens fresh shards using the same projected load/source geography used by rebalance.
+    /// Try to open shards given the counts by source and optional requested zones.
     async fn try_open_shards(
         &mut self,
-        num_shards_by_source: HashMap<SourceUid, usize>,
+        placement: ShardPlacement,
         model: &mut ControlPlaneModel,
         unavailable_ingesters: &FnvHashSet<NodeId>,
         progress: &Progress,
-    ) -> MetastoreResult<HashMap<SourceUid, usize>> {
-        let total: usize = num_shards_by_source.values().sum();
-        let (mut placement_state, _pending_replacements) =
-            PlacementState::from_model(&self.ingester_pool, unavailable_ingesters, model);
-        let plan = placement_state.plan_fresh_openings(num_shards_by_source);
-        if plan.is_empty() && total > 0 {
-            warn!("failed to open {total} shards: no ingesters available");
+    ) -> MetastoreResult<HashMap<Option<Zone>, SourceShardCount>> {
+        let eligible_ingesters =
+            eligible_ingesters(&self.ingester_pool, unavailable_ingesters, model);
+        if eligible_ingesters.is_empty() {
+            warn!("failed to open shards: no ingesters available");
+            return Ok(HashMap::new());
         }
-        let successful_items = self.open_planned_shards(plan, model, progress).await?;
-        let mut num_opened_shards_by_source: HashMap<SourceUid, usize> = HashMap::new();
-        for item in successful_items {
-            *num_opened_shards_by_source
-                .entry(item.source_uid)
-                .or_default() += 1;
-        }
-        Ok(num_opened_shards_by_source)
+        let num_shards_by_source_by_zone = match placement {
+            ShardPlacement::Balanced(num_shards_by_source) => {
+                group_shards_by_zone(num_shards_by_source, &eligible_ingesters)
+            }
+            ShardPlacement::Zoned(num_shards_by_source_by_zone) => num_shards_by_source_by_zone,
+        };
+        self.open_shards(num_shards_by_source_by_zone, &eligible_ingesters, model, progress)
+            .await
     }
 
-    /// Initializes and records one flat exact-target plan. IDs always refer to the original plan
-    /// vector, including after partial or out-of-order init success.
-    async fn open_planned_shards(
+    /// Iterates the per-zone groups, calling [`Self::try_open_shards_by_zone`] for each. The
+    /// per-AZ structure is preserved in the result so callers can match opens back to
+    /// their originating (source, AZ) bucket.
+    async fn open_shards(
         &mut self,
-        plan: Vec<PlannedOpen>,
+        num_shards_by_source_by_zone: HashMap<Option<Zone>, SourceShardCount>,
+        eligible_ingesters: &[EligibleIngester],
         model: &mut ControlPlaneModel,
         progress: &Progress,
-    ) -> MetastoreResult<Vec<PlannedOpen>> {
-        if plan.is_empty() {
-            return Ok(Vec::new());
+    ) -> MetastoreResult<HashMap<Option<Zone>, SourceShardCount>> {
+        let mut opened_by_zone: HashMap<Option<Zone>, SourceShardCount> =
+            HashMap::new();
+        for (requested_zone, num_shards_by_source) in num_shards_by_source_by_zone {
+            let opened = self
+                .try_open_shards_by_zone(
+                    num_shards_by_source,
+                    requested_zone.clone(),
+                    eligible_ingesters,
+                    model,
+                    progress,
+                )
+                .await?;
+            if !opened.is_empty() {
+                opened_by_zone.insert(requested_zone, opened);
+            }
         }
-        assert!(u32::try_from(plan.len()).is_ok());
-        let mut init_shard_subrequests = Vec::with_capacity(plan.len());
-        for (subrequest_id, item) in plan.iter().enumerate() {
+        Ok(opened_by_zone)
+    }
+
+    /// Attempts to open shards for different sources
+    /// The values in `num_shards_to_open_by_source` specify how many shards to open for each
+    /// source.
+    ///
+    /// This function returns the list of sources for which `try_open_shards` was successful.
+    ///
+    /// As long as no metastore error is returned this function leaves the control plane model
+    /// in sync with the metastore.
+    ///
+    /// Also, this function only updates the control plane model and the metastore after
+    /// having successfully initialized a shard (and possibly its replica) on the ingester.
+    ///
+    /// This function can be partially successful: if init_shards was unsuccessful for some shard,
+    /// then the successfully initialized shard will still be record in the metastore/control
+    /// plane model.
+    ///
+    /// The number of successfully open shards is returned.
+    async fn try_open_shards_by_zone(
+        &mut self,
+        num_shards_to_open_by_source: SourceShardCount,
+        requested_zone: Option<Zone>,
+        eligible_ingesters: &[EligibleIngester],
+        model: &mut ControlPlaneModel,
+        progress: &Progress,
+    ) -> MetastoreResult<SourceShardCount> {
+        let num_shards_to_open = total_shards(&num_shards_to_open_by_source);
+
+        if num_shards_to_open == 0 {
+            return Ok(HashMap::new());
+        }
+        let Some(ingester_ids) = allocate_shards(
+            eligible_ingesters,
+            requested_zone,
+            num_shards_to_open,
+        ) else {
+            return Ok(HashMap::new());
+        };
+        let source_uids_with_multiplicity = num_shards_to_open_by_source
+            .iter()
+            .flat_map(|(source_uid, &num_shards)| std::iter::repeat_n(source_uid, num_shards));
+
+        let mut init_shard_subrequests: Vec<InitShardSubrequest> = Vec::new();
+
+        for (subrequest_id, (source_uid, ingester_id)) in
+            source_uids_with_multiplicity.zip(ingester_ids).enumerate()
+        {
             let shard_id = ShardId::from(Ulid::new());
+
             let index_metadata = model
-                .index_metadata(&item.source_uid.index_uid)
+                .index_metadata(&source_uid.index_uid)
                 .expect("index should exist");
             let has_transform = model
-                .source_metadata(&item.source_uid)
+                .source_metadata(source_uid)
                 .expect("source should exist")
                 .transform_config
                 .is_some();
@@ -706,80 +844,42 @@ impl IngestController {
             let doc_mapping_json = serde_utils::to_json_str(doc_mapping)?;
 
             let shard = Shard {
-                index_uid: Some(item.source_uid.index_uid.clone()),
-                source_id: item.source_uid.source_id.clone(),
+                index_uid: Some(source_uid.index_uid.clone()),
+                source_id: source_uid.source_id.clone(),
                 shard_id: Some(shard_id),
-                ingester_id: item.target_node_id.to_string(),
+                ingester_id: ingester_id.to_string(),
                 shard_state: ShardState::Open as i32,
                 doc_mapping_uid: Some(doc_mapping_uid),
                 publish_position_inclusive: Some(Position::Beginning),
                 publish_token: None,
                 update_timestamp: 0, // assigned later by the metastore
             };
-            init_shard_subrequests.push(InitShardSubrequest {
+            let init_shard_subrequest = InitShardSubrequest {
                 subrequest_id: subrequest_id as u32,
                 shard: Some(shard),
                 doc_mapping_json,
                 validate_docs,
-            });
+            };
+            init_shard_subrequests.push(init_shard_subrequest);
         }
 
+        // Let's first attempt to initialize these shards.
         let init_shards_response = self.init_shards(init_shard_subrequests, progress).await;
-        let mut seen_init_ids = HashSet::new();
-        for success in &init_shards_response.successes {
-            let item = plan.get(success.subrequest_id as usize).ok_or_else(|| {
-                placement_protocol_error(format!(
-                    "init_shards returned unknown subrequest ID {}",
-                    success.subrequest_id
-                ))
-            })?;
-            if !seen_init_ids.insert(success.subrequest_id) {
-                return Err(placement_protocol_error(format!(
-                    "init_shards returned duplicate subrequest ID {}",
-                    success.subrequest_id
-                )));
-            }
-            let shard = success.shard();
-            if shard.source_uid() != item.source_uid
-                || shard.ingester_id != item.target_node_id.as_str()
-            {
-                return Err(placement_protocol_error(format!(
-                    "init_shards changed exact plan item {}",
-                    success.subrequest_id
-                )));
-            }
-        }
-        for failure in &init_shards_response.failures {
-            if plan.get(failure.subrequest_id as usize).is_none() {
-                return Err(placement_protocol_error(format!(
-                    "init_shards returned unknown failure ID {}",
-                    failure.subrequest_id
-                )));
-            }
-            if !seen_init_ids.insert(failure.subrequest_id) {
-                return Err(placement_protocol_error(format!(
-                    "init_shards returned duplicate result ID {}",
-                    failure.subrequest_id
-                )));
-            }
-        }
-        let successful_init_ids: HashSet<u32> = init_shards_response
-            .successes
-            .iter()
-            .map(|success| success.subrequest_id)
-            .collect();
+
         let open_shard_subrequests = init_shards_response
             .successes
             .into_iter()
-            .map(|success| {
-                let shard = success.shard();
+            .map(|init_shard_success| {
+                let shard = init_shard_success.shard();
+
                 OpenShardSubrequest {
-                    subrequest_id: success.subrequest_id,
+                    subrequest_id: init_shard_success.subrequest_id,
                     index_uid: shard.index_uid.clone(),
                     source_id: shard.source_id.clone(),
                     shard_id: shard.shard_id.clone(),
                     ingester_id: shard.ingester_id.clone(),
                     doc_mapping_uid: shard.doc_mapping_uid,
+                    // Shards are acquired by the ingest sources
                     publish_token: None,
                 }
             })
@@ -792,39 +892,15 @@ impl IngestController {
                 model,
             ))
             .await?;
-        let mut seen_metastore_ids = HashSet::new();
-        let mut successful_items = Vec::new();
-        for subresponse in open_shards_response.subresponses {
-            if !successful_init_ids.contains(&subresponse.subrequest_id) {
-                return Err(placement_protocol_error(format!(
-                    "metastore returned unknown subrequest ID {}",
-                    subresponse.subrequest_id
-                )));
-            }
-            if !seen_metastore_ids.insert(subresponse.subrequest_id) {
-                return Err(placement_protocol_error(format!(
-                    "metastore returned duplicate subrequest ID {}",
-                    subresponse.subrequest_id
-                )));
-            }
-            let item = &plan[subresponse.subrequest_id as usize];
-            let Some(open_shard) = subresponse.open_shard.as_ref() else {
-                return Err(placement_protocol_error(format!(
-                    "metastore omitted shard for subrequest ID {}",
-                    subresponse.subrequest_id
-                )));
-            };
-            if open_shard.source_uid() != item.source_uid
-                || open_shard.ingester_id != item.target_node_id.as_str()
-            {
-                return Err(placement_protocol_error(format!(
-                    "metastore changed exact plan item {}",
-                    subresponse.subrequest_id
-                )));
-            }
-            successful_items.push(item.clone());
+
+        let mut num_opened_shards_by_source: SourceShardCount = HashMap::new();
+
+        for open_shard_subresponse in open_shards_response.subresponses {
+            let source_uid = open_shard_subresponse.open_shard().source_uid();
+            *num_opened_shards_by_source.entry(source_uid).or_default() += 1;
         }
-        Ok(successful_items)
+
+        Ok(num_opened_shards_by_source)
     }
 
     /// Attempts to decrease the number of shards. This operation is rate limited to avoid closing
@@ -983,33 +1059,71 @@ impl IngestController {
         };
         self.stats.num_rebalance_shards_ops += 1;
 
-        let plan = self.compute_rebalance_plan(model);
-        REBALANCE_SHARDS.set(plan.len() as f64);
-        if plan.is_empty() {
+        let shards_to_rebalance: Vec<Shard> = self.compute_shards_to_rebalance(model);
+
+        REBALANCE_SHARDS.set(shards_to_rebalance.len() as f64);
+
+        if shards_to_rebalance.is_empty() {
             debug!("skipping rebalance: no shards to rebalance");
             return Ok(0);
         }
-        let successful_items = self
-            .open_planned_shards(plan, model, progress)
+        let mut shards_by_zone: HashMap<Option<Zone>, SourceShardCount> = HashMap::new();
+        let mut predecessors_by_zone: HashMap<Option<Zone>, HashMap<SourceUid, Vec<Shard>>> =
+            HashMap::new();
+        for shard in shards_to_rebalance {
+            let zone = self
+                .ingester_pool
+                .get(shard.ingester_id.as_str())
+                .and_then(|ingester| ingester.availability_zone);
+            let source_uid = shard.source_uid();
+            *shards_by_zone
+                .entry(zone.clone())
+                .or_default()
+                .entry(source_uid.clone())
+                .or_default() += 1;
+            predecessors_by_zone
+                .entry(zone)
+                .or_default()
+                .entry(source_uid)
+                .or_default()
+                .push(shard);
+        }
+
+        let opened_by_zone = self
+            .try_open_shards(
+                ShardPlacement::Zoned(shards_by_zone),
+                model,
+                &FnvHashSet::default(),
+                progress,
+            )
             .await
             .inspect_err(|error| {
                 error!(%error, "failed to open shards during rebalance");
                 REBALANCE_SHARDS.set(0.0);
             })?;
-        let num_opened_shards = successful_items.len();
-        let mut opened_source_uids = HashSet::new();
-        let mut shards_to_close = Vec::with_capacity(num_opened_shards);
-        for item in successful_items {
-            opened_source_uids.insert(item.source_uid);
-            let predecessor = item
-                .predecessor
-                .expect("every rebalance plan item must retain its predecessor");
-            shards_to_close.push(predecessor);
+
+        let num_opened_shards: usize = opened_by_zone.values().map(total_shards).sum();
+
+        let mut shards_to_close: Vec<Shard> = Vec::new();
+        for (zone, predecessors_by_source) in predecessors_by_zone {
+            for (source_uid, predecessors) in predecessors_by_source {
+                let num_opened = opened_by_zone
+                    .get(&zone)
+                    .and_then(|opened_by_source| opened_by_source.get(&source_uid))
+                    .copied()
+                    .unwrap_or(0);
+                let num_to_close = num_opened.min(predecessors.len());
+                shards_to_close.extend(predecessors.into_iter().take(num_to_close));
+            }
         }
 
         REBALANCE_SHARDS.set(num_opened_shards as f64);
 
-        for source_uid in &opened_source_uids {
+        for source_uid in opened_by_zone
+            .values()
+            .flat_map(|opened_by_source| opened_by_source.keys())
+            .unique()
+        {
             // We temporarily disable the ability the scale down the number of shards for
             // the source to avoid closing the shards we just opened.
             model.drain_scaling_permits(source_uid, ScalingMode::Down);
@@ -1041,38 +1155,94 @@ impl IngestController {
         Ok(num_opened_shards)
     }
 
-    /// Plans exact predecessor-to-target transitions from a single projected snapshot.
-    fn compute_rebalance_plan(&self, model: &ControlPlaneModel) -> Vec<PlannedOpen> {
-        let (mut placement_state, pending_replacements) =
-            PlacementState::from_model(&self.ingester_pool, &FnvHashSet::default(), model);
-        let num_ready_shards: usize = placement_state
-            .nodes
-            .iter()
-            .map(|node| node.projected_num_open_shards)
-            .sum();
-        let num_ready_ingesters = placement_state.nodes.len();
-        let num_retiring_shards = pending_replacements.len();
-        let plan = placement_state.plan_rebalance(pending_replacements);
-        if plan.is_empty() {
+    /// Computes shards that need to be rebalanced.
+    ///
+    /// This function identifies which shards should be moved to achieve a balance across available
+    /// ingesters.
+    /// It does not mutate any state. It just identifies the list of shards
+    /// that need to be rebalanced.
+    ///
+    /// Unfortunately, we cannot move shards that are on unavailable ingesters.
+    /// The closing operation can only be done by the ingester of that shard.
+    /// For these reason, we exclude these shards from the rebalance process.
+    fn compute_shards_to_rebalance(&self, model: &ControlPlaneModel) -> Vec<Shard> {
+        let mut shards_by_ready_ingester_id: HashMap<NodeId, Vec<&Shard>> = HashMap::new();
+        let mut retiring_ingesters: HashSet<NodeId> = HashSet::new();
+
+        for (ingester_id, ingester) in self.ingester_pool.keys_values() {
+            if ingester.status.is_ready() {
+                shards_by_ready_ingester_id.insert(ingester_id, Vec::new());
+            } else if ingester.status == IngesterStatus::Retiring {
+                retiring_ingesters.insert(ingester_id);
+            }
+        }
+
+        let mut shards_to_rebalance: Vec<Shard> = Vec::new();
+        let mut num_ready_shards: usize = 0;
+
+        for shard in model.all_shards() {
+            if !shard.is_open() {
+                continue;
+            }
+            if let Some(shards) = shards_by_ready_ingester_id.get_mut(shard.ingester_id.as_str()) {
+                // Shards on ready ingesters participate in the balancing logic.
+                num_ready_shards += 1;
+                shards.push(&shard.shard);
+            } else if retiring_ingesters.contains(shard.ingester_id.as_str()) {
+                // All open shards on retiring ingesters must be rebalanced.
+                shards_to_rebalance.push(shard.shard.clone());
+            }
+        }
+
+        let num_retiring_shards = shards_to_rebalance.len();
+        let num_ready_ingesters = shards_by_ready_ingester_id.len();
+
+        let mut rng = rng();
+        let mut shuffled_open_shards_by_ingester: Vec<Vec<&Shard>> = shards_by_ready_ingester_id
+            .into_values()
+            .map(|mut shards| {
+                shards.shuffle(&mut rng);
+                shards
+            })
+            .collect();
+
+        // This is more of a loop-loop, but since we know it should exit before
+        // `num_ready_shards`, we defensively use a for-loop.
+        for _ in 0..num_ready_shards {
+            let MinMaxResult::MinMax(min_shards, max_shards) = shuffled_open_shards_by_ingester
+                .iter_mut()
+                .minmax_by_key(|shards| shards.len())
+            else {
+                // There are less than 2 ingesters.
+                // Nothing to do here.
+                break;
+            };
+
+            // We leave a tolerance of 1/10 between the min and max number of shards per ingester
+            const TOLERANCE_INV_RATIO: usize = 10;
+            if max_shards.len()
+                < min_shards.len() + min_shards.len().div_ceil(TOLERANCE_INV_RATIO).max(2)
+            {
+                break;
+            }
+
+            let shard = max_shards.pop().expect("shards should not be empty");
+            shards_to_rebalance.push(shard.clone());
+            min_shards.push(shard);
+        }
+
+        if shards_to_rebalance.is_empty() {
             debug!("no shards to rebalance");
         } else {
             info!(
                 num_ready_shards,
                 num_ready_ingesters,
                 num_retiring_shards,
-                num_shards_to_rebalance = plan.len(),
+                num_shards_to_rebalance = shards_to_rebalance.len(),
                 "rebalancing shards"
             );
         }
-        plan
-    }
-
-    #[cfg(test)]
-    fn compute_shards_to_rebalance(&self, model: &ControlPlaneModel) -> Vec<Shard> {
-        self.compute_rebalance_plan(model)
-            .into_iter()
-            .filter_map(|item| item.predecessor)
-            .collect()
+        shards_to_rebalance
     }
 
     /// Attempts to close the list of shards passed as argument.
@@ -1252,7 +1422,7 @@ mod tests {
                 assert_eq!(request.subrequests[0].doc_mapping_uid(), doc_mapping_uid_1);
 
                 let subresponses = vec![metastore::OpenShardSubresponse {
-                    subrequest_id: request.subrequests[0].subrequest_id,
+                    subrequest_id: 1,
                     open_shard: Some(Shard {
                         index_uid: index_uid_1.clone().into(),
                         source_id: source_id.to_string(),
@@ -2050,7 +2220,7 @@ mod tests {
             NodeId::from_str("test-ingester-1"),
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester)),
         );
-        let num_shards_to_open_by_source: HashMap<SourceUid, usize> =
+        let num_shards_to_open_by_source: SourceShardCount =
             HashMap::from_iter([(source_uid.clone(), 1)]);
         let unavailable_ingesters = FnvHashSet::default();
         let progress = Progress::default();
@@ -3294,127 +3464,6 @@ mod tests {
         assert_eq!(controller.rebalance_semaphore.available_permits(), 1);
     }
 
-    #[tokio::test]
-    async fn test_exact_plan_correlation_survives_partial_and_out_of_order_success() {
-        let index_uid = IndexUid::for_test("exact-plan", 0);
-        let mut index_metadata = IndexMetadata::for_test("exact-plan", "ram://indexes/exact-plan");
-        for source_id in ["source-0", "source-1", "source-2"] {
-            index_metadata.sources.insert(
-                source_id.to_string(),
-                SourceConfig::for_test(source_id, quickwit_config::SourceParams::void()),
-            );
-        }
-        let mut model = ControlPlaneModel::default();
-        model.add_index(index_metadata);
-
-        let mut mock_metastore = MockMetastoreService::new();
-        mock_metastore
-            .expect_open_shards()
-            .once()
-            .returning(|request| {
-                let mut by_id: HashMap<u32, OpenShardSubrequest> = request
-                    .subrequests
-                    .into_iter()
-                    .map(|subrequest| (subrequest.subrequest_id, subrequest))
-                    .collect();
-                assert_eq!(by_id.keys().copied().sorted().collect_vec(), vec![0, 2]);
-                let mut response_for = |subrequest_id| {
-                    let subrequest = by_id.remove(&subrequest_id).unwrap();
-                    OpenShardSubresponse {
-                        subrequest_id,
-                        open_shard: Some(Shard {
-                            index_uid: subrequest.index_uid,
-                            source_id: subrequest.source_id,
-                            shard_id: subrequest.shard_id,
-                            ingester_id: subrequest.ingester_id,
-                            shard_state: ShardState::Open as i32,
-                            doc_mapping_uid: subrequest.doc_mapping_uid,
-                            ..Default::default()
-                        }),
-                    }
-                };
-                // Deliberately return metastore successes in the reverse of their original plan
-                // order.
-                Ok(OpenShardsResponse {
-                    subresponses: vec![response_for(2), response_for(0)],
-                })
-            });
-        let ingester_pool = IngesterPool::default();
-        for (subrequest_id, succeeds) in [(0, true), (1, false), (2, true)] {
-            let mut mock_ingester = MockIngesterService::new();
-            mock_ingester
-                .expect_init_shards()
-                .once()
-                .returning(move |request| {
-                    let subrequest = request.subrequests.into_iter().next().unwrap();
-                    assert_eq!(subrequest.subrequest_id, subrequest_id);
-                    let shard = subrequest.shard.unwrap();
-                    if succeeds {
-                        Ok(InitShardsResponse {
-                            successes: vec![InitShardSuccess {
-                                subrequest_id,
-                                shard: Some(shard),
-                            }],
-                            failures: Vec::new(),
-                        })
-                    } else {
-                        Ok(InitShardsResponse {
-                            successes: Vec::new(),
-                            failures: vec![InitShardFailure {
-                                subrequest_id,
-                                index_uid: shard.index_uid,
-                                source_id: shard.source_id,
-                                shard_id: shard.shard_id,
-                            }],
-                        })
-                    }
-                });
-            ingester_pool.insert(
-                NodeId::from_str(&format!("target-{subrequest_id}")),
-                IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(
-                    mock_ingester,
-                )),
-            );
-        }
-        let mut controller = IngestController::new(
-            MetastoreServiceClient::from_mock(mock_metastore),
-            ingester_pool,
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
-            1.001,
-        );
-        let plan: Vec<PlannedOpen> = (0..3)
-            .map(|subrequest_id| PlannedOpen {
-                source_uid: SourceUid {
-                    index_uid: index_uid.clone(),
-                    source_id: format!("source-{subrequest_id}"),
-                },
-                target_node_id: NodeId::from_str(&format!("target-{subrequest_id}")),
-                predecessor: Some(Shard {
-                    index_uid: Some(index_uid.clone()),
-                    source_id: format!("source-{subrequest_id}"),
-                    shard_id: Some(ShardId::from(100 + subrequest_id as u64)),
-                    ingester_id: format!("donor-{subrequest_id}"),
-                    shard_state: ShardState::Open as i32,
-                    ..Default::default()
-                }),
-            })
-            .collect();
-
-        let successful_items = controller
-            .open_planned_shards(plan, &mut model, &Progress::default())
-            .await
-            .unwrap();
-        let successful_predecessors: Vec<ShardId> = successful_items
-            .into_iter()
-            .map(|item| item.predecessor.unwrap().shard_id().clone())
-            .collect();
-        assert_eq!(
-            successful_predecessors,
-            vec![ShardId::from(102), ShardId::from(100)]
-        );
-        assert_eq!(model.all_shards().count(), 2);
-    }
-
     // #[track_caller]
     fn assert_allocate_shards_balances_load(
         num_shards_by_ingester_id: &HashMap<NodeId, usize>,
@@ -3631,21 +3680,12 @@ mod tests {
         );
         let shards_to_rebalance = controller.compute_shards_to_rebalance(&model);
 
-        // All shards on retiring ingesters must be rebalanced when there is a Ready destination.
-        // With no Ready node, opening and closing nothing is the required safe behavior.
+        // All shards on retiring ingesters must be rebalanced.
         let num_retiring_shards_to_rebalance = shards_to_rebalance
             .iter()
             .filter(|shard| shard.ingester_id.starts_with("retiring-"))
             .count();
-        let expected_retiring_replacements = if ready_ids.is_empty() {
-            0
-        } else {
-            num_retiring_shards
-        };
-        assert_eq!(
-            num_retiring_shards_to_rebalance,
-            expected_retiring_replacements
-        );
+        assert_eq!(num_retiring_shards_to_rebalance, num_retiring_shards);
 
         let source_uid = SourceUid {
             index_uid: index_uid.clone(),
