@@ -35,7 +35,7 @@ use quickwit_proto::indexing::{
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::types::NodeId;
 use scheduling::{
-    Eligibility, IndexerInfo, SourceToSchedule, SourceToScheduleType, is_shard_nearby,
+    Eligibility, IndexerInfo, SourceToSchedule, SourceToScheduleType, is_shard_in_same_zone,
 };
 use serde::Serialize;
 use tracing::{debug, info, warn};
@@ -662,7 +662,7 @@ fn get_shard_locality_metrics(
                     .contains(&indexer)
                 {
                     num_local_shards += 1;
-                } else if is_shard_nearby(indexer, shard_id, shard_locations, indexer_infos) {
+                } else if is_shard_in_same_zone(indexer, shard_id, shard_locations, indexer_infos) {
                     num_nearby_shards += 1;
                 } else {
                     num_remote_shards += 1;

@@ -547,7 +547,7 @@ fn shard_availability_zone<'a>(
     indexer_availability_zone(hosting_node_id, indexer_infos)
 }
 
-pub(crate) fn is_shard_nearby(
+pub(crate) fn is_shard_in_same_zone(
     indexer: &NodeId,
     shard_id: &ShardId,
     shard_locations: &ShardLocations,
@@ -558,7 +558,7 @@ pub(crate) fn is_shard_nearby(
         && availability_zone == indexer_availability_zone(indexer, indexer_infos)
 }
 
-fn find_nearby_indexer(
+fn find_same_zone_indexer(
     shard_id: &ShardId,
     remaining_num_shards_per_node: &HashMap<NodeId, NonZeroU32>,
     shard_locations: &ShardLocations,
@@ -566,7 +566,7 @@ fn find_nearby_indexer(
 ) -> Option<NodeId> {
     remaining_num_shards_per_node
         .iter()
-        .filter(|(node_id, _)| is_shard_nearby(node_id, shard_id, shard_locations, indexer_infos))
+        .filter(|(node_id, _)| is_shard_in_same_zone(node_id, shard_id, shard_locations, indexer_infos))
         // Fill up the nearly-full indexers first. Ties break on node id, for determinism.
         .min_by_key(|(node_id, num_remaining_shards)| (**num_remaining_shards, *node_id))
         .map(|(node_id, _)| node_id.clone())
@@ -637,7 +637,7 @@ fn find_indexer_for_shard(
     shard_locations: &ShardLocations,
     indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
 ) -> NodeId {
-    if let Some(indexer) = find_nearby_indexer(
+    if let Some(indexer) = find_same_zone_indexer(
         shard_id,
         remaining_num_shards_per_node,
         shard_locations,
