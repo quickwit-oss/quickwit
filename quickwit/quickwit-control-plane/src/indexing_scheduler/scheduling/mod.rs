@@ -844,6 +844,8 @@ pub fn build_physical_indexing_plan(
         &mut new_physical_plan,
         previous_plan_opt,
         sources,
+        shard_locations,
+        indexer_infos,
         can_optimize_plan,
     );
 
