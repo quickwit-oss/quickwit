@@ -31,7 +31,8 @@ use super::{FoyerSplitRangeCache, SplitRangeCacheKey};
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, OwnedBytes, PutPayload, Storage, StorageError, StorageErrorKind, StorageResult,
+    BulkDeleteError, ListObjectsStream, OwnedBytes, PutPayload, Storage, StorageError,
+    StorageErrorKind, StorageResult,
 };
 
 /// Foyer hybrid-cache entry header size in the 0.22.3 block engine.
@@ -246,6 +247,10 @@ impl Storage for FoyerSplitRangeStorage {
             error: Some(unsupported_operation(paths)),
             ..Default::default()
         })
+    }
+
+    fn list(&self, prefix: &Path) -> ListObjectsStream {
+        self.inner.list(prefix)
     }
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {

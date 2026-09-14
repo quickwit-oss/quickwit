@@ -57,11 +57,18 @@ impl foyer::Code for SplitRangeCacheKey {
     }
 
     fn decode(reader: &mut impl Read) -> foyer::Result<Self> {
-        let uri_len = read_u64(reader)? as usize;
-        let mut uri_bytes = vec![0; uri_len];
-        reader
-            .read_exact(&mut uri_bytes)
+        let uri_len = read_u64(reader)?;
+        let mut uri_bytes = Vec::new();
+        let num_uri_bytes = (&mut *reader)
+            .take(uri_len)
+            .read_to_end(&mut uri_bytes)
             .map_err(foyer::Error::io_error)?;
+        if num_uri_bytes as u64 != uri_len {
+            return Err(foyer::Error::io_error(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "split range cache key ended before its declared object URI length",
+            )));
+        }
         let object_uri = String::from_utf8(uri_bytes).map_err(|error| {
             foyer::Error::new(foyer::ErrorKind::Parse, "object URI is not UTF-8").with_source(error)
         })?;
@@ -123,6 +130,13 @@ mod tests {
         let mut encoded = Vec::new();
         key.encode(&mut encoded).unwrap();
         encoded.pop();
+        let error = SplitRangeCacheKey::decode(&mut encoded.as_slice()).unwrap_err();
+        assert_eq!(error.kind(), foyer::ErrorKind::Io);
+    }
+
+    #[test]
+    fn test_split_range_cache_key_codec_rejects_oversized_uri_length() {
+        let encoded = u64::MAX.to_le_bytes();
         let error = SplitRangeCacheKey::decode(&mut encoded.as_slice()).unwrap_err();
         assert_eq!(error.kind(), foyer::ErrorKind::Io);
     }

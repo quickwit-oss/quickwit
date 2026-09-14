@@ -17,9 +17,12 @@ use std::fmt;
 
 use mixtrics::metrics::{
     BoxedCounter, BoxedCounterVec, BoxedGauge, BoxedGaugeVec, BoxedHistogram, BoxedHistogramVec,
-    CounterOps, CounterVecOps, GaugeOps, GaugeVecOps, HistogramOps, HistogramVecOps, RegistryOps,
+    Buckets, CounterOps, CounterVecOps, GaugeOps, GaugeVecOps, HistogramOps, HistogramVecOps,
+    RegistryOps,
 };
-use quickwit_metrics::{LazyCounter, label_names, label_values, lazy_counter};
+use quickwit_metrics::{
+    LazyCounter, LazyHistogram, label_names, label_values, lazy_counter, lazy_histogram,
+};
 
 use super::storage::AdmissionBypass;
 
@@ -45,6 +48,65 @@ static FAIL_OPEN_TOTAL: LazyCounter = lazy_counter!(
     name: "split_range_disk_cache_fail_open_total",
     description: "Foyer failures bypassed through lower storage",
     subsystem: "storage",
+);
+
+fn foyer_histogram_buckets(name: &str) -> Option<Vec<f64>> {
+    match name {
+        "foyer_storage_op_duration" | "foyer_storage_disk_io_duration" => {
+            Some(Buckets::exponential(0.000_001, 2.0, 23))
+        }
+        "foyer_storage_inner_op_duration" => Some(Buckets::exponential(0.000_001, 2.0, 25)),
+        "foyer_storage_entry_serde_duration" => Some(Buckets::exponential(0.000_000_01, 2.0, 23)),
+        "foyer_storage_block_engine_buffer_efficiency" => Some(Buckets::linear(0.1, 0.1, 10)),
+        "foyer_storage_block_engine_recover_duration" => Some(Buckets::exponential(0.001, 2.0, 21)),
+        _ => None,
+    }
+}
+
+// The Prometheus recorder reads histogram bucket definitions before Foyer
+// registers its metrics at runtime. Mirror the definitions from Foyer 0.22.3
+// here so the adapter retains Foyer's intended bucket boundaries.
+static _FOYER_STORAGE_OP_DURATION: LazyHistogram = lazy_histogram!(
+    name: "foyer_storage_op_duration",
+    description: "foyer disk cache op durations",
+    system: "",
+    subsystem: "",
+    buckets: foyer_histogram_buckets("foyer_storage_op_duration").unwrap(),
+);
+static _FOYER_STORAGE_INNER_OP_DURATION: LazyHistogram = lazy_histogram!(
+    name: "foyer_storage_inner_op_duration",
+    description: "foyer disk cache inner op durations",
+    system: "",
+    subsystem: "",
+    buckets: foyer_histogram_buckets("foyer_storage_inner_op_duration").unwrap(),
+);
+static _FOYER_STORAGE_DISK_IO_DURATION: LazyHistogram = lazy_histogram!(
+    name: "foyer_storage_disk_io_duration",
+    description: "foyer disk cache disk io duration",
+    system: "",
+    subsystem: "",
+    buckets: foyer_histogram_buckets("foyer_storage_disk_io_duration").unwrap(),
+);
+static _FOYER_STORAGE_ENTRY_SERDE_DURATION: LazyHistogram = lazy_histogram!(
+    name: "foyer_storage_entry_serde_duration",
+    description: "foyer disk cache entry serde durations",
+    system: "",
+    subsystem: "",
+    buckets: foyer_histogram_buckets("foyer_storage_entry_serde_duration").unwrap(),
+);
+static _FOYER_STORAGE_BLOCK_ENGINE_BUFFER_EFFICIENCY: LazyHistogram = lazy_histogram!(
+    name: "foyer_storage_block_engine_buffer_efficiency",
+    description: "foyer large object disk cache buffer efficiency",
+    system: "",
+    subsystem: "",
+    buckets: foyer_histogram_buckets("foyer_storage_block_engine_buffer_efficiency").unwrap(),
+);
+static _FOYER_STORAGE_BLOCK_ENGINE_RECOVER_DURATION: LazyHistogram = lazy_histogram!(
+    name: "foyer_storage_block_engine_recover_duration",
+    description: "foyer large object disk cache recover duration",
+    system: "",
+    subsystem: "",
+    buckets: foyer_histogram_buckets("foyer_storage_block_engine_recover_duration").unwrap(),
 );
 
 pub(crate) static REQUESTS_MEMORY: LazyCounter = lazy_counter!(
@@ -168,8 +230,13 @@ impl RegistryOps for QuickwitMetricsRegistry {
         name: Cow<'static, str>,
         desc: Cow<'static, str>,
         label_names: &'static [&'static str],
-        _buckets: Vec<f64>,
+        buckets: Vec<f64>,
     ) -> BoxedHistogramVec {
+        debug_assert_eq!(
+            foyer_histogram_buckets(&name),
+            Some(buckets),
+            "Foyer histogram bucket definitions have changed"
+        );
         self.register_histogram_vec(name, desc, label_names)
     }
 }
@@ -285,11 +352,42 @@ fn labeled(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use ::metrics::with_local_recorder;
     use metrics_util::debugging::{DebugValue, DebuggingRecorder};
-    use mixtrics::metrics::RegistryOps;
+    use mixtrics::metrics::{Buckets, RegistryOps};
 
     use super::*;
+
+    #[test]
+    fn test_foyer_histogram_buckets_are_registered_with_exporter() {
+        let configured_buckets: HashMap<_, _> = quickwit_metrics::histogram_buckets().collect();
+        assert_eq!(
+            configured_buckets["foyer_storage_op_duration"],
+            Buckets::exponential(0.000_001, 2.0, 23)
+        );
+        assert_eq!(
+            configured_buckets["foyer_storage_inner_op_duration"],
+            Buckets::exponential(0.000_001, 2.0, 25)
+        );
+        assert_eq!(
+            configured_buckets["foyer_storage_disk_io_duration"],
+            Buckets::exponential(0.000_001, 2.0, 23)
+        );
+        assert_eq!(
+            configured_buckets["foyer_storage_entry_serde_duration"],
+            Buckets::exponential(0.000_000_01, 2.0, 23)
+        );
+        assert_eq!(
+            configured_buckets["foyer_storage_block_engine_buffer_efficiency"],
+            Buckets::linear(0.1, 0.1, 10)
+        );
+        assert_eq!(
+            configured_buckets["foyer_storage_block_engine_recover_duration"],
+            Buckets::exponential(0.001, 2.0, 21)
+        );
+    }
 
     #[test]
     fn test_quickwit_metrics_registry_records_counter_gauge_histogram() {
@@ -315,7 +413,7 @@ mod tests {
                 "foyer_storage_op_duration".into(),
                 "foyer storage op duration".into(),
                 &["name", "op"],
-                vec![0.1, 1.0],
+                foyer_histogram_buckets("foyer_storage_op_duration").unwrap(),
             );
             histograms
                 .histogram(&["split-range-v1".into(), "hit".into()])

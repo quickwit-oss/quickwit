@@ -17,9 +17,10 @@ use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
+use futures::TryStreamExt;
 use quickwit_common::uri::Uri;
 use quickwit_config::SplitRangeCacheWritePolicy;
 use tokio::io::AsyncRead;
@@ -29,8 +30,8 @@ use super::metrics::{ADMISSION_MAX_ENTRY_SIZE, REQUESTS_ERROR, REQUESTS_MEMORY, 
 use super::*;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, OwnedBytes, PutPayload, RamStorageBuilder, Storage, StorageErrorKind,
-    StorageResult, wrap_storage_with_split_range_cache,
+    BulkDeleteError, ListObjectsStream, ObjectMetadata, OwnedBytes, PutPayload, RamStorageBuilder,
+    Storage, StorageErrorKind, StorageResult, wrap_storage_with_split_range_cache,
 };
 
 const SPLIT_PATH: &str = "a.split";
@@ -138,6 +139,17 @@ impl Storage for LowerProbe {
 
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
         self.inner.bulk_delete(paths).await
+    }
+
+    fn list(&self, prefix: &Path) -> ListObjectsStream {
+        assert_eq!(prefix, Path::new(""));
+        Box::pin(futures::stream::once(async {
+            Ok(vec![ObjectMetadata {
+                path: Path::new(SPLIT_PATH).to_owned(),
+                size: ByteSize::b(SPLIT_BYTES.len() as u64),
+                last_modified: SystemTime::UNIX_EPOCH,
+            }])
+        }))
     }
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
@@ -344,6 +356,21 @@ async fn test_get_all_is_not_cached() {
     assert_eq!(fixture.lower_reads(), 0);
     fixture.storage.get_slice(path, 0..5).await.unwrap();
     assert_eq!(fixture.lower_reads(), 1);
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn test_list_is_delegated_to_lower_storage() {
+    let fixture = Fixture::new().await;
+    let object_batches: Vec<_> = fixture
+        .storage
+        .list(Path::new(""))
+        .try_collect()
+        .await
+        .unwrap();
+    assert_eq!(object_batches.len(), 1);
+    assert_eq!(object_batches[0].len(), 1);
+    assert_eq!(object_batches[0][0].path, Path::new(SPLIT_PATH));
     fixture.close().await;
 }
 
