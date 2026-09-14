@@ -14,6 +14,7 @@
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use itertools::Itertools;
 use quickwit_proto::ingest::Shard;
@@ -112,7 +113,7 @@ impl RoutingEntry {
         &self,
         ingester_pool: &IngesterPool,
         unavailable_ingesters: &HashSet<NodeId>,
-        self_availability_zone: &Option<String>,
+        self_availability_zone: &Option<Arc<str>>,
     ) -> Option<&IngesterNode> {
         let (local_ingesters, remote_ingesters): (Vec<&IngesterNode>, Vec<&IngesterNode>) = self
             .nodes
@@ -140,11 +141,11 @@ impl RoutingEntry {
 #[derive(Debug, Default)]
 pub(super) struct RoutingTable {
     table: HashMap<(IndexId, SourceId), RoutingEntry>,
-    self_availability_zone: Option<String>,
+    self_availability_zone: Option<Arc<str>>,
 }
 
 impl RoutingTable {
-    pub fn new(self_availability_zone: Option<String>) -> Self {
+    pub fn new(self_availability_zone: Option<Arc<str>>) -> Self {
         Self {
             self_availability_zone,
             ..Default::default()
@@ -338,7 +339,7 @@ mod tests {
         IngesterPoolEntry {
             client: IngesterServiceClient::mocked(),
             status: IngesterStatus::Ready,
-            availability_zone: availability_zone.map(|s| s.to_string()),
+            availability_zone: availability_zone.map(Arc::from),
         }
     }
 
@@ -600,7 +601,7 @@ mod tests {
 
     #[test]
     fn test_pick_node_prefers_same_az() {
-        let mut table = RoutingTable::new(Some("az-1".to_string()));
+        let mut table = RoutingTable::new(Some(Arc::from("az-1")));
         let pool = IngesterPool::default();
 
         table.apply_capacity_update(
@@ -628,7 +629,7 @@ mod tests {
 
     #[test]
     fn test_pick_node_falls_back_to_cross_az() {
-        let mut table = RoutingTable::new(Some("az-1".to_string()));
+        let mut table = RoutingTable::new(Some(Arc::from("az-1")));
         let pool = IngesterPool::default();
 
         table.apply_capacity_update(
@@ -668,7 +669,7 @@ mod tests {
 
     #[test]
     fn test_pick_node_missing_entry() {
-        let table = RoutingTable::new(Some("az-1".to_string()));
+        let table = RoutingTable::new(Some(Arc::from("az-1")));
         let pool = IngesterPool::default();
 
         assert!(
@@ -768,7 +769,7 @@ mod tests {
 
     #[test]
     fn test_classify_az_locality() {
-        let table = RoutingTable::new(Some("az-1".to_string()));
+        let table = RoutingTable::new(Some(Arc::from("az-1")));
         let pool = IngesterPool::default();
         pool.insert(
             NodeId::from_str("node-local"),

@@ -92,7 +92,7 @@ fn fire_and_forget(
     });
 }
 
-type Zone = String;
+type Zone = Arc<str>;
 
 type SourceShardCount = HashMap<SourceUid, usize>;
 
@@ -119,11 +119,13 @@ fn pick_least_loaded<'a>(
     eligible_ingesters: &'a [EligibleIngester],
     requested_zone: Option<&Zone>,
     rng: &mut ThreadRng,
-) -> Option<&'a EligibleIngester> {
+) -> &'a EligibleIngester {
+    assert!(!eligible_ingesters.is_empty());
     let min_load = eligible_ingesters
         .iter()
         .map(|ingester| ingester.num_open_shards.load(Ordering::Relaxed))
-        .min()?;
+        .min()
+        .expect("There should be at least one eligible ingester");
     let minima: Vec<&EligibleIngester> = eligible_ingesters
         .iter()
         .filter(|ingester| ingester.num_open_shards.load(Ordering::Relaxed) == min_load)
@@ -133,12 +135,12 @@ fn pick_least_loaded<'a>(
         .copied()
         .filter(|ingester| requested_zone.is_some() && ingester.zone.as_ref() == requested_zone)
         .collect();
-    let candidates = if !same_zone_minima.is_empty() {
+    let candidates = if same_zone_minima.len() > 0 {
         same_zone_minima
     } else {
         minima
     };
-    candidates.choose(rng).copied()
+    candidates.choose(rng).expect("Candidates came from the list of eligible ingesters, which is not empty")
 }
 
 fn all_ingesters_advertise_availability_zone(ingesters: &IngesterPool) -> bool {
@@ -187,19 +189,15 @@ fn allocate_shards(
     eligible_ingesters: &[EligibleIngester],
     requested_zone: Option<Zone>,
     num_shards: usize,
-) -> Option<Vec<NodeId>> {
-    if eligible_ingesters.is_empty() {
-        return None;
-    }
+) -> Vec<NodeId> {
     let mut rng = rng();
     let mut ingester_ids = Vec::with_capacity(num_shards);
     for _ in 0..num_shards {
-        let picked = pick_least_loaded(eligible_ingesters, requested_zone.as_ref(), &mut rng)
-            .expect("eligible ingesters non-empty");
+        let picked = pick_least_loaded(eligible_ingesters, requested_zone.as_ref(), &mut rng);
         picked.num_open_shards.fetch_add(1, Ordering::Relaxed);
         ingester_ids.push(picked.node_id.clone());
     }
-    Some(ingester_ids)
+    ingester_ids
 }
 
 fn distribute_shards_across_zones(
@@ -257,29 +255,27 @@ fn match_shards_to_close(
     let mut shards_to_close: Vec<Shard> = Vec::new();
     for (requested_zone, opened_by_source) in opened_by_zone {
         for (source_uid, &num_opened) in opened_by_source {
-            let mut num_matched = 0;
-            for _ in 0..num_opened {
-                let Some(position) = shards_to_rebalance.iter().position(|shard| {
+            for num_matched in 0..num_opened {
+                let Some(position) = shards_to_rebalance.iter().position(|shard|
                     shard.source_uid() == *source_uid
                         && ingester_pool
                             .get(shard.ingester_id.as_str())
                             .and_then(|ingester| ingester.availability_zone)
                             == *requested_zone
-                }) else {
+                ) else {
+                    // This would only happen if the ingester pool changed underneath after shards
+                    // were opened, and is unlikely, but it is possible.
+                    warn!(
+                        index_uid = %source_uid.index_uid,
+                        source_id = %source_uid.source_id,
+                        ?requested_zone,
+                        num_opened,
+                        num_matched,
+                        "could not match every replacement shard to a live predecessor"
+                    );
                     break;
                 };
                 shards_to_close.push(shards_to_rebalance.swap_remove(position));
-                num_matched += 1;
-            }
-            if num_matched < num_opened {
-                warn!(
-                    index_uid = %source_uid.index_uid,
-                    source_id = %source_uid.source_id,
-                    ?requested_zone,
-                    num_opened,
-                    num_matched,
-                    "could not match every replacement shard to a live predecessor"
-                );
             }
         }
     }
@@ -875,11 +871,11 @@ impl IngestController {
         if num_shards_to_open == 0 {
             return Ok(HashMap::new());
         }
-        let Some(ingester_ids) =
-            allocate_shards(eligible_ingesters, requested_zone, num_shards_to_open)
-        else {
-            return Ok(HashMap::new());
-        };
+        // By now, we've asserted that there's at least one eligible ingester. We have to have
+        // something to open a shard on.
+        assert!(!eligible_ingesters.is_empty());
+        let ingester_ids= allocate_shards(eligible_ingesters, requested_zone, num_shards_to_open);
+
         let source_uids_with_multiplicity = num_shards_to_open_by_source
             .iter()
             .flat_map(|(source_uid, &num_shards)| std::iter::repeat_n(source_uid, num_shards));
@@ -1446,7 +1442,7 @@ mod tests {
         IngesterPoolEntry {
             client: IngesterServiceClient::mocked(),
             status,
-            availability_zone: availability_zone.map(str::to_string),
+            availability_zone: availability_zone.map(Arc::from),
         }
     }
 
@@ -1457,7 +1453,7 @@ mod tests {
     ) -> EligibleIngester {
         EligibleIngester {
             node_id: NodeId::from_str(node_id),
-            zone: zone.map(str::to_string),
+            zone: zone.map(Arc::from),
             num_open_shards: AtomicUsize::new(num_open_shards),
         }
     }
@@ -2067,12 +2063,8 @@ mod tests {
         assert_eq!(initial_loads.get("test-ingester-1"), Some(&2));
         assert_eq!(initial_loads.get("test-ingester-3"), Some(&0));
 
-        assert!(allocate_shards(&[], None, 0).is_none());
-        assert_eq!(
-            allocate_shards(&eligible_ingesters, None, 0),
-            Some(Vec::new())
-        );
-        let ingester_ids = allocate_shards(&eligible_ingesters, None, 4).unwrap();
+        assert!(allocate_shards(&eligible_ingesters, None, 0).is_empty());
+        let ingester_ids = allocate_shards(&eligible_ingesters, None, 4);
 
         // Ingester 2 is unavailable. Ingester 1 already has 2 open shards, ingester 3 has none, so
         // shards are allocated to balance the load between ingester 1 and ingester 3: ingester 3
@@ -2453,7 +2445,7 @@ mod tests {
                 IngesterPoolEntry {
                     client: ingester_client.clone(),
                     status: IngesterStatus::Ready,
-                    availability_zone: Some(zone.to_string()),
+                    availability_zone: Some(Arc::from(zone)),
                 },
             );
         }
@@ -2499,7 +2491,7 @@ mod tests {
 
         assert_eq!(opened_by_zone.len(), 3);
         for zone in ["az-a", "az-b", "az-c"] {
-            assert_eq!(opened_by_zone[&Some(zone.to_string())][&source_uid], 1);
+            assert_eq!(opened_by_zone[&Some(Arc::from(zone))][&source_uid], 1);
         }
         let ingester_ids: HashSet<&str> = model
             .all_shards()
@@ -3770,10 +3762,10 @@ mod tests {
         ];
         let opened_by_zone = HashMap::from([
             (
-                Some("az-a".to_string()),
+                Some(Arc::from("az-a")),
                 HashMap::from([(source_uid.clone(), 2)]),
             ),
-            (Some("az-c".to_string()), HashMap::from([(source_uid, 1)])),
+            (Some(Arc::from("az-c")), HashMap::from([(source_uid, 1)])),
         ]);
 
         let mut shards_to_close =
@@ -3798,12 +3790,10 @@ mod tests {
                 eligible_ingester(&format!("ingester-{index}"), None, num_open_shards)
             })
             .collect();
-        let ingester_ids_opt = allocate_shards(&eligible_ingesters, None, num_shards);
         if initial_num_shards.is_empty() {
-            assert!(ingester_ids_opt.is_none());
             return;
         }
-        let ingester_ids = ingester_ids_opt.unwrap();
+        let ingester_ids = allocate_shards(&eligible_ingesters, None, num_shards);
         assert_eq!(ingester_ids.len(), num_shards);
         let mut current_num_shards_by_ingester_id: HashMap<NodeId, usize> = initial_num_shards
             .iter()
@@ -3866,15 +3856,13 @@ mod tests {
     #[test]
     fn test_pick_least_loaded_uses_zone_only_to_break_global_ties() {
         let mut rng = rand::rng();
-        assert!(pick_least_loaded(&[], None, &mut rng).is_none());
-
         let tied_ingesters = vec![
             eligible_ingester("ingester-a", Some("az-a"), 1),
             eligible_ingester("ingester-b", Some("az-b"), 1),
             eligible_ingester("ingester-c", Some("az-c"), 1),
         ];
-        let az_b = "az-b".to_string();
-        let picked = pick_least_loaded(&tied_ingesters, Some(&az_b), &mut rng).unwrap();
+        let az_b = Arc::from("az-b");
+        let picked = pick_least_loaded(&tied_ingesters, Some(&az_b), &mut rng);
         assert_eq!(picked.node_id, "ingester-b");
 
         let uneven_ingesters = vec![
@@ -3882,10 +3870,10 @@ mod tests {
             eligible_ingester("ingester-b", Some("az-b"), 1),
             eligible_ingester("ingester-c", Some("az-c"), 2),
         ];
-        let az_a = "az-a".to_string();
-        let picked = pick_least_loaded(&uneven_ingesters, Some(&az_a), &mut rng).unwrap();
+        let az_a = Arc::from("az-a");
+        let picked = pick_least_loaded(&uneven_ingesters, Some(&az_a), &mut rng);
         assert_eq!(picked.node_id, "ingester-b");
-        let picked = pick_least_loaded(&uneven_ingesters, None, &mut rng).unwrap();
+        let picked = pick_least_loaded(&uneven_ingesters, None, &mut rng);
         assert_eq!(picked.node_id, "ingester-b");
     }
 
@@ -3898,8 +3886,11 @@ mod tests {
             HashMap::from([(None, 5)])
         );
 
-        let zones =
-            HashSet::from_iter(["az-a".to_string(), "az-b".to_string(), "az-c".to_string()]);
+        let zones = HashSet::from_iter([
+            Arc::from("az-a"),
+            Arc::from("az-b"),
+            Arc::from("az-c"),
+        ]);
         for (num_shards, expected_num_zones) in [(2, 2), (3, 3), (8, 3)] {
             let distribution = distribute_shards_across_zones(num_shards, &zones);
             assert_eq!(distribution.len(), expected_num_zones);

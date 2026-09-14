@@ -125,7 +125,7 @@ impl IngestRouter {
         control_plane: ControlPlaneServiceClient,
         ingester_pool: IngesterPool,
         event_broker: EventBroker,
-        self_availability_zone: Option<String>,
+        self_availability_zone: Option<Arc<str>>,
     ) -> Self {
         let state = Arc::new(Mutex::new(RouterState {
             debouncer: GetOrCreateOpenShardsRequestDebouncer::default(),
@@ -647,7 +647,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(Arc::from("test-az")),
         );
         let mut workbench = IngestWorkbench::default();
         let (get_or_create_open_shard_request_opt, rendezvous) = router
@@ -870,7 +870,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(Arc::from("test-az")),
         );
         let ingest_subrequests = vec![
             IngestSubrequest {
@@ -967,7 +967,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(Arc::from("test-az")),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1025,7 +1025,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(Arc::from("test-az")),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1054,7 +1054,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(Arc::from("test-az")),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1110,7 +1110,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(Arc::from("test-az")),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1175,7 +1175,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(Arc::from("test-az")),
         );
         let ingest_subrequests = vec![
             IngestSubrequest {
@@ -1258,7 +1258,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(Arc::from("test-az")),
         );
 
         let index_uid_0: IndexUid = IndexUid::for_test("test-index-0", 0);
@@ -1408,7 +1408,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(Arc::from("test-az")),
         );
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
         {
@@ -1514,7 +1514,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(Arc::from("test-az")),
         );
         let index_uid_0: IndexUid = IndexUid::for_test("test-index-0", 0);
         let index_uid_1: IndexUid = IndexUid::for_test("test-index-1", 0);
@@ -1569,7 +1569,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(Arc::from("test-az")),
         );
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
         {
@@ -1660,7 +1660,7 @@ mod tests {
             ControlPlaneServiceClient::from_mock(MockControlPlaneService::new()),
             ingester_pool.clone(),
             event_broker.clone(),
-            Some("test-az".to_string()),
+            Some(Arc::from("test-az")),
         );
         router.subscribe();
 
@@ -1695,7 +1695,7 @@ mod tests {
             ControlPlaneServiceClient::from_mock(MockControlPlaneService::new()),
             IngesterPool::default(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(Arc::from("test-az")),
         );
         let ingest_subrequests = vec![
             IngestSubrequest {
@@ -1788,7 +1788,7 @@ mod tests {
             ControlPlaneServiceClient::from_mock(MockControlPlaneService::new()),
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(Arc::from("test-az")),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
