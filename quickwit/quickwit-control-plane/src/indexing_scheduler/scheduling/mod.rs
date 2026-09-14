@@ -566,7 +566,9 @@ fn find_same_zone_indexer(
 ) -> Option<NodeId> {
     remaining_num_shards_per_node
         .iter()
-        .filter(|(node_id, _)| is_shard_in_same_zone(node_id, shard_id, shard_locations, indexer_infos))
+        .filter(|(node_id, _)| {
+            is_shard_in_same_zone(node_id, shard_id, shard_locations, indexer_infos)
+        })
         // Fill up the nearly-full indexers first. Ties break on node id, for determinism.
         .min_by_key(|(node_id, num_remaining_shards)| (**num_remaining_shards, *node_id))
         .map(|(node_id, _)| node_id.clone())
