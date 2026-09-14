@@ -1155,7 +1155,7 @@ async fn setup_ingest_v2(
         control_plane.clone(),
         ingester_pool.clone(),
         event_broker.clone(),
-        node_config.availability_zone.clone(),
+        node_config.availability_zone.as_deref().map(Arc::from),
     );
     ingest_router.subscribe();
     setup_ingester_capacity_update_listener(cluster.clone(), event_broker.clone())
@@ -1280,7 +1280,7 @@ fn build_ingester_insert_change(
     let pool_entry = IngesterPoolEntry {
         client: ingester_service,
         status: node.ingester_status,
-        availability_zone: node.availability_zone().map(|az| az.to_string()),
+        availability_zone: node.availability_zone().map(Arc::from),
         generation_id: node.generation_id,
     };
     Change::Insert(node_id, pool_entry)

@@ -34,6 +34,7 @@ mod workbench;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::ops::{Add, AddAssign};
+use std::sync::Arc;
 use std::time::Duration;
 use std::{env, fmt};
 
@@ -70,7 +71,7 @@ pub use self::router::IngestRouter;
 pub struct IngesterPoolEntry {
     pub client: IngesterServiceClient,
     pub status: IngesterStatus,
-    pub availability_zone: Option<String>,
+    pub availability_zone: Option<Arc<str>>,
     pub generation_id: GenerationId,
 }
 
