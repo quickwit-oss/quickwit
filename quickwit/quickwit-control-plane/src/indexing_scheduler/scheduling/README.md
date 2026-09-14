@@ -9,6 +9,11 @@ We also want to observe some interesting properties such as:
 - (C) we want to balance the load between nodes as soon as the load is significatively (>30%) higher than the average (target) load
 - (D) when we are working with the Ingest API source, we prefer to colocate indexers on
   the ingesters holding the data.
+- (E) when enabled, we'd like to try, as much as possible, to keep indexers indexing shards within their own availability
+  zone. Cross-AZ traffic is quite expensive, and is usually used for redundancy. That doesn't apply here, so we try to
+  minimize it.
+- (F) we'd like indexers that are decommissioning to index their own shards, to speed up the decommissioning process,
+  and to reduce plan churn.
 
 # Problem abstraction
 
@@ -45,6 +50,8 @@ In our scheduler, a source simply has:
 
 And indexer has:
 - a maximum total load (that we will need to measure or configure).
+- the availability zone that it's in
+- whether it's eligible to index foreign shards (ready state or not)
 
 The problem is now greatly simplified.
 A solution is a sparse matrix of `(num_indexers, num_sources)` that holds a number of shards to be indexed.
@@ -57,9 +64,9 @@ Note that the constraint (C) is enforced differently depending on the load:
 - shards can be placed freely on nodes up to 30% of their capacity
 - above this threshold, we try to assign shards to indexers so that the total load on each indexer is close to the average load
 
-To express the affinity constraint (D) we could similarly define a matrix of `(num_indexers, num_sources)` with affinity scores and compute a distance with the solution matrix. 
+To express the affinity constraint (D) we could similarly define a matrix of `(num_indexers, num_sources)` with affinity scores and compute a distance with the solution matrix.
 
-The actual cost function we would craft is however not linear, it is the combination of multiple distances like those discribed above.
+The actual cost function we would craft is however not linear, it is the combination of multiple distances like those described above.
 
 # The heuristic
 
@@ -90,11 +97,15 @@ Matrix-wise, note that phase 1 and phase 2 creates a matrix lower or equal to th
 At this point we have reached a solution that fits on the cluster, but we possibly has several missing shards.
 We therefore use a greedy algorithm to allocate these shard. We assign the shards source by source, in the order of decreasing total load.
 
+First, however, we need to prioritize decommissioning indexers. We need to reassign all shards from a decommissioning indexer back to
+that indexer, so it can participate in its own decommissioning. This way, we do not artificially reduce cluster indexing capacity.
+
 We try assigning shards to indexers while trying to respect their virtual capacity. Because of the uneven size of shards and the greedy approach, this problem might not have a solution. In that case we iteratively grow the virtual capacity by 20% until the solution fits.
 
-Shards for each source are placed in two steps:
-- in a first iteration we assign shards that have affinity scores (D)
-- in a second iteration we assign the rest of the shards starting with the node having the highest capacity
+Shards for each source are placed in three steps:
+- in a first iteration, we assign shards that are in the same locality group (aka, availability zone) (E)
+- in a second iteration we assign shards that have affinity scores (D)
+- in a third iteration we assign the rest of the shards starting with the node having the highest capacity
 
 ## Phase 4: Optimization
 
