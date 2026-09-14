@@ -869,6 +869,7 @@ mod tests {
                 enable_cooperative_indexing: false,
                 max_merge_write_throughput: Some(ByteSize::mb(100)),
                 parquet_merge_use_streaming_engine: true,
+                shutdown_drain_timeout: IndexerConfig::default_shutdown_drain_timeout(),
             }
         );
         assert_eq!(
