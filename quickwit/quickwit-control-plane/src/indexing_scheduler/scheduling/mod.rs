@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod optimization;
 #[cfg(test)]
 mod scale_tests;
-mod optimization;
 pub mod scheduling_logic;
 pub mod scheduling_logic_model;
 
@@ -29,14 +29,13 @@ pub use scheduling_logic_model::Eligibility;
 use scheduling_logic_model::{IndexerLocality, IndexerOrd, LocalityGroup, SourceOrd};
 use tracing::{error, warn};
 
+use self::optimization::conditionally_optimize_plan;
+pub(super) use self::optimization::is_plan_eligible_for_optimization;
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::scheduling::scheduling_logic_model::{
     IndexerAssignment, SchedulingProblem, SchedulingSolution,
 };
 use crate::model::ShardLocations;
-
-use self::optimization::conditionally_optimize_plan;
-pub(super) use self::optimization::is_plan_eligible_for_optimization;
 
 /// If we have several pipelines below this threshold we
 /// reduce the number of pipelines.

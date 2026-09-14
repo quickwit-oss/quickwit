@@ -133,9 +133,7 @@ fn select_density_repair(
             })
             .map(|(task_ord, _)| task_ord)
             .collect();
-        task_ords.sort_by_key(|task_ord| {
-            (indexing_tasks[*task_ord].shard_ids.len(), *task_ord)
-        });
+        task_ords.sort_by_key(|task_ord| (indexing_tasks[*task_ord].shard_ids.len(), *task_ord));
         let [donor_task_ord, receiver_task_ord, ..] = task_ords.as_slice() else {
             continue;
         };
@@ -177,10 +175,8 @@ mod tests {
 
     use super::{is_plan_repair_due, is_running_plan_stable, repair_physical_plan_density};
     use crate::indexing_plan::PhysicalIndexingPlan;
-    use crate::indexing_scheduler::{
-        IndexingSchedulerState, MIN_DURATION_BETWEEN_SCHEDULING,
-    };
     use crate::indexing_scheduler::scheduling::{SourceToSchedule, SourceToScheduleType};
+    use crate::indexing_scheduler::{IndexingSchedulerState, MIN_DURATION_BETWEEN_SCHEDULING};
 
     fn source_uid() -> SourceUid {
         SourceUid {
@@ -208,10 +204,7 @@ mod tests {
         let indexer_id = NodeId::from_str("indexer");
         let plan = PhysicalIndexingPlan::with_indexer_ids(std::slice::from_ref(&indexer_id));
         let running_tasks = plan.indexing_tasks_per_indexer().clone();
-        let ready_statuses = FnvHashMap::from_iter([(
-            indexer_id.clone(),
-            IngesterStatus::Ready,
-        )]);
+        let ready_statuses = FnvHashMap::from_iter([(indexer_id.clone(), IngesterStatus::Ready)]);
         let mut state = IndexingSchedulerState::default();
 
         assert!(!is_running_plan_stable(
@@ -234,10 +227,7 @@ mod tests {
             &state
         ));
 
-        let retiring_statuses = FnvHashMap::from_iter([(
-            indexer_id,
-            IngesterStatus::Retiring,
-        )]);
+        let retiring_statuses = FnvHashMap::from_iter([(indexer_id, IngesterStatus::Retiring)]);
         assert!(!is_running_plan_stable(
             &running_tasks,
             &retiring_statuses,
