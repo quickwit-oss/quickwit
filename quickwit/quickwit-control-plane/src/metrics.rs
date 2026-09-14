@@ -254,6 +254,12 @@ pub(crate) static SCHEDULE_TOTAL: LazyCounter = lazy_counter!(
         subsystem: "control_plane",
 );
 
+pub(crate) static LOCALITY_REPAIRS_TOTAL: LazyCounter = lazy_counter!(
+        name: "locality_repairs_total",
+        description: "Number of successful physical-plan locality repairs.",
+        subsystem: "control_plane",
+);
+
 pub(crate) static METASTORE_ERROR_ABORTED: LazyCounter = lazy_counter!(
         name: "metastore_error_aborted",
         description: "Number of aborted metastore transaction (= do not trigger a control plane restart)",
