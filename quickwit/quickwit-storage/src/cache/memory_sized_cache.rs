@@ -22,6 +22,7 @@ use quickwit_config::CacheConfig;
 
 use crate::OwnedBytes;
 use crate::cache::base_cache::{AnyCache, FakeCacheEntry};
+use crate::cache::mem_usage::MemUsage;
 use crate::cache::slice_address::{SliceAddress, SliceAddressKey, SliceAddressRef};
 use crate::metrics::CacheMetrics;
 
@@ -30,7 +31,7 @@ struct CacheState<K: Hash + Eq> {
     virtual_caches: Vec<AnyCache<K, FakeCacheEntry>>,
 }
 
-impl<K: Hash + Eq + Clone + Send + Sync + 'static> CacheState<K> {
+impl<K: Hash + Eq + Clone + MemUsage + Send + Sync + 'static> CacheState<K> {
     fn from_config(cache_config: &CacheConfig, cache_counters: &'static CacheMetrics) -> Self {
         let cache = AnyCache::from_policy_and_capacity(
             cache_config.policy(),
@@ -91,7 +92,7 @@ pub struct MemorySizedCache<K: Hash + Eq = SliceAddress> {
     inner: Mutex<CacheState<K>>,
 }
 
-impl<K: Hash + Eq + Clone + Send + Sync + 'static> MemorySizedCache<K> {
+impl<K: Hash + Eq + Clone + MemUsage + Send + Sync + 'static> MemorySizedCache<K> {
     /// Creates an slice cache with the given capacity.
     pub fn from_config(cache_config: &CacheConfig, cache_counters: &'static CacheMetrics) -> Self {
         MemorySizedCache {
@@ -117,8 +118,9 @@ impl<K: Hash + Eq + Clone + Send + Sync + 'static> MemorySizedCache<K> {
     }
 
     /// Attempt to put the given amount of data in the cache.
-    /// This may fail silently if the owned_bytes slice is larger than the cache
-    /// capacity.
+    ///
+    /// An entry is charged for its key as well as its value, so this may fail silently if the key
+    /// and the owned_bytes slice together are larger than the cache capacity.
     pub fn put(&self, val: K, bytes: OwnedBytes) {
         self.inner.lock().unwrap().put(val, bytes);
     }
@@ -132,8 +134,9 @@ impl MemorySizedCache<SliceAddress> {
     }
 
     /// Attempt to put the given amount of data in the cache.
-    /// This may fail silently if the owned_bytes slice is larger than the cache
-    /// capacity.
+    ///
+    /// An entry is charged for its key as well as its value, so this may fail silently if the key
+    /// and the owned_bytes slice together are larger than the cache capacity.
     pub fn put_slice(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
         let slice_address = SliceAddress { path, byte_range };
         self.put(slice_address, bytes);
@@ -142,19 +145,27 @@ impl MemorySizedCache<SliceAddress> {
 
 #[cfg(test)]
 mod tests {
+    use std::mem::size_of;
+
     use bytesize::ByteSize;
+    use quickwit_config::CachePolicy;
 
     use super::*;
     use crate::cache::base_cache::LRU_MIN_TIME_SINCE_LAST_ACCESS;
     use crate::metrics::CACHE_METRICS_FOR_TESTS;
 
+    /// Memory charged for one of the single-character `String` keys used below: the inline size of
+    /// a `String` plus its one byte of heap. Entries are charged their key on top of their value,
+    /// so capacities in these tests are expressed relative to it.
+    const KEY_COST: usize = size_of::<String>() + 1;
+
     #[tokio::test]
     async fn test_cache_edge_condition() {
         tokio::time::pause();
-        let cache = MemorySizedCache::<String>::from_config(
-            &ByteSize::b(5).into(),
-            &CACHE_METRICS_FOR_TESTS,
-        );
+        // Room for the two first entries ("abc" and "de") and their keys, exactly.
+        let capacity = ByteSize::b((2 * KEY_COST + 5) as u64);
+        let cache =
+            MemorySizedCache::<String>::from_config(&capacity.into(), &CACHE_METRICS_FOR_TESTS);
         {
             let data = OwnedBytes::new(&b"abc"[..]);
             cache.put("3".to_string(), data);
@@ -184,12 +195,66 @@ mod tests {
         }
         tokio::time::advance(LRU_MIN_TIME_SINCE_LAST_ACCESS.mul_f32(1.1f32)).await;
         {
-            let data = OwnedBytes::new(&b"klmnop"[..]);
+            // Large enough that even alone with its key it overflows the whole cache.
+            let data = OwnedBytes::new(vec![0u8; capacity.as_u64() as usize - KEY_COST + 1]);
             cache.put("6".to_string(), data);
             // The entry put should have been dismissed as it is too large for the cache
             assert!(cache.get(&"6".to_string()).is_none());
             // The previous entry should however be remaining.
             assert_eq!(cache.get(&"5".to_string()).unwrap(), &b"fghij"[..]);
+        }
+    }
+
+    #[test]
+    fn test_cache_charges_the_key() {
+        let data = OwnedBytes::new(&b"abc"[..]);
+        // A capacity covering the value alone is not enough: the key is charged too.
+        let value_only_cache = MemorySizedCache::<String>::from_config(
+            &ByteSize::b(data.len() as u64).into(),
+            &CACHE_METRICS_FOR_TESTS,
+        );
+        value_only_cache.put("3".to_string(), data.clone());
+        assert!(value_only_cache.get(&"3".to_string()).is_none());
+
+        // Room for the key on top of the value, and the very same entry fits.
+        let key_and_value_cache = MemorySizedCache::<String>::from_config(
+            &ByteSize::b((KEY_COST + data.len()) as u64).into(),
+            &CACHE_METRICS_FOR_TESTS,
+        );
+        key_and_value_cache.put("3".to_string(), data);
+        assert_eq!(
+            key_and_value_cache.get(&"3".to_string()).unwrap(),
+            &b"abc"[..]
+        );
+    }
+
+    #[test]
+    fn test_every_policy_charges_the_key() {
+        const NUM_ENTRIES: usize = 500;
+        const KEY_PADDING_LEN: usize = 8_000;
+        let capacity = ByteSize::mb(1);
+        let keys: Vec<String> = (0..NUM_ENTRIES)
+            .map(|i| format!("{i:08}{}", "k".repeat(KEY_PADDING_LEN)))
+            .collect();
+        // How many entries the budget can hold once keys are charged.
+        let expected_num_entries =
+            capacity.as_u64() as usize / (keys[0].mem_usage() + "0123456789abcdef".len());
+
+        for policy in [CachePolicy::Lru, CachePolicy::S3Fifo, CachePolicy::TinyLfu] {
+            let cache = MemorySizedCache::<String>::from_config(
+                &CacheConfig::with_capacity_and_policy(capacity, policy),
+                &CACHE_METRICS_FOR_TESTS,
+            );
+            for key in &keys {
+                cache.put(key.clone(), OwnedBytes::new(&b"0123456789abcdef"[..]));
+            }
+
+            let num_entries = keys.iter().filter(|key| cache.get(*key).is_some()).count();
+            assert_eq!(
+                num_entries, expected_num_entries,
+                "{policy:?} should have held only the entries whose keys and values fit in \
+                 {capacity}"
+            );
         }
     }
 

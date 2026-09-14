@@ -20,7 +20,7 @@ use quickwit_config::CacheConfig;
 use quickwit_proto::search::{
     CountHits, LeafResourceStats, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
 };
-use quickwit_storage::{MemorySizedCache, OwnedBytes};
+use quickwit_storage::{MemUsage, MemorySizedCache, OwnedBytes};
 use siphasher::sip128::{Hasher128, SipHasher13};
 use tantivy::index::SegmentId;
 
@@ -29,6 +29,12 @@ use tantivy::index::SegmentId;
 /// The original key is discarded. The 128-bit output makes accidental collisions negligible.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct CacheKeyHash(u128);
+
+impl MemUsage for CacheKeyHash {
+    fn heap_mem_usage(&self) -> usize {
+        0
+    }
+}
 
 #[derive(Clone, Copy)]
 struct CacheKeyHasher {
