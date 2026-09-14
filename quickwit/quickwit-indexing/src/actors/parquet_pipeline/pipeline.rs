@@ -349,7 +349,10 @@ impl MetricsPipeline {
             .spawn(publisher);
 
         // Sequencer
-        let sequencer = Sequencer::new(publisher_mailbox);
+        let sequencer = Sequencer::new(
+            publisher_mailbox,
+            QueueCapacity::Bounded(self.params.max_concurrent_split_uploads),
+        );
         let (sequencer_mailbox, sequencer_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
