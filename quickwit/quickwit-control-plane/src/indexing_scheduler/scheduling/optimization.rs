@@ -378,12 +378,10 @@ mod tests {
         repair_physical_plan_locality, select_locality_repair_pipelines,
     };
     use crate::indexing_plan::PhysicalIndexingPlan;
-    use crate::indexing_scheduler::{
-        IndexingSchedulerState, MIN_DURATION_BETWEEN_SCHEDULING,
-    };
     use crate::indexing_scheduler::scheduling::{
         Eligibility, IndexerInfo, SourceToSchedule, SourceToScheduleType, shard_ids_for_indexer,
     };
+    use crate::indexing_scheduler::{IndexingSchedulerState, MIN_DURATION_BETWEEN_SCHEDULING};
     use crate::model::ShardLocations;
 
     fn source_uid() -> SourceUid {
