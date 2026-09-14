@@ -168,12 +168,18 @@ fn apply_density_repair(physical_plan: &mut PhysicalIndexingPlan, repair: Densit
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU32;
+    use std::time::{Duration, Instant};
 
+    use fnv::FnvHashMap;
     use quickwit_proto::indexing::IndexingTask;
+    use quickwit_proto::ingest::ingester::IngesterStatus;
     use quickwit_proto::types::{IndexUid, NodeId, PipelineUid, ShardId, SourceUid};
 
-    use super::repair_physical_plan_density;
+    use super::{is_plan_repair_due, is_running_plan_stable, repair_physical_plan_density};
     use crate::indexing_plan::PhysicalIndexingPlan;
+    use crate::indexing_scheduler::{
+        IndexingSchedulerState, MIN_DURATION_BETWEEN_SCHEDULING,
+    };
     use crate::indexing_scheduler::scheduling::{SourceToSchedule, SourceToScheduleType};
 
     fn source_uid() -> SourceUid {
@@ -195,6 +201,67 @@ mod tests {
             shard_ids,
             params_fingerprint: 7,
         }
+    }
+
+    #[test]
+    fn test_is_running_plan_stable() {
+        let indexer_id = NodeId::from_str("indexer");
+        let plan = PhysicalIndexingPlan::with_indexer_ids(std::slice::from_ref(&indexer_id));
+        let running_tasks = plan.indexing_tasks_per_indexer().clone();
+        let ready_statuses = FnvHashMap::from_iter([(
+            indexer_id.clone(),
+            IngesterStatus::Ready,
+        )]);
+        let mut state = IndexingSchedulerState::default();
+
+        assert!(!is_running_plan_stable(
+            &running_tasks,
+            &ready_statuses,
+            &state
+        ));
+
+        state.last_applied_physical_plan = Some(plan);
+        state.last_applied_indexer_statuses = ready_statuses.clone();
+        assert!(is_running_plan_stable(
+            &running_tasks,
+            &ready_statuses,
+            &state
+        ));
+
+        assert!(!is_running_plan_stable(
+            &FnvHashMap::default(),
+            &ready_statuses,
+            &state
+        ));
+
+        let retiring_statuses = FnvHashMap::from_iter([(
+            indexer_id,
+            IngesterStatus::Retiring,
+        )]);
+        assert!(!is_running_plan_stable(
+            &running_tasks,
+            &retiring_statuses,
+            &state
+        ));
+    }
+
+    #[test]
+    fn test_is_plan_repair_due() {
+        let mut state = IndexingSchedulerState::default();
+        assert!(!is_plan_repair_due(&state));
+
+        state.last_applied_plan_timestamp = Some(Instant::now());
+        assert!(!is_plan_repair_due(&state));
+
+        let elapsed = MIN_DURATION_BETWEEN_SCHEDULING + Duration::from_millis(1);
+        state.last_applied_plan_timestamp = Some(Instant::now() - elapsed);
+        assert!(is_plan_repair_due(&state));
+
+        state.last_plan_repair_attempt_timestamp = Some(Instant::now());
+        assert!(!is_plan_repair_due(&state));
+
+        state.last_plan_repair_attempt_timestamp = Some(Instant::now() - elapsed);
+        assert!(is_plan_repair_due(&state));
     }
 
     #[test]

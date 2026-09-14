@@ -109,9 +109,21 @@ Shards for each source are placed in three steps:
 
 ## Phase 4: Optimization
 
-This is not implemented yet. We could craft a proper optimization cost and use a BFS search to explore
-better solutions.
+The idea behind optimization is simple: if we're able to perform one single action that improves the plan, over time, we'll eventually
+converge on a plan that's quite good. This is a hill climbing algorithm - we don't attempt to solve the optimization problem in one shot,
+because 1. It's very complex, and the algorithm to do so is (dangerously) exponential, and 2. it's very disruptive - we'd likely reset a lot of pipelines at once.
 
+Optimization is gated on three things: locality being enabled, the plan being stable, and a 30 second cooldown.
+
+The stability requirement is because resetting a pipeline, which optimization does, is expensive, as
+we throw away uncommitted work for the shards in that pipeline. So we try to perform optimization only on a stable cluster.
+This works doubly well with deployments, because deployments, which are already resetting many pipelines in their own right, also leave the cluster
+in a chaotic state. Optimization can kick in once the plan is stable (and the deployment finished).
+
+Optimization itself works in a naive, greedy, simple way. For each source, find two pipelines that are running under capacity; rearrange the shards each is indexing
+so that one pipeline fills up. 
+
+If we do this enough times, eventually, we'll end up with the minimal number of pipelines, and optimal density.
 
 # Code organization
 
