@@ -135,12 +135,14 @@ fn pick_least_loaded<'a>(
         .copied()
         .filter(|ingester| requested_zone.is_some() && ingester.zone.as_ref() == requested_zone)
         .collect();
-    let candidates = if same_zone_minima.len() > 0 {
+    let candidates = if !same_zone_minima.is_empty() {
         same_zone_minima
     } else {
         minima
     };
-    candidates.choose(rng).expect("Candidates came from the list of eligible ingesters, which is not empty")
+    candidates
+        .choose(rng)
+        .expect("Candidates came from the list of eligible ingesters, which is not empty")
 }
 
 fn all_ingesters_advertise_availability_zone(ingesters: &IngesterPool) -> bool {
@@ -242,33 +244,35 @@ fn balance_shards_to_open_across_zones(
     num_shards_by_source_by_zone
 }
 
-/// Matches successful replacement opens to shards that are still hosted by live ingesters.
+/// Rebalancing shards consists of opening new replacements, and then upon success, closing the
+/// originals. For the newly opened shards, we find a relevant shard that needed rebalanceing, so
+/// that we can close it.
 ///
 /// The ingester pool can change while replacements are being opened. A shard whose ingester has
 /// disappeared from the pool can no longer be closed directly, so it is deliberately left for the
 /// control plane's self-healing mechanisms instead of turning normal cluster churn into a panic.
 fn match_shards_to_close(
     ingester_pool: &IngesterPool,
-    opened_by_zone: &HashMap<Option<Zone>, SourceShardCount>,
+    opened_by_original_zone: &HashMap<Option<Zone>, SourceShardCount>,
     shards_to_rebalance: &mut Vec<Shard>,
 ) -> Vec<Shard> {
     let mut shards_to_close: Vec<Shard> = Vec::new();
-    for (requested_zone, opened_by_source) in opened_by_zone {
-        for (source_uid, &num_opened) in opened_by_source {
+    for (original_zone, num_opened_by_source) in opened_by_original_zone {
+        for (source_uid, &num_opened) in num_opened_by_source {
             for num_matched in 0..num_opened {
-                let Some(position) = shards_to_rebalance.iter().position(|shard|
+                let Some(position) = shards_to_rebalance.iter().position(|shard| {
                     shard.source_uid() == *source_uid
                         && ingester_pool
                             .get(shard.ingester_id.as_str())
                             .and_then(|ingester| ingester.availability_zone)
-                            == *requested_zone
-                ) else {
+                            == *original_zone
+                }) else {
                     // This would only happen if the ingester pool changed underneath after shards
                     // were opened, and is unlikely, but it is possible.
                     warn!(
                         index_uid = %source_uid.index_uid,
                         source_id = %source_uid.source_id,
-                        ?requested_zone,
+                        ?original_zone,
                         num_opened,
                         num_matched,
                         "could not match every replacement shard to a live predecessor"
@@ -874,7 +878,7 @@ impl IngestController {
         // By now, we've asserted that there's at least one eligible ingester. We have to have
         // something to open a shard on.
         assert!(!eligible_ingesters.is_empty());
-        let ingester_ids= allocate_shards(eligible_ingesters, requested_zone, num_shards_to_open);
+        let ingester_ids = allocate_shards(eligible_ingesters, requested_zone, num_shards_to_open);
 
         let source_uids_with_multiplicity = num_shards_to_open_by_source
             .iter()
@@ -1153,9 +1157,6 @@ impl IngestController {
                 REBALANCE_SHARDS.set(0.0);
             })?;
 
-        // For every shard we successfully opened, close an equivalent from the zone we requested
-        // it in. The preferred zone is not necessarily the zone in which the replacement landed.
-        // Pool membership may have changed while opening replacements, so matching is best effort.
         let num_opened_shards: usize = opened_by_zone.values().map(total_shards).sum();
         let shards_to_close = match_shards_to_close(
             &self.ingester_pool,
@@ -3887,11 +3888,7 @@ mod tests {
             HashMap::from([(None, 5)])
         );
 
-        let zones = HashSet::from_iter([
-            Arc::from("az-a"),
-            Arc::from("az-b"),
-            Arc::from("az-c"),
-        ]);
+        let zones = HashSet::from_iter([Arc::from("az-a"), Arc::from("az-b"), Arc::from("az-c")]);
         for (num_shards, expected_num_zones) in [(2, 2), (3, 3), (8, 3)] {
             let distribution = distribute_shards_across_zones(num_shards, &zones);
             assert_eq!(distribution.len(), expected_num_zones);
