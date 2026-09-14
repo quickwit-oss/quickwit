@@ -310,7 +310,7 @@ This section contains the configuration options for a Searcher.
 | `partial_request_cache_capacity` | Partial request in memory cache capacity on a Searcher. Cache intermediate state for a request, possibly making subsequent requests faster. It can be disabled by setting the size to `0`. | `64M` |
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `split_cache` | Searcher split cache configuration options defined in the section below. Cache disabled if unspecified. | |
-| `split_range_disk_cache` | Process-wide on-disk cache for exact split footer and body byte ranges. Configuration options are defined in the section below. Cache disabled if unspecified. | |
+| `split_range_disk_cache` | On-disk cache for split byte ranges. Configuration options are defined in the section below. Cache disabled if unspecified. | |
 | `request_timeout_secs` | The time before a search request is cancelled. This should match the timeout of the stack calling into quickwit if there is one set.  | `30` |
 | `use_metastore_read_replica` | If true, routes read-only metastore requests from searchers, including DataFusion when enabled, to nodes running the `metastore_read_replica` service. Searchers require at least one `metastore_read_replica` node at startup and do not fall back to the primary metastore. | `false` |
 
@@ -326,7 +326,7 @@ This section contains the configuration options for the on-disk searcher split c
 
 ### Searcher split range disk cache configuration
 
-This section contains the configuration options for the process-wide on-disk cache of exact split footer and body ranges. The cache is disabled when this section is omitted or set to `null`. If it is set and `fast_field_cache_capacity` is omitted, the long-lived fast field RAM cache is disabled; set a capacity explicitly to keep both.
+This section contains the configuration options for the on-disk cache of split byte ranges. The cache is disabled when this section is omitted or set to `null`. If it is set and `fast_field_cache_capacity` is omitted, the fast field RAM cache is disabled; set a capacity explicitly to keep both.
 
 | Property | Description | Default value |
 | --- | --- | --- |

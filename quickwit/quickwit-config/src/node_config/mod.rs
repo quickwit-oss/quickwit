@@ -529,7 +529,7 @@ pub struct SearcherConfig {
     pub aggregation_memory_limit: ByteSize,
     pub aggregation_bucket_limit: u32,
 
-    /// Long-lived `.fast` RAM cache. Omitted is `None` and resolved in
+    /// Fast-field RAM cache. Omitted is `None` and resolved in
     /// [`Self::resolved_fast_field_cache`].
     #[serde(alias = "fast_field_cache_capacity")]
     #[serde(default, deserialize_with = "deserialize_optional_fast_field_cache")]
@@ -558,7 +558,7 @@ pub struct SearcherConfig {
     // TODO document and fix if necessary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub split_cache: Option<SplitCacheLimits>,
-    /// Process-wide Foyer disk cache for exact split footer and body ranges.
+    /// Foyer disk cache for exact split footer and body ranges.
     /// Omitted or `null` disables the cache.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub split_range_disk_cache: Option<SplitRangeDiskCacheConfig>,
@@ -825,7 +825,7 @@ impl SearcherConfig {
         NonZeroU64::new(30).unwrap()
     }
 
-    /// Long-lived `.fast` RAM cache after applying defaults.
+    /// Fast-field RAM cache after applying defaults.
     ///
     /// An explicit config is used as-is. If omitted, Foyer disables the cache
     /// and otherwise it is 1 GiB.

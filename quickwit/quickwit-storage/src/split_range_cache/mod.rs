@@ -33,7 +33,7 @@ use quickwit_config::{
 };
 pub use storage::{FoyerSplitRangeStorage, wrap_storage_with_split_range_cache};
 
-/// Process-wide Foyer hybrid cache for exact split byte-range payloads.
+/// Foyer hybrid cache for exact split byte-range payloads.
 pub struct FoyerSplitRangeCache {
     pub(crate) cache: foyer::HybridCache<SplitRangeCacheKey, Bytes>,
     pub(crate) max_entry_size: usize,

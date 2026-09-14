@@ -41,11 +41,10 @@ fn read_u64(reader: &mut impl Read) -> foyer::Result<u64> {
     Ok(u64::from_le_bytes(buf))
 }
 
-/// Manual `Code` impl: keep Foyer's serde feature off so bincode is not pulled
-/// in for keys or values. Foyer 0.22.3 already implements `Code` for `Bytes`,
-/// so only this key needs a codec. Enabling serde would encode each value byte
-/// as an integer; for a 15 MiB payload that is millions of serializer visits
-/// instead of one `write_all`.
+/// Manual `Code` impl keeps Foyer's serde feature off, avoids adding bincode,
+/// and gives Quickwit explicit control over the on-disk key format. Foyer
+/// 0.22.3 already implements `Code` for `Bytes`, so only this key needs a
+/// codec.
 impl foyer::Code for SplitRangeCacheKey {
     fn encode(&self, writer: &mut impl Write) -> foyer::Result<()> {
         let uri_bytes = self.object_uri.as_bytes();

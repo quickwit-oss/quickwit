@@ -167,12 +167,14 @@ pub(crate) async fn open_split_bundle(
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<(OwnedBytes, BundleStorage)> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
-    let foyer_storage: Arc<dyn Storage> = match &searcher_context.split_range_disk_cache_opt {
+    let storage_with_split_range_cache: Arc<dyn Storage> = match &searcher_context
+        .split_range_disk_cache_opt
+    {
         Some(cache) => wrap_storage_with_split_range_cache(cache.clone(), index_storage.clone()),
         None => index_storage.clone(),
     };
     let footer_data = get_split_footer_from_cache_or_fetch(
-        foyer_storage.clone(),
+        storage_with_split_range_cache.clone(),
         split_and_footer_offsets,
         &searcher_context.split_footer_cache,
     )
@@ -182,9 +184,9 @@ pub(crate) async fn open_split_bundle(
     // This is before the bundle storage: at this point, this storage is reading `.split` files.
     let index_storage_with_split_cache =
         if let Some(split_cache) = searcher_context.split_cache_opt.as_ref() {
-            SearchSplitCache::wrap_storage(split_cache.clone(), foyer_storage)
+            SearchSplitCache::wrap_storage(split_cache.clone(), storage_with_split_range_cache)
         } else {
-            foyer_storage
+            storage_with_split_range_cache
         };
 
     let (bundle_storage, hotcache_bytes) = BundleStorage::open_from_split_bytes(

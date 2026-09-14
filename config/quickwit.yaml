@@ -212,7 +212,7 @@ indexer:
 #      max_num_bytes: 1G
 #      max_num_splits: 10000
 #      num_concurrent_downloads: 1
-#   # Process-wide Foyer disk cache for exact split footer and body ranges.
+#   # Foyer disk cache for exact split footer and body ranges.
 #   # Omitted or null disables the cache. write_policy defaults to write-on-eviction.
 #   split_range_disk_cache:
 #     path: /quickwit/qwdata/split-range-v1
