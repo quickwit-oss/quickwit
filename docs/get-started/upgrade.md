@@ -11,6 +11,10 @@ This page documents breaking changes and migration steps when upgrading Quickwit
 2. **Back up your index data (optional).** The on-disk split format and object-storage layout are unchanged, so no re-indexing is needed. A backup is still recommended if your storage is not already versioned.
 3. **Stop all 0.8.x nodes before starting any 0.9 node.** Mixed-version clusters are not supported during the migration.
 
+### Metrics prototype
+
+The Parquet metrics pipeline and DataFusion query layer in the source tree are early prototype work. They are not built into the official v0.9.0 binaries or Docker images and are not supported in this release.
+
 ### Ingest V2
 
 In 0.8.x, ingest V2 was opt-in via `QW_ENABLE_INGEST_V2=true` and was served from a dedicated route `POST /api/v1/{index}/ingest-v2`.
