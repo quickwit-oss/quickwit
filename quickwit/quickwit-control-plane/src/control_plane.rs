@@ -1089,7 +1089,7 @@ mod tests {
     use tokio::sync::Semaphore;
 
     use super::*;
-    use crate::IndexerNodeInfo;
+    use crate::IndexerPoolEntry;
 
     #[tokio::test]
     async fn test_control_plane_create_index() {
@@ -1263,13 +1263,14 @@ mod tests {
             .withf(move |request| request.indexing_tasks.len() == pipelines_after_update)
             .return_once(|_| Ok(ApplyIndexingPlanResponse {}));
         let indexer = IndexingServiceClient::from_mock(mock_indexer);
-        let indexer_info = IndexerNodeInfo {
+        let indexer_info = IndexerPoolEntry {
             node_id: self_node_id.clone(),
             generation_id: 0,
             client: indexer,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(1_000),
             ingester_status: IngesterStatus::Ready,
+            availability_zone: None,
         };
         indexer_pool.insert(self_node_id.clone(), indexer_info);
 
@@ -1838,13 +1839,14 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let (client_mailbox, client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
-        let indexer_node_info = IndexerNodeInfo {
+        let indexer_node_info = IndexerPoolEntry {
             node_id: NodeId::from_str("test-indexer"),
             generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: IngesterStatus::Ready,
+            availability_zone: None,
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
@@ -1986,13 +1988,14 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let (client_mailbox, _client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
-        let indexer_node_info = IndexerNodeInfo {
+        let indexer_node_info = IndexerPoolEntry {
             node_id: NodeId::from_str("test-indexer"),
             generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: IngesterStatus::Ready,
+            availability_zone: None,
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
@@ -2063,13 +2066,14 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let (client_mailbox, _client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
-        let indexer_node_info = IndexerNodeInfo {
+        let indexer_node_info = IndexerPoolEntry {
             node_id: NodeId::from_str("test-indexer"),
             generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: IngesterStatus::Ready,
+            availability_zone: None,
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
@@ -2685,13 +2689,14 @@ mod tests {
             .return_once(|_| Ok(ApplyIndexingPlanResponse {}));
         let indexer = IndexingServiceClient::from_mock(mock_indexer);
 
-        let indexer_info = IndexerNodeInfo {
+        let indexer_info = IndexerPoolEntry {
             node_id: ingester_id.clone(),
             generation_id: 0,
             client: indexer,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(1_000),
             ingester_status: IngesterStatus::Ready,
+            availability_zone: None,
         };
         indexer_pool.insert(ingester_id.clone(), indexer_info);
 
