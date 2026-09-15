@@ -50,6 +50,8 @@ azure_core = { workspace = true, optional = true }
 azure_identity = { workspace = true, optional = true }
 azure_storage = { workspace = true, optional = true }
 azure_storage_blobs = { workspace = true, optional = true }
+arc-swap = { workspace = true, optional = true }
+time = { workspace = true, optional = true }
 
 quickwit-aws = { workspace = true }
 quickwit-common = { workspace = true }
@@ -83,6 +85,8 @@ quickwit-common = { workspace = true, features = ["testsuite"] }
 
 [features]
 azure = [
+  "dep:arc-swap",
+  "dep:time",
   "azure_core",
   "azure_identity",
   "azure_identity/enable_reqwest_rustls",
