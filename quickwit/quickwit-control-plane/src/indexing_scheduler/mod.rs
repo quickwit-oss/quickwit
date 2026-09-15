@@ -47,7 +47,9 @@ use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotif
 use crate::indexing_scheduler::scheduling::{
     build_physical_indexing_plan, is_plan_eligible_for_optimization,
 };
-use crate::metrics::{APPLY_PLAN_TOTAL, INDEXING_PLAN_DENSITY, SCHEDULE_TOTAL, ShardLocalityMetrics};
+use crate::metrics::{
+    APPLY_PLAN_TOTAL, INDEXING_PLAN_DENSITY, SCHEDULE_TOTAL, ShardLocalityMetrics,
+};
 use crate::model::{ControlPlaneModel, ShardEntry, ShardLocations};
 use crate::{IndexerPool, IndexerPoolEntry};
 
