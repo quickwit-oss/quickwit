@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod resource_stats_logging;
+
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock};
@@ -41,6 +43,7 @@ use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_query::query_ast::{
     BoolQuery, QueryAst, QueryAstVisitor, RangeQuery, TermQuery, TermSetQuery,
 };
+use resource_stats_logging::RootResourceStatsLogGuard;
 use serde::{Deserialize, Serialize};
 use tantivy::TantivyError;
 use tantivy::aggregation::agg_result::AggregationResults;
@@ -573,6 +576,7 @@ async fn search_partial_hits_phase_with_scroll(
     mut search_request: SearchRequest,
     split_metadatas: &[SplitMetadata],
     cluster_client: &ClusterClient,
+    resource_log: &RootResourceStatsLogGuard,
 ) -> crate::Result<(
     LeafSearchResponse,
     Option<ScrollKeyAndStartOffset>,
@@ -595,6 +599,7 @@ async fn search_partial_hits_phase_with_scroll(
             &search_request,
             split_metadatas,
             cluster_client,
+            Some(resource_log),
         )
         .await?;
         let cached_partial_hits = leaf_search_resp.partial_hits.clone();
@@ -644,6 +649,7 @@ async fn search_partial_hits_phase_with_scroll(
             &search_request,
             split_metadatas,
             cluster_client,
+            Some(resource_log),
         )
         .await?;
         Ok((leaf_search_resp, None, root_resource_stats))
@@ -798,11 +804,14 @@ pub(crate) async fn search_partial_hits_phase(
     search_request: &SearchRequest,
     split_metadatas: &[SplitMetadata],
     cluster_client: &ClusterClient,
+    resource_log: Option<&RootResourceStatsLogGuard>,
 ) -> crate::Result<(LeafSearchResponse, Option<RootResourceStats>)> {
     // Each entry is (leaf response, number of leaf attempts made to obtain it).
     // Metadata-count responses are synthesised locally and contribute 0 attempts.
     let mut leaf_num_calls = 0u64;
-    let leaf_num_calls_including_retries_arc: Arc<AtomicU64> = Default::default();
+    let leaf_num_calls_including_retries_arc: Arc<AtomicU64> = resource_log
+        .map(|log| log.leaf_num_calls_including_retries.clone())
+        .unwrap_or_default();
     let leaf_search_responses: Vec<LeafSearchResponse> =
         if is_metadata_count_request(search_request) {
             get_count_from_metadata(split_metadatas)
@@ -826,7 +835,19 @@ pub(crate) async fn search_partial_hits_phase(
                 ));
             }
             leaf_num_calls = leaf_request_tasks.len() as u64;
-            try_join_all(leaf_request_tasks).await?
+            if let Some(log) = resource_log {
+                log.leaf_num_calls.store(leaf_num_calls, Ordering::Relaxed);
+            }
+            // Capture each response before try_join_all can discard it on another leaf's error
+            // or cancellation. Only returned resource stats, not payloads, are retained.
+            try_join_all(leaf_request_tasks.into_iter().map(|task| async move {
+                let response = task.await?;
+                if let Some(log) = resource_log {
+                    log.record_response(&response);
+                }
+                Ok::<_, crate::SearchError>(response)
+            }))
+            .await?
         };
 
     let num_failed_splits: u64 = leaf_search_responses
@@ -1057,9 +1078,10 @@ fn get_sort_field_datetime_format(
 async fn root_search_aux(
     searcher_context: &SearcherContext,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
-    search_request: SearchRequest,
+    search_request: &SearchRequest,
     split_metadatas: Vec<SplitMetadata>,
     cluster_client: &ClusterClient,
+    resource_log: &RootResourceStatsLogGuard,
 ) -> crate::Result<SearchResponse> {
     debug!(split_metadatas = ?PrettySample::new(&split_metadatas, 5));
     let start = Instant::now();
@@ -1073,6 +1095,7 @@ async fn root_search_aux(
         search_request.clone(),
         &split_metadatas[..],
         cluster_client,
+        resource_log,
     )
     .await?;
 
@@ -1085,13 +1108,13 @@ async fn root_search_aux(
         indexes_metas_for_leaf_search,
         &first_phase_result.partial_hits,
         &split_metadatas[..],
-        &search_request,
+        search_request,
         cluster_client,
     )
     .await?;
 
     let mut aggregation_result_postcard_opt = finalize_aggregation_if_any(
-        &search_request,
+        search_request,
         first_phase_result.intermediate_aggregation_result,
         searcher_context,
     )?;
@@ -1289,6 +1312,35 @@ async fn plan_splits_for_root_search(
     ))
 }
 
+/// Logs root-search details on completion, including when the search future is cancelled.
+struct RootSearchLogGuard<'a> {
+    start_instant: Instant,
+    search_request: &'a SearchRequest,
+    num_docs: usize,
+    num_splits: usize,
+    status: &'static str,
+}
+
+impl Drop for RootSearchLogGuard<'_> {
+    fn drop(&mut self) {
+        info!(
+            query_ast = self.search_request.query_ast.as_str(),
+            agg = self.search_request.aggregation_request(),
+            start_ts = ?(
+                self.search_request.start_timestamp()..self.search_request.end_timestamp()
+            ),
+            count_required = self.search_request.count_hits().as_str_name(),
+            max_hits = self.search_request.max_hits,
+            num_docs = self.num_docs,
+            num_splits = self.num_splits,
+            priority = self.search_request.priority,
+            elapsed_time_micros = self.start_instant.elapsed().as_micros() as u64,
+            status = self.status,
+            "root_search"
+        );
+    }
+}
+
 /// Performs a distributed search.
 /// 1. Sends leaf requests over gRPC to multiple leaf nodes.
 /// 2. Merges the search results.
@@ -1302,29 +1354,32 @@ pub async fn root_search(
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
     let start_instant = Instant::now();
+    let mut resource_log = RootResourceStatsLogGuard::new();
 
-    let (split_metadatas, indexes_meta_for_leaf_search) = RootSearchMetricsFuture {
+    let plan_result = RootSearchMetricsFuture {
         start: start_instant,
         tracked: plan_splits_for_root_search(&mut search_request, metastore),
         is_success: None,
         step: RootSearchMetricsStep::Plan,
     }
-    .await?;
+    .await;
+    let (split_metadatas, indexes_meta_for_leaf_search) = match plan_result {
+        Ok(plan) => plan,
+        Err(error) => {
+            resource_log.status = "error";
+            return Err(error);
+        }
+    };
 
     let num_docs: usize = split_metadatas.iter().map(|split| split.num_docs).sum();
     let num_splits = split_metadatas.len();
-
-    info!(
-        query_ast = search_request.query_ast.as_str(),
-        agg = search_request.aggregation_request(),
-        start_ts = ?(search_request.start_timestamp()..search_request.end_timestamp()),
-        count_required = search_request.count_hits().as_str_name(),
-        max_hits = search_request.max_hits,
-        num_docs = num_docs,
-        num_splits = num_splits,
-        priority = search_request.priority,
-        "root_search"
-    );
+    let mut log_guard = RootSearchLogGuard {
+        start_instant,
+        search_request: &search_request,
+        num_docs,
+        num_splits,
+        status: "cancelled",
+    };
 
     // set attributes directly on the trace so it doesn't make logs too verbose
     Span::current().set_attribute("query_ast", search_request.query_ast.clone());
@@ -1347,6 +1402,8 @@ pub async fn root_search(
             query=%search_request.query_ast,
             "max total splits exceeded"
         );
+        log_guard.status = "error";
+        resource_log.status = "error";
         return Err(SearchError::InvalidArgument(format!(
             "Number of targeted splits {num_splits} exceeds the limit {max_total_split_searches}"
         )));
@@ -1357,9 +1414,10 @@ pub async fn root_search(
         tracked: root_search_aux(
             searcher_context,
             &indexes_meta_for_leaf_search,
-            search_request,
+            &search_request,
             split_metadatas,
             cluster_client,
+            &resource_log,
         ),
         is_success: None,
         step: RootSearchMetricsStep::Exec {
@@ -1370,7 +1428,11 @@ pub async fn root_search(
 
     if let Ok(search_response) = &mut search_response_result {
         search_response.elapsed_time_micros = start_instant.elapsed().as_micros() as u64;
+        log_guard.status = "success";
+    } else {
+        log_guard.status = "error";
     }
+    resource_log.status = log_guard.status;
 
     search_response_result
 }
