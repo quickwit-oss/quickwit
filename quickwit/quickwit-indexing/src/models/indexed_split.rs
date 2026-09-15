@@ -23,7 +23,7 @@ use quickwit_metrics::{GaugeGuard, label_values};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::types::{DocMappingUid, IndexUid, SplitId};
 use tantivy::IndexBuilder;
-use tantivy::directory::MmapDirectory;
+use tantivy::directory::{MmapDirectory, RamDirectory};
 use tracing::{Span, error, instrument};
 
 use crate::controlled_directory::ControlledDirectory;
@@ -38,6 +38,7 @@ pub struct IndexedSplitBuilder {
     pub split_scratch_directory: TempDirectory,
     pub controlled_directory_opt: Option<ControlledDirectory>,
     pub doc_id_clusterer_opt: Option<DocIdClusterer>,
+    ram_directory: RamDirectory,
 }
 
 pub struct IndexedSplit {
@@ -95,10 +96,9 @@ impl IndexedSplitBuilder {
         let split_scratch_directory_prefix = format!("split-{split_id}-");
         let split_scratch_directory =
             scratch_directory.named_temp_child(&split_scratch_directory_prefix)?;
-        let mmap_directory = MmapDirectory::open(split_scratch_directory.path())?;
-        let box_mmap_directory = Box::new(mmap_directory);
-
-        let controlled_directory = ControlledDirectory::new(box_mmap_directory, io_controls);
+        let ram_directory = RamDirectory::default();
+        let controlled_directory =
+            ControlledDirectory::new(Box::new(ram_directory.clone()), io_controls);
 
         let index_writer =
             index_builder.single_segment_index_writer(controlled_directory.clone(), 15_000_000)?;
@@ -121,6 +121,7 @@ impl IndexedSplitBuilder {
             doc_id_clusterer_opt,
             split_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
+            ram_directory,
         })
     }
 
@@ -160,6 +161,9 @@ impl IndexedSplitBuilder {
         } else {
             self.index_writer.finalize()?
         };
+        // The packager and uploader consume split files from the scratch directory.
+        let mmap_directory = MmapDirectory::open(self.split_scratch_directory.path())?;
+        self.ram_directory.persist(&mmap_directory)?;
         Ok(IndexedSplit {
             split_attrs,
             index,
@@ -170,6 +174,10 @@ impl IndexedSplitBuilder {
 
     pub fn path(&self) -> &Path {
         self.split_scratch_directory.path()
+    }
+
+    pub fn mem_usage(&self) -> usize {
+        self.index_writer.mem_usage() + self.ram_directory.total_mem_usage()
     }
 
     pub fn split_id(&self) -> &SplitId {

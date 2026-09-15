@@ -317,7 +317,7 @@ impl IndexerState {
                 counters,
                 ctx,
             )?;
-            let mem_usage_before = indexed_split.index_writer.mem_usage() as u64;
+            let mem_usage_before = indexed_split.mem_usage() as u64;
             if split_created {
                 // The split was just created. We need to account for the initial index writer's
                 // memory usage.
@@ -338,7 +338,7 @@ impl IndexerState {
                 .index_writer
                 .add_document(doc)
                 .context("failed to add document")?;
-            let mem_usage_after = indexed_split.index_writer.mem_usage() as u64;
+            let mem_usage_after = indexed_split.mem_usage() as u64;
             memory_usage_delta += mem_usage_after as i64 - mem_usage_before as i64;
             ctx.record_progress();
         }
@@ -1314,8 +1314,11 @@ mod tests {
             index_serializer_inbox.drain_for_test_typed();
         let mut split_batch = split_batches.pop().unwrap();
         let split_builder = split_batch.splits.pop().unwrap();
+        let split_path = split_builder.path().to_path_buf();
+        assert_eq!(std::fs::read_dir(&split_path)?.count(), 0);
 
         let indexed_split = split_builder.finalize()?;
+        assert!(split_path.join("meta.json").try_exists()?);
         let reader = indexed_split.index.reader()?;
         let searcher = reader.searcher();
         let mut bodies = Vec::new();
