@@ -35,7 +35,8 @@ use quickwit_proto::indexing::{
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::types::NodeId;
 use scheduling::{
-    Eligibility, IndexerInfo, SourceToSchedule, SourceToScheduleType, is_shard_in_same_zone,
+    Eligibility, IndexerInfo, SourceToSchedule, SourceToScheduleType,
+    compute_max_num_shards_per_pipeline, is_shard_in_same_zone,
 };
 use serde::Serialize;
 use tracing::{debug, info, warn};
@@ -46,9 +47,7 @@ use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotif
 use crate::indexing_scheduler::scheduling::{
     build_physical_indexing_plan, is_plan_eligible_for_optimization,
 };
-use crate::metrics::{
-    APPLY_PLAN_TOTAL, SCHEDULE_TOTAL, ShardLocalityMetrics, publish_indexing_plan_metrics,
-};
+use crate::metrics::{APPLY_PLAN_TOTAL, INDEXING_PLAN_DENSITY, SCHEDULE_TOTAL, ShardLocalityMetrics};
 use crate::model::{ControlPlaneModel, ShardEntry, ShardLocations};
 use crate::{IndexerPool, IndexerPoolEntry};
 
@@ -440,6 +439,7 @@ impl IndexingScheduler {
         let shard_locality_metrics =
             get_shard_locality_metrics(&new_physical_plan, &shard_locations, &indexer_infos);
         shard_locality_metrics.publish();
+        INDEXING_PLAN_DENSITY.set(get_indexing_plan_density(&new_physical_plan, &sources));
 
         if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
             let plans_diff = get_indexing_plans_diff(
@@ -570,10 +570,6 @@ impl IndexingScheduler {
         notify_on_drop: Option<Arc<NotifyChangeOnDrop>>,
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
-        publish_indexing_plan_metrics(
-            self.state.last_applied_physical_plan.as_ref(),
-            &new_physical_plan,
-        );
         APPLY_PLAN_TOTAL.inc();
         // The indexing plan ID is a monotonically increasing time based ID that's used as the
         // publish token for indexers, which ensures indexing plans and shard acquisition are always
@@ -681,7 +677,7 @@ fn get_shard_locality_metrics(
     indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
 ) -> ShardLocalityMetrics {
     let mut num_local_shards = 0;
-    let mut num_nearby_shards = 0;
+    let mut num_zonal_shards = 0;
     let mut num_remote_shards = 0;
     for (indexer, tasks) in physical_plan.indexing_tasks_per_indexer() {
         for task in tasks {
@@ -692,7 +688,7 @@ fn get_shard_locality_metrics(
                 {
                     num_local_shards += 1;
                 } else if is_shard_in_same_zone(indexer, shard_id, shard_locations, indexer_infos) {
-                    num_nearby_shards += 1;
+                    num_zonal_shards += 1;
                 } else {
                     num_remote_shards += 1;
                 }
@@ -701,9 +697,40 @@ fn get_shard_locality_metrics(
     }
     ShardLocalityMetrics {
         num_remote_shards,
-        num_nearby_shards,
+        num_zonal_shards,
         num_local_shards,
     }
+}
+
+fn get_indexing_plan_density(
+    physical_plan: &PhysicalIndexingPlan,
+    sources: &[SourceToSchedule],
+) -> f64 {
+    let mut num_shards = 0;
+    let mut num_shard_slots = 0;
+    for source in sources {
+        if !matches!(source.source_type, SourceToScheduleType::Sharded { .. }) {
+            continue;
+        }
+        let max_num_shards =
+            compute_max_num_shards_per_pipeline(&source.source_type).get() as usize;
+        for tasks in physical_plan.indexing_tasks_per_indexer().values() {
+            for task in tasks {
+                if task.index_uid.as_ref() != Some(&source.source_uid.index_uid)
+                    || task.source_id != source.source_uid.source_id
+                    || task.params_fingerprint != source.params_fingerprint
+                {
+                    continue;
+                }
+                num_shards += task.shard_ids.len();
+                num_shard_slots += max_num_shards;
+            }
+        }
+    }
+    if num_shard_slots == 0 {
+        return 1.0;
+    }
+    num_shards as f64 / num_shard_slots as f64
 }
 
 impl fmt::Debug for IndexingPlansDiff<'_> {
@@ -1253,6 +1280,7 @@ mod tests {
         );
         let metrics = get_shard_locality_metrics(&plan, &shard_locations, &indexer_infos);
         assert_eq!(metrics.locality_percent(), 100);
+        assert_eq!(get_indexing_plan_density(&plan, &sources), 1.0 / 3.0);
         assert_eq!(
             shard_ids_for_indexer(&plan, &indexer1),
             vec![shard1.clone()]

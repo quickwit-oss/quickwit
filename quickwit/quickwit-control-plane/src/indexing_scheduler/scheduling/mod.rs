@@ -202,7 +202,9 @@ pub enum SourceToScheduleType {
     IngestV1,
 }
 
-fn compute_max_num_shards_per_pipeline(source_type: &SourceToScheduleType) -> NonZeroU32 {
+pub(super) fn compute_max_num_shards_per_pipeline(
+    source_type: &SourceToScheduleType,
+) -> NonZeroU32 {
     match &source_type {
         SourceToScheduleType::Sharded { load_per_shard, .. } => {
             NonZeroU32::new(MAX_LOAD_PER_PIPELINE.cpu_millis() / load_per_shard.get())
@@ -1327,7 +1329,7 @@ mod tests {
 
     struct TopologyOutcome {
         num_local_shards: usize,
-        num_nearby_shards: usize,
+        num_zonal_shards: usize,
         num_remote_shards: usize,
         shard_counts_per_az: BTreeMap<Option<String>, Vec<usize>>,
     }
@@ -1408,7 +1410,7 @@ mod tests {
         let metrics = get_shard_locality_metrics(&plan, &shard_locations, &indexer_infos);
         TopologyOutcome {
             num_local_shards: metrics.num_local_shards,
-            num_nearby_shards: metrics.num_nearby_shards,
+            num_zonal_shards: metrics.num_zonal_shards,
             num_remote_shards: metrics.num_remote_shards,
             shard_counts_per_az: counts_per_az,
         }
@@ -1424,7 +1426,7 @@ mod tests {
             let outcome =
                 assert_stable_locality_topology(&indexer_specs, &shard_ids[..2], &shard_hosts);
             assert_eq!(outcome.num_local_shards, 1);
-            assert_eq!(outcome.num_nearby_shards, 0);
+            assert_eq!(outcome.num_zonal_shards, 0);
             assert_eq!(outcome.num_remote_shards, 1);
             let expected_counts_per_az = BTreeMap::from_iter([(None, vec![2])]);
             assert_eq!(outcome.shard_counts_per_az, expected_counts_per_az);
@@ -1438,7 +1440,7 @@ mod tests {
             let outcome =
                 assert_stable_locality_topology(&indexer_specs, &shard_ids[..2], &shard_hosts);
             assert_eq!(outcome.num_local_shards, 1);
-            assert_eq!(outcome.num_nearby_shards, 1);
+            assert_eq!(outcome.num_zonal_shards, 1);
             assert_eq!(outcome.num_remote_shards, 0);
             let expected_counts_per_az =
                 BTreeMap::from_iter([(Some("az-a".to_string()), vec![1, 1])]);
@@ -1453,7 +1455,7 @@ mod tests {
             let outcome =
                 assert_stable_locality_topology(&indexer_specs, &shard_ids[..2], &shard_hosts);
             assert_eq!(outcome.num_local_shards, 1);
-            assert_eq!(outcome.num_nearby_shards, 0);
+            assert_eq!(outcome.num_zonal_shards, 0);
             assert_eq!(outcome.num_remote_shards, 1);
             let expected_counts_per_az = BTreeMap::from_iter([
                 (Some("az-a".to_string()), vec![1]),
@@ -1471,7 +1473,7 @@ mod tests {
             let shard_hosts = vec![&indexer_specs[0].node_id; 5];
             let outcome = assert_stable_locality_topology(&indexer_specs, &shard_ids, &shard_hosts);
             assert_eq!(outcome.num_local_shards, 2);
-            assert_eq!(outcome.num_nearby_shards, 1);
+            assert_eq!(outcome.num_zonal_shards, 1);
             assert_eq!(outcome.num_remote_shards, 2);
             let expected_counts_per_az = BTreeMap::from_iter([
                 (Some("az-a".to_string()), vec![1, 2]),
@@ -1626,7 +1628,7 @@ mod tests {
 
         let metrics = get_shard_locality_metrics(&plan, &shard_locations, &indexer_infos);
         assert_eq!(metrics.num_local_shards, 2);
-        assert_eq!(metrics.num_nearby_shards, 0);
+        assert_eq!(metrics.num_zonal_shards, 0);
         assert_eq!(metrics.num_remote_shards, 0);
 
         let replanned = build_physical_indexing_plan(
