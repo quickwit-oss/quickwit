@@ -1055,6 +1055,7 @@ mod tests {
 
     use std::collections::{BTreeMap, HashMap, HashSet};
     use std::num::NonZeroU32;
+    use std::slice;
     use std::str::FromStr;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -1743,7 +1744,7 @@ mod tests {
         let obsolete_pipeline_uid = PipelineUid::for_test(1u128);
         let current_pipeline_uid = PipelineUid::for_test(2u128);
         let non_sharded_pipeline_uid = PipelineUid::for_test(3u128);
-        let mut previous_plan = PhysicalIndexingPlan::with_indexer_ids(&[indexer.clone()]);
+        let mut previous_plan = PhysicalIndexingPlan::with_indexer_ids(slice::from_ref(&indexer));
         previous_plan.add_indexing_task(
             &indexer,
             IndexingTask {
@@ -1821,7 +1822,7 @@ mod tests {
         indexer_infos.insert(indexer.clone(), IndexerInfo::for_test(mcpu(16_000)));
 
         let recycled_pipeline_uid = PipelineUid::for_test(1u128);
-        let mut previous_plan = PhysicalIndexingPlan::with_indexer_ids(&[indexer.clone()]);
+        let mut previous_plan = PhysicalIndexingPlan::with_indexer_ids(slice::from_ref(&indexer));
         previous_plan.add_indexing_task(
             &indexer,
             IndexingTask {

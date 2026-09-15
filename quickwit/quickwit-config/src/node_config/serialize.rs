@@ -1057,14 +1057,10 @@ mod tests {
                 "QW_AVAILABILITY_ZONE".to_string(),
                 availability_zone.to_string(),
             );
-            let config = load_node_config_with_env(
-                ConfigFormat::Yaml,
-                b"version: 0.8",
-                &env_vars,
-                None,
-            )
-            .await
-            .unwrap();
+            let config =
+                load_node_config_with_env(ConfigFormat::Yaml, b"version: 0.8", &env_vars, None)
+                    .await
+                    .unwrap();
             assert_eq!(
                 config.availability_zone.as_deref(),
                 expected_availability_zone
