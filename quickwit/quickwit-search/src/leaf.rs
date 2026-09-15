@@ -2350,6 +2350,8 @@ async fn leaf_search_single_split_wrapper(
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Bound;
+
     use async_trait::async_trait;
     use bytes::BufMut;
     use quickwit_config::{LambdaConfig, SearcherConfig};
@@ -2399,6 +2401,248 @@ mod tests {
         assert_eq!(counters.error_tantivy_search.get(), 0);
         assert_eq!(counters.error_panic.get(), 0);
         assert_eq!(counters.cancel_warmup.get(), 1);
+    }
+
+    #[track_caller]
+    fn assert_normalized_timestamp_range(
+        mut request: SearchRequest,
+        split: &SplitIdAndFooterOffsets,
+        expected_range: Option<RangeQuery>,
+    ) {
+        normalize_timestamp_range(&mut request, split, "timestamp");
+        let actual_ast: QueryAst = serde_json::from_str(&request.query_ast).unwrap();
+        let expected_ast = expected_range
+            .map(|range_query| {
+                QueryAst::from(BoolQuery {
+                    must: vec![QueryAst::MatchAll],
+                    filter: vec![range_query.into()],
+                    ..Default::default()
+                })
+            })
+            .unwrap_or(QueryAst::MatchAll);
+        assert_eq!(actual_ast, expected_ast);
+        assert!(request.start_timestamp.is_none());
+        assert!(request.end_timestamp.is_none());
+    }
+
+    fn timestamp_range(lower_bound: Bound<i64>, upper_bound: Bound<i64>) -> QueryAst {
+        RangeQuery {
+            field: "timestamp".to_string(),
+            lower_bound: lower_bound.map(Into::into),
+            upper_bound: upper_bound.map(Into::into),
+        }
+        .into()
+    }
+
+    #[test]
+    fn test_normalize_timestamp_range_clips_to_split_and_preserves_bound_types() {
+        const S_TO_NS: i64 = 1_000_000_000;
+        let time1 = 1_700_001_000;
+        let time2 = 1_700_002_000;
+        let time3 = 1_700_003_000;
+        let time4 = 1_700_004_000;
+        let split = SplitIdAndFooterOffsets {
+            timestamp_start: Some(time2),
+            timestamp_end: Some(time3),
+            ..Default::default()
+        };
+
+        // A query covering the split is removed. The millisecond upper bound also exercises
+        // timestamp unit detection.
+        assert_normalized_timestamp_range(
+            SearchRequest {
+                query_ast: serde_json::to_string(&timestamp_range(
+                    Bound::Included(time1),
+                    Bound::Included(time4 * 1_000),
+                ))
+                .unwrap(),
+                ..Default::default()
+            },
+            &split,
+            None,
+        );
+        assert_normalized_timestamp_range(
+            SearchRequest {
+                query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
+                start_timestamp: Some(time1),
+                end_timestamp: Some(time4),
+                ..Default::default()
+            },
+            &split,
+            None,
+        );
+
+        for (query_ast, expected_range) in [
+            (
+                timestamp_range(Bound::Included(time1), Bound::Included(time3)),
+                RangeQuery {
+                    field: "timestamp".to_string(),
+                    lower_bound: Bound::Unbounded,
+                    upper_bound: Bound::Included((time3 * S_TO_NS).into()),
+                },
+            ),
+            (
+                timestamp_range(Bound::Included(time1), Bound::Excluded(time3)),
+                RangeQuery {
+                    field: "timestamp".to_string(),
+                    lower_bound: Bound::Unbounded,
+                    upper_bound: Bound::Excluded((time3 * S_TO_NS).into()),
+                },
+            ),
+            (
+                timestamp_range(Bound::Excluded(time2), Bound::Included(time3)),
+                RangeQuery {
+                    field: "timestamp".to_string(),
+                    lower_bound: Bound::Excluded((time2 * S_TO_NS).into()),
+                    upper_bound: Bound::Included((time3 * S_TO_NS).into()),
+                },
+            ),
+        ] {
+            assert_normalized_timestamp_range(
+                SearchRequest {
+                    query_ast: serde_json::to_string(&query_ast).unwrap(),
+                    ..Default::default()
+                },
+                &split,
+                Some(expected_range),
+            );
+        }
+
+        // Request end timestamps are exclusive.
+        assert_normalized_timestamp_range(
+            SearchRequest {
+                query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
+                start_timestamp: Some(time1),
+                end_timestamp: Some(time3),
+                ..Default::default()
+            },
+            &split,
+            Some(RangeQuery {
+                field: "timestamp".to_string(),
+                lower_bound: Bound::Unbounded,
+                upper_bound: Bound::Excluded((time3 * S_TO_NS).into()),
+            }),
+        );
+    }
+
+    #[test]
+    fn test_normalize_timestamp_range_intersects_request_and_ast_bounds() {
+        const S_TO_NS: i64 = 1_000_000_000;
+        let time1 = 1_700_001_000;
+        let time2 = 1_700_002_000;
+        let time3 = 1_700_003_000;
+        let time4 = 1_700_004_000;
+        let split = SplitIdAndFooterOffsets {
+            timestamp_start: Some(time1),
+            timestamp_end: Some(time4),
+            ..Default::default()
+        };
+
+        let test_cases = [
+            (
+                timestamp_range(Bound::Included(time1), Bound::Included(time3)),
+                Some(time1),
+                Some(time2),
+                RangeQuery {
+                    field: "timestamp".to_string(),
+                    lower_bound: Bound::Unbounded,
+                    upper_bound: Bound::Excluded((time2 * S_TO_NS).into()),
+                },
+            ),
+            (
+                timestamp_range(Bound::Included(time1), Bound::Included(time2)),
+                Some(time1),
+                Some(time3),
+                RangeQuery {
+                    field: "timestamp".to_string(),
+                    lower_bound: Bound::Unbounded,
+                    upper_bound: Bound::Included((time2 * S_TO_NS).into()),
+                },
+            ),
+            (
+                timestamp_range(Bound::Included(time2), Bound::Included(time4)),
+                Some(time3),
+                Some(time4 + 1),
+                RangeQuery {
+                    field: "timestamp".to_string(),
+                    lower_bound: Bound::Included((time3 * S_TO_NS).into()),
+                    upper_bound: Bound::Included((time4 * S_TO_NS).into()),
+                },
+            ),
+            (
+                timestamp_range(Bound::Included(time3), Bound::Included(time4)),
+                Some(time2),
+                Some(time4 + 1),
+                RangeQuery {
+                    field: "timestamp".to_string(),
+                    lower_bound: Bound::Included((time3 * S_TO_NS).into()),
+                    upper_bound: Bound::Included((time4 * S_TO_NS).into()),
+                },
+            ),
+        ];
+        for (query_ast, start_timestamp, end_timestamp, expected_range) in test_cases {
+            assert_normalized_timestamp_range(
+                SearchRequest {
+                    query_ast: serde_json::to_string(&query_ast).unwrap(),
+                    start_timestamp,
+                    end_timestamp,
+                    ..Default::default()
+                },
+                &split,
+                Some(expected_range),
+            );
+        }
+
+        let inner_split = SplitIdAndFooterOffsets {
+            timestamp_start: Some(time2),
+            timestamp_end: Some(time3),
+            ..Default::default()
+        };
+        assert_normalized_timestamp_range(
+            SearchRequest {
+                query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
+                start_timestamp: Some(time1),
+                end_timestamp: Some(time4),
+                ..Default::default()
+            },
+            &inner_split,
+            None,
+        );
+    }
+
+    // Regression test for #4935: adding the timestamp filter must not turn `should` into an
+    // optional clause by putting it alongside the filter in the same bool query.
+    #[test]
+    fn test_normalize_timestamp_range_keeps_should_semantics() {
+        let original_ast = QueryAst::from(BoolQuery {
+            should: vec![QueryAst::MatchAll],
+            ..Default::default()
+        });
+        let mut request = SearchRequest {
+            query_ast: serde_json::to_string(&original_ast).unwrap(),
+            start_timestamp: Some(1_700_002_000),
+            ..Default::default()
+        };
+        let split = SplitIdAndFooterOffsets {
+            timestamp_start: Some(1_700_001_000),
+            timestamp_end: Some(1_700_003_000),
+            ..Default::default()
+        };
+
+        normalize_timestamp_range(&mut request, &split, "timestamp");
+
+        let actual_ast: QueryAst = serde_json::from_str(&request.query_ast).unwrap();
+        assert_eq!(
+            actual_ast,
+            QueryAst::from(BoolQuery {
+                must: vec![QueryAst::from(CacheNode::new(original_ast))],
+                filter: vec![timestamp_range(
+                    Bound::Included(1_700_002_000_000_000_000),
+                    Bound::Unbounded,
+                )],
+                ..Default::default()
+            })
+        );
     }
 
     #[test]
