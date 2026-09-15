@@ -198,17 +198,11 @@ fn repair_physical_plan_locality(
     pipelines_by_source.shuffle(rng);
 
     for source_pipelines in pipelines_by_source {
-        let selected_pipelines = select_locality_repair_pipelines(
-            source_pipelines,
-            shard_locations,
-            indexer_infos,
-            rng,
-        );
-        let Some(replacement_shards) = arrange_shards_in_home_zones(
-            &selected_pipelines,
-            shard_locations,
-            indexer_infos,
-        ) else {
+        let selected_pipelines =
+            select_locality_repair_pipelines(source_pipelines, shard_locations, indexer_infos, rng);
+        let Some(replacement_shards) =
+            arrange_shards_in_home_zones(&selected_pipelines, shard_locations, indexer_infos)
+        else {
             continue;
         };
         apply_locality_repair(physical_plan, &selected_pipelines, replacement_shards);
@@ -299,9 +293,8 @@ fn arrange_shards_in_home_zones(
     for pipeline in selected_pipelines {
         let mut pipeline_replacement: Vec<ShardId> = Vec::new();
         for shard_id in &pipeline.shard_ids {
-            let shard_is_local =
-                shard_availability_zone(shard_id, shard_locations, indexer_infos)
-                    == Some(pipeline.availability_zone.as_str());
+            let shard_is_local = shard_availability_zone(shard_id, shard_locations, indexer_infos)
+                == Some(pipeline.availability_zone.as_str());
             if shard_is_local {
                 pipeline_replacement.push(shard_id.clone());
             } else {
@@ -312,9 +305,7 @@ fn arrange_shards_in_home_zones(
     }
 
     let num_local_shards_before: usize = replacement_shards.iter().map(Vec::len).sum();
-    for (pipeline, pipeline_replacement) in
-        selected_pipelines.iter().zip(&mut replacement_shards)
-    {
+    for (pipeline, pipeline_replacement) in selected_pipelines.iter().zip(&mut replacement_shards) {
         while pipeline_replacement.len() < pipeline.shard_ids.len() {
             let Some(shard_position) = remaining_shards.iter().position(|shard_id| {
                 shard_availability_zone(shard_id, shard_locations, indexer_infos)
@@ -330,9 +321,7 @@ fn arrange_shards_in_home_zones(
         return None;
     }
 
-    for (pipeline, pipeline_replacement) in
-        selected_pipelines.iter().zip(&mut replacement_shards)
-    {
+    for (pipeline, pipeline_replacement) in selected_pipelines.iter().zip(&mut replacement_shards) {
         while pipeline_replacement.len() < pipeline.shard_ids.len() {
             let shard_id = remaining_shards
                 .pop()
@@ -372,10 +361,10 @@ mod tests {
     use rand::rngs::StdRng;
 
     use super::{
-        LocalityRepairPipeline,
-        arrange_shards_in_home_zones, collect_locality_repair_pipelines_by_source,
-        is_plan_repair_due, is_running_plan_stable, repair_physical_plan_density,
-        repair_physical_plan_locality, select_locality_repair_pipelines,
+        LocalityRepairPipeline, arrange_shards_in_home_zones,
+        collect_locality_repair_pipelines_by_source, is_plan_repair_due, is_running_plan_stable,
+        repair_physical_plan_density, repair_physical_plan_locality,
+        select_locality_repair_pipelines,
     };
     use crate::indexing_plan::PhysicalIndexingPlan;
     use crate::indexing_scheduler::scheduling::{
@@ -499,12 +488,7 @@ mod tests {
         shard_locations.add_location(&another_shard_b, &indexer_b);
         let candidates = vec![
             locality_pipeline(&indexer_a, 0, "az-a", vec![shard_b.clone()]),
-            locality_pipeline(
-                &indexer_a,
-                1,
-                "az-a",
-                vec![another_shard_b.clone()],
-            ),
+            locality_pipeline(&indexer_a, 1, "az-a", vec![another_shard_b.clone()]),
             locality_pipeline(&indexer_b, 0, "az-b", vec![shard_a.clone()]),
             locality_pipeline(&indexer_c, 0, "az-c", vec![shard_c.clone()]),
             locality_pipeline(&indexer_c, 1, "az-c", vec![ShardId::from(99)]),
@@ -556,12 +540,9 @@ mod tests {
             ),
         ];
 
-        let mut replacements = arrange_shards_in_home_zones(
-            &crossed_pipelines,
-            &shard_locations,
-            &indexer_infos,
-        )
-        .unwrap();
+        let mut replacements =
+            arrange_shards_in_home_zones(&crossed_pipelines, &shard_locations, &indexer_infos)
+                .unwrap();
         replacements.iter_mut().for_each(|shards| shards.sort());
         assert_eq!(replacements[0], vec![shard_a_1.clone(), shard_a_2.clone()]);
         assert_eq!(replacements[1], vec![shard_b_1.clone(), shard_b_2.clone()]);
@@ -581,20 +562,12 @@ mod tests {
             ),
         ];
         assert!(
-            arrange_shards_in_home_zones(
-                &local_pipelines,
-                &shard_locations,
-                &indexer_infos,
-            )
-            .is_none()
+            arrange_shards_in_home_zones(&local_pipelines, &shard_locations, &indexer_infos,)
+                .is_none()
         );
         assert!(
-            arrange_shards_in_home_zones(
-                &local_pipelines[..1],
-                &shard_locations,
-                &indexer_infos,
-            )
-            .is_none()
+            arrange_shards_in_home_zones(&local_pipelines[..1], &shard_locations, &indexer_infos,)
+                .is_none()
         );
     }
 
@@ -733,13 +706,28 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(0);
         assert!(repair_physical_plan_locality(
-            &mut plan, &shard_locations, &indexer_infos, &mut rng,
+            &mut plan,
+            &shard_locations,
+            &indexer_infos,
+            &mut rng,
         ));
-        assert_eq!(shard_ids_for_indexer(&plan, &indexer_a), vec![shard_a.clone()]);
-        assert_eq!(shard_ids_for_indexer(&plan, &indexer_b), vec![shard_b.clone()]);
-        assert_eq!(shard_ids_for_indexer(&plan, &indexer_c), vec![shard_c.clone()]);
+        assert_eq!(
+            shard_ids_for_indexer(&plan, &indexer_a),
+            vec![shard_a.clone()]
+        );
+        assert_eq!(
+            shard_ids_for_indexer(&plan, &indexer_b),
+            vec![shard_b.clone()]
+        );
+        assert_eq!(
+            shard_ids_for_indexer(&plan, &indexer_c),
+            vec![shard_c.clone()]
+        );
         assert!(!repair_physical_plan_locality(
-            &mut plan, &shard_locations, &indexer_infos, &mut rng,
+            &mut plan,
+            &shard_locations,
+            &indexer_infos,
+            &mut rng,
         ));
     }
 }

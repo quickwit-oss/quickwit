@@ -365,6 +365,13 @@ fn build_indexer_tasks(indexers: &[IndexerPoolEntry]) -> FnvHashMap<NodeId, Vec<
         .collect()
 }
 
+fn all_indexers_advertise_availability_zone(indexers: &IndexerPool) -> bool {
+    indexers
+        .values()
+        .iter()
+        .all(|indexer| indexer.availability_zone.is_some())
+}
+
 impl IndexingScheduler {
     pub fn new(cluster_id: String, self_node_id: NodeId, indexer_pool: IndexerPool) -> Self {
         IndexingScheduler {
@@ -403,7 +410,8 @@ impl IndexingScheduler {
 
         let sources = get_sources_to_schedule(model, disable_ingest_v1());
 
-        let is_locality_aware = enable_locality_aware_scheduling();
+        let is_locality_aware = enable_locality_aware_scheduling()
+            && all_indexers_advertise_availability_zone(&self.indexer_pool);
 
         let indexer_infos: FnvHashMap<NodeId, IndexerInfo> =
             build_indexer_infos(&indexers, is_locality_aware);
@@ -1636,6 +1644,22 @@ mod tests {
         ]);
         assert_eq!(selected.len(), 3);
         assert_eq!(selected_statuses, expected_statuses);
+    }
+
+    #[test]
+    fn test_all_indexers_advertise_availability_zone() {
+        let indexer_pool = IndexerPool::default();
+        let mut zoned_indexer = mock_indexer_node_info("indexer-zoned", IngesterStatus::Ready);
+        zoned_indexer.availability_zone = Some("az-a".to_string());
+        indexer_pool.insert(zoned_indexer.node_id.clone(), zoned_indexer);
+
+        assert!(all_indexers_advertise_availability_zone(&indexer_pool));
+
+        let unzoned_indexer =
+            mock_indexer_node_info("indexer-unzoned", IngesterStatus::Initializing);
+        indexer_pool.insert(unzoned_indexer.node_id.clone(), unzoned_indexer);
+
+        assert!(!all_indexers_advertise_availability_zone(&indexer_pool));
     }
 
     #[test]
