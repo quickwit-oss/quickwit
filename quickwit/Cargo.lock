@@ -9154,6 +9154,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "bytesize",
+ "crc-fast",
  "futures",
  "http 1.4.2",
  "http-body-util",

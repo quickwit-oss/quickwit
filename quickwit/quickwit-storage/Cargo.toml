@@ -17,6 +17,7 @@ async-trait = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
+crc-fast = { workspace = true, optional = true }
 futures = { workspace = true }
 http-body-util = { workspace = true}
 hyper = { workspace = true }
@@ -86,6 +87,7 @@ azure = [
   "azure_core",
   "azure_identity",
   "azure_storage_blob",
+  "dep:crc-fast",
   "dep:time",
 ]
 gcs = ["dep:opendal", "opendal/services-gcs"]

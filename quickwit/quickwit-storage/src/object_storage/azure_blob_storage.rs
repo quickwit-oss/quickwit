@@ -32,7 +32,6 @@ use bytes::Bytes;
 use bytesize::ByteSize;
 use futures::io::Error as FutureError;
 use futures::stream::{StreamExt, TryStreamExt};
-use md5::Digest;
 use quickwit_common::retry::{RetryParams, Retryable, retry};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, ignore_error_kind, into_u64_range};
@@ -342,7 +341,7 @@ impl AzureBlobStorage {
                     .await?;
                 return Result::<(), AzureErrorWrapper>::Ok(());
             }
-            let digest = md5::compute(&data[..]);
+            let checksum = crc64_nvme(&data);
             let content_length = data.len() as u64;
             // Staged and committed rather than uploaded in one shot, because `upload()`
             // only exposes `blob_content_md5`, which the service stores without checking it
@@ -351,7 +350,7 @@ impl AzureBlobStorage {
             // a silent corruption here would be permanent. The cost is one extra request per
             // object below the multipart threshold.
             let stage_block_options = BlockBlobClientStageBlockOptions {
-                transactional_content_md5: Some(digest.0.to_vec()),
+                transactional_content_crc64: Some(checksum),
                 ..Default::default()
             };
             // `RequestContent::from` is an inherent function over `Vec<u8>`, which shadows
@@ -410,12 +409,14 @@ impl AzureBlobStorage {
                         HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_UPLOAD_PART_DURATION);
                     retry(&self.retry_params, || async {
                         let block_id = format_block_id(upload_id, num);
-                        let (data, hash_digest) =
-                            extract_range_data_and_hash(moved_payload.box_clone(), range.clone())
-                                .await?;
+                        let (data, checksum) = extract_range_data_and_checksum(
+                            moved_payload.box_clone(),
+                            range.clone(),
+                        )
+                        .await?;
                         let content_length = data.len() as u64;
                         let stage_block_options = BlockBlobClientStageBlockOptions {
-                            transactional_content_md5: Some(hash_digest.0.to_vec()),
+                            transactional_content_crc64: Some(checksum),
                             ..Default::default()
                         };
                         // The SDK base64 encodes the block id, so it takes the raw bytes.
@@ -664,11 +665,22 @@ fn build_emulated_container_client(container: &str) -> BlobContainerClient {
     .expect("the emulator endpoint should be a valid URL")
 }
 
-/// Copy range of payload into `Bytes` and return the computed md5.
-async fn extract_range_data_and_hash(
+/// Computes the checksum the service validates a staged block against.
+///
+/// `x-ms-content-crc64` is CRC-64/NVME, little endian, despite the 1.0 SDK's own tests
+/// calling it ECMA-182. The two use different polynomials, and the vector those tests pin
+/// (`V0JSBnCFdzM=` for `hello`) is the NVME one.
+fn crc64_nvme(data: &[u8]) -> Vec<u8> {
+    crc_fast::checksum(crc_fast::CrcAlgorithm::Crc64Nvme, data)
+        .to_le_bytes()
+        .to_vec()
+}
+
+/// Copy range of payload into `Bytes` and return the computed checksum.
+async fn extract_range_data_and_checksum(
     payload: Box<dyn PutPayload>,
     range: Range<u64>,
-) -> io::Result<(Bytes, Digest)> {
+) -> io::Result<(Bytes, Vec<u8>)> {
     let mut reader = payload
         .range_byte_stream(range.clone())
         .await?
@@ -676,8 +688,8 @@ async fn extract_range_data_and_hash(
     let mut buf: Vec<u8> = Vec::with_capacity(range.count());
     tokio::io::copy(&mut reader, &mut buf).await?;
     let data = Bytes::from(buf);
-    let hash = md5::compute(&data[..]);
-    Ok((data, hash))
+    let checksum = crc64_nvme(&data);
+    Ok((data, checksum))
 }
 
 pub fn parse_azure_uri(uri: &Uri) -> Option<(String, PathBuf)> {
@@ -751,7 +763,15 @@ impl From<AzureErrorWrapper> for StorageError {
 mod tests {
     use quickwit_common::uri::Uri;
 
-    use crate::object_storage::azure_blob_storage::parse_azure_uri;
+    use crate::object_storage::azure_blob_storage::{crc64_nvme, parse_azure_uri};
+
+    /// Pins the variant `x-ms-content-crc64` expects. The 1.0 SDK ships this vector in its
+    /// own block blob tests but labels it ECMA-182, which is a different polynomial, so the
+    /// label is the thing to distrust if this ever fails.
+    #[test]
+    fn test_crc64_nvme_matches_the_service_vector() {
+        assert_eq!(crc64_nvme(b"hello"), vec![87, 66, 82, 6, 112, 133, 119, 51]);
+    }
 
     #[test]
     fn test_parse_azure_uri() {
