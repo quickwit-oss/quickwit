@@ -19,6 +19,7 @@ use std::time::Duration;
 use std::{fmt, io};
 
 use async_trait::async_trait;
+use bytesize::ByteSize;
 use futures::AsyncWriteExt as FuturesAsyncWriteExt;
 use opendal::layers::{ConcurrentLimitLayer, RetryLayer};
 use opendal::{DeleteInput, IntoDeleteInput, Operator};
@@ -36,6 +37,23 @@ use crate::{
     BulkDeleteError, MultiPartPolicy, OwnedBytes, PutPayload, Storage, StorageError,
     StorageErrorKind, StorageResolverError, StorageResult,
 };
+
+/// Upload limits for the OpenDAL backends.
+///
+/// These match [`MultiPartPolicy::default`] except for the target part size. OpenDAL
+/// buffers a whole part before flushing it, so the part size is also the peak amount of
+/// memory an upload holds. The S3 implementation streams each part straight from the
+/// payload instead, which is why it can afford the larger default: there, a bigger part
+/// only means fewer billed PUT requests, at no cost in memory.
+///
+/// A gibibyte still keeps the request count low while bounding what a single upload can
+/// pin in RAM.
+fn opendal_multipart_policy() -> MultiPartPolicy {
+    MultiPartPolicy {
+        target_part_num_bytes: ByteSize::gib(1),
+        ..MultiPartPolicy::default()
+    }
+}
 
 /// OpenDAL based storage implementation.
 /// # TODO
@@ -74,8 +92,7 @@ impl OpendalStorage {
         Self {
             uri,
             op,
-            // limits are the same as on S3
-            multipart_policy: MultiPartPolicy::default(),
+            multipart_policy: opendal_multipart_policy(),
         }
     }
 
@@ -341,6 +358,52 @@ mod tests {
     use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
     use super::*;
+
+    /// A part is buffered whole before it is flushed, so the part size chosen for an
+    /// upload is what that upload can pin in memory.
+    #[test]
+    fn opendal_policy_bounds_the_part_size() {
+        let split_len = ByteSize::gib(4).as_u64();
+
+        // Under the shared default a split this size is sent as one part, so the whole
+        // thing is held at once.
+        assert_eq!(
+            MultiPartPolicy::default().part_num_bytes(split_len),
+            ByteSize::gib(5).as_u64()
+        );
+        assert_eq!(
+            opendal_multipart_policy().part_num_bytes(split_len),
+            ByteSize::gib(1).as_u64()
+        );
+    }
+
+    /// Only the part size differs. The rest still describes what the backend accepts.
+    #[test]
+    fn opendal_policy_keeps_the_other_limits() {
+        let policy = opendal_multipart_policy();
+        let default = MultiPartPolicy::default();
+
+        assert_eq!(
+            policy.multipart_threshold_num_bytes,
+            default.multipart_threshold_num_bytes
+        );
+        assert_eq!(policy.max_num_parts, default.max_num_parts);
+        assert_eq!(policy.max_object_num_bytes, default.max_object_num_bytes);
+        assert_eq!(
+            policy.max_concurrent_uploads(),
+            default.max_concurrent_uploads()
+        );
+    }
+
+    /// Splits below the multipart threshold are unaffected.
+    #[test]
+    fn opendal_policy_leaves_small_uploads_single_part() {
+        let small_len = ByteSize::mib(64).as_u64();
+        assert_eq!(
+            opendal_multipart_policy().part_num_bytes(small_len),
+            small_len
+        );
+    }
 
     /// `AsyncRead` that returns a predefined sequence of chunks, one chunk per
     /// `poll_read` call. This lets us simulate a source that returns small
