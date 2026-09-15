@@ -20,6 +20,7 @@ mod ingest_v2_tests;
 mod metrics_distributed_tests;
 mod no_cp_tests;
 mod otlp_tests;
+mod serve_failure_tests;
 #[cfg(feature = "sqs-localstack-tests")]
 mod sqs_tests;
 mod tls_tests;
