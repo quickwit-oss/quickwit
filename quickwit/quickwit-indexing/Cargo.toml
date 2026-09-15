@@ -14,6 +14,7 @@ license.workspace = true
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-compression = { workspace = true }
+async-nats = { workspace = true, optional = true }
 async-trait = { workspace = true }
 aws-sdk-kinesis = { workspace = true, optional = true }
 aws-sdk-sqs = { workspace = true, optional = true }
@@ -83,6 +84,8 @@ kinesis = [
   "quickwit-aws/kinesis",
 ]
 kinesis-localstack-tests = []
+nats = ["dep:async-nats"]
+nats-broker-tests = ["nats"]
 pulsar = ["dep:pulsar"]
 pulsar-broker-tests = []
 queue-sources = []
@@ -117,6 +120,8 @@ ci-test = []
 bytes = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 mockall = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
 parquet = { workspace = true }
 proptest = { workspace = true }
 prost = { workspace = true }

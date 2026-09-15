@@ -84,7 +84,7 @@ use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig, disable_ingest
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
-use quickwit_indexing::actors::{IndexingService, MergeSchedulerService};
+use quickwit_indexing::actors::{DrainAllPipelines, IndexingService, MergeSchedulerService};
 use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::{IndexingSplitCache, start_indexing_service};
 use quickwit_ingest::{
@@ -508,6 +508,8 @@ fn start_shard_positions_service(
 async fn shutdown_signal_handler(
     shutdown_signal: BoxFutureInfaillible<()>,
     universe: Universe,
+    indexing_service_opt: Option<Mailbox<IndexingService>>,
+    indexer_shutdown_drain_timeout: Duration,
     ingester_opt: Option<Ingester>,
     ingester_decommission_timeout: Duration,
     compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
@@ -536,6 +538,26 @@ async fn shutdown_signal_handler(
     }
     if let Err(error) = compactor_result {
         error!("failed to decommission compactor gracefully: {:?}", error);
+    }
+
+    if let Some(indexing_service) = &indexing_service_opt {
+        match tokio::time::timeout(
+            indexer_shutdown_drain_timeout,
+            indexing_service.ask(DrainAllPipelines),
+        )
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                error!("failed to drain indexing pipelines gracefully: {:?}", error);
+            }
+            Err(_elapsed) => {
+                error!(
+                    timeout=?indexer_shutdown_drain_timeout,
+                    "timed out draining the indexing pipelines"
+                );
+            }
+        }
     }
     let actor_exit_statuses = universe.quit().await;
 
@@ -910,6 +932,7 @@ pub async fn serve_quickwit(
 
     let grpc_listen_addr = node_config.grpc_listen_addr;
     let rest_listen_addr = node_config.rest_config.listen_addr;
+    let indexer_shutdown_drain_timeout = node_config.indexer_config.shutdown_drain_timeout();
     let ingester_decommission_timeout = node_config.ingest_api_config.decommission_timeout();
     let compactor_decommission_timeout = node_config.compactor_config.decommission_timeout();
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
@@ -1033,6 +1056,8 @@ pub async fn serve_quickwit(
     let shutdown_handle = tokio::spawn(shutdown_signal_handler(
         shutdown_signal,
         universe,
+        quickwit_services.indexing_service_opt.clone(),
+        indexer_shutdown_drain_timeout,
         ingester_opt,
         ingester_decommission_timeout,
         compactor_supervisor_opt,

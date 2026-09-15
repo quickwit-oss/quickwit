@@ -568,7 +568,7 @@ Create source by posting a source config JSON payload.
 |-------------------|----------|----------------------------------------------------------------------------------------|---------------|
 | `version**       | `String` | Config format version, put your current Quickwit version.                               | _required_    |
 | `source_id`     | `String` | Source ID. See ID [validation rules](../configuration/source-config.md).                 | _required_    |
-| `source_type`   | `String` | Source type: `kafka`, `kinesis` or `pulsar`.                                             | _required_    |
+| `source_type`   | `String` | Source type: `kafka`, `kinesis`, `nats`, `pubsub` or `pulsar`.                           | _required_    |
 | `num_pipelines` | `usize`  | Number of running indexing pipelines per node for this source.                           | `1`           |
 | `transform`     | `object` | A [VRL](https://vector.dev/docs/reference/vrl/) transformation applied to incoming documents, as defined in [source config docs](../configuration/source-config.md#transform-parameters).                          | `null`         |
 | `params`        | `object` | Source parameters as defined in [source config docs](../configuration/source-config.md). | _required_    |
@@ -623,7 +623,7 @@ Update a source by posting a source config JSON payload.
 |-------------------|----------|----------------------------------------------------------------------------------------|---------------|
 | `version**       | `String` | Config format version, put your current Quickwit version.                               | _required_    |
 | `source_id`     | `String` | Source ID, must be the same source as in the request URL.                                | _required_    |
-| `source_type`   | `String` | Source type: `kafka`, `kinesis` or `pulsar`. Cannot be updated.                          | _required_    |
+| `source_type`   | `String` | Source type: `kafka`, `kinesis`, `nats`, `pubsub` or `pulsar`. Cannot be updated.        | _required_    |
 | `num_pipelines` | `usize`  | Number of running indexing pipelines per node for this source.                           | `1`           |
 | `transform`     | `object` | A [VRL](https://vector.dev/docs/reference/vrl/) transformation applied to incoming documents, as defined in [source config docs](../configuration/source-config.md#transform-parameters).                          | `null`         |
 | `params`        | `object` | Source parameters as defined in [source config docs](../configuration/source-config.md). | _required_    |

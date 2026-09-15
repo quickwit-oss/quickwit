@@ -153,6 +153,9 @@ jobs:
       - name: Run Pulsar service
         run: DOCKER_SERVICES=pulsar make docker-compose-up
 
+      - name: Run NATS service
+        run: DOCKER_SERVICES=nats make docker-compose-up
+
       - name: Install Rust
         run: rustup toolchain install
         working-directory: ./quickwit

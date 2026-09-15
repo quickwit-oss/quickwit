@@ -1513,6 +1513,7 @@ fn use_shard_api(params: &SourceParams) -> bool {
         SourceParams::Kinesis(_) => false,
         SourceParams::PubSub(_) => false,
         SourceParams::Pulsar(_) => false,
+        SourceParams::Nats(_) => false,
         SourceParams::Stdin => panic!("stdin cannot be checkpointed"),
         SourceParams::Vec(_) => false,
         SourceParams::Void(_) => false,
