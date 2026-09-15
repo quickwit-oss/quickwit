@@ -97,9 +97,9 @@ impl fmt::Debug for TokenCredentialKind {
 /// environment credential came before managed identity. Dropping that ordering silently
 /// breaks every deployment that authenticates with a service principal, because the client
 /// secret is ignored and IMDS is contacted instead.
-fn select_token_credential_kind(var: impl Fn(&str) -> Option<String>) -> TokenCredentialKind {
-    let non_empty = |name: &str| match var(name) {
-        Some(value) if !value.trim().is_empty() => Some(value),
+fn select_token_credential_kind(var_fn: impl Fn(&str) -> Option<String>) -> TokenCredentialKind {
+    let non_empty = |name: &str| match var_fn(name) {
+        Some(value) if !value.trim().is_empty() => Some(value.trim().to_string()),
         _ => None,
     };
     let client_id = non_empty(AZURE_CLIENT_ID);
@@ -168,7 +168,10 @@ fn resolve_token_credential() -> azure_core::Result<Arc<dyn TokenCredential>> {
     let kind = match credential_kind.as_str() {
         "workloadidentity" => TokenCredentialKind::WorkloadIdentity,
         "managedidentity" => TokenCredentialKind::ManagedIdentity {
-            user_assigned_client_id: env::var(AZURE_CLIENT_ID).ok().filter(|id| !id.is_empty()),
+            user_assigned_client_id: env::var(AZURE_CLIENT_ID)
+                .ok()
+                .map(|client_id| client_id.trim().to_string())
+                .filter(|client_id| !client_id.is_empty()),
         },
         // An empty or unrecognized value falls through to detection.
         _ => select_token_credential_kind(|name| env::var(name).ok()),
@@ -314,6 +317,25 @@ mod tests {
             (AZURE_TENANT_ID, "tenant"),
             (AZURE_CLIENT_ID, "client"),
             (AZURE_CLIENT_SECRET, "secret"),
+        ]));
+        assert_eq!(
+            kind,
+            TokenCredentialKind::ClientSecret {
+                tenant_id: "tenant".to_owned(),
+                client_id: "client".to_owned(),
+                secret: "secret".to_owned(),
+            }
+        );
+    }
+
+    /// Whitespace around a variable survives most shell and manifest plumbing. Accepting the
+    /// value but keeping the padding sends it to Entra as part of the tenant or client id.
+    #[test]
+    fn test_surrounding_whitespace_is_stripped() {
+        let kind = select_token_credential_kind(env_from(&[
+            (AZURE_TENANT_ID, "  tenant\n"),
+            (AZURE_CLIENT_ID, "\tclient  "),
+            (AZURE_CLIENT_SECRET, " secret "),
         ]));
         assert_eq!(
             kind,
