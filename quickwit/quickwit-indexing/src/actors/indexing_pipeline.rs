@@ -371,6 +371,7 @@ impl IndexingPipeline {
             self.params.indexing_directory.clone(),
             self.params.indexing_settings.clone(),
             self.params.cooperative_indexing_permits.clone(),
+            self.params.spread_indexing_pipelines,
             index_serializer_mailbox,
             self.params.fingerprinter_opt.clone(),
         );
@@ -556,6 +557,9 @@ pub struct IndexingPipelineParams {
     pub split_store: IndexingSplitStore,
     pub max_concurrent_split_uploads_index: usize,
     pub cooperative_indexing_permits: Option<Arc<Semaphore>>,
+    /// Spreads the indexing pipelines of a node uniformly in time. Implied by cooperative
+    /// indexing.
+    pub spread_indexing_pipelines: bool,
 
     // Merge-related parameters
     pub merge_policy: Arc<dyn MergePolicy>,
@@ -700,6 +704,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            spread_indexing_pipelines: false,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             event_broker: EventBroker::default(),
             params_fingerprint: 42u64,
@@ -807,6 +812,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            spread_indexing_pipelines: false,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             params_fingerprint: 42u64,
             event_broker: EventBroker::default(),
@@ -937,6 +943,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            spread_indexing_pipelines: false,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             event_broker: Default::default(),
             params_fingerprint: 42u64,
@@ -1038,6 +1045,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            spread_indexing_pipelines: false,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox.clone()),
             event_broker: Default::default(),
             params_fingerprint: 42u64,
@@ -1122,6 +1130,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            spread_indexing_pipelines: false,
             merge_planner_mailbox_opt: None,
             event_broker: Default::default(),
             params_fingerprint: 42u64,
@@ -1276,6 +1285,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            spread_indexing_pipelines: false,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             params_fingerprint: 42u64,
             event_broker: Default::default(),
