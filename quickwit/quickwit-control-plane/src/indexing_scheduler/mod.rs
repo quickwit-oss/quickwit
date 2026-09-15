@@ -43,7 +43,9 @@ use ulid::Ulid;
 
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotifier};
-use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
+use crate::indexing_scheduler::scheduling::{
+    build_physical_indexing_plan, is_plan_eligible_for_optimization,
+};
 use crate::metrics::{
     APPLY_PLAN_TOTAL, SCHEDULE_TOTAL, ShardLocalityMetrics, publish_indexing_plan_metrics,
 };
@@ -76,6 +78,8 @@ pub struct IndexingSchedulerState {
     pub last_applied_indexer_statuses: FnvHashMap<NodeId, IngesterStatus>,
     #[serde(skip)]
     pub last_applied_plan_timestamp: Option<Instant>,
+    #[serde(skip)]
+    pub last_plan_repair_attempt_timestamp: Option<Instant>,
 }
 
 /// The [`IndexingScheduler`] is responsible for listing indexing tasks and assigning them to
@@ -382,13 +386,22 @@ impl IndexingScheduler {
     // Prefer not calling this method directly, and instead call
     // `ControlPlane::rebuild_indexing_plan_debounced`.
     pub(crate) fn rebuild_plan(&mut self, model: &ControlPlaneModel) {
+        let indexers = self.select_available_indexers_for_scheduling();
+        let indexer_statuses = build_indexer_statuses(&indexers);
+        self.rebuild_plan_with_indexers(model, indexers, indexer_statuses);
+    }
+
+    fn rebuild_plan_with_indexers(
+        &mut self,
+        model: &ControlPlaneModel,
+        indexers: Vec<IndexerPoolEntry>,
+        indexer_statuses: FnvHashMap<NodeId, IngesterStatus>,
+    ) {
         SCHEDULE_TOTAL.inc();
 
         let notify_on_drop = self.next_rebuild_tracker.start_rebuild();
 
         let sources = get_sources_to_schedule(model, disable_ingest_v1());
-
-        let indexers: Vec<IndexerPoolEntry> = self.select_available_indexers_for_scheduling();
 
         let is_locality_aware = enable_locality_aware_scheduling();
 
@@ -403,15 +416,23 @@ impl IndexingScheduler {
         };
 
         let shard_locations = model.shard_locations();
-        let (new_physical_plan, shard_locality_metrics) = self.build_new_plan(
+        let can_optimize_plan = is_plan_eligible_for_optimization(
+            &indexers,
+            &indexer_statuses,
+            is_locality_aware,
+            &mut self.state,
+        );
+        let new_physical_plan = self.build_new_plan(
             &sources,
             &indexer_infos,
             is_locality_aware,
             &shard_locations,
+            can_optimize_plan,
         );
+        let shard_locality_metrics =
+            get_shard_locality_metrics(&new_physical_plan, &shard_locations, &indexer_infos);
         shard_locality_metrics.publish();
 
-        let indexer_statuses = build_indexer_statuses(&indexers);
         if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
             let plans_diff = get_indexing_plans_diff(
                 last_applied_plan.indexing_tasks_per_indexer(),
@@ -435,16 +456,16 @@ impl IndexingScheduler {
         indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
         locality_aware: bool,
         shard_locations: &ShardLocations,
-    ) -> (PhysicalIndexingPlan, ShardLocalityMetrics) {
-        let new_plan = build_physical_indexing_plan(
+        can_optimize_plan: bool,
+    ) -> PhysicalIndexingPlan {
+        build_physical_indexing_plan(
             sources,
             indexer_infos,
             locality_aware,
             self.state.last_applied_physical_plan.as_ref(),
             shard_locations,
-        );
-        let locality = get_shard_locality_metrics(&new_plan, shard_locations, indexer_infos);
-        (new_plan, locality)
+            can_optimize_plan,
+        )
     }
 
     /// Checks if the last applied plan corresponds to the running indexing tasks present in the
@@ -480,7 +501,7 @@ impl IndexingScheduler {
         );
         if !indexing_plans_diff.has_same_nodes() {
             info!(plans_diff=?indexing_plans_diff, "running plan and last applied plan indexers differ: schedule an indexing plan");
-            self.rebuild_plan(model);
+            self.rebuild_plan_with_indexers(model, indexers, running_indexer_statuses);
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
             info!(plans_diff=?indexing_plans_diff, "running tasks and last applied tasks differ: reapply last plan");
@@ -1215,8 +1236,14 @@ mod tests {
 
         // With no previous plan, the build starts from scratch: affinity-based placement gives
         // each indexer its own hosted shard.
-        let (plan, metrics) =
-            scheduler.build_new_plan(&sources, &indexer_infos, locality_aware, &shard_locations);
+        let plan = scheduler.build_new_plan(
+            &sources,
+            &indexer_infos,
+            locality_aware,
+            &shard_locations,
+            false,
+        );
+        let metrics = get_shard_locality_metrics(&plan, &shard_locations, &indexer_infos);
         assert_eq!(metrics.locality_percent(), 100);
         assert_eq!(
             shard_ids_for_indexer(&plan, &indexer1),
@@ -1226,8 +1253,15 @@ mod tests {
         // Seeded with a valid but non-local plan, the next build retains it rather than
         // rebuilding from scratch to restore locality.
         scheduler.state.last_applied_physical_plan = Some(swapped_plan());
-        let (retained_plan, metrics_retained) =
-            scheduler.build_new_plan(&sources, &indexer_infos, locality_aware, &shard_locations);
+        let retained_plan = scheduler.build_new_plan(
+            &sources,
+            &indexer_infos,
+            locality_aware,
+            &shard_locations,
+            false,
+        );
+        let metrics_retained =
+            get_shard_locality_metrics(&retained_plan, &shard_locations, &indexer_infos);
         assert_eq!(metrics_retained.locality_percent(), 0);
         assert_eq!(
             shard_ids_for_indexer(&retained_plan, &indexer1),

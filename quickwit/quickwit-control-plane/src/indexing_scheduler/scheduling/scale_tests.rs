@@ -101,6 +101,7 @@ fn test_scale_all_indexers_ready() {
         locality_aware,
         None,
         &shard_locations,
+        false,
     );
 
     assert_every_shard_scheduled_once(&plan, &sources);
@@ -133,6 +134,7 @@ fn test_scale_all_indexers_ready() {
         locality_aware,
         Some(&plan),
         &shard_locations,
+        false,
     );
     assert_eq!(plan, replanned);
 }
@@ -155,6 +157,7 @@ fn test_scale_drain_spread_across_azs() {
         locality_aware,
         None,
         &shard_locations,
+        false,
     );
 
     let draining_indexer_ords = spread_draining_indexer_ords();
@@ -166,6 +169,7 @@ fn test_scale_drain_spread_across_azs() {
         locality_aware,
         Some(&baseline_plan),
         &shard_locations,
+        false,
     );
 
     assert_every_shard_scheduled_once(&drained_plan, &sources);
@@ -199,6 +203,7 @@ fn test_scale_drain_spread_across_azs() {
         locality_aware,
         Some(&drained_plan),
         &shard_locations,
+        false,
     );
     let num_released_shards = num_hosted_on_draining - num_indexed_by_draining;
     let num_churned_shards = num_shards_with_changed_pipeline(&drained_plan, &replanned);
@@ -242,6 +247,7 @@ fn test_scale_drain_whole_az() {
         locality_aware,
         None,
         &shard_locations,
+        false,
     );
 
     let draining_indexer_ords = whole_az_draining_indexer_ords();
@@ -253,6 +259,7 @@ fn test_scale_drain_whole_az() {
         locality_aware,
         Some(&baseline_plan),
         &shard_locations,
+        false,
     );
 
     assert_every_shard_scheduled_once(&drained_plan, &sources);
@@ -296,6 +303,7 @@ fn test_scale_drain_whole_az() {
         locality_aware,
         Some(&drained_plan),
         &shard_locations,
+        false,
     );
     let num_released_shards = num_hosted_on_draining - num_indexed_by_draining;
     let num_churned_shards = num_shards_with_changed_pipeline(&drained_plan, &replanned);
