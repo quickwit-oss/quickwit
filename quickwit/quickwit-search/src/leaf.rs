@@ -297,11 +297,17 @@ async fn run_cancellable(
 /// the (immutable, query-independent) absence — see [`term_absence_cache_key`]. It only ever
 /// fires for a single-segment split, where "absent in the split" is sound.
 ///
+/// `priority` schedules the CPU-intensive part of warmup. Warmup is mostly IO-bound, but
+/// resolving automatons walks the term dictionary on the search thread pool, so the originating
+/// request's priority has to be forwarded for that work to be scheduled against the rest of the
+/// queue. Callers without a request priority to forward pass [`Priority::default`].
+///
 /// Returns whether the query is provably empty in this split (i.e. `on_absent` fired and
 /// warmup was short-circuited).
 pub(crate) async fn warmup(
     searcher: &Searcher,
     warmup_info: &WarmupInfo,
+    priority: Priority,
     on_absent: &(dyn Fn(&Term, SegmentId) + Sync),
 ) -> anyhow::Result<bool> {
     debug!(warmup_info=?warmup_info);
@@ -355,7 +361,7 @@ pub(crate) async fn warmup(
     .instrument(debug_span!("warm_up_postings"));
     let warm_up_automatons_future = run_cancellable(
         abort_token.as_ref(),
-        warm_up_automatons(searcher, &warmup_info.automatons_grouped_by_field),
+        warm_up_automatons(searcher, &warmup_info.automatons_grouped_by_field, priority),
     )
     .instrument(debug_span!("warm_up_automatons"));
 
@@ -515,11 +521,12 @@ async fn warm_up_term_ranges(
 async fn warm_up_automatons(
     searcher: &Searcher,
     terms_grouped_by_field: &HashMap<Field, HashSet<Automaton>>,
+    priority: Priority,
 ) -> anyhow::Result<()> {
     let mut warm_up_futures = Vec::new();
-    let cpu_intensive_executor = |task| async {
+    let cpu_intensive_executor = |task| async move {
         crate::search_thread_pool()
-            .run_cpu_intensive(task)
+            .run_cpu_intensive_with_priority(priority, task)
             .await
             .map_err(|_| std::io::Error::other("task panicked"))?
     };
@@ -797,13 +804,17 @@ async fn leaf_search_single_split(
             downloaded_mb = tracing::field::Empty,
             total_mb = tracing::field::Empty
         );
-        let provably_empty = warmup(&searcher, &warmup_info, &record_absence)
-            .instrument(warmup_span.clone())
-            .await
-            .inspect_err(|_| {
-                leaf_search_state_guard
-                    .set_state(SplitSearchState::Error(SplitSearchErrorKind::Warmup))
-            })?;
+        let provably_empty = warmup(
+            &searcher,
+            &warmup_info,
+            Priority::Normal(search_request.priority),
+            &record_absence,
+        )
+        .instrument(warmup_span.clone())
+        .await
+        .inspect_err(|_| {
+            leaf_search_state_guard.set_state(SplitSearchState::Error(SplitSearchErrorKind::Warmup))
+        })?;
         warmup_span.record(
             "downloaded_mb",
             download_counters
@@ -894,7 +905,7 @@ async fn leaf_search_single_split(
     let wait_for_search_permit: Duration = search_permit.wait_for_acquisition();
     let search_request_and_result: Option<(SearchRequest, LeafSearchResponse)> =
         crate::search_thread_pool()
-            .run_cpu_intensive(move || {
+            .run_cpu_intensive_with_priority(Priority::Normal(search_request.priority), move || {
                 // The CPU-pool queue wait ends as this closure starts executing.
                 drop(cpu_wait_span);
                 leaf_search_state_guard.set_state(SplitSearchState::Cpu);
@@ -2952,9 +2963,14 @@ mod tests {
         // `on_absent` was invoked with.
         async fn run(searcher: &Searcher, warmup_info: &WarmupInfo) -> (bool, Vec<Term>) {
             let reported = std::sync::Mutex::new(Vec::new());
-            let provably_empty = warmup(searcher, warmup_info, &|term: &Term, _segment_id| {
-                reported.lock().unwrap().push(term.clone());
-            })
+            let provably_empty = warmup(
+                searcher,
+                warmup_info,
+                Priority::default(),
+                &|term: &Term, _segment_id| {
+                    reported.lock().unwrap().push(term.clone());
+                },
+            )
             .await
             .unwrap();
             (provably_empty, reported.into_inner().unwrap())
