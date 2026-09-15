@@ -490,10 +490,36 @@ fn convert_scheduling_solution_to_physical_plan(
             );
         }
     }
+    remove_empty_sharded_pipelines(&mut new_physical_plan, sources);
 
     new_physical_plan.normalize();
 
     new_physical_plan
+}
+
+// We try to reuse existing pipelines if possible, but if all the shards on this pipeline reach EOF
+// or were moved off, we're left with an empty pipeline, which should be pruned.
+fn remove_empty_sharded_pipelines(
+    physical_plan: &mut PhysicalIndexingPlan,
+    sources: &[SourceToSchedule],
+) {
+    let sharded_source_uids: FnvHashSet<SourceUid> = sources
+        .iter()
+        .filter(|source| matches!(source.source_type, SourceToScheduleType::Sharded { .. }))
+        .map(|source| source.source_uid.clone())
+        .collect();
+    for indexing_tasks in physical_plan.indexing_tasks_per_indexer_mut().values_mut() {
+        indexing_tasks.retain(|indexing_task| {
+            if !indexing_task.shard_ids.is_empty() {
+                return true;
+            }
+            let source_uid = SourceUid {
+                index_uid: indexing_task.index_uid().clone(),
+                source_id: indexing_task.source_id.clone(),
+            };
+            !sharded_source_uids.contains(&source_uid)
+        });
+    }
 }
 
 fn is_shard_local(indexer: &NodeId, shard_id: &ShardId, shard_locations: &ShardLocations) -> bool {
@@ -1685,6 +1711,139 @@ mod tests {
         let current_tasks = plan.indexer(&current_host).unwrap();
         assert_eq!(current_tasks.len(), 1);
         assert_eq!(current_tasks[0].pipeline_uid(), current_pipeline_uid);
+    }
+
+    #[test]
+    fn test_build_physical_plan_removes_empty_sharded_pipelines() {
+        let sharded_source_uid = source_id();
+        let non_sharded_source_uid = source_id();
+        let current_shard0 = ShardId::from(1);
+        let current_shard1 = ShardId::from(2);
+        let sharded_source = SourceToSchedule {
+            source_uid: sharded_source_uid.clone(),
+            source_type: SourceToScheduleType::Sharded {
+                shard_ids: vec![current_shard0.clone(), current_shard1.clone()],
+                load_per_shard: NonZeroU32::new(1_000).unwrap(),
+            },
+            params_fingerprint: 0,
+        };
+        let non_sharded_source = SourceToSchedule {
+            source_uid: non_sharded_source_uid.clone(),
+            source_type: SourceToScheduleType::NonSharded {
+                num_pipelines: 1,
+                load_per_pipeline: NonZeroU32::new(1_000).unwrap(),
+            },
+            params_fingerprint: 0,
+        };
+
+        let indexer = NodeId::from_str("indexer1");
+        let mut indexer_infos = FnvHashMap::default();
+        indexer_infos.insert(indexer.clone(), IndexerInfo::for_test(mcpu(16_000)));
+
+        let obsolete_pipeline_uid = PipelineUid::for_test(1u128);
+        let current_pipeline_uid = PipelineUid::for_test(2u128);
+        let non_sharded_pipeline_uid = PipelineUid::for_test(3u128);
+        let mut previous_plan = PhysicalIndexingPlan::with_indexer_ids(&[indexer.clone()]);
+        previous_plan.add_indexing_task(
+            &indexer,
+            IndexingTask {
+                index_uid: Some(sharded_source_uid.index_uid.clone()),
+                source_id: sharded_source_uid.source_id.clone(),
+                pipeline_uid: Some(obsolete_pipeline_uid),
+                shard_ids: vec![ShardId::from(0)],
+                params_fingerprint: 0,
+            },
+        );
+        previous_plan.add_indexing_task(
+            &indexer,
+            IndexingTask {
+                index_uid: Some(sharded_source_uid.index_uid.clone()),
+                source_id: sharded_source_uid.source_id.clone(),
+                pipeline_uid: Some(current_pipeline_uid),
+                shard_ids: vec![current_shard0.clone(), current_shard1.clone()],
+                params_fingerprint: 0,
+            },
+        );
+        previous_plan.add_indexing_task(
+            &indexer,
+            IndexingTask {
+                index_uid: Some(non_sharded_source_uid.index_uid.clone()),
+                source_id: non_sharded_source_uid.source_id.clone(),
+                pipeline_uid: Some(non_sharded_pipeline_uid),
+                shard_ids: Vec::new(),
+                params_fingerprint: 0,
+            },
+        );
+
+        let plan = build_physical_indexing_plan_without_locality(
+            &[sharded_source, non_sharded_source],
+            &indexer_infos,
+            Some(&previous_plan),
+            &ShardLocations::default(),
+        );
+        let tasks = plan.indexer(&indexer).unwrap();
+        let sharded_tasks: Vec<&IndexingTask> = tasks
+            .iter()
+            .filter(|task| task.source_id == sharded_source_uid.source_id)
+            .collect();
+        assert_eq!(sharded_tasks.len(), 1);
+        assert_eq!(sharded_tasks[0].pipeline_uid(), current_pipeline_uid);
+        assert_eq!(sharded_tasks[0].shard_ids, [current_shard0, current_shard1]);
+        assert_ne!(sharded_tasks[0].pipeline_uid(), obsolete_pipeline_uid);
+
+        let non_sharded_tasks: Vec<&IndexingTask> = tasks
+            .iter()
+            .filter(|task| task.source_id == non_sharded_source_uid.source_id)
+            .collect();
+        assert_eq!(non_sharded_tasks.len(), 1);
+        assert_eq!(
+            non_sharded_tasks[0].pipeline_uid(),
+            non_sharded_pipeline_uid
+        );
+        assert!(non_sharded_tasks[0].shard_ids.is_empty());
+    }
+
+    #[test]
+    fn test_build_physical_plan_refills_empty_sharded_pipeline_before_removing_it() {
+        let source_uid = source_id();
+        let current_shard = ShardId::from(1);
+        let source = SourceToSchedule {
+            source_uid: source_uid.clone(),
+            source_type: SourceToScheduleType::Sharded {
+                shard_ids: vec![current_shard.clone()],
+                load_per_shard: NonZeroU32::new(1_000).unwrap(),
+            },
+            params_fingerprint: 0,
+        };
+
+        let indexer = NodeId::from_str("indexer1");
+        let mut indexer_infos = FnvHashMap::default();
+        indexer_infos.insert(indexer.clone(), IndexerInfo::for_test(mcpu(16_000)));
+
+        let recycled_pipeline_uid = PipelineUid::for_test(1u128);
+        let mut previous_plan = PhysicalIndexingPlan::with_indexer_ids(&[indexer.clone()]);
+        previous_plan.add_indexing_task(
+            &indexer,
+            IndexingTask {
+                index_uid: Some(source_uid.index_uid),
+                source_id: source_uid.source_id,
+                pipeline_uid: Some(recycled_pipeline_uid),
+                shard_ids: vec![ShardId::from(0)],
+                params_fingerprint: 0,
+            },
+        );
+
+        let plan = build_physical_indexing_plan_without_locality(
+            &[source],
+            &indexer_infos,
+            Some(&previous_plan),
+            &ShardLocations::default(),
+        );
+
+        let tasks = plan.indexer(&indexer).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].pipeline_uid(), recycled_pipeline_uid);
+        assert_eq!(tasks[0].shard_ids, [current_shard]);
     }
 
     #[tokio::test]
