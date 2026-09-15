@@ -20,7 +20,7 @@ use std::{fmt, io};
 
 use async_trait::async_trait;
 use futures::AsyncWriteExt as FuturesAsyncWriteExt;
-use opendal::layers::{ConcurrentLimitLayer, RetryLayer};
+use opendal::layers::{ConcurrentLimitLayer, RetryLayer, TimeoutLayer};
 use opendal::{DeleteInput, IntoDeleteInput, Operator};
 use quickwit_common::get_from_env_cached;
 use quickwit_common::uri::Uri;
@@ -65,6 +65,7 @@ impl OpendalStorage {
     ) -> Result<Self, StorageResolverError> {
         opendal::install_default();
         let op = Operator::new(cfg)?
+            .layer(gcs_timeout_layer())
             .layer(gcs_retry_layer())
             .layer(GCS_CONCURRENT_LIMIT_LAYER.clone());
         Ok(Self::from_operator(uri, op))
@@ -87,8 +88,26 @@ impl OpendalStorage {
         cfg: opendal::services::Gcs,
         http_transport: opendal::HttpTransporter,
     ) -> Result<Self, StorageResolverError> {
+        Self::new_google_cloud_storage_with_http_transport_and_io_timeout_for_test(
+            uri,
+            cfg,
+            http_transport,
+            GCS_IO_TIMEOUT,
+        )
+    }
+
+    // same as `new_google_cloud_storage_with_http_transport_for_test` but let pick a custom
+    // timeout for testing purpose
+    #[cfg(test)]
+    pub(super) fn new_google_cloud_storage_with_http_transport_and_io_timeout_for_test(
+        uri: Uri,
+        cfg: opendal::services::Gcs,
+        http_transport: opendal::HttpTransporter,
+        io_timeout: Duration,
+    ) -> Result<Self, StorageResolverError> {
         let op = Operator::new(cfg)?
             .with_context(opendal::OperationContext::new().with_http_transport(http_transport))
+            .layer(gcs_timeout_layer_with(io_timeout))
             .layer(gcs_retry_layer())
             .layer(GCS_CONCURRENT_LIMIT_LAYER.clone());
         Ok(Self::from_operator(uri, op))
@@ -98,6 +117,21 @@ impl OpendalStorage {
     pub fn set_policy(&mut self, multipart_policy: MultiPartPolicy) {
         self.multipart_policy = multipart_policy;
     }
+}
+
+const GCS_CONTROL_TIMEOUT: Duration = Duration::from_secs(10);
+const GCS_IO_TIMEOUT: Duration = Duration::from_secs(5);
+
+fn gcs_timeout_layer() -> TimeoutLayer {
+    gcs_timeout_layer_with(GCS_IO_TIMEOUT)
+}
+
+// io_timeout is similar to s3 stalled stream protection. it also covers connect() timeout (though
+// we use a different connect and stalled stream timeout in our s3 connector)
+fn gcs_timeout_layer_with(io_timeout: Duration) -> TimeoutLayer {
+    TimeoutLayer::default()
+        .with_timeout(GCS_CONTROL_TIMEOUT)
+        .with_io_timeout(io_timeout)
 }
 
 /// Builds the retry layer applied to the GCS operator.
