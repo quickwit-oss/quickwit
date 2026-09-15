@@ -56,7 +56,6 @@ impl std::fmt::Debug for CacheState {
 }
 
 // cache state shouldn't impact a CacheNode equality
-impl Eq for CacheNode {}
 impl PartialEq for CacheNode {
     fn eq(&self, other: &Self) -> bool {
         self.inner == other.inner
