@@ -40,6 +40,9 @@ impl From<Vec<(&'static str, Arc<dyn StorageCache>)>> for QuickwitCache {
 impl QuickwitCache {
     /// Creates a [`QuickwitCache`] with a cache on fast fields.
     pub fn new(cache_config: &CacheConfig) -> Self {
+        if cache_config.capacity().as_u64() == 0 {
+            return QuickwitCache::empty();
+        }
         let mut quickwit_cache = QuickwitCache::empty();
         let fast_field_cache_counters: &'static CacheMetrics = &FAST_FIELD_CACHE;
         quickwit_cache.add_route(
@@ -150,9 +153,25 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
 
+    use quickwit_config::CacheConfig;
+
     use super::QuickwitCache;
     use crate::cache::StorageCache;
     use crate::{MockStorageCache, OwnedBytes};
+
+    #[test]
+    fn test_new_with_zero_capacity_is_empty() {
+        let quickwit_cache = QuickwitCache::new(&CacheConfig::no_cache());
+        assert!(quickwit_cache.router.is_empty());
+    }
+
+    #[test]
+    fn test_new_with_nonzero_capacity_adds_fast_field_route() {
+        let quickwit_cache = QuickwitCache::new(&CacheConfig::default_with_capacity(
+            bytesize::ByteSize::mb(1),
+        ));
+        assert_eq!(quickwit_cache.router.len(), 1);
+    }
 
     #[tokio::test]
     async fn test_quickwit_cache_get_all() {
