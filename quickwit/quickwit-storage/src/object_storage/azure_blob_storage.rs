@@ -159,9 +159,7 @@ impl AzureBlobStorage {
 
     /// Creates an emulated storage for testing.
     ///
-    /// The 1.0 SDK has no `emulator()` helper, and could not offer one: the emulator
-    /// authenticates with a shared key, which the SDK no longer signs. The well-known
-    /// account and key are documented at
+    /// The well-known account and key are documented at:
     /// <https://learn.microsoft.com/azure/storage/common/storage-use-azurite>.
     #[cfg(feature = "integration-testsuite")]
     pub fn new_emulated(container: &str) -> Self {
