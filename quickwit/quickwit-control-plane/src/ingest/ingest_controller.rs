@@ -121,20 +121,25 @@ fn pick_least_loaded<'a>(
     rng: &mut ThreadRng,
 ) -> &'a EligibleIngester {
     assert!(!eligible_ingesters.is_empty());
-    let min_load = eligible_ingesters
-        .iter()
-        .map(|ingester| ingester.num_open_shards.load(Ordering::Relaxed))
-        .min()
-        .expect("There should be at least one eligible ingester");
-    let minima: Vec<&EligibleIngester> = eligible_ingesters
-        .iter()
-        .filter(|ingester| ingester.num_open_shards.load(Ordering::Relaxed) == min_load)
-        .collect();
-    let same_zone_minima: Vec<&EligibleIngester> = minima
-        .iter()
-        .copied()
-        .filter(|ingester| requested_zone.is_some() && ingester.zone.as_ref() == requested_zone)
-        .collect();
+    let mut min_load = usize::MAX;
+    let mut minima = Vec::new();
+    let mut same_zone_minima = Vec::new();
+
+    for ingester in eligible_ingesters {
+        let load = ingester.num_open_shards.load(Ordering::Relaxed);
+        if load > min_load {
+            continue;
+        }
+        if load < min_load {
+            min_load = load;
+            minima.clear();
+            same_zone_minima.clear();
+        }
+        minima.push(ingester);
+        if requested_zone.is_some() && ingester.zone.as_ref() == requested_zone {
+            same_zone_minima.push(ingester);
+        }
+    }
     let candidates = if !same_zone_minima.is_empty() {
         same_zone_minima
     } else {
