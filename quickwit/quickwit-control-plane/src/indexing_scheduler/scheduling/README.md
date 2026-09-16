@@ -125,7 +125,7 @@ so that one pipeline fills up.
 
 If we do this enough times, eventually, we'll end up with the minimal number of pipelines, and optimal density.
 
-Then, once pipelines are sufficiently dense, for each source, find one pipeline in each zone at random that has cross-zonal shards.
+Then, once we cannot find more opportunities to increase density, for each source, find one pipeline in each zone at random that has cross-zonal shards.
 Perform a simple swap of those shards to improve locality. Eventually, over time, we'll converge at a locality optimum given the current plan.
 
 This optimization is nice and will improve a plan as much as is theoretically possible given enough time.

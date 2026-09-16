@@ -22,7 +22,7 @@ use rand::Rng;
 use rand::seq::SliceRandom;
 
 use super::{
-    Eligibility, IndexerInfo, SourceToSchedule, SourceToScheduleType,
+    AvailabilityZone, Eligibility, IndexerInfo, SourceToSchedule,
     compute_max_num_shards_per_pipeline, shard_availability_zone,
 };
 use crate::IndexerPoolEntry;
@@ -40,32 +40,31 @@ pub(in crate::indexing_scheduler) fn is_plan_eligible_for_optimization(
     locality_aware: bool,
     state: &mut IndexingSchedulerState,
 ) -> bool {
-    if !locality_aware || !is_plan_repair_due(state) {
+    if !locality_aware || !is_plan_improvement_due(state) {
         return false;
     }
     let running_indexer_tasks = build_indexer_tasks(indexers);
     if !is_running_plan_stable(&running_indexer_tasks, indexer_statuses, state) {
         return false;
     }
-    state.last_plan_repair_attempt_timestamp = Some(Instant::now());
+    state.last_plan_improvement_attempt_timestamp = Some(Instant::now());
     true
 }
 
-pub(super) fn conditionally_optimize_plan(
+/// We try to make one low-hanging optimization to the physical plan on every pass. The idea is to
+/// slowly improve the physical plan while resetting a minimum number of pipelines.
+/// Density is higher priority, so we do that first; once the plan is optimized for density,
+/// then we do locality.
+pub(super) fn try_optimize_plan(
     physical_plan: &mut PhysicalIndexingPlan,
-    previous_plan: Option<&PhysicalIndexingPlan>,
     sources: &[SourceToSchedule],
     shard_locations: &ShardLocations,
     indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
-    can_optimize_plan: bool,
 ) {
-    if !can_optimize_plan || previous_plan != Some(physical_plan) {
+    if improve_physical_plan_density(physical_plan, sources) {
         return;
     }
-    if repair_physical_plan_density(physical_plan, sources) {
-        return;
-    }
-    repair_physical_plan_locality(
+    improve_physical_plan_locality(
         physical_plan,
         shard_locations,
         indexer_infos,
@@ -73,6 +72,8 @@ pub(super) fn conditionally_optimize_plan(
     );
 }
 
+/// Stable = the produced plans are the same, and the cluster was also stable in that time - all
+/// indexers are ready.
 fn is_running_plan_stable(
     current_indexer_tasks: &FnvHashMap<NodeId, Vec<IndexingTask>>,
     current_indexer_statuses: &FnvHashMap<NodeId, IngesterStatus>,
@@ -80,7 +81,7 @@ fn is_running_plan_stable(
 ) -> bool {
     if current_indexer_statuses
         .values()
-        .any(|status| *status != IngesterStatus::Ready)
+        .any(|status| !status.is_ready())
     {
         return false;
     }
@@ -96,49 +97,51 @@ fn is_running_plan_stable(
     current_running_plan_diff.is_empty()
 }
 
-fn is_plan_repair_due(state: &IndexingSchedulerState) -> bool {
+fn is_plan_improvement_due(state: &IndexingSchedulerState) -> bool {
     let Some(last_applied_plan_timestamp) = state.last_applied_plan_timestamp else {
         return false;
     };
     if last_applied_plan_timestamp.elapsed() < MIN_DURATION_BETWEEN_SCHEDULING {
         return false;
     }
-    let Some(last_attempt) = state.last_plan_repair_attempt_timestamp else {
+    let Some(last_attempt) = state.last_plan_improvement_attempt_timestamp else {
         return true;
     };
     last_attempt.elapsed() >= MIN_DURATION_BETWEEN_SCHEDULING
 }
 
-struct DensityRepair {
+struct DensityImprovement {
     indexer_id: NodeId,
     donor_task_ord: usize,
     receiver_task_ord: usize,
 }
 
-fn repair_physical_plan_density(
+/// Density repair is simple: Each source has a max number of shards per pipeline. Walk the indexers
+/// at random, and try to find two pipelines that can be combined into one.
+fn improve_physical_plan_density(
     physical_plan: &mut PhysicalIndexingPlan,
     sources: &[SourceToSchedule],
 ) -> bool {
     for source in sources {
-        if !matches!(source.source_type, SourceToScheduleType::Sharded { .. }) {
+        if !source.source_type.is_sharded() {
             continue;
         }
         let max_num_shards =
             compute_max_num_shards_per_pipeline(&source.source_type).get() as usize;
-        let Some(repair) = select_density_repair(physical_plan, source, max_num_shards) else {
-            continue;
-        };
-        apply_density_repair(physical_plan, repair);
-        return true;
+        if let Some(repair) = select_density_improvement(physical_plan, source, max_num_shards) {
+            // we've found a repair to do; apply it, and our work here is done.
+            apply_density_improvement(physical_plan, repair);
+            return true;
+        }
     }
     false
 }
 
-fn select_density_repair(
+fn select_density_improvement(
     physical_plan: &PhysicalIndexingPlan,
     source: &SourceToSchedule,
     max_num_shards: usize,
-) -> Option<DensityRepair> {
+) -> Option<DensityImprovement> {
     for (indexer_id, indexing_tasks) in physical_plan.indexing_tasks_per_indexer() {
         let mut task_ords: Vec<usize> = indexing_tasks
             .iter()
@@ -157,7 +160,7 @@ fn select_density_repair(
         let combined_num_shards = indexing_tasks[*donor_task_ord].shard_ids.len()
             + indexing_tasks[*receiver_task_ord].shard_ids.len();
         if combined_num_shards <= max_num_shards {
-            return Some(DensityRepair {
+            return Some(DensityImprovement {
                 indexer_id: indexer_id.clone(),
                 donor_task_ord: *donor_task_ord,
                 receiver_task_ord: *receiver_task_ord,
@@ -167,27 +170,33 @@ fn select_density_repair(
     None
 }
 
-fn apply_density_repair(physical_plan: &mut PhysicalIndexingPlan, repair: DensityRepair) {
+fn apply_density_improvement(
+    physical_plan: &mut PhysicalIndexingPlan,
+    improvement: DensityImprovement,
+) {
     let indexing_tasks = physical_plan
         .indexing_tasks_per_indexer_mut()
-        .get_mut(&repair.indexer_id)
+        .get_mut(&improvement.indexer_id)
         .expect("selected density-repair indexer disappeared");
-    let donor_shards = std::mem::take(&mut indexing_tasks[repair.donor_task_ord].shard_ids);
-    indexing_tasks[repair.receiver_task_ord]
+    let donor_shards = std::mem::take(&mut indexing_tasks[improvement.donor_task_ord].shard_ids);
+    indexing_tasks[improvement.receiver_task_ord]
         .shard_ids
         .extend(donor_shards);
-    indexing_tasks.remove(repair.donor_task_ord);
+    indexing_tasks.remove(improvement.donor_task_ord);
     physical_plan.normalize();
 }
 
-struct LocalityRepairPipeline {
+struct LocalityImprovementPipeline {
     indexer_id: NodeId,
     task_ord: usize,
-    availability_zone: String,
+    availability_zone: AvailabilityZone,
     shard_ids: Vec<ShardId>,
 }
 
-fn repair_physical_plan_locality(
+/// Locality improvement occurs after density is optimized and stable. For each source, find at
+/// least two pipelines that have cross-AZ shards, and swap the shards between the pipelines.
+/// Because the shards are swapped, density is guaranteed to stay the same.
+fn improve_physical_plan_locality(
     physical_plan: &mut PhysicalIndexingPlan,
     shard_locations: &ShardLocations,
     indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
@@ -200,14 +209,13 @@ fn repair_physical_plan_locality(
     for source_pipelines in pipelines_by_source {
         let selected_pipelines =
             select_locality_repair_pipelines(source_pipelines, shard_locations, indexer_infos, rng);
-        let Some(replacement_shards) =
+        if let Some(replacement_shards) =
             arrange_shards_in_home_zones(&selected_pipelines, shard_locations, indexer_infos)
-        else {
-            continue;
-        };
-        apply_locality_repair(physical_plan, &selected_pipelines, replacement_shards);
-        LOCALITY_REPAIRS_TOTAL.inc();
-        return true;
+        {
+            apply_locality_improvement(physical_plan, &selected_pipelines, replacement_shards);
+            LOCALITY_REPAIRS_TOTAL.inc();
+            return true;
+        }
     }
     false
 }
@@ -215,15 +223,15 @@ fn repair_physical_plan_locality(
 fn collect_locality_repair_pipelines_by_source(
     physical_plan: &PhysicalIndexingPlan,
     indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
-) -> Vec<Vec<LocalityRepairPipeline>> {
-    let mut pipelines_by_source: FnvHashMap<(SourceUid, u64), Vec<LocalityRepairPipeline>> =
+) -> Vec<Vec<LocalityImprovementPipeline>> {
+    let mut pipelines_by_source: FnvHashMap<(SourceUid, u64), Vec<LocalityImprovementPipeline>> =
         FnvHashMap::default();
     for (indexer_id, indexing_tasks) in physical_plan.indexing_tasks_per_indexer() {
         let indexer_info = &indexer_infos[indexer_id];
         if indexer_info.eligibility != Eligibility::Any {
             continue;
         }
-        let Some(availability_zone) = indexer_info.availability_zone.as_ref() else {
+        let Some(availability_zone) = indexer_info.availability_zone.clone() else {
             continue;
         };
         for (task_ord, indexing_task) in indexing_tasks.iter().enumerate() {
@@ -237,7 +245,7 @@ fn collect_locality_repair_pipelines_by_source(
             pipelines_by_source
                 .entry((source_uid, indexing_task.params_fingerprint))
                 .or_default()
-                .push(LocalityRepairPipeline {
+                .push(LocalityImprovementPipeline {
                     indexer_id: indexer_id.clone(),
                     task_ord,
                     availability_zone: availability_zone.clone(),
@@ -249,18 +257,18 @@ fn collect_locality_repair_pipelines_by_source(
 }
 
 fn select_locality_repair_pipelines(
-    mut source_pipelines: Vec<LocalityRepairPipeline>,
+    mut source_pipelines: Vec<LocalityImprovementPipeline>,
     shard_locations: &ShardLocations,
     indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
     rng: &mut impl Rng,
-) -> Vec<LocalityRepairPipeline> {
+) -> Vec<LocalityImprovementPipeline> {
     source_pipelines.shuffle(rng);
 
-    let mut selected_pipelines: Vec<LocalityRepairPipeline> = Vec::new();
+    let mut selected_pipelines: Vec<LocalityImprovementPipeline> = Vec::new();
     for pipeline in source_pipelines {
-        let availability_zone_selected = selected_pipelines
-            .iter()
-            .any(|selected| selected.availability_zone == pipeline.availability_zone);
+        let availability_zone_selected = selected_pipelines.iter().any(|selected| {
+            selected.availability_zone.clone() == pipeline.availability_zone.clone()
+        });
         if availability_zone_selected {
             continue;
         }
@@ -270,7 +278,7 @@ fn select_locality_repair_pipelines(
             else {
                 return false;
             };
-            shard_availability_zone != pipeline.availability_zone.as_str()
+            shard_availability_zone != pipeline.availability_zone.clone()
         });
         if has_foreign_shard {
             selected_pipelines.push(pipeline);
@@ -280,7 +288,7 @@ fn select_locality_repair_pipelines(
 }
 
 fn arrange_shards_in_home_zones(
-    selected_pipelines: &[LocalityRepairPipeline],
+    selected_pipelines: &[LocalityImprovementPipeline],
     shard_locations: &ShardLocations,
     indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
 ) -> Option<Vec<Vec<ShardId>>> {
@@ -294,7 +302,7 @@ fn arrange_shards_in_home_zones(
         let mut pipeline_replacement: Vec<ShardId> = Vec::new();
         for shard_id in &pipeline.shard_ids {
             let shard_is_local = shard_availability_zone(shard_id, shard_locations, indexer_infos)
-                == Some(pipeline.availability_zone.as_str());
+                == Some(pipeline.availability_zone.clone());
             if shard_is_local {
                 pipeline_replacement.push(shard_id.clone());
             } else {
@@ -309,7 +317,7 @@ fn arrange_shards_in_home_zones(
         while pipeline_replacement.len() < pipeline.shard_ids.len() {
             let Some(shard_position) = remaining_shards.iter().position(|shard_id| {
                 shard_availability_zone(shard_id, shard_locations, indexer_infos)
-                    == Some(pipeline.availability_zone.as_str())
+                    == Some(pipeline.availability_zone.clone())
             }) else {
                 break;
             };
@@ -333,9 +341,9 @@ fn arrange_shards_in_home_zones(
     Some(replacement_shards)
 }
 
-fn apply_locality_repair(
+fn apply_locality_improvement(
     physical_plan: &mut PhysicalIndexingPlan,
-    selected_pipelines: &[LocalityRepairPipeline],
+    selected_pipelines: &[LocalityImprovementPipeline],
     replacement_shards: Vec<Vec<ShardId>>,
 ) {
     for (pipeline, shard_ids) in selected_pipelines.iter().zip(replacement_shards) {
@@ -361,16 +369,19 @@ mod tests {
     use rand::rngs::StdRng;
 
     use super::{
-        LocalityRepairPipeline, arrange_shards_in_home_zones,
-        collect_locality_repair_pipelines_by_source, is_plan_repair_due, is_running_plan_stable,
-        repair_physical_plan_density, repair_physical_plan_locality,
+        LocalityImprovementPipeline, arrange_shards_in_home_zones,
+        collect_locality_repair_pipelines_by_source, improve_physical_plan_density,
+        improve_physical_plan_locality, is_plan_improvement_due, is_running_plan_stable,
         select_locality_repair_pipelines,
     };
     use crate::indexing_plan::PhysicalIndexingPlan;
     use crate::indexing_scheduler::scheduling::{
-        Eligibility, IndexerInfo, SourceToSchedule, SourceToScheduleType, shard_ids_for_indexer,
+        AvailabilityZone, Eligibility, IndexerInfo, SourceToSchedule, SourceToScheduleType,
+        shard_ids_for_indexer,
     };
-    use crate::indexing_scheduler::{IndexingSchedulerState, MIN_DURATION_BETWEEN_SCHEDULING};
+    use crate::indexing_scheduler::{
+        IndexingSchedulerState, MIN_DURATION_BETWEEN_SCHEDULING, get_indexing_plan_density,
+    };
     use crate::model::ShardLocations;
 
     fn source_uid() -> SourceUid {
@@ -397,7 +408,7 @@ mod tests {
     fn indexer_info(availability_zone: &str) -> IndexerInfo {
         IndexerInfo {
             cpu_capacity: mcpu(4_000),
-            availability_zone: Some(availability_zone.to_string()),
+            availability_zone: Some(AvailabilityZone::from(availability_zone)),
             eligibility: Eligibility::Any,
         }
     }
@@ -407,11 +418,11 @@ mod tests {
         task_ord: usize,
         availability_zone: &str,
         shard_ids: Vec<ShardId>,
-    ) -> LocalityRepairPipeline {
-        LocalityRepairPipeline {
+    ) -> LocalityImprovementPipeline {
+        LocalityImprovementPipeline {
             indexer_id: indexer_id.clone(),
             task_ord,
-            availability_zone: availability_zone.to_string(),
+            availability_zone: AvailabilityZone::from(availability_zone),
             shard_ids,
         }
     }
@@ -501,12 +512,18 @@ mod tests {
             &indexer_infos,
             &mut rng,
         );
-        let mut selected_zones: Vec<&str> = selected
+        let mut selected_zones: Vec<AvailabilityZone> = selected
             .iter()
-            .map(|pipeline| pipeline.availability_zone.as_str())
+            .map(|pipeline| pipeline.availability_zone.clone())
             .collect();
         selected_zones.sort();
-        assert_eq!(selected_zones, vec!["az-a", "az-b"]);
+        assert_eq!(
+            selected_zones,
+            vec![
+                AvailabilityZone::from("az-a"),
+                AvailabilityZone::from("az-b")
+            ]
+        );
     }
 
     #[test]
@@ -610,20 +627,20 @@ mod tests {
     #[test]
     fn test_is_plan_repair_due() {
         let mut state = IndexingSchedulerState::default();
-        assert!(!is_plan_repair_due(&state));
+        assert!(!is_plan_improvement_due(&state));
 
         state.last_applied_plan_timestamp = Some(Instant::now());
-        assert!(!is_plan_repair_due(&state));
+        assert!(!is_plan_improvement_due(&state));
 
         let elapsed = MIN_DURATION_BETWEEN_SCHEDULING + Duration::from_millis(1);
         state.last_applied_plan_timestamp = Some(Instant::now() - elapsed);
-        assert!(is_plan_repair_due(&state));
+        assert!(is_plan_improvement_due(&state));
 
-        state.last_plan_repair_attempt_timestamp = Some(Instant::now());
-        assert!(!is_plan_repair_due(&state));
+        state.last_plan_improvement_attempt_timestamp = Some(Instant::now());
+        assert!(!is_plan_improvement_due(&state));
 
-        state.last_plan_repair_attempt_timestamp = Some(Instant::now() - elapsed);
-        assert!(is_plan_repair_due(&state));
+        state.last_plan_improvement_attempt_timestamp = Some(Instant::now() - elapsed);
+        assert!(is_plan_improvement_due(&state));
     }
 
     #[test]
@@ -648,7 +665,7 @@ mod tests {
             indexing_task(&source_uid, 2, vec![ShardId::from(2), ShardId::from(3)]),
         );
 
-        assert!(repair_physical_plan_density(
+        assert!(improve_physical_plan_density(
             &mut plan,
             std::slice::from_ref(&source)
         ));
@@ -661,7 +678,7 @@ mod tests {
             plan.indexer(&indexer_id).unwrap()[0].pipeline_uid,
             Some(PipelineUid::for_test(2))
         );
-        assert!(!repair_physical_plan_density(
+        assert!(!improve_physical_plan_density(
             &mut plan,
             std::slice::from_ref(&source)
         ));
@@ -705,7 +722,7 @@ mod tests {
         }
 
         let mut rng = StdRng::seed_from_u64(0);
-        assert!(repair_physical_plan_locality(
+        assert!(improve_physical_plan_locality(
             &mut plan,
             &shard_locations,
             &indexer_infos,
@@ -723,11 +740,62 @@ mod tests {
             shard_ids_for_indexer(&plan, &indexer_c),
             vec![shard_c.clone()]
         );
-        assert!(!repair_physical_plan_locality(
+        assert!(!improve_physical_plan_locality(
             &mut plan,
             &shard_locations,
             &indexer_infos,
             &mut rng,
         ));
+    }
+
+    #[test]
+    fn test_locality_improvement_preserves_density() {
+        let indexer_a = NodeId::from_str("indexer-a");
+        let indexer_b = NodeId::from_str("indexer-b");
+        let shard_a_1 = ShardId::from(1);
+        let shard_a_2 = ShardId::from(2);
+        let shard_b = ShardId::from(3);
+        let source_uid = source_uid();
+        let source = SourceToSchedule {
+            source_uid: source_uid.clone(),
+            source_type: SourceToScheduleType::Sharded {
+                shard_ids: vec![shard_a_1.clone(), shard_a_2.clone(), shard_b.clone()],
+                load_per_shard: NonZeroU32::new(1_000).unwrap(),
+            },
+            params_fingerprint: 7,
+        };
+
+        let indexer_infos = FnvHashMap::from_iter([
+            (indexer_a.clone(), indexer_info("az-a")),
+            (indexer_b.clone(), indexer_info("az-b")),
+        ]);
+        let mut shard_locations = ShardLocations::default();
+        shard_locations.add_location(&shard_a_1, &indexer_a);
+        shard_locations.add_location(&shard_a_2, &indexer_a);
+        shard_locations.add_location(&shard_b, &indexer_b);
+
+        let mut plan =
+            PhysicalIndexingPlan::with_indexer_ids(&[indexer_a.clone(), indexer_b.clone()]);
+        plan.add_indexing_task(
+            &indexer_a,
+            indexing_task(&source_uid, 1, vec![shard_a_1.clone(), shard_b.clone()]),
+        );
+        plan.add_indexing_task(
+            &indexer_b,
+            indexing_task(&source_uid, 2, vec![shard_a_2.clone()]),
+        );
+
+        let sources = std::slice::from_ref(&source);
+        let density_before = get_indexing_plan_density(&plan, sources);
+        assert_eq!(density_before, 0.5);
+
+        let mut rng = StdRng::seed_from_u64(0);
+        assert!(improve_physical_plan_locality(
+            &mut plan,
+            &shard_locations,
+            &indexer_infos,
+            &mut rng,
+        ));
+        assert_eq!(get_indexing_plan_density(&plan, sources), density_before);
     }
 }

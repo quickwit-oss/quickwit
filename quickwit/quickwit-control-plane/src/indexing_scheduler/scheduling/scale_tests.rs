@@ -602,13 +602,13 @@ fn assert_drained_az_spills_across_zones(
         for task in tasks {
             for shard_id in &task.shard_ids {
                 let host = &host_per_shard[shard_id];
-                let host_az = indexer_infos[host].availability_zone.as_deref();
-                if host_az != Some(drained_az) || host == indexer {
+                let host_az = indexer_infos[host].availability_zone.clone();
+                if host_az.as_deref() != Some(drained_az) || host == indexer {
                     continue;
                 }
-                let indexer_az = indexer_infos[indexer].availability_zone.as_deref();
+                let indexer_az = indexer_infos[indexer].availability_zone.clone();
                 assert_ne!(
-                    indexer_az,
+                    indexer_az.as_deref(),
                     Some(drained_az),
                     "shard {shard_id:?} hosted on {host} moved to {indexer}, still inside the \
                      fully drained {drained_az}"

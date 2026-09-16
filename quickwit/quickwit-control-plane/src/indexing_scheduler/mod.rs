@@ -35,7 +35,7 @@ use quickwit_proto::indexing::{
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::types::NodeId;
 use scheduling::{
-    Eligibility, IndexerInfo, SourceToSchedule, SourceToScheduleType,
+    AvailabilityZone, Eligibility, IndexerInfo, SourceToSchedule, SourceToScheduleType,
     compute_max_num_shards_per_pipeline, is_shard_in_same_zone,
 };
 use serde::Serialize;
@@ -80,7 +80,7 @@ pub struct IndexingSchedulerState {
     #[serde(skip)]
     pub last_applied_plan_timestamp: Option<Instant>,
     #[serde(skip)]
-    pub last_plan_repair_attempt_timestamp: Option<Instant>,
+    pub last_plan_improvement_attempt_timestamp: Option<Instant>,
 }
 
 /// The [`IndexingScheduler`] is responsible for listing indexing tasks and assigning them to
@@ -177,7 +177,7 @@ fn enable_variable_shard_load() -> bool {
 /// With this enabled, availability zone will be used (if provided) to preferentially index shards
 /// in the same-AZ. It also allows decommissioning indexers to index their own shards to speed up
 /// the decommissioning process.
-fn enable_locality_aware_scheduling() -> bool {
+fn is_locality_aware_scheduling_enabled() -> bool {
     static IS_LOCALITY_AWARE_SCHEDULING_ENABLED: LazyLock<bool> = LazyLock::new(|| {
         quickwit_common::get_bool_from_env(
             "QW_ENABLE_LOCALITY_AWARE_SCHEDULING",
@@ -332,7 +332,10 @@ fn build_indexer_info(indexer: &IndexerPoolEntry, locality_aware: bool) -> Index
     };
     IndexerInfo {
         cpu_capacity: indexer.indexing_capacity,
-        availability_zone: indexer.availability_zone.clone(),
+        availability_zone: indexer
+            .availability_zone
+            .as_deref()
+            .map(AvailabilityZone::from),
         eligibility,
     }
 }
@@ -411,7 +414,7 @@ impl IndexingScheduler {
 
         let sources = get_sources_to_schedule(model, disable_ingest_v1());
 
-        let is_locality_aware = enable_locality_aware_scheduling()
+        let is_locality_aware = is_locality_aware_scheduling_enabled()
             && all_indexers_advertise_availability_zone(&self.indexer_pool);
 
         let indexer_infos: FnvHashMap<NodeId, IndexerInfo> =
@@ -520,7 +523,7 @@ impl IndexingScheduler {
     }
 
     fn select_available_indexers_for_scheduling(&self) -> Vec<IndexerPoolEntry> {
-        if enable_locality_aware_scheduling() {
+        if is_locality_aware_scheduling_enabled() {
             return self.select_ready_and_draining_indexers();
         }
         self.select_ready_or_retiring_indexers()
@@ -704,6 +707,8 @@ fn get_shard_locality_metrics(
     }
 }
 
+/// Density is a (0..1] metric that measures whether we index shards on a minimal number
+/// of pipelines. The higher the better.
 fn get_indexing_plan_density(
     physical_plan: &PhysicalIndexingPlan,
     sources: &[SourceToSchedule],
@@ -711,7 +716,7 @@ fn get_indexing_plan_density(
     let mut num_shards = 0;
     let mut num_shard_slots = 0;
     for source in sources {
-        if !matches!(source.source_type, SourceToScheduleType::Sharded { .. }) {
+        if !source.source_type.is_sharded() {
             continue;
         }
         let max_num_shards =
@@ -1707,8 +1712,8 @@ mod tests {
 
             assert_eq!(indexer_infos["indexer-ready"].eligibility, Eligibility::Any);
             assert_eq!(
-                indexer_infos["indexer-ready"].availability_zone,
-                Some("az-a".to_string())
+                indexer_infos["indexer-ready"].availability_zone.clone(),
+                Some(AvailabilityZone::from("az-a"))
             );
             assert_eq!(
                 indexer_infos["indexer-retiring"].eligibility,
@@ -1746,8 +1751,14 @@ mod tests {
 
             let indexer_infos = build_indexer_infos(&indexers, locality_unaware);
 
-            assert_eq!(indexer_infos["indexer-ready"].availability_zone, None);
-            assert_eq!(indexer_infos["indexer-retiring"].availability_zone, None);
+            assert_eq!(
+                indexer_infos["indexer-ready"].availability_zone.clone(),
+                None
+            );
+            assert_eq!(
+                indexer_infos["indexer-retiring"].availability_zone.clone(),
+                None
+            );
             assert_eq!(indexer_infos["indexer-ready"].eligibility, Eligibility::Any);
             assert_eq!(
                 indexer_infos["indexer-retiring"].eligibility,
