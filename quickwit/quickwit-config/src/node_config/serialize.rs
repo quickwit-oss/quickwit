@@ -255,17 +255,17 @@ impl NodeConfigBuilder {
             .node_id
             .resolve(env_vars)
             .map(|node_id_str| NodeId::from_str(&node_id_str))?;
-        let availability_zone = self
-            .availability_zone
-            .resolve_optional(env_vars)?
-            .and_then(|availability_zone| {
-                let availability_zone = availability_zone.trim();
-                if availability_zone.is_empty() {
-                    None
-                } else {
-                    Some(AvailabilityZone::from(availability_zone))
-                }
-            });
+        let availability_zone =
+            self.availability_zone
+                .resolve_optional(env_vars)?
+                .and_then(|availability_zone| {
+                    let availability_zone = availability_zone.trim();
+                    if availability_zone.is_empty() {
+                        None
+                    } else {
+                        Some(AvailabilityZone::from(availability_zone))
+                    }
+                });
 
         let enable_standalone_compactors = self.enable_standalone_compactors.resolve(env_vars)?;
         let docs_clustering_config =
