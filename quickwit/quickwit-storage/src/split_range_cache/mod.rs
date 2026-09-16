@@ -37,7 +37,6 @@ pub use storage::{FoyerSplitRangeStorage, wrap_storage_with_split_range_cache};
 pub struct FoyerSplitRangeCache {
     pub(crate) cache: foyer::HybridCache<SplitRangeCacheKey, Bytes>,
     pub(crate) max_entry_size: usize,
-    pub(crate) block_size: usize,
 }
 
 impl FoyerSplitRangeCache {
@@ -77,7 +76,6 @@ impl FoyerSplitRangeCache {
         Ok(Self {
             cache,
             max_entry_size: bytesize_to_usize(config.max_entry_size, "max_entry_size")?,
-            block_size: bytesize_to_usize(config.block_size, "block_size")?,
         })
     }
 

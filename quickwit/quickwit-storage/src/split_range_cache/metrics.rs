@@ -20,14 +20,12 @@ use mixtrics::metrics::{
     Buckets, CounterOps, CounterVecOps, GaugeOps, GaugeVecOps, HistogramOps, HistogramVecOps,
     RegistryOps,
 };
+use mixtrics::registry::noop::NoopMetricsRegistry;
 use quickwit_metrics::{
     LazyCounter, LazyHistogram, label_names, label_values, lazy_counter, lazy_histogram,
 };
 
-use super::storage::AdmissionBypass;
-
 const CACHE_RESULT: quickwit_metrics::LabelNames<1> = label_names!("result");
-const ADMISSION_REASON: quickwit_metrics::LabelNames<1> = label_names!("reason");
 
 static REQUESTS: LazyCounter = lazy_counter!(
     name: "split_range_disk_cache_requests_total",
@@ -39,26 +37,13 @@ static REQUESTED_BYTES: LazyCounter = lazy_counter!(
     description: "Split range disk cache requested bytes by result",
     subsystem: "storage",
 );
-static ADMISSION_BYPASSES: LazyCounter = lazy_counter!(
-    name: "split_range_disk_cache_admission_bypasses_total",
-    description: "Entries kept memory-only by admission checks",
-    subsystem: "storage",
-);
-static FAIL_OPEN_TOTAL: LazyCounter = lazy_counter!(
-    name: "split_range_disk_cache_fail_open_total",
-    description: "Foyer failures bypassed through lower storage",
-    subsystem: "storage",
-);
 
 fn foyer_histogram_buckets(name: &str) -> Option<Vec<f64>> {
     match name {
         "foyer_storage_op_duration" | "foyer_storage_disk_io_duration" => {
             Some(Buckets::exponential(0.000_001, 2.0, 23))
         }
-        "foyer_storage_inner_op_duration" => Some(Buckets::exponential(0.000_001, 2.0, 25)),
-        "foyer_storage_entry_serde_duration" => Some(Buckets::exponential(0.000_000_01, 2.0, 23)),
         "foyer_storage_block_engine_buffer_efficiency" => Some(Buckets::linear(0.1, 0.1, 10)),
-        "foyer_storage_block_engine_recover_duration" => Some(Buckets::exponential(0.001, 2.0, 21)),
         _ => None,
     }
 }
@@ -73,13 +58,6 @@ static _FOYER_STORAGE_OP_DURATION: LazyHistogram = lazy_histogram!(
     subsystem: "",
     buckets: foyer_histogram_buckets("foyer_storage_op_duration").unwrap(),
 );
-static _FOYER_STORAGE_INNER_OP_DURATION: LazyHistogram = lazy_histogram!(
-    name: "foyer_storage_inner_op_duration",
-    description: "foyer disk cache inner op durations",
-    system: "",
-    subsystem: "",
-    buckets: foyer_histogram_buckets("foyer_storage_inner_op_duration").unwrap(),
-);
 static _FOYER_STORAGE_DISK_IO_DURATION: LazyHistogram = lazy_histogram!(
     name: "foyer_storage_disk_io_duration",
     description: "foyer disk cache disk io duration",
@@ -87,26 +65,12 @@ static _FOYER_STORAGE_DISK_IO_DURATION: LazyHistogram = lazy_histogram!(
     subsystem: "",
     buckets: foyer_histogram_buckets("foyer_storage_disk_io_duration").unwrap(),
 );
-static _FOYER_STORAGE_ENTRY_SERDE_DURATION: LazyHistogram = lazy_histogram!(
-    name: "foyer_storage_entry_serde_duration",
-    description: "foyer disk cache entry serde durations",
-    system: "",
-    subsystem: "",
-    buckets: foyer_histogram_buckets("foyer_storage_entry_serde_duration").unwrap(),
-);
 static _FOYER_STORAGE_BLOCK_ENGINE_BUFFER_EFFICIENCY: LazyHistogram = lazy_histogram!(
     name: "foyer_storage_block_engine_buffer_efficiency",
     description: "foyer large object disk cache buffer efficiency",
     system: "",
     subsystem: "",
     buckets: foyer_histogram_buckets("foyer_storage_block_engine_buffer_efficiency").unwrap(),
-);
-static _FOYER_STORAGE_BLOCK_ENGINE_RECOVER_DURATION: LazyHistogram = lazy_histogram!(
-    name: "foyer_storage_block_engine_recover_duration",
-    description: "foyer large object disk cache recover duration",
-    system: "",
-    subsystem: "",
-    buckets: foyer_histogram_buckets("foyer_storage_block_engine_recover_duration").unwrap(),
 );
 
 pub(crate) static REQUESTS_MEMORY: LazyCounter = lazy_counter!(
@@ -141,14 +105,6 @@ static REQUESTED_BYTES_ERROR: LazyCounter = lazy_counter!(
     parent: REQUESTED_BYTES,
     labels: [label_values!(CACHE_RESULT => "error")]
 );
-pub(crate) static ADMISSION_MAX_ENTRY_SIZE: LazyCounter = lazy_counter!(
-    parent: ADMISSION_BYPASSES,
-    labels: [label_values!(ADMISSION_REASON => "max_entry_size")]
-);
-pub(crate) static ADMISSION_ENCODED_TOO_LARGE: LazyCounter = lazy_counter!(
-    parent: ADMISSION_BYPASSES,
-    labels: [label_values!(ADMISSION_REASON => "encoded_too_large")]
-);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum FetchOutcome {
@@ -179,18 +135,41 @@ pub(crate) fn record_request(outcome: FetchOutcome, num_bytes: u64) {
     }
 }
 
-pub(crate) fn record_admission_bypass(reason: AdmissionBypass) {
-    match reason {
-        AdmissionBypass::MaxEntrySize => ADMISSION_MAX_ENTRY_SIZE.inc(),
-        AdmissionBypass::EncodedTooLarge => ADMISSION_ENCODED_TOO_LARGE.inc(),
-    }
+fn is_dashboard_counter(name: &str) -> bool {
+    matches!(
+        name,
+        "foyer_memory_op_total"
+            | "foyer_storage_op_total"
+            | "foyer_storage_inner_op_total"
+            | "foyer_storage_disk_io_total"
+            | "foyer_storage_disk_io_bytes_total"
+            | "foyer_storage_block_engine_op_total"
+            | "foyer_hybrid_op_total"
+    )
 }
 
-pub(crate) fn record_fail_open() {
-    FAIL_OPEN_TOTAL.inc();
+fn is_dashboard_gauge(name: &str) -> bool {
+    matches!(
+        name,
+        "foyer_memory_usage"
+            | "foyer_memory_entries"
+            | "foyer_storage_block_engine_block"
+            | "foyer_storage_block_engine_block_size_bytes"
+    )
 }
 
-/// Mixtrics registry that forwards Foyer metrics to the process `metrics` recorder.
+fn is_dashboard_histogram(name: &str) -> bool {
+    matches!(
+        name,
+        "foyer_storage_op_duration"
+            | "foyer_storage_disk_io_duration"
+            | "foyer_storage_block_engine_buffer_efficiency"
+            | "foyer_hybrid_op_duration"
+    )
+}
+
+/// Mixtrics registry that forwards dashboarded Foyer metrics to the process
+/// `metrics` recorder and discards all other Foyer metrics.
 #[derive(Debug)]
 pub(crate) struct QuickwitMetricsRegistry;
 
@@ -201,6 +180,9 @@ impl RegistryOps for QuickwitMetricsRegistry {
         desc: Cow<'static, str>,
         label_names: &'static [&'static str],
     ) -> BoxedCounterVec {
+        if !is_dashboard_counter(&name) {
+            return Box::new(NoopMetricsRegistry);
+        }
         ::metrics::describe_counter!(name.clone(), desc.clone());
         Box::new(MetricsCounterVec { name, label_names })
     }
@@ -211,6 +193,9 @@ impl RegistryOps for QuickwitMetricsRegistry {
         desc: Cow<'static, str>,
         label_names: &'static [&'static str],
     ) -> BoxedGaugeVec {
+        if !is_dashboard_gauge(&name) {
+            return Box::new(NoopMetricsRegistry);
+        }
         ::metrics::describe_gauge!(name.clone(), desc.clone());
         Box::new(MetricsGaugeVec { name, label_names })
     }
@@ -221,6 +206,9 @@ impl RegistryOps for QuickwitMetricsRegistry {
         desc: Cow<'static, str>,
         label_names: &'static [&'static str],
     ) -> BoxedHistogramVec {
+        if !is_dashboard_histogram(&name) {
+            return Box::new(NoopMetricsRegistry);
+        }
         ::metrics::describe_histogram!(name.clone(), desc.clone());
         Box::new(MetricsHistogramVec { name, label_names })
     }
@@ -232,6 +220,9 @@ impl RegistryOps for QuickwitMetricsRegistry {
         label_names: &'static [&'static str],
         buckets: Vec<f64>,
     ) -> BoxedHistogramVec {
+        if !is_dashboard_histogram(&name) {
+            return Box::new(NoopMetricsRegistry);
+        }
         debug_assert_eq!(
             foyer_histogram_buckets(&name),
             Some(buckets),
@@ -361,6 +352,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_foyer_dashboard_metric_allowlist() {
+        for counter in [
+            "foyer_memory_op_total",
+            "foyer_storage_op_total",
+            "foyer_storage_inner_op_total",
+            "foyer_storage_disk_io_total",
+            "foyer_storage_disk_io_bytes_total",
+            "foyer_storage_block_engine_op_total",
+            "foyer_hybrid_op_total",
+        ] {
+            assert!(is_dashboard_counter(counter));
+        }
+        for gauge in [
+            "foyer_memory_usage",
+            "foyer_memory_entries",
+            "foyer_storage_block_engine_block",
+            "foyer_storage_block_engine_block_size_bytes",
+        ] {
+            assert!(is_dashboard_gauge(gauge));
+        }
+        for histogram in [
+            "foyer_storage_op_duration",
+            "foyer_storage_disk_io_duration",
+            "foyer_storage_block_engine_buffer_efficiency",
+            "foyer_hybrid_op_duration",
+        ] {
+            assert!(is_dashboard_histogram(histogram));
+        }
+    }
+
+    #[test]
     fn test_foyer_histogram_buckets_are_registered_with_exporter() {
         let configured_buckets: HashMap<_, _> = quickwit_metrics::histogram_buckets().collect();
         assert_eq!(
@@ -368,29 +390,20 @@ mod tests {
             Buckets::exponential(0.000_001, 2.0, 23)
         );
         assert_eq!(
-            configured_buckets["foyer_storage_inner_op_duration"],
-            Buckets::exponential(0.000_001, 2.0, 25)
-        );
-        assert_eq!(
             configured_buckets["foyer_storage_disk_io_duration"],
             Buckets::exponential(0.000_001, 2.0, 23)
-        );
-        assert_eq!(
-            configured_buckets["foyer_storage_entry_serde_duration"],
-            Buckets::exponential(0.000_000_01, 2.0, 23)
         );
         assert_eq!(
             configured_buckets["foyer_storage_block_engine_buffer_efficiency"],
             Buckets::linear(0.1, 0.1, 10)
         );
-        assert_eq!(
-            configured_buckets["foyer_storage_block_engine_recover_duration"],
-            Buckets::exponential(0.001, 2.0, 21)
-        );
+        assert!(!configured_buckets.contains_key("foyer_storage_inner_op_duration"));
+        assert!(!configured_buckets.contains_key("foyer_storage_entry_serde_duration"));
+        assert!(!configured_buckets.contains_key("foyer_storage_block_engine_recover_duration"));
     }
 
     #[test]
-    fn test_quickwit_metrics_registry_records_counter_gauge_histogram() {
+    fn test_quickwit_metrics_registry_only_records_dashboard_metrics() {
         let recorder = DebuggingRecorder::new();
         let snapshotter = recorder.snapshotter();
         with_local_recorder(&recorder, || {
@@ -418,6 +431,32 @@ mod tests {
             histograms
                 .histogram(&["split-range-v1".into(), "hit".into()])
                 .record(0.5);
+
+            registry
+                .register_counter_vec(
+                    "foyer_future_counter".into(),
+                    "not used by the disk cache dashboard".into(),
+                    &[],
+                )
+                .counter(&[])
+                .increase(1);
+            registry
+                .register_gauge_vec(
+                    "foyer_future_gauge".into(),
+                    "not used by the disk cache dashboard".into(),
+                    &[],
+                )
+                .gauge(&[])
+                .absolute(1);
+            registry
+                .register_histogram_vec_with_buckets(
+                    "foyer_storage_entry_serde_duration".into(),
+                    "not used by the disk cache dashboard".into(),
+                    &[],
+                    Buckets::exponential(0.000_000_01, 2.0, 23),
+                )
+                .histogram(&[])
+                .record(0.5);
         });
         let snapshot = snapshotter.snapshot().into_vec();
         let has_counter = snapshot.iter().any(|(key, _, _, value)| {
@@ -441,5 +480,17 @@ mod tests {
             has_histogram,
             "Foyer histogram must register through the metrics recorder"
         );
+        for ignored_name in [
+            "foyer_future_counter",
+            "foyer_future_gauge",
+            "foyer_storage_entry_serde_duration",
+        ] {
+            assert!(
+                !snapshot
+                    .iter()
+                    .any(|(key, _, _, _)| key.key().name() == ignored_name),
+                "{ignored_name} must not register through the metrics recorder"
+            );
+        }
     }
 }

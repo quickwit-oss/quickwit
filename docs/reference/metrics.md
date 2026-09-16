@@ -93,7 +93,22 @@ PostgreSQL-backed metastores also expose connection pool gauges:
 | `quickwit_storage` | `object_storage_download_num_bytes` | Amount of data downloaded from an object storage | `counter` |
 | `quickwit_storage` | `split_range_disk_cache_requests_total` | Split range disk cache requests by `result` (`memory`, `disk`, `miss`, or `error`) | `counter` |
 | `quickwit_storage` | `split_range_disk_cache_requested_bytes_total` | Requested bytes by `result` | `counter` |
-| `quickwit_storage` | `split_range_disk_cache_admission_bypasses_total` | Entries kept memory-only, labeled by `reason` (`max_entry_size` or `encoded_too_large`) | `counter` |
-| `quickwit_storage` | `split_range_disk_cache_fail_open_total` | Foyer failures served from object storage | `counter` |
 
-Foyer also exports its own hybrid-cache metrics on `/metrics` when `split_range_disk_cache` is enabled, including `foyer_memory_op_total`, `foyer_memory_usage`, `foyer_memory_entries`, `foyer_storage_op_total`, and `foyer_storage_disk_io_bytes_total`, labeled by cache `name` (`split-range-v1`). Object-storage GET counters cover actual remote fetches on a cache miss.
+When `split_range_disk_cache` is enabled, Foyer metrics used by the disk-cache
+dashboard are also exported on `/metrics`:
+
+- Memory tier: `foyer_memory_op_total`, `foyer_memory_usage`, and
+  `foyer_memory_entries`.
+- Disk tier: `foyer_storage_op_total`, `foyer_storage_op_duration`,
+  `foyer_storage_inner_op_total`, `foyer_storage_disk_io_total`,
+  `foyer_storage_disk_io_bytes_total`, and
+  `foyer_storage_disk_io_duration`.
+- Block engine: `foyer_storage_block_engine_block`,
+  `foyer_storage_block_engine_block_size_bytes`,
+  `foyer_storage_block_engine_op_total`, and
+  `foyer_storage_block_engine_buffer_efficiency`.
+- Hybrid cache: `foyer_hybrid_op_total` and `foyer_hybrid_op_duration`.
+
+These metrics are labeled by cache `name` (`split-range-v1`). Other internal
+Foyer metrics are discarded. Object-storage GET counters cover actual remote
+fetches on a cache miss.

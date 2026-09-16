@@ -26,7 +26,7 @@ use quickwit_config::SplitRangeCacheWritePolicy;
 use tokio::io::AsyncRead;
 use tokio::sync::watch;
 
-use super::metrics::{ADMISSION_MAX_ENTRY_SIZE, REQUESTS_ERROR, REQUESTS_MEMORY, REQUESTS_MISS};
+use super::metrics::{REQUESTS_ERROR, REQUESTS_MEMORY, REQUESTS_MISS};
 use super::*;
 use crate::storage::SendableAsync;
 use crate::{
@@ -449,7 +449,6 @@ async fn test_oversized_value_is_memory_only_and_returned() {
     let fixture = Fixture::with_payload(&payload, true).await;
     let path = Path::new(SPLIT_PATH);
     let range = 0..payload.len();
-    let bypasses_before = ADMISSION_MAX_ENTRY_SIZE.get();
     assert_eq!(
         fixture
             .storage
@@ -469,6 +468,5 @@ async fn test_oversized_value_is_memory_only_and_returned() {
         payload.as_slice()
     );
     assert_eq!(fixture.lower_reads(), 1);
-    assert!(ADMISSION_MAX_ENTRY_SIZE.get() > bypasses_before);
     fixture.close().await;
 }
