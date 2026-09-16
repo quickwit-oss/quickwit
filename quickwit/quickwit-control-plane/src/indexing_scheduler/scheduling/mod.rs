@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod optimization;
 #[cfg(test)]
 mod scale_tests;
 pub mod scheduling_logic;
@@ -28,6 +29,8 @@ pub use scheduling_logic_model::Eligibility;
 use scheduling_logic_model::{IndexerLocality, IndexerOrd, LocalityGroup, SourceOrd};
 use tracing::{error, warn};
 
+use self::optimization::conditionally_optimize_plan;
+pub(super) use self::optimization::is_plan_eligible_for_optimization;
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::scheduling::scheduling_logic_model::{
     IndexerAssignment, SchedulingProblem, SchedulingSolution,
@@ -798,6 +801,7 @@ pub fn build_physical_indexing_plan(
     locality_aware: bool,
     previous_plan_opt: Option<&PhysicalIndexingPlan>,
     shard_locations: &ShardLocations,
+    can_optimize_plan: bool,
 ) -> PhysicalIndexingPlan {
     // Asserts that the source are valid.
     check_sources(sources);
@@ -828,13 +832,19 @@ pub fn build_physical_indexing_plan(
     let new_solution = scheduling_logic::solve(problem, previous_solution);
 
     // Convert the new scheduling solution back to a physical plan.
-    let new_physical_plan = convert_scheduling_solution_to_physical_plan(
+    let mut new_physical_plan = convert_scheduling_solution_to_physical_plan(
         &new_solution,
         &id_to_ord_map,
         sources,
         previous_plan_opt,
         shard_locations,
         indexer_infos,
+    );
+    conditionally_optimize_plan(
+        &mut new_physical_plan,
+        previous_plan_opt,
+        sources,
+        can_optimize_plan,
     );
 
     assert_post_condition_physical_plan_match_solution(
@@ -1008,6 +1018,7 @@ pub(crate) fn build_physical_indexing_plan_without_locality(
         locality_aware,
         previous_plan_opt,
         shard_locations,
+        false,
     )
 }
 
@@ -1325,6 +1336,7 @@ mod tests {
             locality_aware,
             None,
             &shard_locations,
+            false,
         );
 
         let scheduled_shard_ids: Vec<ShardId> = plan
@@ -1343,6 +1355,7 @@ mod tests {
             locality_aware,
             Some(&plan),
             &shard_locations,
+            false,
         );
         assert_eq!(plan, replanned);
 
@@ -1357,6 +1370,7 @@ mod tests {
             locality_aware,
             None,
             &shard_locations,
+            false,
         );
         let counts_per_az = shard_counts_per_az(&plan, &indexer_infos);
         let reversed_counts_per_az = shard_counts_per_az(&reversed_plan, &reversed_indexer_infos);
@@ -1478,6 +1492,7 @@ mod tests {
                 locality_aware,
                 None,
                 &shard_locations,
+                false,
             );
 
             let mut legacy_indexer_infos = FnvHashMap::default();
@@ -1572,6 +1587,7 @@ mod tests {
             locality_aware,
             Some(&swapped_plan),
             &shard_locations,
+            false,
         );
 
         let draining_shard_ids = shard_ids_for_indexer(&plan, &draining_indexer);
@@ -1590,6 +1606,7 @@ mod tests {
             locality_aware,
             Some(&plan),
             &shard_locations,
+            false,
         );
         assert_eq!(plan, replanned);
     }
@@ -1655,6 +1672,7 @@ mod tests {
             true,
             Some(&previous_plan),
             &shard_locations,
+            false,
         );
 
         assert!(shard_ids_for_indexer(&plan, &old_host).is_empty());
