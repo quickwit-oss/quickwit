@@ -16,6 +16,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
+use quickwit_cluster::GenerationId;
 use quickwit_proto::ingest::Shard;
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, SourceId};
 use rand::rng;
@@ -29,6 +30,7 @@ use crate::IngesterPool;
 #[derive(Debug, Clone)]
 pub(super) struct IngesterNode {
     pub node_id: NodeId,
+    pub generation_id: GenerationId,
     pub index_uid: IndexUid,
     /// Score from 0-10. Higher means more available capacity.
     pub capacity_score: usize,
@@ -49,15 +51,14 @@ impl IngesterNode {
         if unavailable_ingesters.contains(&self.node_id) {
             return false;
         }
-        let is_ready = ingester_pool
+        let Some(ingester) = ingester_pool
             .get(&self.node_id)
-            .map(|ingester| ingester.status.is_ready())
-            .unwrap_or(false);
-
-        if !is_ready {
+            .filter(|ingester| ingester.status.is_ready())
+        else {
             unavailable_ingesters.insert(self.node_id.clone());
-        }
-        is_ready
+            return false;
+        };
+        ingester.generation_id == self.generation_id
     }
 }
 
@@ -104,6 +105,20 @@ fn pick_from(candidates: Vec<&IngesterNode>) -> Option<&IngesterNode> {
     }
 }
 
+fn is_ingester_eligible(
+    node: &IngesterNode,
+    ingester_pool: &IngesterPool,
+    unavailable_ingesters: &HashSet<NodeId>,
+) -> bool {
+    node.capacity_score > 0
+        && node.open_shard_count > 0
+        && ingester_pool
+            .get(&node.node_id)
+            .map(|entry| entry.status.is_ready() && entry.generation_id == node.generation_id)
+            .unwrap_or(false)
+        && !unavailable_ingesters.contains(&node.node_id)
+}
+
 impl RoutingEntry {
     /// Pick an ingester node to persist the request to. Uses power of two choices based on reported
     /// ingester capacity, if more than one eligible node exists. Prefers nodes in the same
@@ -117,15 +132,7 @@ impl RoutingEntry {
         let (local_ingesters, remote_ingesters): (Vec<&IngesterNode>, Vec<&IngesterNode>) = self
             .nodes
             .values()
-            .filter(|node| {
-                node.capacity_score > 0
-                    && node.open_shard_count > 0
-                    && ingester_pool
-                        .get(&node.node_id)
-                        .map(|entry| entry.status.is_ready())
-                        .unwrap_or(false)
-                    && !unavailable_ingesters.contains(&node.node_id)
-            })
+            .filter(|node| is_ingester_eligible(node, ingester_pool, unavailable_ingesters))
             .partition(|node| {
                 let node_az = ingester_pool
                     .get(&node.node_id)
@@ -242,6 +249,7 @@ impl RoutingTable {
     pub fn apply_capacity_update(
         &mut self,
         node_id: NodeId,
+        generation_id: GenerationId,
         index_uid: IndexUid,
         source_id: SourceId,
         capacity_score: usize,
@@ -264,8 +272,15 @@ impl RoutingTable {
             Ordering::Greater => return,
             Ordering::Equal => {}
         }
+        if let Some(existing) = entry.nodes.get(&node_id)
+            && existing.generation_id.as_u64() > generation_id.as_u64()
+        {
+            // drop a capacity update from an older incarantion of an ingester.
+            return;
+        }
         let ingester_node = IngesterNode {
             node_id: node_id.clone(),
+            generation_id,
             index_uid,
             capacity_score,
             open_shard_count,
@@ -279,6 +294,7 @@ impl RoutingTable {
     /// New nodes get a default capacity_score of 5.
     pub fn merge_from_shards(
         &mut self,
+        ingester_pool: &IngesterPool,
         index_uid: IndexUid,
         source_id: SourceId,
         shards: Vec<Shard>,
@@ -310,12 +326,18 @@ impl RoutingTable {
             .sum();
 
         for (node_id, open_shard_count) in per_ingester_count {
+            let Some(generation_id) = ingester_pool.get(&node_id).map(|entry| entry.generation_id)
+            else {
+                // TODO: decide what you want to do here exactly. This might be important
+                continue;
+            };
             entry
                 .nodes
                 .entry(node_id.clone())
                 .and_modify(|node| node.open_shard_count = open_shard_count)
                 .or_insert_with(|| IngesterNode {
                     node_id,
+                    generation_id,
                     index_uid: index_uid.clone(),
                     capacity_score: 5,
                     open_shard_count,
@@ -339,6 +361,14 @@ mod tests {
             client: IngesterServiceClient::mocked(),
             status: IngesterStatus::Ready,
             availability_zone: availability_zone.map(|s| s.to_string()),
+            generation_id: GenerationId::from(1u64),
+        }
+    }
+
+    fn mocked_ingester_gen(availability_zone: Option<&str>, generation: u64) -> IngesterPoolEntry {
+        IngesterPoolEntry {
+            generation_id: GenerationId::from(generation),
+            ..mocked_ingester(availability_zone)
         }
     }
 
@@ -349,6 +379,7 @@ mod tests {
     ) -> IngesterNode {
         IngesterNode {
             node_id: NodeId::from_str(node_id),
+            generation_id: GenerationId::from(1u64),
             index_uid: IndexUid::for_test("test-index", 0),
             capacity_score,
             open_shard_count,
@@ -393,6 +424,14 @@ mod tests {
             unavailable_ingesters,
             HashSet::from([NodeId::from_str("node-2")])
         );
+
+        let mut unavailable_ingesters = HashSet::new();
+        let mismatched = IngesterNode {
+            generation_id: GenerationId::from(2u64),
+            ..ingester_node("node-1", 5, 3)
+        };
+        assert!(!mismatched.is_routing_candidate(&pool, &mut unavailable_ingesters));
+        assert!(unavailable_ingesters.is_empty());
     }
 
     #[test]
@@ -403,6 +442,7 @@ mod tests {
         // Insert first node.
         table.apply_capacity_update(
             NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             8,
@@ -415,6 +455,7 @@ mod tests {
         // Update existing node.
         table.apply_capacity_update(
             NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             4,
@@ -427,6 +468,7 @@ mod tests {
         // Add second node.
         table.apply_capacity_update(
             NodeId::from_str("node-2"),
+            GenerationId::from(1u64),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             6,
@@ -437,6 +479,7 @@ mod tests {
         // Zero shards: node stays in table but becomes ineligible for routing.
         table.apply_capacity_update(
             NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             0,
@@ -446,6 +489,48 @@ mod tests {
         assert_eq!(entry.nodes.len(), 2);
         assert_eq!(entry.nodes.get("node-1").unwrap().open_shard_count, 0);
         assert_eq!(entry.nodes.get("node-1").unwrap().capacity_score, 0);
+    }
+
+    #[test]
+    fn test_apply_capacity_update_generation_ordering() {
+        let mut table = RoutingTable::default();
+        let key = ("test-index".to_string(), "test-source".to_string());
+
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(5u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            8,
+            3,
+        );
+
+        // Older generation is dropped.
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(2u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            1,
+            1,
+        );
+        let node = table.table.get(&key).unwrap().nodes.get("node-1").unwrap();
+        assert_eq!(node.generation_id, GenerationId::from(5u64));
+        assert_eq!(node.capacity_score, 8);
+
+        // Newer generation replaces.
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(9u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            2,
+            2,
+        );
+        let node = table.table.get(&key).unwrap().nodes.get("node-1").unwrap();
+        assert_eq!(node.generation_id, GenerationId::from(9u64));
+        assert_eq!(node.capacity_score, 2);
+        assert_eq!(node.open_shard_count, 2);
     }
 
     #[test]
@@ -462,6 +547,22 @@ mod tests {
             &mut HashSet::new()
         ));
 
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
+            index_uid.clone(),
+            "test-source".into(),
+            5,
+            3,
+        );
+        table.apply_capacity_update(
+            NodeId::from_str("node-2"),
+            GenerationId::from(1u64),
+            index_uid.clone(),
+            "test-source".into(),
+            5,
+            3,
+        );
         // Seed from CP so has_any_routing_candidate can return true.
         let shards = vec![
             Shard {
@@ -481,7 +582,7 @@ mod tests {
                 ..Default::default()
             },
         ];
-        table.merge_from_shards(index_uid.clone(), "test-source".into(), shards);
+        table.merge_from_shards(&pool, index_uid.clone(), "test-source".into(), shards);
 
         // Neither node is in the pool: both ingesters are recorded as unavailable and reported to
         // the control plane.
@@ -535,6 +636,7 @@ mod tests {
         // Node with capacity_score=0 is not eligible and is not reported as unavailable.
         table.apply_capacity_update(
             NodeId::from_str("node-2"),
+            GenerationId::from(1u64),
             index_uid.clone(),
             "test-source".into(),
             0,
@@ -564,6 +666,7 @@ mod tests {
         // because the entry hasn't been seeded from the control plane yet.
         table.apply_capacity_update(
             NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             8,
@@ -586,6 +689,7 @@ mod tests {
             ..Default::default()
         }];
         table.merge_from_shards(
+            &pool,
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             shards,
@@ -605,6 +709,7 @@ mod tests {
 
         table.apply_capacity_update(
             NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             5,
@@ -612,6 +717,7 @@ mod tests {
         );
         table.apply_capacity_update(
             NodeId::from_str("node-2"),
+            GenerationId::from(1u64),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             5,
@@ -633,6 +739,7 @@ mod tests {
 
         table.apply_capacity_update(
             NodeId::from_str("node-2"),
+            GenerationId::from(1u64),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             5,
@@ -653,6 +760,7 @@ mod tests {
 
         table.apply_capacity_update(
             NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             5,
@@ -679,24 +787,49 @@ mod tests {
     }
 
     #[test]
+    fn test_pick_node_generation_mismatch() {
+        let mut table = RoutingTable::default();
+        let pool = IngesterPool::default();
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester_gen(None, 2));
+
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            5,
+            3,
+        );
+
+        assert!(
+            table
+                .pick_node("test-index", "test-source", &pool, &HashSet::new())
+                .is_none()
+        );
+    }
+
+    #[test]
     fn test_power_of_two_choices() {
         // 3 candidates: best appears in the random pair 2/3 of the time and always
         // wins when it does, so it should win ~67% of 1000 runs. Asserting > 550
         // is ~7.5 standard deviations from the mean — effectively impossible to flake.
         let high = IngesterNode {
             node_id: NodeId::from_str("high"),
+            generation_id: GenerationId::from(1u64),
             index_uid: IndexUid::for_test("idx", 0),
             capacity_score: 9,
             open_shard_count: 2,
         };
         let mid = IngesterNode {
             node_id: NodeId::from_str("mid"),
+            generation_id: GenerationId::from(1u64),
             index_uid: IndexUid::for_test("idx", 0),
             capacity_score: 5,
             open_shard_count: 2,
         };
         let low = IngesterNode {
             node_id: NodeId::from_str("low"),
+            generation_id: GenerationId::from(1u64),
             index_uid: IndexUid::for_test("idx", 0),
             capacity_score: 1,
             open_shard_count: 2,
@@ -715,6 +848,11 @@ mod tests {
     #[test]
     fn test_merge_from_shards() {
         let mut table = RoutingTable::default();
+        let pool = IngesterPool::default();
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester(None));
+        pool.insert(NodeId::from_str("node-2"), mocked_ingester(None));
+        pool.insert(NodeId::from_str("node-3"), mocked_ingester(None));
+        pool.insert(NodeId::from_str("node-4"), mocked_ingester(None));
         let index_uid = IndexUid::for_test("test-index", 0);
         let key = ("test-index".to_string(), "test-source".to_string());
 
@@ -739,7 +877,7 @@ mod tests {
             make_shard(4, "node-2", false),
             make_shard(5, "node-3", false),
         ];
-        table.merge_from_shards(index_uid.clone(), "test-source".into(), shards);
+        table.merge_from_shards(&pool, index_uid.clone(), "test-source".into(), shards);
 
         let entry = table.table.get(&key).unwrap();
         assert_eq!(entry.nodes.len(), 3);
@@ -756,7 +894,7 @@ mod tests {
 
         // Merging again adds new nodes but preserves existing ones.
         let shards = vec![make_shard(10, "node-4", true)];
-        table.merge_from_shards(index_uid, "test-source".into(), shards);
+        table.merge_from_shards(&pool, index_uid, "test-source".into(), shards);
 
         let entry = table.table.get(&key).unwrap();
         assert_eq!(entry.nodes.len(), 4);
@@ -764,6 +902,71 @@ mod tests {
         assert!(entry.nodes.contains_key("node-2"));
         assert!(entry.nodes.contains_key("node-3"));
         assert!(entry.nodes.contains_key("node-4"));
+    }
+
+    #[test]
+    fn test_merge_from_shards_skips_nodes_absent_from_pool() {
+        let mut table = RoutingTable::default();
+        let pool = IngesterPool::default();
+        let key = ("test-index".to_string(), "test-source".to_string());
+
+        let shards = vec![Shard {
+            index_uid: Some(IndexUid::for_test("test-index", 0)),
+            source_id: "test-source".to_string(),
+            shard_id: Some(ShardId::from(1u64)),
+            shard_state: ShardState::Open as i32,
+            ingester_id: "node-1".to_string(),
+            ..Default::default()
+        }];
+        table.merge_from_shards(
+            &pool,
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            shards,
+        );
+
+        let entry = table.table.get(&key).unwrap();
+        assert!(entry.nodes.is_empty());
+        assert!(entry.seeded_from_cp);
+    }
+
+    #[test]
+    fn test_merge_from_shards_stamps_pool_generation_and_preserves_it() {
+        let mut table = RoutingTable::default();
+        let pool = IngesterPool::default();
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester_gen(None, 7));
+        let key = ("test-index".to_string(), "test-source".to_string());
+        let index_uid = IndexUid::for_test("test-index", 0);
+
+        let shard = Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: "test-source".to_string(),
+            shard_id: Some(ShardId::from(1u64)),
+            shard_state: ShardState::Open as i32,
+            ingester_id: "node-1".to_string(),
+            ..Default::default()
+        };
+        table.merge_from_shards(
+            &pool,
+            index_uid.clone(),
+            "test-source".into(),
+            vec![shard.clone()],
+        );
+        let node = table.table.get(&key).unwrap().nodes.get("node-1").unwrap();
+        assert_eq!(node.generation_id, GenerationId::from(7u64));
+
+        // A subsequent pool churn (gen 9) does not overwrite the existing entry's generation on a
+        // subsequent merge — only open_shard_count is refreshed. The routing entry keeps whatever
+        // generation it was created at; explicit apply_capacity_update is the only mutator.
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester_gen(None, 9));
+        let shard_2 = Shard {
+            shard_id: Some(ShardId::from(2u64)),
+            ..shard.clone()
+        };
+        table.merge_from_shards(&pool, index_uid, "test-source".into(), vec![shard, shard_2]);
+        let node = table.table.get(&key).unwrap().nodes.get("node-1").unwrap();
+        assert_eq!(node.generation_id, GenerationId::from(7u64));
+        assert_eq!(node.open_shard_count, 2);
     }
 
     #[test]
@@ -803,11 +1006,14 @@ mod tests {
     #[test]
     fn test_incarnation_check_clears_stale_nodes() {
         let mut table = RoutingTable::default();
+        let pool = IngesterPool::default();
+        pool.insert(NodeId::from_str("node-4"), mocked_ingester(None));
         let key = ("test-index".to_string(), "test-source".to_string());
 
         // Populate with incarnation 0: two nodes.
         table.apply_capacity_update(
             NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             8,
@@ -815,6 +1021,7 @@ mod tests {
         );
         table.apply_capacity_update(
             NodeId::from_str("node-2"),
+            GenerationId::from(1u64),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
             6,
@@ -827,6 +1034,7 @@ mod tests {
         // Capacity update with incarnation 1 clears stale nodes.
         table.apply_capacity_update(
             NodeId::from_str("node-3"),
+            GenerationId::from(1u64),
             IndexUid::for_test("test-index", 1),
             "test-source".into(),
             5,
@@ -849,6 +1057,7 @@ mod tests {
             ..Default::default()
         }];
         table.merge_from_shards(
+            &pool,
             IndexUid::for_test("test-index", 2),
             "test-source".into(),
             shards,
@@ -858,5 +1067,47 @@ mod tests {
         assert!(entry.nodes.contains_key("node-4"));
         assert!(!entry.nodes.contains_key("node-3"));
         assert_eq!(entry.index_uid, IndexUid::for_test("test-index", 2));
+    }
+
+    #[test]
+    fn test_rolling_restart_generation_switch() {
+        let mut table = RoutingTable::default();
+        let pool = IngesterPool::default();
+
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester_gen(None, 1));
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            5,
+            3,
+        );
+        let picked = table
+            .pick_node("test-index", "test-source", &pool, &HashSet::new())
+            .unwrap();
+        assert_eq!(picked.generation_id, GenerationId::from(1u64));
+
+        // Pool advances to gen 2 (simulated rolling restart); table still holds gen 1.
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester_gen(None, 2));
+        assert!(
+            table
+                .pick_node("test-index", "test-source", &pool, &HashSet::new())
+                .is_none()
+        );
+
+        // Gen-2 broadcast lands and routing recovers.
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(2u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            5,
+            3,
+        );
+        let picked = table
+            .pick_node("test-index", "test-source", &pool, &HashSet::new())
+            .unwrap();
+        assert_eq!(picked.generation_id, GenerationId::from(2u64));
     }
 }
