@@ -17,13 +17,13 @@ use std::time::Instant;
 use fnv::FnvHashMap;
 use quickwit_proto::indexing::IndexingTask;
 use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::types::{NodeId, ShardId, SourceUid};
+use quickwit_proto::types::{AvailabilityZone, NodeId, ShardId, SourceUid};
 use rand::Rng;
 use rand::seq::SliceRandom;
 
 use super::{
-    AvailabilityZone, Eligibility, IndexerInfo, SourceToSchedule,
-    compute_max_num_shards_per_pipeline, shard_availability_zone,
+    Eligibility, IndexerInfo, SourceToSchedule, compute_max_num_shards_per_pipeline,
+    shard_availability_zone,
 };
 use crate::IndexerPoolEntry;
 use crate::indexing_plan::PhysicalIndexingPlan;
@@ -364,7 +364,9 @@ mod tests {
     use fnv::FnvHashMap;
     use quickwit_proto::indexing::{IndexingTask, mcpu};
     use quickwit_proto::ingest::ingester::IngesterStatus;
-    use quickwit_proto::types::{IndexUid, NodeId, PipelineUid, ShardId, SourceUid};
+    use quickwit_proto::types::{
+        AvailabilityZone, IndexUid, NodeId, PipelineUid, ShardId, SourceUid,
+    };
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 
@@ -376,8 +378,7 @@ mod tests {
     };
     use crate::indexing_plan::PhysicalIndexingPlan;
     use crate::indexing_scheduler::scheduling::{
-        AvailabilityZone, Eligibility, IndexerInfo, SourceToSchedule, SourceToScheduleType,
-        shard_ids_for_indexer,
+        Eligibility, IndexerInfo, SourceToSchedule, SourceToScheduleType, shard_ids_for_indexer,
     };
     use crate::indexing_scheduler::{
         IndexingSchedulerState, MIN_DURATION_BETWEEN_SCHEDULING, get_indexing_plan_density,

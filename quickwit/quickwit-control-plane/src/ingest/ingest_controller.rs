@@ -45,7 +45,7 @@ use quickwit_proto::metastore::{
     MetastoreResult, MetastoreService, MetastoreServiceClient, OpenShardSubrequest,
     OpenShardsRequest, OpenShardsResponse, serde_utils,
 };
-use quickwit_proto::types::{IndexUid, NodeId, Position, ShardId, SourceUid};
+use quickwit_proto::types::{AvailabilityZone, IndexUid, NodeId, Position, ShardId, SourceUid};
 use rand::prelude::IndexedRandom;
 use rand::rngs::ThreadRng;
 use rand::seq::SliceRandom;
@@ -92,8 +92,6 @@ fn fire_and_forget(
     });
 }
 
-type Zone = Arc<str>;
-
 type SourceShardCount = HashMap<SourceUid, usize>;
 
 fn total_shards(source_shard_counts: &SourceShardCount) -> usize {
@@ -105,19 +103,19 @@ fn total_shards(source_shard_counts: &SourceShardCount) -> usize {
 /// new shards evenly.
 enum ShardPlacement {
     Balanced(SourceShardCount),
-    Zoned(HashMap<Option<Zone>, SourceShardCount>),
+    Zoned(HashMap<Option<AvailabilityZone>, SourceShardCount>),
 }
 
 struct EligibleIngester {
     node_id: NodeId,
-    zone: Option<Zone>,
+    zone: Option<AvailabilityZone>,
     num_open_shards: AtomicUsize,
 }
 
 /// Find the globally minimally loaded ingester. Break ties with the requested zone, if provided.
 fn pick_least_loaded<'a>(
     eligible_ingesters: &'a [EligibleIngester],
-    requested_zone: Option<&Zone>,
+    requested_zone: Option<&AvailabilityZone>,
     rng: &mut ThreadRng,
 ) -> &'a EligibleIngester {
     assert!(!eligible_ingesters.is_empty());
@@ -187,6 +185,7 @@ fn eligible_ingesters(
             // global "zonal" group.
             zone: ingester
                 .availability_zone
+                .clone()
                 .filter(|_| zonal_placement_enabled),
         })
         .collect()
@@ -194,7 +193,7 @@ fn eligible_ingesters(
 
 fn allocate_shards(
     eligible_ingesters: &[EligibleIngester],
-    requested_zone: Option<Zone>,
+    requested_zone: Option<AvailabilityZone>,
     num_shards: usize,
 ) -> Vec<NodeId> {
     let mut rng = rng();
@@ -209,15 +208,15 @@ fn allocate_shards(
 
 fn distribute_shards_across_zones(
     num_to_open: usize,
-    zones: &HashSet<Zone>,
-) -> HashMap<Option<Zone>, usize> {
+    zones: &HashSet<AvailabilityZone>,
+) -> HashMap<Option<AvailabilityZone>, usize> {
     if num_to_open == 0 {
         return HashMap::new();
     }
     if zones.is_empty() {
         return HashMap::from([(None, num_to_open)]);
     }
-    let mut shuffled: Vec<&Zone> = zones.iter().collect();
+    let mut shuffled: Vec<&AvailabilityZone> = zones.iter().collect();
     shuffled.shuffle(&mut rng());
     shuffled
         .iter()
@@ -231,12 +230,13 @@ fn distribute_shards_across_zones(
 fn balance_shards_to_open_across_zones(
     source_shard_counts: SourceShardCount,
     eligible_ingesters: &[EligibleIngester],
-) -> HashMap<Option<Zone>, SourceShardCount> {
-    let zones: HashSet<Zone> = eligible_ingesters
+) -> HashMap<Option<AvailabilityZone>, SourceShardCount> {
+    let zones: HashSet<AvailabilityZone> = eligible_ingesters
         .iter()
         .filter_map(|ingester| ingester.zone.clone())
         .collect();
-    let mut num_shards_by_source_by_zone: HashMap<Option<Zone>, SourceShardCount> = HashMap::new();
+    let mut num_shards_by_source_by_zone: HashMap<Option<AvailabilityZone>, SourceShardCount> =
+        HashMap::new();
     for (source_uid, num_shards) in source_shard_counts {
         // Number of shards to open for this source in each zone.
         for (zone, count) in distribute_shards_across_zones(num_shards, &zones) {
@@ -258,7 +258,7 @@ fn balance_shards_to_open_across_zones(
 /// control plane's self-healing mechanisms instead of turning normal cluster churn into a panic.
 fn match_shards_to_close(
     ingester_pool: &IngesterPool,
-    opened_by_original_zone: &HashMap<Option<Zone>, SourceShardCount>,
+    opened_by_original_zone: &HashMap<Option<AvailabilityZone>, SourceShardCount>,
     shards_to_rebalance: &mut Vec<Shard>,
 ) -> Vec<Shard> {
     let mut shards_to_close: Vec<Shard> = Vec::new();
@@ -269,7 +269,7 @@ fn match_shards_to_close(
                     shard.source_uid() == *source_uid
                         && ingester_pool
                             .get(shard.ingester_id.as_str())
-                            .and_then(|ingester| ingester.availability_zone)
+                            .and_then(|ingester| ingester.availability_zone.clone())
                             == *original_zone
                 }) else {
                     // This would only happen if the ingester pool changed underneath after shards
@@ -791,7 +791,7 @@ impl IngestController {
         model: &mut ControlPlaneModel,
         unavailable_ingesters: &FnvHashSet<NodeId>,
         progress: &Progress,
-    ) -> MetastoreResult<HashMap<Option<Zone>, SourceShardCount>> {
+    ) -> MetastoreResult<HashMap<Option<AvailabilityZone>, SourceShardCount>> {
         // Zonal aware placement is enabled only after every ingester has advertised its
         // zone. If not, every ingester's zone is set to None and the global balancing logic
         // applies.
@@ -827,12 +827,13 @@ impl IngestController {
     /// their originating (source, AZ) bucket.
     async fn open_shards(
         &mut self,
-        num_shards_by_source_by_zone: HashMap<Option<Zone>, SourceShardCount>,
+        num_shards_by_source_by_zone: HashMap<Option<AvailabilityZone>, SourceShardCount>,
         eligible_ingesters: &[EligibleIngester],
         model: &mut ControlPlaneModel,
         progress: &Progress,
-    ) -> MetastoreResult<HashMap<Option<Zone>, SourceShardCount>> {
-        let mut opened_by_zone: HashMap<Option<Zone>, SourceShardCount> = HashMap::new();
+    ) -> MetastoreResult<HashMap<Option<AvailabilityZone>, SourceShardCount>> {
+        let mut opened_by_zone: HashMap<Option<AvailabilityZone>, SourceShardCount> =
+            HashMap::new();
         for (requested_zone, num_shards_by_source) in num_shards_by_source_by_zone {
             let opened = self
                 .try_open_shards_by_zone(
@@ -870,7 +871,7 @@ impl IngestController {
     async fn try_open_shards_by_zone(
         &mut self,
         num_shards_to_open_by_source: SourceShardCount,
-        requested_zone: Option<Zone>,
+        requested_zone: Option<AvailabilityZone>,
         eligible_ingesters: &[EligibleIngester],
         model: &mut ControlPlaneModel,
         progress: &Progress,
@@ -1135,13 +1136,13 @@ impl IngestController {
             debug!("skipping rebalance: no shards to rebalance");
             return Ok(0);
         }
-        let mut replacement_counts_by_zone: HashMap<Option<Zone>, SourceShardCount> =
+        let mut replacement_counts_by_zone: HashMap<Option<AvailabilityZone>, SourceShardCount> =
             HashMap::new();
         for shard in &shards_to_rebalance {
             let zone = self
                 .ingester_pool
                 .get(shard.ingester_id.as_str())
-                .and_then(|ingester| ingester.availability_zone);
+                .and_then(|ingester| ingester.availability_zone.clone());
             *replacement_counts_by_zone
                 .entry(zone)
                 .or_default()
@@ -1448,7 +1449,8 @@ mod tests {
         IngesterPoolEntry {
             client: IngesterServiceClient::mocked(),
             status,
-            availability_zone: availability_zone.map(Arc::from),
+            availability_zone: availability_zone.map(AvailabilityZone::from),
+            generation_id: GenerationId::from(1u64),
         }
     }
 
@@ -1459,7 +1461,7 @@ mod tests {
     ) -> EligibleIngester {
         EligibleIngester {
             node_id: NodeId::from_str(node_id),
-            zone: zone.map(Arc::from),
+            zone: zone.map(AvailabilityZone::from),
             num_open_shards: AtomicUsize::new(num_open_shards),
         }
     }
@@ -1919,7 +1921,7 @@ mod tests {
             &ControlPlaneModel::default(),
             zonal_placement_enabled,
         );
-        let zones_by_ingester: HashMap<NodeId, Option<Zone>> = eligible_ingesters
+        let zones_by_ingester: HashMap<NodeId, Option<AvailabilityZone>> = eligible_ingesters
             .into_iter()
             .map(|ingester| (ingester.node_id, ingester.zone))
             .collect();
@@ -2452,7 +2454,8 @@ mod tests {
                 IngesterPoolEntry {
                     client: ingester_client.clone(),
                     status: IngesterStatus::Ready,
-                    availability_zone: Some(Arc::from(zone)),
+                    availability_zone: Some(AvailabilityZone::from(zone)),
+                    generation_id: GenerationId::from(1u64),
                 },
             );
         }
@@ -2498,7 +2501,10 @@ mod tests {
 
         assert_eq!(opened_by_zone.len(), 3);
         for zone in ["az-a", "az-b", "az-c"] {
-            assert_eq!(opened_by_zone[&Some(Arc::from(zone))][&source_uid], 1);
+            assert_eq!(
+                opened_by_zone[&Some(AvailabilityZone::from(zone))][&source_uid],
+                1
+            );
         }
         let ingester_ids: HashSet<&str> = model
             .all_shards()
@@ -3769,10 +3775,13 @@ mod tests {
         ];
         let opened_by_zone = HashMap::from([
             (
-                Some(Arc::from("az-a")),
+                Some(AvailabilityZone::from("az-a")),
                 HashMap::from([(source_uid.clone(), 2)]),
             ),
-            (Some(Arc::from("az-c")), HashMap::from([(source_uid, 1)])),
+            (
+                Some(AvailabilityZone::from("az-c")),
+                HashMap::from([(source_uid, 1)]),
+            ),
         ]);
 
         let mut shards_to_close =
@@ -3839,6 +3848,7 @@ mod tests {
     }
 
     use proptest::prelude::*;
+    use quickwit_cluster::GenerationId;
 
     proptest! {
         #[test]
@@ -3868,7 +3878,7 @@ mod tests {
             eligible_ingester("ingester-b", Some("az-b"), 1),
             eligible_ingester("ingester-c", Some("az-c"), 1),
         ];
-        let az_b = Arc::from("az-b");
+        let az_b = AvailabilityZone::from("az-b");
         let picked = pick_least_loaded(&tied_ingesters, Some(&az_b), &mut rng);
         assert_eq!(picked.node_id, "ingester-b");
 
@@ -3877,7 +3887,7 @@ mod tests {
             eligible_ingester("ingester-b", Some("az-b"), 1),
             eligible_ingester("ingester-c", Some("az-c"), 2),
         ];
-        let az_a = Arc::from("az-a");
+        let az_a = AvailabilityZone::from("az-a");
         let picked = pick_least_loaded(&uneven_ingesters, Some(&az_a), &mut rng);
         assert_eq!(picked.node_id, "ingester-b");
         let picked = pick_least_loaded(&uneven_ingesters, None, &mut rng);
@@ -3893,7 +3903,11 @@ mod tests {
             HashMap::from([(None, 5)])
         );
 
-        let zones = HashSet::from_iter([Arc::from("az-a"), Arc::from("az-b"), Arc::from("az-c")]);
+        let zones = HashSet::from_iter([
+            AvailabilityZone::from("az-a"),
+            AvailabilityZone::from("az-b"),
+            AvailabilityZone::from("az-c"),
+        ]);
         for (num_shards, expected_num_zones) in [(2, 2), (3, 3), (8, 3)] {
             let distribution = distribute_shards_across_zones(num_shards, &zones);
             assert_eq!(distribution.len(), expected_num_zones);

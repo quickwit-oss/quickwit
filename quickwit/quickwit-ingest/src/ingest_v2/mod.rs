@@ -34,7 +34,6 @@ mod workbench;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::ops::{Add, AddAssign};
-use std::sync::Arc;
 use std::time::Duration;
 use std::{env, fmt};
 
@@ -51,7 +50,7 @@ use quickwit_proto::ingest::ingester::{IngesterServiceClient, IngesterStatus};
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
 use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2, DocFormat};
 use quickwit_proto::types::{
-    DocUid, DocUidGenerator, IndexId, IndexUid, NodeId, SourceId, SubrequestId,
+    AvailabilityZone, DocUid, DocUidGenerator, IndexId, IndexUid, NodeId, SourceId, SubrequestId,
 };
 use serde::Serialize;
 use tracing::{error, info};
@@ -71,7 +70,7 @@ pub use self::router::IngestRouter;
 pub struct IngesterPoolEntry {
     pub client: IngesterServiceClient,
     pub status: IngesterStatus,
-    pub availability_zone: Option<Arc<str>>,
+    pub availability_zone: Option<AvailabilityZone>,
     pub generation_id: GenerationId,
 }
 
