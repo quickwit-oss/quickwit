@@ -1650,7 +1650,10 @@ mod tests {
 
     use futures::executor::block_on;
     use quickwit_common::uri::{Protocol, Uri};
-    use quickwit_config::IndexConfig;
+    use quickwit_config::{
+        FileSourceMessageType, FileSourceNotification, FileSourceParams, FileSourceSqs,
+        IndexConfig, SourceConfig, SourceParams,
+    };
     use quickwit_proto::ingest::Shard;
     use quickwit_proto::metastore::{DeleteQuery, MetastoreError};
     use quickwit_proto::types::SourceId;
@@ -1956,6 +1959,66 @@ mod tests {
             .unwrap();
         assert_eq!(splits.len(), 1);
         Ok(())
+    }
+
+    /// Regression test for <https://github.com/quickwit-oss/quickwit/issues/5782>.
+    ///
+    /// A source that stores its checkpoint in the shard table holds no shard until its first one
+    /// is opened. Such a source used to lose its shard table entry when the index was persisted,
+    /// which left every shard API call on the reloaded index failing with `NotFound(Source)`.
+    #[tokio::test]
+    async fn test_file_backed_metastore_shard_api_sources_survive_reload() {
+        let storage = Arc::new(RamStorage::default());
+        let metastore = FileBackedMetastore::try_new(storage.clone(), None)
+            .await
+            .unwrap();
+
+        let index_config = IndexConfig::for_test("test-index", "ram:///indexes/test-index");
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+        let index_uid: IndexUid = metastore
+            .create_index(create_index_request)
+            .await
+            .unwrap()
+            .index_uid()
+            .clone();
+
+        let sqs_params = FileSourceSqs {
+            queue_url: "https://sqs.us-east-1.amazonaws.com/000000000000/queue".to_string(),
+            message_type: FileSourceMessageType::S3Notification,
+            deduplication_window_duration_secs: 100,
+            deduplication_window_max_messages: 100,
+            deduplication_cleanup_interval_secs: 60,
+        };
+        let sqs_source_params = SourceParams::File(FileSourceParams::Notifications(
+            FileSourceNotification::Sqs(sqs_params),
+        ));
+        let source_configs = [
+            SourceConfig::for_test("sqs-source", sqs_source_params),
+            SourceConfig::ingest_v2(),
+        ];
+        for source_config in &source_configs {
+            let add_source_request =
+                AddSourceRequest::try_from_source_config(index_uid.clone(), source_config).unwrap();
+            metastore.add_source(add_source_request).await.unwrap();
+        }
+
+        // A second metastore instance reloads the index from the storage the first one wrote to.
+        let reloaded_metastore = FileBackedMetastore::try_new(storage, None).await.unwrap();
+
+        for source_config in &source_configs {
+            let prune_shards_request = PruneShardsRequest {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_config.source_id.clone(),
+                max_age_secs: None,
+                max_count: None,
+                interval_secs: None,
+            };
+            reloaded_metastore
+                .prune_shards(prune_shards_request)
+                .await
+                .unwrap();
+        }
     }
 
     #[tokio::test]

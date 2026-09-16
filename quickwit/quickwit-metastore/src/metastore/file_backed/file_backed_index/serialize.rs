@@ -16,14 +16,13 @@ use std::collections::HashMap;
 
 use itertools::Itertools;
 use quickwit_proto::ingest::Shard;
-use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::{DocMappingUid, SourceId};
 use serde::{Deserialize, Serialize};
 
 use super::StoredParquetSplit;
 use super::shards::Shards;
 use crate::file_backed::file_backed_index::FileBackedIndex;
-use crate::metastore::DeleteTask;
+use crate::metastore::{DeleteTask, use_shard_api};
 use crate::{IndexMetadata, Split};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -88,15 +87,18 @@ impl From<FileBackedIndex> for FileBackedIndexV0_8 {
             .per_source_shards
             .into_iter()
             .filter_map(|(source_id, shards)| {
-                // TODO: Remove this filter when we release ingest v2.
-                // Skip serializing empty shards since the feature is hidden and disabled by
-                // default. This way, we can still modify the serialization format without worrying
-                // about backward compatibility post `0.7`.
                 if !shards.is_empty() {
-                    Some((source_id, shards.into_shards_vec()))
-                } else {
-                    None
+                    return Some((source_id, shards.into_shards_vec()));
                 }
+                // A source whose checkpoint is stored in the shard table must keep its entry even
+                // when it holds no shard, so that a node still running an affected version can
+                // serve the shard API for it. The other sources carry no information and are
+                // skipped, as they were before ingest v2 was released.
+                let source = index.metadata.sources.get(&source_id)?;
+                if !use_shard_api(&source.source_params) {
+                    return None;
+                }
+                Some((source_id, shards.into_shards_vec()))
             })
             .collect();
         let delete_tasks = index
@@ -138,9 +140,11 @@ impl From<FileBackedIndexV0_8> for FileBackedIndex {
                 )
             })
             .collect();
-        // TODO: Remove this when we release ingest v2.
+        // Restore the entries of the sources that store their checkpoint in the shard table but
+        // hold no shard. Versions prior to this one dropped them on serialization, so this also
+        // repairs indexes that were persisted by those versions.
         for source in index.metadata.sources.values() {
-            if source.source_type() == SourceType::IngestV2
+            if use_shard_api(&source.source_params)
                 && !per_source_shards.contains_key(&source.source_id)
             {
                 let index_uid = index.metadata.index_uid.clone();
@@ -156,5 +160,74 @@ impl From<FileBackedIndexV0_8> for FileBackedIndex {
             index.metrics_splits,
             index.sketch_splits,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use quickwit_config::{
+        FileSourceMessageType, FileSourceNotification, FileSourceParams, FileSourceSqs,
+        SourceConfig, SourceParams,
+    };
+    use quickwit_proto::metastore::ListShardsSubrequest;
+
+    use super::*;
+
+    /// Builds an index holding one source that uses the shard API and one that does not, neither
+    /// of them holding a shard yet.
+    fn index_with_shardless_sources() -> FileBackedIndex {
+        let sqs_params = FileSourceSqs {
+            queue_url: "https://sqs.us-east-1.amazonaws.com/000000000000/queue".to_string(),
+            message_type: FileSourceMessageType::S3Notification,
+            deduplication_window_duration_secs: 100,
+            deduplication_window_max_messages: 100,
+            deduplication_cleanup_interval_secs: 60,
+        };
+        let source_params = SourceParams::File(FileSourceParams::Notifications(
+            FileSourceNotification::Sqs(sqs_params),
+        ));
+        let index_metadata = IndexMetadata::for_test("test-index", "ram://indexes/test-index");
+        let mut index = FileBackedIndex::from(index_metadata);
+        index
+            .add_source(SourceConfig::for_test("sqs-source", source_params))
+            .unwrap();
+        index
+            .add_source(SourceConfig::for_test("void-source", SourceParams::void()))
+            .unwrap();
+        index
+    }
+
+    /// A source that stores its checkpoint in the shard table holds no shard until its first one
+    /// is opened. Its entry must still be serialized, otherwise a node running an affected
+    /// version cannot serve the shard API for it.
+    #[test]
+    fn test_serialize_keeps_shardless_shard_api_source() {
+        let index = index_with_shardless_sources();
+
+        let serialized = serde_json::to_value(&index).unwrap();
+
+        assert_eq!(serialized["shards"]["sqs-source"], serde_json::json!([]));
+        // The sources that do not use the shard API carry no information and are still skipped.
+        assert!(serialized["shards"].get("void-source").is_none());
+    }
+
+    /// Versions prior to this one dropped that entry, which left the index permanently unable to
+    /// serve the shard API for the source. Deserialization restores it.
+    #[test]
+    fn test_deserialize_restores_dropped_shardless_shard_api_source() {
+        let index = index_with_shardless_sources();
+        let mut serialized = serde_json::to_value(&index).unwrap();
+        // Simulate an index persisted by an affected version.
+        serialized.as_object_mut().unwrap().remove("shards");
+
+        let deserialized: FileBackedIndex = serde_json::from_value(serialized).unwrap();
+
+        let subresponse = deserialized
+            .list_shards(ListShardsSubrequest {
+                source_id: "sqs-source".to_string(),
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(subresponse.shards.is_empty());
     }
 }
