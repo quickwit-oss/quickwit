@@ -9629,7 +9629,6 @@ dependencies = [
  "base64 0.23.0",
  "bytes",
  "bytesize",
- "fail",
  "foyer",
  "futures",
  "http 1.4.2",

@@ -40,7 +40,7 @@ impl From<Vec<(&'static str, Arc<dyn StorageCache>)>> for QuickwitCache {
 impl QuickwitCache {
     /// Creates a [`QuickwitCache`] with a cache on fast fields.
     pub fn new(cache_config: &CacheConfig) -> Self {
-        if cache_config.capacity().as_u64() == 0 {
+        if cache_config.capacity().as_u64() == 0 && cache_config.virtual_caches.is_empty() {
             return QuickwitCache::empty();
         }
         let mut quickwit_cache = QuickwitCache::empty();
@@ -163,6 +163,20 @@ mod tests {
     fn test_new_with_zero_capacity_is_empty() {
         let quickwit_cache = QuickwitCache::new(&CacheConfig::no_cache());
         assert!(quickwit_cache.router.is_empty());
+    }
+
+    #[test]
+    fn test_new_with_zero_capacity_and_virtual_cache_adds_fast_field_route() {
+        let mut cache_config = CacheConfig::no_cache();
+        cache_config
+            .virtual_caches
+            .push(CacheConfig::default_with_capacity(bytesize::ByteSize::mb(
+                1,
+            )));
+
+        let quickwit_cache = QuickwitCache::new(&cache_config);
+
+        assert_eq!(quickwit_cache.router.len(), 1);
     }
 
     #[test]
