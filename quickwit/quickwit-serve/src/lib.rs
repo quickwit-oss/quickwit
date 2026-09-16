@@ -1663,6 +1663,7 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_cluster::{ChitchatTransport, ClusterNode, GenerationId, create_cluster_for_test};
+    use quickwit_common::assert_eventually;
     use quickwit_common::uri::Uri;
     use quickwit_config::SearcherConfig;
     use quickwit_metastore::{IndexMetadata, metastore_for_test};
@@ -1674,7 +1675,7 @@ mod tests {
     use tonic_health::pb::HealthCheckRequest;
     use tonic_health::pb::health_client::HealthClient;
     use tonic_health::server::health_reporter;
-    use quickwit_common::assert_eventually;
+
     use super::*;
 
     #[tokio::test]
