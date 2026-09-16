@@ -34,7 +34,7 @@ use async_speed_limit::limiter::Consume;
 use bytesize::ByteSize;
 use pin_project::pin_project;
 use quickwit_metrics::{Counter, LazyCounter, counter, lazy_counter};
-use tokio::io::AsyncWrite;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use crate::{KillSwitch, Progress, ProtectedZoneGuard};
 
@@ -236,6 +236,58 @@ fn quirky_truncate_slices<'a, 'b>(bufs: &'b [IoSlice<'a>], max_len: usize) -> &'
     bufs
 }
 
+#[pin_project]
+pub struct ControlledRead<A: IoControlsAccess, R> {
+    #[pin]
+    underlying_read: R,
+    waiter: Option<Consume<StandardClock, ()>>,
+    io_controls_access: A,
+}
+
+impl<A: IoControlsAccess, R: AsyncRead> AsyncRead for ControlledRead<A, R> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let this = self.project();
+
+        let _protect_guard = match this
+            .io_controls_access
+            .apply(|io_controls| io_controls.check_if_alive())
+        {
+            Ok(protect_guard) => protect_guard,
+            Err(io_error) => return Poll::Ready(Err(io_error)),
+        };
+
+        if let Some(waiter) = this.waiter {
+            if Pin::new(waiter).poll(cx).is_pending() {
+                return Poll::Pending;
+            }
+            *this.waiter = None;
+        }
+
+        let max_num_bytes = buf.remaining().min(MAX_NUM_BYTES_WRITTEN_AT_ONCE);
+        let mut limited_buf = buf.take(max_num_bytes);
+        let poll_result = this.underlying_read.poll_read(cx, &mut limited_buf);
+        if poll_result.is_ready() {
+            let num_bytes_read = limited_buf.filled().len();
+            drop(limited_buf);
+            buf.advance(num_bytes_read);
+            if num_bytes_read > 0 {
+                *this.waiter = this.io_controls_access.apply(|io_controls| {
+                    io_controls.bytes_counter.inc_by(num_bytes_read as u64);
+                    io_controls
+                        .throughput_limiter_opt
+                        .as_ref()
+                        .map(|limiter| limiter.consume(num_bytes_read))
+                });
+            }
+        }
+        poll_result
+    }
+}
+
 impl<A: IoControlsAccess, W: AsyncWrite> AsyncWrite for ControlledWrite<A, W> {
     fn poll_write(
         self: Pin<&mut Self>,
@@ -270,6 +322,14 @@ impl<A: IoControlsAccess, W: AsyncWrite> AsyncWrite for ControlledWrite<A, W> {
 }
 
 pub trait IoControlsAccess: Sized {
+    fn wrap_read<R>(self, read: R) -> ControlledRead<Self, R> {
+        ControlledRead {
+            underlying_read: read,
+            waiter: None,
+            io_controls_access: self,
+        }
+    }
+
     fn wrap_write<W>(self, wrt: W) -> ControlledWrite<Self, W> {
         ControlledWrite {
             underlying_wrt: wrt,
@@ -328,10 +388,23 @@ mod tests {
     use std::time::Duration;
 
     use bytesize::ByteSize;
-    use tokio::io::{AsyncWriteExt, sink};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt, repeat, sink};
     use tokio::time::Instant;
 
     use crate::io::{IoControls, IoControlsAccess};
+
+    #[tokio::test]
+    async fn test_controlled_reader_limited_async() {
+        let io_controls = IoControls::default().set_throughput_limit(ByteSize::mb(2));
+        let mut controlled_read = io_controls.clone().wrap_read(repeat(0));
+        let mut buf = vec![0; 2_000_000];
+        let start = Instant::now();
+        controlled_read.read_exact(&mut buf).await.unwrap();
+        let elapsed = start.elapsed();
+        assert!(elapsed >= Duration::from_millis(400));
+        assert!(elapsed <= Duration::from_millis(700));
+        assert_eq!(io_controls.num_bytes(), 2_000_000u64);
+    }
 
     #[tokio::test]
     async fn test_controlled_writer_limited_async() {
