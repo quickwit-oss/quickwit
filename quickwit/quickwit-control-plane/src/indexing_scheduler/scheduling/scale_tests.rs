@@ -111,15 +111,15 @@ fn test_scale_all_indexers_ready() {
 
     let metrics = get_shard_locality_metrics(&plan, &shard_locations, &indexer_infos);
     println!(
-        "{num_shards} shards: {} local, {} nearby, {} remote",
-        metrics.num_local_shards, metrics.num_nearby_shards, metrics.num_remote_shards
+        "{num_shards} shards: {} local, {} zonal, {} remote",
+        metrics.num_local_shards, metrics.num_zonal_shards, metrics.num_remote_shards
     );
     assert_eq!(
-        metrics.num_local_shards + metrics.num_nearby_shards + metrics.num_remote_shards,
+        metrics.num_local_shards + metrics.num_zonal_shards + metrics.num_remote_shards,
         num_shards
     );
     assert!(
-        metrics.num_nearby_shards > 0,
+        metrics.num_zonal_shards > 0,
         "no shard overflowed to a same-az peer, so pass two never engaged"
     );
     assert_eq!(
@@ -188,8 +188,8 @@ fn test_scale_drain_spread_across_azs() {
     let metrics = get_shard_locality_metrics(&drained_plan, &shard_locations, &ready_indexer_infos);
     println!(
         "{num_shards} shards: draining indexers host {num_hosted_on_draining} and index \
-         {num_indexed_by_draining}; {} local, {} nearby, {} remote",
-        metrics.num_local_shards, metrics.num_nearby_shards, metrics.num_remote_shards
+         {num_indexed_by_draining}; {} local, {} zonal, {} remote",
+        metrics.num_local_shards, metrics.num_zonal_shards, metrics.num_remote_shards
     );
     assert!(
         num_indexed_by_draining * 100 >= num_hosted_on_draining * 85,
@@ -284,8 +284,8 @@ fn test_scale_drain_whole_az() {
     let metrics = get_shard_locality_metrics(&drained_plan, &shard_locations, &ready_indexer_infos);
     println!(
         "{num_shards} shards: draining indexers host {num_hosted_on_draining} and index \
-         {num_indexed_by_draining}; {} local, {} nearby, {} remote",
-        metrics.num_local_shards, metrics.num_nearby_shards, metrics.num_remote_shards
+         {num_indexed_by_draining}; {} local, {} zonal, {} remote",
+        metrics.num_local_shards, metrics.num_zonal_shards, metrics.num_remote_shards
     );
     assert!(
         num_indexed_by_draining * 100 >= num_hosted_on_draining * 85,
@@ -562,8 +562,8 @@ fn assert_locality_of_hosted_shards_is_stable(
         "{} shards were indexed on their host before the replan and {} after",
         metrics_before.num_local_shards, metrics_after.num_local_shards
     );
-    let num_displaced_before = metrics_before.num_nearby_shards + metrics_before.num_remote_shards;
-    let num_displaced_after = metrics_after.num_nearby_shards + metrics_after.num_remote_shards;
+    let num_displaced_before = metrics_before.num_zonal_shards + metrics_before.num_remote_shards;
+    let num_displaced_after = metrics_after.num_zonal_shards + metrics_after.num_remote_shards;
     assert_eq!(num_displaced_before, num_displaced_after);
 }
 
@@ -602,13 +602,13 @@ fn assert_drained_az_spills_across_zones(
         for task in tasks {
             for shard_id in &task.shard_ids {
                 let host = &host_per_shard[shard_id];
-                let host_az = indexer_infos[host].availability_zone.as_deref();
-                if host_az != Some(drained_az) || host == indexer {
+                let host_az = indexer_infos[host].availability_zone.clone();
+                if host_az.as_deref() != Some(drained_az) || host == indexer {
                     continue;
                 }
-                let indexer_az = indexer_infos[indexer].availability_zone.as_deref();
+                let indexer_az = indexer_infos[indexer].availability_zone.clone();
                 assert_ne!(
-                    indexer_az,
+                    indexer_az.as_deref(),
                     Some(drained_az),
                     "shard {shard_id:?} hosted on {host} moved to {indexer}, still inside the \
                      fully drained {drained_az}"
