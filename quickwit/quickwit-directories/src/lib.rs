@@ -30,6 +30,7 @@ mod debug_proxy_directory;
 mod hot_directory;
 mod storage_directory;
 mod union_directory;
+mod unsynced_mmap_directory;
 
 pub use self::bundle_directory::{BundleDirectory, get_hotcache_from_split, read_split_footer};
 pub use self::caching_directory::CachingDirectory;
@@ -37,6 +38,7 @@ pub use self::debug_proxy_directory::{DebugProxyDirectory, ReadOperation};
 pub use self::hot_directory::{HotDirectory, write_hotcache};
 pub use self::storage_directory::StorageDirectory;
 pub use self::union_directory::UnionDirectory;
+pub use self::unsynced_mmap_directory::UnsyncedMmapDirectory;
 
 macro_rules! read_only_directory {
     () => {
