@@ -1684,6 +1684,7 @@ mod tests {
                 client: IngesterServiceClient::mocked(),
                 status: IngesterStatus::Retiring,
                 availability_zone: None,
+                generation_id: quickwit_cluster::GenerationId::from(1u64),
             },
         );
         let open_shard_opt =
@@ -3549,6 +3550,7 @@ mod tests {
                 client: ingester_client.clone(),
                 status: IngesterStatus::Ready,
                 availability_zone: None,
+                generation_id: quickwit_cluster::GenerationId::from(1u64),
             };
             ingester_pool.insert(NodeId::from_str(ingester_id), ingester);
         }
@@ -3566,6 +3568,7 @@ mod tests {
                 client: ingester_client.clone(),
                 status: IngesterStatus::Retiring,
                 availability_zone: None,
+                generation_id: quickwit_cluster::GenerationId::from(1u64),
             };
             ingester_pool.insert(NodeId::from_str(ingester_id), ingester);
         }
@@ -3707,6 +3710,7 @@ mod tests {
                     client: ingester_client.clone(),
                     status: IngesterStatus::Decommissioned,
                     availability_zone: None,
+                    generation_id: quickwit_cluster::GenerationId::from(1u64),
                 };
                 ingester_pool.insert(NodeId::from_str(ingester_id), ingester);
             }

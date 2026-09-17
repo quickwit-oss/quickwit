@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use bitpacking::{BitPacker, BitPacker1x};
@@ -105,14 +106,18 @@ impl BuildTantivyAst for CacheNode {
             }
             .into()),
             CacheState::CacheMiss(cache_filler) => {
-                let tantivy_query: Box<dyn Query> = self
-                    .inner
-                    .build_tantivy_ast_call(context)?
-                    .simplify()
-                    .into();
+                let tantivy_query_ast = self.inner.build_tantivy_ast_call(context)?.simplify();
+                let mut required_terms = HashSet::new();
+                super::required_terms::collect_required_terms(
+                    &tantivy_query_ast,
+                    context.schema,
+                    &mut required_terms,
+                );
+                let tantivy_query: Box<dyn Query> = tantivy_query_ast.into();
                 Ok(CacheFillerQuery {
                     inner_query: Box::new(tantivy_query),
                     cache_filler: cache_filler.clone(),
+                    required_terms,
                 }
                 .into())
             }
@@ -123,7 +128,7 @@ impl BuildTantivyAst for CacheNode {
 use tantivy::directory::OwnedBytes;
 use tantivy::index::SegmentId;
 use tantivy::query::{EnableScoring, Explanation, Query, Scorer, Weight};
-use tantivy::{DocId, DocSet, Score, SegmentReader, TantivyError};
+use tantivy::{DocId, DocSet, Score, SegmentReader, TantivyError, Term};
 
 #[derive(Clone, Debug)]
 pub struct CacheHitQuery {
@@ -397,6 +402,7 @@ impl CacheFiller {
 pub struct CacheFillerQuery {
     inner_query: Box<dyn Query>,
     cache_filler: CacheFiller,
+    required_terms: HashSet<Term>,
 }
 
 impl Clone for CacheFillerQuery {
@@ -404,7 +410,14 @@ impl Clone for CacheFillerQuery {
         Self {
             inner_query: self.inner_query.box_clone(),
             cache_filler: self.cache_filler.clone(),
+            required_terms: self.required_terms.clone(),
         }
+    }
+}
+
+impl CacheFillerQuery {
+    pub(crate) fn required_terms(&self) -> &HashSet<Term> {
+        &self.required_terms
     }
 }
 
@@ -714,6 +727,56 @@ mod tests {
             visitor.transform(ast).unwrap();
             assert!(visitor.0);
         }
+    }
+
+    #[test]
+    fn test_cache_filler_preserves_required_terms() {
+        let mut schema_builder = Schema::builder();
+        let body_field = schema_builder.add_text_field("body", TEXT);
+        let schema = schema_builder.build();
+        let context = BuildTantivyAstContext::for_test(&schema);
+        let term_query: QueryAst = TermQuery {
+            field: "body".to_string(),
+            value: "val".to_string(),
+        }
+        .into();
+        let cache_node = CacheNode::new(term_query);
+        let query_json = serde_json::to_string(&cache_node.inner).unwrap();
+        let ast: QueryAst = cache_node.into();
+        let cache = Arc::new(Mutex::new(HashMap::new()));
+
+        let cache_miss_ast = PredicateCacheInjector {
+            cache: cache.clone(),
+            split_id: "split".to_string(),
+        }
+        .transform(ast.clone())
+        .unwrap()
+        .unwrap();
+        let (_query, required_terms) = cache_miss_ast
+            .build_tantivy_query_and_required_terms(&context)
+            .unwrap();
+        assert_eq!(
+            required_terms,
+            HashSet::from([Term::from_field_text(body_field, "val")])
+        );
+
+        cache.put(
+            "split".to_string(),
+            query_json,
+            SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap(),
+            HitSet::empty(),
+        );
+        let cache_hit_ast = PredicateCacheInjector {
+            cache,
+            split_id: "split".to_string(),
+        }
+        .transform(ast)
+        .unwrap()
+        .unwrap();
+        let (_query, required_terms) = cache_hit_ast
+            .build_tantivy_query_and_required_terms(&context)
+            .unwrap();
+        assert!(required_terms.is_empty());
     }
 
     #[test]

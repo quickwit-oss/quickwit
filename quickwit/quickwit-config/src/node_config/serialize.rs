@@ -255,7 +255,11 @@ impl NodeConfigBuilder {
             .node_id
             .resolve(env_vars)
             .map(|node_id_str| NodeId::from_str(&node_id_str))?;
-        let availability_zone = self.availability_zone.resolve_optional(env_vars)?;
+        let availability_zone = self
+            .availability_zone
+            .resolve_optional(env_vars)?
+            .map(|availability_zone| availability_zone.trim().to_string())
+            .filter(|availability_zone| !availability_zone.is_empty());
 
         let enable_standalone_compactors = self.enable_standalone_compactors.resolve(env_vars)?;
         let docs_clustering_config =
@@ -1013,6 +1017,55 @@ mod tests {
             )
         );
         assert!(config.ingest_api_config._replication_factor.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_availability_zone_is_normalized() {
+        let test_cases = [
+            ("version: 0.8", None),
+            ("version: 0.8\navailability_zone:", None),
+            ("version: 0.8\navailability_zone: ''", None),
+            ("version: 0.8\navailability_zone: '   '", None),
+            (
+                "version: 0.8\navailability_zone: ' us-east-1a '",
+                Some("us-east-1a"),
+            ),
+        ];
+        for (config_yaml, expected_availability_zone) in test_cases {
+            let config = load_node_config_with_env(
+                ConfigFormat::Yaml,
+                config_yaml.as_bytes(),
+                &Default::default(),
+                None,
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                config.availability_zone.as_deref(),
+                expected_availability_zone
+            );
+        }
+
+        let test_cases = [
+            ("", None),
+            ("   ", None),
+            (" us-east-1a ", Some("us-east-1a")),
+        ];
+        for (availability_zone, expected_availability_zone) in test_cases {
+            let mut env_vars = HashMap::new();
+            env_vars.insert(
+                "QW_AVAILABILITY_ZONE".to_string(),
+                availability_zone.to_string(),
+            );
+            let config =
+                load_node_config_with_env(ConfigFormat::Yaml, b"version: 0.8", &env_vars, None)
+                    .await
+                    .unwrap();
+            assert_eq!(
+                config.availability_zone.as_deref(),
+                expected_availability_zone
+            );
+        }
     }
 
     #[tokio::test]

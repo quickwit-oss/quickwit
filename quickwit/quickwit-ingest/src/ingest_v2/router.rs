@@ -20,6 +20,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt};
+use quickwit_cluster::GenerationId;
 use quickwit_common::metrics::IN_FLIGHT_INGEST_ROUTER;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::{rate_limited_error, rate_limited_warn};
@@ -259,6 +260,7 @@ impl IngestRouter {
 
         for success in response.successes {
             state_guard.routing_table.merge_from_shards(
+                &self.ingester_pool,
                 success.index_uid().clone(),
                 success.source_id,
                 success.open_shards,
@@ -311,6 +313,7 @@ impl IngestRouter {
                         for shard_update in routing_update.source_shard_updates {
                             state_guard.routing_table.apply_capacity_update(
                                 ingester_id.clone(),
+                                persist_summary.generation_id,
                                 shard_update.index_uid().clone(),
                                 shard_update.source_id,
                                 routing_update.capacity_score as usize,
@@ -403,12 +406,14 @@ impl IngestRouter {
                 .iter()
                 .map(|subrequest| subrequest.subrequest_id)
                 .collect();
-            let Some(ingester) = self.ingester_pool.get(&ingester_id).map(|h| h.client) else {
+            let Some(pool_entry) = self.ingester_pool.get(&ingester_id) else {
                 no_shards_available_subrequest_ids.extend(subrequest_ids);
                 continue;
             };
+            let ingester = pool_entry.client;
             let persist_summary = PersistRequestSummary {
                 ingester_id: ingester_id.clone(),
+                generation_id: pool_entry.generation_id,
                 subrequest_ids,
             };
             let persist_request = PersistRequest {
@@ -603,6 +608,7 @@ impl EventSubscriber<IngesterCapacityScoreUpdate> for WeakRouterState {
         let mut state_guard = state.lock().await;
         state_guard.routing_table.apply_capacity_update(
             update.node_id,
+            update.generation_id,
             update.source_uid.index_uid,
             update.source_uid.source_id,
             update.capacity_score,
@@ -613,6 +619,7 @@ impl EventSubscriber<IngesterCapacityScoreUpdate> for WeakRouterState {
 
 pub(super) struct PersistRequestSummary {
     pub ingester_id: NodeId,
+    pub generation_id: GenerationId,
     pub subrequest_ids: Vec<SubrequestId>,
 }
 
@@ -659,7 +666,16 @@ mod tests {
 
         {
             let mut state_guard = router.state.lock().await;
+            state_guard.routing_table.apply_capacity_update(
+                NodeId::from_str("test-ingester-0"),
+                GenerationId::from(1u64),
+                IndexUid::for_test("test-index-0", 0),
+                "test-source".into(),
+                5,
+                1,
+            );
             state_guard.routing_table.merge_from_shards(
+                &ingester_pool,
                 IndexUid::for_test("test-index-0", 0),
                 "test-source".to_string(),
                 vec![Shard {
@@ -865,6 +881,14 @@ mod tests {
             });
         let control_plane = ControlPlaneServiceClient::from_mock(mock_control_plane);
         let ingester_pool = IngesterPool::default();
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-0"),
+            IngesterPoolEntry::mocked_ingester(),
+        );
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-1"),
+            IngesterPoolEntry::mocked_ingester(),
+        );
         let router = IngestRouter::new(
             self_node_id,
             control_plane,
@@ -1069,6 +1093,7 @@ mod tests {
         persist_futures.push(async move {
             let persist_summary = PersistRequestSummary {
                 ingester_id: NodeId::from_str("test-ingester-0"),
+                generation_id: GenerationId::from(1u64),
                 subrequest_ids: vec![0],
             };
             let persist_result = Ok::<_, IngestV2Error>(PersistResponse {
@@ -1125,6 +1150,7 @@ mod tests {
         persist_futures.push(async move {
             let persist_summary = PersistRequestSummary {
                 ingester_id: NodeId::from_str("test-ingester-0"),
+                generation_id: GenerationId::from(1u64),
                 subrequest_ids: vec![0],
             };
             let persist_result = Ok::<_, IngestV2Error>(PersistResponse {
@@ -1197,6 +1223,7 @@ mod tests {
         persist_futures.push(async {
             let persist_summary = PersistRequestSummary {
                 ingester_id: NodeId::from_str("test-ingester-0"),
+                generation_id: GenerationId::from(1u64),
                 subrequest_ids: vec![0],
             };
             let persist_result =
@@ -1222,6 +1249,7 @@ mod tests {
         persist_futures.push(async {
             let persist_summary = PersistRequestSummary {
                 ingester_id: NodeId::from_str("test-ingester-1"),
+                generation_id: GenerationId::from(1u64),
                 subrequest_ids: vec![1],
             };
             let persist_result =
@@ -1263,9 +1291,18 @@ mod tests {
 
         let index_uid_0: IndexUid = IndexUid::for_test("test-index-0", 0);
         let index_uid_1: IndexUid = IndexUid::for_test("test-index-1", 0);
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-0"),
+            IngesterPoolEntry::mocked_ingester(),
+        );
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-1"),
+            IngesterPoolEntry::mocked_ingester(),
+        );
         {
             let mut state_guard = router.state.lock().await;
             state_guard.routing_table.merge_from_shards(
+                &ingester_pool,
                 index_uid_0.clone(),
                 "test-source".to_string(),
                 vec![Shard {
@@ -1278,6 +1315,7 @@ mod tests {
                 }],
             );
             state_guard.routing_table.merge_from_shards(
+                &ingester_pool,
                 index_uid_1.clone(),
                 "test-source".to_string(),
                 vec![Shard {
@@ -1329,6 +1367,7 @@ mod tests {
                 client: IngesterServiceClient::from_mock(mock_ingester_0),
                 status: IngesterStatus::Ready,
                 availability_zone: None,
+                generation_id: GenerationId::from(1u64),
             },
         );
 
@@ -1365,6 +1404,7 @@ mod tests {
                 client: IngesterServiceClient::from_mock(mock_ingester_1),
                 availability_zone: None,
                 status: IngesterStatus::Ready,
+                generation_id: GenerationId::from(1u64),
             },
         );
 
@@ -1411,9 +1451,14 @@ mod tests {
             Some("test-az".to_string()),
         );
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-0"),
+            IngesterPoolEntry::mocked_ingester(),
+        );
         {
             let mut state_guard = router.state.lock().await;
             state_guard.routing_table.merge_from_shards(
+                &ingester_pool,
                 index_uid.clone(),
                 "test-source".to_string(),
                 vec![Shard {
@@ -1485,6 +1530,7 @@ mod tests {
                 client: IngesterServiceClient::from_mock(mock_ingester_0),
                 status: IngesterStatus::Ready,
                 availability_zone: None,
+                generation_id: GenerationId::from(1u64),
             },
         );
 
@@ -1518,10 +1564,19 @@ mod tests {
         );
         let index_uid_0: IndexUid = IndexUid::for_test("test-index-0", 0);
         let index_uid_1: IndexUid = IndexUid::for_test("test-index-1", 0);
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-0"),
+            IngesterPoolEntry::mocked_ingester(),
+        );
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-1"),
+            IngesterPoolEntry::mocked_ingester(),
+        );
 
         {
             let mut state_guard = router.state.lock().await;
             state_guard.routing_table.merge_from_shards(
+                &ingester_pool,
                 index_uid_0.clone(),
                 "test-source".to_string(),
                 vec![Shard {
@@ -1533,6 +1588,7 @@ mod tests {
                 }],
             );
             state_guard.routing_table.merge_from_shards(
+                &ingester_pool,
                 index_uid_1.clone(),
                 "test-source".to_string(),
                 vec![Shard {
@@ -1572,9 +1628,14 @@ mod tests {
             Some("test-az".to_string()),
         );
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-0"),
+            IngesterPoolEntry::mocked_ingester(),
+        );
         {
             let mut state_guard = router.state.lock().await;
             state_guard.routing_table.merge_from_shards(
+                &ingester_pool,
                 index_uid.clone(),
                 "test-source".to_string(),
                 vec![Shard {
@@ -1630,6 +1691,7 @@ mod tests {
                 client: ingester_0.clone(),
                 availability_zone: None,
                 status: IngesterStatus::Ready,
+                generation_id: GenerationId::from(1u64),
             },
         );
 
@@ -1666,6 +1728,7 @@ mod tests {
 
         event_broker.publish(IngesterCapacityScoreUpdate {
             node_id: NodeId::from_str("test-ingester-0"),
+            generation_id: GenerationId::from(1u64),
             source_uid: SourceUid {
                 index_uid: IndexUid::for_test("test-index", 0),
                 source_id: "test-source".to_string(),
@@ -1680,12 +1743,30 @@ mod tests {
             NodeId::from_str("test-ingester-0"),
             IngesterPoolEntry::mocked_ingester(),
         );
+        {
+            let state_guard = router.state.lock().await;
+            let node = state_guard
+                .routing_table
+                .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
+                .unwrap();
+            assert_eq!(node.node_id, NodeId::from_str("test-ingester-0"));
+            assert_eq!(node.generation_id, GenerationId::from(1u64));
+        }
+
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-0"),
+            IngesterPoolEntry {
+                generation_id: GenerationId::from(2u64),
+                ..IngesterPoolEntry::mocked_ingester()
+            },
+        );
         let state_guard = router.state.lock().await;
-        let node = state_guard
-            .routing_table
-            .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
-            .unwrap();
-        assert_eq!(node.node_id, NodeId::from_str("test-ingester-0"));
+        assert!(
+            state_guard
+                .routing_table
+                .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -1718,6 +1799,7 @@ mod tests {
         persist_futures.push(async {
             let summary = PersistRequestSummary {
                 ingester_id: NodeId::from_str("test-ingester-0"),
+                generation_id: GenerationId::from(1u64),
                 subrequest_ids: vec![0],
             };
             let result = Ok::<_, IngestV2Error>(PersistResponse {
@@ -1751,6 +1833,7 @@ mod tests {
         persist_futures.push(async {
             let summary = PersistRequestSummary {
                 ingester_id: NodeId::from_str("test-ingester-1"),
+                generation_id: GenerationId::from(1u64),
                 subrequest_ids: vec![1],
             };
             let result = Ok::<_, IngestV2Error>(PersistResponse {
@@ -1802,6 +1885,7 @@ mod tests {
         persist_futures.push(async {
             let summary = PersistRequestSummary {
                 ingester_id: NodeId::from_str("test-ingester-0"),
+                generation_id: GenerationId::from(3u64),
                 subrequest_ids: vec![0],
             };
             let result = Ok::<_, IngestV2Error>(PersistResponse {
@@ -1826,13 +1910,34 @@ mod tests {
 
         ingester_pool.insert(
             NodeId::from_str("test-ingester-0"),
-            IngesterPoolEntry::mocked_ingester(),
+            IngesterPoolEntry {
+                generation_id: GenerationId::from(3u64),
+                ..IngesterPoolEntry::mocked_ingester()
+            },
+        );
+        {
+            let state_guard = router.state.lock().await;
+            let node = state_guard
+                .routing_table
+                .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
+                .unwrap();
+            assert_eq!(node.node_id, NodeId::from_str("test-ingester-0"));
+            assert_eq!(node.generation_id, GenerationId::from(3u64));
+        }
+
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester-0"),
+            IngesterPoolEntry {
+                generation_id: GenerationId::from(7u64),
+                ..IngesterPoolEntry::mocked_ingester()
+            },
         );
         let state_guard = router.state.lock().await;
-        let node = state_guard
-            .routing_table
-            .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
-            .unwrap();
-        assert_eq!(node.node_id, NodeId::from_str("test-ingester-0"));
+        assert!(
+            state_guard
+                .routing_table
+                .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
+                .is_none()
+        );
     }
 }

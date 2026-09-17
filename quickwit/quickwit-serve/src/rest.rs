@@ -180,6 +180,8 @@ pub(crate) async fn start_rest_server(
         quickwit_services.cluster.clone(),
         quickwit_services.indexing_service_opt.clone(),
         quickwit_services.janitor_service_opt.clone(),
+        quickwit_services.compactor_service_opt.clone(),
+        quickwit_services.ingester_opt.clone(),
     )
     .boxed();
 
@@ -278,6 +280,8 @@ pub(crate) async fn start_health_check_server(
         quickwit_services.cluster.clone(),
         quickwit_services.indexing_service_opt.clone(),
         quickwit_services.janitor_service_opt.clone(),
+        quickwit_services.compactor_service_opt.clone(),
+        quickwit_services.ingester_opt.clone(),
     )
     .recover(recover_fn_final)
     .boxed();
@@ -1005,7 +1009,7 @@ mod tests {
             node_config: Arc::new(node_config.clone()),
             search_service: Arc::new(MockSearchService::new()),
             jaeger_service_opt: None,
-            _compactor_supervisor_opt: None,
+            compactor_service_opt: None,
             env_filter_reload_fn: crate::do_nothing_env_filter_reload_fn(),
             #[cfg(feature = "datafusion")]
             datafusion_session_builder: None,
