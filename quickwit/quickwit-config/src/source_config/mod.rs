@@ -86,6 +86,7 @@ impl SourceConfig {
             SourceParams::Kafka(params) => serde_json::to_value(params),
             SourceParams::Kinesis(params) => serde_json::to_value(params),
             SourceParams::Pulsar(params) => serde_json::to_value(params),
+            SourceParams::Nats(params) => serde_json::to_value(params),
             SourceParams::Stdin => serde_json::to_value(()),
             SourceParams::Vec(params) => serde_json::to_value(params),
             SourceParams::Void(params) => serde_json::to_value(params),
@@ -231,6 +232,7 @@ pub enum SourceParams {
     #[serde(rename = "pubsub")]
     PubSub(PubSubSourceParams),
     Pulsar(PulsarSourceParams),
+    Nats(NatsSourceParams),
     Stdin,
     Vec(VecSourceParams),
     Void(VoidSourceParams),
@@ -263,6 +265,7 @@ impl SourceParams {
             SourceParams::Kinesis(_) => SourceType::Kinesis,
             SourceParams::PubSub(_) => SourceType::PubSub,
             SourceParams::Pulsar(_) => SourceType::Pulsar,
+            SourceParams::Nats(_) => SourceType::Nats,
             SourceParams::Stdin => SourceType::Stdin,
             SourceParams::Vec(_) => SourceType::Vec,
             SourceParams::Void(_) => SourceType::Void,
@@ -287,6 +290,7 @@ impl SourceParams {
             (SourceParams::Pulsar(current), SourceParams::Pulsar(new)) => {
                 current.validate_update(new)
             }
+            (SourceParams::Nats(current), SourceParams::Nats(new)) => current.validate_update(new),
             (current, new) if current.source_type() != new.source_type() => Err(anyhow::anyhow!(
                 "source type cannot be changed, current type {}",
                 current.source_type(),
@@ -618,6 +622,88 @@ where D: Deserializer<'de> {
 
 fn default_consumer_name() -> String {
     "quickwit".to_string()
+}
+
+#[derive(
+    Clone, Debug, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
+#[serde(deny_unknown_fields)]
+pub struct NatsSourceParams {
+    /// The URIs of the NATS servers to connect to (e.g. `nats://localhost:4222`).
+    pub uris: Vec<String>,
+    /// Name of the NATS JetStream stream that the source consumes.
+    pub stream: String,
+    /// Name of the durable consumer to bind to. The consumer is provisioned
+    /// externally. It must use the explicit ack policy: the source acknowledges
+    /// each message once the split containing it is published.
+    pub consumer: String,
+    /// TLS options: custom root CA and client certificates (mutual TLS). TLS
+    /// itself is enabled by connecting to `tls://` URIs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tls: Option<NatsSourceTls>,
+    // Serde yaml has some specific behaviour when deserializing
+    // enums (see https://github.com/dtolnay/serde-yaml/issues/342)
+    // and requires explicitly stating `default` in order to make the parameter
+    // optional on the yaml config.
+    #[serde(default, with = "serde_yaml::with::singleton_map")]
+    /// Authentication for NATS.
+    pub authentication: Option<NatsSourceAuth>,
+}
+
+impl NatsSourceParams {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        ensure!(
+            !self.uris.is_empty(),
+            "`uris` must contain at least one NATS server URI"
+        );
+        ensure!(!self.stream.is_empty(), "`stream` must be set");
+        ensure!(!self.consumer.is_empty(), "`consumer` must be set");
+        if let Some(tls) = &self.tls {
+            ensure!(
+                tls.client_certificate_path.is_some() == tls.client_key_path.is_some(),
+                "`tls.client_certificate_path` and `tls.client_key_path` must be set together"
+            );
+        }
+        Ok(())
+    }
+
+    fn validate_update(&self, _other: &Self) -> anyhow::Result<()> {
+        // The resume point is the consumer's ack floor, not the metastore
+        // checkpoint: re-binding to another stream or consumer is a plain
+        // reconfiguration and cannot corrupt any tracked progress.
+        Ok(())
+    }
+}
+
+/// TLS options for the NATS connection. Certificates are PEM files loaded by
+/// the indexer when the connection is established, so the paths must exist on
+/// the indexer nodes; validation only checks the options' consistency.
+#[derive(
+    Clone, Debug, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
+#[serde(deny_unknown_fields)]
+pub struct NatsSourceTls {
+    /// Path to a PEM file whose root certificates are trusted instead of the
+    /// system ones (e.g. a private CA).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ca_certificates_path: Option<String>,
+    /// Path to the client certificate PEM file, for mutual TLS. Requires
+    /// `client_key_path`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_certificate_path: Option<String>,
+    /// Path to the client private key PEM file, for mutual TLS. Requires
+    /// `client_certificate_path`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_key_path: Option<String>,
+}
+
+#[derive(
+    Clone, Debug, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum NatsSourceAuth {
+    UserPassword { user: String, password: String },
+    Token(String),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, utoipa::ToSchema)]
@@ -1339,6 +1425,116 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn test_nats_source_params_deserialization() {
+        let base_params = NatsSourceParams {
+            uris: vec!["nats://localhost:4222".to_string()],
+            stream: "my-stream".to_string(),
+            consumer: "my-consumer".to_string(),
+            tls: None,
+            authentication: None,
+        };
+        {
+            let yaml = r#"
+                    uris:
+                        - nats://localhost:4222
+                    stream: my-stream
+                    consumer: my-consumer
+                "#;
+            let params = serde_yaml::from_str::<NatsSourceParams>(yaml).unwrap();
+            assert_eq!(params, base_params);
+            params.validate().unwrap();
+        }
+        {
+            let yaml = r#"
+                    uris:
+                        - tls://localhost:4222
+                    stream: my-stream
+                    consumer: my-consumer
+                    tls:
+                        ca_certificates_path: /etc/ssl/private-ca.pem
+                        client_certificate_path: /etc/ssl/client.pem
+                        client_key_path: /etc/ssl/client.key
+                    authentication:
+                        token: my-token
+                "#;
+            let params = serde_yaml::from_str::<NatsSourceParams>(yaml).unwrap();
+            assert_eq!(
+                params,
+                NatsSourceParams {
+                    uris: vec!["tls://localhost:4222".to_string()],
+                    tls: Some(NatsSourceTls {
+                        ca_certificates_path: Some("/etc/ssl/private-ca.pem".to_string()),
+                        client_certificate_path: Some("/etc/ssl/client.pem".to_string()),
+                        client_key_path: Some("/etc/ssl/client.key".to_string()),
+                    }),
+                    authentication: Some(NatsSourceAuth::Token("my-token".to_string())),
+                    ..base_params.clone()
+                }
+            );
+            params.validate().unwrap();
+        }
+        {
+            let yaml = r#"
+                    uris:
+                        - nats://localhost:4222
+                    stream: my-stream
+                "#;
+            serde_yaml::from_str::<NatsSourceParams>(yaml)
+                .expect_err("parameters should error on missing consumer");
+        }
+        {
+            let params = NatsSourceParams {
+                uris: Vec::new(),
+                ..base_params.clone()
+            };
+            params
+                .validate()
+                .expect_err("validation should reject empty uris");
+        }
+        {
+            let params = NatsSourceParams {
+                consumer: String::new(),
+                ..base_params.clone()
+            };
+            params
+                .validate()
+                .expect_err("validation should reject an empty consumer name");
+        }
+        {
+            let params = NatsSourceParams {
+                tls: Some(NatsSourceTls {
+                    ca_certificates_path: None,
+                    client_certificate_path: Some("/etc/ssl/client.pem".to_string()),
+                    client_key_path: None,
+                }),
+                ..base_params.clone()
+            };
+            params
+                .validate()
+                .expect_err("validation should reject a client certificate without its key");
+        }
+    }
+
+    #[test]
+    fn test_nats_source_supports_multiple_pipelines() {
+        let source_config_yaml = r#"
+            version: 0.8
+            source_id: my-nats-source
+            num_pipelines: 2
+            source_type: nats
+            params:
+              uris:
+                - nats://localhost:4222
+              stream: my-stream
+              consumer: my-consumer
+            "#;
+        let source_config =
+            load_source_config_from_user_config(ConfigFormat::Yaml, source_config_yaml.as_bytes())
+                .unwrap();
+        assert_eq!(source_config.num_pipelines.get(), 2);
     }
 
     #[cfg(feature = "vrl")]

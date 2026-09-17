@@ -127,6 +127,21 @@ services:
         timeout: 10s
         retries: 100
 
+  nats:
+    image: nats:${NATS_VERSION:-2.10-alpine}
+    container_name: nats
+    command: --jetstream --http_port 8222
+    ports:
+      - "${MAP_HOST_NATS:-127.0.0.1}:4222:4222"
+    profiles:
+      - all
+      - nats
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8222/healthz"]
+      interval: 1s
+      timeout: 5s
+      retries: 100
+
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:${AZURITE_VERSION:-3.24.0}
     container_name: azurite

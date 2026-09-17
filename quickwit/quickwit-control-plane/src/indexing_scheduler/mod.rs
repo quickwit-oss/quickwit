@@ -299,6 +299,7 @@ fn get_sources_to_schedule(
             }
             SourceParams::Kafka(_)
             | SourceParams::Kinesis(_)
+            | SourceParams::Nats(_)
             | SourceParams::PubSub(_)
             | SourceParams::Pulsar(_)
             | SourceParams::File(FileSourceParams::Notifications(_)) => {

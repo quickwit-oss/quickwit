@@ -20,8 +20,11 @@
 
 use std::str::FromStr;
 
-use opentelemetry::propagation::{Extractor, Injector};
-use opentelemetry::{Context, global};
+pub use opentelemetry::Context;
+use opentelemetry::global;
+pub use opentelemetry::propagation::Extractor;
+use opentelemetry::propagation::Injector;
+use opentelemetry::trace::TraceContextExt;
 use tonic::Status;
 use tonic::metadata::{KeyAndValueRef, MetadataKey, MetadataMap, MetadataValue};
 use tonic::service::Interceptor;
@@ -72,12 +75,45 @@ pub fn inject_current_context(metadata: &mut MetadataMap) {
     });
 }
 
+fn extract_context_from(extractor: &impl Extractor) -> Context {
+    global::get_text_map_propagator(|propagator| propagator.extract(extractor))
+}
+
 /// Extracts an OpenTelemetry context from incoming gRPC request metadata.
 /// Returns the empty context when no propagator is installed or no headers
 /// are present.
 pub fn extract_context(metadata: &MetadataMap) -> Context {
-    let extractor = MetadataExtractor(metadata);
-    global::get_text_map_propagator(|propagator| propagator.extract(&extractor))
+    extract_context_from(&MetadataExtractor(metadata))
+}
+
+/// Extracts the context propagated through `extractor` (e.g. a W3C
+/// `traceparent` header), or `None` when it carries no valid span context, so
+/// callers can skip creating a span for it.
+pub fn extract_remote_context(extractor: &impl Extractor) -> Option<Context> {
+    let context = extract_context_from(extractor);
+    if !context.span().span_context().is_valid() {
+        return None;
+    }
+    Some(context)
+}
+
+/// Parents `span` on `parent_context`, typically one returned by
+/// [`extract_remote_context`].
+pub fn set_span_parent(span: &Span, parent_context: Context) {
+    let _ = span.set_parent(parent_context);
+}
+
+/// The OpenTelemetry context of `span`, to parent or link spans created
+/// later, possibly after `span` closed.
+pub fn span_context(span: &Span) -> Context {
+    span.context()
+}
+
+/// Links `span` to `linked_span`: a causal relation that is not a
+/// parent/child one, e.g. a batch and each message it carries. No-op when
+/// `linked_span` has no OpenTelemetry context.
+pub fn link_span(span: &Span, linked_span: &Span) {
+    span.add_link(linked_span.context().span().span_context().clone());
 }
 
 /// Extracts a W3C trace context from incoming gRPC request metadata and
@@ -87,7 +123,7 @@ pub fn extract_context(metadata: &MetadataMap) -> Context {
 /// caller's trace.
 pub fn set_current_span_parent_from_metadata(metadata: &MetadataMap) {
     let parent_context = extract_context(metadata);
-    let _ = Span::current().set_parent(parent_context);
+    set_span_parent(&Span::current(), parent_context);
 }
 
 /// Tonic interceptor that injects the active span's W3C trace context into
@@ -146,6 +182,27 @@ mod tests {
         assert_eq!(
             extracted_span_context.trace_flags(),
             span_context.trace_flags()
+        );
+    }
+
+    #[test]
+    fn extract_remote_context_requires_a_valid_span_context() {
+        // The helper reads the process-wide propagator, a no-op by default.
+        global::set_text_map_propagator(TraceContextPropagator::new());
+
+        let mut metadata = MetadataMap::new();
+        assert!(extract_remote_context(&MetadataExtractor(&metadata)).is_none());
+
+        metadata.insert(
+            "traceparent",
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+                .parse()
+                .unwrap(),
+        );
+        let context = extract_remote_context(&MetadataExtractor(&metadata)).unwrap();
+        assert_eq!(
+            context.span().span_context().trace_id(),
+            known_span_context().trace_id()
         );
     }
 

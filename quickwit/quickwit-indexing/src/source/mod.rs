@@ -62,6 +62,8 @@ mod ingest_api_source;
 mod kafka_source;
 #[cfg(feature = "kinesis")]
 mod kinesis;
+#[cfg(feature = "nats")]
+mod nats_source;
 #[cfg(feature = "pulsar")]
 mod pulsar_source;
 #[cfg(feature = "queue-sources")]
@@ -87,6 +89,8 @@ pub use gcp_pubsub_source::{GcpPubSubSource, GcpPubSubSourceFactory};
 pub use kafka_source::{KafkaSource, KafkaSourceFactory};
 #[cfg(feature = "kinesis")]
 pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
+#[cfg(feature = "nats")]
+pub use nats_source::{NatsSource, NatsSourceFactory};
 #[cfg(feature = "pulsar")]
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 #[cfg(feature = "sqs")]
@@ -94,8 +98,8 @@ pub use queue_sources::sqs_queue;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
 use quickwit_common::metrics::{
     IN_FLIGHT_FILE_SOURCE, IN_FLIGHT_INGEST_SOURCE, IN_FLIGHT_KAFKA_SOURCE,
-    IN_FLIGHT_KINESIS_SOURCE, IN_FLIGHT_OTHER_SOURCE, IN_FLIGHT_PUBSUB_SOURCE,
-    IN_FLIGHT_PULSAR_SOURCE,
+    IN_FLIGHT_KINESIS_SOURCE, IN_FLIGHT_NATS_SOURCE, IN_FLIGHT_OTHER_SOURCE,
+    IN_FLIGHT_PUBSUB_SOURCE, IN_FLIGHT_PULSAR_SOURCE,
 };
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimeType;
@@ -296,6 +300,25 @@ pub trait Source: Send + 'static {
         Ok(())
     }
 
+    /// Whether tearing down the pipeline must go through a drain ([`Drain`])
+    /// rather than a plain kill. Only acknowledgment-based sources should opt
+    /// in: killing them loses the acknowledgments of their in-flight messages,
+    /// which are then redelivered and indexed again after the broker's ack
+    /// timeout.
+    fn should_be_drained(&self) -> bool {
+        false
+    }
+
+    /// Once the source is draining (see [`Drain`]), reports whether every
+    /// message it delivered has been durably accounted for, i.e. published
+    /// and, for acknowledgment-based sources, acknowledged.
+    ///
+    /// Sources without acknowledgment state have nothing to wait for and are
+    /// drained as soon as they stop emitting.
+    fn is_drained(&self) -> bool {
+        true
+    }
+
     /// Finalize is called once after the actor terminates.
     async fn finalize(
         &mut self,
@@ -321,6 +344,7 @@ pub trait Source: Send + 'static {
 pub struct SourceActor {
     source: Box<dyn Source>,
     source_sink: SourceSink,
+    draining: bool,
 }
 
 impl SourceActor {
@@ -328,6 +352,7 @@ impl SourceActor {
         SourceActor {
             source,
             source_sink: source_sink.into(),
+            draining: false,
         }
     }
 }
@@ -381,11 +406,50 @@ impl Actor for SourceActor {
     }
 }
 
+/// Asks the source to stop emitting batches while staying alive to handle
+/// `SuggestTruncate`. An empty force-commit batch is pushed downstream so the
+/// indexer flushes its pending workbench instead of waiting for the commit
+/// timeout. The source actor exits with success once everything it delivered
+/// has been durably accounted for (see [`Source::is_drained`]) — immediately
+/// for sources without acknowledgment state, otherwise on the truncate
+/// notification that settles the last in-flight message.
+#[derive(Debug)]
+pub struct Drain;
+
+#[async_trait]
+impl Handler<Drain> for SourceActor {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _message: Drain,
+        ctx: &SourceContext,
+    ) -> Result<(), ActorExitStatus> {
+        if self.draining {
+            return Ok(());
+        }
+        self.draining = true;
+        // sends a last empty batch with force commit to wait for the entire pipeline flush.
+        let flush_batch = RawDocBatch::new(Vec::new(), SourceCheckpointDelta::default(), true);
+        self.source_sink
+            .send_raw_doc_batch(flush_batch, ctx)
+            .await?;
+        if self.source.is_drained() {
+            return Err(ActorExitStatus::Success);
+        }
+        Ok(())
+    }
+}
+
 #[async_trait]
 impl Handler<Loop> for SourceActor {
     type Reply = ();
 
     async fn handle(&mut self, _message: Loop, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
+        // If we are draining we should stop emit_batches so a source can flush gracefully.
+        if self.draining {
+            return Ok(());
+        }
         let wait_for = self.source.emit_batches(&self.source_sink, ctx).await?;
         if wait_for.is_zero() {
             ctx.send_self_message(Loop).await?;
@@ -426,6 +490,8 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source(SourceType::Kafka, KafkaSourceFactory);
         #[cfg(feature = "kinesis")]
         source_factory.add_source(SourceType::Kinesis, KinesisSourceFactory);
+        #[cfg(feature = "nats")]
+        source_factory.add_source(SourceType::Nats, NatsSourceFactory);
         #[cfg(feature = "pulsar")]
         source_factory.add_source(SourceType::Pulsar, PulsarSourceFactory);
         source_factory.add_source(SourceType::Stdin, StdinSourceFactory);
@@ -493,6 +559,17 @@ pub async fn check_source_connectivity(
                 Ok(())
             }
         }
+        #[allow(unused_variables)]
+        SourceParams::Nats(params) => {
+            #[cfg(not(feature = "nats"))]
+            anyhow::bail!("Quickwit was compiled without the `nats` feature");
+
+            #[cfg(feature = "nats")]
+            {
+                nats_source::check_connectivity(params).await?;
+                Ok(())
+            }
+        }
         _ => Ok(()),
     }
 }
@@ -515,6 +592,10 @@ impl Handler<SuggestTruncate> for SourceActor {
             // Failing to process suggest truncate does not
             // kill the source nor the indexing pipeline, but we log the error.
             error!(%error, "failed to process suggest truncate");
+        }
+        if self.draining && self.source.is_drained() {
+            // This truncate settled the last in-flight message (see `Drain`).
+            return Err(ActorExitStatus::Success);
         }
         Ok(())
     }
@@ -541,6 +622,7 @@ impl BatchBuilder {
             SourceType::IngestV2 => &IN_FLIGHT_INGEST_SOURCE,
             SourceType::Kafka => &IN_FLIGHT_KAFKA_SOURCE,
             SourceType::Kinesis => &IN_FLIGHT_KINESIS_SOURCE,
+            SourceType::Nats => &IN_FLIGHT_NATS_SOURCE,
             SourceType::PubSub => &IN_FLIGHT_PUBSUB_SOURCE,
             SourceType::Pulsar => &IN_FLIGHT_PULSAR_SOURCE,
             _ => &IN_FLIGHT_OTHER_SOURCE,
@@ -640,7 +722,11 @@ mod tests {
 
         #[cfg(all(
             test,
-            any(feature = "kafka-broker-tests", feature = "sqs-localstack-tests")
+            any(
+                feature = "kafka-broker-tests",
+                feature = "nats-broker-tests",
+                feature = "sqs-localstack-tests"
+            )
         ))]
         pub fn with_metastore(mut self, metastore: MetastoreServiceClient) -> Self {
             self.metastore_opt = Some(metastore);
@@ -692,6 +778,47 @@ mod tests {
                 });
             MetastoreServiceClient::from_mock(mock_metastore)
         }
+    }
+
+    #[tokio::test]
+    async fn test_source_actor_drain() {
+        use quickwit_actors::Universe;
+
+        let universe = Universe::with_accelerated_time();
+        let source_config = SourceConfig {
+            source_id: "void".to_string(),
+            num_pipelines: NonZeroUsize::MIN,
+            enabled: true,
+            source_params: SourceParams::void(),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
+        let source_runtime =
+            SourceRuntimeBuilder::new(IndexUid::new_with_random_ulid("test-index"), source_config)
+                .build();
+        let source = quickwit_supported_sources()
+            .load_source(source_runtime)
+            .await
+            .unwrap();
+        let (doc_processor_mailbox, doc_processor_inbox) =
+            universe.create_test_mailbox::<crate::actors::DocProcessor>();
+        let source_actor = SourceActor::new(source, doc_processor_mailbox);
+        let (source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
+
+        source_mailbox.send_message(Drain).await.unwrap();
+        // A source without ack state drains immediately: the actor exits with
+        // success on its own.
+        let (exit_status, _state) = source_handle.join().await;
+        assert!(matches!(exit_status, ActorExitStatus::Success));
+
+        // Draining pushes an empty force-commit batch to flush the indexer.
+        let batches: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
+        assert_eq!(batches.len(), 1);
+        assert!(batches[0].docs.is_empty());
+        assert!(batches[0].checkpoint_delta.is_empty());
+        assert!(batches[0].force_commit);
+
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -757,6 +884,7 @@ mod tests {
     any(
         feature = "sqs-localstack-tests",
         feature = "kafka-broker-tests",
+        feature = "nats-broker-tests",
         feature = "pulsar-broker-tests"
     )
 ))]
