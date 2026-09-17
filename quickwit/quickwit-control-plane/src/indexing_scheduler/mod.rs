@@ -35,7 +35,7 @@ use quickwit_proto::indexing::{
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::types::NodeId;
 use scheduling::{
-    AvailabilityZone, Eligibility, IndexerInfo, SourceToSchedule, SourceToScheduleType,
+    Eligibility, IndexerInfo, SourceToSchedule, SourceToScheduleType,
     compute_max_num_shards_per_pipeline, is_shard_in_same_zone,
 };
 use serde::Serialize;
@@ -332,10 +332,7 @@ fn build_indexer_info(indexer: &IndexerPoolEntry, locality_aware: bool) -> Index
     };
     IndexerInfo {
         cpu_capacity: indexer.indexing_capacity,
-        availability_zone: indexer
-            .availability_zone
-            .as_deref()
-            .map(AvailabilityZone::from),
+        availability_zone: indexer.availability_zone.clone(),
         eligibility,
     }
 }
@@ -983,7 +980,7 @@ mod tests {
     use proptest::{prop_compose, proptest};
     use quickwit_config::{IndexConfig, KafkaSourceParams, SourceConfig, SourceParams};
     use quickwit_metastore::IndexMetadata;
-    use quickwit_proto::types::{IndexUid, PipelineUid, ShardId, SourceUid};
+    use quickwit_proto::types::{AvailabilityZone, IndexUid, PipelineUid, ShardId, SourceUid};
 
     use super::*;
     use crate::indexing_scheduler::scheduling::{
@@ -1685,7 +1682,7 @@ mod tests {
     fn test_all_indexers_advertise_availability_zone() {
         let indexer_pool = IndexerPool::default();
         let mut zoned_indexer = mock_indexer_node_info("indexer-zoned", IngesterStatus::Ready);
-        zoned_indexer.availability_zone = Some("az-a".to_string());
+        zoned_indexer.availability_zone = Some(AvailabilityZone::from("az-a"));
         indexer_pool.insert(zoned_indexer.node_id.clone(), zoned_indexer);
 
         assert!(all_indexers_advertise_availability_zone(&indexer_pool));
@@ -1702,7 +1699,7 @@ mod tests {
         let locality_aware = true;
         {
             let mut ready = mock_indexer_node_info("indexer-ready", IngesterStatus::Ready);
-            ready.availability_zone = Some("az-a".to_string());
+            ready.availability_zone = Some(AvailabilityZone::from("az-a"));
             let retiring = mock_indexer_node_info("indexer-retiring", IngesterStatus::Retiring);
             let decommissioning =
                 mock_indexer_node_info("indexer-decommissioning", IngesterStatus::Decommissioning);
@@ -1743,9 +1740,9 @@ mod tests {
         }
         {
             let mut ready = mock_indexer_node_info("indexer-ready", IngesterStatus::Ready);
-            ready.availability_zone = Some("az-a".to_string());
+            ready.availability_zone = Some(AvailabilityZone::from("az-a"));
             let mut retiring = mock_indexer_node_info("indexer-retiring", IngesterStatus::Retiring);
-            retiring.availability_zone = Some("az-b".to_string());
+            retiring.availability_zone = Some(AvailabilityZone::from("az-b"));
             let indexers = vec![ready, retiring];
             let locality_unaware = false;
 

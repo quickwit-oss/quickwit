@@ -20,12 +20,11 @@ pub mod scheduling_logic_model;
 
 use std::collections::HashMap;
 use std::num::NonZeroU32;
-use std::sync::Arc;
 
 use fnv::{FnvHashMap, FnvHashSet};
 use quickwit_common::rate_limited_debug;
 use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
-use quickwit_proto::types::{NodeId, PipelineUid, ShardId, SourceUid};
+use quickwit_proto::types::{AvailabilityZone, NodeId, PipelineUid, ShardId, SourceUid};
 pub use scheduling_logic_model::Eligibility;
 use scheduling_logic_model::{IndexerLocality, IndexerOrd, LocalityGroup, SourceOrd};
 use tracing::{error, warn};
@@ -37,8 +36,6 @@ use crate::indexing_scheduler::scheduling::scheduling_logic_model::{
     IndexerAssignment, SchedulingProblem, SchedulingSolution,
 };
 use crate::model::ShardLocations;
-
-pub type AvailabilityZone = Arc<str>;
 
 /// If we have several pipelines below this threshold we
 /// reduce the number of pipelines.

@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet};
 use itertools::Itertools;
 use quickwit_cluster::GenerationId;
 use quickwit_proto::ingest::Shard;
-use quickwit_proto::types::{IndexId, IndexUid, NodeId, SourceId};
+use quickwit_proto::types::{AvailabilityZone, IndexId, IndexUid, NodeId, SourceId};
 use rand::rng;
 use rand::seq::IndexedRandom;
 
@@ -127,7 +127,7 @@ impl RoutingEntry {
         &self,
         ingester_pool: &IngesterPool,
         unavailable_ingesters: &HashSet<NodeId>,
-        self_availability_zone: &Option<String>,
+        self_availability_zone: &Option<AvailabilityZone>,
     ) -> Option<&IngesterNode> {
         let (local_ingesters, remote_ingesters): (Vec<&IngesterNode>, Vec<&IngesterNode>) = self
             .nodes
@@ -136,7 +136,7 @@ impl RoutingEntry {
             .partition(|node| {
                 let node_az = ingester_pool
                     .get(&node.node_id)
-                    .and_then(|h| h.availability_zone);
+                    .and_then(|h| h.availability_zone.clone());
                 node_az == *self_availability_zone
             });
 
@@ -147,11 +147,11 @@ impl RoutingEntry {
 #[derive(Debug, Default)]
 pub(super) struct RoutingTable {
     table: HashMap<(IndexId, SourceId), RoutingEntry>,
-    self_availability_zone: Option<String>,
+    self_availability_zone: Option<AvailabilityZone>,
 }
 
 impl RoutingTable {
-    pub fn new(self_availability_zone: Option<String>) -> Self {
+    pub fn new(self_availability_zone: Option<AvailabilityZone>) -> Self {
         Self {
             self_availability_zone,
             ..Default::default()
@@ -184,7 +184,7 @@ impl RoutingTable {
         };
         let target_az = ingester_pool
             .get(target_node_id)
-            .and_then(|entry| entry.availability_zone);
+            .and_then(|entry| entry.availability_zone.clone());
         match target_az {
             Some(ref az) if az == self_az => "same_az",
             Some(_) => "cross_az",
@@ -199,7 +199,9 @@ impl RoutingTable {
         let mut per_index: HashMap<IndexId, Vec<serde_json::Value>> = HashMap::new();
         for ((index_id, source_id), entry) in &self.table {
             for (node_id, node) in &entry.nodes {
-                let az = ingester_pool.get(node_id).and_then(|h| h.availability_zone);
+                let az = ingester_pool
+                    .get(node_id)
+                    .and_then(|h| h.availability_zone.clone());
                 per_index
                     .entry(index_id.clone())
                     .or_default()
@@ -360,7 +362,7 @@ mod tests {
         IngesterPoolEntry {
             client: IngesterServiceClient::mocked(),
             status: IngesterStatus::Ready,
-            availability_zone: availability_zone.map(|s| s.to_string()),
+            availability_zone: availability_zone.map(AvailabilityZone::from),
             generation_id: GenerationId::from(1u64),
         }
     }
@@ -704,7 +706,7 @@ mod tests {
 
     #[test]
     fn test_pick_node_prefers_same_az() {
-        let mut table = RoutingTable::new(Some("az-1".to_string()));
+        let mut table = RoutingTable::new(Some(AvailabilityZone::from("az-1")));
         let pool = IngesterPool::default();
 
         table.apply_capacity_update(
@@ -734,7 +736,7 @@ mod tests {
 
     #[test]
     fn test_pick_node_falls_back_to_cross_az() {
-        let mut table = RoutingTable::new(Some("az-1".to_string()));
+        let mut table = RoutingTable::new(Some(AvailabilityZone::from("az-1")));
         let pool = IngesterPool::default();
 
         table.apply_capacity_update(
@@ -776,7 +778,7 @@ mod tests {
 
     #[test]
     fn test_pick_node_missing_entry() {
-        let table = RoutingTable::new(Some("az-1".to_string()));
+        let table = RoutingTable::new(Some(AvailabilityZone::from("az-1")));
         let pool = IngesterPool::default();
 
         assert!(
@@ -971,7 +973,7 @@ mod tests {
 
     #[test]
     fn test_classify_az_locality() {
-        let table = RoutingTable::new(Some("az-1".to_string()));
+        let table = RoutingTable::new(Some(AvailabilityZone::from("az-1")));
         let pool = IngesterPool::default();
         pool.insert(
             NodeId::from_str("node-local"),
