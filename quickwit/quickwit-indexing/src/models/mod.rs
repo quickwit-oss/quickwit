@@ -56,3 +56,6 @@ pub use split_attrs::{SplitAttrs, create_split_metadata};
 /// shard re-acquisition; the publisher reads it at publish time. `None` means no token (merge
 /// pipelines, or sources without a publish token such as file/kafka).
 pub type SharedPublishToken = Arc<ArcSwapOption<PublishToken>>;
+
+#[derive(Debug)]
+pub struct SourceReachedEOF;

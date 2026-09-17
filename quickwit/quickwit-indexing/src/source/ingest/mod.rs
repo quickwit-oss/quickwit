@@ -479,6 +479,13 @@ impl Source for IngestSource {
             );
             let message = batch_builder.build();
             source_sink.send_raw_doc_batch(message, ctx).await?;
+            if self
+                .assigned_shards
+                .values()
+                .all(|shard| shard.current_position_inclusive.is_eof())
+            {
+                source_sink.send_source_reached_eof(ctx).await?;
+            }
         }
         Ok(Duration::default())
     }

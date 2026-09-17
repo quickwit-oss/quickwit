@@ -23,19 +23,23 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, Command, DeferableReplyHandler, Mailbox, SendError};
 
 use super::SourceContext;
-use crate::models::{NewPublishLock, RawDocBatch};
+use crate::models::{NewPublishLock, RawDocBatch, SourceReachedEOF};
 
 /// Internal trait used to type-erase the concrete `Mailbox<T>`.
 #[async_trait]
 trait SourceSinkTrait: Send + Sync + 'static {
     async fn send_raw_doc_batch(&self, batch: RawDocBatch) -> Result<(), SendError>;
     async fn send_publish_lock(&self, lock: NewPublishLock) -> Result<(), SendError>;
+    async fn send_source_reached_eof(&self) -> Result<(), SendError>;
     async fn send_exit_with_success(&self) -> Result<(), SendError>;
 }
 
 #[async_trait]
 impl<A> SourceSinkTrait for Mailbox<A>
-where A: Actor + DeferableReplyHandler<RawDocBatch> + DeferableReplyHandler<NewPublishLock>
+where A: Actor
+        + DeferableReplyHandler<RawDocBatch>
+        + DeferableReplyHandler<NewPublishLock>
+        + DeferableReplyHandler<SourceReachedEOF>
 {
     async fn send_raw_doc_batch(&self, batch: RawDocBatch) -> Result<(), SendError> {
         self.send_message(batch).await?;
@@ -49,6 +53,11 @@ where A: Actor + DeferableReplyHandler<RawDocBatch> + DeferableReplyHandler<NewP
 
     async fn send_exit_with_success(&self) -> Result<(), SendError> {
         self.send_message(Command::ExitWithSuccess).await?;
+        Ok(())
+    }
+
+    async fn send_source_reached_eof(&self) -> Result<(), SendError> {
+        self.send_message(SourceReachedEOF).await?;
         Ok(())
     }
 }
@@ -97,5 +106,10 @@ impl SourceSink {
     pub async fn send_exit_with_success(&self, ctx: &SourceContext) -> Result<(), SendError> {
         let _guard = ctx.protect_zone();
         self.inner.send_exit_with_success().await
+    }
+
+    pub async fn send_source_reached_eof(&self, ctx: &SourceContext) -> Result<(), SendError> {
+        let _guard = ctx.protect_zone();
+        self.inner.send_source_reached_eof().await
     }
 }
