@@ -506,7 +506,7 @@ mod test {
 
     #[test]
     fn test_required_fast_fields_mixed_query() {
-        use std::collections::{BTreeSet, HashMap};
+        use std::collections::{BTreeMap, BTreeSet};
 
         use quickwit_query::query_ast::{FieldPresenceQuery, RangeQuery, TermQuery, TermSetQuery};
 
@@ -551,7 +551,7 @@ mod test {
             ],
             filter: vec![
                 TermSetQuery {
-                    terms_per_field: HashMap::from([
+                    terms_per_field: BTreeMap::from([
                         ("set_value".to_string(), BTreeSet::from(["1".to_string()])),
                         ("indexed".to_string(), BTreeSet::from(["keep".to_string()])),
                     ]),
