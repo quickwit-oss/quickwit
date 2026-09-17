@@ -690,7 +690,7 @@ mod tests {
 
     use super::*;
     use crate::actors::DocProcessor;
-    use crate::models::RawDocBatch;
+    use crate::models::{RawDocBatch, SourceReachedEOF};
     use crate::source::SourceActor;
 
     // In this test, we simulate a source to which we sequentially assign the following set of
@@ -1459,6 +1459,9 @@ mod tests {
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
         // In this scenario, the ingester receives fetch responses from shard 1 and 2.
+        source.emit_batches(&source_sink, &ctx).await.unwrap();
+        assert!(doc_processor_inbox.drain_for_test().is_empty());
+
         source.assigned_shards.insert(
             ShardId::from(1),
             AssignedShard {
@@ -1547,6 +1550,7 @@ mod tests {
         assert_eq!(partition_deltas[1].0, 2u64.into());
         assert_eq!(partition_deltas[1].1.from, Position::offset(22u64));
         assert_eq!(partition_deltas[1].1.to, Position::eof(23u64));
+        assert!(doc_processor_inbox.drain_for_test().is_empty());
 
         source.emit_batches(&source_sink, &ctx).await.unwrap();
         let shard = source.assigned_shards.get(&ShardId::from(2)).unwrap();
@@ -1583,6 +1587,40 @@ mod tests {
         source.emit_batches(&source_sink, &ctx).await.unwrap();
         let shard = source.assigned_shards.get(&ShardId::from(1)).unwrap();
         assert_eq!(shard.status, IndexingStatus::Active);
+        let messages = doc_processor_inbox.drain_for_test();
+        assert_eq!(messages.len(), 1);
+        assert!(messages[0].is::<RawDocBatch>());
+
+        let fetch_eof = FetchEof {
+            index_uid: Some(IndexUid::for_test("test-index", 0)),
+            source_id: "test-source".into(),
+            shard_id: Some(ShardId::from(1)),
+            eof_position: Some(Position::eof(15u64)),
+        };
+        fetch_message_tx
+            .send(Ok(InFlightValue::new(
+                FetchMessage::new_eof(fetch_eof),
+                ByteSize(0),
+                &IN_FLIGHT_FETCH_STREAM,
+            )))
+            .await
+            .unwrap();
+
+        source.emit_batches(&source_sink, &ctx).await.unwrap();
+        let messages = doc_processor_inbox.drain_for_test();
+        assert_eq!(messages.len(), 2);
+        let final_batch = messages[0].downcast_ref::<RawDocBatch>().unwrap();
+        assert!(final_batch.docs.is_empty());
+        assert!(!final_batch.force_commit);
+        let partition_deltas: Vec<_> = final_batch.checkpoint_delta.iter().collect();
+        assert_eq!(partition_deltas.len(), 1);
+        assert_eq!(partition_deltas[0].0, PartitionId::from(1u64));
+        assert_eq!(partition_deltas[0].1.from, Position::offset(15u64));
+        assert_eq!(partition_deltas[0].1.to, Position::eof(15u64));
+        assert!(messages[1].is::<SourceReachedEOF>());
+
+        source.emit_batches(&source_sink, &ctx).await.unwrap();
+        assert!(doc_processor_inbox.drain_for_test().is_empty());
     }
 
     // Drives the source with an `MRecordBatch` whose records are encoded with the v1

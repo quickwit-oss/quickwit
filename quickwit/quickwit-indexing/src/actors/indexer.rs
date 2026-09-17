@@ -715,18 +715,20 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::Universe;
-    use quickwit_config::DocsClusteringConfig;
+    use quickwit_config::{DocsClusteringConfig, SourceInputFormat};
     use quickwit_doc_mapper::{DocMapper, default_doc_mapper_for_test};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_proto::metastore::{
         EmptyResponse, LastDeleteOpstampResponse, MockMetastoreService,
     };
-    use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
+    use quickwit_proto::types::{IndexUid, NodeId, PipelineUid, Position};
     use tantivy::schema::Value;
     use tantivy::{DateTime, DocAddress, TantivyDocument, doc};
 
     use super::{IndexerCounters, record_timestamp, *};
+    use crate::actors::DocProcessor;
     use crate::docs_clustering::Fingerprint;
+    use crate::models::RawDocBatch;
 
     #[test]
     fn test_record_timestamp() {
@@ -1151,6 +1153,130 @@ mod tests {
             CommitTrigger::Drained
         );
         assert_eq!(indexed_split_batches[0].splits[0].split_attrs.num_docs, 1);
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_indexer_triggers_commit_on_source_reached_eof() -> anyhow::Result<()> {
+        let universe = Universe::new();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
+            source_id: "test-source".to_string(),
+            node_id: NodeId::from_str("test-node"),
+            pipeline_uid: PipelineUid::default(),
+        };
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_last_delete_opstamp()
+            .times(3)
+            .returning(|_| Ok(LastDeleteOpstampResponse::new(0)));
+        let indexing_settings = IndexingSettings {
+            commit_timeout_secs: 3_600,
+            ..IndexingSettings::for_test()
+        };
+        let indexer = Indexer::new(
+            pipeline_id,
+            doc_mapper.clone(),
+            MetastoreServiceClient::from_mock(mock_metastore),
+            TempDirectory::for_test(),
+            indexing_settings,
+            None,
+            index_serializer_mailbox,
+            None,
+        );
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
+        let doc_processor = DocProcessor::try_new(
+            "test-index".to_string(),
+            "test-source".to_string(),
+            doc_mapper,
+            indexer_mailbox.clone(),
+            None,
+            SourceInputFormat::Json,
+            None,
+        )?;
+        let (doc_processor_mailbox, doc_processor_handle) =
+            universe.spawn_builder().spawn(doc_processor);
+
+        indexer_mailbox.ask(SourceReachedEOF).await?;
+        assert!(index_serializer_inbox.drain_for_test().is_empty());
+
+        for shard_id in 0..2u64 {
+            doc_processor_mailbox
+                .ask(RawDocBatch::new(
+                    vec![bytes::Bytes::from_static(
+                        br#"{"body": "test document", "timestamp": 1628837062}"#,
+                    )],
+                    SourceCheckpointDelta::from_partition_delta(
+                        shard_id.into(),
+                        Position::Beginning,
+                        Position::offset(0u64),
+                    )?,
+                    false,
+                ))
+                .await?;
+            doc_processor_mailbox
+                .ask(RawDocBatch::new(
+                    Vec::new(),
+                    SourceCheckpointDelta::from_partition_delta(
+                        shard_id.into(),
+                        Position::offset(0u64),
+                        Position::eof(0u64),
+                    )?,
+                    false,
+                ))
+                .await?;
+            let counters = indexer_handle.process_pending_and_observe().await.state;
+            assert_eq!(counters.num_docs_in_workbench, 1);
+            assert!(index_serializer_inbox.drain_for_test().is_empty());
+
+            doc_processor_mailbox.ask(SourceReachedEOF).await?;
+            let counters = indexer_handle.process_pending_and_observe().await.state;
+            assert_eq!(counters.num_docs_in_workbench, 0);
+            let messages = index_serializer_inbox.drain_for_test();
+            assert_eq!(messages.len(), 1);
+            let batch = messages[0]
+                .downcast_ref::<IndexedSplitBatchBuilder>()
+                .unwrap();
+            assert_eq!(batch.commit_trigger, CommitTrigger::NoMoreDocs);
+            assert_eq!(batch.splits.len(), 1);
+            assert_eq!(batch.splits[0].split_attrs.num_docs, 1);
+            assert_eq!(
+                batch.checkpoint_delta_opt.as_ref().unwrap().source_delta,
+                SourceCheckpointDelta::from_partition_delta(
+                    shard_id.into(),
+                    Position::Beginning,
+                    Position::eof(0u64),
+                )?
+            );
+            assert!(indexer_handle.state().is_running());
+            assert!(doc_processor_handle.state().is_running());
+
+            indexer_mailbox.ask(SourceReachedEOF).await?;
+            assert!(index_serializer_inbox.drain_for_test().is_empty());
+        }
+
+        let checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
+            2u64.into(),
+            Position::Beginning,
+            Position::Beginning.as_eof(),
+        )?;
+        doc_processor_mailbox
+            .ask(RawDocBatch::new(Vec::new(), checkpoint_delta.clone(), false))
+            .await?;
+        indexer_handle.process_pending_and_observe().await;
+        assert!(index_serializer_inbox.drain_for_test().is_empty());
+        doc_processor_mailbox.ask(SourceReachedEOF).await?;
+        indexer_handle.process_pending_and_observe().await;
+        let messages = index_serializer_inbox.drain_for_test();
+        assert_eq!(messages.len(), 1);
+        let empty_split = messages[0].downcast_ref::<EmptySplit>().unwrap();
+        assert_eq!(empty_split.checkpoint_delta.source_delta, checkpoint_delta);
+
+        doc_processor_handle.quit().await;
+        indexer_handle.quit().await;
         universe.assert_quit().await;
         Ok(())
     }
