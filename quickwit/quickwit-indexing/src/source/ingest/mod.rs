@@ -232,7 +232,7 @@ impl IngestSource {
         &mut self,
         batch_builder: &mut BatchBuilder,
         fetch_eof: FetchEof,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<()> {
         let assigned_shard = self
             .assigned_shards
             .get_mut(fetch_eof.shard_id())
@@ -253,8 +253,16 @@ impl IngestSource {
             )
             .context("failed to record partition delta")?;
         assigned_shard.current_position_inclusive = to_position_inclusive;
-        let all_sources_reached_eof = self.assigned_shards.values().all(|shard| matches!(shard.status,IndexingStatus::ReachedEof));
-        Ok(all_sources_reached_eof)
+        if self
+            .assigned_shards
+            .values()
+            .all(|shard| matches!(shard.status, IndexingStatus::ReachedEof))
+        {
+            // All shards reaching EOF means we can immediately flush this split once finished as
+            // there's nothing left to wait for.
+            batch_builder.force_commit();
+        }
+        Ok(())
     }
 
     fn process_fetch_stream_error(
@@ -440,7 +448,6 @@ impl Source for IngestSource {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_builder = BatchBuilder::new(SourceType::IngestV2);
-        let mut all_sources_reached_eof = false;
 
         let now = time::Instant::now();
         let deadline = now + *EMIT_BATCHES_TIMEOUT;
@@ -455,11 +462,7 @@ impl Source for IngestSource {
                         }
                     }
                     Some(fetch_message::Message::Eof(fetch_eof)) => {
-                        all_sources_reached_eof =
-                            self.process_fetch_eof(&mut batch_builder, fetch_eof)?;
-                        if all_sources_reached_eof {
-                            break;
-                        }
+                        self.process_fetch_eof(&mut batch_builder, fetch_eof)?;
                     }
                     None => {
                         warn!("received empty fetch message");
@@ -485,11 +488,6 @@ impl Source for IngestSource {
             );
             let message = batch_builder.build();
             source_sink.send_raw_doc_batch(message, ctx).await?;
-        }
-        if all_sources_reached_eof {
-            // If all shards reach EOF, we can let the indexer know (via the doc processor) that it
-            // can commit its workbench.
-            source_sink.send_source_reached_eof(ctx).await?;
         }
         Ok(Duration::default())
     }
@@ -677,6 +675,7 @@ mod tests {
     use quickwit_common::stream_utils::InFlightValue;
     use quickwit_config::{IndexingSettings, SourceConfig, SourceParams};
     use quickwit_ingest::IngesterPoolEntry;
+    use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::ingest::ingester::{
         FetchMessage, IngesterServiceClient, MockIngesterService, TruncateShardsResponse,
@@ -690,7 +689,7 @@ mod tests {
 
     use super::*;
     use crate::actors::DocProcessor;
-    use crate::models::{RawDocBatch, SourceReachedEOF};
+    use crate::models::RawDocBatch;
     use crate::source::SourceActor;
 
     // In this test, we simulate a source to which we sequentially assign the following set of
@@ -1421,6 +1420,71 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_ingest_source_process_fetch_eof_forces_commit_on_last_shard() -> anyhow::Result<()>
+    {
+        let source_runtime = SourceRuntime {
+            pipeline_id: IndexingPipelineId {
+                node_id: NodeId::from_str("test-node"),
+                index_uid: IndexUid::for_test("test-index", 0),
+                source_id: "test-source".to_string(),
+                pipeline_uid: PipelineUid::default(),
+            },
+            source_config: SourceConfig::for_test("test-source", SourceParams::Ingest),
+            metastore: MetastoreServiceClient::from_mock(MockMetastoreService::new()),
+            ingester_pool: IngesterPool::default(),
+            queues_dir_path: PathBuf::from("./queues"),
+            storage_resolver: StorageResolver::for_test(),
+            event_broker: EventBroker::default(),
+            indexing_setting: IndexingSettings::default(),
+            publish_token: SharedPublishToken::default(),
+        };
+        let mut source = IngestSource::try_new(source_runtime, RetryParams::for_test()).await?;
+        for shard_id in 1..=2u64 {
+            source.assigned_shards.insert(
+                ShardId::from(shard_id),
+                AssignedShard {
+                    ingester_id: NodeId::from_str("test-ingester"),
+                    partition_id: shard_id.into(),
+                    current_position_inclusive: Position::offset(10u64),
+                    status: IndexingStatus::Active,
+                },
+            );
+        }
+
+        for shard_id in 1..=2u64 {
+            let mut batch_builder = BatchBuilder::new(SourceType::IngestV2);
+            source.process_fetch_eof(
+                &mut batch_builder,
+                FetchEof {
+                    index_uid: Some(IndexUid::for_test("test-index", 0)),
+                    source_id: "test-source".to_string(),
+                    shard_id: Some(ShardId::from(shard_id)),
+                    eof_position: Some(Position::eof(10u64)),
+                },
+            )?;
+
+            let batch = batch_builder.build();
+            assert_eq!(batch.force_commit, shard_id == 2);
+            assert!(batch.docs.is_empty());
+            assert_eq!(
+                batch.checkpoint_delta,
+                SourceCheckpointDelta::from_partition_delta(
+                    shard_id.into(),
+                    Position::offset(10u64),
+                    Position::eof(10u64),
+                )?
+            );
+            let shard = source
+                .assigned_shards
+                .get(&ShardId::from(shard_id))
+                .unwrap();
+            assert_eq!(shard.status, IndexingStatus::ReachedEof);
+            assert_eq!(shard.current_position_inclusive, Position::eof(10u64));
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_ingest_source_emit_batches() {
         let pipeline_id = IndexingPipelineId {
             node_id: NodeId::from_str("test-node"),
@@ -1589,7 +1653,12 @@ mod tests {
         assert_eq!(shard.status, IndexingStatus::Active);
         let messages = doc_processor_inbox.drain_for_test();
         assert_eq!(messages.len(), 1);
-        assert!(messages[0].is::<RawDocBatch>());
+        assert!(
+            !messages[0]
+                .downcast_ref::<RawDocBatch>()
+                .unwrap()
+                .force_commit
+        );
 
         let fetch_eof = FetchEof {
             index_uid: Some(IndexUid::for_test("test-index", 0)),
@@ -1608,16 +1677,15 @@ mod tests {
 
         source.emit_batches(&source_sink, &ctx).await.unwrap();
         let messages = doc_processor_inbox.drain_for_test();
-        assert_eq!(messages.len(), 2);
+        assert_eq!(messages.len(), 1);
         let final_batch = messages[0].downcast_ref::<RawDocBatch>().unwrap();
         assert!(final_batch.docs.is_empty());
-        assert!(!final_batch.force_commit);
+        assert!(final_batch.force_commit);
         let partition_deltas: Vec<_> = final_batch.checkpoint_delta.iter().collect();
         assert_eq!(partition_deltas.len(), 1);
         assert_eq!(partition_deltas[0].0, PartitionId::from(1u64));
         assert_eq!(partition_deltas[0].1.from, Position::offset(15u64));
         assert_eq!(partition_deltas[0].1.to, Position::eof(15u64));
-        assert!(messages[1].is::<SourceReachedEOF>());
 
         source.emit_batches(&source_sink, &ctx).await.unwrap();
         assert!(doc_processor_inbox.drain_for_test().is_empty());

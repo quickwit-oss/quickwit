@@ -42,9 +42,7 @@ use super::vrl_processing::*;
 use crate::actors::Indexer;
 use crate::docs_clustering::Fingerprinter;
 use crate::metrics::{PROCESSED_BYTES, PROCESSED_DOCS_TOTAL};
-use crate::models::{
-    NewPublishLock, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch, SourceReachedEOF,
-};
+use crate::models::{NewPublishLock, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch};
 
 const PLAIN_TEXT: &str = "plain_text";
 pub(super) struct JsonDoc {
@@ -599,21 +597,6 @@ impl Handler<RawDocBatch> for DocProcessor {
         );
         ctx.send_message(&self.indexer_mailbox, processed_doc_batch)
             .await?;
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<SourceReachedEOF> for DocProcessor {
-    type Reply = ();
-
-    // We're just passing this through to the indexer.
-    async fn handle(
-        &mut self,
-        message: SourceReachedEOF,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
-        ctx.send_message(&self.indexer_mailbox, message).await?;
         Ok(())
     }
 }

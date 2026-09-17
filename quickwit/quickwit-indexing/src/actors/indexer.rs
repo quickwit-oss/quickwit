@@ -56,7 +56,7 @@ use crate::docs_clustering::{DocIdClusterer, Fingerprinter};
 use crate::metrics::SPLIT_BUILDERS;
 use crate::models::{
     CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, NewPublishLock,
-    ProcessedDoc, ProcessedDocBatch, PublishLock, SourceReachedEOF,
+    ProcessedDoc, ProcessedDocBatch, PublishLock,
 };
 
 // Random partition ID used to gather partitions exceeding the maximum number of partitions.
@@ -504,21 +504,6 @@ impl Handler<ProcessedDocBatch> for Indexer {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.index_batch(doc_batch, ctx).await
-    }
-}
-
-#[async_trait]
-impl Handler<SourceReachedEOF> for Indexer {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        _message: SourceReachedEOF,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
-        self.send_to_serializer(CommitTrigger::NoMoreDocs, ctx)
-            .await?;
-        Ok(())
     }
 }
 
@@ -1158,7 +1143,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_indexer_triggers_commit_on_source_reached_eof() -> anyhow::Result<()> {
+    async fn test_indexer_commits_eof_batch_through_doc_processor() -> anyhow::Result<()> {
         let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
@@ -1200,9 +1185,6 @@ mod tests {
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
 
-        indexer_mailbox.ask(SourceReachedEOF).await?;
-        assert!(index_serializer_inbox.drain_for_test().is_empty());
-
         for shard_id in 0..2u64 {
             doc_processor_mailbox
                 .ask(RawDocBatch::new(
@@ -1217,6 +1199,10 @@ mod tests {
                     false,
                 ))
                 .await?;
+            let counters = indexer_handle.process_pending_and_observe().await.state;
+            assert_eq!(counters.num_docs_in_workbench, 1);
+            assert!(index_serializer_inbox.drain_for_test().is_empty());
+
             doc_processor_mailbox
                 .ask(RawDocBatch::new(
                     Vec::new(),
@@ -1225,14 +1211,9 @@ mod tests {
                         Position::offset(0u64),
                         Position::eof(0u64),
                     )?,
-                    false,
+                    true,
                 ))
                 .await?;
-            let counters = indexer_handle.process_pending_and_observe().await.state;
-            assert_eq!(counters.num_docs_in_workbench, 1);
-            assert!(index_serializer_inbox.drain_for_test().is_empty());
-
-            doc_processor_mailbox.ask(SourceReachedEOF).await?;
             let counters = indexer_handle.process_pending_and_observe().await.state;
             assert_eq!(counters.num_docs_in_workbench, 0);
             let messages = index_serializer_inbox.drain_for_test();
@@ -1240,7 +1221,7 @@ mod tests {
             let batch = messages[0]
                 .downcast_ref::<IndexedSplitBatchBuilder>()
                 .unwrap();
-            assert_eq!(batch.commit_trigger, CommitTrigger::NoMoreDocs);
+            assert_eq!(batch.commit_trigger, CommitTrigger::ForceCommit);
             assert_eq!(batch.splits.len(), 1);
             assert_eq!(batch.splits[0].split_attrs.num_docs, 1);
             assert_eq!(
@@ -1253,9 +1234,6 @@ mod tests {
             );
             assert!(indexer_handle.state().is_running());
             assert!(doc_processor_handle.state().is_running());
-
-            indexer_mailbox.ask(SourceReachedEOF).await?;
-            assert!(index_serializer_inbox.drain_for_test().is_empty());
         }
 
         let checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
@@ -1264,11 +1242,8 @@ mod tests {
             Position::Beginning.as_eof(),
         )?;
         doc_processor_mailbox
-            .ask(RawDocBatch::new(Vec::new(), checkpoint_delta.clone(), false))
+            .ask(RawDocBatch::new(Vec::new(), checkpoint_delta.clone(), true))
             .await?;
-        indexer_handle.process_pending_and_observe().await;
-        assert!(index_serializer_inbox.drain_for_test().is_empty());
-        doc_processor_mailbox.ask(SourceReachedEOF).await?;
         indexer_handle.process_pending_and_observe().await;
         let messages = index_serializer_inbox.drain_for_test();
         assert_eq!(messages.len(), 1);

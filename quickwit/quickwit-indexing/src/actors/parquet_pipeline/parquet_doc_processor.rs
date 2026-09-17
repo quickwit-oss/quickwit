@@ -307,20 +307,6 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
 }
 
 #[async_trait]
-impl Handler<crate::models::SourceReachedEOF> for ParquetDocProcessor {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        _message: crate::models::SourceReachedEOF,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
-        // EOF-triggered commits are currently only supported by the Tantivy pipeline.
-        Ok(())
-    }
-}
-
-#[async_trait]
 impl Handler<NewPublishLock> for ParquetDocProcessor {
     type Reply = ();
 
