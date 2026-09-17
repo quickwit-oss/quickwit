@@ -56,7 +56,7 @@ use crate::docs_clustering::{DocIdClusterer, Fingerprinter};
 use crate::metrics::SPLIT_BUILDERS;
 use crate::models::{
     CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, NewPublishLock,
-    ProcessedDoc, ProcessedDocBatch, PublishLock,
+    ProcessedDoc, ProcessedDocBatch, PublishLock, SourceReachedEOF,
 };
 
 // Random partition ID used to gather partitions exceeding the maximum number of partitions.
@@ -504,6 +504,21 @@ impl Handler<ProcessedDocBatch> for Indexer {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.index_batch(doc_batch, ctx).await
+    }
+}
+
+#[async_trait]
+impl Handler<SourceReachedEOF> for Indexer {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _message: SourceReachedEOF,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        self.send_to_serializer(CommitTrigger::NoMoreDocs, ctx)
+            .await?;
+        Ok(())
     }
 }
 

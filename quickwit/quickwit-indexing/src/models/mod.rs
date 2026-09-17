@@ -56,3 +56,8 @@ pub use split_attrs::{SplitAttrs, create_split_metadata};
 /// shard re-acquisition; the publisher reads it at publish time. `None` means no token (merge
 /// pipelines, or sources without a publish token such as file/kafka).
 pub type SharedPublishToken = Arc<ArcSwapOption<PublishToken>>;
+
+/// All shards currently assigned to the ingest source have reached EOF. We can take advantage of 
+/// this knowledge to write the in-progress split early, rather than waiting for the commit timeout.
+#[derive(Debug)]
+pub struct SourceReachedEOF;

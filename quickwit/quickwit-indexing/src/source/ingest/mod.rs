@@ -232,7 +232,7 @@ impl IngestSource {
         &mut self,
         batch_builder: &mut BatchBuilder,
         fetch_eof: FetchEof,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<bool> {
         let assigned_shard = self
             .assigned_shards
             .get_mut(fetch_eof.shard_id())
@@ -253,7 +253,8 @@ impl IngestSource {
             )
             .context("failed to record partition delta")?;
         assigned_shard.current_position_inclusive = to_position_inclusive;
-        Ok(())
+        let all_sources_reached_eof = self.assigned_shards.values().all(|shard| matches!(shard.status,IndexingStatus::ReachedEof));
+        Ok(all_sources_reached_eof)
     }
 
     fn process_fetch_stream_error(
@@ -439,6 +440,7 @@ impl Source for IngestSource {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_builder = BatchBuilder::new(SourceType::IngestV2);
+        let mut all_sources_reached_eof = false;
 
         let now = time::Instant::now();
         let deadline = now + *EMIT_BATCHES_TIMEOUT;
@@ -453,7 +455,11 @@ impl Source for IngestSource {
                         }
                     }
                     Some(fetch_message::Message::Eof(fetch_eof)) => {
-                        self.process_fetch_eof(&mut batch_builder, fetch_eof)?;
+                        all_sources_reached_eof =
+                            self.process_fetch_eof(&mut batch_builder, fetch_eof)?;
+                        if all_sources_reached_eof {
+                            break;
+                        }
                     }
                     None => {
                         warn!("received empty fetch message");
@@ -479,6 +485,11 @@ impl Source for IngestSource {
             );
             let message = batch_builder.build();
             source_sink.send_raw_doc_batch(message, ctx).await?;
+        }
+        if all_sources_reached_eof {
+            // If all shards reach EOF, we can let the indexer know (via the doc processor) that it
+            // can commit its workbench.
+            source_sink.send_source_reached_eof(ctx).await?;
         }
         Ok(Duration::default())
     }
