@@ -700,20 +700,18 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::Universe;
-    use quickwit_config::{DocsClusteringConfig, SourceInputFormat};
+    use quickwit_config::DocsClusteringConfig;
     use quickwit_doc_mapper::{DocMapper, default_doc_mapper_for_test};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_proto::metastore::{
         EmptyResponse, LastDeleteOpstampResponse, MockMetastoreService,
     };
-    use quickwit_proto::types::{IndexUid, NodeId, PipelineUid, Position};
+    use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
     use tantivy::schema::Value;
     use tantivy::{DateTime, DocAddress, TantivyDocument, doc};
 
     use super::{IndexerCounters, record_timestamp, *};
-    use crate::actors::DocProcessor;
     use crate::docs_clustering::Fingerprint;
-    use crate::models::RawDocBatch;
 
     #[test]
     fn test_record_timestamp() {
