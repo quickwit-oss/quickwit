@@ -23,7 +23,6 @@ use std::time::{Duration, Instant};
 
 use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
-use quickwit_common::is_parquet_pipeline_index;
 use quickwit_common::pretty::PrettySample;
 use quickwit_config::{
     FileSourceParams, SourceParams, disable_ingest_v1, indexing_pipeline_params_fingerprint,
@@ -257,11 +256,6 @@ fn get_sources_to_schedule(
 
             SourceParams::IngestApi => {
                 if disable_ingest_v1 {
-                    continue;
-                }
-                // Metrics indexes should use IngestV2 only, not IngestV1.
-                // The ParquetSourceLoader doesn't support IngestV1.
-                if is_parquet_pipeline_index(&source_uid.index_uid.index_id) {
                     continue;
                 }
                 // TODO ingest v1 is scheduled differently

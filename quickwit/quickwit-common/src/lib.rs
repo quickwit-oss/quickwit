@@ -51,7 +51,6 @@ pub mod tracing_utils;
 pub mod type_map;
 pub mod uri;
 
-mod metrics_specific;
 use std::fmt::Display;
 use std::future::Future;
 use std::ops::{Range, RangeInclusive};
@@ -63,7 +62,6 @@ pub use env::{
     get_from_env_opt, parse_bool_lenient,
 };
 pub use kill_switch::KillSwitch;
-pub use metrics_specific::*;
 pub use path_hasher::PathHasher;
 pub use progress::{Progress, ProtectedZoneGuard};
 pub use stream_utils::{BoxStream, ServiceStream};

@@ -69,10 +69,7 @@ following the verification pyramid philosophy.
    ```
 
 4. **Run tests - EXPECT FAILURE**
-   ```bash
-   cargo test -p quickwit-dst -- your_feature_tests
-   # Should fail: component doesn't exist yet
-   ```
+   Run the relevant checks in the crate that owns the simulation or model.
 
 ### Phase 3: Implement (make tests pass)
 
@@ -81,17 +78,12 @@ following the verification pyramid philosophy.
    - Follow the coding style in [CODE_STYLE.md](../../CODE_STYLE.md) and [RUST_STYLE.md](RUST_STYLE.md)
 
 6. **Run tests - EXPECT PASS**
-   ```bash
-   cargo test -p quickwit-dst -- your_feature_tests
-   # Should pass now
-   ```
+   Run the relevant checks in the crate that owns the simulation or model.
 
 ### Phase 4: Verify All Layers
 
 7. **Run Stateright model** (if applicable)
-   ```bash
-   cargo test -p quickwit-dst -- stateright_your_feature
-   ```
+   Run the relevant checks in the crate that owns the simulation or model.
 
 8. **Run unit tests**
    ```bash

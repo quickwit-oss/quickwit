@@ -10,6 +10,9 @@ for file in $(git ls-files | \
     grep -v "/codegen/" \
 )
 do
+    if [ ! -e "$file" ]; then
+        continue
+    fi
     diff <(sed 's/{\\d+}/2021/' .license_header.txt) <(head -n 14 $file) > /dev/null
     DIFFRESULT=$?
     if [ $DIFFRESULT -ne 0 ]; then

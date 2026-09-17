@@ -48,9 +48,9 @@ pub use docs_clustering::{
 // See #2048
 use index_config::serialize::{IndexConfigV0_8, VersionedIndexConfig};
 pub use index_config::{
-    IndexConfig, IndexingResources, IndexingSettings, IngestSettings, ParquetIndexingConfig,
-    RetentionPolicy, SearchSettings, build_doc_mapper, load_index_config_from_user_config,
-    load_index_config_update, prepare_doc_mapping_update,
+    IndexConfig, IndexingResources, IndexingSettings, IngestSettings, RetentionPolicy,
+    SearchSettings, build_doc_mapper, load_index_config_from_user_config, load_index_config_update,
+    prepare_doc_mapping_update,
 };
 pub use quickwit_doc_mapper::DocMapping;
 use serde::Serialize;
@@ -70,8 +70,7 @@ use tracing::warn;
 use crate::index_template::IndexTemplateV0_8;
 pub use crate::index_template::{IndexTemplate, IndexTemplateId, VersionedIndexTemplate};
 use crate::merge_policy_config::{
-    ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, ParquetMergePolicyConfig,
-    StableLogMergePolicyConfig,
+    ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, StableLogMergePolicyConfig,
 };
 pub use crate::metastore_config::{
     MetastoreBackend, MetastoreConfig, MetastoreConfigs, PostgresMetastoreConfig,
@@ -116,8 +115,6 @@ pub fn disable_ingest_v1() -> bool {
     KafkaSourceParams,
     KinesisSourceParams,
     MergePolicyConfig,
-    ParquetIndexingConfig,
-    ParquetMergePolicyConfig,
     PubSubSourceParams,
     PulsarSourceAuth,
     PulsarSourceParams,

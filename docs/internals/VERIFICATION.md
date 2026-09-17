@@ -45,37 +45,7 @@ DST provides deterministic control over time, network, storage, and randomness. 
 | **In-Memory** | Standard Rust | `SimClock` (app-level) | `FaultInjector` | CI, quick iteration |
 | **gVisor DST** | gVisor kernel | `VirtualClocks` (kernel) | Syscall-level | Finding subtle bugs |
 
-### Running DST Tests
-
-```bash
-# Run all DST tests (once the DST crate exists)
-cargo test -p quickwit-dst
-
-# Reproduce failure with specific seed
-DST_SEED=12345 cargo test -p quickwit-dst
-
-# Verbose fault logging
-RUST_LOG=quickwit_dst=debug cargo test -p quickwit-dst
-```
-
-### Writing DST Tests
-
-```rust
-use quickwit_dst::{Simulation, SimConfig, FaultConfig, FaultType};
-
-#[test]
-fn test_with_faults() {
-    let config = SimConfig::new(12345); // Deterministic seed
-    let mut sim = Simulation::new(config)
-        .with_fault(FaultConfig::new(FaultType::StorageWriteFail, 0.1));
-
-    sim.run(|env| async move {
-        let storage = env.storage();
-        // Test logic - fully deterministic
-        Ok(())
-    }).unwrap();
-}
-```
+The workspace has no shared DST crate. Any simulation harness must be provided by the component being verified.
 
 ### DST Guidelines
 
@@ -197,7 +167,6 @@ Each spec defines:
 | Compaction | `quickwit-indexing` | Atomic split swap, no data loss |
 | Ingest pipeline | `quickwit-ingest` | Backpressure, bounded buffers |
 | Shard management | `quickwit-control-plane` | No split-brain, consistent assignment |
-| Tantivy + Parquet | `quickwit-indexing` | Dual-write consistency |
 
 ## Shared Invariants
 
@@ -224,16 +193,12 @@ if !result.holds {
 | `compaction.rs` | `compaction_atomicity`, `no_data_loss_during_compaction` |
 | `ingest.rs` | `no_buffer_overflow`, `backpressure_correctness` |
 | `shard.rs` | `no_split_brain`, `shard_assignment_consistency` |
-| `tantivy_parquet.rs` | `tantivy_subset_of_parquet`, `idle_consistency` |
 
 ## Stateright Model Checking
 
 Rust-native exhaustive state space exploration:
 
-```bash
-# Run Stateright model checking
-cargo test -p quickwit-dst stateright -- --ignored
-```
+There are currently no checked-in Stateright models.
 
 Benefits over TLA+:
 - Runs in CI with `cargo test`

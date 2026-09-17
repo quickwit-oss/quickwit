@@ -73,7 +73,6 @@ This section compares Quickwit's approach with insights from Pierre Zemb's artic
 
 | Pierre Zemb's Insight | Quickwit Implementation | Approach |
 |----------------------|----------------------------------|----------|
-| **"Deterministic simulation is the killer feature"** | Seeded RNG ensures reproducible fault injection | `DST_SEED=12345 cargo test -p quickwit-dst` reproduces any failure |
 | **"Control time, don't wait for it"** | `SimClock` provides deterministic time control | Tests complete in seconds, not hours |
 | **"Inject faults systematically"** | `FaultInjector` with configurable fault types | Storage failures, network partitions, catalog conflicts |
 | **"Make state space exploration exhaustive"** | Stateright model checker explores all interleavings | Exhaustive verification of concurrent operations |
@@ -115,7 +114,6 @@ Key areas for formal specification in Quickwit:
 - Shard management and assignment
 - Compaction protocol (atomic swap)
 - Ingest backpressure and WAL ordering
-- Tantivy + Parquet dual-write consistency
 - Garbage collection safety
 
 **How to run:**
@@ -163,12 +161,6 @@ fn verify_no_lost_splits() {
 
 **How to run:**
 ```bash
-# DST tests with specific seed
-DST_SEED=12345 cargo test -p quickwit-dst
-
-# Stateright model checking
-cargo test -p quickwit-dst -- stateright --nocapture
-
 # Kani proofs (CI or x86_64 Linux)
 cargo kani --package quickwit-metastore
 ```

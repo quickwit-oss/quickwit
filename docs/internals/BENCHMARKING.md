@@ -23,41 +23,6 @@ Metrics         Metrics         (perf/samply)
 
 ## Microbenchmarks
 
-### Metrics Engine (current priority)
-
-The metrics engine has the richest benchmark suite. All commands run from `quickwit/`.
-
-```bash
-# Ingestion profiling — breaks down time per pipeline stage
-# (IPC deserialization, batch accumulation, sorting, Parquet writing, metadata extraction)
-cargo bench -p quickwit-metrics-engine --bench ingestion_profile_bench
-
-# Configure row count:
-BENCH_ROWS=1000000 cargo bench -p quickwit-metrics-engine --bench ingestion_profile_bench
-
-# High cardinality — end-to-end with realistic 30M series patterns
-# (Arrow batch generation, Parquet split creation, DataFusion queries)
-cargo bench -p quickwit-metrics-engine --bench high_cardinality_bench
-
-# Scale to 30M series (requires ~32GB RAM):
-BENCH_SERIES=30000000 cargo bench -p quickwit-metrics-engine --bench high_cardinality_bench
-
-# Sort optimization — compares sorting strategies for metrics data
-# (full lexsort, reduced columns, row-group-only, pre-sorted skip)
-cargo bench -p quickwit-metrics-engine --bench sort_optimization_bench
-
-# Sustained ingestion — simulates real-world sustained metric ingestion
-# (30M series, 10s emit interval, 900s simulation, 2.7B data points at full scale)
-cargo bench -p quickwit-metrics-engine --bench sustained_ingestion_bench
-```
-
-### OTLP Metrics (ingestion path)
-
-```bash
-# OTLP protobuf parsing, query parsing, filter evaluation, aggregation construction
-cargo bench -p quickwit-opentelemetry
-```
-
 ### Other Crates
 
 ```bash
@@ -77,20 +42,15 @@ cargo bench -p quickwit-common
 cargo bench -p quickwit-actors
 
 # Compare against baseline
-cargo bench -p quickwit-metrics-engine -- --save-baseline before
+cargo bench -p quickwit-doc-mapper -- --save-baseline before
 # ... make changes ...
-cargo bench -p quickwit-metrics-engine -- --baseline before
+cargo bench -p quickwit-doc-mapper -- --baseline before
 ```
 
 ### Key Metrics
 
 | Benchmark | What It Measures | Crate |
 |-----------|------------------|-------|
-| `ingestion_profile_bench` | Per-stage pipeline latency | `quickwit-metrics-engine` |
-| `high_cardinality_bench` | End-to-end ingestion + query at 30M series | `quickwit-metrics-engine` |
-| `sort_optimization_bench` | Sorting strategy comparison (7-col vs reduced) | `quickwit-metrics-engine` |
-| `sustained_ingestion_bench` | Sustained throughput over 900s simulation | `quickwit-metrics-engine` |
-| `metrics_bench` | OTLP parsing + filter evaluation | `quickwit-opentelemetry` |
 | `processors_bench` | Document transform throughput | `quickwit-doc-transforms` |
 | `tokenizers_bench` | Tokenizer performance | `quickwit-query` |
 

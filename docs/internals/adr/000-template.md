@@ -5,7 +5,7 @@
 - **Status**: [Proposed | Accepted | Deprecated | Superseded]
 - **Date**: YYYY-MM-DD
 - **Tags**: [e.g., storage, query, protocol, testing, metrics, traces, logs]
-- **Components**: [e.g., quickwit-metrics-engine, quickwit-indexing]
+- **Components**: [e.g., quickwit-metastore, quickwit-indexing]
 - **Authors**: [Names]
 
 ## Context

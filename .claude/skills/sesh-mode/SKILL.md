@@ -197,5 +197,3 @@ These are expected unless justified:
 | ADR index | [docs/internals/adr/README.md](../../../docs/internals/adr/README.md) |
 | Architecture evolution | [docs/internals/adr/EVOLUTION.md](../../../docs/internals/adr/EVOLUTION.md) |
 | Compaction architecture | [docs/internals/compaction-architecture.md](../../../docs/internals/compaction-architecture.md) |
-| Tantivy + Parquet design | [docs/internals/tantivy-parquet-architecture.md](../../../docs/internals/tantivy-parquet-architecture.md) |
-| Locality compaction | [docs/internals/locality-compaction/](../../../docs/internals/locality-compaction/) |

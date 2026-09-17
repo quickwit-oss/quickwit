@@ -12,7 +12,6 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-arrow = { workspace = true }
 async-trait = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true }
@@ -27,7 +26,6 @@ quickwit-common = { workspace = true }
 quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-ingest = { workspace = true }
-quickwit-parquet-engine = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]

@@ -72,22 +72,12 @@ A spec may have several `.cfg` files exploring different bounds:
   behaviors (e.g. `_chains` for deep merge chains, `_small` for fastest
   iteration). Each `.cfg` runs against the *same* `.tla` source.
 
-## Available Specifications
-
-| Spec | Small States | Full States | Invariants |
-|------|-------------|-------------|------------|
-| ParquetDataModel | 8 | millions | DM-1..DM-5 |
-| SortSchema | 49,490 | millions | SS-1..SS-5 |
-| TimeWindowedCompaction | 938 | thousands | TW-1..3, CS-1..3, MC-1..4 |
-| MergePipelineShutdown (primary, multi-lifetime) | — | 15,732 (~1s) | RowsConserved, NoSplitLoss, NoDuplicateMerge, NoOrphanInPlanner, NoOrphanWhenConnected, LeakIsObjectStoreOnly, MP1\_LevelHomogeneity, BoundedWriteAmp, FinalizeWithinBound, ShutdownOnlyWhenDrained + RestartReSeedsAllImmature (action) + ShutdownEventuallyCompletes, NoPersistentOrphan (liveness) |
-| MergePipelineShutdown\_chains (deep merge chain) | — | 217,854 (~12s) | same invariant set; MaxIngests=4, MaxRestarts=1 |
-
 ## Creating New Specs
 
 1. Create `NewProtocol.tla` with the specification
 2. Create `NewProtocol_small.cfg` (minimal constants for fast iteration)
 3. Create `NewProtocol.cfg` (larger constants for thorough checking)
-4. Update the table above
+4. List the specification in README.md
 5. Run both configs through TLC to verify
 
 ### Config File Template

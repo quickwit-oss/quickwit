@@ -12,15 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Quickwit-specific DataFusion glue: metrics data source, object-store adapter,
-//! and `SearcherPool`-backed worker resolver.
-//!
-//! The generic DataFusion runtime (session, service, worker, substrait, gRPC)
-//! lives in [`quickwit_df_core`]. This crate wires that framework to Quickwit's
-//! domain types (metastore, storage, search).
-
 pub mod object_store_registry;
-pub mod sources;
 pub(crate) mod storage_bridge;
 pub mod worker_resolver;
 
@@ -31,6 +23,3 @@ pub use quickwit_df_core::proto;
 pub use quickwit_df_core::*;
 pub use storage_bridge::QuickwitObjectStore;
 pub use worker_resolver::QuickwitWorkerResolver;
-
-#[cfg(any(test, feature = "testsuite"))]
-pub mod test_utils;

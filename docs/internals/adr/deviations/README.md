@@ -94,7 +94,6 @@ Deviation files use sequential numbering: `001-short-description.md`
 
 | Deviation | Title | Related ADR | Priority |
 |-----------|-------|-------------|----------|
-| [001](./001-dual-parquet-merge-engines.md) | Dual Parquet merge engines during streaming-engine rollout | [ADR-003](../003-time-windowed-sorted-compaction.md) | Accept until post-soak |
 
 ## Lifecycle
 

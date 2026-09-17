@@ -22,22 +22,6 @@
 //! [`QuickwitSubstraitConsumerExt`] claims them, and falls back to the
 //! standard catalog lookup for everything else.
 //!
-//! ## OSS path — standard Substrait (no custom protos)
-//!
-//! A producer targeting Quickwit OSS sends a completely vanilla Substrait plan:
-//!
-//! ```text
-//! ReadRel {
-//!     base_schema: <NamedStruct describing projected columns>,
-//!     read_type: NamedTable { names: ["<index_name>"] },
-//! }
-//! ```
-//!
-//! [`MetricsDataSource`][crate::sources::metrics::MetricsDataSource] handles
-//! this by resolving the index from the metastore and creating a
-//! `MetricsTableProvider` with the schema declared in `base_schema`.  No
-//! custom protobuf type or type URL is involved.
-//!
 //! ## Extension path — custom protos (downstream callers)
 //!
 //! A downstream caller registers its own `QuickwitSubstraitConsumerExt`

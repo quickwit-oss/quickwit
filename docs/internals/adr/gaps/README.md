@@ -105,15 +105,3 @@ Gap files use sequential numbering: `001-short-description.md`
 
 | Gap | Title | Status | Severity |
 |-----|-------|--------|----------|
-| [001](./001-no-parquet-compaction.md) | No Parquet Split Compaction | Open | High |
-| [002](./002-fixed-sort-schema.md) | Fixed Hardcoded Sort Schema | Open | Medium |
-| [003](./003-no-time-window-partitioning.md) | No Time-Window Partitioning at Ingestion | Open | High |
-| [004](./004-incomplete-split-metadata.md) | Incomplete Split Metadata for Compaction | Open | High |
-| [005](./005-no-per-point-deduplication.md) | No Per-Point Deduplication | Open | Medium |
-| [006](./006-no-independent-auto-scaling.md) | No Independent Auto-Scaling | Open | High |
-| [007](./007-no-multi-level-caching.md) | No Parquet Metadata Caching | Open | High |
-| [008](./008-no-high-query-rate-optimization.md) | No High Query Rate Optimization | Open | High |
-| [009](./009-no-leading-edge-prioritization.md) | No Leading Edge Prioritization | Open | High |
-| [010](./010-no-data-caching-or-query-affinity.md) | No Multi-Level Data Caching or Query Affinity Optimization | Open | High |
-| [011](./011-no-legacy-promotion-planner.md) | No Planner-Level Legacy Promotion | Open | Medium |
-| [012](./012-merge-downloads-instead-of-streaming.md) | Parquet Merge Executor Downloads Inputs Instead of Streaming Them | Open | Medium |

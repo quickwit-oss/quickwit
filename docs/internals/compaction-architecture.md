@@ -11,8 +11,7 @@
 5. [How Queries Find Splits](#how-queries-find-splits)
 6. [Document Routing Detail](#document-routing-detail)
 7. [Partition IDs: Tenant Isolation](#partition-ids-tenant-isolation)
-8. [The Metrics Pipeline](#the-metrics-pipeline)
-9. [Configuration Reference](#configuration-reference)
+8. [Configuration Reference](#configuration-reference)
 
 ---
 
@@ -24,7 +23,7 @@ This document follows the path of data from ingestion through compaction and int
 
 ### Vocabulary
 
-- **Split** -- a self-contained unit of indexed data (a Tantivy segment for logs/traces, or a Parquet file for metrics). Documents within a split are stored in **ingestion order** -- no sort is applied at index time or during merges. Once published, a split is immutably associated with the `node_id` of the node that created it.
+- **Split** -- a self-contained unit of indexed data (a Tantivy segment). Documents within a split are stored in **ingestion order** -- no sort is applied at index time or during merges. Once published, a split is immutably associated with the `node_id` of the node that created it.
 - **Shard** -- a logical WAL stream for a particular (index, source) pair, hosted on an ingester node. Ephemeral: can be closed and replaced on a different node at any time.
 - **Merge scope** -- the 5-part key `(node_id, index_uid, source_id, partition_id, doc_mapping_uid)`. Each unique combination gets an independent compaction hierarchy with no cross-key coordination.
 - **Maturity** -- a split's eligibility for further merging. Immature splits can be merged; mature splits (by size or age) will not be merged again.
@@ -78,7 +77,7 @@ Each shard has its own append-only WAL stream, stored on the leader node's local
 
 **Physical location:** `{data_dir}/queues/` on the ingester node.
 
-**Persistence:** By default, the WAL flushes every 5 seconds without fsync (`PersistPolicy::OnDelay`). For metrics pipelines, the WAL uses persistent volumes to survive pod restarts.
+**Persistence:** By default, the WAL flushes every 5 seconds without fsync (`PersistPolicy::OnDelay`).
 
 ### d) WAL to Split
 
@@ -99,7 +98,7 @@ Initial splits are small -- typically 100K-500K documents. Compaction happens la
 | Data | Location |
 |------|----------|
 | WAL | Local disk on ingester nodes (ephemeral unless persistent volume) |
-| Split files | Object storage (`{split_id}.split` or `.parquet`) |
+| Split files | Object storage (`{split_id}.split`) |
 | Split metadata | PostgreSQL (`splits` table) |
 
 ### Pipeline Actors (detail)
@@ -448,85 +447,6 @@ When a single indexing workbench exceeds `max_num_partitions`, additional docume
 
 ---
 
-## The Metrics Pipeline
-
-The metrics pipeline uses a **completely different implementation** from logs/traces.
-
-### Key Differences
-
-| Aspect | Logs/Traces (Tantivy) | Metrics (Parquet) |
-|--------|----------------------|-------------------|
-| **Storage format** | Tantivy segments (`.split`) | Parquet files (`.parquet`) |
-| **Pipeline actors** | 8 (indexing) + 7 (merge) | 4 (no merge pipeline) |
-| **Compaction** | StableLogMergePolicy | Not implemented |
-| **WAL** | IngestV2 (ephemeral by default) | IngestV2 only (persistent volume) |
-| **Metadata** | `SplitMetadata` (Postgres) | `MetricsSplitMetadata` (Postgres) |
-| **Query engine** | Tantivy + custom code | DataFusion + Arrow |
-
-### Pipeline Architecture
-
-```
-Source → MetricsDocProcessor → MetricsIndexer → MetricsUploader → MetricsPublisher
-```
-
-- **MetricsDocProcessor** -- converts Arrow IPC to RecordBatch
-- **MetricsIndexer** -- accumulates batches, writes Parquet splits
-- **MetricsUploader** -- stages and uploads Parquet files to storage
-- **MetricsPublisher** -- publishes metadata to PostgreSQL
-
-**Location:** `quickwit/quickwit-indexing/src/actors/indexing_pipeline.rs:600-728`
-
-### Metrics Skip IngestV1
-
-Metrics indexes are filtered out of IngestV1 scheduling:
-
-```rust
-// quickwit/quickwit-control-plane/src/indexing_scheduler/mod.rs:219-222
-if is_metrics_index(&source_uid.index_uid.index_id) {
-    continue;  // Skip IngestV1 source for metrics
-}
-```
-
-### Persistent WAL for Metrics
-
-Metrics use persistent volumes for the WAL to survive pod restarts, preventing data loss during failures:
-
-```yaml
-# k8s/eks/metrics.quickwit.dev.yaml
-indexer:
-  persistentVolume:
-    enabled: true
-    storage: "10Gi"
-    storageClass: "gp3"
-```
-
-### Why No Compaction (Yet)?
-
-Metrics splits accumulate without compaction. This is tolerable in the short term because DataFusion can query many small Parquet files, and time-based retention eventually removes old data. But it is not ideal, and metrics compaction is a planned goal.
-
-### The Problem With the Current Architecture for Metrics
-
-The existing log/trace compaction system (StableLogMergePolicy) is a poor fit for metrics even if it were enabled on Parquet splits. The core issue is **data locality**.
-
-Metrics time series emit points on a periodic schedule (e.g., every 10 seconds). With load-balanced routing across nodes and shards, the points for any given time series are scattered across whichever nodes happened to receive them. Each node produces its own splits independently, so a single time series' data ends up fragmented across many small splits on many nodes. The node-local compaction model (merge scope bound by `node_id`) means these fragments can never be merged together -- each node only compacts its own portion.
-
-Logs and traces suffer from the same fundamental scattering -- data is load-balanced across nodes with no content-aware placement, so documents for a given service, trace ID, or tag combination are spread across splits on every node. The current compaction model can *get away with* this because log/trace queries typically scan by time range and filter by tags, so a full scan across all matching splits still produces correct results. But "correct" is not "efficient": every query must fan out to every split in the time range, with no ability to prune splits based on data content. The system works, but it leaves significant query performance on the table.
-
-For metrics the problem is more acute. Metrics queries often need to reconstruct a **single time series** across a time window (e.g., "plot CPU usage for host X over the last hour"), which means reading a point or two from each of many splits. The fan-out cost per query grows with the number of splits, and the lack of cross-node compaction means this never improves.
-
-### Future: Locality-Aware Compaction
-
-The eventual goal is a compaction system designed around data locality, drawing on approaches similar to [Husky's storage compaction](https://www.datadoghq.com/blog/engineering/husky-storage-compaction/). While the immediate motivation is metrics, the same approach would benefit logs and traces by enabling split pruning based on data content rather than requiring full scans. The key ideas include:
-
-- **Cross-node compaction** -- unlike the current model, locality-aware compaction must merge data regardless of which node produced it, since load balancing inherently distributes related data across nodes. This applies equally to metrics time series, log streams from a service, and spans from a trace. As discussed in [Why Each Key Component Matters](#why-each-key-component-matters), the current `node_id` constraint is an implementation choice for simplicity, not a data integrity requirement -- merge operations don't interact with checkpoints, so there is no fundamental obstacle to cross-node merging. The challenge is coordination, not correctness.
-- **Sort-key-aware merging** -- reorganizing data by a sort schema (e.g., metric name + tags + timestamp, or service name + timestamp) so that related data is physically co-located within splits
-- **Locality compaction** -- an LSM-inspired approach that progressively narrows each split's coverage of the sort-key space, creating non-overlapping segments. This enables **query pruning**: a query for a specific service or metric can skip entire splits whose key range doesn't overlap, rather than scanning everything in the time window.
-- **Time bucketing** -- partitioning compaction by time windows, since queries use time as a primary filter and observability data is ephemeral
-
-A detailed design will be covered in a forthcoming document.
-
----
-
 ## Configuration Reference
 
 ### Merge Policy
@@ -562,17 +482,7 @@ ingest_api:
 
 indexer:
   enable_otlp_endpoint: true
-  data_dir: /quickwit/data  # Must be on persistent volume for metrics
-```
-
-### Kubernetes Persistent Volume (Metrics WAL)
-
-```yaml
-indexer:
-  persistentVolume:
-    enabled: true
-    storage: "10Gi"
-    storageClass: "gp3"
+  data_dir: /quickwit/data
 ```
 
 ---

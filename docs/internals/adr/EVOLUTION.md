@@ -63,15 +63,6 @@ Discovered → Open → Investigating → ADR-Drafted → Closed
 
 | Gap | Title | Status | Severity |
 |-----|-------|--------|----------|
-| [001](./gaps/001-no-parquet-compaction.md) | No Parquet Split Compaction | Open | High |
-| [002](./gaps/002-fixed-sort-schema.md) | Fixed Hardcoded Sort Schema | Open | Medium |
-| [003](./gaps/003-no-time-window-partitioning.md) | No Time-Window Partitioning at Ingestion | Open | High |
-| [004](./gaps/004-incomplete-split-metadata.md) | Incomplete Split Metadata for Compaction | Open | High |
-| [005](./gaps/005-no-per-point-deduplication.md) | No Per-Point Deduplication | Open | Medium |
-| [006](./gaps/006-no-independent-auto-scaling.md) | No Independent Auto-Scaling | Open | High |
-| [007](./gaps/007-no-multi-level-caching.md) | No Multi-Level Caching | Open | High |
-| [008](./gaps/008-no-high-query-rate-optimization.md) | No High Query Rate Optimization | Open | High |
-| [009](./gaps/009-no-leading-edge-prioritization.md) | No Leading Edge Prioritization | Open | High |
 
 ## Deviations (Pragmatic)
 

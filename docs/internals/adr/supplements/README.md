@@ -7,9 +7,6 @@ This directory contains supplementary documentation that supports the main ADRs 
 Supplements are named after the ADR they support:
 - `NNN-adr-title-supplement-name.md`
 
-For example:
-- `001-metrics-pipeline-implementation-roadmap.md` - Detailed roadmap for ADR-001
-
 ## Agent Workflow
 
 Agents (and humans) should use supplements to track progress without losing context.
