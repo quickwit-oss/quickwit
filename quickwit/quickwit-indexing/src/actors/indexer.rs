@@ -16,6 +16,7 @@ use std::collections::hash_map::Entry;
 use std::num::NonZeroU32;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -47,11 +48,13 @@ use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, DocId, IndexBuilder, IndexSettings};
 use tokio::runtime::Handle;
 use tokio::sync::Semaphore;
+use tokio::time::Instant;
 use tracing::{Span, debug, info_span, warn};
 use ulid::Ulid;
 
 use super::IndexSerializer;
 use super::cooperative_indexing::{CooperativeIndexingCycle, CooperativeIndexingPeriod};
+use super::pipeline_schedule::PipelineSchedule;
 use crate::docs_clustering::{DocIdClusterer, Fingerprinter};
 use crate::metrics::SPLIT_BUILDERS;
 use crate::models::{
@@ -62,9 +65,48 @@ use crate::models::{
 // Random partition ID used to gather partitions exceeding the maximum number of partitions.
 pub(crate) const OTHER_PARTITION_ID: u64 = 3264326757911759461u64;
 
+const ENABLE_SPREAD_INDEXING_PIPELINES_ENV_KEY: &str = "QW_ENABLE_SPREAD_INDEXING_PIPELINES";
+
 #[derive(Debug)]
 struct CommitTimeout {
     workbench_id: Ulid,
+}
+
+enum IndexingMode {
+    Normal(Duration),
+    Cooperative(CooperativeIndexingCycle),
+    Spread(PipelineSchedule),
+}
+
+impl IndexingMode {
+    fn new(
+        pipeline_id: &IndexingPipelineId,
+        commit_timeout: Duration,
+        cooperative_indexing_permits_opt: Option<Arc<Semaphore>>,
+        enable_spread_indexing_pipelines: bool,
+    ) -> Self {
+        if let Some(permits) = cooperative_indexing_permits_opt {
+            return Self::Cooperative(CooperativeIndexingCycle::new(
+                pipeline_id,
+                commit_timeout,
+                permits,
+            ));
+        }
+
+        if enable_spread_indexing_pipelines {
+            return Self::Spread(PipelineSchedule::new(pipeline_id, commit_timeout));
+        }
+
+        Self::Normal(commit_timeout)
+    }
+
+    fn commit_timeout(&self, now: Instant) -> Duration {
+        match self {
+            Self::Normal(commit_timeout) => *commit_timeout,
+            Self::Cooperative(cycle) => cycle.commit_timeout(),
+            Self::Spread(schedule) => schedule.nudged_commit_timeout(now),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
@@ -100,7 +142,7 @@ struct IndexerState {
     tokenizer_manager: TokenizerManager,
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
-    cooperative_indexing_opt: Option<CooperativeIndexingCycle>,
+    indexing_mode: IndexingMode,
     indexing_io_throughput_limiter_opt: Option<Limiter>,
 }
 
@@ -202,7 +244,7 @@ impl IndexerState {
         );
         let indexing_span = info_span!(parent: batch_parent_span.id(), "indexer");
         let cooperative_indexing_period =
-            if let Some(cooperative_indexing) = &self.cooperative_indexing_opt {
+            if let IndexingMode::Cooperative(cooperative_indexing) = &self.indexing_mode {
                 Some(
                     ctx.protect_future(cooperative_indexing.cooperative_indexing_period())
                         .await,
@@ -261,10 +303,8 @@ impl IndexerState {
             let commit_timeout_message = CommitTimeout {
                 workbench_id: indexing_workbench.workbench_id,
             };
-            ctx.schedule_self_msg(
-                self.indexing_settings.commit_timeout(),
-                commit_timeout_message,
-            );
+            let commit_timeout = self.indexing_mode.commit_timeout(Instant::now());
+            ctx.schedule_self_msg(commit_timeout, commit_timeout_message);
             *indexing_workbench_opt = Some(indexing_workbench);
         }
         let current_indexing_workbench = indexing_workbench_opt.as_mut().context(
@@ -404,11 +444,15 @@ impl Actor for Indexer {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        if let Some(cooperative_indexing_cycle) = &self.indexer_state.cooperative_indexing_opt {
-            let initial_sleep_duration = cooperative_indexing_cycle.initial_sleep_duration();
-            ctx.pause();
-            ctx.schedule_self_msg(initial_sleep_duration, Command::Resume);
-        }
+        let initial_sleep_duration = match &self.indexer_state.indexing_mode {
+            // when spreading indexing pipelines is enabled, start indexing immediately and nudge
+            // pipelines on further commit timeout. This way, we are using all available CPU
+            // right away instead of idling on the first indexing cycle
+            IndexingMode::Normal(_) | IndexingMode::Spread(_) => return Ok(()),
+            IndexingMode::Cooperative(cycle) => cycle.initial_sleep_duration(),
+        };
+        ctx.pause();
+        ctx.schedule_self_msg(initial_sleep_duration, Command::Resume);
         Ok(())
     }
 
@@ -551,14 +595,15 @@ impl Indexer {
             // A configured fingerprinter supplies the mapping when the split is finalized.
             manual_doc_id_mapping: fingerprinter_opt.is_some(),
         };
-        let cooperative_indexing_opt: Option<CooperativeIndexingCycle> =
-            cooperative_indexing_permits_opt.map(|cooperative_indexing_permits| {
-                CooperativeIndexingCycle::new(
-                    &pipeline_id,
-                    indexing_settings.commit_timeout(),
-                    cooperative_indexing_permits,
-                )
-            });
+        let indexing_mode = IndexingMode::new(
+            &pipeline_id,
+            indexing_settings.commit_timeout(),
+            cooperative_indexing_permits_opt,
+            quickwit_common::get_bool_from_env_cached!(
+                ENABLE_SPREAD_INDEXING_PIPELINES_ENV_KEY,
+                false,
+            ),
+        );
         Self {
             indexer_state: IndexerState {
                 pipeline_id,
@@ -572,7 +617,7 @@ impl Indexer {
                 tokenizer_manager: tokenizer_manager.tantivy_manager().clone(),
                 index_settings,
                 max_num_partitions: doc_mapper.max_num_partitions(),
-                cooperative_indexing_opt,
+                indexing_mode,
                 indexing_io_throughput_limiter_opt,
             },
             index_serializer_mailbox,
