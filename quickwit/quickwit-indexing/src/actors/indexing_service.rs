@@ -123,6 +123,7 @@ pub struct IndexingService {
     #[cfg(feature = "metrics")]
     parquet_merge_pipeline_handles: HashMap<IndexUid, ParquetMergePipelineHandle>,
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
+    spread_indexing_pipelines: bool,
     fingerprinter_opt: Option<Fingerprinter>,
     merge_io_throughput_limiter_opt: Option<io::Limiter>,
     pub(crate) event_broker: EventBroker,
@@ -166,6 +167,7 @@ impl IndexingService {
         } else {
             None
         };
+        let spread_indexing_pipelines = indexer_config.enable_spread_indexing_pipelines;
         Ok(IndexingService {
             node_id,
             indexing_root_directory,
@@ -189,6 +191,7 @@ impl IndexingService {
             fingerprinter_opt,
             merge_io_throughput_limiter_opt,
             cooperative_indexing_permits,
+            spread_indexing_pipelines,
             event_broker,
         })
     }
@@ -420,6 +423,7 @@ impl IndexingService {
             split_store,
             max_concurrent_split_uploads_index,
             cooperative_indexing_permits: self.cooperative_indexing_permits.clone(),
+            spread_indexing_pipelines: self.spread_indexing_pipelines,
             merge_policy,
             retention_policy,
             max_concurrent_split_uploads_merge,

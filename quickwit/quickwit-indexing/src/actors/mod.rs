@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod cooperative_indexing;
 mod doc_processor;
 mod index_serializer;
 mod indexer;
+mod indexing_cycle;
 mod indexing_pipeline;
 mod indexing_service;
 mod log_publisher_impl;
