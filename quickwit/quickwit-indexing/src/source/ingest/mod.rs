@@ -253,6 +253,15 @@ impl IngestSource {
             )
             .context("failed to record partition delta")?;
         assigned_shard.current_position_inclusive = to_position_inclusive;
+        if self
+            .assigned_shards
+            .values()
+            .all(|shard| matches!(shard.status, IndexingStatus::ReachedEof))
+        {
+            // All shards reaching EOF means we can immediately flush this split once finished as
+            // there's nothing left to wait for.
+            batch_builder.force_commit();
+        }
         Ok(())
     }
 
@@ -666,6 +675,7 @@ mod tests {
     use quickwit_common::stream_utils::InFlightValue;
     use quickwit_config::{IndexingSettings, SourceConfig, SourceParams};
     use quickwit_ingest::IngesterPoolEntry;
+    use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::ingest::ingester::{
         FetchMessage, IngesterServiceClient, MockIngesterService, TruncateShardsResponse,
@@ -1410,6 +1420,71 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_ingest_source_process_fetch_eof_forces_commit_on_last_shard() -> anyhow::Result<()>
+    {
+        let source_runtime = SourceRuntime {
+            pipeline_id: IndexingPipelineId {
+                node_id: NodeId::from_str("test-node"),
+                index_uid: IndexUid::for_test("test-index", 0),
+                source_id: "test-source".to_string(),
+                pipeline_uid: PipelineUid::default(),
+            },
+            source_config: SourceConfig::for_test("test-source", SourceParams::Ingest),
+            metastore: MetastoreServiceClient::from_mock(MockMetastoreService::new()),
+            ingester_pool: IngesterPool::default(),
+            queues_dir_path: PathBuf::from("./queues"),
+            storage_resolver: StorageResolver::for_test(),
+            event_broker: EventBroker::default(),
+            indexing_setting: IndexingSettings::default(),
+            publish_token: SharedPublishToken::default(),
+        };
+        let mut source = IngestSource::try_new(source_runtime, RetryParams::for_test()).await?;
+        for shard_id in 1..=2u64 {
+            source.assigned_shards.insert(
+                ShardId::from(shard_id),
+                AssignedShard {
+                    ingester_id: NodeId::from_str("test-ingester"),
+                    partition_id: shard_id.into(),
+                    current_position_inclusive: Position::offset(10u64),
+                    status: IndexingStatus::Active,
+                },
+            );
+        }
+
+        for shard_id in 1..=2u64 {
+            let mut batch_builder = BatchBuilder::new(SourceType::IngestV2);
+            source.process_fetch_eof(
+                &mut batch_builder,
+                FetchEof {
+                    index_uid: Some(IndexUid::for_test("test-index", 0)),
+                    source_id: "test-source".to_string(),
+                    shard_id: Some(ShardId::from(shard_id)),
+                    eof_position: Some(Position::eof(10u64)),
+                },
+            )?;
+
+            let batch = batch_builder.build();
+            assert_eq!(batch.force_commit, shard_id == 2);
+            assert!(batch.docs.is_empty());
+            assert_eq!(
+                batch.checkpoint_delta,
+                SourceCheckpointDelta::from_partition_delta(
+                    shard_id.into(),
+                    Position::offset(10u64),
+                    Position::eof(10u64),
+                )?
+            );
+            let shard = source
+                .assigned_shards
+                .get(&ShardId::from(shard_id))
+                .unwrap();
+            assert_eq!(shard.status, IndexingStatus::ReachedEof);
+            assert_eq!(shard.current_position_inclusive, Position::eof(10u64));
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_ingest_source_emit_batches() {
         let pipeline_id = IndexingPipelineId {
             node_id: NodeId::from_str("test-node"),
@@ -1448,6 +1523,9 @@ mod tests {
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
         // In this scenario, the ingester receives fetch responses from shard 1 and 2.
+        source.emit_batches(&source_sink, &ctx).await.unwrap();
+        assert!(doc_processor_inbox.drain_for_test().is_empty());
+
         source.assigned_shards.insert(
             ShardId::from(1),
             AssignedShard {
@@ -1536,6 +1614,7 @@ mod tests {
         assert_eq!(partition_deltas[1].0, 2u64.into());
         assert_eq!(partition_deltas[1].1.from, Position::offset(22u64));
         assert_eq!(partition_deltas[1].1.to, Position::eof(23u64));
+        assert!(doc_processor_inbox.drain_for_test().is_empty());
 
         source.emit_batches(&source_sink, &ctx).await.unwrap();
         let shard = source.assigned_shards.get(&ShardId::from(2)).unwrap();
@@ -1572,6 +1651,44 @@ mod tests {
         source.emit_batches(&source_sink, &ctx).await.unwrap();
         let shard = source.assigned_shards.get(&ShardId::from(1)).unwrap();
         assert_eq!(shard.status, IndexingStatus::Active);
+        let messages = doc_processor_inbox.drain_for_test();
+        assert_eq!(messages.len(), 1);
+        assert!(
+            !messages[0]
+                .downcast_ref::<RawDocBatch>()
+                .unwrap()
+                .force_commit
+        );
+
+        let fetch_eof = FetchEof {
+            index_uid: Some(IndexUid::for_test("test-index", 0)),
+            source_id: "test-source".into(),
+            shard_id: Some(ShardId::from(1)),
+            eof_position: Some(Position::eof(15u64)),
+        };
+        fetch_message_tx
+            .send(Ok(InFlightValue::new(
+                FetchMessage::new_eof(fetch_eof),
+                ByteSize(0),
+                &IN_FLIGHT_FETCH_STREAM,
+            )))
+            .await
+            .unwrap();
+
+        source.emit_batches(&source_sink, &ctx).await.unwrap();
+        let messages = doc_processor_inbox.drain_for_test();
+        assert_eq!(messages.len(), 1);
+        let final_batch = messages[0].downcast_ref::<RawDocBatch>().unwrap();
+        assert!(final_batch.docs.is_empty());
+        assert!(final_batch.force_commit);
+        let partition_deltas: Vec<_> = final_batch.checkpoint_delta.iter().collect();
+        assert_eq!(partition_deltas.len(), 1);
+        assert_eq!(partition_deltas[0].0, PartitionId::from(1u64));
+        assert_eq!(partition_deltas[0].1.from, Position::offset(15u64));
+        assert_eq!(partition_deltas[0].1.to, Position::eof(15u64));
+
+        source.emit_batches(&source_sink, &ctx).await.unwrap();
+        assert!(doc_processor_inbox.drain_for_test().is_empty());
     }
 
     // Drives the source with an `MRecordBatch` whose records are encoded with the v1
