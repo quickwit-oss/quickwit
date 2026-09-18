@@ -1315,8 +1315,6 @@ mod tests {
         let mut split_batch = split_batches.pop().unwrap();
         let split_builder = split_batch.splits.pop().unwrap();
         let split_path = split_builder.path().to_path_buf();
-        assert_eq!(std::fs::read_dir(&split_path)?.count(), 0);
-
         let indexed_split = split_builder.finalize()?;
         assert!(split_path.join("meta.json").try_exists()?);
         let reader = indexed_split.index.reader()?;

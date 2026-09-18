@@ -75,13 +75,13 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
             //
             // In theory the controlled directory should be sufficient.
             let _protect_guard = ctx.protect_zone();
-            if let Some(controlled_directory) = &split_builder.controlled_directory_opt {
-                let io_controls = IoControls::default()
-                    .set_progress(ctx.progress().clone())
-                    .set_kill_switch(ctx.kill_switch().clone())
-                    .set_component("index_serializer");
-                controlled_directory.set_io_controls(io_controls);
-            }
+            let io_controls = IoControls::default()
+                .set_progress(ctx.progress().clone())
+                .set_kill_switch(ctx.kill_switch().clone())
+                .set_component("index_serializer");
+            split_builder
+                .controlled_directory
+                .set_io_controls(io_controls);
             let split = split_builder.finalize()?;
             splits.push(split);
         }
