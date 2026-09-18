@@ -520,7 +520,7 @@ impl IndexingScheduler {
     }
 
     fn select_available_indexers_for_scheduling(&self) -> Vec<IndexerPoolEntry> {
-        if is_locality_aware_scheduling_enabled() {
+        if is_locality_aware_scheduling_enabled() && all_indexers_advertise_availability_zone(&self.indexer_pool) {
             return self.select_ready_and_draining_indexers();
         }
         self.select_ready_or_retiring_indexers()
@@ -1687,11 +1687,16 @@ mod tests {
 
         assert!(all_indexers_advertise_availability_zone(&indexer_pool));
 
-        let unzoned_indexer =
+        let mut unzoned_indexer =
             mock_indexer_node_info("indexer-unzoned", IngesterStatus::Initializing);
-        indexer_pool.insert(unzoned_indexer.node_id.clone(), unzoned_indexer);
+        indexer_pool.insert(unzoned_indexer.node_id.clone(), unzoned_indexer.clone());
 
         assert!(!all_indexers_advertise_availability_zone(&indexer_pool));
+
+        unzoned_indexer.availability_zone = Some(AvailabilityZone::from("az-b"));
+        indexer_pool.insert(unzoned_indexer.node_id.clone(), unzoned_indexer);
+
+        assert!(all_indexers_advertise_availability_zone(&indexer_pool));
     }
 
     #[test]
