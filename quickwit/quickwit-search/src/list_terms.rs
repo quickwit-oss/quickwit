@@ -16,7 +16,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Bound;
 use std::sync::Arc;
 
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use quickwit_common::pretty::PrettySample;
@@ -71,13 +71,14 @@ pub async fn root_list_terms(
                 SearchError::Internal(format!("failed to build doc mapper. cause: {err}"))
             })?;
         let schema = doc_mapper.schema();
-        let field = schema.get_field(&list_terms_request.field).map_err(|_| {
-            SearchError::InvalidQuery(format!(
-                "failed to list terms in `{}`, field doesn't exist",
-                list_terms_request.field
-            ))
-        })?;
-        let field_entry = schema.get_field_entry(field);
+        let resolved_field =
+            resolve_list_terms_field(&schema, &list_terms_request.field).map_err(|_| {
+                SearchError::InvalidQuery(format!(
+                    "failed to list terms in `{}`, field doesn't exist",
+                    list_terms_request.field
+                ))
+            })?;
+        let field_entry = schema.get_field_entry(resolved_field.field);
         if !field_entry.is_indexed() {
             return Err(SearchError::InvalidQuery(
                 "trying to list terms on field which isn't indexed".to_string(),
@@ -224,24 +225,20 @@ async fn leaf_list_terms_single_split(
         .try_into()?;
     let searcher = reader.searcher();
 
-    let field = split_schema
-        .get_field(&search_request.field)
+    let resolved_field = resolve_list_terms_field(&split_schema, &search_request.field)
         .with_context(|| {
             format!(
                 "couldn't get field named {:?} from schema to list terms",
                 search_request.field
             )
         })?;
-
+    let field = resolved_field.field;
     let field_type = split_schema.get_field_entry(field).field_type();
-    let start_term: Option<Term> = search_request
-        .start_key
-        .as_ref()
-        .map(|data| term_from_data(field, field_type, data));
-    let end_term: Option<Term> = search_request
-        .end_key
-        .as_ref()
-        .map(|data| term_from_data(field, field_type, data));
+    let (start_term, end_term) = list_terms_bounds(
+        &resolved_field,
+        search_request.start_key.as_deref(),
+        search_request.end_key.as_deref(),
+    )?;
 
     let mut segment_results = Vec::new();
     for segment_reader in searcher.segment_readers() {
@@ -300,6 +297,104 @@ async fn leaf_list_terms_single_split(
         num_attempted_splits: 1,
         failed_splits: Vec::new(),
     })
+}
+
+#[derive(Clone, Copy)]
+struct ResolvedListTermsField<'a> {
+    field: Field,
+    field_type: &'a FieldType,
+    json_path: Option<(&'a str, bool)>,
+}
+
+fn resolve_list_terms_field<'a>(
+    schema: &'a tantivy::schema::Schema,
+    field_name: &'a str,
+) -> anyhow::Result<ResolvedListTermsField<'a>> {
+    // Exact field names, including names containing dots, take precedence over JSON paths.
+    if let Ok(field) = schema.get_field(field_name) {
+        return Ok(ResolvedListTermsField {
+            field,
+            field_type: schema.get_field_entry(field).field_type(),
+            json_path: None,
+        });
+    }
+    let (field, json_path) = schema
+        .find_field(field_name)
+        .ok_or_else(|| anyhow!("field `{field_name}` does not exist"))?;
+    let field_type = schema.get_field_entry(field).field_type();
+    let FieldType::JsonObject(json_options) = field_type else {
+        return Err(anyhow!(
+            "field `{field_name}` has a dotted suffix but its root is not a JSON field"
+        ));
+    };
+    if json_path.is_empty() {
+        return Err(anyhow!("field `{field_name}` does not exist"));
+    }
+    Ok(ResolvedListTermsField {
+        field,
+        field_type,
+        json_path: Some((json_path, json_options.is_expand_dots_enabled())),
+    })
+}
+
+fn list_terms_bounds(
+    resolved_field: &ResolvedListTermsField<'_>,
+    start_key: Option<&[u8]>,
+    end_key: Option<&[u8]>,
+) -> anyhow::Result<(Option<Term>, Option<Term>)> {
+    let Some((json_path, expand_dots_enabled)) = resolved_field.json_path else {
+        // Preserve the existing encoding and unbounded behavior for exact fields.
+        let start_term = start_key
+            .map(|data| term_from_data(resolved_field.field, resolved_field.field_type, data));
+        let end_term = end_key
+            .map(|data| term_from_data(resolved_field.field, resolved_field.field_type, data));
+        return Ok((start_term, end_term));
+    };
+
+    let path_start =
+        Term::from_field_json_path(resolved_field.field, json_path, expand_dots_enabled);
+    let path_end = term_prefix_end(path_start.clone());
+
+    // ListTerms bounds are opaque bytes. For JSON paths they are deliberately interpreted as
+    // strings; numeric, boolean, and date bounds require typed encodings that this API cannot
+    // express. Unbounded requests enumerate every value type, while supplying either bound limits
+    // the result to string values so that unrelated JSON types cannot leak through a one-sided
+    // bound.
+    if start_key.is_none() && end_key.is_none() {
+        return Ok((Some(path_start), Some(path_end)));
+    }
+    let mut first_string = path_start.clone();
+    first_string.append_type_and_str("");
+    let after_last_string = term_prefix_end(first_string.clone());
+
+    let start_term = if let Some(data) = start_key {
+        let value =
+            std::str::from_utf8(data).context("JSON string start_key is not valid UTF-8")?;
+        let mut term = path_start.clone();
+        term.append_type_and_str(value);
+        term
+    } else {
+        first_string
+    };
+    let end_term = if let Some(data) = end_key {
+        let value = std::str::from_utf8(data).context("JSON string end_key is not valid UTF-8")?;
+        let mut term = path_start;
+        term.append_type_and_str(value);
+        term
+    } else {
+        after_last_string
+    };
+    Ok((Some(start_term), Some(end_term)))
+}
+
+fn term_prefix_end(mut term: Term) -> Term {
+    // Tantivy's JSON path terminator and value type tags are both below 0xff.
+    let term_len = term.len_bytes();
+    let last_byte = term.serialized_value_bytes()[term_len - 1];
+    debug_assert_ne!(last_byte, u8::MAX);
+    term.truncate_value_bytes(term_len - 1);
+    term.append_bytes(&[last_byte + 1]);
+    term
 }
 
 fn term_from_data(field: Field, field_type: &FieldType, data: &[u8]) -> Term {
@@ -419,4 +514,25 @@ pub async fn leaf_list_terms(
     };
 
     Ok(merged_search_response)
+}
+
+#[cfg(test)]
+mod tests {
+    use tantivy::schema::{JsonObjectOptions, Schema, TEXT};
+
+    use super::resolve_list_terms_field;
+
+    #[test]
+    fn test_resolve_list_terms_field_prefers_exact_dotted_field() {
+        let mut schema_builder = Schema::builder();
+        let json_field = schema_builder.add_json_field("custom", JsonObjectOptions::default());
+        let exact_field = schema_builder.add_text_field("custom.http_method", TEXT);
+        let schema = schema_builder.build();
+
+        let resolved_field = resolve_list_terms_field(&schema, "custom.http_method").unwrap();
+
+        assert_eq!(resolved_field.field, exact_field);
+        assert_ne!(resolved_field.field, json_field);
+        assert!(resolved_field.json_path.is_none());
+    }
 }
