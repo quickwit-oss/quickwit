@@ -109,6 +109,11 @@ impl CooperativeIndexingCycle {
         Duration::from_millis(initial_sleep_millis)
     }
 
+    // with cooperative indexing, the nudging is done only when the actor mailbox is empty
+    pub fn commit_timeout(&self) -> Duration {
+        self.schedule.commit_timeout()
+    }
+
     pub async fn cooperative_indexing_period(&self) -> CooperativeIndexingPeriod {
         let t_wake = Instant::now();
         let permit = Semaphore::acquire_owned(self.indexing_permits.clone())
