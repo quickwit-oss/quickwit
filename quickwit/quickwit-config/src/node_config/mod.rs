@@ -198,9 +198,6 @@ pub struct IndexerConfig {
     pub split_store_max_num_splits: usize,
     #[serde(default = "IndexerConfig::default_max_concurrent_split_uploads")]
     pub max_concurrent_split_uploads: usize,
-    /// Limits the aggregate IO throughput of indexing pipelines on this node.
-    #[serde(default)]
-    pub max_indexing_write_throughput: Option<ByteSize>,
     /// Limits the IO throughput of the `SplitDownloader` and the `MergeExecutor`.
     /// On hardware where IO is constrained, it makes sure that Merges (a batch operation)
     /// does not starve indexing itself (as it is a latency sensitive operation).
@@ -280,7 +277,6 @@ impl IndexerConfig {
             split_store_max_num_splits: 3,
             max_concurrent_split_uploads: 4,
             cpu_capacity: PIPELINE_FULL_CAPACITY * 4u32,
-            max_indexing_write_throughput: None,
             max_merge_write_throughput: None,
             merge_concurrency: NonZeroUsize::new(3).unwrap(),
             parquet_merge_use_streaming_engine: Self::default_parquet_merge_use_streaming_engine(),
@@ -299,7 +295,6 @@ impl Default for IndexerConfig {
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
             cpu_capacity: Self::default_cpu_capacity(),
             merge_concurrency: Self::default_merge_concurrency(),
-            max_indexing_write_throughput: None,
             max_merge_write_throughput: None,
             parquet_merge_use_streaming_engine: Self::default_parquet_merge_use_streaming_engine(),
         }

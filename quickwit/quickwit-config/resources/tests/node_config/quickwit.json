@@ -75,7 +75,6 @@
         "split_store_max_num_bytes": "1T",
         "split_store_max_num_splits": 10000,
         "max_concurrent_split_uploads": 8,
-        "max_indexing_write_throughput": "200mb",
         "max_merge_write_throughput": "100mb",
         "merge_concurrency": 2,
         "parquet_merge_use_streaming_engine": true
