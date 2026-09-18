@@ -178,6 +178,11 @@ fn enable_variable_shard_load() -> bool {
 /// in the same-AZ. It also allows decommissioning indexers to index their own shards to speed up
 /// the decommissioning process.
 fn is_locality_aware_scheduling_enabled() -> bool {
+    #[cfg(test)]
+    if let Some(enabled) = tests::LOCALITY_AWARE_SCHEDULING_OVERRIDE.get() {
+        return enabled;
+    }
+
     static IS_LOCALITY_AWARE_SCHEDULING_ENABLED: LazyLock<bool> = LazyLock::new(|| {
         quickwit_common::get_bool_from_env(
             "QW_ENABLE_LOCALITY_AWARE_SCHEDULING",
@@ -366,11 +371,12 @@ fn build_indexer_tasks(indexers: &[IndexerPoolEntry]) -> FnvHashMap<NodeId, Vec<
         .collect()
 }
 
-fn all_indexers_advertise_availability_zone(indexers: &IndexerPool) -> bool {
-    indexers
-        .values()
-        .iter()
-        .all(|indexer| indexer.availability_zone.is_some())
+fn is_locality_aware(indexers: &IndexerPool) -> bool {
+    is_locality_aware_scheduling_enabled()
+        && indexers
+            .values()
+            .iter()
+            .all(|indexer| indexer.availability_zone.is_some())
 }
 
 impl IndexingScheduler {
@@ -411,8 +417,7 @@ impl IndexingScheduler {
 
         let sources = get_sources_to_schedule(model, disable_ingest_v1());
 
-        let is_locality_aware = is_locality_aware_scheduling_enabled()
-            && all_indexers_advertise_availability_zone(&self.indexer_pool);
+        let is_locality_aware = is_locality_aware(&self.indexer_pool);
 
         let indexer_infos: FnvHashMap<NodeId, IndexerInfo> =
             build_indexer_infos(&indexers, is_locality_aware);
@@ -520,7 +525,7 @@ impl IndexingScheduler {
     }
 
     fn select_available_indexers_for_scheduling(&self) -> Vec<IndexerPoolEntry> {
-        if is_locality_aware_scheduling_enabled() {
+        if is_locality_aware(&self.indexer_pool) {
             return self.select_ready_and_draining_indexers();
         }
         self.select_ready_or_retiring_indexers()
@@ -987,6 +992,12 @@ mod tests {
         build_physical_indexing_plan_without_locality, shard_ids_for_indexer,
     };
     use crate::model::ShardLocations;
+
+    thread_local! {
+        pub(super) static LOCALITY_AWARE_SCHEDULING_OVERRIDE: std::cell::Cell<Option<bool>> =
+            const { std::cell::Cell::new(None) };
+    }
+
     #[test]
     fn test_indexing_plans_diff() {
         let index_uid = IndexUid::from_str("index-1:11111111111111111111111111").unwrap();
@@ -1679,19 +1690,48 @@ mod tests {
     }
 
     #[test]
-    fn test_all_indexers_advertise_availability_zone() {
+    fn test_is_locality_aware_when_disabled() {
+        LOCALITY_AWARE_SCHEDULING_OVERRIDE.set(Some(false));
+
         let indexer_pool = IndexerPool::default();
+        assert!(!is_locality_aware(&indexer_pool));
+
+        let mut indexer = mock_indexer_node_info("indexer-ready", IngesterStatus::Ready);
+        indexer_pool.insert(indexer.node_id.clone(), indexer.clone());
+        assert!(!is_locality_aware(&indexer_pool));
+
+        indexer.availability_zone = Some(AvailabilityZone::from("az-a"));
+        indexer_pool.insert(indexer.node_id.clone(), indexer);
+        assert!(!is_locality_aware(&indexer_pool));
+
+        LOCALITY_AWARE_SCHEDULING_OVERRIDE.set(None);
+    }
+
+    #[test]
+    fn test_is_locality_aware_when_enabled() {
+        LOCALITY_AWARE_SCHEDULING_OVERRIDE.set(Some(true));
+
+        let indexer_pool = IndexerPool::default();
+        assert!(is_locality_aware(&indexer_pool));
+
+        let mut unzoned_indexer =
+            mock_indexer_node_info("indexer-unzoned", IngesterStatus::Initializing);
+        indexer_pool.insert(unzoned_indexer.node_id.clone(), unzoned_indexer.clone());
+
+        assert!(!is_locality_aware(&indexer_pool));
+
         let mut zoned_indexer = mock_indexer_node_info("indexer-zoned", IngesterStatus::Ready);
         zoned_indexer.availability_zone = Some(AvailabilityZone::from("az-a"));
         indexer_pool.insert(zoned_indexer.node_id.clone(), zoned_indexer);
 
-        assert!(all_indexers_advertise_availability_zone(&indexer_pool));
+        assert!(!is_locality_aware(&indexer_pool));
 
-        let unzoned_indexer =
-            mock_indexer_node_info("indexer-unzoned", IngesterStatus::Initializing);
+        unzoned_indexer.availability_zone = Some(AvailabilityZone::from("az-b"));
         indexer_pool.insert(unzoned_indexer.node_id.clone(), unzoned_indexer);
 
-        assert!(!all_indexers_advertise_availability_zone(&indexer_pool));
+        assert!(is_locality_aware(&indexer_pool));
+
+        LOCALITY_AWARE_SCHEDULING_OVERRIDE.set(None);
     }
 
     #[test]
