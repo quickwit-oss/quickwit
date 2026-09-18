@@ -14,7 +14,7 @@
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
-use quickwit_common::io::IoControls;
+use quickwit_common::io::{IoControls, Limiter};
 use quickwit_common::runtimes::RuntimeType;
 use tokio::runtime::Handle;
 use tracing::instrument;
@@ -32,11 +32,18 @@ use crate::models::{EmptySplit, IndexedSplit, IndexedSplitBatch, IndexedSplitBat
 /// it can range from medium IO to IO heavy.
 pub struct IndexSerializer {
     packager_mailbox: Mailbox<Packager>,
+    indexing_io_throughput_limiter_opt: Option<Limiter>,
 }
 
 impl IndexSerializer {
-    pub fn new(packager_mailbox: Mailbox<Packager>) -> Self {
-        Self { packager_mailbox }
+    pub fn new(
+        packager_mailbox: Mailbox<Packager>,
+        indexing_io_throughput_limiter_opt: Option<Limiter>,
+    ) -> Self {
+        Self {
+            packager_mailbox,
+            indexing_io_throughput_limiter_opt,
+        }
     }
 }
 
@@ -76,6 +83,7 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
             // In theory the controlled directory should be sufficient.
             let _protect_guard = ctx.protect_zone();
             let io_controls = IoControls::default()
+                .set_throughput_limiter_opt(self.indexing_io_throughput_limiter_opt.clone())
                 .set_progress(ctx.progress().clone())
                 .set_kill_switch(ctx.kill_switch().clone())
                 .set_component("index_serializer");

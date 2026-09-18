@@ -124,6 +124,7 @@ pub struct IndexingService {
     parquet_merge_pipeline_handles: HashMap<IndexUid, ParquetMergePipelineHandle>,
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
     fingerprinter_opt: Option<Fingerprinter>,
+    indexing_io_throughput_limiter_opt: Option<io::Limiter>,
     merge_io_throughput_limiter_opt: Option<io::Limiter>,
     pub(crate) event_broker: EventBroker,
 }
@@ -156,6 +157,9 @@ impl IndexingService {
         split_cache: Arc<IndexingSplitCache>,
         fingerprinter_opt: Option<Fingerprinter>,
     ) -> anyhow::Result<IndexingService> {
+        let indexing_io_throughput_limiter_opt = indexer_config
+            .max_indexing_write_throughput
+            .map(io::limiter);
         let merge_io_throughput_limiter_opt =
             indexer_config.max_merge_write_throughput.map(io::limiter);
         let indexing_root_directory =
@@ -187,6 +191,7 @@ impl IndexingService {
             #[cfg(feature = "metrics")]
             parquet_merge_pipeline_handles: HashMap::new(),
             fingerprinter_opt,
+            indexing_io_throughput_limiter_opt,
             merge_io_throughput_limiter_opt,
             cooperative_indexing_permits,
             event_broker,
@@ -420,6 +425,7 @@ impl IndexingService {
             split_store,
             max_concurrent_split_uploads_index,
             cooperative_indexing_permits: self.cooperative_indexing_permits.clone(),
+            indexing_io_throughput_limiter_opt: self.indexing_io_throughput_limiter_opt.clone(),
             merge_policy,
             retention_policy,
             max_concurrent_split_uploads_merge,
