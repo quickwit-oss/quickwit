@@ -190,7 +190,8 @@ impl IndexedSplitBuilder {
             + self
                 .ram_directory_opt
                 .as_ref()
-                .map_or(0, RamDirectory::total_mem_usage)
+                .map(RamDirectory::total_mem_usage)
+                .unwrap_or(0)
     }
 
     pub fn split_id(&self) -> &SplitId {
