@@ -141,6 +141,14 @@ impl IndexConfigForSerialization {
             &index_config.search_settings,
             &index_config.retention_policy_opt,
         )?;
+        if let Some(max_shards) = index_config.ingest_settings.max_shards {
+            ensure!(
+                max_shards >= index_config.ingest_settings.min_shards,
+                "ingest_settings.max_shards ({}) must be >= ingest_settings.min_shards ({})",
+                max_shards.get(),
+                index_config.ingest_settings.min_shards.get()
+            );
+        }
         Ok(index_config)
     }
 }
