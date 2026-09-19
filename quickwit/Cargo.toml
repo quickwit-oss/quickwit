@@ -16,7 +16,6 @@ members = [
   "quickwit-df-core",
   "quickwit-directories",
   "quickwit-doc-mapper",
-  "quickwit-dst",
   "quickwit-index-management",
   "quickwit-indexing",
   "quickwit-ingest",
@@ -34,7 +33,6 @@ members = [
   # We can reenable it when we need it.
   # "quickwit-metastore-utils",
   "quickwit-opentelemetry",
-  "quickwit-parquet-engine",
   "quickwit-proto",
   "quickwit-query",
   "quickwit-rest-client",
@@ -77,7 +75,6 @@ default-members = [
   "quickwit-metrics-inventory",
   "quickwit-metrics",
   "quickwit-opentelemetry",
-  "quickwit-parquet-engine",
   "quickwit-proto",
   "quickwit-query",
   "quickwit-rest-client",
@@ -204,7 +201,6 @@ opentelemetry-otlp = { version = "0.32", default-features = false, features = [
     "trace",
 ] }
 ouroboros = "0.18"
-parquet = { version = "58", default-features = false, features = ["arrow", "experimental", "snap", "variant_experimental", "zstd"] }
 percent-encoding = "2.3"
 pin-project = "1.1"
 pnet = { version = "0.35", features = ["std"] }
@@ -271,8 +267,6 @@ serial_test = { version = "4.0", features = ["file_locks"] }
 sha2 = "0.11"
 siphasher = "1.0"
 stable_deref_trait = "1.2"
-stateright = "0.31"
-storekey = { version = "0.11", default-features = false }
 smallvec = "1"
 sqlx = { version = "0.8", features = [
   "migrate",
@@ -408,7 +402,6 @@ quickwit-datetime = { path = "quickwit-datetime" }
 quickwit-df-core = { path = "quickwit-df-core" }
 quickwit-directories = { path = "quickwit-directories" }
 quickwit-doc-mapper = { path = "quickwit-doc-mapper" }
-quickwit-dst = { path = "quickwit-dst" }
 quickwit-index-management = { path = "quickwit-index-management" }
 quickwit-indexing = { path = "quickwit-indexing" }
 quickwit-ingest = { path = "quickwit-ingest" }
@@ -422,7 +415,6 @@ quickwit-metastore = { path = "quickwit-metastore" }
 quickwit-metrics = { path = "quickwit-metrics" }
 quickwit-metrics-inventory = { path = "quickwit-metrics-inventory" }
 quickwit-opentelemetry = { path = "quickwit-opentelemetry" }
-quickwit-parquet-engine = { path = "quickwit-parquet-engine" }
 quickwit-proto = { path = "quickwit-proto" }
 quickwit-query = { path = "quickwit-query" }
 quickwit-rest-client = { path = "quickwit-rest-client" }

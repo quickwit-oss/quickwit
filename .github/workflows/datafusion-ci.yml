@@ -45,11 +45,11 @@ jobs:
               - quickwit/**/*.toml
               - quickwit/**/*.proto
               - .github/workflows/datafusion-ci.yml
-      - name: Install Ubuntu packages
+      - name: Install protoc
         if: steps.modified.outputs.rust_src == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get -y install protobuf-compiler
+        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
+        with:
+          tool: protoc
       - name: Setup stable Rust Toolchain
         if: steps.modified.outputs.rust_src == 'true'
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
@@ -61,11 +61,11 @@ jobs:
         with:
           workspaces: "./quickwit -> target"
           shared-key: "quickwit-cargo"
-      - name: cargo test quickwit-datafusion
+      - name: cargo test DataFusion crates
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: cargo test -p quickwit-datafusion --tests
+        run: cargo test -p quickwit-df-core -p quickwit-datafusion --all-features
         working-directory: ./quickwit
-      - name: cargo test quickwit-integration-tests with datafusion
+      - name: cargo check server with DataFusion
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: cargo test -p quickwit-integration-tests --features datafusion metrics_distributed_tests -- --test-threads=1
+        run: cargo check -p quickwit-cli --features quickwit-metastore/postgres,datafusion --bin quickwit
         working-directory: ./quickwit

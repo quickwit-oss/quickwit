@@ -315,7 +315,11 @@ This section contains the configuration options for a Searcher.
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `split_cache` | Searcher split cache configuration options defined in the section below. Cache disabled if unspecified. | |
 | `request_timeout_secs` | The time before a search request is cancelled. This should match the timeout of the stack calling into quickwit if there is one set.  | `30` |
-| `use_metastore_read_replica` | If true, routes read-only metastore requests from searchers, including DataFusion when enabled, to nodes running the `metastore_read_replica` service. Searchers require at least one `metastore_read_replica` node at startup and do not fall back to the primary metastore. | `false` |
+| `use_metastore_read_replica` | If true, routes read-only metastore requests from searchers to nodes running the `metastore_read_replica` service. Searchers require at least one `metastore_read_replica` node at startup and do not fall back to the primary metastore. | `false` |
+
+### DataFusion query service
+
+Build with the `datafusion` feature and set `QW_ENABLE_DATAFUSION_ENDPOINT=true` to enable the DataFusion query and distributed worker gRPC services on searcher nodes. The runtime supports SQL, Substrait, object-store access, worker discovery, and TLS. It does not install a metrics or sketch data source or register Quickwit indexes as DataFusion tables; applications must provide their own table registration or runtime extensions.
 
 ### Searcher split cache configuration
 

@@ -811,7 +811,6 @@ pub async fn serve_quickwit(
     let datafusion_session_builder = datafusion_api::setup::build_datafusion_session_builder(
         &node_config,
         cluster.change_stream(),
-        search_metastore_client,
         storage_resolver.clone(),
     )?;
     // The search job placer owns a clone of this pool; the local binding is not

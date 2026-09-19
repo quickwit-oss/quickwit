@@ -16,7 +16,7 @@ use std::fmt;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use quickwit_actors::ActorExitStatus;
+use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::FileSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
@@ -25,7 +25,8 @@ use quickwit_proto::types::SourceId;
 use super::doc_file_reader::ObjectUriBatchReader;
 #[cfg(feature = "queue-sources")]
 use super::queue_sources::coordinator::QueueCoordinator;
-use crate::source::{Source, SourceContext, SourceRuntime, SourceSink, TypedSourceFactory};
+use crate::actors::DocProcessor;
+use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
 enum FileSourceState {
     #[cfg(feature = "queue-sources")]
@@ -54,13 +55,13 @@ impl Source for FileSource {
     #[allow(unused_variables)]
     async fn initialize(
         &mut self,
-        source_sink: &SourceSink,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         match &mut self.state {
             #[cfg(feature = "queue-sources")]
             FileSourceState::Notification(coordinator) => {
-                coordinator.initialize(source_sink, ctx).await
+                coordinator.initialize(doc_processor_mailbox, ctx).await
             }
             FileSourceState::Filepath { .. } => Ok(()),
         }
@@ -69,13 +70,13 @@ impl Source for FileSource {
     #[allow(unused_variables)]
     async fn emit_batches(
         &mut self,
-        source_sink: &SourceSink,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         match &mut self.state {
             #[cfg(feature = "queue-sources")]
             FileSourceState::Notification(coordinator) => {
-                coordinator.emit_batches(source_sink, ctx).await?;
+                coordinator.emit_batches(doc_processor_mailbox, ctx).await?;
             }
             FileSourceState::Filepath {
                 batch_reader,
@@ -87,11 +88,10 @@ impl Source for FileSource {
                     .await?;
                 *num_bytes_processed += batch_builder.num_bytes;
                 *num_lines_processed += batch_builder.docs.len() as u64;
-                source_sink
-                    .send_raw_doc_batch(batch_builder.build(), ctx)
+                ctx.send_message(doc_processor_mailbox, batch_builder.build())
                     .await?;
                 if batch_reader.is_eof() {
-                    source_sink.send_exit_with_success(ctx).await?;
+                    ctx.send_exit_with_success(doc_processor_mailbox).await?;
                     return Err(ActorExitStatus::Success);
                 }
             }

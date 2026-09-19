@@ -408,48 +408,6 @@ async fn delete_splits_marked_for_deletion_several_indexes(
     split_removal_info
 }
 
-/// A split normalized for storage deletion: just the id, path, and size.
-/// Used as the common currency between tantivy and parquet GC paths.
-pub(crate) struct SplitToDelete {
-    pub split_id: String,
-    pub path: PathBuf,
-    pub size_bytes: u64,
-}
-
-/// Deletes split files from storage and partitions into (succeeded, failed).
-///
-/// Returns the `BulkDeleteError` if there was a partial failure, so the caller
-/// can log it with index-specific context. Does NOT touch the metastore.
-pub(crate) async fn delete_split_files(
-    storage: &dyn Storage,
-    splits: Vec<SplitToDelete>,
-    progress_opt: Option<&Progress>,
-) -> (
-    Vec<SplitToDelete>,
-    Vec<SplitToDelete>,
-    Option<BulkDeleteError>,
-) {
-    if splits.is_empty() {
-        return (Vec::new(), Vec::new(), None);
-    }
-    let paths: Vec<&Path> = splits.iter().map(|s| s.path.as_path()).collect();
-    let result = protect_future(progress_opt, storage.bulk_delete(&paths)).await;
-
-    if let Some(progress) = progress_opt {
-        progress.record_progress();
-    }
-    match result {
-        Ok(()) => (splits, Vec::new(), None),
-        Err(bulk_err) => {
-            let success_paths: HashSet<&PathBuf> = bulk_err.successes.iter().collect();
-            let (succeeded, failed) = splits
-                .into_iter()
-                .partition(|s| success_paths.contains(&s.path));
-            (succeeded, failed, Some(bulk_err))
-        }
-    }
-}
-
 /// Delete a list of splits from the storage and the metastore.
 /// It should leave the index and the metastore in good state.
 ///
@@ -465,48 +423,53 @@ pub async fn delete_splits_from_storage_and_metastore(
     splits: Vec<SplitMetadata>,
     progress_opt: Option<&Progress>,
 ) -> Result<Vec<SplitInfo>, DeleteSplitsError> {
+    if splits.is_empty() {
+        return Ok(Vec::new());
+    }
     let mut split_infos: HashMap<PathBuf, SplitInfo> = HashMap::with_capacity(splits.len());
     for split in splits {
         let split_info = split.as_split_info();
         split_infos.insert(split_info.file_name.clone(), split_info);
     }
 
-    let splits_to_delete: Vec<SplitToDelete> = split_infos
-        .values()
-        .map(|info| SplitToDelete {
-            split_id: info.split_id.to_string(),
-            path: info.file_name.clone(),
-            size_bytes: info.file_size_bytes.as_u64(),
-        })
-        .collect();
+    let split_paths = split_infos
+        .keys()
+        .map(|split_path_buf| split_path_buf.as_path())
+        .collect::<Vec<&Path>>();
+    let delete_result = protect_future(progress_opt, storage.bulk_delete(&split_paths)).await;
 
-    let (succeeded_stds, failed_stds, storage_err) =
-        delete_split_files(&*storage, splits_to_delete, progress_opt).await;
-
-    let successes: Vec<SplitInfo> = succeeded_stds
-        .iter()
-        .map(|s| split_infos[&s.path].clone())
-        .collect();
-    let storage_failures: Vec<SplitInfo> = failed_stds
-        .iter()
-        .map(|s| split_infos[&s.path].clone())
-        .collect();
-
-    let mut storage_error: Option<BulkDeleteError> = None;
-    if let Some(bulk_delete_error) = storage_err {
-        let failed_split_paths = storage_failures
-            .iter()
-            .map(|split_info| split_info.file_name.as_path())
-            .collect::<Vec<_>>();
-        error!(
-            error=?bulk_delete_error.error,
-            index_id=index_uid.index_id,
-            "failed to delete split file(s) {:?} from storage",
-            PrettySample::new(&failed_split_paths, 5),
-        );
-        storage_error = Some(bulk_delete_error);
+    if let Some(progress) = progress_opt {
+        progress.record_progress();
     }
+    let mut successes = Vec::with_capacity(split_infos.len());
+    let mut storage_error: Option<BulkDeleteError> = None;
+    let mut storage_failures = Vec::new();
 
+    match delete_result {
+        Ok(_) => successes.extend(split_infos.into_values()),
+        Err(bulk_delete_error) => {
+            let success_split_paths: HashSet<&PathBuf> =
+                bulk_delete_error.successes.iter().collect();
+            for (split_path, split_info) in split_infos {
+                if success_split_paths.contains(&split_path) {
+                    successes.push(split_info);
+                } else {
+                    storage_failures.push(split_info);
+                }
+            }
+            let failed_split_paths = storage_failures
+                .iter()
+                .map(|split_info| split_info.file_name.as_path())
+                .collect::<Vec<_>>();
+            error!(
+                error=?bulk_delete_error.error,
+                index_id=index_uid.index_id,
+                "failed to delete split file(s) {:?} from storage",
+                PrettySample::new(&failed_split_paths, 5),
+            );
+            storage_error = Some(bulk_delete_error);
+        }
+    };
     if !successes.is_empty() {
         let split_ids: Vec<String> = successes
             .iter()
