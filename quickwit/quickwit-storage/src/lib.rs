@@ -74,7 +74,8 @@ pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 #[cfg(feature = "azure")]
 pub use self::object_storage::{AzureBlobStorage, AzureBlobStorageFactory};
 pub use self::object_storage::{
-    MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
+    MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory, create_s3_client,
+    create_s3_full_body_client,
 };
 #[cfg(feature = "gcs")]
 pub use self::opendal_storage::GoogleCloudStorageFactory;
