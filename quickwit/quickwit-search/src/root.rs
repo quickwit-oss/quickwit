@@ -1781,9 +1781,8 @@ async fn assign_client_fetch_docs_jobs(
         fetch_docs_req_jobs.push(fetch_docs_job);
     }
 
-    // don't do a second call to GetLoad to place fetch_docs jobs
     let assigned_jobs = client_pool
-        .assign_jobs_ignoring_load(fetch_docs_req_jobs, &HashSet::new())
+        .assign_jobs(fetch_docs_req_jobs, &HashSet::new())
         .await?;
 
     Ok(assigned_jobs)

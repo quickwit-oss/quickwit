@@ -296,14 +296,18 @@ After:   Node A (alive)          Node B (departed)
 
 This is critical: while `node_id` controls which merge planner owns a split, **queries ignore `node_id` entirely**.
 
-Search uses **rendezvous hashing on `split_id`** to assign splits to searcher nodes, with load-aware balancing:
+Search uses **rendezvous hashing on `split_id` and stable searcher node IDs** to assign splits, with per-request cost balancing:
 
 ```rust
-// quickwit/quickwit-search/src/search_job_placer.rs:212
+// quickwit/quickwit-search/src/search_job_placer.rs
 sort_by_rendez_vous_hash(&mut candidate_nodes, job.split_id());
 ```
 
-The `node_id` field is not referenced anywhere in the `quickwit-search` module. Any searcher node can read any split from object storage regardless of which node created it. Orphaned splits from departed nodes are fully queryable -- the only impact is on split count.
+The split metadata's `node_id` does not constrain placement; the searcher node IDs used for affinity are independent of split ownership. Any searcher node can read any split from object storage regardless of which node created it. Orphaned splits from departed nodes are fully queryable -- the only impact is on split count.
+
+Each placement call starts all candidates at zero assigned cost and does not issue `GetLoad` RPCs. Jobs are sorted by descending cost, then ascending split ID. The target is `ceil(total_request_cost * 105 / (num_candidates * 100))`; each job goes to the first affinity-ranked node whose assigned cost is below this target **before** adding that job. Large requests can therefore spill onto secondary nodes, but unrelated requests' queued/active work cannot change placement and disrupt cache locality.
+
+Outstanding-load-aware placement has been removed. `QW_DISABLE_LOAD_ESTIMATION` is no longer used.
 
 ### Implications for Long-Running Clusters
 
@@ -332,11 +336,11 @@ Total orphaned small splits grows with each departure.
 Queries are completely decoupled from `node_id`. The query path:
 
 1. **Coordinator** (root search) queries PostgreSQL for relevant splits, filtered by time range, tags, index, etc. The `node_id` field is not part of any query filter.
-2. **Job placement**: each split becomes a search job. Jobs are assigned to searcher nodes via **rendezvous hashing on `split_id`** combined with load-aware balancing. The hasher sorts candidate nodes by affinity, then the placer assigns jobs to the first node under a ~5% load disparity target.
+2. **Job placement**: each split becomes a search job. Jobs are assigned via **rendezvous hashing on `split_id` and stable searcher node IDs** combined with per-request cost balancing. The hasher sorts candidate nodes by affinity, then the placer assigns jobs to the first node whose cost assigned within this request is below the target described above.
 3. **Execution**: each searcher reads its assigned splits directly from object storage. No node needs to "own" the split to read it.
 4. **Cache warming**: indexers can optionally notify searchers of newly published splits via `report_splits()` so the split cache can pre-warm. This uses `split_id` and `storage_uri`, not `node_id`.
 
-**Key point:** `node_id` is purely a compaction concept. It has no role in query routing or execution.
+**Key point:** the split metadata's `node_id` is purely a compaction concept. It has no role in query routing or execution.
 
 ---
 
