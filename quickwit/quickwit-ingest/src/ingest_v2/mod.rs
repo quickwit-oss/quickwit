@@ -50,7 +50,7 @@ use quickwit_proto::ingest::ingester::{IngesterServiceClient, IngesterStatus};
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
 use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2, DocFormat};
 use quickwit_proto::types::{
-    DocUid, DocUidGenerator, IndexId, IndexUid, NodeId, SourceId, SubrequestId,
+    AvailabilityZone, DocUid, DocUidGenerator, IndexId, IndexUid, NodeId, SourceId, SubrequestId,
 };
 use serde::Serialize;
 use tracing::{error, info};
@@ -70,7 +70,7 @@ pub use self::router::IngestRouter;
 pub struct IngesterPoolEntry {
     pub client: IngesterServiceClient,
     pub status: IngesterStatus,
-    pub availability_zone: Option<String>,
+    pub availability_zone: Option<AvailabilityZone>,
     pub generation_id: GenerationId,
 }
 

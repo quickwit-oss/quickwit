@@ -1280,7 +1280,7 @@ fn build_ingester_insert_change(
     let pool_entry = IngesterPoolEntry {
         client: ingester_service,
         status: node.ingester_status,
-        availability_zone: node.availability_zone().map(|az| az.to_string()),
+        availability_zone: node.availability_zone(),
         generation_id: node.generation_id,
     };
     Change::Insert(node_id, pool_entry)
@@ -1514,7 +1514,7 @@ fn build_indexer_insert_change(
             indexing_tasks: node.indexing_tasks.to_vec(),
             indexing_capacity: node.indexing_cpu_capacity,
             ingester_status: node.ingester_status,
-            availability_zone: node.availability_zone().map(|az| az.to_string()),
+            availability_zone: node.availability_zone(),
         },
     )
 }

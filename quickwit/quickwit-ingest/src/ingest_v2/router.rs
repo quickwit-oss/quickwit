@@ -36,7 +36,7 @@ use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
 };
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, RateLimitingCause};
-use quickwit_proto::types::{NodeId, SubrequestId};
+use quickwit_proto::types::{AvailabilityZone, NodeId, SubrequestId};
 use serde_json::{Value as JsonValue, json};
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::error::Elapsed;
@@ -126,7 +126,7 @@ impl IngestRouter {
         control_plane: ControlPlaneServiceClient,
         ingester_pool: IngesterPool,
         event_broker: EventBroker,
-        self_availability_zone: Option<String>,
+        self_availability_zone: Option<AvailabilityZone>,
     ) -> Self {
         let state = Arc::new(Mutex::new(RouterState {
             debouncer: GetOrCreateOpenShardsRequestDebouncer::default(),
@@ -654,7 +654,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(AvailabilityZone::from("test-az")),
         );
         let mut workbench = IngestWorkbench::default();
         let (get_or_create_open_shard_request_opt, rendezvous) = router
@@ -894,7 +894,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(AvailabilityZone::from("test-az")),
         );
         let ingest_subrequests = vec![
             IngestSubrequest {
@@ -991,7 +991,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(AvailabilityZone::from("test-az")),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1049,7 +1049,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(AvailabilityZone::from("test-az")),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1078,7 +1078,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(AvailabilityZone::from("test-az")),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1135,7 +1135,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(AvailabilityZone::from("test-az")),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1201,7 +1201,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(AvailabilityZone::from("test-az")),
         );
         let ingest_subrequests = vec![
             IngestSubrequest {
@@ -1286,7 +1286,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(AvailabilityZone::from("test-az")),
         );
 
         let index_uid_0: IndexUid = IndexUid::for_test("test-index-0", 0);
@@ -1448,7 +1448,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(AvailabilityZone::from("test-az")),
         );
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
         ingester_pool.insert(
@@ -1560,7 +1560,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(AvailabilityZone::from("test-az")),
         );
         let index_uid_0: IndexUid = IndexUid::for_test("test-index-0", 0);
         let index_uid_1: IndexUid = IndexUid::for_test("test-index-1", 0);
@@ -1625,7 +1625,7 @@ mod tests {
             control_plane,
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(AvailabilityZone::from("test-az")),
         );
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
         ingester_pool.insert(
@@ -1722,7 +1722,7 @@ mod tests {
             ControlPlaneServiceClient::from_mock(MockControlPlaneService::new()),
             ingester_pool.clone(),
             event_broker.clone(),
-            Some("test-az".to_string()),
+            Some(AvailabilityZone::from("test-az")),
         );
         router.subscribe();
 
@@ -1776,7 +1776,7 @@ mod tests {
             ControlPlaneServiceClient::from_mock(MockControlPlaneService::new()),
             IngesterPool::default(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(AvailabilityZone::from("test-az")),
         );
         let ingest_subrequests = vec![
             IngestSubrequest {
@@ -1871,7 +1871,7 @@ mod tests {
             ControlPlaneServiceClient::from_mock(MockControlPlaneService::new()),
             ingester_pool.clone(),
             EventBroker::default(),
-            Some("test-az".to_string()),
+            Some(AvailabilityZone::from("test-az")),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
