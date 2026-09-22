@@ -298,7 +298,7 @@ impl DeleteTaskPlanner {
         index_uri: &str,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<bool> {
-        let search_job = SearchJob::from(&stale_split.split_metadata);
+        let search_job = SearchJob::new(&stale_split.split_metadata, 1.0);
         let mut search_client = self
             .search_job_placer
             .assign_job(search_job.clone(), &HashSet::new())

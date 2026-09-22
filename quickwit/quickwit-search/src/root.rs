@@ -52,6 +52,7 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{QuickwitAggregations, make_merge_collector};
+use crate::cost::{compute_query_complexity_factor, compute_split_query_cost};
 use crate::metrics_trackers::{RootSearchMetricsFuture, RootSearchMetricsStep};
 use crate::scroll_context::{ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_job_placer::{Job, group_by, group_jobs_by_index_id};
@@ -90,6 +91,15 @@ pub struct SearchJob {
 }
 
 impl SearchJob {
+    /// Creates a split search job with a cost based on its document count and query complexity.
+    pub fn new(split_metadata: &SplitMetadata, query_complexity_factor: f32) -> Self {
+        Self {
+            index_uid: split_metadata.index_uid.clone(),
+            cost: compute_split_query_cost(split_metadata.num_docs as u64, query_complexity_factor),
+            offsets: extract_split_and_footer_offsets(split_metadata),
+        }
+    }
+
     /// Create a fake job from a split_id (used for hashing), and a cost.
     #[cfg(test)]
     pub fn for_test(split_id: &str, cost: usize) -> SearchJob {
@@ -108,16 +118,6 @@ impl SearchJob {
 impl From<SearchJob> for SplitIdAndFooterOffsets {
     fn from(search_job: SearchJob) -> Self {
         search_job.offsets
-    }
-}
-
-impl<'a> From<&'a SplitMetadata> for SearchJob {
-    fn from(split_metadata: &'a SplitMetadata) -> Self {
-        SearchJob {
-            index_uid: split_metadata.index_uid.clone(),
-            cost: compute_split_cost(split_metadata.num_docs as u64),
-            offsets: extract_split_and_footer_offsets(split_metadata),
-        }
     }
 }
 
@@ -807,7 +807,11 @@ pub(crate) async fn search_partial_hits_phase(
         if is_metadata_count_request(search_request) {
             get_count_from_metadata(split_metadatas)
         } else {
-            let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
+            let query_complexity_factor = compute_query_complexity_factor(search_request)?;
+            let jobs: Vec<SearchJob> = split_metadatas
+                .iter()
+                .map(|split_metadata| SearchJob::new(split_metadata, query_complexity_factor))
+                .collect();
             let assigned_leaf_search_jobs = cluster_client
                 .search_job_placer
                 .assign_jobs(jobs, &HashSet::default())
@@ -1787,15 +1791,6 @@ async fn assign_client_fetch_docs_jobs(
         .await?;
 
     Ok(assigned_jobs)
-}
-
-// Measure the cost associated to searching in a given split metadata.
-pub(crate) fn compute_split_cost(num_docs: u64) -> usize {
-    // TODO this formula could be tuned a lot more. The general idea is that there is a fixed
-    // cost to searching a split, plus a somewhat-linear cost depending on the size of the split
-    // This should also factor the query shape (is it an expensive filter, is it an expensive
-    // aggregation...)
-    5 + (num_docs / 100_000) as usize
 }
 
 /// Builds a LeafSearchRequest to one node, from a list of [`SearchJob`].
