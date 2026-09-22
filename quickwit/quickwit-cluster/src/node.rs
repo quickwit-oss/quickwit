@@ -103,6 +103,10 @@ impl ClusterNode {
         self.is_service_enabled(QuickwitService::Searcher)
     }
 
+    pub fn is_compactor(&self) -> bool {
+        self.is_service_enabled(QuickwitService::Compactor)
+    }
+
     pub fn is_self_node(&self) -> bool {
         self.inner.is_self_node
     }

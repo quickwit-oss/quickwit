@@ -14,7 +14,6 @@ license.workspace = true
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 quickwit-actors = { workspace = true }
-quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-doc-mapper = { workspace = true }

@@ -76,7 +76,7 @@ use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
 use quickwit_compaction::planner::CompactionPlanner;
 use quickwit_compaction::{
-    CompactorService, notify_compactor_decommission, start_compactor_service,
+    CompactorPool, CompactorService, notify_compactor_decommission, start_compactor_service,
     wait_for_compactor_decommission,
 };
 use quickwit_config::service::QuickwitService;
@@ -292,7 +292,7 @@ async fn get_compaction_planner_client_if_needed(
         return Ok((None, None));
     }
     if is_janitor {
-        let planner = CompactionPlanner::new(metastore_client.clone(), cluster.clone());
+        let planner = build_compaction_planner(cluster, metastore_client);
         let (mailbox, handle) = universe.spawn_builder().spawn(planner);
         info!("compaction planner actor started on janitor node");
         let planner_client = CompactionPlannerServiceClient::tower()
@@ -321,6 +321,31 @@ async fn get_compaction_planner_client_if_needed(
             None,
         );
     Ok((Some(planner_client), None))
+}
+
+fn build_compaction_planner(
+    cluster: &Cluster,
+    metastore_client: &MetastoreServiceClient,
+) -> CompactionPlanner {
+    let compactor_pool = CompactorPool::default();
+    setup_compactor_pool(cluster.change_stream(), compactor_pool.clone());
+    let cluster = cluster.clone();
+    let can_start_compaction = move || -> BoxFutureInfaillible<bool> {
+        let cluster = cluster.clone();
+        Box::pin(async move {
+            cluster
+                .live_nodes()
+                .await
+                .iter()
+                .filter(|node| node.is_indexer())
+                .all(|node| node.enable_standalone_compactors())
+        })
+    };
+    CompactionPlanner::new(
+        metastore_client.clone(),
+        Box::new(can_start_compaction),
+        compactor_pool,
+    )
 }
 
 fn spawn_merge_scheduler_service(
@@ -1559,6 +1584,23 @@ fn build_indexing_service(
             max_message_size,
             None,
         )
+}
+
+fn setup_compactor_pool(cluster_change_stream: ClusterChangeStream, compactor_pool: CompactorPool) {
+    let compactor_change_stream = cluster_change_stream.filter_map(|cluster_change| {
+        Box::pin(async move {
+            match cluster_change {
+                ClusterChange::Add(node) if node.is_compactor() => {
+                    Some(Change::Insert(node.node_id.clone(), ()))
+                }
+                ClusterChange::Remove(node) if node.is_compactor() => {
+                    Some(Change::Remove(node.node_id.clone()))
+                }
+                _ => None,
+            }
+        })
+    });
+    compactor_pool.listen_for_changes(compactor_change_stream);
 }
 
 fn require<T: Clone + Send>(

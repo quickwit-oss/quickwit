@@ -20,7 +20,7 @@ pub(crate) mod metrics;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
-pub use compaction_planner::CompactionPlanner;
+pub use compaction_planner::{CompactionPlanner, CompactionReadyCheck};
 use quickwit_indexing::merge_policy::{MergeOperation, compute_merge_score};
 use quickwit_metrics::{gauge, label_values};
 use quickwit_proto::types::{IndexUid, SourceId};

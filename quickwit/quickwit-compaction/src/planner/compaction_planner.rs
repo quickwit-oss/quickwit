@@ -19,9 +19,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
-use quickwit_cluster::Cluster;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::rate_limited_tracing::rate_limited_info;
+use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, Split, SplitState,
 };
@@ -38,6 +38,7 @@ use ulid::Ulid;
 use super::PendingMerge;
 use super::compaction_state::CompactionState;
 use super::index_config_metastore::{IndexConfigMetastore, IndexEntry};
+use crate::CompactorPool;
 use crate::planner::metrics::{METASTORE_ERRORS, NEW_SPLITS_SCANNED, OPERATION, SOURCE_UID};
 
 /// Cap on splits fetched per tick. Every tick, the planner re-scans the immature published set,
@@ -50,12 +51,26 @@ const SCAN_PAGE_SIZE: usize = 5_000;
 /// It's a sanity max rather than some invariant.
 const MAX_EXCLUDED_SPLIT_IDS: usize = 50_000;
 
-#[derive(Debug)]
+pub type CompactionReadyCheck = Box<dyn Fn() -> BoxFutureInfaillible<bool> + Send + Sync>;
+
 pub struct CompactionPlanner {
     state: CompactionState,
     index_config_metastore: IndexConfigMetastore,
     metastore: MetastoreServiceClient,
-    cluster: Cluster,
+    can_start_compaction: CompactionReadyCheck,
+    compactor_pool: CompactorPool,
+}
+
+impl Debug for CompactionPlanner {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CompactionPlanner")
+            .field("state", &self.state)
+            .field("index_config_metastore", &self.index_config_metastore)
+            .field("metastore", &self.metastore)
+            .field("compactor_pool", &self.compactor_pool)
+            .finish_non_exhaustive()
+    }
 }
 
 const SCAN_AND_PLAN_INTERVAL: Duration = Duration::from_secs(5);
@@ -116,7 +131,7 @@ impl Handler<AwaitIndexersMigrated> for CompactionPlanner {
         _msg: AwaitIndexersMigrated,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if self.all_indexers_migrated().await {
+        if (self.can_start_compaction)().await {
             info!(
                 "all indexers report standalone compactors enabled, starting compaction scan loop"
             );
@@ -146,28 +161,25 @@ impl Handler<ReportStatusRequest> for CompactionPlanner {
         self.state.process_successes(&msg.successes);
         self.state.process_failures(&msg.failures);
         self.state.update_heartbeats(&node_id, &msg.in_progress);
-        let new_tasks = self.assign_tasks(&node_id, msg.available_slots);
+        let new_tasks =
+            self.assign_tasks(&node_id, msg.available_slots, msg.in_progress.len() as u32);
         Ok(Ok(ReportStatusResponse { new_tasks }))
     }
 }
 
 impl CompactionPlanner {
-    pub fn new(metastore: MetastoreServiceClient, cluster: Cluster) -> Self {
+    pub fn new(
+        metastore: MetastoreServiceClient,
+        can_start_compaction: CompactionReadyCheck,
+        compactor_pool: CompactorPool,
+    ) -> Self {
         CompactionPlanner {
             state: CompactionState::default(),
             index_config_metastore: IndexConfigMetastore::new(metastore.clone()),
             metastore,
-            cluster,
+            can_start_compaction,
+            compactor_pool,
         }
-    }
-
-    async fn all_indexers_migrated(&self) -> bool {
-        self.cluster
-            .live_nodes()
-            .await
-            .iter()
-            .filter(|node| node.is_indexer())
-            .all(|node| node.enable_standalone_compactors())
     }
 
     async fn ingest_splits(&mut self, splits: Vec<Split>) {
@@ -239,11 +251,54 @@ impl CompactionPlanner {
         }
     }
 
-    fn assign_tasks(&mut self, node_id: &NodeId, available_slots: u32) -> Vec<MergeTaskAssignment> {
-        let pending_merge_ops = self.state.pop_pending(available_slots as usize);
-        let mut assignments = Vec::with_capacity(pending_merge_ops.len());
+    /// We do a simple load balancing calculation here. The desired load for this compactor is
+    /// computed as follows:
+    /// * Compute the total pending and ongoing merges across the cluster
+    /// * Compute the target number of tasks per compactor, spreading load uniformly
+    ///   * Size of compaction is ignored
+    /// * Compute the headroom on the compactor, as a function of target tasks minus ongoing work
+    /// * Take the smallest of those
+    ///
+    /// This gives us even spread of work, while still prioritizing a backlog if one exists.
+    /// In the case a backlog exists, target_per_worker and headroom will necessarily exceed
+    /// available_slots.
+    ///
+    /// Example: 2 compactors with 6 slots each, 30 pending merges, no work in flight.
+    /// target_per_worker = ceil(30 / 2) = 15.
+    ///
+    /// | Worker | pending | available_slots | total_in_flight | all__merges | headroom | returned |
+    /// | ------ | ------- | --------------- | --------------- | ------------| -------- | ---------|
+    /// | A      |    30   |        6        |        0        |     30      |    15    |     6    |
+    /// | B      |    24   |        6        |        6        |     30      |    15    |     6    |
+    fn compute_num_jobs_to_assign(&self, available_slots: u32, in_progress_count: u32) -> usize {
+        let pending_merges = self.state.pending_count();
+        let all_merges = pending_merges + self.state.live_in_flight_count(&self.compactor_pool);
+        let target_per_worker = all_merges.div_ceil(self.compactor_pool.len());
+        let headroom = target_per_worker.saturating_sub(in_progress_count as usize);
+        pending_merges.min(available_slots as usize).min(headroom)
+    }
 
-        for merge_op in pending_merge_ops {
+    fn assign_tasks(
+        &mut self,
+        node_id: &NodeId,
+        available_slots: u32,
+        in_progress_count: u32,
+    ) -> Vec<MergeTaskAssignment> {
+        if !self.compactor_pool.contains_key(node_id) {
+            rate_limited_info!(
+                limit_per_min = 6,
+                node_id = %node_id,
+                "compactor not in gossip membership; withholding assignments"
+            );
+            return Vec::new();
+        }
+        let num_jobs_to_assign =
+            self.compute_num_jobs_to_assign(available_slots, in_progress_count);
+
+        let merge_ops = self.state.pop_pending(num_jobs_to_assign);
+        let mut assignments = Vec::with_capacity(merge_ops.len());
+
+        for merge_op in merge_ops {
             let task_id = Ulid::new().to_string();
             let Some(index_entry) = self.index_config_metastore.get(&merge_op.index_uid) else {
                 error!(index_uid=%merge_op.index_uid, "index config not found for pending operation, skipping");
@@ -312,7 +367,7 @@ mod tests {
     use std::ops::Bound;
     use std::time::Duration;
 
-    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, Cluster, create_cluster_for_test};
     use quickwit_common::ServiceStream;
     use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_config::IndexingSettings;
@@ -385,6 +440,28 @@ mod tests {
             .unwrap()
     }
 
+    fn test_compaction_ready_check(cluster: Cluster) -> CompactionReadyCheck {
+        Box::new(move || {
+            let cluster = cluster.clone();
+            Box::pin(async move {
+                cluster
+                    .live_nodes()
+                    .await
+                    .iter()
+                    .filter(|node| node.is_indexer())
+                    .all(|node| node.enable_standalone_compactors())
+            })
+        })
+    }
+
+    fn test_compactor_pool(node_ids: &[&str]) -> CompactorPool {
+        let pool = CompactorPool::default();
+        for node_id in node_ids {
+            pool.insert(NodeId::from_str(node_id), ());
+        }
+        pool
+    }
+
     #[tokio::test]
     async fn test_scan_metastore_query_shape_and_passthrough() {
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -423,7 +500,8 @@ mod tests {
 
         let planner = CompactionPlanner::new(
             MetastoreServiceClient::from_mock(mock),
-            test_cluster().await,
+            test_compaction_ready_check(test_cluster().await),
+            test_compactor_pool(&["worker-1"]),
         );
         let result = planner.scan_metastore().await.unwrap();
 
@@ -450,7 +528,8 @@ mod tests {
 
         let mut planner = CompactionPlanner::new(
             MetastoreServiceClient::from_mock(mock),
-            test_cluster().await,
+            test_compaction_ready_check(test_cluster().await),
+            test_compactor_pool(&["worker-1"]),
         );
         planner.state.track_split(SplitMetadata {
             split_id: SplitId::from("tracked"),
@@ -482,7 +561,8 @@ mod tests {
 
         let mut planner = CompactionPlanner::new(
             MetastoreServiceClient::from_mock(mock),
-            test_cluster().await,
+            test_compaction_ready_check(test_cluster().await),
+            test_compactor_pool(&["worker-1"]),
         );
 
         // Pre-populate: "in-flight" is already being compacted.
@@ -520,7 +600,8 @@ mod tests {
 
         let mut planner = CompactionPlanner::new(
             MetastoreServiceClient::from_mock(mock),
-            test_cluster().await,
+            test_compaction_ready_check(test_cluster().await),
+            test_compactor_pool(&["worker-1"]),
         );
         assert!(planner.scan_and_plan().await.is_err());
     }
@@ -540,7 +621,8 @@ mod tests {
 
         let mut planner = CompactionPlanner::new(
             MetastoreServiceClient::from_mock(mock),
-            test_cluster().await,
+            test_compaction_ready_check(test_cluster().await),
+            test_compactor_pool(&["worker-1"]),
         );
         planner.ingest_splits(splits).await;
 
@@ -569,7 +651,8 @@ mod tests {
 
         let mut planner = CompactionPlanner::new(
             MetastoreServiceClient::from_mock(mock),
-            test_cluster().await,
+            test_compaction_ready_check(test_cluster().await),
+            test_compactor_pool(&["worker-1"]),
         );
         planner.scan_and_plan().await.unwrap();
 
@@ -603,12 +686,13 @@ mod tests {
 
         let mut planner = CompactionPlanner::new(
             MetastoreServiceClient::from_mock(mock),
-            test_cluster().await,
+            test_compaction_ready_check(test_cluster().await),
+            test_compactor_pool(&["worker-1"]),
         );
         let node_id = NodeId::from_str("worker-1");
 
         planner.scan_and_plan().await.unwrap();
-        let assignments = planner.assign_tasks(&node_id, 10);
+        let assignments = planner.assign_tasks(&node_id, 10, 0);
         assert_eq!(assignments.len(), 1);
         let task_id = assignments[0].task_id.clone();
         assert!(planner.state.is_split_tracked("s1"));
@@ -630,13 +714,14 @@ mod tests {
         assert!(planner.state.is_split_tracked("s2"));
     }
 
-    /// Helper: creates a planner with merge_factor=2, ingests the given splits,
+    /// Helper: builds a planner around the given index metadata, ingests the given splits,
     /// and runs merge policies. Returns the planner ready for `assign_tasks`.
-    async fn planner_with_pending_merges(split_ids: &[&str]) -> (CompactionPlanner, IndexUid) {
-        let index_metadata = test_index_metadata_with_merge_factor_2();
-        let index_uid = index_metadata.index_uid.clone();
-        let response = test_index_metadata_response(&index_metadata);
-
+    async fn planner_with_ingested_splits(
+        index_metadata: &IndexMetadata,
+        splits: Vec<Split>,
+        pool_nodes: &[&str],
+    ) -> CompactionPlanner {
+        let response = test_index_metadata_response(index_metadata);
         let mut mock = MockMetastoreService::new();
         mock.expect_index_metadata()
             .returning(move |_| Ok(response.clone()));
@@ -648,26 +733,28 @@ mod tests {
 
         let mut planner = CompactionPlanner::new(
             MetastoreServiceClient::from_mock(mock),
-            test_cluster().await,
+            test_compaction_ready_check(test_cluster().await),
+            test_compactor_pool(pool_nodes),
         );
-
-        let splits: Vec<Split> = split_ids
-            .iter()
-            .enumerate()
-            .map(|(i, id)| test_split(id, &index_uid, (i + 1) as i64 * 1000))
-            .collect();
         planner.ingest_splits(splits).await;
         planner.run_merge_policies();
-        (planner, index_uid)
+        planner
     }
 
     #[tokio::test]
     async fn test_assign_tasks_returns_assignments_and_drains_queue() {
-        let (mut planner, index_uid) = planner_with_pending_merges(&["s1", "s2"]).await;
+        let index_metadata = test_index_metadata_with_merge_factor_2();
+        let index_uid = index_metadata.index_uid.clone();
+        let splits = vec![
+            test_split("s1", &index_uid, 1000),
+            test_split("s2", &index_uid, 2000),
+        ];
+        let mut planner =
+            planner_with_ingested_splits(&index_metadata, splits, &["worker-1"]).await;
         let node_id = NodeId::from_str("worker-1");
 
         // First call: get the assignment.
-        let assignments = planner.assign_tasks(&node_id, 10);
+        let assignments = planner.assign_tasks(&node_id, 10, 0);
         assert_eq!(assignments.len(), 1);
 
         let assignment = &assignments[0];
@@ -679,31 +766,47 @@ mod tests {
         assert!(!assignment.index_storage_uri.is_empty());
 
         // Second call: queue is drained, no more assignments.
-        let assignments = planner.assign_tasks(&node_id, 10);
+        let assignments = planner.assign_tasks(&node_id, 10, 0);
         assert!(assignments.is_empty());
     }
 
     #[tokio::test]
     async fn test_assign_tasks_respects_available_slots() {
         // 4 splits with merge_factor=2 produces 2 merge operations.
-        let (mut planner, _) = planner_with_pending_merges(&["s1", "s2", "s3", "s4"]).await;
+        let index_metadata = test_index_metadata_with_merge_factor_2();
+        let index_uid = index_metadata.index_uid.clone();
+        let splits = vec![
+            test_split("s1", &index_uid, 1000),
+            test_split("s2", &index_uid, 2000),
+            test_split("s3", &index_uid, 3000),
+            test_split("s4", &index_uid, 4000),
+        ];
+        let mut planner =
+            planner_with_ingested_splits(&index_metadata, splits, &["worker-1"]).await;
         let node_id = NodeId::from_str("worker-1");
 
         // Request only 1 slot.
-        let assignments = planner.assign_tasks(&node_id, 1);
+        let assignments = planner.assign_tasks(&node_id, 1, 0);
         assert_eq!(assignments.len(), 1);
 
         // The remaining operation is still pending.
-        let assignments = planner.assign_tasks(&node_id, 10);
+        let assignments = planner.assign_tasks(&node_id, 10, 0);
         assert_eq!(assignments.len(), 1);
     }
 
     #[tokio::test]
     async fn test_report_status_success_frees_splits_for_future_merges() {
-        let (mut planner, index_uid) = planner_with_pending_merges(&["s1", "s2"]).await;
+        let index_metadata = test_index_metadata_with_merge_factor_2();
+        let index_uid = index_metadata.index_uid.clone();
+        let splits = vec![
+            test_split("s1", &index_uid, 1000),
+            test_split("s2", &index_uid, 2000),
+        ];
+        let mut planner =
+            planner_with_ingested_splits(&index_metadata, splits, &["worker-1"]).await;
         let node_id = NodeId::from_str("worker-1");
 
-        let assignments = planner.assign_tasks(&node_id, 10);
+        let assignments = planner.assign_tasks(&node_id, 10, 0);
         assert_eq!(assignments.len(), 1);
         let task_id = assignments[0].task_id.clone();
 
@@ -721,9 +824,172 @@ mod tests {
         planner.ingest_splits(new_splits).await;
         planner.run_merge_policies();
 
-        let assignments = planner.assign_tasks(&node_id, 10);
+        let assignments = planner.assign_tasks(&node_id, 10, 0);
         assert_eq!(assignments.len(), 1);
         assert_eq!(assignments[0].splits_metadata_json.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_assign_tasks_refuses_reporter_absent_from_pool() {
+        let index_metadata = test_index_metadata_with_merge_factor_2();
+        let index_uid = index_metadata.index_uid.clone();
+        let splits = vec![
+            test_split("s1", &index_uid, 1000),
+            test_split("s2", &index_uid, 2000),
+        ];
+        let mut planner =
+            planner_with_ingested_splits(&index_metadata, splits, &["worker-1"]).await;
+
+        let unknown = NodeId::from_str("worker-unknown");
+        let assignments = planner.assign_tasks(&unknown, 10, 0);
+        assert!(assignments.is_empty());
+
+        let known = NodeId::from_str("worker-1");
+        let assignments = planner.assign_tasks(&known, 10, 0);
+        assert_eq!(assignments.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_assign_tasks_spreads_across_pool() {
+        let index_metadata = test_index_metadata_with_merge_factor_2();
+        let index_uid = index_metadata.index_uid.clone();
+        let splits: Vec<Split> = (0..12)
+            .map(|i| test_split(&format!("s{i}"), &index_uid, (i as i64 + 1) * 1000))
+            .collect();
+        let mut planner =
+            planner_with_ingested_splits(&index_metadata, splits, &["worker-1", "worker-2"]).await;
+        assert_eq!(planner.state.pending_count(), 6);
+
+        let worker_1 = NodeId::from_str("worker-1");
+        let worker_2 = NodeId::from_str("worker-2");
+
+        let assignments = planner.assign_tasks(&worker_1, 6, 0);
+        assert_eq!(assignments.len(), 3);
+
+        let assignments = planner.assign_tasks(&worker_2, 6, 0);
+        assert_eq!(assignments.len(), 3);
+
+        assert_eq!(planner.state.pending_count(), 0);
+
+        let assignments = planner.assign_tasks(&worker_1, 6, 0);
+        assert!(assignments.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_assign_tasks_backlog_fills_capacity() {
+        let index_metadata = test_index_metadata_with_merge_factor_2();
+        let index_uid = index_metadata.index_uid.clone();
+        let splits: Vec<Split> = (0..60)
+            .map(|i| test_split(&format!("s{i}"), &index_uid, (i as i64 + 1) * 1000))
+            .collect();
+        let mut planner =
+            planner_with_ingested_splits(&index_metadata, splits, &["worker-1", "worker-2"]).await;
+        assert_eq!(planner.state.pending_count(), 30);
+
+        let worker_1 = NodeId::from_str("worker-1");
+        let worker_2 = NodeId::from_str("worker-2");
+
+        let assignments = planner.assign_tasks(&worker_1, 6, 0);
+        assert_eq!(assignments.len(), 6);
+
+        let assignments = planner.assign_tasks(&worker_2, 6, 0);
+        assert_eq!(assignments.len(), 6);
+
+        assert_eq!(planner.state.pending_count(), 18);
+    }
+
+    #[tokio::test]
+    async fn test_assign_tasks_headroom_clamps_loaded_worker() {
+        let index_metadata = test_index_metadata_with_merge_factor_2();
+        let index_uid = index_metadata.index_uid.clone();
+        let splits = vec![
+            test_split("s1", &index_uid, 1000),
+            test_split("s2", &index_uid, 2000),
+            test_split("s3", &index_uid, 3000),
+            test_split("s4", &index_uid, 4000),
+        ];
+        let mut planner =
+            planner_with_ingested_splits(&index_metadata, splits, &["worker-1", "worker-2"]).await;
+        assert_eq!(planner.state.pending_count(), 2);
+
+        let worker_1 = NodeId::from_str("worker-1");
+        let worker_2 = NodeId::from_str("worker-2");
+
+        planner.state.record_assignment(
+            "seeded-task-a".to_string(),
+            HashSet::from([SplitId::from("seeded-a")]),
+            worker_1.clone(),
+        );
+        planner.state.record_assignment(
+            "seeded-task-b".to_string(),
+            HashSet::from([SplitId::from("seeded-b")]),
+            worker_1.clone(),
+        );
+
+        let assignments = planner.assign_tasks(&worker_1, 4, 2);
+        assert!(assignments.is_empty());
+
+        let assignments = planner.assign_tasks(&worker_2, 6, 0);
+        assert_eq!(assignments.len(), 2);
+    }
+
+    async fn planner_with_state(
+        pool_nodes: &[&str],
+        pending_ops: usize,
+        in_flight_per_node: &[(&str, usize)],
+    ) -> CompactionPlanner {
+        let index_metadata = test_index_metadata_with_merge_factor_2();
+        let index_uid = index_metadata.index_uid.clone();
+        let splits: Vec<Split> = (0..(pending_ops * 2))
+            .map(|i| test_split(&format!("s{i}"), &index_uid, (i as i64 + 1) * 1000))
+            .collect();
+        let mut planner = planner_with_ingested_splits(&index_metadata, splits, pool_nodes).await;
+
+        let mut task_id_counter = 0;
+        for (node, count) in in_flight_per_node {
+            for _ in 0..*count {
+                planner.state.record_assignment(
+                    format!("seed-task-{task_id_counter}"),
+                    HashSet::from([SplitId::from(format!("seed-split-{task_id_counter}"))]),
+                    NodeId::from_str(node),
+                );
+                task_id_counter += 1;
+            }
+        }
+        planner
+    }
+
+    #[tokio::test]
+    async fn test_compute_num_jobs_balances_steady_state() {
+        let planner = planner_with_state(&["worker-1", "worker-2"], 0, &[]).await;
+        assert_eq!(planner.compute_num_jobs_to_assign(6, 0), 0);
+
+        let planner = planner_with_state(&["worker-1", "worker-2"], 6, &[]).await;
+        assert_eq!(planner.compute_num_jobs_to_assign(6, 0), 3);
+
+        let planner = planner_with_state(&["worker-1", "worker-2"], 3, &[("worker-1", 3)]).await;
+        assert_eq!(planner.compute_num_jobs_to_assign(6, 0), 3);
+    }
+
+    #[tokio::test]
+    async fn test_compute_num_jobs_fills_capacity_on_backlog() {
+        let planner = planner_with_state(&["worker-1", "worker-2"], 30, &[]).await;
+        assert_eq!(planner.compute_num_jobs_to_assign(6, 0), 6);
+
+        let planner = planner_with_state(&["worker-1"], 30, &[]).await;
+        assert_eq!(planner.compute_num_jobs_to_assign(6, 0), 6);
+    }
+
+    #[tokio::test]
+    async fn test_compute_num_jobs_picks_min_of_headroom_and_slots() {
+        let planner = planner_with_state(&["worker-1", "worker-2"], 2, &[("worker-1", 2)]).await;
+        assert_eq!(planner.compute_num_jobs_to_assign(4, 2), 0);
+
+        let planner = planner_with_state(&["worker-1", "worker-2"], 30, &[]).await;
+        assert_eq!(planner.compute_num_jobs_to_assign(6, 0), 6);
+
+        let planner = planner_with_state(&["worker-1", "worker-2"], 1, &[]).await;
+        assert_eq!(planner.compute_num_jobs_to_assign(6, 0), 1);
     }
 
     async fn migrated_indexer(seeds: Vec<String>, transport: &ChitchatTransport) -> Cluster {
@@ -765,10 +1031,11 @@ mod tests {
         let seeds = vec![janitor_cluster.gossip_listen_addr.to_string()];
         let planner = CompactionPlanner::new(
             MetastoreServiceClient::from_mock(MockMetastoreService::new()),
-            janitor_cluster.clone(),
+            test_compaction_ready_check(janitor_cluster.clone()),
+            test_compactor_pool(&[]),
         );
 
-        assert!(planner.all_indexers_migrated().await);
+        assert!((planner.can_start_compaction)().await);
 
         let old_indexer_1 = create_cluster_for_test(seeds.clone(), &["indexer"], &transport, true)
             .await
@@ -777,18 +1044,18 @@ mod tests {
             .await
             .unwrap();
         wait_for_indexer_count(&janitor_cluster, 2).await;
-        assert!(!planner.all_indexers_migrated().await);
+        assert!(!(planner.can_start_compaction)().await);
 
         let new_indexer_1 = migrated_indexer(seeds.clone(), &transport).await;
         wait_for_indexer_count(&janitor_cluster, 3).await;
-        assert!(!planner.all_indexers_migrated().await);
+        assert!(!(planner.can_start_compaction)().await);
 
         let new_indexer_2 = migrated_indexer(seeds.clone(), &transport).await;
         drop(old_indexer_1);
         drop(old_indexer_2);
 
         wait_for_indexer_count(&janitor_cluster, 2).await;
-        assert!(planner.all_indexers_migrated().await);
+        assert!((planner.can_start_compaction)().await);
 
         drop(new_indexer_1);
         drop(new_indexer_2);
