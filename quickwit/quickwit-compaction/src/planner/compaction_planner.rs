@@ -61,18 +61,6 @@ pub struct CompactionPlanner {
     compactor_pool: CompactorPool,
 }
 
-impl Debug for CompactionPlanner {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("CompactionPlanner")
-            .field("state", &self.state)
-            .field("index_config_metastore", &self.index_config_metastore)
-            .field("metastore", &self.metastore)
-            .field("compactor_pool", &self.compactor_pool)
-            .finish_non_exhaustive()
-    }
-}
-
 const SCAN_AND_PLAN_INTERVAL: Duration = Duration::from_secs(5);
 /// On initialization, we want to wait for two intervals to allow any in-progress workers to report
 /// their progress, preventing us from frivolously rescheduling work.
@@ -162,7 +150,7 @@ impl Handler<ReportStatusRequest> for CompactionPlanner {
         self.state.process_failures(&msg.failures);
         self.state.update_heartbeats(&node_id, &msg.in_progress);
         let new_tasks =
-            self.assign_tasks(&node_id, msg.available_slots, msg.in_progress.len() as u32);
+            self.assign_tasks(&node_id, msg.available_slots as usize, msg.in_progress.len());
         Ok(Ok(ReportStatusResponse { new_tasks }))
     }
 }
@@ -270,19 +258,19 @@ impl CompactionPlanner {
     /// | ------ | ------- | --------------- | --------------- | ------------| -------- | ---------|
     /// | A      |    30   |        6        |        0        |     30      |    15    |     6    |
     /// | B      |    24   |        6        |        6        |     30      |    15    |     6    |
-    fn compute_num_jobs_to_assign(&self, available_slots: u32, in_progress_count: u32) -> usize {
+    fn compute_num_jobs_to_assign(&self, available_slots: usize, in_progress_count: usize) -> usize {
         let pending_merges = self.state.pending_count();
         let all_merges = pending_merges + self.state.live_in_flight_count(&self.compactor_pool);
         let target_per_worker = all_merges.div_ceil(self.compactor_pool.len());
-        let headroom = target_per_worker.saturating_sub(in_progress_count as usize);
-        pending_merges.min(available_slots as usize).min(headroom)
+        let headroom = target_per_worker.saturating_sub(in_progress_count);
+        pending_merges.min(available_slots).min(headroom)
     }
 
     fn assign_tasks(
         &mut self,
         node_id: &NodeId,
-        available_slots: u32,
-        in_progress_count: u32,
+        available_slots: usize,
+        in_progress_count: usize,
     ) -> Vec<MergeTaskAssignment> {
         if !self.compactor_pool.contains_key(node_id) {
             rate_limited_info!(
