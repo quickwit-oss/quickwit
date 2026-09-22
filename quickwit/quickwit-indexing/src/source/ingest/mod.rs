@@ -256,7 +256,7 @@ impl IngestSource {
         if self
             .assigned_shards
             .values()
-            .all(|shard| matches!(shard.status, IndexingStatus::ReachedEof))
+            .all(|shard| shard.current_position_inclusive.is_eof())
         {
             // All shards reaching EOF means we can immediately flush this split once finished as
             // there's nothing left to wait for.
