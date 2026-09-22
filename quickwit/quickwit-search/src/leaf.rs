@@ -828,7 +828,10 @@ async fn leaf_search_single_split(
         let provably_empty = warmup(
             &searcher,
             &warmup_info,
-            Priority::Normal(search_request.priority),
+            Priority::Normal {
+                priority: search_request.priority,
+                job_cost: search_permit.job_cost(),
+            },
             &record_absence,
         )
         .instrument(warmup_span.clone())
@@ -924,9 +927,13 @@ async fn leaf_search_single_split(
     let download_counters_clone = download_counters.clone();
     leaf_search_state_guard.set_state(SplitSearchState::CpuQueue);
     let wait_for_search_permit: Duration = search_permit.wait_for_acquisition();
+    let cpu_priority = Priority::Normal {
+        priority: search_request.priority,
+        job_cost: search_permit.job_cost(),
+    };
     let search_request_and_result: Option<(SearchRequest, LeafSearchResponse)> =
         crate::search_thread_pool()
-            .run_cpu_intensive_with_priority(Priority::Normal(search_request.priority), move || {
+            .run_cpu_intensive_with_priority(cpu_priority, move || {
                 // The CPU-pool queue wait ends as this closure starts executing.
                 drop(cpu_wait_span);
                 leaf_search_state_guard.set_state(SplitSearchState::Cpu);

@@ -483,6 +483,10 @@ impl SearchPermit {
         ByteSize(self.memory_allocation)
     }
 
+    pub fn job_cost(&self) -> usize {
+        self.job_cost
+    }
+
     fn send_if_still_running(&self, msg: SearchPermitMessage) {
         if let Some(sender) = self.msg_sender.upgrade() {
             sender
