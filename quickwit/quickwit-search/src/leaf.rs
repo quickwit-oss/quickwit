@@ -20,7 +20,7 @@ use std::ops::Bound;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, LazyLock, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
@@ -192,6 +192,25 @@ pub(crate) async fn open_split_bundle(
     Ok((hotcache_bytes, bundle_storage))
 }
 
+/// Returns the process-wide expression compilation cache.
+///
+/// Its capacity can be overridden via the `QW_EXPR_COMPILATION_CACHE_CAPACITY`
+/// environment variable. Compilation is cheap. The main point of this cache is to
+/// avoid recompiling expression across splits within a same leaf search request.
+fn set_expr_compilation_cache(index: &mut Index) {
+    use tantivy::jitexpr::compile::ExprCompilationCache;
+    static GLOBAL_EXPR_COMPILATION_CACHE: LazyLock<ExprCompilationCache> = LazyLock::new(|| {
+        const DEFAULT_EXPR_COMPILATION_CACHE_CAPACITY: usize = 256;
+        let capacity: usize = quickwit_common::get_from_env(
+            "QW_EXPR_COMPILATION_CACHE_CAPACITY",
+            DEFAULT_EXPR_COMPILATION_CACHE_CAPACITY,
+            false,
+        );
+        ExprCompilationCache::with_capacity(capacity)
+    });
+    index.set_expr_compilation_cache(GLOBAL_EXPR_COMPILATION_CACHE.clone());
+}
+
 /// Add a storage proxy to retry `get_slice` requests if they are taking too long,
 /// if configured in the searcher config.
 ///
@@ -255,6 +274,7 @@ pub(crate) async fn open_index_with_caches(
             .tantivy_manager()
             .clone(),
     );
+    set_expr_compilation_cache(&mut index);
     Ok((index, hot_directory))
 }
 

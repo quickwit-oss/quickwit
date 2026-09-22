@@ -32,8 +32,9 @@ const JAVA_DATE_FORMAT_TOKENS: &[&str] = &[
     "yyyy",
     "xxxx",
     "SSSSSSSSS", // For nanoseconds
-    "SSSSSSS",   // For microseconds
-    "SSSSSS",    // For fractional seconds up to six digits
+    "SSSSSSSS",
+    "SSSSSSS", // For microseconds
+    "SSSSSS",  // For fractional seconds up to six digits
     "SSSSS",
     "SSSS",
     "SSS",
@@ -238,9 +239,8 @@ fn match_java_date_format_token(
                 "HH" | "H" => build_hour_item(token),
                 "mm" | "m" => build_minute_item(token),
                 "ss" | "s" => build_second_item(token),
-                "SSSSSSSSS" | "SSSSSSS" | "SSSSSS" | "SSSSS" | "SSSS" | "SSS" | "SS" | "S" => {
-                    build_fraction_of_second_item(token)
-                }
+                "SSSSSSSSS" | "SSSSSSSS" | "SSSSSSS" | "SSSSSS" | "SSSSS" | "SSSS" | "SSS"
+                | "SS" | "S" => build_fraction_of_second_item(token),
                 "Z" => build_zone_offset(token),
                 "ww" | "w[w]" | "w" => build_week_of_year_item(token),
                 "e" => build_day_of_week_item(token),
@@ -483,6 +483,18 @@ mod tests {
         let parser = StrptimeParser::from_java_datetime_format(java_date_time_format).unwrap();
         let datetime = parser.parse_date_time(date_str).unwrap();
         assert_eq!(datetime, expected_datetime);
+    }
+
+    #[test]
+    fn test_parse_java_datetime_format_every_subsecond_width() {
+        for num_digits in 1..=9 {
+            let format = format!("yyyy-MM-dd HH:mm:ss.{}", "S".repeat(num_digits));
+            test_parse_java_datetime_aux(
+                &format,
+                "2021-01-01 11:00:03.123456789",
+                datetime!(2021-01-01 11:00:03.123456789 UTC),
+            );
+        }
     }
 
     #[test]
