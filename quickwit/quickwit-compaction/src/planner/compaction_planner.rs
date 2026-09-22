@@ -161,8 +161,11 @@ impl Handler<ReportStatusRequest> for CompactionPlanner {
         self.state.process_successes(&msg.successes);
         self.state.process_failures(&msg.failures);
         self.state.update_heartbeats(&node_id, &msg.in_progress);
-        let new_tasks =
-            self.assign_tasks(&node_id, msg.available_slots as usize, msg.in_progress.len());
+        let new_tasks = self.assign_tasks(
+            &node_id,
+            msg.available_slots as usize,
+            msg.in_progress.len(),
+        );
         Ok(Ok(ReportStatusResponse { new_tasks }))
     }
 }
@@ -270,7 +273,11 @@ impl CompactionPlanner {
     /// | ------ | ------- | --------------- | --------------- | ------------| -------- | ---------|
     /// | A      |    30   |        6        |        0        |     30      |    15    |     6    |
     /// | B      |    24   |        6        |        6        |     30      |    15    |     6    |
-    fn compute_num_jobs_to_assign(&self, available_slots: usize, in_progress_count: usize) -> usize {
+    fn compute_num_jobs_to_assign(
+        &self,
+        available_slots: usize,
+        in_progress_count: usize,
+    ) -> usize {
         let pending_merges = self.state.pending_count();
         let all_merges = pending_merges + self.state.live_in_flight_count(&self.compactor_pool);
         let target_per_worker = all_merges.div_ceil(self.compactor_pool.len());
