@@ -61,6 +61,18 @@ pub struct CompactionPlanner {
     compactor_pool: CompactorPool,
 }
 
+impl Debug for CompactionPlanner {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CompactionPlanner")
+            .field("state", &self.state)
+            .field("index_config_metastore", &self.index_config_metastore)
+            .field("metastore", &self.metastore)
+            .field("compactor_pool", &self.compactor_pool)
+            .finish_non_exhaustive()
+    }
+}
+
 const SCAN_AND_PLAN_INTERVAL: Duration = Duration::from_secs(5);
 /// On initialization, we want to wait for two intervals to allow any in-progress workers to report
 /// their progress, preventing us from frivolously rescheduling work.
