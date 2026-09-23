@@ -44,6 +44,9 @@ arrow-select,https://github.com/apache/arrow-rs,Apache-2.0,Apache Arrow <dev@arr
 arrow-string,https://github.com/apache/arrow-rs,Apache-2.0,Apache Arrow <dev@arrow.apache.org>
 ascii,https://github.com/tomprogrammer/rust-ascii,Apache-2.0 OR MIT,"Thomas Bahn <thomas@thomas-bahn.net>, Torbjørn Birch Moltu <t.b.moltu@lyse.net>, Simon Sapin <simon.sapin@exyr.org>"
 ascii-canvas,https://github.com/lalrpop/ascii-canvas,Apache-2.0 OR MIT,Niko Matsakis <niko@alum.mit.edu>
+asn1-rs,https://github.com/rusticata/asn1-rs,MIT OR Apache-2.0,Pierre Chifflier <chifflier@wzdftpd.net>
+asn1-rs-derive,https://github.com/rusticata/asn1-rs,MIT OR Apache-2.0,Pierre Chifflier <chifflier@wzdftpd.net>
+asn1-rs-impl,https://github.com/rusticata/asn1-rs,MIT OR Apache-2.0,Pierre Chifflier <chifflier@wzdftpd.net>
 assert-json-diff,https://github.com/davidpdrsn/assert-json-diff,MIT,David Pedersen <david.pdrsn@gmail.com>
 async-channel,https://github.com/smol-rs/async-channel,Apache-2.0 OR MIT,Stjepan Glavina <stjepang@gmail.com>
 async-compression,https://github.com/Nullus157/async-compression,MIT OR Apache-2.0,"Wim Looman <wim@nemo157.com>, Allen Bui <fairingrey@gmail.com>"
@@ -275,6 +278,7 @@ defmt-macros,https://github.com/knurling-rs/defmt,MIT OR Apache-2.0,The Knurling
 defmt-parser,https://github.com/knurling-rs/defmt,MIT OR Apache-2.0,The Knurling-rs developers
 delegate,https://github.com/kobzol/rust-delegate,MIT OR Apache-2.0,"Godfrey Chan <godfreykfc@gmail.com>, Jakub Beránek <berykubik@gmail.com>"
 der,https://github.com/RustCrypto/formats/tree/master/der,Apache-2.0 OR MIT,RustCrypto Developers
+der-parser,https://github.com/rusticata/der-parser,MIT OR Apache-2.0,Pierre Chifflier <chifflier@wzdftpd.net>
 deranged,https://github.com/jhpratt/deranged,MIT OR Apache-2.0,Jacob Pratt <jacob@jhpratt.dev>
 dialoguer,https://github.com/console-rs/dialoguer,MIT,The dialoguer Authors
 diff,https://github.com/utkarshkukreti/diff.rs,MIT OR Apache-2.0,Utkarsh Kukreti <utkarshkukreti@gmail.com>
@@ -543,6 +547,7 @@ object,https://github.com/gimli-rs/object,Apache-2.0 OR MIT,The object Authors
 object_store,https://github.com/apache/arrow-rs-object-store,MIT OR Apache-2.0,The object_store Authors
 octseq,https://github.com/NLnetLabs/octets,BSD-3-Clause,NLnet Labs <rust-team@nlnetlabs.nl>
 ofb,https://github.com/RustCrypto/block-modes,MIT OR Apache-2.0,RustCrypto Developers
+oid-registry,https://github.com/rusticata/oid-registry,MIT OR Apache-2.0,Pierre Chifflier <chifflier@wzdftpd.net>
 once_cell,https://github.com/matklad/once_cell,MIT OR Apache-2.0,Aleksey Kladov <aleksey.kladov@gmail.com>
 once_cell_polyfill,https://github.com/polyfill-rs/once_cell_polyfill,MIT OR Apache-2.0,The once_cell_polyfill Authors
 oneshot,https://github.com/faern/oneshot,MIT OR Apache-2.0,Linus Färnstrand <faern@faern.net>
@@ -728,6 +733,7 @@ rust-ini,https://github.com/zonyitoo/rust-ini,MIT,Y. T. Chung <zonyitoo@gmail.co
 rust_decimal,https://github.com/paupino/rust-decimal,MIT,Paul Mason <paul@form1.co.nz>
 rustc-demangle,https://github.com/rust-lang/rustc-demangle,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 rustc-hash,https://github.com/rust-lang/rustc-hash,Apache-2.0 OR MIT,The Rust Project Developers
+rusticata-macros,https://github.com/rusticata/rusticata-macros,MIT OR Apache-2.0,Pierre Chifflier <chifflier@wzdftpd.net>
 rustix,https://github.com/bytecodealliance/rustix,Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT,"Dan Gohman <dev@sunfishcode.online>, Jakub Konka <kubkon@jakubkonka.com>"
 rustls,https://github.com/rustls/rustls,Apache-2.0 OR ISC OR MIT,The rustls Authors
 rustls-native-certs,https://github.com/rustls/rustls-native-certs,Apache-2.0 OR ISC OR MIT,The rustls-native-certs Authors
@@ -1009,9 +1015,11 @@ winnow,https://github.com/winnow-rs/winnow,MIT,The winnow Authors
 wit-bindgen,https://github.com/bytecodealliance/wit-bindgen,Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT,Alex Crichton <alex@alexcrichton.com>
 woothee,https://github.com/woothee/woothee-rust,Apache-2.0,hhatto <hhatto.jp@gmail.com>
 writeable,https://github.com/unicode-org/icu4x,Unicode-3.0,The ICU4X Project Developers
+x509-parser,https://github.com/rusticata/x509-parser,MIT OR Apache-2.0,Pierre Chifflier <chifflier@wzdftpd.net>
 xmlparser,https://github.com/RazrFalcon/xmlparser,MIT OR Apache-2.0,Yevhenii Reizner <razrfalcon@gmail.com>
 xxhash-rust,https://github.com/DoumanAsh/xxhash-rust,BSL-1.0,Douman <douman@gmx.se>
 yansi,https://github.com/SergioBenitez/yansi,MIT OR Apache-2.0,Sergio Benitez <sb@sergio.bz>
+yasna,https://github.com/qnighy/yasna.rs,MIT OR Apache-2.0,Masaki Hara <ackie.h.gmai@gmail.com>
 yoke,https://github.com/unicode-org/icu4x,Unicode-3.0,Manish Goregaokar <manishsmail@gmail.com>
 yoke-derive,https://github.com/unicode-org/icu4x,Unicode-3.0,Manish Goregaokar <manishsmail@gmail.com>
 zerocopy,https://github.com/google/zerocopy,BSD-2-Clause OR Apache-2.0 OR MIT,"Joshua Liebow-Feeser <joshlf@google.com>, Jack Wrenn <jswrenn@amazon.com>"

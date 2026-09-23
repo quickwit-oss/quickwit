@@ -93,7 +93,7 @@ The doc mapping defines how a document and the fields it contains are stored and
 | `dynamic_mapping` | This parameter is only allowed when `mode` is set to `dynamic`. It then defines whether dynamically mapped fields should be indexed, stored, etc.  | (See [mode](#mode))
 | `tag_fields` | Collection of fields* explicitly defined in `field_mappings` whose values will be stored as part of the `tags` metadata. Allowed types are: `text` (with raw tokenizer), `i64` and `u64`. [Learn more about tags](../overview/concepts/querying.md#tag-pruning). | `[]` |
 | `store_source` | Whether or not the original JSON document is stored or not in the index.   | `false` |
-| `timestamp_field`      | Timestamp field* used for sharding documents in splits. The field has to be of type `datetime`. [Learn more about time sharding](./../overview/architecture.md).  | `None` |
+| `timestamp_field`      | Timestamp field* used for sharding documents in splits. The field has to be of type `datetime`. [Learn more about time sharding](./../overview/architecture.md).  | `null` |
 | `partition_key`   |  If set, quickwit will route documents into different splits depending on the field name declared as the `partition_key`. | `null` |
 | `max_num_partitions`  | Limits the number of splits created through partitioning. (See [Partitioning](../overview/concepts/querying.md#partitioning))  |    `200` |
 | `index_field_presence` | `exists` queries are enabled automatically for fast fields. To enable it for all other fields set this parameter to `true`. Enabling it can have a significant CPU-cost on indexing.  |  false |
@@ -129,7 +129,7 @@ fast:
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `description` | Optional description for the field. | `None` |
+| `description` | Optional description for the field. | `null` |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value should be indexed so it can be searched | `true` |
 | `tokenizer` | Name of the `Tokenizer`. ([See tokenizers](#description-of-available-tokenizers)) for a list of available tokenizers.  | `default` |
@@ -189,7 +189,7 @@ fast: true
 
 | Variable        | Description   | Default value |
 | --------------- | ------------- | ------------- |
-| `description`   | Optional description for the field. | `None` |
+| `description`   | Optional description for the field. | `null` |
 | `stored`        | Whether the field values are stored in the document store. | `true` |
 | `indexed`       | Whether the field values are indexed. | `true` |
 | `fast`          | Whether the field values are stored in a fast field. | `false` |
@@ -287,7 +287,7 @@ fast: true
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `description` | Optional description for the field. | `None` |
+| `description` | Optional description for the field. | `null` |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`      | Whether value is stored in a fast field | `false` |
@@ -309,7 +309,7 @@ fast: true
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `description` | Optional description for the field. | `None` |
+| `description` | Optional description for the field. | `null` |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`      | Whether value is stored in a fast field | `false` |
@@ -334,7 +334,7 @@ output_format: hex
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `description` | Optional description for the field. | `None` |
+| `description` | Optional description for the field. | `null` |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`     | Whether value is stored in a fast field. Only on 1:1 cardinality, not supported on `array<bytes>` fields | `false` |
@@ -370,7 +370,7 @@ Stored primitive types are inferred from the JSON value types using the followin
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `description` | Optional description for the field. | `None` |
+| `description` | Optional description for the field. | `null` |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`     | Whether value is stored in a fast field. The default behaviour for text in the JSON is to store the text unchanged. A normalizer can be configured via `normalizer: lowercase`. ([See normalizers](#description-of-available-normalizers)) for a list of available normalizers. | `false` |
@@ -782,7 +782,7 @@ This section describes search settings for a given index.
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `default_search_fields` | Default list of fields that will be used for search. The field names in this list may be declared explicitly in the schema, or may refer to a field captured by the dynamic mode. | `None` |
+| `default_search_fields` | Default list of fields that will be used for search. The field names in this list may be declared explicitly in the schema, or may refer to a field captured by the dynamic mode. | `[]` |
 
 ## Retention policy
 

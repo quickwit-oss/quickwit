@@ -21,7 +21,7 @@ use hyper::client::conn::http2::SendRequest;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{HumanDuration, TlsConfig};
+use quickwit_config::{AllowedClientIdentities, HumanDuration, TlsConfig};
 use quickwit_serve::SearchRequestQueryString;
 
 use crate::test_utils::ClusterSandboxBuilder;
@@ -37,6 +37,7 @@ fn fixture_tls_config() -> TlsConfig {
         ca_path: format!("{TLS_FIXTURES_DIR}/ca.crt"),
         expected_name: None,
         verify_client_cert: false,
+        allowed_client_identities: None,
         cert_poll_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
     }
 }
@@ -135,6 +136,10 @@ async fn test_tls_grpc() {
         node.0.grpc_config.tls_config = Some(TlsConfig {
             expected_name: Some("quickwit.local".to_string()),
             verify_client_cert: true,
+            allowed_client_identities: Some(AllowedClientIdentities {
+                dns_sans: vec!["*.local".to_string()],
+                ..Default::default()
+            }),
             ..fixture_tls_config()
         });
     }

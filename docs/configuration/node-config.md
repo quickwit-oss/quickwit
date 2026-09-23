@@ -100,7 +100,7 @@ The health server is **disabled by default**. It starts only when `listen_port` 
 
 | Property | Description | Env variable | Default value |
 | --- | --- | --- | --- |
-| `listen_port` | The port on which the plaintext health server listens for HTTP traffic. When unset, the health server is disabled. | `QW_HEALTH_LISTEN_PORT` | _(disabled)_ |
+| `listen_port` | The port on which the plaintext health server listens for HTTP traffic. When unset, the health server is disabled. | `QW_HEALTH_LISTEN_PORT` | `null` |
 
 Pick a free port that is not already used by the REST or gRPC servers.
 
@@ -129,10 +129,84 @@ When the REST API is behind mTLS, simple HTTP health probes can no longer reach 
 | `key_path` | Path to the PEM-encoded private key matching `cert_path`. | |
 | `ca_path` | Path to a PEM file holding the trusted CA certificate(s). Used by the server to validate client certificates when `verify_client_cert` is enabled, and by the gRPC client to validate peer certificates. Multiple CA certificates may be concatenated in the same file: all of them are trusted (see [CA rotation](#ca-rotation)). | |
 | `verify_client_cert` | If `true`, require clients (REST) or peers (gRPC) to present a certificate signed by `ca_path`, i.e. enforce mutual TLS. | `false` |
+| `allowed_client_identities` | Optional client-certificate identity allowlist, with `common_names`, `dns_sans`, and `uri_sans` lists. Requires `verify_client_cert: true`. A match in any list authorizes the client after certificate validation. See [client identity authorization](#client-identity-authorization). | `null` |
 | `expected_name` | gRPC only. The hostname the gRPC client checks against the peer certificate's Subject Alternative Name (SAN). Defaults to the peer's address. | |
 | `cert_poll_interval` | How often `cert_path` and `key_path` are polled for on-disk changes and hot-reloaded, without restarting the process. An immediate reload can also be triggered by sending `SIGHUP` to the process. | `5m` |
 
 Certificates are hot-reloaded: when `cert_path`/`key_path` change on disk, new connections pick up the new certificate within `cert_poll_interval` (or immediately on `SIGHUP`), while in-flight connections keep the certificate they negotiated. A new certificate is only applied if it parses and matches its key; otherwise the previous certificate is kept. Note that the CA trust roots (`ca_path`) are **not** hot-reloaded — rotating them still requires a restart.
+
+### Client identity authorization
+
+`allowed_client_identities` restricts incoming REST clients or gRPC peers to selected identities
+within the trusted CA population. Connections must pass the normal TLS certificate and handshake
+checks using the configured CA bundle, and have at least one matching identity in the
+**leaf certificate**. A name match never bypasses those checks.
+
+```yaml
+rest: # The same setting is available under grpc.tls.
+  tls:
+    cert_path: /path/to/server.crt
+    key_path: /path/to/server.key
+    ca_path: /path/to/clients-ca.crt
+    verify_client_cert: true
+    allowed_client_identities:
+      common_names:
+        - "collector-*"
+        - "forwarder"
+      dns_sans:
+        - "*.collectors.example.com"
+        - "collector.example.com"
+      uri_sans:
+        - "spiffe://example.com/ns/logging/sa/*"
+        - "spiffe://example.com/ns/logging/sa/collector"
+        - "spiffe://example.com/ns/observability/**"
+        - "urn:example:collector"
+```
+
+The lists are **alternatives (OR)**: a matching CN, DNS SAN, or URI SAN is sufficient.
+Common names are checked only when `common_names` is configured, including when the certificate
+also contains SANs. A DNS rule only checks DNS SANs, and a URI rule only checks URI SANs.
+Intermediate and CA certificate identities cannot authorize a client.
+
+| List | Exact matching | Wildcard matching |
+| --- | --- | --- |
+| `common_names` | Case-sensitive certificate CN text. Patterns must be nonempty. | `*` matches zero or more characters, including dots. All other characters are literal. |
+| `dns_sans` | Case-insensitive ASCII DNS SAN. Use punycode for internationalized names. | `*` matches zero or more characters within a single label, never a dot. For example, `*.example.com` matches `a.example.com`, but not `example.com` or `a.b.example.com`. Partial-label patterns such as `collector-*.example.com` are supported. |
+| `uri_sans` | Case-sensitive URI SAN text, including the scheme and authority. Supports any URI scheme, including `spiffe`, `https`, and `urn`. | `*` matches zero or more characters within a single path segment, never `/`, `?`, or `#`. A terminal `/**` in the path matches the preceding path and its descendants: `/ns/logging/**` matches `/ns/logging` and `/ns/logging/sa/collector`, but not `/ns/logging-other`. Scheme, authority, query, and fragment must match literally and cannot contain wildcards. |
+
+All matches cover the entire identity. Wildcards are interpreted only in configuration.
+Presented DNS SANs must be concrete names with nonempty labels of at most 63 ASCII letters,
+digits, or hyphens, with no leading or trailing hyphen. DNS names are at most 253 bytes and
+cannot be IP literals or end in a dot. DNS patterns follow the same grammar with `*` additionally
+allowed within labels; `**` is not supported for DNS.
+
+URI patterns must use valid URI syntax. A URI SAN with invalid syntax cannot match a URI rule.
+Wildcards apply only to the parsed path. The authority must match literally, including its presence
+or absence: `file:/**` matches `file:/secret`, but not `file:///secret` (an empty authority) or
+`file://untrusted.example/secret`.
+Quickwit compares the literal text without percent-decoding, case folding, or normalization of dot
+segments or repeated separators. For example, an exact rule for `https://example.com/%61` does not match
+`https://example.com/a`. URI path wildcards operate on that literal text; `*` can match `%2F`,
+and `/**` includes empty segments and trailing slashes. `**` is only supported as a terminal
+`/**` in the path. Queries and fragments, when configured, match literally.
+
+`uri_sans` provides generic certificate-field matching: a `spiffe://` value does **not** enable
+SPIFFE ID or X.509-SVID profile checks. Multiple URI SANs are allowed, and any one can match.
+Normal TLS client-certificate validation still applies. Malformed certificate encodings or
+SAN extensions fail certificate validation. A SAN entry with invalid encoding is rejected even when
+a CN or another SAN matches an allowed identity.
+
+Omitting `allowed_client_identities` preserves CA-based mTLS behavior. A configured policy must
+contain at least one rule; an empty policy, an invalid pattern, or a policy configured without
+`verify_client_cert: true` is a startup error. Individual lists may be omitted or empty.
+Policy changes require a restart. Certificate renewal with the same allowed identity continues
+to work, and existing connections retain the authorization from their handshake. TLS session
+caches belong to their server configuration and are discarded on restart.
+
+Every CA in `ca_path` is trusted to issue all configured identities, including SPIFFE identities
+in the listed trust domains. Use issuers authorized for those identities. This setting controls
+connection admission; index and API permissions require separate authorization. The outgoing
+gRPC server-name check remains configured by `expected_name`.
 
 ### CA rotation
 
@@ -266,7 +340,7 @@ indexer:
 | `max_queue_memory_usage` | Maximum size in bytes of the in-memory Ingest queue. | `2GiB` |
 | `max_queue_disk_usage` | Maximum disk-space in bytes taken by the Ingest queue. The minimum size is at least `256M` and be at least `max_queue_memory_usage`. | `4GiB` |
 | `content_length_limit` | Maximum payload size uncompressed. Increasing this is discouraged, use a [file source](../ingest-data/sqs-files.md) instead. | `10MiB` |
-| `grpc_compression_algorithm` | Compression algorithm (`gzip` or `zstd`) to use for gRPC traffic between nodes for the ingest service | `None` |
+| `grpc_compression_algorithm` | Compression algorithm (`gzip` or `zstd`) to use for gRPC traffic between nodes for the ingest service | `null` |
 | `decommission_timeout` | Maximum amount of time to wait for the ingester to finish decommissioning gracefully on shutdown before giving up. Can be overridden with the `QW_INGEST_DECOMMISSION_TIMEOUT` environment variable. | `300s` |
 
 Example:
@@ -289,7 +363,7 @@ This section contains the configuration options for a Compactor.
 | `max_concurrent_merge_executions` | Maximum number of concurrent merges, which hold the CPU for a long time. | `num threads available - 1` |
 | `pipeline_slots_per_merge_execution` | Number of pipelines to run per merge execution. Since merges perform a lot of IO, multiple concurrent merges can be interleaved. | `2` |
 | `max_concurrent_split_uploads` | Maximum number of concurrent split uploads across all pipelines. | `12` |
-| `max_merge_write_throughput` | Limits the IO throughput of the split downloader and the merge executor. | `None` |
+| `max_merge_write_throughput` | Limits the IO throughput of the split downloader and the merge executor. | `null` |
 | `decommission_timeout` | Maximum amount of time to wait for the compactor to finish decommissioning gracefully on shutdown before giving up. Can be overridden with the `QW_COMPACTOR_DECOMMISSION_TIMEOUT` environment variable. | `300s` |
 
 Example:

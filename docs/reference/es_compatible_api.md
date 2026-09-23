@@ -539,10 +539,10 @@ The following query types are supported.
 
 | Variable | Type                            | Description                            | Default value |
 | -------- | ------------------------------- | -------------------------------------- | ------------- |
-| `gt`     | bool, string, Number (Optional) | Greater than                           | None          |
-| `gte`    | bool, string, Number (Optional) | Greater than or equal                  | None          |
-| `lt`     | bool, string, Number (Optional) | Less than                              | None          |
-| `lte`    | bool, string, Number (Optional) | Less than or equal                     | None          |
+| `gt`     | bool, string, Number (Optional) | Greater than                           | `null`        |
+| `gte`    | bool, string, Number (Optional) | Greater than or equal                  | `null`        |
+| `lt`     | bool, string, Number (Optional) | Less than                              | `null`        |
+| `lte`    | bool, string, Number (Optional) | Less than or equal                     | `null`        |
 | `boost`  | `Number`                        | Multiplier boost for score computation | 1.0           |
 
 

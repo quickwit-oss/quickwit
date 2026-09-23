@@ -30,6 +30,15 @@ key_path = "/path/to/rest.key"
 ca_path = "/path/to/ca.crt"
 verify_client_cert = true
 
+[rest.tls.allowed_client_identities]
+common_names = ["collector-*", "forwarder"]
+dns_sans = ["*.collectors.example.com", "collector.example.com"]
+uri_sans = [
+    "spiffe://example.com/ns/logging/sa/*",
+    "spiffe://example.com/ns/observability/**",
+    "urn:example:collector",
+]
+
 [health]
 listen_port = 4444
 
@@ -44,6 +53,14 @@ key_path = "/path/to/grpc.key"
 ca_path = "/path/to/ca.crt"
 verify_client_cert = true
 expected_name = "quickwit.local"
+
+[grpc.tls.allowed_client_identities]
+common_names = ["quickwit-*", "quickwit-indexer"]
+dns_sans = ["*.quickwit.example.com", "quickwit.local"]
+uri_sans = [
+    "spiffe://example.com/quickwit/**",
+    "spiffe://example.com/quickwit/indexer",
+]
 
 [storage.azure]
 account = "quickwit-dev"
