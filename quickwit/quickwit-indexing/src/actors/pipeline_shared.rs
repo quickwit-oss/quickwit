@@ -20,7 +20,7 @@ use tokio::sync::Semaphore;
 
 pub(crate) const SUPERVISE_INTERVAL: Duration = Duration::from_secs(1);
 
-const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
+const MAX_RETRY_DELAY: Duration = Duration::from_mins(10);
 
 #[derive(Debug)]
 pub(crate) struct SuperviseLoop;

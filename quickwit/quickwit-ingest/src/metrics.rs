@@ -18,25 +18,13 @@ pub(crate) const VALIDITY: LabelNames<1> = label_names!("validity");
 
 pub(crate) static DOCS_BYTES_TOTAL: LazyCounter = lazy_counter!(
         name: "docs_bytes_total",
-        description: "Total size of the docs ingested, measured in ingester's leader, after validation and before persistence/replication",
+        description: "Total size of the docs ingested, measured after validation and before persistence",
         subsystem: "ingest",
 );
 
 pub(crate) static DOCS_TOTAL: LazyCounter = lazy_counter!(
         name: "docs_total",
-        description: "Total number of the docs ingested, measured in ingester's leader, after validation and before persistence/replication",
-        subsystem: "ingest",
-);
-
-pub(crate) static REPLICATED_NUM_BYTES_TOTAL: LazyCounter = lazy_counter!(
-        name: "replicated_num_bytes_total",
-        description: "Total size in bytes of the replicated docs.",
-        subsystem: "ingest",
-);
-
-pub(crate) static REPLICATED_NUM_DOCS_TOTAL: LazyCounter = lazy_counter!(
-        name: "replicated_num_docs_total",
-        description: "Total number of docs replicated.",
+        description: "Total number of docs ingested, measured after validation and before persistence",
         subsystem: "ingest",
 );
 

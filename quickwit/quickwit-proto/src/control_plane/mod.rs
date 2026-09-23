@@ -73,6 +73,12 @@ impl ServiceError for ControlPlaneError {
     }
 }
 
+impl quickwit_common::tower::GrpcStatusCode for ControlPlaneError {
+    fn grpc_status_code(&self) -> tonic::Code {
+        self.error_code().grpc_status_code()
+    }
+}
+
 impl GrpcServiceError for ControlPlaneError {
     fn new_internal(message: String) -> Self {
         Self::Internal(message)

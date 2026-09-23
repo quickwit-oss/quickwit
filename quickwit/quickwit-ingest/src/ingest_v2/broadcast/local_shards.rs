@@ -19,7 +19,7 @@ use bytesize::ByteSize;
 use quickwit_cluster::{Cluster, ListenerHandle};
 use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_common::ring_buffer::RingBuffer;
-use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
+use quickwit_common::shared_consts::INGESTER_SHARDS_PREFIX;
 use quickwit_common::sorted_iter::{KeyDiff, SortedByKeyIterator};
 use quickwit_common::tower::{ConstantRate, Rate};
 use quickwit_proto::ingest::ShardState;
@@ -37,7 +37,7 @@ use crate::ingest_v2::state::WeakIngesterState;
 
 const ONE_MIB: ByteSize = ByteSize::mib(1);
 
-/// Broadcasted information about a primary shard.
+/// Broadcasted information about a shard.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ShardInfo {
     pub shard_id: ShardId,
@@ -101,10 +101,10 @@ impl<'de> Deserialize<'de> for ShardInfo {
     }
 }
 
-/// A set of primary shards belonging to the same source.
+/// A set of shards belonging to the same source.
 pub type ShardInfos = BTreeSet<ShardInfo>;
 
-/// Lists ALL the primary shards hosted by a SINGLE ingester, grouped by source.
+/// Lists all the shards hosted by a single ingester, grouped by source.
 #[derive(Debug, Default, Eq, PartialEq)]
 struct LocalShardsSnapshot {
     per_source_shard_infos: BTreeMap<SourceUid, ShardInfos>,
@@ -148,7 +148,7 @@ impl LocalShardsSnapshot {
     }
 }
 
-/// Takes a snapshot of the primary shards hosted by the ingester at regular intervals and
+/// Takes a snapshot of the shards hosted by the ingester at regular intervals and
 /// broadcasts it to other nodes via Chitchat.
 pub struct BroadcastLocalShardsTask {
     cluster: Cluster,
@@ -269,7 +269,7 @@ impl BroadcastLocalShardsTask {
             state_guard
                 .shards
                 .values_mut()
-                .filter(|shard| shard.is_advertisable && !shard.is_replica())
+                .filter(|shard| shard.is_advertisable)
                 .map(|shard| {
                     let source_uid = SourceUid {
                         index_uid: shard.index_uid.clone(),
@@ -322,13 +322,13 @@ impl BroadcastLocalShardsTask {
                     source_uid,
                     shard_infos,
                 } => {
-                    let key = make_key(INGESTER_PRIMARY_SHARDS_PREFIX, source_uid);
+                    let key = make_key(INGESTER_SHARDS_PREFIX, source_uid);
                     let value = serde_json::to_string(&shard_infos)
                         .expect("`ShardInfos` should be JSON serializable");
                     self.cluster.set_self_key_value(key, value).await;
                 }
                 ShardInfosChange::Removed { source_uid } => {
-                    let key = make_key(INGESTER_PRIMARY_SHARDS_PREFIX, source_uid);
+                    let key = make_key(INGESTER_SHARDS_PREFIX, source_uid);
                     self.cluster.remove_self_key(&key).await;
                 }
             }
@@ -365,7 +365,7 @@ impl BroadcastLocalShardsTask {
 
 #[derive(Debug, Clone)]
 pub struct LocalShardsUpdate {
-    pub leader_id: NodeId,
+    pub ingester_id: NodeId,
     pub source_uid: SourceUid,
     pub shard_infos: ShardInfos,
 }
@@ -377,7 +377,7 @@ pub async fn setup_local_shards_update_listener(
     event_broker: EventBroker,
 ) -> ListenerHandle {
     cluster
-        .subscribe(INGESTER_PRIMARY_SHARDS_PREFIX, move |event| {
+        .subscribe(INGESTER_SHARDS_PREFIX, move |event| {
             let Some(source_uid) = parse_key(event.key) else {
                 warn!("failed to parse source UID `{}`", event.key);
                 return;
@@ -386,10 +386,10 @@ pub async fn setup_local_shards_update_listener(
                 warn!("failed to parse shard infos `{}`", event.value);
                 return;
             };
-            let leader_id: NodeId = NodeId::from_str(&event.node.node_id);
+            let ingester_id: NodeId = NodeId::from_str(&event.node.node_id);
 
             let local_shards_update = LocalShardsUpdate {
-                leader_id,
+                ingester_id,
                 source_uid,
                 shard_infos,
             };
@@ -405,9 +405,9 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
-    use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
+    use quickwit_common::shared_consts::INGESTER_SHARDS_PREFIX;
     use quickwit_proto::ingest::ShardState;
-    use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SourceUid};
+    use quickwit_proto::types::{IndexUid, ShardId, SourceId, SourceUid};
 
     use super::*;
     use crate::RateMibPerSec;
@@ -551,7 +551,7 @@ mod tests {
         let mut state_guard = state.lock_partially("test").await.unwrap();
 
         let index_uid = IndexUid::for_test("test-index", 0);
-        let shard_00 = IngesterShard::new_solo(
+        let shard_00 = IngesterShard::builder(
             index_uid.clone(),
             SourceId::from("test-source"),
             ShardId::from(0),
@@ -559,7 +559,7 @@ mod tests {
         .build();
         state_guard.shards.insert(shard_00.queue_id(), shard_00);
 
-        let shard_01 = IngesterShard::new_solo(
+        let shard_01 = IngesterShard::builder(
             index_uid.clone(),
             SourceId::from("test-source"),
             ShardId::from(1),
@@ -569,28 +569,16 @@ mod tests {
         let queue_id_01 = shard_01.queue_id();
         state_guard.shards.insert(queue_id_01.clone(), shard_01);
 
-        let shard_02 = IngesterShard::new_replica(
-            index_uid.clone(),
-            SourceId::from("test-source"),
-            ShardId::from(2),
-            NodeId::from_str("test-leader"),
-        )
-        .advertisable()
-        .build();
-        state_guard.shards.insert(shard_02.queue_id(), shard_02);
         drop(state_guard);
 
-        // First tick: shard_01 (advertisable, non-replica) is the only one
-        // contributing to the snapshot — broadcast publishes it.
+        // First tick: shard_01 (advertisable) is the only one contributing to the snapshot —
+        // broadcast publishes it.
         assert!(task.run_once().await);
         assert_eq!(task.previous_snapshot.per_source_shard_infos.len(), 1);
 
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        let key = format!(
-            "{INGESTER_PRIMARY_SHARDS_PREFIX}{}:{}",
-            index_uid, "test-source"
-        );
+        let key = format!("{INGESTER_SHARDS_PREFIX}{}:{}", index_uid, "test-source");
         task.cluster.get_self_key_value(&key).await.unwrap();
 
         // Remove the only advertisable shard, run again: snapshot empty,
@@ -644,7 +632,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: SourceId::from("test-source"),
         };
-        let key = make_key(INGESTER_PRIMARY_SHARDS_PREFIX, &source_uid);
+        let key = make_key(INGESTER_SHARDS_PREFIX, &source_uid);
         let value = serde_json::to_string(&vec![ShardInfo {
             shard_id: ShardId::from(1),
             shard_state: ShardState::Open,

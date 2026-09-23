@@ -24,7 +24,7 @@ use serde::Serialize;
 use crate::observation::ObservationType;
 use crate::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Command, Handler, Health,
-    Mailbox, Observation, Supervisable, Universe,
+    KillSwitch, Mailbox, Observation, Supervisable, Universe,
 };
 
 // An actor that receives ping messages.
@@ -220,6 +220,9 @@ struct DoNothing;
 #[derive(Clone, Debug)]
 struct Block;
 
+#[derive(Clone, Debug)]
+struct Fail;
+
 impl Actor for BuggyActor {
     type ObservableState = ();
 
@@ -257,6 +260,49 @@ impl Handler<Block> for BuggyActor {
         }
         Ok(())
     }
+}
+
+#[async_trait]
+impl Handler<Fail> for BuggyActor {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _message: Fail,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        Err(ActorExitStatus::from(anyhow::anyhow!("handler blew up")))
+    }
+}
+
+#[tokio::test]
+async fn test_failing_actor_records_root_cause_fault() {
+    let universe = Universe::with_accelerated_time();
+    let kill_switch = KillSwitch::default();
+    let (failing_mailbox, failing_handle) = universe
+        .spawn_builder()
+        .set_kill_switch(kill_switch.clone())
+        .spawn(BuggyActor);
+    let (sibling_mailbox, sibling_handle) = universe
+        .spawn_builder()
+        .set_kill_switch(kill_switch.clone())
+        .spawn(BuggyActor);
+    sibling_mailbox.send_message(Block).await.unwrap();
+    failing_mailbox.send_message(Fail).await.unwrap();
+
+    let (exit_status, _) = failing_handle.join().await;
+    assert!(matches!(exit_status, ActorExitStatus::Failure(_)));
+
+    // The sibling is taken down by the shared kill switch. Being a casualty rather than the
+    // root cause, it must not overwrite the fault.
+    let (sibling_exit_status, _) = sibling_handle.join().await;
+    assert!(matches!(sibling_exit_status, ActorExitStatus::Killed));
+
+    let fault = kill_switch.fault().expect("fault should be recorded");
+    let cause = format!("{fault:#}");
+    assert!(cause.contains("BuggyActor"), "{cause}");
+    assert!(cause.contains("handling"), "{cause}");
+    assert!(cause.contains("handler blew up"), "{cause}");
 }
 
 #[tokio::test]

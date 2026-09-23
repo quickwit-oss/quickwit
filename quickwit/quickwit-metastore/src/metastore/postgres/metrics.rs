@@ -52,3 +52,9 @@ pub(super) static IDLE_CONNECTIONS: LazyGauge = lazy_gauge!(
         description: "Number of idle connections.",
         subsystem: "metastore",
 );
+
+pub(super) static MAX_CONNECTIONS: LazyGauge = lazy_gauge!(
+        name: "max_connections",
+        description: "Maximum number of connections configured for the pool.",
+        subsystem: "metastore",
+);

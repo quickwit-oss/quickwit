@@ -21,7 +21,7 @@ A commented example is available here: [quickwit.yaml](https://github.com/quickw
 | --- | --- | --- | --- |
 | `version` | Config file version. `0.7` is the only available value with a retro compatibility on `0.5` and `0.4`. | | |
 | `cluster_id` | Unique identifier of the cluster the node will be joining. Clusters sharing the same network should use distinct cluster IDs.| `QW_CLUSTER_ID` | `quickwit-default-cluster` |
-| `node_id` | Unique identifier of the node. It must be distinct from the node IDs of its cluster peers. Defaults to the instance's short hostname if not set. | `QW_NODE_ID` | short hostname |
+| `node_id` | Unique identifier of the node. It must be distinct from the node IDs of its cluster peers. Searchers hash this ID for split affinity, so keep it stable across restarts (for example a StatefulSet pod name) if the same splits should keep landing on the same node. Defaults to the instance's short hostname if not set. | `QW_NODE_ID` | short hostname |
 | `enabled_services` | Enabled services (control_plane, indexer, janitor, metastore, metastore_read_replica, searcher) | `QW_ENABLED_SERVICES` | all services except metastore_read_replica |
 | `listen_address` | The IP address or hostname that Quickwit service binds to for starting REST and GRPC server and connecting this node to other nodes. By default, Quickwit binds itself to 127.0.0.1 (localhost). This default is not valid when trying to form a cluster. | `QW_LISTEN_ADDRESS` | `127.0.0.1` |
 | `advertise_address` | IP address advertised by the node, i.e. the IP address that peer nodes should use to connect to the node for RPCs. | `QW_ADVERTISE_ADDRESS` | `listen_address` |
@@ -92,7 +92,9 @@ We advise changing the default value of 20 MiB only if you encounter the followi
 
 ## Health check configuration
 
-This section configures an optional, **plaintext (no TLS)** HTTP server that exposes only the health endpoints `/health/livez` (liveness) and `/health/readyz` (readiness). Its purpose is to let liveness/readiness probes (for example from Kubernetes or a load balancer) reach the node even when the main REST API is put behind [TLS or mTLS](#tls-configuration), which a simple HTTP probe cannot negotiate.
+This section configures an optional, **plaintext (no TLS)** HTTP server that exposes only the health endpoints `/health/livez` (liveness) and `/health/startupz` (startup completion), plus `/health/readyz`, a deprecated alias for `/health/startupz`. Its purpose is to let liveness and startup probes (for example from Kubernetes or a load balancer) reach the node even when the main REST API is put behind [TLS or mTLS](#tls-configuration), which a simple HTTP probe cannot negotiate.
+
+`/health/startupz` reports whether the node has finished starting up. It latches once and never returns to a not-started state, so it is suited to a Kubernetes **startup probe** rather than a readiness probe. There is no readiness endpoint: a node that is up but degraded is restarted, not removed from rotation.
 
 The health server is **disabled by default**. It starts only when `listen_port` is set (or the `QW_HEALTH_LISTEN_PORT` environment variable is provided). The same `/health/*` endpoints always remain available on the main REST API as well.
 
@@ -245,6 +247,8 @@ This section contains the configuration options for an indexer. The split store 
 | `cpu_capacity` | Advisory parameter used by the control plane. The value can expressed be in threads (e.g. `2`) or in term of millicpus (`2000m`). The control plane will attempt to schedule indexing pipelines on the different nodes proportionally to the cpu capacity advertised by the indexer. It is NOT used as a limit. All pipelines will be scheduled regardless of whether the cluster has sufficient capacity or not. The control plane does not attempt to spread the work equally when the load is well below the `cpu_capacity`. Users who need a balanced load on all of their indexer nodes can set the `cpu_capacity` to an arbitrarily low value as long as they keep it proportional to the number of threads available. | `num threads available` |
 | `enable_cooperative_indexing` | Enable sharing resources more efficiently when the number of indexes actively written to is significantly higher than the number of cores but might decrease the overall indexing throughput. | `false` |
 
+Set the `QW_INDEXING_MAX_WRITE_THROUGHPUT` environment variable to limit the aggregate indexing IO throughput on a node. It accepts human-readable byte sizes per second, such as `500mb`, and is unlimited by default.
+
 Example:
 
 ```yaml
@@ -263,6 +267,7 @@ indexer:
 | `max_queue_disk_usage` | Maximum disk-space in bytes taken by the Ingest queue. The minimum size is at least `256M` and be at least `max_queue_memory_usage`. | `4GiB` |
 | `content_length_limit` | Maximum payload size uncompressed. Increasing this is discouraged, use a [file source](../ingest-data/sqs-files.md) instead. | `10MiB` |
 | `grpc_compression_algorithm` | Compression algorithm (`gzip` or `zstd`) to use for gRPC traffic between nodes for the ingest service | `None` |
+| `decommission_timeout` | Maximum amount of time to wait for the ingester to finish decommissioning gracefully on shutdown before giving up. Can be overridden with the `QW_INGEST_DECOMMISSION_TIMEOUT` environment variable. | `300s` |
 
 Example:
 
@@ -272,6 +277,28 @@ ingest_api:
   max_queue_disk_usage: 4GiB
   content_length_limit: 10MiB
   grpc_compression_algorithm: zstd
+  decommission_timeout: 300s
+```
+
+## Compactor configuration
+
+This section contains the configuration options for a Compactor.
+
+| Property | Description | Default value |
+| --- | --- | --- |
+| `max_concurrent_merge_executions` | Maximum number of concurrent merges, which hold the CPU for a long time. | `num threads available - 1` |
+| `pipeline_slots_per_merge_execution` | Number of pipelines to run per merge execution. Since merges perform a lot of IO, multiple concurrent merges can be interleaved. | `2` |
+| `max_concurrent_split_uploads` | Maximum number of concurrent split uploads across all pipelines. | `12` |
+| `max_merge_write_throughput` | Limits the IO throughput of the split downloader and the merge executor. | `None` |
+| `decommission_timeout` | Maximum amount of time to wait for the compactor to finish decommissioning gracefully on shutdown before giving up. Can be overridden with the `QW_COMPACTOR_DECOMMISSION_TIMEOUT` environment variable. | `300s` |
+
+Example:
+
+```yaml
+compactor:
+  max_concurrent_merge_executions: 3
+  max_concurrent_split_uploads: 12
+  decommission_timeout: 300s
 ```
 
 ## Searcher configuration

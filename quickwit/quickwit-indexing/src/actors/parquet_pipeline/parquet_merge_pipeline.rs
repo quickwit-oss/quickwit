@@ -57,7 +57,7 @@ use crate::actors::pipeline_shared::wait_duration_before_retry;
 use crate::actors::publisher::DisconnectMergePlanner;
 use crate::actors::{MergeSchedulerService, Publisher, Sequencer, UploaderType};
 use crate::metrics::ONGOING_MERGE_OPERATIONS;
-use crate::models::MergeStatistics;
+use crate::models::{MergeStatistics, SharedPublishToken};
 
 /// Limits concurrent Parquet merge pipeline spawns to avoid overwhelming the
 /// metastore. This is a separate semaphore from the Tantivy merge pipeline's.
@@ -231,7 +231,7 @@ impl ParquetMergePipeline {
             }
         }
         if !failure_or_unhealthy_actors.is_empty() {
-            error!(
+            debug!(
                 generation = self.generation(),
                 healthy_actors = ?healthy_actors,
                 failed_or_unhealthy_actors = ?failure_or_unhealthy_actors,
@@ -302,6 +302,7 @@ impl ParquetMergePipeline {
             self.params.metastore.clone(),
             None, // No Tantivy planner
             None, // No source
+            SharedPublishToken::default(),
         )
         .set_parquet_merge_planner_mailbox(self.merge_planner_mailbox.clone());
 
@@ -312,7 +313,10 @@ impl ParquetMergePipeline {
 
         // 2. Sequencer — ensures merged splits are published in the order they were uploaded, even
         //    if uploads complete out of order.
-        let sequencer = Sequencer::new(merge_publisher_mailbox.clone());
+        let sequencer = Sequencer::new(
+            merge_publisher_mailbox.clone(),
+            QueueCapacity::Bounded(self.params.max_concurrent_split_uploads),
+        );
         let (sequencer_mailbox, _sequencer_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
@@ -675,7 +679,7 @@ mod tests {
                 max_merge_factor: 2,
                 max_merge_ops: 5,
                 target_split_size_bytes: 256 * 1024 * 1024,
-                maturation_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_hours(1),
                 max_finalize_merge_operations: 3,
             },
         ));
@@ -707,7 +711,7 @@ mod tests {
             .window_start_secs(0)
             .window_duration_secs(3600)
             .maturity(ParquetSplitMaturity::Immature {
-                maturation_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_hours(1),
             })
             .build()
     }
@@ -807,7 +811,7 @@ mod tests {
                 max_merge_factor: 2,
                 max_merge_ops: 5,
                 target_split_size_bytes: 256 * 1024 * 1024,
-                maturation_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_hours(1),
                 max_finalize_merge_operations: 3,
             },
         ));

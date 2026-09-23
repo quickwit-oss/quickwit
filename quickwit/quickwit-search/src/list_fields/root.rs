@@ -30,7 +30,7 @@ use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_query::query_ast::QueryAst;
 use tracing::{Span, instrument};
 
-use crate::list_fields::{merge_entries, sort_and_dedup};
+use crate::list_fields::{merge_entries_with_limit_override, sort_and_dedup};
 use crate::search_job_placer::group_jobs_by_index_id;
 use crate::{
     ClusterClient, SearchError, SearchJob, list_relevant_splits, resolve_index_patterns,
@@ -141,7 +141,7 @@ pub async fn root_list_fields(
         .into_iter()
         .map(|response| response.entries)
         .collect();
-    let merged_entries = merge_fields_metadata(leaf_entries).await?;
+    let merged_entries = merge_fields_metadata(leaf_entries, list_fields_req.limit).await?;
     let response = ListFieldsResponse {
         entries: merged_entries,
     };
@@ -170,6 +170,7 @@ fn jobs_to_leaf_requests(
             index_uri: index_meta.index_uri.to_string(),
             field_patterns: search_request_for_leaf.field_patterns.clone(),
             split_offsets: job_group.into_iter().map(|job| job.offsets).collect(),
+            limit: search_request_for_leaf.limit,
         };
         leaf_search_requests.push(leaf_search_request);
         Ok(())
@@ -181,6 +182,7 @@ fn jobs_to_leaf_requests(
 #[instrument(skip_all, fields(num_leaves = entry_groups.len()))]
 async fn merge_fields_metadata(
     mut entry_groups: Vec<Vec<ListFieldsEntry>>,
+    limit: Option<u32>,
 ) -> crate::Result<Vec<ListFieldsEntry>> {
     let parent_span = Span::current();
     search_thread_pool()
@@ -200,7 +202,7 @@ async fn merge_fields_metadata(
                         sort_and_dedup(entry_group);
                     }
                 }
-                merge_entries(entry_groups)
+                merge_entries_with_limit_override(entry_groups, limit)
             })
         })
         .await

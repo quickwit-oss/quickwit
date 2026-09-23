@@ -1,0 +1,169 @@
+name: Full test suite
+
+# Runs `make test-all` against a PR merge commit and reports status on its head.
+on:
+  workflow_call:
+    inputs:
+      head_sha:
+        description: "PR head SHA -- the commit the status is reported on"
+        required: true
+        type: string
+      merge_sha:
+        description: "PR test merge commit SHA -- this is what gets tested"
+        required: true
+        type: string
+      pr_number:
+        description: "PR number being tested"
+        required: true
+        type: string
+    secrets:
+      DISCORD_WEBHOOK:
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  # Must match the required status context in branch protection.
+  STATUS_CONTEXT: "full-test-suite"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    name: Set pending status
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      statuses: write
+    steps:
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          STATUS_SHA: ${{ inputs.head_sha }}
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: process.env.STATUS_SHA,
+              state: 'pending',
+              context: process.env.STATUS_CONTEXT,
+              description: 'Running full test suite...',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+  full-tests:
+    name: make test-all
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # PR-authored code runs only in this job. It has no secrets or write access,
+    # checkout does not persist credentials, and cache writes are disabled. Jobs
+    # with write access never execute PR code. This isolation mitigates CodeQL's
+    # `actions/untrusted-checkout` finding.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.merge_sha }}
+          persist-credentials: false
+
+      - name: Install Ubuntu packages
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install libsasl2-dev libcurl4-openssl-dev
+
+      # apt's protobuf-compiler is too old for proto3 optional fields required
+      # by the substrait crate enabled through the datafusion feature.
+      - name: Install protoc
+        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
+        with:
+          tool: protoc
+
+      - name: Setup stable Rust Toolchain
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: stable
+
+      # Do not save caches from PR code: `issue_comment` runs use the default-
+      # branch cache scope, so writes could poison trusted workflows. Reuse the
+      # trusted `quickwit-cargo` key read-only.
+      - name: Setup cache (read-only)
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: "./quickwit -> target"
+          shared-key: "quickwit-cargo"
+          save-if: false
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
+        with:
+          tool: cargo-nextest
+
+      - name: Run full test suite
+        run: make test-all
+
+  report-status:
+    name: Report final status
+    needs: [prepare, full-tests]
+    if: ${{ always() && needs.prepare.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      statuses: write
+    steps:
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          TEST_SHA: ${{ inputs.merge_sha }}
+          STATUS_SHA: ${{ inputs.head_sha }}
+          RESULT: ${{ needs.full-tests.result }}
+        with:
+          script: |
+            const state = process.env.RESULT === 'success' ? 'success' : 'failure';
+            const testSha = process.env.TEST_SHA;
+            const statusSha = process.env.STATUS_SHA;
+
+            const suffix = testSha === statusSha ? '' : ` (merge commit ${testSha.slice(0, 7)})`;
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: statusSha,
+              state,
+              context: process.env.STATUS_CONTEXT,
+              description: (state === 'success' ? 'Full test suite passed' : 'Full test suite failed') + suffix,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+  on-failure:
+    name: Send failure notification
+    needs: [prepare, full-tests]
+    if: >-
+      ${{ always() && github.repository_owner == 'quickwit-oss' &&
+      needs.prepare.result == 'success' && needs.full-tests.result == 'failure' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    # Job-level env is required by the step condition. This job does not check
+    # out PR code.
+    env:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+      TARGET: "PR #${{ inputs.pr_number }}"
+    steps:
+      - name: Send message
+        if: env.DISCORD_WEBHOOK != ''
+        uses: sarisia/actions-status-discord@eb045afee445dc055c18d3d90bd0f244fd062708 # v1.16.0
+        with:
+          webhook: ${{ env.DISCORD_WEBHOOK }}
+          nodetail: true
+          color: "#FF0000"
+          title: ""
+          description: |
+            ### ❌ ${{ env.TARGET }}
+
+            The full test suite (`make test-all`) failed.
+
+            **[View logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})**

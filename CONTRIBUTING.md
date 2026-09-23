@@ -16,7 +16,7 @@ Feel free to send your contribution in an unfinished state to get early feedback
 In that case, simply mark the PR with the tag [WIP] (standing for work in progress).
 
 ## PR verification checks
-When you submit a pull request to the project, the CI system runs several verification checks. After your PR is merged, a more exhaustive list of tests will be run.
+When you submit a pull request to the project, the CI system runs several verification checks. A collaborator with write access or above can run the full test suite by commenting `/ci-run-all-tests` on the pull request. This runs `make test-all` (all features, failpoints, and all broker backends) against the pull request merged with its base branch and publishes the `full-test-suite` commit status. It takes approximately 22 minutes. If you push new commits afterwards, the command must be run again. Maintainers should run the full test suite before merging a pull request.
 
 You will be notified by email from the CI system if any issues are discovered, but if you want to run these checks locally before submitting PR or in order to verify changes you can use the following commands in the root directory:
 1. To verify that all tests are passing, run `make test-all`.
@@ -106,7 +106,7 @@ As the react UI is embedded in the rust binary, we need to build the react app b
 
 ## Testing release (alpha, beta, rc)
 
-The following Quickwit installation command `curl -L https://install.quickwit.io | sh` always installs the latest stable version of quickwit. To make it easier in installing and testing new (alpha, beta, rc) releases, you can manually pull and execute the script as `./install.sh --allow-any-latest-version`. This will force the script to install any latest available release package.
+The following Quickwit installation command `curl -L https://raw.githubusercontent.com/quickwit-oss/quickwit/main/install.sh | sh` always installs the latest stable version of quickwit. To make it easier in installing and testing new (alpha, beta, rc) releases, you can manually pull and execute the script as `./install.sh --allow-any-latest-version`. This will force the script to install any latest available release package.
 
 ## Tracking licenses
 

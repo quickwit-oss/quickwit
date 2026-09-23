@@ -35,7 +35,7 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::NodeId;
 use serde_json::json;
 
-use crate::IndexerNodeInfo;
+use crate::IndexerPoolEntry;
 use crate::control_plane::{CONTROL_PLAN_LOOP_INTERVAL, ControlPlane};
 use crate::indexing_scheduler::MIN_DURATION_BETWEEN_SCHEDULING;
 
@@ -66,7 +66,7 @@ fn index_metadata_for_test(index_id: &str, source_id: &str, num_pipelines: usize
 pub fn test_indexer_change_stream(
     cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
     indexing_clients: FnvHashMap<NodeId, Mailbox<IndexingService>>,
-) -> impl Stream<Item = Change<NodeId, IndexerNodeInfo>> + Send + 'static {
+) -> impl Stream<Item = Change<NodeId, IndexerPoolEntry>> + Send + 'static {
     cluster_change_stream.filter_map(move |cluster_change| {
         let indexing_clients = indexing_clients.clone();
         Box::pin(async move {
@@ -79,13 +79,14 @@ pub fn test_indexer_change_stream(
                     let client = IndexingServiceClient::from_mailbox(client_mailbox);
                     let change = Change::Insert(
                         node_id.clone(),
-                        IndexerNodeInfo {
+                        IndexerPoolEntry {
                             node_id,
                             generation_id,
                             client,
                             indexing_tasks,
                             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
                             ingester_status: node.ingester_status,
+                            availability_zone: None,
                         },
                     );
                     Some(change)
@@ -269,7 +270,7 @@ async fn test_scheduler_scheduling_no_indexer() {
 
     // There is no indexer, we should observe no
     // scheduling.
-    universe.sleep(Duration::from_secs(60)).await;
+    universe.sleep(Duration::from_mins(1)).await;
     let scheduler_state = control_plane_mailbox
         .ask(Observe)
         .await

@@ -29,6 +29,7 @@ use quickwit_indexing::actors::{
     MergeExecutor, MergeSplitDownloader, Packager, Publisher, Uploader, UploaderType,
 };
 use quickwit_indexing::merge_policy::{MergeOperation, MergeSource};
+use quickwit_indexing::models::SharedPublishToken;
 use quickwit_indexing::{IndexingSplitStore, SplitsUpdateMailbox};
 use quickwit_metrics::{counter, gauge, histogram, label_values};
 use quickwit_proto::indexing::MergePipelineId;
@@ -93,7 +94,7 @@ impl CompactionPipelineHandles {
 
 /// A single-use compaction pipeline. Processes one merge task and terminates.
 ///
-/// Owned by the `CompactorSupervisor`, which periodically calls
+/// Owned by the `CompactorService`, which periodically calls
 /// `check_actor_health()` to collect status updates. The pipeline manages
 /// its own retry logic internally.
 pub struct CompactionPipeline {
@@ -175,7 +176,7 @@ impl CompactionPipeline {
     ///
     /// If the pipeline is already completed or failed (terminal status), returns the status
     /// without re-checking actors. The pipeline sits in this "completed" state (finished or failed)
-    /// until the supervisor cleans up the spot in favor of a new pipeline. This is done to
+    /// until the compactor service cleans up the spot in favor of a new pipeline. This is done to
     /// ensure that the planner acks the success/failure.
     pub fn pipeline_status_update(&mut self) -> PipelineStatusUpdate {
         self.update_status();
@@ -232,7 +233,7 @@ impl CompactionPipeline {
     }
 
     /// Fires once when the pipeline transitions from InProgress to a terminal state.
-    /// Pairs with the `COMPACTIONS_IN_PROGRESS.inc()` in `CompactorSupervisor::spawn_task`.
+    /// Pairs with the `COMPACTIONS_IN_PROGRESS.inc()` in `CompactorService::spawn_task`.
     fn record_terminal_metrics(&self, succeeded: bool) {
         let merge_level = self.merge_operation.merge_level().to_string();
         let index_label =
@@ -290,6 +291,7 @@ impl CompactionPipeline {
             self.metastore.clone(),
             None,
             None,
+            SharedPublishToken::default(),
         );
         let (merge_publisher_mailbox, merge_publisher_handle) = spawn_ctx
             .spawn_builder()

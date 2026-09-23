@@ -18,6 +18,7 @@ use std::fmt::Debug;
 
 use anyhow::Context;
 use quickwit_actors::AskError;
+use quickwit_common::tower::GrpcStatusCode;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use tonic::metadata::BinaryMetadataValue;
@@ -45,7 +46,7 @@ pub enum ServiceErrorCode {
 }
 
 impl ServiceErrorCode {
-    fn grpc_status_code(&self) -> tonic::Code {
+    pub fn grpc_status_code(&self) -> tonic::Code {
         match self {
             Self::AlreadyExists => tonic::Code::AlreadyExists,
             Self::BadRequest => tonic::Code::InvalidArgument,
@@ -101,7 +102,9 @@ where E: ServiceError
 /// between clients and servers over the network without being semantically limited to a status code
 /// and a message. However, it also means that modifying the serialization format of existing errors
 /// or introducing new ones is not backward compatible.
-pub trait GrpcServiceError: ServiceError + Serialize + DeserializeOwned + Send + Sync {
+pub trait GrpcServiceError:
+    ServiceError + GrpcStatusCode + Serialize + DeserializeOwned + Send + Sync
+{
     fn into_grpc_status(self) -> tonic::Status {
         grpc_error_to_grpc_status(self)
     }
@@ -223,6 +226,12 @@ mod tests {
                     Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
                     Self::Unavailable(_) => ServiceErrorCode::Unavailable,
                 }
+            }
+        }
+
+        impl GrpcStatusCode for MyError {
+            fn grpc_status_code(&self) -> tonic::Code {
+                self.error_code().grpc_status_code()
             }
         }
 

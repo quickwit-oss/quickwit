@@ -12,28 +12,44 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::{GoogleCloudStorageConfig, StorageBackend};
 use regex::Regex;
+use reqsign_core::{Context, ProvideCredential, ProvideCredentialChain};
+use reqsign_google::{
+    Credential, DefaultCredentialProvider, FileCredentialProvider,
+    ServiceAccountTokenCredentialProvider,
+};
 use tracing::info;
 
 use super::OpendalStorage;
 use crate::debouncer::DebouncedStorage;
 use crate::{Storage, StorageFactory, StorageResolverError};
 
+// Matches opendal's DEFAULT_GCS_SCOPE, which is more restrictive than `cloud-platform` used by
+// default in reqsign_google
+const GCS_SCOPE: &str = "https://www.googleapis.com/auth/devstorage.read_write";
+
 /// Google cloud storage resolver.
 pub struct GoogleCloudStorageFactory {
     storage_config: GoogleCloudStorageConfig,
+    // this is technically an unbounded cache, the bound is the number of indexes that have existed
+    // since node start, which should be low enough this isn't catastrophic
+    storage_cache: Mutex<HashMap<Uri, Arc<DebouncedStorage<OpendalStorage>>>>,
 }
 
 impl GoogleCloudStorageFactory {
     /// Create a new google cloud storage factory via config.
     pub fn new(storage_config: GoogleCloudStorageConfig) -> Self {
-        Self { storage_config }
+        Self {
+            storage_config,
+            storage_cache: Mutex::new(HashMap::new()),
+        }
     }
 }
 
@@ -44,8 +60,17 @@ impl StorageFactory for GoogleCloudStorageFactory {
     }
 
     async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let storage = from_uri(&self.storage_config, uri)?;
-        Ok(Arc::new(DebouncedStorage::new(storage)))
+        let storage = {
+            let mut cache = self.storage_cache.lock().expect("lock poisoned");
+            if let Some(storage) = cache.get(uri) {
+                storage.clone()
+            } else {
+                let storage = Arc::new(DebouncedStorage::new(from_uri(&self.storage_config, uri)?));
+                cache.insert(uri.clone(), storage.clone());
+                storage
+            }
+        };
+        Ok(storage)
     }
 }
 
@@ -73,6 +98,54 @@ pub mod test_config_helpers {
     }
 }
 
+// this struct implements a ProvideCredential which calls the usual chain of credential providers.
+// if that chain returns service-account details, but no token, we lower ourselves the
+// service-account to a token, which can get cached by our caller
+//
+// before this, our caller would cache the service-account details, but SA to token conversion would
+// happen per-request instead of once every hour
+#[derive(Debug)]
+struct ServiceAccountTokenExchanger {
+    inner: ProvideCredentialChain<Credential>,
+    scope: String,
+}
+
+impl ServiceAccountTokenExchanger {
+    fn new(credential_path: Option<String>, scope: String) -> Self {
+        let mut chain = ProvideCredentialChain::new().push(DefaultCredentialProvider::new());
+        if let Some(path) = credential_path {
+            chain = chain.push_front(FileCredentialProvider::new(path).with_scope(&scope));
+        }
+        Self {
+            inner: chain,
+            scope,
+        }
+    }
+}
+
+impl ProvideCredential for ServiceAccountTokenExchanger {
+    type Credential = Credential;
+
+    async fn provide_credential(
+        &self,
+        ctx: &Context,
+    ) -> reqsign_core::Result<Option<Self::Credential>> {
+        let Some(cred) = self.inner.provide_credential(ctx).await? else {
+            return Ok(None);
+        };
+        match (&cred.service_account, &cred.token) {
+            (Some(sa), None) => {
+                // service account but no token: fetch a token
+                ServiceAccountTokenCredentialProvider::new(sa.clone())
+                    .with_scope(&self.scope)
+                    .provide_credential(ctx)
+                    .await
+            }
+            _ => Ok(Some(cred)),
+        }
+    }
+}
+
 fn from_uri(
     google_cloud_storage_config: &GoogleCloudStorageConfig,
     uri: &Uri,
@@ -86,10 +159,16 @@ fn from_uri(
         .bucket(&bucket_name)
         .root(&prefix.to_string_lossy());
 
-    if let Some(credential_path) = google_cloud_storage_config.resolve_credential_path() {
+    let credential_path = google_cloud_storage_config.resolve_credential_path();
+    if let Some(credential_path) = credential_path.as_ref() {
         info!(path=%credential_path, "fetching google cloud storage credentials from path");
-        cfg = cfg.credential_path(&credential_path);
     }
+
+    cfg = cfg.credential_provider(ServiceAccountTokenExchanger::new(
+        credential_path,
+        GCS_SCOPE.to_string(),
+    ));
+
     let store = OpendalStorage::new_google_cloud_storage(uri.clone(), cfg)?;
     Ok(store)
 }
@@ -118,7 +197,8 @@ mod tests {
     use std::sync::Arc;
 
     use base64::Engine;
-    use opendal::raw::HttpClient;
+    use opendal::HttpTransporter;
+    use opendal_http_transport_reqwest::ReqwestTransport;
     use quickwit_common::uri::Uri;
     use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivateSec1KeyDer};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -203,10 +283,10 @@ mod tests {
             .skip_signature()
             .disable_config_load()
             .disable_vm_metadata();
-        let storage = OpendalStorage::new_google_cloud_storage_with_http_client_for_test(
+        let storage = OpendalStorage::new_google_cloud_storage_with_http_transport_for_test(
             Uri::for_test("gs://quickwit-test-bucket"),
             cfg,
-            HttpClient::with(reqwest_client),
+            HttpTransporter::new(ReqwestTransport::new(reqwest_client)),
         )?;
 
         let bytes = storage.get_slice(Path::new("hello.txt"), 0..2).await?;

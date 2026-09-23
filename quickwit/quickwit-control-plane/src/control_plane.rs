@@ -71,10 +71,14 @@ pub(crate) const CONTROL_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, featur
 };
 
 /// Minimum period between two identical shard pruning operations.
-const PRUNE_SHARDS_DEFAULT_COOLDOWN_PERIOD: Duration = Duration::from_secs(120);
+const PRUNE_SHARDS_DEFAULT_COOLDOWN_PERIOD: Duration = Duration::from_mins(2);
 
 /// Minimum period between two rebuild plan operations.
-const REBUILD_PLAN_COOLDOWN_PERIOD: Duration = Duration::from_secs(2);
+const REBUILD_PLAN_COOLDOWN_PERIOD: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(100)
+} else {
+    Duration::from_secs(2)
+};
 
 #[derive(Debug)]
 struct ControlPlaneLoop;
@@ -124,7 +128,6 @@ impl ControlPlane {
         let (control_plane_mailbox, control_plane_handle) =
             universe.spawn_builder().supervise_fn(move || {
                 let cluster_id = cluster_config.cluster_id.clone();
-                let replication_factor = cluster_config.replication_factor;
                 let shard_throughput_limit_mib: f32 = cluster_config.shard_throughput_limit.as_u64()
                     as f32
                     / shared_consts::MIB as f32;
@@ -133,7 +136,6 @@ impl ControlPlane {
                 let ingest_controller = IngestController::new(
                     metastore.clone(),
                     ingester_pool.clone(),
-                    replication_factor,
                     shard_throughput_limit_mib,
                     cluster_config.shard_scale_up_factor,
                 );
@@ -319,7 +321,7 @@ impl ControlPlane {
             ingesters.insert(ingester_id.clone(), ingester_json);
         }
         for shard in self.model.all_shards() {
-            let ingester_id = NodeId::from_str(&shard.leader_id);
+            let ingester_id = NodeId::from_str(&shard.ingester_id);
 
             if let Entry::Vacant(entry) = ingesters.entry(ingester_id.clone()) {
                 let ingester_json = json!({
@@ -359,14 +361,13 @@ impl ControlPlane {
                     "source_id": source_uid.source_id,
                     "shard_id": shard_entry.shard_id,
                     "shard_state": shard_entry.shard_state().as_json_str_name(),
-                    "leader_id": shard_entry.leader_id,
-                    "follower_id": shard_entry.follower_id,
+                    "ingester_id": shard_entry.ingester_id,
                     "publish_position_inclusive": shard_entry.publish_position_inclusive(),
                 });
                 per_index_and_leader_shards_json
                     .entry(source_uid.index_uid.clone())
                     .or_default()
-                    .entry(shard_entry.leader_id.clone())
+                    .entry(shard_entry.ingester_id.clone())
                     .or_default()
                     .push(shard_json);
             }
@@ -662,8 +663,7 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
         let ingester_needing_resync: BTreeSet<NodeId> = self
             .model
             .list_shards_for_index(&index_uid)
-            .flat_map(|shard_entry| shard_entry.ingesters())
-            .map(|node_id_ref| node_id_ref.to_owned())
+            .map(|shard_entry| NodeId::from_str(&shard_entry.ingester_id))
             .collect();
 
         self.model.delete_index(&index_uid);
@@ -835,8 +835,7 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
             if let Some(shard_entries) = self.model.get_shards_for_source(&source_uid) {
                 shard_entries
                     .values()
-                    .flat_map(|shard_entry| shard_entry.ingesters())
-                    .map(|node_id_ref| node_id_ref.to_owned())
+                    .map(|shard_entry| NodeId::from_str(&shard_entry.ingester_id))
                     .collect()
             } else {
                 BTreeSet::new()
@@ -1045,9 +1044,9 @@ impl Handler<RebalanceShardsCallback> for ControlPlane {
             };
             self.model.close_shards(&source_uid, &[shard_id]);
         }
-        // We drop the rebalance guard explicitly here to put some emphasis on where the rebalance
-        // lock is released.
-        drop(message.rebalance_guard);
+        // We drop the rebalance permit explicitly here to put some emphasis on where the next
+        // rebalance is enabled.
+        drop(message.rebalance_permit);
         Ok(())
     }
 }
@@ -1087,10 +1086,10 @@ mod tests {
         OpenShardSubresponse, OpenShardsResponse, SourceType,
     };
     use quickwit_proto::types::{DocMappingUid, Position};
-    use tokio::sync::Mutex;
+    use tokio::sync::Semaphore;
 
     use super::*;
-    use crate::IndexerNodeInfo;
+    use crate::IndexerPoolEntry;
 
     #[tokio::test]
     async fn test_control_plane_create_index() {
@@ -1264,13 +1263,14 @@ mod tests {
             .withf(move |request| request.indexing_tasks.len() == pipelines_after_update)
             .return_once(|_| Ok(ApplyIndexingPlanResponse {}));
         let indexer = IndexingServiceClient::from_mock(mock_indexer);
-        let indexer_info = IndexerNodeInfo {
+        let indexer_info = IndexerPoolEntry {
             node_id: self_node_id.clone(),
             generation_id: 0,
             client: indexer,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(1_000),
             ingester_status: IngesterStatus::Ready,
+            availability_zone: None,
         };
         indexer_pool.insert(self_node_id.clone(), indexer_info);
 
@@ -1506,7 +1506,7 @@ mod tests {
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shard_id: Some(ShardId::from(1)),
                         shard_state: ShardState::Open as i32,
-                        leader_id: "test-ingester".to_string(),
+                        ingester_id: "test-ingester".to_string(),
                         ..Default::default()
                     }],
                 }];
@@ -1530,7 +1530,7 @@ mod tests {
                 source_id: INGEST_V2_SOURCE_ID.to_string(),
             }],
             closed_shards: Vec::new(),
-            unavailable_leaders: Vec::new(),
+            unavailable_ingesters: Vec::new(),
         };
         let get_open_shards_response = control_plane_mailbox
             .ask_for_res(get_open_shards_request)
@@ -1714,7 +1714,7 @@ mod tests {
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shard_id: Some(ShardId::from(1)),
                         shard_state: ShardState::Open as i32,
-                        leader_id: retiring_ingester_id_clone.to_string(),
+                        ingester_id: retiring_ingester_id_clone.to_string(),
                         ..Default::default()
                     }],
                 }],
@@ -1739,8 +1739,7 @@ mod tests {
                             index_uid: subrequest.index_uid.clone(),
                             source_id: subrequest.source_id.clone(),
                             shard_id: subrequest.shard_id.clone(),
-                            leader_id: subrequest.leader_id.clone(),
-                            follower_id: subrequest.follower_id.clone(),
+                            ingester_id: subrequest.ingester_id.clone(),
                             shard_state: ShardState::Open as i32,
                             ..Default::default()
                         }),
@@ -1784,6 +1783,7 @@ mod tests {
                 client: IngesterServiceClient::from_mock(mock_retiring_ingester),
                 status: IngesterStatus::Retiring,
                 availability_zone: None,
+                generation_id: quickwit_cluster::GenerationId::from(1u64),
             },
         );
         ingester_pool.insert(
@@ -1840,13 +1840,14 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let (client_mailbox, client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
-        let indexer_node_info = IndexerNodeInfo {
+        let indexer_node_info = IndexerPoolEntry {
             node_id: NodeId::from_str("test-indexer"),
             generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: IngesterStatus::Ready,
+            availability_zone: None,
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
@@ -1888,7 +1889,7 @@ mod tests {
             index_uid: Some(index_0.index_uid.clone()),
             source_id: INGEST_V2_SOURCE_ID.to_string(),
             shard_id: Some(ShardId::from(17)),
-            leader_id: "test-ingester".to_string(),
+            ingester_id: "test-ingester".to_string(),
             publish_position_inclusive: Some(Position::Beginning),
             ..Default::default()
         };
@@ -1988,13 +1989,14 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let (client_mailbox, _client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
-        let indexer_node_info = IndexerNodeInfo {
+        let indexer_node_info = IndexerPoolEntry {
             node_id: NodeId::from_str("test-indexer"),
             generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: IngesterStatus::Ready,
+            availability_zone: None,
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
@@ -2019,7 +2021,7 @@ mod tests {
             index_uid: Some(index_metadata.index_uid.clone()),
             source_id: INGEST_V2_SOURCE_ID.to_string(),
             shard_id: Some(ShardId::from(17)),
-            leader_id: "test-ingester".to_string(),
+            ingester_id: "test-ingester".to_string(),
             publish_position_inclusive: Some(Position::Offset(1234u64.into())),
             ..Default::default()
         };
@@ -2065,13 +2067,14 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let (client_mailbox, _client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
-        let indexer_node_info = IndexerNodeInfo {
+        let indexer_node_info = IndexerPoolEntry {
             node_id: NodeId::from_str("test-indexer"),
             generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: IngesterStatus::Ready,
+            availability_zone: None,
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
@@ -2192,8 +2195,7 @@ mod tests {
                             index_uid: Some(index_uid_clone.clone()),
                             source_id: source.source_id.to_string(),
                             shard_id: Some(ShardId::from(15)),
-                            leader_id: "node1".to_string(),
-                            follower_id: None,
+                            ingester_id: "node1".to_string(),
                             shard_state: ShardState::Open as i32,
                             doc_mapping_uid: Some(DocMappingUid::default()),
                             publish_position_inclusive: None,
@@ -2323,8 +2325,7 @@ mod tests {
                             index_uid: Some(index_uid_clone),
                             source_id: source.source_id.to_string(),
                             shard_id: Some(ShardId::from(15)),
-                            leader_id: "node1".to_string(),
-                            follower_id: None,
+                            ingester_id: "node1".to_string(),
                             shard_state: ShardState::Open as i32,
                             doc_mapping_uid: Some(DocMappingUid::default()),
                             publish_position_inclusive: None,
@@ -2435,7 +2436,7 @@ mod tests {
                     source_id: INGEST_V2_SOURCE_ID.to_string(),
                 }],
                 closed_shards: Vec::new(),
-                unavailable_leaders: Vec::new(),
+                unavailable_ingesters: Vec::new(),
             })
             .await
             .unwrap()
@@ -2596,8 +2597,7 @@ mod tests {
                         index_uid: Some(IndexUid::for_test("test-index", 0u128)),
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shard_id: Some(ShardId::from(0u64)),
-                        leader_id: "test-ingester".to_string(),
-                        follower_id: None,
+                        ingester_id: "test-ingester".to_string(),
                         shard_state: ShardState::Open as i32,
                         doc_mapping_uid: Some(DocMappingUid::default()),
                         publish_position_inclusive: Some(Position::Beginning),
@@ -2637,7 +2637,7 @@ mod tests {
                 source_id: INGEST_V2_SOURCE_ID.to_string(),
             }],
             closed_shards: Vec::new(),
-            unavailable_leaders: Vec::new(),
+            unavailable_ingesters: Vec::new(),
         };
         control_plane_mailbox
             .ask(get_or_create_open_shards_request)
@@ -2657,11 +2657,11 @@ mod tests {
                 shard_id: Some(ShardId::from(1u64)),
             },
         ];
-        let rebalance_lock = Arc::new(Mutex::new(()));
-        let rebalance_guard = rebalance_lock.clone().lock_owned().await;
+        let rebalance_semaphore = Arc::new(Semaphore::new(1));
+        let rebalance_permit = rebalance_semaphore.acquire_owned().await.unwrap();
         let callback = RebalanceShardsCallback {
             closed_shards,
-            rebalance_guard,
+            rebalance_permit,
         };
         control_plane_mailbox.ask(callback).await.unwrap();
 
@@ -2690,13 +2690,14 @@ mod tests {
             .return_once(|_| Ok(ApplyIndexingPlanResponse {}));
         let indexer = IndexingServiceClient::from_mock(mock_indexer);
 
-        let indexer_info = IndexerNodeInfo {
+        let indexer_info = IndexerPoolEntry {
             node_id: ingester_id.clone(),
             generation_id: 0,
             client: indexer,
             indexing_tasks: Vec::new(),
             indexing_capacity: CpuCapacity::from_cpu_millis(1_000),
             ingester_status: IngesterStatus::Ready,
+            availability_zone: None,
         };
         indexer_pool.insert(ingester_id.clone(), indexer_info);
 
@@ -2750,8 +2751,7 @@ mod tests {
                         index_uid: Some(IndexUid::for_test("test-index", 0u128)),
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shard_id: Some(ShardId::from(0u64)),
-                        leader_id: "test-ingester".to_string(),
-                        follower_id: None,
+                        ingester_id: "test-ingester".to_string(),
                         shard_state: ShardState::Open as i32,
                         doc_mapping_uid: Some(DocMappingUid::default()),
                         publish_position_inclusive: Some(Position::Beginning),
@@ -2791,7 +2791,7 @@ mod tests {
                 source_id: INGEST_V2_SOURCE_ID.to_string(),
             }],
             closed_shards: Vec::new(),
-            unavailable_leaders: Vec::new(),
+            unavailable_ingesters: Vec::new(),
         };
         control_plane_mailbox
             .ask(get_or_create_open_shards_request)
@@ -2811,8 +2811,7 @@ mod tests {
         assert_eq!(shard["source_id"], INGEST_V2_SOURCE_ID);
         assert_eq!(shard["shard_id"], "00000000000000000000");
         assert_eq!(shard["shard_state"], "open");
-        assert_eq!(shard["leader_id"], "test-ingester");
-        assert_eq!(shard["follower_id"], JsonValue::Null);
+        assert_eq!(shard["ingester_id"], "test-ingester");
         assert_eq!(
             shard["publish_position_inclusive"],
             json!(Position::Beginning)

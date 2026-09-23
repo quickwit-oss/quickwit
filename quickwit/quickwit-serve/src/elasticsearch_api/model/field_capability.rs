@@ -229,6 +229,7 @@ pub fn build_list_field_request_for_es_api(
         start_timestamp: search_params.start_timestamp,
         end_timestamp: search_params.end_timestamp,
         query_ast: query_ast_json,
+        limit: None,
     })
 }
 

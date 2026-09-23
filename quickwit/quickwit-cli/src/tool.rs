@@ -37,6 +37,7 @@ use quickwit_config::{
 };
 use quickwit_index_management::{IndexService, clear_cache_directory};
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergeSchedulerService};
+use quickwit_indexing::docs_clustering::Fingerprinter;
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
@@ -451,6 +452,10 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     let merge_scheduler_service_mailbox = universe.get_or_spawn_one();
     let split_cache =
         Arc::new(IndexingSplitCache::from_config(&indexer_config, &config.data_dir_path).await?);
+    let fingerprinter_opt = config
+        .docs_clustering_config
+        .as_ref()
+        .map(Fingerprinter::new);
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
@@ -464,6 +469,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         storage_resolver,
         EventBroker::default(),
         split_cache,
+        fingerprinter_opt,
     )
     .await?;
     let (indexing_server_mailbox, indexing_server_handle) =
@@ -591,6 +597,10 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     let indexer_config = IndexerConfig::default();
     let universe = Universe::new();
     let merge_scheduler_service: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
+    let fingerprinter_opt = config
+        .docs_clustering_config
+        .as_ref()
+        .map(Fingerprinter::new);
     let indexing_server = IndexingService::new(
         config.node_id,
         config.data_dir_path,
@@ -604,6 +614,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         storage_resolver,
         EventBroker::default(),
         Arc::new(IndexingSplitCache::no_caching()),
+        fingerprinter_opt,
     )
     .await?;
     let (indexing_service_mailbox, indexing_service_handle) =
@@ -802,12 +813,9 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
         .deserialize_index_metadata()?;
     let index_storage = storage_resolver.resolve(index_metadata.index_uri()).await?;
     let split_file = PathBuf::from(format!("{}.split", args.split_id));
-    let split_data = index_storage.get_all(split_file.as_path()).await?;
-    let (_hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data_with_owned_bytes(
-        index_storage,
-        split_file,
-        split_data,
-    )?;
+    let split_bytes = index_storage.get_all(split_file.as_path()).await?;
+    let (bundle_storage, _hotcache_bytes) =
+        BundleStorage::open_from_split_bytes(index_storage, split_file, split_bytes)?;
     std::fs::create_dir_all(&args.target_dir)?;
     for path in bundle_storage.iter_files() {
         let mut out_path = args.target_dir.to_owned();
@@ -1022,6 +1030,7 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         config.gossip_advertise_addr,
         Vec::new(),
         config.gossip_interval,
+        config.gossip_protocol_version,
         FailureDetectorConfig::default(),
         &ChitchatTransport::default(),
         channel_factory,

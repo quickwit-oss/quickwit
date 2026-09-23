@@ -374,7 +374,6 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
                 output_dir,
                 checkpoint_delta_opt: None,
                 publish_lock: PublishLock::default(),
-                publish_token_opt: None,
                 replaced_split_ids,
                 _scratch_directory_opt: Some(scratch.scratch_directory),
                 _merge_task_opt: Some(ParquetMergeTask {
@@ -460,7 +459,6 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
             output_dir,
             checkpoint_delta_opt: None,
             publish_lock: PublishLock::default(),
-            publish_token_opt: None,
             replaced_split_ids,
             _scratch_directory_opt: Some(scratch.scratch_directory),
             _merge_task_opt: Some(ParquetMergeTask {

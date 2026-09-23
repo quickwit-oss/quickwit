@@ -70,7 +70,7 @@ impl GetOrCreateOpenShardsRequestDebouncer {
 pub(super) struct DebouncedGetOrCreateOpenShardsRequest {
     subrequests: Vec<GetOrCreateOpenShardsSubrequest>,
     pub closed_shards: Vec<ShardIds>,
-    pub unavailable_leaders: Vec<String>,
+    pub unavailable_ingesters: Vec<String>,
     rendezvous: Rendezvous,
 }
 
@@ -86,7 +86,7 @@ impl DebouncedGetOrCreateOpenShardsRequest {
         let request = GetOrCreateOpenShardsRequest {
             subrequests: self.subrequests,
             closed_shards: self.closed_shards,
-            unavailable_leaders: self.unavailable_leaders,
+            unavailable_ingesters: self.unavailable_ingesters,
         };
         (Some(request), self.rendezvous)
     }

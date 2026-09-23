@@ -14,6 +14,7 @@
 
 use std::fmt::Debug;
 use std::str::FromStr;
+use std::time::Duration;
 
 use tracing::{error, info};
 
@@ -24,13 +25,17 @@ fn get_from_env_opt_aux<T: Debug>(
 ) -> Option<T> {
     let value_str = std::env::var(key).ok()?;
     let Some(value) = parse_fn(&value_str) else {
-        error!(value=%value_str, "failed to parse environment variable `{key}` value");
+        if sensitive {
+            error!("failed to parse environment variable `{key}`");
+        } else {
+            error!("failed to parse value `{value_str}` for environment variable `{key}`");
+        }
         return None;
     };
     if sensitive {
-        info!("using environment variable `{key}` value");
+        info!("using environment variable `{key}`");
     } else {
-        info!(value=?value, "using environment variable `{key}` value");
+        info!("using value `{value:?}` for environment variable `{key}`");
     }
     Some(value)
 }
@@ -39,7 +44,7 @@ pub fn get_from_env<T: FromStr + Debug>(key: &str, default_value: T, sensitive: 
     if let Some(value) = get_from_env_opt(key, sensitive) {
         value
     } else {
-        info!(default_value=?default_value, "using environment variable `{key}` default value");
+        info!("using default value `{default_value:?}` for environment variable `{key}`");
         default_value
     }
 }
@@ -56,7 +61,22 @@ pub fn get_bool_from_env(key: &str, default_value: bool) -> bool {
     if let Some(flag_value) = get_bool_from_env_opt(key) {
         flag_value
     } else {
-        info!(default_value=%default_value, "using environment variable `{key}` default value");
+        info!("using default value `{default_value}` for environment variable `{key}`");
+        default_value
+    }
+}
+
+/// Reads and parses an environment variable as a human-readable duration (e.g. `"300s"`,
+/// `"5m"`), falling back to `default_value` if the variable is unset or fails to parse.
+pub fn get_duration_from_env(key: &str, default_value: Duration) -> Duration {
+    if let Some(value) = get_from_env_opt_aux(
+        key,
+        |val_str| humantime::parse_duration(val_str).ok(),
+        false,
+    ) {
+        value
+    } else {
+        info!("using default value `{default_value:?}` for environment variable `{key}`");
         default_value
     }
 }

@@ -16,31 +16,36 @@ use std::fmt;
 use std::path::Path;
 
 use quickwit_common::io::IoControls;
+use quickwit_common::metrics::index_label;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_metrics::GaugeGuard;
+use quickwit_metrics::{GaugeGuard, label_values};
 use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::types::{DocMappingUid, IndexUid, PublishToken, SplitId};
+use quickwit_proto::types::{DocMappingUid, IndexUid, SplitId};
 use tantivy::IndexBuilder;
-use tantivy::directory::MmapDirectory;
-use tracing::{Span, instrument};
+use tantivy::directory::{MmapDirectory, RamDirectory};
+use tracing::{Span, error, instrument};
 
 use crate::controlled_directory::ControlledDirectory;
+use crate::docs_clustering::DocIdClusterer;
 use crate::merge_policy::MergeTask;
+use crate::metrics::INDEX_SOURCE;
 use crate::models::{PublishLock, SplitAttrs};
 
 pub struct IndexedSplitBuilder {
     pub split_attrs: SplitAttrs,
     pub index_writer: tantivy::SingleSegmentIndexWriter,
     pub split_scratch_directory: TempDirectory,
-    pub controlled_directory_opt: Option<ControlledDirectory>,
+    pub controlled_directory: ControlledDirectory,
+    pub doc_id_clusterer_opt: Option<DocIdClusterer>,
+    ram_directory_opt: Option<RamDirectory>,
 }
 
 pub struct IndexedSplit {
     pub split_attrs: SplitAttrs,
     pub index: tantivy::Index,
     pub split_scratch_directory: TempDirectory,
-    pub controlled_directory_opt: Option<ControlledDirectory>,
+    pub controlled_directory: ControlledDirectory,
 }
 
 impl IndexedSplit {
@@ -67,11 +72,13 @@ impl fmt::Debug for IndexedSplitBuilder {
             .field("split_id", &self.split_attrs.split_id)
             .field("dir", &self.split_scratch_directory.path())
             .field("num_docs", &self.split_attrs.num_docs)
+            .field("doc_id_clusterer_opt", &self.doc_id_clusterer_opt.is_some())
             .finish()
     }
 }
 
 impl IndexedSplitBuilder {
+    #[allow(clippy::too_many_arguments)]
     pub fn new_in_dir(
         pipeline_id: IndexingPipelineId,
         partition_id: u64,
@@ -80,6 +87,7 @@ impl IndexedSplitBuilder {
         scratch_directory: TempDirectory,
         index_builder: IndexBuilder,
         io_controls: IoControls,
+        doc_id_clusterer_opt: Option<DocIdClusterer>,
     ) -> anyhow::Result<Self> {
         // We avoid intermediary merge, and instead merge all segments in the packager.
         // The benefit is that we don't have to wait for potentially existing merges,
@@ -88,13 +96,20 @@ impl IndexedSplitBuilder {
         let split_scratch_directory_prefix = format!("split-{split_id}-");
         let split_scratch_directory =
             scratch_directory.named_temp_child(&split_scratch_directory_prefix)?;
+        let use_ram_directory =
+            quickwit_common::get_bool_from_env_cached!("QW_ENABLE_IN_MEMORY_INDEXING", false);
+        let ram_directory_opt = use_ram_directory.then(RamDirectory::default);
         let mmap_directory = MmapDirectory::open(split_scratch_directory.path())?;
-        let box_mmap_directory = Box::new(mmap_directory);
-
-        let controlled_directory = ControlledDirectory::new(box_mmap_directory, io_controls);
+        let controlled_directory = ControlledDirectory::new(Box::new(mmap_directory), io_controls);
+        let indexing_directory: Box<dyn tantivy::Directory> =
+            if let Some(ram_directory) = &ram_directory_opt {
+                Box::new(ram_directory.clone())
+            } else {
+                Box::new(controlled_directory.clone())
+            };
 
         let index_writer =
-            index_builder.single_segment_index_writer(controlled_directory.clone(), 15_000_000)?;
+            index_builder.single_segment_index_writer(indexing_directory, 15_000_000)?;
         Ok(Self {
             split_attrs: SplitAttrs {
                 node_id: pipeline_id.node_id,
@@ -111,8 +126,10 @@ impl IndexedSplitBuilder {
                 num_merge_ops: 0,
             },
             index_writer,
+            doc_id_clusterer_opt,
             split_scratch_directory,
-            controlled_directory_opt: Some(controlled_directory),
+            controlled_directory,
+            ram_directory_opt,
         })
     }
 
@@ -131,17 +148,50 @@ impl IndexedSplitBuilder {
         )
     )]
     pub fn finalize(self) -> anyhow::Result<IndexedSplit> {
-        let index = self.index_writer.finalize()?;
+        let split_attrs = self.split_attrs;
+        let index = if let Some(doc_id_clusterer) = self.doc_id_clusterer_opt {
+            // Update metrics for document clustering.
+            let index_label = index_label(&split_attrs.index_uid.index_id);
+            let labels = label_values!(
+                INDEX_SOURCE => index_label.to_string(),
+                split_attrs.source_id.to_string()
+            );
+            doc_id_clusterer.observe_cluster_group_sizes(labels);
+
+            // Finalize the index with the doc id mapping.
+            let doc_id_mapping = doc_id_clusterer
+                .into_doc_id_mapping()
+                .inspect_err(|error| {
+                    error!(?error, "failed to create doc id mapping");
+                })?;
+            self.index_writer
+                .finalize_with_doc_id_mapping(&doc_id_mapping)?
+        } else {
+            self.index_writer.finalize()?
+        };
+        if let Some(ram_directory) = &self.ram_directory_opt {
+            // The packager and uploader consume split files from the scratch directory.
+            ram_directory.persist(&self.controlled_directory)?;
+        }
         Ok(IndexedSplit {
-            split_attrs: self.split_attrs,
+            split_attrs,
             index,
             split_scratch_directory: self.split_scratch_directory,
-            controlled_directory_opt: self.controlled_directory_opt,
+            controlled_directory: self.controlled_directory,
         })
     }
 
     pub fn path(&self) -> &Path {
         self.split_scratch_directory.path()
+    }
+
+    pub fn mem_usage(&self) -> usize {
+        self.index_writer.mem_usage()
+            + self
+                .ram_directory_opt
+                .as_ref()
+                .map(RamDirectory::total_mem_usage)
+                .unwrap_or(0)
     }
 
     pub fn split_id(&self) -> &SplitId {
@@ -154,7 +204,6 @@ pub struct IndexedSplitBatch {
     pub splits: Vec<IndexedSplit>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
-    pub publish_token_opt: Option<PublishToken>,
     /// A [`MergeTask`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
     /// in the `MergePipeline` or `DeleteTaskPipeline`.
     /// See planners docs to understand the usage.
@@ -178,7 +227,6 @@ pub struct IndexedSplitBatchBuilder {
     pub splits: Vec<IndexedSplitBuilder>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
-    pub publish_token_opt: Option<PublishToken>,
     pub commit_trigger: CommitTrigger,
     pub batch_parent_span: Span,
     pub memory_usage: GaugeGuard,
@@ -191,6 +239,5 @@ pub struct EmptySplit {
     pub index_uid: IndexUid,
     pub checkpoint_delta: IndexCheckpointDelta,
     pub publish_lock: PublishLock,
-    pub publish_token_opt: Option<PublishToken>,
     pub batch_parent_span: Span,
 }

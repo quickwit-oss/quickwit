@@ -3,13 +3,14 @@
 
 A split is laid out from the tail as:
     [ ... file data ... ]
-    [ 8 bytes: magic + version (BundleStorageFileOffsetsVersions) ]
+    [ 8 bytes: magic + version (BundleFileRangesVersions) ]
     [ JSON: {"files": {path: {"start": .., "end": ..}, ...}} ]
     [ 4 bytes LE u32: bundle metadata length (covers 8B header + JSON) ]
     [ ... hotcache bytes ... ]
     [ 4 bytes LE u32: hotcache length ]
+    [ optional 16-byte split footer trailer: footer start (u64), version (u32), QWFT ]
 
-See `BundleStorage::open_from_split_data` in
+See `BundleStorage::open_from_split_bytes` in
 `quickwit/quickwit-storage/src/bundle_storage.rs` for the authoritative reader.
 """
 
@@ -21,20 +22,51 @@ from pathlib import Path
 
 FOOTER_LEN_BYTES = 4
 BUNDLE_HEADER_BYTES = 8  # magic (u32 LE) + version (u32 LE)
+SPLIT_FOOTER_TRAILER_BYTES = 16
+SPLIT_FOOTER_TRAILER_MAGIC = b"QWFT"
+SPLIT_FOOTER_TRAILER_VERSION = 1
 
 
 def inspect(path: Path) -> dict:
     with path.open("rb") as f:
-        # Read hotcache length (last 4 bytes).
-        f.seek(-FOOTER_LEN_BYTES, 2)
+        f.seek(0, 2)
+        split_size = f.tell()
+        footer_end = split_size
+
+        if split_size >= SPLIT_FOOTER_TRAILER_BYTES:
+            f.seek(-SPLIT_FOOTER_TRAILER_BYTES, 2)
+            trailer = f.read(SPLIT_FOOTER_TRAILER_BYTES)
+            footer_start, trailer_version, trailer_magic = struct.unpack("<QI4s", trailer)
+            if trailer_magic == SPLIT_FOOTER_TRAILER_MAGIC:
+                if trailer_version != SPLIT_FOOTER_TRAILER_VERSION:
+                    raise RuntimeError(
+                        f"unsupported split footer trailer version ({trailer_version})"
+                    )
+                footer_end -= SPLIT_FOOTER_TRAILER_BYTES
+                if footer_start > footer_end:
+                    raise RuntimeError(
+                        f"invalid split footer start ({footer_start} > {footer_end})"
+                    )
+
+        if footer_end < FOOTER_LEN_BYTES:
+            raise RuntimeError("split is too short to contain a hotcache length")
+
+        # Read hotcache length immediately before the optional trailer.
+        f.seek(footer_end - FOOTER_LEN_BYTES)
         (hot_len,) = struct.unpack("<I", f.read(FOOTER_LEN_BYTES))
 
         # Read bundle metadata length (4 bytes preceding the hotcache).
-        f.seek(-(FOOTER_LEN_BYTES + hot_len + FOOTER_LEN_BYTES), 2)
+        meta_len_offset = footer_end - FOOTER_LEN_BYTES - hot_len - FOOTER_LEN_BYTES
+        if meta_len_offset < 0:
+            raise RuntimeError("invalid hotcache length")
+        f.seek(meta_len_offset)
         (meta_len,) = struct.unpack("<I", f.read(FOOTER_LEN_BYTES))
 
         # Read bundle metadata (the 8-byte magic+version header followed by JSON).
-        f.seek(-(FOOTER_LEN_BYTES + hot_len + FOOTER_LEN_BYTES + meta_len), 2)
+        meta_offset = meta_len_offset - meta_len
+        if meta_offset < 0:
+            raise RuntimeError("invalid bundle metadata length")
+        f.seek(meta_offset)
         meta = f.read(meta_len)
 
     if len(meta) < BUNDLE_HEADER_BYTES:

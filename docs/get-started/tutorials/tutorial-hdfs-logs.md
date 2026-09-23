@@ -33,7 +33,7 @@ Here is an example of a log entry:
 Let's download and install Quickwit.
 
 ```bash
-curl -L https://install.quickwit.io | sh
+curl -L https://raw.githubusercontent.com/quickwit-oss/quickwit/main/install.sh | sh
 cd quickwit-v*/
 ```
 

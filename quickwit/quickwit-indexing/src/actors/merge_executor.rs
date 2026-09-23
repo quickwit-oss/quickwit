@@ -175,7 +175,6 @@ impl Handler<MergeScratch> for MergeExecutor {
                     splits: vec![indexed_split],
                     checkpoint_delta_opt: Default::default(),
                     publish_lock: PublishLock::default(),
-                    publish_token_opt: None,
                     batch_parent_span,
                     merge_task_opt,
                 },
@@ -381,7 +380,7 @@ impl MergeExecutor {
             split_attrs,
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,
-            controlled_directory_opt: Some(controlled_directory),
+            controlled_directory,
         })
     }
 
@@ -500,7 +499,7 @@ impl MergeExecutor {
             },
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,
-            controlled_directory_opt: Some(controlled_directory),
+            controlled_directory,
         };
         Ok(Some(indexed_split))
     }

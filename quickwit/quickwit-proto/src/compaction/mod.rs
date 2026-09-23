@@ -14,7 +14,7 @@
 
 use quickwit_actors::AskError;
 use quickwit_common::rate_limited_error;
-use quickwit_common::tower::MakeLoadShedError;
+use quickwit_common::tower::{MakeLoadShedError, TimeoutExceeded};
 use serde::{Deserialize, Serialize};
 
 use crate::GrpcServiceError;
@@ -40,6 +40,12 @@ pub enum CompactionError {
     Unavailable(String),
 }
 
+impl From<TimeoutExceeded> for CompactionError {
+    fn from(_timeout_exceeded: TimeoutExceeded) -> Self {
+        Self::Timeout("tower layer timeout".to_string())
+    }
+}
+
 impl ServiceError for CompactionError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
@@ -55,6 +61,12 @@ impl ServiceError for CompactionError {
 }
 
 // Required by the codegen tower layers. All four constructors are mandatory.
+impl quickwit_common::tower::GrpcStatusCode for CompactionError {
+    fn grpc_status_code(&self) -> tonic::Code {
+        self.error_code().grpc_status_code()
+    }
+}
+
 impl GrpcServiceError for CompactionError {
     fn new_internal(message: String) -> Self {
         Self::Internal(message)

@@ -127,7 +127,7 @@ fn make_multi_metric_split_metadata(
         .window_start_secs(0)
         .window_duration_secs(900)
         .maturity(ParquetSplitMaturity::Immature {
-            maturation_period: Duration::from_secs(3600),
+            maturation_period: Duration::from_hours(1),
         })
         .rg_partition_prefix_len(prefix_len);
     for metric in metric_names {
@@ -453,7 +453,7 @@ fn make_pipeline_params(
             max_merge_factor: 3,
             max_merge_ops,
             target_split_size_bytes: 256 * 1024 * 1024,
-            maturation_period: Duration::from_secs(3600),
+            maturation_period: Duration::from_hours(1),
             max_finalize_merge_operations: 3,
         },
     ));
@@ -874,7 +874,7 @@ async fn run_three_input_multi_metric_merge<F, Fut>(
             let publish_called = capture.publish_called.clone();
             async move { publish_called.load(Ordering::SeqCst) }
         },
-        Duration::from_secs(60),
+        Duration::from_mins(1),
         Duration::from_millis(100),
     )
     .await
@@ -982,7 +982,7 @@ async fn run_three_input_prefix_aligned_merge<F, Fut>(
             let publish_called = capture.publish_called.clone();
             async move { publish_called.load(Ordering::SeqCst) }
         },
-        Duration::from_secs(60),
+        Duration::from_mins(1),
         Duration::from_millis(100),
     )
     .await

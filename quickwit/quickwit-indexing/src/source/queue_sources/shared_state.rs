@@ -122,8 +122,7 @@ impl QueueSharedState {
                 subrequest_id: idx as u32,
                 index_uid: Some(self.source_uid.index_uid.clone()),
                 source_id: self.source_uid.source_id.clone(),
-                leader_id: String::new(),
-                follower_id: None,
+                ingester_id: String::new(),
                 shard_id: Some(ShardId::from(partition_id.as_str())),
                 doc_mapping_uid: Some(DocMappingUid::default()),
                 publish_token: Some(publish_token.to_string()),
@@ -246,16 +245,16 @@ pub mod shared_state_for_tests {
                 .expect_open_shards()
                 .returning(move |request| {
                     let mut subresponses = Vec::with_capacity(request.subrequests.len());
-                    for sub_req in request.subrequests {
-                        let partition_id: PartitionId = sub_req.shard_id().to_string().into();
-                        let req_token = sub_req.publish_token();
+                    for subrequest in request.subrequests {
+                        let partition_id: PartitionId = subrequest.shard_id().to_string().into();
+                        let publish_token = subrequest.publish_token();
                         let (token, position, update_timestamp) = inner_state_ref
                             .lock()
                             .unwrap()
                             .get(&partition_id)
                             .cloned()
                             .unwrap_or((
-                                req_token.to_string(),
+                                publish_token.to_string(),
                                 Position::Beginning,
                                 OffsetDateTime::now_utc().unix_timestamp(),
                             ));
@@ -265,15 +264,14 @@ pub mod shared_state_for_tests {
                             (token.clone(), position.clone(), update_timestamp),
                         );
                         subresponses.push(OpenShardSubresponse {
-                            subrequest_id: sub_req.subrequest_id,
+                            subrequest_id: subrequest.subrequest_id,
                             open_shard: Some(Shard {
-                                shard_id: sub_req.shard_id,
-                                source_id: sub_req.source_id,
+                                shard_id: subrequest.shard_id,
+                                source_id: subrequest.source_id,
                                 publish_token: Some(token),
-                                index_uid: sub_req.index_uid,
-                                follower_id: sub_req.follower_id,
-                                leader_id: sub_req.leader_id,
-                                doc_mapping_uid: sub_req.doc_mapping_uid,
+                                index_uid: subrequest.index_uid,
+                                ingester_id: subrequest.ingester_id,
+                                doc_mapping_uid: subrequest.doc_mapping_uid,
                                 publish_position_inclusive: Some(position),
                                 shard_state: ShardState::Open as i32,
                                 update_timestamp,
@@ -297,7 +295,7 @@ pub mod shared_state_for_tests {
                             .unwrap()
                             .get(&partition_id)
                             .cloned()
-                            .expect("we should never try to acquire a shard that doesn't exist");
+                            .unwrap();
                         inner_state.lock().unwrap().insert(
                             partition_id,
                             (
@@ -309,11 +307,10 @@ pub mod shared_state_for_tests {
                         assert_ne!(existing_token, request.publish_token);
                         acquired_shards.push(Shard {
                             shard_id: Some(shard_id),
-                            source_id: "dummy".to_string(),
+                            source_id: "test-source".to_string(),
                             publish_token: Some(request.publish_token.clone()),
                             index_uid: None,
-                            follower_id: None,
-                            leader_id: "dummy".to_string(),
+                            ingester_id: "test-ingester".to_string(),
                             doc_mapping_uid: None,
                             publish_position_inclusive: Some(position),
                             shard_state: ShardState::Open as i32,
@@ -350,7 +347,7 @@ pub mod shared_state_for_tests {
             metastore,
             source_uid: SourceUid {
                 index_uid,
-                source_id: "test-queue-src".to_string(),
+                source_id: "test-source".to_string(),
             },
             reacquire_grace_period: Duration::from_secs(10),
             _cleanup_handle: Arc::new(()),

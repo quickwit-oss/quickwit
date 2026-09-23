@@ -239,7 +239,7 @@ mod tests {
             split_id: split_id.clone(),
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
             maturity: SplitMaturity::Immature {
-                maturation_period: Duration::from_secs(3600),
+                maturation_period: Duration::from_hours(1),
             },
             ..Default::default()
         }
@@ -349,9 +349,9 @@ mod tests {
         let split_store = IndexingSplitStore::new(remote_storage, Arc::new(split_cache));
 
         let split_id1 = SplitId::new();
-        let split_payload1 = SplitPayloadBuilder::get_split_payload(&[], &[], &[5, 5, 5])?;
+        let split_payload1 = SplitPayloadBuilder::get_split_payload(&[], &[], None, &[5, 5, 5])?;
         let split_id2 = SplitId::new();
-        let split_payload2 = SplitPayloadBuilder::get_split_payload(&[], &[], &[5, 5, 5, 5])?;
+        let split_payload2 = SplitPayloadBuilder::get_split_payload(&[], &[], None, &[5, 5, 5, 5])?;
 
         {
             let split_path = temp_dir.path().join(split_id1.as_str());

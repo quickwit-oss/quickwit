@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt;
+use std::{fmt, io};
 
 use quickwit_common::rate_limited_error;
 use quickwit_common::retry::Retryable;
@@ -30,6 +30,91 @@ pub const METASTORE_FILE_DESCRIPTOR_SET: &[u8] =
     include_bytes!("../codegen/quickwit/metastore_descriptor.bin");
 
 pub type MetastoreResult<T> = Result<T, MetastoreError>;
+
+const SPLIT_RECOVERY_METADATA_MAGIC: &[u8; 4] = b"QWSM";
+const SPLIT_RECOVERY_METADATA_FORMAT_VERSION: u8 = 1;
+const SPLIT_RECOVERY_METADATA_HEADER_LEN: usize = SPLIT_RECOVERY_METADATA_MAGIC.len()
+    + std::mem::size_of_val(&SPLIT_RECOVERY_METADATA_FORMAT_VERSION);
+
+impl SplitRecoveryMetadata {
+    /// Serializes the recovery metadata with a small container header followed by protobuf bytes.
+    /// The container version only covers framing; compatible protobuf fields can be added without
+    /// changing it.
+    pub fn serialize(&self) -> Vec<u8> {
+        use prost::Message;
+
+        let mut output =
+            Vec::with_capacity(SPLIT_RECOVERY_METADATA_HEADER_LEN + self.encoded_len());
+        output.extend_from_slice(SPLIT_RECOVERY_METADATA_MAGIC);
+        output.push(SPLIT_RECOVERY_METADATA_FORMAT_VERSION);
+        self.encode(&mut output)
+            .expect("encoding a protobuf into a Vec should not fail");
+        output
+    }
+
+    /// Deserializes split recovery metadata embedded in a split bundle.
+    pub fn deserialize(mut bytes: &[u8]) -> io::Result<Self> {
+        use prost::Message;
+
+        if bytes.len() < SPLIT_RECOVERY_METADATA_HEADER_LEN
+            || &bytes[..SPLIT_RECOVERY_METADATA_MAGIC.len()] != SPLIT_RECOVERY_METADATA_MAGIC
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid split recovery metadata magic number",
+            ));
+        }
+        let version = bytes[SPLIT_RECOVERY_METADATA_MAGIC.len()];
+        if version != SPLIT_RECOVERY_METADATA_FORMAT_VERSION {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("unsupported split recovery metadata format version: {version}"),
+            ));
+        }
+        bytes = &bytes[SPLIT_RECOVERY_METADATA_HEADER_LEN..];
+        Self::decode(bytes).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+    }
+}
+
+#[cfg(test)]
+mod split_recovery_metadata_tests {
+    use super::SplitRecoveryMetadata;
+    use crate::types::{DocMappingUid, IndexUid};
+
+    #[test]
+    fn test_split_recovery_metadata_roundtrip_and_unknown_fields() {
+        let metadata = SplitRecoveryMetadata {
+            split_id: "split-a".to_string(),
+            index_uid: Some(IndexUid::for_test("index-a", 1)),
+            source_id: "source-a".to_string(),
+            node_id: "node-a".to_string(),
+            doc_mapping_uid: Some(DocMappingUid::for_test(2)),
+            partition_id: 3,
+            num_docs: 4,
+            uncompressed_docs_size_bytes: 5,
+            time_range_start_inclusive: Some(10),
+            time_range_end_inclusive: Some(20),
+            create_timestamp: 30,
+            tags: vec!["tenant!".to_string(), "tenant:acme".to_string()],
+            delete_opstamp: 6,
+            num_merge_ops: 7,
+            parent_split_ids: vec!["parent-a".to_string(), "parent-b".to_string()],
+            maturation_period_millis: Some(40_500),
+        };
+        let mut serialized = metadata.serialize();
+        // An unknown protobuf varint field must be ignored by older readers.
+        serialized.extend_from_slice(&[0x98, 0x06, 0x01]);
+
+        let decoded = SplitRecoveryMetadata::deserialize(&serialized).unwrap();
+        assert_eq!(decoded, metadata);
+    }
+
+    #[test]
+    fn test_split_recovery_metadata_rejects_invalid_container_header() {
+        let error = SplitRecoveryMetadata::deserialize(b"not-a-manifest").unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+}
 
 /// Lists the object types stored and managed by the metastore.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -127,6 +212,9 @@ pub enum MetastoreError {
     #[error("invalid argument: {message}")]
     InvalidArgument { message: String },
 
+    #[error("invalid publish token for shard `{queue_id}`")]
+    InvalidPublishToken { queue_id: QueueId },
+
     #[error("IO error: {message}")]
     Io { message: String },
 
@@ -164,6 +252,7 @@ impl MetastoreError {
             | MetastoreError::FailedPrecondition { .. }
             | MetastoreError::Forbidden { .. }
             | MetastoreError::InvalidArgument { .. }
+            | MetastoreError::InvalidPublishToken { .. }
             | MetastoreError::JsonDeserializeError { .. }
             | MetastoreError::JsonSerializeError { .. }
             | MetastoreError::NotFound(_)
@@ -227,6 +316,7 @@ impl ServiceError for MetastoreError {
                 ServiceErrorCode::Internal
             }
             Self::InvalidArgument { .. } => ServiceErrorCode::BadRequest,
+            Self::InvalidPublishToken { .. } => ServiceErrorCode::BadRequest,
             Self::Io { message } => {
                 rate_limited_error!(limit_per_min = 6, "metastore/io internal error: {message}");
                 ServiceErrorCode::Internal
@@ -256,6 +346,12 @@ impl ServiceError for MetastoreError {
             Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
+    }
+}
+
+impl quickwit_common::tower::GrpcStatusCode for MetastoreError {
+    fn grpc_status_code(&self) -> tonic::Code {
+        self.error_code().grpc_status_code()
     }
 }
 

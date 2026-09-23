@@ -23,6 +23,7 @@ use aws_sdk_s3::operation::delete_object::DeleteObjectError;
 use aws_sdk_s3::operation::delete_objects::DeleteObjectsError;
 use aws_sdk_s3::operation::get_object::GetObjectError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
+use aws_sdk_s3::operation::list_objects_v2::ListObjectsV2Error;
 use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_s3::operation::upload_part::UploadPartError;
 use aws_smithy_types::retry::ErrorKind;
@@ -133,6 +134,12 @@ impl AwsRetryable for PutObjectError {
 }
 
 impl AwsRetryable for HeadObjectError {
+    fn is_retryable(&self) -> bool {
+        is_retryable(self.meta())
+    }
+}
+
+impl AwsRetryable for ListObjectsV2Error {
     fn is_retryable(&self) -> bool {
         is_retryable(self.meta())
     }

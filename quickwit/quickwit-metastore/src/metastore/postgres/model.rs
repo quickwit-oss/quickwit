@@ -228,8 +228,7 @@ pub(super) enum Shards {
     SourceId,
     ShardId,
     ShardState,
-    LeaderId,
-    FollowerId,
+    IngesterId,
     PublishPositionInclusive,
     PublishToken,
 }
@@ -262,8 +261,8 @@ pub(super) struct PgShard {
     pub source_id: SourceId,
     #[sqlx(try_from = "String")]
     pub shard_id: ShardId,
-    pub leader_id: String,
-    pub follower_id: Option<String>,
+    #[sqlx(rename = "leader_id")]
+    pub ingester_id: String,
     pub shard_state: PgShardState,
     #[sqlx(try_from = "String")]
     pub doc_mapping_uid: DocMappingUid,
@@ -279,8 +278,7 @@ impl From<PgShard> for Shard {
             source_id: pg_shard.source_id,
             shard_id: Some(pg_shard.shard_id),
             shard_state: ShardState::from(pg_shard.shard_state) as i32,
-            leader_id: pg_shard.leader_id,
-            follower_id: pg_shard.follower_id,
+            ingester_id: pg_shard.ingester_id,
             doc_mapping_uid: Some(pg_shard.doc_mapping_uid),
             publish_position_inclusive: Some(pg_shard.publish_position_inclusive.into()),
             publish_token: pg_shard.publish_token,

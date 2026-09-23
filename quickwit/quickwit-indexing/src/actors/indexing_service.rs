@@ -15,10 +15,11 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use anyhow::Context;
 use async_trait::async_trait;
+use bytesize::ByteSize;
 use futures::TryStreamExt;
 use itertools::Itertools;
 use quickwit_actors::{
@@ -27,7 +28,7 @@ use quickwit_actors::{
 };
 use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::EventBroker;
-use quickwit_common::{io, temp_dir};
+use quickwit_common::{get_from_env_opt, io, temp_dir};
 use quickwit_config::{
     INGEST_API_SOURCE_ID, IndexConfig, IndexerConfig, SourceConfig, SourceParams, build_doc_mapper,
     disable_ingest_v1, indexing_pipeline_params_fingerprint,
@@ -50,7 +51,7 @@ use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, ListSplitsRequest, MetastoreResult, MetastoreService,
     MetastoreServiceClient,
 };
-use quickwit_proto::types::{IndexId, IndexUid, NodeId, PipelineUid, ShardId};
+use quickwit_proto::types::{IndexId, IndexUid, IndexingPlanId, NodeId, PipelineUid, ShardId};
 use quickwit_storage::StorageResolver;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -60,6 +61,7 @@ use tracing::{debug, error, info, warn};
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::pipeline_shared::{ActorPipeline, PipelineHandle};
 use super::{FinishPendingMergesAndShutdownPipeline, MergePlanner, MergeSchedulerService};
+use crate::docs_clustering::Fingerprinter;
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
 use crate::source::{AssignShards, Assignment};
 use crate::split_store::IndexingSplitCache;
@@ -67,6 +69,12 @@ use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, Indexi
 
 /// Name of the indexing directory, usually located at `<data_dir_path>/indexing`.
 pub const INDEXING_DIR_NAME: &str = "indexing";
+
+const INDEXING_MAX_WRITE_THROUGHPUT_ENV_KEY: &str = "QW_INDEXING_MAX_WRITE_THROUGHPUT";
+
+static INDEXING_IO_THROUGHPUT_LIMITER: LazyLock<Option<io::Limiter>> = LazyLock::new(|| {
+    get_from_env_opt::<ByteSize>(INDEXING_MAX_WRITE_THROUGHPUT_ENV_KEY, false).map(io::limiter)
+});
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct IndexingServiceCounters {
@@ -107,6 +115,7 @@ pub struct IndexingService {
     pub(crate) ingester_pool: IngesterPool,
     pub(crate) storage_resolver: StorageResolver,
     indexing_pipelines: HashMap<PipelineUid, BoxedPipelineHandle>,
+    latest_indexing_plan_id: IndexingPlanId,
     counters: IndexingServiceCounters,
     pub(crate) max_concurrent_split_uploads: usize,
     merge_scheduler_service_opt: Option<Mailbox<MergeSchedulerService>>,
@@ -121,6 +130,8 @@ pub struct IndexingService {
     #[cfg(feature = "metrics")]
     parquet_merge_pipeline_handles: HashMap<IndexUid, ParquetMergePipelineHandle>,
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
+    fingerprinter_opt: Option<Fingerprinter>,
+    indexing_io_throughput_limiter_opt: Option<io::Limiter>,
     merge_io_throughput_limiter_opt: Option<io::Limiter>,
     pub(crate) event_broker: EventBroker,
 }
@@ -151,7 +162,9 @@ impl IndexingService {
         storage_resolver: StorageResolver,
         event_broker: EventBroker,
         split_cache: Arc<IndexingSplitCache>,
+        fingerprinter_opt: Option<Fingerprinter>,
     ) -> anyhow::Result<IndexingService> {
+        let indexing_io_throughput_limiter_opt = (*INDEXING_IO_THROUGHPUT_LIMITER).clone();
         let merge_io_throughput_limiter_opt =
             indexer_config.max_merge_write_throughput.map(io::limiter);
         let indexing_root_directory =
@@ -174,6 +187,7 @@ impl IndexingService {
             storage_resolver,
             split_cache,
             indexing_pipelines: Default::default(),
+            latest_indexing_plan_id: String::new(),
             counters: Default::default(),
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
             #[cfg(feature = "metrics")]
@@ -181,6 +195,8 @@ impl IndexingService {
             merge_pipeline_handles: HashMap::new(),
             #[cfg(feature = "metrics")]
             parquet_merge_pipeline_handles: HashMap::new(),
+            fingerprinter_opt,
+            indexing_io_throughput_limiter_opt,
             merge_io_throughput_limiter_opt,
             cooperative_indexing_permits,
             event_broker,
@@ -394,6 +410,14 @@ impl IndexingService {
         };
         let max_concurrent_split_uploads_merge =
             (self.max_concurrent_split_uploads - max_concurrent_split_uploads_index).max(1);
+        if let Some(fingerprinter) = self.fingerprinter_opt.as_ref() {
+            info!(
+                index_id = indexing_pipeline_id.index_uid.index_id,
+                source_id = indexing_pipeline_id.source_id,
+                clustering_config=?fingerprinter.config(),
+                "document clustering enabled",
+            );
+        }
 
         let pipeline_params = IndexingPipelineParams {
             pipeline_id: indexing_pipeline_id.clone(),
@@ -402,9 +426,11 @@ impl IndexingService {
             doc_mapper,
             indexing_directory,
             indexing_settings: index_config.indexing_settings.clone(),
+            fingerprinter_opt: self.fingerprinter_opt.clone(),
             split_store,
             max_concurrent_split_uploads_index,
             cooperative_indexing_permits: self.cooperative_indexing_permits.clone(),
+            indexing_io_throughput_limiter_opt: self.indexing_io_throughput_limiter_opt.clone(),
             merge_policy,
             retention_policy,
             max_concurrent_split_uploads_merge,
@@ -538,10 +564,7 @@ impl IndexingService {
                 match pipeline_handle.state() {
                     ActorState::Paused | ActorState::Running => true,
                     ActorState::Success => {
-                        info!(
-                            pipeline_uid=%pipeline_uid,
-                            "indexing pipeline exited successfully"
-                        );
+                        info!(%pipeline_uid, "indexing pipeline exited successfully");
                         self.counters.num_successful_pipelines += 1;
                         self.counters.num_running_pipelines -= 1;
                         false
@@ -549,10 +572,7 @@ impl IndexingService {
                     ActorState::Failure => {
                         // This should never happen: Indexing Pipelines are not supposed to fail,
                         // and are themselves in charge of supervising the pipeline actors.
-                        error!(
-                            pipeline_uid=%pipeline_uid,
-                            "indexing pipeline exited with failure: this should never happen, please report"
-                        );
+                        error!(%pipeline_uid, "indexing pipeline exited with failure: this should never happen, please report");
                         self.counters.num_failed_pipelines += 1;
                         self.counters.num_running_pipelines -= 1;
                         false
@@ -773,8 +793,8 @@ impl IndexingService {
     /// or not.
     ///
     /// If a pipeline actor has failed, this function just logs an error.
-    async fn assign_shards_to_pipelines(&mut self, tasks: &[IndexingTask]) {
-        for task in tasks {
+    async fn assign_shards_to_pipelines(&mut self, plan_request: &ApplyIndexingPlanRequest) {
+        for task in &plan_request.indexing_tasks {
             if task.shard_ids.is_empty() {
                 continue;
             }
@@ -784,6 +804,7 @@ impl IndexingService {
             };
             let assignment = Assignment {
                 shard_ids: task.shard_ids.iter().cloned().collect(),
+                indexing_plan_id: plan_request.indexing_plan_id.clone(),
             };
             let message = AssignShards(assignment);
 
@@ -798,10 +819,24 @@ impl IndexingService {
     /// - Starting the pipelines that are not running.
     async fn apply_indexing_plan(
         &mut self,
-        tasks: &[IndexingTask],
+        plan_request: ApplyIndexingPlanRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<(), IndexingError> {
-        let pipeline_diff = self.compute_pipeline_diff(tasks);
+        // Plan ids are ULIDs
+        if plan_request.indexing_plan_id < self.latest_indexing_plan_id {
+            info!(
+                dropped_plan_id = %plan_request.indexing_plan_id,
+                latest_plan_id = %self.latest_indexing_plan_id,
+                "ignoring stale indexing plan"
+            );
+            return Ok(());
+        }
+        if plan_request.indexing_plan_id == self.latest_indexing_plan_id {
+            return Ok(());
+        }
+        self.latest_indexing_plan_id = plan_request.indexing_plan_id.clone();
+
+        let pipeline_diff = self.compute_pipeline_diff(&plan_request.indexing_tasks);
 
         if !pipeline_diff.pipelines_to_shutdown.is_empty() {
             self.shutdown_pipelines(&pipeline_diff.pipelines_to_shutdown)
@@ -814,7 +849,7 @@ impl IndexingService {
                 .spawn_pipelines(&pipeline_diff.pipelines_to_spawn, ctx)
                 .await?;
         }
-        self.assign_shards_to_pipelines(tasks).await;
+        self.assign_shards_to_pipelines(&plan_request).await;
         self.update_chitchat_running_plan().await;
 
         if !spawn_pipeline_failures.is_empty() {
@@ -1158,7 +1193,7 @@ impl Handler<ApplyIndexingPlanRequest> for IndexingService {
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self
-            .apply_indexing_plan(&plan_request.indexing_tasks, ctx)
+            .apply_indexing_plan(plan_request, ctx)
             .await
             .map(|_| ApplyIndexingPlanResponse {}))
     }
@@ -1241,6 +1276,7 @@ mod tests {
             storage_resolver.clone(),
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
+            None,
         )
         .await
         .unwrap();
@@ -1491,7 +1527,10 @@ mod tests {
                 },
             ];
             indexing_service
-                .ask_for_res(ApplyIndexingPlanRequest { indexing_tasks })
+                .ask_for_res(ApplyIndexingPlanRequest {
+                    indexing_tasks,
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FA1".to_string(),
+                })
                 .await
                 .unwrap();
             assert_eq!(
@@ -1559,6 +1598,7 @@ mod tests {
             indexing_service
                 .ask_for_res(ApplyIndexingPlanRequest {
                     indexing_tasks: indexing_tasks.clone(),
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FA2".to_string(),
                 })
                 .await
                 .unwrap();
@@ -1615,6 +1655,7 @@ mod tests {
             indexing_service
                 .ask_for_res(ApplyIndexingPlanRequest {
                     indexing_tasks: indexing_tasks.clone(),
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FA3".to_string(),
                 })
                 .await
                 .unwrap();
@@ -1674,6 +1715,7 @@ mod tests {
             indexing_service
                 .ask_for_res(ApplyIndexingPlanRequest {
                     indexing_tasks: indexing_tasks.clone(),
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FA4".to_string(),
                 })
                 .await
                 .unwrap();
@@ -1693,6 +1735,7 @@ mod tests {
         indexing_service
             .ask_for_res(ApplyIndexingPlanRequest {
                 indexing_tasks: Vec::new(),
+                indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FA5".to_string(),
             })
             .await
             .unwrap();
@@ -1700,6 +1743,110 @@ mod tests {
         assert_eq!(indexing_service_obs.num_running_pipelines, 0);
         assert_eq!(indexing_service_obs.num_deleted_queues, 1);
         assert_eq!(indexing_service_obs.num_delete_queue_failures, 0);
+        indexing_service_handle.quit().await;
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_indexing_service_drops_superseded_plan() {
+        quickwit_common::setup_logging_for_tests();
+        let transport = ChitchatTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        let metastore = metastore_for_test();
+
+        let index_id = append_random_suffix("test-plan-gate");
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+        let index_uid: IndexUid = metastore
+            .create_index(create_index_request)
+            .await
+            .unwrap()
+            .index_uid()
+            .clone();
+
+        let source_config = SourceConfig {
+            source_id: "test-plan-gate--source".to_string(),
+            num_pipelines: NonZeroUsize::MIN,
+            enabled: true,
+            source_params: SourceParams::void(),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
+        let add_source_request =
+            AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config).unwrap();
+        metastore.add_source(add_source_request).await.unwrap();
+
+        let universe = Universe::new();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let (indexing_service, indexing_service_handle) = spawn_indexing_service_for_test(
+            temp_dir.path(),
+            &universe,
+            metastore.clone(),
+            cluster.clone(),
+        )
+        .await;
+
+        let params_fingerprint =
+            indexing_pipeline_params_fingerprint(&index_config, &source_config);
+        let task = |pipeline_uid: u128| IndexingTask {
+            index_uid: Some(index_uid.clone()),
+            source_id: source_config.source_id.clone(),
+            shard_ids: Vec::new(),
+            pipeline_uid: Some(PipelineUid::for_test(pipeline_uid)),
+            params_fingerprint,
+        };
+
+        indexing_service
+            .ask_for_res(ApplyIndexingPlanRequest {
+                indexing_tasks: vec![task(0), task(1)],
+                indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5F50".to_string(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            indexing_service_handle
+                .observe()
+                .await
+                .num_running_pipelines,
+            2
+        );
+
+        // A superseded (older id) plan that would drop a pipeline is ignored.
+        indexing_service
+            .ask_for_res(ApplyIndexingPlanRequest {
+                indexing_tasks: vec![task(0)],
+                indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5F40".to_string(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            indexing_service_handle
+                .observe()
+                .await
+                .num_running_pipelines,
+            2
+        );
+
+        // A newer plan applies, dropping the second pipeline.
+        indexing_service
+            .ask_for_res(ApplyIndexingPlanRequest {
+                indexing_tasks: vec![task(0)],
+                indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5F60".to_string(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            indexing_service_handle
+                .observe()
+                .await
+                .num_running_pipelines,
+            1
+        );
+
         indexing_service_handle.quit().await;
         universe.assert_quit().await;
     }
@@ -1763,6 +1910,7 @@ mod tests {
             storage_resolver.clone(),
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
+            None,
         )
         .await
         .unwrap();
@@ -1860,6 +2008,7 @@ mod tests {
             storage_resolver.clone(),
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
+            None,
         )
         .await
         .unwrap();
@@ -1941,6 +2090,7 @@ mod tests {
             storage_resolver.clone(),
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
+            None,
         )
         .await
         .unwrap();
@@ -2126,6 +2276,7 @@ mod tests {
             storage_resolver.clone(),
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
+            None,
         )
         .await
         .unwrap();
@@ -2264,6 +2415,7 @@ mod tests {
                         params_fingerprint: 0,
                     },
                 ],
+                indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
             })
             .await
             .unwrap();

@@ -23,10 +23,10 @@ use aws_sdk_s3::primitives::{ByteStream, FsBuilder, Length, SdkBody};
 use futures::{Stream, StreamExt, stream};
 use hyper::body::{Bytes, Frame};
 use pin_project::pin_project;
-use quickwit_common::shared_consts::SPLIT_FIELDS_FILE_NAME;
+use quickwit_common::shared_consts::{SPLIT_FIELDS_FILE_NAME, SPLIT_RECOVERY_METADATA_FILE_NAME};
 
-use crate::bundle_storage::BundleStorageFileOffsetsVersions;
-use crate::{BundleStorageFileOffsets, PutPayload, VersionedComponent};
+use crate::bundle_storage::{BundleFileRangesVersions, serialize_split_footer_trailer};
+use crate::{BundleFileRanges, PutPayload, VersionedComponent};
 
 /// Payload of a split which builds the split bundle and hotcache on the fly and streams it to the
 /// storage.
@@ -143,10 +143,11 @@ pub struct SplitPayloadBuilder {
 }
 
 impl SplitPayloadBuilder {
-    /// Creates a new SplitPayloadBuilder for given files and hotcache.
+    /// Creates a new SplitPayloadBuilder for given files, recovery metadata, and hotcache.
     pub fn get_split_payload(
         split_files: &[PathBuf],
         serialized_split_fields: &[u8],
+        serialized_recovery_metadata: Option<&[u8]>,
         hotcache: &[u8],
     ) -> anyhow::Result<SplitPayload> {
         let mut split_payload_builder = SplitPayloadBuilder::default();
@@ -157,6 +158,12 @@ impl SplitPayloadBuilder {
             SPLIT_FIELDS_FILE_NAME.to_string(),
             Box::new(serialized_split_fields.to_vec()),
         );
+        if let Some(serialized_recovery_metadata) = serialized_recovery_metadata {
+            split_payload_builder.add_payload(
+                SPLIT_RECOVERY_METADATA_FILE_NAME.to_string(),
+                Box::new(serialized_recovery_metadata.to_vec()),
+            );
+        }
         let offsets = split_payload_builder.finalize(hotcache)?;
         Ok(offsets)
     }
@@ -192,12 +199,20 @@ impl SplitPayloadBuilder {
         Ok(())
     }
 
-    /// Writes the bundle file offsets metadata at the end of the bundle file,
-    /// and returns the byte-range of this metadata information.
+    /// Writes the bundle file ranges at the end of the bundle file.
     pub fn finalize(self, hotcache: &[u8]) -> anyhow::Result<SplitPayload> {
-        // Add the fields metadata to the bundle metadata.
+        let enable_footer_trailer =
+            quickwit_common::get_bool_from_env_cached!("QW_ENABLE_SPLIT_FOOTER_TRAILER", false);
+        self.finalize_with_footer_trailer(hotcache, enable_footer_trailer)
+    }
+
+    pub(crate) fn finalize_with_footer_trailer(
+        self,
+        hotcache: &[u8],
+        enable_footer_trailer: bool,
+    ) -> anyhow::Result<SplitPayload> {
         // Build the footer.
-        let metadata_with_fixed_paths = self
+        let file_ranges = self
             .payloads
             .iter()
             .map(|(file_name, _, range)| {
@@ -206,19 +221,19 @@ impl SplitPayloadBuilder {
             })
             .collect::<Result<HashMap<_, _>, anyhow::Error>>()?;
 
-        let bundle_storage_file_offsets = BundleStorageFileOffsets {
-            files: metadata_with_fixed_paths,
-        };
-        let metadata_json =
-            BundleStorageFileOffsetsVersions::serialize(&bundle_storage_file_offsets);
+        let bundle_file_ranges = BundleFileRanges { files: file_ranges };
+        let bundle_metadata = BundleFileRangesVersions::serialize(&bundle_file_ranges);
 
-        // The hotcache needs to be the next to the metadata in order to be able to read both
+        // The hotcache needs to be next to the bundle metadata in order to read both
         // in one continuous read.
         let mut footer_bytes = Vec::new();
-        footer_bytes.extend(&metadata_json);
-        footer_bytes.extend((metadata_json.len() as u32).to_le_bytes());
+        footer_bytes.extend(&bundle_metadata);
+        footer_bytes.extend((bundle_metadata.len() as u32).to_le_bytes());
         footer_bytes.extend(hotcache);
         footer_bytes.extend((hotcache.len() as u32).to_le_bytes());
+        if enable_footer_trailer {
+            footer_bytes.extend(serialize_split_footer_trailer(self.current_offset as u64));
+        }
 
         let mut payloads: Vec<Box<dyn PutPayload>> = self
             .payloads
@@ -280,6 +295,8 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
 
+    use tantivy::directory::FileSlice;
+
     use super::*;
 
     #[tokio::test]
@@ -294,12 +311,35 @@ mod tests {
         let mut file2 = File::create(&test_filepath2)?;
         file2.write_all(b"world")?;
 
-        let split_payload =
-            SplitPayloadBuilder::get_split_payload(&[test_filepath1, test_filepath2], &[], b"abc")?;
+        let split_payload = SplitPayloadBuilder::get_split_payload(
+            &[test_filepath1, test_filepath2],
+            &[],
+            None,
+            b"abc",
+        )?;
 
         assert_eq!(split_payload.len(), 128);
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_split_payload_embeds_recovery_metadata() {
+        let recovery_metadata = b"recovery-protobuf";
+        let split_payload = SplitPayloadBuilder::get_split_payload(
+            &[],
+            b"fields",
+            Some(recovery_metadata),
+            b"hotcache",
+        )
+        .unwrap();
+
+        let recovery_range =
+            b"fields".len() as u64..(b"fields".len() + recovery_metadata.len()) as u64;
+        assert_eq!(
+            fetch_data(&split_payload, recovery_range).await.unwrap(),
+            recovery_metadata
+        );
     }
 
     #[cfg(test)]
@@ -431,6 +471,7 @@ mod tests {
         let split_streamer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
             &[],
+            None,
             &[1, 2, 3],
         )?;
 
@@ -471,8 +512,12 @@ mod tests {
         let total_len = split_streamer.len();
         let all_data = fetch_data(&split_streamer, 0..total_len).await?;
 
-        // last 8 bytes are the length of the hotcache bytes
-        assert_eq!(all_data[all_data.len() - 4..], 3_u32.to_le_bytes());
+        let split_without_trailer =
+            crate::strip_split_footer_trailer(FileSlice::from(all_data))?.read_bytes()?;
+        assert_eq!(
+            split_without_trailer[split_without_trailer.len() - 4..],
+            3_u32.to_le_bytes()
+        );
         Ok(())
     }
 }

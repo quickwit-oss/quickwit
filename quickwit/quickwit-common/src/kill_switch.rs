@@ -13,9 +13,9 @@
 // limitations under the License.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
-use tracing::debug;
+use tracing::{debug, error};
 
 #[derive(Clone, Default)]
 pub struct KillSwitch {
@@ -24,6 +24,7 @@ pub struct KillSwitch {
 
 struct Inner {
     alive: AtomicBool,
+    fault: OnceLock<Arc<anyhow::Error>>,
     children: Mutex<Vec<Weak<Inner>>>,
 }
 
@@ -31,6 +32,7 @@ impl Default for Inner {
     fn default() -> Self {
         Self {
             alive: AtomicBool::new(true),
+            fault: OnceLock::new(),
             children: Mutex::default(),
         }
     }
@@ -58,6 +60,20 @@ impl KillSwitch {
 
     pub fn kill(&self) {
         self.inner.kill();
+    }
+
+    pub fn kill_with_fault(&self, fault: anyhow::Error) {
+        if self.is_alive() {
+            let fault = Arc::new(fault);
+            if self.inner.fault.set(fault.clone()).is_ok() {
+                error!(cause = %format!("{fault:#}"), "actor-fault");
+            }
+        }
+        self.kill();
+    }
+
+    pub fn fault(&self) -> Option<Arc<anyhow::Error>> {
+        self.inner.fault.get().cloned()
     }
 
     // Creates a child killswitch.
@@ -131,6 +147,34 @@ mod tests {
         assert!(kill_switch.is_dead());
         assert!(child_kill_switch.is_dead());
         assert!(grandchild_kill_switch.is_dead());
+    }
+
+    #[test]
+    fn test_kill_switch_fault() {
+        let kill_switch = KillSwitch::default();
+        assert!(kill_switch.fault().is_none());
+
+        kill_switch.kill_with_fault(anyhow::anyhow!("indexer blew up"));
+        assert!(kill_switch.is_dead());
+        let fault = kill_switch.fault().expect("fault should be recorded");
+        assert_eq!(fault.to_string(), "indexer blew up");
+
+        // The first fault is the root cause: actors dying because of it must not overwrite it.
+        kill_switch.kill_with_fault(anyhow::anyhow!("publisher noticed and gave up"));
+        let fault = kill_switch.fault().expect("fault should be recorded");
+        assert_eq!(fault.to_string(), "indexer blew up");
+    }
+
+    #[test]
+    fn test_kill_switch_without_fault_records_nothing() {
+        let kill_switch = KillSwitch::default();
+        kill_switch.kill();
+        assert!(kill_switch.is_dead());
+        assert!(kill_switch.fault().is_none());
+
+        // An error hit while already dying is a consequence of the kill, not a root cause.
+        kill_switch.kill_with_fault(anyhow::anyhow!("directory kill switch was activated"));
+        assert!(kill_switch.fault().is_none());
     }
 
     #[test]

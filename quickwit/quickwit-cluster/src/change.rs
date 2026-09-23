@@ -149,7 +149,7 @@ async fn compute_cluster_change_events_on_added(
 
         if previous_node_ref.chitchat_id().generation_id > new_chitchat_id.generation_id {
             warn!(
-                node_id=%new_chitchat_id.node_id,
+                remote_node_id=%new_chitchat_id.node_id,
                 generation_id=%new_chitchat_id.generation_id,
                 "ignoring node `{}` rejoining the cluster with a lower generation ID",
                 new_chitchat_id.node_id
@@ -175,7 +175,7 @@ async fn compute_cluster_change_events_on_added(
         return events;
     };
     info!(
-        node_id=%new_chitchat_id.node_id,
+        remote_node_id=%new_chitchat_id.node_id,
         generation_id=%new_chitchat_id.generation_id,
         "node `{}` has {verb} the cluster",
         new_chitchat_id.node_id,
@@ -185,7 +185,7 @@ async fn compute_cluster_change_events_on_added(
 
     if new_node.is_ready {
         info!(
-            node_id=%new_chitchat_id.node_id,
+            remote_node_id=%new_chitchat_id.node_id,
             generation_id=%new_chitchat_id.generation_id,
             "node `{}` has transitioned to ready state",
             new_chitchat_id.node_id
@@ -207,7 +207,7 @@ async fn compute_cluster_change_events_on_updated(
 
     if previous_node.chitchat_id().generation_id > updated_chitchat_id.generation_id {
         warn!(
-            node_id=%updated_chitchat_id.node_id,
+            remote_node_id=%updated_chitchat_id.node_id,
             generation_id=%updated_chitchat_id.generation_id,
             "ignoring node `{}` update with a lower generation ID",
             updated_chitchat_id.node_id
@@ -230,7 +230,7 @@ async fn compute_cluster_change_events_on_updated(
         warmup_channel(updated_node.channel()).await;
 
         info!(
-            node_id=%updated_chitchat_id.node_id,
+            remote_node_id=%updated_chitchat_id.node_id,
             generation_id=%updated_chitchat_id.generation_id,
             "node `{}` has transitioned to ready state",
             updated_chitchat_id.node_id
@@ -238,7 +238,7 @@ async fn compute_cluster_change_events_on_updated(
         Some(ClusterChange::Add(updated_node))
     } else if previous_node.is_ready && !updated_node.is_ready {
         info!(
-            node_id=%updated_chitchat_id.node_id,
+            remote_node_id=%updated_chitchat_id.node_id,
             generation_id=%updated_chitchat_id.generation_id,
             "node `{}` has transitioned out of ready state",
             updated_chitchat_id.node_id
@@ -265,7 +265,7 @@ fn compute_cluster_change_events_on_removed(
 
         if previous_node_ref.chitchat_id().generation_id == removed_chitchat_id.generation_id {
             info!(
-                node_id=%removed_chitchat_id.node_id,
+                remote_node_id=%removed_chitchat_id.node_id,
                 generation_id=%removed_chitchat_id.generation_id,
                 "node `{}` has left the cluster",
                 removed_chitchat_id.node_id
@@ -292,7 +292,7 @@ fn try_new_node_with_channel(
         Err(error) => {
             warn!(
                 cluster_id=%cluster_id,
-                node_id=%chitchat_id.node_id,
+                remote_node_id=%chitchat_id.node_id,
                 error=%error,
                 "failed to create cluster node from Chitchat node state"
             );
@@ -316,7 +316,7 @@ async fn try_new_node(
         Err(error) => {
             warn!(
                 cluster_id=%cluster_id,
-                node_id=%chitchat_id.node_id,
+                remote_node_id=%chitchat_id.node_id,
                 error=%error,
                 "failed to read or parse gRPC advertise address"
             );

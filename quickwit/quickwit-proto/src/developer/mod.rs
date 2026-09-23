@@ -50,6 +50,12 @@ impl ServiceError for DeveloperError {
     }
 }
 
+impl quickwit_common::tower::GrpcStatusCode for DeveloperError {
+    fn grpc_status_code(&self) -> tonic::Code {
+        self.error_code().grpc_status_code()
+    }
+}
+
 impl GrpcServiceError for DeveloperError {
     fn new_internal(message: String) -> Self {
         Self::Internal(message)

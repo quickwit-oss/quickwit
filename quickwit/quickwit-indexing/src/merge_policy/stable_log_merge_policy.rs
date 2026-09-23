@@ -371,7 +371,7 @@ mod tests {
         assert_eq!(
             merge_policy.split_maturity(9_000_000, 0),
             SplitMaturity::Immature {
-                maturation_period: Duration::from_secs(3600 * 48)
+                maturation_period: Duration::from_hours(48)
             }
         );
         assert_eq!(
@@ -641,7 +641,7 @@ mod tests {
             min_level_num_docs: 100_000,
             merge_factor: 4,
             max_merge_factor: 6,
-            maturation_period: Duration::from_secs(3600),
+            maturation_period: Duration::from_hours(1),
         };
         let merge_policy = StableLogMergePolicy::new(config, 10_000_000);
         crate::merge_policy::tests::proptest_merge_policy(&merge_policy);

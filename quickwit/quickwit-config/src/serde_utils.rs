@@ -97,6 +97,15 @@ impl PartialEq for HumanDuration {
     }
 }
 
+impl Eq for HumanDuration {}
+
+impl std::hash::Hash for HumanDuration {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // We do not hash the chosen representation, consistent with `PartialEq`.
+        self.duration.hash(state);
+    }
+}
+
 #[cfg(test)]
 mod tests {
 

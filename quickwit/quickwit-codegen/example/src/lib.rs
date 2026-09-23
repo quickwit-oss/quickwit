@@ -923,7 +923,7 @@ mod tests {
             let server_fut = async {
                 let hello = HelloImpl {
                     // delay the response so that the server freezes in the middle of the request
-                    delay: Duration::from_millis(1000),
+                    delay: Duration::from_secs(1),
                 };
                 let grpc_server_adapter = HelloGrpcServerAdapter::new(hello);
                 let grpc_server = HelloGrpcServer::new(grpc_server_adapter);

@@ -93,6 +93,12 @@ impl ServiceError for SearchError {
     }
 }
 
+impl quickwit_common::tower::GrpcStatusCode for SearchError {
+    fn grpc_status_code(&self) -> tonic::Code {
+        self.error_code().grpc_status_code()
+    }
+}
+
 impl GrpcServiceError for SearchError {
     fn new_internal(message: String) -> Self {
         Self::Internal(message)
@@ -120,8 +126,13 @@ impl From<SearchError> for tonic::Status {
 /// Parse tonic error and returns `SearchError`.
 pub fn parse_grpc_error(grpc_error: &tonic::Status) -> SearchError {
     // TODO: the serialization to JSON part is missing.
-    serde_json::from_str(grpc_error.message())
-        .unwrap_or_else(|_| SearchError::Internal(grpc_error.message().to_string()))
+    serde_json::from_str(grpc_error.message()).unwrap_or_else(|_| {
+        SearchError::Internal(format!(
+            "tonic error: {} ({})",
+            grpc_error.message(),
+            grpc_error.code()
+        ))
+    })
 }
 
 impl From<TantivyError> for SearchError {

@@ -29,7 +29,7 @@ type LastAccessDate = u64;
 const MAX_NUM_CANDIDATES: usize = 1_000;
 
 /// Splits that are freshly reported get a last access time of `now - NEWLY_REPORT_SPLIT_LAST_TIME`.
-const NEWLY_REPORTED_SPLIT_LAST_TIME: Duration = Duration::from_secs(60 * 10); // 10mn
+const NEWLY_REPORTED_SPLIT_LAST_TIME: Duration = Duration::from_mins(10);
 
 #[derive(Clone)]
 pub(crate) struct SplitKey {

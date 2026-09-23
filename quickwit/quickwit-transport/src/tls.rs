@@ -45,7 +45,7 @@ use tracing::{error, info, warn};
 static TLS_CERT_RELOADS_TOTAL: LazyCounter = lazy_counter!(
         name: "cert_reloads_total",
         description: "Total number of TLS certificate hot-reload attempts, labeled by `result` \
-                      (`success`: a new cert was applied without a restart; `error`: the attempt \
+                      (`success`: a new cert was applied without a restart; `failure`: the attempt \
                       failed and the current cert was kept).",
         subsystem: "tls",
 );
@@ -295,14 +295,14 @@ fn spawn_cert_reload_task(resolver: Arc<ReloadableCertResolver>, cert_poll_inter
                 }
                 Ok(Ok(false)) => {}
                 Ok(Err(error)) => {
-                    counter!(parent: TLS_CERT_RELOADS_TOTAL, "result" => "error").inc();
+                    counter!(parent: TLS_CERT_RELOADS_TOTAL, "result" => "failure").inc();
                     error!(
                         cert_path = %resolver.cert_path,
                         "failed to reload TLS certificate: {error:#}"
                     );
                 }
                 Err(join_error) => {
-                    counter!(parent: TLS_CERT_RELOADS_TOTAL, "result" => "error").inc();
+                    counter!(parent: TLS_CERT_RELOADS_TOTAL, "result" => "failure").inc();
                     error!(
                         cert_path = %resolver.cert_path,
                         "failed to reload TLS certificate: {join_error:#}"

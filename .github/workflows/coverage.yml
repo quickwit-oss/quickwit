@@ -154,7 +154,8 @@ jobs:
         run: DOCKER_SERVICES=pulsar make docker-compose-up
 
       - name: Install Rust
-        run: rustup update stable
+        run: rustup toolchain install
+        working-directory: ./quickwit
 
       - name: Install cargo-llvm-cov, cargo-nextest, and protoc
         uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1 # v2.75.27
