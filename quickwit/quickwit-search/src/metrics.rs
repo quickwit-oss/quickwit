@@ -262,12 +262,6 @@ pub(crate) static LEAF_SEARCH_WARMUP_ONGOING_NUM_BYTES: LazyGauge = lazy_gauge!(
     subsystem: "search",
 );
 
-pub(crate) static JOB_ASSIGNED_TOTAL: LazyCounter = lazy_counter!(
-        name: "job_assigned_total",
-        description: "Number of job assigned to searchers, per affinity rank.",
-        subsystem: "search",
-);
-
 pub(crate) static SEARCHER_LOCAL_KV_STORE_SIZE_BYTES: LazyGauge = lazy_gauge!(
         name: "searcher_local_kv_store_size_bytes",
         description: "Size of the searcher kv store in bytes. This store is used to cache scroll contexts.",

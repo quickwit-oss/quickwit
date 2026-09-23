@@ -80,6 +80,7 @@ mod tests {
         };
         LeafSearchRequest {
             search_request: Some(search_request),
+            is_retry: false,
             doc_mappers: vec!["doc_mapper".to_string()],
             index_uris: vec!["uri".to_string()],
             leaf_requests: vec![LeafRequestRef {
@@ -88,6 +89,7 @@ mod tests {
                 split_offsets: vec![
                     SplitIdAndFooterOffsets {
                         split_id: "split_1".to_string(),
+                        affinity_rank: None,
                         split_footer_start: 0,
                         split_footer_end: 100,
                         timestamp_start: None,
@@ -96,6 +98,7 @@ mod tests {
                     },
                     SplitIdAndFooterOffsets {
                         split_id: "split_2".to_string(),
+                        affinity_rank: None,
                         split_footer_start: 0,
                         split_footer_end: 100,
                         timestamp_start: None,

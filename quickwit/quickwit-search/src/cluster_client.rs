@@ -84,15 +84,17 @@ impl ClusterClient {
     /// with the number of leaf search calls done (including retries).
     pub async fn leaf_search(
         &self,
-        request: LeafSearchRequest,
+        mut request: LeafSearchRequest,
         mut client: SearchServiceClient,
         leaf_search_call_count: Arc<AtomicU64>,
     ) -> crate::Result<LeafSearchResponse> {
+        self.search_job_placer
+            .set_affinity_ranks(&mut request, client.grpc_addr());
         leaf_search_call_count.fetch_add(1u64, std::sync::atomic::Ordering::Relaxed);
         let response_res = client.leaf_search(request.clone()).await;
         let retry_policy = LeafSearchRetryPolicy {};
         // We retry only once.
-        let Some(retry_request) = retry_policy.retry_request(request, &response_res) else {
+        let Some(mut retry_request) = retry_policy.retry_request(request, &response_res) else {
             return response_res;
         };
         let Some(first_split) = retry_request
@@ -115,6 +117,9 @@ impl ClusterClient {
             &first_split.split_id,
         )
         .await?;
+        retry_request.is_retry = true;
+        self.search_job_placer
+            .set_affinity_ranks(&mut retry_request, client.grpc_addr());
         debug!(
             "Leaf search response error: `{:?}`. Retry once to execute {:?} with {:?}",
             response_res, retry_request, client
@@ -358,6 +363,7 @@ mod tests {
             index_uri: "uri".to_string(),
             split_offsets: vec![SplitIdAndFooterOffsets {
                 split_id: split_id.to_string(),
+                affinity_rank: None,
                 split_footer_end: 100,
                 split_footer_start: 0,
                 timestamp_start: None,
@@ -377,6 +383,7 @@ mod tests {
         };
         LeafSearchRequest {
             search_request: Some(search_request),
+            is_retry: false,
             doc_mappers: vec!["doc_mapper".to_string()],
             index_uris: vec!["uri".to_string()],
             leaf_requests: vec![LeafRequestRef {
@@ -385,6 +392,7 @@ mod tests {
                 split_offsets: vec![
                     SplitIdAndFooterOffsets {
                         split_id: "split_1".to_string(),
+                        affinity_rank: None,
                         split_footer_start: 0,
                         split_footer_end: 100,
                         timestamp_start: None,
@@ -393,6 +401,7 @@ mod tests {
                     },
                     SplitIdAndFooterOffsets {
                         split_id: "split_2".to_string(),
+                        affinity_rank: None,
                         split_footer_start: 0,
                         split_footer_end: 100,
                         timestamp_start: None,
