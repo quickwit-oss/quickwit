@@ -346,7 +346,7 @@ vrl = { version = "0.33", default-features = false, features = [
 ] }
 warp = { version = "0.4", features = ["server", "test"] }
 wiremock = "0.6"
-zstd = { version = "0.13", default-features = false }
+zstd = { version = "0.14", default-features = false }
 
 aws-config = "1.9"
 aws-credential-types = { version = "1.3", features = ["hardcoded-credentials"] }
@@ -382,8 +382,10 @@ opendal = { version = "0.58", default-features = false, features = [
   "http-transport-reqwest",
   "layers-retry",
   "layers-concurrent-limit",
+  "layers-timeout",
 ] }
-reqsign = { version = "0.18", default-features = false, features = ["google", "default-context"] }
+reqsign-core = { version = "3.2", default-features = false }
+reqsign-google = { version = "3.0", default-features = false }
 
 quickwit-actors = { path = "quickwit-actors" }
 quickwit-aws = { path = "quickwit-aws" }
@@ -422,7 +424,9 @@ quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-transport = { path = "quickwit-transport" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "1020eba2b9c20c422c6d061528f08aeda3e5a3e0", default-features = false, features = [
+# This is the tip of tantivy main.
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e229de6db748c6b21747a99a18220446e76104e1", default-features = false, features = [
+  "jitexpr",
   "lz4-compression",
   "mmap",
   "quickwit",
@@ -437,6 +441,10 @@ encoding_rs = "=0.8.35"
 
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "085a4c7" }
+# ServiceAccountTokenCredentialProvider isn't released yet, temporarily depend on a git release
+# to get it
+reqsign-core = { git = "https://github.com/apache/opendal-reqsign", rev = "29f3a9a529f21a5ae0ae32cc9c0967045569d96d" }
+reqsign-google = { git = "https://github.com/apache/opendal-reqsign", rev = "29f3a9a529f21a5ae0ae32cc9c0967045569d96d" }
 
 ## this patched version of tracing helps better understand what happens inside futures (when are
 ## they polled, how long does poll take...)
