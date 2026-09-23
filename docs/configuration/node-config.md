@@ -338,7 +338,7 @@ This section contains the configuration options for the on-disk cache of split b
 | `memory_eviction_policy` | Eviction policy for the memory tier: `s3-fifo` or `cost-aware`. | |
 | `write_throughput` | Maximum disk-cache write throughput in bytes per second. Must be positive. | `500MiB` |
 
-The cache is opened with no compression, quiet recovery, 64MB blocks, a 60MB maximum disk entry, 8 flushers, 8 reclaimers, a clean-block threshold of 16, and write-on-eviction. Entries larger than 60MB stay in memory. `s3-fifo` uses a small-queue ratio of 0.1, a ghost-queue ratio of 1.0, and a promotion threshold of 1. `cost-aware` uses a fixed retrieval cost of 10000000 and a sample size of 64.
+The cache is opened with no compression, quiet recovery, 64MB blocks, a 60MB maximum disk entry, 8 flushers, 8 reclaimers, a clean-block threshold of 16, and write-on-eviction. Entries larger than 60MB stay in memory. `s3-fifo` uses a small-queue ratio of 0.2, a ghost-queue ratio of 1.0, and a promotion threshold of 1. `cost-aware` uses a fixed retrieval cost of 10000000 and a sample size of 2048.
 
 Example:
 

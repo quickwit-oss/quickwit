@@ -36,10 +36,10 @@ const FLUSHERS: usize = 8;
 const RECLAIMERS: usize = 8;
 const CLEAN_BLOCK_THRESHOLD: usize = 16;
 const S3FIFO_GHOST_QUEUE_CAPACITY_RATIO: f64 = 1.0;
-const S3FIFO_SMALL_QUEUE_CAPACITY_RATIO: f64 = 0.1;
+const S3FIFO_SMALL_QUEUE_CAPACITY_RATIO: f64 = 0.2;
 const S3FIFO_SMALL_TO_MAIN_FREQ_THRESHOLD: u8 = 1;
 const COST_AWARE_FIXED_RETRIEVAL_COST: u64 = 10_000_000;
-const COST_AWARE_SAMPLE_SIZE: usize = 64;
+const COST_AWARE_SAMPLE_SIZE: usize = 2048;
 
 /// Foyer hybrid cache for exact split byte-range payloads.
 pub struct FoyerSplitRangeCache {

@@ -45,7 +45,7 @@ fn test_memory_eviction_config_follows_policy() {
         panic!("s3-fifo policy must build an s3-fifo eviction config");
     };
     assert_eq!(s3fifo.ghost_queue_capacity_ratio, 1.0);
-    assert_eq!(s3fifo.small_queue_capacity_ratio, 0.1);
+    assert_eq!(s3fifo.small_queue_capacity_ratio, 0.2);
     assert_eq!(s3fifo.small_to_main_freq_threshold, 1);
 
     let foyer::EvictionConfig::CostAware(cost_aware) =
@@ -54,7 +54,7 @@ fn test_memory_eviction_config_follows_policy() {
         panic!("cost-aware policy must build a cost-aware eviction config");
     };
     assert_eq!(cost_aware.fixed_retrieval_cost, 10_000_000);
-    assert_eq!(cost_aware.sample_size, 64);
+    assert_eq!(cost_aware.sample_size, 2048);
 }
 
 #[test]
