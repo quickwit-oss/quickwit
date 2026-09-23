@@ -213,21 +213,16 @@ indexer:
 #      max_num_splits: 10000
 #      num_concurrent_downloads: 1
 #   # Foyer disk cache for exact split footer and body ranges.
-#   # Omitted or null disables the cache. write_policy defaults to write-on-eviction.
+#   # Omitted or null disables the cache. The disk engine uses no compression,
+#   # quiet recovery, 64MB blocks, a 60MB max entry, 8 flushers, 8 reclaimers,
+#   # a clean-block threshold of 16, and write-on-eviction.
 #   split_range_disk_cache:
 #     path: /quickwit/qwdata/split-range-v1
 #     disk_capacity: 1500G
 #     memory_capacity: 15G
 #     memory_eviction_policy: s3-fifo
-#     compression: lz4
-#     recover_mode: quiet
-#     block_size: 64M
-#     max_entry_size: 60M
-#     flushers: 24
 #     buffer_pool_size: 2G
 #     submit_queue_size_threshold: 3G
-#     reclaimers: 8
-#     clean_block_threshold: 16
 #     write_throughput: 500MiB
 # -------------------------------- Jaeger settings --------------------------------
 

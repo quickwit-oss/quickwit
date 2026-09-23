@@ -27,11 +27,14 @@ use bytes::Bytes;
 use bytesize::ByteSize;
 use foyer::{Code, DeviceBuilder};
 pub(crate) use key::SplitRangeCacheKey;
-use quickwit_config::{
-    CachePolicy, DiskCompression, RecoverMode, SplitRangeCacheWritePolicy,
-    SplitRangeDiskCacheConfig,
-};
+use quickwit_config::{SplitRangeDiskCacheConfig, SplitRangeMemoryEvictionPolicy};
 pub use storage::{FoyerSplitRangeStorage, wrap_storage_with_split_range_cache};
+
+const BLOCK_SIZE: usize = ByteSize::mb(64).as_u64() as usize;
+const MAX_ENTRY_SIZE: usize = ByteSize::mb(60).as_u64() as usize;
+const FLUSHERS: usize = 8;
+const RECLAIMERS: usize = 8;
+const CLEAN_BLOCK_THRESHOLD: usize = 16;
 
 /// Foyer hybrid cache for exact split byte-range payloads.
 pub struct FoyerSplitRangeCache {
@@ -60,22 +63,22 @@ impl FoyerSplitRangeCache {
         let cache = foyer::HybridCacheBuilder::new()
             .with_name("split-range-v1")
             .with_metrics_registry(Box::new(metrics::QuickwitMetricsRegistry))
-            .with_policy(foyer_write_policy(config.write_policy))
-            .with_flush_on_close(foyer_flush_on_close(config.write_policy))
+            .with_policy(foyer::HybridCachePolicy::WriteOnEviction)
+            .with_flush_on_close(true)
             .memory(memory_capacity)
-            .with_eviction_config(foyer_memory_eviction_config(config.memory_eviction_policy)?)
+            .with_eviction_config(foyer_memory_eviction_config(config)?)
             .with_weighter(|key: &SplitRangeCacheKey, value: &Bytes| {
                 key.estimated_size() + value.len()
             })
             .storage()
             .with_engine_config(engine)
-            .with_recover_mode(foyer_recover_mode(config.recover_mode))
-            .with_compression(foyer_compression(config.compression))
+            .with_recover_mode(foyer::RecoverMode::Quiet)
+            .with_compression(foyer::Compression::None)
             .build()
             .await?;
         Ok(Self {
             cache,
-            max_entry_size: bytesize_to_usize(config.max_entry_size, "max_entry_size")?,
+            max_entry_size: MAX_ENTRY_SIZE,
         })
     }
 
@@ -88,41 +91,38 @@ impl FoyerSplitRangeCache {
     }
 }
 
-pub(crate) fn foyer_write_policy(policy: SplitRangeCacheWritePolicy) -> foyer::HybridCachePolicy {
-    match policy {
-        SplitRangeCacheWritePolicy::WriteOnEviction => foyer::HybridCachePolicy::WriteOnEviction,
-        SplitRangeCacheWritePolicy::WriteOnInsertion => foyer::HybridCachePolicy::WriteOnInsertion,
+fn foyer_memory_eviction_config(
+    config: &SplitRangeDiskCacheConfig,
+) -> anyhow::Result<foyer::EvictionConfig> {
+    match config.memory_eviction_policy {
+        SplitRangeMemoryEvictionPolicy::S3Fifo => Ok(s3fifo_eviction(config).into()),
+        SplitRangeMemoryEvictionPolicy::CostAware => cost_aware_eviction(config),
     }
 }
 
-/// Flush the memory tier on close under write-on-eviction so a graceful
-/// restart can recover hot entries. Write-on-insertion already submitted
-/// those entries to disk.
-pub(crate) fn foyer_flush_on_close(policy: SplitRangeCacheWritePolicy) -> bool {
-    matches!(policy, SplitRangeCacheWritePolicy::WriteOnEviction)
+fn s3fifo_eviction(config: &SplitRangeDiskCacheConfig) -> foyer::S3FifoConfig {
+    let mut eviction = foyer::S3FifoConfig::default();
+    if let Some(ratio) = config.s3fifo_ghost_queue_capacity_ratio {
+        eviction.ghost_queue_capacity_ratio = ratio;
+    }
+    if let Some(ratio) = config.s3fifo_small_queue_capacity_ratio {
+        eviction.small_queue_capacity_ratio = ratio;
+    }
+    if let Some(threshold) = config.s3fifo_small_to_main_freq_threshold {
+        eviction.small_to_main_freq_threshold = threshold;
+    }
+    eviction
 }
 
-fn foyer_recover_mode(recover_mode: RecoverMode) -> foyer::RecoverMode {
-    match recover_mode {
-        RecoverMode::Quiet => foyer::RecoverMode::Quiet,
-    }
-}
-
-fn foyer_compression(compression: DiskCompression) -> foyer::Compression {
-    match compression {
-        DiskCompression::Lz4 => foyer::Compression::Lz4,
-    }
-}
-
-fn foyer_memory_eviction_config(policy: CachePolicy) -> anyhow::Result<foyer::S3FifoConfig> {
-    match policy {
-        CachePolicy::S3Fifo => Ok(foyer::S3FifoConfig::default()),
-        CachePolicy::Lru | CachePolicy::TinyLfu => {
-            anyhow::bail!(
-                "split_range_disk_cache.memory_eviction_policy must be s3-fifo in phase 1"
-            )
-        }
-    }
+fn cost_aware_eviction(
+    config: &SplitRangeDiskCacheConfig,
+) -> anyhow::Result<foyer::EvictionConfig> {
+    anyhow::bail!(
+        "cost-aware memory eviction is not supported by foyer (fixed_retrieval_cost={:?}, \
+         sample_size={:?})",
+        config.cost_aware_fixed_retrieval_cost,
+        config.cost_aware_sample_size,
+    )
 }
 
 fn foyer_throttle(config: &SplitRangeDiskCacheConfig) -> anyhow::Result<foyer::Throttle> {
@@ -150,10 +150,10 @@ fn build_block_engine(
 ) -> anyhow::Result<foyer::BlockEngineConfig<SplitRangeCacheKey, Bytes, foyer::HybridCacheProperties>>
 {
     Ok(foyer::BlockEngineConfig::new(device)
-        .with_block_size(bytesize_to_usize(config.block_size, "block_size")?)
-        .with_flushers(config.flushers)
-        .with_reclaimers(config.reclaimers)
-        .with_clean_block_threshold(config.clean_block_threshold)
+        .with_block_size(BLOCK_SIZE)
+        .with_flushers(FLUSHERS)
+        .with_reclaimers(RECLAIMERS)
+        .with_clean_block_threshold(CLEAN_BLOCK_THRESHOLD)
         .with_buffer_pool_size(bytesize_to_usize(
             config.buffer_pool_size,
             "buffer_pool_size",
@@ -177,19 +177,16 @@ fn bytesize_to_usize(size: ByteSize, field: &'static str) -> anyhow::Result<usiz
 pub(crate) fn config_for_test(path: impl AsRef<Path>) -> SplitRangeDiskCacheConfig {
     SplitRangeDiskCacheConfig {
         path: path.as_ref().to_path_buf(),
-        disk_capacity: ByteSize::mb(64),
+        disk_capacity: ByteSize::mb(512),
         memory_capacity: ByteSize::mb(8),
         buffer_pool_size: ByteSize::mb(4),
         submit_queue_size_threshold: ByteSize::mb(8),
-        memory_eviction_policy: CachePolicy::S3Fifo,
-        write_policy: SplitRangeCacheWritePolicy::WriteOnEviction,
-        compression: DiskCompression::Lz4,
-        recover_mode: RecoverMode::Quiet,
-        block_size: ByteSize::mb(4),
-        max_entry_size: ByteSize::mb(2),
-        flushers: 1,
-        reclaimers: 1,
-        clean_block_threshold: 16,
+        memory_eviction_policy: SplitRangeMemoryEvictionPolicy::S3Fifo,
+        s3fifo_ghost_queue_capacity_ratio: None,
+        s3fifo_small_queue_capacity_ratio: None,
+        s3fifo_small_to_main_freq_threshold: None,
+        cost_aware_fixed_retrieval_cost: None,
+        cost_aware_sample_size: None,
         write_throughput: ByteSize::mib(500),
     }
 }

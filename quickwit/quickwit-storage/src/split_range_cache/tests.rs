@@ -22,7 +22,7 @@ use std::time::{Duration, SystemTime};
 use async_trait::async_trait;
 use futures::TryStreamExt;
 use quickwit_common::uri::Uri;
-use quickwit_config::SplitRangeCacheWritePolicy;
+use quickwit_config::SplitRangeMemoryEvictionPolicy;
 use tokio::io::AsyncRead;
 use tokio::sync::watch;
 
@@ -38,13 +38,25 @@ const SPLIT_PATH: &str = "a.split";
 const SPLIT_BYTES: &[u8] = b"abcde";
 
 #[test]
-fn test_flush_on_close_pairs_with_write_policy() {
-    assert!(foyer_flush_on_close(
-        SplitRangeCacheWritePolicy::WriteOnEviction
-    ));
-    assert!(!foyer_flush_on_close(
-        SplitRangeCacheWritePolicy::WriteOnInsertion
-    ));
+fn test_s3fifo_settings_apply_only_for_s3_fifo() {
+    let mut config = config_for_test("/tmp/quickwit-split-range-cache-eviction");
+    config.s3fifo_ghost_queue_capacity_ratio = Some(0.5);
+    config.s3fifo_small_queue_capacity_ratio = Some(0.2);
+    config.s3fifo_small_to_main_freq_threshold = Some(2);
+    config.cost_aware_fixed_retrieval_cost = Some(4.0);
+    config.cost_aware_sample_size = Some(65536);
+    let foyer::EvictionConfig::S3Fifo(eviction) = foyer_memory_eviction_config(&config).unwrap()
+    else {
+        panic!("s3-fifo policy must build an s3-fifo eviction config");
+    };
+    assert_eq!(eviction.ghost_queue_capacity_ratio, 0.5);
+    assert_eq!(eviction.small_queue_capacity_ratio, 0.2);
+    assert_eq!(eviction.small_to_main_freq_threshold, 2);
+
+    config.memory_eviction_policy = SplitRangeMemoryEvictionPolicy::CostAware;
+    let error = foyer_memory_eviction_config(&config).unwrap_err();
+    assert!(error.to_string().contains("cost-aware"));
+    assert!(error.to_string().contains("65536"));
 }
 
 #[test]
@@ -66,19 +78,6 @@ async fn test_split_range_cache_builder_uses_configured_policy_and_throttle() {
     assert_eq!(
         cache.cache.policy(),
         foyer::HybridCachePolicy::WriteOnEviction
-    );
-    cache.close().await.unwrap();
-}
-
-#[tokio::test]
-async fn test_split_range_cache_builder_write_on_insertion() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let mut config = config_for_test(temp_dir.path());
-    config.write_policy = SplitRangeCacheWritePolicy::WriteOnInsertion;
-    let cache = FoyerSplitRangeCache::open(&config).await.unwrap();
-    assert_eq!(
-        cache.cache.policy(),
-        foyer::HybridCachePolicy::WriteOnInsertion
     );
     cache.close().await.unwrap();
 }

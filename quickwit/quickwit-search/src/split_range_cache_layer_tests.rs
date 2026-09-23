@@ -18,8 +18,7 @@ use std::sync::Arc;
 
 use bytesize::ByteSize;
 use quickwit_config::{
-    CachePolicy, DiskCompression, RecoverMode, SearcherConfig, SplitCacheLimits,
-    SplitRangeCacheWritePolicy, SplitRangeDiskCacheConfig,
+    SearcherConfig, SplitCacheLimits, SplitRangeDiskCacheConfig, SplitRangeMemoryEvictionPolicy,
 };
 use quickwit_proto::search::SplitIdAndFooterOffsets;
 use quickwit_storage::{
@@ -38,19 +37,16 @@ const HOTCACHE_BYTES: &[u8] = b"HOT";
 fn range_cache_config(path: impl AsRef<Path>) -> SplitRangeDiskCacheConfig {
     SplitRangeDiskCacheConfig {
         path: path.as_ref().to_path_buf(),
-        disk_capacity: ByteSize::mb(64),
+        disk_capacity: ByteSize::mb(512),
         memory_capacity: ByteSize::mb(8),
         buffer_pool_size: ByteSize::mb(4),
         submit_queue_size_threshold: ByteSize::mb(8),
-        memory_eviction_policy: CachePolicy::S3Fifo,
-        write_policy: SplitRangeCacheWritePolicy::WriteOnEviction,
-        compression: DiskCompression::Lz4,
-        recover_mode: RecoverMode::Quiet,
-        block_size: ByteSize::mb(4),
-        max_entry_size: ByteSize::mb(2),
-        flushers: 1,
-        reclaimers: 1,
-        clean_block_threshold: 16,
+        memory_eviction_policy: SplitRangeMemoryEvictionPolicy::S3Fifo,
+        s3fifo_ghost_queue_capacity_ratio: None,
+        s3fifo_small_queue_capacity_ratio: None,
+        s3fifo_small_to_main_freq_threshold: None,
+        cost_aware_fixed_retrieval_cost: None,
+        cost_aware_sample_size: None,
         write_throughput: ByteSize::mib(500),
     }
 }

@@ -335,16 +335,15 @@ This section contains the configuration options for the on-disk cache of split b
 | `memory_capacity` | In-memory tier size in front of the disk cache. | |
 | `buffer_pool_size` | Size of the disk write buffer pool. | |
 | `submit_queue_size_threshold` | Maximum amount of data waiting to be flushed to disk. | |
-| `memory_eviction_policy` | Eviction policy for the memory tier. Currently only `s3-fifo` is accepted. | |
-| `write_policy` | When admitted values are written to disk: `write-on-eviction` or `write-on-insertion`. | `write-on-eviction` |
-| `compression` | On-disk compression. Currently only `lz4` is accepted. | |
-| `recover_mode` | How existing cache files are recovered on startup. Currently only `quiet` is accepted. | |
-| `block_size` | Disk block size. Must be larger than `max_entry_size`. | |
-| `max_entry_size` | Maximum uncompressed payload stored as one disk entry. Larger ranges stay in memory only. | |
-| `flushers` | Number of flush worker threads. Must be positive. | |
-| `reclaimers` | Number of reclaim worker threads. Must be positive. | |
-| `clean_block_threshold` | Clean disk block count at or below which reclaimers start working. Must be positive. | `16` |
+| `memory_eviction_policy` | Eviction policy for the memory tier: `s3-fifo` or `cost-aware`. | |
+| `s3fifo_ghost_queue_capacity_ratio` | Ghost queue capacity ratio. Applied only when `memory_eviction_policy` is `s3-fifo`. | `1.0` |
+| `s3fifo_small_queue_capacity_ratio` | Small queue capacity ratio. Applied only when `memory_eviction_policy` is `s3-fifo`. | `0.1` |
+| `s3fifo_small_to_main_freq_threshold` | Access count required to promote an entry from the small queue to the main queue. Applied only when `memory_eviction_policy` is `s3-fifo`. | `1` |
+| `cost_aware_fixed_retrieval_cost` | Fixed retrieval cost. Applied only when `memory_eviction_policy` is `cost-aware`. | |
+| `cost_aware_sample_size` | Eviction sample size. Applied only when `memory_eviction_policy` is `cost-aware`. | |
 | `write_throughput` | Maximum disk-cache write throughput in bytes per second. Must be positive. | `500MiB` |
+
+The cache is opened with no compression, quiet recovery, 64MB blocks, a 60MB maximum disk entry, 8 flushers, 8 reclaimers, a clean-block threshold of 16, and write-on-eviction. Entries larger than 60MB stay in memory. `cost-aware` is accepted in configuration, but foyer 0.22.3 has no cost-aware eviction, so opening the cache with that policy fails.
 
 Example:
 
@@ -363,15 +362,9 @@ searcher:
     disk_capacity: 1500G
     memory_capacity: 15G
     memory_eviction_policy: s3-fifo
-    compression: lz4
-    recover_mode: quiet
-    block_size: 64M
-    max_entry_size: 60M
-    flushers: 24
+    s3fifo_small_queue_capacity_ratio: 0.1
     buffer_pool_size: 2G
     submit_queue_size_threshold: 3G
-    reclaimers: 8
-    clean_block_threshold: 16
     write_throughput: 500MiB
 ```
 

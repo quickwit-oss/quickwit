@@ -403,33 +403,20 @@ impl SplitCacheLimits {
     }
 }
 
-/// Admission policy for the split-range Foyer cache.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum SplitRangeCacheWritePolicy {
-    /// Keep admitted values in memory and persist them when memory eviction occurs.
-    #[default]
-    WriteOnEviction,
-    /// Persist admitted values as soon as they are inserted.
-    WriteOnInsertion,
-}
-
-/// On-disk compression for the split-range Foyer cache.
+/// Memory-tier eviction for the split-range Foyer cache.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum DiskCompression {
-    Lz4,
-}
-
-/// Recovery mode for the split-range Foyer cache.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum RecoverMode {
-    Quiet,
+pub enum SplitRangeMemoryEvictionPolicy {
+    S3Fifo,
+    CostAware,
 }
 
 /// Disabled-by-default searcher disk cache for exact split byte ranges.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+///
+/// Compression, recovery, block size, entry size, flushers, reclaimers, the
+/// clean-block threshold, and the write policy are fixed when the cache is
+/// opened.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SplitRangeDiskCacheConfig {
     pub path: PathBuf,
@@ -441,19 +428,22 @@ pub struct SplitRangeDiskCacheConfig {
     pub buffer_pool_size: ByteSize,
     #[serde(with = "crate::serde_utils::bytesize_serde")]
     pub submit_queue_size_threshold: ByteSize,
-    pub memory_eviction_policy: CachePolicy,
-    #[serde(default)]
-    pub write_policy: SplitRangeCacheWritePolicy,
-    pub compression: DiskCompression,
-    pub recover_mode: RecoverMode,
-    #[serde(with = "crate::serde_utils::bytesize_serde")]
-    pub block_size: ByteSize,
-    #[serde(with = "crate::serde_utils::bytesize_serde")]
-    pub max_entry_size: ByteSize,
-    pub flushers: usize,
-    pub reclaimers: usize,
-    #[serde(default = "SplitRangeDiskCacheConfig::default_clean_block_threshold")]
-    pub clean_block_threshold: usize,
+    pub memory_eviction_policy: SplitRangeMemoryEvictionPolicy,
+    /// Applied only when `memory_eviction_policy` is `s3-fifo`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s3fifo_ghost_queue_capacity_ratio: Option<f64>,
+    /// Applied only when `memory_eviction_policy` is `s3-fifo`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s3fifo_small_queue_capacity_ratio: Option<f64>,
+    /// Applied only when `memory_eviction_policy` is `s3-fifo`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s3fifo_small_to_main_freq_threshold: Option<u8>,
+    /// Applied only when `memory_eviction_policy` is `cost-aware`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_aware_fixed_retrieval_cost: Option<f64>,
+    /// Applied only when `memory_eviction_policy` is `cost-aware`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_aware_sample_size: Option<usize>,
     #[serde(
         default = "SplitRangeDiskCacheConfig::default_write_throughput",
         with = "crate::serde_utils::bytesize_serde"
@@ -462,10 +452,6 @@ pub struct SplitRangeDiskCacheConfig {
 }
 
 impl SplitRangeDiskCacheConfig {
-    fn default_clean_block_threshold() -> usize {
-        16
-    }
-
     fn default_write_throughput() -> ByteSize {
         ByteSize::mib(500)
     }
@@ -479,21 +465,6 @@ impl SplitRangeDiskCacheConfig {
         }
         if self.buffer_pool_size.as_u64() == 0 || self.submit_queue_size_threshold.as_u64() == 0 {
             bail!("split range buffer pool and submit queue sizes must be positive");
-        }
-        if self.block_size.as_u64() == 0 || self.max_entry_size.as_u64() == 0 {
-            bail!("split range block and entry sizes must be positive");
-        }
-        if self.max_entry_size >= self.block_size {
-            bail!("split_range_disk_cache.max_entry_size must be smaller than block_size");
-        }
-        if self.memory_eviction_policy != CachePolicy::S3Fifo {
-            bail!("split_range_disk_cache.memory_eviction_policy must be s3-fifo in phase 1");
-        }
-        if self.flushers == 0 || self.reclaimers == 0 || self.clean_block_threshold == 0 {
-            bail!(
-                "split range disk cache flushers, reclaimers, and clean block threshold must be \
-                 positive"
-            );
         }
         if self.write_throughput.as_u64() == 0 {
             bail!("split_range_disk_cache.write_throughput must be positive");
@@ -509,15 +480,12 @@ impl SplitRangeDiskCacheConfig {
             memory_capacity: ByteSize::gb(1),
             buffer_pool_size: ByteSize::mb(512),
             submit_queue_size_threshold: ByteSize::gb(1),
-            memory_eviction_policy: CachePolicy::S3Fifo,
-            write_policy: SplitRangeCacheWritePolicy::WriteOnEviction,
-            compression: DiskCompression::Lz4,
-            recover_mode: RecoverMode::Quiet,
-            block_size: ByteSize::mb(16),
-            max_entry_size: ByteSize::mb(15),
-            flushers: 4,
-            reclaimers: 4,
-            clean_block_threshold: Self::default_clean_block_threshold(),
+            memory_eviction_policy: SplitRangeMemoryEvictionPolicy::S3Fifo,
+            s3fifo_ghost_queue_capacity_ratio: None,
+            s3fifo_small_queue_capacity_ratio: None,
+            s3fifo_small_to_main_freq_threshold: None,
+            cost_aware_fixed_retrieval_cost: None,
+            cost_aware_sample_size: None,
             write_throughput: Self::default_write_throughput(),
         }
     }
@@ -1494,12 +1462,6 @@ split_range_disk_cache:
   buffer_pool_size: 512M
   submit_queue_size_threshold: 1G
   memory_eviction_policy: s3-fifo
-  compression: lz4
-  recover_mode: quiet
-  block_size: 16M
-  max_entry_size: 15M
-  flushers: 4
-  reclaimers: 4
 "#;
         let config: SearcherConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(config.split_range_disk_cache.is_some());
@@ -1518,12 +1480,6 @@ split_range_disk_cache:
   buffer_pool_size: 512M
   submit_queue_size_threshold: 1G
   memory_eviction_policy: s3-fifo
-  compression: lz4
-  recover_mode: quiet
-  block_size: 16M
-  max_entry_size: 15M
-  flushers: 4
-  reclaimers: 4
 "#;
         let config: SearcherConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(config.split_range_disk_cache.is_some());
@@ -1553,31 +1509,30 @@ split_range_disk_cache:
   buffer_pool_size: 512M
   submit_queue_size_threshold: 1G
   memory_eviction_policy: s3-fifo
-  compression: lz4
-  recover_mode: quiet
-  block_size: 16M
-  max_entry_size: 15M
-  flushers: 4
-  reclaimers: 4
+  s3fifo_ghost_queue_capacity_ratio: 0.5
+  s3fifo_small_queue_capacity_ratio: 0.2
+  s3fifo_small_to_main_freq_threshold: 2
 "#;
         let config: SearcherConfig = serde_yaml::from_str(yaml).unwrap();
         let disk_cache = config.split_range_disk_cache.as_ref().unwrap();
         let serialized_disk_cache = serde_yaml::to_string(disk_cache).unwrap();
-        assert!(serialized_disk_cache.contains("clean_block_threshold: 16"));
         assert!(serialized_disk_cache.contains("write_throughput: 524288000"));
-        assert_eq!(disk_cache.clean_block_threshold, 16);
+        assert!(!serialized_disk_cache.contains("compression"));
+        assert!(!serialized_disk_cache.contains("block_size"));
         assert_eq!(disk_cache.write_throughput, ByteSize::mib(500));
         assert_eq!(
             disk_cache.path,
             PathBuf::from("/var/cache/quickwit/split-range-v1")
         );
-        assert_eq!(disk_cache.memory_eviction_policy, CachePolicy::S3Fifo);
         assert_eq!(
-            disk_cache.write_policy,
-            SplitRangeCacheWritePolicy::WriteOnEviction
+            disk_cache.memory_eviction_policy,
+            SplitRangeMemoryEvictionPolicy::S3Fifo
         );
-        assert_eq!(disk_cache.block_size, ByteSize::mb(16));
-        assert_eq!(disk_cache.max_entry_size, ByteSize::mb(15));
+        assert_eq!(disk_cache.s3fifo_ghost_queue_capacity_ratio, Some(0.5));
+        assert_eq!(disk_cache.s3fifo_small_queue_capacity_ratio, Some(0.2));
+        assert_eq!(disk_cache.s3fifo_small_to_main_freq_threshold, Some(2));
+        assert_eq!(disk_cache.cost_aware_fixed_retrieval_cost, None);
+        assert_eq!(disk_cache.cost_aware_sample_size, None);
         // Round-trip the nested cache config. SearcherConfig's other ByteSize
         // fields serialize as display strings and do not round-trip exactly.
         assert_eq!(
@@ -1587,7 +1542,7 @@ split_range_disk_cache:
     }
 
     #[test]
-    fn test_split_range_disk_cache_accepts_write_on_insertion() {
+    fn test_split_range_disk_cache_accepts_cost_aware_settings() {
         let yaml = r#"
 split_range_disk_cache:
   path: /var/cache/quickwit/split-range-v1
@@ -1595,52 +1550,19 @@ split_range_disk_cache:
   memory_capacity: 1G
   buffer_pool_size: 512M
   submit_queue_size_threshold: 1G
-  memory_eviction_policy: s3-fifo
-  write_policy: write-on-insertion
-  compression: lz4
-  recover_mode: quiet
-  block_size: 16M
-  max_entry_size: 15M
-  flushers: 4
-  reclaimers: 4
+  memory_eviction_policy: cost-aware
+  cost_aware_fixed_retrieval_cost: 4.0
+  cost_aware_sample_size: 65536
 "#;
         let config: SearcherConfig = serde_yaml::from_str(yaml).unwrap();
+        let disk_cache = config.split_range_disk_cache.as_ref().unwrap();
         assert_eq!(
-            config.split_range_disk_cache.unwrap().write_policy,
-            SplitRangeCacheWritePolicy::WriteOnInsertion
+            disk_cache.memory_eviction_policy,
+            SplitRangeMemoryEvictionPolicy::CostAware
         );
-    }
-
-    #[test]
-    fn test_split_range_disk_cache_rejects_invalid_sizes() {
-        let mut disk_cache = SplitRangeDiskCacheConfig::for_test();
-        disk_cache.max_entry_size = ByteSize::mb(16);
-        let config = SearcherConfig {
-            split_range_disk_cache: Some(disk_cache),
-            ..Default::default()
-        };
-        let error = config.validate().unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .contains("max_entry_size must be smaller than block_size")
-        );
-    }
-
-    #[test]
-    fn test_split_range_disk_cache_rejects_zero_clean_block_threshold() {
-        let mut disk_cache = SplitRangeDiskCacheConfig::for_test();
-        disk_cache.clean_block_threshold = 0;
-        let config = SearcherConfig {
-            split_range_disk_cache: Some(disk_cache),
-            ..Default::default()
-        };
-        let error = config.validate().unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .contains("clean block threshold must be positive")
-        );
+        assert_eq!(disk_cache.cost_aware_fixed_retrieval_cost, Some(4.0));
+        assert_eq!(disk_cache.cost_aware_sample_size, Some(65536));
+        config.validate().unwrap();
     }
 
     #[test]
