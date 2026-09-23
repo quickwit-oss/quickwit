@@ -42,11 +42,6 @@ fn range_cache_config(path: impl AsRef<Path>) -> SplitRangeDiskCacheConfig {
         buffer_pool_size: ByteSize::mb(4),
         submit_queue_size_threshold: ByteSize::mb(8),
         memory_eviction_policy: SplitRangeMemoryEvictionPolicy::S3Fifo,
-        s3fifo_ghost_queue_capacity_ratio: None,
-        s3fifo_small_queue_capacity_ratio: None,
-        s3fifo_small_to_main_freq_threshold: None,
-        cost_aware_fixed_retrieval_cost: None,
-        cost_aware_sample_size: None,
         write_throughput: ByteSize::mib(500),
     }
 }

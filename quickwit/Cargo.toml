@@ -136,7 +136,7 @@ fail = "0.5"
 flate2 = "1.1"
 flume = "0.12"
 fnv = "1"
-foyer = { version = "=0.22.3", default-features = false, features = ["runtime-tokio"] }
+foyer = { git = "https://github.com/PSeitz/foyer.git", rev = "14c2d88b9d7dd2135bfc723d0967debb59532b4b", default-features = false, features = ["runtime-tokio"] }
 futures = "0.3"
 futures-util = { version = "0.3", default-features = false }
 glob = "0.3"

@@ -414,9 +414,9 @@ pub enum SplitRangeMemoryEvictionPolicy {
 /// Disabled-by-default searcher disk cache for exact split byte ranges.
 ///
 /// Compression, recovery, block size, entry size, flushers, reclaimers, the
-/// clean-block threshold, and the write policy are fixed when the cache is
-/// opened.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// clean-block threshold, the write policy, and the policy-specific eviction
+/// parameters are fixed when the cache is opened.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SplitRangeDiskCacheConfig {
     pub path: PathBuf,
@@ -429,21 +429,6 @@ pub struct SplitRangeDiskCacheConfig {
     #[serde(with = "crate::serde_utils::bytesize_serde")]
     pub submit_queue_size_threshold: ByteSize,
     pub memory_eviction_policy: SplitRangeMemoryEvictionPolicy,
-    /// Applied only when `memory_eviction_policy` is `s3-fifo`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub s3fifo_ghost_queue_capacity_ratio: Option<f64>,
-    /// Applied only when `memory_eviction_policy` is `s3-fifo`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub s3fifo_small_queue_capacity_ratio: Option<f64>,
-    /// Applied only when `memory_eviction_policy` is `s3-fifo`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub s3fifo_small_to_main_freq_threshold: Option<u8>,
-    /// Applied only when `memory_eviction_policy` is `cost-aware`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cost_aware_fixed_retrieval_cost: Option<f64>,
-    /// Applied only when `memory_eviction_policy` is `cost-aware`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cost_aware_sample_size: Option<usize>,
     #[serde(
         default = "SplitRangeDiskCacheConfig::default_write_throughput",
         with = "crate::serde_utils::bytesize_serde"
@@ -481,11 +466,6 @@ impl SplitRangeDiskCacheConfig {
             buffer_pool_size: ByteSize::mb(512),
             submit_queue_size_threshold: ByteSize::gb(1),
             memory_eviction_policy: SplitRangeMemoryEvictionPolicy::S3Fifo,
-            s3fifo_ghost_queue_capacity_ratio: None,
-            s3fifo_small_queue_capacity_ratio: None,
-            s3fifo_small_to_main_freq_threshold: None,
-            cost_aware_fixed_retrieval_cost: None,
-            cost_aware_sample_size: None,
             write_throughput: Self::default_write_throughput(),
         }
     }
@@ -1509,16 +1489,14 @@ split_range_disk_cache:
   buffer_pool_size: 512M
   submit_queue_size_threshold: 1G
   memory_eviction_policy: s3-fifo
-  s3fifo_ghost_queue_capacity_ratio: 0.5
-  s3fifo_small_queue_capacity_ratio: 0.2
-  s3fifo_small_to_main_freq_threshold: 2
 "#;
         let config: SearcherConfig = serde_yaml::from_str(yaml).unwrap();
         let disk_cache = config.split_range_disk_cache.as_ref().unwrap();
         let serialized_disk_cache = serde_yaml::to_string(disk_cache).unwrap();
         assert!(serialized_disk_cache.contains("write_throughput: 524288000"));
         assert!(!serialized_disk_cache.contains("compression"));
-        assert!(!serialized_disk_cache.contains("block_size"));
+        assert!(!serialized_disk_cache.contains("s3fifo_"));
+        assert!(!serialized_disk_cache.contains("cost_aware_"));
         assert_eq!(disk_cache.write_throughput, ByteSize::mib(500));
         assert_eq!(
             disk_cache.path,
@@ -1528,11 +1506,6 @@ split_range_disk_cache:
             disk_cache.memory_eviction_policy,
             SplitRangeMemoryEvictionPolicy::S3Fifo
         );
-        assert_eq!(disk_cache.s3fifo_ghost_queue_capacity_ratio, Some(0.5));
-        assert_eq!(disk_cache.s3fifo_small_queue_capacity_ratio, Some(0.2));
-        assert_eq!(disk_cache.s3fifo_small_to_main_freq_threshold, Some(2));
-        assert_eq!(disk_cache.cost_aware_fixed_retrieval_cost, None);
-        assert_eq!(disk_cache.cost_aware_sample_size, None);
         // Round-trip the nested cache config. SearcherConfig's other ByteSize
         // fields serialize as display strings and do not round-trip exactly.
         assert_eq!(
@@ -1551,17 +1524,16 @@ split_range_disk_cache:
   buffer_pool_size: 512M
   submit_queue_size_threshold: 1G
   memory_eviction_policy: cost-aware
-  cost_aware_fixed_retrieval_cost: 4.0
-  cost_aware_sample_size: 65536
 "#;
         let config: SearcherConfig = serde_yaml::from_str(yaml).unwrap();
-        let disk_cache = config.split_range_disk_cache.as_ref().unwrap();
         assert_eq!(
-            disk_cache.memory_eviction_policy,
+            config
+                .split_range_disk_cache
+                .as_ref()
+                .unwrap()
+                .memory_eviction_policy,
             SplitRangeMemoryEvictionPolicy::CostAware
         );
-        assert_eq!(disk_cache.cost_aware_fixed_retrieval_cost, Some(4.0));
-        assert_eq!(disk_cache.cost_aware_sample_size, Some(65536));
         config.validate().unwrap();
     }
 

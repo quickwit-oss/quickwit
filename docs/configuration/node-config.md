@@ -336,14 +336,9 @@ This section contains the configuration options for the on-disk cache of split b
 | `buffer_pool_size` | Size of the disk write buffer pool. | |
 | `submit_queue_size_threshold` | Maximum amount of data waiting to be flushed to disk. | |
 | `memory_eviction_policy` | Eviction policy for the memory tier: `s3-fifo` or `cost-aware`. | |
-| `s3fifo_ghost_queue_capacity_ratio` | Ghost queue capacity ratio. Applied only when `memory_eviction_policy` is `s3-fifo`. | `1.0` |
-| `s3fifo_small_queue_capacity_ratio` | Small queue capacity ratio. Applied only when `memory_eviction_policy` is `s3-fifo`. | `0.1` |
-| `s3fifo_small_to_main_freq_threshold` | Access count required to promote an entry from the small queue to the main queue. Applied only when `memory_eviction_policy` is `s3-fifo`. | `1` |
-| `cost_aware_fixed_retrieval_cost` | Fixed retrieval cost. Applied only when `memory_eviction_policy` is `cost-aware`. | |
-| `cost_aware_sample_size` | Eviction sample size. Applied only when `memory_eviction_policy` is `cost-aware`. | |
 | `write_throughput` | Maximum disk-cache write throughput in bytes per second. Must be positive. | `500MiB` |
 
-The cache is opened with no compression, quiet recovery, 64MB blocks, a 60MB maximum disk entry, 8 flushers, 8 reclaimers, a clean-block threshold of 16, and write-on-eviction. Entries larger than 60MB stay in memory. `cost-aware` is accepted in configuration, but foyer 0.22.3 has no cost-aware eviction, so opening the cache with that policy fails.
+The cache is opened with no compression, quiet recovery, 64MB blocks, a 60MB maximum disk entry, 8 flushers, 8 reclaimers, a clean-block threshold of 16, and write-on-eviction. Entries larger than 60MB stay in memory. `s3-fifo` uses a small-queue ratio of 0.1, a ghost-queue ratio of 1.0, and a promotion threshold of 1. `cost-aware` uses a fixed retrieval cost of 10000000 and a sample size of 64.
 
 Example:
 
@@ -362,7 +357,6 @@ searcher:
     disk_capacity: 1500G
     memory_capacity: 15G
     memory_eviction_policy: s3-fifo
-    s3fifo_small_queue_capacity_ratio: 0.1
     buffer_pool_size: 2G
     submit_queue_size_threshold: 3G
     write_throughput: 500MiB

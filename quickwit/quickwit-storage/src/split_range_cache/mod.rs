@@ -35,6 +35,11 @@ const MAX_ENTRY_SIZE: usize = ByteSize::mb(60).as_u64() as usize;
 const FLUSHERS: usize = 8;
 const RECLAIMERS: usize = 8;
 const CLEAN_BLOCK_THRESHOLD: usize = 16;
+const S3FIFO_GHOST_QUEUE_CAPACITY_RATIO: f64 = 1.0;
+const S3FIFO_SMALL_QUEUE_CAPACITY_RATIO: f64 = 0.1;
+const S3FIFO_SMALL_TO_MAIN_FREQ_THRESHOLD: u8 = 1;
+const COST_AWARE_FIXED_RETRIEVAL_COST: u64 = 10_000_000;
+const COST_AWARE_SAMPLE_SIZE: usize = 64;
 
 /// Foyer hybrid cache for exact split byte-range payloads.
 pub struct FoyerSplitRangeCache {
@@ -66,7 +71,7 @@ impl FoyerSplitRangeCache {
             .with_policy(foyer::HybridCachePolicy::WriteOnEviction)
             .with_flush_on_close(true)
             .memory(memory_capacity)
-            .with_eviction_config(foyer_memory_eviction_config(config)?)
+            .with_eviction_config(foyer_memory_eviction_config(config.memory_eviction_policy))
             .with_weighter(|key: &SplitRangeCacheKey, value: &Bytes| {
                 key.estimated_size() + value.len()
             })
@@ -91,38 +96,20 @@ impl FoyerSplitRangeCache {
     }
 }
 
-fn foyer_memory_eviction_config(
-    config: &SplitRangeDiskCacheConfig,
-) -> anyhow::Result<foyer::EvictionConfig> {
-    match config.memory_eviction_policy {
-        SplitRangeMemoryEvictionPolicy::S3Fifo => Ok(s3fifo_eviction(config).into()),
-        SplitRangeMemoryEvictionPolicy::CostAware => cost_aware_eviction(config),
+fn foyer_memory_eviction_config(policy: SplitRangeMemoryEvictionPolicy) -> foyer::EvictionConfig {
+    match policy {
+        SplitRangeMemoryEvictionPolicy::S3Fifo => foyer::S3FifoConfig {
+            ghost_queue_capacity_ratio: S3FIFO_GHOST_QUEUE_CAPACITY_RATIO,
+            small_queue_capacity_ratio: S3FIFO_SMALL_QUEUE_CAPACITY_RATIO,
+            small_to_main_freq_threshold: S3FIFO_SMALL_TO_MAIN_FREQ_THRESHOLD,
+        }
+        .into(),
+        SplitRangeMemoryEvictionPolicy::CostAware => foyer::CostAwareConfig {
+            fixed_retrieval_cost: COST_AWARE_FIXED_RETRIEVAL_COST,
+            sample_size: COST_AWARE_SAMPLE_SIZE,
+        }
+        .into(),
     }
-}
-
-fn s3fifo_eviction(config: &SplitRangeDiskCacheConfig) -> foyer::S3FifoConfig {
-    let mut eviction = foyer::S3FifoConfig::default();
-    if let Some(ratio) = config.s3fifo_ghost_queue_capacity_ratio {
-        eviction.ghost_queue_capacity_ratio = ratio;
-    }
-    if let Some(ratio) = config.s3fifo_small_queue_capacity_ratio {
-        eviction.small_queue_capacity_ratio = ratio;
-    }
-    if let Some(threshold) = config.s3fifo_small_to_main_freq_threshold {
-        eviction.small_to_main_freq_threshold = threshold;
-    }
-    eviction
-}
-
-fn cost_aware_eviction(
-    config: &SplitRangeDiskCacheConfig,
-) -> anyhow::Result<foyer::EvictionConfig> {
-    anyhow::bail!(
-        "cost-aware memory eviction is not supported by foyer (fixed_retrieval_cost={:?}, \
-         sample_size={:?})",
-        config.cost_aware_fixed_retrieval_cost,
-        config.cost_aware_sample_size,
-    )
 }
 
 fn foyer_throttle(config: &SplitRangeDiskCacheConfig) -> anyhow::Result<foyer::Throttle> {
@@ -182,11 +169,6 @@ pub(crate) fn config_for_test(path: impl AsRef<Path>) -> SplitRangeDiskCacheConf
         buffer_pool_size: ByteSize::mb(4),
         submit_queue_size_threshold: ByteSize::mb(8),
         memory_eviction_policy: SplitRangeMemoryEvictionPolicy::S3Fifo,
-        s3fifo_ghost_queue_capacity_ratio: None,
-        s3fifo_small_queue_capacity_ratio: None,
-        s3fifo_small_to_main_freq_threshold: None,
-        cost_aware_fixed_retrieval_cost: None,
-        cost_aware_sample_size: None,
         write_throughput: ByteSize::mib(500),
     }
 }
