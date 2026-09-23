@@ -140,6 +140,26 @@ impl<'a> QueryAstVisitor<'a> for GetRequiredFastFieldsVisitor<'_> {
     }
 }
 
+/// Rewrites eligible `EQ(REGEXP_EXTRACT(...), literal)` calculated predicates into
+/// [`RegexQuery`] nodes before warmup analysis.
+struct OptimizeCalcFieldRegex<'a> {
+    schema: &'a Schema,
+}
+
+impl QueryAstTransformer for OptimizeCalcFieldRegex<'_> {
+    type Err = Infallible;
+
+    fn transform_calc_field(
+        &mut self,
+        calc_field_query: CalcFieldQuery,
+    ) -> Result<Option<QueryAst>, Self::Err> {
+        if let Some(regex_query) = calc_field_query.try_optimize_to_regex_query(self.schema) {
+            return Ok(Some(regex_query.into()));
+        }
+        Ok(Some(QueryAst::CalcField(calc_field_query)))
+    }
+}
+
 /// Build a `Query` with field resolution & forbidding range clauses.
 pub(crate) fn build_query(
     query_ast: QueryAst,
@@ -154,6 +174,14 @@ pub(crate) fn build_query(
     } else {
         query_ast
     };
+
+    // Rewrite eligible REGEXP_EXTRACT equality predicates before warmup so automaton
+    // and fast-field visitors observe the optimized QueryAst.
+    let mut calc_field_optimizer = OptimizeCalcFieldRegex {
+        schema: context.schema,
+    };
+    let Ok(query_ast) = calc_field_optimizer.transform(query_ast);
+    let query_ast = query_ast.unwrap_or(QueryAst::MatchAll);
 
     // Visit after cache injection: cache hits do not evaluate the underlying predicate,
     // while uninitialized cache nodes and cache misses still need their input columns.
@@ -413,11 +441,14 @@ mod test {
     };
     use tantivy::Term;
     use tantivy::jitexpr::ast::deserialize;
-    use tantivy::schema::{DateOptions, DateTimePrecision, FAST, INDEXED, STORED, Schema, TEXT};
+    use tantivy::schema::{
+        DateOptions, DateTimePrecision, FAST, INDEXED, STORED, STRING, Schema, TEXT,
+    };
 
     use super::{ExtractPrefixTermRanges, build_query};
     use crate::{
-        DYNAMIC_FIELD_NAME, FastFieldWarmupInfo, SOURCE_FIELD_NAME, TermRange, WarmupInfo,
+        Automaton, DYNAMIC_FIELD_NAME, FastFieldWarmupInfo, SOURCE_FIELD_NAME, TermRange,
+        WarmupInfo,
     };
 
     fn calc_field(expression: &str) -> QueryAst {
@@ -486,6 +517,34 @@ mod test {
                 "filter_field"
             ])
         );
+    }
+
+    #[test]
+    fn test_calc_field_regexp_extract_eq_warms_automaton_not_fast_field() {
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_text_field("service", STRING | FAST);
+        schema_builder.add_text_field("tokenized", TEXT | FAST);
+        let schema = schema_builder.build();
+        let context = BuildTantivyAstContext::for_test(&schema);
+
+        let eligible =
+            calc_field(r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#);
+        let (_, warmup) = build_query(eligible, &context, None).unwrap();
+        assert!(warmup.fast_fields.is_empty());
+        let service_field = schema.get_field("service").unwrap();
+        assert_eq!(
+            warmup.automatons_grouped_by_field.get(&service_field),
+            Some(&HashSet::from([Automaton::Regex(
+                None,
+                "svc-api-prod".to_string()
+            )]))
+        );
+
+        let ineligible =
+            calc_field(r#"(EQ (REGEXP_EXTRACT tokenized "^svc-([a-z]+)-prod$" 1u64) "api")"#);
+        let (_, warmup) = build_query(ineligible, &context, None).unwrap();
+        assert_eq!(warmup.fast_fields, expected_fast_fields(&["tokenized"]));
+        assert!(warmup.automatons_grouped_by_field.is_empty());
     }
 
     fn full_text_query_for_warmup(field: &str, tokenizer: Option<&str>) -> QueryAst {
