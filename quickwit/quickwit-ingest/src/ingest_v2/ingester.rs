@@ -155,7 +155,7 @@ impl Ingester {
                     timeout_after.pretty_display()
                 ));
                 error!(%error, "failed to decommission ingester");
-                self.log_wal_usage().await;
+                self.emit_remaining_wal_stats().await;
                 Err(error)
             }
         }
@@ -743,7 +743,7 @@ impl Ingester {
         Ok(service_stream)
     }
 
-    pub async fn log_wal_usage(&self) {
+    async fn emit_remaining_wal_stats(&self) {
         let mrecordlog = self.state.mrecordlog();
         let mrecordlog_guard = mrecordlog.read().await;
         let (wal_memory_used_bytes, wal_disk_used_bytes, wal_num_records) =
