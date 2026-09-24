@@ -31,10 +31,10 @@ use crate::{InvalidQuery, find_field_or_hit_dynamic};
 /// fields before running a synchronous search against remote storage.
 ///
 /// A narrow subset of predicates of the form
-/// `(EQ (REGEXP_EXTRACT field "prefix(capture)suffix" 1u64) "literal")` may be rewritten
-/// to a [`RegexQuery`] when `field` is a fast, indexed, raw-tokenized string field.
-/// Optional `^` / `$` anchors are honored; missing sides are wrapped with `.*` so the
-/// FST whole-term regex stays equivalent to substring `REGEXP_EXTRACT`.
+/// `(EQ (REGEXP_EXTRACT field "prefix(capture)suffix" 1u64) "literal")` (or the swapped
+/// literal/extract form) may be accelerated with an FST [`RegexQuery`] prefilter when
+/// `field` is a fast, indexed, raw-tokenized string field. The prefilter may over-match;
+/// the original calculated predicate remains as the exact filter.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CalcFieldQuery {
     #[serde(with = "jitexpr_serde")]
@@ -48,12 +48,14 @@ impl From<CalcFieldQuery> for QueryAst {
 }
 
 impl CalcFieldQuery {
-    /// Attempts to lower `(EQ (REGEXP_EXTRACT field pattern 1u64) "literal")` (or the
-    /// swapped literal/extract form) into a [`RegexQuery`].
+    /// Builds an FST [`RegexQuery`] that is a *superset* of documents matching
+    /// `(EQ (REGEXP_EXTRACT field pattern 1u64) "literal")` (or the swapped form).
     ///
-    /// Returns `None` whenever the expression shape or field is not eligible, so callers
-    /// can keep the calculated-predicate path.
-    pub fn try_optimize_to_regex_query(&self, schema: &TantivySchema) -> Option<RegexQuery> {
+    /// The prefilter may over-match (e.g. longer captures or an earlier different
+    /// extract). Callers must keep this [`CalcFieldQuery`] and intersect both.
+    ///
+    /// Returns `None` whenever the expression shape or field is not eligible.
+    pub fn try_prefilter_regex_query(&self, schema: &TantivySchema) -> Option<RegexQuery> {
         let (field_name, pattern, literal) = match_eq_regexp_extract(&self.expression)?;
         if !is_fast_indexed_raw_string_field(field_name, schema) {
             return None;
@@ -71,8 +73,8 @@ impl BuildTantivyAst for CalcFieldQuery {
         &self,
         _context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        // Eligible REGEXP_EXTRACT equality predicates are rewritten to RegexQuery earlier
-        // in query_builder so warmup visitors see the optimized AST.
+        // Eligible REGEXP_EXTRACT equality predicates may be wrapped with an FST
+        // RegexQuery prefilter earlier in query_builder; this path stays exact.
         let predicate = JitExprPredicate::new(self.expression.clone())
             .context("invalid calculated predicate expression")
             .map_err(InvalidQuery::Other)?;
@@ -139,14 +141,17 @@ fn is_fast_indexed_raw_string_field(field_name: &str, schema: &TantivySchema) ->
     text_indexing.tokenizer() == RAW_TOKENIZER_NAME
 }
 
-/// Rewrites `prefix(capture)suffix` by replacing the single `(...)` group with the
-/// escaped literal. Rejects special groups and nested/extra parentheses.
-/// Also requires the equality literal to match the capture subpattern, otherwise
-/// `REGEXP_EXTRACT` can never equal that literal and rewriting would over-match.
+/// Builds an FST whole-term regex that is a *superset* of terms for which
+/// `EQ(REGEXP_EXTRACT(..., pattern, 1), literal)` holds.
 ///
-/// `REGEXP_EXTRACT` matches substrings; Tantivy FST regexes match whole terms and reject
-/// `^`/`$`. Optional anchors are therefore stripped, and each missing side is wrapped
-/// with `.*` so the whole-term regex stays equivalent.
+/// Replaces the single `(...)` group with the escaped literal. Rejects special
+/// groups and nested/extra parentheses. Requires the equality literal to match
+/// the capture subpattern (otherwise EQ is always false and no prefilter helps).
+///
+/// `REGEXP_EXTRACT` matches substrings; Tantivy FST regexes match whole terms and
+/// reject `^`/`$`. Optional anchors are stripped, and each missing side is wrapped
+/// with `.*`. The result may over-match leftmost extract+EQ; callers must keep the
+/// exact calculated predicate.
 fn substitute_single_capture(pattern: &str, literal: &str) -> Option<String> {
     let anchored_start = pattern.starts_with('^');
     let anchored_end = pattern.ends_with('$');
@@ -167,14 +172,13 @@ fn substitute_single_capture(pattern: &str, literal: &str) -> Option<String> {
         return None;
     }
     let capture = &body[open + 1..close];
-    // `EQ(REGEXP_EXTRACT(...), L)` also requires L to match the capture pattern.
+    // Impossible EQ: literal outside the capture class.
     let capture_re = regex::Regex::new(&format!("^(?:{capture})$")).ok()?;
     if !capture_re.is_match(literal) {
         return None;
     }
 
-    // Build the FST whole-term regex by splicing the escaped literal into the capture
-    // and wrapping any side that was not anchored:
+    // Superset whole-term regex (may over-match leftmost extract+EQ):
     //   ^prefix(C)suffix$ + L  →  prefix{escape(L)}suffix
     //   ^prefix(C)suffix  + L  →  prefix{escape(L)}suffix.*
     //    prefix(C)suffix$ + L  →  .*prefix{escape(L)}suffix
@@ -197,16 +201,12 @@ mod jitexpr_serde {
     use tantivy::jitexpr::ast::UntypedExpr;
 
     pub fn serialize<S>(expression: &UntypedExpr, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+    where S: Serializer {
         serializer.serialize_str(&tantivy::jitexpr::ast::serialize(expression))
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<UntypedExpr, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
+    where D: Deserializer<'de> {
         let expression = String::deserialize(deserializer)?;
         tantivy::jitexpr::ast::deserialize(&expression).map_err(serde::de::Error::custom)
     }
@@ -222,7 +222,7 @@ mod tests {
     use tantivy::{Index, TantivyDocument, doc};
 
     use super::{CalcFieldQuery, substitute_single_capture};
-    use crate::query_ast::{BuildTantivyAstContext, QueryAst};
+    use crate::query_ast::{BoolQuery, BuildTantivyAstContext, QueryAst};
 
     fn calc_field(expression: &str) -> QueryAst {
         CalcFieldQuery {
@@ -235,6 +235,17 @@ mod tests {
         CalcFieldQuery {
             expression: deserialize(expression).unwrap(),
         }
+    }
+
+    fn prefilter_conjunction(calc: CalcFieldQuery, schema: &Schema) -> QueryAst {
+        let regex_query = calc
+            .try_prefilter_regex_query(schema)
+            .expect("eligible expression should produce a prefilter");
+        BoolQuery {
+            filter: vec![regex_query.into(), QueryAst::CalcField(calc)],
+            ..Default::default()
+        }
+        .into()
     }
 
     #[test]
@@ -340,32 +351,38 @@ mod tests {
             substitute_single_capture("^svc-(a.b)-prod$", "a+b").as_deref(),
             Some(r"svc-a\+b-prod")
         );
-        // Literal does not match the capture class: rewrite must not over-match.
+        // Literal does not match the capture class: no useful prefilter.
         assert!(substitute_single_capture("^svc-([a-z]+)-prod$", "123").is_none());
         assert!(substitute_single_capture("^svc-([a-z]+)-([a-z]+)$", "api").is_none());
         assert!(substitute_single_capture("^svc-(?:[a-z]+)-prod$", "api").is_none());
     }
 
     #[test]
-    fn test_calc_field_regexp_extract_eq_optimize() {
+    fn test_calc_field_regexp_extract_eq_prefilter() {
         let mut schema_builder = Schema::builder();
         schema_builder.add_text_field("service", STRING | FAST);
         schema_builder.add_text_field("indexed_only", STRING);
         schema_builder.add_text_field("fast_tokenized", TEXT | FAST);
         let schema = schema_builder.build();
 
-        let optimized: crate::query_ast::RegexQuery =
+        let prefilter: crate::query_ast::RegexQuery =
             calc_field_query(r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#)
-                .try_optimize_to_regex_query(&schema)
-                .expect("eligible expression should optimize");
-        assert_eq!(optimized.field, "service");
-        assert_eq!(optimized.regex, "svc-api-prod");
+                .try_prefilter_regex_query(&schema)
+                .expect("eligible expression should produce a prefilter");
+        assert_eq!(prefilter.field, "service");
+        assert_eq!(prefilter.regex, "svc-api-prod");
 
         let swapped =
             calc_field_query(r#"(EQ "api" (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64))"#)
-                .try_optimize_to_regex_query(&schema)
-                .expect("swapped EQ args should optimize");
-        assert_eq!(swapped, optimized);
+                .try_prefilter_regex_query(&schema)
+                .expect("swapped EQ args should produce a prefilter");
+        assert_eq!(swapped, prefilter);
+
+        let unanchored =
+            calc_field_query(r#"(EQ (REGEXP_EXTRACT service "svc-([a-z]+)-prod" 1u64) "api")"#)
+                .try_prefilter_regex_query(&schema)
+                .expect("unanchored pattern should produce a prefilter");
+        assert_eq!(unanchored.regex, ".*svc-api-prod.*");
 
         for expression in [
             r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 0u64) "api")"#,
@@ -375,7 +392,7 @@ mod tests {
         ] {
             assert!(
                 calc_field_query(expression)
-                    .try_optimize_to_regex_query(&schema)
+                    .try_prefilter_regex_query(&schema)
                     .is_none(),
                 "{expression}"
             );
@@ -383,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    fn test_calc_field_regexp_extract_eq_matches_jit_predicate() {
+    fn test_calc_field_regexp_extract_eq_prefilter_matches_jit_predicate() {
         let mut schema_builder = Schema::builder();
         let service = schema_builder.add_text_field("service", STRING | FAST);
         let index = Index::create_in_ram(schema_builder.build());
@@ -396,6 +413,9 @@ mod tests {
             "svc-123-prod",
             "other",
             "svc-api-prod-extra",
+            // Prefilter over-matches (longer capture / earlier different extract); JIT rejects.
+            "svc-apixyz",
+            "svc-web-prod-svc-api-prod",
         ] {
             writer.add_document(doc!(service => value)).unwrap();
         }
@@ -415,12 +435,18 @@ mod tests {
                 r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "web")"#,
                 1,
             ),
-            // Unanchored extract: also matches the svc-api-prod-extra document.
+            // Unanchored: svc-api-prod and svc-api-prod-extra (not the earlier-other-id doc).
             (
                 r#"(EQ (REGEXP_EXTRACT service "svc-([a-z]+)-prod" 1u64) "api")"#,
                 2,
             ),
-            // Literal outside the capture class: always false for both paths.
+            // Half-anchored: svc-api-prod and svc-api-prod-extra match; svc-apixyz does not
+            // (capture apixyz) even though the FST prefilter svc-api.* would over-match it.
+            (
+                r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)" 1u64) "api")"#,
+                2,
+            ),
+            // Literal outside the capture class: always false.
             (
                 r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "123")"#,
                 0,
@@ -436,9 +462,9 @@ mod tests {
                 .unwrap();
             assert_eq!(jit_count, expected_count, "jit {expression}");
 
-            match calc_field_query(expression).try_optimize_to_regex_query(&schema) {
+            match calc_field_query(expression).try_prefilter_regex_query(&schema) {
                 Some(regex_query) => {
-                    let optimized_count = searcher
+                    let regex_only_count = searcher
                         .search(
                             &*QueryAst::from(regex_query)
                                 .build_tantivy_query(&context)
@@ -446,10 +472,23 @@ mod tests {
                             &Count,
                         )
                         .unwrap();
-                    assert_eq!(optimized_count, jit_count, "optimized {expression}");
+                    assert!(
+                        regex_only_count >= jit_count,
+                        "prefilter must be a superset for {expression}: regex={regex_only_count} \
+                         jit={jit_count}"
+                    );
+
+                    let optimized_count = searcher
+                        .search(
+                            &*prefilter_conjunction(calc_field_query(expression), &schema)
+                                .build_tantivy_query(&context)
+                                .unwrap(),
+                            &Count,
+                        )
+                        .unwrap();
+                    assert_eq!(optimized_count, jit_count, "prefilter∧jit {expression}");
                 }
                 None => {
-                    // Ineligible rewrite must still agree with the JIT result above.
                     assert_eq!(jit_count, expected_count, "fallback {expression}");
                 }
             }

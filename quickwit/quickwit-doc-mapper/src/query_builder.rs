@@ -18,9 +18,9 @@ use std::ops::Bound;
 use std::sync::Arc;
 
 use quickwit_query::query_ast::{
-    BuildTantivyAstContext, CalcFieldQuery, FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery,
-    QueryAst, QueryAstTransformer, QueryAstVisitor, RangeQuery, RegexQuery, TermSetQuery,
-    WildcardQuery,
+    BoolQuery, BuildTantivyAstContext, CalcFieldQuery, FieldPresenceQuery, FullTextQuery,
+    PhrasePrefixQuery, QueryAst, QueryAstTransformer, QueryAstVisitor, RangeQuery, RegexQuery,
+    TermSetQuery, WildcardQuery,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{InvalidQuery, find_field_or_hit_dynamic};
@@ -140,8 +140,9 @@ impl<'a> QueryAstVisitor<'a> for GetRequiredFastFieldsVisitor<'_> {
     }
 }
 
-/// Rewrites eligible `EQ(REGEXP_EXTRACT(...), literal)` calculated predicates into
-/// [`RegexQuery`] nodes before warmup analysis.
+/// Wraps eligible `EQ(REGEXP_EXTRACT(...), literal)` calculated predicates with an FST
+/// [`RegexQuery`] prefilter before warmup analysis. The prefilter may over-match; the
+/// original calculated predicate stays as the exact filter.
 struct OptimizeCalcFieldRegex<'a> {
     schema: &'a Schema,
 }
@@ -153,8 +154,12 @@ impl QueryAstTransformer for OptimizeCalcFieldRegex<'_> {
         &mut self,
         calc_field_query: CalcFieldQuery,
     ) -> Result<Option<QueryAst>, Self::Err> {
-        if let Some(regex_query) = calc_field_query.try_optimize_to_regex_query(self.schema) {
-            return Ok(Some(regex_query.into()));
+        if let Some(regex_query) = calc_field_query.try_prefilter_regex_query(self.schema) {
+            let bool_query = BoolQuery {
+                filter: vec![regex_query.into(), QueryAst::CalcField(calc_field_query)],
+                ..Default::default()
+            };
+            return Ok(Some(bool_query.into()));
         }
         Ok(Some(QueryAst::CalcField(calc_field_query)))
     }
@@ -175,8 +180,8 @@ pub(crate) fn build_query(
         query_ast
     };
 
-    // Rewrite eligible REGEXP_EXTRACT equality predicates before warmup so automaton
-    // and fast-field visitors observe the optimized QueryAst.
+    // Attach FST RegexQuery prefilters to eligible REGEXP_EXTRACT equality predicates
+    // before warmup so automaton and fast-field visitors observe both clauses.
     let mut calc_field_optimizer = OptimizeCalcFieldRegex {
         schema: context.schema,
     };
@@ -520,7 +525,7 @@ mod test {
     }
 
     #[test]
-    fn test_calc_field_regexp_extract_eq_warms_automaton_not_fast_field() {
+    fn test_calc_field_regexp_extract_eq_warms_automaton_and_fast_field() {
         let mut schema_builder = Schema::builder();
         schema_builder.add_text_field("service", STRING | FAST);
         schema_builder.add_text_field("tokenized", TEXT | FAST);
@@ -530,7 +535,8 @@ mod test {
         let eligible =
             calc_field(r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#);
         let (_, warmup) = build_query(eligible, &context, None).unwrap();
-        assert!(warmup.fast_fields.is_empty());
+        // Prefilter needs the FST automaton; exact CalcField still needs the fast field.
+        assert_eq!(warmup.fast_fields, expected_fast_fields(&["service"]));
         let service_field = schema.get_field("service").unwrap();
         assert_eq!(
             warmup.automatons_grouped_by_field.get(&service_field),
