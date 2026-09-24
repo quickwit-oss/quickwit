@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Azure Blob Storage: support custom endpoints via `endpoint` and `endpoint_suffix` configuration options for sovereign clouds (#6624)
 
 ### Fixed
+- Azure Blob Storage: reject managed identity on unmapped custom endpoints and document sovereign-cloud `AZURE_AUTHORITY_HOST` requirements (#6624)
 - (Jaeger) Query resource attributes when Jaeger request carries tags
 
 ### Changed
