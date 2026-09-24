@@ -1,11 +1,5 @@
 name: Full test suite
 
-# Trusted dispatcher for the full test suite. `workflow_run` executes the
-# default-branch workflow definition, so PR authors cannot weaken the suite or
-# forge its result by editing it in the PR. It runs `make test-all` against the
-# PR merge commit whenever the trigger workflow completes, skips docs- and
-# UI-only changes, and publishes the `full-test-suite` commit status on the
-# PR head.
 on:
   workflow_run:
     workflows: [Full test suite trigger]
@@ -15,14 +9,16 @@ permissions:
   contents: read
 
 concurrency:
-  # One run per PR. New pushes cancel superseded runs.
-  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_repository.full_name }}/${{ github.event.workflow_run.head_branch }}
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.event }}-${{ github.event.workflow_run.head_sha }}-${{ github.event.workflow_run.conclusion }}
   cancel-in-progress: true
 
 jobs:
   prepare:
     name: Set pending status
-    if: github.event.workflow_run.conclusion != 'cancelled'
+    if: >-
+      ${{ github.event.workflow_run.event == 'merge_group' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository }}
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     permissions:
@@ -39,7 +35,7 @@ jobs:
               sha: process.env.STATUS_SHA,
               state: 'pending',
               context: 'full-test-suite',
-              description: 'Running full test suite...',
+              description: 'Running full test suite on merge group...',
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             });
 
@@ -48,145 +44,16 @@ jobs:
     needs: prepare
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    # PR-authored code runs only in this job, with no secrets or write access
-    # (CodeQL `actions/untrusted-checkout` mitigation).
     permissions:
       contents: read
-      pull-requests: read
-    outputs:
-      pr_number: ${{ steps.resolve.outputs.pr_number }}
-      merge_sha: ${{ steps.resolve.outputs.merge_sha }}
-      affects_suite: ${{ steps.changes.outputs.affects_suite }}
+    cache-mode: read
     steps:
-      # Resolve the PR by head and a fresh merge SHA. Mergeability is computed
-      # asynchronously, so poll until it is available.
-      - name: Resolve PR and merge commit
-        id: resolve
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
-        env:
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-          HEAD_OWNER: ${{ github.event.workflow_run.head_repository.owner.login }}
-          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-        with:
-          script: |
-            const { data: prs } = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              head: `${process.env.HEAD_OWNER}:${process.env.HEAD_BRANCH}`,
-              state: 'open',
-            });
-            const pull = prs.find((pr) => pr.head.sha === process.env.HEAD_SHA);
-            if (!pull) {
-              core.setFailed(
-                `No open PR has head ${process.env.HEAD_SHA}. ` +
-                'The branch may have been force pushed. Push again to retrigger.'
-              );
-              return;
-            }
-            core.setOutput('pr_number', String(pull.number));
-
-            let pr;
-            for (let attempt = 1; attempt <= 10; attempt += 1) {
-              ({ data: pr } = await github.rest.pulls.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: pull.number,
-              }));
-              if (pr.state !== 'open') {
-                core.setFailed(`PR #${pull.number} is ${pr.state}, not open.`);
-                return;
-              }
-              if (pr.mergeable !== null) {
-                break;
-              }
-              core.info(`Mergeability not computed yet (attempt ${attempt}/10), retrying in 3s.`);
-              await new Promise((resolve) => { setTimeout(resolve, 3000); });
-            }
-
-            if (pr.mergeable === null) {
-              core.setFailed(
-                `GitHub did not finish computing mergeability for PR #${pull.number}. ` +
-                'Re-run the workflow in a moment.'
-              );
-              return;
-            }
-            if (pr.mergeable === false) {
-              core.setFailed(
-                `PR #${pull.number} conflicts with ${pr.base.ref}. Merge or rebase ` +
-                `${pr.base.ref} for the full test suite to run.`
-              );
-              return;
-            }
-            if (!pr.merge_commit_sha) {
-              core.setFailed(`PR #${pull.number} has no test merge commit to test.`);
-              return;
-            }
-
-            core.info(`Testing merge commit ${pr.merge_commit_sha} (head ${pr.head.sha}).`);
-            core.setOutput('merge_sha', pr.merge_commit_sha);
-
-      # Skip only when every changed file is docs or UI (the UI has its own
-      # ui-ci.yml). Everything else runs the suite. Renames count on both
-      # sides.
-      - name: Detect changes that can affect the test suite
-        id: changes
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
-        env:
-          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
-        with:
-          script: |
-            const pull_number = Number(process.env.PR_NUMBER);
-            const isSafe = (path) =>
-              path.endsWith('.md') ||
-              path.startsWith('docs/') ||
-              path.startsWith('quickwit/quickwit-ui/');
-
-            let allSafe = true;
-            let unsafe = '';
-            for (let page = 1; allSafe; page += 1) {
-              const { data: files } = await github.rest.pulls.listFiles({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number,
-                per_page: 100,
-                page,
-              });
-              if (files.length === 0) {
-                break;
-              }
-              for (const file of files) {
-                const paths = [file.filename];
-                if (file.previous_filename) {
-                  paths.push(file.previous_filename);
-                }
-                for (const path of paths) {
-                  if (!isSafe(path)) {
-                    allSafe = false;
-                    unsafe = path;
-                    break;
-                  }
-                }
-                if (!allSafe) {
-                  break;
-                }
-              }
-            }
-
-            core.info(
-              allSafe
-                ? 'All changed files are docs or UI, skipping the full test suite.'
-                : `Changed file ${unsafe} can affect the test suite, running it.`
-            );
-            core.setOutput('affects_suite', allSafe ? 'false' : 'true');
-
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        if: steps.changes.outputs.affects_suite == 'true'
         with:
-          ref: ${{ steps.resolve.outputs.merge_sha }}
+          ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
 
       - name: Install Ubuntu packages
-        if: steps.changes.outputs.affects_suite == 'true'
         run: |
           sudo apt-get update
           sudo apt-get -y install libsasl2-dev libcurl4-openssl-dev
@@ -194,42 +61,33 @@ jobs:
       # apt's protobuf-compiler is too old for proto3 optional fields required
       # by the substrait crate enabled through the datafusion feature.
       - name: Install protoc
-        if: steps.changes.outputs.affects_suite == 'true'
         uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
         with:
           tool: protoc
 
       - name: Setup stable Rust Toolchain
-        if: steps.changes.outputs.affects_suite == 'true'
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
           toolchain: stable
 
-      # workflow_run runs use the default-branch cache scope, so writes would
-      # let PR-authored code poison trusted caches. Reuse the trusted
-      # `quickwit-cargo` key read-only.
       - name: Setup cache (read-only)
-        if: steps.changes.outputs.affects_suite == 'true'
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: "./quickwit -> target"
           shared-key: "quickwit-cargo"
-          save-if: false
 
       - name: Install cargo-nextest
-        if: steps.changes.outputs.affects_suite == 'true'
         uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
         with:
           tool: cargo-nextest
 
       - name: Run full test suite
-        if: steps.changes.outputs.affects_suite == 'true'
         run: make test-all
 
   report-status:
     name: Report final status
     needs: [prepare, full-tests]
-    if: always() && needs.prepare.result == 'success'
+    if: ${{ always() && needs.prepare.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     permissions:
@@ -239,29 +97,16 @@ jobs:
         env:
           STATUS_SHA: ${{ github.event.workflow_run.head_sha }}
           RESULT: ${{ needs.full-tests.result }}
-          AFFECTS_SUITE: ${{ needs.full-tests.outputs.affects_suite }}
-          MERGE_SHA: ${{ needs.full-tests.outputs.merge_sha }}
         with:
           script: |
-            const skipped = process.env.AFFECTS_SUITE === 'false';
             const state = process.env.RESULT === 'success' ? 'success' : 'failure';
-            const mergeSha = process.env.MERGE_SHA;
-            const statusSha = process.env.STATUS_SHA;
-            const suffix =
-              !skipped && mergeSha && mergeSha !== statusSha
-                ? ` (merge commit ${mergeSha.slice(0, 7)})`
-                : '';
-            const description = skipped
-              ? 'Full test suite skipped (docs/UI only)'
-              : (state === 'success' ? 'Full test suite passed' : 'Full test suite failed') + suffix;
-
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              sha: statusSha,
+              sha: process.env.STATUS_SHA,
               state,
               context: 'full-test-suite',
-              description,
+              description: state === 'success' ? 'Full test suite passed' : 'Full test suite failed',
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             });
 
@@ -274,11 +119,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
-    # Job-level env is required by the step condition. This job never checks
-    # out PR code.
     env:
       DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-      TARGET: "PR #${{ needs.full-tests.outputs.pr_number }}"
     steps:
       - name: Send message
         if: env.DISCORD_WEBHOOK != ''
@@ -289,7 +131,7 @@ jobs:
           color: "#FF0000"
           title: ""
           description: |
-            ### ❌ ${{ env.TARGET }}
+            ### ❌ Merge queue
 
             The full test suite (`make test-all`) failed.
 

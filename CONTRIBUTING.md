@@ -16,7 +16,7 @@ Feel free to send your contribution in an unfinished state to get early feedback
 In that case, simply mark the PR with the tag [WIP] (standing for work in progress).
 
 ## PR verification checks
-When you submit a pull request to the project, the CI system runs several verification checks. On every commit pushed to the pull request, the CI also runs the full test suite: `make test-all` (all features, failpoints, and all broker backends) against the pull request merged with its base branch. Changes that only touch documentation or the UI skip the run. It takes approximately 22 minutes, and superseded runs are cancelled automatically when you push new commits.
+When you submit a pull request, CI runs the usual verification checks and reports a `full-test-suite` queue-eligibility status. Once the pull request enters the merge queue, CI runs `make test-all` (all features, failpoints, and all broker backends) against the merge-group commit. The full suite takes approximately 22 minutes and does not run on every commit pushed to the pull request.
 
 You will be notified by email from the CI system if any issues are discovered, but if you want to run these checks locally before submitting PR or in order to verify changes you can use the following commands in the root directory:
 1. To verify that all tests are passing, run `make test-all`.

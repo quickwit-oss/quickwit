@@ -1,28 +1,42 @@
 name: Full test suite trigger
 
-# Fires on every commit pushed to a PR. The job is a no-op signal that wakes
-# the trusted `full-tests.yml` dispatcher, which runs the suite from the
-# default-branch workflow definition. This file runs from the PR revision, so
-# a PR author can only decide whether the dispatcher wakes, never what it
-# does.
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+  merge_group:
+    types: [checks_requested]
 
-permissions:
-  contents: read
-
-concurrency:
-  # One run per PR. New pushes cancel superseded runs.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+permissions: {}
 
 jobs:
-  request:
-    name: request
+  queue-eligibility:
+    name: Queue eligibility
+    if: ${{ github.event_name == 'pull_request_target' && (github.event.action != 'edited' || github.event.changes.base != null) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      statuses: write
+    steps:
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: process.env.PR_SHA,
+              state: 'success',
+              context: 'full-test-suite',
+              description: 'Full suite runs in the merge queue',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+  dispatch:
+    name: Request merge queue tests
+    if: github.event_name == 'merge_group'
     runs-on: ubuntu-24.04
     timeout-minutes: 2
-    permissions: {}
     steps:
-      - name: Request the full test suite
-        run: echo "Requesting the full test suite for commit ${{ github.event.pull_request.head.sha }}"
+      - run: echo "Requesting full tests for merge group $GITHUB_SHA"
