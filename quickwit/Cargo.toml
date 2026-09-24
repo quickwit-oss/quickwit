@@ -11,9 +11,7 @@ members = [
   "quickwit-compaction",
   "quickwit-config",
   "quickwit-control-plane",
-  "quickwit-datafusion",
   "quickwit-datetime",
-  "quickwit-df-core",
   "quickwit-directories",
   "quickwit-doc-mapper",
   "quickwit-index-management",
@@ -43,48 +41,6 @@ members = [
   "quickwit-transport",
 ]
 
-# The following list excludes `quickwit-metastore-utils`
-# from the default member to ease build/deps.
-#
-# DataFusion crates are opt-in and covered by their own CI lane. Keep them out
-# of the default members so a plain `cargo build` does not pull DataFusion in.
-default-members = [
-  "quickwit-actors",
-  "quickwit-aws",
-  "quickwit-cli",
-  "quickwit-cluster",
-  "quickwit-codegen",
-  "quickwit-codegen/example",
-  "quickwit-common",
-  "quickwit-compaction",
-  "quickwit-config",
-  "quickwit-control-plane",
-  "quickwit-datetime",
-  "quickwit-directories",
-  "quickwit-doc-mapper",
-  "quickwit-index-management",
-  "quickwit-indexing",
-  "quickwit-ingest",
-  "quickwit-integration-tests",
-  "quickwit-jaeger",
-  "quickwit-janitor",
-  "quickwit-lambda-client",
-  "quickwit-lambda-server",
-  "quickwit-macros",
-  "quickwit-metastore",
-  "quickwit-metrics-inventory",
-  "quickwit-metrics",
-  "quickwit-opentelemetry",
-  "quickwit-proto",
-  "quickwit-query",
-  "quickwit-rest-client",
-  "quickwit-search",
-  "quickwit-serve",
-  "quickwit-storage",
-  "quickwit-telemetry-exporters",
-  "quickwit-transport",
-]
-
 [workspace.package]
 version = "0.9.0"
 edition = "2024"
@@ -98,7 +54,6 @@ license = "Apache-2.0"
 ahash = "0.8"
 anyhow = "1"
 arc-swap = "1.9"
-arrow = { version = "58", default-features = false, features = ["ipc"] }
 assert-json-diff = "2"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
@@ -397,9 +352,7 @@ quickwit-common = { path = "quickwit-common" }
 quickwit-compaction = { path = "quickwit-compaction" }
 quickwit-config = { path = "quickwit-config" }
 quickwit-control-plane = { path = "quickwit-control-plane" }
-quickwit-datafusion = { path = "quickwit-datafusion" }
 quickwit-datetime = { path = "quickwit-datetime" }
-quickwit-df-core = { path = "quickwit-df-core" }
 quickwit-directories = { path = "quickwit-directories" }
 quickwit-doc-mapper = { path = "quickwit-doc-mapper" }
 quickwit-index-management = { path = "quickwit-index-management" }

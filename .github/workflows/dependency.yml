@@ -20,4 +20,4 @@ jobs:
         with:
           # GHSA-c38w-74pg-36hr, GHSA-4grx-2x9w-596c: minor vuln on the rsa crate, used for google storage.
           # GHSA-cq8v-f236-94qc: rand 0.8.6 unsound with custom logger + rand::rng(), not affected (log feature disabled, transitive dep from fail/sqlx).
-          allow-ghsas: GHSA-c38w-74pg-36hr,GHSA-4grx-2x9w-596c,GHSA-cq8v-f236-94qc,GHSA-2f9f-gq7v-9h6m
+          allow-ghsas: GHSA-c38w-74pg-36hr,GHSA-4grx-2x9w-596c,GHSA-cq8v-f236-94qc

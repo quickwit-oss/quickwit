@@ -105,10 +105,6 @@ jobs:
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo check --features=postgres --tests --bin quickwit
         working-directory: ./quickwit
-      - name: cargo check with DataFusion
-        if: always() && steps.modified.outputs.rust_src == 'true'
-        run: cargo check --features=postgres,datafusion --tests --bin quickwit
-        working-directory: ./quickwit
       - name: cargo nextest
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo nextest run --features=postgres --retries 1

@@ -428,7 +428,7 @@ pub struct SearcherConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
-    /// Routes read-only metastore requests from searchers, including DataFusion when enabled, to
+    /// Routes read-only metastore requests from searchers to
     /// nodes running the `metastore_read_replica` service.
     #[serde(default)]
     pub use_metastore_read_replica: bool,

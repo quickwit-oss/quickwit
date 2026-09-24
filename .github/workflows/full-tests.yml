@@ -76,8 +76,6 @@ jobs:
           sudo apt-get update
           sudo apt-get -y install libsasl2-dev libcurl4-openssl-dev
 
-      # apt's protobuf-compiler is too old for proto3 optional fields required
-      # by the substrait crate enabled through the datafusion feature.
       - name: Install protoc
         uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
         with:
