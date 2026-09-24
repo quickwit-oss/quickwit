@@ -20,6 +20,7 @@
 mod client;
 mod cluster_client;
 mod collector;
+mod cost;
 mod error;
 mod fetch_docs;
 mod find_trace_ids_collector;
