@@ -40,3 +40,7 @@ quickwit-common = { workspace = true, features = ["testsuite"] }
 [[bench]]
 name = "tokenizers_bench"
 harness = false
+
+[[bench]]
+name = "regexp_extract_eq_bench"
+harness = false
