@@ -22,6 +22,7 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, HEARTBEAT, Handler, Health, Mailbox,
     QueueCapacity, Supervisable,
 };
+use quickwit_common::metrics::index_label;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::{KillSwitch, io};
@@ -129,7 +130,8 @@ impl Actor for IndexingPipeline {
 
 impl IndexingPipeline {
     pub fn new(params: IndexingPipelineParams) -> Self {
-        let indexing_pipelines_gauge = gauge!(parent: INDEXING_PIPELINES, "index" => params.pipeline_id.index_uid.index_id.clone());
+        let index_label = index_label(&params.pipeline_id.index_uid.index_id).to_string();
+        let indexing_pipelines_gauge = gauge!(parent: INDEXING_PIPELINES, "index" => index_label);
         let indexing_pipelines_gauge_guard = GaugeGuard::new(&indexing_pipelines_gauge, 1.0);
         let params_fingerprint = params.params_fingerprint;
         IndexingPipeline {
