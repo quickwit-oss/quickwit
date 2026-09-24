@@ -1811,6 +1811,7 @@ pub fn jobs_to_leaf_request(
 
     let mut leaf_search_request = LeafSearchRequest {
         search_request: Some(search_request_for_leaf),
+        is_retry: false,
         leaf_requests: Vec::new(),
         doc_mappers: Vec::new(),
         index_uris: Vec::new(),

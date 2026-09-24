@@ -1041,6 +1041,7 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         test_sandbox.storage(),
         splits_offsets,
         test_sandbox.doc_mapper(),
+        false,
     )
     .await
     .unwrap();
@@ -1951,6 +1952,7 @@ async fn test_negative_cache_records_term_absence() {
         storage,
         splits,
         doc_mapper,
+        false,
     )
     .await
     .unwrap();
@@ -1985,6 +1987,7 @@ async fn test_negative_cache_short_circuits_query_with_extra_terms() {
         storage.clone(),
         splits.clone(),
         doc_mapper.clone(),
+        false,
     )
     .await
     .unwrap();
@@ -2017,6 +2020,7 @@ async fn test_negative_cache_short_circuits_query_with_extra_terms() {
         storage,
         splits,
         doc_mapper,
+        false,
     )
     .await
     .unwrap();
@@ -2048,6 +2052,7 @@ async fn test_negative_cache_records_then_prunes_query_with_added_term() {
         storage.clone(),
         splits.clone(),
         doc_mapper.clone(),
+        false,
     )
     .await
     .unwrap();
@@ -2078,6 +2083,7 @@ async fn test_negative_cache_records_then_prunes_query_with_added_term() {
         storage,
         splits,
         doc_mapper,
+        false,
     )
     .await
     .unwrap();
@@ -2341,6 +2347,7 @@ async fn test_time_bounded_query_populates_and_reuses_complete_predicate_cache()
         storage.clone(),
         splits.clone(),
         doc_mapper.clone(),
+        false,
     )
     .await
     .unwrap();
@@ -2372,6 +2379,7 @@ async fn test_time_bounded_query_populates_and_reuses_complete_predicate_cache()
         storage.clone(),
         splits.clone(),
         doc_mapper.clone(),
+        false,
     )
     .await
     .unwrap();
@@ -2413,6 +2421,7 @@ async fn test_time_bounded_query_populates_and_reuses_complete_predicate_cache()
         test_sandbox.storage(),
         splits.clone(),
         doc_mapper.clone(),
+        false,
     )
     .await
     .unwrap();
@@ -2437,6 +2446,7 @@ async fn test_time_bounded_query_populates_and_reuses_complete_predicate_cache()
         storage,
         splits,
         doc_mapper,
+        false,
     )
     .await
     .unwrap();
@@ -2479,6 +2489,7 @@ async fn test_negative_cache_short_circuits_across_time_windows() {
         storage,
         splits,
         doc_mapper,
+        false,
     )
     .await
     .unwrap();
