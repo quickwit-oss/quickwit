@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 --->
 
+# [0.9.1]
+
+### Security
+
+- Bound trace search resource usage (GHSA-55pj-w5q5-r3m6).
+
 # [0.9.0]
 
 ### Breaking / Migration
