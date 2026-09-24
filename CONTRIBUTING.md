@@ -15,14 +15,6 @@ keep it open, just write `See #<Issue Number>`.
 Feel free to send your contribution in an unfinished state to get early feedback.
 In that case, simply mark the PR with the tag [WIP] (standing for work in progress).
 
-## PR verification checks
-When you submit a pull request, CI runs the usual verification checks and reports a `full-test-suite` queue-eligibility status. Once the pull request enters the merge queue, CI runs `make test-all` (all features, failpoints, and all broker backends) against the merge-group commit. The full suite takes approximately 22 minutes and does not run on every commit pushed to the pull request.
-
-You will be notified by email from the CI system if any issues are discovered, but if you want to run these checks locally before submitting PR or in order to verify changes you can use the following commands in the root directory:
-1. To verify that all tests are passing, run `make test-all`.
-2. To fix code style and format as well as catch common mistakes run `make fix`. Alternatively, run `make -k test-all docker-compose-down` to tear down the Docker services after running all the tests.
-3. To build docs run `make build-rustdoc`.
-
 # Development
 
 ## Setup & run tests
