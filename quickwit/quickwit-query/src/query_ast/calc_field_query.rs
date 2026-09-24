@@ -31,8 +31,10 @@ use crate::{InvalidQuery, find_field_or_hit_dynamic};
 /// fields before running a synchronous search against remote storage.
 ///
 /// A narrow subset of predicates of the form
-/// `(EQ (REGEXP_EXTRACT field "^prefix(capture)suffix$" 1u64) "literal")` may be rewritten
+/// `(EQ (REGEXP_EXTRACT field "prefix(capture)suffix" 1u64) "literal")` may be rewritten
 /// to a [`RegexQuery`] when `field` is a fast, indexed, raw-tokenized string field.
+/// Optional `^` / `$` anchors are honored; missing sides are wrapped with `.*` so the
+/// FST whole-term regex stays equivalent to substring `REGEXP_EXTRACT`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CalcFieldQuery {
     #[serde(with = "jitexpr_serde")]
@@ -46,8 +48,8 @@ impl From<CalcFieldQuery> for QueryAst {
 }
 
 impl CalcFieldQuery {
-    /// Attempts to lower `(EQ (REGEXP_EXTRACT field pattern 1u64) "literal")` into a
-    /// [`RegexQuery`].
+    /// Attempts to lower `(EQ (REGEXP_EXTRACT field pattern 1u64) "literal")` (or the
+    /// swapped literal/extract form) into a [`RegexQuery`].
     ///
     /// Returns `None` whenever the expression shape or field is not eligible, so callers
     /// can keep the calculated-predicate path.
@@ -79,7 +81,8 @@ impl BuildTantivyAst for CalcFieldQuery {
     }
 }
 
-/// Matches `(EQ (REGEXP_EXTRACT field pattern 1u64) "literal")`.
+/// Matches `(EQ (REGEXP_EXTRACT field pattern 1u64) "literal")` and the swapped form
+/// `(EQ "literal" (REGEXP_EXTRACT field pattern 1u64))`.
 fn match_eq_regexp_extract(expression: &UntypedExpr) -> Option<(&str, &str, &str)> {
     let UntypedExpr::FnCall {
         function: Function::Eq,
@@ -88,9 +91,15 @@ fn match_eq_regexp_extract(expression: &UntypedExpr) -> Option<(&str, &str, &str
     else {
         return None;
     };
-    let [extract, UntypedExpr::Literal(Literal::String(literal))] = args.as_slice() else {
+    let [left, right] = args.as_slice() else {
         return None;
     };
+    let (extract, literal) = match (left, right) {
+        (extract, UntypedExpr::Literal(Literal::String(literal))) => (extract, literal),
+        (UntypedExpr::Literal(Literal::String(literal)), extract) => (extract, literal),
+        _ => return None,
+    };
+
     let UntypedExpr::FnCall {
         function: Function::RegexpExtract,
         args: extract_args,
@@ -130,34 +139,57 @@ fn is_fast_indexed_raw_string_field(field_name: &str, schema: &TantivySchema) ->
     text_indexing.tokenizer() == RAW_TOKENIZER_NAME
 }
 
-/// Rewrites `^prefix(capture)suffix$` by replacing the single `(...)` group with the
-/// escaped literal. Rejects special groups, nested/extra parentheses, and unanchored
-/// patterns. Also requires the equality literal to match the capture subpattern, otherwise
+/// Rewrites `prefix(capture)suffix` by replacing the single `(...)` group with the
+/// escaped literal. Rejects special groups and nested/extra parentheses.
+/// Also requires the equality literal to match the capture subpattern, otherwise
 /// `REGEXP_EXTRACT` can never equal that literal and rewriting would over-match.
-/// Tantivy FST regexes already match whole dictionary terms, so anchors are stripped.
+///
+/// `REGEXP_EXTRACT` matches substrings; Tantivy FST regexes match whole terms and reject
+/// `^`/`$`. Optional anchors are therefore stripped, and each missing side is wrapped
+/// with `.*` so the whole-term regex stays equivalent.
 fn substitute_single_capture(pattern: &str, literal: &str) -> Option<String> {
-    let pattern = pattern.strip_prefix('^')?.strip_suffix('$')?;
-    let open = pattern.find('(')?;
-    let close = pattern[open + 1..].find(')')? + open + 1;
+    let anchored_start = pattern.starts_with('^');
+    let anchored_end = pattern.ends_with('$');
+    let body = match (anchored_start, anchored_end) {
+        (true, true) => &pattern[1..pattern.len() - 1],
+        (true, false) => &pattern[1..],
+        (false, true) => &pattern[..pattern.len() - 1],
+        (false, false) => pattern,
+    };
+
+    let open = body.find('(')?;
+    let close = body[open + 1..].find(')')? + open + 1;
     // Reject `(?:...)` / other special groups, nested parentheses, and a second group.
-    if pattern.as_bytes().get(open + 1) == Some(&b'?')
-        || pattern[open + 1..close].contains(['(', ')'])
-        || pattern[close + 1..].contains('(')
+    if body.as_bytes().get(open + 1) == Some(&b'?')
+        || body[open + 1..close].contains(['(', ')'])
+        || body[close + 1..].contains('(')
     {
         return None;
     }
-    let capture = &pattern[open + 1..close];
+    let capture = &body[open + 1..close];
     // `EQ(REGEXP_EXTRACT(...), L)` also requires L to match the capture pattern.
     let capture_re = regex::Regex::new(&format!("^(?:{capture})$")).ok()?;
     if !capture_re.is_match(literal) {
         return None;
     }
-    Some(format!(
-        "{}{}{}",
-        &pattern[..open],
-        regex::escape(literal),
-        &pattern[close + 1..]
-    ))
+
+    // Build the FST whole-term regex by splicing the escaped literal into the capture
+    // and wrapping any side that was not anchored:
+    //   ^prefix(C)suffix$ + L  →  prefix{escape(L)}suffix
+    //   ^prefix(C)suffix  + L  →  prefix{escape(L)}suffix.*
+    //    prefix(C)suffix$ + L  →  .*prefix{escape(L)}suffix
+    //    prefix(C)suffix  + L  →  .*prefix{escape(L)}suffix.*
+    let mut rewritten = String::new();
+    if !anchored_start {
+        rewritten.push_str(".*");
+    }
+    rewritten.push_str(&body[..open]);
+    rewritten.push_str(&regex::escape(literal));
+    rewritten.push_str(&body[close + 1..]);
+    if !anchored_end {
+        rewritten.push_str(".*");
+    }
+    Some(rewritten)
 }
 
 mod jitexpr_serde {
@@ -165,12 +197,16 @@ mod jitexpr_serde {
     use tantivy::jitexpr::ast::UntypedExpr;
 
     pub fn serialize<S>(expression: &UntypedExpr, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
+    where
+        S: Serializer,
+    {
         serializer.serialize_str(&tantivy::jitexpr::ast::serialize(expression))
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<UntypedExpr, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         let expression = String::deserialize(deserializer)?;
         tantivy::jitexpr::ast::deserialize(&expression).map_err(serde::de::Error::custom)
     }
@@ -289,12 +325,23 @@ mod tests {
             Some("svc-api-prod")
         );
         assert_eq!(
+            substitute_single_capture("svc-([a-z]+)-prod", "api").as_deref(),
+            Some(".*svc-api-prod.*")
+        );
+        assert_eq!(
+            substitute_single_capture("^svc-([a-z]+)", "api").as_deref(),
+            Some("svc-api.*")
+        );
+        assert_eq!(
+            substitute_single_capture("([a-z]+)-prod$", "api").as_deref(),
+            Some(".*api-prod")
+        );
+        assert_eq!(
             substitute_single_capture("^svc-(a.b)-prod$", "a+b").as_deref(),
             Some(r"svc-a\+b-prod")
         );
         // Literal does not match the capture class: rewrite must not over-match.
         assert!(substitute_single_capture("^svc-([a-z]+)-prod$", "123").is_none());
-        assert!(substitute_single_capture("svc-([a-z]+)-prod", "api").is_none());
         assert!(substitute_single_capture("^svc-([a-z]+)-([a-z]+)$", "api").is_none());
         assert!(substitute_single_capture("^svc-(?:[a-z]+)-prod$", "api").is_none());
     }
@@ -307,15 +354,20 @@ mod tests {
         schema_builder.add_text_field("fast_tokenized", TEXT | FAST);
         let schema = schema_builder.build();
 
-        let optimized =
+        let optimized: crate::query_ast::RegexQuery =
             calc_field_query(r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#)
                 .try_optimize_to_regex_query(&schema)
                 .expect("eligible expression should optimize");
         assert_eq!(optimized.field, "service");
         assert_eq!(optimized.regex, "svc-api-prod");
 
+        let swapped =
+            calc_field_query(r#"(EQ "api" (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64))"#)
+                .try_optimize_to_regex_query(&schema)
+                .expect("swapped EQ args should optimize");
+        assert_eq!(swapped, optimized);
+
         for expression in [
-            r#"(EQ "api" (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64))"#,
             r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 0u64) "api")"#,
             r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "123")"#,
             r#"(EQ (REGEXP_EXTRACT fast_tokenized "^svc-([a-z]+)-prod$" 1u64) "api")"#,
@@ -362,6 +414,11 @@ mod tests {
             (
                 r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "web")"#,
                 1,
+            ),
+            // Unanchored extract: also matches the svc-api-prod-extra document.
+            (
+                r#"(EQ (REGEXP_EXTRACT service "svc-([a-z]+)-prod" 1u64) "api")"#,
+                2,
             ),
             // Literal outside the capture class: always false for both paths.
             (
