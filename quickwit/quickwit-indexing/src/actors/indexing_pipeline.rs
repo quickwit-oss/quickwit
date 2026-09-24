@@ -22,9 +22,9 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, HEARTBEAT, Handler, Health, Mailbox,
     QueueCapacity, Supervisable,
 };
-use quickwit_common::KillSwitch;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
+use quickwit_common::{KillSwitch, io};
 use quickwit_config::{IndexingSettings, RetentionPolicy, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::IngesterPool;
@@ -334,7 +334,10 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "publisher")]))
             .spawn(publisher);
 
-        let sequencer = Sequencer::new(publisher_mailbox);
+        let sequencer = Sequencer::new(
+            publisher_mailbox,
+            QueueCapacity::Bounded(self.params.max_concurrent_split_uploads_index),
+        );
         let (sequencer_mailbox, sequencer_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "sequencer")]))
@@ -367,7 +370,10 @@ impl IndexingPipeline {
             .spawn(packager);
 
         // Index Serializer
-        let index_serializer = IndexSerializer::new(packager_mailbox);
+        let index_serializer = IndexSerializer::new(
+            packager_mailbox,
+            self.params.indexing_io_throughput_limiter_opt.clone(),
+        );
         let (index_serializer_mailbox, index_serializer_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
@@ -383,6 +389,7 @@ impl IndexingPipeline {
             self.params.cooperative_indexing_permits.clone(),
             index_serializer_mailbox,
             self.params.fingerprinter_opt.clone(),
+            self.params.indexing_io_throughput_limiter_opt.clone(),
         );
         let (indexer_mailbox, indexer_handle) = ctx
             .spawn_actor()
@@ -608,6 +615,7 @@ pub struct IndexingPipelineParams {
     pub split_store: IndexingSplitStore,
     pub max_concurrent_split_uploads_index: usize,
     pub cooperative_indexing_permits: Option<Arc<Semaphore>>,
+    pub indexing_io_throughput_limiter_opt: Option<io::Limiter>,
 
     // Merge-related parameters
     pub merge_policy: Arc<dyn MergePolicy>,
@@ -752,6 +760,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             event_broker: EventBroker::default(),
             params_fingerprint: 42u64,
@@ -859,6 +868,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             params_fingerprint: 42u64,
             event_broker: EventBroker::default(),
@@ -989,6 +999,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             event_broker: Default::default(),
             params_fingerprint: 42u64,
@@ -1090,6 +1101,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox.clone()),
             event_broker: Default::default(),
             params_fingerprint: 42u64,
@@ -1174,6 +1186,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: None,
             event_broker: Default::default(),
             params_fingerprint: 42u64,
@@ -1328,6 +1341,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             params_fingerprint: 42u64,
             event_broker: Default::default(),

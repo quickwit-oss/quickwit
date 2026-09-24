@@ -110,6 +110,10 @@ impl fmt::Debug for Ingester {
 }
 
 impl Ingester {
+    pub fn status(&self) -> IngesterStatus {
+        *self.state.status_rx.borrow()
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub async fn try_new(
         cluster: Cluster,
@@ -3051,6 +3055,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingester_open_observation_stream() {
         let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
+        assert_eq!(ingester.status(), IngesterStatus::Ready);
 
         let mut observation_stream = ingester
             .open_observation_stream(OpenObservationStreamRequest {})
@@ -3065,6 +3070,7 @@ mod tests {
             .set_status(IngesterStatus::Decommissioning)
             .await;
         drop(state_guard);
+        assert_eq!(ingester.status(), IngesterStatus::Decommissioning);
 
         let observation = observation_stream.next().await.unwrap().unwrap();
         assert_eq!(observation.node_id, ingester_ctx.node_id);

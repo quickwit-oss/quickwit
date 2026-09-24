@@ -32,11 +32,18 @@ use tokio::sync::oneshot;
 /// ensures that publish message are send in the right order.
 pub struct Sequencer<A: Actor> {
     mailbox: Mailbox<A>,
+    queue_capacity: QueueCapacity,
 }
 
 impl<A: Actor> Sequencer<A> {
-    pub fn new(mailbox: Mailbox<A>) -> Self {
-        Sequencer { mailbox }
+    /// The queue must be large enough to hold the reservations for all concurrent producers.
+    /// Otherwise, its backpressure becomes a lower concurrency limit than the producer's own
+    /// semaphore.
+    pub fn new(mailbox: Mailbox<A>, queue_capacity: QueueCapacity) -> Self {
+        Sequencer {
+            mailbox,
+            queue_capacity,
+        }
     }
 }
 
@@ -45,7 +52,7 @@ impl<A: Actor> Actor for Sequencer<A> {
     type ObservableState = ();
 
     fn queue_capacity(&self) -> QueueCapacity {
-        QueueCapacity::Bounded(2)
+        self.queue_capacity
     }
 
     fn observable_state(&self) {}
@@ -124,10 +131,8 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let test_actor = SequencerTestActor::default();
         let (test_mailbox, test_handle) = universe.spawn_builder().spawn(test_actor);
-        let sequencer = Sequencer::new(test_mailbox);
+        let sequencer = Sequencer::new(test_mailbox, QueueCapacity::Bounded(2));
         let (sequencer_mailbox, sequencer_handle) = universe.spawn_builder().spawn(sequencer);
-        // The sequencer has a capacity of 2.
-        // This is the maximum we can do without provoking a deadlock.
         let (fut_tx_1, fut_rx_1) = oneshot::channel();
         let (fut_tx_2, fut_rx_2) = oneshot::channel();
         let (fut_tx_3, fut_rx_3) = oneshot::channel();

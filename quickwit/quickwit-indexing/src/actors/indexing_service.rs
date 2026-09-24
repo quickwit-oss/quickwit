@@ -15,11 +15,12 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
+use std::sync::{Arc, LazyLock};
 
 use anyhow::Context;
 use async_trait::async_trait;
+use bytesize::ByteSize;
 use futures::TryStreamExt;
 use itertools::Itertools;
 use quickwit_actors::{
@@ -28,7 +29,7 @@ use quickwit_actors::{
 };
 use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::EventBroker;
-use quickwit_common::{io, temp_dir};
+use quickwit_common::{get_from_env_opt, io, temp_dir};
 use quickwit_config::{
     INGEST_API_SOURCE_ID, IndexConfig, IndexerConfig, SourceConfig, SourceParams, build_doc_mapper,
     disable_ingest_v1, indexing_pipeline_params_fingerprint,
@@ -70,6 +71,12 @@ use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, Indexi
 
 /// Name of the indexing directory, usually located at `<data_dir_path>/indexing`.
 pub const INDEXING_DIR_NAME: &str = "indexing";
+
+const INDEXING_MAX_WRITE_THROUGHPUT_ENV_KEY: &str = "QW_INDEXING_MAX_WRITE_THROUGHPUT";
+
+static INDEXING_IO_THROUGHPUT_LIMITER: LazyLock<Option<io::Limiter>> = LazyLock::new(|| {
+    get_from_env_opt::<ByteSize>(INDEXING_MAX_WRITE_THROUGHPUT_ENV_KEY, false).map(io::limiter)
+});
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct IndexingServiceCounters {
@@ -140,6 +147,7 @@ pub struct IndexingService {
     parquet_merge_pipeline_handles: HashMap<IndexUid, ParquetMergePipelineHandle>,
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
     fingerprinter_opt: Option<Fingerprinter>,
+    indexing_io_throughput_limiter_opt: Option<io::Limiter>,
     merge_io_throughput_limiter_opt: Option<io::Limiter>,
     pub(crate) event_broker: EventBroker,
 }
@@ -172,6 +180,7 @@ impl IndexingService {
         split_cache: Arc<IndexingSplitCache>,
         fingerprinter_opt: Option<Fingerprinter>,
     ) -> anyhow::Result<IndexingService> {
+        let indexing_io_throughput_limiter_opt = (*INDEXING_IO_THROUGHPUT_LIMITER).clone();
         let merge_io_throughput_limiter_opt =
             indexer_config.max_merge_write_throughput.map(io::limiter);
         let indexing_root_directory =
@@ -207,6 +216,7 @@ impl IndexingService {
             #[cfg(feature = "metrics")]
             parquet_merge_pipeline_handles: HashMap::new(),
             fingerprinter_opt,
+            indexing_io_throughput_limiter_opt,
             merge_io_throughput_limiter_opt,
             cooperative_indexing_permits,
             event_broker,
@@ -448,6 +458,7 @@ impl IndexingService {
             split_store,
             max_concurrent_split_uploads_index,
             cooperative_indexing_permits: self.cooperative_indexing_permits.clone(),
+            indexing_io_throughput_limiter_opt: self.indexing_io_throughput_limiter_opt.clone(),
             merge_policy,
             retention_policy,
             max_concurrent_split_uploads_merge,
