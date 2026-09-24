@@ -29,6 +29,13 @@ rest:
     key_path: /path/to/rest.key
     ca_path: /path/to/ca.crt
     verify_client_cert: true
+    allowed_client_identities:
+      common_names: ["collector-*", "forwarder"]
+      dns_sans: ["*.collectors.example.com", "collector.example.com"]
+      uri_sans:
+        - "spiffe://example.com/ns/logging/sa/*"
+        - "spiffe://example.com/ns/observability/**"
+        - "urn:example:collector"
   max_connection_age: 30m
   max_connection_age_grace: 30s
 
@@ -43,6 +50,12 @@ grpc:
     ca_path: /path/to/ca.crt
     verify_client_cert: true
     expected_name: quickwit.local
+    allowed_client_identities:
+      common_names: ["quickwit-*", "quickwit-indexer"]
+      dns_sans: ["*.quickwit.example.com", "quickwit.local"]
+      uri_sans:
+        - "spiffe://example.com/quickwit/**"
+        - "spiffe://example.com/quickwit/indexer"
   max_connection_age: 1h
   max_connection_age_grace: 10s
 

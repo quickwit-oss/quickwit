@@ -24,7 +24,10 @@ tokio-rustls = { workspace = true }
 tonic = { workspace = true, features = ["channel"] }
 tower = { workspace = true }
 tracing = { workspace = true }
+x509-parser = { workspace = true }
 
 [dev-dependencies]
+rcgen = { workspace = true }
 tempfile = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

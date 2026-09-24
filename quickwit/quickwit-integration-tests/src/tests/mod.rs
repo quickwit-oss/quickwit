@@ -23,5 +23,6 @@ mod otlp_tests;
 mod serve_failure_tests;
 #[cfg(feature = "sqs-localstack-tests")]
 mod sqs_tests;
+mod tls_identity_tests;
 mod tls_tests;
 mod update_tests;

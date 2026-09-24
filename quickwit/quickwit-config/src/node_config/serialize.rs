@@ -712,7 +712,7 @@ mod tests {
 
     use super::*;
     use crate::storage_config::StorageBackendFlavor;
-    use crate::{CacheConfig, LambdaConfig, LambdaDeployConfig};
+    use crate::{AllowedClientIdentities, CacheConfig, LambdaConfig, LambdaDeployConfig};
 
     fn get_config_filepath(config_filename: &str) -> String {
         format!(
@@ -757,6 +757,18 @@ mod tests {
                 ca_path: "/path/to/ca.crt".to_string(),
                 expected_name: None,
                 verify_client_cert: true,
+                allowed_client_identities: Some(AllowedClientIdentities {
+                    common_names: vec!["collector-*".to_string(), "forwarder".to_string()],
+                    dns_sans: vec![
+                        "*.collectors.example.com".to_string(),
+                        "collector.example.com".to_string(),
+                    ],
+                    uri_sans: vec![
+                        "spiffe://example.com/ns/logging/sa/*".to_string(),
+                        "spiffe://example.com/ns/observability/**".to_string(),
+                        "urn:example:collector".to_string(),
+                    ],
+                }),
                 cert_poll_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
             }
         );
@@ -779,6 +791,17 @@ mod tests {
                 ca_path: "/path/to/ca.crt".to_string(),
                 expected_name: Some("quickwit.local".to_string()),
                 verify_client_cert: true,
+                allowed_client_identities: Some(AllowedClientIdentities {
+                    common_names: vec!["quickwit-*".to_string(), "quickwit-indexer".to_string()],
+                    dns_sans: vec![
+                        "*.quickwit.example.com".to_string(),
+                        "quickwit.local".to_string(),
+                    ],
+                    uri_sans: vec![
+                        "spiffe://example.com/quickwit/**".to_string(),
+                        "spiffe://example.com/quickwit/indexer".to_string(),
+                    ],
+                }),
                 cert_poll_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
             }
         );

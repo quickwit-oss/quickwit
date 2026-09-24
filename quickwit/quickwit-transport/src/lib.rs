@@ -21,6 +21,7 @@
 
 mod accept;
 mod channel;
+mod client_cert_verifier;
 mod tls;
 
 pub use accept::accept_tls_incoming;

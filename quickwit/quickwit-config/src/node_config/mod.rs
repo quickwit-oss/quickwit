@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod serialize;
+mod tls_identity;
 
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -33,6 +34,7 @@ use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_proto::types::{AvailabilityZone, NodeId};
 use serde::{Deserialize, Deserializer, Serialize};
+pub use tls_identity::{AllowedClientIdentities, ClientIdentityMatcher};
 use tracing::{info, warn};
 
 use crate::docs_clustering::DocsClusteringConfig;
@@ -168,6 +170,9 @@ pub struct TlsConfig {
     pub expected_name: Option<String>,
     #[serde(default, alias = "validate_client")]
     pub verify_client_cert: bool,
+    /// Optional authorization policy for incoming client certificates. Changes require a restart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_client_identities: Option<AllowedClientIdentities>,
     // How often the certificate and key files are polled for changes and hot-reloaded (e.g.
     // `"5m"`). An immediate reload can also be triggered out-of-band with `SIGHUP`.
     #[serde(alias = "cert_reload_interval", default = "default_cert_poll_interval")]
@@ -176,6 +181,13 @@ pub struct TlsConfig {
 
 impl TlsConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
+        if let Some(identities) = &self.allowed_client_identities {
+            ensure!(
+                self.verify_client_cert,
+                "`tls.allowed_client_identities` requires `tls.verify_client_cert: true`"
+            );
+            identities.compile()?;
+        }
         ensure!(
             !self.cert_poll_interval.is_zero(),
             "`tls.cert_poll_interval` must be greater than zero, got `{}`",
@@ -1282,22 +1294,29 @@ mod tests {
         assert!(grpc_config.validate().is_ok());
     }
 
-    fn tls_config(poll_interval: &str) -> TlsConfig {
-        TlsConfig {
+    #[test]
+    fn test_tls_config_validates_cert_poll_interval() {
+        let valid_tls_config = TlsConfig {
             cert_path: "/path/to/server.crt".to_string(),
             key_path: "/path/to/server.key".to_string(),
             ca_path: String::new(),
             expected_name: None,
             verify_client_cert: false,
-            cert_poll_interval: HumanDuration::try_from(poll_interval.to_string()).unwrap(),
-        }
-    }
+            allowed_client_identities: None,
+            cert_poll_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
+        };
+        valid_tls_config.validate().unwrap();
 
-    #[test]
-    fn test_tls_config_validate() {
-        assert!(tls_config("5m").validate().is_ok());
-
-        let error = tls_config("0s").validate().unwrap_err().to_string();
+        let zero_interval_tls_config = TlsConfig {
+            cert_path: "/path/to/server.crt".to_string(),
+            key_path: "/path/to/server.key".to_string(),
+            ca_path: String::new(),
+            expected_name: None,
+            verify_client_cert: false,
+            allowed_client_identities: None,
+            cert_poll_interval: HumanDuration::try_from("0s".to_string()).unwrap(),
+        };
+        let error = zero_interval_tls_config.validate().unwrap_err().to_string();
         assert!(
             error.contains("must be greater than zero"),
             "unexpected error: {error}"
@@ -1305,10 +1324,88 @@ mod tests {
     }
 
     #[test]
+    fn test_tls_config_validates_allowed_client_identities() {
+        let valid_identities = AllowedClientIdentities {
+            common_names: vec!["*.local".to_string()],
+            dns_sans: vec!["*.local".to_string()],
+            uri_sans: Vec::new(),
+        };
+        let valid_tls_config = TlsConfig {
+            cert_path: "/path/to/server.crt".to_string(),
+            key_path: "/path/to/server.key".to_string(),
+            ca_path: String::new(),
+            expected_name: None,
+            verify_client_cert: true,
+            allowed_client_identities: Some(valid_identities),
+            cert_poll_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
+        };
+        valid_tls_config.validate().unwrap();
+
+        let config_without_mtls = TlsConfig {
+            verify_client_cert: false,
+            ..valid_tls_config
+        };
+        let missing_mtls_error = config_without_mtls.validate().unwrap_err().to_string();
+        assert!(
+            missing_mtls_error.contains("requires `tls.verify_client_cert: true`"),
+            "unexpected error: {missing_mtls_error}"
+        );
+
+        let empty_identities = AllowedClientIdentities {
+            common_names: Vec::new(),
+            dns_sans: Vec::new(),
+            uri_sans: Vec::new(),
+        };
+        let empty_policy_tls_config = TlsConfig {
+            cert_path: "/path/to/server.crt".to_string(),
+            key_path: "/path/to/server.key".to_string(),
+            ca_path: String::new(),
+            expected_name: None,
+            verify_client_cert: true,
+            allowed_client_identities: Some(empty_identities),
+            cert_poll_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
+        };
+        let empty_policy_error = empty_policy_tls_config.validate().unwrap_err().to_string();
+        assert!(
+            empty_policy_error.contains("must contain at least one identity"),
+            "unexpected error: {empty_policy_error}"
+        );
+
+        let invalid_dns_identities = AllowedClientIdentities {
+            common_names: Vec::new(),
+            dns_sans: vec!["**.local".to_string()],
+            uri_sans: Vec::new(),
+        };
+        let invalid_dns_tls_config = TlsConfig {
+            cert_path: "/path/to/server.crt".to_string(),
+            key_path: "/path/to/server.key".to_string(),
+            ca_path: String::new(),
+            expected_name: None,
+            verify_client_cert: true,
+            allowed_client_identities: Some(invalid_dns_identities),
+            cert_poll_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
+        };
+        let invalid_dns_error = invalid_dns_tls_config.validate().unwrap_err().to_string();
+        assert!(
+            invalid_dns_error
+                .contains("invalid DNS name pattern `**.local` in `tls.allowed_client_identities`"),
+            "unexpected error: {invalid_dns_error}"
+        );
+    }
+
+    #[test]
     fn test_grpc_config_validate_rejects_zero_tls_poll_interval() {
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::mib(20),
-            tls_config: Some(tls_config("0s")),
+            tls_config: Some(TlsConfig {
+                cert_path: "/path/to/server.crt".to_string(),
+                key_path: "/path/to/server.key".to_string(),
+                ca_path: String::new(),
+                expected_name: None,
+                verify_client_cert: false,
+                allowed_client_identities: None,
+                cert_poll_interval: HumanDuration::try_from("0s".to_string()).unwrap(),
+            }),
             ..Default::default()
         };
         assert!(grpc_config.validate().is_err());

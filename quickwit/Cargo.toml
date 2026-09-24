@@ -134,6 +134,7 @@ enum-iterator = "2.3"
 env_logger = { version = "0.11", default-features = false, features = ["auto-color"] }
 fail = "0.5"
 flate2 = "1.1"
+fluent-uri = { version = "0.4", default-features = false }
 flume = "0.12"
 fnv = "1"
 futures = "0.3"
@@ -241,6 +242,7 @@ rdkafka = { version = "0.39", default-features = false, features = [
   "tokio",
   "zstd",
 ] }
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring"] }
 regex = "1.13"
 regex-automata = "0.4"
 regex-syntax = "0.8"
@@ -352,6 +354,7 @@ vrl = { version = "0.33", default-features = false, features = [
 ] }
 warp = { version = "0.4", features = ["server", "test"] }
 wiremock = "0.6"
+x509-parser = { version = "0.18", default-features = false }
 zstd = { version = "0.14", default-features = false }
 
 aws-config = "1.9"

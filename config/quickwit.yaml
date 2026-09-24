@@ -46,6 +46,21 @@ version: 0.8
 #     # mTLS: require clients to present a certificate signed by this CA.
 #     ca_path: /path/to/ca.crt
 #     verify_client_cert: true
+#     # Optional client identity allowlist; requires verify_client_cert: true.
+#     # Any matching entry suffices (OR). Changes require a restart.
+#     # Full rules: https://quickwit.io/docs/configuration/node-config#client-identity-authorization
+#     allowed_client_identities:
+#       # Case-sensitive CNs; '*' matches any characters.
+#       common_names: ["collector-*", "forwarder"]
+#       # Case-insensitive DNS SANs; '*' stays within one label.
+#       dns_sans: ["*.collectors.example.com", "collector.example.com"]
+#       # Case-sensitive URI SANs; '*' stays within one path segment.
+#       # A terminal '/**' matches a path and its descendants.
+#       uri_sans:
+#         - "spiffe://example.com/ns/logging/sa/*"
+#         - "spiffe://example.com/ns/logging/sa/collector"
+#         - "spiffe://example.com/ns/observability/**"
+#         - "urn:example:collector"
 #     # How often cert_path/key_path are polled for changes and hot-reloaded; an
 #     # immediate reload can also be triggered with SIGHUP. Defaults to 5m.
 #     cert_poll_interval: 5m
@@ -79,6 +94,21 @@ version: 0.8
 #     verify_client_cert: true
 #     # Hostname checked against the peer certificate's SAN when connecting to peers.
 #     expected_name: quickwit.local
+#     # Optional client identity allowlist; requires verify_client_cert: true.
+#     # Any matching entry suffices (OR). Changes require a restart.
+#     # Full rules: https://quickwit.io/docs/configuration/node-config#client-identity-authorization
+#     allowed_client_identities:
+#       # Case-sensitive CNs; '*' matches any characters.
+#       common_names: ["collector-*", "forwarder"]
+#       # Case-insensitive DNS SANs; '*' stays within one label.
+#       dns_sans: ["*.collectors.example.com", "collector.example.com"]
+#       # Case-sensitive URI SANs; '*' stays within one path segment.
+#       # A terminal '/**' matches a path and its descendants.
+#       uri_sans:
+#         - "spiffe://example.com/ns/logging/sa/*"
+#         - "spiffe://example.com/ns/logging/sa/collector"
+#         - "spiffe://example.com/ns/observability/**"
+#         - "urn:example:collector"
 #     # How often cert_path/key_path are polled for changes and hot-reloaded; an
 #     # immediate reload can also be triggered with SIGHUP. Defaults to 5m.
 #     cert_poll_interval: 5m
