@@ -26,7 +26,7 @@ use tracing::{error, info, warn};
 
 use crate::planner::metrics::{SOURCE_UID, SPLITS_NEEDING_COMPACTION, TIMED_OUT_OPERATIONS};
 use crate::planner::{PendingMerge, PendingOperations};
-use crate::{TaskId, source_uid_metrics_label};
+use crate::{CompactorPool, TaskId, source_uid_metrics_label};
 
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_mins(1);
 
@@ -200,6 +200,17 @@ impl CompactionState {
                 }
             }
         }
+    }
+
+    pub fn pending_count(&self) -> usize {
+        self.pending_operations.len()
+    }
+
+    pub fn live_in_flight_count(&self, compactor_pool: &CompactorPool) -> usize {
+        self.in_flight
+            .values()
+            .filter(|inflight| compactor_pool.contains_key(&inflight.node_id))
+            .count()
     }
 
     /// Pops up to `count` pending merges for assignment, highest-priority first.
@@ -436,6 +447,50 @@ mod tests {
         for split_id in &split_ids {
             assert!(state.is_split_tracked(split_id.as_str()));
         }
+    }
+
+    #[test]
+    fn test_live_in_flight_count_filters_by_pool() {
+        let mut state = CompactionState::default();
+        let worker_a = NodeId::from_str("worker-a");
+        let worker_b = NodeId::from_str("worker-b");
+        let worker_c = NodeId::from_str("worker-c");
+
+        state.in_flight_split_ids.insert(SplitId::from("s1"));
+        state.record_assignment(
+            "task-1".to_string(),
+            HashSet::from([SplitId::from("s1")]),
+            worker_a.clone(),
+        );
+        state.in_flight_split_ids.insert(SplitId::from("s2"));
+        state.record_assignment(
+            "task-2".to_string(),
+            HashSet::from([SplitId::from("s2")]),
+            worker_a.clone(),
+        );
+        state.in_flight_split_ids.insert(SplitId::from("s3"));
+        state.record_assignment(
+            "task-3".to_string(),
+            HashSet::from([SplitId::from("s3")]),
+            worker_b.clone(),
+        );
+
+        let empty_pool = CompactorPool::default();
+        assert_eq!(state.live_in_flight_count(&empty_pool), 0);
+
+        let pool_a = CompactorPool::default();
+        pool_a.insert(worker_a.clone(), ());
+        assert_eq!(state.live_in_flight_count(&pool_a), 2);
+
+        let pool_ab = CompactorPool::default();
+        pool_ab.insert(worker_a, ());
+        pool_ab.insert(worker_b.clone(), ());
+        assert_eq!(state.live_in_flight_count(&pool_ab), 3);
+
+        let pool_bc = CompactorPool::default();
+        pool_bc.insert(worker_b, ());
+        pool_bc.insert(worker_c, ());
+        assert_eq!(state.live_in_flight_count(&pool_bc), 1);
     }
 
     #[test]

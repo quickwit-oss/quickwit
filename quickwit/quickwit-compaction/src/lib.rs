@@ -29,6 +29,7 @@ pub use compactor_service::{
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
+use quickwit_common::tower::Pool;
 use quickwit_config::CompactorConfig;
 use quickwit_indexing::IndexingSplitCache;
 use quickwit_proto::compaction::CompactionPlannerServiceClient;
@@ -36,6 +37,8 @@ use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::{IndexUid, NodeId, SourceId};
 use quickwit_storage::StorageResolver;
 use tracing::info;
+
+pub type CompactorPool = Pool<NodeId, ()>;
 
 pub fn source_uid_metrics_label(index_uid: &IndexUid, source_id: &SourceId) -> String {
     let source_uid = format!("{}-{}", index_uid, source_id);
