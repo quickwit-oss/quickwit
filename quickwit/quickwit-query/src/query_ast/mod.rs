@@ -28,6 +28,7 @@ mod field_presence;
 mod full_text_query;
 mod phrase_prefix_query;
 mod range_query;
+mod regex_extract_eq;
 mod regex_query;
 mod required_terms;
 mod tantivy_query_ast;
