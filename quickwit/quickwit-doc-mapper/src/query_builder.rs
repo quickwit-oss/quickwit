@@ -491,7 +491,7 @@ mod test {
     }
 
     #[test]
-    fn test_calc_field_regexp_extract_eq_warmup() {
+    fn test_calc_field_regex_extract_eq_warmup() {
         let mut schema_builder = Schema::builder();
         schema_builder.add_text_field("service", STRING | FAST);
         schema_builder.add_text_field("tokenized", TEXT | FAST);

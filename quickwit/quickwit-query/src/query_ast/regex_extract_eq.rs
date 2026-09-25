@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::ops::RangeInclusive;
 use std::sync::Arc;
 
-use tantivy::columnar::{Cardinality, Column, ColumnValues};
 use tantivy::query::{
     BitSetDocSet, ConstScorer, EmptyScorer, EnableScoring, Explanation, Query, Scorer, Weight,
 };
@@ -23,11 +21,6 @@ use tantivy::{DocId, DocSet, Score, SegmentReader, TantivyError};
 use tantivy_common::BitSet;
 
 use super::TantivyQueryAst;
-
-/// Above this many runs of consecutive matching ordinals, one block-decoding pass over the column
-/// is cheaper than one range scan per run.
-const MAX_ORD_RANGE_SCANS: usize = 4;
-const DECODE_BLOCK_LEN: usize = 1024;
 
 /// Compiled plan evaluating `EQ(REGEXP_EXTRACT(field, pattern, 1), literal)` once per distinct
 /// fast-field value instead of once per document.
@@ -39,6 +32,9 @@ const DECODE_BLOCK_LEN: usize = 1024;
 ///   the same documents.
 /// - `value_matches` must keep the semantics of the jitexpr `REGEXP_EXTRACT` function
 ///   (`Regex::new(pattern)`, leftmost-first `captures`, group 1).
+/// - Unlike the JIT predicate, which treats a column it fails to open as absent, the scorer returns
+///   errors from opening the column or reading its dictionary, so a corrupt split fails the search
+///   instead of silently matching nothing.
 pub(crate) struct RegexExtractEqPlan {
     fast_field_name: String,
     prefilter_regex: String,
@@ -142,21 +138,31 @@ impl Weight for RegexExtractEqWeight {
                 self.plan.fast_field_name
             ))
         })?;
-        let mut matching_ords = MatchingOrds::new(num_values);
+        let mut matching_ords = BitSet::with_max_value(num_values);
         let mut value_stream = dictionary
             .search(&self.plan.prefilter_automaton)
             .into_stream()?;
         while value_stream.advance() {
             if self.plan.value_matches(value_stream.key()) {
-                matching_ords.insert(value_stream.term_ord());
+                // `term_ord < num_values`, which fits in u32.
+                matching_ords.insert(value_stream.term_ord() as u32);
             }
         }
-        if matching_ords.is_empty() {
+        if matching_ords.len() == 0 {
             return Ok(Box::new(EmptyScorer));
         }
         let max_doc = reader.max_doc();
         let mut doc_bitset = BitSet::with_max_value(max_doc);
-        collect_first_value_matches(str_column.ords(), &matching_ords, max_doc, &mut doc_bitset);
+        let ords = str_column.ords();
+        // The JIT predicate evaluates the first value of each document only.
+        for doc in 0..max_doc {
+            let Some(ord) = ords.first(doc) else {
+                continue;
+            };
+            if matching_ords.contains(ord as u32) {
+                doc_bitset.insert(doc);
+            }
+        }
         let doc_set = BitSetDocSet::from(doc_bitset);
         Ok(Box::new(ConstScorer::new(doc_set, boost)))
     }
@@ -172,331 +178,283 @@ impl Weight for RegexExtractEqWeight {
     }
 }
 
-/// Ordinals of the fast-field values satisfying the predicate.
-struct MatchingOrds {
-    bitset: BitSet,
-    /// Runs of consecutive matching ordinals, or `None` once there are more than
-    /// `MAX_ORD_RANGE_SCANS` of them.
-    runs: Option<Vec<RangeInclusive<u64>>>,
-}
-
-impl MatchingOrds {
-    fn new(num_values: u32) -> Self {
-        MatchingOrds {
-            bitset: BitSet::with_max_value(num_values),
-            runs: Some(Vec::new()),
-        }
-    }
-
-    /// `ord` must be lower than `num_values` and greater than every previously inserted ordinal,
-    /// which holds when inserting in dictionary stream order.
-    fn insert(&mut self, ord: u64) {
-        self.bitset.insert(ord as u32);
-        let Some(runs) = &mut self.runs else {
-            return;
-        };
-        if let Some(last_run) = runs.last_mut()
-            && *last_run.end() + 1 == ord
-        {
-            *last_run = *last_run.start()..=ord;
-            return;
-        }
-        if runs.len() == MAX_ORD_RANGE_SCANS {
-            self.runs = None;
-            return;
-        }
-        runs.push(ord..=ord);
-    }
-
-    fn contains(&self, ord: u64) -> bool {
-        self.bitset.contains(ord as u32)
-    }
-
-    fn is_empty(&self) -> bool {
-        self.bitset.len() == 0
-    }
-}
-
-/// How documents are selected from the ordinal column.
-#[derive(Debug)]
-enum OrdScanStrategy<'a> {
-    /// One range scan per run of matching ordinals.
-    RangeScans(&'a [RangeInclusive<u64>]),
-    /// One pass decoding ordinals in blocks.
-    BlockDecoding,
-    /// One first-value lookup per document.
-    FirstValueLoop,
-}
-
-fn ord_scan_strategy(
-    cardinality: Cardinality,
-    matching_ords: &MatchingOrds,
-) -> OrdScanStrategy<'_> {
-    match (cardinality, &matching_ords.runs) {
-        // A range scan returns documents having *any* value in the run, which is their first
-        // value only when documents have at most one value.
-        (Cardinality::Full | Cardinality::Optional, Some(runs)) => {
-            OrdScanStrategy::RangeScans(runs)
-        }
-        // Row ids are doc ids only when every document has exactly one value.
-        (Cardinality::Full, None) => OrdScanStrategy::BlockDecoding,
-        (Cardinality::Optional, None) | (Cardinality::Multivalued, _) => {
-            OrdScanStrategy::FirstValueLoop
-        }
-    }
-}
-
-/// Inserts into `doc_bitset` every document whose first value ordinal is in `matching_ords`,
-/// which is the value the JIT predicate evaluates.
-fn collect_first_value_matches(
-    ords: &Column<u64>,
-    matching_ords: &MatchingOrds,
-    max_doc: DocId,
-    doc_bitset: &mut BitSet,
-) {
-    match ord_scan_strategy(ords.get_cardinality(), matching_ords) {
-        OrdScanStrategy::RangeScans(runs) => {
-            collect_by_range_scans(ords, runs, max_doc, doc_bitset)
-        }
-        OrdScanStrategy::BlockDecoding => {
-            collect_by_block_decoding(ords, matching_ords, doc_bitset)
-        }
-        OrdScanStrategy::FirstValueLoop => {
-            collect_by_first_value_loop(ords, matching_ords, max_doc, doc_bitset)
-        }
-    }
-}
-
-/// Requires a column with at most one value per document.
-fn collect_by_range_scans(
-    ords: &Column<u64>,
-    runs: &[RangeInclusive<u64>],
-    max_doc: DocId,
-    doc_bitset: &mut BitSet,
-) {
-    let mut docs: Vec<DocId> = Vec::new();
-    for run in runs {
-        docs.clear();
-        ords.get_docids_for_value_range(run.clone(), 0..max_doc, &mut docs);
-        for &doc in &docs {
-            doc_bitset.insert(doc);
-        }
-    }
-}
-
-/// Requires a column with exactly one value per document.
-fn collect_by_block_decoding(
-    ords: &Column<u64>,
-    matching_ords: &MatchingOrds,
-    doc_bitset: &mut BitSet,
-) {
-    let num_rows = ords.values.num_vals();
-    let mut block = [0u64; DECODE_BLOCK_LEN];
-    for block_start in (0..num_rows).step_by(DECODE_BLOCK_LEN) {
-        let block_len = (num_rows - block_start).min(DECODE_BLOCK_LEN as u32) as usize;
-        let block = &mut block[..block_len];
-        ords.values.get_range(block_start as u64, block);
-        for (offset, &ord) in block.iter().enumerate() {
-            if matching_ords.contains(ord) {
-                doc_bitset.insert(block_start + offset as u32);
-            }
-        }
-    }
-}
-
-fn collect_by_first_value_loop(
-    ords: &Column<u64>,
-    matching_ords: &MatchingOrds,
-    max_doc: DocId,
-    doc_bitset: &mut BitSet,
-) {
-    for doc in 0..max_doc {
-        let Some(ord) = ords.first(doc) else {
-            continue;
-        };
-        if matching_ords.contains(ord) {
-            doc_bitset.insert(doc);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use tantivy::columnar::{Cardinality, StrColumn};
-    use tantivy::schema::{FAST, STRING, Schema};
-    use tantivy::{DocId, Index, TantivyDocument};
-    use tantivy_common::BitSet;
+    use tantivy::collector::Count;
+    use tantivy::jitexpr::ast::deserialize;
+    use tantivy::query::doc_predicate_query::{DocPredicateQuery, JitExprPredicate};
+    use tantivy::schema::{FAST, STRING, Schema, TEXT, TextOptions};
+    use tantivy::tokenizer::MAX_TOKEN_LEN;
+    use tantivy::{Index, TantivyDocument, doc};
 
-    use super::{
-        MAX_ORD_RANGE_SCANS, MatchingOrds, OrdScanStrategy, collect_by_block_decoding,
-        collect_by_first_value_loop, collect_by_range_scans, collect_first_value_matches,
-        ord_scan_strategy,
-    };
+    use crate::query_ast::{BuildTantivyAstContext, CalcFieldQuery, QueryAst};
 
-    const NUM_VALUES: u64 = 10;
+    fn calc_field(expression: &str) -> QueryAst {
+        calc_field_query(expression).into()
+    }
 
-    /// Builds a one-segment string column. Values `v0`..`v9` get ordinals 0..9 when all present.
-    fn build_str_column(documents: &[Vec<String>]) -> (StrColumn, DocId) {
+    fn calc_field_query(expression: &str) -> CalcFieldQuery {
+        CalcFieldQuery {
+            expression: deserialize(expression).unwrap(),
+        }
+    }
+
+    #[test]
+    fn test_regex_extract_eq_prefilter() {
         let mut schema_builder = Schema::builder();
-        let field = schema_builder.add_text_field("field", STRING | FAST);
+        schema_builder.add_text_field("service", STRING | FAST);
+        schema_builder.add_text_field("indexed_only", STRING);
+        schema_builder.add_text_field("fast_only", FAST);
+        schema_builder.add_text_field("fast_tokenized", TEXT | FAST);
+        schema_builder.add_text_field("fast_lowercased", STRING.set_fast("lowercase"));
+        let schema = schema_builder.build();
+
+        let prefilter =
+            calc_field_query(r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#)
+                .try_prefilter_regex_query(&schema)
+                .expect("eligible expression should produce a prefilter");
+        assert_eq!(prefilter.field, "service");
+        assert_eq!(prefilter.regex, "svc-api-prod");
+
+        let swapped =
+            calc_field_query(r#"(EQ "api" (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64))"#)
+                .try_prefilter_regex_query(&schema)
+                .expect("swapped EQ args should produce a prefilter");
+        assert_eq!(swapped, prefilter);
+
+        let unanchored =
+            calc_field_query(r#"(EQ (REGEXP_EXTRACT service "svc-([a-z]+)-prod" 1u64) "api")"#)
+                .try_prefilter_regex_query(&schema)
+                .expect("unanchored pattern should produce a prefilter");
+        assert_eq!(unanchored.regex, "(?s:.*)svc-api-prod(?s:.*)");
+
+        for expression in [
+            r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 0u64) "api")"#,
+            r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "123")"#,
+            r#"(EQ (REGEXP_EXTRACT indexed_only "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+            r#"(EQ (REGEXP_EXTRACT fast_only "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+            r#"(EQ (REGEXP_EXTRACT fast_tokenized "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+            r#"(EQ (REGEXP_EXTRACT fast_lowercased "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+            // FST regexes reject look-arounds and lazy repetitions.
+            r#"(EQ (REGEXP_EXTRACT service "\\bsvc-([a-z]+)" 1u64) "api")"#,
+            r#"(EQ (REGEXP_EXTRACT service "(?m)^svc-([a-z]+)" 1u64) "api")"#,
+            r#"(EQ (REGEXP_EXTRACT service "a^svc-([a-z]+)" 1u64) "api")"#,
+            r#"(EQ (REGEXP_EXTRACT service "svc-([a-z]+)-.*?x" 1u64) "api")"#,
+        ] {
+            assert!(
+                calc_field_query(expression)
+                    .try_prefilter_regex_query(&schema)
+                    .is_none(),
+                "{expression}"
+            );
+        }
+    }
+
+    fn jit_count(searcher: &tantivy::Searcher, expression: &str) -> usize {
+        let predicate = JitExprPredicate::new(deserialize(expression).unwrap()).unwrap();
+        searcher
+            .search(&DocPredicateQuery::from(predicate), &Count)
+            .unwrap()
+    }
+
+    #[test]
+    fn test_regex_extract_eq_term_query_matches_jit_predicate() {
+        let mut schema_builder = Schema::builder();
+        let service = schema_builder.add_text_field("service", STRING | FAST);
         let index = Index::create_in_ram(schema_builder.build());
         let mut writer = index
-            .writer_with_num_threads::<TantivyDocument>(1, 15_000_000)
+            .writer_with_num_threads::<TantivyDocument>(1, 50_000_000)
+            .unwrap();
+        for value in [
+            "svc-api-prod",
+            "svc-web-prod",
+            "svc-123-prod",
+            "other",
+            "svc-api-prod-extra",
+            // Prefilter over-matches (longer capture / earlier different extract); JIT rejects.
+            "svc-apixyz",
+            "svc-web-prod-svc-api-prod",
+            // Multi-line value: the prefilter wrappers must match newlines.
+            "line1\nsvc-api-prod\nline3",
+            // Capture stopped by a character outside its class; leftmost-first extracts.
+            "svc-apiX",
+            "id=12 id=1",
+            "id=1",
+            "id=123",
+        ] {
+            writer.add_document(doc!(service => value)).unwrap();
+        }
+        writer.commit().unwrap();
+
+        let schema = index.schema();
+        let context = BuildTantivyAstContext::for_test(&schema);
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+
+        for (expression, expected_count) in [
+            (
+                r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+                1usize,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "web")"#,
+                1,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "svc-([a-z]+)-prod" 1u64) "api")"#,
+                3,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "other|svc-([a-z]+)-prod" 1u64) "api")"#,
+                3,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "\\bsvc-([a-z]+)-prod" 1u64) "api")"#,
+                3,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)" 1u64) "api")"#,
+                3,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "svc-([a-z]+)" 1u64) "api")"#,
+                4,
+            ),
+            (r#"(EQ (REGEXP_EXTRACT service "id=([0-9]+)" 1u64) "1")"#, 1),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "id=([0-9]+)" 1u64) "12")"#,
+                1,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "123")"#,
+                0,
+            ),
+        ] {
+            assert_eq!(
+                jit_count(&searcher, expression),
+                expected_count,
+                "jit {expression}"
+            );
+            let calc_field_query_built = calc_field(expression)
+                .build_tantivy_query(&context)
+                .unwrap();
+            let calc_field_count = searcher.search(&*calc_field_query_built, &Count).unwrap();
+            assert_eq!(calc_field_count, expected_count, "calc field {expression}");
+
+            let prefilter = calc_field_query(expression).try_prefilter_regex_query(&schema);
+            assert_eq!(
+                calc_field_query_built
+                    .downcast_ref::<DocPredicateQuery>()
+                    .is_none(),
+                prefilter.is_some(),
+                "eligible expressions must not build the JIT query: {expression}"
+            );
+            let Some(regex_query) = prefilter else {
+                continue;
+            };
+            let regex_only_count = searcher
+                .search(
+                    &*QueryAst::from(regex_query)
+                        .build_tantivy_query(&context)
+                        .unwrap(),
+                    &Count,
+                )
+                .unwrap();
+            assert!(
+                regex_only_count >= expected_count,
+                "prefilter must be a superset for {expression}: regex={regex_only_count} \
+                 expected={expected_count}"
+            );
+        }
+    }
+
+    /// Indexes one document per entry of `documents` in `field_options` and asserts that the
+    /// eligible `expression` matches exactly `expected_count` documents, like the JIT.
+    fn assert_regex_extract_eq_matches_jit(
+        field_options: TextOptions,
+        documents: &[&[&str]],
+        expression: &str,
+        expected_count: usize,
+    ) {
+        let mut schema_builder = Schema::builder();
+        let service = schema_builder.add_text_field("service", field_options);
+        let mut index = Index::create_in_ram(schema_builder.build());
+        index.set_fast_field_tokenizers(
+            crate::get_quickwit_fastfield_normalizer_manager()
+                .tantivy_manager()
+                .clone(),
+        );
+        let mut writer = index
+            .writer_with_num_threads::<TantivyDocument>(1, 50_000_000)
             .unwrap();
         for values in documents {
             let mut document = TantivyDocument::default();
-            for value in values {
-                document.add_text(field, value);
+            for value in *values {
+                document.add_text(service, value);
             }
             writer.add_document(document).unwrap();
         }
         writer.commit().unwrap();
+
+        let schema = index.schema();
+        let context = BuildTantivyAstContext::for_test(&schema);
         let searcher = index.reader().unwrap().searcher();
-        let segment_reader = searcher.segment_reader(0);
-        let str_column = segment_reader.fast_fields().str("field").unwrap().unwrap();
-        assert_eq!(str_column.dictionary().num_terms() as u64, NUM_VALUES);
-        (str_column, segment_reader.max_doc())
-    }
-
-    /// 40 documents cycling through `v0`..`v9`; every third one has no value if `with_missing`.
-    fn single_valued_documents(with_missing: bool) -> Vec<Vec<String>> {
-        (0..40u64)
-            .map(|doc| {
-                if with_missing && doc % 3 == 2 {
-                    return Vec::new();
-                }
-                vec![format!("v{}", (doc * 7) % NUM_VALUES)]
-            })
-            .collect()
-    }
-
-    fn matching_ords(ords: &[u64]) -> MatchingOrds {
-        let mut matching_ords = MatchingOrds::new(NUM_VALUES as u32);
-        for &ord in ords {
-            matching_ords.insert(ord);
-        }
-        matching_ords
-    }
-
-    fn bitset_docs(bitset: &BitSet, max_doc: DocId) -> Vec<DocId> {
-        (0..max_doc).filter(|&doc| bitset.contains(doc)).collect()
+        let query = calc_field(expression)
+            .build_tantivy_query(&context)
+            .unwrap();
+        assert!(query.downcast_ref::<DocPredicateQuery>().is_none());
+        assert_eq!(jit_count(&searcher, expression), expected_count, "jit");
+        assert_eq!(searcher.search(&*query, &Count).unwrap(), expected_count);
     }
 
     #[test]
-    fn test_matching_ords_tracks_runs_up_to_limit() {
-        let ords = matching_ords(&[0, 1, 2, 5, 7, 8]);
-        assert_eq!(ords.runs, Some(vec![0..=2, 5..=5, 7..=8]));
-        assert!(ords.contains(5) && !ords.contains(6));
-
-        let separate_ords: Vec<u64> = (0..MAX_ORD_RANGE_SCANS as u64).map(|i| i * 2).collect();
-        assert_eq!(
-            matching_ords(&separate_ords).runs.map(|runs| runs.len()),
-            Some(MAX_ORD_RANGE_SCANS)
+    fn test_regex_extract_eq_matches_first_value_only() {
+        assert_regex_extract_eq_matches_jit(
+            STRING | FAST,
+            &[
+                &["aaa", "svc-api-prod"],
+                &["svc-api-prod", "zzz"],
+                &["aaa", "zzz"],
+            ],
+            r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+            1,
         );
-        let too_many_ords: Vec<u64> = (0..=MAX_ORD_RANGE_SCANS as u64).map(|i| i * 2).collect();
-        assert_eq!(matching_ords(&too_many_ords).runs, None);
-        assert!(matching_ords(&[]).is_empty());
     }
 
     #[test]
-    fn test_ord_scan_strategy() {
-        let few_runs = matching_ords(&[1, 2, 5]);
-        let many_runs = matching_ords(&[0, 2, 4, 6, 8]);
-        for (cardinality, ords, expected) in [
-            (Cardinality::Full, &few_runs, "range_scans"),
-            (Cardinality::Optional, &few_runs, "range_scans"),
-            (Cardinality::Multivalued, &few_runs, "first_value_loop"),
-            (Cardinality::Full, &many_runs, "block_decoding"),
-            (Cardinality::Optional, &many_runs, "first_value_loop"),
-            (Cardinality::Multivalued, &many_runs, "first_value_loop"),
-        ] {
-            let strategy = match ord_scan_strategy(cardinality, ords) {
-                OrdScanStrategy::RangeScans(_) => "range_scans",
-                OrdScanStrategy::BlockDecoding => "block_decoding",
-                OrdScanStrategy::FirstValueLoop => "first_value_loop",
-            };
-            assert_eq!(strategy, expected, "{cardinality:?} {:?}", ords.runs);
-        }
+    fn test_regex_extract_eq_matches_documents_without_value() {
+        assert_regex_extract_eq_matches_jit(
+            STRING | FAST,
+            &[
+                &[],
+                &["svc-api-prod"],
+                &[],
+                &["svc-web-prod"],
+                &["svc-api-prod"],
+            ],
+            r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+            2,
+        );
     }
 
     #[test]
-    fn test_strategies_match_first_value_loop() {
-        for with_missing in [false, true] {
-            let documents = single_valued_documents(with_missing);
-            let (str_column, max_doc) = build_str_column(&documents);
-            let ords = str_column.ords();
-            let expected_cardinality = if with_missing {
-                Cardinality::Optional
-            } else {
-                Cardinality::Full
-            };
-            assert_eq!(ords.get_cardinality(), expected_cardinality);
-
-            for matching in [&[3][..], &[2, 3, 4], &[1, 4, 7], &[0, 2, 4, 6, 8], &[9]] {
-                let matching_ords = matching_ords(matching);
-                // Document `doc` holds `v{(doc * 7) % 10}`, whose ordinal is that same number.
-                let expected: Vec<DocId> = (0..max_doc)
-                    .filter(|&doc| {
-                        !documents[doc as usize].is_empty()
-                            && matching.contains(&((doc as u64 * 7) % NUM_VALUES))
-                    })
-                    .collect();
-
-                let mut loop_bitset = BitSet::with_max_value(max_doc);
-                collect_by_first_value_loop(ords, &matching_ords, max_doc, &mut loop_bitset);
-                assert_eq!(bitset_docs(&loop_bitset, max_doc), expected, "{matching:?}");
-
-                let mut dispatched_bitset = BitSet::with_max_value(max_doc);
-                collect_first_value_matches(ords, &matching_ords, max_doc, &mut dispatched_bitset);
-                assert_eq!(bitset_docs(&dispatched_bitset, max_doc), expected);
-
-                if let Some(runs) = &matching_ords.runs {
-                    let mut range_bitset = BitSet::with_max_value(max_doc);
-                    collect_by_range_scans(ords, runs, max_doc, &mut range_bitset);
-                    assert_eq!(
-                        bitset_docs(&range_bitset, max_doc),
-                        expected,
-                        "{matching:?}"
-                    );
-                }
-                if !with_missing {
-                    let mut block_bitset = BitSet::with_max_value(max_doc);
-                    collect_by_block_decoding(ords, &matching_ords, &mut block_bitset);
-                    assert_eq!(
-                        bitset_docs(&block_bitset, max_doc),
-                        expected,
-                        "{matching:?}"
-                    );
-                }
-            }
-        }
+    fn test_regex_extract_eq_matches_values_longer_than_max_token_len() {
+        let long_value = format!("svc-api-prod{}", "x".repeat(MAX_TOKEN_LEN));
+        assert_regex_extract_eq_matches_jit(
+            STRING | FAST,
+            &[&[long_value.as_str()], &["svc-web-prod"]],
+            r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod" 1u64) "api")"#,
+            1,
+        );
     }
 
     #[test]
-    fn test_multivalued_column_uses_first_value_loop() {
-        let documents: Vec<Vec<String>> = (0..NUM_VALUES)
-            .map(|i| vec![format!("v{i}"), format!("v{}", (i + 1) % NUM_VALUES)])
-            .collect();
-        let (str_column, max_doc) = build_str_column(&documents);
-        let ords = str_column.ords();
-        assert_eq!(ords.get_cardinality(), Cardinality::Multivalued);
-
-        let matching_ords = matching_ords(&[3]);
-        assert!(matches!(
-            ord_scan_strategy(ords.get_cardinality(), &matching_ords),
-            OrdScanStrategy::FirstValueLoop
-        ));
-        let mut dispatched_bitset = BitSet::with_max_value(max_doc);
-        collect_first_value_matches(ords, &matching_ords, max_doc, &mut dispatched_bitset);
-        let expected: Vec<DocId> = (0..max_doc)
-            .filter(|&doc| ords.first(doc) == Some(3))
-            .collect();
-        assert_eq!(expected.len(), 1);
-        assert_eq!(bitset_docs(&dispatched_bitset, max_doc), expected);
-
-        // A range scan would also select the document holding `v3` as its second value.
-        let mut range_bitset = BitSet::with_max_value(max_doc);
-        collect_by_range_scans(ords, &[3..=3], max_doc, &mut range_bitset);
-        assert_eq!(bitset_docs(&range_bitset, max_doc).len(), 2);
+    fn test_regex_extract_eq_matches_normalized_fast_field() {
+        assert_regex_extract_eq_matches_jit(
+            STRING.set_fast("lowercase"),
+            &[&["SVC-API-PROD"], &["svc-api-prod"], &["SVC-WEB-PROD"]],
+            r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+            2,
+        );
     }
 }
