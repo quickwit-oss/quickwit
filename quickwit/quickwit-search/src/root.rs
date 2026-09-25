@@ -46,6 +46,7 @@ use tantivy::TantivyError;
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
+use tantivy::query::EmptyQuery;
 use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
 use tracing::{Span, debug, error, info, info_span, instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -195,6 +196,7 @@ fn validate_request_and_build_metadata(
     let mut indexes_meta_for_leaf_search: HashMap<IndexUid, IndexMetasForLeafSearch> =
         HashMap::new();
     let mut query_ast_resolved_opt: Option<QueryAst> = None;
+    let mut all_queries_empty = true;
     let mut timestamp_field_opt: Option<String> = None;
     let mut sort_fields_is_datetime: HashMap<String, bool> = HashMap::new();
 
@@ -252,12 +254,13 @@ fn validate_request_and_build_metadata(
         )?;
 
         // Validates the query by effectively building it against the current schema.
-        doc_mapper.query(
+        let (query, _) = doc_mapper.query(
             doc_mapper.schema(),
             query_ast_resolved_for_index,
             true,
             None,
         )?;
+        all_queries_empty &= query.as_any().is::<EmptyQuery>();
 
         let index_metadata_for_leaf_search = IndexMetasForLeafSearch {
             index_uri: index_metadata.index_uri().clone(),
@@ -271,11 +274,16 @@ fn validate_request_and_build_metadata(
         );
     }
 
-    let query_ast_resolved = query_ast_resolved_opt.ok_or_else(|| {
+    let mut query_ast_resolved = query_ast_resolved_opt.ok_or_else(|| {
         SearchError::Internal(
             "resolved query AST must be present. this should never happen".to_string(),
         )
     })?;
+
+    // Reuse Tantivy's simplification, but only prune if the query is empty for every index.
+    if all_queries_empty {
+        query_ast_resolved = QueryAst::MatchNone;
+    }
 
     Ok(RequestMetadata {
         timestamp_field_opt,
@@ -1225,6 +1233,11 @@ async fn refine_and_list_matches(
 
     // convert search_after datetime values from input datetime format to nanos.
     convert_search_after_datetime_values(search_request, &sort_fields_is_datetime)?;
+
+    // Keep request validation and empty-result finalization, but do not search any splits.
+    if query_ast_resolved == QueryAst::MatchNone {
+        return Ok(Vec::new());
+    }
 
     // update_search_after_datetime_in_nanos(&mut search_request)?;
     if let Some(timestamp_field) = &timestamp_field_opt {
@@ -4397,6 +4410,50 @@ mod tests {
         .unwrap();
         assert_eq!(search_response.num_hits, 1);
         assert_eq!(search_response.hits.len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_plan_splits_match_none() -> anyhow::Result<()> {
+        let mut metastore = MockMetastoreService::new();
+        metastore.expect_list_indexes_metadata().returning(|_| {
+            Ok(ListIndexesMetadataResponse::for_test(vec![
+                IndexMetadata::for_test("test-index", "ram:///test-index"),
+            ]))
+        });
+        metastore.expect_list_splits().never();
+        let metastore = MetastoreServiceClient::from_mock(metastore);
+        let timestamp_range = qast_helper(
+            "timestamp:[2024-01-01T00:00:00Z TO 2024-01-02T00:00:00Z]",
+            &[],
+        );
+        for query_ast in [
+            QueryAst::MatchNone,
+            BoolQuery {
+                must: vec![QueryAst::MatchNone, timestamp_range.clone()],
+                ..Default::default()
+            }
+            .into(),
+            BoolQuery {
+                filter: vec![QueryAst::MatchNone, timestamp_range],
+                ..Default::default()
+            }
+            .into(),
+        ] {
+            let mut request = SearchRequest {
+                index_id_patterns: vec!["test-index".to_string()],
+                query_ast: serde_json::to_string(&query_ast)?,
+                ..Default::default()
+            };
+            let (splits, indexes_metadata) =
+                plan_splits_for_root_search(&mut request, &metastore).await?;
+            assert!(splits.is_empty());
+            assert_eq!(indexes_metadata.len(), 1);
+            assert_eq!(
+                serde_json::from_str::<QueryAst>(&request.query_ast)?,
+                QueryAst::MatchNone
+            );
+        }
         Ok(())
     }
 
