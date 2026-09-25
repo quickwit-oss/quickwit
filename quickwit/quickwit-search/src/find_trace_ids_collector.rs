@@ -26,6 +26,16 @@ use tantivy::{DateTime, DocId, Score, SegmentReader};
 
 type TermOrd = u64;
 
+/// Maximum number of trace IDs retained by a single search.
+pub const MAX_NUM_TRACES: usize = 10_000;
+
+/// Clamps directly deserialized aggregation requests to [`MAX_NUM_TRACES`].
+fn deserialize_num_traces<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where D: serde::Deserializer<'de> {
+    let num_traces = usize::deserialize(deserializer)?;
+    Ok(num_traces.min(MAX_NUM_TRACES))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Metadata about a single span
 pub struct Span {
@@ -111,7 +121,8 @@ impl Eq for TraceIdTermOrd {}
 /// top k elements with duplicates
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FindTraceIdsCollector {
-    /// The number of traces to select.
+    /// The number of traces to select. Zero selects no traces.
+    #[serde(deserialize_with = "deserialize_num_traces")]
     pub num_traces: usize,
     /// The name of the fast field storing the trace IDs.
     pub trace_id_field_name: String,
@@ -176,6 +187,10 @@ impl Collector for FindTraceIdsCollector {
 }
 
 fn merge_segment_fruits(mut segment_fruits: Vec<Vec<Span>>, num_traces: usize) -> Vec<Span> {
+    if num_traces == 0 {
+        return Vec::new();
+    }
+    let num_traces = num_traces.min(MAX_NUM_TRACES);
     // Spans are ordered in reverse order of their timestamp.
     for segment_fruit in &mut segment_fruits {
         segment_fruit.sort_unstable()
@@ -255,6 +270,7 @@ struct SelectTraceIds {
 
 impl SelectTraceIds {
     fn new(num_traces: usize) -> Self {
+        let num_traces = num_traces.min(MAX_NUM_TRACES);
         Self {
             num_traces,
             dedup_workbench: FnvHashMap::with_capacity_and_hasher(
@@ -269,6 +285,9 @@ impl SelectTraceIds {
     }
 
     fn collect(&mut self, term_ord: TermOrd, span_timestamp: DateTime) {
+        if self.num_traces == 0 {
+            return;
+        }
         if self.running_term_ord.is_none() {
             self.running_term_ord = Some(term_ord);
             self.running_span_timestamp = span_timestamp;
@@ -412,6 +431,24 @@ mod tests {
         let span_json = serde_json::to_string(&expected_span).unwrap();
         let span = serde_json::from_str::<Span>(&span_json).unwrap();
         assert_eq!(span, expected_span);
+    }
+
+    #[test]
+    fn test_zero_num_traces_does_not_collect() {
+        let mut select_trace_ids = SelectTraceIds::new(0);
+        for term_ord in 0..100 {
+            select_trace_ids.collect_for_test(term_ord, term_ord as i64 + 1);
+        }
+        assert!(select_trace_ids.running_term_ord.is_none());
+        assert!(select_trace_ids.dedup_workbench.is_empty());
+        assert!(select_trace_ids.select_workbench.is_empty());
+        assert!(select_trace_ids.harvest().is_empty());
+    }
+
+    #[test]
+    fn test_zero_num_traces_merges_no_spans() {
+        let segment_fruits = vec![vec![Span::for_test(b"foo", 1)]];
+        assert!(merge_segment_fruits(segment_fruits, 0).is_empty());
     }
 
     #[test]
@@ -605,5 +642,41 @@ mod tests {
         fn test_proptest_spans_vec_postcard_serdeser(spans in proptest::collection::vec(span_strategy(), 0..100)) {
             test_postcard_aux(&spans);
         }
+    }
+
+    #[test]
+    fn test_num_traces_is_bounded_for_untrusted_input() {
+        let merged = merge_segment_fruits(Vec::new(), usize::MAX);
+        assert!(merged.is_empty());
+        assert!(merged.capacity() <= MAX_NUM_TRACES);
+
+        let select_trace_ids = SelectTraceIds::new(usize::MAX);
+        assert_eq!(select_trace_ids.num_traces, MAX_NUM_TRACES);
+        assert!(select_trace_ids.select_workbench.capacity() <= 2 * MAX_NUM_TRACES);
+        assert!(select_trace_ids.dedup_workbench.capacity() <= 4 * MAX_NUM_TRACES);
+    }
+
+    #[test]
+    fn test_num_traces_is_bounded_when_deserialized() {
+        let aggregation: QuickwitAggregations = serde_json::from_value(serde_json::json!({
+            "num_traces": i32::MAX,
+            "trace_id_field_name": "trace_id",
+            "span_timestamp_field_name": "span_start_timestamp_nanos"
+        }))
+        .unwrap();
+        let QuickwitAggregations::FindTraceIdsAggregation(collector) = aggregation else {
+            panic!("Expected FindTraceIdsAggregation");
+        };
+        assert_eq!(collector.num_traces, MAX_NUM_TRACES);
+    }
+
+    #[test]
+    fn test_working_set_stays_bounded() {
+        let mut select_trace_ids = SelectTraceIds::new(usize::MAX);
+        for term_ord in 0..(3 * MAX_NUM_TRACES as u64) {
+            select_trace_ids.collect_for_test(term_ord, term_ord as i64 + 1);
+        }
+        assert!(select_trace_ids.dedup_workbench.len() <= 2 * MAX_NUM_TRACES);
+        assert_eq!(select_trace_ids.harvest().len(), MAX_NUM_TRACES);
     }
 }

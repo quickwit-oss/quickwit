@@ -49,6 +49,8 @@ pub type SubrequestId = u32;
 
 pub type IndexingPlanId = String;
 
+pub type AvailabilityZone = Arc<str>;
+
 /// Uniquely identifies a shard and its underlying mrecordlog queue.
 pub type QueueId = String; // <index_uid>/<source_id>/<shard_id>
 

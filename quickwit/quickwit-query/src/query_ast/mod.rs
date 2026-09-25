@@ -23,6 +23,7 @@ use crate::tokenizers::TokenizerManager;
 
 mod bool_query;
 mod cache_node;
+mod calc_field_query;
 mod field_presence;
 mod full_text_query;
 mod phrase_prefix_query;
@@ -39,6 +40,7 @@ mod wildcard_query;
 
 pub use bool_query::BoolQuery;
 pub use cache_node::{CacheNode, HitSet, PredicateCache, PredicateCacheInjector};
+pub use calc_field_query::CalcFieldQuery;
 pub use field_presence::FieldPresenceQuery;
 pub use full_text_query::{FullTextMode, FullTextParams, FullTextQuery};
 pub use phrase_prefix_query::PhrasePrefixQuery;
@@ -53,7 +55,7 @@ pub use wildcard_query::WildcardQuery;
 
 use crate::{BooleanOperand, InvalidQuery, NotNaNf32};
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 pub enum QueryAst {
@@ -74,6 +76,7 @@ pub enum QueryAst {
         boost: NotNaNf32,
     },
     Cache(CacheNode),
+    CalcField(CalcFieldQuery),
 }
 
 impl QueryAst {
@@ -111,7 +114,8 @@ impl QueryAst {
             | ast @ QueryAst::FieldPresence(_)
             | ast @ QueryAst::Range(_)
             | ast @ QueryAst::Wildcard(_)
-            | ast @ QueryAst::Regex(_) => Ok(ast),
+            | ast @ QueryAst::Regex(_)
+            | ast @ QueryAst::CalcField(_) => Ok(ast),
             QueryAst::UserInput(user_text_query) => {
                 user_text_query.parse_user_query(default_search_fields)
             }
@@ -259,6 +263,9 @@ impl BuildTantivyAst for QueryAst {
             QueryAst::Wildcard(wildcard) => wildcard.build_tantivy_ast_call(context),
             QueryAst::Regex(regex) => regex.build_tantivy_ast_call(context),
             QueryAst::Cache(cache_node) => cache_node.build_tantivy_ast_call(context),
+            QueryAst::CalcField(calc_field_query) => {
+                calc_field_query.build_tantivy_ast_call(context)
+            }
         }
     }
 }

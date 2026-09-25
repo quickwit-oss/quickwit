@@ -92,7 +92,9 @@ We advise changing the default value of 20 MiB only if you encounter the followi
 
 ## Health check configuration
 
-This section configures an optional, **plaintext (no TLS)** HTTP server that exposes only the health endpoints `/health/livez` (liveness) and `/health/readyz` (readiness). Its purpose is to let liveness/readiness probes (for example from Kubernetes or a load balancer) reach the node even when the main REST API is put behind [TLS or mTLS](#tls-configuration), which a simple HTTP probe cannot negotiate.
+This section configures an optional, **plaintext (no TLS)** HTTP server that exposes only the health endpoints `/health/livez` (liveness) and `/health/startupz` (startup completion), plus `/health/readyz`, a deprecated alias for `/health/startupz`. Its purpose is to let liveness and startup probes (for example from Kubernetes or a load balancer) reach the node even when the main REST API is put behind [TLS or mTLS](#tls-configuration), which a simple HTTP probe cannot negotiate.
+
+`/health/startupz` reports whether the node has finished starting up. It latches once and never returns to a not-started state, so it is suited to a Kubernetes **startup probe** rather than a readiness probe. There is no readiness endpoint: a node that is up but degraded is restarted, not removed from rotation.
 
 The health server is **disabled by default**. It starts only when `listen_port` is set (or the `QW_HEALTH_LISTEN_PORT` environment variable is provided). The same `/health/*` endpoints always remain available on the main REST API as well.
 
@@ -244,6 +246,8 @@ This section contains the configuration options for an indexer. The split store 
 | `enable_otlp_endpoint` | If true, enables the OpenTelemetry exporter endpoint to ingest logs and traces via the OpenTelemetry Protocol (OTLP). | `false` |
 | `cpu_capacity` | Advisory parameter used by the control plane. The value can expressed be in threads (e.g. `2`) or in term of millicpus (`2000m`). The control plane will attempt to schedule indexing pipelines on the different nodes proportionally to the cpu capacity advertised by the indexer. It is NOT used as a limit. All pipelines will be scheduled regardless of whether the cluster has sufficient capacity or not. The control plane does not attempt to spread the work equally when the load is well below the `cpu_capacity`. Users who need a balanced load on all of their indexer nodes can set the `cpu_capacity` to an arbitrarily low value as long as they keep it proportional to the number of threads available. | `num threads available` |
 | `enable_cooperative_indexing` | Enable sharing resources more efficiently when the number of indexes actively written to is significantly higher than the number of cores but might decrease the overall indexing throughput. | `false` |
+
+Set the `QW_INDEXING_MAX_WRITE_THROUGHPUT` environment variable to limit the aggregate indexing IO throughput on a node. It accepts human-readable byte sizes per second, such as `500mb`, and is unlimited by default.
 
 Example:
 
