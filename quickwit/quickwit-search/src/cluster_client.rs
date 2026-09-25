@@ -400,6 +400,7 @@ mod tests {
                         num_docs: 0,
                     },
                 ],
+                retention_timestamp_cutoff: None,
             }],
         }
     }
