@@ -89,7 +89,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.9.0"
+version = "0.9.1"
 edition = "2024"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
@@ -433,7 +433,7 @@ quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-transport = { path = "quickwit-transport" }
 
 # This is the tip of tantivy main.
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "20d7f72f2c959f2b768e9ee88b8c0cfcdab842a4", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e229de6db748c6b21747a99a18220446e76104e1", default-features = false, features = [
   "jitexpr",
   "lz4-compression",
   "mmap",

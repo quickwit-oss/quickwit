@@ -40,7 +40,7 @@ use quickwit_proto::opentelemetry::proto::trace::v1::status::StatusCode as OtlpS
 use quickwit_proto::search::{CountHits, ListTermsRequest, SearchRequest};
 use quickwit_query::BooleanOperand;
 use quickwit_query::query_ast::{BoolQuery, QueryAst, RangeQuery, TermQuery, UserInputQuery};
-use quickwit_search::{FindTraceIdsCollector, SearchService};
+use quickwit_search::{FindTraceIdsCollector, MAX_NUM_TRACES, SearchService};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use tantivy::collector::Collector;
@@ -234,7 +234,7 @@ impl JaegerService {
             max_start_secs,
             min_duration_millis,
             max_duration_millis,
-            trace_query.num_traces as usize,
+            trace_query.num_traces,
             index_id_patterns,
         )
         .await
@@ -252,9 +252,16 @@ pub(crate) async fn find_trace_ids_common(
     max_start_secs: Option<i64>,
     min_duration_millis: Option<i64>,
     max_duration_millis: Option<i64>,
-    num_traces: usize,
+    num_traces: i32,
     index_id_patterns: Vec<String>,
 ) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
+    if num_traces < 0 || num_traces > MAX_NUM_TRACES as i32 {
+        return Err(Status::invalid_argument(format!(
+            "`num_traces` must be between 0 and {MAX_NUM_TRACES}, got `{num_traces}`"
+        )));
+    }
+    let num_traces = num_traces as usize;
+
     let query_ast = build_search_query(
         service_name,
         None,
@@ -1960,6 +1967,49 @@ mod tests {
             collector.span_timestamp_field_name,
             "span_start_timestamp_nanos"
         );
+    }
+
+    fn jaeger_with_no_search() -> JaegerService {
+        let mut search_service = MockSearchService::new();
+        search_service.expect_root_search().never();
+        JaegerService::new(JaegerConfig::default(), Arc::new(search_service))
+    }
+
+    #[tokio::test]
+    async fn test_v1_rejects_invalid_num_traces() {
+        let jaeger = jaeger_with_no_search();
+        for num_traces in [-1, MAX_NUM_TRACES as i32 + 1] {
+            let request = FindTraceIDsRequest {
+                query: Some(TraceQueryParameters {
+                    num_traces,
+                    ..Default::default()
+                }),
+            };
+            let error = SpanReaderPlugin::find_trace_i_ds(&jaeger, tonic::Request::new(request))
+                .await
+                .unwrap_err();
+            assert_eq!(error.code(), tonic::Code::InvalidArgument);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_v2_rejects_invalid_search_depth() {
+        use quickwit_proto::jaeger::storage::v2;
+        use quickwit_proto::jaeger::storage::v2::trace_reader_server::TraceReader;
+
+        let jaeger = jaeger_with_no_search();
+        for search_depth in [-1, MAX_NUM_TRACES as i32 + 1] {
+            let request = v2::FindTracesRequest {
+                query: Some(v2::TraceQueryParameters {
+                    search_depth,
+                    ..Default::default()
+                }),
+            };
+            let error = TraceReader::find_trace_i_ds(&jaeger, tonic::Request::new(request))
+                .await
+                .unwrap_err();
+            assert_eq!(error.code(), tonic::Code::InvalidArgument);
+        }
     }
 
     #[test]

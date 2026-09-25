@@ -59,6 +59,7 @@ use bytesize::ByteSize;
 pub(crate) use decompression::Body;
 pub use format::BodyFormat;
 use futures::StreamExt;
+use futures::future::OptionFuture;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, ActorHandle, Mailbox, SpawnContext, Universe};
 use quickwit_cluster::{
@@ -89,9 +90,9 @@ use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::{IndexingSplitCache, start_indexing_service};
 use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
-    IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout, notify_ingester_decommission,
+    IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout,
     setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
-    start_ingest_api_service, wait_for_ingester_decommission, wait_for_ingester_status,
+    start_ingest_api_service,
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
@@ -103,8 +104,8 @@ use quickwit_proto::compaction::CompactionPlannerServiceClient;
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
 use quickwit_proto::ingest::ingester::{
-    IngesterService, IngesterServiceClient, IngesterServiceTowerLayerStack, IngesterStatus,
-    PersistFailureReason, PersistResponse,
+    DecommissionRequest, IngesterService, IngesterServiceClient, IngesterServiceTowerLayerStack,
+    IngesterStatus, PersistFailureReason, PersistResponse,
 };
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::ingest::{IngestV2Error, RateLimitingCause};
@@ -490,7 +491,8 @@ fn start_shard_positions_service(
     // the `ShardPositionsService`. If we don't, all the events we emit too early will be dismissed.
     tokio::spawn(async move {
         if let Some(ingester) = &ingester_opt
-            && wait_for_ingester_status(ingester, IngesterStatus::Ready, Duration::from_mins(5))
+            && ingester
+                .wait_for_status(IngesterStatus::Ready, Duration::from_mins(5))
                 .await
                 .is_err()
         {
@@ -527,7 +529,9 @@ async fn shutdown_signal_handler(
             error!("server supervisor exited; initiating shutdown");
         }
     }
-    if let Err(error) = notify_ingester_decommission(ingester_opt.as_ref()).await {
+    if let Some(ingester) = &ingester_opt
+        && let Err(error) = ingester.decommission(DecommissionRequest {}).await
+    {
         error!("failed to initiate ingester decommission: {:?}", error);
     }
     let compactor_status_rx_opt = notify_compactor_decommission(compactor_service_opt.as_ref())
@@ -536,11 +540,16 @@ async fn shutdown_signal_handler(
             error!("failed to initiate compactor decommission: {:?}", error);
             None
         });
+    let ingester_decommission = OptionFuture::from(
+        ingester_opt
+            .as_ref()
+            .map(|ingester| ingester.wait_for_decommission(ingester_decommission_timeout)),
+    );
     let (ingester_result, compactor_result) = tokio::join!(
-        wait_for_ingester_decommission(ingester_opt.as_ref(), ingester_decommission_timeout),
+        ingester_decommission,
         wait_for_compactor_decommission(compactor_status_rx_opt, compactor_decommission_timeout),
     );
-    if let Err(error) = ingester_result {
+    if let Some(Err(error)) = ingester_result {
         error!("failed to decommission ingester gracefully: {:?}", error);
     }
     if let Err(error) = compactor_result {

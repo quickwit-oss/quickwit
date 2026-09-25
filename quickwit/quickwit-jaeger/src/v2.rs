@@ -335,7 +335,7 @@ async fn find_trace_ids_impl(
         max_start_secs,
         min_duration_millis,
         max_duration_millis,
-        query.search_depth as usize,
+        query.search_depth,
         index_id_patterns,
     )
     .await
