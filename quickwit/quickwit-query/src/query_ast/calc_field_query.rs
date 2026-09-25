@@ -21,7 +21,7 @@ use tantivy::schema::{FieldType, Schema as TantivySchema};
 
 use super::regex_extract_eq::RegexExtractEqPlan;
 use super::{BuildTantivyAst, BuildTantivyAstContext, QueryAst, RegexQuery, TantivyQueryAst};
-use crate::tokenizers::{DEFAULT_REMOVE_TOKEN_LENGTH, RAW_TOKENIZER_NAME};
+use crate::tokenizers::RAW_TOKENIZER_NAME;
 use crate::{InvalidQuery, find_field_or_hit_dynamic};
 
 /// A boolean predicate expressed as a calculated-field expression.
@@ -78,15 +78,13 @@ impl CalcFieldQuery {
             return None;
         }
         let prefilter_regex = substitute_single_capture(pattern, literal)?;
-        // The raw tokenizer drops tokens of `DEFAULT_REMOVE_TOKEN_LENGTH` bytes or more.
-        let indexed_value_len_limit = is_raw_term_prefilter_compatible(field_name, schema)
-            .then_some(DEFAULT_REMOVE_TOKEN_LENGTH);
+        let terms_are_fast_field_values = is_raw_term_prefilter_compatible(field_name, schema);
         RegexExtractEqPlan::new(
             field_name,
             prefilter_regex,
             pattern,
             literal,
-            indexed_value_len_limit,
+            terms_are_fast_field_values,
         )
     }
 }

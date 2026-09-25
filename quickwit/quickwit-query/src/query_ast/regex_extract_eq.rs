@@ -14,7 +14,9 @@
 
 use std::sync::Arc;
 
-use tantivy::columnar::{Cardinality, Column};
+use tantivy::columnar::{Cardinality, Column, StrColumn};
+use tantivy::index::InvertedIndexReader;
+use tantivy::postings::TermInfo;
 use tantivy::query::{
     BitSetDocSet, ConstScorer, EmptyScorer, EnableScoring, Explanation, Query, Scorer, Weight,
 };
@@ -34,8 +36,9 @@ use super::TantivyQueryAst;
 ///   the same documents.
 /// - `value_matches` must keep the semantics of the jitexpr `REGEXP_EXTRACT` function
 ///   (`Regex::new(pattern)`, leftmost-first `captures`, group 1).
-/// - When `indexed_value_len_limit` is set, the field is also indexed with its raw fast-field
-///   values as terms, every value shorter than the limit (in bytes) is a term, and callers warm the
+/// - When `terms_are_fast_field_values` is set, every term of the field is one of its fast-field
+///   values: the raw tokenizer may drop a value (such as a long one) but never alters it, and
+///   merges drop the values without alive documents from both dictionaries. Callers then warm the
 ///   term dictionary and postings with `prefilter_regex` before searching.
 /// - Unlike the JIT predicate, which treats a column it fails to open as absent, the scorer returns
 ///   errors from opening the column or reading its dictionary, so a corrupt split fails the search
@@ -46,7 +49,7 @@ pub(crate) struct RegexExtractEqPlan {
     prefilter_automaton: tantivy_fst::Regex,
     extract_regex: regex::Regex,
     literal: String,
-    indexed_value_len_limit: Option<usize>,
+    terms_are_fast_field_values: bool,
 }
 
 impl RegexExtractEqPlan {
@@ -59,7 +62,7 @@ impl RegexExtractEqPlan {
         prefilter_regex: String,
         pattern: &str,
         literal: &str,
-        indexed_value_len_limit: Option<usize>,
+        terms_are_fast_field_values: bool,
     ) -> Option<Self> {
         let prefilter_automaton = tantivy_fst::Regex::new(&prefilter_regex).ok()?;
         let extract_regex = regex::Regex::new(pattern).ok()?;
@@ -69,7 +72,7 @@ impl RegexExtractEqPlan {
             prefilter_automaton,
             extract_regex,
             literal: literal.to_string(),
-            indexed_value_len_limit,
+            terms_are_fast_field_values,
         })
     }
 
@@ -79,7 +82,7 @@ impl RegexExtractEqPlan {
 
     /// Whether the scorer may read the field's term dictionary and postings.
     pub(crate) fn reads_postings(&self) -> bool {
-        self.indexed_value_len_limit.is_some()
+        self.terms_are_fast_field_values
     }
 
     /// Whole-value FST regex accepting a superset of the matching values.
@@ -144,43 +147,18 @@ impl Weight for RegexExtractEqWeight {
             // Without the column every value is `None`, which `EQ` never matches.
             return Ok(Box::new(EmptyScorer));
         };
-        let dictionary = str_column.dictionary();
-        let num_values = u32::try_from(dictionary.num_terms()).map_err(|_| {
+        let num_values = u32::try_from(str_column.dictionary().num_terms()).map_err(|_| {
             TantivyError::InternalError(format!(
                 "fast field `{}` has more than u32::MAX distinct values",
                 self.plan.fast_field_name
             ))
         })?;
-        let mut matching_ords = BitSet::with_max_value(num_values);
-        let mut max_matching_value_len = 0;
-        let mut value_stream = dictionary
-            .search(&self.plan.prefilter_automaton)
-            .into_stream()?;
-        while value_stream.advance() {
-            if self.plan.value_matches(value_stream.key()) {
-                // `term_ord < num_values`, which fits in u32.
-                matching_ords.insert(value_stream.term_ord() as u32);
-                max_matching_value_len = max_matching_value_len.max(value_stream.key().len());
-            }
-        }
-        if matching_ords.len() == 0 {
-            return Ok(Box::new(EmptyScorer));
-        }
         let max_doc = reader.max_doc();
         let mut doc_bitset = BitSet::with_max_value(max_doc);
-        let ords = str_column.ords();
-        let all_matching_values_indexed = matches!(
-            self.plan.indexed_value_len_limit,
-            Some(limit) if max_matching_value_len < limit
-        );
-        if all_matching_values_indexed {
-            self.collect_from_postings(reader, ords, &matching_ords, &mut doc_bitset)?;
+        if let Some(inverted_index) = self.inverted_index_with_all_values(reader, &str_column)? {
+            self.collect_from_postings(&inverted_index, &str_column, num_values, &mut doc_bitset)?;
         } else {
-            for doc in 0..max_doc {
-                if first_value_matches(ords, &matching_ords, doc) {
-                    doc_bitset.insert(doc);
-                }
-            }
+            self.collect_from_first_values(&str_column, num_values, max_doc, &mut doc_bitset)?;
         }
         let doc_set = BitSetDocSet::from(doc_bitset);
         Ok(Box::new(ConstScorer::new(doc_set, boost)))
@@ -198,47 +176,93 @@ impl Weight for RegexExtractEqWeight {
 }
 
 impl RegexExtractEqWeight {
-    /// Visits only the documents holding a matching value, through the postings of the terms
-    /// equal to the matching values. Requires every matching value to be a term of the field.
-    fn collect_from_postings(
+    /// Returns the field's inverted index when its terms are exactly the fast-field values. Both
+    /// dictionaries are then sorted the same way, so term ordinals are fast-field value ordinals.
+    fn inverted_index_with_all_values(
         &self,
         reader: &SegmentReader,
-        ords: &Column<u64>,
-        matching_ords: &BitSet,
-        doc_bitset: &mut BitSet,
-    ) -> tantivy::Result<()> {
+        str_column: &StrColumn,
+    ) -> tantivy::Result<Option<Arc<InvertedIndexReader>>> {
+        if !self.plan.terms_are_fast_field_values {
+            return Ok(None);
+        }
         let field = reader.schema().get_field(&self.plan.fast_field_name)?;
         let inverted_index = reader.inverted_index(field)?;
+        // The terms are a subset of the fast-field values, so equal counts mean the tokenizer
+        // dropped no value.
+        if inverted_index.terms().num_terms() != str_column.dictionary().num_terms() {
+            return Ok(None);
+        }
+        Ok(Some(inverted_index))
+    }
+
+    /// Walks the term dictionary and visits only the documents in the postings of the matching
+    /// terms. Requires the terms to be exactly the fast-field values.
+    fn collect_from_postings(
+        &self,
+        inverted_index: &InvertedIndexReader,
+        str_column: &StrColumn,
+        num_values: u32,
+        doc_bitset: &mut BitSet,
+    ) -> tantivy::Result<()> {
+        let mut matching_ords = BitSet::with_max_value(num_values);
+        let mut matching_term_infos: Vec<TermInfo> = Vec::new();
         let mut term_stream = inverted_index
             .terms()
             .search(&self.plan.prefilter_automaton)
             .into_stream()?;
+        while term_stream.advance() {
+            if self.plan.value_matches(term_stream.key()) {
+                // Term ordinals are fast-field value ordinals, lower than `num_values`.
+                matching_ords.insert(term_stream.term_ord() as u32);
+                matching_term_infos.push(term_stream.value().clone());
+            }
+        }
+        let ords = str_column.ords();
         // A document of a single-valued column holds only the value of the term, which matches.
         let check_first_value = ords.get_cardinality() == Cardinality::Multivalued;
-        let mut num_matching_terms = 0;
-        while term_stream.advance() {
-            if !self.plan.value_matches(term_stream.key()) {
-                continue;
-            }
-            num_matching_terms += 1;
-            let mut postings = inverted_index
-                .read_postings_from_terminfo(term_stream.value(), IndexRecordOption::Basic)?;
+        for term_info in &matching_term_infos {
+            let mut postings =
+                inverted_index.read_postings_from_terminfo(term_info, IndexRecordOption::Basic)?;
             let mut doc = postings.doc();
             while doc != TERMINATED {
                 // A multivalued document may hold the matching value after its first value.
-                if !check_first_value || first_value_matches(ords, matching_ords, doc) {
+                if !check_first_value || first_value_matches(ords, &matching_ords, doc) {
                     doc_bitset.insert(doc);
                 }
                 doc = postings.advance();
             }
         }
-        if num_matching_terms != matching_ords.len() {
-            return Err(TantivyError::InternalError(format!(
-                "field `{}` has {} matching fast-field values but {num_matching_terms} matching \
-                 terms",
-                self.plan.fast_field_name,
-                matching_ords.len()
-            )));
+        Ok(())
+    }
+
+    /// Walks the fast-field dictionary and checks the first value of every document.
+    fn collect_from_first_values(
+        &self,
+        str_column: &StrColumn,
+        num_values: u32,
+        max_doc: DocId,
+        doc_bitset: &mut BitSet,
+    ) -> tantivy::Result<()> {
+        let mut matching_ords = BitSet::with_max_value(num_values);
+        let mut value_stream = str_column
+            .dictionary()
+            .search(&self.plan.prefilter_automaton)
+            .into_stream()?;
+        while value_stream.advance() {
+            if self.plan.value_matches(value_stream.key()) {
+                // `term_ord < num_values`, which fits in u32.
+                matching_ords.insert(value_stream.term_ord() as u32);
+            }
+        }
+        if matching_ords.len() == 0 {
+            return Ok(());
+        }
+        let ords = str_column.ords();
+        for doc in 0..max_doc {
+            if first_value_matches(ords, &matching_ords, doc) {
+                doc_bitset.insert(doc);
+            }
         }
         Ok(())
     }
@@ -556,6 +580,61 @@ mod tests {
             expression,
             2,
         );
+    }
+
+    #[test]
+    fn test_regex_extract_eq_matches_after_deletes_and_merge() {
+        let expression = r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod" 1u64) "api")"#;
+        let mut schema_builder = Schema::builder();
+        let id = schema_builder.add_u64_field("id", tantivy::schema::INDEXED);
+        let service = schema_builder.add_text_field("service", STRING | FAST);
+        let mut index = Index::create_in_ram(schema_builder.build());
+        index.set_tokenizers(
+            crate::create_default_quickwit_tokenizer_manager()
+                .tantivy_manager()
+                .clone(),
+        );
+        let mut writer = index
+            .writer_with_num_threads::<TantivyDocument>(1, 50_000_000)
+            .unwrap();
+        writer.set_merge_policy(Box::new(tantivy::indexer::NoMergePolicy));
+        // The long value is not a term, so the postings are complete only once it is merged away.
+        let unindexed_value = format!("svc-api-prod{}", "x".repeat(DEFAULT_REMOVE_TOKEN_LENGTH));
+        for (doc_id, value) in [
+            (0u64, unindexed_value.as_str()),
+            (1, "svc-api-prod"),
+            (2, "svc-web-prod"),
+        ] {
+            writer
+                .add_document(doc!(id => doc_id, service => value))
+                .unwrap();
+        }
+        writer.commit().unwrap();
+        writer
+            .add_document(doc!(id => 3u64, service => "svc-api-prod"))
+            .unwrap();
+        writer.delete_term(tantivy::Term::from_field_u64(id, 0));
+        writer.commit().unwrap();
+
+        let schema = index.schema();
+        let context = BuildTantivyAstContext::for_test(&schema);
+        let query = calc_field(expression)
+            .build_tantivy_query(&context)
+            .unwrap();
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+        assert_eq!(searcher.segment_readers().len(), 2);
+        assert_eq!(jit_count(&searcher, expression), 2);
+        assert_eq!(searcher.search(&*query, &Count).unwrap(), 2);
+
+        let segment_ids = index.searchable_segment_ids().unwrap();
+        writer.merge(&segment_ids).wait().unwrap();
+        writer.wait_merging_threads().unwrap();
+        reader.reload().unwrap();
+        let searcher = reader.searcher();
+        assert_eq!(searcher.segment_readers().len(), 1);
+        assert_eq!(jit_count(&searcher, expression), 2);
+        assert_eq!(searcher.search(&*query, &Count).unwrap(), 2);
     }
 
     #[test]
