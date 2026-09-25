@@ -22,8 +22,8 @@ use quickwit_doc_mapper::DocMapper;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_indexing::TestSandbox;
 use quickwit_proto::search::{
-    LeafListTermsResponse, ListTermsRequest, SearchRequest, SortByValue, SortField, SortOrder,
-    SortValue, TraceId,
+    CountHits, LeafListTermsResponse, ListTermsRequest, SearchRequest, SortByValue, SortField,
+    SortOrder, SortValue, TraceId,
 };
 use quickwit_query::query_ast::{
     BoolQuery, HitSet, PredicateCache, QueryAst, RangeQuery, qast_helper, qast_json_helper,
@@ -1874,6 +1874,106 @@ async fn test_search_in_text_field_with_custom_tokenizer() -> anyhow::Result<()>
     }
     test_sandbox.assert_quit().await;
     Ok(())
+}
+
+#[tokio::test]
+async fn test_cached_hits_prune_uncached_splits_before_warmup() {
+    let doc_mapping_yaml = r#"
+        field_mappings:
+          - name: body
+            type: text
+          - name: ts
+            type: datetime
+            fast: true
+        timestamp_field: ts
+    "#;
+    let test_sandbox = TestSandbox::create("cached-hit-pruning", doc_mapping_yaml, "{}", &["body"])
+        .await
+        .unwrap();
+    for timestamp in [1_700_000_000i64, 1_700_000_100] {
+        test_sandbox
+            .add_documents(vec![json!({"body": "hello", "ts": timestamp})])
+            .await
+            .unwrap();
+    }
+    let splits_metadata =
+        list_all_splits(vec![test_sandbox.index_uid()], &test_sandbox.metastore())
+            .await
+            .unwrap();
+    let mut splits: Vec<SplitIdAndFooterOffsets> = splits_metadata
+        .iter()
+        .map(extract_split_and_footer_offsets)
+        .collect();
+    assert_eq!(splits.len(), 2);
+
+    for sort_order in [SortOrder::Asc, SortOrder::Desc] {
+        splits.sort_by_key(|split| split.timestamp_start());
+        if sort_order == SortOrder::Desc {
+            splits.reverse();
+        }
+        for max_hits in [1, 2] {
+            for count_hits in [CountHits::Underestimate, CountHits::CountAll] {
+                let searcher_context = Arc::new(SearcherContext::for_test());
+                // A term query avoids the upfront match-all optimization.
+                let request = SearchRequest {
+                    query_ast: qast_json_helper("hello", &["body"]),
+                    max_hits,
+                    count_hits: count_hits.into(),
+                    sort_fields: vec![SortField {
+                        field_name: "ts".to_string(),
+                        sort_order: sort_order.into(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                };
+                let cached_response = single_doc_mapping_leaf_search(
+                    searcher_context.clone(),
+                    Arc::new(request.clone()),
+                    test_sandbox.storage(),
+                    vec![splits[0].clone()],
+                    test_sandbox.doc_mapper(),
+                )
+                .await
+                .unwrap();
+                assert!(cached_response.failed_splits.is_empty());
+                assert_eq!(cached_response.partial_hits.len(), 1);
+
+                let response = single_doc_mapping_leaf_search(
+                    searcher_context.clone(),
+                    Arc::new(request.clone()),
+                    test_sandbox.storage(),
+                    splits.clone(),
+                    test_sandbox.doc_mapper(),
+                )
+                .await
+                .unwrap();
+                assert!(response.failed_splits.is_empty());
+                assert_eq!(response.partial_hits.len(), max_hits as usize);
+                assert_eq!(response.partial_hits[0], cached_response.partial_hits[0]);
+                let must_search = max_hits == 2 || count_hits == CountHits::CountAll;
+                assert_eq!(response.num_hits, 1 + u64::from(must_search));
+                let stats = response.resource_stats.unwrap();
+                assert_eq!(stats.partial_result_cache_num_splits, 1);
+                assert_eq!(stats.localexec_num_splits, u64::from(must_search));
+
+                if max_hits == 1 && count_hits == CountHits::CountAll {
+                    // The remaining split still counts matches, but no longer collects hits.
+                    let count_request = SearchRequest {
+                        max_hits: 0,
+                        sort_fields: Vec::new(),
+                        ..request
+                    };
+                    let count_response = searcher_context
+                        .leaf_search_cache
+                        .get(splits[1].clone(), count_request)
+                        .expect("the uncached split should have executed a count-only request");
+                    assert_eq!(count_response.num_hits, 1);
+                    assert!(count_response.partial_hits.is_empty());
+                }
+            }
+        }
+    }
+    test_sandbox.assert_quit().await;
 }
 
 /// Indexes a single split holding one `body: "hello world"` document and returns

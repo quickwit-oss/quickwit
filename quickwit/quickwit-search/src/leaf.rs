@@ -2046,6 +2046,13 @@ pub async fn single_doc_mapping_leaf_search(
             split_outcome_counters.clone(),
             &mut incremental_merge_collector,
         )?;
+    // Cached hits can already rule out uncached splits before they start warming up.
+    if let Some(last_hit) = incremental_merge_collector.peek_worst_hit() {
+        split_filter_arc
+            .write()
+            .unwrap()
+            .record_new_worst_hit(last_hit.as_ref());
+    }
     let incremental_merge_collector_arc: Arc<Mutex<IncrementalCollector>> =
         Arc::new(Mutex::new(incremental_merge_collector));
 
