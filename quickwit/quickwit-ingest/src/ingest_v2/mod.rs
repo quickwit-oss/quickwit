@@ -16,7 +16,6 @@ mod broadcast;
 mod debouncing;
 mod doc_mapper;
 mod fetch;
-mod helpers;
 mod idle;
 mod ingester;
 pub(crate) mod metrics;
@@ -57,9 +56,6 @@ use tracing::{error, info};
 use workbench::pending_subrequests;
 
 pub use self::fetch::{FetchStreamError, MultiFetchStream};
-pub use self::helpers::{
-    notify_ingester_decommission, wait_for_ingester_decommission, wait_for_ingester_status,
-};
 pub use self::ingester::Ingester;
 use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{MRecord, decoded_mrecords};
