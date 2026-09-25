@@ -441,6 +441,8 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "20d7f72f2c9
   "zstd-compression",
   "columnar-zstd-compression",
 ] }
+# Must stay on the same rev as `tantivy`.
+tantivy-common = { git = "https://github.com/quickwit-oss/tantivy/", rev = "20d7f72f2c959f2b768e9ee88b8c0cfcdab842a4" }
 tantivy-fst = "0.5"
 
 # This is actually not used directly the goal is to fix the version

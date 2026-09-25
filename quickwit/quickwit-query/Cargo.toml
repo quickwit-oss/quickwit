@@ -21,6 +21,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 tantivy = { workspace = true }
+tantivy-common = { workspace = true }
 unicode-segmentation = { workspace = true }
 tantivy-fst = { workspace = true }
 tracing = { workspace = true }
@@ -40,8 +41,4 @@ quickwit-common = { workspace = true, features = ["testsuite"] }
 
 [[bench]]
 name = "tokenizers_bench"
-harness = false
-
-[[bench]]
-name = "regexp_extract_eq_bench"
 harness = false

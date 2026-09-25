@@ -19,6 +19,7 @@ use tantivy::jitexpr::ast::{Function, Literal, UntypedExpr};
 use tantivy::query::doc_predicate_query::{DocPredicateQuery, JitExprPredicate};
 use tantivy::schema::{FieldType, Schema as TantivySchema};
 
+use super::regex_extract_eq::RegexExtractEqPlan;
 use super::{BuildTantivyAst, BuildTantivyAstContext, QueryAst, RegexQuery, TantivyQueryAst};
 use crate::tokenizers::RAW_TOKENIZER_NAME;
 use crate::{InvalidQuery, find_field_or_hit_dynamic};
@@ -31,12 +32,12 @@ use crate::{InvalidQuery, find_field_or_hit_dynamic};
 /// happen when Tantivy creates the segment scorer. Callers must warm the referenced fast
 /// fields before running a synchronous search against remote storage.
 ///
-/// A narrow subset of predicates of the form
-/// `(EQ (REGEXP_EXTRACT field "prefix(capture)suffix" 1u64) "literal")` (or the swapped
-/// literal/extract form) may be accelerated with an FST [`RegexQuery`] *prefilter* when
-/// `field` is a fast, indexed, raw-tokenized string field. The prefilter may over-match;
-/// callers must keep the original calculated predicate as the exact filter.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// Predicates of the form `(EQ (REGEXP_EXTRACT field "prefix(capture)suffix" 1u64) "literal")`
+/// (or the swapped literal/extract form) on a non-JSON string fast field are evaluated once per
+/// distinct fast-field value instead of once per document: the fast-field dictionary is walked
+/// with an FST *prefilter* regex, each accepted value is checked exactly, and documents are
+/// selected by the ordinal of their first value. They match the same documents as the JIT path.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CalcFieldQuery {
     #[serde(with = "jitexpr_serde")]
     pub expression: UntypedExpr,
@@ -49,32 +50,42 @@ impl From<CalcFieldQuery> for QueryAst {
 }
 
 impl CalcFieldQuery {
-    /// Builds an FST [`RegexQuery`] that is a *superset* of documents matching
+    /// Builds an FST [`RegexQuery`] accepting a *superset* of the values matching
     /// `(EQ (REGEXP_EXTRACT field pattern 1u64) "literal")` (or the swapped form).
     ///
-    /// The prefilter may over-match; callers must intersect with this [`CalcFieldQuery`].
+    /// Query construction walks the fast-field dictionary with this regex. The returned
+    /// [`RegexQuery`] is only available when the indexed terms contain the same raw values.
     ///
     /// Returns `None` whenever the expression shape or field is not eligible.
     pub fn try_prefilter_regex_query(&self, schema: &TantivySchema) -> Option<RegexQuery> {
-        let (field_name, pattern, literal) = match_eq_regexp_extract(&self.expression)?;
-        if !is_fast_indexed_raw_string_field(field_name, schema) {
+        let plan = self.regexp_extract_eq_plan(schema)?;
+        if !is_raw_term_prefilter_compatible(plan.fast_field_name(), schema) {
             return None;
         }
-        let regex = substitute_single_capture(pattern, literal)?;
         Some(RegexQuery {
-            field: field_name.to_string(),
-            regex,
+            field: plan.fast_field_name().to_string(),
+            regex: plan.prefilter_regex().to_string(),
         })
+    }
+
+    fn regexp_extract_eq_plan(&self, schema: &TantivySchema) -> Option<RegexExtractEqPlan> {
+        let (field_name, pattern, literal) = match_eq_regexp_extract(&self.expression)?;
+        if !is_str_fast_field(field_name, schema) {
+            return None;
+        }
+        let prefilter_regex = substitute_single_capture(pattern, literal)?;
+        RegexExtractEqPlan::new(field_name, prefilter_regex, pattern, literal)
     }
 }
 
 impl BuildTantivyAst for CalcFieldQuery {
     fn build_tantivy_ast_impl(
         &self,
-        _context: &BuildTantivyAstContext,
+        context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        // Eligible REGEXP_EXTRACT equality predicates may be wrapped with an FST
-        // RegexQuery prefilter earlier in query_builder; this path stays exact.
+        if let Some(plan) = self.regexp_extract_eq_plan(context.schema) {
+            return Ok(plan.build_query());
+        }
         let predicate = JitExprPredicate::new(self.expression.clone())
             .context("invalid calculated predicate expression")
             .map_err(InvalidQuery::Other)?;
@@ -120,7 +131,7 @@ fn match_eq_regexp_extract(expression: &UntypedExpr) -> Option<(&str, &str, &str
     Some((field_name.as_ref(), pattern.as_ref(), literal.as_ref()))
 }
 
-fn is_fast_indexed_raw_string_field(field_name: &str, schema: &TantivySchema) -> bool {
+fn is_str_fast_field(field_name: &str, schema: &TantivySchema) -> bool {
     let Some((_field, field_entry, json_path)) = find_field_or_hit_dynamic(field_name, schema)
     else {
         return false;
@@ -129,7 +140,15 @@ fn is_fast_indexed_raw_string_field(field_name: &str, schema: &TantivySchema) ->
     if !json_path.is_empty() {
         return false;
     }
-    if !field_entry.is_fast() || !field_entry.is_indexed() {
+    field_entry.is_fast() && matches!(field_entry.field_type(), FieldType::Str(_))
+}
+
+fn is_raw_term_prefilter_compatible(field_name: &str, schema: &TantivySchema) -> bool {
+    let Some((_field, field_entry, json_path)) = find_field_or_hit_dynamic(field_name, schema)
+    else {
+        return false;
+    };
+    if !json_path.is_empty() {
         return false;
     }
     let FieldType::Str(text_options) = field_entry.field_type() else {
@@ -138,8 +157,6 @@ fn is_fast_indexed_raw_string_field(field_name: &str, schema: &TantivySchema) ->
     let Some(text_indexing) = text_options.get_indexing_options() else {
         return false;
     };
-    // The JIT reads fast-field values while the prefilter reads indexed terms: both must hold
-    // the untransformed value.
     let fast_field_is_raw = matches!(
         text_options.get_fast_field_tokenizer_name(),
         None | Some(RAW_TOKENIZER_NAME)
@@ -211,9 +228,6 @@ fn substitute_single_capture(pattern: &str, literal: &str) -> Option<String> {
     if !anchored_end {
         rewritten.push_str(ANY_TEXT);
     }
-    // FST regexes support no look-around (`\b`, `^` behind flags or inside the pattern, ...):
-    // such patterns must stay on the JIT path instead of failing the query.
-    tantivy_fst::Regex::new(&rewritten).ok()?;
     Some(rewritten)
 }
 
@@ -294,35 +308,22 @@ mod tests {
     use serde_json::json;
     use tantivy::collector::Count;
     use tantivy::jitexpr::ast::deserialize;
-    use tantivy::query::doc_predicate_query::DocPredicateQuery;
-    use tantivy::schema::{FAST, STRING, Schema, TEXT};
+    use tantivy::query::doc_predicate_query::{DocPredicateQuery, JitExprPredicate};
+    use tantivy::schema::{FAST, STRING, Schema, TEXT, TextOptions};
+    use tantivy::tokenizer::MAX_TOKEN_LEN;
     use tantivy::{Index, TantivyDocument, doc};
 
     use super::{CalcFieldQuery, substitute_single_capture};
-    use crate::query_ast::{BoolQuery, BuildTantivyAstContext, QueryAst};
+    use crate::query_ast::{BuildTantivyAstContext, QueryAst};
 
     fn calc_field(expression: &str) -> QueryAst {
-        CalcFieldQuery {
-            expression: deserialize(expression).unwrap(),
-        }
-        .into()
+        calc_field_query(expression).into()
     }
 
     fn calc_field_query(expression: &str) -> CalcFieldQuery {
         CalcFieldQuery {
             expression: deserialize(expression).unwrap(),
         }
-    }
-
-    fn prefilter_conjunction(calc: CalcFieldQuery, schema: &Schema) -> QueryAst {
-        let regex_query = calc
-            .try_prefilter_regex_query(schema)
-            .expect("eligible expression should produce a prefilter");
-        BoolQuery {
-            filter: vec![regex_query.into(), QueryAst::CalcField(calc)],
-            ..Default::default()
-        }
-        .into()
     }
 
     #[test]
@@ -440,10 +441,6 @@ mod tests {
         assert!(substitute_single_capture("x|([a-z]+)", "api").is_none());
         assert!(substitute_single_capture("(?:a([a-z]+))+", "api").is_none());
         assert!(substitute_single_capture("(?:id=([a-z]+))?end", "api").is_none());
-        // Look-arounds left in the rewritten regex are not supported by FST regexes.
-        assert!(substitute_single_capture(r"\bsvc-([a-z]+)", "api").is_none());
-        assert!(substitute_single_capture("(?m)^svc-([a-z]+)", "api").is_none());
-        assert!(substitute_single_capture("a^svc-([a-z]+)", "api").is_none());
     }
 
     #[test]
@@ -451,6 +448,7 @@ mod tests {
         let mut schema_builder = Schema::builder();
         schema_builder.add_text_field("service", STRING | FAST);
         schema_builder.add_text_field("indexed_only", STRING);
+        schema_builder.add_text_field("fast_only", FAST);
         schema_builder.add_text_field("fast_tokenized", TEXT | FAST);
         schema_builder.add_text_field("fast_lowercased", STRING.set_fast("lowercase"));
         let schema = schema_builder.build();
@@ -477,9 +475,15 @@ mod tests {
         for expression in [
             r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 0u64) "api")"#,
             r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "123")"#,
-            r#"(EQ (REGEXP_EXTRACT fast_tokenized "^svc-([a-z]+)-prod$" 1u64) "api")"#,
             r#"(EQ (REGEXP_EXTRACT indexed_only "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+            r#"(EQ (REGEXP_EXTRACT fast_only "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+            r#"(EQ (REGEXP_EXTRACT fast_tokenized "^svc-([a-z]+)-prod$" 1u64) "api")"#,
             r#"(EQ (REGEXP_EXTRACT fast_lowercased "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+            // FST regexes reject look-arounds and lazy repetitions.
+            r#"(EQ (REGEXP_EXTRACT service "\\bsvc-([a-z]+)" 1u64) "api")"#,
+            r#"(EQ (REGEXP_EXTRACT service "(?m)^svc-([a-z]+)" 1u64) "api")"#,
+            r#"(EQ (REGEXP_EXTRACT service "a^svc-([a-z]+)" 1u64) "api")"#,
+            r#"(EQ (REGEXP_EXTRACT service "svc-([a-z]+)-.*?x" 1u64) "api")"#,
         ] {
             assert!(
                 calc_field_query(expression)
@@ -490,8 +494,15 @@ mod tests {
         }
     }
 
+    fn jit_count(searcher: &tantivy::Searcher, expression: &str) -> usize {
+        let predicate = JitExprPredicate::new(deserialize(expression).unwrap()).unwrap();
+        searcher
+            .search(&DocPredicateQuery::from(predicate), &Count)
+            .unwrap()
+    }
+
     #[test]
-    fn test_calc_field_regexp_extract_eq_prefilter_matches_jit_predicate() {
+    fn test_calc_field_regexp_extract_eq_term_query_matches_jit_predicate() {
         let mut schema_builder = Schema::builder();
         let service = schema_builder.add_text_field("service", STRING | FAST);
         let index = Index::create_in_ram(schema_builder.build());
@@ -509,6 +520,11 @@ mod tests {
             "svc-web-prod-svc-api-prod",
             // Multi-line value: the prefilter wrappers must match newlines.
             "line1\nsvc-api-prod\nline3",
+            // Capture stopped by a character outside its class; leftmost-first extracts.
+            "svc-apiX",
+            "id=12 id=1",
+            "id=1",
+            "id=123",
         ] {
             writer.add_document(doc!(service => value)).unwrap();
         }
@@ -542,53 +558,159 @@ mod tests {
             ),
             (
                 r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)" 1u64) "api")"#,
-                2,
+                3,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "svc-([a-z]+)" 1u64) "api")"#,
+                4,
+            ),
+            (r#"(EQ (REGEXP_EXTRACT service "id=([0-9]+)" 1u64) "1")"#, 1),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "id=([0-9]+)" 1u64) "12")"#,
+                1,
             ),
             (
                 r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "123")"#,
                 0,
             ),
         ] {
-            let jit_count = searcher
+            assert_eq!(
+                jit_count(&searcher, expression),
+                expected_count,
+                "jit {expression}"
+            );
+            let calc_field_query_built = calc_field(expression)
+                .build_tantivy_query(&context)
+                .unwrap();
+            let calc_field_count = searcher.search(&*calc_field_query_built, &Count).unwrap();
+            assert_eq!(calc_field_count, expected_count, "calc field {expression}");
+
+            let prefilter = calc_field_query(expression).try_prefilter_regex_query(&schema);
+            assert_eq!(
+                calc_field_query_built
+                    .downcast_ref::<DocPredicateQuery>()
+                    .is_none(),
+                prefilter.is_some(),
+                "eligible expressions must not build the JIT query: {expression}"
+            );
+            let Some(regex_query) = prefilter else {
+                continue;
+            };
+            let regex_only_count = searcher
                 .search(
-                    &*calc_field(expression)
+                    &*QueryAst::from(regex_query)
                         .build_tantivy_query(&context)
                         .unwrap(),
                     &Count,
                 )
                 .unwrap();
-            assert_eq!(jit_count, expected_count, "jit {expression}");
+            assert!(
+                regex_only_count >= expected_count,
+                "prefilter must be a superset for {expression}: regex={regex_only_count} \
+                 expected={expected_count}"
+            );
+        }
+    }
 
-            match calc_field_query(expression).try_prefilter_regex_query(&schema) {
-                Some(regex_query) => {
-                    let regex_only_count = searcher
-                        .search(
-                            &*QueryAst::from(regex_query)
-                                .build_tantivy_query(&context)
-                                .unwrap(),
-                            &Count,
-                        )
-                        .unwrap();
-                    assert!(
-                        regex_only_count >= jit_count,
-                        "prefilter must be a superset for {expression}: regex={regex_only_count} \
-                         jit={jit_count}"
-                    );
+    /// Indexes one document per entry of `documents` in `field_options` and asserts that the
+    /// eligible `expression` matches exactly `expected_count` documents, like the JIT.
+    fn assert_regexp_extract_eq_matches_jit(
+        field_options: TextOptions,
+        documents: &[&[&str]],
+        expression: &str,
+        expected_count: usize,
+    ) {
+        let mut schema_builder = Schema::builder();
+        let service = schema_builder.add_text_field("service", field_options);
+        let mut index = Index::create_in_ram(schema_builder.build());
+        index.set_fast_field_tokenizers(
+            crate::get_quickwit_fastfield_normalizer_manager()
+                .tantivy_manager()
+                .clone(),
+        );
+        let mut writer = index
+            .writer_with_num_threads::<TantivyDocument>(1, 50_000_000)
+            .unwrap();
+        for values in documents {
+            let mut document = TantivyDocument::default();
+            for value in *values {
+                document.add_text(service, value);
+            }
+            writer.add_document(document).unwrap();
+        }
+        writer.commit().unwrap();
 
-                    let optimized_count = searcher
-                        .search(
-                            &*prefilter_conjunction(calc_field_query(expression), &schema)
-                                .build_tantivy_query(&context)
-                                .unwrap(),
-                            &Count,
-                        )
-                        .unwrap();
-                    assert_eq!(optimized_count, jit_count, "prefilter∧jit {expression}");
+        let schema = index.schema();
+        let context = BuildTantivyAstContext::for_test(&schema);
+        let searcher = index.reader().unwrap().searcher();
+        let query = calc_field(expression)
+            .build_tantivy_query(&context)
+            .unwrap();
+        assert!(query.downcast_ref::<DocPredicateQuery>().is_none());
+        assert_eq!(jit_count(&searcher, expression), expected_count, "jit");
+        assert_eq!(searcher.search(&*query, &Count).unwrap(), expected_count);
+    }
+
+    #[test]
+    fn test_calc_field_regexp_extract_eq_matches_first_value_only() {
+        assert_regexp_extract_eq_matches_jit(
+            STRING | FAST,
+            &[
+                &["aaa", "svc-api-prod"],
+                &["svc-api-prod", "zzz"],
+                &["aaa", "zzz"],
+            ],
+            r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+            1,
+        );
+    }
+
+    #[test]
+    fn test_calc_field_regexp_extract_eq_matches_across_column_layouts() {
+        let expression = r#"(EQ (REGEXP_EXTRACT service "svc-([a-z]+)" 1u64) "api")"#;
+        // Matching values are interleaved with non-matching ones, so each forms its own run of
+        // ordinals: 2 runs use range scans, 10 runs exceed `MAX_ORD_RANGE_SCANS`.
+        for num_matching_values in [2, 10] {
+            let values: Vec<String> = (0..num_matching_values)
+                .flat_map(|i| [format!("a{i} svc-api"), format!("a{i}x svc-web")])
+                .collect();
+            // Documents without a value turn the column from full to optional.
+            for with_missing_values in [false, true] {
+                let mut documents: Vec<Vec<&str>> =
+                    values.iter().map(|value| vec![value.as_str()]).collect();
+                if with_missing_values {
+                    documents.insert(0, Vec::new());
+                    documents.push(Vec::new());
                 }
-                None => {
-                    assert_eq!(jit_count, expected_count, "fallback {expression}");
-                }
+                let documents: Vec<&[&str]> = documents.iter().map(Vec::as_slice).collect();
+                assert_regexp_extract_eq_matches_jit(
+                    STRING | FAST,
+                    &documents,
+                    expression,
+                    num_matching_values,
+                );
             }
         }
+    }
+
+    #[test]
+    fn test_calc_field_regexp_extract_eq_matches_values_longer_than_max_token_len() {
+        let long_value = format!("svc-api-prod{}", "x".repeat(MAX_TOKEN_LEN));
+        assert_regexp_extract_eq_matches_jit(
+            STRING | FAST,
+            &[&[long_value.as_str()], &["svc-web-prod"]],
+            r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod" 1u64) "api")"#,
+            1,
+        );
+    }
+
+    #[test]
+    fn test_calc_field_regexp_extract_eq_matches_normalized_fast_field() {
+        assert_regexp_extract_eq_matches_jit(
+            STRING.set_fast("lowercase"),
+            &[&["SVC-API-PROD"], &["svc-api-prod"], &["SVC-WEB-PROD"]],
+            r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+            2,
+        );
     }
 }
