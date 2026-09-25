@@ -138,28 +138,28 @@ fn is_fast_indexed_raw_string_field(field_name: &str, schema: &TantivySchema) ->
     let Some(text_indexing) = text_options.get_indexing_options() else {
         return false;
     };
-    text_indexing.tokenizer() == RAW_TOKENIZER_NAME
+    // The JIT reads fast-field values while the prefilter reads indexed terms: both must hold
+    // the untransformed value.
+    let fast_field_is_raw = matches!(
+        text_options.get_fast_field_tokenizer_name(),
+        None | Some(RAW_TOKENIZER_NAME)
+    );
+    text_indexing.tokenizer() == RAW_TOKENIZER_NAME && fast_field_is_raw
 }
+
+/// Matches any sequence of characters, including newlines.
+const ANY_TEXT: &str = "(?s:.*)";
 
 /// Builds an FST whole-term regex that is a *superset* of terms for which
 /// `EQ(REGEXP_EXTRACT(..., pattern, 1), literal)` holds.
 ///
-/// Parses `pattern` with [`regex_syntax`], requires exactly one capturing group
-/// as a top-level concatenation child (no nested/extra captures), replaces that
-/// group with the escaped literal, and requires the literal to match the capture
-/// subpattern (otherwise EQ is always false).
+/// Parses `pattern` with [`regex_syntax`], requires exactly one capturing group that is a
+/// direct part of the top-level concatenation (not inside an alternation or repetition),
+/// replaces that group with the escaped literal, and requires the literal to match the
+/// capture subpattern (otherwise EQ is always false).
 ///
 /// Tantivy FST regexes match whole terms and reject `^`/`$`, so start/end anchors
-/// are stripped. Missing sides are wrapped with `.*`.
-/// Builds an FST whole-term regex that is a *superset* of terms for which
-/// `EQ(REGEXP_EXTRACT(..., pattern, 1), literal)` holds.
-///
-/// Parses `pattern` with [`regex_syntax`], requires exactly one capturing group,
-/// replaces that group with the escaped literal, and requires the literal to
-/// match the capture subpattern (otherwise EQ is always false).
-///
-/// Tantivy FST regexes match whole terms and reject `^`/`$`, so start/end anchors
-/// are stripped. Missing sides are wrapped with `.*`.
+/// are stripped. Missing sides are wrapped with [`ANY_TEXT`].
 fn substitute_single_capture(pattern: &str, literal: &str) -> Option<String> {
     let ast = ast::parse::Parser::new().parse(pattern).ok()?;
     let group = {
@@ -170,6 +170,17 @@ fn substitute_single_capture(pattern: &str, literal: &str) -> Option<String> {
             _ => return None,
         }
     };
+    let is_top_level_part = match &ast {
+        Ast::Concat(concat) => concat
+            .asts
+            .iter()
+            .any(|part| matches!(part, Ast::Group(part_group) if part_group.span == group.span)),
+        Ast::Group(root_group) => root_group.span == group.span,
+        _ => false,
+    };
+    if !is_top_level_part {
+        return None;
+    }
 
     let (body_start, body_end, anchored_start, anchored_end) = body_bounds(&ast, pattern.len());
     let group_start = group.span.start.offset;
@@ -185,21 +196,24 @@ fn substitute_single_capture(pattern: &str, literal: &str) -> Option<String> {
         return None;
     }
 
-    // Superset whole-term regex (may over-match leftmost extract+EQ):
+    // Superset whole-term regex (may over-match leftmost extract+EQ), with `…` = ANY_TEXT:
     //   ^prefix(C)suffix$ + L  →  prefix{escape(L)}suffix
-    //   ^prefix(C)suffix  + L  →  prefix{escape(L)}suffix.*
-    //    prefix(C)suffix$ + L  →  .*prefix{escape(L)}suffix
-    //    prefix(C)suffix  + L  →  .*prefix{escape(L)}suffix.*
+    //   ^prefix(C)suffix  + L  →  prefix{escape(L)}suffix…
+    //    prefix(C)suffix$ + L  →  …prefix{escape(L)}suffix
+    //    prefix(C)suffix  + L  →  …prefix{escape(L)}suffix…
     let mut rewritten = String::new();
     if !anchored_start {
-        rewritten.push_str(".*");
+        rewritten.push_str(ANY_TEXT);
     }
     rewritten.push_str(&pattern[body_start..group_start]);
     rewritten.push_str(&regex_syntax::escape(literal));
     rewritten.push_str(&pattern[group_end..body_end]);
     if !anchored_end {
-        rewritten.push_str(".*");
+        rewritten.push_str(ANY_TEXT);
     }
+    // FST regexes support no look-around (`\b`, `^` behind flags or inside the pattern, ...):
+    // such patterns must stay on the JIT path instead of failing the query.
+    tantivy_fst::Regex::new(&rewritten).ok()?;
     Some(rewritten)
 }
 
@@ -215,23 +229,23 @@ fn body_bounds(ast: &Ast, pattern_len: usize) -> (usize, usize, bool, bool) {
     let mut anchored_start = false;
     let mut anchored_end = false;
 
-    if let Some(Ast::Assertion(assertion)) = parts.first() {
-        if matches!(
+    if let Some(Ast::Assertion(assertion)) = parts.first()
+        && matches!(
             assertion.kind,
             AssertionKind::StartLine | AssertionKind::StartText
-        ) {
-            anchored_start = true;
-            body_start = assertion.span.end.offset;
-        }
+        )
+    {
+        anchored_start = true;
+        body_start = assertion.span.end.offset;
     }
-    if let Some(Ast::Assertion(assertion)) = parts.last() {
-        if matches!(
+    if let Some(Ast::Assertion(assertion)) = parts.last()
+        && matches!(
             assertion.kind,
             AssertionKind::EndLine | AssertionKind::EndText
-        ) {
-            anchored_end = true;
-            body_end = assertion.span.start.offset;
-        }
+        )
+    {
+        anchored_end = true;
+        body_end = assertion.span.start.offset;
     }
     (body_start, body_end, anchored_start, anchored_end)
 }
@@ -400,15 +414,15 @@ mod tests {
         );
         assert_eq!(
             substitute_single_capture("svc-([a-z]+)-prod", "api").as_deref(),
-            Some(".*svc-api-prod.*")
+            Some("(?s:.*)svc-api-prod(?s:.*)")
         );
         assert_eq!(
             substitute_single_capture("^svc-([a-z]+)", "api").as_deref(),
-            Some("svc-api.*")
+            Some("svc-api(?s:.*)")
         );
         assert_eq!(
             substitute_single_capture("([a-z]+)-prod$", "api").as_deref(),
-            Some(".*api-prod")
+            Some("(?s:.*)api-prod")
         );
         assert_eq!(
             substitute_single_capture("^svc-(a.b)-prod$", "a+b").as_deref(),
@@ -422,6 +436,14 @@ mod tests {
         assert!(substitute_single_capture("^svc-([a-z]+)-prod$", "123").is_none());
         assert!(substitute_single_capture("^svc-([a-z]+)-([a-z]+)$", "api").is_none());
         assert!(substitute_single_capture("^svc-(?:[a-z]+)-prod$", "api").is_none());
+        // The capture must be a direct part of the top-level concatenation.
+        assert!(substitute_single_capture("x|([a-z]+)", "api").is_none());
+        assert!(substitute_single_capture("(?:a([a-z]+))+", "api").is_none());
+        assert!(substitute_single_capture("(?:id=([a-z]+))?end", "api").is_none());
+        // Look-arounds left in the rewritten regex are not supported by FST regexes.
+        assert!(substitute_single_capture(r"\bsvc-([a-z]+)", "api").is_none());
+        assert!(substitute_single_capture("(?m)^svc-([a-z]+)", "api").is_none());
+        assert!(substitute_single_capture("a^svc-([a-z]+)", "api").is_none());
     }
 
     #[test]
@@ -430,6 +452,7 @@ mod tests {
         schema_builder.add_text_field("service", STRING | FAST);
         schema_builder.add_text_field("indexed_only", STRING);
         schema_builder.add_text_field("fast_tokenized", TEXT | FAST);
+        schema_builder.add_text_field("fast_lowercased", STRING.set_fast("lowercase"));
         let schema = schema_builder.build();
 
         let prefilter =
@@ -449,13 +472,14 @@ mod tests {
             calc_field_query(r#"(EQ (REGEXP_EXTRACT service "svc-([a-z]+)-prod" 1u64) "api")"#)
                 .try_prefilter_regex_query(&schema)
                 .expect("unanchored pattern should produce a prefilter");
-        assert_eq!(unanchored.regex, ".*svc-api-prod.*");
+        assert_eq!(unanchored.regex, "(?s:.*)svc-api-prod(?s:.*)");
 
         for expression in [
             r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 0u64) "api")"#,
             r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "123")"#,
             r#"(EQ (REGEXP_EXTRACT fast_tokenized "^svc-([a-z]+)-prod$" 1u64) "api")"#,
             r#"(EQ (REGEXP_EXTRACT indexed_only "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+            r#"(EQ (REGEXP_EXTRACT fast_lowercased "^svc-([a-z]+)-prod$" 1u64) "api")"#,
         ] {
             assert!(
                 calc_field_query(expression)
@@ -483,6 +507,8 @@ mod tests {
             // Prefilter over-matches (longer capture / earlier different extract); JIT rejects.
             "svc-apixyz",
             "svc-web-prod-svc-api-prod",
+            // Multi-line value: the prefilter wrappers must match newlines.
+            "line1\nsvc-api-prod\nline3",
         ] {
             writer.add_document(doc!(service => value)).unwrap();
         }
@@ -504,7 +530,15 @@ mod tests {
             ),
             (
                 r#"(EQ (REGEXP_EXTRACT service "svc-([a-z]+)-prod" 1u64) "api")"#,
-                2,
+                3,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "other|svc-([a-z]+)-prod" 1u64) "api")"#,
+                3,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "\\bsvc-([a-z]+)-prod" 1u64) "api")"#,
+                3,
             ),
             (
                 r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)" 1u64) "api")"#,

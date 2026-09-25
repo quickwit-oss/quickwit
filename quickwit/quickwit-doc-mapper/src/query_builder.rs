@@ -556,7 +556,7 @@ mod test {
             warmup.automatons_grouped_by_field.get(&service_field),
             Some(&HashSet::from([Automaton::Regex(
                 None,
-                ".*svc-api-prod.*".to_string()
+                "(?s:.*)svc-api-prod(?s:.*)".to_string()
             )]))
         );
 
