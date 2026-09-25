@@ -255,7 +255,7 @@ mod tests {
             super::index_management_handlers(index_service, Arc::new(NodeConfig::for_test()))
                 .recover(recover_fn);
         let resp = warp::test::request()
-            .path("/indexes/test-index")
+            .path("/indices/test-index")
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
@@ -332,7 +332,7 @@ mod tests {
         {
             let resp = warp::test::request()
                 .path(
-                    "/indexes/quickwit-demo-index/splits?split_states=Published,Staged&\
+                    "/indices/quickwit-demo-index/splits?split_states=Published,Staged&\
                      start_timestamp=10&end_timestamp=20&end_create_timestamp=2",
                 )
                 .reply(&index_management_handler)
@@ -533,7 +533,7 @@ mod tests {
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_list_indexes_metadata()
-            .return_once(|list_indexes_request| {
+            .returning(|list_indexes_request| {
                 assert_eq!(
                     list_indexes_request.index_id_patterns,
                     vec!["test-index-*".to_string()]
@@ -541,7 +541,8 @@ mod tests {
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
                 Ok(ListIndexesMetadataResponse::for_test(vec![index_metadata]))
-            });
+            })
+            .times(2);
         let index_service = IndexService::new(
             MetastoreServiceClient::from_mock(mock_metastore),
             StorageResolver::unconfigured(),
@@ -549,23 +550,28 @@ mod tests {
         let index_management_handler =
             super::index_management_handlers(index_service, Arc::new(NodeConfig::for_test()))
                 .recover(recover_fn);
-        let resp = warp::test::request()
-            .path("/indexes?index_id_patterns=test-index-*")
-            .reply(&index_management_handler)
-            .await;
-        assert_eq!(resp.status(), 200);
-        let actual_response_json: JsonValue = serde_json::from_slice(resp.body())?;
-        let actual_response_arr: &Vec<JsonValue> = actual_response_json.as_array().unwrap();
-        assert_eq!(actual_response_arr.len(), 1);
-        let actual_index_metadata_json: &JsonValue = &actual_response_arr[0];
-        let expected_response_json = serde_json::json!({
-            "index_id": "test-index",
-            "index_uri": "ram:///indexes/test-index",
-        });
-        assert_json_include!(
-            actual: actual_index_metadata_json.get("index_config").unwrap(),
-            expected: expected_response_json
-        );
+        for path in [
+            "/indexes?index_id_patterns=test-index-*",
+            "/indices?index_id_patterns=test-index-*",
+        ] {
+            let resp = warp::test::request()
+                .path(path)
+                .reply(&index_management_handler)
+                .await;
+            assert_eq!(resp.status(), 200);
+            let actual_response_json: JsonValue = serde_json::from_slice(resp.body())?;
+            let actual_response_arr: &Vec<JsonValue> = actual_response_json.as_array().unwrap();
+            assert_eq!(actual_response_arr.len(), 1);
+            let actual_index_metadata_json: &JsonValue = &actual_response_arr[0];
+            let expected_response_json = serde_json::json!({
+                "index_id": "test-index",
+                "index_uri": "ram:///indexes/test-index",
+            });
+            assert_json_include!(
+                actual: actual_index_metadata_json.get("index_config").unwrap(),
+                expected: expected_response_json
+            );
+        }
         Ok(())
     }
 
@@ -744,7 +750,7 @@ mod tests {
         let index_management_handler =
             super::index_management_handlers(index_service, Arc::new(node_config));
         let resp = warp::test::request()
-            .path("/indexes")
+            .path("/indices")
             .method("POST")
             .json(&true)
             .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
@@ -763,7 +769,7 @@ mod tests {
         // Create source.
         let source_config_body = r#"{"version": "0.7", "source_id": "vec-source", "source_type": "vec", "params": {"docs": [], "batch_num_docs": 10}}"#;
         let resp = warp::test::request()
-            .path("/indexes/hdfs-logs/sources")
+            .path("/indices/hdfs-logs/sources")
             .method("POST")
             .json(&true)
             .body(source_config_body)
@@ -773,7 +779,7 @@ mod tests {
 
         // Get source.
         let resp = warp::test::request()
-            .path("/indexes/hdfs-logs/sources/vec-source")
+            .path("/indices/hdfs-logs/sources/vec-source")
             .method("GET")
             .reply(&index_management_handler)
             .await;
@@ -800,7 +806,7 @@ mod tests {
 
         // Check delete source.
         let resp = warp::test::request()
-            .path("/indexes/hdfs-logs/sources/vec-source")
+            .path("/indices/hdfs-logs/sources/vec-source")
             .method("DELETE")
             .body(source_config_body)
             .reply(&index_management_handler)
@@ -842,7 +848,7 @@ mod tests {
 
         // Check delete index.
         let resp = warp::test::request()
-            .path("/indexes/hdfs-logs")
+            .path("/indices/hdfs-logs")
             .method("DELETE")
             .body(source_config_body)
             .reply(&index_management_handler)
