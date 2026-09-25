@@ -24,7 +24,7 @@ use quickwit_common::fs::get_disk_size;
 use quickwit_common::net::{Host, find_private_ip, get_short_hostname};
 use quickwit_common::new_coolid;
 use quickwit_common::uri::Uri;
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{AvailabilityZone, NodeId};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
@@ -255,7 +255,17 @@ impl NodeConfigBuilder {
             .node_id
             .resolve(env_vars)
             .map(|node_id_str| NodeId::from_str(&node_id_str))?;
-        let availability_zone = self.availability_zone.resolve_optional(env_vars)?;
+        let availability_zone =
+            self.availability_zone
+                .resolve_optional(env_vars)?
+                .and_then(|availability_zone| {
+                    let availability_zone = availability_zone.trim();
+                    if availability_zone.is_empty() {
+                        None
+                    } else {
+                        Some(AvailabilityZone::from(availability_zone))
+                    }
+                });
 
         let enable_standalone_compactors = self.enable_standalone_compactors.resolve(env_vars)?;
         let docs_clustering_config =
@@ -629,7 +639,7 @@ pub fn node_config_for_tests_from_ports(
 ) -> NodeConfig {
     let node_id = NodeId::from_str(&default_node_id().unwrap());
     let enabled_services = QuickwitService::default_services();
-    let availability_zone = Some(String::from("az-1"));
+    let availability_zone = Some(AvailabilityZone::from("az-1"));
     let listen_address = Host::default();
     let rest_listen_addr = listen_address
         .with_port(rest_listen_port)
@@ -725,7 +735,7 @@ mod tests {
         assert!(config.is_service_enabled(QuickwitService::Janitor));
         assert!(config.is_service_enabled(QuickwitService::Metastore));
 
-        assert_eq!(config.availability_zone.unwrap(), "az-1");
+        assert_eq!(config.availability_zone.as_deref(), Some("az-1"));
         assert_eq!(
             config.rest_config.listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 1111)
@@ -1013,6 +1023,55 @@ mod tests {
             )
         );
         assert!(config.ingest_api_config._replication_factor.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_availability_zone_is_normalized() {
+        let test_cases = [
+            ("version: 0.8", None),
+            ("version: 0.8\navailability_zone:", None),
+            ("version: 0.8\navailability_zone: ''", None),
+            ("version: 0.8\navailability_zone: '   '", None),
+            (
+                "version: 0.8\navailability_zone: ' us-east-1a '",
+                Some("us-east-1a"),
+            ),
+        ];
+        for (config_yaml, expected_availability_zone) in test_cases {
+            let config = load_node_config_with_env(
+                ConfigFormat::Yaml,
+                config_yaml.as_bytes(),
+                &Default::default(),
+                None,
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                config.availability_zone.as_deref(),
+                expected_availability_zone
+            );
+        }
+
+        let test_cases = [
+            ("", None),
+            ("   ", None),
+            (" us-east-1a ", Some("us-east-1a")),
+        ];
+        for (availability_zone, expected_availability_zone) in test_cases {
+            let mut env_vars = HashMap::new();
+            env_vars.insert(
+                "QW_AVAILABILITY_ZONE".to_string(),
+                availability_zone.to_string(),
+            );
+            let config =
+                load_node_config_with_env(ConfigFormat::Yaml, b"version: 0.8", &env_vars, None)
+                    .await
+                    .unwrap();
+            assert_eq!(
+                config.availability_zone.as_deref(),
+                expected_availability_zone
+            );
+        }
     }
 
     #[tokio::test]

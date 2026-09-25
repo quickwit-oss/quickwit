@@ -16,7 +16,6 @@ mod broadcast;
 mod debouncing;
 mod doc_mapper;
 mod fetch;
-mod helpers;
 mod idle;
 mod ingester;
 pub(crate) mod metrics;
@@ -44,22 +43,19 @@ pub use broadcast::{
 use bytes::buf::Writer;
 use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
+use quickwit_cluster::GenerationId;
 use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::{IngesterServiceClient, IngesterStatus};
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
 use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2, DocFormat};
 use quickwit_proto::types::{
-    DocUid, DocUidGenerator, IndexId, IndexUid, NodeId, SourceId, SubrequestId,
+    AvailabilityZone, DocUid, DocUidGenerator, IndexId, IndexUid, NodeId, SourceId, SubrequestId,
 };
 use serde::Serialize;
 use tracing::{error, info};
 use workbench::pending_subrequests;
 
 pub use self::fetch::{FetchStreamError, MultiFetchStream};
-pub use self::helpers::{
-    notify_ingester_decommission, try_get_ingester_status, wait_for_ingester_decommission,
-    wait_for_ingester_status,
-};
 pub use self::ingester::Ingester;
 use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{MRecord, decoded_mrecords};
@@ -70,7 +66,8 @@ pub use self::router::IngestRouter;
 pub struct IngesterPoolEntry {
     pub client: IngesterServiceClient,
     pub status: IngesterStatus,
-    pub availability_zone: Option<String>,
+    pub availability_zone: Option<AvailabilityZone>,
+    pub generation_id: GenerationId,
 }
 
 impl IngesterPoolEntry {
@@ -80,6 +77,7 @@ impl IngesterPoolEntry {
             client,
             status: IngesterStatus::Ready,
             availability_zone: None,
+            generation_id: GenerationId::from(1u64),
         }
     }
 
@@ -89,6 +87,7 @@ impl IngesterPoolEntry {
             client: IngesterServiceClient::mocked(),
             status: IngesterStatus::Ready,
             availability_zone: None,
+            generation_id: GenerationId::from(1u64),
         }
     }
 }
