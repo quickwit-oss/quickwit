@@ -14,10 +14,12 @@
 
 use std::sync::Arc;
 
+use tantivy::columnar::Column;
 use tantivy::query::{
     BitSetDocSet, ConstScorer, EmptyScorer, EnableScoring, Explanation, Query, Scorer, Weight,
 };
-use tantivy::{DocId, DocSet, Score, SegmentReader, TantivyError};
+use tantivy::schema::IndexRecordOption;
+use tantivy::{DocId, DocSet, Score, SegmentReader, TERMINATED, TantivyError};
 use tantivy_common::BitSet;
 
 use super::TantivyQueryAst;
@@ -32,6 +34,9 @@ use super::TantivyQueryAst;
 ///   the same documents.
 /// - `value_matches` must keep the semantics of the jitexpr `REGEXP_EXTRACT` function
 ///   (`Regex::new(pattern)`, leftmost-first `captures`, group 1).
+/// - When `indexed_value_len_limit` is set, the field is also indexed with its raw fast-field
+///   values as terms, every value shorter than the limit (in bytes) is a term, and callers warm the
+///   term dictionary and postings with `prefilter_regex` before searching.
 /// - Unlike the JIT predicate, which treats a column it fails to open as absent, the scorer returns
 ///   errors from opening the column or reading its dictionary, so a corrupt split fails the search
 ///   instead of silently matching nothing.
@@ -41,6 +46,7 @@ pub(crate) struct RegexExtractEqPlan {
     prefilter_automaton: tantivy_fst::Regex,
     extract_regex: regex::Regex,
     literal: String,
+    indexed_value_len_limit: Option<usize>,
 }
 
 impl RegexExtractEqPlan {
@@ -53,6 +59,7 @@ impl RegexExtractEqPlan {
         prefilter_regex: String,
         pattern: &str,
         literal: &str,
+        indexed_value_len_limit: Option<usize>,
     ) -> Option<Self> {
         let prefilter_automaton = tantivy_fst::Regex::new(&prefilter_regex).ok()?;
         let extract_regex = regex::Regex::new(pattern).ok()?;
@@ -62,11 +69,17 @@ impl RegexExtractEqPlan {
             prefilter_automaton,
             extract_regex,
             literal: literal.to_string(),
+            indexed_value_len_limit,
         })
     }
 
     pub(crate) fn fast_field_name(&self) -> &str {
         &self.fast_field_name
+    }
+
+    /// Whether the scorer may read the field's term dictionary and postings.
+    pub(crate) fn reads_postings(&self) -> bool {
+        self.indexed_value_len_limit.is_some()
     }
 
     /// Whole-value FST regex accepting a superset of the matching values.
@@ -139,6 +152,7 @@ impl Weight for RegexExtractEqWeight {
             ))
         })?;
         let mut matching_ords = BitSet::with_max_value(num_values);
+        let mut max_matching_value_len = 0;
         let mut value_stream = dictionary
             .search(&self.plan.prefilter_automaton)
             .into_stream()?;
@@ -146,6 +160,7 @@ impl Weight for RegexExtractEqWeight {
             if self.plan.value_matches(value_stream.key()) {
                 // `term_ord < num_values`, which fits in u32.
                 matching_ords.insert(value_stream.term_ord() as u32);
+                max_matching_value_len = max_matching_value_len.max(value_stream.key().len());
             }
         }
         if matching_ords.len() == 0 {
@@ -154,13 +169,17 @@ impl Weight for RegexExtractEqWeight {
         let max_doc = reader.max_doc();
         let mut doc_bitset = BitSet::with_max_value(max_doc);
         let ords = str_column.ords();
-        // The JIT predicate evaluates the first value of each document only.
-        for doc in 0..max_doc {
-            let Some(ord) = ords.first(doc) else {
-                continue;
-            };
-            if matching_ords.contains(ord as u32) {
-                doc_bitset.insert(doc);
+        let all_matching_values_indexed = matches!(
+            self.plan.indexed_value_len_limit,
+            Some(limit) if max_matching_value_len < limit
+        );
+        if all_matching_values_indexed {
+            self.collect_from_postings(reader, ords, &matching_ords, &mut doc_bitset)?;
+        } else {
+            for doc in 0..max_doc {
+                if first_value_matches(ords, &matching_ords, doc) {
+                    doc_bitset.insert(doc);
+                }
             }
         }
         let doc_set = BitSetDocSet::from(doc_bitset);
@@ -178,6 +197,59 @@ impl Weight for RegexExtractEqWeight {
     }
 }
 
+impl RegexExtractEqWeight {
+    /// Visits only the documents holding a matching value, through the postings of the terms
+    /// equal to the matching values. Requires every matching value to be a term of the field.
+    fn collect_from_postings(
+        &self,
+        reader: &SegmentReader,
+        ords: &Column<u64>,
+        matching_ords: &BitSet,
+        doc_bitset: &mut BitSet,
+    ) -> tantivy::Result<()> {
+        let field = reader.schema().get_field(&self.plan.fast_field_name)?;
+        let inverted_index = reader.inverted_index(field)?;
+        let mut term_stream = inverted_index
+            .terms()
+            .search(&self.plan.prefilter_automaton)
+            .into_stream()?;
+        let mut num_matching_terms = 0;
+        while term_stream.advance() {
+            if !self.plan.value_matches(term_stream.key()) {
+                continue;
+            }
+            num_matching_terms += 1;
+            let mut postings = inverted_index
+                .read_postings_from_terminfo(term_stream.value(), IndexRecordOption::Basic)?;
+            let mut doc = postings.doc();
+            while doc != TERMINATED {
+                // A multivalued document may hold the matching value after its first value.
+                if first_value_matches(ords, matching_ords, doc) {
+                    doc_bitset.insert(doc);
+                }
+                doc = postings.advance();
+            }
+        }
+        if num_matching_terms != matching_ords.len() {
+            return Err(TantivyError::InternalError(format!(
+                "field `{}` has {} matching fast-field values but {num_matching_terms} matching \
+                 terms",
+                self.plan.fast_field_name,
+                matching_ords.len()
+            )));
+        }
+        Ok(())
+    }
+}
+
+/// The JIT predicate evaluates the first value of each document only.
+fn first_value_matches(ords: &Column<u64>, matching_ords: &BitSet, doc: DocId) -> bool {
+    let Some(ord) = ords.first(doc) else {
+        return false;
+    };
+    matching_ords.contains(ord as u32)
+}
+
 #[cfg(test)]
 mod tests {
     use tantivy::collector::Count;
@@ -187,6 +259,7 @@ mod tests {
     use tantivy::tokenizer::MAX_TOKEN_LEN;
     use tantivy::{Index, TantivyDocument, doc};
 
+    use crate::DEFAULT_REMOVE_TOKEN_LENGTH;
     use crate::query_ast::{BuildTantivyAstContext, CalcFieldQuery, QueryAst};
 
     fn calc_field(expression: &str) -> QueryAst {
@@ -379,6 +452,11 @@ mod tests {
         let mut schema_builder = Schema::builder();
         let service = schema_builder.add_text_field("service", field_options);
         let mut index = Index::create_in_ram(schema_builder.build());
+        index.set_tokenizers(
+            crate::create_default_quickwit_tokenizer_manager()
+                .tantivy_manager()
+                .clone(),
+        );
         index.set_fast_field_tokenizers(
             crate::get_quickwit_fastfield_normalizer_manager()
                 .tantivy_manager()
@@ -444,6 +522,50 @@ mod tests {
             STRING | FAST,
             &[&[long_value.as_str()], &["svc-web-prod"]],
             r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod" 1u64) "api")"#,
+            1,
+        );
+    }
+
+    #[test]
+    fn test_regex_extract_eq_matches_values_around_indexed_len_limit() {
+        let expression = r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod" 1u64) "api")"#;
+        let value_of_len = |len: usize| format!("svc-api-prod{}", "x".repeat(len - 12));
+        let indexed_value = value_of_len(DEFAULT_REMOVE_TOKEN_LENGTH - 1);
+        let unindexed_value = value_of_len(DEFAULT_REMOVE_TOKEN_LENGTH);
+        // Only indexed matching values: documents are read from the postings.
+        assert_regex_extract_eq_matches_jit(
+            STRING | FAST,
+            &[
+                &[indexed_value.as_str()],
+                &["svc-api-prod"],
+                &["svc-web-prod"],
+            ],
+            expression,
+            2,
+        );
+        // A matching value missing from the postings: every document is checked.
+        assert_regex_extract_eq_matches_jit(
+            STRING | FAST,
+            &[
+                &[indexed_value.as_str()],
+                &[unindexed_value.as_str()],
+                &["svc-web-prod"],
+            ],
+            expression,
+            2,
+        );
+    }
+
+    #[test]
+    fn test_regex_extract_eq_matches_fast_only_field() {
+        assert_regex_extract_eq_matches_jit(
+            TextOptions::from(FAST),
+            &[
+                &["aaa", "svc-api-prod"],
+                &["svc-api-prod"],
+                &["svc-web-prod"],
+            ],
+            r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#,
             1,
         );
     }

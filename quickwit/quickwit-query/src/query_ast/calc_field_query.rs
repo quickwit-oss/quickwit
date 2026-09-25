@@ -21,7 +21,7 @@ use tantivy::schema::{FieldType, Schema as TantivySchema};
 
 use super::regex_extract_eq::RegexExtractEqPlan;
 use super::{BuildTantivyAst, BuildTantivyAstContext, QueryAst, RegexQuery, TantivyQueryAst};
-use crate::tokenizers::RAW_TOKENIZER_NAME;
+use crate::tokenizers::{DEFAULT_REMOVE_TOKEN_LENGTH, RAW_TOKENIZER_NAME};
 use crate::{InvalidQuery, find_field_or_hit_dynamic};
 
 /// A boolean predicate expressed as a calculated-field expression.
@@ -37,6 +37,9 @@ use crate::{InvalidQuery, find_field_or_hit_dynamic};
 /// distinct fast-field value instead of once per document: the fast-field dictionary is walked
 /// with an FST *prefilter* regex, each accepted value is checked exactly, and documents are
 /// selected by the ordinal of their first value. They match the same documents as the JIT path.
+/// When the field is also indexed with the raw tokenizer, only the documents in the postings of
+/// the matching values are visited; callers must then also warm the field's term dictionary and
+/// postings with the regex of [`CalcFieldQuery::try_prefilter_regex_query`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CalcFieldQuery {
     #[serde(with = "jitexpr_serde")]
@@ -53,13 +56,14 @@ impl CalcFieldQuery {
     /// Builds an FST [`RegexQuery`] accepting a *superset* of the values matching
     /// `(EQ (REGEXP_EXTRACT field pattern 1u64) "literal")` (or the swapped form).
     ///
-    /// Query construction walks the fast-field dictionary with this regex. The returned
-    /// [`RegexQuery`] is only available when the indexed terms contain the same raw values.
+    /// Available only when the indexed terms contain the same raw values as the fast field, in
+    /// which case the query reads the postings of the terms this regex accepts, and they must be
+    /// warmed.
     ///
     /// Returns `None` whenever the expression shape or field is not eligible.
     pub fn try_prefilter_regex_query(&self, schema: &TantivySchema) -> Option<RegexQuery> {
         let plan = self.regex_extract_eq_plan(schema)?;
-        if !is_raw_term_prefilter_compatible(plan.fast_field_name(), schema) {
+        if !plan.reads_postings() {
             return None;
         }
         Some(RegexQuery {
@@ -74,7 +78,16 @@ impl CalcFieldQuery {
             return None;
         }
         let prefilter_regex = substitute_single_capture(pattern, literal)?;
-        RegexExtractEqPlan::new(field_name, prefilter_regex, pattern, literal)
+        // The raw tokenizer drops tokens of `DEFAULT_REMOVE_TOKEN_LENGTH` bytes or more.
+        let indexed_value_len_limit = is_raw_term_prefilter_compatible(field_name, schema)
+            .then_some(DEFAULT_REMOVE_TOKEN_LENGTH);
+        RegexExtractEqPlan::new(
+            field_name,
+            prefilter_regex,
+            pattern,
+            literal,
+            indexed_value_len_limit,
+        )
     }
 }
 
