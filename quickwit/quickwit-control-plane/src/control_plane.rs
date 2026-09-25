@@ -31,13 +31,14 @@ use quickwit_actors::{
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::uri::Uri;
-use quickwit_common::{Progress, shared_consts};
+use quickwit_common::Progress;
 use quickwit_config::{ClusterConfig, IndexConfig, IndexTemplate, SourceConfig};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadataResponseExt};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, ControlPlaneError, ControlPlaneResult,
     GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
+    ReportIndexerStateRequest, ReportIndexerStateResponse,
 };
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::IngesterStatus;
@@ -128,15 +129,12 @@ impl ControlPlane {
         let (control_plane_mailbox, control_plane_handle) =
             universe.spawn_builder().supervise_fn(move || {
                 let cluster_id = cluster_config.cluster_id.clone();
-                let shard_throughput_limit_mib: f32 = cluster_config.shard_throughput_limit.as_u64()
-                    as f32
-                    / shared_consts::MIB as f32;
                 let indexing_scheduler =
                     IndexingScheduler::new(cluster_id, self_node_id.clone(), indexer_pool.clone());
                 let ingest_controller = IngestController::new(
                     metastore.clone(),
                     ingester_pool.clone(),
-                    shard_throughput_limit_mib,
+                    cluster_config.shard_throughput_limit,
                     cluster_config.shard_scale_up_factor,
                 );
 
@@ -363,6 +361,8 @@ impl ControlPlane {
                     "shard_state": shard_entry.shard_state().as_json_str_name(),
                     "ingester_id": shard_entry.ingester_id,
                     "publish_position_inclusive": shard_entry.publish_position_inclusive(),
+                    "short_term_ingestion_rate_bytes_per_sec": shard_entry.short_term_ingestion_rate.as_u64(),
+                    "long_term_ingestion_rate_bytes_per_sec": shard_entry.long_term_ingestion_rate.as_u64(),
                 });
                 per_index_and_leader_shards_json
                     .entry(source_uid.index_uid.clone())
@@ -948,13 +948,57 @@ impl Handler<LocalShardsUpdate> for ControlPlane {
     ) -> Result<Self::Reply, ActorExitStatus> {
         if let Err(metastore_error) = self
             .ingest_controller
-            .handle_local_shards_update(local_shards_update, &mut self.model, ctx.progress())
+            .update_source_shards(
+                local_shards_update.source_uid,
+                &local_shards_update.shard_infos,
+                &mut self.model,
+                ctx.progress(),
+            )
             .await
         {
             return convert_metastore_error(metastore_error);
         }
         let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
         Ok(Ok(()))
+    }
+}
+
+#[async_trait]
+impl DeferableReplyHandler<ReportIndexerStateRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<ReportIndexerStateResponse>;
+
+    async fn handle_message(
+        &mut self,
+        request: ReportIndexerStateRequest,
+        reply: impl FnOnce(Self::Reply) + Send + Sync + 'static,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        reply(Ok(ReportIndexerStateResponse {}));
+
+        if let Some(indexing_tasks_update) = request.indexing_tasks_update {
+            self.indexing_scheduler.record_reported_tasks(
+                &request.node_id,
+                request.generation_id,
+                indexing_tasks_update.indexing_tasks,
+            );
+        }
+        if let Some(shards_update) = request.shards_update {
+            if let Err(metastore_error) = self
+                .ingest_controller
+                .handle_shards_update(
+                    &request.node_id,
+                    request.generation_id,
+                    shards_update,
+                    &mut self.model,
+                    ctx.progress(),
+                )
+                .await
+            {
+                return convert_metastore_error::<()>(metastore_error).map(|_| ());
+            }
+        }
+        let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
+        Ok(())
     }
 }
 

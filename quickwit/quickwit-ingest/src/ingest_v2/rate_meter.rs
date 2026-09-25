@@ -12,15 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use quickwit_common::tower::ConstantRate;
+use std::time::Duration;
+
+use bytesize::ByteSize;
+use quickwit_common::ring_buffer::RingBuffer;
+use quickwit_common::tower::{ConstantRate, Rate};
 use tokio::time::Instant;
+
+const SHORT_TERM_WINDOW_LEN: usize = 5;
+
+const LONG_TERM_WINDOW_LEN: usize = 60;
+
+pub(super) struct IngestionRates {
+    pub short_term: ByteSize,
+    pub long_term: ByteSize,
+}
 
 /// A naive rate meter that tracks how much work was performed during a period of time defined by
 /// two successive calls to `harvest`.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(super) struct RateMeter {
     total_work: u64,
     harvested_at: Instant,
+    short_term_rates: RingBuffer<ByteSize, SHORT_TERM_WINDOW_LEN>,
+    long_term_rates: RingBuffer<ByteSize, LONG_TERM_WINDOW_LEN>,
 }
 
 impl Default for RateMeter {
@@ -28,6 +43,8 @@ impl Default for RateMeter {
         Self {
             total_work: 0,
             harvested_at: Instant::now(),
+            short_term_rates: RingBuffer::default(),
+            long_term_rates: RingBuffer::default(),
         }
     }
 }
@@ -40,7 +57,7 @@ impl RateMeter {
 
     /// Returns the average work rate since the last call to this method and resets the internal
     /// state.
-    pub fn harvest(&mut self) -> ConstantRate {
+    fn harvest(&mut self) -> ConstantRate {
         let now = Instant::now();
         let elapsed = now.duration_since(self.harvested_at);
         let rate = ConstantRate::new(self.total_work, elapsed);
@@ -48,6 +65,25 @@ impl RateMeter {
         self.harvested_at = now;
         rate
     }
+
+    pub fn sample(&mut self) -> IngestionRates {
+        let rate = self.harvest();
+        let rate_per_sec = rate.rescale(Duration::from_secs(1)).work_bytes();
+        self.short_term_rates.push_back(rate_per_sec);
+        self.long_term_rates.push_back(rate_per_sec);
+        IngestionRates {
+            short_term: average_rate(&self.short_term_rates),
+            long_term: average_rate(&self.long_term_rates),
+        }
+    }
+}
+
+fn average_rate<const N: usize>(rates: &RingBuffer<ByteSize, N>) -> ByteSize {
+    if rates.is_empty() {
+        return ByteSize::default();
+    }
+    let sum = rates.iter().map(ByteSize::as_u64).sum::<u64>();
+    ByteSize::b(sum / rates.len() as u64)
 }
 
 #[cfg(test)]

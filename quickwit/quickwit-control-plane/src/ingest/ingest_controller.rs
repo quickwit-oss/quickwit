@@ -20,6 +20,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use bytesize::ByteSize;
 use fnv::FnvHashSet;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
@@ -27,11 +28,11 @@ use itertools::{Itertools as _, MinMaxResult};
 use quickwit_actors::Mailbox;
 use quickwit_common::Progress;
 use quickwit_common::pretty::PrettySample;
-use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
+use quickwit_ingest::{IngesterPool, ShardInfos, SourceShardReport};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, GetOrCreateOpenShardsFailureReason,
     GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
-    GetOrCreateOpenShardsSuccess,
+    GetOrCreateOpenShardsSuccess, ShardsUpdate,
 };
 use quickwit_proto::ingest::ingester::{
     CloseShardsRequest, CloseShardsResponse, IngesterService, IngesterStatus, InitShardFailure,
@@ -392,7 +393,7 @@ impl IngestController {
     pub fn new(
         metastore: MetastoreServiceClient,
         ingester_pool: IngesterPool,
-        max_shard_ingestion_throughput_mib_per_sec: f32,
+        max_shard_ingestion_throughput: ByteSize,
         shard_scale_up_factor: f32,
     ) -> Self {
         IngestController {
@@ -400,8 +401,8 @@ impl IngestController {
             ingester_pool,
             rebalance_semaphore: Arc::new(Semaphore::new(1)),
             stats: IngestControllerStats::default(),
-            scaling_arbiter: ScalingArbiter::with_max_shard_ingestion_throughput_mib_per_sec(
-                max_shard_ingestion_throughput_mib_per_sec,
+            scaling_arbiter: ScalingArbiter::with_max_shard_ingestion_throughput(
+                max_shard_ingestion_throughput,
                 shard_scale_up_factor,
             ),
         }
@@ -490,23 +491,52 @@ impl IngestController {
         }
     }
 
-    pub(crate) async fn handle_local_shards_update(
+    pub(crate) async fn handle_shards_update(
         &mut self,
-        local_shards_update: LocalShardsUpdate,
+        node_id: &str,
+        generation_id: u64,
+        shards_update: ShardsUpdate,
         model: &mut ControlPlaneModel,
         progress: &Progress,
     ) -> MetastoreResult<()> {
-        let shard_stats = model.update_shards(
-            &local_shards_update.source_uid,
-            &local_shards_update.shard_infos,
-        );
-        // The index may have been deleted since the ingester sent this update.
+        if let Some(ingester) = self.ingester_pool.get(node_id)
+            && generation_id != ingester.generation_id.as_u64()
+        {
+            return Ok(());
+        }
+        for source_shard_infos in &shards_update.shard_infos_by_source {
+            let SourceShardReport {
+                source_uid,
+                shard_infos,
+            } = source_shard_infos.into();
+
+            if let Err(metastore_error) = self
+                .update_source_shards(source_uid, &shard_infos, model, progress)
+                .await
+            {
+                if !metastore_error.is_transaction_certainly_aborted() {
+                    return Err(metastore_error);
+                }
+                error!(error=?metastore_error, "failed to update source shards");
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn update_source_shards(
+        &mut self,
+        source_uid: SourceUid,
+        shard_infos: &ShardInfos,
+        model: &mut ControlPlaneModel,
+        progress: &Progress,
+    ) -> MetastoreResult<()> {
+        let shard_stats = model.update_shards(&source_uid, shard_infos);
         let Some(min_shards) = model
-            .index_metadata(&local_shards_update.source_uid.index_uid)
+            .index_metadata(&source_uid.index_uid)
             .map(|index_metadata| index_metadata.index_config.ingest_settings.min_shards)
         else {
             warn!(
-                index_uid=%local_shards_update.source_uid.index_uid,
+                index_uid=%source_uid.index_uid,
                 "ignoring local shards update for a deleted index"
             );
             return Ok(());
@@ -517,24 +547,12 @@ impl IngestController {
         };
         match scaling_mode {
             ScalingMode::Up(num_shards) => {
-                self.try_scale_up_shards(
-                    local_shards_update.source_uid,
-                    shard_stats,
-                    model,
-                    progress,
-                    num_shards,
-                )
-                .await?;
+                self.try_scale_up_shards(source_uid, shard_stats, model, progress, num_shards)
+                    .await?;
             }
             ScalingMode::Down => {
-                self.try_scale_down_shards(
-                    local_shards_update.source_uid,
-                    shard_stats,
-                    min_shards,
-                    model,
-                    progress,
-                )
-                .await?;
+                self.try_scale_down_shards(source_uid, shard_stats, min_shards, model, progress)
+                    .await?;
             }
         }
 

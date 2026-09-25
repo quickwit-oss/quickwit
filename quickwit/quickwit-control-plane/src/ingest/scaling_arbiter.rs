@@ -14,13 +14,15 @@
 
 use std::num::NonZeroUsize;
 
+use bytesize::ByteSize;
+
 use crate::model::{ScalingMode, ShardStats};
 
 pub(crate) struct ScalingArbiter {
-    // Threshold in MiB/s below which we decrease the number of shards.
-    scale_down_shards_threshold_mib_per_sec: f32,
+    // Threshold in B/s below which we decrease the number of shards.
+    scale_down_shards_threshold: ByteSize,
 
-    // Per shard threshold in MiB/s above which we increase the number of shards.
+    // Per shard threshold in B/s above which we increase the number of shards.
     //
     // We want scaling up to be reactive, so we first inspect the short
     // term threshold.
@@ -30,23 +32,22 @@ pub(crate) struct ScalingArbiter {
     // In order to avoid having back and forth scaling up and down in response to temporary
     // punctual spikes of a few MB, we also compute what would be the long term ingestion rate
     // after scaling up, and double check that it is above the long term threshold.
-    scale_up_shards_short_term_threshold_mib_per_sec: f32,
-    scale_up_shards_long_term_threshold_mib_per_sec: f32,
+    scale_up_shards_short_term_threshold: ByteSize,
+    scale_up_shards_long_term_threshold: ByteSize,
     // The max increase factor of the number of shards in one scale up operation
     shard_scale_up_factor: f32,
 }
 
 impl ScalingArbiter {
-    pub fn with_max_shard_ingestion_throughput_mib_per_sec(
-        max_shard_throughput_mib_per_sec: f32,
+    pub fn with_max_shard_ingestion_throughput(
+        max_shard_throughput: ByteSize,
         shard_scale_up_factor: f32,
     ) -> ScalingArbiter {
+        let max_shard_throughput_bytes = max_shard_throughput.as_u64();
         ScalingArbiter {
-            scale_up_shards_short_term_threshold_mib_per_sec: max_shard_throughput_mib_per_sec
-                * 0.8f32,
-            scale_up_shards_long_term_threshold_mib_per_sec: max_shard_throughput_mib_per_sec
-                * 0.3f32,
-            scale_down_shards_threshold_mib_per_sec: max_shard_throughput_mib_per_sec * 0.2f32,
+            scale_up_shards_short_term_threshold: ByteSize::b(max_shard_throughput_bytes * 8 / 10),
+            scale_up_shards_long_term_threshold: ByteSize::b(max_shard_throughput_bytes * 3 / 10),
+            scale_down_shards_threshold: ByteSize::b(max_shard_throughput_bytes * 2 / 10),
             shard_scale_up_factor,
         }
     }
@@ -54,9 +55,10 @@ impl ScalingArbiter {
     /// Computes the maximum number of shards we can have without going below
     /// the long term scale up threshold
     fn long_term_scale_up_threshold_max_shards(&self, shard_stats: ShardStats) -> usize {
-        (shard_stats.avg_long_term_ingestion_rate * shard_stats.num_open_shards as f32
-            / self.scale_up_shards_long_term_threshold_mib_per_sec)
-            .floor() as usize
+        let total_long_term_ingestion_rate = shard_stats.avg_long_term_ingestion_rate.as_u64()
+            * shard_stats.num_open_shards as u64;
+        (total_long_term_ingestion_rate / self.scale_up_shards_long_term_threshold.as_u64())
+            as usize
     }
 
     /// Computes the next number of shards we should have according the scaling factor
@@ -75,7 +77,9 @@ impl ScalingArbiter {
     ) -> Option<ScalingMode> {
         // If ingest is idle, there is nothing to do. Idle shards are automatically closed by
         // ingesters (see `quickwit_ingest::ingest_v2::idle::CloseIdleShardsTask`).
-        if shard_stats.num_open_shards == 0 || shard_stats.avg_long_term_ingestion_rate == 0.0 {
+        if shard_stats.num_open_shards == 0
+            || shard_stats.avg_long_term_ingestion_rate == ByteSize::default()
+        {
             return None;
         }
         if shard_stats.num_open_shards < min_shards.get() {
@@ -85,9 +89,7 @@ impl ScalingArbiter {
         }
         // Scale up based on the short term metric value while making sure that
         // the long term value doesn't get near the scale down threshold.
-        if shard_stats.avg_short_term_ingestion_rate
-            >= self.scale_up_shards_short_term_threshold_mib_per_sec
-        {
+        if shard_stats.avg_short_term_ingestion_rate >= self.scale_up_shards_short_term_threshold {
             let new_calculated_num_shards = usize::min(
                 self.long_term_scale_up_threshold_max_shards(shard_stats),
                 self.scale_up_factor_target_shards(shard_stats),
@@ -103,7 +105,7 @@ impl ScalingArbiter {
         }
         // On the other hand, scale down only based on the long term metric value to avoid
         // being sensitive to very short drops in ingestion
-        if shard_stats.avg_long_term_ingestion_rate <= self.scale_down_shards_threshold_mib_per_sec
+        if shard_stats.avg_long_term_ingestion_rate <= self.scale_down_shards_threshold
             && shard_stats.num_open_shards > min_shards.get()
         {
             return Some(ScalingMode::Down);

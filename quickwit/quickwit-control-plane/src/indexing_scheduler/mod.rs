@@ -126,7 +126,13 @@ pub struct IndexingScheduler {
     self_node_id: NodeId,
     indexer_pool: IndexerPool,
     state: IndexingSchedulerState,
+    reported_tasks: FnvHashMap<NodeId, ReportedIndexingTasks>,
     pub(crate) next_rebuild_tracker: RebuildNotifier,
+}
+
+struct ReportedIndexingTasks {
+    generation_id: u64,
+    indexing_tasks: Vec<IndexingTask>,
 }
 
 impl fmt::Debug for IndexingScheduler {
@@ -206,7 +212,7 @@ fn compute_load_per_shard(shard_entries: &[&ShardEntry]) -> NonZeroU32 {
         let num_shards = shard_entries.len().max(1) as u64;
         let average_throughput_per_shard_bytes: u64 = shard_entries
             .iter()
-            .map(|shard_entry| shard_entry.long_term_ingestion_rate.0 as u64 * bytesize::MIB)
+            .map(|shard_entry| shard_entry.long_term_ingestion_rate.as_u64())
             .sum::<u64>()
             .div_ceil(num_shards)
             // A shard throughput cannot exceed PIPELINE_THROUGHPUT in the long term (this is
@@ -358,10 +364,21 @@ fn build_indexer_statuses(indexers: &[IndexerPoolEntry]) -> FnvHashMap<NodeId, I
         .collect()
 }
 
-fn build_indexer_tasks(indexers: &[IndexerPoolEntry]) -> FnvHashMap<NodeId, Vec<IndexingTask>> {
+fn build_indexer_tasks(
+    indexers: &[IndexerPoolEntry],
+    reported_tasks: &FnvHashMap<NodeId, ReportedIndexingTasks>,
+) -> FnvHashMap<NodeId, Vec<IndexingTask>> {
     indexers
         .iter()
-        .map(|indexer| (indexer.node_id.clone(), indexer.indexing_tasks.clone()))
+        .map(|indexer| {
+            let indexing_tasks = match reported_tasks.get(&indexer.node_id) {
+                Some(reported) if reported.generation_id == indexer.generation_id => {
+                    &reported.indexing_tasks
+                }
+                _ => &indexer.indexing_tasks,
+            };
+            (indexer.node_id.clone(), indexing_tasks.clone())
+        })
         .collect()
 }
 
@@ -380,12 +397,34 @@ impl IndexingScheduler {
             self_node_id,
             indexer_pool,
             state: IndexingSchedulerState::default(),
+            reported_tasks: FnvHashMap::default(),
             next_rebuild_tracker: RebuildNotifier::default(),
         }
     }
 
     pub fn observable_state(&self) -> IndexingSchedulerState {
         self.state.clone()
+    }
+
+    pub(crate) fn record_reported_tasks(
+        &mut self,
+        node_id: &str,
+        generation_id: u64,
+        indexing_tasks: Vec<IndexingTask>,
+    ) {
+        let node_id = NodeId::from_str(node_id);
+        if let Some(indexer) = self.indexer_pool.get(&node_id)
+            && generation_id < indexer.generation_id
+        {
+            return;
+        }
+        self.reported_tasks.insert(
+            node_id,
+            ReportedIndexingTasks {
+                generation_id,
+                indexing_tasks,
+            },
+        );
     }
 
     // Should be called whenever a change in the list of index/shard
@@ -424,8 +463,9 @@ impl IndexingScheduler {
         };
 
         let shard_locations = model.shard_locations();
+        let running_indexer_tasks = build_indexer_tasks(&indexers, &self.reported_tasks);
         let can_optimize_plan = is_plan_eligible_for_optimization(
-            &indexers,
+            &running_indexer_tasks,
             &indexer_statuses,
             is_locality_aware,
             &mut self.state,
@@ -499,7 +539,7 @@ impl IndexingScheduler {
             return;
         }
         let indexers: Vec<IndexerPoolEntry> = self.select_available_indexers_for_scheduling();
-        let running_indexer_tasks = build_indexer_tasks(&indexers);
+        let running_indexer_tasks = build_indexer_tasks(&indexers, &self.reported_tasks);
         let running_indexer_statuses = build_indexer_statuses(&indexers);
 
         let indexing_plans_diff = get_indexing_plans_diff(

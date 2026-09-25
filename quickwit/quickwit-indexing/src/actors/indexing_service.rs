@@ -55,7 +55,7 @@ use quickwit_proto::types::{IndexId, IndexUid, IndexingPlanId, NodeId, PipelineU
 use quickwit_storage::StorageResolver;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore, watch};
 use tracing::{debug, error, info, warn};
 
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
@@ -123,6 +123,7 @@ pub struct IndexingService {
     indexing_io_throughput_limiter_opt: Option<io::Limiter>,
     merge_io_throughput_limiter_opt: Option<io::Limiter>,
     event_broker: EventBroker,
+    indexing_tasks_tx: watch::Sender<Option<Arc<Vec<IndexingTask>>>>,
 }
 
 impl Debug for IndexingService {
@@ -152,6 +153,7 @@ impl IndexingService {
         event_broker: EventBroker,
         split_cache: Arc<IndexingSplitCache>,
         fingerprinter_opt: Option<Fingerprinter>,
+        indexing_tasks_tx: watch::Sender<Option<Arc<Vec<IndexingTask>>>>,
     ) -> anyhow::Result<IndexingService> {
         let indexing_io_throughput_limiter_opt = (*INDEXING_IO_THROUGHPUT_LIMITER).clone();
         let merge_io_throughput_limiter_opt =
@@ -185,6 +187,7 @@ impl IndexingService {
             merge_io_throughput_limiter_opt,
             cooperative_indexing_permits,
             event_broker,
+            indexing_tasks_tx,
         })
     }
 
@@ -586,7 +589,7 @@ impl IndexingService {
             .retain(|_, merge_pipeline_handle| merge_pipeline_handle.handle.state().is_running());
         self.counters.num_running_merge_pipelines = self.merge_pipeline_handles.len();
 
-        self.update_chitchat_running_plan().await;
+        self.publish_indexing_tasks();
 
         let pipeline_metrics: HashMap<&IndexingPipelineId, PipelineMetrics> = self
             .indexing_pipelines
@@ -692,7 +695,7 @@ impl IndexingService {
                 .await?;
         }
         self.assign_shards_to_pipelines(&plan_request).await;
-        self.update_chitchat_running_plan().await;
+        self.publish_indexing_tasks();
 
         if !spawn_pipeline_failures.is_empty() {
             let message =
@@ -844,8 +847,7 @@ impl IndexingService {
         }
     }
 
-    /// Broadcasts the current running plan via chitchat.
-    async fn update_chitchat_running_plan(&self) {
+    fn publish_indexing_tasks(&self) {
         let mut indexing_tasks: Vec<IndexingTask> = self
             .indexing_pipelines
             .values()
@@ -865,9 +867,9 @@ impl IndexingService {
         // TODO: Does anybody why we sort the indexing tasks by pipeline_uid here?
         indexing_tasks.sort_unstable_by_key(|task| task.pipeline_uid);
 
-        self.cluster
-            .update_self_node_indexing_tasks(&indexing_tasks)
-            .await;
+        let _ = self
+            .indexing_tasks_tx
+            .send_replace(Some(Arc::new(indexing_tasks)));
     }
 
     /// Garbage collects ingest API queues of deleted indexes.

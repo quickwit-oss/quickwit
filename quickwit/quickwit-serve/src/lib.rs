@@ -86,10 +86,10 @@ use quickwit_control_plane::{IndexerPool, IndexerPoolEntry};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
 use quickwit_indexing::actors::{IndexingService, MergeSchedulerService};
 use quickwit_indexing::models::ShardPositionsService;
-use quickwit_indexing::{IndexingSplitCache, start_indexing_service};
+use quickwit_indexing::{IndexerStateReporter, IndexingSplitCache, start_indexing_service};
 use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
-    IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout,
+    IngesterPoolEntry, LocalShardsSnapshot, LocalShardsUpdate, get_idle_shard_timeout,
     setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
     start_ingest_api_service,
 };
@@ -122,7 +122,7 @@ use quickwit_storage::{SearchSplitCache, StorageResolver};
 pub use quickwit_telemetry_exporters::{EnvFilterReloadFn, do_nothing_env_filter_reload_fn};
 pub use quickwit_transport::reload_tls_cert;
 use tcp_listener::TcpListenerResolver;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use tonic::codec::CompressionEncoding;
 use tonic_health::ServingStatus;
@@ -636,6 +636,7 @@ pub async fn serve_quickwit(
 
     let indexing_split_cache = indexing_split_cache_for_config(&node_config).await?;
 
+    let (indexing_tasks_tx, indexing_tasks_rx) = watch::channel(None);
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
         // if standalone compactors is enabled, indexing pipelines don't perform any merges.
         // if standalone compactors is disabled, indexing pipelines perform all merges as before.
@@ -657,6 +658,7 @@ pub async fn serve_quickwit(
             event_broker.clone(),
             merge_scheduler_mailbox_opt,
             split_cache,
+            indexing_tasks_tx,
         )
         .await
         .context("failed to start indexing service")?;
@@ -674,15 +676,27 @@ pub async fn serve_quickwit(
     );
 
     // Setup ingest service v2.
+    let (local_shards_tx, local_shards_rx) = watch::channel(None);
     let (ingest_router, ingest_router_service, ingester_opt) = setup_ingest_v2(
         &node_config,
         &cluster,
         &event_broker,
         control_plane_client.clone(),
         ingester_pool,
+        local_shards_tx,
     )
     .await
     .context("failed to start ingest v2 service")?;
+
+    if ingester_opt.is_some() {
+        IndexerStateReporter::start_reporting(
+            cluster.self_node_id(),
+            cluster.self_chitchat_id().generation_id,
+            local_shards_rx,
+            indexing_tasks_rx,
+            control_plane_client.clone(),
+        );
+    }
 
     if node_config.is_service_enabled(QuickwitService::Indexer)
         || node_config.is_service_enabled(QuickwitService::ControlPlane)
@@ -1125,6 +1139,7 @@ async fn setup_ingest_v2(
     event_broker: &EventBroker,
     control_plane: ControlPlaneServiceClient,
     ingester_pool: IngesterPool,
+    local_shards_tx: watch::Sender<Option<Arc<LocalShardsSnapshot>>>,
 ) -> anyhow::Result<(IngestRouter, IngestRouterServiceClient, Option<Ingester>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().to_owned();
@@ -1172,6 +1187,7 @@ async fn setup_ingest_v2(
             node_config.ingest_api_config.max_queue_memory_usage,
             rate_limiter_settings,
             idle_shard_timeout,
+            local_shards_tx,
         )
         .await?;
         ingester.subscribe(event_broker);
