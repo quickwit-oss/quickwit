@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use tantivy::columnar::Column;
+use tantivy::columnar::{Cardinality, Column};
 use tantivy::query::{
     BitSetDocSet, ConstScorer, EmptyScorer, EnableScoring, Explanation, Query, Scorer, Weight,
 };
@@ -213,6 +213,8 @@ impl RegexExtractEqWeight {
             .terms()
             .search(&self.plan.prefilter_automaton)
             .into_stream()?;
+        // A document of a single-valued column holds only the value of the term, which matches.
+        let check_first_value = ords.get_cardinality() == Cardinality::Multivalued;
         let mut num_matching_terms = 0;
         while term_stream.advance() {
             if !self.plan.value_matches(term_stream.key()) {
@@ -224,7 +226,7 @@ impl RegexExtractEqWeight {
             let mut doc = postings.doc();
             while doc != TERMINATED {
                 // A multivalued document may hold the matching value after its first value.
-                if first_value_matches(ords, matching_ords, doc) {
+                if !check_first_value || first_value_matches(ords, matching_ords, doc) {
                     doc_bitset.insert(doc);
                 }
                 doc = postings.advance();
