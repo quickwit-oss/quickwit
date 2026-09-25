@@ -68,10 +68,10 @@ jobs:
           fi
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Install Ubuntu packages
-        run: |
-          sudo apt-get update
-          sudo apt-get -y install protobuf-compiler
+      - name: Install protoc
+        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
+        with:
+          tool: protoc
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v.6.2.0
         with:
           python-version: '3.11'
@@ -101,17 +101,13 @@ jobs:
         uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
         with:
           tool: cargo-nextest
-      - name: cargo check without metrics
+      - name: cargo check
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo check --features=postgres --tests --bin quickwit
         working-directory: ./quickwit
-      - name: cargo check with metrics
-        if: always() && steps.modified.outputs.rust_src == 'true'
-        run: cargo check --features=postgres,metrics --tests --bin quickwit
-        working-directory: ./quickwit
       - name: cargo nextest
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: cargo nextest run --features=postgres,metrics --retries 1
+        run: cargo nextest run --features=postgres --retries 1
         working-directory: ./quickwit
       - name: Install python packages
         if: always() && steps.modified.outputs.rust_src == 'true'

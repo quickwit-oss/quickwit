@@ -4,6 +4,9 @@ RESULT=0
 
 for file in $(git ls-files | grep -E "src/.*\.rs$")
 do
+    if [ ! -e "$file" ]; then
+        continue
+    fi
     LOG_STARTING_WITH_UPPERCASE=$(grep -E -n "(warn|info|error|debug)!\(\"[A-Z][a-z]" $file)
     DIFFRESULT=$?
     LOG_ENDING_WITH_PERIOD=$(grep -E -n "(warn|info|error|debug)!.*\.\"\);" $file)

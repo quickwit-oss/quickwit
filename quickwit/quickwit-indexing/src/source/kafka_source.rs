@@ -21,7 +21,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use itertools::Itertools;
 use oneshot;
-use quickwit_actors::ActorExitStatus;
+use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::KafkaSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
@@ -40,11 +40,12 @@ use tokio::task::{JoinHandle, spawn_blocking};
 use tokio::time;
 use tracing::{debug, info, warn};
 
+use crate::actors::DocProcessor;
 use crate::metrics::KAFKA_REBALANCE_TOTAL;
 use crate::models::{NewPublishLock, PublishLock};
 use crate::source::{
     BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
-    SourceRuntime, SourceSink, TypedSourceFactory,
+    SourceRuntime, TypedSourceFactory,
 };
 
 type GroupId = String;
@@ -394,7 +395,7 @@ impl KafkaSource {
     async fn process_revoke_partitions(
         &mut self,
         ctx: &SourceContext,
-        source_sink: &SourceSink,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         batch: &mut BatchBuilder,
         ack_tx: oneshot::Sender<()>,
     ) -> anyhow::Result<()> {
@@ -406,9 +407,11 @@ impl KafkaSource {
         batch.clear();
         self.publish_lock = PublishLock::default();
         self.state.num_rebalances += 1;
-        source_sink
-            .send_publish_lock(NewPublishLock(self.publish_lock.clone()), ctx)
-            .await?;
+        ctx.send_message(
+            doc_processor_mailbox,
+            NewPublishLock(self.publish_lock.clone()),
+        )
+        .await?;
         Ok(())
     }
 
@@ -442,19 +445,18 @@ impl KafkaSource {
 impl Source for KafkaSource {
     async fn initialize(
         &mut self,
-        source_sink: &SourceSink,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         let publish_lock = self.publish_lock.clone();
-        source_sink
-            .send_publish_lock(NewPublishLock(publish_lock), ctx)
+        ctx.send_message(doc_processor_mailbox, NewPublishLock(publish_lock))
             .await?;
         Ok(())
     }
 
     async fn emit_batches(
         &mut self,
-        source_sink: &SourceSink,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
@@ -469,7 +471,7 @@ impl Source for KafkaSource {
                     match event {
                         KafkaEvent::Message(message) => self.process_message(message, &mut batch_builder).await?,
                         KafkaEvent::AssignPartitions { partitions, assignment_tx} => self.process_assign_partitions(ctx, &partitions, assignment_tx).await?,
-                        KafkaEvent::RevokePartitions { ack_tx } => self.process_revoke_partitions(ctx, source_sink, &mut batch_builder, ack_tx).await?,
+                        KafkaEvent::RevokePartitions { ack_tx } => self.process_revoke_partitions(ctx, doc_processor_mailbox, &mut batch_builder, ack_tx).await?,
                         KafkaEvent::PartitionEOF(partition) => self.process_partition_eof(partition),
                         KafkaEvent::Error(error) => Err(ActorExitStatus::from(error))?,
                     }
@@ -491,11 +493,11 @@ impl Source for KafkaSource {
                 "sending doc batch to indexer"
             );
             let message = batch_builder.build();
-            source_sink.send_raw_doc_batch(message, ctx).await?;
+            ctx.send_message(doc_processor_mailbox, message).await?;
         }
         if self.should_exit() {
             info!(topic = %self.topic, "reached end of topic");
-            source_sink.send_exit_with_success(ctx).await?;
+            ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
         Ok(Duration::default())
@@ -774,7 +776,7 @@ mod kafka_broker_tests {
     use crate::actors::DocProcessor;
     use crate::source::test_setup_helper::setup_index;
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{RawDocBatch, SourceActor, SourceSink, quickwit_supported_sources};
+    use crate::source::{RawDocBatch, SourceActor, quickwit_supported_sources};
 
     fn create_base_consumer(group_id: &str) -> BaseConsumer {
         ClientConfig::new()
@@ -1123,9 +1125,9 @@ mod kafka_broker_tests {
         assert!(publish_lock.is_alive());
         assert_eq!(kafka_source.state.num_rebalances, 0);
 
-        let source_sink = SourceSink::from(indexer_mailbox);
+        let doc_processor_mailbox = indexer_mailbox;
         kafka_source
-            .process_revoke_partitions(&ctx, &source_sink, &mut batch_builder, ack_tx)
+            .process_revoke_partitions(&ctx, &doc_processor_mailbox, &mut batch_builder, ack_tx)
             .await
             .unwrap();
 

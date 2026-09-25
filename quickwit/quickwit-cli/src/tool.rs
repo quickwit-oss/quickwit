@@ -41,7 +41,7 @@ use quickwit_indexing::docs_clustering::Fingerprinter;
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
-use quickwit_indexing::{BoxedPipelineHandle, IndexingSplitCache};
+use quickwit_indexing::{IndexingPipeline, IndexingSplitCache};
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::CpuCapacity;
@@ -679,13 +679,6 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
     let mut index_service = IndexService::new(metastore, storage_resolver);
 
-    if quickwit_common::is_parquet_pipeline_index(&args.index_id) {
-        let removal_info = index_service
-            .garbage_collect_parquet_index(&args.index_id, args.grace_period, args.dry_run)
-            .await?;
-        return print_parquet_gc_result(args.dry_run, removal_info);
-    }
-
     let removal_info = index_service
         .garbage_collect_index(&args.index_id, args.grace_period, args.dry_run)
         .await?;
@@ -747,58 +740,6 @@ fn print_tantivy_gc_result(
     Ok(())
 }
 
-fn print_parquet_gc_result(
-    dry_run: bool,
-    removal_info: quickwit_index_management::ParquetSplitRemovalInfo,
-) -> anyhow::Result<()> {
-    if removal_info.removed_parquet_splits_entries.is_empty()
-        && removal_info.failed_parquet_splits.is_empty()
-    {
-        println!("No dangling files to garbage collect.");
-        return Ok(());
-    }
-
-    if dry_run {
-        println!("The following files will be garbage collected.");
-        for entry in &removal_info.removed_parquet_splits_entries {
-            println!(" - {}.parquet", entry.split_id);
-        }
-        return Ok(());
-    }
-
-    if !removal_info.failed_parquet_splits.is_empty() {
-        println!("The following splits were attempted to be removed, but failed.");
-        for split in &removal_info.failed_parquet_splits {
-            println!(" - {}", split.split_id);
-        }
-        println!(
-            "{} Splits were unable to be removed.",
-            removal_info.failed_parquet_splits.len()
-        );
-    }
-
-    println!(
-        "{}MB of storage garbage collected.",
-        removal_info.removed_bytes() / 1_000_000
-    );
-
-    if removal_info.failed_parquet_splits.is_empty() {
-        println!(
-            "{} Index successfully garbage collected.",
-            "✔".color(GREEN_COLOR)
-        );
-    } else if removal_info.removed_parquet_splits_entries.is_empty() {
-        println!("{} Failed to garbage collect index.", "✘".color(RED_COLOR));
-    } else {
-        println!(
-            "{} Index partially garbage collected.",
-            "✘".color(RED_COLOR)
-        );
-    }
-
-    Ok(())
-}
-
 async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     debug!(args=?args, "extract-split");
     println!("❯ Extracting split...");
@@ -831,7 +772,7 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
 /// Starts a tokio task that displays the indexing statistics
 /// every once in awhile.
 pub async fn start_statistics_reporting_loop(
-    pipeline_handle: BoxedPipelineHandle,
+    pipeline_handle: ActorHandle<IndexingPipeline>,
     is_stdin: bool,
 ) -> anyhow::Result<IndexingStatistics> {
     let mut stdout_handle = stdout();
