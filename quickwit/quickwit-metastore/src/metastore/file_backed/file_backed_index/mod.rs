@@ -333,6 +333,17 @@ impl FileBackedIndex {
         Ok(())
     }
 
+    /// Stages a split only when its ID is absent, preserving any concurrent writer's row.
+    pub(crate) fn stage_split_create_only(
+        &mut self,
+        split_metadata: SplitMetadata,
+    ) -> Result<(), MetastoreError> {
+        if self.splits.contains_key(split_metadata.split_id()) {
+            return Ok(());
+        }
+        self.stage_split(split_metadata)
+    }
+
     /// Marks the splits for deletion. Returns whether a mutation occurred.
     pub(crate) fn mark_splits_for_deletion(
         &mut self,

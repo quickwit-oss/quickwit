@@ -679,6 +679,7 @@ impl MetastoreService for PostgresqlMetastore {
     #[instrument(name = "metastore.postgres.stage_splits", skip_all, fields(split_ids))]
     async fn stage_splits(&self, request: StageSplitsRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid: IndexUid = request.index_uid().clone();
+        let create_only = request.create_only;
         let splits_metadata = request.deserialize_splits_metadata()?;
 
         if splits_metadata.is_empty() {
@@ -745,7 +746,9 @@ impl MetastoreService for PostgresqlMetastore {
                         node_id = excluded.node_id,
                         update_timestamp = CURRENT_TIMESTAMP,
                         create_timestamp = CURRENT_TIMESTAMP
-                    WHERE splits.split_id = excluded.split_id AND splits.split_state = 'Staged'
+                    WHERE splits.split_id = excluded.split_id
+                      AND splits.split_state = 'Staged'
+                      AND NOT $11
                 RETURNING split_id;
                 "#)
                 .bind(&split_ids)
@@ -758,11 +761,12 @@ impl MetastoreService for PostgresqlMetastore {
                 .bind(&node_ids)
                 .bind(SplitState::Staged.as_str())
                 .bind(&index_uid)
+                .bind(create_only)
                 .fetch_all(tx.as_mut())
                 .await
                 .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
 
-            if upserted_split_ids.len() != split_ids.len() {
+            if !create_only && upserted_split_ids.len() != split_ids.len() {
                 let failed_split_ids: Vec<String> = split_ids
                     .into_iter()
                     .filter(|split_id| !upserted_split_ids.contains(split_id))
