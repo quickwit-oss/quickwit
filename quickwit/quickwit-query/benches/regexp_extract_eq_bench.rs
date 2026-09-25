@@ -124,18 +124,30 @@ fn eq_extract_expression(pattern: &str) -> String {
 fn bench_pair(c: &mut Criterion, group_name: &str, index: &Arc<BenchIndex>, expression: &str) {
     let calc = calc_field(expression);
     let jit_ast: QueryAst = calc.clone().into();
+    let prefilter_ast: QueryAst = calc
+        .try_prefilter_regex_query(&index.schema)
+        .expect("expression should be eligible for prefilter")
+        .into();
     let optimized = prefilter_conjunction(calc, &index.schema);
     let jit_query = build_query(&jit_ast, &index.schema);
+    let prefilter_query = build_query(&prefilter_ast, &index.schema);
     let opt_query = build_query(&optimized, &index.schema);
 
     let searcher = index.searcher();
     let jit_hits = search_count(&searcher, &*jit_query);
+    let prefilter_hits = search_count(&searcher, &*prefilter_query);
     let opt_hits = search_count(&searcher, &*opt_query);
     assert_eq!(jit_hits, opt_hits, "prefilter∧JIT must match JIT hits");
+    assert!(prefilter_hits >= jit_hits, "prefilter must be a superset");
     assert!(jit_hits > 0, "bench query must match at least one doc");
+    println!("{group_name}: jit_hits={jit_hits} prefilter_hits={prefilter_hits}");
 
     let mut group = c.benchmark_group(group_name);
     group.throughput(Throughput::Elements(NUM_DOCS));
+    group.bench_function("prefilter_only", |b| {
+        let searcher = index.searcher();
+        b.iter(|| std::hint::black_box(search_count(&searcher, &*prefilter_query)));
+    });
     group.bench_function("jit_only", |b| {
         let searcher = index.searcher();
         b.iter(|| std::hint::black_box(search_count(&searcher, &*jit_query)));

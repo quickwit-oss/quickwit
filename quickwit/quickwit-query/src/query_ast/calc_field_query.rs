@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use anyhow::Context as _;
+use regex_syntax::ast::{self, AssertionKind, Ast};
 use serde::{Deserialize, Serialize};
 use tantivy::jitexpr::ast::{Function, Literal, UntypedExpr};
 use tantivy::query::doc_predicate_query::{DocPredicateQuery, JitExprPredicate};
@@ -143,32 +144,41 @@ fn is_fast_indexed_raw_string_field(field_name: &str, schema: &TantivySchema) ->
 /// Builds an FST whole-term regex that is a *superset* of terms for which
 /// `EQ(REGEXP_EXTRACT(..., pattern, 1), literal)` holds.
 ///
-/// Replaces the single `(...)` group with the escaped literal. Rejects special
-/// groups and nested/extra parentheses. Requires the equality literal to match
-/// the capture subpattern (otherwise EQ is always false).
+/// Parses `pattern` with [`regex_syntax`], requires exactly one capturing group
+/// as a top-level concatenation child (no nested/extra captures), replaces that
+/// group with the escaped literal, and requires the literal to match the capture
+/// subpattern (otherwise EQ is always false).
 ///
-/// Tantivy FST regexes match whole terms and reject `^`/`$`, so anchors are stripped.
-/// Missing sides are wrapped with `.*`.
+/// Tantivy FST regexes match whole terms and reject `^`/`$`, so start/end anchors
+/// are stripped. Missing sides are wrapped with `.*`.
+/// Builds an FST whole-term regex that is a *superset* of terms for which
+/// `EQ(REGEXP_EXTRACT(..., pattern, 1), literal)` holds.
+///
+/// Parses `pattern` with [`regex_syntax`], requires exactly one capturing group,
+/// replaces that group with the escaped literal, and requires the literal to
+/// match the capture subpattern (otherwise EQ is always false).
+///
+/// Tantivy FST regexes match whole terms and reject `^`/`$`, so start/end anchors
+/// are stripped. Missing sides are wrapped with `.*`.
 fn substitute_single_capture(pattern: &str, literal: &str) -> Option<String> {
-    let anchored_start = pattern.starts_with('^');
-    let anchored_end = pattern.ends_with('$');
-    let body = match (anchored_start, anchored_end) {
-        (true, true) => &pattern[1..pattern.len() - 1],
-        (true, false) => &pattern[1..],
-        (false, true) => &pattern[..pattern.len() - 1],
-        (false, false) => pattern,
+    let ast = ast::parse::Parser::new().parse(pattern).ok()?;
+    let group = {
+        let mut groups = Vec::new();
+        collect_capturing_groups(&ast, &mut groups);
+        match groups.as_slice() {
+            [group] => *group,
+            _ => return None,
+        }
     };
 
-    let open = body.find('(')?;
-    let close = body[open + 1..].find(')')? + open + 1;
-    // Reject `(?:...)` / other special groups, nested parentheses, and a second group.
-    if body.as_bytes().get(open + 1) == Some(&b'?')
-        || body[open + 1..close].contains(['(', ')'])
-        || body[close + 1..].contains('(')
-    {
+    let (body_start, body_end, anchored_start, anchored_end) = body_bounds(&ast, pattern.len());
+    let group_start = group.span.start.offset;
+    let group_end = group.span.end.offset;
+    if group_start < body_start || group_end > body_end {
         return None;
     }
-    let capture = &body[open + 1..close];
+
+    let capture = &pattern[group.ast.span().start.offset..group.ast.span().end.offset];
     // Impossible EQ: literal outside the capture class.
     let capture_re = regex::Regex::new(&format!("^(?:{capture})$")).ok()?;
     if !capture_re.is_match(literal) {
@@ -184,13 +194,69 @@ fn substitute_single_capture(pattern: &str, literal: &str) -> Option<String> {
     if !anchored_start {
         rewritten.push_str(".*");
     }
-    rewritten.push_str(&body[..open]);
-    rewritten.push_str(&regex::escape(literal));
-    rewritten.push_str(&body[close + 1..]);
+    rewritten.push_str(&pattern[body_start..group_start]);
+    rewritten.push_str(&regex_syntax::escape(literal));
+    rewritten.push_str(&pattern[group_end..body_end]);
     if !anchored_end {
         rewritten.push_str(".*");
     }
     Some(rewritten)
+}
+
+/// Byte range of `pattern` after stripping a leading `^`/`\A` and trailing `$`/`\z`.
+fn body_bounds(ast: &Ast, pattern_len: usize) -> (usize, usize, bool, bool) {
+    let parts: Vec<&Ast> = match ast {
+        Ast::Concat(concat) => concat.asts.iter().collect(),
+        _ => vec![ast],
+    };
+
+    let mut body_start = 0;
+    let mut body_end = pattern_len;
+    let mut anchored_start = false;
+    let mut anchored_end = false;
+
+    if let Some(Ast::Assertion(assertion)) = parts.first() {
+        if matches!(
+            assertion.kind,
+            AssertionKind::StartLine | AssertionKind::StartText
+        ) {
+            anchored_start = true;
+            body_start = assertion.span.end.offset;
+        }
+    }
+    if let Some(Ast::Assertion(assertion)) = parts.last() {
+        if matches!(
+            assertion.kind,
+            AssertionKind::EndLine | AssertionKind::EndText
+        ) {
+            anchored_end = true;
+            body_end = assertion.span.start.offset;
+        }
+    }
+    (body_start, body_end, anchored_start, anchored_end)
+}
+
+fn collect_capturing_groups<'a>(ast: &'a Ast, groups: &mut Vec<&'a ast::Group>) {
+    match ast {
+        Ast::Group(group) => {
+            if group.is_capturing() {
+                groups.push(group);
+            }
+            collect_capturing_groups(&group.ast, groups);
+        }
+        Ast::Repetition(repetition) => collect_capturing_groups(&repetition.ast, groups),
+        Ast::Alternation(alternation) => {
+            for child in &alternation.asts {
+                collect_capturing_groups(child, groups);
+            }
+        }
+        Ast::Concat(concat) => {
+            for child in &concat.asts {
+                collect_capturing_groups(child, groups);
+            }
+        }
+        _ => {}
+    }
 }
 
 mod jitexpr_serde {
