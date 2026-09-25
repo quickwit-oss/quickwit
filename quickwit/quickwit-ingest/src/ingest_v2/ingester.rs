@@ -41,14 +41,16 @@ use quickwit_proto::types::{
     IndexUid, NodeId, Position, QueueId, ShardId, SourceId, SubrequestId, queue_id, split_queue_id,
 };
 use serde_json::{Value as JsonValue, json};
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore, watch};
 use tokio::time::{sleep, timeout};
 use tracing::{Span, debug, error, info, instrument, warn};
 
-use super::broadcast::{BroadcastIngesterCapacityScoreTask, BroadcastLocalShardsTask};
+use super::broadcast::BroadcastIngesterCapacityScoreTask;
 use super::doc_mapper::validate_doc_batch;
 use super::fetch::FetchStreamTask;
 use super::idle::CloseIdleShardsTask;
+use super::local_shards::LocalShardsSnapshot;
+use super::metrics::report_local_shards_metrics;
 use super::models::IngesterShard;
 use super::mrecordlog_utils::{
     AppendDocBatchError, append_non_empty_doc_batch, check_enough_capacity, wal_stats,
@@ -170,6 +172,7 @@ impl Ingester {
         memory_capacity: ByteSize,
         rate_limiter_settings: RateLimiterSettings,
         idle_shard_timeout: Duration,
+        local_shards_tx: watch::Sender<Option<Arc<LocalShardsSnapshot>>>,
     ) -> IngestV2Result<Self> {
         let self_node_id: NodeId = cluster.self_node_id();
         let state = IngesterState::load(
@@ -178,11 +181,12 @@ impl Ingester {
             disk_capacity,
             memory_capacity,
             rate_limiter_settings,
+            local_shards_tx,
         )
         .await;
 
         let weak_state = state.weak();
-        BroadcastLocalShardsTask::spawn(cluster.clone(), weak_state.clone());
+        state.spawn_local_shards_publisher();
         BroadcastIngesterCapacityScoreTask::spawn(cluster, weak_state.clone());
         CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
 
@@ -676,8 +680,12 @@ impl Ingester {
             .wal_capacity_tracker
             .score(ByteSize::b(disk_used), ByteSize::b(memory_used))
             as u32;
+        let local_shards = state_guard.publish_local_shards();
         drop(state_guard);
 
+        if let Some(snapshot) = local_shards {
+            report_local_shards_metrics(&snapshot);
+        }
         if disk_used >= self.disk_capacity.as_u64() * 90 / 100 {
             self.background_reset_shards();
         }

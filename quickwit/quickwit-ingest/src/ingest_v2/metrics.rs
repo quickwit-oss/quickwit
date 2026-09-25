@@ -19,6 +19,9 @@ use quickwit_metrics::{
     LabelNames, LazyCounter, LazyGauge, LazyHistogram, label_names, lazy_counter, lazy_gauge,
     lazy_histogram,
 };
+use quickwit_proto::ingest::ShardState;
+
+use super::local_shards::LocalShardsSnapshot;
 
 pub(super) const STATUS: LabelNames<1> = label_names!("status");
 
@@ -215,6 +218,25 @@ pub(crate) static WAL_BYTES_WRITTEN_TRUNCATE: LazyCounter =
 pub(super) fn report_wal_limits(disk_capacity: ByteSize, memory_capacity: ByteSize) {
     WAL_DISK_LIMIT_BYTES.set(disk_capacity.as_u64() as f64);
     WAL_MEMORY_LIMIT_BYTES.set(memory_capacity.as_u64() as f64);
+}
+
+pub(super) fn report_local_shards_metrics(snapshot: &LocalShardsSnapshot) {
+    let mut num_open_shards = 0;
+    let mut num_closed_shards = 0;
+
+    for shard_infos in snapshot.per_source_shard_infos.values() {
+        for shard_info in shard_infos {
+            match shard_info.shard_state {
+                ShardState::Open => num_open_shards += 1,
+                ShardState::Closed => num_closed_shards += 1,
+                ShardState::Unavailable | ShardState::Unspecified => {}
+            }
+            SHARD_ST_THROUGHPUT_MIB.observe(shard_info.short_term_ingestion_rate.as_mib().ceil());
+            SHARD_LT_THROUGHPUT_MIB.observe(shard_info.long_term_ingestion_rate.as_mib().ceil());
+        }
+    }
+    OPEN_SHARDS.set(num_open_shards as f64);
+    CLOSED_SHARDS.set(num_closed_shards as f64);
 }
 
 pub(super) fn report_wal_usage(

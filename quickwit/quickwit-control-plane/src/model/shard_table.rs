@@ -17,11 +17,12 @@ use std::collections::{BTreeSet, HashMap};
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
+use bytesize::ByteSize;
 use fnv::{FnvHashMap, FnvHashSet};
 use quickwit_common::metrics::index_label;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::tower::ConstantRate;
-use quickwit_ingest::{RateMibPerSec, ShardInfo, ShardInfos};
+use quickwit_ingest::{ShardInfo, ShardInfos};
 use quickwit_metrics::{gauge, label_values};
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::types::{IndexUid, NodeId, NodeIdRef, ShardId, SourceId, SourceUid};
@@ -54,8 +55,8 @@ pub(crate) enum ScalingMode {
 #[derive(Debug, Clone)]
 pub(crate) struct ShardEntry {
     pub shard: Shard,
-    pub short_term_ingestion_rate: RateMibPerSec,
-    pub long_term_ingestion_rate: RateMibPerSec,
+    pub short_term_ingestion_rate: ByteSize,
+    pub long_term_ingestion_rate: ByteSize,
 }
 
 impl Deref for ShardEntry {
@@ -76,8 +77,8 @@ impl From<Shard> for ShardEntry {
     fn from(shard: Shard) -> Self {
         Self {
             shard,
-            short_term_ingestion_rate: RateMibPerSec::default(),
-            long_term_ingestion_rate: RateMibPerSec::default(),
+            short_term_ingestion_rate: ByteSize::default(),
+            long_term_ingestion_rate: ByteSize::default(),
         }
     }
 }
@@ -109,27 +110,27 @@ impl ShardTableEntry {
     fn shards_stats(&self) -> ShardStats {
         let mut num_open_shards = 0;
         let mut num_closed_shards = 0;
-        let mut short_term_ingestion_rate_sum = 0;
-        let mut long_term_ingestion_rate_sum = 0;
+        let mut short_term_ingestion_rate_sum = ByteSize::default();
+        let mut long_term_ingestion_rate_sum = ByteSize::default();
 
         for shard_entry in self.shard_entries.values() {
             if shard_entry.is_open() {
                 num_open_shards += 1;
-                short_term_ingestion_rate_sum += shard_entry.short_term_ingestion_rate.0 as usize;
-                long_term_ingestion_rate_sum += shard_entry.long_term_ingestion_rate.0 as usize;
+                short_term_ingestion_rate_sum += shard_entry.short_term_ingestion_rate;
+                long_term_ingestion_rate_sum += shard_entry.long_term_ingestion_rate;
             } else if shard_entry.is_closed() {
                 num_closed_shards += 1;
             }
         }
         let avg_short_term_ingestion_rate = if num_open_shards > 0 {
-            short_term_ingestion_rate_sum as f32 / num_open_shards as f32
+            ByteSize::b(short_term_ingestion_rate_sum.as_u64() / num_open_shards as u64)
         } else {
-            0.0
+            ByteSize::default()
         };
         let avg_long_term_ingestion_rate = if num_open_shards > 0 {
-            long_term_ingestion_rate_sum as f32 / num_open_shards as f32
+            ByteSize::b(long_term_ingestion_rate_sum.as_u64() / num_open_shards as u64)
         } else {
-            0.0
+            ByteSize::default()
         };
         ShardStats {
             num_open_shards,
@@ -601,10 +602,10 @@ impl ShardTable {
 pub(crate) struct ShardStats {
     pub num_open_shards: usize,
     pub num_closed_shards: usize,
-    /// Average short-term ingestion rate (MiB/s) over all open shards.
-    pub avg_short_term_ingestion_rate: f32,
-    /// Average long-term ingestion rate (MiB/s) over all open shards.
-    pub avg_long_term_ingestion_rate: f32,
+    /// Average short-term ingestion rate (B/s) over all open shards.
+    pub avg_short_term_ingestion_rate: ByteSize,
+    /// Average long-term ingestion rate (B/s) over all open shards.
+    pub avg_long_term_ingestion_rate: ByteSize,
 }
 
 #[cfg(test)]
