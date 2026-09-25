@@ -225,9 +225,25 @@ pub struct IndexerConfig {
     /// can't handle mixed prefix lengths.
     #[serde(default = "IndexerConfig::default_parquet_merge_use_streaming_engine")]
     pub parquet_merge_use_streaming_engine: bool,
+    #[serde(default = "IndexerConfig::default_shutdown_drain_timeout")]
+    pub shutdown_drain_timeout: HumanDuration,
 }
 
 impl IndexerConfig {
+    /// Returns the shutdown drain timeout, as defined in the environment variable or in
+    /// the configuration, in that order (the environment variable overrides the configuration).
+    pub fn shutdown_drain_timeout(&self) -> Duration {
+        quickwit_common::get_duration_from_env(
+            "QW_INDEXER_SHUTDOWN_DRAIN_TIMEOUT",
+            Duration::from(self.shutdown_drain_timeout.clone()),
+        )
+    }
+
+    fn default_shutdown_drain_timeout() -> HumanDuration {
+        HumanDuration::try_from("300s".to_string())
+            .expect("`300s` should be a valid human duration")
+    }
+
     fn default_enable_cooperative_indexing() -> bool {
         false
     }
@@ -280,6 +296,7 @@ impl IndexerConfig {
             max_merge_write_throughput: None,
             merge_concurrency: NonZeroUsize::new(3).unwrap(),
             parquet_merge_use_streaming_engine: Self::default_parquet_merge_use_streaming_engine(),
+            shutdown_drain_timeout: Self::default_shutdown_drain_timeout(),
         };
         Ok(indexer_config)
     }
@@ -297,6 +314,7 @@ impl Default for IndexerConfig {
             merge_concurrency: Self::default_merge_concurrency(),
             max_merge_write_throughput: None,
             parquet_merge_use_streaming_engine: Self::default_parquet_merge_use_streaming_engine(),
+            shutdown_drain_timeout: Self::default_shutdown_drain_timeout(),
         }
     }
 }
