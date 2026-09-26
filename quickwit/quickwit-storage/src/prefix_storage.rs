@@ -59,6 +59,36 @@ impl Storage for PrefixStorage {
         self.storage.put(&self.prefix.join(path), payload).await
     }
 
+    async fn put_if_absent(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayload>,
+    ) -> crate::StorageResult<Option<crate::ObjectVersion>> {
+        self.storage
+            .put_if_absent(&self.prefix.join(path), payload)
+            .await
+    }
+
+    async fn put_if_version_matches(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayload>,
+        expected_version: &crate::ObjectVersion,
+    ) -> crate::StorageResult<Option<crate::ObjectVersion>> {
+        self.storage
+            .put_if_version_matches(&self.prefix.join(path), payload, expected_version)
+            .await
+    }
+
+    async fn get_all_with_version(
+        &self,
+        path: &Path,
+    ) -> crate::StorageResult<(OwnedBytes, Option<crate::ObjectVersion>)> {
+        self.storage
+            .get_all_with_version(&self.prefix.join(path))
+            .await
+    }
+
     async fn copy_to(
         &self,
         path: &Path,
