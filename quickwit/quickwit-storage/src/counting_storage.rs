@@ -23,7 +23,9 @@ use tantivy::directory::OwnedBytes;
 use tokio::io::AsyncRead;
 
 use crate::storage::SendableAsync;
-use crate::{BulkDeleteError, ListObjectsStream, PutPayload, Storage, StorageResult};
+use crate::{
+    BulkDeleteError, ListObjectsStream, ObjectVersion, PutPayload, Storage, StorageResult,
+};
 
 /// Per-request download counters tracked by [`CountingStorage`].
 ///
@@ -91,6 +93,34 @@ impl Storage for CountingStorage {
 
     async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()> {
         self.inner.put(path, payload).await
+    }
+
+    // Conditional writes are delegated like `put`: the counters track bytes, and a failed
+    // precondition writes nothing to count.
+    async fn put_if_absent(
+        &self,
+        path: &Path,
+        payload: Box<dyn PutPayload>,
+    ) -> StorageResult<Option<ObjectVersion>> {
+        self.inner.put_if_absent(path, payload).await
+    }
+
+    async fn put_if_version_matches(
+        &self,
+        path: &Path,
+        payload: Box<dyn PutPayload>,
+        expected_version: &ObjectVersion,
+    ) -> StorageResult<Option<ObjectVersion>> {
+        self.inner
+            .put_if_version_matches(path, payload, expected_version)
+            .await
+    }
+
+    async fn get_all_with_version(
+        &self,
+        path: &Path,
+    ) -> StorageResult<(OwnedBytes, Option<ObjectVersion>)> {
+        self.inner.get_all_with_version(path).await
     }
 
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
@@ -162,7 +192,39 @@ impl Storage for CountingStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::RamStorageBuilder;
+    use crate::{RamStorageBuilder, StorageErrorKind};
+
+    /// A wrapper must not silently drop the conditional-write capability: a shared metastore put
+    /// behind one would otherwise fail every write instead of sharing safely.
+    #[tokio::test]
+    async fn test_counting_storage_forwards_conditional_writes() -> anyhow::Result<()> {
+        let inner = RamStorageBuilder::default().build();
+        let (storage, _counters) = CountingStorage::instrument_storage(Arc::new(inner));
+
+        let path = Path::new("metastore.json");
+        let version = storage
+            .put_if_absent(path, Box::new(b"v1".to_vec()))
+            .await?
+            .expect("the wrapped storage versions objects");
+        assert_eq!(
+            storage
+                .put_if_absent(path, Box::new(b"v2".to_vec()))
+                .await
+                .unwrap_err()
+                .kind(),
+            StorageErrorKind::PreconditionFailed
+        );
+
+        let (bytes, read_version) = storage.get_all_with_version(path).await?;
+        assert_eq!(&bytes, &b"v1"[..]);
+
+        storage
+            .put_if_version_matches(path, Box::new(b"v2".to_vec()), &version)
+            .await?;
+        assert_ne!(read_version, None);
+        assert_eq!(&storage.get_all(path).await?, &b"v2"[..]);
+        Ok(())
+    }
 
     #[tokio::test]
     async fn test_counting_storage_counts_get_slice() {

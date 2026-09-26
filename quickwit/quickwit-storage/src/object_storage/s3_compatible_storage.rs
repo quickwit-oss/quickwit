@@ -106,6 +106,15 @@ pub struct S3CompatibleObjectStorage {
     checksum_algorithm: quickwit_config::ChecksumAlgorithm,
 }
 
+/// Precondition attached to a conditional single-part PUT.
+#[derive(Clone, Debug)]
+enum PutCondition {
+    /// `If-None-Match: *` — succeeds only if the object does not exist yet.
+    IfAbsent,
+    /// `If-Match: <etag>` — succeeds only if the stored object still has this version.
+    IfVersion(String),
+}
+
 impl fmt::Debug for S3CompatibleObjectStorage {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
@@ -398,7 +407,8 @@ impl S3CompatibleObjectStorage {
         key: &'a str,
         payload: Box<dyn crate::PutPayload>,
         len: u64,
-    ) -> Result<(), Retry<StorageError>> {
+        condition_opt: Option<PutCondition>,
+    ) -> Result<Option<String>, Retry<StorageError>> {
         // For MD5 uploads, compute Content-MD5 before streaming the body.
         // The AWS SDK no-ops ChecksumAlgorithm::Md5, so MD5 must be sent via
         // the legacy Content-MD5 header (same as the multipart path does per part).
@@ -417,14 +427,24 @@ impl S3CompatibleObjectStorage {
         crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(len);
         let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_PUT_OBJECT_DURATION);
 
-        self.s3_client
+        let put_object_request = self
+            .s3_client
             .put_object()
             .bucket(bucket)
             .key(key)
             .body(body)
             .content_length(len as i64)
             .set_checksum_algorithm(aws_checksum_algorithm(self.checksum_algorithm))
-            .set_content_md5(content_md5)
+            .set_content_md5(content_md5);
+        // Conditional headers turn the PUT into a compare-and-swap. They are only defined for a
+        // single-part upload, which is why callers of the conditional API reject payloads that
+        // would go through multipart.
+        let put_object_request = match condition_opt {
+            None => put_object_request,
+            Some(PutCondition::IfAbsent) => put_object_request.if_none_match("*"),
+            Some(PutCondition::IfVersion(etag)) => put_object_request.if_match(etag),
+        };
+        let output = put_object_request
             .send()
             .await
             .inspect_err(|error| {
@@ -441,7 +461,7 @@ impl S3CompatibleObjectStorage {
                     Retry::Permanent(StorageError::from(sdk_error))
                 }
             })?;
-        Ok(())
+        Ok(output.e_tag().map(str::to_string))
     }
 
     #[tracing::instrument(skip_all)]
@@ -453,12 +473,55 @@ impl S3CompatibleObjectStorage {
     ) -> StorageResult<()> {
         let bucket = &self.bucket;
         aws_retry(&self.retry_params, || async {
-            self.put_single_part_single_try(bucket, key, payload.clone(), len)
+            self.put_single_part_single_try(bucket, key, payload.clone(), len, None)
                 .await
         })
         .await
         .map_err(|error| error.into_inner())?;
         Ok(())
+    }
+
+    /// Writes `payload` under a precondition, using a single `PutObject` call.
+    ///
+    /// Hidden contract: every conditional write has to fit in one part. Multipart uploads carry no
+    /// conditional headers, so a larger payload is rejected instead of being written
+    /// unconditionally behind the caller's back.
+    async fn put_single_part_conditional(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayload>,
+        condition: PutCondition,
+    ) -> StorageResult<Option<crate::ObjectVersion>> {
+        let key = self.key(path);
+        let total_len = payload.len();
+        let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
+        let would_use_multipart = !self.disable_multipart_upload && part_num_bytes < total_len;
+        if would_use_multipart {
+            return Err(StorageErrorKind::Unsupported.with_error(anyhow!(
+                "conditional writes must fit in a single PUT, but the {total_len}-byte payload \
+                 for `{}` exceeds the multipart threshold",
+                path.display(),
+            )));
+        }
+        // A conditional write is a PUT request like any other: count it here, otherwise
+        // `object_storage_puts_total` would miss every compare-and-swap write and operators would
+        // under-count the requests they pay for on a shared metastore. The rejection above happens
+        // before any request is sent, so it is deliberately not counted.
+        crate::metrics::OBJECT_STORAGE_PUT_TOTAL.inc();
+        let _permit = REQUEST_SEMAPHORE.acquire().await;
+        let e_tag = aws_retry(&self.retry_params, || async {
+            self.put_single_part_single_try(
+                &self.bucket,
+                &key,
+                payload.clone(),
+                total_len,
+                Some(condition.clone()),
+            )
+            .await
+        })
+        .await
+        .map_err(|error| error.into_inner())?;
+        Ok(e_tag.map(crate::ObjectVersion::new))
     }
 
     async fn create_multipart_upload(&self, key: &str) -> StorageResult<MultipartUploadId> {
@@ -938,6 +1001,51 @@ impl Storage for S3CompatibleObjectStorage {
             crate::metrics::OBJECT_STORAGE_PUT_ERRORS_TOTAL.inc();
         }
         put_result
+    }
+
+    #[instrument(name = "storage.s3.put_if_absent", level = "debug", skip(self, payload), fields(payload_len = payload.len()))]
+    async fn put_if_absent(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayload>,
+    ) -> crate::StorageResult<Option<crate::ObjectVersion>> {
+        self.put_single_part_conditional(path, payload, PutCondition::IfAbsent)
+            .await
+    }
+
+    #[instrument(name = "storage.s3.put_if_version_matches", level = "debug", skip(self, payload), fields(payload_len = payload.len()))]
+    async fn put_if_version_matches(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayload>,
+        expected_version: &crate::ObjectVersion,
+    ) -> crate::StorageResult<Option<crate::ObjectVersion>> {
+        let condition = PutCondition::IfVersion(expected_version.as_str().to_string());
+        self.put_single_part_conditional(path, payload, condition)
+            .await
+    }
+
+    #[instrument(name = "storage.s3.get_all_with_version", level = "debug", skip(self))]
+    async fn get_all_with_version(
+        &self,
+        path: &Path,
+    ) -> crate::StorageResult<(OwnedBytes, Option<crate::ObjectVersion>)> {
+        let _permit = REQUEST_SEMAPHORE.acquire().await;
+        let get_object_output = aws_retry(&self.retry_params, || self.get_object(path, None))
+            .await
+            .map_err(StorageError::from)
+            .map_err(|err| {
+                err.add_context(format!(
+                    "failed to fetch object: {}/{}",
+                    self.uri,
+                    path.display()
+                ))
+            })?;
+        // `e_tag()` is always set by S3-compatible stores; keeping it optional here would push a
+        // meaningless `None` case onto every caller.
+        let version = get_object_output.e_tag().map(crate::ObjectVersion::new);
+        let bytes = download_all(get_object_output.body).await?;
+        Ok((into_owned_bytes(bytes), version))
     }
 
     #[instrument(name = "storage.s3.copy_to", level = "debug", skip(self, output))]
@@ -1759,6 +1867,64 @@ mod tests {
                 .body(SdkBody::empty())
                 .unwrap(),
         )
+    }
+
+    /// A compare-and-swap write is still a PUT request: it must show up in the request counters,
+    /// otherwise the cost of a shared metastore is invisible to operators.
+    #[tokio::test]
+    async fn test_conditional_put_is_counted_as_a_put() {
+        let client = StaticReplayClient::new(vec![ok_put_response()]);
+        let s3_storage =
+            make_s3_storage_with_replay(client.clone(), quickwit_config::ChecksumAlgorithm::Crc32c);
+        // Counters are process-global and tests run in parallel, so assert on the delta.
+        let puts_before = crate::metrics::OBJECT_STORAGE_PUT_TOTAL.get();
+        s3_storage
+            .put_if_absent(Path::new("test-key"), Box::new(vec![1u8, 2, 3]))
+            .await
+            .unwrap();
+        let requests = client.actual_requests().collect::<Vec<_>>();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            requests[0].headers().get("if-none-match").unwrap(),
+            "*",
+            "the conditional write must send the precondition header"
+        );
+        assert!(
+            crate::metrics::OBJECT_STORAGE_PUT_TOTAL.get() - puts_before >= 1,
+            "a conditional write is a PUT and must be counted by object_storage_puts_total"
+        );
+    }
+
+    /// A conditional write that is rejected before any request is sent must not send a request.
+    ///
+    /// The assertion is on the requests the client actually saw rather than on
+    /// `object_storage_puts_total`: the counters are process-global and other tests in this module
+    /// upload objects concurrently, so their delta cannot be attributed to this test.
+    #[tokio::test]
+    async fn test_rejected_conditional_put_sends_no_request() {
+        let client = StaticReplayClient::new(vec![]);
+        let mut s3_storage =
+            make_s3_storage_with_replay(client.clone(), quickwit_config::ChecksumAlgorithm::Crc32c);
+        s3_storage.disable_multipart_upload = false;
+        // Small policy so a tiny payload already needs a multipart upload.
+        s3_storage.multipart_policy = MultiPartPolicy {
+            target_part_num_bytes: bytesize::ByteSize::b(512),
+            max_num_parts: 4,
+            multipart_threshold_num_bytes: bytesize::ByteSize::b(1024),
+            max_object_num_bytes: bytesize::ByteSize::mib(1),
+            max_concurrent_uploads: 2,
+        };
+        let error = s3_storage
+            .put_if_absent(Path::new("test-key"), Box::new(vec![0u8; 4096]))
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), crate::StorageErrorKind::Unsupported);
+        assert_eq!(
+            client.actual_requests().count(),
+            0,
+            "a conditional write that cannot fit in a single PUT must be rejected before any \
+             request is sent"
+        );
     }
 
     #[tokio::test]
