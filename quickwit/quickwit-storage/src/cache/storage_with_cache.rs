@@ -37,6 +37,15 @@ impl fmt::Debug for StorageWithCache {
     }
 }
 
+/// A read-only view of another storage, with the objects it reads kept in a cache.
+///
+/// Hidden contract: this wrapper does not forward the conditional-write methods. `put` is not
+/// implemented either, and forwarding a conditional write would be worse than refusing it: the
+/// write would land in the inner storage while the cache this wrapper serves reads from kept the
+/// version the write path never observed. The trait's default implementations answer
+/// [`StorageErrorKind::Unsupported`], and
+/// `conditional_writes_stay_unsupported_on_a_read_only_wrapper` pins both the refusal and the fact
+/// that nothing reached the inner storage.
 #[async_trait]
 impl Storage for StorageWithCache {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
@@ -120,7 +129,49 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
-    use crate::{MockStorage, MockStorageCache, OwnedBytes};
+    use crate::{
+        MockStorage, MockStorageCache, ObjectVersion, OwnedBytes, RamStorage, StorageErrorKind,
+        wrap_storage_with_cache,
+    };
+
+    /// A read-only wrapper must not let a conditional write reach the inner storage: the reads it
+    /// serves come from its cache, which a write through the wrapper would not update.
+    /// `Unsupported` is the answer; returning success, or writing on the side, would both be
+    /// wrong.
+    #[tokio::test]
+    async fn conditional_writes_stay_unsupported_on_a_read_only_wrapper() {
+        let inner_storage = Arc::new(RamStorage::default());
+        let storage =
+            wrap_storage_with_cache(Arc::new(MockStorageCache::default()), inner_storage.clone());
+        let path = Path::new("a-file");
+
+        let error = storage
+            .put_if_absent(path, Box::new(b"payload".to_vec()))
+            .await
+            .expect_err("a read-only wrapper must not accept a conditional write");
+        assert_eq!(error.kind(), StorageErrorKind::Unsupported);
+
+        let error = storage
+            .put_if_version_matches(
+                path,
+                Box::new(b"payload".to_vec()),
+                &ObjectVersion::new("version-1"),
+            )
+            .await
+            .expect_err("a read-only wrapper must not accept a conditional write");
+        assert_eq!(error.kind(), StorageErrorKind::Unsupported);
+
+        let error = storage
+            .get_all_with_version(path)
+            .await
+            .expect_err("a read-only wrapper must not answer a versioned read");
+        assert_eq!(error.kind(), StorageErrorKind::Unsupported);
+
+        assert!(
+            !inner_storage.exists(path).await.unwrap(),
+            "nothing may reach the inner storage through a read-only wrapper"
+        );
+    }
 
     #[tokio::test]
     async fn put_in_cache_test() {
