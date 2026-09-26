@@ -52,6 +52,10 @@ pub type ListObjectsStream = BoxStream<'static, StorageResult<Vec<ObjectMetadata
 /// overwritten, which is what makes compare-and-swap (`If-Match`) possible. Backends that cannot
 /// version an object return `None` instead, and callers that need compare-and-swap must treat that
 /// as an error rather than as "unchanged".
+///
+/// Note that an ETag is a hash of the object's content, not a monotonic counter: overwriting an
+/// object with byte-identical content yields the same version again, so a compare-and-swap against
+/// it can succeed even though another writer got in between.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObjectVersion(String);
 
