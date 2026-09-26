@@ -503,6 +503,11 @@ impl S3CompatibleObjectStorage {
                 path.display(),
             )));
         }
+        // A conditional write is a PUT request like any other: count it here, otherwise
+        // `object_storage_puts_total` would miss every compare-and-swap write and operators would
+        // under-count the requests they pay for on a shared metastore. The rejection above happens
+        // before any request is sent, so it is deliberately not counted.
+        crate::metrics::OBJECT_STORAGE_PUT_TOTAL.inc();
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let e_tag = aws_retry(&self.retry_params, || async {
             self.put_single_part_single_try(
@@ -1862,6 +1867,64 @@ mod tests {
                 .body(SdkBody::empty())
                 .unwrap(),
         )
+    }
+
+    /// A compare-and-swap write is still a PUT request: it must show up in the request counters,
+    /// otherwise the cost of a shared metastore is invisible to operators.
+    #[tokio::test]
+    async fn test_conditional_put_is_counted_as_a_put() {
+        let client = StaticReplayClient::new(vec![ok_put_response()]);
+        let s3_storage =
+            make_s3_storage_with_replay(client.clone(), quickwit_config::ChecksumAlgorithm::Crc32c);
+        // Counters are process-global and tests run in parallel, so assert on the delta.
+        let puts_before = crate::metrics::OBJECT_STORAGE_PUT_TOTAL.get();
+        s3_storage
+            .put_if_absent(Path::new("test-key"), Box::new(vec![1u8, 2, 3]))
+            .await
+            .unwrap();
+        let requests = client.actual_requests().collect::<Vec<_>>();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            requests[0].headers().get("if-none-match").unwrap(),
+            "*",
+            "the conditional write must send the precondition header"
+        );
+        assert!(
+            crate::metrics::OBJECT_STORAGE_PUT_TOTAL.get() - puts_before >= 1,
+            "a conditional write is a PUT and must be counted by object_storage_puts_total"
+        );
+    }
+
+    /// A conditional write that is rejected before any request is sent must not send a request.
+    ///
+    /// The assertion is on the requests the client actually saw rather than on
+    /// `object_storage_puts_total`: the counters are process-global and other tests in this module
+    /// upload objects concurrently, so their delta cannot be attributed to this test.
+    #[tokio::test]
+    async fn test_rejected_conditional_put_sends_no_request() {
+        let client = StaticReplayClient::new(vec![]);
+        let mut s3_storage =
+            make_s3_storage_with_replay(client.clone(), quickwit_config::ChecksumAlgorithm::Crc32c);
+        s3_storage.disable_multipart_upload = false;
+        // Small policy so a tiny payload already needs a multipart upload.
+        s3_storage.multipart_policy = MultiPartPolicy {
+            target_part_num_bytes: bytesize::ByteSize::b(512),
+            max_num_parts: 4,
+            multipart_threshold_num_bytes: bytesize::ByteSize::b(1024),
+            max_object_num_bytes: bytesize::ByteSize::mib(1),
+            max_concurrent_uploads: 2,
+        };
+        let error = s3_storage
+            .put_if_absent(Path::new("test-key"), Box::new(vec![0u8; 4096]))
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), crate::StorageErrorKind::Unsupported);
+        assert_eq!(
+            client.actual_requests().count(),
+            0,
+            "a conditional write that cannot fit in a single PUT must be rejected before any \
+             request is sent"
+        );
     }
 
     #[tokio::test]
