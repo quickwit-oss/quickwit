@@ -31,6 +31,11 @@ pub enum StorageErrorKind {
     Unauthorized,
     /// A third-party service forbids this operation, or is misconfigured.
     Service,
+    /// A conditional write was rejected: the object did not match the condition it was written
+    /// under (`If-None-Match` / `If-Match`). Object storage reports this as HTTP 412.
+    PreconditionFailed,
+    /// The storage backend does not implement the requested operation.
+    Unsupported,
     /// Any generic internal error.
     Internal,
     /// A timeout occurred during the operation.

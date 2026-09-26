@@ -32,6 +32,16 @@ use quickwit_metrics::counter;
 use crate::metrics::OBJECT_STORAGE_GET_ERRORS_TOTAL;
 use crate::{StorageError, StorageErrorKind};
 
+/// Maps the HTTP status reported by an S3-compatible store to a storage error kind.
+fn storage_error_kind_from_status(status: u16) -> StorageErrorKind {
+    match status {
+        404 /* NOT_FOUND */ => StorageErrorKind::NotFound,
+        403 /* UNAUTHORIZED */ => StorageErrorKind::Unauthorized,
+        412 /* PRECONDITION_FAILED */ => StorageErrorKind::PreconditionFailed,
+        _ => StorageErrorKind::Internal,
+    }
+}
+
 impl<E> From<SdkError<E>> for StorageError
 where E: std::error::Error + ToStorageErrorKind + Send + Sync + 'static
 {
@@ -48,11 +58,7 @@ where E: std::error::Error + ToStorageErrorKind + Send + Sync + 'static
                 }
             }
             SdkError::ResponseError(response_error) => {
-                match response_error.raw().status().as_u16() {
-                    404 /* NOT_FOUND */ => StorageErrorKind::NotFound,
-                    403 /* UNAUTHORIZED */ => StorageErrorKind::Unauthorized,
-                    _ => StorageErrorKind::Internal,
-                }
+                storage_error_kind_from_status(response_error.raw().status().as_u16())
             }
             SdkError::ServiceError(service_error) => service_error.err().to_storage_error_kind(),
             SdkError::TimeoutError(_) => StorageErrorKind::Timeout,
@@ -132,6 +138,11 @@ impl ToStorageErrorKind for CreateMultipartUploadError {
 
 impl ToStorageErrorKind for PutObjectError {
     fn to_storage_error_kind(&self) -> StorageErrorKind {
+        // Conditional writes (`If-None-Match` / `If-Match`) are rejected with this code, and losing
+        // the race is an expected outcome that callers have to retry, not an internal failure.
+        if self.code() == Some("PreconditionFailed") {
+            return StorageErrorKind::PreconditionFailed;
+        }
         StorageErrorKind::Service
     }
 }
@@ -166,5 +177,28 @@ mod tests {
         let storage_error = StorageError::from(sdk_error);
 
         assert_eq!(storage_error.kind(), StorageErrorKind::Timeout);
+    }
+
+    #[test]
+    fn test_precondition_failed_status_is_preserved() {
+        // A conditional write that loses the race is reported as HTTP 412. Mapping it to
+        // `Internal` would make callers treat a normal lost race as a service failure, and mapping
+        // it to `Service` would hide it from the retry loop that has to re-read and try again.
+        assert_eq!(
+            storage_error_kind_from_status(412),
+            StorageErrorKind::PreconditionFailed
+        );
+        assert_eq!(
+            storage_error_kind_from_status(404),
+            StorageErrorKind::NotFound
+        );
+        assert_eq!(
+            storage_error_kind_from_status(403),
+            StorageErrorKind::Unauthorized
+        );
+        assert_eq!(
+            storage_error_kind_from_status(500),
+            StorageErrorKind::Internal
+        );
     }
 }

@@ -200,6 +200,47 @@ impl Storage for LocalFileStorage {
         Ok(())
     }
 
+    #[tracing::instrument(name = "storage.local_file.put_if_absent", level = "debug", skip(self, payload), fields(payload_len = payload.len()))]
+    async fn put_if_absent(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayload>,
+    ) -> crate::StorageResult<Option<crate::ObjectVersion>> {
+        let full_path = self.full_path(path)?;
+        let parent_dir = full_path.parent().ok_or_else(|| {
+            let err = anyhow::anyhow!("no parent directory for {full_path:?}");
+            StorageErrorKind::Internal.with_error(err)
+        })?;
+        tokio::fs::create_dir_all(parent_dir).await?;
+
+        // `create_new` maps to `O_CREAT | O_EXCL`: exactly one concurrent writer can create the
+        // file, which is the whole point of a "create once" coordination object.
+        let mut file = match tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&full_path)
+            .await
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+                return Err(
+                    StorageErrorKind::PreconditionFailed.with_error(anyhow::anyhow!(
+                        "object `{}` already exists",
+                        path.display(),
+                    )),
+                );
+            }
+            Err(error) => return Err(StorageErrorKind::Io.with_error(error)),
+        };
+        let mut reader = payload.byte_stream().await?.into_async_read();
+        tokio::io::copy(&mut reader, &mut file).await?;
+        file.flush().await?;
+        file.sync_data().await?;
+        // A local file has no version token: readers get `None` and must not treat that as
+        // "unchanged".
+        Ok(None)
+    }
+
     #[tracing::instrument(
         name = "storage.local_file.copy_to",
         level = "debug",
@@ -414,6 +455,28 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(exist_error.kind(), StorageErrorKind::Unauthorized);
+    }
+
+    #[tokio::test]
+    async fn test_local_file_storage_put_if_absent_creates_once() -> anyhow::Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let uri = Uri::from_str(&format!("{}", temp_dir.path().display())).unwrap();
+        let local_file_storage = LocalFileStorage::from_uri(&uri)?;
+        let path = Path::new("nested/lock.json");
+
+        local_file_storage
+            .put_if_absent(path, Box::new(b"first".to_vec()))
+            .await?;
+        assert_eq!(&local_file_storage.get_all(path).await?, &b"first"[..]);
+
+        let error = local_file_storage
+            .put_if_absent(path, Box::new(b"second".to_vec()))
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.kind(), StorageErrorKind::PreconditionFailed);
+        assert_eq!(&local_file_storage.get_all(path).await?, &b"first"[..]);
+        Ok(())
     }
 
     #[tokio::test]
