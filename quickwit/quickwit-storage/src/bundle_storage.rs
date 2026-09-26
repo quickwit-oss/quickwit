@@ -466,6 +466,14 @@ impl BundleFileRanges {
     }
 }
 
+/// A read-only view of the files packed inside one split bundle.
+///
+/// Hidden contract: like [`crate::StorageWithCache`], this wrapper does not forward the
+/// conditional-write methods -- it cannot write at all (`put` answers an unsupported-operation
+/// error), and a conditional write that reached the storage behind the bundle would be one the
+/// bundle's own file ranges know nothing about. The trait's default implementations answer
+/// [`StorageErrorKind::Unsupported`], and `conditional_writes_stay_unsupported_on_a_bundle` pins
+/// that nothing reaches the storage behind it.
 #[async_trait]
 impl Storage for BundleStorage {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
@@ -597,9 +605,53 @@ mod tests {
     use std::io::Write;
 
     use super::*;
-    use crate::{CountingStorage, PutPayload, RamStorageBuilder, SplitPayloadBuilder};
+    use crate::{
+        CountingStorage, ObjectVersion, PutPayload, RamStorageBuilder, SplitPayloadBuilder,
+        StorageErrorKind,
+    };
 
     const DEFAULT_SPLIT_TAIL_WINDOW_NUM_BYTES: u64 = 1024 * 1024;
+
+    /// A bundle is a read-only view of the storage it was opened from, so a conditional write has
+    /// to be refused rather than reach it: the write would not be part of any bundle range. This
+    /// pins the refusal and the fact that the storage behind the bundle stayed untouched.
+    #[tokio::test]
+    async fn conditional_writes_stay_unsupported_on_a_bundle() {
+        let storage = Arc::new(RamStorageBuilder::default().build());
+        let bundle_storage = BundleStorage {
+            storage: storage.clone(),
+            bundle_filepath: PathBuf::from("split-bundle"),
+            file_ranges: BundleFileRanges::default(),
+        };
+        let path = Path::new("a-file");
+
+        let error = bundle_storage
+            .put_if_absent(path, Box::new(b"payload".to_vec()))
+            .await
+            .expect_err("a bundle must not accept a conditional write");
+        assert_eq!(error.kind(), StorageErrorKind::Unsupported);
+
+        let error = bundle_storage
+            .put_if_version_matches(
+                path,
+                Box::new(b"payload".to_vec()),
+                &ObjectVersion::new("version-1"),
+            )
+            .await
+            .expect_err("a bundle must not accept a conditional write");
+        assert_eq!(error.kind(), StorageErrorKind::Unsupported);
+
+        let error = bundle_storage
+            .get_all_with_version(path)
+            .await
+            .expect_err("a bundle must not answer a versioned read");
+        assert_eq!(error.kind(), StorageErrorKind::Unsupported);
+
+        assert!(
+            !storage.exists(path).await.unwrap(),
+            "nothing may reach the storage behind the bundle"
+        );
+    }
 
     #[tokio::test]
     async fn bundle_storage_locates_footer_from_object_storage() {
