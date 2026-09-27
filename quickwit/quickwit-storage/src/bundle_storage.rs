@@ -468,12 +468,13 @@ impl BundleFileRanges {
 
 /// A read-only view of the files packed inside one split bundle.
 ///
-/// Hidden contract: like [`crate::StorageWithCache`], this wrapper does not forward the
+/// Hidden contract: like [`crate::cache::StorageWithCache`], this wrapper does not forward the
 /// conditional-write methods -- it cannot write at all (`put` answers an unsupported-operation
 /// error), and a conditional write that reached the storage behind the bundle would be one the
 /// bundle's own file ranges know nothing about. The trait's default implementations answer
-/// [`StorageErrorKind::Unsupported`], and `conditional_writes_stay_unsupported_on_a_bundle` pins
-/// that nothing reaches the storage behind it.
+/// [`crate::StorageErrorKind::Unsupported`], and
+/// `conditional_writes_stay_unsupported_on_a_bundle` pins that nothing reaches the storage behind
+/// it.
 #[async_trait]
 impl Storage for BundleStorage {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
