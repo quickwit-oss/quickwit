@@ -20,8 +20,8 @@ use itertools::Itertools;
 use quickwit_common::binary_heap::{SortKeyMapper, TopK};
 use quickwit_doc_mapper::{FastFieldWarmupInfo, WarmupInfo};
 use quickwit_proto::search::{
-    LeafResourceStats, LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortOrder,
-    SortValue, SplitSearchError,
+    LeafResourceStats, LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortFieldType,
+    SortOrder, SortValue, SplitSearchError,
 };
 use quickwit_proto::types::SplitId;
 use serde::Deserialize;
@@ -91,7 +91,18 @@ impl SortByComponent {
                         ColumnType::U64,
                     )
                 });
-                let sort_field_type = SortFieldType::try_from(column_type)?;
+                let sort_field_type = match column_type {
+                    ColumnType::U64 => SortFieldType::U64,
+                    ColumnType::I64 => SortFieldType::I64,
+                    ColumnType::F64 => SortFieldType::F64,
+                    ColumnType::DateTime => SortFieldType::Datetime,
+                    ColumnType::Bool => SortFieldType::Bool,
+                    _ => {
+                        return Err(TantivyError::InvalidArgument(format!(
+                            "Unsupported sort field type `{column_type:?}`."
+                        )));
+                    }
+                };
                 Ok(SortingFieldExtractorComponent::FastField {
                     sort_column,
                     sort_field_type,
@@ -125,15 +136,6 @@ impl SortByComponent {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(crate) enum SortFieldType {
-    U64,
-    I64,
-    F64,
-    DateTime,
-    Bool,
-}
-
 /// The `SortingFieldExtractor` is used to extract a score, which can either be a true score,
 /// a value from a fast field, or nothing (sort by DocId).
 pub(crate) enum SortingFieldExtractorComponent {
@@ -141,6 +143,8 @@ pub(crate) enum SortingFieldExtractorComponent {
     DocId,
     FastField {
         sort_column: Column<u64>,
+        // Extractor construction accepts only numeric and boolean types. The shared enum
+        // also describes physical text/bytes sorting, which query sorting does not support.
         sort_field_type: SortFieldType,
     },
     Score,
@@ -192,8 +196,11 @@ impl SortingFieldExtractorComponent {
             SortFieldType::U64 => SortValue::U64(fast_field_value),
             SortFieldType::I64 => SortValue::I64(i64::from_u64(fast_field_value)),
             SortFieldType::F64 => SortValue::F64(f64::from_u64(fast_field_value)),
-            SortFieldType::DateTime => SortValue::I64(i64::from_u64(fast_field_value)),
+            SortFieldType::Datetime => SortValue::I64(i64::from_u64(fast_field_value)),
             SortFieldType::Bool => SortValue::Boolean(fast_field_value != 0u64),
+            SortFieldType::Text | SortFieldType::Bytes | SortFieldType::Unspecified => {
+                unreachable!("search sort extractors only accept numeric and boolean columns")
+            }
         };
         match self {
             SortingFieldExtractorComponent::DocId => SortValue::U64(sort_value),
@@ -274,7 +281,7 @@ impl SortingFieldExtractorComponent {
                         (val as i64).to_u64()
                     }
                     (SortValue::U64(val), SortFieldType::F64) => (val as f64).to_u64(),
-                    (SortValue::U64(mut val), SortFieldType::DateTime) => {
+                    (SortValue::U64(mut val), SortFieldType::Datetime) => {
                         // Match everything
                         if sort_order == SortOrder::Desc && val > i64::MAX as u64 {
                             return None;
@@ -294,7 +301,7 @@ impl SortingFieldExtractorComponent {
                         }
                     }
                     (SortValue::I64(val), SortFieldType::F64) => (val as f64).to_u64(),
-                    (SortValue::I64(val), SortFieldType::DateTime) => {
+                    (SortValue::I64(val), SortFieldType::Datetime) => {
                         DateTime::from_timestamp_nanos(val).to_u64()
                     }
                     (SortValue::F64(val), SortFieldType::U64) => {
@@ -309,7 +316,7 @@ impl SortingFieldExtractorComponent {
                         (val as u64).to_u64()
                     }
                     (SortValue::F64(val), SortFieldType::I64)
-                    | (SortValue::F64(val), SortFieldType::DateTime) => {
+                    | (SortValue::F64(val), SortFieldType::Datetime) => {
                         let all_values_ahead1 =
                             val < i64::MIN as f64 && sort_order == SortOrder::Asc;
                         let all_values_ahead2 =
@@ -320,7 +327,7 @@ impl SortingFieldExtractorComponent {
                         // f64 cast already handles under/overflow and clamps the value
                         let val_i64 = val as i64;
 
-                        if *sort_field_type == SortFieldType::DateTime {
+                        if *sort_field_type == SortFieldType::Datetime {
                             DateTime::from_timestamp_nanos(val_i64).to_u64()
                         } else {
                             val_i64.to_u64()
@@ -330,7 +337,7 @@ impl SortingFieldExtractorComponent {
                     (SortValue::Boolean(val), SortFieldType::U64) => val as u64,
                     (SortValue::Boolean(val), SortFieldType::F64) => (val as u64 as f64).to_u64(),
                     (SortValue::Boolean(val), SortFieldType::I64) => (val as i64).to_u64(),
-                    (SortValue::Boolean(val), SortFieldType::DateTime) => {
+                    (SortValue::Boolean(val), SortFieldType::Datetime) => {
                         DateTime::from_timestamp_nanos(val as i64).to_u64()
                     }
                     (SortValue::U64(mut val), SortFieldType::Bool) => {
@@ -360,6 +367,14 @@ impl SortingFieldExtractorComponent {
                         }
                         val = val.clamp(0.0, 1.0);
                         (val >= 0.5).to_u64() // Is this correct?
+                    }
+                    (
+                        _,
+                        SortFieldType::Text | SortFieldType::Bytes | SortFieldType::Unspecified,
+                    ) => {
+                        unreachable!(
+                            "search sort extractors only accept numeric and boolean columns"
+                        )
                     }
                 };
                 Some(val)
@@ -428,23 +443,6 @@ impl SortingFieldExtractorPair {
             .as_ref()
             .and_then(|second| second.extract_typed_sort_value_opt(doc_id, score));
         (first, second)
-    }
-}
-
-impl TryFrom<ColumnType> for SortFieldType {
-    type Error = tantivy::TantivyError;
-
-    fn try_from(column_type: ColumnType) -> tantivy::Result<Self> {
-        match column_type {
-            ColumnType::U64 => Ok(SortFieldType::U64),
-            ColumnType::I64 => Ok(SortFieldType::I64),
-            ColumnType::F64 => Ok(SortFieldType::F64),
-            ColumnType::DateTime => Ok(SortFieldType::DateTime),
-            ColumnType::Bool => Ok(SortFieldType::Bool),
-            _ => Err(TantivyError::InvalidArgument(format!(
-                "Unsupported sort field type `{column_type:?}`."
-            ))),
-        }
     }
 }
 

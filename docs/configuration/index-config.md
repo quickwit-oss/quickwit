@@ -594,6 +594,7 @@ This section describes indexing settings for a given index.
 | ------------- | ------------- | ------------- |
 | `commit_timeout_secs`      | Maximum number of seconds before committing a split since its creation.   | `60` |
 | `split_num_docs_target` | Target number of docs per split.   | `10000000` |
+| `sort_fields` | Physical document order within splits. An empty list disables sorting; currently at most one raw text fast field is supported. | `[]` |
 | `merge_policy` | Describes the strategy used to trigger split merge operations for logs/traces (see [Merge policies](#merge-policies) section below). |
 | `parquet_merge_policy` | Describes the merge policy for Parquet (metrics/sketches) splits (see [Parquet merge policy](#parquet-merge-policy) section below). |
 | `parquet_indexing` | Parquet-specific indexing settings: sort schema, window duration (see [Parquet indexing settings](#parquet-indexing-settings) section below). |
@@ -608,6 +609,33 @@ Choosing an appropriate commit timeout is critical. With a shorter commit timeou
 When decommissioning definitively an indexer node that received data through the ingest API (including the [Elastic bulk API](/docs/reference/es_compatible_api) and the OTEL [log](/docs/log-management/otel-service.md) and [trace](/docs/distributed-tracing/otel-service.md) services), we need to make sure that all the data that was persisted locally (Write Ahead Log) is indexed and committed. After receiving the termination signal, the Quickwit process waits for the indexing pipelines to finish processing this local data. This can take as long as the longest commit timeout of all indexes. Make sure that the termination grace period of the infrastructure supporting the Quickwit indexer nodes is long enough (e.g [`terminationGracePeriodSeconds`](https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/) in Kubernetes or [`stopTimeout`](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html) on AWS ECS).
 
 :::
+
+### Physical document sorting
+
+To sort newly written splits by service, configure a single-valued raw text fast field:
+
+```yaml
+doc_mapping:
+  field_mappings:
+    - name: service
+      type: text
+      tokenizer: raw
+      fast: true
+  tag_fields: [service]
+
+indexing_settings:
+  sort_fields: [service]
+```
+
+`sort_fields` accepts a list of mapped field names but currently rejects more than one entry.
+A bare name sorts ascending; prefix it with `-` for descending order, for example
+`sort_fields: [-service]`. An explicit `+` also means ascending. Nested paths and escaped dots
+use the same syntax as other field references. Empty names and repeated order prefixes are
+rejected. The field must be indexed with the `raw` tokenizer and stored as a fast field.
+Arrays, numeric fields, and unmapped JSON paths are not supported. Strings are compared by their
+UTF-8 bytes. Missing and null values sort
+first for `asc` and last for `desc`; an empty string is a distinct value. Equal values retain all
+documents. Physical ordering does not change query result ordering.
 
 ### Merge policies
 

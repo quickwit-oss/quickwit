@@ -18,7 +18,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
-use anyhow::{Context, anyhow};
+use anyhow::{Context, anyhow, ensure};
 use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
@@ -190,6 +190,28 @@ impl Handler<MergeScratch> for MergeExecutor {
 fn combine_index_meta(mut index_metas: Vec<IndexMeta>) -> anyhow::Result<IndexMeta> {
     let mut union_index_meta = index_metas.pop().with_context(|| "only one IndexMeta")?;
     for index_meta in index_metas {
+        ensure!(
+            index_meta.index_settings.sort_by_field
+                == union_index_meta.index_settings.sort_by_field,
+            "cannot merge indexes with different physical sort fields"
+        );
+        if let Some(sort_field) = &index_meta.index_settings.sort_by_field {
+            let field = index_meta.schema.get_field(&sort_field.field)?;
+            let union_field = union_index_meta.schema.get_field(&sort_field.field)?;
+            ensure!(
+                index_meta
+                    .schema
+                    .get_field_entry(field)
+                    .field_type()
+                    .value_type()
+                    == union_index_meta
+                        .schema
+                        .get_field_entry(union_field)
+                        .field_type()
+                        .value_type(),
+                "cannot merge indexes with different physical sort fields"
+            );
+        }
         union_index_meta.segments.extend(index_meta.segments);
     }
     Ok(union_index_meta)
@@ -198,14 +220,57 @@ fn combine_index_meta(mut index_metas: Vec<IndexMeta>) -> anyhow::Result<IndexMe
 fn open_split_directories(
     // Directories containing the splits to merge
     tantivy_dirs: &[Box<dyn Directory>],
+    splits: &[SplitMetadata],
     tokenizer_manager: &TokenizerManager,
 ) -> anyhow::Result<(IndexMeta, Vec<Box<dyn Directory>>)> {
+    ensure!(
+        tantivy_dirs.len() == splits.len(),
+        "merge input metadata count mismatch"
+    );
     let mut directories: Vec<Box<dyn Directory>> = Vec::new();
     let mut index_metas = Vec::new();
-    for tantivy_dir in tantivy_dirs {
+    for (tantivy_dir, split) in tantivy_dirs.iter().zip(splits) {
         directories.push(tantivy_dir.clone());
 
         let index_meta = open_index(tantivy_dir.clone(), tokenizer_manager)?.load_metas()?;
+        // Verify the persisted declaration against the actual input, not the current mapping.
+        let sort_schema_matches = match (
+            &index_meta.index_settings.sort_by_field,
+            split.sort_fields.fields.as_slice(),
+        ) {
+            (None, []) => true,
+            (Some(actual_sort), [sort_field]) => {
+                use quickwit_proto::search::{SortFieldType, SortOrder};
+                use tantivy::schema::Type;
+
+                let field = index_meta.schema.get_field(&actual_sort.field)?;
+                let field_entry = index_meta.schema.get_field_entry(field);
+                let field_type = match field_entry.field_type().value_type() {
+                    Type::Str => SortFieldType::Text,
+                    Type::I64 => SortFieldType::I64,
+                    Type::U64 => SortFieldType::U64,
+                    Type::F64 => SortFieldType::F64,
+                    Type::Date => SortFieldType::Datetime,
+                    Type::Bytes => SortFieldType::Bytes,
+                    Type::Bool => SortFieldType::Bool,
+                    other => anyhow::bail!("unsupported physical sort field type {other:?}"),
+                };
+                let order = match actual_sort.order {
+                    tantivy::Order::Asc => SortOrder::Asc,
+                    tantivy::Order::Desc => SortOrder::Desc,
+                };
+                field_entry.is_fast()
+                    && actual_sort.field == sort_field.field
+                    && order == sort_field.order
+                    && field_type == sort_field.field_type
+            }
+            _ => false,
+        };
+        ensure!(
+            sort_schema_matches,
+            "split {} physical sort schema disagrees with metastore metadata",
+            split.split_id
+        );
         index_metas.push(index_meta);
     }
     let union_index_meta = combine_index_meta(index_metas)?;
@@ -292,6 +357,11 @@ pub fn merge_split_attrs(
         .first()
         .ok_or_else(|| anyhow::anyhow!("attempted to merge zero splits"))?
         .doc_mapping_uid;
+    let sort_fields = splits[0].sort_fields.clone();
+    ensure!(
+        splits.iter().all(|split| split.sort_fields == sort_fields),
+        "cannot merge splits with different physical sort fields"
+    );
     if splits
         .iter()
         .any(|split| split.doc_mapping_uid != doc_mapping_uid)
@@ -299,11 +369,12 @@ pub fn merge_split_attrs(
         anyhow::bail!("attempted to merge splits with different doc mapping uid");
     }
     Ok(SplitAttrs {
+        split_id: merge_split_id,
         node_id: pipeline_id.node_id.clone(),
         index_uid: pipeline_id.index_uid.clone(),
         source_id: pipeline_id.source_id.clone(),
         doc_mapping_uid,
-        split_id: merge_split_id,
+        sort_fields,
         partition_id,
         replaced_split_ids,
         time_range,
@@ -351,6 +422,7 @@ impl MergeExecutor {
     ) -> anyhow::Result<IndexedSplit> {
         let (union_index_meta, split_directories) = open_split_directories(
             &tantivy_dirs,
+            &splits,
             self.doc_mapper.tokenizer_manager().tantivy_manager(),
         )?;
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
@@ -419,6 +491,7 @@ impl MergeExecutor {
 
         let (union_index_meta, split_directories) = open_split_directories(
             &tantivy_dirs,
+            std::slice::from_ref(&split),
             self.doc_mapper.tokenizer_manager().tantivy_manager(),
         )?;
         let controlled_directory = self
@@ -484,11 +557,12 @@ impl MergeExecutor {
         };
         let indexed_split = IndexedSplit {
             split_attrs: SplitAttrs {
+                split_id: merge_split_id,
                 node_id: NodeId::from_str(&split.node_id),
                 index_uid: split.index_uid,
                 source_id: split.source_id,
                 doc_mapping_uid: split.doc_mapping_uid,
-                split_id: merge_split_id,
+                sort_fields: split.sort_fields,
                 partition_id: split.partition_id,
                 replaced_split_ids: vec![split.split_id.clone()],
                 time_range,
@@ -950,5 +1024,348 @@ mod tests {
             Vec::new(),
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod sort_tests {
+    use quickwit_common::split_file;
+    use quickwit_metastore::{
+        IndexingSortSchema, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt,
+        SortFieldMetadata,
+    };
+    use quickwit_proto::metastore::{DeleteQuery, ListSplitsRequest};
+    use quickwit_proto::search::{SortFieldType, SortOrder};
+    use serde_json::json;
+    use tantivy::collector::{Count, DocSetCollector};
+    use tantivy::query::{PhraseQuery, TermQuery};
+    use tantivy::schema::{IndexRecordOption, Value};
+    use tantivy::{DocAddress, TantivyDocument, Term};
+
+    use super::*;
+    use crate::merge_policy::MergeOperation;
+    use crate::{TestSandbox, get_tantivy_directory_from_split_bundle};
+
+    const MAPPING: &str = r#"
+    field_mappings:
+      - name: service
+        type: text
+        tokenizer: raw
+        fast: true
+      - name: id
+        type: u64
+        fast: true
+      - name: body
+        type: text
+        record: position
+    tag_fields: [service]
+    "#;
+
+    fn sort_fields(order: SortOrder) -> IndexingSortSchema {
+        IndexingSortSchema {
+            fields: vec![SortFieldMetadata {
+                field: "service".to_string(),
+                order,
+                field_type: SortFieldType::Text,
+            }],
+        }
+    }
+
+    #[test]
+    fn test_sort_fields_reject_incompatible_schemas() -> anyhow::Result<()> {
+        let mut text_schema = tantivy::schema::Schema::builder();
+        text_schema.add_text_field("service", tantivy::schema::FAST);
+        let mut int_schema = tantivy::schema::Schema::builder();
+        int_schema.add_i64_field("service", tantivy::schema::FAST);
+        let settings = tantivy::IndexSettings {
+            sort_by_field: Some(tantivy::IndexSortByField {
+                field: "service".to_string(),
+                order: tantivy::Order::Asc,
+            }),
+            ..Default::default()
+        };
+        let mut index_metas = Vec::new();
+        for schema in [text_schema.build(), int_schema.build()] {
+            let index = Index::builder()
+                .schema(schema)
+                .settings(settings.clone())
+                .create_in_ram()?;
+            index_metas.push(index.load_metas()?);
+        }
+        let error = combine_index_meta(index_metas).unwrap_err();
+        assert!(error.to_string().contains("different physical sort fields"));
+        Ok(())
+    }
+
+    /// Check doc-ID order and verify stored fields, fast fields, postings and positions
+    /// still refer to the same documents after the permutation.
+    fn check_index(index: &Index, order: SortOrder) -> anyhow::Result<Vec<u64>> {
+        let reader = index.reader()?;
+        let searcher = reader.searcher();
+        assert_eq!(searcher.segment_readers().len(), 1);
+        let segment = searcher.segment_reader(0);
+        let service_field = index.schema().get_field("service")?;
+        let id_field = index.schema().get_field("id")?;
+        let body_field = index.schema().get_field("body")?;
+        let service_column = segment.fast_fields().str("service")?.unwrap();
+        let id_column = segment.fast_fields().u64("id")?;
+        let mut keys = Vec::new();
+        let mut ids = Vec::new();
+        for doc_id in 0..segment.max_doc() {
+            let document: TantivyDocument = searcher.doc(DocAddress::new(0, doc_id))?;
+            let service = document
+                .get_first(service_field)
+                .and_then(|value| value.as_str());
+            let id = document.get_first(id_field).unwrap().as_u64().unwrap();
+            assert_eq!(id_column.first(doc_id), Some(id));
+            let fast_service = match service_column.term_ords(doc_id).next() {
+                Some(ordinal) => {
+                    let mut value = String::new();
+                    service_column.ord_to_str(ordinal, &mut value)?;
+                    Some(value)
+                }
+                None => None,
+            };
+            assert_eq!(fast_service.as_deref(), service);
+            let expected_service = match id {
+                0 => Some("zulu"),
+                2 | 5 => Some("api"),
+                3 => Some(""),
+                4 => Some("équipe"),
+                1 | 6 | 7 => None,
+                _ => panic!("unexpected id {id}"),
+            };
+            assert_eq!(service, expected_service);
+            let phrase = PhraseQuery::new(vec![
+                Term::from_field_text(body_field, "payload"),
+                Term::from_field_text(body_field, &format!("item{id}")),
+            ]);
+            let matches = searcher.search(&phrase, &DocSetCollector)?;
+            assert_eq!(matches.len(), 1);
+            assert!(matches.contains(&DocAddress::new(0, doc_id)));
+            keys.push(fast_service);
+            ids.push(id);
+        }
+        assert!(keys.windows(2).all(|pair| match order {
+            SortOrder::Asc => pair[0] <= pair[1],
+            SortOrder::Desc => pair[0] >= pair[1],
+        }));
+        let query = TermQuery::new(
+            Term::from_field_text(service_field, "api"),
+            IndexRecordOption::Basic,
+        );
+        assert_eq!(
+            searcher.search(&query, &Count)?,
+            ids.iter().filter(|&&id| id == 2 || id == 5).count()
+        );
+        Ok(ids)
+    }
+
+    async fn execute(
+        sandbox: &TestSandbox,
+        splits: Vec<SplitMetadata>,
+        delete: bool,
+    ) -> anyhow::Result<IndexedSplit> {
+        let scratch = TempDirectory::for_test();
+        let downloads = scratch.named_temp_child("downloads-")?;
+        let mut directories = Vec::new();
+        for split in &splits {
+            let filename = split_file(split.split_id());
+            let path = downloads.path().join(&filename);
+            sandbox
+                .storage()
+                .copy_to_file(Path::new(&filename), &path)
+                .await?;
+            directories.push(get_tantivy_directory_from_split_bundle(&path)?);
+        }
+        for (directory, split) in directories.iter().zip(&splits) {
+            let index = open_index(
+                directory.clone(),
+                sandbox.doc_mapper().tokenizer_manager().tantivy_manager(),
+            )?;
+            check_index(&index, split.sort_fields.fields[0].order)?;
+            assert_eq!(split.num_merge_ops, 0);
+        }
+        // A stale or missing declaration must not silently change merge semantics.
+        let mut wrong_type = splits[0].sort_fields.clone();
+        wrong_type.fields[0].field_type = SortFieldType::I64;
+        for invalid_sort_fields in [IndexingSortSchema::default(), wrong_type] {
+            let mut stale_metadata = splits.clone();
+            stale_metadata[0].sort_fields = invalid_sort_fields;
+            let error = open_split_directories(
+                &directories,
+                &stale_metadata,
+                sandbox.doc_mapper().tokenizer_manager().tantivy_manager(),
+            )
+            .err()
+            .unwrap();
+            assert!(error.to_string().contains("disagrees with metastore"));
+        }
+
+        let operation = if delete {
+            MergeOperation::new_delete_and_merge_operation(splits[0].clone())
+        } else {
+            MergeOperation::new_merge_operation(splits)
+        };
+        let (mailbox, inbox) = sandbox.universe().create_test_mailbox();
+        let executor = MergeExecutor::new(
+            MergePipelineId {
+                node_id: sandbox.node_id(),
+                index_uid: sandbox.index_uid(),
+                source_id: sandbox.source_id(),
+            },
+            sandbox.metastore(),
+            sandbox.doc_mapper(),
+            IoControls::default(),
+            mailbox,
+            None,
+        );
+        let (executor_mailbox, handle) = sandbox.universe().spawn_builder().spawn(executor);
+        executor_mailbox
+            .send_message(MergeScratch {
+                merge_source: MergeSource::Operation(operation),
+                tantivy_dirs: directories,
+                merge_scratch_directory: scratch,
+                downloaded_splits_directory: downloads,
+            })
+            .await?;
+        handle.process_pending_and_observe().await;
+        let mut batches = inbox.drain_for_test_typed::<IndexedSplitBatch>();
+        assert_eq!(batches.len(), 1);
+        Ok(batches.pop().unwrap().splits.pop().unwrap())
+    }
+
+    #[tokio::test]
+    async fn test_sort_fields_generation_zero_and_merge() -> anyhow::Result<()> {
+        for order in [SortOrder::Asc, SortOrder::Desc] {
+            let sort_field = match order {
+                SortOrder::Asc => "service",
+                SortOrder::Desc => "-service",
+            };
+            let settings = serde_json::to_string(&json!({"sort_fields": [sort_field]}))?;
+            let sandbox =
+                TestSandbox::create("service-sort", MAPPING, &settings, &["body"]).await?;
+            for batch in [
+                vec![
+                    (0, Some("zulu")),
+                    (1, None),
+                    (2, Some("api")),
+                    (3, Some("")),
+                ],
+                vec![(4, Some("équipe")), (5, Some("api")), (6, None)],
+                vec![(7, None)],
+            ] {
+                sandbox
+                    .add_documents(batch.into_iter().map(|(id, service)| {
+                        json!({
+                            "id": id, "service": service, "body": format!("payload item{id}")
+                        })
+                    }))
+                    .await?;
+            }
+            let splits = sandbox
+                .metastore()
+                .list_splits(ListSplitsRequest::try_from_index_uid(sandbox.index_uid())?)
+                .await?
+                .collect_splits_metadata()
+                .await?;
+            assert_eq!(splits.len(), 3);
+            assert!(
+                splits
+                    .iter()
+                    .all(|split| split.sort_fields == sort_fields(order))
+            );
+            let merged = execute(&sandbox, splits, false).await?;
+            assert_eq!(merged.split_attrs.sort_fields, sort_fields(order));
+            assert_eq!(merged.split_attrs.num_docs, 8);
+            let mut ids = check_index(&merged.index, order)?;
+            ids.sort_unstable();
+            assert_eq!(ids, (0..8).collect::<Vec<_>>());
+            drop(merged);
+            sandbox.assert_quit().await;
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_sort_fields_preserved_after_delete() -> anyhow::Result<()> {
+        let sandbox = TestSandbox::create(
+            "service-sort-delete",
+            MAPPING,
+            "sort_fields: [service]",
+            &["body"],
+        )
+        .await?;
+        sandbox
+            .add_documents(vec![
+                json!({"id": 0, "service": "zulu", "body": "payload item0"}),
+                json!({"id": 1, "body": "payload item1"}),
+                json!({"id": 2, "service": "api", "body": "payload item2"}),
+            ])
+            .await?;
+        let splits = sandbox
+            .metastore()
+            .list_splits(ListSplitsRequest::try_from_index_uid(sandbox.index_uid())?)
+            .await?
+            .collect_splits_metadata()
+            .await?;
+        sandbox
+            .metastore()
+            .create_delete_task(DeleteQuery {
+                index_uid: Some(sandbox.index_uid()),
+                start_timestamp: None,
+                end_timestamp: None,
+                query_ast: quickwit_query::query_ast::qast_json_helper("service:api", &["body"]),
+            })
+            .await?;
+        let rewritten = execute(&sandbox, splits, true).await?;
+        assert_eq!(
+            rewritten.split_attrs.sort_fields,
+            sort_fields(SortOrder::Asc)
+        );
+        assert_eq!(rewritten.split_attrs.num_docs, 2);
+        assert_eq!(rewritten.split_attrs.delete_opstamp, 1);
+        assert_eq!(check_index(&rewritten.index, SortOrder::Asc)?, vec![1, 0]);
+        drop(rewritten);
+        sandbox.assert_quit().await;
+        Ok(())
+    }
+
+    #[test]
+    fn test_sort_fields_reject_incompatible_merge_inputs() {
+        let mut first = SplitMetadata {
+            sort_fields: sort_fields(SortOrder::Asc),
+            ..Default::default()
+        };
+        let mut second = first.clone();
+        second.sort_fields = IndexingSortSchema::default();
+        let pipeline_id = MergePipelineId {
+            node_id: NodeId::from_str("test"),
+            index_uid: first.index_uid.clone(),
+            source_id: "test".to_string(),
+        };
+        merge_split_attrs(
+            pipeline_id.clone(),
+            SplitId::new(),
+            &[first.clone(), second.clone()],
+        )
+        .unwrap_err();
+        second.sort_fields = sort_fields(SortOrder::Desc);
+        merge_split_attrs(
+            pipeline_id.clone(),
+            SplitId::new(),
+            &[first.clone(), second.clone()],
+        )
+        .unwrap_err();
+        second.sort_fields = first.sort_fields.clone();
+        second.sort_fields.fields[0].field_type = SortFieldType::I64;
+        merge_split_attrs(
+            pipeline_id.clone(),
+            SplitId::new(),
+            &[first.clone(), second.clone()],
+        )
+        .unwrap_err();
+        first.sort_fields = second.sort_fields.clone();
+        merge_split_attrs(pipeline_id, SplitId::new(), &[first, second]).unwrap();
     }
 }

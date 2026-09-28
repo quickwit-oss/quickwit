@@ -377,7 +377,7 @@ mod tests {
     use quickwit_common::io::IoControls;
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_proto::search::{ListFieldsEntry, ListFieldsMetadata};
-    use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId};
+    use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId, SplitId};
     use tantivy::directory::MmapDirectory;
     use tantivy::schema::{FAST, NumericOptions, STRING, Schema, TEXT, Type};
     use tantivy::{DateTime, IndexBuilder, IndexSettings, doc};
@@ -514,11 +514,12 @@ mod tests {
         // but this will require work on tantivy.
         let indexed_split = IndexedSplit {
             split_attrs: SplitAttrs {
+                split_id: SplitId::from("test-split"),
                 node_id,
                 index_uid,
                 source_id,
                 doc_mapping_uid: DocMappingUid::default(),
-                split_id: "test-split".into(),
+                sort_fields: Default::default(),
                 partition_id: 17u64,
                 num_docs,
                 uncompressed_docs_size_in_bytes: num_docs * 15,

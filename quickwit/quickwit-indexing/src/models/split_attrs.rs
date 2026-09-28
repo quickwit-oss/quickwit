@@ -18,7 +18,7 @@ use std::ops::{Range, RangeInclusive};
 use std::sync::Arc;
 use std::time::Duration;
 
-use quickwit_metastore::{SplitMaturity, SplitMetadata};
+use quickwit_metastore::{IndexingSortSchema, SplitMaturity, SplitMetadata};
 use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId, SourceId, SplitId};
 use tantivy::DateTime;
 use time::OffsetDateTime;
@@ -26,6 +26,12 @@ use time::OffsetDateTime;
 use crate::merge_policy::MergePolicy;
 
 pub struct SplitAttrs {
+    /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
+    /// should be enough to uniquely identify a split.
+    /// In reality, some information may be implicitly configured
+    /// in the storage resolver: for instance, the Amazon S3 region.
+    pub split_id: SplitId,
+
     /// ID of the node that produced the split.
     pub node_id: NodeId,
     // Index UID to which the split belongs.
@@ -36,11 +42,8 @@ pub struct SplitAttrs {
     /// Doc mapping UID used to produce this split.
     pub doc_mapping_uid: DocMappingUid,
 
-    /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
-    /// should be enough to uniquely identify a split.
-    /// In reality, some information may be implicitly configured
-    /// in the storage resolver: for instance, the Amazon S3 region.
-    pub split_id: SplitId,
+    /// Physical ordering and logical comparison types. Empty for unsorted splits.
+    pub sort_fields: IndexingSortSchema,
 
     /// Partition to which the split belongs.
     ///
@@ -82,6 +85,7 @@ impl fmt::Debug for SplitAttrs {
             )
             .field("num_docs", &self.num_docs)
             .field("num_merge_ops", &self.num_merge_ops)
+            .field("sort_fields", &self.sort_fields)
             .finish()
     }
 }
@@ -114,6 +118,7 @@ pub fn create_split_metadata(
         index_uid: split_attrs.index_uid.clone(),
         source_id: split_attrs.source_id.clone(),
         doc_mapping_uid: split_attrs.doc_mapping_uid,
+        sort_fields: split_attrs.sort_fields.clone(),
         split_id: split_attrs.split_id.clone(),
         partition_id: split_attrs.partition_id,
         num_docs: split_attrs.num_docs as usize,

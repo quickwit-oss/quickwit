@@ -18,6 +18,7 @@ use std::path::Path;
 use quickwit_common::io::IoControls;
 use quickwit_common::metrics::index_label;
 use quickwit_common::temp_dir::TempDirectory;
+use quickwit_metastore::IndexingSortSchema;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metrics::{GaugeGuard, label_values};
 use quickwit_proto::indexing::IndexingPipelineId;
@@ -78,12 +79,15 @@ impl fmt::Debug for IndexedSplitBuilder {
 }
 
 impl IndexedSplitBuilder {
+    /// The caller must configure `index_builder` with the same physical ordering as `sort_fields`.
+    /// The indexer validates and constructs both together when the pipeline is created.
     #[allow(clippy::too_many_arguments)]
     pub fn new_in_dir(
         pipeline_id: IndexingPipelineId,
         partition_id: u64,
         last_delete_opstamp: u64,
         doc_mapping_uid: DocMappingUid,
+        sort_fields: IndexingSortSchema,
         scratch_directory: TempDirectory,
         index_builder: IndexBuilder,
         io_controls: IoControls,
@@ -112,12 +116,13 @@ impl IndexedSplitBuilder {
             index_builder.single_segment_index_writer(indexing_directory, 15_000_000)?;
         Ok(Self {
             split_attrs: SplitAttrs {
+                split_id,
                 node_id: pipeline_id.node_id,
                 index_uid: pipeline_id.index_uid,
                 source_id: pipeline_id.source_id,
                 doc_mapping_uid,
+                sort_fields,
                 partition_id,
-                split_id,
                 num_docs: 0,
                 replaced_split_ids: Vec::new(),
                 uncompressed_docs_size_in_bytes: 0,

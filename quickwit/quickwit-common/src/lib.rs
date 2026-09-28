@@ -40,6 +40,7 @@ pub mod retry;
 pub mod ring_buffer;
 pub mod runtimes;
 pub mod shared_consts;
+mod sort_fields;
 pub mod sorted_iter;
 pub mod stream_utils;
 pub mod temp_dir;
@@ -66,6 +67,7 @@ pub use kill_switch::KillSwitch;
 pub use metrics_specific::*;
 pub use path_hasher::PathHasher;
 pub use progress::{Progress, ProtectedZoneGuard};
+pub use sort_fields::parse_sort_fields;
 pub use stream_utils::{BoxStream, ServiceStream};
 
 /// Returns true at compile time. This function is mostly used with serde to initialize boolean

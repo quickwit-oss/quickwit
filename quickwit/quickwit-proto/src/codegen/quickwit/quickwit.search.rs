@@ -895,6 +895,54 @@ impl SortOrder {
         }
     }
 }
+/// Value type shared by query sorting and physical split sort schemas.
+/// A split's logical type comes from its writer schema, not its column encoding.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SortFieldType {
+    Unspecified = 0,
+    Text = 1,
+    I64 = 2,
+    U64 = 3,
+    F64 = 4,
+    Datetime = 5,
+    Bytes = 6,
+    Bool = 7,
+}
+impl SortFieldType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "SORT_FIELD_TYPE_UNSPECIFIED",
+            Self::Text => "SORT_FIELD_TYPE_TEXT",
+            Self::I64 => "SORT_FIELD_TYPE_I64",
+            Self::U64 => "SORT_FIELD_TYPE_U64",
+            Self::F64 => "SORT_FIELD_TYPE_F64",
+            Self::Datetime => "SORT_FIELD_TYPE_DATETIME",
+            Self::Bytes => "SORT_FIELD_TYPE_BYTES",
+            Self::Bool => "SORT_FIELD_TYPE_BOOL",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SORT_FIELD_TYPE_UNSPECIFIED" => Some(Self::Unspecified),
+            "SORT_FIELD_TYPE_TEXT" => Some(Self::Text),
+            "SORT_FIELD_TYPE_I64" => Some(Self::I64),
+            "SORT_FIELD_TYPE_U64" => Some(Self::U64),
+            "SORT_FIELD_TYPE_F64" => Some(Self::F64),
+            "SORT_FIELD_TYPE_DATETIME" => Some(Self::Datetime),
+            "SORT_FIELD_TYPE_BYTES" => Some(Self::Bytes),
+            "SORT_FIELD_TYPE_BOOL" => Some(Self::Bool),
+            _ => None,
+        }
+    }
+}
 /// Sort value format for datetime field.
 /// We keep an enum with only one format
 /// for future extension.

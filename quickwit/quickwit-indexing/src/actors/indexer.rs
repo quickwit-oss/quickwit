@@ -33,11 +33,13 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
+use quickwit_metastore::{IndexingSortSchema, SortFieldMetadata};
 use quickwit_metrics::GaugeGuard;
 use quickwit_proto::indexing::{IndexingPipelineId, PipelineMetrics};
 use quickwit_proto::metastore::{
     LastDeleteOpstampRequest, MetastoreService, MetastoreServiceClient,
 };
+use quickwit_proto::search::{SortFieldType, SortOrder};
 use quickwit_proto::types::DocMappingUid;
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use serde::Serialize;
@@ -97,6 +99,7 @@ struct IndexerState {
     publish_lock: PublishLock,
     schema: Schema,
     doc_mapping_uid: DocMappingUid,
+    sort_fields: IndexingSortSchema,
     tokenizer_manager: TokenizerManager,
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
@@ -137,6 +140,7 @@ impl IndexerState {
             partition_id,
             last_delete_opstamp,
             self.doc_mapping_uid,
+            self.sort_fields.clone(),
             self.indexing_directory.clone(),
             index_builder,
             io_controls,
@@ -527,7 +531,7 @@ impl Handler<NewPublishLock> for Indexer {
 
 impl Indexer {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub fn try_new(
         pipeline_id: IndexingPipelineId,
         doc_mapper: Arc<DocMapper>,
         metastore: MetastoreServiceClient,
@@ -537,14 +541,44 @@ impl Indexer {
         index_serializer_mailbox: Mailbox<IndexSerializer>,
         fingerprinter_opt: Option<Fingerprinter>,
         indexing_io_throughput_limiter_opt: Option<Limiter>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        indexing_settings.validate_sort_fields(&doc_mapper)?;
+        // Validation guarantees a single raw text field. Resolve the schema once for this
+        // pipeline and pass it to every split, including splits with only missing values.
+        let sort_fields = IndexingSortSchema {
+            fields: indexing_settings
+                .sort_fields
+                .iter()
+                .map(|sort| SortFieldMetadata {
+                    field: sort.field.clone(),
+                    order: sort.order,
+                    field_type: SortFieldType::Text,
+                })
+                .collect(),
+        };
+        if !indexing_settings.sort_fields.is_empty() {
+            anyhow::ensure!(
+                fingerprinter_opt.is_none(),
+                "indexing_settings.sort_fields cannot be combined with document fingerprint \
+                 clustering"
+            );
+        }
         let schema = doc_mapper.schema();
         let tokenizer_manager = doc_mapper.tokenizer_manager().clone();
         let docstore_compression = Compressor::Zstd(ZstdCompressor {
             compression_level: Some(indexing_settings.docstore_compression_level),
         });
         let index_settings = IndexSettings {
-            sort_by_field: None,
+            sort_by_field: sort_fields
+                .fields
+                .first()
+                .map(|sort| tantivy::IndexSortByField {
+                    field: sort.field.clone(),
+                    order: match sort.order {
+                        SortOrder::Asc => tantivy::Order::Asc,
+                        SortOrder::Desc => tantivy::Order::Desc,
+                    },
+                }),
             docstore_blocksize: indexing_settings.docstore_blocksize,
             docstore_compression,
             docstore_compress_dedicated_thread: true,
@@ -559,7 +593,7 @@ impl Indexer {
                     cooperative_indexing_permits,
                 )
             });
-        Self {
+        Ok(Self {
             indexer_state: IndexerState {
                 pipeline_id,
                 metastore: metastore.clone(),
@@ -569,6 +603,7 @@ impl Indexer {
                 publish_lock: PublishLock::default(),
                 schema,
                 doc_mapping_uid: doc_mapper.doc_mapping_uid(),
+                sort_fields,
                 tokenizer_manager: tokenizer_manager.tantivy_manager().clone(),
                 index_settings,
                 max_num_partitions: doc_mapper.max_num_partitions(),
@@ -578,7 +613,7 @@ impl Indexer {
             index_serializer_mailbox,
             indexing_workbench_opt: None,
             counters: IndexerCounters::default(),
-        }
+        })
     }
 
     fn memory_usage(&self) -> ByteSize {
@@ -728,7 +763,7 @@ mod tests {
         index_serializer_mailbox: Mailbox<IndexSerializer>,
         fingerprinter_opt: Option<Fingerprinter>,
     ) -> Indexer {
-        Indexer::new(
+        Indexer::try_new(
             pipeline_id,
             doc_mapper,
             metastore,
@@ -739,6 +774,50 @@ mod tests {
             fingerprinter_opt,
             None,
         )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_sort_fields_reject_fingerprint_clustering() {
+        let universe = Universe::with_accelerated_time();
+        let (mailbox, _inbox) = universe.create_test_mailbox();
+        let doc_mapper: DocMapper = serde_json::from_value(serde_json::json!({
+            "field_mappings": [{"name": "service", "type": "text", "tokenizer": "raw", "fast": true}]
+        })).unwrap();
+        let clustering: DocsClusteringConfig = serde_json::from_value(serde_json::json!([
+            {"fingerprint": [{"kind": "structure"}]}
+        ]))
+        .unwrap();
+        let result = Indexer::try_new(
+            IndexingPipelineId {
+                index_uid: IndexUid::for_test("test-index", 0),
+                source_id: "test-source".to_string(),
+                node_id: NodeId::from_str("test-node"),
+                pipeline_uid: PipelineUid::default(),
+            },
+            Arc::new(doc_mapper),
+            MetastoreServiceClient::from_mock(MockMetastoreService::new()),
+            TempDirectory::for_test(),
+            IndexingSettings {
+                sort_fields: vec![quickwit_config::IndexingSortField {
+                    field: "service".to_string(),
+                    order: Default::default(),
+                }],
+                ..IndexingSettings::for_test()
+            },
+            None,
+            mailbox,
+            Some(Fingerprinter::new(&clustering)),
+            None,
+        );
+        assert!(
+            result
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("cannot be combined")
+        );
+        universe.assert_quit().await;
     }
 
     #[test]

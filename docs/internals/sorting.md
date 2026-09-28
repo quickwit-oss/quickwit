@@ -12,6 +12,13 @@ to use for sorting. Sorting is Descending by default. The sorting order can be r
 a field name with a hyphen `-`.
 The special value `_score` means sorting by score, it is also Descending by default.
 
+The prefix parser is shared with `indexing_settings.sort_fields` through
+`quickwit_common::parse_sort_fields`, which returns field names and orders.
+Each caller supplies its default and reverse orders: descending by default for search,
+ascending by default for indexing.
+A `+` keeps that default and a `-` reverses it. Each caller handles its own list format
+and field validation.
+
 In case of equality between two documents, the GlobalDocId, composed of (SplitId, SegmentId, DocId)
 is used as a tie breaker. It is used to sort in the same order as the first field being sorted by.
 This means it is in Descending order by default.

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 pub(crate) mod serialize;
-
+mod sort_fields;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
@@ -34,6 +34,7 @@ use rand::{RngExt, distr, rng};
 use serde::{Deserialize, Serialize};
 pub use serialize::{load_index_config_from_user_config, load_index_config_update};
 use siphasher::sip::SipHasher;
+pub use sort_fields::IndexingSortField;
 use tracing::warn;
 
 use crate::index_config::serialize::VersionedIndexConfig;
@@ -104,6 +105,15 @@ impl Default for IndexingResources {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Hash, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingSettings {
+    /// Physical document ordering within splits, independent of query result ordering.
+    /// Currently at most one scalar raw text fast field is supported.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        with = "sort_fields::config"
+    )]
+    #[schema(value_type = Vec<String>)]
+    pub sort_fields: Vec<IndexingSortField>,
     #[schema(default = 60)]
     #[serde(default = "IndexingSettings::default_commit_timeout_secs")]
     pub commit_timeout_secs: usize,
@@ -206,6 +216,17 @@ impl Default for ParquetIndexingConfig {
 }
 
 impl IndexingSettings {
+    pub fn validate_sort_fields(&self, doc_mapper: &DocMapper) -> anyhow::Result<()> {
+        ensure!(
+            self.sort_fields.len() <= 1,
+            "indexing_settings.sort_fields supports at most one field"
+        );
+        for sort_field in &self.sort_fields {
+            doc_mapper.validate_sort_field(&sort_field.field)?;
+        }
+        Ok(())
+    }
+
     pub fn commit_timeout(&self) -> Duration {
         Duration::from_secs(self.commit_timeout_secs as u64)
     }
@@ -252,6 +273,7 @@ impl IndexingSettings {
 impl Default for IndexingSettings {
     fn default() -> Self {
         Self {
+            sort_fields: Vec::new(),
             commit_timeout_secs: Self::default_commit_timeout_secs(),
             docstore_blocksize: Self::default_docstore_blocksize(),
             docstore_compression_level: Self::default_docstore_compression_level(),
@@ -681,7 +703,8 @@ pub(super) fn validate_index_config(
     // Note: this needs a deep refactoring to separate the doc mapping configuration,
     // and doc mapper implementations.
     // TODO see if we should store the byproducton the IndexConfig.
-    build_doc_mapper(doc_mapping, search_settings)?;
+    let doc_mapper = build_doc_mapper(doc_mapping, search_settings)?;
+    indexing_settings.validate_sort_fields(&doc_mapper)?;
 
     indexing_settings.merge_policy.validate()?;
     indexing_settings.resources.validate()?;
@@ -1390,5 +1413,151 @@ mod tests {
         assert!(mutation_occurred);
         assert_eq!(updated_doc_mapping.doc_mapping_uid, new_doc_mapping_uid);
         assert_eq!(updated_doc_mapping.mode, Mode::Strict);
+    }
+}
+
+#[cfg(test)]
+mod sort_field_tests {
+    use quickwit_proto::search::SortOrder;
+    use serde_json::json;
+
+    use super::{
+        DocMapping, IndexConfig, IndexingSettings, IndexingSortField, SearchSettings,
+        validate_index_config,
+    };
+
+    #[test]
+    fn test_sort_field_validation() {
+        let mapping: DocMapping = serde_json::from_value(json!({"field_mappings": [
+            {"name": "service", "type": "text", "tokenizer": "raw"}
+        ]}))
+        .unwrap();
+        let mut settings = IndexingSettings::default();
+        validate_index_config(&mapping, &settings, &SearchSettings::default(), &None).unwrap();
+        settings.sort_fields.push(IndexingSortField {
+            field: "service".to_string(),
+            order: SortOrder::Asc,
+        });
+        let error = validate_index_config(&mapping, &settings, &SearchSettings::default(), &None)
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "sort field `service` must be a fast field; set `fast: true`"
+        );
+    }
+
+    #[test]
+    fn test_sort_fields_shorthand() {
+        for (expression, field, order, canonical) in [
+            ("service", "service", SortOrder::Asc, "service"),
+            ("+service", "service", SortOrder::Asc, "service"),
+            ("-service", "service", SortOrder::Desc, "-service"),
+            (
+                "-resource.service",
+                "resource.service",
+                SortOrder::Desc,
+                "-resource.service",
+            ),
+            (
+                r"service\.name",
+                r"service\.name",
+                SortOrder::Asc,
+                r"service\.name",
+            ),
+        ] {
+            let settings: IndexingSettings =
+                serde_yaml::from_str(&format!("sort_fields: [{expression}]\n")).unwrap();
+            assert_eq!(
+                settings.sort_fields,
+                vec![IndexingSortField {
+                    field: field.to_string(),
+                    order,
+                }]
+            );
+            let serialized = serde_json::to_value(&settings).unwrap();
+            assert_eq!(serialized["sort_fields"], json!([canonical]));
+            assert_eq!(
+                serde_json::from_value::<IndexingSettings>(serialized).unwrap(),
+                settings
+            );
+        }
+    }
+
+    #[test]
+    fn test_sort_fields_invalid_shorthand() {
+        for expression in [
+            "",
+            "+",
+            "-",
+            "--service",
+            "++service",
+            "-+service",
+            "+-service",
+            " service",
+            "service desc",
+        ] {
+            let error = serde_json::from_value::<IndexingSettings>(json!({
+                "sort_fields": [expression]
+            }))
+            .unwrap_err();
+            assert!(
+                error.to_string().contains("invalid sort field"),
+                "{expression:?}: {error}"
+            );
+        }
+        for value in [
+            json!("service"),
+            json!([42]),
+            json!([null]),
+            json!([{"field": "service"}]),
+        ] {
+            serde_json::from_value::<IndexingSettings>(json!({"sort_fields": value})).unwrap_err();
+        }
+    }
+
+    #[test]
+    fn test_sort_field_serialization_and_pipeline_fingerprint() {
+        let legacy: IndexingSettings = serde_json::from_value(json!({})).unwrap();
+        assert!(legacy.sort_fields.is_empty());
+        assert!(
+            serde_json::to_value(&legacy)
+                .unwrap()
+                .get("sort_fields")
+                .is_none()
+        );
+
+        let mut config = IndexConfig::for_test("test-index", "ram://indexes/test-index");
+        let original_fingerprint = config.indexing_params_fingerprint();
+        config.indexing_settings.sort_fields = vec![IndexingSortField {
+            field: "service".to_string(),
+            order: Default::default(),
+        }];
+        assert_ne!(original_fingerprint, config.indexing_params_fingerprint());
+        let serialized = serde_json::to_value(&config.indexing_settings).unwrap();
+        let deserialized: IndexingSettings = serde_json::from_value(serialized).unwrap();
+        assert_eq!(deserialized, config.indexing_settings);
+
+        let ascending_fingerprint = config.indexing_params_fingerprint();
+        config.indexing_settings.sort_fields =
+            serde_json::from_value::<IndexingSettings>(json!({"sort_fields": ["-service"]}))
+                .unwrap()
+                .sort_fields;
+        assert_ne!(ascending_fingerprint, config.indexing_params_fingerprint());
+        config.indexing_settings.sort_fields.clear();
+        assert_eq!(original_fingerprint, config.indexing_params_fingerprint());
+    }
+
+    #[test]
+    fn test_sort_fields_rejects_multiple_fields() {
+        let settings: IndexingSettings =
+            serde_json::from_value(json!({"sort_fields": ["service", "-host"]})).unwrap();
+        let mapping: DocMapping = serde_json::from_value(json!({"field_mappings": [
+            {"name": "service", "type": "text", "tokenizer": "raw", "fast": true},
+            {"name": "host", "type": "text", "tokenizer": "raw", "fast": true}
+        ]}))
+        .unwrap();
+        let error = validate_index_config(&mapping, &settings, &SearchSettings::default(), &None)
+            .unwrap_err();
+        assert!(error.to_string().contains("at most one field"));
     }
 }

@@ -311,6 +311,19 @@ enum SortOrder {
   DESC = 1; //< This will be the default value;
 }
 
+// Value type shared by query sorting and physical split sort schemas.
+// A split's logical type comes from its writer schema, not its column encoding.
+enum SortFieldType {
+  SORT_FIELD_TYPE_UNSPECIFIED = 0;
+  SORT_FIELD_TYPE_TEXT = 1;
+  SORT_FIELD_TYPE_I64 = 2;
+  SORT_FIELD_TYPE_U64 = 3;
+  SORT_FIELD_TYPE_F64 = 4;
+  SORT_FIELD_TYPE_DATETIME = 5;
+  SORT_FIELD_TYPE_BYTES = 6;
+  SORT_FIELD_TYPE_BOOL = 7;
+}
+
 // Sort value format for datetime field.
 // We keep an enum with only one format
 // for future extension.

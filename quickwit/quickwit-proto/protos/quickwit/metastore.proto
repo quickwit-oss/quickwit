@@ -18,6 +18,7 @@ package quickwit.metastore;
 
 import "quickwit/common.proto";
 import "quickwit/ingest.proto";
+import "quickwit/search.proto";
 
 enum SourceType {
   SOURCE_TYPE_UNSPECIFIED = 0;
@@ -62,6 +63,17 @@ message SplitRecoveryMetadata {
 
   // None means the split is mature; otherwise, this is its maturation period in milliseconds.
   optional uint64 maturation_period_millis = 16;
+
+  // Physical ordering. Empty for legacy splits and splits without a sort guarantee.
+  repeated SplitSortField sort_fields = 17;
+}
+
+// Physical ordering. Missing values sort first ascending, last descending.
+message SplitSortField {
+  string field = 1;
+  bool descending = 2;
+  // Required for every declared sort field. Unspecified and unknown types are invalid.
+  quickwit.search.SortFieldType field_type = 3;
 }
 
 // Metastore meant to manage Quickwit's indexes, their splits and delete tasks.

@@ -425,6 +425,33 @@ fn extract_single_obj(
 }
 
 impl DocMapper {
+    /// Validates the physical index sort contract: a scalar text field with raw
+    /// indexing and raw fast-field values. Missing values follow the sort direction.
+    pub fn validate_sort_field(&self, field_name: &str) -> anyhow::Result<()> {
+        let Some(FieldMappingType::Text(options, Cardinality::SingleValued)) =
+            self.field_mappings.find_field_mapping_type(field_name)
+        else {
+            bail!(
+                "sort field `{field_name}` must be an explicitly mapped single-valued text field"
+            );
+        };
+        let text_options: tantivy::schema::TextOptions = options.into();
+        if !text_options.is_fast() {
+            bail!("sort field `{field_name}` must be a fast field; set `fast: true`");
+        }
+        if let Some(normalizer) = text_options.get_fast_field_tokenizer_name() {
+            if normalizer != "raw" {
+                bail!(
+                    "sort field `{field_name}` must use the `raw` fast-field normalizer, got \
+                     `{normalizer}`"
+                );
+            }
+        }
+        validate_tag(field_name, &self.schema)
+            .with_context(|| format!("invalid sort field `{field_name}`"))?;
+        Ok(())
+    }
+
     /// Returns the unique identifier of the doc mapping.
     pub fn doc_mapping_uid(&self) -> DocMappingUid {
         self.doc_mapping_uid
@@ -727,6 +754,73 @@ mod tests {
         DOCUMENT_SIZE_FIELD_NAME, DYNAMIC_FIELD_NAME, DocMapperBuilder, DocParsingError,
         FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
     };
+
+    fn validate_sort_field(field: JsonValue, field_name: &str) -> anyhow::Result<()> {
+        let builder: DocMapperBuilder = serde_json::from_value(json!({"field_mappings": [field]}))?;
+        builder.try_build()?.validate_sort_field(field_name)
+    }
+
+    #[test]
+    fn test_sort_field_validation() {
+        let valid = json!({"name": "service", "type": "text", "tokenizer": "raw", "fast": true});
+        validate_sort_field(valid.clone(), "service").unwrap();
+        validate_sort_field(valid.clone(), "unknown").unwrap_err();
+        validate_sort_field(valid.clone(), "").unwrap_err();
+
+        for (key, value) in [
+            ("type", json!("array<text>")),
+            ("tokenizer", json!("default")),
+        ] {
+            let mut invalid = valid.clone();
+            invalid[key] = value;
+            validate_sort_field(invalid, "service").unwrap_err();
+        }
+        for (fast, expected_error) in [
+            (
+                json!(false),
+                "sort field `service` must be a fast field; set `fast: true`",
+            ),
+            (
+                json!({"normalizer": "lowercase"}),
+                "sort field `service` must use the `raw` fast-field normalizer, got `lowercase`",
+            ),
+        ] {
+            let mut invalid = valid.clone();
+            invalid["fast"] = fast;
+            assert_eq!(
+                validate_sort_field(invalid, "service")
+                    .unwrap_err()
+                    .to_string(),
+                expected_error
+            );
+        }
+        validate_sort_field(
+            json!({"name": "service", "type": "u64", "fast": true}),
+            "service",
+        )
+        .unwrap_err();
+        validate_sort_field(
+            json!({"name": "service", "type": "text", "indexed": false, "fast": true}),
+            "service",
+        )
+        .unwrap_err();
+    }
+
+    #[test]
+    fn test_sort_field_nested_and_escaped_names() {
+        validate_sort_field(
+            json!({"name": "resource", "type": "object", "field_mappings": [
+                {"name": "service", "type": "text", "tokenizer": "raw", "fast": true}
+            ]}),
+            "resource.service",
+        )
+        .unwrap();
+        validate_sort_field(
+            json!({"name": "service.name", "type": "text", "tokenizer": "raw", "fast": true}),
+            r"service\.name",
+        )
+        .unwrap();
+    }
 
     fn example_json_doc_value() -> JsonValue {
         serde_json::json!({

@@ -134,6 +134,12 @@ pub struct SplitMetadata {
     /// Doc mapping UID used when creating this split. This split may only be merged with other
     /// splits using the same doc mapping UID.
     pub doc_mapping_uid: DocMappingUid,
+
+    /// Physical ordering, including each field's logical comparison type.
+    /// Missing values sort first ascending, last descending.
+    /// An empty list means no ordering is guaranteed, including for legacy splits. Merge inputs
+    /// must have identical declarations; the index configuration cannot change this claim.
+    pub sort_fields: crate::IndexingSortSchema,
 }
 
 impl fmt::Debug for SplitMetadata {
@@ -178,6 +184,9 @@ impl fmt::Debug for SplitMetadata {
         debug_struct.field("footer_offsets", &self.footer_offsets);
         debug_struct.field("delete_opstamp", &self.delete_opstamp);
         debug_struct.field("num_merge_ops", &self.num_merge_ops);
+        if !self.sort_fields.is_empty() {
+            debug_struct.field("sort_fields", &self.sort_fields);
+        }
         debug_struct.finish()
     }
 }
@@ -206,6 +215,7 @@ impl SplitMetadata {
             num_merge_ops,
             parent_split_ids,
             maturation_period_millis,
+            sort_fields,
         } = recovery_metadata;
         let time_range = match (time_range_start_inclusive, time_range_end_inclusive) {
             (Some(start), Some(end)) if start <= end => Some(start..=end),
@@ -242,6 +252,12 @@ impl SplitMetadata {
             num_merge_ops: num_merge_ops.try_into()?,
             doc_mapping_uid: doc_mapping_uid
                 .ok_or_else(|| anyhow::anyhow!("missing recovery doc mapping UID"))?,
+            sort_fields: crate::IndexingSortSchema {
+                fields: sort_fields
+                    .into_iter()
+                    .map(TryInto::try_into)
+                    .collect::<anyhow::Result<_>>()?,
+            },
         };
         let parent_split_ids = parent_split_ids.into_iter().map(SplitId::from).collect();
         Ok((split_metadata, parent_split_ids))
@@ -359,6 +375,7 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
             footer_offsets: 1000..2000,
             num_merge_ops: 3,
             doc_mapping_uid: DocMappingUid::default(),
+            sort_fields: Default::default(),
         }
     }
 
@@ -499,6 +516,7 @@ mod tests {
             delete_opstamp: 0,
             num_merge_ops: 0,
             doc_mapping_uid: DocMappingUid::default(),
+            sort_fields: Default::default(),
         };
 
         let expected_output = "SplitMetadata { split_id: \"split-1\", index_uid: IndexUid { \
@@ -511,6 +529,50 @@ mod tests {
                                footer_offsets: 0..1024, delete_opstamp: 0, num_merge_ops: 0 }";
 
         assert_eq!(format!("{split_metadata:?}"), expected_output);
+    }
+
+    #[test]
+    fn test_split_sort_fields_serde_compatibility() {
+        let legacy = SplitMetadata::default();
+        let json = serde_json::to_value(&legacy).unwrap();
+        assert!(json.get("sort_fields").is_none());
+        assert!(
+            serde_json::from_value::<SplitMetadata>(json)
+                .unwrap()
+                .sort_fields
+                .is_empty()
+        );
+
+        let sorted = SplitMetadata {
+            sort_fields: crate::IndexingSortSchema {
+                fields: vec![crate::SortFieldMetadata {
+                    field: "service".to_string(),
+                    order: quickwit_proto::search::SortOrder::Asc,
+                    field_type: quickwit_proto::search::SortFieldType::Text,
+                }],
+            },
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&sorted).unwrap();
+        assert_eq!(
+            json["sort_fields"],
+            serde_json::json!([{"field": "service", "order": "asc", "type": "text"}])
+        );
+        assert_eq!(
+            serde_json::from_value::<SplitMetadata>(json.clone()).unwrap(),
+            sorted
+        );
+        let mut missing_type = json.clone();
+        missing_type["sort_fields"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("type");
+        serde_json::from_value::<SplitMetadata>(missing_type).unwrap_err();
+        for invalid_type in ["unknown", "unspecified"] {
+            let mut invalid_metadata = json.clone();
+            invalid_metadata["sort_fields"][0]["type"] = serde_json::json!(invalid_type);
+            serde_json::from_value::<SplitMetadata>(invalid_metadata).unwrap_err();
+        }
     }
 
     #[test]

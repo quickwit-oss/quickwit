@@ -2,7 +2,7 @@
 /// Immutable metadata embedded directly in a split so that the metastore split metadata can be
 /// reconstructed if the metastore database is lost.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitRecoveryMetadata {
     #[prost(string, tag = "1")]
     pub split_id: ::prost::alloc::string::String,
@@ -38,6 +38,21 @@ pub struct SplitRecoveryMetadata {
     /// None means the split is mature; otherwise, this is its maturation period in milliseconds.
     #[prost(uint64, optional, tag = "16")]
     pub maturation_period_millis: ::core::option::Option<u64>,
+    /// Physical ordering. Empty for legacy splits and splits without a sort guarantee.
+    #[prost(message, repeated, tag = "17")]
+    pub sort_fields: ::prost::alloc::vec::Vec<SplitSortField>,
+}
+/// Physical ordering. Missing values sort first ascending, last descending.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SplitSortField {
+    #[prost(string, tag = "1")]
+    pub field: ::prost::alloc::string::String,
+    #[prost(bool, tag = "2")]
+    pub descending: bool,
+    /// Required for every declared sort field. Unspecified and unknown types are invalid.
+    #[prost(enumeration = "super::search::SortFieldType", tag = "3")]
+    pub field_type: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
