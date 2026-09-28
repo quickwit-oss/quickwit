@@ -163,6 +163,8 @@ By default, the sort order is `ascending` for fast fields and descending for `_s
 
 When sorting by a fast field and this field contains several values in a single document, only the first value is used for sorting.
 
+Documents that lack the sort field are always sorted last, whatever the sort order. This matches the Elasticsearch default `"missing": "_last"`. The `missing` parameter accepts only `_last`; any other value is rejected.
+
 The sort order can be set as descending/ascending using the
 following syntax.
 
