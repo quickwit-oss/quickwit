@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use itertools::Itertools;
-use quickwit_actors::ActorExitStatus;
+use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_common::rate_limited_error;
 use quickwit_config::{FileSourceMessageType, FileSourceSqs};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
@@ -33,8 +33,9 @@ use super::local_state::QueueLocalState;
 use super::message::{MessageType, PreProcessingError, ReadyMessage};
 use super::shared_state::{QueueSharedState, checkpoint_messages};
 use super::visibility::{VisibilitySettings, spawn_visibility_task};
+use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, PublishLock};
-use crate::source::{SourceContext, SourceRuntime, SourceSink};
+use crate::source::{SourceContext, SourceRuntime};
 
 /// Maximum duration that the `emit_batches()` callback can wait for
 /// `queue.receive()` calls. If too small, the actor loop will spin
@@ -155,12 +156,11 @@ impl QueueCoordinator {
 
     pub async fn initialize(
         &mut self,
-        source_sink: &SourceSink,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         let publish_lock = self.publish_lock.clone();
-        source_sink
-            .send_publish_lock(NewPublishLock(publish_lock), ctx)
+        ctx.send_message(doc_processor_mailbox, NewPublishLock(publish_lock))
             .await?;
         Ok(())
     }
@@ -254,7 +254,7 @@ impl QueueCoordinator {
 
     pub async fn emit_batches(
         &mut self,
-        source_sink: &SourceSink,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         if let Some(in_progress_ref) = self.local_state.read_in_progress_mut() {
@@ -265,8 +265,7 @@ impl QueueCoordinator {
                 .await?;
             self.observable_state.num_lines_processed += batch_builder.docs.len() as u64;
             self.observable_state.num_bytes_processed += batch_builder.num_bytes;
-            source_sink
-                .send_raw_doc_batch(batch_builder.build(), ctx)
+            ctx.send_message(doc_processor_mailbox, batch_builder.build())
                 .await?;
             if in_progress_ref.batch_reader.is_eof() {
                 self.local_state.drop_currently_read().await?;
@@ -335,7 +334,7 @@ mod tests {
     use crate::source::queue_sources::memory_queue::MemoryQueueForTests;
     use crate::source::queue_sources::message::PreProcessedPayload;
     use crate::source::queue_sources::shared_state::shared_state_for_tests::init_state;
-    use crate::source::{BATCH_NUM_BYTES_LIMIT, SourceActor, SourceSink};
+    use crate::source::{BATCH_NUM_BYTES_LIMIT, SourceActor};
 
     fn setup_coordinator(
         queue: Arc<MemoryQueueForTests>,
@@ -375,14 +374,19 @@ mod tests {
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
         let (doc_processor_mailbox, doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
-        let source_sink = SourceSink::from(doc_processor_mailbox);
         let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
-        coordinator.initialize(&source_sink, &ctx).await.unwrap();
+        coordinator
+            .initialize(&doc_processor_mailbox, &ctx)
+            .await
+            .unwrap();
 
-        coordinator.emit_batches(&source_sink, &ctx).await.unwrap();
+        coordinator
+            .emit_batches(&doc_processor_mailbox, &ctx)
+            .await
+            .unwrap();
 
         for (uri, ack_id) in messages {
             queue.send_message(uri.to_string(), ack_id);
@@ -392,7 +396,10 @@ mod tests {
         // start, emit), assuming the `QueueReceiver` doesn't chunk the receive
         // future.
         for _ in 0..(messages.len() * 4) {
-            coordinator.emit_batches(&source_sink, &ctx).await.unwrap();
+            coordinator
+                .emit_batches(&doc_processor_mailbox, &ctx)
+                .await
+                .unwrap();
         }
 
         let batches = doc_processor_inbox

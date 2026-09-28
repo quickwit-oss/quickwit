@@ -62,7 +62,6 @@ quickwit-common = { workspace = true }
 quickwit-compaction = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-control-plane = { workspace = true }
-quickwit-datafusion = { workspace = true, optional = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-index-management = { workspace = true }
 quickwit-indexing = { workspace = true }
@@ -112,7 +111,6 @@ quickwit-search = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
-datafusion = ["dep:quickwit-datafusion"]
 pprof = [
   "dep:pprof"
 ]
