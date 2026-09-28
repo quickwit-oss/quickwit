@@ -33,13 +33,14 @@ use crate::{InvalidQuery, find_field_or_hit_dynamic};
 /// fields before running a synchronous search against remote storage.
 ///
 /// Predicates of the form `(EQ (REGEXP_EXTRACT field "prefix(capture)suffix" 1u64) "literal")`
-/// (or the swapped literal/extract form) on a non-JSON string fast field are evaluated once per
-/// distinct fast-field value instead of once per document: the fast-field dictionary is walked
-/// with an FST *prefilter* regex, each accepted value is checked exactly, and documents are
-/// selected by the ordinal of their first value. They match the same documents as the JIT path.
-/// When the field is also indexed with the raw tokenizer, only the documents in the postings of
-/// the matching values are visited; callers must then also warm the field's term dictionary and
-/// postings with the regex of [`CalcFieldQuery::try_prefilter_regex_query`].
+/// (or the swapped literal/extract form, with any capture index or none for the whole match) on
+/// a non-JSON string fast field are evaluated once per distinct value instead of once per
+/// document: the dictionary is walked with an FST *prefilter* regex, each accepted value is
+/// checked exactly, and documents are selected by their first value. They match the same
+/// documents as the JIT path. When the field is also indexed with the raw tokenizer, only the
+/// documents in the postings of the matching values are visited; callers must then also warm the
+/// field's term dictionary and postings with the regex of
+/// [`CalcFieldQuery::try_prefilter_regex_query`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CalcFieldQuery {
     #[serde(with = "jitexpr_serde")]
@@ -54,7 +55,7 @@ impl From<CalcFieldQuery> for QueryAst {
 
 impl CalcFieldQuery {
     /// Builds an FST [`RegexQuery`] accepting a *superset* of the values matching
-    /// `(EQ (REGEXP_EXTRACT field pattern 1u64) "literal")` (or the swapped form).
+    /// `(EQ (REGEXP_EXTRACT field pattern capture_index) "literal")` (or the swapped form).
     ///
     /// Available only when the indexed terms contain the same raw values as the fast field, in
     /// which case the query reads the postings of the terms this regex accepts, and they must be
@@ -73,16 +74,18 @@ impl CalcFieldQuery {
     }
 
     fn regex_extract_eq_plan(&self, schema: &TantivySchema) -> Option<RegexExtractEqPlan> {
-        let (field_name, pattern, literal) = match_eq_regexp_extract(&self.expression)?;
+        let (field_name, pattern, capture_index, literal) =
+            match_eq_regexp_extract(&self.expression)?;
         if !is_str_fast_field(field_name, schema) {
             return None;
         }
-        let prefilter_regex = substitute_single_capture(pattern, literal)?;
+        let isolated_pattern = isolate_capture(pattern, capture_index)?;
+        let prefilter_regex = substitute_single_capture(&isolated_pattern, literal)?;
         let terms_are_fast_field_values = is_raw_term_prefilter_compatible(field_name, schema);
         RegexExtractEqPlan::new(
             field_name,
             prefilter_regex,
-            pattern,
+            &isolated_pattern,
             literal,
             terms_are_fast_field_values,
         )
@@ -105,9 +108,10 @@ impl BuildTantivyAst for CalcFieldQuery {
     }
 }
 
-/// Matches `(EQ (REGEXP_EXTRACT field pattern 1u64) "literal")` and the swapped form
-/// `(EQ "literal" (REGEXP_EXTRACT field pattern 1u64))`.
-fn match_eq_regexp_extract(expression: &UntypedExpr) -> Option<(&str, &str, &str)> {
+/// Matches `(EQ (REGEXP_EXTRACT field pattern [capture_index]) "literal")` and the swapped form
+/// `(EQ "literal" (REGEXP_EXTRACT field pattern [capture_index]))`, and returns the field, the
+/// pattern, the capture index (0, the whole match, when omitted) and the literal.
+fn match_eq_regexp_extract(expression: &UntypedExpr) -> Option<(&str, &str, u64, &str)> {
     let UntypedExpr::FnCall {
         function: Function::Eq,
         args,
@@ -131,15 +135,24 @@ fn match_eq_regexp_extract(expression: &UntypedExpr) -> Option<(&str, &str, &str
     else {
         return None;
     };
-    let [
-        UntypedExpr::Variable(field_name),
-        UntypedExpr::Literal(Literal::String(pattern)),
-        UntypedExpr::Literal(Literal::U64(1)),
-    ] = extract_args.as_slice()
-    else {
-        return None;
+    let (field_name, pattern, capture_index) = match extract_args.as_slice() {
+        [
+            UntypedExpr::Variable(field_name),
+            UntypedExpr::Literal(Literal::String(pattern)),
+        ] => (field_name, pattern, 0),
+        [
+            UntypedExpr::Variable(field_name),
+            UntypedExpr::Literal(Literal::String(pattern)),
+            UntypedExpr::Literal(Literal::U64(capture_index)),
+        ] => (field_name, pattern, *capture_index),
+        _ => return None,
     };
-    Some((field_name.as_ref(), pattern.as_ref(), literal.as_ref()))
+    Some((
+        field_name.as_ref(),
+        pattern.as_ref(),
+        capture_index,
+        literal.as_ref(),
+    ))
 }
 
 fn is_str_fast_field(field_name: &str, schema: &TantivySchema) -> bool {
@@ -177,6 +190,45 @@ fn is_raw_term_prefilter_compatible(field_name: &str, schema: &TantivySchema) ->
 
 /// Matches any sequence of characters, including newlines.
 const ANY_TEXT: &str = "(?s:.*)";
+
+/// Rewrites `pattern` into an equivalent pattern whose only capturing group, group 1, captures
+/// what group `capture_index` of `pattern` captures (the whole match for index 0).
+///
+/// The other capturing groups become non-capturing: Rust regexes have no backreferences, so
+/// capturing never changes where they match. Returns `None` when `pattern` does not parse or has
+/// no group `capture_index`.
+fn isolate_capture(pattern: &str, capture_index: u64) -> Option<String> {
+    let ast = ast::parse::Parser::new().parse(pattern).ok()?;
+    let mut groups = Vec::new();
+    collect_capturing_groups(&ast, &mut groups);
+    if capture_index > groups.len() as u64 {
+        return None;
+    }
+    let mut isolated = String::with_capacity(pattern.len() + 2);
+    let mut copied_until = 0;
+    // `collect_capturing_groups` lists groups by increasing offset.
+    for group in groups {
+        if group.capture_index().map(u64::from) == Some(capture_index) {
+            continue;
+        }
+        isolated.push_str(&pattern[copied_until..group.span.start.offset]);
+        isolated.push_str("(?:");
+        copied_until = group.ast.span().start.offset;
+    }
+    isolated.push_str(&pattern[copied_until..]);
+    if capture_index != 0 {
+        return Some(isolated);
+    }
+    // Anchors are zero-width, so the whole match is what the body between them matches.
+    let isolated_ast = ast::parse::Parser::new().parse(&isolated).ok()?;
+    let (body_start, body_end, _, _) = body_bounds(&isolated_ast, isolated.len());
+    Some(format!(
+        "{}({}){}",
+        &isolated[..body_start],
+        &isolated[body_start..body_end],
+        &isolated[body_end..]
+    ))
+}
 
 /// Builds an FST whole-term regex that is a *superset* of terms for which
 /// `EQ(REGEXP_EXTRACT(..., pattern, 1), literal)` holds.
@@ -316,6 +368,7 @@ mod jitexpr_serde {
 
 #[cfg(test)]
 mod tests {
+    use regex::Regex;
     use serde_json::json;
     use tantivy::collector::Count;
     use tantivy::jitexpr::ast::deserialize;
@@ -323,7 +376,7 @@ mod tests {
     use tantivy::schema::{FAST, STRING, Schema};
     use tantivy::{Index, TantivyDocument, doc};
 
-    use super::{CalcFieldQuery, substitute_single_capture};
+    use super::{CalcFieldQuery, isolate_capture, substitute_single_capture};
     use crate::query_ast::{BuildTantivyAstContext, QueryAst};
 
     fn calc_field(expression: &str) -> QueryAst {
@@ -414,6 +467,96 @@ mod tests {
                 expected_count,
                 "{expression}"
             );
+        }
+    }
+
+    #[test]
+    fn test_isolate_capture() {
+        for (pattern, capture_index, expected) in [
+            ("^([a-z]+)-([a-z]+)$", 1, "^([a-z]+)-(?:[a-z]+)$"),
+            ("^([a-z]+)-([a-z]+)$", 2, "^(?:[a-z]+)-([a-z]+)$"),
+            (
+                "^([a-z]+)-([a-z]+)-([a-z]+)-([0-9]+)-([a-z0-9-]+)$",
+                5,
+                "^(?:[a-z]+)-(?:[a-z]+)-(?:[a-z]+)-(?:[0-9]+)-([a-z0-9-]+)$",
+            ),
+            ("((a)b)(c)", 2, "(?:(a)b)(?:c)"),
+            (r"(?P<svc>[a-z]+)-(\d+)", 1, r"(?P<svc>[a-z]+)-(?:\d+)"),
+            (r"(?P<svc>[a-z]+)-(\d+)", 2, r"(?:[a-z]+)-(\d+)"),
+            ("^svc-([a-z]+)-prod$", 0, "^(svc-(?:[a-z]+)-prod)$"),
+            ("svc-[a-z]+", 0, "(svc-[a-z]+)"),
+            ("a|b", 0, "(a|b)"),
+        ] {
+            assert_eq!(
+                isolate_capture(pattern, capture_index).as_deref(),
+                Some(expected),
+                "{pattern} {capture_index}"
+            );
+        }
+        assert!(isolate_capture("^svc-([a-z]+)$", 2).is_none());
+        assert!(isolate_capture("(", 1).is_none());
+    }
+
+    #[test]
+    fn test_isolate_capture_preserves_requested_match() {
+        for (pattern, capture_index, values) in [
+            (
+                r"^([a-z]+)-([a-z]+)-prod$",
+                2,
+                &["svc-api-prod", "svc-web-prod", "invalid"][..],
+            ),
+            (
+                r"^svc-(?P<name>[a-z]+)-(prod)$",
+                1,
+                &["svc-api-prod", "svc-web-prod", "svc-123-prod"][..],
+            ),
+            (
+                r"^([a-z]+)-([a-z]+)-([a-z]+)-([0-9]+)-([a-z0-9-]+)$",
+                3,
+                &[
+                    "svc-api-prod-42-us-east-1",
+                    "svc-web-dev-7-eu-west-2",
+                    "invalid",
+                ][..],
+            ),
+            (
+                r"^([a-z]+)-([a-z]+)-([a-z]+)-([0-9]+)-([a-z0-9-]+)$",
+                5,
+                &[
+                    "svc-api-prod-42-us-east-1",
+                    "svc-web-dev-7-eu-west-2",
+                    "svc-api-prod-x-us-east-1",
+                ][..],
+            ),
+            (
+                r"^svc-([a-z]+)-prod$",
+                0,
+                &["svc-api-prod", "svc-web-prod", "svc-api-dev"][..],
+            ),
+            (
+                r"svc-[a-z]+",
+                0,
+                &["prefix svc-api suffix", "svc-web", "other"][..],
+            ),
+        ] {
+            let isolated_pattern = isolate_capture(pattern, capture_index).unwrap();
+            let original_regex = Regex::new(pattern).unwrap();
+            let isolated_regex = Regex::new(&isolated_pattern).unwrap();
+            for value in values {
+                let original_capture = original_regex
+                    .captures(value)
+                    .and_then(|captures| captures.get(capture_index as usize))
+                    .map(|capture| capture.as_str());
+                let isolated_capture = isolated_regex
+                    .captures(value)
+                    .and_then(|captures| captures.get(1))
+                    .map(|capture| capture.as_str());
+                assert_eq!(
+                    isolated_capture, original_capture,
+                    "pattern={pattern}, isolated={isolated_pattern}, index={capture_index}, \
+                     value={value}"
+                );
+            }
         }
     }
 

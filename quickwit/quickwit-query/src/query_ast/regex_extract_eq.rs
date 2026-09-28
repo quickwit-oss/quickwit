@@ -26,7 +26,7 @@ use tantivy_common::BitSet;
 
 use super::TantivyQueryAst;
 
-/// Compiled plan evaluating `EQ(REGEXP_EXTRACT(field, pattern, 1), literal)` once per distinct
+/// Compiled plan evaluating `EQ(REGEXP_EXTRACT(field, pattern, i), literal)` once per distinct
 /// fast-field value instead of once per document.
 ///
 /// Hidden contracts:
@@ -35,7 +35,8 @@ use super::TantivyQueryAst;
 ///   dictionary and first-value rule as the JIT predicate (`load_str_input`), so both paths match
 ///   the same documents.
 /// - `value_matches` must keep the semantics of the jitexpr `REGEXP_EXTRACT` function
-///   (`Regex::new(pattern)`, leftmost-first `captures`, group 1).
+///   (`Regex::new(pattern)`, leftmost-first `captures`). `pattern` has a single capturing group,
+///   group 1, standing for the requested capture of the original pattern.
 /// - When `terms_are_fast_field_values` is set, every term of the field is one of its fast-field
 ///   values: the raw tokenizer may drop a value (such as a long one) but never alters it, and
 ///   merges drop the values without alive documents from both dictionaries. Callers then warm the
@@ -147,12 +148,7 @@ impl Weight for RegexExtractEqWeight {
             // Without the column every value is `None`, which `EQ` never matches.
             return Ok(Box::new(EmptyScorer));
         };
-        let num_values = u32::try_from(str_column.dictionary().num_terms()).map_err(|_| {
-            TantivyError::InternalError(format!(
-                "fast field `{}` has more than u32::MAX distinct values",
-                self.plan.fast_field_name
-            ))
-        })?;
+        let num_values = str_column.dictionary().num_terms() as u32;
         let max_doc = reader.max_doc();
         let mut doc_bitset = BitSet::with_max_value(max_doc);
         if let Some(inverted_index) = self.inverted_index_with_all_values(reader, &str_column)? {
@@ -327,6 +323,26 @@ mod tests {
                 .expect("unanchored pattern should produce a prefilter");
         assert_eq!(unanchored.regex, "(?s:.*)svc-api-prod(?s:.*)");
 
+        for (expression, expected_regex) in [
+            (
+                r#"(EQ (REGEXP_EXTRACT service "^([a-z]+)-([a-z]+)-prod$" 2u64) "api")"#,
+                "(?:[a-z]+)-api-prod",
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-(prod)$" 1u64) "api")"#,
+                "svc-api-(?:prod)",
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "svc-[a-z]+") "svc-api")"#,
+                r"(?s:.*)svc\-api(?s:.*)",
+            ),
+        ] {
+            let prefilter = calc_field_query(expression)
+                .try_prefilter_regex_query(&schema)
+                .expect("any capture index should produce a prefilter");
+            assert_eq!(prefilter.regex, expected_regex, "{expression}");
+        }
+
         for expression in [
             r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 0u64) "api")"#,
             r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "123")"#,
@@ -426,6 +442,33 @@ mod tests {
             ),
             (
                 r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "123")"#,
+                0,
+            ),
+            // Other capture indexes, with the other groups made non-capturing.
+            (
+                r#"(EQ (REGEXP_EXTRACT service "^([a-z]+)-([a-z]+)-prod$" 2u64) "api")"#,
+                1,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "svc-([a-z]+)-(prod)" 1u64) "api")"#,
+                3,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "^svc-(?P<name>[a-z]+)-(prod)$" 1u64) "api")"#,
+                1,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 0u64) "svc-api-prod")"#,
+                1,
+            ),
+            (r#"(EQ (REGEXP_EXTRACT service "svc-[a-z]+") "svc-api")"#, 4),
+            // Nested capture or missing group: JIT path.
+            (
+                r#"(EQ (REGEXP_EXTRACT service "^(svc-([a-z]+))-prod$" 2u64) "api")"#,
+                1,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 2u64) "api")"#,
                 0,
             ),
         ] {
