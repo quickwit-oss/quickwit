@@ -55,8 +55,8 @@ impl ScalingArbiter {
     /// Computes the maximum number of shards we can have without going below
     /// the long term scale up threshold
     fn long_term_scale_up_threshold_max_shards(&self, shard_stats: ShardStats) -> usize {
-        let total_long_term_ingestion_rate = shard_stats.avg_long_term_ingestion_rate.as_u64()
-            * shard_stats.num_open_shards as u64;
+        let total_long_term_ingestion_rate =
+            shard_stats.avg_long_term_ingestion_rate.as_u64() * shard_stats.num_open_shards as u64;
         (total_long_term_ingestion_rate / self.scale_up_shards_long_term_threshold.as_u64())
             as usize
     }

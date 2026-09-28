@@ -28,10 +28,10 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, DeferableReplyHandler, Handler, Mailbox,
     Supervisor, Universe, WeakMailbox,
 };
+use quickwit_common::Progress;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::uri::Uri;
-use quickwit_common::Progress;
 use quickwit_config::{ClusterConfig, IndexConfig, IndexTemplate, SourceConfig};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadataResponseExt};
@@ -991,8 +991,8 @@ impl DeferableReplyHandler<ReportIndexerStateRequest> for ControlPlane {
                 indexing_tasks_update.indexing_tasks,
             );
         }
-        if let Some(shards_update) = request.shards_update {
-            if let Err(metastore_error) = self
+        if let Some(shards_update) = request.shards_update
+            && let Err(metastore_error) = self
                 .ingest_controller
                 .handle_shards_update(
                     &request.node_id,
@@ -1002,10 +1002,9 @@ impl DeferableReplyHandler<ReportIndexerStateRequest> for ControlPlane {
                     ctx.progress(),
                 )
                 .await
-            {
-                // Return () if there's no metastore error; return the error if there is one.
-                return convert_metastore_error::<()>(metastore_error).map(|_| ());
-            }
+        {
+            // Return () if there's no metastore error; return the error if there is one.
+            return convert_metastore_error::<()>(metastore_error).map(|_| ());
         }
         let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
         Ok(())
@@ -1308,7 +1307,7 @@ mod tests {
                 control_plane
                     .model
                     .all_shards()
-                    .find(|shard| shard.shard_id() == &ShardId::from(1))
+                    .find(|shard| shard.shard_id() == ShardId::from(1))
                     .unwrap()
                     .short_term_ingestion_rate,
                 bytesize::ByteSize::b(123)
