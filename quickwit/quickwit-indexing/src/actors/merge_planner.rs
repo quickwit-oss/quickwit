@@ -38,6 +38,7 @@ pub(crate) struct RunFinalizeMergePolicyAndQuit;
 struct MergePartition {
     partition_id: u64,
     doc_mapping_uid: DocMappingUid,
+    sort_fields: Vec<quickwit_metastore::SortFieldMetadata>,
 }
 
 impl MergePartition {
@@ -45,6 +46,7 @@ impl MergePartition {
         MergePartition {
             partition_id: split_meta.partition_id,
             doc_mapping_uid: split_meta.doc_mapping_uid,
+            sort_fields: split_meta.sort_fields.clone(),
         }
     }
 }
@@ -403,6 +405,77 @@ mod tests {
             doc_mapping_uid,
             ..Default::default()
         }
+    }
+
+    #[tokio::test]
+    async fn test_sort_fields_separate_legacy_merge_groups() -> anyhow::Result<()> {
+        use quickwit_metastore::{SortFieldMetadata, SortValueType};
+        use quickwit_proto::search::SortOrder;
+
+        let universe = Universe::with_accelerated_time();
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
+        let pipeline_id = MergePipelineId {
+            node_id: NodeId::from_str("test-node"),
+            index_uid: index_uid.clone(),
+            source_id: "test-source".to_string(),
+        };
+        let settings = IndexingSettings {
+            merge_policy: MergePolicyConfig::ConstWriteAmplification(
+                ConstWriteAmplificationMergePolicyConfig {
+                    merge_factor: 2,
+                    max_merge_factor: 2,
+                    ..Default::default()
+                },
+            ),
+            ..Default::default()
+        };
+        let mut splits = Vec::new();
+        for (group, sort) in [
+            None,
+            Some((SortOrder::Asc, SortValueType::Text)),
+            Some((SortOrder::Desc, SortValueType::Text)),
+            Some((SortOrder::Asc, SortValueType::I64)),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            for i in 0..2 {
+                let mut split = split_metadata_for_test(
+                    &index_uid,
+                    &format!("split-{group}-{i}"),
+                    0,
+                    DocMappingUid::default(),
+                    1000,
+                    0,
+                );
+                split.sort_fields = sort
+                    .map(|(order, field_type)| SortFieldMetadata {
+                        field: "service".to_string(),
+                        order,
+                        field_type,
+                    })
+                    .into_iter()
+                    .collect();
+                splits.push(split);
+            }
+        }
+        let (downloader_mailbox, downloader_inbox) = universe.create_test_mailbox();
+        let planner = MergePlanner::new(
+            &pipeline_id,
+            splits,
+            merge_policy_from_settings(&settings),
+            downloader_mailbox,
+            universe.get_or_spawn_one(),
+        );
+        let (_mailbox, _handle) = universe.spawn_builder().spawn(planner);
+        for _ in 0..4 {
+            let source = downloader_inbox.recv_typed_message::<MergeSource>().await?;
+            let splits = &source.as_operation().splits;
+            assert_eq!(splits.len(), 2);
+            assert_eq!(splits[0].sort_fields, splits[1].sort_fields);
+        }
+        universe.assert_quit().await;
+        Ok(())
     }
 
     #[tokio::test]

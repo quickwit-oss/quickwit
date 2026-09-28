@@ -514,11 +514,12 @@ mod tests {
         // but this will require work on tantivy.
         let indexed_split = IndexedSplit {
             split_attrs: SplitAttrs {
+                split_id: "test-split".into(),
                 node_id,
                 index_uid,
                 source_id,
                 doc_mapping_uid: DocMappingUid::default(),
-                split_id: "test-split".into(),
+                sort_fields: Vec::new(),
                 partition_id: 17u64,
                 num_docs,
                 uncompressed_docs_size_in_bytes: num_docs * 15,

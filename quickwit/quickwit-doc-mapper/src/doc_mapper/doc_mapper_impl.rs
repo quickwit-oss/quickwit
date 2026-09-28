@@ -425,6 +425,33 @@ fn extract_single_obj(
 }
 
 impl DocMapper {
+    /// Validates the physical index sort contract: a scalar text field with raw
+    /// indexing and raw fast-field values. Missing values follow the sort direction.
+    pub fn validate_sort_field(&self, field_name: &str) -> anyhow::Result<()> {
+        let Some(FieldMappingType::Text(options, Cardinality::SingleValued)) =
+            self.field_mappings.find_field_mapping_type(field_name)
+        else {
+            bail!(
+                "sort field `{field_name}` must be an explicitly mapped single-valued text field"
+            );
+        };
+        let text_options: tantivy::schema::TextOptions = options.into();
+        if !text_options.is_fast() {
+            bail!("sort field `{field_name}` must be a fast field; set `fast: true`");
+        }
+        if let Some(normalizer) = text_options.get_fast_field_tokenizer_name() {
+            if normalizer != "raw" {
+                bail!(
+                    "sort field `{field_name}` must use the `raw` fast-field normalizer, got \
+                     `{normalizer}`"
+                );
+            }
+        }
+        validate_tag(field_name, &self.schema)
+            .with_context(|| format!("invalid sort field `{field_name}`"))?;
+        Ok(())
+    }
+
     /// Returns the unique identifier of the doc mapping.
     pub fn doc_mapping_uid(&self) -> DocMappingUid {
         self.doc_mapping_uid

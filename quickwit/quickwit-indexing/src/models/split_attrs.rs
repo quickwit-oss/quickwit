@@ -18,14 +18,75 @@ use std::ops::{Range, RangeInclusive};
 use std::sync::Arc;
 use std::time::Duration;
 
-use quickwit_metastore::{SplitMaturity, SplitMetadata};
+use quickwit_metastore::{SortFieldMetadata, SortValueType, SplitMaturity, SplitMetadata};
 use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId, SourceId, SplitId};
 use tantivy::DateTime;
 use time::OffsetDateTime;
 
 use crate::merge_policy::MergePolicy;
 
+/// Tantivy currently supports one physical sort field. Never silently ignore trailing fields.
+pub(crate) fn tantivy_sort_by_field(
+    sort_fields: &[quickwit_config::IndexingSortField],
+) -> anyhow::Result<Option<tantivy::IndexSortByField>> {
+    anyhow::ensure!(
+        sort_fields.len() <= 1,
+        "physical sorting supports at most one field"
+    );
+    Ok(sort_fields.first().map(|sort| tantivy::IndexSortByField {
+        field: sort.field.clone(),
+        order: match sort.order {
+            quickwit_proto::search::SortOrder::Asc => tantivy::Order::Asc,
+            quickwit_proto::search::SortOrder::Desc => tantivy::Order::Desc,
+        },
+    }))
+}
+
+/// Resolve the ordering from the writer's schema, including for all-null columns.
+/// Never infer logical types from physical fast-field encodings or the current index config.
+pub(crate) fn resolve_sort_fields(
+    index_settings: &tantivy::IndexSettings,
+    schema: &tantivy::schema::Schema,
+) -> anyhow::Result<Vec<SortFieldMetadata>> {
+    let Some(sort) = &index_settings.sort_by_field else {
+        return Ok(Vec::new());
+    };
+    let field = schema.get_field(&sort.field)?;
+    let field_entry = schema.get_field_entry(field);
+    anyhow::ensure!(
+        field_entry.is_fast(),
+        "sort field `{}` is not a fast field",
+        sort.field
+    );
+    let field_type = match field_entry.field_type().value_type() {
+        tantivy::schema::Type::Str => SortValueType::Text,
+        tantivy::schema::Type::I64 => SortValueType::I64,
+        tantivy::schema::Type::U64 => SortValueType::U64,
+        tantivy::schema::Type::F64 => SortValueType::F64,
+        tantivy::schema::Type::Date => SortValueType::DateTime,
+        tantivy::schema::Type::Bytes => SortValueType::Bytes,
+        other => anyhow::bail!(
+            "unsupported physical sort field type {other:?} for `{}`",
+            sort.field
+        ),
+    };
+    Ok(vec![SortFieldMetadata {
+        field: sort.field.clone(),
+        order: match sort.order {
+            tantivy::Order::Asc => quickwit_proto::search::SortOrder::Asc,
+            tantivy::Order::Desc => quickwit_proto::search::SortOrder::Desc,
+        },
+        field_type,
+    }])
+}
+
 pub struct SplitAttrs {
+    /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
+    /// should be enough to uniquely identify a split.
+    /// In reality, some information may be implicitly configured
+    /// in the storage resolver: for instance, the Amazon S3 region.
+    pub split_id: SplitId,
+
     /// ID of the node that produced the split.
     pub node_id: NodeId,
     // Index UID to which the split belongs.
@@ -36,11 +97,8 @@ pub struct SplitAttrs {
     /// Doc mapping UID used to produce this split.
     pub doc_mapping_uid: DocMappingUid,
 
-    /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
-    /// should be enough to uniquely identify a split.
-    /// In reality, some information may be implicitly configured
-    /// in the storage resolver: for instance, the Amazon S3 region.
-    pub split_id: SplitId,
+    /// Physical ordering and logical comparison types. Empty for unsorted splits.
+    pub sort_fields: Vec<SortFieldMetadata>,
 
     /// Partition to which the split belongs.
     ///
@@ -82,6 +140,7 @@ impl fmt::Debug for SplitAttrs {
             )
             .field("num_docs", &self.num_docs)
             .field("num_merge_ops", &self.num_merge_ops)
+            .field("sort_fields", &self.sort_fields)
             .finish()
     }
 }
@@ -114,6 +173,7 @@ pub fn create_split_metadata(
         index_uid: split_attrs.index_uid.clone(),
         source_id: split_attrs.source_id.clone(),
         doc_mapping_uid: split_attrs.doc_mapping_uid,
+        sort_fields: split_attrs.sort_fields.clone(),
         split_id: split_attrs.split_id.clone(),
         partition_id: split_attrs.partition_id,
         num_docs: split_attrs.num_docs as usize,

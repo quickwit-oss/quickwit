@@ -2,7 +2,7 @@
 /// Immutable metadata embedded directly in a split so that the metastore split metadata can be
 /// reconstructed if the metastore database is lost.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitRecoveryMetadata {
     #[prost(string, tag = "1")]
     pub split_id: ::prost::alloc::string::String,
@@ -38,6 +38,21 @@ pub struct SplitRecoveryMetadata {
     /// None means the split is mature; otherwise, this is its maturation period in milliseconds.
     #[prost(uint64, optional, tag = "16")]
     pub maturation_period_millis: ::core::option::Option<u64>,
+    /// Physical ordering. Empty for legacy splits and splits without a sort guarantee.
+    #[prost(message, repeated, tag = "17")]
+    pub sort_fields: ::prost::alloc::vec::Vec<SplitSortField>,
+}
+/// Physical ordering. Missing values sort first ascending, last descending.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SplitSortField {
+    #[prost(string, tag = "1")]
+    pub field: ::prost::alloc::string::String,
+    #[prost(bool, tag = "2")]
+    pub descending: bool,
+    /// Required for every declared sort field. Unspecified and unknown types are invalid.
+    #[prost(enumeration = "SplitSortFieldType", tag = "3")]
+    pub field_type: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -748,6 +763,50 @@ impl SourceType {
             "SOURCE_TYPE_VEC" => Some(Self::Vec),
             "SOURCE_TYPE_VOID" => Some(Self::Void),
             "SOURCE_TYPE_STDIN" => Some(Self::Stdin),
+            _ => None,
+        }
+    }
+}
+/// Logical comparison type, independent of a segment's physical column encoding.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SplitSortFieldType {
+    Unspecified = 0,
+    Text = 1,
+    I64 = 2,
+    U64 = 3,
+    F64 = 4,
+    Datetime = 5,
+    Bytes = 6,
+}
+impl SplitSortFieldType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "SPLIT_SORT_FIELD_TYPE_UNSPECIFIED",
+            Self::Text => "SPLIT_SORT_FIELD_TYPE_TEXT",
+            Self::I64 => "SPLIT_SORT_FIELD_TYPE_I64",
+            Self::U64 => "SPLIT_SORT_FIELD_TYPE_U64",
+            Self::F64 => "SPLIT_SORT_FIELD_TYPE_F64",
+            Self::Datetime => "SPLIT_SORT_FIELD_TYPE_DATETIME",
+            Self::Bytes => "SPLIT_SORT_FIELD_TYPE_BYTES",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SPLIT_SORT_FIELD_TYPE_UNSPECIFIED" => Some(Self::Unspecified),
+            "SPLIT_SORT_FIELD_TYPE_TEXT" => Some(Self::Text),
+            "SPLIT_SORT_FIELD_TYPE_I64" => Some(Self::I64),
+            "SPLIT_SORT_FIELD_TYPE_U64" => Some(Self::U64),
+            "SPLIT_SORT_FIELD_TYPE_F64" => Some(Self::F64),
+            "SPLIT_SORT_FIELD_TYPE_DATETIME" => Some(Self::Datetime),
+            "SPLIT_SORT_FIELD_TYPE_BYTES" => Some(Self::Bytes),
             _ => None,
         }
     }

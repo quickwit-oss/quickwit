@@ -461,6 +461,7 @@ fn create_split_recovery_metadata(
         num_merge_ops: split_metadata.num_merge_ops as u64,
         parent_split_ids,
         maturation_period_millis,
+        sort_fields: split_metadata.sort_fields.iter().map(Into::into).collect(),
     }
 }
 
@@ -624,6 +625,31 @@ mod tests {
         assert_eq!(recovered_mature_metadata.maturity, SplitMaturity::Mature);
     }
 
+    #[test]
+    fn test_split_recovery_metadata_preserves_sort_fields() {
+        let split_metadata = SplitMetadata {
+            sort_fields: vec![quickwit_metastore::SortFieldMetadata {
+                field: "service".to_string(),
+                order: quickwit_proto::search::SortOrder::Desc,
+                field_type: quickwit_metastore::SortValueType::Text,
+            }],
+            ..Default::default()
+        };
+        let bytes = create_split_recovery_metadata(&split_metadata, &[]).serialize();
+        let recovery_metadata = SplitRecoveryMetadata::deserialize(&bytes).unwrap();
+        let (recovered, _) =
+            SplitMetadata::try_from_recovery_metadata(recovery_metadata, 1..2).unwrap();
+        assert_eq!(recovered.sort_fields, split_metadata.sort_fields);
+
+        for invalid_type in [0, 99] {
+            let mut recovery_metadata = create_split_recovery_metadata(&split_metadata, &[]);
+            recovery_metadata.sort_fields[0].field_type = invalid_type;
+            let bytes = recovery_metadata.serialize();
+            let recovery_metadata = SplitRecoveryMetadata::deserialize(&bytes).unwrap();
+            assert!(SplitMetadata::try_from_recovery_metadata(recovery_metadata, 1..2).is_err());
+        }
+    }
+
     #[tokio::test]
     async fn test_uploader_with_sequencer() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
@@ -673,10 +699,12 @@ mod tests {
             .send_message(PackagedSplitBatch::new(
                 vec![PackagedSplit {
                     split_attrs: SplitAttrs {
+                        split_id: "test-split".into(),
                         node_id,
                         index_uid,
                         source_id,
                         doc_mapping_uid: DocMappingUid::default(),
+                        sort_fields: Vec::new(),
                         partition_id: 3u64,
                         time_range: Some(
                             DateTime::from_timestamp_secs(1_628_203_589)
@@ -685,7 +713,6 @@ mod tests {
                         uncompressed_docs_size_in_bytes: 1_000,
                         num_docs: 10,
                         replaced_split_ids: Vec::new(),
-                        split_id: "test-split".into(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
                     },
@@ -783,11 +810,12 @@ mod tests {
         let split_scratch_directory_2 = TempDirectory::for_test();
         let packaged_split_1 = PackagedSplit {
             split_attrs: SplitAttrs {
+                split_id: "test-split-1".into(),
                 node_id: node_id.clone(),
                 index_uid: index_uid.clone(),
                 source_id: source_id.clone(),
                 doc_mapping_uid: DocMappingUid::default(),
-                split_id: "test-split-1".into(),
+                sort_fields: Vec::new(),
                 partition_id: 3u64,
                 num_docs: 10,
                 uncompressed_docs_size_in_bytes: 1_000,
@@ -810,11 +838,12 @@ mod tests {
         };
         let package_split_2 = PackagedSplit {
             split_attrs: SplitAttrs {
+                split_id: "test-split-2".into(),
                 node_id,
                 index_uid,
                 source_id,
                 doc_mapping_uid: DocMappingUid::default(),
-                split_id: "test-split-2".into(),
+                sort_fields: Vec::new(),
                 partition_id: 3u64,
                 num_docs: 10,
                 uncompressed_docs_size_in_bytes: 1_000,
@@ -935,11 +964,12 @@ mod tests {
             .send_message(PackagedSplitBatch::new(
                 vec![PackagedSplit {
                     split_attrs: SplitAttrs {
+                        split_id: "test-split".into(),
                         node_id,
                         index_uid,
                         source_id,
                         doc_mapping_uid: DocMappingUid::default(),
-                        split_id: "test-split".into(),
+                        sort_fields: Vec::new(),
                         partition_id: 3u64,
                         time_range: None,
                         uncompressed_docs_size_in_bytes: 1_000,
@@ -1112,10 +1142,12 @@ mod tests {
             .send_message(PackagedSplitBatch::new(
                 vec![PackagedSplit {
                     split_attrs: SplitAttrs {
+                        split_id: SPLIT_ULID_STR.into(),
                         node_id,
                         index_uid,
                         source_id,
                         doc_mapping_uid: DocMappingUid::default(),
+                        sort_fields: Vec::new(),
                         partition_id: 3u64,
                         time_range: Some(
                             DateTime::from_timestamp_secs(1_628_203_589)
@@ -1124,7 +1156,6 @@ mod tests {
                         uncompressed_docs_size_in_bytes: 1_000,
                         num_docs: 10,
                         replaced_split_ids: Vec::new(),
-                        split_id: SPLIT_ULID_STR.into(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
                     },

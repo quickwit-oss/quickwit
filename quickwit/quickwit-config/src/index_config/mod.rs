@@ -13,7 +13,7 @@
 // limitations under the License.
 
 pub(crate) mod serialize;
-
+mod sort_fields;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
@@ -34,6 +34,7 @@ use rand::{RngExt, distr, rng};
 use serde::{Deserialize, Serialize};
 pub use serialize::{load_index_config_from_user_config, load_index_config_update};
 use siphasher::sip::SipHasher;
+pub use sort_fields::IndexingSortField;
 use tracing::warn;
 
 use crate::index_config::serialize::VersionedIndexConfig;
@@ -104,6 +105,15 @@ impl Default for IndexingResources {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Hash, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct IndexingSettings {
+    /// Physical document ordering within splits, independent of query result ordering.
+    /// Currently at most one scalar raw text fast field is supported.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        with = "sort_fields::config"
+    )]
+    #[schema(value_type = Vec<String>)]
+    pub sort_fields: Vec<IndexingSortField>,
     #[schema(default = 60)]
     #[serde(default = "IndexingSettings::default_commit_timeout_secs")]
     pub commit_timeout_secs: usize,
@@ -206,6 +216,17 @@ impl Default for ParquetIndexingConfig {
 }
 
 impl IndexingSettings {
+    pub fn validate_sort_fields(&self, doc_mapper: &DocMapper) -> anyhow::Result<()> {
+        ensure!(
+            self.sort_fields.len() <= 1,
+            "indexing_settings.sort_fields supports at most one field"
+        );
+        for sort_field in &self.sort_fields {
+            doc_mapper.validate_sort_field(&sort_field.field)?;
+        }
+        Ok(())
+    }
+
     pub fn commit_timeout(&self) -> Duration {
         Duration::from_secs(self.commit_timeout_secs as u64)
     }
@@ -252,6 +273,7 @@ impl IndexingSettings {
 impl Default for IndexingSettings {
     fn default() -> Self {
         Self {
+            sort_fields: Vec::new(),
             commit_timeout_secs: Self::default_commit_timeout_secs(),
             docstore_blocksize: Self::default_docstore_blocksize(),
             docstore_compression_level: Self::default_docstore_compression_level(),
@@ -681,7 +703,8 @@ pub(super) fn validate_index_config(
     // Note: this needs a deep refactoring to separate the doc mapping configuration,
     // and doc mapper implementations.
     // TODO see if we should store the byproducton the IndexConfig.
-    build_doc_mapper(doc_mapping, search_settings)?;
+    let doc_mapper = build_doc_mapper(doc_mapping, search_settings)?;
+    indexing_settings.validate_sort_fields(&doc_mapper)?;
 
     indexing_settings.merge_policy.validate()?;
     indexing_settings.resources.validate()?;
@@ -1392,3 +1415,6 @@ mod tests {
         assert_eq!(updated_doc_mapping.mode, Mode::Strict);
     }
 }
+
+#[cfg(test)]
+mod sort_field_tests;

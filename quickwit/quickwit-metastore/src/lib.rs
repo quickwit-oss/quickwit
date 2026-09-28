@@ -29,6 +29,7 @@ mod error;
 mod metastore;
 mod metastore_factory;
 mod metastore_resolver;
+mod sort_field_metadata;
 mod split_metadata;
 mod split_metadata_version;
 #[cfg(test)]
@@ -56,6 +57,7 @@ pub use metastore_factory::{MetastoreFactory, MetastoreFactoryOptions, Unsupport
 pub use metastore_resolver::MetastoreResolver;
 use quickwit_common::is_disjoint;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+pub use sort_field_metadata::{SortFieldMetadata, SortValueType};
 pub use split_metadata::{Split, SplitInfo, SplitMaturity, SplitMetadata, SplitState};
 pub(crate) use split_metadata_version::{SplitMetadataV0_8, VersionedSplitMetadata};
 
