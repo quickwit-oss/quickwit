@@ -39,7 +39,7 @@ use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
 use tracing::{error, info, instrument};
 
-use super::local_shards::{LocalShardsSnapshot, ShardInfo, ShardInfos};
+use super::local_shards::{ShardInfo, ShardInfos, ShardThroughputReadings};
 use super::metrics::report_local_shards_metrics;
 use super::models::IngesterShard;
 use super::rate_meter::RateMeter;
@@ -75,7 +75,7 @@ pub(super) struct InnerIngesterState {
     disk_capacity: ByteSize,
     memory_capacity: ByteSize,
     status_tx: watch::Sender<IngesterStatus>,
-    local_shards_tx: watch::Sender<Option<Arc<LocalShardsSnapshot>>>,
+    local_shards_tx: watch::Sender<Option<Arc<ShardThroughputReadings>>>,
     local_shards_sampled_at: tokio::time::Instant,
 }
 
@@ -159,7 +159,11 @@ impl InnerIngesterState {
         }
         (open_counts, closed_shards)
     }
-    pub fn publish_local_shards(&mut self) -> Option<Arc<LocalShardsSnapshot>> {
+
+    /// Every LOCAL_SHARDS_SAMPLE_INTERVAL, measure how much work each shard did, per source, to
+    /// report to the control plane. The value kept is always the latest, as the only data that
+    /// matters is the most recent snapshot.
+    pub fn harvest_shard_throughput_readings(&mut self) -> Option<Arc<ShardThroughputReadings>> {
         let now = tokio::time::Instant::now();
         if now.duration_since(self.local_shards_sampled_at) < LOCAL_SHARDS_SAMPLE_INTERVAL {
             return None;
@@ -187,11 +191,11 @@ impl InnerIngesterState {
                 .or_default()
                 .insert(shard_info);
         }
-        let snapshot = Arc::new(LocalShardsSnapshot {
+        let snapshot = Arc::new(ShardThroughputReadings {
             per_source_shard_infos,
         });
         self.local_shards_sampled_at = now;
-        let _ = self.local_shards_tx.send_replace(Some(snapshot.clone()));
+        self.local_shards_tx.send_replace(Some(snapshot.clone()));
         Some(snapshot)
     }
 }
@@ -201,7 +205,7 @@ impl IngesterState {
         cluster: Cluster,
         disk_capacity: ByteSize,
         memory_capacity: ByteSize,
-        local_shards_tx: watch::Sender<Option<Arc<LocalShardsSnapshot>>>,
+        local_shards_tx: watch::Sender<Option<Arc<ShardThroughputReadings>>>,
     ) -> Self {
         let status = IngesterStatus::Initializing;
         let (status_tx, status_rx) = watch::channel(status);
@@ -230,7 +234,9 @@ impl IngesterState {
         }
     }
 
-    pub fn spawn_local_shards_publisher(&self) -> JoinHandle<()> {
+    /// Most readings of shard throughputs will take place through the persist path, when the state
+    /// lock is held. This is a backup path for when persist might be idle.
+    pub fn spawn_shards_readings_publisher(&self) -> JoinHandle<()> {
         let weak_state = self.weak();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(LOCAL_SHARDS_SAMPLE_INTERVAL);
@@ -253,7 +259,7 @@ impl IngesterState {
                     operation: "publish_local_shards",
                     acquired_at: Instant::now(),
                 };
-                let snapshot = state_guard.publish_local_shards();
+                let snapshot = state_guard.harvest_shard_throughput_readings();
                 drop(state_guard);
                 if let Some(snapshot) = snapshot {
                     report_local_shards_metrics(&snapshot);
@@ -268,7 +274,7 @@ impl IngesterState {
         disk_capacity: ByteSize,
         memory_capacity: ByteSize,
         rate_limiter_settings: RateLimiterSettings,
-        local_shards_tx: watch::Sender<Option<Arc<LocalShardsSnapshot>>>,
+        local_shards_tx: watch::Sender<Option<Arc<ShardThroughputReadings>>>,
     ) -> Self {
         let state = Self::create(cluster, disk_capacity, memory_capacity, local_shards_tx).await;
         let state_clone = state.clone();
@@ -306,6 +312,7 @@ impl IngesterState {
             disk_capacity,
             ByteSize::mb(256),
             RateLimiterSettings::default(),
+            watch::Sender::new(None),
         )
         .await;
 
@@ -794,9 +801,137 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_publish_local_shards_cadence_and_snapshot() {
+        let (sender, mut receiver) = watch::channel(None);
+        let state = IngesterState::create(
+            test_cluster().await,
+            ByteSize::mb(256),
+            ByteSize::mb(256),
+            sender,
+        )
+        .await;
+        tokio::time::pause();
+        let mut inner = state.inner.lock().await;
+        let index_uid = IndexUid::for_test("index", 0);
+        for (source_id, shard_id, advertisable) in [
+            ("source-a", 1, true),
+            ("source-a", 2, false),
+            ("source-b", 3, true),
+        ] {
+            let mut shard = IngesterShard::builder(
+                index_uid.clone(),
+                source_id.to_string(),
+                ShardId::from(shard_id),
+            )
+            .build();
+            shard.is_advertisable = advertisable;
+            shard.rate_meter.update(100);
+            inner.shards.insert(shard.queue_id(), shard);
+        }
+        assert!(inner.harvest_shard_throughput_readings().is_none());
+        assert!(receiver.borrow().is_none());
+        tokio::time::advance(LOCAL_SHARDS_SAMPLE_INTERVAL).await;
+        let snapshot = inner.harvest_shard_throughput_readings().unwrap();
+        assert_eq!(snapshot.per_source_shard_infos.len(), 2);
+        for shards in snapshot.per_source_shard_infos.values() {
+            assert_eq!(shards.len(), 1);
+            let shard = shards.first().unwrap();
+            assert_ne!(shard.shard_id, ShardId::from(2));
+            assert_eq!(shard.short_term_ingestion_rate, ByteSize::b(2_000));
+            assert_eq!(shard.long_term_ingestion_rate, ByteSize::b(2_000));
+        }
+        assert!(Arc::ptr_eq(
+            receiver.borrow_and_update().as_ref().unwrap(),
+            &snapshot
+        ));
+        assert!(inner.harvest_shard_throughput_readings().is_none());
+        assert!(!receiver.has_changed().unwrap());
+
+        inner.shards.clear();
+        tokio::time::advance(LOCAL_SHARDS_SAMPLE_INTERVAL).await;
+        assert!(
+            inner
+                .harvest_shard_throughput_readings()
+                .unwrap()
+                .per_source_shard_infos
+                .is_empty()
+        );
+        assert!(
+            receiver
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .per_source_shard_infos
+                .is_empty()
+        );
+        assert_eq!(snapshot.per_source_shard_infos.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_local_shards_publisher_skips_busy_state_and_stops() {
+        let (sender, receiver) = watch::channel(None);
+        let state = IngesterState::create(
+            test_cluster().await,
+            ByteSize::mb(256),
+            ByteSize::mb(256),
+            sender,
+        )
+        .await;
+        tokio::time::pause();
+        let publisher = state.spawn_shards_readings_publisher();
+        tokio::task::yield_now().await;
+        tokio::time::advance(LOCAL_SHARDS_SAMPLE_INTERVAL).await;
+        tokio::task::yield_now().await;
+        assert!(receiver.borrow().is_none());
+
+        let mut inner = state.inner.lock().await;
+        inner.set_status(IngesterStatus::Ready).await;
+        tokio::time::advance(LOCAL_SHARDS_SAMPLE_INTERVAL).await;
+        tokio::task::yield_now().await;
+        assert!(receiver.borrow().is_none());
+        drop(inner);
+        let inner = state
+            .inner
+            .try_lock()
+            .expect("publisher must not queue for the lock");
+        drop(inner);
+
+        tokio::time::advance(LOCAL_SHARDS_SAMPLE_INTERVAL).await;
+        tokio::task::yield_now().await;
+        assert!(receiver.borrow().is_some());
+
+        state
+            .inner
+            .lock()
+            .await
+            .set_status(IngesterStatus::Failed)
+            .await;
+        tokio::time::advance(LOCAL_SHARDS_SAMPLE_INTERVAL).await;
+        timeout(LOCAL_SHARDS_SAMPLE_INTERVAL, publisher)
+            .await
+            .unwrap()
+            .unwrap();
+
+        let publisher = state.spawn_shards_readings_publisher();
+        let weak = state.weak();
+        drop(state);
+        assert!(weak.upgrade().is_none());
+        timeout(LOCAL_SHARDS_SAMPLE_INTERVAL, publisher)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
     async fn test_ingester_state_does_not_lock_while_initializing() {
         let cluster = test_cluster().await;
-        let state = IngesterState::create(cluster, ByteSize::mb(256), ByteSize::mb(256)).await;
+        let state = IngesterState::create(
+            cluster,
+            ByteSize::mb(256),
+            ByteSize::mb(256),
+            watch::Sender::new(None),
+        )
+        .await;
         let inner_guard = state.inner.lock().await;
 
         assert_eq!(inner_guard.status(), IngesterStatus::Initializing);
@@ -812,7 +947,13 @@ mod tests {
     #[tokio::test]
     async fn test_ingester_state_failed() {
         let cluster = test_cluster().await;
-        let state = IngesterState::create(cluster, ByteSize::mb(256), ByteSize::mb(256)).await;
+        let state = IngesterState::create(
+            cluster,
+            ByteSize::mb(256),
+            ByteSize::mb(256),
+            watch::Sender::new(None),
+        )
+        .await;
 
         state
             .inner
@@ -878,7 +1019,13 @@ mod tests {
             mrecordlog.create_queue(&queue_id_03).await.unwrap();
         }
         let cluster = test_cluster().await;
-        let mut state = IngesterState::create(cluster, ByteSize::mb(256), ByteSize::mb(256)).await;
+        let mut state = IngesterState::create(
+            cluster,
+            ByteSize::mb(256),
+            ByteSize::mb(256),
+            watch::Sender::new(None),
+        )
+        .await;
         state
             .init(
                 temp_dir.path(),
@@ -1076,8 +1223,13 @@ mod tests {
     #[tokio::test]
     async fn test_ingester_state_set_status() {
         let cluster = test_cluster().await;
-        let state =
-            IngesterState::create(cluster.clone(), ByteSize::mb(256), ByteSize::mb(256)).await;
+        let state = IngesterState::create(
+            cluster.clone(),
+            ByteSize::mb(256),
+            ByteSize::mb(256),
+            watch::Sender::new(None),
+        )
+        .await;
         let temp_dir = tempfile::tempdir().unwrap();
 
         state

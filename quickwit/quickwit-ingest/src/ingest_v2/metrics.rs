@@ -21,7 +21,7 @@ use quickwit_metrics::{
 };
 use quickwit_proto::ingest::ShardState;
 
-use super::local_shards::LocalShardsSnapshot;
+use super::local_shards::ShardThroughputReadings;
 
 pub(super) const STATUS: LabelNames<1> = label_names!("status");
 
@@ -220,7 +220,7 @@ pub(super) fn report_wal_limits(disk_capacity: ByteSize, memory_capacity: ByteSi
     WAL_MEMORY_LIMIT_BYTES.set(memory_capacity.as_u64() as f64);
 }
 
-pub(super) fn report_local_shards_metrics(snapshot: &LocalShardsSnapshot) {
+pub(super) fn report_local_shards_metrics(snapshot: &ShardThroughputReadings) {
     let mut num_open_shards = 0;
     let mut num_closed_shards = 0;
 

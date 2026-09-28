@@ -90,7 +90,7 @@ use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::{IndexerStateReporter, IndexingSplitCache, start_indexing_service};
 use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
-    IngesterPoolEntry, LocalShardsSnapshot, LocalShardsUpdate, get_idle_shard_timeout,
+    IngesterPoolEntry, LocalShardsUpdate, ShardThroughputReadings, get_idle_shard_timeout,
     setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
     start_ingest_api_service,
 };
@@ -1166,7 +1166,7 @@ async fn setup_ingest_v2(
     event_broker: &EventBroker,
     control_plane: ControlPlaneServiceClient,
     ingester_pool: IngesterPool,
-    local_shards_tx: watch::Sender<Option<Arc<LocalShardsSnapshot>>>,
+    local_shards_tx: watch::Sender<Option<Arc<ShardThroughputReadings>>>,
 ) -> anyhow::Result<(IngestRouter, IngestRouterServiceClient, Option<Ingester>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().to_owned();

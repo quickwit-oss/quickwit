@@ -1443,7 +1443,7 @@ mod tests {
     use quickwit_common::shared_consts::DEFAULT_SHARD_THROUGHPUT_LIMIT;
     use quickwit_common::tower::DelayLayer;
     use quickwit_config::{DocMapping, INGEST_V2_SOURCE_ID, SourceConfig};
-    use quickwit_ingest::{IngesterPoolEntry, RateMibPerSec, ShardInfo};
+    use quickwit_ingest::{IngesterPoolEntry, ShardInfo};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
     use quickwit_proto::ingest::ingester::{
@@ -1457,9 +1457,6 @@ mod tests {
     use quickwit_proto::types::{DocMappingUid, Position, SourceId};
 
     use super::*;
-
-    const TEST_SHARD_THROUGHPUT_LIMIT_MIB: f32 =
-        DEFAULT_SHARD_THROUGHPUT_LIMIT.as_u64() as f32 / quickwit_common::shared_consts::MIB as f32;
 
     fn ingester_pool_entry(
         status: IngesterStatus,
@@ -1482,6 +1479,185 @@ mod tests {
             node_id: NodeId::from_str(node_id),
             zone: zone.map(AvailabilityZone::from),
             num_open_shards: AtomicUsize::new(num_open_shards),
+        }
+    }
+
+    fn shard_reports_for_test(min_shards: usize) -> (ControlPlaneModel, ShardsUpdate) {
+        let mut model = ControlPlaneModel::default();
+        let mut metadata = IndexMetadata::for_test("index", "ram:///index");
+        metadata.index_config.ingest_settings.min_shards =
+            std::num::NonZeroUsize::new(min_shards).unwrap();
+        let index_uid = metadata.index_uid.clone();
+        model.add_index(metadata);
+        let mut update = ShardsUpdate::default();
+        for source_id in ["source-a", "source-b"] {
+            model
+                .add_source(
+                    &index_uid,
+                    SourceConfig::for_test(source_id, quickwit_config::SourceParams::void()),
+                )
+                .unwrap();
+            model.insert_shards(
+                &index_uid,
+                &source_id.to_string(),
+                vec![Shard {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: source_id.to_string(),
+                    shard_id: Some(ShardId::from(1)),
+                    ingester_id: "ingester".to_string(),
+                    shard_state: ShardState::Open as i32,
+                    ..Default::default()
+                }],
+            );
+            update.shard_infos_by_source.push(
+                SourceShardReport {
+                    source_uid: SourceUid {
+                        index_uid: index_uid.clone(),
+                        source_id: source_id.to_string(),
+                    },
+                    shard_infos: BTreeSet::from([ShardInfo {
+                        shard_id: ShardId::from(1),
+                        shard_state: ShardState::Open,
+                        short_term_ingestion_rate: ByteSize::b(123),
+                        long_term_ingestion_rate: ByteSize::b(456),
+                    }]),
+                }
+                .into(),
+            );
+        }
+        (model, update)
+    }
+
+    #[tokio::test]
+    async fn test_shards_update_sources_and_generation() {
+        let pool = IngesterPool::default();
+        let ingester = IngesterPoolEntry::ready_with_client(IngesterServiceClient::mocked());
+        let generation = ingester.generation_id.as_u64();
+        pool.insert(NodeId::from_str("ingester"), ingester);
+        let mut controller = IngestController::new(
+            MetastoreServiceClient::mocked(),
+            pool,
+            DEFAULT_SHARD_THROUGHPUT_LIMIT,
+            1.5,
+        );
+        let progress = Progress::default();
+        let (mut model, update) = shard_reports_for_test(1);
+        for wrong_generation in [generation - 1, generation + 1] {
+            controller
+                .handle_shards_update(
+                    "ingester",
+                    wrong_generation,
+                    update.clone(),
+                    &mut model,
+                    &progress,
+                )
+                .await
+                .unwrap();
+            assert!(
+                model
+                    .all_shards()
+                    .all(|shard| shard.short_term_ingestion_rate == ByteSize::default())
+            );
+        }
+        controller
+            .handle_shards_update(
+                "ingester",
+                generation,
+                update.clone(),
+                &mut model,
+                &progress,
+            )
+            .await
+            .unwrap();
+        assert_eq!(model.all_shards().count(), 2);
+        assert!(
+            model
+                .all_shards()
+                .all(|shard| shard.short_term_ingestion_rate == ByteSize::b(123)
+                    && shard.long_term_ingestion_rate == ByteSize::b(456))
+        );
+
+        let (mut model, _) = shard_reports_for_test(1);
+        controller
+            .handle_shards_update(
+                "joining-ingester",
+                generation,
+                update,
+                &mut model,
+                &progress,
+            )
+            .await
+            .unwrap();
+        assert!(
+            model
+                .all_shards()
+                .all(|shard| shard.short_term_ingestion_rate == ByteSize::b(123))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_shards_update_continues_only_after_certainly_aborted_errors() {
+        for certainly_aborted in [true, false] {
+            let (mut model, update) = shard_reports_for_test(2);
+            let mut mock_metastore = MockMetastoreService::new();
+            mock_metastore
+                .expect_open_shards()
+                .times(if certainly_aborted { 2 } else { 1 })
+                .returning(move |_| {
+                    if certainly_aborted {
+                        Err(MetastoreError::InvalidArgument {
+                            message: "aborted".to_string(),
+                        })
+                    } else {
+                        Err(MetastoreError::Connection {
+                            message: "uncertain".to_string(),
+                        })
+                    }
+                });
+            let mut mock_ingester = MockIngesterService::new();
+            mock_ingester
+                .expect_init_shards()
+                .times(if certainly_aborted { 2 } else { 1 })
+                .returning(|request| {
+                    Ok(InitShardsResponse {
+                        successes: request
+                            .subrequests
+                            .into_iter()
+                            .map(|request| InitShardSuccess {
+                                subrequest_id: request.subrequest_id,
+                                shard: request.shard,
+                            })
+                            .collect(),
+                        failures: Vec::new(),
+                    })
+                });
+            let pool = IngesterPool::default();
+            pool.insert(
+                NodeId::from_str("ingester"),
+                IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(
+                    mock_ingester,
+                )),
+            );
+            let mut controller = IngestController::new(
+                MetastoreServiceClient::from_mock(mock_metastore),
+                pool,
+                DEFAULT_SHARD_THROUGHPUT_LIMIT,
+                1.5,
+            );
+            let result = controller
+                .handle_shards_update("ingester", 1, update, &mut model, &Progress::default())
+                .await;
+            assert_eq!(result.is_ok(), certainly_aborted);
+            let second_source = model
+                .all_shards()
+                .find(|shard| shard.source_id == "source-b")
+                .unwrap();
+            let expected = if certainly_aborted {
+                ByteSize::b(123)
+            } else {
+                ByteSize::default()
+            };
+            assert_eq!(second_source.short_term_ingestion_rate, expected);
         }
     }
 
@@ -1578,7 +1754,7 @@ mod tests {
         let mut controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            DEFAULT_SHARD_THROUGHPUT_LIMIT,
             1.001,
         );
 
@@ -1765,7 +1941,7 @@ mod tests {
         let mut controller = IngestController::new(
             metastore,
             ingester_pool,
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            DEFAULT_SHARD_THROUGHPUT_LIMIT,
             1.001,
         );
 
@@ -1806,7 +1982,7 @@ mod tests {
         let mut controller = IngestController::new(
             metastore,
             ingester_pool,
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            DEFAULT_SHARD_THROUGHPUT_LIMIT,
             1.001,
         );
         let mut model = ControlPlaneModel::default();
@@ -2116,7 +2292,7 @@ mod tests {
         let controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            DEFAULT_SHARD_THROUGHPUT_LIMIT,
             1.001,
         );
 
@@ -2345,7 +2521,7 @@ mod tests {
         let mut controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            DEFAULT_SHARD_THROUGHPUT_LIMIT,
             1.001,
         );
 
@@ -2504,7 +2680,7 @@ mod tests {
         let mut controller = IngestController::new(
             MetastoreServiceClient::from_mock(mock_metastore),
             ingester_pool,
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            DEFAULT_SHARD_THROUGHPUT_LIMIT,
             1.001,
         );
 
@@ -2536,7 +2712,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ingest_controller_handle_local_shards_update() {
+    async fn test_ingest_controller_update_source_shards() {
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_open_shards()
@@ -2589,7 +2765,7 @@ mod tests {
         let mut controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            DEFAULT_SHARD_THROUGHPUT_LIMIT,
             1.001,
         );
 
@@ -2621,29 +2797,24 @@ mod tests {
         let shard_entries: Vec<ShardEntry> = model.all_shards().cloned().collect();
 
         assert_eq!(shard_entries.len(), 1);
-        assert_eq!(shard_entries[0].short_term_ingestion_rate, 0);
+        assert_eq!(shard_entries[0].short_term_ingestion_rate, ByteSize::mib(0));
 
         // Test update shard ingestion rate but no scale down because num open shards is 1.
         let shard_infos = BTreeSet::from_iter([ShardInfo {
             shard_id: ShardId::from(1),
             shard_state: ShardState::Open,
-            short_term_ingestion_rate: RateMibPerSec(1),
-            long_term_ingestion_rate: RateMibPerSec(1),
+            short_term_ingestion_rate: ByteSize::mib(1),
+            long_term_ingestion_rate: ByteSize::mib(1),
         }]);
-        let local_shards_update = LocalShardsUpdate {
-            ingester_id: NodeId::from_str("test-ingester"),
-            source_uid: source_uid.clone(),
-            shard_infos,
-        };
 
         controller
-            .handle_local_shards_update(local_shards_update, &mut model, &progress)
+            .update_source_shards(source_uid.clone(), &shard_infos, &mut model, &progress)
             .await
             .unwrap();
 
         let shard_entries: Vec<ShardEntry> = model.all_shards().cloned().collect();
         assert_eq!(shard_entries.len(), 1);
-        assert_eq!(shard_entries[0].short_term_ingestion_rate, 1);
+        assert_eq!(shard_entries[0].short_term_ingestion_rate, ByteSize::mib(1));
 
         // Test update shard ingestion rate with failing scale down.
         let shards = vec![Shard {
@@ -2695,23 +2866,18 @@ mod tests {
             ShardInfo {
                 shard_id: ShardId::from(1),
                 shard_state: ShardState::Open,
-                short_term_ingestion_rate: RateMibPerSec(1),
-                long_term_ingestion_rate: RateMibPerSec(1),
+                short_term_ingestion_rate: ByteSize::mib(1),
+                long_term_ingestion_rate: ByteSize::mib(1),
             },
             ShardInfo {
                 shard_id: ShardId::from(2),
                 shard_state: ShardState::Open,
-                short_term_ingestion_rate: RateMibPerSec(1),
-                long_term_ingestion_rate: RateMibPerSec(1),
+                short_term_ingestion_rate: ByteSize::mib(1),
+                long_term_ingestion_rate: ByteSize::mib(1),
             },
         ]);
-        let local_shards_update = LocalShardsUpdate {
-            ingester_id: NodeId::from_str("test-ingester"),
-            source_uid: source_uid.clone(),
-            shard_infos,
-        };
         controller
-            .handle_local_shards_update(local_shards_update, &mut model, &progress)
+            .update_source_shards(source_uid.clone(), &shard_infos, &mut model, &progress)
             .await
             .unwrap();
 
@@ -2720,25 +2886,20 @@ mod tests {
             ShardInfo {
                 shard_id: ShardId::from(1),
                 shard_state: ShardState::Open,
-                short_term_ingestion_rate: RateMibPerSec(4),
-                long_term_ingestion_rate: RateMibPerSec(4),
+                short_term_ingestion_rate: ByteSize::mib(4),
+                long_term_ingestion_rate: ByteSize::mib(4),
             },
             ShardInfo {
                 shard_id: ShardId::from(2),
                 shard_state: ShardState::Open,
-                short_term_ingestion_rate: RateMibPerSec(4),
-                long_term_ingestion_rate: RateMibPerSec(4),
+                short_term_ingestion_rate: ByteSize::mib(4),
+                long_term_ingestion_rate: ByteSize::mib(4),
             },
         ]);
-        let local_shards_update = LocalShardsUpdate {
-            ingester_id: NodeId::from_str("test-ingester"),
-            source_uid: source_uid.clone(),
-            shard_infos,
-        };
 
         // The first request fails due to an error on the metastore.
         let MetastoreError::InvalidArgument { .. } = controller
-            .handle_local_shards_update(local_shards_update.clone(), &mut model, &progress)
+            .update_source_shards(source_uid.clone(), &shard_infos, &mut model, &progress)
             .await
             .unwrap_err()
         else {
@@ -2747,7 +2908,7 @@ mod tests {
 
         // The second request works!
         controller
-            .handle_local_shards_update(local_shards_update, &mut model, &progress)
+            .update_source_shards(source_uid.clone(), &shard_infos, &mut model, &progress)
             .await
             .unwrap();
     }
@@ -2785,7 +2946,7 @@ mod tests {
         let mut controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            DEFAULT_SHARD_THROUGHPUT_LIMIT,
             1.001,
         );
 
@@ -2845,17 +3006,12 @@ mod tests {
         let shard_infos = BTreeSet::from_iter([ShardInfo {
             shard_id: ShardId::from(1),
             shard_state: ShardState::Open,
-            short_term_ingestion_rate: RateMibPerSec(4),
-            long_term_ingestion_rate: RateMibPerSec(4),
+            short_term_ingestion_rate: ByteSize::mib(4),
+            long_term_ingestion_rate: ByteSize::mib(4),
         }]);
-        let local_shards_update = LocalShardsUpdate {
-            ingester_id: NodeId::from_str("test-ingester"),
-            source_uid: source_uid.clone(),
-            shard_infos,
-        };
 
         controller
-            .handle_local_shards_update(local_shards_update, &mut model, &progress)
+            .update_source_shards(source_uid.clone(), &shard_infos, &mut model, &progress)
             .await
             .unwrap();
     }
@@ -2909,7 +3065,7 @@ mod tests {
         let mut controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            DEFAULT_SHARD_THROUGHPUT_LIMIT,
             1.001,
         );
 
@@ -3020,7 +3176,7 @@ mod tests {
         let controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            DEFAULT_SHARD_THROUGHPUT_LIMIT,
             1.001,
         );
 
@@ -3228,38 +3384,38 @@ mod tests {
             ShardInfo {
                 shard_id: ShardId::from(1),
                 shard_state: ShardState::Open,
-                short_term_ingestion_rate: quickwit_ingest::RateMibPerSec(1),
-                long_term_ingestion_rate: quickwit_ingest::RateMibPerSec(1),
+                short_term_ingestion_rate: ByteSize::mib(1),
+                long_term_ingestion_rate: ByteSize::mib(1),
             },
             ShardInfo {
                 shard_id: ShardId::from(2),
                 shard_state: ShardState::Open,
-                short_term_ingestion_rate: quickwit_ingest::RateMibPerSec(2),
-                long_term_ingestion_rate: quickwit_ingest::RateMibPerSec(2),
+                short_term_ingestion_rate: ByteSize::mib(2),
+                long_term_ingestion_rate: ByteSize::mib(2),
             },
             ShardInfo {
                 shard_id: ShardId::from(3),
                 shard_state: ShardState::Open,
-                short_term_ingestion_rate: quickwit_ingest::RateMibPerSec(3),
-                long_term_ingestion_rate: quickwit_ingest::RateMibPerSec(3),
+                short_term_ingestion_rate: ByteSize::mib(3),
+                long_term_ingestion_rate: ByteSize::mib(3),
             },
             ShardInfo {
                 shard_id: ShardId::from(4),
                 shard_state: ShardState::Open,
-                short_term_ingestion_rate: quickwit_ingest::RateMibPerSec(4),
-                long_term_ingestion_rate: quickwit_ingest::RateMibPerSec(4),
+                short_term_ingestion_rate: ByteSize::mib(4),
+                long_term_ingestion_rate: ByteSize::mib(4),
             },
             ShardInfo {
                 shard_id: ShardId::from(5),
                 shard_state: ShardState::Open,
-                short_term_ingestion_rate: quickwit_ingest::RateMibPerSec(5),
-                long_term_ingestion_rate: quickwit_ingest::RateMibPerSec(5),
+                short_term_ingestion_rate: ByteSize::mib(5),
+                long_term_ingestion_rate: ByteSize::mib(5),
             },
             ShardInfo {
                 shard_id: ShardId::from(6),
                 shard_state: ShardState::Open,
-                short_term_ingestion_rate: quickwit_ingest::RateMibPerSec(6),
-                long_term_ingestion_rate: quickwit_ingest::RateMibPerSec(6),
+                short_term_ingestion_rate: ByteSize::mib(6),
+                long_term_ingestion_rate: ByteSize::mib(6),
             },
         ]);
         model.update_shards(&source_uid, &shard_infos);
@@ -3277,7 +3433,7 @@ mod tests {
         let controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            DEFAULT_SHARD_THROUGHPUT_LIMIT,
             1.001,
         );
 
@@ -3356,7 +3512,7 @@ mod tests {
         let controller = IngestController::new(
             metastore,
             ingester_pool,
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            DEFAULT_SHARD_THROUGHPUT_LIMIT,
             1.001,
         );
 
@@ -3431,7 +3587,7 @@ mod tests {
         let controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            DEFAULT_SHARD_THROUGHPUT_LIMIT,
             1.001,
         );
 
@@ -3589,7 +3745,7 @@ mod tests {
         let mut controller = IngestController::new(
             metastore,
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            DEFAULT_SHARD_THROUGHPUT_LIMIT,
             1.001,
         );
 
@@ -4067,7 +4223,7 @@ mod tests {
         let controller = IngestController::new(
             MetastoreServiceClient::mocked(),
             ingester_pool.clone(),
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            DEFAULT_SHARD_THROUGHPUT_LIMIT,
             1.001,
         );
         let shards_to_rebalance = controller.compute_shards_to_rebalance(&model);

@@ -94,6 +94,46 @@ mod tests {
 
     use super::*;
 
+    #[tokio::test(start_paused = true)]
+    async fn test_sample_normalizes_elapsed_time() {
+        let mut meter = RateMeter::default();
+        meter.update(100);
+        tokio::time::advance(Duration::from_millis(250)).await;
+        let rates = meter.sample();
+        assert_eq!(rates.short_term, ByteSize::b(400));
+        assert_eq!(rates.long_term, ByteSize::b(400));
+
+        meter.update(800);
+        tokio::time::advance(Duration::from_secs(2)).await;
+        let rates = meter.sample();
+        assert_eq!(rates.short_term, ByteSize::b(400));
+        assert_eq!(rates.long_term, ByteSize::b(400));
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        let rates = meter.sample();
+        assert_eq!(rates.short_term, ByteSize::b(266));
+        assert_eq!(rates.long_term, ByteSize::b(266));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_sample_expires_short_and_long_term_history() {
+        let mut meter = RateMeter::default();
+        meter.update(600);
+        tokio::time::advance(Duration::from_secs(1)).await;
+        let rates = meter.sample();
+        assert_eq!(rates.short_term, ByteSize::b(600));
+        assert_eq!(rates.long_term, ByteSize::b(600));
+
+        for sample in 2..=61 {
+            tokio::time::advance(Duration::from_secs(1)).await;
+            let rates = meter.sample();
+            let expected_short = if sample <= 5 { 600 / sample } else { 0 };
+            let expected_long = if sample <= 60 { 600 / sample } else { 0 };
+            assert_eq!(rates.short_term, ByteSize::b(expected_short));
+            assert_eq!(rates.long_term, ByteSize::b(expected_long));
+        }
+    }
+
     #[tokio::test]
     async fn test_rate_meter() {
         tokio::time::pause();
