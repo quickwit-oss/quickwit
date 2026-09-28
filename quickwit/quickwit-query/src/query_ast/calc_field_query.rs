@@ -193,37 +193,65 @@ const ANY_TEXT: &str = "(?s:.*)";
 /// The other capturing groups become non-capturing: Rust regexes have no backreferences, so
 /// capturing never changes where they match. Returns `None` when `pattern` does not parse or has
 /// no group `capture_index`.
+///
+/// Synthesized AST nodes reuse the span of the whole pattern: spans are meaningless in the
+/// rewritten AST, which is only printed, and the printer ignores them.
 fn isolate_capture(pattern: &str, capture_index: u64) -> Option<String> {
-    let ast = ast::parse::Parser::new().parse(pattern).ok()?;
-    let mut groups = Vec::new();
-    collect_capturing_groups(&ast, &mut groups);
-    if capture_index > groups.len() as u64 {
-        return None;
-    }
-    let mut isolated = String::with_capacity(pattern.len() + 2);
-    let mut copied_until = 0;
-    // `collect_capturing_groups` lists groups by increasing offset.
-    for group in groups {
-        if group.capture_index().map(u64::from) == Some(capture_index) {
-            continue;
-        }
-        isolated.push_str(&pattern[copied_until..group.span.start.offset]);
-        isolated.push_str("(?:");
-        copied_until = group.ast.span().start.offset;
-    }
-    isolated.push_str(&pattern[copied_until..]);
+    let mut ast = parse_regex(pattern)?;
+    let span = *ast.span();
+    let has_capture = anonymize_captures_except(&mut ast, capture_index);
     if capture_index != 0 {
-        return Some(isolated);
+        return has_capture.then(|| ast.to_string());
     }
     // Anchors are zero-width, so the whole match is what the body between them matches.
-    let isolated_ast = ast::parse::Parser::new().parse(&isolated).ok()?;
-    let (body_start, body_end, _, _) = body_bounds(&isolated_ast, isolated.len());
-    Some(format!(
-        "{}({}){}",
-        &isolated[..body_start],
-        &isolated[body_start..body_end],
-        &isolated[body_end..]
-    ))
+    let (start_anchor, body, end_anchor) = split_anchors(ast);
+    let whole_match = Ast::group(ast::Group {
+        span,
+        kind: ast::GroupKind::CaptureIndex(1),
+        ast: Box::new(ast::Concat { span, asts: body }.into_ast()),
+    });
+    let asts = start_anchor
+        .into_iter()
+        .chain(std::iter::once(whole_match))
+        .chain(end_anchor)
+        .collect();
+    Some(ast::Concat { span, asts }.into_ast().to_string())
+}
+
+/// Makes every capturing group of `ast` non-capturing except group `capture_index`, and returns
+/// whether that group exists.
+fn anonymize_captures_except(ast: &mut Ast, capture_index: u64) -> bool {
+    match ast {
+        Ast::Group(group) => {
+            let is_kept = group.capture_index().map(u64::from) == Some(capture_index);
+            if group.is_capturing() && !is_kept {
+                group.kind = ast::GroupKind::NonCapturing(ast::Flags {
+                    span: group.span,
+                    items: Vec::new(),
+                });
+            }
+            let has_nested_capture = anonymize_captures_except(&mut group.ast, capture_index);
+            is_kept || has_nested_capture
+        }
+        Ast::Repetition(repetition) => {
+            anonymize_captures_except(&mut repetition.ast, capture_index)
+        }
+        Ast::Alternation(alternation) => {
+            let mut has_capture = false;
+            for child in &mut alternation.asts {
+                has_capture |= anonymize_captures_except(child, capture_index);
+            }
+            has_capture
+        }
+        Ast::Concat(concat) => {
+            let mut has_capture = false;
+            for child in &mut concat.asts {
+                has_capture |= anonymize_captures_except(child, capture_index);
+            }
+            has_capture
+        }
+        _ => false,
+    }
 }
 
 /// Builds an FST whole-term regex that is a *superset* of terms for which
@@ -237,40 +265,42 @@ fn isolate_capture(pattern: &str, capture_index: u64) -> Option<String> {
 /// capture subpattern (otherwise EQ is always false).
 ///
 /// Tantivy FST regexes match whole terms and reject `^`/`$`, so start/end anchors
-/// are stripped. Missing sides are wrapped with [`ANY_TEXT`].
+/// are stripped. Missing sides are wrapped with [`ANY_TEXT`]. A trailing `$` under the multi-line
+/// flag is kept, so the unsupported assertion makes the prefilter construction fall back safely.
+///
+/// Synthesized AST nodes reuse the span of the whole pattern: spans are meaningless in the
+/// rewritten AST, which is only printed, and the printer ignores them.
 fn substitute_single_capture(pattern: &str, literal: &str) -> Option<String> {
-    let ast = ast::parse::Parser::new().parse(pattern).ok()?;
-    let group = {
-        let mut groups = Vec::new();
-        collect_capturing_groups(&ast, &mut groups);
-        match groups.as_slice() {
-            [group] => *group,
-            _ => return None,
-        }
-    };
-    let is_top_level_part = match &ast {
-        Ast::Concat(concat) => concat
-            .asts
+    let ast = parse_regex(pattern)?;
+    let span = *ast.span();
+    let ignores_whitespace = mentions_flag(&ast, ast::Flag::IgnoreWhitespace);
+    let mut groups = Vec::new();
+    collect_capturing_groups(&ast, &mut groups);
+    if groups.len() != 1 {
+        return None;
+    }
+    let (start_anchor, mut parts, end_anchor) = split_anchors(ast);
+    if matches!(
+        parts.last(),
+        Some(Ast::Assertion(assertion)) if assertion.kind == AssertionKind::EndLine
+    ) {
+        // Under `m`, `$` also matches before a newline and therefore cannot be stripped.
+        return None;
+    }
+    // The capture must be a direct part of the top-level concatenation.
+    let (capture_position, capture_pattern) =
+        parts
             .iter()
-            .any(|part| matches!(part, Ast::Group(part_group) if part_group.span == group.span)),
-        Ast::Group(root_group) => root_group.span == group.span,
-        _ => false,
-    };
-    if !is_top_level_part {
-        return None;
-    }
-
-    let (body_start, body_end, anchored_start, anchored_end) = body_bounds(&ast, pattern.len());
-    let group_start = group.span.start.offset;
-    let group_end = group.span.end.offset;
-    if group_start < body_start || group_end > body_end {
-        return None;
-    }
-
-    let capture = &pattern[group.ast.span().start.offset..group.ast.span().end.offset];
-    // Impossible EQ: literal outside the capture class.
-    let capture_re = regex::Regex::new(&format!("^(?:{capture})$")).ok()?;
-    if !capture_re.is_match(literal) {
+            .enumerate()
+            .find_map(|(position, part)| match part {
+                Ast::Group(group) if group.is_capturing() => {
+                    Some((position, group.ast.to_string()))
+                }
+                _ => None,
+            })?;
+    // Impossible EQ: literal outside the capture subpattern.
+    let capture_regex = regex::Regex::new(&format!("^(?:{capture_pattern})$")).ok()?;
+    if !capture_regex.is_match(literal) {
         return None;
     }
 
@@ -279,51 +309,118 @@ fn substitute_single_capture(pattern: &str, literal: &str) -> Option<String> {
     //   ^prefix(C)suffix  + L  →  prefix{escape(L)}suffix…
     //    prefix(C)suffix$ + L  →  …prefix{escape(L)}suffix
     //    prefix(C)suffix  + L  →  …prefix{escape(L)}suffix…
-    let mut rewritten = String::new();
-    if !anchored_start {
-        rewritten.push_str(ANY_TEXT);
+    let mut literal_ast = parse_regex(&regex_syntax::escape(literal))?;
+    if ignores_whitespace {
+        // `escape` leaves whitespace as is, which the `x` flag would ignore: disable it.
+        literal_ast = Ast::group(ast::Group {
+            span,
+            kind: ast::GroupKind::NonCapturing(ast::Flags {
+                span,
+                items: vec![
+                    ast::FlagsItem {
+                        span,
+                        kind: ast::FlagsItemKind::Negation,
+                    },
+                    ast::FlagsItem {
+                        span,
+                        kind: ast::FlagsItemKind::Flag(ast::Flag::IgnoreWhitespace),
+                    },
+                ],
+            }),
+            ast: Box::new(literal_ast),
+        });
     }
-    rewritten.push_str(&pattern[body_start..group_start]);
-    rewritten.push_str(&regex_syntax::escape(literal));
-    rewritten.push_str(&pattern[group_end..body_end]);
-    if !anchored_end {
-        rewritten.push_str(ANY_TEXT);
+    parts[capture_position] = literal_ast;
+    if start_anchor.is_none() {
+        parts.insert(0, parse_regex(ANY_TEXT)?);
     }
-    Some(rewritten)
+    if end_anchor.is_none() {
+        parts.push(parse_regex(ANY_TEXT)?);
+    }
+    Some(ast::Concat { span, asts: parts }.into_ast().to_string())
 }
 
-/// Returns the byte range of `pattern` after stripping a leading `^`/`\A` and trailing `$`/`\z`,
-/// along with whether each anchor was present.
-fn body_bounds(ast: &Ast, pattern_len: usize) -> (usize, usize, bool, bool) {
-    let parts: Vec<&Ast> = match ast {
-        Ast::Concat(concat) => concat.asts.iter().collect(),
-        _ => vec![ast],
+fn parse_regex(pattern: &str) -> Option<Ast> {
+    ast::parse::Parser::new().parse(pattern).ok()
+}
+
+/// Returns whether any flag group of `ast` sets or clears `flag`.
+fn mentions_flag(ast: &Ast, flag: ast::Flag) -> bool {
+    struct FlagFinder {
+        flag: ast::Flag,
+        found: bool,
+    }
+
+    impl ast::Visitor for FlagFinder {
+        type Output = bool;
+        type Err = std::convert::Infallible;
+
+        fn finish(self) -> Result<bool, Self::Err> {
+            Ok(self.found)
+        }
+
+        fn visit_pre(&mut self, node: &Ast) -> Result<(), Self::Err> {
+            let flags = match node {
+                Ast::Flags(set_flags) => Some(&set_flags.flags),
+                Ast::Group(group) => group.flags(),
+                _ => None,
+            };
+            if let Some(flags) = flags
+                && flags.flag_state(self.flag).is_some()
+            {
+                self.found = true;
+            }
+            Ok(())
+        }
+    }
+
+    let Ok(found) = ast::visit(ast, FlagFinder { flag, found: false });
+    found
+}
+
+/// Splits the top-level concatenation of `ast` into a leading `^`/`\A`, the body parts and a
+/// trailing `$`/`\z`.
+///
+/// A trailing `$` stays in the body when `ast` uses the multi-line flag, since it may then match
+/// before a newline and depends on the flags in scope. A leading `^` precedes any flag group, so
+/// it always matches the start of the text.
+fn split_anchors(mut ast: Ast) -> (Option<Ast>, Vec<Ast>, Option<Ast>) {
+    let mut parts = if let Ast::Concat(concat) = &mut ast {
+        // `Ast` implements `Drop`, so take the parts instead of deep-cloning them.
+        std::mem::take(&mut concat.asts)
+    } else {
+        vec![ast]
     };
-
-    let mut body_start = 0;
-    let mut body_end = pattern_len;
-    let mut anchored_start = false;
-    let mut anchored_end = false;
-
-    if let Some(Ast::Assertion(assertion)) = parts.first()
-        && matches!(
-            assertion.kind,
-            AssertionKind::StartLine | AssertionKind::StartText
-        )
-    {
-        anchored_start = true;
-        body_start = assertion.span.end.offset;
+    // Only top-level flag declarations affect a trailing top-level assertion. Flags in a scoped
+    // non-capturing group do not leak out of that group.
+    let mut multi_line_at_end = false;
+    for part in &parts {
+        if let Ast::Flags(set_flags) = part
+            && let Some(enabled) = set_flags.flags.flag_state(ast::Flag::MultiLine)
+        {
+            multi_line_at_end = enabled;
+        }
     }
-    if let Some(Ast::Assertion(assertion)) = parts.last()
-        && matches!(
-            assertion.kind,
-            AssertionKind::EndLine | AssertionKind::EndText
-        )
-    {
-        anchored_end = true;
-        body_end = assertion.span.start.offset;
-    }
-    (body_start, body_end, anchored_start, anchored_end)
+    let start_anchor = if matches!(
+        parts.first(),
+        Some(Ast::Assertion(assertion))
+            if matches!(assertion.kind, AssertionKind::StartLine | AssertionKind::StartText)
+    ) {
+        Some(parts.remove(0))
+    } else {
+        None
+    };
+    let end_anchor = if matches!(
+        parts.last(),
+        Some(Ast::Assertion(assertion))
+            if assertion.kind == AssertionKind::EndText
+                || (assertion.kind == AssertionKind::EndLine && !multi_line_at_end)
+    ) {
+        parts.pop()
+    } else {
+        None
+    };
+    (start_anchor, parts, end_anchor)
 }
 
 fn collect_capturing_groups<'a>(ast: &'a Ast, groups: &mut Vec<&'a ast::Group>) {
@@ -485,6 +582,8 @@ mod tests {
             ("^svc-([a-z]+)-prod$", 0, "^(svc-(?:[a-z]+)-prod)$"),
             ("svc-[a-z]+", 0, "(svc-[a-z]+)"),
             ("a|b", 0, "(a|b)"),
+            // A multi-line `$` stays within the scope of the flags preceding it.
+            ("^(?m)id=[a-z]+$", 0, "^((?m)id=[a-z]+$)"),
         ] {
             assert_eq!(
                 isolate_capture(pattern, capture_index).as_deref(),
@@ -536,6 +635,11 @@ mod tests {
                 r"svc-[a-z]+",
                 0,
                 &["prefix svc-api suffix", "svc-web", "other"][..],
+            ),
+            (
+                r"^(?m)id=[a-z]+$",
+                0,
+                &["id=abc\nrest", "id=abc", "id=ABC"][..],
             ),
         ] {
             let isolated_pattern = isolate_capture(pattern, capture_index).unwrap();
@@ -593,5 +697,20 @@ mod tests {
         assert!(substitute_single_capture("x|([a-z]+)", "api").is_none());
         assert!(substitute_single_capture("(?:a([a-z]+))+", "api").is_none());
         assert!(substitute_single_capture("(?:id=([a-z]+))?end", "api").is_none());
+        // A multi-line `$` also matches before a newline, so it cannot be stripped.
+        assert!(substitute_single_capture("^(?m)id=([a-z]+)$", "abc").is_none());
+        // Without a trailing `$`, or when `m` is disabled before it, the prefilter is safe.
+        for pattern in ["(?m)id=([a-z]+)", "^(?m)(?-m)id=([a-z]+)$"] {
+            let prefilter = substitute_single_capture(pattern, "abc").unwrap();
+            assert!(tantivy_fst::Regex::new(&prefilter).is_ok(), "{prefilter}");
+        }
+    }
+
+    #[test]
+    fn test_substitute_single_capture_keeps_literal_whitespace() {
+        let prefilter = substitute_single_capture("^(?x)svc - (.+)$", "a b").unwrap();
+        assert_eq!(prefilter, "(?x)svc-(?-x:a b)");
+        let prefilter_regex = Regex::new(&format!("^(?:{prefilter})$")).unwrap();
+        assert!(prefilter_regex.is_match("svc-a b"));
     }
 }
