@@ -17,12 +17,15 @@ async-trait = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
+foyer = { workspace = true }
 futures = { workspace = true }
 http-body-util = { workspace = true}
 hyper = { workspace = true }
 lru = { workspace = true }
 md5 = { workspace = true }
+metrics = { workspace = true }
 mini-moka = { workspace = true }
+mixtrics = { workspace = true }
 mockall = { workspace = true, optional = true }
 percent-encoding = { workspace = true }
 pin-project = { workspace = true }
@@ -64,6 +67,7 @@ reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
 http = { workspace = true }
+metrics-util = { workspace = true }
 mockall = { workspace = true }
 proptest = { workspace = true }
 # Match OpenDAL's internal reqwest major. `default-features = false` is

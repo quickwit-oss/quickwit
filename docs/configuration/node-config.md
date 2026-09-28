@@ -309,11 +309,12 @@ This section contains the configuration options for a Searcher.
 | --- | --- | --- |
 | `aggregation_memory_limit` | Controls the maximum amount of memory that can be used for aggregations before aborting. This limit is per searcher node. A node may run concurrent queries, which share the limit. The first query that will hit the limit will be aborted and frees its memory. It is used to prevent excessive memory usage during the aggregation phase, which can lead to performance degradation or crashes. | `500M`|
 | `aggregation_bucket_limit` | Determines the maximum number of buckets returned to the client. | `65000` |
-| `fast_field_cache_capacity` | Fast field in memory cache capacity on a Searcher. If your filter by dates, run aggregations, range queries, or even for tracing, it might worth increasing this parameter. The [metrics](../reference/metrics.md) starting by `quickwit_cache_fastfields_cache` can help you make an informed choice when setting this value. | `1G` |
+| `fast_field_cache_capacity` | Fast field in memory cache capacity on a Searcher. If your filter by dates, run aggregations, range queries, or even for tracing, it might worth increasing this parameter. The [metrics](../reference/metrics.md) starting by `quickwit_cache_fastfields_cache` can help you make an informed choice when setting this value. Default is `1G` when `split_range_disk_cache` is unset. If `split_range_disk_cache` is set and this key is omitted, the RAM cache is disabled. Set a capacity explicitly to keep both. | `1G` |
 | `split_footer_cache_capacity` | Split footer in memory cache (it is essentially the hotcache) capacity on a Searcher.| `500M` |
 | `partial_request_cache_capacity` | Partial request in memory cache capacity on a Searcher. Cache intermediate state for a request, possibly making subsequent requests faster. It can be disabled by setting the size to `0`. | `64M` |
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `split_cache` | Searcher split cache configuration options defined in the section below. Cache disabled if unspecified. | |
+| `split_range_disk_cache` | On-disk cache for split byte ranges. Configuration options are defined in the section below. Cache disabled if unspecified. | |
 | `request_timeout_secs` | The time before a search request is cancelled. This should match the timeout of the stack calling into quickwit if there is one set.  | `30` |
 | `use_metastore_read_replica` | If true, routes read-only metastore requests from searchers, including DataFusion when enabled, to nodes running the `metastore_read_replica` service. Searchers require at least one `metastore_read_replica` node at startup and do not fall back to the primary metastore. | `false` |
 
@@ -327,6 +328,21 @@ This section contains the configuration options for the on-disk searcher split c
 | `max_num_splits` | Maximum number of splits allowed in the split cache.   | `10000` |
 | `num_concurrent_downloads` | Maximum number of concurrent download of splits. | `1` |
 
+### Searcher split range disk cache configuration
+
+This section contains the configuration options for the on-disk cache of split byte ranges. The cache is disabled when this section is omitted or set to `null`. If it is set and `fast_field_cache_capacity` is omitted, the fast field RAM cache is disabled; set a capacity explicitly to keep both.
+
+| Property | Description | Default value |
+| --- | --- | --- |
+| `path` | Directory used to store cache files. Created if missing. Must already sit on a usable filesystem. | |
+| `disk_capacity` | Maximum on-disk size of the cache. | |
+| `memory_capacity` | In-memory tier size in front of the disk cache. | |
+| `buffer_pool_size` | Size of the disk write buffer pool. | |
+| `submit_queue_size_threshold` | Maximum amount of data waiting to be flushed to disk. | |
+| `memory_eviction_policy` | Eviction policy for the memory tier: `s3-fifo` or `cost-aware`. | |
+| `write_throughput` | Maximum disk-cache write throughput in bytes per second. Must be positive. | `500MiB` |
+
+The cache is opened with no compression, quiet recovery, 64MB blocks, a 60MB maximum disk entry, 8 flushers, 8 reclaimers, a clean-block threshold of 16, and write-on-eviction. Entries larger than 60MB stay in memory. `s3-fifo` uses a small-queue ratio of 0.2, a ghost-queue ratio of 1.0, and a promotion threshold of 1. `cost-aware` uses a fixed retrieval cost of 10000000 and a sample size of 2048.
 
 Example:
 
@@ -340,6 +356,14 @@ searcher:
     max_num_bytes: 1G
     max_num_splits: 10000
     num_concurrent_downloads: 1
+  split_range_disk_cache:
+    path: /quickwit/qwdata/split-range-v1
+    disk_capacity: 1500G
+    memory_capacity: 15G
+    memory_eviction_policy: s3-fifo
+    buffer_pool_size: 2G
+    submit_queue_size_threshold: 3G
+    write_throughput: 500MiB
 ```
 
 ## Jaeger configuration

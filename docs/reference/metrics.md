@@ -91,3 +91,24 @@ PostgreSQL-backed metastores also expose connection pool gauges:
 | `quickwit_storage` | `object_storage_puts_total` | Number of objects uploaded. May differ from object_storage_requests_parts due to multipart upload | `counter` |
 | `quickwit_storage` | `object_storage_puts_parts` | Number of object parts uploaded | `counter` |
 | `quickwit_storage` | `object_storage_download_num_bytes` | Amount of data downloaded from an object storage | `counter` |
+| `quickwit_storage` | `split_range_disk_cache_requests_total` | Split range disk cache requests by `result` (`memory`, `disk`, `miss`, or `error`) | `counter` |
+| `quickwit_storage` | `split_range_disk_cache_requested_bytes_total` | Requested bytes by `result` | `counter` |
+
+When `split_range_disk_cache` is enabled, Foyer metrics used by the disk-cache
+dashboard are also exported on `/metrics`:
+
+- Memory tier: `foyer_memory_op_total`, `foyer_memory_usage`, and
+  `foyer_memory_entries`.
+- Disk tier: `foyer_storage_op_total`, `foyer_storage_op_duration`,
+  `foyer_storage_inner_op_total`, `foyer_storage_disk_io_total`,
+  `foyer_storage_disk_io_bytes_total`, and
+  `foyer_storage_disk_io_duration`.
+- Block engine: `foyer_storage_block_engine_block`,
+  `foyer_storage_block_engine_block_size_bytes`,
+  `foyer_storage_block_engine_op_total`, and
+  `foyer_storage_block_engine_buffer_efficiency`.
+- Hybrid cache: `foyer_hybrid_op_total` and `foyer_hybrid_op_duration`.
+
+These metrics are labeled by cache `name` (`split-range-v1`). Other internal
+Foyer metrics are discarded. Object-storage GET counters cover actual remote
+fetches on a cache miss.

@@ -50,6 +50,7 @@ mod prefix_storage;
 mod ram_storage;
 mod split;
 mod split_cache;
+mod split_range_cache;
 mod stable_deref_bytes;
 mod storage_factory;
 mod storage_resolver;
@@ -57,6 +58,9 @@ mod versioned_component;
 
 use quickwit_common::uri::Uri;
 pub use split_cache::SearchSplitCache;
+pub use split_range_cache::{
+    FoyerSplitRangeCache, FoyerSplitRangeStorage, wrap_storage_with_split_range_cache,
+};
 pub use tantivy::directory::OwnedBytes;
 pub use versioned_component::VersionedComponent;
 
