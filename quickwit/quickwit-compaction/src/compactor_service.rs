@@ -311,11 +311,21 @@ impl CompactorService {
         ))
     }
 
+    /// The merge execution semaphore is a proxy for number of CPUs on the machine. We can use this
+    /// to create a dumb, greedy load balancing effect.
+    /// - First, fill as many pipelines as there are available merge permits.
+    /// - Then, fill the remaining pipelines one at a time.
+    ///
+    /// This creates an opportunity for other compactors to potentially fill their pipelines up to
+    /// their permits, after which the remaining load is round-robined around the cluster.
+    /// It doesn't create a perfect spread, but it creates a reasonable one.
     fn available_slots(&self, in_progress_count: usize) -> u32 {
         if self.status() != CompactorStatus::Ready {
             return 0;
         }
-        (self.pipelines.len() - in_progress_count) as u32
+        let free_slots = self.pipelines.len() - in_progress_count;
+        let available_permits = self.merge_execution_semaphore.available_permits();
+        free_slots.min(available_permits.max(1)) as u32
     }
 
     fn build_report_status_request(
@@ -556,6 +566,35 @@ mod tests {
             EventBroker::default(),
             TempDirectory::for_test(),
         )
+    }
+
+    #[test]
+    fn test_available_slots_follow_merge_execution_capacity() {
+        let mut compactor_service = test_compactor_service(3);
+        assert_eq!(compactor_service.available_slots(0), 3);
+        assert_eq!(compactor_service.available_slots(3), 3);
+
+        let permit = compactor_service
+            .merge_execution_semaphore
+            .try_acquire()
+            .unwrap();
+        assert_eq!(compactor_service.available_slots(3), 2);
+        assert_eq!(compactor_service.available_slots(5), 1);
+
+        let remaining_permits = compactor_service
+            .merge_execution_semaphore
+            .try_acquire_many(2)
+            .unwrap();
+        assert_eq!(compactor_service.available_slots(3), 1);
+        assert_eq!(compactor_service.available_slots(6), 0);
+
+        drop(remaining_permits);
+        assert_eq!(compactor_service.available_slots(3), 2);
+        drop(permit);
+        assert_eq!(compactor_service.available_slots(3), 3);
+
+        compactor_service.set_status(CompactorStatus::Decommissioning);
+        assert_eq!(compactor_service.available_slots(0), 0);
     }
 
     #[test]
