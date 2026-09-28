@@ -555,7 +555,8 @@ async fn assert_three_input_three_metric_single_output_correct(
         merged_meta
             .row_keys_proto
             .as_ref()
-            .is_some_and(|b| !b.is_empty()),
+            .map(|row_keys| !row_keys.is_empty())
+            .unwrap_or(false),
         "row_keys_proto must be present and non-empty"
     );
     assert!(
@@ -815,7 +816,10 @@ async fn assert_three_input_three_metric_multi_output_correct(
             meta.parquet_file,
         );
         assert!(
-            meta.row_keys_proto.as_ref().is_some_and(|b| !b.is_empty()),
+            meta.row_keys_proto
+                .as_ref()
+                .map(|row_keys| !row_keys.is_empty())
+                .unwrap_or(false),
             "output {} missing row_keys_proto",
             meta.parquet_file,
         );

@@ -579,8 +579,20 @@ mod tests {
         create_placeholder_parquet_files(temp_dir.path(), &splits);
 
         // Verify files exist before upload
-        assert!(temp_dir.path().join("split-a.parquet").exists());
-        assert!(temp_dir.path().join("split-b.parquet").exists());
+        assert!(
+            temp_dir
+                .path()
+                .join("split-a.parquet")
+                .try_exists()
+                .unwrap()
+        );
+        assert!(
+            temp_dir
+                .path()
+                .join("split-b.parquet")
+                .try_exists()
+                .unwrap()
+        );
 
         let checkpoint_delta = IndexCheckpointDelta {
             source_id: "test-source".to_string(),
@@ -607,11 +619,19 @@ mod tests {
 
         // Both local files should be deleted
         assert!(
-            !temp_dir.path().join("split-a.parquet").exists(),
+            !temp_dir
+                .path()
+                .join("split-a.parquet")
+                .try_exists()
+                .unwrap(),
             "split-a.parquet should be deleted after upload"
         );
         assert!(
-            !temp_dir.path().join("split-b.parquet").exists(),
+            !temp_dir
+                .path()
+                .join("split-b.parquet")
+                .try_exists()
+                .unwrap(),
             "split-b.parquet should be deleted after upload"
         );
 

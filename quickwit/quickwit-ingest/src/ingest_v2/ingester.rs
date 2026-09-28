@@ -1444,7 +1444,8 @@ mod tests {
             ingester_ctx.local_shards_rx.wait_for(|snapshot| {
                 snapshot
                     .as_ref()
-                    .is_some_and(|snapshot| !snapshot.per_source_shard_infos.is_empty())
+                    .map(|snapshot| !snapshot.per_source_shard_infos.is_empty())
+                    .unwrap_or(false)
             }),
         )
         .await
@@ -1475,13 +1476,16 @@ mod tests {
         let snapshot = timeout(
             Duration::from_secs(1),
             ingester_ctx.local_shards_rx.wait_for(|snapshot| {
-                snapshot.as_ref().is_some_and(|snapshot| {
-                    snapshot.per_source_shard_infos[&source_uid]
-                        .first()
-                        .unwrap()
-                        .shard_state
-                        == ShardState::Closed
-                })
+                snapshot
+                    .as_ref()
+                    .map(|snapshot| {
+                        snapshot.per_source_shard_infos[&source_uid]
+                            .first()
+                            .unwrap()
+                            .shard_state
+                            == ShardState::Closed
+                    })
+                    .unwrap_or(false)
             }),
         )
         .await
@@ -1504,7 +1508,8 @@ mod tests {
             ingester_ctx.local_shards_rx.wait_for(|snapshot| {
                 snapshot
                     .as_ref()
-                    .is_some_and(|snapshot| snapshot.per_source_shard_infos.is_empty())
+                    .map(|snapshot| snapshot.per_source_shard_infos.is_empty())
+                    .unwrap_or(false)
             }),
         )
         .await
