@@ -15,6 +15,7 @@ anyhow = { workspace = true }
 base64 = { workspace = true }
 bitpacking = { workspace = true }
 hex = { workspace = true }
+lru = { workspace = true }
 regex = { workspace = true }
 regex-syntax = { workspace = true }
 serde = { workspace = true }

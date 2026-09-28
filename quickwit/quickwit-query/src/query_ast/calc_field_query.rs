@@ -19,7 +19,7 @@ use tantivy::jitexpr::ast::{Function, Literal, UntypedExpr};
 use tantivy::query::doc_predicate_query::{DocPredicateQuery, JitExprPredicate};
 use tantivy::schema::{FieldType, Schema as TantivySchema};
 
-use super::regex_extract_eq::RegexExtractEqPlan;
+use super::regex_extract_eq::RegexExtractEqSpec;
 use super::{BuildTantivyAst, BuildTantivyAstContext, QueryAst, RegexQuery, TantivyQueryAst};
 use crate::tokenizers::RAW_TOKENIZER_NAME;
 use crate::{InvalidQuery, find_field_or_hit_dynamic};
@@ -62,23 +62,20 @@ impl CalcFieldQuery {
     /// Builds an FST [`RegexQuery`] accepting a *superset* of the values matching
     /// `(EQ (REGEXP_EXTRACT field pattern capture_index) "literal")` (or the swapped form).
     ///
-    /// Available only for fields indexed with the raw tokenizer and a raw fast field. The scorer
-    /// reads matching-term postings only in segments whose term and fast-field dictionaries
-    /// contain the same values; callers still warm them for every raw-compatible segment.
+    /// Available only for fields indexed with the raw tokenizer and a raw fast field. Compilation
+    /// is shared with query construction and other splits by a bounded process-wide cache.
     ///
     /// Returns `None` whenever the expression shape or field is not eligible.
     pub fn try_prefilter_regex_query(&self, schema: &TantivySchema) -> Option<RegexQuery> {
-        let plan = self.regex_extract_eq_plan(schema)?;
-        if !plan.reads_postings() {
-            return None;
-        }
-        Some(RegexQuery {
-            field: plan.fast_field_name().to_string(),
-            regex: plan.prefilter_regex().to_string(),
-        })
+        self.regex_extract_eq_spec(schema)?
+            .try_build_warmup_prefilter_query()
     }
 
-    fn regex_extract_eq_plan(&self, schema: &TantivySchema) -> Option<RegexExtractEqPlan> {
+    /// Rewrites an eligible expression into uncompiled prefilter and isolated-pattern strings.
+    ///
+    /// Does not compile any regex. Warmup discovery and query building share compiled FST and
+    /// exact regexes through bounded process-wide component caches across splits.
+    fn regex_extract_eq_spec(&self, schema: &TantivySchema) -> Option<RegexExtractEqSpec> {
         let (field_name, pattern, capture_index, literal) =
             match_eq_regexp_extract(&self.expression)?;
         // Resolve the field once: the same metadata determines both fast-field eligibility and
@@ -109,15 +106,13 @@ impl CalcFieldQuery {
                 text_options.get_indexing_options(),
                 Some(text_indexing) if text_indexing.tokenizer() == RAW_TOKENIZER_NAME
             );
-        // Keep both forms: the FST prefilter narrows candidate values, while the isolated regex
-        // performs the exact REGEXP_EXTRACT equality check.
-        RegexExtractEqPlan::new(
+        Some(RegexExtractEqSpec::new(
             field_name,
             prefilter_regex,
-            &isolated_pattern,
+            isolated_pattern,
             literal,
             terms_are_fast_field_values,
-        )
+        ))
     }
 }
 
@@ -126,7 +121,11 @@ impl BuildTantivyAst for CalcFieldQuery {
         &self,
         context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        if let Some(plan) = self.regex_extract_eq_plan(context.schema) {
+        // Compilation is shared with warmup discovery and other splits by the component caches.
+        if let Some(plan) = self
+            .regex_extract_eq_spec(context.schema)
+            .and_then(RegexExtractEqSpec::compile_execution_plan)
+        {
             return Ok(plan.build_query());
         }
         let predicate = JitExprPredicate::new(self.expression.clone())
@@ -261,8 +260,9 @@ fn anonymize_captures_except(ast: &mut Ast, capture_index: u64) -> bool {
 ///
 /// Parses `pattern` with [`regex_syntax`], requires exactly one capturing group that is a
 /// direct part of the top-level concatenation (not inside an alternation or repetition),
-/// replaces that group with the escaped literal, and requires the literal to match the
-/// capture subpattern (otherwise EQ is always false).
+/// and replaces that group with the escaped literal. If the literal cannot match the capture
+/// subpattern, the resulting prefilter may still yield candidates, but the exact matcher rejects
+/// them.
 ///
 /// Tantivy FST regexes match whole terms and reject `^`/`$`, so start/end anchors
 /// are stripped. Missing sides are wrapped with [`ANY_TEXT`]. A trailing `$` under the multi-line
@@ -288,21 +288,13 @@ fn substitute_single_capture(pattern: &str, literal: &str) -> Option<String> {
         return None;
     }
     // The capture must be a direct part of the top-level concatenation.
-    let (capture_position, capture_pattern) =
-        parts
-            .iter()
-            .enumerate()
-            .find_map(|(position, part)| match part {
-                Ast::Group(group) if group.is_capturing() => {
-                    Some((position, group.ast.to_string()))
-                }
-                _ => None,
-            })?;
-    // Impossible EQ: literal outside the capture subpattern.
-    let capture_regex = regex::Regex::new(&format!("^(?:{capture_pattern})$")).ok()?;
-    if !capture_regex.is_match(literal) {
-        return None;
-    }
+    let capture_position = parts
+        .iter()
+        .enumerate()
+        .find_map(|(position, part)| match part {
+            Ast::Group(group) if group.is_capturing() => Some(position),
+            _ => None,
+        })?;
 
     // Superset whole-term regex (may over-match leftmost extract+EQ), with `…` = ANY_TEXT:
     //   ^prefix(C)suffix$ + L  →  prefix{escape(L)}suffix
@@ -687,8 +679,11 @@ mod tests {
             substitute_single_capture("^.*userid=([A-Z0-9]+).*$", "USER42").as_deref(),
             Some(".*userid=USER42.*")
         );
-        // Literal does not match the capture class: no useful rewrite.
-        assert!(substitute_single_capture("^svc-([a-z]+)-prod$", "123").is_none());
+        // The exact matcher rejects literals outside the capture class.
+        assert_eq!(
+            substitute_single_capture("^svc-([a-z]+)-prod$", "123").as_deref(),
+            Some("svc-123-prod")
+        );
         assert!(substitute_single_capture("^svc-([a-z]+)-([a-z]+)$", "api").is_none());
         assert!(substitute_single_capture("^svc-(?:[a-z]+)-prod$", "api").is_none());
         // The capture must be a direct part of the top-level concatenation.

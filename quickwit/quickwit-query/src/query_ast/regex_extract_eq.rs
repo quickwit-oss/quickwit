@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use std::num::NonZeroUsize;
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 
+use lru::LruCache;
 use tantivy::columnar::{Cardinality, Column, StrColumn};
 use tantivy::index::InvertedIndexReader;
 use tantivy::postings::TermInfo;
@@ -24,7 +26,106 @@ use tantivy::schema::IndexRecordOption;
 use tantivy::{DocId, DocSet, Score, SegmentReader, TERMINATED, TantivyError};
 use tantivy_common::BitSet;
 
-use super::TantivyQueryAst;
+use super::{RegexQuery, TantivyQueryAst};
+
+const CACHE_CAPACITY: NonZeroUsize = NonZeroUsize::new(256).unwrap();
+
+type FstRegexCompilationSlot = Arc<OnceLock<Option<Arc<tantivy_fst::Regex>>>>;
+
+static FST_REGEX_CACHE: LazyLock<Mutex<LruCache<String, FstRegexCompilationSlot>>> =
+    LazyLock::new(|| Mutex::new(LruCache::new(CACHE_CAPACITY)));
+
+/// Returns the cached FST regex for `pattern`, compiling it on a cache miss.
+///
+/// Compilation failures are cached too, so unsupported patterns consistently stay on the JIT path.
+pub fn get_or_compile_cached_fst_regex(pattern: &str) -> Option<Arc<tantivy_fst::Regex>> {
+    let slot = FST_REGEX_CACHE
+        .lock()
+        .expect("FST regex cache lock should not be poisoned")
+        .get_or_insert(pattern.to_string(), FstRegexCompilationSlot::default)
+        .clone();
+    slot.get_or_init(|| tantivy_fst::Regex::new(pattern).ok().map(Arc::new))
+        .clone()
+}
+
+type ExactRegexCompilationSlot = Arc<OnceLock<Option<Arc<regex::Regex>>>>;
+
+static EXACT_REGEX_CACHE: LazyLock<Mutex<LruCache<String, ExactRegexCompilationSlot>>> =
+    LazyLock::new(|| Mutex::new(LruCache::new(CACHE_CAPACITY)));
+
+/// Returns the cached exact regex for `pattern`, compiling it on a cache miss.
+fn get_or_compile_cached_exact_regex(pattern: &str) -> Option<Arc<regex::Regex>> {
+    let slot = EXACT_REGEX_CACHE
+        .lock()
+        .expect("exact regex cache lock should not be poisoned")
+        .get_or_insert(pattern.to_string(), ExactRegexCompilationSlot::default)
+        .clone();
+    slot.get_or_init(|| regex::Regex::new(pattern).ok().map(Arc::new))
+        .clone()
+}
+
+/// Uncompiled rewrite of an eligible `EQ(REGEXP_EXTRACT(...), literal)` predicate.
+///
+/// Warmup discovery and query building turn this into cheap [`RegexExtractEqPlan`] wrappers around
+/// process-cached FST and exact regexes.
+#[derive(Debug, Clone)]
+pub(crate) struct RegexExtractEqSpec {
+    fast_field_name: String,
+    prefilter_regex: String,
+    isolated_pattern: String,
+    literal: String,
+    terms_are_fast_field_values: bool,
+}
+
+impl RegexExtractEqSpec {
+    pub(crate) fn new(
+        fast_field_name: &str,
+        prefilter_regex: String,
+        isolated_pattern: String,
+        literal: &str,
+        terms_are_fast_field_values: bool,
+    ) -> Self {
+        RegexExtractEqSpec {
+            fast_field_name: fast_field_name.to_string(),
+            prefilter_regex,
+            isolated_pattern,
+            literal: literal.to_string(),
+            terms_are_fast_field_values,
+        }
+    }
+
+    /// Compiles the execution plan, or returns `None` when the predicate must stay on the JIT path.
+    ///
+    /// FST regexes reject look-arounds, lazy repetitions and byte classes, and cap the automaton
+    /// size, so a valid `REGEXP_EXTRACT` pattern may still have no usable prefilter.
+    pub(crate) fn compile_execution_plan(self) -> Option<Arc<RegexExtractEqPlan>> {
+        let prefilter_automaton = get_or_compile_cached_fst_regex(&self.prefilter_regex)?;
+        let extract_regex = get_or_compile_cached_exact_regex(&self.isolated_pattern)?;
+        Some(Arc::new(RegexExtractEqPlan {
+            fast_field_name: self.fast_field_name,
+            prefilter_automaton,
+            extract_regex,
+            literal: self.literal,
+            terms_are_fast_field_values: self.terms_are_fast_field_values,
+        }))
+    }
+
+    /// Builds the string-backed prefilter descriptor used to warm term dictionaries and postings.
+    ///
+    /// The descriptor carries the pattern rather than the compiled automaton; leaf warmup obtains
+    /// that automaton from the process-local cache using the same pattern.
+    pub(crate) fn try_build_warmup_prefilter_query(&self) -> Option<RegexQuery> {
+        if !self.terms_are_fast_field_values {
+            return None;
+        }
+        // Do not register an automaton when execution must fall back to the JIT path.
+        get_or_compile_cached_fst_regex(&self.prefilter_regex)?;
+        Some(RegexQuery {
+            field: self.fast_field_name.clone(),
+            regex: self.prefilter_regex.clone(),
+        })
+    }
+}
 
 /// Compiled plan evaluating `EQ(REGEXP_EXTRACT(field, pattern, i), literal)` once per distinct
 /// fast-field value instead of once per document.
@@ -40,58 +141,21 @@ use super::TantivyQueryAst;
 /// - When `terms_are_fast_field_values` is set, every term of the field is one of its fast-field
 ///   values: the raw tokenizer may drop a value (such as a long one) but never alters it, and
 ///   merges drop the values without alive documents from both dictionaries. Callers then warm the
-///   term dictionary and postings with `prefilter_regex` before searching.
+///   term dictionary and postings with the prefilter pattern from [`RegexExtractEqSpec`] before
+///   searching.
 /// - Unlike the JIT predicate, which treats a column it fails to open as absent, the scorer returns
 ///   errors from opening the column or reading its dictionary, so a corrupt split fails the search
 ///   instead of silently matching nothing.
 #[derive(Debug)]
 pub(crate) struct RegexExtractEqPlan {
     fast_field_name: String,
-    prefilter_regex: String,
-    prefilter_automaton: tantivy_fst::Regex,
-    extract_regex: regex::Regex,
+    prefilter_automaton: Arc<tantivy_fst::Regex>,
+    extract_regex: Arc<regex::Regex>,
     literal: String,
     terms_are_fast_field_values: bool,
 }
 
 impl RegexExtractEqPlan {
-    /// Compiles the plan, or returns `None` when the predicate must stay on the JIT path.
-    ///
-    /// FST regexes reject look-arounds, lazy repetitions and byte classes, and cap the automaton
-    /// size, so a valid `REGEXP_EXTRACT` pattern may still have no usable prefilter.
-    pub(crate) fn new(
-        fast_field_name: &str,
-        prefilter_regex: String,
-        pattern: &str,
-        literal: &str,
-        terms_are_fast_field_values: bool,
-    ) -> Option<Self> {
-        let prefilter_automaton = tantivy_fst::Regex::new(&prefilter_regex).ok()?;
-        let extract_regex = regex::Regex::new(pattern).ok()?;
-        Some(RegexExtractEqPlan {
-            fast_field_name: fast_field_name.to_string(),
-            prefilter_regex,
-            prefilter_automaton,
-            extract_regex,
-            literal: literal.to_string(),
-            terms_are_fast_field_values,
-        })
-    }
-
-    pub(crate) fn fast_field_name(&self) -> &str {
-        &self.fast_field_name
-    }
-
-    /// Whether the scorer may read the field's term dictionary and postings.
-    pub(crate) fn reads_postings(&self) -> bool {
-        self.terms_are_fast_field_values
-    }
-
-    /// Whole-value FST regex accepting a superset of the matching values.
-    pub(crate) fn prefilter_regex(&self) -> &str {
-        &self.prefilter_regex
-    }
-
     fn value_matches(&self, value_bytes: &[u8]) -> bool {
         let Ok(value) = std::str::from_utf8(value_bytes) else {
             return false;
@@ -106,11 +170,8 @@ impl RegexExtractEqPlan {
         capture.as_str() == self.literal
     }
 
-    pub(crate) fn build_query(self) -> TantivyQueryAst {
-        RegexExtractEqQuery {
-            plan: Arc::new(self),
-        }
-        .into()
+    pub(crate) fn build_query(self: Arc<Self>) -> TantivyQueryAst {
+        RegexExtractEqQuery { plan: self }.into()
     }
 }
 
@@ -197,7 +258,7 @@ impl RegexExtractEqWeight {
         let mut matching_term_infos: Vec<TermInfo> = Vec::new();
         let mut term_stream = inverted_index
             .terms()
-            .search(&self.plan.prefilter_automaton)
+            .search(self.plan.prefilter_automaton.as_ref())
             .into_stream()?;
         while term_stream.advance() {
             if self.plan.value_matches(term_stream.key()) {
@@ -236,7 +297,7 @@ impl RegexExtractEqWeight {
         let mut matching_ords = BitSet::with_max_value(num_values);
         let mut value_stream = str_column
             .dictionary()
-            .search(&self.plan.prefilter_automaton)
+            .search(self.plan.prefilter_automaton.as_ref())
             .into_stream()?;
         while value_stream.advance() {
             if self.plan.value_matches(value_stream.key()) {
@@ -287,6 +348,31 @@ mod tests {
         }
     }
 
+    fn make_prefilter(expression: &str, schema: &Schema) -> Option<super::RegexQuery> {
+        calc_field_query(expression).try_prefilter_regex_query(schema)
+    }
+
+    #[test]
+    fn test_regex_extract_eq_component_caches_reuse_compilation() {
+        let spec = super::RegexExtractEqSpec::new(
+            "service",
+            "svc-api-prod".to_string(),
+            "^svc-([a-z]+)-prod$".to_string(),
+            "api",
+            true,
+        );
+        let first = spec.clone().compile_execution_plan().unwrap();
+        let second = spec.compile_execution_plan().unwrap();
+        assert!(std::sync::Arc::ptr_eq(
+            &first.prefilter_automaton,
+            &second.prefilter_automaton
+        ));
+        assert!(std::sync::Arc::ptr_eq(
+            &first.extract_regex,
+            &second.extract_regex
+        ));
+    }
+
     #[test]
     fn test_regex_extract_eq_prefilter() {
         let mut schema_builder = Schema::builder();
@@ -297,26 +383,37 @@ mod tests {
         schema_builder.add_text_field("fast_lowercased", STRING.set_fast("lowercase"));
         let schema = schema_builder.build();
 
-        let prefilter =
-            calc_field_query(r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#)
-                .try_prefilter_regex_query(&schema)
-                .expect("eligible expression should produce a prefilter");
+        let prefilter = make_prefilter(
+            r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+            &schema,
+        )
+        .expect("eligible expression should produce a prefilter");
         assert_eq!(prefilter.field, "service");
         assert_eq!(prefilter.regex, "svc-api-prod");
 
-        let swapped =
-            calc_field_query(r#"(EQ "api" (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64))"#)
-                .try_prefilter_regex_query(&schema)
-                .expect("swapped EQ args should produce a prefilter");
+        let swapped = make_prefilter(
+            r#"(EQ "api" (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64))"#,
+            &schema,
+        )
+        .expect("swapped EQ args should produce a prefilter");
         assert_eq!(swapped, prefilter);
 
-        let unanchored =
-            calc_field_query(r#"(EQ (REGEXP_EXTRACT service "svc-([a-z]+)-prod" 1u64) "api")"#)
-                .try_prefilter_regex_query(&schema)
-                .expect("unanchored pattern should produce a prefilter");
+        let unanchored = make_prefilter(
+            r#"(EQ (REGEXP_EXTRACT service "svc-([a-z]+)-prod" 1u64) "api")"#,
+            &schema,
+        )
+        .expect("unanchored pattern should produce a prefilter");
         assert_eq!(unanchored.regex, "(?s:.*)svc-api-prod(?s:.*)");
 
         for (expression, expected_regex) in [
+            (
+                r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 0u64) "api")"#,
+                "api",
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "123")"#,
+                "svc-123-prod",
+            ),
             (
                 r#"(EQ (REGEXP_EXTRACT service "^([a-z]+)-([a-z]+)-prod$" 2u64) "api")"#,
                 "(?:[a-z]+)-api-prod",
@@ -330,15 +427,12 @@ mod tests {
                 r"(?s:.*)svc\-api(?s:.*)",
             ),
         ] {
-            let prefilter = calc_field_query(expression)
-                .try_prefilter_regex_query(&schema)
+            let prefilter = make_prefilter(expression, &schema)
                 .expect("any capture index should produce a prefilter");
             assert_eq!(prefilter.regex, expected_regex, "{expression}");
         }
 
         for expression in [
-            r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 0u64) "api")"#,
-            r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "123")"#,
             r#"(EQ (REGEXP_EXTRACT indexed_only "^svc-([a-z]+)-prod$" 1u64) "api")"#,
             r#"(EQ (REGEXP_EXTRACT fast_only "^svc-([a-z]+)-prod$" 1u64) "api")"#,
             r#"(EQ (REGEXP_EXTRACT fast_tokenized "^svc-([a-z]+)-prod$" 1u64) "api")"#,
@@ -351,9 +445,7 @@ mod tests {
             r#"(EQ (REGEXP_EXTRACT service "svc-([a-z]+)-.*?x" 1u64) "api")"#,
         ] {
             assert!(
-                calc_field_query(expression)
-                    .try_prefilter_regex_query(&schema)
-                    .is_none(),
+                make_prefilter(expression, &schema).is_none(),
                 "{expression}"
             );
         }
@@ -478,7 +570,7 @@ mod tests {
             let calc_field_count = searcher.search(&*calc_field_query_built, &Count).unwrap();
             assert_eq!(calc_field_count, expected_count, "calc field {expression}");
 
-            let prefilter = calc_field_query(expression).try_prefilter_regex_query(&schema);
+            let prefilter = make_prefilter(expression, &schema);
             assert_eq!(
                 calc_field_query_built
                     .downcast_ref::<DocPredicateQuery>()

@@ -9477,6 +9477,7 @@ dependencies = [
  "bitpacking",
  "criterion",
  "hex",
+ "lru 0.18.4",
  "proptest",
  "quickwit-common",
  "quickwit-datetime",
