@@ -312,21 +312,19 @@ fn substitute_single_capture(pattern: &str, literal: &str) -> Option<String> {
     let mut literal_ast = parse_regex(&regex_syntax::escape(literal))?;
     if ignores_whitespace {
         // `escape` leaves whitespace as is, which the `x` flag would ignore: disable it.
+        let items = vec![
+            ast::FlagsItem {
+                span,
+                kind: ast::FlagsItemKind::Negation,
+            },
+            ast::FlagsItem {
+                span,
+                kind: ast::FlagsItemKind::Flag(ast::Flag::IgnoreWhitespace),
+            },
+        ];
         literal_ast = Ast::group(ast::Group {
             span,
-            kind: ast::GroupKind::NonCapturing(ast::Flags {
-                span,
-                items: vec![
-                    ast::FlagsItem {
-                        span,
-                        kind: ast::FlagsItemKind::Negation,
-                    },
-                    ast::FlagsItem {
-                        span,
-                        kind: ast::FlagsItemKind::Flag(ast::Flag::IgnoreWhitespace),
-                    },
-                ],
-            }),
+            kind: ast::GroupKind::NonCapturing(ast::Flags { span, items }),
             ast: Box::new(literal_ast),
         });
     }
