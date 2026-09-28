@@ -55,7 +55,7 @@ use quickwit_proto::types::{IndexId, IndexUid, IndexingPlanId, NodeId, PipelineU
 use quickwit_storage::StorageResolver;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore, watch};
 use tracing::{debug, error, info, warn};
 
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
@@ -134,6 +134,7 @@ pub struct IndexingService {
     indexing_io_throughput_limiter_opt: Option<io::Limiter>,
     merge_io_throughput_limiter_opt: Option<io::Limiter>,
     pub(crate) event_broker: EventBroker,
+    indexing_tasks_tx: watch::Sender<Option<Arc<Vec<IndexingTask>>>>,
 }
 
 impl Debug for IndexingService {
@@ -163,6 +164,7 @@ impl IndexingService {
         event_broker: EventBroker,
         split_cache: Arc<IndexingSplitCache>,
         fingerprinter_opt: Option<Fingerprinter>,
+        indexing_tasks_tx: watch::Sender<Option<Arc<Vec<IndexingTask>>>>,
     ) -> anyhow::Result<IndexingService> {
         let indexing_io_throughput_limiter_opt = (*INDEXING_IO_THROUGHPUT_LIMITER).clone();
         let merge_io_throughput_limiter_opt =
@@ -200,6 +202,7 @@ impl IndexingService {
             merge_io_throughput_limiter_opt,
             cooperative_indexing_permits,
             event_broker,
+            indexing_tasks_tx,
         })
     }
 
@@ -664,7 +667,7 @@ impl IndexingService {
                 .retain(|_, handle| handle.handle.state().is_running());
         }
 
-        self.update_chitchat_running_plan().await;
+        self.publish_indexing_tasks();
 
         let pipeline_metrics: HashMap<&IndexingPipelineId, PipelineMetrics> = self
             .indexing_pipelines
@@ -850,7 +853,7 @@ impl IndexingService {
                 .await?;
         }
         self.assign_shards_to_pipelines(&plan_request).await;
-        self.update_chitchat_running_plan().await;
+        self.publish_indexing_tasks();
 
         if !spawn_pipeline_failures.is_empty() {
             let message =
@@ -1004,8 +1007,7 @@ impl IndexingService {
         }
     }
 
-    /// Broadcasts the current running plan via chitchat.
-    async fn update_chitchat_running_plan(&self) {
+    fn publish_indexing_tasks(&self) {
         let mut indexing_tasks: Vec<IndexingTask> = self
             .indexing_pipelines
             .values()
@@ -1025,9 +1027,9 @@ impl IndexingService {
         // TODO: Does anybody why we sort the indexing tasks by pipeline_uid here?
         indexing_tasks.sort_unstable_by_key(|task| task.pipeline_uid);
 
-        self.cluster
-            .update_self_node_indexing_tasks(&indexing_tasks)
-            .await;
+        let _ = self
+            .indexing_tasks_tx
+            .send_replace(Some(Arc::new(indexing_tasks)));
     }
 
     /// Garbage collects ingest API queues of deleted indexes.
@@ -1253,6 +1255,7 @@ mod tests {
         universe: &Universe,
         metastore: MetastoreServiceClient,
         cluster: Cluster,
+        indexing_tasks_tx: watch::Sender<Option<Arc<Vec<IndexingTask>>>>,
     ) -> (Mailbox<IndexingService>, ActorHandle<IndexingService>) {
         let indexer_config = IndexerConfig::for_test().unwrap();
         let num_blocking_threads = 1;
@@ -1277,6 +1280,7 @@ mod tests {
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
             None,
+            indexing_tasks_tx,
         )
         .await
         .unwrap();
@@ -1313,8 +1317,14 @@ mod tests {
 
         let universe = Universe::with_accelerated_time();
         let temp_dir = tempfile::tempdir().unwrap();
-        let (indexing_service, indexing_service_handle) =
-            spawn_indexing_service_for_test(temp_dir.path(), &universe, metastore, cluster).await;
+        let (indexing_service, indexing_service_handle) = spawn_indexing_service_for_test(
+            temp_dir.path(),
+            &universe,
+            metastore,
+            cluster,
+            watch::Sender::new(None),
+        )
+        .await;
         let observation = indexing_service_handle.observe().await;
         assert_eq!(observation.num_running_pipelines, 0);
         assert_eq!(observation.num_failed_pipelines, 0);
@@ -1419,8 +1429,15 @@ mod tests {
 
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
-        let (indexing_service, indexing_server_handle) =
-            spawn_indexing_service_for_test(temp_dir.path(), &universe, metastore, cluster).await;
+        let (indexing_tasks_tx, indexing_tasks_rx) = watch::channel(None);
+        let (indexing_service, indexing_server_handle) = spawn_indexing_service_for_test(
+            temp_dir.path(),
+            &universe,
+            metastore,
+            cluster,
+            indexing_tasks_tx,
+        )
+        .await;
 
         indexing_service
             .ask_for_res(SpawnPipeline {
@@ -1433,6 +1450,7 @@ mod tests {
         for _ in 0..2000 {
             let obs = indexing_server_handle.observe().await;
             if obs.num_successful_pipelines == 1 {
+                assert!(indexing_tasks_rx.borrow().as_ref().unwrap().is_empty());
                 // It may or may not panic
                 universe.quit().await;
                 return;
@@ -1480,11 +1498,13 @@ mod tests {
         metastore.add_source(add_source_request).await.unwrap();
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
+        let (indexing_tasks_tx, indexing_tasks_rx) = watch::channel(None);
         let (indexing_service, indexing_service_handle) = spawn_indexing_service_for_test(
             temp_dir.path(),
             &universe,
             metastore.clone(),
             cluster.clone(),
+            indexing_tasks_tx,
         )
         .await;
         let metadata = metastore
@@ -1609,21 +1629,15 @@ mod tests {
                     .num_running_pipelines,
                 4
             );
-            cluster
-                .wait_for_ready_members(
-                    |members| {
-                        members
-                            .iter()
-                            .any(|member| member.indexing_tasks.len() == indexing_tasks.len())
-                    },
-                    Duration::from_secs(5),
-                )
-                .await
-                .unwrap();
-            let self_member = &cluster.ready_members().await[0];
+            let published = indexing_tasks_rx.borrow().clone().unwrap();
             assert_eq!(
-                HashSet::<_>::from_iter(self_member.indexing_tasks.iter()),
+                HashSet::<_>::from_iter(published.iter()),
                 HashSet::from_iter(indexing_tasks.iter())
+            );
+            assert!(
+                published
+                    .windows(2)
+                    .all(|tasks| tasks[0].pipeline_uid <= tasks[1].pipeline_uid)
             );
         }
         {
@@ -1666,23 +1680,15 @@ mod tests {
 
             indexing_service_handle.process_pending_and_observe().await;
 
-            cluster
-                .wait_for_ready_members(
-                    |members| {
-                        members
-                            .iter()
-                            .any(|member| member.indexing_tasks.len() == indexing_tasks.len())
-                    },
-                    Duration::from_secs(5),
-                )
-                .await
-                .unwrap();
-
-            let self_member = &cluster.ready_members().await[0];
-
+            let published = indexing_tasks_rx.borrow().clone().unwrap();
             assert_eq!(
-                HashSet::<_>::from_iter(self_member.indexing_tasks.iter()),
+                HashSet::<_>::from_iter(published.iter()),
                 HashSet::from_iter(indexing_tasks.iter())
+            );
+            assert!(
+                published
+                    .windows(2)
+                    .all(|tasks| tasks[0].pipeline_uid <= tasks[1].pipeline_uid)
             );
         }
         {
@@ -1743,6 +1749,8 @@ mod tests {
         assert_eq!(indexing_service_obs.num_running_pipelines, 0);
         assert_eq!(indexing_service_obs.num_deleted_queues, 1);
         assert_eq!(indexing_service_obs.num_delete_queue_failures, 0);
+        assert!(indexing_tasks_rx.borrow().as_ref().unwrap().is_empty());
+        assert!(cluster.ready_members().await[0].indexing_tasks.is_empty());
         indexing_service_handle.quit().await;
         universe.assert_quit().await;
     }
@@ -1787,6 +1795,7 @@ mod tests {
             &universe,
             metastore.clone(),
             cluster.clone(),
+            watch::Sender::new(None),
         )
         .await;
 
@@ -1911,6 +1920,7 @@ mod tests {
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
             None,
+            tokio::sync::watch::Sender::new(None),
         )
         .await
         .unwrap();
@@ -2009,6 +2019,7 @@ mod tests {
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
             None,
+            tokio::sync::watch::Sender::new(None),
         )
         .await
         .unwrap();
@@ -2091,6 +2102,7 @@ mod tests {
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
             None,
+            tokio::sync::watch::Sender::new(None),
         )
         .await
         .unwrap();
@@ -2190,6 +2202,7 @@ mod tests {
             &universe,
             MetastoreServiceClient::from_mock(mock_metastore),
             cluster,
+            watch::Sender::new(None),
         )
         .await;
         let _pipeline_id = indexing_service
@@ -2277,6 +2290,7 @@ mod tests {
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
             None,
+            tokio::sync::watch::Sender::new(None),
         )
         .await
         .unwrap();
@@ -2376,6 +2390,7 @@ mod tests {
             &universe,
             MetastoreServiceClient::from_mock(mock_metastore),
             cluster,
+            watch::Sender::new(None),
         )
         .await;
 

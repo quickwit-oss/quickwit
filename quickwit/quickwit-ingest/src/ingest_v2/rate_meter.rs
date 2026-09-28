@@ -12,15 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use quickwit_common::tower::ConstantRate;
+use std::time::Duration;
+
+use bytesize::ByteSize;
+use quickwit_common::ring_buffer::RingBuffer;
+use quickwit_common::tower::{ConstantRate, Rate};
 use tokio::time::Instant;
+
+const SHORT_TERM_WINDOW_LEN: usize = 5;
+
+const LONG_TERM_WINDOW_LEN: usize = 60;
+
+pub(super) struct IngestionRates {
+    pub short_term: ByteSize,
+    pub long_term: ByteSize,
+}
 
 /// A naive rate meter that tracks how much work was performed during a period of time defined by
 /// two successive calls to `harvest`.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(super) struct RateMeter {
     total_work: u64,
     harvested_at: Instant,
+    short_term_rates: RingBuffer<ByteSize, SHORT_TERM_WINDOW_LEN>,
+    long_term_rates: RingBuffer<ByteSize, LONG_TERM_WINDOW_LEN>,
 }
 
 impl Default for RateMeter {
@@ -28,6 +43,8 @@ impl Default for RateMeter {
         Self {
             total_work: 0,
             harvested_at: Instant::now(),
+            short_term_rates: RingBuffer::default(),
+            long_term_rates: RingBuffer::default(),
         }
     }
 }
@@ -40,7 +57,7 @@ impl RateMeter {
 
     /// Returns the average work rate since the last call to this method and resets the internal
     /// state.
-    pub fn harvest(&mut self) -> ConstantRate {
+    fn harvest(&mut self) -> ConstantRate {
         let now = Instant::now();
         let elapsed = now.duration_since(self.harvested_at);
         let rate = ConstantRate::new(self.total_work, elapsed);
@@ -48,6 +65,25 @@ impl RateMeter {
         self.harvested_at = now;
         rate
     }
+
+    pub fn sample(&mut self) -> IngestionRates {
+        let rate = self.harvest();
+        let rate_per_sec = rate.rescale(Duration::from_secs(1)).work_bytes();
+        self.short_term_rates.push_back(rate_per_sec);
+        self.long_term_rates.push_back(rate_per_sec);
+        IngestionRates {
+            short_term: average_rate(&self.short_term_rates),
+            long_term: average_rate(&self.long_term_rates),
+        }
+    }
+}
+
+fn average_rate<const N: usize>(rates: &RingBuffer<ByteSize, N>) -> ByteSize {
+    if rates.is_empty() {
+        return ByteSize::default();
+    }
+    let sum = rates.iter().map(ByteSize::as_u64).sum::<u64>();
+    ByteSize::b(sum / rates.len() as u64)
 }
 
 #[cfg(test)]
@@ -57,6 +93,46 @@ mod tests {
     use quickwit_common::tower::Rate;
 
     use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn test_sample_normalizes_elapsed_time() {
+        let mut meter = RateMeter::default();
+        meter.update(100);
+        tokio::time::advance(Duration::from_millis(250)).await;
+        let rates = meter.sample();
+        assert_eq!(rates.short_term, ByteSize::b(400));
+        assert_eq!(rates.long_term, ByteSize::b(400));
+
+        meter.update(800);
+        tokio::time::advance(Duration::from_secs(2)).await;
+        let rates = meter.sample();
+        assert_eq!(rates.short_term, ByteSize::b(400));
+        assert_eq!(rates.long_term, ByteSize::b(400));
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        let rates = meter.sample();
+        assert_eq!(rates.short_term, ByteSize::b(266));
+        assert_eq!(rates.long_term, ByteSize::b(266));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_sample_expires_short_and_long_term_history() {
+        let mut meter = RateMeter::default();
+        meter.update(600);
+        tokio::time::advance(Duration::from_secs(1)).await;
+        let rates = meter.sample();
+        assert_eq!(rates.short_term, ByteSize::b(600));
+        assert_eq!(rates.long_term, ByteSize::b(600));
+
+        for sample in 2..=61 {
+            tokio::time::advance(Duration::from_secs(1)).await;
+            let rates = meter.sample();
+            let expected_short = if sample <= 5 { 600 / sample } else { 0 };
+            let expected_long = if sample <= 60 { 600 / sample } else { 0 };
+            assert_eq!(rates.short_term, ByteSize::b(expected_short));
+            assert_eq!(rates.long_term, ByteSize::b(expected_long));
+        }
+    }
 
     #[tokio::test]
     async fn test_rate_meter() {

@@ -130,6 +130,7 @@ impl TestSandbox {
             EventBroker::default(),
             Arc::new(IndexingSplitCache::no_caching()),
             None,
+            tokio::sync::watch::Sender::new(None),
         )
         .await?;
         let (indexing_service, _indexing_service_handle) =

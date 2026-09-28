@@ -69,6 +69,8 @@ service ControlPlaneService {
 
   // Performs a debounced shard pruning request to the metastore.
   rpc PruneShards(quickwit.metastore.PruneShardsRequest) returns (quickwit.metastore.EmptyResponse);
+
+  rpc ReportIndexerState(ReportIndexerStateRequest) returns (ReportIndexerStateResponse);
 }
 
 // Shard API
@@ -125,3 +127,33 @@ message AdviseResetShardsResponse {
   repeated quickwit.ingest.ShardIds shards_to_delete = 1;
   repeated quickwit.ingest.ShardIdPositions shards_to_truncate = 2;
 }
+
+message ReportIndexerStateRequest {
+  string node_id = 1;
+  uint64 generation_id = 2;
+  ShardsUpdate shards_update = 3;
+  IndexingTasksUpdate indexing_tasks_update = 4;
+}
+
+message IndexingTasksUpdate {
+  repeated quickwit.indexing.IndexingTask indexing_tasks = 1;
+}
+
+message ShardsUpdate {
+  repeated ShardInfosBySource shard_infos_by_source = 1;
+}
+
+message ShardInfosBySource {
+  quickwit.common.IndexUid index_uid = 1;
+  string source_id = 2;
+  repeated ShardInfo shard_infos = 3;
+}
+
+message ShardInfo {
+  quickwit.ingest.ShardId shard_id = 1;
+  quickwit.ingest.ShardState shard_state = 2;
+  uint64 short_term_ingestion_rate_bytes_per_sec = 3;
+  uint64 long_term_ingestion_rate_bytes_per_sec = 4;
+}
+
+message ReportIndexerStateResponse {}
