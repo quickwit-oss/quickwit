@@ -15,7 +15,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use quickwit_common::{rate_limited_info, rate_limited_error};
+use quickwit_common::{rate_limited_error, rate_limited_info};
 use quickwit_ingest::ShardThroughputReadings;
 use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, IndexingTasksUpdate, ReportIndexerStateRequest,
