@@ -81,12 +81,36 @@ impl CalcFieldQuery {
     fn regex_extract_eq_plan(&self, schema: &TantivySchema) -> Option<RegexExtractEqPlan> {
         let (field_name, pattern, capture_index, literal) =
             match_eq_regexp_extract(&self.expression)?;
-        if !is_str_fast_field(field_name, schema) {
+        // Resolve the field once: the same metadata determines both fast-field eligibility and
+        // whether the postings-based scorer can be used.
+        let (_field, field_entry, json_path) = find_field_or_hit_dynamic(field_name, schema)?;
+        // JSON subfields and non-fast fields cannot use the value dictionary scorer.
+        if !json_path.is_empty() || !field_entry.is_fast() {
             return None;
         }
+        let FieldType::Str(text_options) = field_entry.field_type() else {
+            return None;
+        };
+        // The fast-field scorer remains valid without indexing; only the postings optimization
+        // requires raw indexing and a raw fast-field tokenizer.
+        let fast_field_is_raw = matches!(
+            text_options.get_fast_field_tokenizer_name(),
+            None | Some(RAW_TOKENIZER_NAME)
+        );
+        // Normalize the requested capture to group 1 so the exact matcher can keep the same
+        // capture semantics regardless of the original capture index.
         let isolated_pattern = isolate_capture(pattern, capture_index)?;
+        // Replace the isolated capture with the literal to build an FST superset prefilter.
         let prefilter_regex = substitute_single_capture(&isolated_pattern, literal)?;
-        let terms_are_fast_field_values = is_raw_term_prefilter_compatible(field_name, schema);
+        // Postings are safe only when raw indexing preserves the same values as the raw fast
+        // field. The scorer performs the per-segment dictionary-count check later.
+        let terms_are_fast_field_values = fast_field_is_raw
+            && matches!(
+                text_options.get_indexing_options(),
+                Some(text_indexing) if text_indexing.tokenizer() == RAW_TOKENIZER_NAME
+            );
+        // Keep both forms: the FST prefilter narrows candidate values, while the isolated regex
+        // performs the exact REGEXP_EXTRACT equality check.
         RegexExtractEqPlan::new(
             field_name,
             prefilter_regex,
@@ -158,39 +182,6 @@ fn match_eq_regexp_extract(expression: &UntypedExpr) -> Option<(&str, &str, u64,
         capture_index,
         literal.as_ref(),
     ))
-}
-
-fn is_str_fast_field(field_name: &str, schema: &TantivySchema) -> bool {
-    let Some((_field, field_entry, json_path)) = find_field_or_hit_dynamic(field_name, schema)
-    else {
-        return false;
-    };
-    // Narrow scope: plain string fields only, not JSON subpaths.
-    if !json_path.is_empty() {
-        return false;
-    }
-    field_entry.is_fast() && matches!(field_entry.field_type(), FieldType::Str(_))
-}
-
-fn is_raw_term_prefilter_compatible(field_name: &str, schema: &TantivySchema) -> bool {
-    let Some((_field, field_entry, json_path)) = find_field_or_hit_dynamic(field_name, schema)
-    else {
-        return false;
-    };
-    if !json_path.is_empty() {
-        return false;
-    }
-    let FieldType::Str(text_options) = field_entry.field_type() else {
-        return false;
-    };
-    let Some(text_indexing) = text_options.get_indexing_options() else {
-        return false;
-    };
-    let fast_field_is_raw = matches!(
-        text_options.get_fast_field_tokenizer_name(),
-        None | Some(RAW_TOKENIZER_NAME)
-    );
-    text_indexing.tokenizer() == RAW_TOKENIZER_NAME && fast_field_is_raw
 }
 
 /// Matches any sequence of characters, including newlines.

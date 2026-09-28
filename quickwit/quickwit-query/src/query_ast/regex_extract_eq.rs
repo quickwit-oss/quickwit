@@ -44,6 +44,7 @@ use super::TantivyQueryAst;
 /// - Unlike the JIT predicate, which treats a column it fails to open as absent, the scorer returns
 ///   errors from opening the column or reading its dictionary, so a corrupt split fails the search
 ///   instead of silently matching nothing.
+#[derive(Debug)]
 pub(crate) struct RegexExtractEqPlan {
     fast_field_name: String,
     prefilter_regex: String,
@@ -116,19 +117,9 @@ impl RegexExtractEqPlan {
 /// Matches documents whose first fast-field value satisfies
 /// `REGEXP_EXTRACT(value, pattern, 1) == literal`, checking each distinct value once. Here
 /// `pattern` is the isolated pattern whose group 1 represents the requested original capture.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct RegexExtractEqQuery {
     plan: Arc<RegexExtractEqPlan>,
-}
-
-impl std::fmt::Debug for RegexExtractEqQuery {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.debug_struct("RegexExtractEqQuery")
-            .field("fast_field_name", &self.plan.fast_field_name)
-            .field("extract_regex", &self.plan.extract_regex.as_str())
-            .field("literal", &self.plan.literal)
-            .finish()
-    }
 }
 
 impl Query for RegexExtractEqQuery {
