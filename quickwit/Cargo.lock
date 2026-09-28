@@ -9556,7 +9556,6 @@ dependencies = [
  "serde_json",
  "siphasher",
  "tantivy",
- "tantivy-fst",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
