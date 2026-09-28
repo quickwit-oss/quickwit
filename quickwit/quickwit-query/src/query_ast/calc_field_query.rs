@@ -32,15 +32,20 @@ use crate::{InvalidQuery, find_field_or_hit_dynamic};
 /// happen when Tantivy creates the segment scorer. Callers must warm the referenced fast
 /// fields before running a synchronous search against remote storage.
 ///
-/// Predicates of the form `(EQ (REGEXP_EXTRACT field "prefix(capture)suffix" 1u64) "literal")`
-/// (or the swapped literal/extract form, with any capture index or none for the whole match) on
-/// a non-JSON string fast field are evaluated once per distinct value instead of once per
-/// document: the dictionary is walked with an FST *prefilter* regex, each accepted value is
-/// checked exactly, and documents are selected by their first value. They match the same
-/// documents as the JIT path. When the field is also indexed with the raw tokenizer, only the
-/// documents in the postings of the matching values are visited; callers must then also warm the
-/// field's term dictionary and postings with the regex of
-/// [`CalcFieldQuery::try_prefilter_regex_query`].
+/// Eligible predicates of the form
+/// `(EQ (REGEXP_EXTRACT field "prefix(capture)suffix" 1u64) "literal")` (or the swapped
+/// literal/extract form, with any capture index or none for the whole match) on a non-JSON string
+/// fast field are evaluated once per distinct value instead of once per document: the dictionary
+/// is walked with an FST *prefilter* regex, each accepted value is checked exactly, and documents
+/// are selected by their first value. They match the same documents as the JIT path.
+///
+/// In particular, `REGEXP_EXTRACT` sees only the first value of a multivalued field. A matching
+/// later value does not make the predicate match.
+///
+/// On raw-indexed fields, segments whose term and fast-field dictionaries contain the same values
+/// visit only the postings of matching terms. Other segments fall back to checking every
+/// document's first value. Callers must warm the raw field's term dictionary and postings with the
+/// regex of [`CalcFieldQuery::try_prefilter_regex_query`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CalcFieldQuery {
     #[serde(with = "jitexpr_serde")]
@@ -57,9 +62,9 @@ impl CalcFieldQuery {
     /// Builds an FST [`RegexQuery`] accepting a *superset* of the values matching
     /// `(EQ (REGEXP_EXTRACT field pattern capture_index) "literal")` (or the swapped form).
     ///
-    /// Available only when the indexed terms contain the same raw values as the fast field, in
-    /// which case the query reads the postings of the terms this regex accepts, and they must be
-    /// warmed.
+    /// Available only for fields indexed with the raw tokenizer and a raw fast field. The scorer
+    /// reads matching-term postings only in segments whose term and fast-field dictionaries
+    /// contain the same values; callers still warm them for every raw-compatible segment.
     ///
     /// Returns `None` whenever the expression shape or field is not eligible.
     pub fn try_prefilter_regex_query(&self, schema: &TantivySchema) -> Option<RegexQuery> {
@@ -231,7 +236,9 @@ fn isolate_capture(pattern: &str, capture_index: u64) -> Option<String> {
 }
 
 /// Builds an FST whole-term regex that is a *superset* of terms for which
-/// `EQ(REGEXP_EXTRACT(..., pattern, 1), literal)` holds.
+/// `EQ(REGEXP_EXTRACT(..., pattern, 1), literal)` holds. Here `pattern` is the
+/// output of [`isolate_capture`], so group 1 represents the requested capture
+/// from the original pattern.
 ///
 /// Parses `pattern` with [`regex_syntax`], requires exactly one capturing group that is a
 /// direct part of the top-level concatenation (not inside an alternation or repetition),
@@ -294,7 +301,8 @@ fn substitute_single_capture(pattern: &str, literal: &str) -> Option<String> {
     Some(rewritten)
 }
 
-/// Byte range of `pattern` after stripping a leading `^`/`\A` and trailing `$`/`\z`.
+/// Returns the byte range of `pattern` after stripping a leading `^`/`\A` and trailing `$`/`\z`,
+/// along with whether each anchor was present.
 fn body_bounds(ast: &Ast, pattern_len: usize) -> (usize, usize, bool, bool) {
     let parts: Vec<&Ast> = match ast {
         Ast::Concat(concat) => concat.asts.iter().collect(),

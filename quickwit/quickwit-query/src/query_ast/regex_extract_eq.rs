@@ -31,9 +31,9 @@ use super::TantivyQueryAst;
 ///
 /// Hidden contracts:
 /// - `prefilter_automaton` accepts a superset of the values satisfying the predicate.
-/// - `fast_field_name` names a non-JSON string fast field. Values are read from the same column,
-///   dictionary and first-value rule as the JIT predicate (`load_str_input`), so both paths match
-///   the same documents.
+/// - `fast_field_name` names a non-JSON string fast field. The JIT predicate's `load_str_input`
+///   reads its first value only; this query applies the same rule, so a matching later value of a
+///   multivalued field does not match.
 /// - `value_matches` must keep the semantics of the jitexpr `REGEXP_EXTRACT` function
 ///   (`Regex::new(pattern)`, leftmost-first `captures`). `pattern` has a single capturing group,
 ///   group 1, standing for the requested capture of the original pattern.
@@ -114,7 +114,8 @@ impl RegexExtractEqPlan {
 }
 
 /// Matches documents whose first fast-field value satisfies
-/// `REGEXP_EXTRACT(value, pattern, 1) == literal`, checking each distinct value once.
+/// `REGEXP_EXTRACT(value, pattern, 1) == literal`, checking each distinct value once. Here
+/// `pattern` is the isolated pattern whose group 1 represents the requested original capture.
 #[derive(Clone)]
 struct RegexExtractEqQuery {
     plan: Arc<RegexExtractEqPlan>,
@@ -209,7 +210,8 @@ impl RegexExtractEqWeight {
             .into_stream()?;
         while term_stream.advance() {
             if self.plan.value_matches(term_stream.key()) {
-                // Term ordinals are fast-field value ordinals, lower than `num_values`.
+                // Term ordinals are fast-field value ordinals and are represented as u32, like
+                // the column ordinals.
                 matching_ords.insert(term_stream.term_ord() as u32);
                 matching_term_infos.push(term_stream.value().clone());
             }
@@ -247,7 +249,7 @@ impl RegexExtractEqWeight {
             .into_stream()?;
         while value_stream.advance() {
             if self.plan.value_matches(value_stream.key()) {
-                // `term_ord < num_values`, which fits in u32.
+                // The dictionary and column expose ordinals using the same u32 representation.
                 matching_ords.insert(value_stream.term_ord() as u32);
             }
         }
@@ -350,7 +352,8 @@ mod tests {
             r#"(EQ (REGEXP_EXTRACT fast_only "^svc-([a-z]+)-prod$" 1u64) "api")"#,
             r#"(EQ (REGEXP_EXTRACT fast_tokenized "^svc-([a-z]+)-prod$" 1u64) "api")"#,
             r#"(EQ (REGEXP_EXTRACT fast_lowercased "^svc-([a-z]+)-prod$" 1u64) "api")"#,
-            // FST regexes reject look-arounds and lazy repetitions.
+            // FST regexes reject word boundaries and lazy repetitions, and only a leading `^`
+            // or trailing `$` can be stripped.
             r#"(EQ (REGEXP_EXTRACT service "\\bsvc-([a-z]+)" 1u64) "api")"#,
             r#"(EQ (REGEXP_EXTRACT service "(?m)^svc-([a-z]+)" 1u64) "api")"#,
             r#"(EQ (REGEXP_EXTRACT service "a^svc-([a-z]+)" 1u64) "api")"#,
@@ -386,7 +389,8 @@ mod tests {
             "svc-123-prod",
             "other",
             "svc-api-prod-extra",
-            // Prefilter over-matches (longer capture / earlier different extract); JIT rejects.
+            // Prefilter over-matches (longer capture / earlier different extract); exact matching
+            // rejects.
             "svc-apixyz",
             "svc-web-prod-svc-api-prod",
             // Multi-line value: the prefilter wrappers must match newlines.

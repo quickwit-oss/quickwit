@@ -512,8 +512,8 @@ mod test {
         let schema = schema_builder.build();
         let context = BuildTantivyAstContext::for_test(&schema);
 
-        // The predicate always reads the fast field. It also reads the postings of the terms
-        // accepted by the prefilter when the field is indexed with the raw tokenizer.
+        // The predicate always reads the fast field. It may also read postings of terms accepted
+        // by the prefilter when the field uses the raw tokenizer for both indexing and fast fields.
         for (expression, fast_field, expected_prefilter) in [
             (
                 r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#,
