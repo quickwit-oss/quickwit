@@ -81,6 +81,8 @@ impl ApiResponse {
 pub struct SearchResponseRestClient {
     pub num_hits: u64,
     pub hits: Vec<JsonValue>,
+    #[serde(default)]
+    pub cursors: Vec<String>,
     pub snippets: Option<Vec<JsonValue>>,
     pub elapsed_time_micros: u64,
     pub errors: Vec<String>,

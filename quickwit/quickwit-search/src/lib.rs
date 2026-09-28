@@ -91,7 +91,7 @@ pub use crate::root::{
 };
 pub use crate::search_job_placer::{Job, SearchJobPlacer};
 pub use crate::search_response_rest::{
-    AggregationResults, SearchPlanResponseRest, SearchResponseRest,
+    AggregationResults, SearchAfterCursor, SearchPlanResponseRest, SearchResponseRest,
 };
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 

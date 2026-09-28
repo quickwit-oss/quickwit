@@ -237,6 +237,8 @@ You can pass the `sort` value of the last hit in a subsequent request where othe
 
 This allows you to paginate your results.
 
+If a datetime sort field has a `fast_precision` finer than milliseconds, `search_after` requires the `epoch_nanos_int` format for that field. Quickwit rejects these requests without it: with millisecond sort values, Quickwit would skip the hits within the same millisecond as the last hit.
+
 ### `_msearch` &nbsp; Multi search API
 
 ```
