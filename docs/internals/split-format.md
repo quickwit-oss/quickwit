@@ -12,6 +12,20 @@ It contains the field name, type and capabilities.
 - a versioned protobuf entry named `split_recovery_metadata` containing the immutable split
   metadata and direct lineage needed to reconstruct its metastore record.
 
+Splits may declare `sort_fields` in their metastore metadata and recovery entry. Each entry
+records a field name, direction, and logical comparison type, for example
+`{"field": "service", "order": "asc", "type": "text"}`. The type is resolved from the writer's
+schema, even for an all-null field; it is independent of the physical column encoding. A nonempty
+declaration with a missing or unknown type is rejected, including during recovery.
+
+The list is empty for legacy and unsorted splits; currently writers support one scalar raw text
+field, with ascending or descending byte ordering. Missing values sort first ascending and last
+descending. The declaration must agree with both the sort setting and schema in Tantivy's
+`meta.json`. Merge planners group by the complete declaration, including type, and merge execution
+rejects mismatches rather than adopting the current index configuration as the order of older
+data. Splits must also have the same document-mapping UID to merge; matching sort declarations
+do not remove that constraint.
+
 The split file data layout looks like this:
 - concatenation all of the files in the split
 - a footer

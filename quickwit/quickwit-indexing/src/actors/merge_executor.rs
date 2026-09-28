@@ -18,7 +18,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
-use anyhow::{Context, anyhow};
+use anyhow::{Context, anyhow, ensure};
 use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
@@ -49,6 +49,10 @@ use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::{MergeOperationType, MergeSource};
 use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, SplitAttrs};
+
+#[cfg(test)]
+#[path = "merge_executor_sort_tests.rs"]
+mod sort_tests;
 
 #[derive(Clone)]
 pub struct MergeExecutor {
@@ -189,7 +193,16 @@ impl Handler<MergeScratch> for MergeExecutor {
 
 fn combine_index_meta(mut index_metas: Vec<IndexMeta>) -> anyhow::Result<IndexMeta> {
     let mut union_index_meta = index_metas.pop().with_context(|| "only one IndexMeta")?;
+    let sort_fields = crate::models::resolve_sort_fields(
+        &union_index_meta.index_settings,
+        &union_index_meta.schema,
+    )?;
     for index_meta in index_metas {
+        ensure!(
+            crate::models::resolve_sort_fields(&index_meta.index_settings, &index_meta.schema)?
+                == sort_fields,
+            "cannot merge indexes with different physical sort fields"
+        );
         union_index_meta.segments.extend(index_meta.segments);
     }
     Ok(union_index_meta)
@@ -198,14 +211,26 @@ fn combine_index_meta(mut index_metas: Vec<IndexMeta>) -> anyhow::Result<IndexMe
 fn open_split_directories(
     // Directories containing the splits to merge
     tantivy_dirs: &[Box<dyn Directory>],
+    splits: &[SplitMetadata],
     tokenizer_manager: &TokenizerManager,
 ) -> anyhow::Result<(IndexMeta, Vec<Box<dyn Directory>>)> {
+    ensure!(
+        tantivy_dirs.len() == splits.len(),
+        "merge input metadata count mismatch"
+    );
     let mut directories: Vec<Box<dyn Directory>> = Vec::new();
     let mut index_metas = Vec::new();
-    for tantivy_dir in tantivy_dirs {
+    for (tantivy_dir, split) in tantivy_dirs.iter().zip(splits) {
         directories.push(tantivy_dir.clone());
 
         let index_meta = open_index(tantivy_dir.clone(), tokenizer_manager)?.load_metas()?;
+        let actual_sort_fields =
+            crate::models::resolve_sort_fields(&index_meta.index_settings, &index_meta.schema)?;
+        ensure!(
+            actual_sort_fields == split.sort_fields,
+            "split {} physical sort order or type disagrees with metastore metadata",
+            split.split_id
+        );
         index_metas.push(index_meta);
     }
     let union_index_meta = combine_index_meta(index_metas)?;
@@ -292,6 +317,11 @@ pub fn merge_split_attrs(
         .first()
         .ok_or_else(|| anyhow::anyhow!("attempted to merge zero splits"))?
         .doc_mapping_uid;
+    let sort_fields = splits[0].sort_fields.clone();
+    ensure!(
+        splits.iter().all(|split| split.sort_fields == sort_fields),
+        "cannot merge splits with different physical sort fields"
+    );
     if splits
         .iter()
         .any(|split| split.doc_mapping_uid != doc_mapping_uid)
@@ -299,11 +329,12 @@ pub fn merge_split_attrs(
         anyhow::bail!("attempted to merge splits with different doc mapping uid");
     }
     Ok(SplitAttrs {
+        split_id: merge_split_id,
         node_id: pipeline_id.node_id.clone(),
         index_uid: pipeline_id.index_uid.clone(),
         source_id: pipeline_id.source_id.clone(),
         doc_mapping_uid,
-        split_id: merge_split_id,
+        sort_fields,
         partition_id,
         replaced_split_ids,
         time_range,
@@ -351,6 +382,7 @@ impl MergeExecutor {
     ) -> anyhow::Result<IndexedSplit> {
         let (union_index_meta, split_directories) = open_split_directories(
             &tantivy_dirs,
+            &splits,
             self.doc_mapper.tokenizer_manager().tantivy_manager(),
         )?;
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
@@ -419,6 +451,7 @@ impl MergeExecutor {
 
         let (union_index_meta, split_directories) = open_split_directories(
             &tantivy_dirs,
+            std::slice::from_ref(&split),
             self.doc_mapper.tokenizer_manager().tantivy_manager(),
         )?;
         let controlled_directory = self
@@ -484,11 +517,12 @@ impl MergeExecutor {
         };
         let indexed_split = IndexedSplit {
             split_attrs: SplitAttrs {
+                split_id: merge_split_id,
                 node_id: NodeId::from_str(&split.node_id),
                 index_uid: split.index_uid,
                 source_id: split.source_id,
                 doc_mapping_uid: split.doc_mapping_uid,
-                split_id: merge_split_id,
+                sort_fields: split.sort_fields,
                 partition_id: split.partition_id,
                 replaced_split_ids: vec![split.split_id.clone()],
                 time_range,

@@ -112,12 +112,13 @@ impl IndexedSplitBuilder {
             index_builder.single_segment_index_writer(indexing_directory, 15_000_000)?;
         Ok(Self {
             split_attrs: SplitAttrs {
+                split_id,
                 node_id: pipeline_id.node_id,
                 index_uid: pipeline_id.index_uid,
                 source_id: pipeline_id.source_id,
                 doc_mapping_uid,
+                sort_fields: Vec::new(),
                 partition_id,
-                split_id,
                 num_docs: 0,
                 replaced_split_ids: Vec::new(),
                 uncompressed_docs_size_in_bytes: 0,
@@ -148,7 +149,7 @@ impl IndexedSplitBuilder {
         )
     )]
     pub fn finalize(self) -> anyhow::Result<IndexedSplit> {
-        let split_attrs = self.split_attrs;
+        let mut split_attrs = self.split_attrs;
         let index = if let Some(doc_id_clusterer) = self.doc_id_clusterer_opt {
             // Update metrics for document clustering.
             let index_label = index_label(&split_attrs.index_uid.index_id);
@@ -169,6 +170,7 @@ impl IndexedSplitBuilder {
         } else {
             self.index_writer.finalize()?
         };
+        split_attrs.sort_fields = super::resolve_sort_fields(index.settings(), &index.schema())?;
         if let Some(ram_directory) = &self.ram_directory_opt {
             // The packager and uploader consume split files from the scratch directory.
             ram_directory.persist(&self.controlled_directory)?;

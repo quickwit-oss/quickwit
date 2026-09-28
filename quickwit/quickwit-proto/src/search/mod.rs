@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod sort_fields;
 mod span_id;
 mod trace_id;
 
@@ -21,6 +22,7 @@ use std::io::{self, Read};
 
 use prost::Message;
 pub use sort_by_value::SortValue;
+pub use sort_fields::parse_sort_fields;
 pub use span_id::{SpanId, TryFromSpanIdError};
 pub use trace_id::{TraceId, TryFromTraceIdError};
 

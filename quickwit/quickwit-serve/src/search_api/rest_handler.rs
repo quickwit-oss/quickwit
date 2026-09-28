@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use percent_encoding::percent_decode_str;
 use quickwit_config::validate_index_id_pattern;
-use quickwit_proto::search::{CountHits, SortField, SortOrder};
+use quickwit_proto::search::{CountHits, SortField, SortOrder, parse_sort_fields};
 use quickwit_query::query_ast::query_ast_from_user_text;
 use quickwit_search::{SearchError, SearchPlanResponseRest, SearchResponseRest, SearchService};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -92,28 +92,15 @@ impl SortBy {
 
 impl From<String> for SortBy {
     fn from(sort_by: String) -> Self {
-        let mut sort_fields = Vec::new();
-
-        for field_name in sort_by.split(',') {
-            if field_name.is_empty() {
-                continue;
-            }
-            let (field_name, sort_order) = if let Some(tail) = field_name.strip_prefix('+') {
-                (tail.trim().to_string(), SortOrder::Desc)
-            } else if let Some(tail) = field_name.strip_prefix('-') {
-                (tail.trim().to_string(), SortOrder::Asc)
-            } else {
-                let trimmed_field_name = field_name.trim().to_string();
-
-                (trimmed_field_name, SortOrder::Desc)
-            };
-            let sort_field = SortField {
-                field_name,
+        let fields = sort_by.split(',').filter(|field| !field.is_empty());
+        let sort_fields = parse_sort_fields(fields, SortOrder::Desc)
+            .into_iter()
+            .map(|(field_name, sort_order)| SortField {
+                field_name: field_name.trim().to_string(),
                 sort_order: sort_order as i32,
                 sort_datetime_format: None,
-            };
-            sort_fields.push(sort_field);
-        }
+            })
+            .collect();
         Self { sort_fields }
     }
 }
@@ -815,6 +802,21 @@ mod tests {
                     SortField {
                         field_name: "field2".to_string(),
                         sort_order: SortOrder::Desc as i32,
+                        sort_datetime_format: None,
+                    },
+                ],
+            ),
+            (
+                "%2B%20field1%20,,,-%20field2%20,",
+                vec![
+                    SortField {
+                        field_name: "field1".to_string(),
+                        sort_order: SortOrder::Desc as i32,
+                        sort_datetime_format: None,
+                    },
+                    SortField {
+                        field_name: "field2".to_string(),
+                        sort_order: SortOrder::Asc as i32,
                         sort_datetime_format: None,
                     },
                 ],

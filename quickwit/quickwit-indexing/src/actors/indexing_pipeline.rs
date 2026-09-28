@@ -367,7 +367,7 @@ impl IndexingPipeline {
             .spawn(index_serializer);
 
         // Indexer
-        let indexer = Indexer::new(
+        let indexer = Indexer::try_new(
             self.params.pipeline_id.clone(),
             self.params.doc_mapper.clone(),
             self.params.metastore.clone(),
@@ -377,7 +377,7 @@ impl IndexingPipeline {
             index_serializer_mailbox,
             self.params.fingerprinter_opt.clone(),
             self.params.indexing_io_throughput_limiter_opt.clone(),
-        );
+        )?;
         let (indexer_mailbox, indexer_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "indexer")]))

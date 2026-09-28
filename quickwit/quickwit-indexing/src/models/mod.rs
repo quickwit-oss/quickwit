@@ -51,6 +51,7 @@ pub use raw_doc_batch::RawDocBatch;
 pub(crate) use shard_positions::LocalShardPositionsUpdate;
 pub use shard_positions::ShardPositionsService;
 pub use split_attrs::{SplitAttrs, create_split_metadata};
+pub(crate) use split_attrs::{resolve_sort_fields, tantivy_sort_by_field};
 
 /// Shared, live publish token owned by an indexing pipeline. The source writes it on reset and
 /// shard re-acquisition; the publisher reads it at publish time. `None` means no token (merge

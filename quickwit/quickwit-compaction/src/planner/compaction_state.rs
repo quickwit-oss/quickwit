@@ -36,6 +36,7 @@ pub struct CompactionPartitionKey {
     pub source_id: SourceId,
     pub partition_id: u64,
     pub doc_mapping_uid: DocMappingUid,
+    pub sort_fields: Vec<quickwit_metastore::SortFieldMetadata>,
 }
 
 impl CompactionPartitionKey {
@@ -45,6 +46,7 @@ impl CompactionPartitionKey {
             source_id: split.source_id.clone(),
             partition_id: split.partition_id,
             doc_mapping_uid: split.doc_mapping_uid,
+            sort_fields: split.sort_fields.clone(),
         }
     }
 }
@@ -317,6 +319,56 @@ mod tests {
         state.track_split(test_split("s2", &index_uid));
 
         assert_eq!(state.partition_keys().len(), 1);
+    }
+
+    #[test]
+    fn test_sort_fields_separate_compaction_groups() {
+        use quickwit_metastore::{SortFieldMetadata, SortValueType};
+        use quickwit_proto::search::SortOrder;
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let mut state = CompactionState::default();
+
+        for (group, sort_fields) in [
+            Vec::new(),
+            vec![SortFieldMetadata {
+                field: "service".to_string(),
+                order: SortOrder::Asc,
+                field_type: SortValueType::Text,
+            }],
+            vec![SortFieldMetadata {
+                field: "service".to_string(),
+                order: SortOrder::Desc,
+                field_type: SortValueType::Text,
+            }],
+            vec![SortFieldMetadata {
+                field: "service".to_string(),
+                order: SortOrder::Asc,
+                field_type: SortValueType::I64,
+            }],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            for i in 0..2 {
+                let mut split = test_split(&format!("split-{group}-{i}"), &index_uid);
+                split.sort_fields = sort_fields.clone();
+                state.track_split(split);
+            }
+        }
+        let keys = state.partition_keys();
+        assert_eq!(keys.len(), 4);
+
+        for key in keys {
+            state.plan_partition(&key, &*test_merge_policy());
+        }
+        assert_eq!(state.pending_operations.len(), 4);
+
+        for pending in state.pending_operations.iter() {
+            let splits = &pending.operation.splits;
+            assert_eq!(splits.len(), 2);
+            assert_eq!(splits[0].sort_fields, splits[1].sort_fields);
+        }
     }
 
     #[test]

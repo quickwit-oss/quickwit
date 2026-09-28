@@ -527,7 +527,7 @@ impl Handler<NewPublishLock> for Indexer {
 
 impl Indexer {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub fn try_new(
         pipeline_id: IndexingPipelineId,
         doc_mapper: Arc<DocMapper>,
         metastore: MetastoreServiceClient,
@@ -537,14 +537,22 @@ impl Indexer {
         index_serializer_mailbox: Mailbox<IndexSerializer>,
         fingerprinter_opt: Option<Fingerprinter>,
         indexing_io_throughput_limiter_opt: Option<Limiter>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        indexing_settings.validate_sort_fields(&doc_mapper)?;
+        if !indexing_settings.sort_fields.is_empty() {
+            anyhow::ensure!(
+                fingerprinter_opt.is_none(),
+                "indexing_settings.sort_fields cannot be combined with document fingerprint \
+                 clustering"
+            );
+        }
         let schema = doc_mapper.schema();
         let tokenizer_manager = doc_mapper.tokenizer_manager().clone();
         let docstore_compression = Compressor::Zstd(ZstdCompressor {
             compression_level: Some(indexing_settings.docstore_compression_level),
         });
         let index_settings = IndexSettings {
-            sort_by_field: None,
+            sort_by_field: crate::models::tantivy_sort_by_field(&indexing_settings.sort_fields)?,
             docstore_blocksize: indexing_settings.docstore_blocksize,
             docstore_compression,
             docstore_compress_dedicated_thread: true,
@@ -559,7 +567,7 @@ impl Indexer {
                     cooperative_indexing_permits,
                 )
             });
-        Self {
+        Ok(Self {
             indexer_state: IndexerState {
                 pipeline_id,
                 metastore: metastore.clone(),
@@ -578,7 +586,7 @@ impl Indexer {
             index_serializer_mailbox,
             indexing_workbench_opt: None,
             counters: IndexerCounters::default(),
-        }
+        })
     }
 
     fn memory_usage(&self) -> ByteSize {
@@ -728,7 +736,7 @@ mod tests {
         index_serializer_mailbox: Mailbox<IndexSerializer>,
         fingerprinter_opt: Option<Fingerprinter>,
     ) -> Indexer {
-        Indexer::new(
+        Indexer::try_new(
             pipeline_id,
             doc_mapper,
             metastore,
@@ -739,6 +747,50 @@ mod tests {
             fingerprinter_opt,
             None,
         )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_sort_fields_reject_fingerprint_clustering() {
+        let universe = Universe::with_accelerated_time();
+        let (mailbox, _inbox) = universe.create_test_mailbox();
+        let doc_mapper: DocMapper = serde_json::from_value(serde_json::json!({
+            "field_mappings": [{"name": "service", "type": "text", "tokenizer": "raw", "fast": true}]
+        })).unwrap();
+        let clustering: DocsClusteringConfig = serde_json::from_value(serde_json::json!([
+            {"fingerprint": [{"kind": "structure"}]}
+        ]))
+        .unwrap();
+        let result = Indexer::try_new(
+            IndexingPipelineId {
+                index_uid: IndexUid::for_test("test-index", 0),
+                source_id: "test-source".to_string(),
+                node_id: NodeId::from_str("test-node"),
+                pipeline_uid: PipelineUid::default(),
+            },
+            Arc::new(doc_mapper),
+            MetastoreServiceClient::from_mock(MockMetastoreService::new()),
+            TempDirectory::for_test(),
+            IndexingSettings {
+                sort_fields: vec![quickwit_config::IndexingSortField {
+                    field: "service".to_string(),
+                    order: Default::default(),
+                }],
+                ..IndexingSettings::for_test()
+            },
+            None,
+            mailbox,
+            Some(Fingerprinter::new(&clustering)),
+            None,
+        );
+        assert!(
+            result
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("cannot be combined")
+        );
+        universe.assert_quit().await;
     }
 
     #[test]

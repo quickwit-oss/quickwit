@@ -62,6 +62,28 @@ message SplitRecoveryMetadata {
 
   // None means the split is mature; otherwise, this is its maturation period in milliseconds.
   optional uint64 maturation_period_millis = 16;
+
+  // Physical ordering. Empty for legacy splits and splits without a sort guarantee.
+  repeated SplitSortField sort_fields = 17;
+}
+
+// Logical comparison type, independent of a segment's physical column encoding.
+enum SplitSortFieldType {
+  SPLIT_SORT_FIELD_TYPE_UNSPECIFIED = 0;
+  SPLIT_SORT_FIELD_TYPE_TEXT = 1;
+  SPLIT_SORT_FIELD_TYPE_I64 = 2;
+  SPLIT_SORT_FIELD_TYPE_U64 = 3;
+  SPLIT_SORT_FIELD_TYPE_F64 = 4;
+  SPLIT_SORT_FIELD_TYPE_DATETIME = 5;
+  SPLIT_SORT_FIELD_TYPE_BYTES = 6;
+}
+
+// Physical ordering. Missing values sort first ascending, last descending.
+message SplitSortField {
+  string field = 1;
+  bool descending = 2;
+  // Required for every declared sort field. Unspecified and unknown types are invalid.
+  SplitSortFieldType field_type = 3;
 }
 
 // Metastore meant to manage Quickwit's indexes, their splits and delete tasks.

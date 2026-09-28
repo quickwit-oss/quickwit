@@ -100,6 +100,11 @@ mod split_recovery_metadata_tests {
             num_merge_ops: 7,
             parent_split_ids: vec!["parent-a".to_string(), "parent-b".to_string()],
             maturation_period_millis: Some(40_500),
+            sort_fields: vec![super::SplitSortField {
+                field: "service".to_string(),
+                descending: false,
+                field_type: super::SplitSortFieldType::Text as i32,
+            }],
         };
         let mut serialized = metadata.serialize();
         // An unknown protobuf varint field must be ignored by older readers.
