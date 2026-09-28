@@ -49,7 +49,7 @@ use super::broadcast::BroadcastIngesterCapacityScoreTask;
 use super::doc_mapper::validate_doc_batch;
 use super::fetch::FetchStreamTask;
 use super::idle::CloseIdleShardsTask;
-use super::local_shards::LocalShardsSnapshot;
+use super::local_shards::ShardThroughputReadings;
 use super::metrics::report_local_shards_metrics;
 use super::models::IngesterShard;
 use super::mrecordlog_utils::{
@@ -172,7 +172,7 @@ impl Ingester {
         memory_capacity: ByteSize,
         rate_limiter_settings: RateLimiterSettings,
         idle_shard_timeout: Duration,
-        local_shards_tx: watch::Sender<Option<Arc<LocalShardsSnapshot>>>,
+        local_shards_tx: watch::Sender<Option<Arc<ShardThroughputReadings>>>,
     ) -> IngestV2Result<Self> {
         let self_node_id: NodeId = cluster.self_node_id();
         let state = IngesterState::load(
@@ -186,7 +186,7 @@ impl Ingester {
         .await;
 
         let weak_state = state.weak();
-        state.spawn_local_shards_publisher();
+        state.spawn_shards_readings_publisher();
         BroadcastIngesterCapacityScoreTask::spawn(cluster, weak_state.clone());
         CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
 
@@ -680,10 +680,12 @@ impl Ingester {
             .wal_capacity_tracker
             .score(ByteSize::b(disk_used), ByteSize::b(memory_used))
             as u32;
-        let local_shards = state_guard.publish_local_shards();
+        // Take advantage of the state guard already being held to potentially update the shard
+        // throughput readings.
+        let shard_throughput_readings_opt = state_guard.harvest_shard_throughput_readings();
         drop(state_guard);
 
-        if let Some(snapshot) = local_shards {
+        if let Some(snapshot) = shard_throughput_readings_opt {
             report_local_shards_metrics(&snapshot);
         }
         if disk_used >= self.disk_capacity.as_u64() * 90 / 100 {
@@ -1195,7 +1197,6 @@ mod tests {
     use super::*;
     use crate::MRecord;
     use crate::ingest_v2::DEFAULT_IDLE_SHARD_TIMEOUT;
-    use crate::ingest_v2::broadcast::ShardInfos;
     use crate::ingest_v2::doc_mapper::try_build_doc_mapper;
     use crate::ingest_v2::fetch::tests::{into_fetch_eof, into_fetch_payload};
 
@@ -1278,6 +1279,7 @@ mod tests {
             .await
             .unwrap();
 
+            let (local_shards_tx, local_shards_rx) = watch::channel(None);
             let ingester = Ingester::try_new(
                 cluster.clone(),
                 self.control_plane.clone(),
@@ -1286,6 +1288,7 @@ mod tests {
                 self.memory_capacity,
                 self.rate_limiter_settings,
                 self.idle_shard_timeout,
+                local_shards_tx,
             )
             .await
             .unwrap();
@@ -1298,6 +1301,7 @@ mod tests {
             let ingester_env = IngesterContext {
                 tempdir,
                 _transport: transport,
+                local_shards_rx,
                 node_id: self.node_id,
                 cluster,
             };
@@ -1306,6 +1310,7 @@ mod tests {
     }
 
     pub struct IngesterContext {
+        local_shards_rx: watch::Receiver<Option<Arc<ShardThroughputReadings>>>,
         tempdir: tempfile::TempDir,
         _transport: ChitchatTransport,
         node_id: NodeId,
@@ -1416,8 +1421,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ingester_broadcasts_local_shards() {
-        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
+    async fn test_ingester_publishes_local_shards() {
+        let (mut ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -1434,18 +1439,30 @@ mod tests {
         state_guard.shards.insert(queue_id_01.clone(), shard_01);
         drop(state_guard);
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        let key = format!("{INGESTER_SHARDS_PREFIX}{}:{}", index_uid, "test-source");
-        let value = ingester_ctx.cluster.get_self_key_value(&key).await.unwrap();
-
-        let shard_infos: ShardInfos = serde_json::from_str(&value).unwrap();
+        let snapshot = timeout(
+            Duration::from_secs(1),
+            ingester_ctx.local_shards_rx.wait_for(|snapshot| {
+                snapshot
+                    .as_ref()
+                    .is_some_and(|snapshot| !snapshot.per_source_shard_infos.is_empty())
+            }),
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .clone()
+        .unwrap();
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: "test-source".to_string(),
+        };
+        let shard_infos = &snapshot.per_source_shard_infos[&source_uid];
         assert_eq!(shard_infos.len(), 1);
 
         let shard_info = shard_infos.iter().next().unwrap();
         assert_eq!(shard_info.shard_id, ShardId::from(1));
         assert_eq!(shard_info.shard_state, ShardState::Open);
-        assert_eq!(shard_info.short_term_ingestion_rate, 0);
+        assert_eq!(shard_info.short_term_ingestion_rate, ByteSize::default());
 
         let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
         state_guard
@@ -1455,11 +1472,24 @@ mod tests {
             .shard_state = ShardState::Closed;
         drop(state_guard);
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        let value = ingester_ctx.cluster.get_self_key_value(&key).await.unwrap();
-
-        let shard_infos: ShardInfos = serde_json::from_str(&value).unwrap();
+        let snapshot = timeout(
+            Duration::from_secs(1),
+            ingester_ctx.local_shards_rx.wait_for(|snapshot| {
+                snapshot.as_ref().is_some_and(|snapshot| {
+                    snapshot.per_source_shard_infos[&source_uid]
+                        .first()
+                        .unwrap()
+                        .shard_state
+                        == ShardState::Closed
+                })
+            }),
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .clone()
+        .unwrap();
+        let shard_infos = &snapshot.per_source_shard_infos[&source_uid];
         assert_eq!(shard_infos.len(), 1);
 
         let shard_info = shard_infos.iter().next().unwrap();
@@ -1469,10 +1499,25 @@ mod tests {
         state_guard.shards.remove(&queue_id_01).unwrap();
         drop(state_guard);
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        let value_opt = ingester_ctx.cluster.get_self_key_value(&key).await;
-        assert!(value_opt.is_none());
+        timeout(
+            Duration::from_secs(1),
+            ingester_ctx.local_shards_rx.wait_for(|snapshot| {
+                snapshot
+                    .as_ref()
+                    .is_some_and(|snapshot| snapshot.per_source_shard_infos.is_empty())
+            }),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let key = format!("{INGESTER_SHARDS_PREFIX}{}:{}", index_uid, "test-source");
+        assert!(
+            ingester_ctx
+                .cluster
+                .get_self_key_value(&key)
+                .await
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -1572,6 +1617,65 @@ mod tests {
         shard.assert_truncation_position(Position::Beginning);
 
         assert!(state_guard.mrecordlog.queue_exists(&queue_id));
+    }
+
+    #[tokio::test]
+    async fn test_persist_publishes_shard_throughput() {
+        let (mut ingester_ctx, ingester) = IngesterForTest::default().build().await;
+        let index_uid = IndexUid::for_test("index", 0);
+        let doc_mapping_uid = DocMappingUid::random();
+        let response = ingester
+            .init_shards(InitShardsRequest {
+                subrequests: vec![InitShardSubrequest {
+                    subrequest_id: 0,
+                    shard: Some(Shard {
+                        index_uid: Some(index_uid.clone()),
+                        source_id: "source".to_string(),
+                        shard_id: Some(ShardId::from(1)),
+                        shard_state: ShardState::Open as i32,
+                        ingester_id: ingester_ctx.node_id.to_string(),
+                        doc_mapping_uid: Some(doc_mapping_uid),
+                        ..Default::default()
+                    }),
+                    doc_mapping_json: format!(r#"{{"doc_mapping_uid":"{doc_mapping_uid}"}}"#),
+                    validate_docs: true,
+                }],
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.successes.len(), 1);
+        let state_guard = ingester.state.lock_fully("test").await.unwrap();
+        ingester_ctx.local_shards_rx.borrow_and_update();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(!ingester_ctx.local_shards_rx.has_changed().unwrap());
+        drop(state_guard);
+
+        let response = ingester
+            .persist(PersistRequest {
+                ingester_id: ingester_ctx.node_id.to_string(),
+                commit_type: CommitTypeV2::Auto as i32,
+                subrequests: vec![PersistSubrequest {
+                    subrequest_id: 0,
+                    index_uid: Some(index_uid.clone()),
+                    source_id: "source".to_string(),
+                    doc_batch: Some(DocBatchV2::for_test([r#"{"doc":"published"}"#])),
+                }],
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.successes.len(), 1);
+        assert!(ingester_ctx.local_shards_rx.has_changed().unwrap());
+        let snapshot = ingester_ctx.local_shards_rx.borrow().clone().unwrap();
+        let source_uid = SourceUid {
+            index_uid,
+            source_id: "source".to_string(),
+        };
+        let shard = snapshot.per_source_shard_infos[&source_uid]
+            .first()
+            .unwrap();
+        assert_eq!(shard.shard_id, ShardId::from(1));
+        assert!(shard.short_term_ingestion_rate.as_u64() > 0);
+        assert!(shard.long_term_ingestion_rate.as_u64() > 0);
     }
 
     #[tokio::test]

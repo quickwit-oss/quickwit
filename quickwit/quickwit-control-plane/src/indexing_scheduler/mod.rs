@@ -183,11 +183,6 @@ fn enable_variable_shard_load() -> bool {
 /// in the same-AZ. It also allows decommissioning indexers to index their own shards to speed up
 /// the decommissioning process.
 fn is_locality_aware_scheduling_enabled() -> bool {
-    #[cfg(test)]
-    if let Some(enabled) = tests::LOCALITY_AWARE_SCHEDULING_OVERRIDE.get() {
-        return enabled;
-    }
-
     static IS_LOCALITY_AWARE_SCHEDULING_ENABLED: LazyLock<bool> = LazyLock::new(|| {
         quickwit_common::get_bool_from_env(
             "QW_ENABLE_LOCALITY_AWARE_SCHEDULING",
@@ -207,8 +202,8 @@ fn is_locality_aware_scheduling_enabled() -> bool {
 ///
 /// It does not take in account the variation that could raise from the different
 /// doc mapping / nature of the data, etc.
-fn compute_load_per_shard(shard_entries: &[&ShardEntry]) -> NonZeroU32 {
-    if enable_variable_shard_load() {
+fn compute_load_per_shard(shard_entries: &[&ShardEntry], variable_shard_load: bool) -> NonZeroU32 {
+    if variable_shard_load {
         let num_shards = shard_entries.len().max(1) as u64;
         let average_throughput_per_shard_bytes: u64 = shard_entries
             .iter()
@@ -292,7 +287,8 @@ fn get_sources_to_schedule(
                     .iter()
                     .map(|shard_entry| shard_entry.shard_id().clone())
                     .collect();
-                let load_per_shard = compute_load_per_shard(&shard_entries[..]);
+                let load_per_shard =
+                    compute_load_per_shard(&shard_entries[..], enable_variable_shard_load());
                 sources.push(SourceToSchedule {
                     source_uid,
                     source_type: SourceToScheduleType::Sharded {
@@ -382,8 +378,8 @@ fn build_indexer_tasks(
         .collect()
 }
 
-fn is_locality_aware(indexers: &IndexerPool) -> bool {
-    is_locality_aware_scheduling_enabled()
+fn is_locality_aware(indexers: &IndexerPool, locality_aware_scheduling_enabled: bool) -> bool {
+    locality_aware_scheduling_enabled
         && indexers
             .values()
             .iter()
@@ -450,7 +446,8 @@ impl IndexingScheduler {
 
         let sources = get_sources_to_schedule(model, disable_ingest_v1());
 
-        let is_locality_aware = is_locality_aware(&self.indexer_pool);
+        let is_locality_aware =
+            is_locality_aware(&self.indexer_pool, is_locality_aware_scheduling_enabled());
 
         let indexer_infos: FnvHashMap<NodeId, IndexerInfo> =
             build_indexer_infos(&indexers, is_locality_aware);
@@ -559,7 +556,7 @@ impl IndexingScheduler {
     }
 
     fn select_available_indexers_for_scheduling(&self) -> Vec<IndexerPoolEntry> {
-        if is_locality_aware(&self.indexer_pool) {
+        if is_locality_aware(&self.indexer_pool, is_locality_aware_scheduling_enabled()) {
             return self.select_ready_and_draining_indexers();
         }
         self.select_ready_or_retiring_indexers()
@@ -1027,9 +1024,167 @@ mod tests {
     };
     use crate::model::ShardLocations;
 
-    thread_local! {
-        pub(super) static LOCALITY_AWARE_SCHEDULING_OVERRIDE: std::cell::Cell<Option<bool>> =
-            const { std::cell::Cell::new(None) };
+    #[test]
+    fn test_compute_load_per_shard_uses_bytes() {
+        assert_eq!(compute_load_per_shard(&[], true).get(), 50);
+        let mut shard = ShardEntry::from(Shard::default());
+        shard.long_term_ingestion_rate = bytesize::ByteSize::b(PIPELINE_THROUGHPUT.as_u64() / 8);
+        assert_eq!(
+            compute_load_per_shard(&[&shard], true).get(),
+            PIPELINE_FULL_CAPACITY.cpu_millis() / 8
+        );
+        let mut second = shard.clone();
+        second.long_term_ingestion_rate = bytesize::ByteSize::b(PIPELINE_THROUGHPUT.as_u64() / 4);
+        assert_eq!(
+            compute_load_per_shard(&[&shard, &second], true).get(),
+            PIPELINE_FULL_CAPACITY.cpu_millis() * 3 / 16
+        );
+        shard.long_term_ingestion_rate = bytesize::ByteSize::b(PIPELINE_THROUGHPUT.as_u64() * 2);
+        assert_eq!(
+            compute_load_per_shard(&[&shard], true).get(),
+            PIPELINE_FULL_CAPACITY.cpu_millis()
+        );
+    }
+
+    #[test]
+    fn test_reported_tasks_precedence_and_generations() {
+        let pool = IndexerPool::default();
+        let mut indexer = mock_indexer_node_info("indexer", IngesterStatus::Ready);
+        indexer.generation_id = 10;
+        let gossip_task = IndexingTask {
+            pipeline_uid: Some(PipelineUid::for_test(1)),
+            ..Default::default()
+        };
+        let rpc_task = IndexingTask {
+            pipeline_uid: Some(PipelineUid::for_test(2)),
+            ..Default::default()
+        };
+        indexer.indexing_tasks = vec![gossip_task.clone()];
+        pool.insert(indexer.node_id.clone(), indexer.clone());
+        let mut scheduler =
+            IndexingScheduler::new("cluster".to_string(), NodeId::from_str("cp"), pool.clone());
+        let tasks = |scheduler: &IndexingScheduler| {
+            build_indexer_tasks(&pool.values(), &scheduler.reported_tasks)[&indexer.node_id].clone()
+        };
+        assert_eq!(tasks(&scheduler), vec![gossip_task.clone()]);
+        scheduler.record_reported_tasks("indexer", 9, vec![rpc_task.clone()]);
+        assert!(!scheduler.reported_tasks.contains_key(&indexer.node_id));
+        scheduler.record_reported_tasks("indexer", 10, vec![rpc_task.clone()]);
+        assert_eq!(tasks(&scheduler), vec![rpc_task.clone()]);
+        scheduler.record_reported_tasks("indexer", 9, Vec::new());
+        assert_eq!(tasks(&scheduler), vec![rpc_task.clone()]);
+        scheduler.record_reported_tasks("indexer", 10, Vec::new());
+        assert!(tasks(&scheduler).is_empty());
+
+        scheduler.record_reported_tasks("indexer", 11, vec![rpc_task.clone()]);
+        assert_eq!(tasks(&scheduler), vec![gossip_task]);
+        let mut restarted = indexer.clone();
+        restarted.generation_id = 11;
+        pool.insert(restarted.node_id.clone(), restarted.clone());
+        assert_eq!(tasks(&scheduler), vec![rpc_task.clone()]);
+        restarted.generation_id = 12;
+        restarted.indexing_tasks.clear();
+        pool.insert(restarted.node_id.clone(), restarted);
+        assert!(tasks(&scheduler).is_empty());
+
+        scheduler.record_reported_tasks("joining", 1, vec![rpc_task.clone()]);
+        assert!(
+            !build_indexer_tasks(&pool.values(), &scheduler.reported_tasks)
+                .contains_key(&NodeId::from_str("joining"))
+        );
+        let mut joining = mock_indexer_node_info("joining", IngesterStatus::Ready);
+        joining.generation_id = 1;
+        pool.insert(joining.node_id.clone(), joining);
+        assert_eq!(
+            build_indexer_tasks(&pool.values(), &scheduler.reported_tasks)
+                [&NodeId::from_str("joining")],
+            vec![rpc_task]
+        );
+        let mut remaining_indexers = pool.values();
+        remaining_indexers.retain(|entry| entry.node_id != indexer.node_id);
+        assert!(
+            !build_indexer_tasks(&remaining_indexers, &scheduler.reported_tasks)
+                .contains_key(&indexer.node_id)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_control_running_plan_uses_reported_tasks() {
+        let pool = IndexerPool::default();
+        let mut indexer = mock_indexer_node_info("indexer", IngesterStatus::Ready);
+        let task = IndexingTask {
+            index_uid: Some(IndexUid::for_test("index", 0)),
+            source_id: "source".to_string(),
+            pipeline_uid: Some(PipelineUid::for_test(1)),
+            ..Default::default()
+        };
+        let (applied_tx, mut applied_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut mock = MockIndexingService::new();
+        mock.expect_apply_indexing_plan()
+            .once()
+            .returning(move |request| {
+                applied_tx.send(request).unwrap();
+                Ok(ApplyIndexingPlanResponse {})
+            });
+        indexer.client = IndexingServiceClient::from_mock(mock);
+        pool.insert(indexer.node_id.clone(), indexer.clone());
+        let mut scheduler =
+            IndexingScheduler::new("cluster".to_string(), NodeId::from_str("cp"), pool.clone());
+        let mut plan =
+            PhysicalIndexingPlan::with_indexer_ids(std::slice::from_ref(&indexer.node_id));
+        plan.add_indexing_task(&indexer.node_id, task.clone());
+        scheduler.state.last_applied_physical_plan = Some(plan);
+        scheduler.state.last_applied_indexer_statuses = build_indexer_statuses(&pool.values());
+        scheduler.record_reported_tasks("indexer", 0, vec![task.clone()]);
+        scheduler.control_running_plan(&ControlPlaneModel::default());
+        assert_eq!(scheduler.state.num_applied_physical_indexing_plan, 0);
+
+        indexer.indexing_tasks = vec![task.clone()];
+        pool.insert(indexer.node_id.clone(), indexer);
+        scheduler.record_reported_tasks("indexer", 0, Vec::new());
+        scheduler.control_running_plan(&ControlPlaneModel::default());
+        assert_eq!(scheduler.state.num_applied_physical_indexing_plan, 1);
+        let applied = tokio::time::timeout(Duration::from_secs(1), applied_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(applied.indexing_tasks, vec![task]);
+    }
+
+    #[test]
+    fn test_optimization_eligibility_uses_reported_tasks() {
+        let pool = IndexerPool::default();
+        let indexer = mock_indexer_node_info("indexer", IngesterStatus::Ready);
+        pool.insert(indexer.node_id.clone(), indexer.clone());
+        let mut scheduler =
+            IndexingScheduler::new("cluster".to_string(), NodeId::from_str("cp"), pool.clone());
+        let task = IndexingTask {
+            index_uid: Some(IndexUid::for_test("index", 0)),
+            source_id: "source".to_string(),
+            pipeline_uid: Some(PipelineUid::for_test(1)),
+            ..Default::default()
+        };
+        let mut plan =
+            PhysicalIndexingPlan::with_indexer_ids(std::slice::from_ref(&indexer.node_id));
+        plan.add_indexing_task(&indexer.node_id, task.clone());
+        let statuses = build_indexer_statuses(&pool.values());
+        scheduler.state.last_applied_physical_plan = Some(plan);
+        scheduler.state.last_applied_indexer_statuses = statuses.clone();
+        scheduler.state.last_applied_plan_timestamp =
+            Some(Instant::now() - MIN_DURATION_BETWEEN_SCHEDULING * 2);
+        assert!(!is_plan_eligible_for_optimization(
+            &build_indexer_tasks(&pool.values(), &scheduler.reported_tasks),
+            &statuses,
+            true,
+            &mut scheduler.state
+        ));
+        scheduler.record_reported_tasks("indexer", 0, vec![task]);
+        assert!(is_plan_eligible_for_optimization(
+            &build_indexer_tasks(&pool.values(), &scheduler.reported_tasks),
+            &statuses,
+            true,
+            &mut scheduler.state
+        ));
     }
 
     #[test]
@@ -1725,47 +1880,39 @@ mod tests {
 
     #[test]
     fn test_is_locality_aware_when_disabled() {
-        LOCALITY_AWARE_SCHEDULING_OVERRIDE.set(Some(false));
-
         let indexer_pool = IndexerPool::default();
-        assert!(!is_locality_aware(&indexer_pool));
+        assert!(!is_locality_aware(&indexer_pool, false));
 
         let mut indexer = mock_indexer_node_info("indexer-ready", IngesterStatus::Ready);
         indexer_pool.insert(indexer.node_id.clone(), indexer.clone());
-        assert!(!is_locality_aware(&indexer_pool));
+        assert!(!is_locality_aware(&indexer_pool, false));
 
         indexer.availability_zone = Some(AvailabilityZone::from("az-a"));
         indexer_pool.insert(indexer.node_id.clone(), indexer);
-        assert!(!is_locality_aware(&indexer_pool));
-
-        LOCALITY_AWARE_SCHEDULING_OVERRIDE.set(None);
+        assert!(!is_locality_aware(&indexer_pool, false));
     }
 
     #[test]
     fn test_is_locality_aware_when_enabled() {
-        LOCALITY_AWARE_SCHEDULING_OVERRIDE.set(Some(true));
-
         let indexer_pool = IndexerPool::default();
-        assert!(is_locality_aware(&indexer_pool));
+        assert!(is_locality_aware(&indexer_pool, true));
 
         let mut unzoned_indexer =
             mock_indexer_node_info("indexer-unzoned", IngesterStatus::Initializing);
         indexer_pool.insert(unzoned_indexer.node_id.clone(), unzoned_indexer.clone());
 
-        assert!(!is_locality_aware(&indexer_pool));
+        assert!(!is_locality_aware(&indexer_pool, true));
 
         let mut zoned_indexer = mock_indexer_node_info("indexer-zoned", IngesterStatus::Ready);
         zoned_indexer.availability_zone = Some(AvailabilityZone::from("az-a"));
         indexer_pool.insert(zoned_indexer.node_id.clone(), zoned_indexer);
 
-        assert!(!is_locality_aware(&indexer_pool));
+        assert!(!is_locality_aware(&indexer_pool, true));
 
         unzoned_indexer.availability_zone = Some(AvailabilityZone::from("az-b"));
         indexer_pool.insert(unzoned_indexer.node_id.clone(), unzoned_indexer);
 
-        assert!(is_locality_aware(&indexer_pool));
-
-        LOCALITY_AWARE_SCHEDULING_OVERRIDE.set(None);
+        assert!(is_locality_aware(&indexer_pool, true));
     }
 
     #[test]

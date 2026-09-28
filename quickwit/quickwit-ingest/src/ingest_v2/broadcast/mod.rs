@@ -14,7 +14,6 @@
 
 #[allow(dead_code)]
 mod capacity_score;
-mod local_shards;
 
 use std::time::Duration;
 
@@ -31,15 +30,12 @@ pub use capacity_score::{
     BroadcastIngesterCapacityScoreTask, IngesterCapacityScoreUpdate,
     setup_ingester_capacity_update_listener,
 };
-pub use local_shards::{LocalShardsUpdate, setup_local_shards_update_listener};
 
-pub use super::local_shards::ShardInfos;
-
-fn make_key(prefix: &str, source_uid: &SourceUid) -> String {
+pub(super) fn make_key(prefix: &str, source_uid: &SourceUid) -> String {
     format!("{prefix}{}:{}", source_uid.index_uid, source_uid.source_id)
 }
 
-fn parse_key(key: &str) -> Option<SourceUid> {
+pub(super) fn parse_key(key: &str) -> Option<SourceUid> {
     let (index_uid_str, source_id_str) = key.rsplit_once(':')?;
     Some(SourceUid {
         index_uid: index_uid_str.parse().ok()?,

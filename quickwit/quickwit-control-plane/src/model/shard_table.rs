@@ -896,39 +896,45 @@ mod tests {
             ShardInfo {
                 shard_id: ShardId::from(1),
                 shard_state: ShardState::Open,
-                short_term_ingestion_rate: RateMibPerSec(1),
-                long_term_ingestion_rate: RateMibPerSec(1),
+                short_term_ingestion_rate: ByteSize::mib(1),
+                long_term_ingestion_rate: ByteSize::mib(1),
             },
             ShardInfo {
                 shard_id: ShardId::from(2),
                 shard_state: ShardState::Open,
-                short_term_ingestion_rate: RateMibPerSec(2),
-                long_term_ingestion_rate: RateMibPerSec(2),
+                short_term_ingestion_rate: ByteSize::mib(2),
+                long_term_ingestion_rate: ByteSize::mib(2),
             },
             ShardInfo {
                 shard_id: ShardId::from(3),
                 shard_state: ShardState::Open,
-                short_term_ingestion_rate: RateMibPerSec(3),
-                long_term_ingestion_rate: RateMibPerSec(3),
+                short_term_ingestion_rate: ByteSize::mib(3),
+                long_term_ingestion_rate: ByteSize::mib(3),
             },
             ShardInfo {
                 shard_id: ShardId::from(4),
                 shard_state: ShardState::Closed,
-                short_term_ingestion_rate: RateMibPerSec(4),
-                long_term_ingestion_rate: RateMibPerSec(4),
+                short_term_ingestion_rate: ByteSize::mib(4),
+                long_term_ingestion_rate: ByteSize::mib(4),
             },
             ShardInfo {
                 shard_id: ShardId::from(5),
                 shard_state: ShardState::Open,
-                short_term_ingestion_rate: RateMibPerSec(5),
-                long_term_ingestion_rate: RateMibPerSec(5),
+                short_term_ingestion_rate: ByteSize::mib(5),
+                long_term_ingestion_rate: ByteSize::mib(5),
             },
         ]);
         let shard_stats = shard_table.update_shards(&source_uid, &shard_infos);
         assert_eq!(shard_stats.num_open_shards, 2);
-        assert_eq!(shard_stats.avg_short_term_ingestion_rate, 1.5);
+        assert_eq!(
+            shard_stats.avg_short_term_ingestion_rate,
+            ByteSize::b(3 * bytesize::MIB / 2)
+        );
 
-        assert_eq!(shard_stats.avg_short_term_ingestion_rate, 1.5);
+        assert_eq!(
+            shard_stats.avg_long_term_ingestion_rate,
+            ByteSize::b(3 * bytesize::MIB / 2)
+        );
 
         let shard_entries: Vec<ShardEntry> = shard_table
             .get_shards(&source_uid)
@@ -941,22 +947,22 @@ mod tests {
 
         assert_eq!(shard_entries[0].shard.shard_id(), ShardId::from(1));
         assert_eq!(shard_entries[0].shard.shard_state(), ShardState::Open);
-        assert_eq!(shard_entries[0].short_term_ingestion_rate, RateMibPerSec(1));
+        assert_eq!(shard_entries[0].short_term_ingestion_rate, ByteSize::mib(1));
 
         assert_eq!(shard_entries[1].shard.shard_id(), ShardId::from(2));
         assert_eq!(shard_entries[1].shard.shard_state(), ShardState::Open);
-        assert_eq!(shard_entries[1].short_term_ingestion_rate, RateMibPerSec(2));
+        assert_eq!(shard_entries[1].short_term_ingestion_rate, ByteSize::mib(2));
 
         assert_eq!(shard_entries[2].shard.shard_id(), ShardId::from(3));
         assert_eq!(
             shard_entries[2].shard.shard_state(),
             ShardState::Unavailable
         );
-        assert_eq!(shard_entries[2].short_term_ingestion_rate, RateMibPerSec(3));
+        assert_eq!(shard_entries[2].short_term_ingestion_rate, ByteSize::mib(3));
 
         assert_eq!(shard_entries[3].shard.shard_id(), ShardId::from(4));
         assert_eq!(shard_entries[3].shard.shard_state(), ShardState::Closed);
-        assert_eq!(shard_entries[3].short_term_ingestion_rate, RateMibPerSec(4));
+        assert_eq!(shard_entries[3].short_term_ingestion_rate, ByteSize::mib(4));
     }
 
     #[test]

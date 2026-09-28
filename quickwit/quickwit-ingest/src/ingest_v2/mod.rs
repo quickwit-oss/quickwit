@@ -37,13 +37,14 @@ use std::ops::{Add, AddAssign};
 use std::time::Duration;
 use std::{env, fmt};
 
-pub use broadcast::{
-    LocalShardsUpdate, setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
-};
+pub use broadcast::setup_ingester_capacity_update_listener;
 use bytes::buf::Writer;
 use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
-pub use local_shards::{LocalShardsSnapshot, ShardInfo, ShardInfos, SourceShardReport};
+pub use local_shards::{
+    LocalShardsUpdate, ShardInfo, ShardInfos, ShardThroughputReadings, SourceShardReport,
+    setup_local_shards_update_listener,
+};
 use quickwit_cluster::GenerationId;
 use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::{IngesterServiceClient, IngesterStatus};
