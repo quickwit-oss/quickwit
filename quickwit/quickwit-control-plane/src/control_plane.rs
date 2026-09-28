@@ -1168,6 +1168,7 @@ mod tests {
                 shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
                 ingester_id: "indexer".to_string(),
+                publish_position_inclusive: Some(Position::Beginning),
                 ..Default::default()
             }],
         );
