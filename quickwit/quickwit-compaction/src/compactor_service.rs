@@ -646,8 +646,7 @@ mod tests {
         let request = compactor_service.build_report_status_request(&statuses);
 
         assert_eq!(request.node_id, "test-node");
-        // 6 slots, 1 in-progress = 5 available
-        assert_eq!(request.available_slots, 5);
+        assert_eq!(request.available_slots, 3);
         assert_eq!(request.in_progress.len(), 1);
         assert_eq!(request.in_progress[0].task_id, "task-1");
         assert_eq!(
@@ -669,7 +668,7 @@ mod tests {
         let compactor_service = test_compactor_service(4);
         let request = compactor_service.build_report_status_request(&[]);
         assert_eq!(request.node_id, "test-node");
-        assert_eq!(request.available_slots, 8);
+        assert_eq!(request.available_slots, 4);
         assert!(request.in_progress.is_empty());
         assert!(request.successes.is_empty());
         assert!(request.failures.is_empty());
@@ -826,7 +825,7 @@ mod tests {
         // Simulate what the handler does: collect statuses, report, process response.
         let statuses = compactor_service.check_pipeline_statuses();
         let request = compactor_service.build_report_status_request(&statuses);
-        assert_eq!(request.available_slots, 6);
+        assert_eq!(request.available_slots, 3);
 
         let response = compactor_service
             .planner_client
@@ -843,7 +842,7 @@ mod tests {
         assert_eq!(request.in_progress.len(), 1);
         assert_eq!(request.in_progress[0].task_id, "planner-task-1");
         assert_eq!(request.in_progress[0].split_ids.len(), 2);
-        assert_eq!(request.available_slots, 5);
+        assert_eq!(request.available_slots, 3);
 
         universe.assert_quit().await;
     }
@@ -880,8 +879,7 @@ mod tests {
 
         let request = compactor_service.build_report_status_request(&statuses);
 
-        // 8 slots, 1 in-progress = 7 available
-        assert_eq!(request.available_slots, 7);
+        assert_eq!(request.available_slots, 4);
         assert_eq!(request.in_progress.len(), 1);
         assert_eq!(request.in_progress[0].task_id, "task-1");
         assert_eq!(
