@@ -28,7 +28,6 @@ jobs:
     timeout-minutes: 40
     permissions:
       contents: read
-    cache-mode: read
     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
     services:
       localstack:
@@ -163,17 +162,28 @@ jobs:
 
       - name: Ensure coverage Rust toolchain is complete
         run: |
-          if ! rustc --version >/dev/null 2>&1; then
+          needs_reinstall=false
+          if ! rustc --version >/dev/null 2>&1 || ! cargo --version >/dev/null 2>&1; then
+            needs_reinstall=true
+          else
+            if ! target_libdir=$(rustc --print target-libdir 2>/dev/null) ||
+               ! compgen -G "$target_libdir/libstd-*.rlib" >/dev/null; then
+              needs_reinstall=true
+            fi
+          fi
+          if [ "$needs_reinstall" = true ]; then
             # A runner can have a partial installation that rustup considers installed.
             active_toolchain=$(rustup show active-toolchain | cut -d ' ' -f 1)
             rustup toolchain uninstall "$active_toolchain"
             rustup toolchain install
           fi
-          rustup component add rustc llvm-tools-preview
+          rustup component add rustc cargo llvm-tools-preview
           rustup show active-toolchain
           rustup component list --installed
           rustc --version
           cargo --version
+          target_libdir=$(rustc --print target-libdir)
+          compgen -G "$target_libdir/libstd-*.rlib" >/dev/null
         working-directory: ./quickwit
 
       # We limit the number of jobs to 4 to avoid OOM errors when linking the binary.
@@ -189,7 +199,8 @@ jobs:
       - name: Upload coverage report artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: coverage-report
+          name: coverage-report-${{ inputs.sha }}
           path: quickwit/lcov.info
           if-no-files-found: error
-          retention-days: 1
+          overwrite: true
+          retention-days: 7
