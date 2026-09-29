@@ -761,7 +761,7 @@ Performs utility operations. Requires a node config.
 
 ### tool local-ingest
 
-Indexes NDJSON documents locally.  
+Indexes NDJSON or Parquet documents locally.  
 `quickwit tool local-ingest [args]`
 
 *Synopsis*
@@ -771,6 +771,8 @@ quickwit tool local-ingest
     --index <index>
     [--input-path <input-path>]
     [--input-format <input-format>]
+    [--num-pipelines <num-pipelines>]
+    [--batch-num-rows <batch-num-rows>]
     [--overwrite]
     [--transform-script <transform-script>]
     [--keep-cache]
@@ -782,10 +784,14 @@ quickwit tool local-ingest
 |-----------------|-------------|--------:|
 | `--index` | ID of the target index |  |
 | `--input-path` | Location of the input file. |  |
-| `--input-format` | Format of the input data. | `json` |
+| `--input-format` | Format of the input documents: `json` or `plain`. Parquet rows are indexed as `json` documents. | `json` |
+| `--num-pipelines` | Number of indexing pipelines running in parallel. Values greater than 1 require a `.parquet` input file. Defaults to half the number of CPUs for a `.parquet` input file, 1 otherwise. |  |
+| `--batch-num-rows` | Number of Parquet rows decoded at once. Only valid with a `.parquet` input file. |  |
 | `--overwrite` | Overwrites pre-existing index. |  |
 | `--transform-script` | VRL program to transform docs before ingesting. |  |
 | `--keep-cache` | Does not clear local cache directory upon completion. |  |
+
+An `--input-path` ending with `.parquet` is bulk loaded by several pipelines without merging (benchmark only, requires the `parquet` Cargo feature). The index must be empty (`--overwrite` clears it); cleanup on failure is best effort. See `docs/internals/parquet-bulk-load.md`.
 ### tool extract-split
 
 Downloads and extracts a split to a directory.  

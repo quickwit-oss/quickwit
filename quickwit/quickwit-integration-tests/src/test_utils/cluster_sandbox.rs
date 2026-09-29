@@ -15,6 +15,7 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::net::SocketAddr;
+use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -638,6 +639,8 @@ impl ClusterSandbox {
                     .to_str()
                     .context("temp path could not be converted to URI")?,
             )?),
+            num_pipelines: NonZeroUsize::MIN,
+            batch_num_rows_opt: None,
         })
         .await?;
         Ok(())
