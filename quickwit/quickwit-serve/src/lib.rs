@@ -16,8 +16,6 @@
 
 mod build_info;
 mod cluster_api;
-#[cfg(feature = "datafusion")]
-mod datafusion_api;
 mod decompression;
 mod delete_task_api;
 mod developer_api;
@@ -59,6 +57,7 @@ use bytesize::ByteSize;
 pub(crate) use decompression::Body;
 pub use format::BodyFormat;
 use futures::StreamExt;
+use futures::future::OptionFuture;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, ActorHandle, Mailbox, SpawnContext, Universe};
 use quickwit_cluster::{
@@ -89,9 +88,9 @@ use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::{IndexingSplitCache, start_indexing_service};
 use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
-    IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout, notify_ingester_decommission,
+    IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout,
     setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
-    start_ingest_api_service, wait_for_ingester_decommission, wait_for_ingester_status,
+    start_ingest_api_service,
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
@@ -103,8 +102,8 @@ use quickwit_proto::compaction::CompactionPlannerServiceClient;
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
 use quickwit_proto::ingest::ingester::{
-    IngesterService, IngesterServiceClient, IngesterServiceTowerLayerStack, IngesterStatus,
-    PersistFailureReason, PersistResponse,
+    DecommissionRequest, IngesterService, IngesterServiceClient, IngesterServiceTowerLayerStack,
+    IngesterStatus, PersistFailureReason, PersistResponse,
 };
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::ingest::{IngestV2Error, RateLimitingCause};
@@ -204,12 +203,6 @@ struct QuickwitServices {
     pub search_service: Arc<dyn SearchService>,
 
     pub env_filter_reload_fn: EnvFilterReloadFn,
-
-    /// Generic DataFusion session builder (present if searcher role is active
-    /// and the `datafusion` feature + `QW_ENABLE_DATAFUSION_ENDPOINT` env var
-    /// are both enabled).
-    #[cfg(feature = "datafusion")]
-    pub datafusion_session_builder: Option<Arc<quickwit_datafusion::DataFusionSessionBuilder>>,
 
     /// The control plane listens to various events.
     /// We must maintain a reference to the subscription handles to continue receiving
@@ -490,7 +483,8 @@ fn start_shard_positions_service(
     // the `ShardPositionsService`. If we don't, all the events we emit too early will be dismissed.
     tokio::spawn(async move {
         if let Some(ingester) = &ingester_opt
-            && wait_for_ingester_status(ingester, IngesterStatus::Ready, Duration::from_mins(5))
+            && ingester
+                .wait_for_status(IngesterStatus::Ready, Duration::from_mins(5))
                 .await
                 .is_err()
         {
@@ -529,7 +523,9 @@ async fn shutdown_signal_handler(
             error!("server supervisor exited; initiating shutdown");
         }
     }
-    if let Err(error) = notify_ingester_decommission(ingester_opt.as_ref()).await {
+    if let Some(ingester) = &ingester_opt
+        && let Err(error) = ingester.decommission(DecommissionRequest {}).await
+    {
         error!("failed to initiate ingester decommission: {:?}", error);
     }
     let compactor_status_rx_opt = notify_compactor_decommission(compactor_service_opt.as_ref())
@@ -538,11 +534,16 @@ async fn shutdown_signal_handler(
             error!("failed to initiate compactor decommission: {:?}", error);
             None
         });
+    let ingester_decommission = OptionFuture::from(
+        ingester_opt
+            .as_ref()
+            .map(|ingester| ingester.wait_for_decommission(ingester_decommission_timeout)),
+    );
     let (ingester_result, compactor_result) = tokio::join!(
-        wait_for_ingester_decommission(ingester_opt.as_ref(), ingester_decommission_timeout),
+        ingester_decommission,
         wait_for_compactor_decommission(compactor_status_rx_opt, compactor_decommission_timeout),
     );
-    if let Err(error) = ingester_result {
+    if let Some(Err(error)) = ingester_result {
         error!("failed to decommission ingester gracefully: {:?}", error);
     }
     if let Err(error) = compactor_result {
@@ -811,7 +812,7 @@ pub async fn serve_quickwit(
         "configured search metastore client"
     );
 
-    let (search_job_placer, search_service, searcher_pool) = setup_searcher(
+    let (search_job_placer, search_service) = setup_searcher(
         &node_config,
         cluster.change_stream(),
         // search remains available without a control plane because not all
@@ -822,24 +823,6 @@ pub async fn serve_quickwit(
     )
     .await
     .context("failed to start searcher service")?;
-
-    // Build the generic DataFusion session builder if this node is a searcher
-    // and the DataFusion endpoint is enabled. The whole code path is absent
-    // when the `datafusion` feature is off. A runtime setup failure (e.g.
-    // failing to install the object store registry) propagates — DataFusion
-    // should fail the node startup loudly rather than silently disabling
-    // itself.
-    #[cfg(feature = "datafusion")]
-    let datafusion_session_builder = datafusion_api::setup::build_datafusion_session_builder(
-        &node_config,
-        cluster.change_stream(),
-        search_metastore_client,
-        storage_resolver.clone(),
-    )?;
-    // The search job placer owns a clone of this pool; the local binding is not
-    // needed after the searcher and DataFusion setup paths have registered
-    // their listeners.
-    drop(searcher_pool);
 
     // The control plane listens for local shards updates to learn about each shard's ingestion
     // throughput. Ingesters (routers) do so to update their shard table.
@@ -967,8 +950,6 @@ pub async fn serve_quickwit(
         otlp_traces_service_opt,
         search_service,
         env_filter_reload_fn,
-        #[cfg(feature = "datafusion")]
-        datafusion_session_builder,
     });
     // Setup and start gRPC server.
     let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel::<()>();
@@ -1357,7 +1338,7 @@ async fn setup_searcher(
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     searcher_context: Arc<SearcherContext>,
-) -> anyhow::Result<(SearchJobPlacer, Arc<dyn SearchService>, SearcherPool)> {
+) -> anyhow::Result<(SearchJobPlacer, Arc<dyn SearchService>)> {
     let searcher_pool = SearcherPool::default();
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
 
@@ -1417,7 +1398,7 @@ async fn setup_searcher(
         })
     });
     searcher_pool.listen_for_changes(searcher_change_stream);
-    Ok((search_job_placer, search_service, searcher_pool))
+    Ok((search_job_placer, search_service))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1954,7 +1935,7 @@ mod tests {
         let metastore = metastore_for_test();
         let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
         let storage_resolver = StorageResolver::unconfigured();
-        let (search_job_placer, _searcher_service, _searcher_pool) = setup_searcher(
+        let (search_job_placer, _searcher_service) = setup_searcher(
             &node_config,
             change_stream,
             metastore,

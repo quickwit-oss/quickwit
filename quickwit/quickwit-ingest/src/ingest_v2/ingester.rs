@@ -21,7 +21,6 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use bytesize::ByteSize;
-use futures::StreamExt;
 use mrecordlog::error::CreateQueueError;
 use quickwit_cluster::Cluster;
 use quickwit_common::metrics::IN_FLIGHT_INGESTER_PERSIST;
@@ -59,7 +58,8 @@ use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use crate::estimate_size;
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
 use crate::ingest_v2::metrics::{
-    RESET_SHARDS_OPERATIONS_TOTAL, STATUS, report_wal_limits, report_wal_usage,
+    DECOMMISSION_FAILED, DECOMMISSION_SUCCEEDED, RESET_SHARDS_OPERATIONS_TOTAL, STATUS,
+    report_wal_limits, report_wal_usage,
 };
 use crate::metrics::{DOCS_BYTES_TOTAL, DOCS_TOTAL, VALIDITY};
 use crate::mrecordlog_async::MultiRecordLogAsync;
@@ -112,6 +112,53 @@ impl fmt::Debug for Ingester {
 impl Ingester {
     pub fn status(&self) -> IngesterStatus {
         *self.state.status_rx.borrow()
+    }
+
+    pub async fn wait_for_status(
+        &self,
+        status: IngesterStatus,
+        timeout_after: Duration,
+    ) -> anyhow::Result<()> {
+        let mut status_rx = self.state.status_rx.clone();
+        let wait_for_status = status_rx.wait_for(|current_status| *current_status == status);
+
+        match timeout(timeout_after, wait_for_status).await {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(_)) => anyhow::bail!("ingester status channel closed"),
+            Err(_) => anyhow::bail!(
+                "timed out while waiting for ingester to transition to status {status} after {}",
+                timeout_after.pretty_display(),
+            ),
+        }
+    }
+
+    /// Waits for an ingester to reach the `Decommissioned` status, if one is present.
+    pub async fn wait_for_decommission(&self, timeout_after: Duration) -> anyhow::Result<()> {
+        let now = Instant::now();
+
+        match self
+            .wait_for_status(IngesterStatus::Decommissioned, timeout_after)
+            .await
+        {
+            Ok(()) => {
+                DECOMMISSION_SUCCEEDED.inc();
+                info!(
+                    "successfully decommissioned ingester in {}",
+                    now.elapsed().pretty_display()
+                );
+                Ok(())
+            }
+            Err(error) => {
+                DECOMMISSION_FAILED.inc();
+                let error = error.context(format!(
+                    "failed to decommission ingester after {}",
+                    timeout_after.pretty_display()
+                ));
+                error!(%error, "failed to decommission ingester");
+                self.emit_remaining_wal_stats().await;
+                Err(error)
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -696,32 +743,16 @@ impl Ingester {
         Ok(service_stream)
     }
 
-    async fn open_observation_stream_inner(
-        &self,
-        _open_observation_stream_request: OpenObservationStreamRequest,
-    ) -> IngestV2Result<IngesterServiceStream<ObservationMessage>> {
-        let status_stream = ServiceStream::from(self.state.status_rx.clone());
-        let self_node_id = self.self_node_id.clone();
+    async fn emit_remaining_wal_stats(&self) {
         let mrecordlog = self.state.mrecordlog();
-        let observation_stream =
-            ServiceStream::new(Box::pin(Box::pin(status_stream.then(move |status| {
-                let self_node_id = self_node_id.clone();
-                let mrecordlog = mrecordlog.clone();
-                async move {
-                    let mrecordlog_guard = mrecordlog.read().await;
-                    let (wal_memory_used_bytes, wal_disk_used_bytes, wal_num_records) =
-                        wal_stats(mrecordlog_guard.as_ref());
-                    let observation_message = ObservationMessage {
-                        node_id: self_node_id.to_string(),
-                        status: status as i32,
-                        wal_memory_used_bytes,
-                        wal_disk_used_bytes,
-                        wal_num_records,
-                    };
-                    Ok(observation_message)
-                }
-            }))));
-        Ok(observation_stream)
+        let mrecordlog_guard = mrecordlog.read().await;
+        let (wal_memory_used_bytes, wal_disk_used_bytes, wal_num_records) =
+            wal_stats(mrecordlog_guard.as_ref());
+        error!(
+            "{wal_num_records} record(s) remaining in WAL, using {} of memory and {} of disk",
+            ByteSize(wal_memory_used_bytes),
+            ByteSize(wal_disk_used_bytes),
+        );
     }
 
     async fn init_shards_inner(
@@ -898,14 +929,6 @@ impl IngesterService for Ingester {
         open_fetch_stream_request: OpenFetchStreamRequest,
     ) -> IngestV2Result<ServiceStream<IngestV2Result<FetchMessage>>> {
         self.open_fetch_stream_inner(open_fetch_stream_request)
-            .await
-    }
-
-    async fn open_observation_stream(
-        &self,
-        open_observation_stream_request: OpenObservationStreamRequest,
-    ) -> IngestV2Result<IngesterServiceStream<ObservationMessage>> {
-        self.open_observation_stream_inner(open_observation_stream_request)
             .await
     }
 
@@ -1144,6 +1167,7 @@ mod tests {
     use std::sync::atomic::{AtomicU16, Ordering};
 
     use bytes::Bytes;
+    use futures::StreamExt;
     use quickwit_cluster::{ChitchatTransport, create_cluster_for_test_with_id};
     use quickwit_common::shared_consts::INGESTER_SHARDS_PREFIX;
     use quickwit_common::test_utils::wait_until_predicate;
@@ -1166,7 +1190,6 @@ mod tests {
     use crate::ingest_v2::broadcast::ShardInfos;
     use crate::ingest_v2::doc_mapper::try_build_doc_mapper;
     use crate::ingest_v2::fetch::tests::{into_fetch_eof, into_fetch_payload};
-    use crate::ingest_v2::helpers::wait_for_ingester_status;
 
     pub(super) struct IngesterForTest {
         node_id: NodeId,
@@ -1259,7 +1282,8 @@ mod tests {
             .await
             .unwrap();
 
-            wait_for_ingester_status(&ingester, IngesterStatus::Ready, Duration::from_secs(1))
+            ingester
+                .wait_for_status(IngesterStatus::Ready, Duration::from_secs(1))
                 .await
                 .unwrap();
 
@@ -3053,33 +3077,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ingester_open_observation_stream() {
-        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
-        assert_eq!(ingester.status(), IngesterStatus::Ready);
+    async fn test_ingester_wait_for_status() {
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
-        let mut observation_stream = ingester
-            .open_observation_stream(OpenObservationStreamRequest {})
+        ingester
+            .wait_for_status(IngesterStatus::Ready, Duration::from_millis(50))
             .await
             .unwrap();
-        let observation = observation_stream.next().await.unwrap().unwrap();
-        assert_eq!(observation.node_id, ingester_ctx.node_id);
-        assert_eq!(observation.status(), IngesterStatus::Ready);
 
-        let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
-        state_guard
-            .set_status(IngesterStatus::Decommissioning)
-            .await;
-        drop(state_guard);
-        assert_eq!(ingester.status(), IngesterStatus::Decommissioning);
+        let error = ingester
+            .wait_for_status(IngesterStatus::Decommissioning, Duration::from_millis(50))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("timed out"));
 
-        let observation = observation_stream.next().await.unwrap().unwrap();
-        assert_eq!(observation.node_id, ingester_ctx.node_id);
-        assert_eq!(observation.status(), IngesterStatus::Decommissioning);
-
-        drop(ingester);
-
-        let observation_opt = observation_stream.next().await;
-        assert!(observation_opt.is_none());
+        let ingester_clone = ingester.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let mut state_guard = ingester_clone.state.lock_fully("test").await.unwrap();
+            state_guard
+                .set_status(IngesterStatus::Decommissioning)
+                .await;
+        });
+        ingester
+            .wait_for_status(IngesterStatus::Decommissioning, Duration::from_secs(1))
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -3098,24 +3121,13 @@ mod tests {
         state_guard.shards.insert(queue_id.clone(), shard);
         drop(state_guard);
 
-        let mut observation_stream = ingester
-            .open_observation_stream(OpenObservationStreamRequest {})
+        ingester.decommission(DecommissionRequest {}).await.unwrap();
+        assert_eq!(ingester.status(), IngesterStatus::Retiring);
+
+        ingester
+            .wait_for_status(IngesterStatus::Decommissioning, Duration::from_secs(1))
             .await
             .unwrap();
-
-        ingester.decommission(DecommissionRequest {}).await.unwrap();
-
-        let next_observation = observation_stream.next().await.unwrap().unwrap();
-        let next_status = next_observation.status();
-        assert_eq!(next_status, IngesterStatus::Retiring);
-
-        wait_for_ingester_status(
-            &ingester,
-            IngesterStatus::Decommissioning,
-            Duration::from_secs(1),
-        )
-        .await
-        .unwrap();
 
         let state_guard = ingester.state.lock_fully("test").await.unwrap();
         let shard = state_guard.shards.get(&queue_id).unwrap();
@@ -3605,5 +3617,27 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[tokio::test]
+    async fn test_ingester_wait_for_decommission() {
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
+
+        let error = ingester
+            .wait_for_decommission(Duration::from_millis(50))
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("failed to decommission ingester")
+        );
+
+        ingester.decommission(DecommissionRequest {}).await.unwrap();
+        ingester
+            .wait_for_decommission(Duration::from_secs(1))
+            .await
+            .unwrap();
+        assert_eq!(ingester.status(), IngesterStatus::Decommissioned);
     }
 }

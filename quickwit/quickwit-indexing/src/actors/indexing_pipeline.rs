@@ -15,7 +15,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use quickwit_actors::{
@@ -38,10 +38,6 @@ use tracing::{debug, error, info, instrument, warn};
 
 use super::{DocProcessor, IndexSerializer, Indexer, MergePlanner, Packager};
 use crate::SplitsUpdateMailbox;
-use crate::actors::pipeline_shared::{
-    DrainAction, DrainPipeline, DrainState, SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn,
-    SuperviseLoop, wait_duration_before_retry,
-};
 use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
 use crate::actors::{Publisher, Uploader};
@@ -50,9 +46,106 @@ use crate::merge_policy::MergePolicy;
 use crate::metrics::{ACTOR_NAME, BACKPRESSURE_MICROS, INDEXING_PIPELINES};
 use crate::models::{IndexingStatistics, SharedPublishToken};
 use crate::source::{
-    AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
+    AssignShards, Assignment, Drain, SourceActor, SourceRuntime, quickwit_supported_sources,
 };
 use crate::split_store::IndexingSplitStore;
+
+pub(crate) const SUPERVISE_INTERVAL: Duration = Duration::from_secs(1);
+
+const MAX_RETRY_DELAY: Duration = Duration::from_mins(10);
+
+#[derive(Debug)]
+pub(crate) struct SuperviseLoop;
+
+/// Calculates the wait time based on retry count.
+// retry_count, wait_time
+// 0   1s
+// 1   2s
+// 2   4s
+// 3   8s
+// ...
+// >=8   5mn
+pub(crate) fn wait_duration_before_retry(retry_count: usize) -> Duration {
+    // Protect against a `retry_count` that will lead to an overflow.
+    let max_power = (retry_count as u32).min(31);
+    Duration::from_secs(2u64.pow(max_power)).min(MAX_RETRY_DELAY)
+}
+
+/// Spawning an indexing pipeline puts a lot of pressure on the file system, metastore, etc. so
+/// we rely on this semaphore to limit the number of indexing pipelines that can be spawned
+/// concurrently.
+/// See also <https://github.com/quickwit-oss/quickwit/issues/1638>.
+pub(crate) static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Spawn {
+    pub(crate) retry_count: usize,
+}
+
+/// Asks a pipeline to drain and shut itself down: the source stops emitting,
+/// and once the in-flight batches are flushed, published, and settled
+/// (acknowledged), the source exits on its own. Past `drain_timeout`, the
+/// pipeline gives up, kills its actors, and still exits: delivery degrades to
+/// at-least-once. A draining pipeline is never respawned.
+///
+/// Only sources opting in through
+/// [`crate::source::Source::should_be_drained`] actually drain: for the
+/// others the pipeline kills its actors and exits immediately.
+#[derive(Debug)]
+pub struct DrainPipeline {
+    pub drain_timeout: Duration,
+}
+
+/// Drain progress of a pipeline supervisor (see [`DrainPipeline`]).
+#[derive(Default)]
+pub(crate) struct DrainState {
+    deadline_opt: Option<Instant>,
+}
+
+pub(crate) enum DrainAction {
+    /// The drain is now (or was already) in progress: keep supervising.
+    KeepRunning,
+    /// Nothing left to settle: exit successfully.
+    Exit,
+    /// The source cannot drain: kill the actors, then exit.
+    TerminateAndExit,
+}
+
+impl DrainState {
+    /// Whether a drain was initiated. A draining pipeline must never respawn.
+    pub(crate) fn is_draining(&self) -> bool {
+        self.deadline_opt.is_some()
+    }
+
+    pub(crate) async fn on_drain_request(
+        &mut self,
+        running_source_opt: Option<(&Mailbox<SourceActor>, bool)>,
+        drain_timeout: Duration,
+    ) -> DrainAction {
+        if self.is_draining() {
+            return DrainAction::KeepRunning;
+        }
+        let Some((source_mailbox, source_should_be_drained)) = running_source_opt else {
+            return DrainAction::Exit;
+        };
+        if !source_should_be_drained {
+            // The source settles nothing on a drain: tearing the pipeline down
+            // right away.
+            return DrainAction::TerminateAndExit;
+        }
+        self.deadline_opt = Some(Instant::now() + drain_timeout);
+        let _ = source_mailbox.send_message(Drain).await;
+        DrainAction::KeepRunning
+    }
+
+    /// Whether the draining pipeline ran out of time to settle: the caller
+    /// kills whatever is left and exits.
+    pub(crate) fn is_deadline_exceeded(&self) -> bool {
+        self.deadline_opt
+            .map(|deadline| Instant::now() >= deadline)
+            .unwrap_or(false)
+    }
+}
 
 /// Handles for standard Tantivy-based indexing pipeline.
 struct IndexingPipelineHandles {
@@ -321,8 +414,7 @@ impl IndexingPipeline {
 
         // Publisher
         let publisher = Publisher::new(
-            super::PUBLISHER_NAME,
-            QueueCapacity::Bounded(1),
+            super::PublisherType::MainPublisher,
             self.params.metastore.clone(),
             self.params.merge_planner_mailbox_opt.clone(),
             Some(source_mailbox.clone()),
