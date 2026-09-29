@@ -28,7 +28,7 @@ time = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 ulid = { workspace = true }
-itertools = "0.14.0"
+itertools = "0.15.0"
 
 [dev-dependencies]
 quickwit-actors = { workspace = true, features = ["testsuite"] }
