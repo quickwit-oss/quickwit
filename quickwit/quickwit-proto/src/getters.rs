@@ -134,21 +134,7 @@ generate_getters! {
     ToggleSourceRequest,
     UpdateIndexRequest,
     UpdateSourceRequest,
-    UpdateSplitsDeleteOpstampRequest,
-
-    // Metrics Split API
-    StageMetricsSplitsRequest,
-    PublishMetricsSplitsRequest,
-    ListMetricsSplitsRequest,
-    MarkMetricsSplitsForDeletionRequest,
-    DeleteMetricsSplitsRequest,
-
-    // Sketch Split API
-    StageSketchSplitsRequest,
-    PublishSketchSplitsRequest,
-    ListSketchSplitsRequest,
-    MarkSketchSplitsForDeletionRequest,
-    DeleteSketchSplitsRequest
+    UpdateSplitsDeleteOpstampRequest
 }
 
 // [`PipelineUid`] getters

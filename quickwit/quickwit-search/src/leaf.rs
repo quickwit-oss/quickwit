@@ -40,7 +40,7 @@ use quickwit_proto::search::{
 use quickwit_proto::types::SplitId;
 use quickwit_query::query_ast::{
     BoolQuery, CacheNode, HitSet, PredicateCache, QueryAst, QueryAstTransformer, RangeQuery,
-    TermQuery,
+    TermQuery, get_or_compile_cached_fst_regex,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
@@ -558,12 +558,12 @@ async fn warm_up_automatons(
                 warm_up_futures.push(async move {
                     match automaton {
                         Automaton::Regex(path, regex_str) => {
-                            let regex = tantivy_fst::Regex::new(regex_str)
+                            let regex = get_or_compile_cached_fst_regex(regex_str)
                                 .context("failed to parse regex during warmup")?;
                             inv_idx_clone
                                 .warm_postings_automaton(
                                     quickwit_query::query_ast::JsonPathPrefix {
-                                        automaton: regex.into(),
+                                        automaton: regex,
                                         prefix: path.clone().unwrap_or_default(),
                                     },
                                     cpu_intensive_executor,

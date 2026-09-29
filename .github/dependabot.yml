@@ -6,15 +6,6 @@ updates:
     schedule:
       interval: "monthly"
     groups:
-      arrow-datafusion:
-        applies-to: version-updates
-        patterns:
-          - "arrow"
-          - "datafusion"
-          - "datafusion-*"
-          - "object_store"
-          - "parquet"
-          - "thrift"
       aws:
         applies-to: version-updates
         patterns:

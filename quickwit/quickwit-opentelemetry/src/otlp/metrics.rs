@@ -57,12 +57,6 @@ pub(crate) static INGESTED_SPANS_TOTAL: LazyCounter = lazy_counter!(
         subsystem: "otlp",
 );
 
-pub(crate) static INGESTED_DATA_POINTS_TOTAL: LazyCounter = lazy_counter!(
-        name: "ingested_data_points_total",
-        description: "Number of metric data points ingested",
-        subsystem: "otlp",
-);
-
 pub(crate) static INGESTED_BYTES_TOTAL: LazyCounter = lazy_counter!(
         name: "ingested_bytes_total",
         description: "Number of bytes ingested",
