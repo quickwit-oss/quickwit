@@ -41,6 +41,7 @@ use quickwit_indexing::docs_clustering::Fingerprinter;
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
+use quickwit_indexing::source::{SourceLoader, quickwit_supported_sources};
 use quickwit_indexing::{IndexingPipeline, IndexingSplitCache};
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::IndexMetadataResponseExt;
@@ -53,7 +54,7 @@ use quickwit_search::{SearchResponseRest, single_node_search};
 use quickwit_serve::{
     BodyFormat, SearchRequestQueryString, SortBy, search_request_from_api_request,
 };
-use quickwit_storage::{BundleStorage, Storage};
+use quickwit_storage::{BundleStorage, Storage, StorageResolver};
 use quickwit_transport::ChannelFactory;
 use thousands::Separable;
 use tracing::debug;
@@ -64,6 +65,11 @@ use crate::{
     run_index_checklist, start_actor_runtimes,
 };
 
+#[cfg(feature = "parquet")]
+mod parquet_ingest;
+#[cfg(feature = "parquet")]
+mod parquet_report;
+
 pub fn build_tool_command() -> Command {
     Command::new("tool")
         .about("Performs utility operations. Requires a node config.")
@@ -71,16 +77,20 @@ pub fn build_tool_command() -> Command {
         .subcommand(
             Command::new("local-ingest")
                 .display_order(10)
-                .about("Indexes NDJSON documents locally.")
-                .long_about("Local ingest indexes locally NDJSON documents from a file or from stdin and uploads splits on the configured storage.")
+                .about("Indexes NDJSON or Parquet documents locally.")
+                .long_about("Local ingest indexes locally NDJSON documents from a file or from stdin, or rows of a local `.parquet` file (requires the `parquet` feature), and uploads splits on the configured storage.")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index")
                         .display_order(1)
                         .required(true),
                     arg!(--"input-path" <INPUT_PATH> "Location of the input file.")
                         .required(false),
-                    arg!(--"input-format" <INPUT_FORMAT> "Format of the input data.")
+                    arg!(--"input-format" <INPUT_FORMAT> "Format of the input documents: `json` or `plain`. Parquet rows are indexed as `json` documents.")
                         .default_value("json")
+                        .required(false),
+                    arg!(--"num-pipelines" <NUM_PIPELINES> "Number of indexing pipelines running in parallel. Values greater than 1 require a `.parquet` input file. Defaults to half the number of CPUs for a `.parquet` input file, 1 otherwise.")
+                        .required(false),
+                    arg!(--"batch-num-rows" <BATCH_NUM_ROWS> "Number of Parquet rows decoded at once. Only valid with a `.parquet` input file.")
                         .required(false),
                     arg!(--overwrite "Overwrites pre-existing index.")
                         .required(false),
@@ -177,6 +187,10 @@ pub struct LocalIngestDocsArgs {
     pub overwrite: bool,
     pub vrl_script: Option<String>,
     pub clear_cache: bool,
+    /// Number of indexing pipelines. Values greater than 1 require a `.parquet` input file.
+    pub num_pipelines: NonZeroUsize,
+    /// Number of Parquet rows decoded at once. Only valid with a `.parquet` input file.
+    pub batch_num_rows_opt: Option<NonZeroUsize>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -263,7 +277,39 @@ impl ToolCliCommand {
         let overwrite = matches.get_flag("overwrite");
         let vrl_script = matches.remove_one::<String>("transform-script");
         let clear_cache = !matches.get_flag("keep-cache");
+        let num_pipelines_opt: Option<NonZeroUsize> = matches
+            .remove_one::<String>("num-pipelines")
+            .map(|num_pipelines| num_pipelines.parse())
+            .transpose()
+            .context("`num-pipelines` must be a strictly positive integer")?;
+        let batch_num_rows_opt: Option<NonZeroUsize> = matches
+            .remove_one::<String>("batch-num-rows")
+            .map(|batch_num_rows| batch_num_rows.parse())
+            .transpose()
+            .context("`batch-num-rows` must be a strictly positive integer")?;
 
+        let is_parquet = matches!(&input_path_opt, Some(input_path) if is_parquet_uri(input_path));
+        if is_parquet && input_format != SourceInputFormat::Json {
+            bail!("Parquet rows are indexed as `json` documents: remove `--input-format`");
+        }
+        if !is_parquet {
+            if let Some(num_pipelines) = num_pipelines_opt
+                && num_pipelines.get() > 1
+            {
+                bail!("`--num-pipelines` greater than 1 requires a `.parquet` input file");
+            }
+            if batch_num_rows_opt.is_some() {
+                bail!("`--batch-num-rows` requires a `.parquet` input file");
+            }
+        }
+        // Measured optimum: 16 pipelines on m8gd.8xlarge (32 vCPUs), with 5M-doc splits.
+        let num_pipelines = num_pipelines_opt.unwrap_or_else(|| {
+            if is_parquet {
+                NonZeroUsize::new(quickwit_common::num_cpus() / 2).unwrap_or(NonZeroUsize::MIN)
+            } else {
+                NonZeroUsize::MIN
+            }
+        });
         Ok(Self::LocalIngest(LocalIngestDocsArgs {
             config_uri,
             index_id,
@@ -272,6 +318,8 @@ impl ToolCliCommand {
             overwrite,
             vrl_script,
             clear_cache,
+            num_pipelines,
+            batch_num_rows_opt,
         }))
     }
 
@@ -399,8 +447,20 @@ impl ToolCliCommand {
     }
 }
 
+fn is_parquet_uri(uri: &Uri) -> bool {
+    uri.extension() == Some("parquet")
+}
+
 pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<()> {
     debug!(args=?args, "local-ingest-docs");
+
+    if matches!(&args.input_path_opt, Some(input_path) if is_parquet_uri(input_path)) {
+        #[cfg(not(feature = "parquet"))]
+        bail!("Quickwit was compiled without the `parquet` feature");
+
+        #[cfg(feature = "parquet")]
+        return parquet_ingest::local_ingest_parquet_cli(args).await;
+    }
     println!("❯ Ingesting documents locally...");
 
     let config = load_node_config(&args.config_uri, None).await?;
@@ -436,44 +496,16 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         let mut index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
         index_service.clear_index(&args.index_id).await?;
     }
-    // The indexing service needs to update its cluster chitchat state so that the control plane is
-    // aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
-    // and avoid impacting potential control plane running on the cluster.
-    let cluster = create_empty_cluster(&config).await?;
-    let indexer_config = IndexerConfig {
-        ..Default::default()
-    };
-    let runtimes_config = RuntimesConfig::default();
-    start_actor_runtimes(
-        runtimes_config,
-        &HashSet::from_iter([QuickwitService::Indexer]),
-    )?;
     let universe = Universe::new();
-    let merge_scheduler_service_mailbox = universe.get_or_spawn_one();
-    let split_cache =
-        Arc::new(IndexingSplitCache::from_config(&indexer_config, &config.data_dir_path).await?);
-    let fingerprinter_opt = config
-        .docs_clustering_config
-        .as_ref()
-        .map(Fingerprinter::new);
-    let indexing_server = IndexingService::new(
-        config.node_id.clone(),
-        config.data_dir_path.clone(),
-        indexer_config,
-        runtimes_config.num_threads_blocking,
-        cluster,
+    let (indexing_server_mailbox, indexing_server_handle) = spawn_indexing_service(
+        &universe,
+        &config,
         metastore,
-        None,
-        Some(merge_scheduler_service_mailbox),
-        IngesterPool::default(),
         storage_resolver,
-        EventBroker::default(),
-        split_cache,
-        fingerprinter_opt,
+        quickwit_supported_sources().clone(),
+        true,
     )
     .await?;
-    let (indexing_server_mailbox, indexing_server_handle) =
-        universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_server_mailbox
         .ask_for_res(SpawnPipeline {
             index_id: args.index_id.clone(),
@@ -537,6 +569,54 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         }
         _ => bail!("failed to ingest all the documents"),
     }
+}
+
+/// Starts the actor runtimes and spawns an indexing service in `universe`.
+pub(crate) async fn spawn_indexing_service(
+    universe: &Universe,
+    config: &NodeConfig,
+    metastore: MetastoreServiceClient,
+    storage_resolver: StorageResolver,
+    source_loader: Arc<SourceLoader>,
+    enable_merges: bool,
+) -> anyhow::Result<(Mailbox<IndexingService>, ActorHandle<IndexingService>)> {
+    // Use an isolated cluster so local tasks don't affect a running control plane.
+    let cluster = create_empty_cluster(config).await?;
+    let indexer_config = IndexerConfig::default();
+    let runtimes_config = RuntimesConfig::default();
+    start_actor_runtimes(
+        runtimes_config,
+        &HashSet::from_iter([QuickwitService::Indexer]),
+    )?;
+    let merge_scheduler_service_opt = if enable_merges {
+        Some(universe.get_or_spawn_one())
+    } else {
+        None
+    };
+    let split_cache =
+        Arc::new(IndexingSplitCache::from_config(&indexer_config, &config.data_dir_path).await?);
+    let fingerprinter_opt = config
+        .docs_clustering_config
+        .as_ref()
+        .map(Fingerprinter::new);
+    let indexing_server = IndexingService::new(
+        config.node_id.clone(),
+        config.data_dir_path.clone(),
+        indexer_config,
+        runtimes_config.num_threads_blocking,
+        cluster,
+        metastore,
+        None,
+        merge_scheduler_service_opt,
+        IngesterPool::default(),
+        storage_resolver,
+        EventBroker::default(),
+        split_cache,
+        fingerprinter_opt,
+    )
+    .await?
+    .with_source_loader(source_loader);
+    Ok(universe.spawn_builder().spawn(indexing_server))
 }
 
 pub async fn local_search_cli(args: LocalSearchArgs) -> anyhow::Result<()> {
@@ -950,7 +1030,7 @@ impl ThroughputCalculator {
     }
 }
 
-async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
+pub(crate) async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
     let self_node = ClusterMember {
         node_id: config.node_id.clone(),
         generation_id: quickwit_cluster::GenerationId::now(),
