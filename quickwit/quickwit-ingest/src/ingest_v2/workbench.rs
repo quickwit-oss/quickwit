@@ -723,6 +723,7 @@ mod tests {
         let ingester_id = NodeId::from_str("test-ingester");
         let persist_summary = PersistRequestSummary {
             ingester_id: ingester_id.clone(),
+            generation_id: quickwit_cluster::GenerationId::from(1u64),
             subrequest_ids: vec![0],
         };
         workbench.record_persist_error(persist_error, persist_summary);
@@ -749,6 +750,7 @@ mod tests {
         let ingester_id = NodeId::from_str("test-ingester");
         let persist_summary = PersistRequestSummary {
             ingester_id: ingester_id.clone(),
+            generation_id: quickwit_cluster::GenerationId::from(1u64),
             subrequest_ids: vec![0],
         };
         workbench.record_persist_error(persist_error, persist_summary);
@@ -776,6 +778,7 @@ mod tests {
         let persist_error = IngestV2Error::Internal("IO error".to_string());
         let persist_summary = PersistRequestSummary {
             ingester_id: NodeId::from_str("test-ingester"),
+            generation_id: quickwit_cluster::GenerationId::from(1u64),
             subrequest_ids: vec![0],
         };
         workbench.record_persist_error(persist_error, persist_summary);

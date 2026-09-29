@@ -22,6 +22,7 @@ use quickwit_proto::jaeger::storage::v1::{
     SpansResponseChunk, TraceQueryParameters,
 };
 use quickwit_proto::tonic;
+use quickwit_search::MAX_NUM_TRACES;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::error;
@@ -120,7 +121,8 @@ pub fn jaeger_service_operations_handler(
     tag = "Jaeger",
     path = "/{otel-traces-index-id}/jaeger/api/traces",
     responses(
-        (status = 200, description = "Successfully fetched traces information.", body = JaegerResponseBody )
+        (status = 200, description = "Successfully fetched traces information.", body = JaegerResponseBody ),
+        (status = 400, description = "Invalid trace search parameters, including a limit outside 0 through 10,000.")
     ),
     params(
         ("otel-traces-index-id" = String, Path, description = "The name of the index to get traces for."),
@@ -131,7 +133,7 @@ pub fn jaeger_service_operations_handler(
         ("tags" = Option<String>, Query, description = "Sets tags with values in the logfmt format, such as error=true status=200."),
         ("min_duration" = Option<String>, Query, description = "Filters all traces with a duration higher than the set value. Possible values are 1.2s, 100ms, 500us."),
         ("max_duration" = Option<String>, Query, description = "Filters all traces with a duration lower than the set value. Possible values are 1.2s, 100ms, 500us."),
-        ("limit" = Option<i32>, Query, description = "Limits the number of traces returned."),
+        ("limit" = Option<i32>, Query, description = "Limits the number of traces returned. Must be between 0 and 10,000 inclusive; defaults to 20. Zero returns no traces."),
     )
 )]
 pub fn jaeger_traces_search_handler(
@@ -214,6 +216,16 @@ async fn jaeger_traces_search(
     search_params: TracesSearchQueryParams,
     jaeger_service: JaegerService,
 ) -> Result<JaegerResponseBody<Vec<JaegerTrace>>, JaegerError> {
+    let num_traces = match search_params.limit {
+        None => DEFAULT_NUMBER_OF_TRACES,
+        Some(limit) if (0..=MAX_NUM_TRACES as i32).contains(&limit) => limit,
+        Some(limit) => {
+            return Err(JaegerError {
+                status: StatusCode::BAD_REQUEST,
+                message: format!("`limit` must be between 0 and {MAX_NUM_TRACES}, got `{limit}`"),
+            });
+        }
+    };
     let duration_min = search_params
         .min_duration
         .map(parse_duration_with_units)
@@ -252,7 +264,7 @@ async fn jaeger_traces_search(
             .map(|ts| to_well_known_timestamp(ts * 1000)),
         duration_min,
         duration_max,
-        num_traces: search_params.limit.unwrap_or(DEFAULT_NUMBER_OF_TRACES),
+        num_traces,
     };
     let find_traces_request = FindTracesRequest { query: Some(query) };
     let spans_chunk_stream = jaeger_service
@@ -497,6 +509,24 @@ mod tests {
             .reply(&jaeger_api_handler)
             .await;
         assert_eq!(resp.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn test_jaeger_traces_search_rejects_out_of_range_limits() {
+        let mut search_service = MockSearchService::new();
+        search_service.expect_root_search().never();
+        let jaeger = JaegerService::new(JaegerConfig::default(), Arc::new(search_service));
+        let handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
+
+        for limit in [-1, MAX_NUM_TRACES as i32 + 1] {
+            let response = warp::test::request()
+                .path(&format!(
+                    "/otel-traces-v0_9/jaeger/api/traces?limit={limit}"
+                ))
+                .reply(&handler)
+                .await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "limit={limit}");
+        }
     }
 
     #[tokio::test]

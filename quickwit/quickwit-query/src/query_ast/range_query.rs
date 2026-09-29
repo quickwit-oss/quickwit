@@ -195,6 +195,12 @@ impl BuildTantivyAst for RangeQuery {
                     field_name: field_entry.name().to_string(),
                 });
             }
+            tantivy::schema::FieldType::Custom(_) => {
+                return Err(InvalidQuery::RangeQueryNotSupportedForField {
+                    value_type: "custom",
+                    field_name: field_entry.name().to_string(),
+                });
+            }
             tantivy::schema::FieldType::Bytes(_) => todo!(),
             tantivy::schema::FieldType::JsonObject(options) => {
                 let mut sub_queries: Vec<TantivyQueryAst> = Vec::new();

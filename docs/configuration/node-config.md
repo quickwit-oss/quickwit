@@ -92,7 +92,9 @@ We advise changing the default value of 20 MiB only if you encounter the followi
 
 ## Health check configuration
 
-This section configures an optional, **plaintext (no TLS)** HTTP server that exposes only the health endpoints `/health/livez` (liveness) and `/health/readyz` (readiness). Its purpose is to let liveness/readiness probes (for example from Kubernetes or a load balancer) reach the node even when the main REST API is put behind [TLS or mTLS](#tls-configuration), which a simple HTTP probe cannot negotiate.
+This section configures an optional, **plaintext (no TLS)** HTTP server that exposes only the health endpoints `/health/livez` (liveness) and `/health/startupz` (startup completion), plus `/health/readyz`, a deprecated alias for `/health/startupz`. Its purpose is to let liveness and startup probes (for example from Kubernetes or a load balancer) reach the node even when the main REST API is put behind [TLS or mTLS](#tls-configuration), which a simple HTTP probe cannot negotiate.
+
+`/health/startupz` reports whether the node has finished starting up. It latches once and never returns to a not-started state, so it is suited to a Kubernetes **startup probe** rather than a readiness probe. There is no readiness endpoint: a node that is up but degraded is restarted, not removed from rotation.
 
 The health server is **disabled by default**. It starts only when `listen_port` is set (or the `QW_HEALTH_LISTEN_PORT` environment variable is provided). The same `/health/*` endpoints always remain available on the main REST API as well.
 
@@ -246,6 +248,8 @@ This section contains the configuration options for an indexer. The split store 
 | `enable_cooperative_indexing` | Enable sharing resources more efficiently when the number of indexes actively written to is significantly higher than the number of cores but might decrease the overall indexing throughput. | `false` |
 | `shutdown_drain_timeout` | Time budget granted to each indexing pipeline to drain gracefully before its remaining actors are killed, on node shutdown and when the control plane tears down a pipeline. Set it above the largest `commit_timeout_secs` plus the time to upload and publish the final splits. Beware that on shutdown, draining only starts after the ingester and compactor decommissions complete, so the deployment's shutdown grace period (e.g. `terminationGracePeriodSeconds` on Kubernetes) must exceed the largest decommission timeout *plus* this value — about 600 seconds with the default timeouts. Can be overridden with the `QW_INDEXER_SHUTDOWN_DRAIN_TIMEOUT` environment variable. | `300s` |
 
+Set the `QW_INDEXING_MAX_WRITE_THROUGHPUT` environment variable to limit the aggregate indexing IO throughput on a node. It accepts human-readable byte sizes per second, such as `500mb`, and is unlimited by default.
+
 Example:
 
 ```yaml
@@ -312,7 +316,7 @@ This section contains the configuration options for a Searcher.
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `split_cache` | Searcher split cache configuration options defined in the section below. Cache disabled if unspecified. | |
 | `request_timeout_secs` | The time before a search request is cancelled. This should match the timeout of the stack calling into quickwit if there is one set.  | `30` |
-| `use_metastore_read_replica` | If true, routes read-only metastore requests from searchers, including DataFusion when enabled, to nodes running the `metastore_read_replica` service. Searchers require at least one `metastore_read_replica` node at startup and do not fall back to the primary metastore. | `false` |
+| `use_metastore_read_replica` | If true, routes read-only metastore requests from searchers to nodes running the `metastore_read_replica` service. Searchers require at least one `metastore_read_replica` node at startup and do not fall back to the primary metastore. | `false` |
 
 ### Searcher split cache configuration
 

@@ -1319,6 +1319,7 @@ pub async fn root_search(
         agg = search_request.aggregation_request(),
         start_ts = ?(search_request.start_timestamp()..search_request.end_timestamp()),
         count_required = search_request.count_hits().as_str_name(),
+        max_hits = search_request.max_hits,
         num_docs = num_docs,
         num_splits = num_splits,
         priority = search_request.priority,

@@ -22,7 +22,7 @@ use chitchat::{ChitchatId, NodeState, Version};
 use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
 use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
 use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{AvailabilityZone, NodeId};
 use tracing::{error, warn};
 
 use crate::cluster::parse_indexing_tasks;
@@ -53,7 +53,7 @@ pub(crate) trait NodeStateExt {
 
     fn ingester_status(&self) -> IngesterStatus;
 
-    fn availability_zone(&self) -> Option<String>;
+    fn availability_zone(&self) -> Option<AvailabilityZone>;
 
     fn enable_standalone_compactors(&self) -> bool;
 }
@@ -93,8 +93,8 @@ impl NodeStateExt for NodeState {
             .unwrap_or(IngesterStatus::Ready)
     }
 
-    fn availability_zone(&self) -> Option<String> {
-        self.get(AVAILABILITY_ZONE_KEY).map(|az| az.to_string())
+    fn availability_zone(&self) -> Option<AvailabilityZone> {
+        self.get(AVAILABILITY_ZONE_KEY).map(AvailabilityZone::from)
     }
 
     fn enable_standalone_compactors(&self) -> bool {
@@ -132,7 +132,7 @@ pub struct ClusterMember {
     /// Whether the node is ready to serve requests.
     pub is_ready: bool,
     /// Availability zone the node is running in, if enabled.
-    pub availability_zone: Option<String>,
+    pub availability_zone: Option<AvailabilityZone>,
     /// Whether the node was started with standalone compactors enabled.
     pub enable_standalone_compactors: bool,
 }

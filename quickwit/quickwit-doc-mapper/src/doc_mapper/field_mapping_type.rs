@@ -138,6 +138,8 @@ fn primitive_type_to_str(primitive_type: &Type) -> &'static str {
         Type::Facet => {
             unimplemented!("Facets are not supported by quickwit at the moment.")
         }
+        // Quickwit mappings cannot construct custom field types.
+        Type::Custom => unimplemented!("custom fields are not supported in Quickwit"),
     }
 }
 

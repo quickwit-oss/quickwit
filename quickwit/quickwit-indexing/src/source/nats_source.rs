@@ -47,7 +47,7 @@ use async_nats::{ConnectOptions, HeaderName, Subject, jetstream};
 use async_trait::async_trait;
 use bytesize::ByteSize;
 use futures::{FutureExt, StreamExt};
-use quickwit_actors::ActorExitStatus;
+use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_common::tracing_utils::{self, Context as TraceContext, Extractor};
 use quickwit_config::{NatsSourceAuth, NatsSourceParams};
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
@@ -57,9 +57,10 @@ use serde_json::{Value as JsonValue, json};
 use tokio::time;
 use tracing::{Instrument, Span, debug, info, warn};
 
+use crate::actors::DocProcessor;
 use crate::source::{
     BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
-    SourceRuntime, SourceSink, TypedSourceFactory,
+    SourceRuntime, TypedSourceFactory,
 };
 
 pub struct NatsSourceFactory;
@@ -325,10 +326,10 @@ impl NatsSource {
 
 #[async_trait]
 impl Source for NatsSource {
-    #[tracing::instrument(skip(source_sink, ctx))]
+    #[tracing::instrument(skip(doc_processor_mailbox, ctx))]
     async fn emit_batches(
         &mut self,
-        source_sink: &SourceSink,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
@@ -376,7 +377,7 @@ impl Source for NatsSource {
                 "sending doc batch to indexer"
             );
             let message = batch_builder.build();
-            source_sink.send_raw_doc_batch(message, ctx).await?;
+            ctx.send_message(doc_processor_mailbox, message).await?;
         }
         Ok(wait_before_next_batch)
     }
@@ -1062,7 +1063,7 @@ mod nats_broker_tests {
         use quickwit_proto::types::{NodeId, PipelineUid};
         use quickwit_storage::{RamStorage, StorageResolver};
 
-        use crate::actors::pipeline_shared::DrainPipeline;
+        use crate::actors::DrainPipeline;
         use crate::merge_policy::default_merge_policy;
         use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore};
 
@@ -1112,6 +1113,7 @@ mod nats_broker_tests {
             queues_dir_path: PathBuf::from("./queues"),
             storage,
             split_store,
+            indexing_io_throughput_limiter_opt: None,
             merge_policy: default_merge_policy(),
             retention_policy: None,
             max_concurrent_split_uploads_index: 4,
@@ -1366,7 +1368,6 @@ mod nats_broker_tests {
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
         let (doc_processor_mailbox, _doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
-        let source_sink = SourceSink::from(doc_processor_mailbox);
         let (observable_state_tx, _observable_state_rx) =
             tokio::sync::watch::channel(JsonValue::Null);
         let ctx: SourceContext =
@@ -1374,7 +1375,10 @@ mod nats_broker_tests {
 
         // A first empty emit issues the pull request: the messages published
         // next are prefetched into the client buffer but never processed.
-        source.emit_batches(&source_sink, &ctx).await.unwrap();
+        source
+            .emit_batches(&doc_processor_mailbox, &ctx)
+            .await
+            .unwrap();
         let subject = format!("{stream}.logs");
         let expected_docs = publish_docs(&jetstream_ctx, &subject, 0..10).await;
         tokio::time::sleep(Duration::from_secs(1)).await;

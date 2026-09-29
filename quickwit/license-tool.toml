@@ -8,3 +8,11 @@
 
 # openssl-macros doesn't declare a repository in its crate metadata
 "openssl-macros" = { origin = "https://github.com/sfackler/rust-openssl" }
+
+# These Wasmtime workspace crates omit the repository from their published metadata.
+"cranelift-assembler-x64-0.134.4" = { origin = "https://github.com/bytecodealliance/wasmtime" }
+"cranelift-assembler-x64-meta-0.134.4" = { origin = "https://github.com/bytecodealliance/wasmtime" }
+"wasmtime-internal-core-47.0.4" = { origin = "https://github.com/bytecodealliance/wasmtime" }
+
+# jitexpr omits license and repository metadata; it is covered by Tantivy's MIT license.
+"jitexpr-0.1.0" = { license = "MIT", origin = "https://github.com/quickwit-oss/tantivy/tree/main/jitexpr" }

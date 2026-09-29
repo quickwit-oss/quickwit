@@ -228,7 +228,7 @@ impl Cluster {
         ];
 
         if let Some(az) = &self_node.availability_zone {
-            initial_key_values.push((AVAILABILITY_ZONE_KEY.to_string(), az.clone()));
+            initial_key_values.push((AVAILABILITY_ZONE_KEY.to_string(), az.to_string()));
         }
         initial_key_values.push((
             STANDALONE_COMPACTORS_KEY.to_string(),

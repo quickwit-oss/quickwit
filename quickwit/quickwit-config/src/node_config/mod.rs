@@ -31,7 +31,7 @@ use quickwit_common::shared_consts::{
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::tonic::codec::CompressionEncoding;
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{AvailabilityZone, NodeId};
 use serde::{Deserialize, Deserializer, Serialize};
 use tracing::{info, warn};
 
@@ -67,10 +67,10 @@ pub struct RestConfig {
 
 /// Configuration for the optional plaintext health-check HTTP server.
 ///
-/// This server exposes only the `/health/livez` and `/health/readyz` endpoints over plain HTTP
-/// (no TLS). It lets liveness/readiness probes reach the node even when the main REST API is put
-/// behind mTLS. It is disabled unless `health.listen_port` (or the `QW_HEALTH_LISTEN_PORT`
-/// environment variable) is set.
+/// This server exposes only the `/health/livez` and `/health/startupz` endpoints over plain HTTP
+/// (no TLS), plus `/health/readyz`, a deprecated alias for `startupz`. It lets liveness and startup
+/// probes reach the node even when the main REST API is put behind mTLS. It is disabled unless
+/// `health.listen_port` (or the `QW_HEALTH_LISTEN_PORT` environment variable) is set.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HealthConfig {
@@ -215,16 +215,6 @@ pub struct IndexerConfig {
     pub enable_cooperative_indexing: bool,
     #[serde(default = "IndexerConfig::default_cpu_capacity")]
     pub cpu_capacity: CpuCapacity,
-    /// If true, run Parquet merges through the streaming column-major engine
-    /// (`execute_merge_operation`). If false (default), use the in-memory
-    /// `merge_sorted_parquet_files` engine. The legacy in-memory engine is
-    /// kept as the runtime fallback so production can flip back to it
-    /// without redeploying if the streaming engine hits a bug. Promotion
-    /// merges (those with `target_prefix_len_override`) always go through
-    /// the streaming engine regardless of this flag — the in-memory path
-    /// can't handle mixed prefix lengths.
-    #[serde(default = "IndexerConfig::default_parquet_merge_use_streaming_engine")]
-    pub parquet_merge_use_streaming_engine: bool,
     #[serde(default = "IndexerConfig::default_shutdown_drain_timeout")]
     pub shutdown_drain_timeout: HumanDuration,
 }
@@ -279,10 +269,6 @@ impl IndexerConfig {
         CpuCapacity::one_cpu_thread() * (quickwit_common::num_cpus() as u32)
     }
 
-    fn default_parquet_merge_use_streaming_engine() -> bool {
-        false
-    }
-
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> anyhow::Result<Self> {
         use quickwit_proto::indexing::PIPELINE_FULL_CAPACITY;
@@ -295,7 +281,6 @@ impl IndexerConfig {
             cpu_capacity: PIPELINE_FULL_CAPACITY * 4u32,
             max_merge_write_throughput: None,
             merge_concurrency: NonZeroUsize::new(3).unwrap(),
-            parquet_merge_use_streaming_engine: Self::default_parquet_merge_use_streaming_engine(),
             shutdown_drain_timeout: Self::default_shutdown_drain_timeout(),
         };
         Ok(indexer_config)
@@ -313,7 +298,6 @@ impl Default for IndexerConfig {
             cpu_capacity: Self::default_cpu_capacity(),
             merge_concurrency: Self::default_merge_concurrency(),
             max_merge_write_throughput: None,
-            parquet_merge_use_streaming_engine: Self::default_parquet_merge_use_streaming_engine(),
             shutdown_drain_timeout: Self::default_shutdown_drain_timeout(),
         }
     }
@@ -462,7 +446,7 @@ pub struct SearcherConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
-    /// Routes read-only metastore requests from searchers, including DataFusion when enabled, to
+    /// Routes read-only metastore requests from searchers to
     /// nodes running the `metastore_read_replica` service.
     #[serde(default)]
     pub use_metastore_read_replica: bool,
@@ -934,7 +918,7 @@ impl Default for JaegerConfig {
 pub struct NodeConfig {
     pub cluster_id: String,
     pub node_id: NodeId,
-    pub availability_zone: Option<String>,
+    pub availability_zone: Option<AvailabilityZone>,
     pub enabled_services: HashSet<QuickwitService>,
     pub gossip_listen_addr: SocketAddr,
     pub grpc_listen_addr: SocketAddr,
