@@ -6,7 +6,6 @@ on:
       sha:
         required: true
         type: string
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -29,6 +28,7 @@ jobs:
     timeout-minutes: 40
     permissions:
       contents: read
+    cache-mode: read
     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
     services:
       localstack:
@@ -105,7 +105,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ inputs.sha || github.sha }}
+          ref: ${{ inputs.sha }}
           persist-credentials: false
 
       - name: Install lib libsasl2
