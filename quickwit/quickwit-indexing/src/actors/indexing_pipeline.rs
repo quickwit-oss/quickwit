@@ -37,7 +37,6 @@ use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument, warn};
 
 use super::{DocProcessor, IndexSerializer, Indexer, MergePlanner, Packager};
-use crate::SplitsUpdateMailbox;
 use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
 use crate::actors::{Publisher, Uploader};
@@ -49,6 +48,7 @@ use crate::source::{
     AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
 };
 use crate::split_store::IndexingSplitStore;
+use crate::{DocEnricher, SplitsUpdateMailbox};
 
 pub(crate) const SUPERVISE_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -395,7 +395,7 @@ impl IndexingPipeline {
             .spawn(index_serializer);
 
         // Indexer
-        let indexer = Indexer::new(
+        let mut indexer = Indexer::new(
             self.params.pipeline_id.clone(),
             self.params.doc_mapper.clone(),
             self.params.metastore.clone(),
@@ -406,6 +406,9 @@ impl IndexingPipeline {
             self.params.fingerprinter_opt.clone(),
             self.params.indexing_io_throughput_limiter_opt.clone(),
         );
+        if let Some(enricher) = &self.params.doc_enricher_opt {
+            indexer = indexer.with_doc_enricher(enricher.clone());
+        }
         let (indexer_mailbox, indexer_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "indexer")]))
@@ -582,6 +585,8 @@ pub struct IndexingPipelineParams {
 
     // Indexing-related parameters
     pub doc_mapper: Arc<DocMapper>,
+    /// Optional enrichment after split selection. Not used by the merge pipeline.
+    pub doc_enricher_opt: Option<DocEnricher>,
     pub indexing_directory: TempDirectory,
     pub indexing_settings: IndexingSettings,
     pub fingerprinter_opt: Option<Fingerprinter>,
@@ -717,6 +722,7 @@ mod tests {
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
+            doc_enricher_opt: None,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             source_storage_resolver: StorageResolver::for_test(),
@@ -780,6 +786,7 @@ mod tests {
     fn spawn_pipeline_failing_to_publish(
         universe: &Universe,
         publish_error: MetastoreError,
+        doc_enricher_opt: Option<DocEnricher>,
     ) -> ActorHandle<IndexingPipeline> {
         let index_uid: IndexUid = IndexUid::for_test("test-index", 1);
         let pipeline_id = IndexingPipelineId {
@@ -825,6 +832,7 @@ mod tests {
         let (merge_planner_mailbox, _) = universe.create_test_mailbox();
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
+            doc_enricher_opt,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             source_storage_resolver: StorageResolver::for_test(),
@@ -860,6 +868,7 @@ mod tests {
             MetastoreError::InvalidPublishToken {
                 queue_id: "test-index:1/test-source/0".to_string(),
             },
+            None,
         );
         let (pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
 
@@ -878,6 +887,7 @@ mod tests {
             MetastoreError::InvalidArgument {
                 message: "failed to apply checkpoint delta".to_string(),
             },
+            None,
         );
         wait_until_predicate(
             || async { pipeline_handle.last_observation().generation >= 2 },
@@ -887,6 +897,38 @@ mod tests {
         .await
         .expect("pipeline should respawn after a publish error other than a revoked token");
 
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_doc_enricher_survives_pipeline_restart() {
+        let universe = Universe::with_accelerated_time();
+        let seen_split_ids = Arc::new(std::sync::Mutex::new(BTreeSet::new()));
+        let enricher: DocEnricher = {
+            let seen_split_ids = seen_split_ids.clone();
+            Arc::new(move |context, _doc| {
+                seen_split_ids
+                    .lock()
+                    .unwrap()
+                    .insert(context.split_id.clone());
+                Ok(())
+            })
+        };
+        let pipeline_handle = spawn_pipeline_failing_to_publish(
+            &universe,
+            MetastoreError::InvalidArgument {
+                message: "retry publishing".to_string(),
+            },
+            Some(enricher),
+        );
+        wait_until_predicate(
+            || async { seen_split_ids.lock().unwrap().len() >= 2 },
+            Duration::from_secs(30),
+            Duration::from_millis(25),
+        )
+        .await
+        .expect("enrichment should run again in a new split after pipeline restart");
+        assert!(pipeline_handle.observe().await.generation >= 2);
         universe.assert_quit().await;
     }
 
@@ -956,6 +998,7 @@ mod tests {
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
+            doc_enricher_opt: None,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             source_storage_resolver: StorageResolver::for_test(),
@@ -1059,6 +1102,7 @@ mod tests {
         let indexing_pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper,
+            doc_enricher_opt: None,
             source_config,
             source_storage_resolver: StorageResolver::for_test(),
             indexing_directory: TempDirectory::for_test(),
@@ -1144,6 +1188,7 @@ mod tests {
         let indexing_pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
+            doc_enricher_opt: None,
             source_config,
             source_storage_resolver: StorageResolver::for_test(),
             indexing_directory: TempDirectory::for_test(),
@@ -1299,6 +1344,7 @@ mod tests {
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(broken_mapper),
+            doc_enricher_opt: None,
             source_config,
             source_storage_resolver: StorageResolver::for_test(),
             indexing_directory: TempDirectory::for_test(),

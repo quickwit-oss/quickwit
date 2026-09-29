@@ -14,6 +14,7 @@
 
 use fnv::FnvHashSet;
 use quickwit_common::PathHasher;
+use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
 use tantivy::Document;
 use tantivy::schema::document::{ReferenceValue, ReferenceValueLeaf};
 use tantivy::schema::{FieldType, Schema, Value};
@@ -33,6 +34,9 @@ pub(crate) fn populate_field_presence<D: Document>(
         FnvHashSet::with_capacity_and_hasher(schema.num_fields(), Default::default());
     for (field, value) in document.iter_fields_and_values() {
         let field_entry = schema.get_field_entry(field);
+        if field_entry.name() == FIELD_PRESENCE_FIELD_NAME {
+            continue;
+        }
         if !field_entry.is_indexed() || field_entry.is_fast() {
             // We are using an tantivy's ExistsQuery for fast fields.
             continue;

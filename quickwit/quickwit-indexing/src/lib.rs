@@ -32,6 +32,7 @@ pub use crate::actors::{
     IndexingPipelineParams, IndexingService, PublisherType, Sequencer, SplitsUpdateMailbox,
 };
 pub use crate::controlled_directory::ControlledDirectory;
+pub use crate::doc_enricher::{DocEnricher, DocEnricherFactory, DocIndexingContext};
 use crate::docs_clustering::Fingerprinter;
 use crate::models::IndexingStatistics;
 pub use crate::split_store::{
@@ -41,6 +42,7 @@ pub use crate::split_store::{
 
 pub mod actors;
 mod controlled_directory;
+mod doc_enricher;
 pub mod docs_clustering;
 pub mod merge_policy;
 mod metrics;

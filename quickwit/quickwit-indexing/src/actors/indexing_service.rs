@@ -64,7 +64,10 @@ use crate::docs_clustering::Fingerprinter;
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
 use crate::source::{AssignShards, Assignment};
 use crate::split_store::IndexingSplitCache;
-use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
+use crate::{
+    DocEnricherFactory, IndexingPipeline, IndexingPipelineParams, IndexingSplitStore,
+    IndexingStatistics,
+};
 
 /// Name of the indexing directory, usually located at `<data_dir_path>/indexing`.
 pub const INDEXING_DIR_NAME: &str = "indexing";
@@ -120,6 +123,7 @@ pub struct IndexingService {
     merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
     fingerprinter_opt: Option<Fingerprinter>,
+    doc_enricher_factory_opt: Option<DocEnricherFactory>,
     indexing_io_throughput_limiter_opt: Option<io::Limiter>,
     merge_io_throughput_limiter_opt: Option<io::Limiter>,
     event_broker: EventBroker,
@@ -181,11 +185,21 @@ impl IndexingService {
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
             merge_pipeline_handles: HashMap::new(),
             fingerprinter_opt,
+            doc_enricher_factory_opt: None,
             indexing_io_throughput_limiter_opt,
             merge_io_throughput_limiter_opt,
             cooperative_indexing_permits,
             event_broker,
         })
+    }
+
+    /// Selects optional document enrichment per pipeline, before the service is spawned.
+    ///
+    /// The factory can return `None` for pipelines that should not be enriched. It is called with
+    /// the pipeline's actual mapper so implementations can validate and resolve fields once.
+    pub fn with_doc_enricher_factory(mut self, factory: DocEnricherFactory) -> Self {
+        self.doc_enricher_factory_opt = Some(factory);
+        self
     }
 
     async fn detach_indexing_pipeline(
@@ -341,6 +355,15 @@ impl IndexingService {
 
         let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
             .map_err(|error| IndexingError::Internal(error.to_string()))?;
+        let doc_enricher_opt = if let Some(factory) = &self.doc_enricher_factory_opt {
+            factory(&indexing_pipeline_id, &doc_mapper).map_err(|error| {
+                IndexingError::Internal(format!(
+                    "failed to configure document enrichment: {error:#}"
+                ))
+            })?
+        } else {
+            None
+        };
 
         let merge_planner_mailbox_opt =
             if let Some(merge_scheduler_service) = self.merge_scheduler_service_opt.clone() {
@@ -388,6 +411,7 @@ impl IndexingService {
             metastore: self.metastore.clone(),
             storage,
             doc_mapper,
+            doc_enricher_opt,
             indexing_directory,
             indexing_settings: index_config.indexing_settings.clone(),
             fingerprinter_opt: self.fingerprinter_opt.clone(),
@@ -1058,6 +1082,10 @@ struct IndexingPipelineDiff {
     pipelines_to_shutdown: Vec<PipelineUid>,
     pipelines_to_spawn: Vec<IndexingTask>,
 }
+
+#[cfg(test)]
+#[path = "indexing_service/doc_enricher_tests.rs"]
+mod doc_enricher_tests;
 
 #[cfg(test)]
 mod tests {

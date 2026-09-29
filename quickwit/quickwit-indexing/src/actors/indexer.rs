@@ -52,6 +52,7 @@ use ulid::Ulid;
 
 use super::IndexSerializer;
 use super::cooperative_indexing::{CooperativeIndexingCycle, CooperativeIndexingPeriod};
+use crate::doc_enricher::{DocEnricher, DocIndexingContext};
 use crate::docs_clustering::{DocIdClusterer, Fingerprinter};
 use crate::metrics::SPLIT_BUILDERS;
 use crate::models::{
@@ -95,6 +96,8 @@ struct IndexerState {
     indexing_settings: IndexingSettings,
     fingerprinter_opt: Option<Fingerprinter>,
     publish_lock: PublishLock,
+    doc_mapper: Arc<DocMapper>,
+    doc_enricher_opt: Option<DocEnricher>,
     schema: Schema,
     doc_mapping_uid: DocMappingUid,
     tokenizer_manager: TokenizerManager,
@@ -304,7 +307,7 @@ impl IndexerState {
         counters.num_doc_batches_in_workbench += 1;
         for doc in batch.docs {
             let ProcessedDoc {
-                doc,
+                mut doc,
                 fingerprint_opt,
                 timestamp_opt,
                 partition,
@@ -325,6 +328,18 @@ impl IndexerState {
                 // memory usage.
                 memory_usage_delta += mem_usage_before as i64;
             }
+            let _protect_guard = ctx.protect_zone();
+            if let Some(enrich) = &self.doc_enricher_opt {
+                let indexing_context = DocIndexingContext {
+                    pipeline_id: &self.pipeline_id,
+                    split_id: &indexed_split.split_attrs.split_id,
+                    partition_id: indexed_split.split_attrs.partition_id,
+                    doc_mapping_uid: self.doc_mapping_uid,
+                    schema: &self.schema,
+                };
+                enrich(&indexing_context, &mut doc).context("failed to enrich document")?;
+                self.doc_mapper.update_field_presence(&mut doc);
+            }
             indexed_split.split_attrs.uncompressed_docs_size_in_bytes += num_bytes as u64;
             // Tantivy doc IDs are local to the split and continue across processed-doc batches.
             let split_doc_id = indexed_split.split_attrs.num_docs as DocId;
@@ -335,7 +350,6 @@ impl IndexerState {
             if let Some(timestamp) = timestamp_opt {
                 record_timestamp(timestamp, &mut indexed_split.split_attrs.time_range);
             }
-            let _protect_guard = ctx.protect_zone();
             indexed_split
                 .index_writer
                 .add_document(doc)
@@ -572,6 +586,8 @@ impl Indexer {
                 tokenizer_manager: tokenizer_manager.tantivy_manager().clone(),
                 index_settings,
                 max_num_partitions: doc_mapper.max_num_partitions(),
+                doc_mapper,
+                doc_enricher_opt: None,
                 cooperative_indexing_opt,
                 indexing_io_throughput_limiter_opt,
             },
@@ -579,6 +595,12 @@ impl Indexer {
             indexing_workbench_opt: None,
             counters: IndexerCounters::default(),
         }
+    }
+
+    /// Configures optional post-routing document enrichment for this indexer.
+    pub fn with_doc_enricher(mut self, doc_enricher: DocEnricher) -> Self {
+        self.indexer_state.doc_enricher_opt = Some(doc_enricher);
+        self
     }
 
     fn memory_usage(&self) -> ByteSize {
@@ -696,6 +718,10 @@ impl Indexer {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "indexer/doc_enricher_tests.rs"]
+mod doc_enricher_tests;
 
 #[cfg(test)]
 mod tests {

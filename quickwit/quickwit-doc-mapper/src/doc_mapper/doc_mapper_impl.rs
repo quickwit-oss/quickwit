@@ -27,7 +27,9 @@ use serde_json::{self, Value as JsonValue};
 use serde_json_borrow::Map as BorrowedJsonMap;
 use tantivy::TantivyDocument as Document;
 use tantivy::query::Query;
-use tantivy::schema::{Field, FieldType, INDEXED, OwnedValue as TantivyValue, STORED, Schema};
+use tantivy::schema::{
+    Field, FieldType, INDEXED, OwnedValue as TantivyValue, STORED, Schema, Value,
+};
 
 use super::DocMapperBuilder;
 use super::field_mapping_entry::RAW_TOKENIZER_NAME;
@@ -561,6 +563,24 @@ impl DocMapper {
         Ok((partition, document))
     }
 
+    /// Records field presence for fields added to an already mapped document.
+    ///
+    /// This is additive and idempotent. It does not support removing fields or modifying existing
+    /// values, and is a no-op when field presence indexing is disabled.
+    pub fn update_field_presence(&self, document: &mut Document) {
+        if !self.index_field_presence {
+            return;
+        }
+        let mut missing_hashes = populate_field_presence(document, &self.schema, true);
+        for value in document.get_all(FIELD_PRESENCE_FIELD) {
+            let hash = value.as_u64().expect("field presence values must be u64");
+            missing_hashes.remove(&hash);
+        }
+        for hash in missing_hashes {
+            document.add_u64(FIELD_PRESENCE_FIELD, hash);
+        }
+    }
+
     /// Converts a tantivy named Document to the json format.
     ///
     /// Tantivy does not have any notion of cardinality nor object.
@@ -721,7 +741,7 @@ mod tests {
         FieldType, IndexRecordOption, OwnedValue as TantivyValue, OwnedValue, Type, Value,
     };
 
-    use super::DocMapper;
+    use super::{DocMapper, FIELD_PRESENCE_FIELD};
     use crate::doc_mapper::field_mapping_entry::{DEFAULT_TOKENIZER_NAME, RAW_TOKENIZER_NAME};
     use crate::{
         DOCUMENT_SIZE_FIELD_NAME, DYNAMIC_FIELD_NAME, DocMapperBuilder, DocParsingError,
@@ -761,6 +781,31 @@ mod tests {
             "attributes.tags": [22, 23],
             "attributes.server\\.status": ["200", "201"]
         }"#;
+
+    #[test]
+    fn test_update_field_presence_after_enrichment() -> anyhow::Result<()> {
+        for enabled in [true, false] {
+            let mapper: DocMapper = serde_json::from_value(serde_json::json!({
+                "index_field_presence": enabled,
+                "field_mappings": [
+                    { "name": "body", "type": "text" },
+                    { "name": "extra", "type": "text" }
+                ]
+            }))?;
+            let (_, mut doc) = mapper.doc_from_json_str(r#"{"body":"original"}"#)?;
+            let initial_count = doc.get_all(FIELD_PRESENCE_FIELD).count();
+            // A no-op enrichment must not index the presence of the internal presence field itself.
+            mapper.update_field_presence(&mut doc);
+            assert_eq!(doc.get_all(FIELD_PRESENCE_FIELD).count(), initial_count);
+            doc.add_text(mapper.schema().get_field("extra")?, "enriched");
+            mapper.update_field_presence(&mut doc);
+            let expected_count = if enabled { 2 } else { 0 };
+            assert_eq!(doc.get_all(FIELD_PRESENCE_FIELD).count(), expected_count);
+            mapper.update_field_presence(&mut doc);
+            assert_eq!(doc.get_all(FIELD_PRESENCE_FIELD).count(), expected_count);
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_json_deserialize() -> anyhow::Result<()> {
