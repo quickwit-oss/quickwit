@@ -21,6 +21,7 @@ jobs:
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |
+            // The current merge queue puts its tested head SHA on main.
             const name = `coverage-report-${context.sha}`;
             const { data } = await github.rest.actions.listArtifactsForRepo({
               owner: context.repo.owner,
@@ -46,7 +47,7 @@ jobs:
             }
             if (!found) {
               // Direct pushes and the merge introducing this workflow have no queued report.
-              core.notice(`No merge queue coverage report found for ${context.sha}`);
+              core.warning(`No merge queue coverage report found for ${context.sha}`);
             }
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
