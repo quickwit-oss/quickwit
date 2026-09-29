@@ -195,8 +195,7 @@ indexer:
 # https://quickwit.io/docs/configuration/node-config#searcher-configuration
 #
 # searcher:
-#   # If true, routes read-only metastore requests from searchers, including
-#   # DataFusion when enabled, to nodes running the `metastore_read_replica`
+#   # If true, routes read-only metastore requests from searchers to nodes running the `metastore_read_replica`
 #   # service. Searchers require at least one `metastore_read_replica` node at
 #   # startup and do not fall back to the primary metastore.
 #   use_metastore_read_replica: false

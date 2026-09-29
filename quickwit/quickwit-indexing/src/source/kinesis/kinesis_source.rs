@@ -21,7 +21,7 @@ use async_trait::async_trait;
 use aws_sdk_kinesis::Client as KinesisClient;
 use bytes::Bytes;
 use itertools::Itertools;
-use quickwit_actors::ActorExitStatus;
+use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_aws::get_aws_config;
 use quickwit_common::retry::RetryParams;
 use quickwit_config::{KinesisSourceParams, RegionOrEndpoint};
@@ -35,10 +35,11 @@ use tracing::{info, warn};
 
 use super::api::list_shards;
 use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMessage};
+use crate::actors::DocProcessor;
 use crate::source::kinesis::helpers::get_kinesis_client;
 use crate::source::{
     BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
-    SourceRuntime, SourceSink, TypedSourceFactory,
+    SourceRuntime, TypedSourceFactory,
 };
 
 type ShardId = String;
@@ -187,7 +188,7 @@ impl KinesisSource {
 impl Source for KinesisSource {
     async fn initialize(
         &mut self,
-        _source_sink: &SourceSink,
+        _doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         let shards = ctx
@@ -217,7 +218,7 @@ impl Source for KinesisSource {
 
     async fn emit_batches(
         &mut self,
-        source_sink: &SourceSink,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_builder = BatchBuilder::new(SourceType::Kinesis);
@@ -312,13 +313,12 @@ impl Source for KinesisSource {
         self.state.num_records_processed += batch_builder.docs.len() as u64;
 
         if !batch_builder.checkpoint_delta.is_empty() {
-            source_sink
-                .send_raw_doc_batch(batch_builder.build(), ctx)
+            ctx.send_message(doc_processor_mailbox, batch_builder.build())
                 .await?;
         }
         if self.state.shard_consumers.is_empty() {
             info!(stream_name = %self.stream_name, "reached end of stream");
-            source_sink.send_exit_with_success(ctx).await?;
+            ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
         Ok(Duration::default())
