@@ -53,7 +53,8 @@ use super::local_shards::ShardThroughputReadings;
 use super::metrics::report_local_shards_metrics;
 use super::models::IngesterShard;
 use super::mrecordlog_utils::{
-    AppendDocBatchError, append_non_empty_doc_batch, check_enough_capacity, wal_stats,
+    AppendDocBatchError, append_non_empty_doc_batch, check_enough_capacity, doc_batch_size,
+    wal_stats,
 };
 use super::rate_meter::RateMeter;
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
@@ -597,6 +598,7 @@ impl Ingester {
                 let queue_id = subrequest.queue_id;
 
                 let batch_num_docs = subrequest.doc_batch.num_docs() as u64;
+                let batch_size = doc_batch_size(&subrequest.doc_batch, force_commit);
 
                 let append_result = append_non_empty_doc_batch(
                     &mut state_guard.mrecordlog,
@@ -637,11 +639,12 @@ impl Ingester {
                     }
                 };
 
-                state_guard
+                let shard = state_guard
                     .shards
                     .get_mut(&queue_id)
-                    .expect("shard should exist")
-                    .set_replication_position_inclusive(current_position_inclusive.clone(), now);
+                    .expect("shard should exist");
+                shard.set_replication_position_inclusive(current_position_inclusive.clone(), now);
+                shard.queue_size += batch_size;
 
                 let persist_success = PersistSuccess {
                     subrequest_id: subrequest.subrequest_id,
@@ -1199,6 +1202,7 @@ mod tests {
     use crate::ingest_v2::DEFAULT_IDLE_SHARD_TIMEOUT;
     use crate::ingest_v2::doc_mapper::try_build_doc_mapper;
     use crate::ingest_v2::fetch::tests::{into_fetch_eof, into_fetch_payload};
+    use crate::ingest_v2::mrecordlog_utils::read_queue_size;
 
     pub(super) struct IngesterForTest {
         node_id: NodeId,
@@ -1782,6 +1786,10 @@ mod tests {
         let shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
         shard_01.assert_is_open();
         shard_01.assert_replication_position(Position::offset(1u64));
+        assert_eq!(
+            shard_01.queue_size,
+            read_queue_size(&state_guard.mrecordlog, &queue_id_01)
+        );
 
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_01,
@@ -1793,6 +1801,10 @@ mod tests {
         let shard_11 = state_guard.shards.get(&queue_id_11).unwrap();
         shard_11.assert_is_open();
         shard_11.assert_replication_position(Position::offset(2u64));
+        assert_eq!(
+            shard_11.queue_size,
+            read_queue_size(&state_guard.mrecordlog, &queue_id_11)
+        );
 
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_11,
