@@ -682,7 +682,10 @@ impl QuickwitIncrementalAggregations {
         }
     }
 
-    fn finalize(self) -> tantivy::Result<Option<Vec<u8>>> {
+    fn finalize(
+        self,
+        merge_collector_role: MergeCollectorRole,
+    ) -> tantivy::Result<Option<Vec<u8>>> {
         match self {
             QuickwitIncrementalAggregations::FindTraceIdsAggregation(collector, mut state) => {
                 let merged_fruit = if state.len() > 1 {
@@ -697,11 +700,22 @@ impl QuickwitIncrementalAggregations {
                 merge_intermediate_aggregation_result(
                     &Some(QuickwitAggregations::TantivyAggregations(aggregation)),
                     state.iter().map(|vec| vec.as_slice()),
+                    merge_collector_role,
                 )
             }
             QuickwitIncrementalAggregations::NoAggregation => Ok(None),
         }
     }
+}
+
+/// Identifies the layer at which intermediate aggregation results are merged.
+///
+/// Leaf fan-in must remain bounded by `segment_size`. Root fan-in must retain all candidates
+/// produced by leaves because aggregation finalization owns the final pruning step.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MergeCollectorRole {
+    Leaf,
+    Root,
 }
 
 /// The quickwit collector is the tantivy Collector used in Quickwit.
@@ -716,6 +730,7 @@ pub(crate) struct QuickwitCollector {
     pub sort_by: SortByPair,
     pub aggregation: Option<QuickwitAggregations>,
     pub agg_context_params: AggContextParams,
+    merge_collector_role: MergeCollectorRole,
     search_after: Option<PartialHit>,
 }
 
@@ -846,6 +861,7 @@ impl Collector for QuickwitCollector {
             sort_order1,
             sort_order2,
             num_hits,
+            self.merge_collector_role,
         )?;
         // ... and drop the first [..start_offsets) hits.
         // note that self.start_offset is 0 when merging from leaf_search, and is only set when
@@ -870,6 +886,7 @@ fn map_error(error: postcard::Error) -> TantivyError {
 fn merge_intermediate_aggregation_result<'a>(
     aggregations_opt: &Option<QuickwitAggregations>,
     intermediate_aggregation_results: impl Iterator<Item = &'a [u8]>,
+    merge_collector_role: MergeCollectorRole,
 ) -> tantivy::Result<Option<Vec<u8>>> {
     let merged_intermediate_aggregation_result = match aggregations_opt {
         Some(QuickwitAggregations::FindTraceIdsAggregation(collector)) => {
@@ -901,9 +918,11 @@ fn merge_intermediate_aggregation_result<'a>(
                     },
                 )?;
             let mut merged = merged_opt.unwrap_or_default();
-            // Leaf results can be merged again at the root or by a federated query. Keep the
-            // intermediate candidate set (`segment_size`) rather than applying final pruning.
-            merged.prune_intermediate_results(aggregations, PruneMode::Intermediate)?;
+            if merge_collector_role == MergeCollectorRole::Leaf {
+                // Leaf results can be merged again at the root or by a federated query. Keep the
+                // intermediate candidate set (`segment_size`) rather than applying final pruning.
+                merged.prune_intermediate_results(aggregations, PruneMode::Intermediate)?;
+            }
             let serialized = postcard::to_allocvec(&merged).map_err(map_error)?;
             Some(serialized)
         }
@@ -920,6 +939,7 @@ fn merge_leaf_responses(
     sort_order1: SortOrder,
     sort_order2: SortOrder,
     max_hits: usize,
+    merge_collector_role: MergeCollectorRole,
 ) -> tantivy::Result<LeafSearchResponse> {
     // Optimization: No merging needed if there is only one result.
     if leaf_responses.len() == 1 {
@@ -937,6 +957,7 @@ fn merge_leaf_responses(
             leaf_responses.iter().filter_map(|leaf_response| {
                 leaf_response.intermediate_aggregation_result.as_deref()
             }),
+            merge_collector_role,
         )?;
     let num_attempted_splits = leaf_responses
         .iter()
@@ -1050,6 +1071,7 @@ pub(crate) fn make_collector_for_split(
         sort_by,
         aggregation,
         agg_context_params,
+        merge_collector_role: MergeCollectorRole::Leaf,
         search_after: search_request.search_after.clone(),
     })
 }
@@ -1058,6 +1080,14 @@ pub(crate) fn make_collector_for_split(
 pub(crate) fn make_merge_collector(
     search_request: &SearchRequest,
     agg_limits: AggregationLimitsGuard,
+) -> crate::Result<QuickwitCollector> {
+    make_merge_collector_with_role(search_request, agg_limits, MergeCollectorRole::Leaf)
+}
+
+pub(crate) fn make_merge_collector_with_role(
+    search_request: &SearchRequest,
+    agg_limits: AggregationLimitsGuard,
+    merge_collector_role: MergeCollectorRole,
 ) -> crate::Result<QuickwitCollector> {
     // Note: at this point the tokenizer manager is not used anymore by aggregations (filter query),
     // so we can create an empty one. So if it will ever be used, it would panic.
@@ -1078,6 +1108,7 @@ pub(crate) fn make_merge_collector(
         sort_by,
         aggregation,
         agg_context_params,
+        merge_collector_role,
         search_after: search_request.search_after.clone(),
     })
 }
@@ -1203,6 +1234,7 @@ pub(crate) struct IncrementalCollector {
     num_attempted_splits: u64,
     num_successful_splits: u64,
     start_offset: usize,
+    merge_collector_role: MergeCollectorRole,
     resource_stats: Option<LeafResourceStats>,
 }
 
@@ -1219,6 +1251,7 @@ impl IncrementalCollector {
         IncrementalCollector {
             top_k_hits: TopK::new(collector.max_hits + collector.start_offset, sort_key_mapper),
             start_offset: collector.start_offset,
+            merge_collector_role: collector.merge_collector_role,
             incremental_aggregation,
             num_hits: 0,
             failed_splits: Vec::new(),
@@ -1298,7 +1331,9 @@ impl IncrementalCollector {
 
     /// Finalize the merge, creating a LeafSearchResponse.
     pub(crate) fn finalize(self) -> tantivy::Result<LeafSearchResponse> {
-        let intermediate_aggregation_result = self.incremental_aggregation.finalize()?;
+        let intermediate_aggregation_result = self
+            .incremental_aggregation
+            .finalize(self.merge_collector_role)?;
         let mut partial_hits = self.top_k_hits.finalize();
         if self.start_offset != 0 {
             partial_hits.drain(0..self.start_offset.min(partial_hits.len()));
@@ -1329,7 +1364,7 @@ mod tests {
     use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
     use tantivy::collector::Collector;
 
-    use super::{IncrementalCollector, make_merge_collector};
+    use super::{IncrementalCollector, MergeCollectorRole, make_merge_collector};
     use crate::QuickwitAggregations;
     use crate::collector::{merge_intermediate_aggregation_result, top_k_partial_hits};
 
@@ -2064,7 +2099,12 @@ mod tests {
 
     #[test]
     fn test_merge_empty_intermediate_aggregation_result() {
-        let merged = merge_intermediate_aggregation_result(&None, std::iter::empty()).unwrap();
+        let merged = merge_intermediate_aggregation_result(
+            &None,
+            std::iter::empty(),
+            MergeCollectorRole::Leaf,
+        )
+        .unwrap();
         assert!(merged.is_none());
 
         let aggregations_json = r#"{
@@ -2072,10 +2112,13 @@ mod tests {
         }"#;
         let ttv_aggregations: Aggregations = serde_json::from_str(aggregations_json).unwrap();
         let qw_aggregations = QuickwitAggregations::TantivyAggregations(ttv_aggregations);
-        let serialized =
-            merge_intermediate_aggregation_result(&Some(qw_aggregations), std::iter::empty())
-                .unwrap()
-                .unwrap();
+        let serialized = merge_intermediate_aggregation_result(
+            &Some(qw_aggregations),
+            std::iter::empty(),
+            MergeCollectorRole::Leaf,
+        )
+        .unwrap()
+        .unwrap();
         let _merged: IntermediateAggregationResults = postcard::from_bytes(&serialized).unwrap();
         // Hopefully `_merged` is empty but the API does not allow us to assert that.
     }
@@ -2133,6 +2176,7 @@ mod tests {
         let serialized = merge_intermediate_aggregation_result(
             &Some(quickwit_aggregations),
             serialized_fruits.iter().map(Vec::as_slice),
+            MergeCollectorRole::Leaf,
         )
         .unwrap()
         .unwrap();
@@ -2146,5 +2190,86 @@ mod tests {
         // Intermediate mode preserves more candidates than the final size (2), while bounding the
         // merged response to segment_size (4).
         assert_eq!(buckets.entries().len(), 4);
+    }
+
+    #[test]
+    fn test_merge_intermediate_terms_root_preserves_leaf_candidates() {
+        use tantivy::Index;
+        use tantivy::aggregation::DistributedAggregationCollector;
+        use tantivy::aggregation::intermediate_agg_result::{
+            IntermediateAggregationResult, IntermediateBucketResult,
+        };
+        use tantivy::query::AllQuery;
+        use tantivy::schema::{FAST, STRING, Schema};
+
+        let aggregations: Aggregations = serde_json::from_str(
+            r#"{
+                "terms": {
+                    "terms": {
+                        "field": "term",
+                        "size": 2,
+                        "segment_size": 4
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let make_fruit = |fruit_ord: usize| {
+            let mut schema_builder = Schema::builder();
+            let term_field = schema_builder.add_text_field("term", STRING | FAST);
+            let index = Index::create_in_ram(schema_builder.build());
+            let mut writer = index.writer(15_000_000).unwrap();
+            for term_ord in 0..3 {
+                let mut document = TantivyDocument::new();
+                document.add_text(term_field, format!("term-{fruit_ord}-{term_ord}"));
+                writer.add_document(document).unwrap();
+            }
+            writer.commit().unwrap();
+
+            let reader = index.reader().unwrap();
+            let searcher = reader.searcher();
+            let collector = DistributedAggregationCollector::from_aggs(
+                aggregations.clone(),
+                Default::default(),
+            );
+            searcher.search(&AllQuery, &collector).unwrap()
+        };
+        let serialized_fruits: Vec<Vec<u8>> = (0..6)
+            .map(make_fruit)
+            .map(|fruit| postcard::to_allocvec(&fruit).unwrap())
+            .collect();
+        let merge = |fruits: &[Vec<u8>], role: MergeCollectorRole| {
+            merge_intermediate_aggregation_result(
+                &Some(QuickwitAggregations::TantivyAggregations(
+                    aggregations.clone(),
+                )),
+                fruits.iter().map(Vec::as_slice),
+                role,
+            )
+            .unwrap()
+            .unwrap()
+        };
+        let bucket_count = |serialized: &[u8]| {
+            let merged: IntermediateAggregationResults = postcard::from_bytes(serialized).unwrap();
+            let IntermediateAggregationResult::Bucket(IntermediateBucketResult::Terms { buckets }) =
+                merged.get("terms").unwrap()
+            else {
+                panic!("expected terms aggregation result");
+            };
+            buckets.entries().len()
+        };
+
+        let leaf_results: Vec<Vec<u8>> = serialized_fruits
+            .chunks(3)
+            .map(|fruits| merge(fruits, MergeCollectorRole::Leaf))
+            .collect();
+        assert!(leaf_results.iter().all(|result| bucket_count(result) == 4));
+
+        let root_result = merge(&leaf_results, MergeCollectorRole::Root);
+        assert_eq!(bucket_count(&root_result), 8);
+        // Repeating the root merge preserves the complete intermediate bucket state, including
+        // its error bound.
+        assert_eq!(root_result, merge(&leaf_results, MergeCollectorRole::Root));
     }
 }

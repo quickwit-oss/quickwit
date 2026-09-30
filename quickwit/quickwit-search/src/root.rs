@@ -51,7 +51,9 @@ use tracing::{Span, debug, error, info, info_span, instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::cluster_client::ClusterClient;
-use crate::collector::{QuickwitAggregations, make_merge_collector};
+use crate::collector::{
+    MergeCollectorRole, QuickwitAggregations, make_merge_collector, make_merge_collector_with_role,
+};
 use crate::metrics_trackers::{RootSearchMetricsFuture, RootSearchMetricsStep};
 use crate::scroll_context::{ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_job_placer::{Job, group_by, group_jobs_by_index_id};
@@ -840,8 +842,11 @@ pub(crate) async fn search_partial_hits_phase(
         num_failed_splits,
     );
 
-    let merge_collector =
-        make_merge_collector(search_request, searcher_context.get_aggregation_limits())?;
+    let merge_collector = make_merge_collector_with_role(
+        search_request,
+        searcher_context.get_aggregation_limits(),
+        MergeCollectorRole::Root,
+    )?;
 
     // Merging is a cpu-bound task. Prioritize it over queued split searches to avoid delaying the
     // final response once all leaf responses are available.
