@@ -878,6 +878,11 @@ mod tests {
             serde_json::json!({"custom": {"programName": "/bar/v2/sports"}}),
             serde_json::json!({"custom": {"programName": "/foo/v1/news"}}),
             serde_json::json!({"programName": "/foo/v1/sports"}),
+            // Only the first value of an array is read, like the JIT.
+            serde_json::json!({"custom": {"programName": ["not-a-match", "/foo/v1/sports"]}}),
+            serde_json::json!({"custom": {"programName": ["/foo/v1/sports", "not-a-match"]}}),
+            // A number at the path is not part of the string column.
+            serde_json::json!({"custom": {"programName": 42}}),
         ] {
             let mut document = TantivyDocument::default();
             document.add_field_value(dynamic, &tantivy::schema::OwnedValue::from(json_value));
@@ -895,7 +900,7 @@ mod tests {
             .unwrap();
         assert!(query.downcast_ref::<DocPredicateQuery>().is_none());
         assert!(make_prefilter(expression, &schema).is_none());
-        assert_eq!(jit_count(&searcher, expression), 2);
-        assert_eq!(searcher.search(&*query, &Count).unwrap(), 2);
+        assert_eq!(jit_count(&searcher, expression), 3);
+        assert_eq!(searcher.search(&*query, &Count).unwrap(), 3);
     }
 }
