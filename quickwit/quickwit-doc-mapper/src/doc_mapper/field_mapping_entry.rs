@@ -655,6 +655,44 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
     }
 }
 
+/// Options for a generated initial split ID. Its value is always a single raw-indexed, fast string.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct QuickwitInitialSplitIdOptions {
+    /// Optional description of the field.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Whether to also store the generated value in the document store.
+    #[serde(default = "true_fn")]
+    pub stored: bool,
+}
+
+impl Default for QuickwitInitialSplitIdOptions {
+    fn default() -> Self {
+        Self {
+            description: None,
+            stored: true,
+        }
+    }
+}
+
+impl From<QuickwitInitialSplitIdOptions> for TextOptions {
+    fn from(options: QuickwitInitialSplitIdOptions) -> Self {
+        let indexing = TextFieldIndexing::default()
+            .set_tokenizer(RAW_TOKENIZER_NAME)
+            .set_index_option(IndexRecordOption::Basic)
+            .set_fieldnorms(false);
+        let mut text_options = TextOptions::default()
+            .set_indexing_options(indexing)
+            .set_fast(RAW_TOKENIZER_NAME);
+        if options.stored {
+            text_options = text_options.set_stored();
+        }
+        text_options
+    }
+}
+
 /// Options associated to a concatenate field.
 #[quickwit_macros::serde_multikey]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -731,6 +769,11 @@ fn deserialize_mapping_type(
                 anyhow::bail!("object type must have at least one field mapping");
             }
             return Ok(FieldMappingType::Object(object_options));
+        }
+        QuickwitFieldType::InitialSplitId => {
+            return Ok(FieldMappingType::InitialSplitId(serde_json::from_value(
+                json,
+            )?));
         }
         QuickwitFieldType::Concatenate => {
             let concatenate_options: QuickwitConcatenateOptions = serde_json::from_value(json)?;
@@ -826,6 +869,7 @@ fn typed_mapping_to_json_params(
 ) -> serde_json::Map<String, JsonValue> {
     match field_mapping_type {
         FieldMappingType::Text(text_options, _) => serialize_to_map(&text_options),
+        FieldMappingType::InitialSplitId(options) => serialize_to_map(&options),
         FieldMappingType::U64(options, _)
         | FieldMappingType::I64(options, _)
         | FieldMappingType::F64(options, _) => serialize_to_map(&options),

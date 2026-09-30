@@ -31,8 +31,8 @@ use super::date_time_type::QuickwitDateTimeOptions;
 use super::field_mapping_entry::QuickwitBoolOptions;
 use super::tantivy_val_to_json::formatted_tantivy_value_to_json;
 use crate::doc_mapper::field_mapping_entry::{
-    QuickwitBytesOptions, QuickwitIpAddrOptions, QuickwitNumericOptions, QuickwitObjectOptions,
-    QuickwitTextOptions,
+    QuickwitBytesOptions, QuickwitInitialSplitIdOptions, QuickwitIpAddrOptions,
+    QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
 };
 use crate::doc_mapper::{FieldMappingType, QuickwitJsonOptions};
 use crate::{Cardinality, DocParsingError, FieldMappingEntry, ModeType};
@@ -48,7 +48,11 @@ pub enum LeafType {
     IpAddr(QuickwitIpAddrOptions),
     Json(QuickwitJsonOptions),
     Text(QuickwitTextOptions),
+    InitialSplitId(QuickwitInitialSplitIdOptions),
 }
+
+const INITIAL_SPLIT_ID_INPUT_ERROR: &str =
+    "initial_split_id is generated during indexing and must not be supplied";
 
 enum MapOrArrayIter {
     Array(std::vec::IntoIter<JsonValue>),
@@ -163,6 +167,7 @@ pub(crate) fn map_primitive_json_to_concatenate_value(value: JsonValue) -> Optio
 impl LeafType {
     fn validate_from_json(&self, json_val: &BorrowedJsonValue) -> Result<(), String> {
         match self {
+            LeafType::InitialSplitId(_) => Err(INITIAL_SPLIT_ID_INPUT_ERROR.to_string()),
             LeafType::Text(_) => {
                 if json_val.is_string() {
                     Ok(())
@@ -220,6 +225,7 @@ impl LeafType {
 
     fn value_from_json(&self, json_val: JsonValue) -> Result<TantivyValue, String> {
         match self {
+            LeafType::InitialSplitId(_) => Err(INITIAL_SPLIT_ID_INPUT_ERROR.to_string()),
             LeafType::Text(_) => {
                 if let JsonValue::String(text) = json_val {
                     Ok(TantivyValue::Str(text))
@@ -269,6 +275,9 @@ impl LeafType {
         json_val: JsonValue,
     ) -> Result<impl Iterator<Item = TantivyValue>, String> {
         match self {
+            LeafType::InitialSplitId(_) => {
+                Err("unsupported concat type: InitialSplitId".to_string())
+            }
             LeafType::Text(_) => {
                 if let JsonValue::String(text) = json_val {
                     Ok(OneOrIter::one(TantivyValue::Str(text)))
@@ -343,6 +352,13 @@ impl MappingLeaf {
         json_value: &BorrowedJsonValue,
         path: &[&str],
     ) -> Result<(), DocParsingError> {
+        // Reject even null and empty arrays: the input must not supply a generated field.
+        if matches!(self.typ, LeafType::InitialSplitId(_)) {
+            return Err(DocParsingError::ValueError(
+                path.join("."),
+                INITIAL_SPLIT_ID_INPUT_ERROR.to_string(),
+            ));
+        }
         if json_value.is_null() {
             // We just ignore `null`.
             return Ok(());
@@ -376,6 +392,12 @@ impl MappingLeaf {
         document: &mut Document,
         path: &mut [String],
     ) -> Result<(), DocParsingError> {
+        if matches!(self.typ, LeafType::InitialSplitId(_)) {
+            return Err(DocParsingError::ValueError(
+                path.join("."),
+                INITIAL_SPLIT_ID_INPUT_ERROR.to_string(),
+            ));
+        }
         if json_val.is_null() {
             // We just ignore `null`.
             return Ok(());
@@ -802,6 +824,18 @@ impl MappingNode {
         }
     }
 
+    pub fn collect_initial_split_id_fields(&self, fields: &mut Vec<Field>) {
+        for name in &self.branches_order {
+            match &self.branches[name] {
+                MappingTree::Leaf(leaf) if matches!(leaf.typ, LeafType::InitialSplitId(_)) => {
+                    fields.push(leaf.field);
+                }
+                MappingTree::Node(node) => node.collect_initial_split_id_fields(fields),
+                MappingTree::Leaf(_) => {}
+            }
+        }
+    }
+
     #[cfg(test)]
     pub fn num_fields(&self) -> usize {
         self.branches.len()
@@ -909,6 +943,7 @@ impl From<MappingLeaf> for FieldMappingType {
     fn from(leaf: MappingLeaf) -> Self {
         match leaf.typ {
             LeafType::Text(opt) => FieldMappingType::Text(opt, leaf.cardinality),
+            LeafType::InitialSplitId(options) => FieldMappingType::InitialSplitId(options),
             LeafType::I64(opt) => FieldMappingType::I64(opt, leaf.cardinality),
             LeafType::U64(opt) => FieldMappingType::U64(opt, leaf.cardinality),
             LeafType::F64(opt) => FieldMappingType::F64(opt, leaf.cardinality),
@@ -1210,6 +1245,17 @@ fn build_mapping_from_field_type<'a>(
 ) -> anyhow::Result<(MappingTree, Vec<Field>)> {
     let field_name = field_name_for_field_path(field_path);
     match field_mapping_type {
+        FieldMappingType::InitialSplitId(options) => {
+            let field =
+                schema_builder.add_text_field(&field_name, TextOptions::from(options.clone()));
+            let mapping_leaf = MappingLeaf {
+                field,
+                typ: LeafType::InitialSplitId(options.clone()),
+                cardinality: Cardinality::SingleValued,
+                concatenate: Vec::new(),
+            };
+            Ok((MappingTree::Leaf(mapping_leaf), Vec::new()))
+        }
         FieldMappingType::Text(options, cardinality) => {
             let text_options: TextOptions = options.clone().into();
             let field = schema_builder.add_text_field(&field_name, text_options);

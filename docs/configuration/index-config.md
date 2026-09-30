@@ -91,7 +91,7 @@ The doc mapping defines how a document and the fields it contains are stored and
 | `field_mappings` | Collection of field mapping, each having its own data type (text, binary, datetime, bool, i64, u64, f64, ip, json).   | `[]` |
 | `mode`        | Defines how quickwit should handle document fields that are not present in the `field_mappings`. In particular, the "dynamic" mode makes it possible to use quickwit in a schemaless manner. (See [mode](#mode)) | `dynamic`
 | `dynamic_mapping` | This parameter is only allowed when `mode` is set to `dynamic`. It then defines whether dynamically mapped fields should be indexed, stored, etc.  | (See [mode](#mode))
-| `tag_fields` | Collection of fields* explicitly defined in `field_mappings` whose values will be stored as part of the `tags` metadata. Allowed types are: `text` (with raw tokenizer), `i64` and `u64`. [Learn more about tags](../overview/concepts/querying.md#tag-pruning). | `[]` |
+| `tag_fields` | Collection of fields* explicitly defined in `field_mappings` whose values will be stored as part of the `tags` metadata. Allowed types are: `text` (with raw tokenizer), `initial_split_id`, `i64` and `u64`. [Learn more about tags](../overview/concepts/querying.md#tag-pruning). | `[]` |
 | `store_source` | Whether or not the original JSON document is stored or not in the index.   | `false` |
 | `timestamp_field`      | Timestamp field* used for sharding documents in splits. The field has to be of type `datetime`. [Learn more about time sharding](./../overview/architecture.md).  | `None` |
 | `partition_key`   |  If set, quickwit will route documents into different splits depending on the field name declared as the `partition_key`. | `null` |
@@ -104,6 +104,8 @@ The doc mapping defines how a document and the fields it contains are stored and
 
 Each field[^1] has a type that indicates the kind of data it contains, such as integer on 64 bits or text.
 Quickwit supports the following raw types [`text`](#text-type), [`i64`](#numeric-types-i64-u64-and-f64-type), [`u64`](#numeric-types-i64-u64-and-f64-type), [`f64`](#numeric-types-i64-u64-and-f64-type), [`datetime`](#datetime-type), [`bool`](#bool-type), [`ip`](#ip-type), [`bytes`](#bytes-type), and [`json`](#json-type), and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
+
+The [`initial_split_id`](#initial_split_id-type) type generates an output-only field during indexing rather than reading a value from the input document.
 
 ### Raw types
 
@@ -403,11 +405,35 @@ Assuming `attributes` as been defined as a field mapping as follows:
 
 If, in addition, `attributes` is set as a default search field, then `color:red` is a valid query.
 
+### Generated types
+
+#### `initial_split_id` type
+
+`initial_split_id` contains the ID of the split a document was first indexed into. It is a single-valued, raw-indexed fast string, preserved through merges.
+
+```yaml
+field_mappings:
+  - name: origin
+    type: initial_split_id
+    stored: true
+```
+
+| Variable | Description | Default value |
+| -------- | ----------- | ------------- |
+| `description` | Optional field description. | `None` |
+| `stored` | Store the value in the document store for retrieval in search hits. | `true` |
+
+Only these options are supported; arrays are not.
+
+- Input documents must omit the field. Supplied values, including `null`, are rejected. The generated value is not added to `_source`.
+- The field cannot be used for `partition_key`, `timestamp_field`, or `concatenate`.
+- Documents in the same initial split share the value: it is **not a per-document ID**. Reindexing assigns new values.
+
 ### Composite types
 
 #### array
 
-Quickwit supports arrays for all raw types except for `object` types.
+Quickwit supports arrays of raw types. Arrays of `object`, `concatenate`, and `initial_split_id` are not supported.
 
 To declare an array type of `i64` in the index config, you just have to set the type to `array<i64>`.
 

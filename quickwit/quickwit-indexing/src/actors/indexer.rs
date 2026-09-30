@@ -41,7 +41,7 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::DocMappingUid;
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use serde::Serialize;
-use tantivy::schema::Schema;
+use tantivy::schema::{Field, Schema};
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, DocId, IndexBuilder, IndexSettings};
@@ -96,6 +96,7 @@ struct IndexerState {
     fingerprinter_opt: Option<Fingerprinter>,
     publish_lock: PublishLock,
     schema: Schema,
+    initial_split_id_fields: Vec<Field>,
     doc_mapping_uid: DocMappingUid,
     tokenizer_manager: TokenizerManager,
     max_num_partitions: NonZeroU32,
@@ -304,7 +305,7 @@ impl IndexerState {
         counters.num_doc_batches_in_workbench += 1;
         for doc in batch.docs {
             let ProcessedDoc {
-                doc,
+                mut doc,
                 fingerprint_opt,
                 timestamp_opt,
                 partition,
@@ -336,6 +337,11 @@ impl IndexerState {
                 record_timestamp(timestamp, &mut indexed_split.split_attrs.time_range);
             }
             let _protect_guard = ctx.protect_zone();
+            // The mapper reserves these fields. Use the actual destination, including OTHER,
+            // and only populate them during initial indexing, never during merges.
+            for field in &self.initial_split_id_fields {
+                doc.add_text(*field, indexed_split.split_id().as_str());
+            }
             indexed_split
                 .index_writer
                 .add_document(doc)
@@ -568,6 +574,7 @@ impl Indexer {
                 fingerprinter_opt,
                 publish_lock: PublishLock::default(),
                 schema,
+                initial_split_id_fields: doc_mapper.initial_split_id_fields().to_vec(),
                 doc_mapping_uid: doc_mapper.doc_mapping_uid(),
                 tokenizer_manager: tokenizer_manager.tantivy_manager().clone(),
                 index_settings,

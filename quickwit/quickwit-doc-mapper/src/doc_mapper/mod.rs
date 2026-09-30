@@ -22,6 +22,9 @@ mod mapping_tree;
 mod tantivy_val_to_json;
 mod tokenizer_entry;
 
+#[cfg(test)]
+mod initial_split_id_tests;
+
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::ops::Bound;
@@ -29,8 +32,8 @@ use std::ops::Bound;
 pub use doc_mapper_builder::DocMapperBuilder;
 pub use doc_mapper_impl::DocMapper;
 pub use field_mapping_entry::{
-    BinaryFormat, FastFieldOptions, FieldMappingEntry, QuickwitBytesOptions, QuickwitJsonOptions,
-    QuickwitTextNormalizer,
+    BinaryFormat, FastFieldOptions, FieldMappingEntry, QuickwitBytesOptions,
+    QuickwitInitialSplitIdOptions, QuickwitJsonOptions, QuickwitTextNormalizer,
 };
 pub(crate) use field_mapping_entry::{
     FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,

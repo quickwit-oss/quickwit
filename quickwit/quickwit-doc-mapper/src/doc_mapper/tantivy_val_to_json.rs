@@ -238,7 +238,7 @@ pub fn formatted_tantivy_value_to_json(
     leaf_type: &LeafType,
 ) -> Option<JsonValue> {
     let res = match leaf_type {
-        LeafType::Text(_) => value_to_string(value),
+        LeafType::Text(_) | LeafType::InitialSplitId(_) => value_to_string(value),
         LeafType::Bool(_) => value_to_bool(value),
         LeafType::IpAddr(_) => value_to_ip(value),
         LeafType::F64(numeric_options) => value_to_float(value, numeric_options),

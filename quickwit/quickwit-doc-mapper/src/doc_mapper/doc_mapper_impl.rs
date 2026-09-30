@@ -70,6 +70,8 @@ pub struct DocMapper {
     dynamic_field: Option<Field>,
     /// Field in which the len of the source document is stored as a fast field.
     document_size_field: Option<Field>,
+    /// Fast string fields populated by the indexer after selecting the initial split.
+    initial_split_id_fields: Vec<Field>,
     /// Default list of field names used for search.
     default_search_field_names: Vec<String>,
     /// Timestamp field name.
@@ -201,6 +203,8 @@ impl TryFrom<DocMapperBuilder> for DocMapper {
             None
         };
         let schema = schema_builder.build();
+        let mut initial_split_id_fields = Vec::new();
+        field_mappings.collect_initial_split_id_fields(&mut initial_split_id_fields);
 
         let tokenizer_manager = create_default_quickwit_tokenizer_manager();
         let mut custom_tokenizer_names = HashSet::new();
@@ -271,6 +275,18 @@ impl TryFrom<DocMapperBuilder> for DocMapper {
             format!("failed to interpret the partition key: `{partition_key_expr}`")
         })?;
 
+        for field in &initial_split_id_fields {
+            let name = schema.get_field_name(*field);
+            let generated_path = build_field_path_from_str(name);
+            if partition_key
+                .field_paths()
+                .iter()
+                .any(|path| path.starts_with(&generated_path))
+            {
+                bail!("initial_split_id field `{name}` cannot be used in the partition key");
+            }
+        }
+
         // If valid, partition key fields should be considered as tags.
         let mut tag_field_names = doc_mapping.tag_fields;
 
@@ -286,6 +302,7 @@ impl TryFrom<DocMapperBuilder> for DocMapper {
             source_field,
             dynamic_field,
             document_size_field,
+            initial_split_id_fields,
             default_search_field_names,
             timestamp_field_name: doc_mapping.timestamp_field,
             timestamp_field_path,
@@ -428,6 +445,14 @@ impl DocMapper {
     /// Returns the unique identifier of the doc mapping.
     pub fn doc_mapping_uid(&self) -> DocMappingUid {
         self.doc_mapping_uid
+    }
+
+    /// Returns the fields the initial indexer must populate after selecting the destination split.
+    ///
+    /// Input values for these fields are rejected by both validation and document mapping. They
+    /// are always fast, so presence queries need no `_field_presence` entry added during mapping.
+    pub fn initial_split_id_fields(&self) -> &[Field] {
+        &self.initial_split_id_fields
     }
 
     /// Validates a JSON object according to the doc mapper.

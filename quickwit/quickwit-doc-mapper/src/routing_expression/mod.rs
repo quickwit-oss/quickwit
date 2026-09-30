@@ -155,8 +155,16 @@ impl RoutingExpr {
 
     /// return all fields in a vector
     pub fn field_names(&self) -> Vec<String> {
+        self.field_paths()
+            .into_iter()
+            .map(|path| path.join("."))
+            .collect()
+    }
+
+    /// Returns parsed paths without losing the distinction between nested fields and literal dots.
+    pub(crate) fn field_paths(&self) -> Vec<&[String]> {
         if let Some(inner) = self.inner_opt.as_ref() {
-            inner.field_names()
+            inner.field_paths()
         } else {
             Vec::new()
         }
@@ -204,18 +212,17 @@ impl InnerRoutingExpr {
         }
     }
 
-    // return all fields in a vector
-    fn field_names(&self) -> Vec<String> {
+    fn field_paths(&self) -> Vec<&[String]> {
         match self {
-            InnerRoutingExpr::Field(field_name) => vec![field_name.join(".")],
+            InnerRoutingExpr::Field(field_path) => vec![field_path.as_slice()],
             InnerRoutingExpr::Composite(children) => {
                 let mut fields = Vec::new();
                 for child in children {
-                    fields.extend(child.field_names());
+                    fields.extend(child.field_paths());
                 }
                 fields
             }
-            InnerRoutingExpr::Modulo(inner_expr, _) => inner_expr.field_names(),
+            InnerRoutingExpr::Modulo(inner_expr, _) => inner_expr.field_paths(),
         }
     }
 }

@@ -105,7 +105,9 @@ fn field_mapping_from_entry(entry: &FieldMappingEntry) -> Option<FieldMapping> {
         // match, prefix, and regexp queries. Reporting them as "keyword" enables
         // downstream connectors (e.g. Trino ES connector) to push down filters and
         // LIKE predicates, which they only do for keyword-typed fields.
-        FieldMappingType::Text(..) => Some(FieldMapping::Leaf { typ: "keyword" }),
+        FieldMappingType::Text(..) | FieldMappingType::InitialSplitId(_) => {
+            Some(FieldMapping::Leaf { typ: "keyword" })
+        }
         FieldMappingType::I64(..) => Some(FieldMapping::Leaf { typ: "long" }),
         FieldMappingType::U64(..) => Some(FieldMapping::Leaf { typ: "long" }),
         FieldMappingType::F64(..) => Some(FieldMapping::Leaf { typ: "double" }),
@@ -238,6 +240,7 @@ mod tests {
     fn test_build_properties_all_leaf_types() {
         let entries: Vec<FieldMappingEntry> = serde_json::from_value(json!([
             { "name": "title", "type": "text" },
+            { "name": "origin", "type": "initial_split_id" },
             { "name": "count", "type": "i64" },
             { "name": "unsigned", "type": "u64" },
             { "name": "score", "type": "f64" },
@@ -260,6 +263,7 @@ mod tests {
         let to_json = |fm: &FieldMapping| serde_json::to_value(fm).unwrap();
 
         assert_eq!(to_json(&props["title"]), json!({ "type": "keyword" }));
+        assert_eq!(to_json(&props["origin"]), json!({ "type": "keyword" }));
         assert_eq!(to_json(&props["count"]), json!({ "type": "long" }));
         assert_eq!(to_json(&props["unsigned"]), json!({ "type": "long" }));
         assert_eq!(to_json(&props["score"]), json!({ "type": "double" }));

@@ -18,8 +18,9 @@ use super::date_time_type::QuickwitDateTimeOptions;
 use super::field_mapping_entry::QuickwitBoolOptions;
 use crate::Cardinality;
 use crate::doc_mapper::field_mapping_entry::{
-    QuickwitBytesOptions, QuickwitConcatenateOptions, QuickwitIpAddrOptions, QuickwitJsonOptions,
-    QuickwitNumericOptions, QuickwitObjectOptions, QuickwitTextOptions,
+    QuickwitBytesOptions, QuickwitConcatenateOptions, QuickwitInitialSplitIdOptions,
+    QuickwitIpAddrOptions, QuickwitJsonOptions, QuickwitNumericOptions, QuickwitObjectOptions,
+    QuickwitTextOptions,
 };
 
 /// A `FieldMappingType` defines the type and indexing options
@@ -28,6 +29,8 @@ use crate::doc_mapper::field_mapping_entry::{
 pub enum FieldMappingType {
     /// String mapping type configuration.
     Text(QuickwitTextOptions, Cardinality),
+    /// Generates the initial physical split ID during indexing.
+    InitialSplitId(QuickwitInitialSplitIdOptions),
     /// Signed 64-bit integer mapping type configuration.
     I64(QuickwitNumericOptions, Cardinality),
     /// Unsigned 64-bit integer mapping type configuration.
@@ -67,6 +70,7 @@ impl FieldMappingType {
                 return QuickwitFieldType::Object;
             }
             FieldMappingType::Concatenate(_) => return QuickwitFieldType::Concatenate,
+            FieldMappingType::InitialSplitId(_) => return QuickwitFieldType::InitialSplitId,
         };
         match cardinality {
             Cardinality::SingleValued => QuickwitFieldType::Simple(primitive_type),
@@ -80,6 +84,7 @@ pub enum QuickwitFieldType {
     Simple(Type),
     Object,
     Concatenate,
+    InitialSplitId,
     Array(Type),
 }
 
@@ -90,6 +95,7 @@ impl QuickwitFieldType {
             QuickwitFieldType::Object => "object".to_string(),
             QuickwitFieldType::Array(typ) => format!("array<{}>", primitive_type_to_str(typ)),
             QuickwitFieldType::Concatenate => "concatenate".to_string(),
+            QuickwitFieldType::InitialSplitId => "initial_split_id".to_string(),
         }
     }
 
@@ -99,6 +105,9 @@ impl QuickwitFieldType {
         }
         if type_str == "concatenate" {
             return Some(QuickwitFieldType::Concatenate);
+        }
+        if type_str == "initial_split_id" {
+            return Some(QuickwitFieldType::InitialSplitId);
         }
         if type_str.starts_with("array<") && type_str.ends_with('>') {
             let parsed_type_str = parse_primitive_type(&type_str[6..type_str.len() - 1])?;

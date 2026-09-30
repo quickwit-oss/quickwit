@@ -42,6 +42,8 @@ pub use crate::split_store::{
 pub mod actors;
 mod controlled_directory;
 pub mod docs_clustering;
+#[cfg(test)]
+mod initial_split_id_tests;
 pub mod merge_policy;
 mod metrics;
 pub mod models;
