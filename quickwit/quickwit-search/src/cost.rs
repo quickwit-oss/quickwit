@@ -40,7 +40,8 @@ const AGG_DEFAULT: f32 = 3.0;
 /// Factor used to compute the cost of searching a split for the specified search request
 ///
 /// query_complexity_factor = shape_cost + agg_cost
-/// shape_cost is based on what is in the query ast. agg_cost is based on the aggregation, if present
+/// shape_cost is based on what is in the query ast. agg_cost is based on the aggregation, if
+/// present
 pub fn compute_query_complexity_factor(search_request: &SearchRequest) -> crate::Result<f32> {
     let query_ast: QueryAst = serde_json::from_str(&search_request.query_ast)
         .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
