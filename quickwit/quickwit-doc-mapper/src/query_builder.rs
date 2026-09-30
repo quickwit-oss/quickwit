@@ -561,6 +561,24 @@ mod test {
         }
     }
 
+    #[test]
+    fn test_calc_field_regex_extract_eq_warmup_on_dynamic_field() {
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_json_field(DYNAMIC_FIELD_NAME, STRING | FAST);
+        let schema = schema_builder.build();
+        let context = BuildTantivyAstContext::for_test(&schema);
+
+        // JSON subfields only read the fast column: their terms share the JSON field's inverted
+        // index with every other path, so no postings prefilter is warmed.
+        let expression = r#"(EQ (REGEXP_EXTRACT custom.programName "^/([a-z]+)/(v[0-9]+)/([a-z]+)$" 3u64) "sports")"#;
+        let (_, warmup) = build_query(calc_field(expression), &context, None).unwrap();
+        assert_eq!(
+            warmup.fast_fields,
+            expected_fast_fields(&["custom.programName"])
+        );
+        assert!(warmup.automatons_grouped_by_field.is_empty());
+    }
+
     fn full_text_query_for_warmup(field: &str, tokenizer: Option<&str>) -> QueryAst {
         quickwit_query::query_ast::FullTextQuery {
             field: field.to_string(),

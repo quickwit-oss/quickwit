@@ -874,9 +874,10 @@ mod tests {
             .writer_with_num_threads::<TantivyDocument>(1, 50_000_000)
             .unwrap();
         for json_value in [
-            serde_json::json!({"service": "svc-api-prod"}),
-            serde_json::json!({"service": "svc-web-prod"}),
-            serde_json::json!({"other": "svc-api-prod"}),
+            serde_json::json!({"custom": {"programName": "/foo/v1/sports"}}),
+            serde_json::json!({"custom": {"programName": "/bar/v2/sports"}}),
+            serde_json::json!({"custom": {"programName": "/foo/v1/news"}}),
+            serde_json::json!({"programName": "/foo/v1/sports"}),
         ] {
             let mut document = TantivyDocument::default();
             document.add_field_value(dynamic, &tantivy::schema::OwnedValue::from(json_value));
@@ -888,13 +889,13 @@ mod tests {
         let context = BuildTantivyAstContext::for_test(&schema);
         let searcher = index.reader().unwrap().searcher();
         // Names absent from the schema resolve to the dynamic field, for both paths.
-        let expression = r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#;
+        let expression = r#"(EQ (REGEXP_EXTRACT custom.programName "^/([a-z]+)/(v[0-9]+)/([a-z]+)$" 3u64) "sports")"#;
         let query = calc_field(expression)
             .build_tantivy_query(&context)
             .unwrap();
         assert!(query.downcast_ref::<DocPredicateQuery>().is_none());
         assert!(make_prefilter(expression, &schema).is_none());
-        assert_eq!(jit_count(&searcher, expression), 1);
-        assert_eq!(searcher.search(&*query, &Count).unwrap(), 1);
+        assert_eq!(jit_count(&searcher, expression), 2);
+        assert_eq!(searcher.search(&*query, &Count).unwrap(), 2);
     }
 }
