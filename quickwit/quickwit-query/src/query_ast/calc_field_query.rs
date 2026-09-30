@@ -17,9 +17,10 @@ use regex_syntax::ast::{self, AssertionKind, Ast};
 use serde::{Deserialize, Serialize};
 use tantivy::jitexpr::ast::{Function, Literal, UntypedExpr};
 use tantivy::query::doc_predicate_query::{DocPredicateQuery, JitExprPredicate};
-use tantivy::schema::{FieldType, Schema as TantivySchema};
+use tantivy::schema::{FieldType, Schema as TantivySchema, TextFieldIndexing};
 
-use super::regex_extract_eq::RegexExtractEqSpec;
+use super::regex_extract_eq::{PostingsTarget, RegexExtractEqSpec};
+use super::regex_query::json_str_term_prefix;
 use super::{BuildTantivyAst, BuildTantivyAstContext, QueryAst, RegexQuery, TantivyQueryAst};
 use crate::tokenizers::RAW_TOKENIZER_NAME;
 use crate::{InvalidQuery, find_field_or_hit_dynamic};
@@ -43,8 +44,8 @@ use crate::{InvalidQuery, find_field_or_hit_dynamic};
 /// In particular, `REGEXP_EXTRACT` sees only the first value of a multivalued field. A matching
 /// later value does not make the predicate match.
 ///
-/// On raw-indexed non-JSON fields, segments whose term and fast-field dictionaries contain the same
-/// values visit only the postings of matching terms. Other segments fall back to checking every
+/// On raw-indexed fields, including JSON subfields, segments where every matching value is indexed
+/// visit only the postings of the matching terms. Other segments fall back to checking every
 /// document's first value. Callers must warm the raw field's term dictionary and postings with the
 /// regex of [`CalcFieldQuery::try_prefilter_regex_query`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -63,7 +64,8 @@ impl CalcFieldQuery {
     /// Builds an FST [`RegexQuery`] accepting a *superset* of the values matching
     /// `(EQ (REGEXP_EXTRACT field pattern capture_index) "literal")` (or the swapped form).
     ///
-    /// Available only for fields indexed with the raw tokenizer and a raw fast field. Compilation
+    /// Available only for fields, or JSON subfields, indexed with the raw tokenizer and a raw fast
+    /// field. Compilation
     /// is shared with query construction and other splits by a bounded process-wide cache.
     ///
     /// Returns `None` whenever the expression shape or field is not eligible.
@@ -81,32 +83,34 @@ impl CalcFieldQuery {
             match_eq_regexp_extract(&self.expression)?;
         // Resolve the field once: the same metadata determines both fast-field eligibility and
         // whether the postings-based scorer can be used.
-        let (_field, field_entry, json_path) = find_field_or_hit_dynamic(field_name, schema)?;
+        let (field, field_entry, json_path) = find_field_or_hit_dynamic(field_name, schema)?;
         // Non-fast fields cannot use the value dictionary scorer.
         if !field_entry.is_fast() {
             return None;
         }
-        let can_use_postings = match field_entry.field_type() {
-            FieldType::Str(text_options) if json_path.is_empty() => {
-                // The fast-field scorer remains valid without indexing; only the postings
-                // optimization requires raw indexing and a raw fast-field tokenizer.
-                let fast_field_is_raw = matches!(
-                    text_options.get_fast_field_tokenizer_name(),
-                    None | Some(RAW_TOKENIZER_NAME)
-                );
-                // Postings are safe only when raw indexing preserves the same values as the raw
-                // fast field. The scorer performs the per-segment dictionary-count check later.
-                fast_field_is_raw
-                    && matches!(
-                        text_options.get_indexing_options(),
-                        Some(text_indexing) if text_indexing.tokenizer() == RAW_TOKENIZER_NAME
-                    )
-            }
+        // The fast-field scorer remains valid without indexing. Postings are safe only when raw
+        // indexing preserves the values of a raw fast field, so that every term is verbatim one
+        // of the fast-field values. The scorer checks per segment that the matching values are
+        // all indexed.
+        let postings_target = match field_entry.field_type() {
+            FieldType::Str(text_options) if json_path.is_empty() => is_raw_fast_and_indexed(
+                text_options.get_fast_field_tokenizer_name(),
+                text_options.get_indexing_options(),
+            )
+            .then(|| PostingsTarget::new(field, Vec::new())),
             // A JSON subfield has its own string column, opened by the scorer under the same
-            // name as the JIT predicate. Its terms, however, share the JSON field's inverted
-            // index with every other path and type, so their ordinals are not the column's value
-            // ordinals: only the fast-field dictionary walk applies.
-            FieldType::JsonObject(_) if !json_path.is_empty() => false,
+            // name as the JIT predicate. Its string terms are those of the JSON field starting
+            // with the subfield's path and string type prefix.
+            FieldType::JsonObject(json_options) if !json_path.is_empty() => {
+                is_raw_fast_and_indexed(
+                    json_options.get_fast_field_tokenizer_name(),
+                    json_options.get_text_indexing_options(),
+                )
+                .then(|| {
+                    let term_prefix = json_str_term_prefix(field, json_path, json_options);
+                    PostingsTarget::new(field, term_prefix)
+                })
+            }
             _ => return None,
         };
         // Normalize the requested capture to group 1 so the exact matcher can keep the same
@@ -119,9 +123,23 @@ impl CalcFieldQuery {
             prefilter_regex,
             isolated_pattern,
             literal,
-            can_use_postings,
+            postings_target,
         ))
     }
+}
+
+/// Returns whether a field with these options indexes its string values with the raw tokenizer
+/// and stores them unnormalized in its fast field.
+fn is_raw_fast_and_indexed(
+    fast_field_tokenizer_name: Option<&str>,
+    indexing_options: Option<&TextFieldIndexing>,
+) -> bool {
+    let fast_field_is_raw = matches!(fast_field_tokenizer_name, None | Some(RAW_TOKENIZER_NAME));
+    fast_field_is_raw
+        && matches!(
+            indexing_options,
+            Some(text_indexing) if text_indexing.tokenizer() == RAW_TOKENIZER_NAME
+        )
 }
 
 impl BuildTantivyAst for CalcFieldQuery {
