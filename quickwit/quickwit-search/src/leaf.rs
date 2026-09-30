@@ -358,11 +358,11 @@ pub(crate) async fn warmup(
         warm_up_term_ranges(searcher, &warmup_info.term_ranges_grouped_by_field),
     )
     .instrument(debug_span!("warm_up_term_ranges"));
-    let warm_up_term_dict_future = run_cancellable(
+    let warm_up_full_term_dictionaries_future = run_cancellable(
         abort_token.as_ref(),
-        warm_up_term_dict_fields(searcher, &warmup_info.term_dict_fields),
+        warm_up_full_term_dictionaries(searcher, &warmup_info.term_dict_fields),
     )
-    .instrument(debug_span!("warm_up_term_dicts"));
+    .instrument(debug_span!("warm_up_full_term_dictionaries"));
     let warm_up_fastfields_future = run_cancellable(
         abort_token.as_ref(),
         warm_up_fastfields(searcher, &warmup_info.fast_fields),
@@ -373,12 +373,12 @@ pub(crate) async fn warmup(
         warm_up_fieldnorms(searcher, warmup_info.field_norms),
     )
     .instrument(debug_span!("warm_up_fieldnorms"));
-    // TODO merge warm_up_postings into warm_up_term_dict_fields
-    let warm_up_postings_future = run_cancellable(
+    // TODO merge warm_up_all_postings into warm_up_full_term_dictionaries
+    let warm_up_all_postings_future = run_cancellable(
         abort_token.as_ref(),
-        warm_up_postings(searcher, &warmup_info.term_dict_fields),
+        warm_up_all_postings(searcher, &warmup_info.term_dict_fields),
     )
-    .instrument(debug_span!("warm_up_postings"));
+    .instrument(debug_span!("warm_up_all_postings"));
     let warm_up_automatons_future = run_cancellable(
         abort_token.as_ref(),
         warm_up_automatons(searcher, &warmup_info.automatons_grouped_by_field, priority),
@@ -389,9 +389,9 @@ pub(crate) async fn warmup(
         warm_up_terms_future,
         warm_up_term_ranges_future,
         warm_up_fastfields_future,
-        warm_up_term_dict_future,
+        warm_up_full_term_dictionaries_future,
         warm_up_fieldnorms_future,
-        warm_up_postings_future,
+        warm_up_all_postings_future,
         warm_up_automatons_future,
     )?;
 
@@ -402,7 +402,8 @@ pub(crate) async fn warmup(
     Ok(provably_empty)
 }
 
-async fn warm_up_term_dict_fields(
+/// Warm up the full term dictionary for each supplied field in every segment.
+async fn warm_up_full_term_dictionaries(
     searcher: &Searcher,
     term_dict_fields: &HashSet<Field>,
 ) -> anyhow::Result<()> {
@@ -420,7 +421,8 @@ async fn warm_up_term_dict_fields(
     Ok(())
 }
 
-async fn warm_up_postings(searcher: &Searcher, fields: &HashSet<Field>) -> anyhow::Result<()> {
+/// Warm up all postings, without positions, for each supplied field in every segment.
+async fn warm_up_all_postings(searcher: &Searcher, fields: &HashSet<Field>) -> anyhow::Result<()> {
     let mut warm_up_futures = Vec::new();
     for field in fields {
         for segment_reader in searcher.segment_readers() {
