@@ -34,16 +34,17 @@ use crate::{InvalidQuery, find_field_or_hit_dynamic};
 ///
 /// Eligible predicates of the form
 /// `(EQ (REGEXP_EXTRACT field "prefix(capture)suffix" 1u64) "literal")` (or the swapped
-/// literal/extract form, with any capture index or none for the whole match) on a non-JSON string
-/// fast field are evaluated once per distinct value instead of once per document: the dictionary
-/// is walked with an FST *prefilter* regex, each accepted value is checked exactly, and documents
-/// are selected by their first value. They match the same documents as the JIT path.
+/// literal/extract form, with any capture index or none for the whole match) on a string fast
+/// field or a fast JSON subfield are evaluated once per distinct value instead of once per
+/// document: the dictionary is walked with an FST *prefilter* regex, each accepted value is checked
+/// exactly, and documents are selected by their first value. They match the same documents as the
+/// JIT path.
 ///
 /// In particular, `REGEXP_EXTRACT` sees only the first value of a multivalued field. A matching
 /// later value does not make the predicate match.
 ///
-/// On raw-indexed fields, segments whose term and fast-field dictionaries contain the same values
-/// visit only the postings of matching terms. Other segments fall back to checking every
+/// On raw-indexed non-JSON fields, segments whose term and fast-field dictionaries contain the same
+/// values visit only the postings of matching terms. Other segments fall back to checking every
 /// document's first value. Callers must warm the raw field's term dictionary and postings with the
 /// regex of [`CalcFieldQuery::try_prefilter_regex_query`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -81,31 +82,38 @@ impl CalcFieldQuery {
         // Resolve the field once: the same metadata determines both fast-field eligibility and
         // whether the postings-based scorer can be used.
         let (_field, field_entry, json_path) = find_field_or_hit_dynamic(field_name, schema)?;
-        // JSON subfields and non-fast fields cannot use the value dictionary scorer.
-        if !json_path.is_empty() || !field_entry.is_fast() {
+        // Non-fast fields cannot use the value dictionary scorer.
+        if !field_entry.is_fast() {
             return None;
         }
-        let FieldType::Str(text_options) = field_entry.field_type() else {
-            return None;
+        let terms_are_fast_field_values = match field_entry.field_type() {
+            FieldType::Str(text_options) if json_path.is_empty() => {
+                // The fast-field scorer remains valid without indexing; only the postings
+                // optimization requires raw indexing and a raw fast-field tokenizer.
+                let fast_field_is_raw = matches!(
+                    text_options.get_fast_field_tokenizer_name(),
+                    None | Some(RAW_TOKENIZER_NAME)
+                );
+                // Postings are safe only when raw indexing preserves the same values as the raw
+                // fast field. The scorer performs the per-segment dictionary-count check later.
+                fast_field_is_raw
+                    && matches!(
+                        text_options.get_indexing_options(),
+                        Some(text_indexing) if text_indexing.tokenizer() == RAW_TOKENIZER_NAME
+                    )
+            }
+            // A JSON subfield has its own string column, opened by the scorer under the same
+            // name as the JIT predicate. Its terms, however, share the JSON field's inverted
+            // index with every other path and type, so their ordinals are not the column's value
+            // ordinals: only the fast-field dictionary walk applies.
+            FieldType::JsonObject(_) if !json_path.is_empty() => false,
+            _ => return None,
         };
-        // The fast-field scorer remains valid without indexing; only the postings optimization
-        // requires raw indexing and a raw fast-field tokenizer.
-        let fast_field_is_raw = matches!(
-            text_options.get_fast_field_tokenizer_name(),
-            None | Some(RAW_TOKENIZER_NAME)
-        );
         // Normalize the requested capture to group 1 so the exact matcher can keep the same
         // capture semantics regardless of the original capture index.
         let isolated_pattern = isolate_capture(pattern, capture_index)?;
         // Replace the isolated capture with the literal to build an FST superset prefilter.
         let prefilter_regex = substitute_single_capture(&isolated_pattern, literal)?;
-        // Postings are safe only when raw indexing preserves the same values as the raw fast
-        // field. The scorer performs the per-segment dictionary-count check later.
-        let terms_are_fast_field_values = fast_field_is_raw
-            && matches!(
-                text_options.get_indexing_options(),
-                Some(text_indexing) if text_indexing.tokenizer() == RAW_TOKENIZER_NAME
-            );
         Some(RegexExtractEqSpec::new(
             field_name,
             prefilter_regex,

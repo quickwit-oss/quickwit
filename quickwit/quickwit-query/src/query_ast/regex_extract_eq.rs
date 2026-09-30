@@ -132,17 +132,19 @@ impl RegexExtractEqSpec {
 ///
 /// Hidden contracts:
 /// - `prefilter_automaton` accepts a superset of the values satisfying the predicate.
-/// - `fast_field_name` names a non-JSON string fast field. The JIT predicate's `load_str_input`
-///   reads its first value only; this query applies the same rule, so a matching later value of a
-///   multivalued field does not match.
+/// - `fast_field_name` names a string fast field or a fast JSON subfield, exactly as the JIT
+///   predicate's variable, so both open the same string column. `load_str_input` reads its first
+///   value only; this query applies the same rule, so a matching later value of a multivalued field
+///   does not match.
 /// - `value_matches` must keep the semantics of the jitexpr `REGEXP_EXTRACT` function
 ///   (`Regex::new(pattern)`, leftmost-first `captures`). `pattern` has a single capturing group,
 ///   group 1, standing for the requested capture of the original pattern.
-/// - When `terms_are_fast_field_values` is set, every term of the field is one of its fast-field
-///   values: the raw tokenizer may drop a value (such as a long one) but never alters it, and
-///   merges drop the values without alive documents from both dictionaries. Callers then warm the
-///   term dictionary and postings with the prefilter pattern from [`RegexExtractEqSpec`] before
-///   searching.
+/// - `terms_are_fast_field_values` is never set for a JSON subfield, whose terms share the JSON
+///   field's inverted index with every other path. When it is set, every term of the field is one
+///   of its fast-field values: the raw tokenizer may drop a value (such as a long one) but never
+///   alters it, and merges drop the values without alive documents from both dictionaries. Callers
+///   then warm the term dictionary and postings with the prefilter pattern from
+///   [`RegexExtractEqSpec`] before searching.
 /// - Unlike the JIT predicate, which treats a column it fails to open as absent, the scorer returns
 ///   errors from opening the column or reading its dictionary, so a corrupt split fails the search
 ///   instead of silently matching nothing.
@@ -789,5 +791,73 @@ mod tests {
             r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#,
             2,
         );
+    }
+
+    #[test]
+    fn test_regex_extract_eq_matches_json_subfield() {
+        let mut schema_builder = Schema::builder();
+        let attributes = schema_builder.add_json_field("attributes", STRING | FAST);
+        let index = Index::create_in_ram(schema_builder.build());
+        let mut writer = index
+            .writer_with_num_threads::<TantivyDocument>(1, 50_000_000)
+            .unwrap();
+        for json_value in [
+            serde_json::json!({"service": "svc-api-prod"}),
+            serde_json::json!({"service": "svc-web-prod"}),
+            // The same value under another path must not match.
+            serde_json::json!({"other": "svc-api-prod"}),
+            // Only the first value of an array is read, like the JIT.
+            serde_json::json!({"service": ["aaa", "svc-api-prod"]}),
+            serde_json::json!({"service": ["svc-api-prod", "zzz"]}),
+            // A non-string value at the path is not part of the string column.
+            serde_json::json!({"service": 12}),
+            serde_json::json!({"nested": {"service": "svc-api-prod"}}),
+        ] {
+            let mut document = TantivyDocument::default();
+            document.add_field_value(attributes, &tantivy::schema::OwnedValue::from(json_value));
+            writer.add_document(document).unwrap();
+        }
+        writer.commit().unwrap();
+
+        let schema = index.schema();
+        let context = BuildTantivyAstContext::for_test(&schema);
+        let searcher = index.reader().unwrap().searcher();
+        for (expression, expected_count) in [
+            (
+                r#"(EQ (REGEXP_EXTRACT attributes.service "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+                2usize,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT attributes.nested.service "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+                1,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT attributes.missing "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+                0,
+            ),
+        ] {
+            let query = calc_field(expression)
+                .build_tantivy_query(&context)
+                .unwrap();
+            assert!(
+                query.downcast_ref::<DocPredicateQuery>().is_none(),
+                "{expression}"
+            );
+            // JSON terms are not the column values, so no postings prefilter is warmed.
+            assert!(
+                make_prefilter(expression, &schema).is_none(),
+                "{expression}"
+            );
+            assert_eq!(
+                jit_count(&searcher, expression),
+                expected_count,
+                "jit {expression}"
+            );
+            assert_eq!(
+                searcher.search(&*query, &Count).unwrap(),
+                expected_count,
+                "calc field {expression}"
+            );
+        }
     }
 }
