@@ -239,8 +239,8 @@ impl Weight for RegexExtractEqWeight {
         // Two ways to prove those postings are complete (every matching fast-field value is
         // indexed), depending on whether term ordinals equal fast-field ordinals.
         //
-        // 1. Plain field, dictionaries the same size: terms == values, so ordinals coincide.
-        //    One term-dictionary walk yields both matching ords and term infos.
+        // 1. Plain field, dictionaries the same size: terms == values, so ordinals coincide. One
+        //    term-dictionary walk yields both matching ords and term infos.
         if let Some((matching_ords, matching_postings)) =
             self.plain_complete_matching_postings(reader, &str_column)?
         {
@@ -249,10 +249,10 @@ impl Weight for RegexExtractEqWeight {
             }
             collect_from_postings(&matching_postings, ords, &matching_ords, &mut doc_bitset)?;
         } else {
-            // 2. Otherwise (JSON subfield, or plain field with some values dropped from the
-            //    index): walk the fast-field dictionary for matching ords, then the term
-            //    dictionary behind the path prefix. Equal matching counts mean every matching
-            //    value is indexed; otherwise fall back to a first-value scan of every doc.
+            // 2. Otherwise (JSON subfield, or plain field with some values dropped from the index):
+            //    walk the fast-field dictionary for matching ords, then the term dictionary behind
+            //    the path prefix. Equal matching counts mean every matching value is indexed;
+            //    otherwise fall back to a first-value scan of every doc.
             let matching_ords = self.matching_value_ords(&str_column)?;
             if matching_ords.len() == 0 {
                 return Ok(Box::new(EmptyScorer));
