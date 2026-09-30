@@ -15,7 +15,7 @@
 use quickwit_proto::search::SearchRequest;
 use quickwit_query::query_ast::{
     BoolQuery, FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, QueryAstVisitor,
-    RangeQuery, TermQuery, TermSetQuery, UserInputQuery, WildcardQuery,
+    RangeQuery, TermQuery, TermSetQuery, WildcardQuery,
 };
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 
@@ -37,20 +37,18 @@ const AGG_COMPOSITE: f32 = 6.0;
 const AGG_DATE_HISTOGRAM: f32 = 8.0;
 const AGG_DEFAULT: f32 = 3.0;
 
-// Factor used to compute the cost of searching a split for the specified search request
-//
-// query_complexity_factor = shape_cost + agg_cost
-// shape_cost is based on what is in the query ast. agg_cost is based on the aggregation, if present
-pub(crate) fn compute_query_complexity_factor(
-    search_request: &SearchRequest,
-) -> crate::Result<f32> {
+/// Factor used to compute the cost of searching a split for the specified search request
+///
+/// query_complexity_factor = shape_cost + agg_cost
+/// shape_cost is based on what is in the query ast. agg_cost is based on the aggregation, if present
+pub fn compute_query_complexity_factor(search_request: &SearchRequest) -> crate::Result<f32> {
     let query_ast: QueryAst = serde_json::from_str(&search_request.query_ast)
         .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
     let mut visitor = ShapeCostVisitor {
         total: 0.0,
         bool_depth: 0,
     };
-    let _ = visitor.visit(&query_ast);
+    let Ok(_) = visitor.visit(&query_ast);
     let shape_cost = visitor.total.max(1.0);
     let aggregation_cost = agg_cost(search_request.aggregation_request.as_deref())?;
     Ok(shape_cost + aggregation_cost)
@@ -59,7 +57,7 @@ pub(crate) fn compute_query_complexity_factor(
 // The cost of searching a split with `num_docs` docs and the specified `query_complexity_factor`
 // split_cost = hit_cost * query_complexity_factor
 pub(crate) fn compute_split_query_cost(num_docs: u64, query_complexity_factor: f32) -> usize {
-    let hit_cost = FIXED_SPLIT_COST as f32 + (num_docs / DOCS_PER_COST_UNIT) as f32;
+    let hit_cost = FIXED_SPLIT_COST as f32 + num_docs as f32 / DOCS_PER_COST_UNIT as f32;
     (hit_cost * query_complexity_factor) as usize
 }
 
@@ -105,7 +103,7 @@ struct ShapeCostVisitor {
 
 impl ShapeCostVisitor {
     fn add_leaf(&mut self, multiplier: f32) {
-        let depth = (self.bool_depth - 1).max(0);
+        let depth = self.bool_depth - 1;
         let depth_factor = (depth as f32 * DEPTH_MULTIPLIER).max(1.0);
         self.total += multiplier * depth_factor;
     }
@@ -135,7 +133,8 @@ impl<'a> QueryAstVisitor<'a> for ShapeCostVisitor {
     }
 
     fn visit_term_set(&mut self, _: &'a TermSetQuery) -> Result<(), Self::Err> {
-        self.add_leaf(Q_TERM);
+        // Indexed term sets execute as an automaton, so approximate their cost with Q_WC_TRAILING.
+        self.add_leaf(Q_WC_TRAILING);
         Ok(())
     }
 
@@ -154,11 +153,6 @@ impl<'a> QueryAstVisitor<'a> for ShapeCostVisitor {
         Ok(())
     }
 
-    fn visit_user_text(&mut self, _: &'a UserInputQuery) -> Result<(), Self::Err> {
-        self.add_leaf(Q_TERM);
-        Ok(())
-    }
-
     fn visit_range(&mut self, _: &'a RangeQuery) -> Result<(), Self::Err> {
         // TODO: Consider discounting timestamp filters.
         self.add_leaf(Q_RANGE);
@@ -166,7 +160,12 @@ impl<'a> QueryAstVisitor<'a> for ShapeCostVisitor {
     }
 
     fn visit_wildcard(&mut self, wildcard_query: &'a WildcardQuery) -> Result<(), Self::Err> {
-        if wildcard_query.value.starts_with('*') {
+        // Ignore up to two initial ?, more ? or * are treated as leading wildcard.
+        let mut prefix = wildcard_query.value.as_str();
+        for _ in 0..2 {
+            prefix = prefix.strip_prefix('?').unwrap_or(prefix);
+        }
+        if prefix.starts_with(['*', '?']) {
             self.add_leaf(Q_WC_LEADING);
         } else {
             self.add_leaf(Q_WC_TRAILING);
@@ -182,6 +181,18 @@ impl<'a> QueryAstVisitor<'a> for ShapeCostVisitor {
     fn visit_match_none(&mut self) -> Result<(), Self::Err> {
         Ok(())
     }
+
+    fn visit_regex(
+        &mut self,
+        _regex_query: &'a quickwit_query::query_ast::RegexQuery,
+    ) -> Result<(), Self::Err> {
+        // Worst case regex cost is Q_WC_LEADING; we do not model other regex cases yet.
+        self.add_leaf(Q_WC_LEADING);
+        Ok(())
+    }
+
+    // CalcField cost is not modeled yet: we do not have a cost model for calculated-field
+    // predicates. The default visit_calc_field adds no shape cost
 
     // visit_boost / visit_cache_node use the trait defaults, which recurse into
     // the inner AST transparently (cache_node skips on a cache hit).
@@ -248,7 +259,13 @@ mod tests {
 
     #[test]
     fn test_wildcard_factors() {
-        for (value, expected) in [("error*", 2.0), ("*error", 125.0)] {
+        for (value, expected) in [
+            ("error*", 2.0),
+            ("*error", 125.0),
+            ("?error*", 2.0),
+            ("??error*", 2.0),
+            ("???error*", 125.0),
+        ] {
             let query = WildcardQuery {
                 field: "message".to_string(),
                 value: value.to_string(),

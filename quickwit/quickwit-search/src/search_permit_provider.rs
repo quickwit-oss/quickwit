@@ -305,10 +305,17 @@ impl LeafPermitRequest {
             return None;
         }
         let permit_request = self.single_split_permit_requests.next()?;
+
+        if permit_request.job_cost > self.remaining_job_cost {
+            warn!(
+                job_cost = permit_request.job_cost,
+                remaining_job_cost = self.remaining_job_cost,
+                "remaining job cost underflow"
+            );
+        }
         self.remaining_job_cost = self
             .remaining_job_cost
-            .checked_sub(permit_request.job_cost)
-            .expect("remaining job cost underflow");
+            .saturating_sub(permit_request.job_cost);
         Some(permit_request)
     }
 
