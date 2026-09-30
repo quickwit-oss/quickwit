@@ -139,7 +139,7 @@ impl RegexExtractEqSpec {
     /// descriptor yields the field and term prefix of the postings target.
     pub(crate) fn try_build_warmup_prefilter_query(&self) -> Option<RegexQuery> {
         self.postings_target.as_ref()?;
-        // Do not register an automaton when execution must fall back to the JIT path.
+        // No automaton when the FST prefilter cannot be compiled: execution stays on the JIT path.
         get_or_compile_cached_fst_regex(&self.prefilter_regex)?;
         Some(RegexQuery {
             field: self.fast_field_name.clone(),
@@ -345,10 +345,11 @@ impl RegexExtractEqWeight {
         )))
     }
 
-    /// Postings path when term ordinals are not fast-field ordinals: collect matching terms under
-    /// the path prefix and accept them only if their count equals `num_matching_values`. Every
-    /// term is verbatim one of the fast-field values (raw indexing), so equal counts mean every
-    /// matching value is indexed. Used for JSON subfields and for plain fields with dropped values.
+    /// Postings path when the plain identical-dictionary path does not apply: collect matching
+    /// terms under the path prefix and accept them only if their count equals
+    /// `num_matching_values`. Every term is verbatim one of the fast-field values (raw indexing),
+    /// so equal counts mean every matching value is indexed. Used for JSON subfields and for plain
+    /// fields with dropped values.
     fn complete_matching_postings(
         &self,
         reader: &SegmentReader,

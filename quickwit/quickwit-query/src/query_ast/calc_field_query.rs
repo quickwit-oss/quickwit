@@ -38,8 +38,9 @@ use crate::{InvalidQuery, find_field_or_hit_dynamic};
 /// literal/extract form, with any capture index or none for the whole match) on a string fast
 /// field or a fast JSON subfield are evaluated once per distinct value instead of once per
 /// document: the dictionary is walked with an FST *prefilter* regex, each accepted value is checked
-/// exactly, and documents are selected by their first value. They match the same documents as the
-/// JIT path.
+/// exactly, and documents are selected by their first value. When every matching value is indexed,
+/// the scorer prefers the postings of those terms over scanning every document. They match the
+/// same documents as the JIT path.
 ///
 /// In particular, `REGEXP_EXTRACT` sees only the first value of a multivalued field. A matching
 /// later value does not make the predicate match.
@@ -65,8 +66,8 @@ impl CalcFieldQuery {
     /// `(EQ (REGEXP_EXTRACT field pattern capture_index) "literal")` (or the swapped form).
     ///
     /// Available only for fields, or JSON subfields, indexed with the raw tokenizer and a raw fast
-    /// field. Compilation
-    /// is shared with query construction and other splits by a bounded process-wide cache.
+    /// field. Compilation is shared with query construction and other splits by a bounded
+    /// process-wide cache.
     ///
     /// Returns `None` whenever the expression shape or field is not eligible.
     pub fn try_prefilter_regex_query(&self, schema: &TantivySchema) -> Option<RegexQuery> {
