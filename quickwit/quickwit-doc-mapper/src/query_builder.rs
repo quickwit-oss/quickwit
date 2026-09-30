@@ -564,19 +564,29 @@ mod test {
     #[test]
     fn test_calc_field_regex_extract_eq_warmup_on_dynamic_field() {
         let mut schema_builder = Schema::builder();
-        schema_builder.add_json_field(DYNAMIC_FIELD_NAME, STRING | FAST);
+        let dynamic = schema_builder.add_json_field(DYNAMIC_FIELD_NAME, STRING | FAST);
         let schema = schema_builder.build();
         let context = BuildTantivyAstContext::for_test(&schema);
 
-        // JSON subfields only read the fast column: their terms share the JSON field's inverted
-        // index with every other path, so no postings prefilter is warmed.
+        // The predicate reads the subfield's fast column, and the postings of the terms accepted
+        // by the prefilter under the subfield's path in the dynamic field.
         let expression = r#"(EQ (REGEXP_EXTRACT custom.programName "^/([a-z]+)/(v[0-9]+)/([a-z]+)$" 3u64) "sports")"#;
         let (_, warmup) = build_query(calc_field(expression), &context, None).unwrap();
         assert_eq!(
             warmup.fast_fields,
             expected_fast_fields(&["custom.programName"])
         );
-        assert!(warmup.automatons_grouped_by_field.is_empty());
+        let mut term_for_path = Term::from_field_json_path(dynamic, "custom.programName", false);
+        term_for_path.append_type_and_str("");
+        let path_prefix = term_for_path.value().as_serialized()[1..].to_vec();
+        let automaton = Automaton::Regex(
+            Some(path_prefix),
+            "/(?:[a-z]+)/(?:v[0-9]+)/sports".to_string(),
+        );
+        assert_eq!(
+            warmup.automatons_grouped_by_field,
+            HashMap::from([(dynamic, HashSet::from([automaton]))])
+        );
     }
 
     fn full_text_query_for_warmup(field: &str, tokenizer: Option<&str>) -> QueryAst {

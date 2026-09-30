@@ -22,11 +22,11 @@ use tantivy::postings::TermInfo;
 use tantivy::query::{
     BitSetDocSet, ConstScorer, EmptyScorer, EnableScoring, Explanation, Query, Scorer, Weight,
 };
-use tantivy::schema::IndexRecordOption;
+use tantivy::schema::{Field, IndexRecordOption};
 use tantivy::{DocId, DocSet, Score, SegmentReader, TERMINATED, TantivyError};
 use tantivy_common::BitSet;
 
-use super::{RegexQuery, TantivyQueryAst};
+use super::{JsonPathPrefix, RegexQuery, TantivyQueryAst};
 
 const CACHE_CAPACITY: NonZeroUsize = NonZeroUsize::new(256).unwrap();
 
@@ -74,7 +74,29 @@ pub(crate) struct RegexExtractEqSpec {
     prefilter_regex: String,
     isolated_pattern: String,
     literal: String,
-    can_use_postings: bool,
+    postings_target: Option<PostingsTarget>,
+}
+
+/// Terms of an inverted index holding the values of a string fast field.
+///
+/// Hidden contract: once `term_prefix` is removed, every term of `field` starting with it is
+/// verbatim one of the fast-field values. The field is indexed with the raw tokenizer and has a
+/// raw fast field: the raw tokenizer may drop a value (such as a long one) but never alters it,
+/// and it drops or keeps a value the same way in every document. The converse does not hold: a
+/// fast-field value may have no term. Merges drop the values without alive documents from both
+/// dictionaries.
+#[derive(Debug, Clone)]
+pub(crate) struct PostingsTarget {
+    field: Field,
+    /// Empty for a plain field. For a JSON subfield, the encoded path and string type starting its
+    /// string terms in the JSON field's term dictionary, which it shares with every other path.
+    term_prefix: Vec<u8>,
+}
+
+impl PostingsTarget {
+    pub(crate) fn new(field: Field, term_prefix: Vec<u8>) -> Self {
+        PostingsTarget { field, term_prefix }
+    }
 }
 
 impl RegexExtractEqSpec {
@@ -83,14 +105,14 @@ impl RegexExtractEqSpec {
         prefilter_regex: String,
         isolated_pattern: String,
         literal: &str,
-        can_use_postings: bool,
+        postings_target: Option<PostingsTarget>,
     ) -> Self {
         RegexExtractEqSpec {
             fast_field_name: fast_field_name.to_string(),
             prefilter_regex,
             isolated_pattern,
             literal: literal.to_string(),
-            can_use_postings,
+            postings_target,
         }
     }
 
@@ -106,19 +128,18 @@ impl RegexExtractEqSpec {
             prefilter_automaton,
             extract_regex,
             literal: self.literal,
-            can_use_postings: self.can_use_postings,
+            postings_target: self.postings_target,
         }))
     }
 
     /// Builds the string-backed prefilter descriptor used to warm term dictionaries and postings.
     ///
     /// The descriptor carries the pattern rather than the compiled automaton; leaf warmup obtains
-    /// that automaton from the process-local cache using the same pattern.
+    /// that automaton from the process-local cache using the same pattern. Resolving the
+    /// descriptor yields the field and term prefix of the postings target.
     pub(crate) fn try_build_warmup_prefilter_query(&self) -> Option<RegexQuery> {
-        if !self.can_use_postings {
-            return None;
-        }
-        // Do not register an automaton when execution must fall back to the JIT path.
+        self.postings_target.as_ref()?;
+        // No automaton when the FST prefilter cannot be compiled: execution stays on the JIT path.
         get_or_compile_cached_fst_regex(&self.prefilter_regex)?;
         Some(RegexQuery {
             field: self.fast_field_name.clone(),
@@ -139,15 +160,13 @@ impl RegexExtractEqSpec {
 /// - `value_matches` must keep the semantics of the jitexpr `REGEXP_EXTRACT` function
 ///   (`Regex::new(pattern)`, leftmost-first `captures`). `pattern` has a single capturing group,
 ///   group 1, standing for the requested capture of the original pattern.
-/// - `can_use_postings` states that the schema guarantees every term of the field is one of its
-///   fast-field values (terms ⊆ values): the field is indexed with the raw tokenizer and has a raw
-///   fast field, and the raw tokenizer may drop a value (such as a long one) but never alters it.
-///   Merges drop the values without alive documents from both dictionaries. The converse does not
-///   hold, so the scorer uses the postings only in segments where both dictionaries have the same
-///   number of entries, which makes term ordinals equal to fast-field value ordinals. It is never
-///   set for a JSON subfield, whose terms share the JSON field's inverted index with every other
-///   path. When it is set, callers warm the term dictionary and postings with the prefilter pattern
-///   from [`RegexExtractEqSpec`] before searching.
+/// - `postings_target`, when set, satisfies the contract of [`PostingsTarget`]. Callers then warm
+///   its term dictionary and postings with the prefilter pattern from [`RegexExtractEqSpec`] before
+///   searching. The scorer uses postings when every matching fast-field value is indexed: for a
+///   plain field whose term and fast-field dictionaries have the same size, term ordinals are
+///   fast-field ordinals and one term-dictionary walk is enough; otherwise it compares the number
+///   of matching terms to the number of matching fast-field values (required for JSON subfields,
+///   whose terms share the field's dictionary with every other path).
 /// - Unlike the JIT predicate, which treats a column it fails to open as absent, the scorer returns
 ///   errors from opening the column or reading its dictionary, so a corrupt split fails the search
 ///   instead of silently matching nothing.
@@ -157,7 +176,7 @@ pub(crate) struct RegexExtractEqPlan {
     prefilter_automaton: Arc<tantivy_fst::Regex>,
     extract_regex: Arc<regex::Regex>,
     literal: String,
-    can_use_postings: bool,
+    postings_target: Option<PostingsTarget>,
 }
 
 impl RegexExtractEqPlan {
@@ -196,6 +215,12 @@ impl Query for RegexExtractEqQuery {
     }
 }
 
+/// Postings of the terms whose values satisfy the predicate.
+struct MatchingPostings {
+    inverted_index: Arc<InvertedIndexReader>,
+    term_infos: Vec<TermInfo>,
+}
+
 struct RegexExtractEqWeight {
     plan: Arc<RegexExtractEqPlan>,
 }
@@ -206,13 +231,39 @@ impl Weight for RegexExtractEqWeight {
             // Without the column every value is `None`, which `EQ` never matches.
             return Ok(Box::new(EmptyScorer));
         };
-        let num_values = str_column.dictionary().num_terms() as u32;
         let max_doc = reader.max_doc();
         let mut doc_bitset = BitSet::with_max_value(max_doc);
-        if let Some(inverted_index) = self.inverted_index_with_all_values(reader, &str_column)? {
-            self.collect_from_postings(&inverted_index, &str_column, num_values, &mut doc_bitset)?;
+        let ords = str_column.ords();
+
+        // Prefer visiting only the postings of matching terms over scanning every document.
+        // Two ways to prove those postings are complete (every matching fast-field value is
+        // indexed), depending on whether term ordinals equal fast-field ordinals.
+        //
+        // 1. Plain field, dictionaries the same size: terms == values, so ordinals coincide. One
+        //    term-dictionary walk yields both matching ords and term infos.
+        if let Some((matching_ords, matching_postings)) =
+            self.plain_complete_matching_postings(reader, &str_column)?
+        {
+            if matching_ords.len() == 0 {
+                return Ok(Box::new(EmptyScorer));
+            }
+            collect_from_postings(&matching_postings, ords, &matching_ords, &mut doc_bitset)?;
         } else {
-            self.collect_from_first_values(&str_column, num_values, max_doc, &mut doc_bitset)?;
+            // 2. Otherwise (JSON subfield, or plain field with some values dropped from the index):
+            //    walk the fast-field dictionary for matching ords, then the term dictionary behind
+            //    the path prefix. Equal matching counts mean every matching value is indexed;
+            //    otherwise fall back to a first-value scan of every doc.
+            let matching_ords = self.matching_value_ords(&str_column)?;
+            if matching_ords.len() == 0 {
+                return Ok(Box::new(EmptyScorer));
+            }
+            if let Some(matching_postings) =
+                self.complete_matching_postings(reader, matching_ords.len())?
+            {
+                collect_from_postings(&matching_postings, ords, &matching_ords, &mut doc_bitset)?;
+            } else {
+                collect_from_first_values(ords, &matching_ords, max_doc, &mut doc_bitset);
+            }
         }
         let doc_set = BitSetDocSet::from(doc_bitset);
         Ok(Box::new(ConstScorer::new(doc_set, boost)))
@@ -230,75 +281,10 @@ impl Weight for RegexExtractEqWeight {
 }
 
 impl RegexExtractEqWeight {
-    /// Returns the field's inverted index when its terms are exactly the fast-field values. Both
-    /// dictionaries are then sorted the same way, so term ordinals are fast-field value ordinals.
-    fn inverted_index_with_all_values(
-        &self,
-        reader: &SegmentReader,
-        str_column: &StrColumn,
-    ) -> tantivy::Result<Option<Arc<InvertedIndexReader>>> {
-        if !self.plan.can_use_postings {
-            return Ok(None);
-        }
-        let field = reader.schema().get_field(&self.plan.fast_field_name)?;
-        let inverted_index = reader.inverted_index(field)?;
-        // The terms are a subset of the fast-field values, so equal counts mean the tokenizer
-        // dropped no value.
-        if inverted_index.terms().num_terms() != str_column.dictionary().num_terms() {
-            return Ok(None);
-        }
-        Ok(Some(inverted_index))
-    }
-
-    /// Walks the term dictionary and visits only the documents in the postings of the matching
-    /// terms. Requires the terms to be exactly the fast-field values.
-    fn collect_from_postings(
-        &self,
-        inverted_index: &InvertedIndexReader,
-        str_column: &StrColumn,
-        num_values: u32,
-        doc_bitset: &mut BitSet,
-    ) -> tantivy::Result<()> {
-        let mut matching_ords = BitSet::with_max_value(num_values);
-        let mut matching_term_infos: Vec<TermInfo> = Vec::new();
-        let mut term_stream = inverted_index
-            .terms()
-            .search(self.plan.prefilter_automaton.as_ref())
-            .into_stream()?;
-        while term_stream.advance() {
-            if self.plan.value_matches(term_stream.key()) {
-                // Term ordinals are fast-field value ordinals and are represented as u32, like
-                // the column ordinals.
-                matching_ords.insert(term_stream.term_ord() as u32);
-                matching_term_infos.push(term_stream.value().clone());
-            }
-        }
-        let ords = str_column.ords();
-        // A document of a single-valued column holds only the value of the term, which matches.
-        let check_first_value = ords.get_cardinality() == Cardinality::Multivalued;
-        for term_info in &matching_term_infos {
-            let mut postings =
-                inverted_index.read_postings_from_terminfo(term_info, IndexRecordOption::Basic)?;
-            let mut doc = postings.doc();
-            while doc != TERMINATED {
-                // A multivalued document may hold the matching value after its first value.
-                if !check_first_value || first_value_matches(ords, &matching_ords, doc) {
-                    doc_bitset.insert(doc);
-                }
-                doc = postings.advance();
-            }
-        }
-        Ok(())
-    }
-
-    /// Walks the fast-field dictionary and checks the first value of every document.
-    fn collect_from_first_values(
-        &self,
-        str_column: &StrColumn,
-        num_values: u32,
-        max_doc: DocId,
-        doc_bitset: &mut BitSet,
-    ) -> tantivy::Result<()> {
+    /// Walks the fast-field dictionary and returns the ordinals of the values satisfying the
+    /// predicate.
+    fn matching_value_ords(&self, str_column: &StrColumn) -> tantivy::Result<BitSet> {
+        let num_values = str_column.dictionary().num_terms() as u32;
         let mut matching_ords = BitSet::with_max_value(num_values);
         let mut value_stream = str_column
             .dictionary()
@@ -310,16 +296,129 @@ impl RegexExtractEqWeight {
                 matching_ords.insert(value_stream.term_ord() as u32);
             }
         }
-        if matching_ords.len() == 0 {
-            return Ok(());
+        Ok(matching_ords)
+    }
+
+    /// Cheap postings path for a plain field whose inverted and fast-field dictionaries hold the
+    /// same keys. Returns `None` when postings are unavailable, the field is a JSON subfield
+    /// (shared term dictionary, ordinals diverge), or any value was dropped from the index.
+    fn plain_complete_matching_postings(
+        &self,
+        reader: &SegmentReader,
+        str_column: &StrColumn,
+    ) -> tantivy::Result<Option<(BitSet, MatchingPostings)>> {
+        let Some(postings_target) = &self.plan.postings_target else {
+            return Ok(None);
+        };
+        // A non-empty prefix means a JSON path: terms of other paths share this inverted index,
+        // so whole-dictionary sizes and term ordinals are not comparable to the subfield column.
+        if !postings_target.term_prefix.is_empty() {
+            return Ok(None);
         }
-        let ords = str_column.ords();
-        for doc in 0..max_doc {
-            if first_value_matches(ords, &matching_ords, doc) {
-                doc_bitset.insert(doc);
+        let inverted_index = reader.inverted_index(postings_target.field)?;
+        // Equal counts mean the raw tokenizer dropped no value, so both dictionaries hold the same
+        // keys in the same order and term ordinals are fast-field ordinals.
+        if inverted_index.terms().num_terms() != str_column.dictionary().num_terms() {
+            return Ok(None);
+        }
+        let num_values = str_column.dictionary().num_terms() as u32;
+        let mut matching_ords = BitSet::with_max_value(num_values);
+        let mut term_infos: Vec<TermInfo> = Vec::new();
+        let mut term_stream = inverted_index
+            .terms()
+            .search(self.plan.prefilter_automaton.as_ref())
+            .into_stream()?;
+        while term_stream.advance() {
+            if self.plan.value_matches(term_stream.key()) {
+                // Safe only because the dictionaries are identical: this term ordinal is the
+                // fast-field ordinal used by `first_value_matches` on multivalued columns.
+                matching_ords.insert(term_stream.term_ord() as u32);
+                term_infos.push(term_stream.value().clone());
             }
         }
-        Ok(())
+        Ok(Some((
+            matching_ords,
+            MatchingPostings {
+                inverted_index,
+                term_infos,
+            },
+        )))
+    }
+
+    /// Postings path when the plain identical-dictionary path does not apply: collect matching
+    /// terms under the path prefix and accept them only if their count equals
+    /// `num_matching_values`. Every term is verbatim one of the fast-field values (raw indexing),
+    /// so equal counts mean every matching value is indexed. Used for JSON subfields and for plain
+    /// fields with dropped values.
+    fn complete_matching_postings(
+        &self,
+        reader: &SegmentReader,
+        num_matching_values: usize,
+    ) -> tantivy::Result<Option<MatchingPostings>> {
+        let Some(postings_target) = &self.plan.postings_target else {
+            return Ok(None);
+        };
+        let inverted_index = reader.inverted_index(postings_target.field)?;
+        // Same automaton leaf warmup loads from the prefilter `RegexQuery` (path prefix + pattern).
+        let automaton = JsonPathPrefix {
+            prefix: postings_target.term_prefix.clone(),
+            automaton: self.plan.prefilter_automaton.clone(),
+        };
+        let mut term_infos: Vec<TermInfo> = Vec::new();
+        let mut term_stream = inverted_index.terms().search(automaton).into_stream()?;
+        while term_stream.advance() {
+            // Strip the JSON path and string-type bytes; the remainder is the indexed value.
+            let value = &term_stream.key()[postings_target.term_prefix.len()..];
+            if self.plan.value_matches(value) {
+                term_infos.push(term_stream.value().clone());
+            }
+        }
+        if term_infos.len() != num_matching_values {
+            return Ok(None);
+        }
+        Ok(Some(MatchingPostings {
+            inverted_index,
+            term_infos,
+        }))
+    }
+}
+
+/// Inserts documents that hold a matching term, keeping JIT first-value semantics.
+fn collect_from_postings(
+    matching_postings: &MatchingPostings,
+    ords: &Column<u64>,
+    matching_ords: &BitSet,
+    doc_bitset: &mut BitSet,
+) -> tantivy::Result<()> {
+    // Single-valued: the posting's value is the document's only (hence first) value.
+    // Multivalued: the matching term may appear after a non-matching first value.
+    let check_first_value = ords.get_cardinality() == Cardinality::Multivalued;
+    for term_info in &matching_postings.term_infos {
+        let mut postings = matching_postings
+            .inverted_index
+            .read_postings_from_terminfo(term_info, IndexRecordOption::Basic)?;
+        let mut doc = postings.doc();
+        while doc != TERMINATED {
+            if !check_first_value || first_value_matches(ords, matching_ords, doc) {
+                doc_bitset.insert(doc);
+            }
+            doc = postings.advance();
+        }
+    }
+    Ok(())
+}
+
+/// Fallback when at least one matching value has no term: check every document's first value.
+fn collect_from_first_values(
+    ords: &Column<u64>,
+    matching_ords: &BitSet,
+    max_doc: DocId,
+    doc_bitset: &mut BitSet,
+) {
+    for doc in 0..max_doc {
+        if first_value_matches(ords, matching_ords, doc) {
+            doc_bitset.insert(doc);
+        }
     }
 }
 
@@ -335,10 +434,11 @@ fn first_value_matches(ords: &Column<u64>, matching_ords: &BitSet, doc: DocId) -
 mod tests {
     use tantivy::collector::Count;
     use tantivy::jitexpr::ast::deserialize;
+    use tantivy::query::Query;
     use tantivy::query::doc_predicate_query::{DocPredicateQuery, JitExprPredicate};
-    use tantivy::schema::{FAST, STRING, Schema, TEXT, TextOptions};
+    use tantivy::schema::{FAST, JsonObjectOptions, OwnedValue, STRING, Schema, TEXT, TextOptions};
     use tantivy::tokenizer::MAX_TOKEN_LEN;
-    use tantivy::{Index, TantivyDocument, doc};
+    use tantivy::{Index, Searcher, TantivyDocument, doc};
 
     use crate::DEFAULT_REMOVE_TOKEN_LENGTH;
     use crate::query_ast::{BuildTantivyAstContext, CalcFieldQuery, QueryAst};
@@ -364,7 +464,10 @@ mod tests {
             "svc-api-prod".to_string(),
             "^svc-([a-z]+)-prod$".to_string(),
             "api",
-            true,
+            Some(super::PostingsTarget::new(
+                tantivy::schema::Field::from_field_id(0),
+                Vec::new(),
+            )),
         );
         let first = spec.clone().compile_execution_plan().unwrap();
         let second = spec.compile_execution_plan().unwrap();
@@ -796,15 +899,98 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_regex_extract_eq_matches_json_subfield() {
+    /// Returns whether `query`, an optimized calculated-field query, reads the postings of the
+    /// matching terms rather than every document's first value in every segment of `searcher`.
+    fn reads_postings(query: &dyn Query, searcher: &Searcher) -> bool {
+        let plan = query
+            .downcast_ref::<super::RegexExtractEqQuery>()
+            .expect("query should be a RegexExtractEqQuery")
+            .plan
+            .clone();
+        let weight = super::RegexExtractEqWeight { plan: plan.clone() };
+        searcher.segment_readers().iter().all(|reader| {
+            let Some(str_column) = reader.fast_fields().str(&plan.fast_field_name).unwrap() else {
+                return false;
+            };
+            if let Some((matching_ords, _)) = weight
+                .plain_complete_matching_postings(reader, &str_column)
+                .unwrap()
+            {
+                return matching_ords.len() > 0;
+            }
+            let matching_ords = weight.matching_value_ords(&str_column).unwrap();
+            if matching_ords.len() == 0 {
+                return false;
+            }
+            weight
+                .complete_matching_postings(reader, matching_ords.len())
+                .unwrap()
+                .is_some()
+        })
+    }
+
+    /// Indexes one document per entry of `json_values` in the JSON field `field_name` with the
+    /// Quickwit tokenizers, asserts that each eligible expression matches its expected number of
+    /// documents like the JIT, and returns whether each one read postings.
+    fn json_regex_extract_eq_reads_postings(
+        field_name: &str,
+        json_options: impl Into<JsonObjectOptions>,
+        json_values: &[serde_json::Value],
+        expressions: &[(&str, usize)],
+    ) -> Vec<bool> {
         let mut schema_builder = Schema::builder();
-        let attributes = schema_builder.add_json_field("attributes", STRING | FAST);
-        let index = Index::create_in_ram(schema_builder.build());
+        let json_field = schema_builder.add_json_field(field_name, json_options);
+        let mut index = Index::create_in_ram(schema_builder.build());
+        index.set_tokenizers(
+            crate::create_default_quickwit_tokenizer_manager()
+                .tantivy_manager()
+                .clone(),
+        );
+        index.set_fast_field_tokenizers(
+            crate::get_quickwit_fastfield_normalizer_manager()
+                .tantivy_manager()
+                .clone(),
+        );
         let mut writer = index
             .writer_with_num_threads::<TantivyDocument>(1, 50_000_000)
             .unwrap();
-        for json_value in [
+        for json_value in json_values {
+            let mut document = TantivyDocument::default();
+            document.add_field_value(json_field, &OwnedValue::from(json_value.clone()));
+            writer.add_document(document).unwrap();
+        }
+        writer.commit().unwrap();
+
+        let schema = index.schema();
+        let context = BuildTantivyAstContext::for_test(&schema);
+        let searcher = index.reader().unwrap().searcher();
+        let mut reads_postings_per_expression = Vec::new();
+        for (expression, expected_count) in expressions {
+            let query = calc_field(expression)
+                .build_tantivy_query(&context)
+                .unwrap();
+            assert!(
+                query.downcast_ref::<DocPredicateQuery>().is_none(),
+                "{expression}"
+            );
+            assert_eq!(
+                jit_count(&searcher, expression),
+                *expected_count,
+                "jit {expression}"
+            );
+            assert_eq!(
+                searcher.search(&*query, &Count).unwrap(),
+                *expected_count,
+                "calc field {expression}"
+            );
+            reads_postings_per_expression.push(reads_postings(&*query, &searcher));
+        }
+        reads_postings_per_expression
+    }
+
+    #[test]
+    fn test_regex_extract_eq_matches_json_subfield() {
+        let json_values = [
             serde_json::json!({"service": "svc-api-prod"}),
             serde_json::json!({"service": "svc-web-prod"}),
             // The same value under another path must not match.
@@ -815,65 +1001,52 @@ mod tests {
             // A non-string value at the path is not part of the string column.
             serde_json::json!({"service": 12}),
             serde_json::json!({"nested": {"service": "svc-api-prod"}}),
-        ] {
-            let mut document = TantivyDocument::default();
-            document.add_field_value(attributes, &tantivy::schema::OwnedValue::from(json_value));
-            writer.add_document(document).unwrap();
-        }
-        writer.commit().unwrap();
-
-        let schema = index.schema();
-        let context = BuildTantivyAstContext::for_test(&schema);
-        let searcher = index.reader().unwrap().searcher();
-        for (expression, expected_count) in [
+        ];
+        let expressions = [
             (
                 r#"(EQ (REGEXP_EXTRACT attributes.service "^svc-([a-z]+)-prod$" 1u64) "api")"#,
-                2usize,
+                2,
             ),
             (
                 r#"(EQ (REGEXP_EXTRACT attributes.nested.service "^svc-([a-z]+)-prod$" 1u64) "api")"#,
                 1,
             ),
+            // Without the column, the scorer matches nothing without reading postings.
             (
                 r#"(EQ (REGEXP_EXTRACT attributes.missing "^svc-([a-z]+)-prod$" 1u64) "api")"#,
                 0,
             ),
-        ] {
-            let query = calc_field(expression)
-                .build_tantivy_query(&context)
-                .unwrap();
-            assert!(
-                query.downcast_ref::<DocPredicateQuery>().is_none(),
-                "{expression}"
-            );
-            // JSON terms are not the column values, so no postings prefilter is warmed.
-            assert!(
-                make_prefilter(expression, &schema).is_none(),
-                "{expression}"
-            );
-            assert_eq!(
-                jit_count(&searcher, expression),
-                expected_count,
-                "jit {expression}"
-            );
-            assert_eq!(
-                searcher.search(&*query, &Count).unwrap(),
-                expected_count,
-                "calc field {expression}"
-            );
-        }
+        ];
+        let reads_postings = json_regex_extract_eq_reads_postings(
+            "attributes",
+            STRING | FAST,
+            &json_values,
+            &expressions,
+        );
+        assert_eq!(reads_postings, [true, true, false]);
+
+        let schema = {
+            let mut schema_builder = Schema::builder();
+            schema_builder.add_json_field("attributes", STRING | FAST);
+            schema_builder.add_json_field("lowercased", STRING.set_fast("lowercase"));
+            schema_builder.build()
+        };
+        let prefilter = make_prefilter(expressions[0].0, &schema).unwrap();
+        assert_eq!(prefilter.field, "attributes.service");
+        assert_eq!(prefilter.regex, "svc-api-prod");
+        // A normalized fast field no longer holds the indexed values.
+        assert!(
+            make_prefilter(
+                r#"(EQ (REGEXP_EXTRACT lowercased.service "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+                &schema,
+            )
+            .is_none()
+        );
     }
 
     #[test]
     fn test_regex_extract_eq_matches_dynamic_field() {
-        let mut schema_builder = Schema::builder();
-        let dynamic = schema_builder
-            .add_json_field(crate::query_ast::utils::DYNAMIC_FIELD_NAME, STRING | FAST);
-        let index = Index::create_in_ram(schema_builder.build());
-        let mut writer = index
-            .writer_with_num_threads::<TantivyDocument>(1, 50_000_000)
-            .unwrap();
-        for json_value in [
+        let json_values = [
             serde_json::json!({"custom": {"programName": "/foo/v1/sports"}}),
             serde_json::json!({"custom": {"programName": "/bar/v2/sports"}}),
             serde_json::json!({"custom": {"programName": "/foo/v1/news"}}),
@@ -883,24 +1056,79 @@ mod tests {
             serde_json::json!({"custom": {"programName": ["/foo/v1/sports", "not-a-match"]}}),
             // A number at the path is not part of the string column.
             serde_json::json!({"custom": {"programName": 42}}),
-        ] {
-            let mut document = TantivyDocument::default();
-            document.add_field_value(dynamic, &tantivy::schema::OwnedValue::from(json_value));
-            writer.add_document(document).unwrap();
+        ];
+        // Names absent from the schema resolve to the dynamic field, for both paths.
+        let expression = r#"(EQ (REGEXP_EXTRACT custom.programName "^/([a-z]+)/(v[0-9]+)/([a-z]+)$" 3u64) "sports")"#;
+        let reads_postings = json_regex_extract_eq_reads_postings(
+            crate::query_ast::utils::DYNAMIC_FIELD_NAME,
+            STRING | FAST,
+            &json_values,
+            &[(expression, 3)],
+        );
+        assert_eq!(reads_postings, [true]);
+    }
+
+    #[test]
+    fn test_regex_extract_eq_json_postings_require_indexed_matching_values() {
+        let expression =
+            r#"(EQ (REGEXP_EXTRACT attributes.service "^svc-([a-z]+)-prod" 1u64) "api")"#;
+        let long_value = |prefix: &str| {
+            let suffix = "x".repeat(DEFAULT_REMOVE_TOKEN_LENGTH);
+            serde_json::json!({ "service": format!("{prefix}{suffix}") })
+        };
+        // A long non-matching value is not indexed, but the matching values all are.
+        let reads_postings = json_regex_extract_eq_reads_postings(
+            "attributes",
+            STRING | FAST,
+            &[
+                serde_json::json!({"service": "svc-api-prod"}),
+                long_value("svc-web-prod"),
+            ],
+            &[(expression, 1)],
+        );
+        assert_eq!(reads_postings, [true]);
+        // A long matching value has no term: every document is checked.
+        let reads_postings = json_regex_extract_eq_reads_postings(
+            "attributes",
+            STRING | FAST,
+            &[
+                serde_json::json!({"service": "svc-api-prod"}),
+                long_value("svc-api-prod"),
+                serde_json::json!({"service": "svc-web-prod"}),
+            ],
+            &[(expression, 2)],
+        );
+        assert_eq!(reads_postings, [false]);
+    }
+
+    #[test]
+    fn test_regex_extract_eq_postings_ignore_unindexed_non_matching_values() {
+        let mut schema_builder = Schema::builder();
+        let service = schema_builder.add_text_field("service", STRING | FAST);
+        let mut index = Index::create_in_ram(schema_builder.build());
+        index.set_tokenizers(
+            crate::create_default_quickwit_tokenizer_manager()
+                .tantivy_manager()
+                .clone(),
+        );
+        let mut writer = index
+            .writer_with_num_threads::<TantivyDocument>(1, 50_000_000)
+            .unwrap();
+        let unindexed_value = format!("svc-web-prod{}", "x".repeat(DEFAULT_REMOVE_TOKEN_LENGTH));
+        for value in ["svc-api-prod", unindexed_value.as_str()] {
+            writer.add_document(doc!(service => value)).unwrap();
         }
         writer.commit().unwrap();
 
         let schema = index.schema();
         let context = BuildTantivyAstContext::for_test(&schema);
         let searcher = index.reader().unwrap().searcher();
-        // Names absent from the schema resolve to the dynamic field, for both paths.
-        let expression = r#"(EQ (REGEXP_EXTRACT custom.programName "^/([a-z]+)/(v[0-9]+)/([a-z]+)$" 3u64) "sports")"#;
+        let expression = r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod" 1u64) "api")"#;
         let query = calc_field(expression)
             .build_tantivy_query(&context)
             .unwrap();
-        assert!(query.downcast_ref::<DocPredicateQuery>().is_none());
-        assert!(make_prefilter(expression, &schema).is_none());
-        assert_eq!(jit_count(&searcher, expression), 3);
-        assert_eq!(searcher.search(&*query, &Count).unwrap(), 3);
+        assert_eq!(jit_count(&searcher, expression), 1);
+        assert_eq!(searcher.search(&*query, &Count).unwrap(), 1);
+        assert!(reads_postings(&*query, &searcher));
     }
 }
