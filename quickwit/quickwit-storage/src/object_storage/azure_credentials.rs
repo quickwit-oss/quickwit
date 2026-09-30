@@ -26,8 +26,8 @@ use azure_core::credentials::TokenCredential;
 use azure_core::http::policies::Policy;
 use azure_core::http::{ClientOptions, Url};
 use azure_identity::{
-    ClientSecretCredential, ManagedIdentityCredential, ManagedIdentityCredentialOptions,
-    UserAssignedId, WorkloadIdentityCredential,
+    AzureCliCredential, ClientSecretCredential, ManagedIdentityCredential,
+    ManagedIdentityCredentialOptions, UserAssignedId, WorkloadIdentityCredential,
 };
 use azure_storage_blob::{BlobContainerClient, BlobContainerClientOptions};
 use quickwit_config::AzureStorageConfig;
@@ -64,6 +64,10 @@ enum TokenCredentialKind {
     ManagedIdentity {
         user_assigned_client_id: Option<String>,
     },
+    /// The identity `az login` cached, for a developer machine or a CI runner rather than a pod.
+    /// Only reachable by pinning `AZURE_CREDENTIAL_KIND`, never by detection: no environment
+    /// variable describes it.
+    AzureCli,
 }
 
 impl fmt::Debug for TokenCredentialKind {
@@ -87,6 +91,7 @@ impl fmt::Debug for TokenCredentialKind {
                 .debug_struct("ManagedIdentity")
                 .field("user_assigned_client_id", user_assigned_client_id)
                 .finish(),
+            Self::AzureCli => formatter.write_str("AzureCli"),
         }
     }
 }
@@ -153,29 +158,45 @@ pub(crate) fn resolve_credential(
     let token_credential = resolve_token_credential().map_err(|error| {
         StorageResolverError::InvalidConfig(format!(
             "could not build an Azure token credential: {error}. Set an access key, or run with \
-             workload identity or managed identity configured"
+             workload identity, managed identity, or the Azure CLI configured"
         ))
     })?;
     Ok(AzureCredential::Token(token_credential))
 }
 
-/// Builds the token credential the environment describes.
-fn resolve_token_credential() -> azure_core::Result<Arc<dyn TokenCredential>> {
-    let credential_kind = env::var(AZURE_CREDENTIAL_KIND)
-        .map(|kind| kind.trim().to_lowercase())
-        .unwrap_or_default();
+/// Maps an explicit `AZURE_CREDENTIAL_KIND` to the provider it names.
+///
+/// `None` when the variable is unset, empty, or names no provider, in which case the caller
+/// detects from the environment instead.
+///
+/// `azure_identity` 0.21 matched this variable after `replace(' ', "").to_lowercase()`, so
+/// `Azure CLI` and `azurecli` were the same value. Normalizing the same way keeps a deployment
+/// that pinned the variable working across the upgrade.
+fn select_pinned_credential_kind(
+    credential_kind: &str,
+    var_fn: impl Fn(&str) -> Option<String>,
+) -> Option<TokenCredentialKind> {
+    let credential_kind = credential_kind.trim().replace(' ', "").to_lowercase();
 
-    let kind = match credential_kind.as_str() {
-        "workloadidentity" => TokenCredentialKind::WorkloadIdentity,
-        "managedidentity" => TokenCredentialKind::ManagedIdentity {
-            user_assigned_client_id: env::var(AZURE_CLIENT_ID)
-                .ok()
+    match credential_kind.as_str() {
+        "workloadidentity" => Some(TokenCredentialKind::WorkloadIdentity),
+        "managedidentity" => Some(TokenCredentialKind::ManagedIdentity {
+            user_assigned_client_id: var_fn(AZURE_CLIENT_ID)
                 .map(|client_id| client_id.trim().to_string())
                 .filter(|client_id| !client_id.is_empty()),
-        },
-        // An empty or unrecognized value falls through to detection.
-        _ => select_token_credential_kind(|name| env::var(name).ok()),
-    };
+        }),
+        "azurecli" => Some(TokenCredentialKind::AzureCli),
+        _ => None,
+    }
+}
+
+/// Builds the token credential the environment describes.
+fn resolve_token_credential() -> azure_core::Result<Arc<dyn TokenCredential>> {
+    let credential_kind = env::var(AZURE_CREDENTIAL_KIND).unwrap_or_default();
+    let var_fn = |name: &str| env::var(name).ok();
+    // An empty or unrecognized value falls through to detection.
+    let kind = select_pinned_credential_kind(&credential_kind, var_fn)
+        .unwrap_or_else(|| select_token_credential_kind(var_fn));
     build_token_credential(kind)
 }
 
@@ -218,6 +239,10 @@ fn build_token_credential(
                 }
             };
             Ok(ManagedIdentityCredential::new(options)?)
+        }
+        TokenCredentialKind::AzureCli => {
+            info!("using azure cli credential");
+            Ok(AzureCliCredential::new(None)?)
         }
     }
 }
@@ -446,6 +471,74 @@ mod tests {
                 user_assigned_client_id: Some("client".to_owned()),
             }
         );
+    }
+
+    /// `azure_identity` 0.21 accepted `azurecli`, and a deployment pinning it authenticates
+    /// through `az login`. Falling through to detection instead lands on managed identity and
+    /// sends the request to IMDS, which loses blob access entirely.
+    #[test]
+    fn test_azure_cli_kind_is_pinned() {
+        let kind = select_pinned_credential_kind("azurecli", env_from(&[]));
+        assert_eq!(kind, Some(TokenCredentialKind::AzureCli));
+    }
+
+    /// 0.21 matched after stripping spaces and lowercasing, so every spelling below named the
+    /// same provider and has to keep doing so.
+    #[test]
+    fn test_kind_matching_ignores_case_and_spaces() {
+        for spelling in [
+            "Azure CLI",
+            "AzureCLI",
+            " azurecli ",
+            "azure cli",
+            "\tazurecli\n",
+        ] {
+            assert_eq!(
+                select_pinned_credential_kind(spelling, env_from(&[])),
+                Some(TokenCredentialKind::AzureCli),
+                "`{spelling}` should name the Azure CLI credential"
+            );
+        }
+        assert_eq!(
+            select_pinned_credential_kind("Workload Identity", env_from(&[])),
+            Some(TokenCredentialKind::WorkloadIdentity)
+        );
+    }
+
+    /// Pinning managed identity still honours `AZURE_CLIENT_ID`, which names a user-assigned
+    /// identity, and still trims it.
+    #[test]
+    fn test_pinned_managed_identity_keeps_the_user_assigned_id() {
+        let kind =
+            select_pinned_credential_kind("managedidentity", env_from(&[(AZURE_CLIENT_ID, " c ")]));
+        assert_eq!(
+            kind,
+            Some(TokenCredentialKind::ManagedIdentity {
+                user_assigned_client_id: Some("c".to_owned()),
+            })
+        );
+
+        let blank =
+            select_pinned_credential_kind("managedidentity", env_from(&[(AZURE_CLIENT_ID, "  ")]));
+        assert_eq!(
+            blank,
+            Some(TokenCredentialKind::ManagedIdentity {
+                user_assigned_client_id: None,
+            })
+        );
+    }
+
+    /// An unset or unrecognized value names no provider, and the caller detects from the
+    /// environment instead.
+    #[test]
+    fn test_unset_and_unrecognized_kinds_name_no_provider() {
+        for spelling in ["", "   ", "azurecl", "developertools"] {
+            assert_eq!(
+                select_pinned_credential_kind(spelling, env_from(&[])),
+                None,
+                "`{spelling}` should not name a provider"
+            );
+        }
     }
 
     #[test]
