@@ -162,7 +162,11 @@ impl RegexExtractEqSpec {
 ///   group 1, standing for the requested capture of the original pattern.
 /// - `postings_target`, when set, satisfies the contract of [`PostingsTarget`]. Callers then warm
 ///   its term dictionary and postings with the prefilter pattern from [`RegexExtractEqSpec`] before
-///   searching.
+///   searching. The scorer uses postings when every matching fast-field value is indexed: for a
+///   plain field whose term and fast-field dictionaries have the same size, term ordinals are
+///   fast-field ordinals and one term-dictionary walk is enough; otherwise it compares the number
+///   of matching terms to the number of matching fast-field values (required for JSON subfields,
+///   whose terms share the field's dictionary with every other path).
 /// - Unlike the JIT predicate, which treats a column it fails to open as absent, the scorer returns
 ///   errors from opening the column or reading its dictionary, so a corrupt split fails the search
 ///   instead of silently matching nothing.
@@ -211,6 +215,12 @@ impl Query for RegexExtractEqQuery {
     }
 }
 
+/// Postings of the terms whose values satisfy the predicate.
+struct MatchingPostings {
+    inverted_index: Arc<InvertedIndexReader>,
+    term_infos: Vec<TermInfo>,
+}
+
 struct RegexExtractEqWeight {
     plan: Arc<RegexExtractEqPlan>,
 }
@@ -221,19 +231,39 @@ impl Weight for RegexExtractEqWeight {
             // Without the column every value is `None`, which `EQ` never matches.
             return Ok(Box::new(EmptyScorer));
         };
-        let matching_ords = self.matching_value_ords(&str_column)?;
-        if matching_ords.len() == 0 {
-            return Ok(Box::new(EmptyScorer));
-        }
         let max_doc = reader.max_doc();
         let mut doc_bitset = BitSet::with_max_value(max_doc);
         let ords = str_column.ords();
-        if let Some(matching_postings) =
-            self.complete_matching_postings(reader, matching_ords.len())?
+
+        // Prefer visiting only the postings of matching terms over scanning every document.
+        // Two ways to prove those postings are complete (every matching fast-field value is
+        // indexed), depending on whether term ordinals equal fast-field ordinals.
+        //
+        // 1. Plain field, dictionaries the same size: terms == values, so ordinals coincide.
+        //    One term-dictionary walk yields both matching ords and term infos.
+        if let Some((matching_ords, matching_postings)) =
+            self.plain_complete_matching_postings(reader, &str_column)?
         {
+            if matching_ords.len() == 0 {
+                return Ok(Box::new(EmptyScorer));
+            }
             collect_from_postings(&matching_postings, ords, &matching_ords, &mut doc_bitset)?;
         } else {
-            collect_from_first_values(ords, &matching_ords, max_doc, &mut doc_bitset);
+            // 2. Otherwise (JSON subfield, or plain field with some values dropped from the
+            //    index): walk the fast-field dictionary for matching ords, then the term
+            //    dictionary behind the path prefix. Equal matching counts mean every matching
+            //    value is indexed; otherwise fall back to a first-value scan of every doc.
+            let matching_ords = self.matching_value_ords(&str_column)?;
+            if matching_ords.len() == 0 {
+                return Ok(Box::new(EmptyScorer));
+            }
+            if let Some(matching_postings) =
+                self.complete_matching_postings(reader, matching_ords.len())?
+            {
+                collect_from_postings(&matching_postings, ords, &matching_ords, &mut doc_bitset)?;
+            } else {
+                collect_from_first_values(ords, &matching_ords, max_doc, &mut doc_bitset);
+            }
         }
         let doc_set = BitSetDocSet::from(doc_bitset);
         Ok(Box::new(ConstScorer::new(doc_set, boost)))
@@ -248,12 +278,6 @@ impl Weight for RegexExtractEqWeight {
         }
         Ok(Explanation::new("RegexExtractEqQuery", 1.0))
     }
-}
-
-/// Postings of the terms whose values satisfy the predicate.
-struct MatchingPostings {
-    inverted_index: Arc<InvertedIndexReader>,
-    term_infos: Vec<TermInfo>,
 }
 
 impl RegexExtractEqWeight {
@@ -275,9 +299,56 @@ impl RegexExtractEqWeight {
         Ok(matching_ords)
     }
 
-    /// Returns the postings of the terms satisfying the predicate when they hold every document
-    /// with one of the `num_matching_values` matching fast-field values, that is when all those
-    /// values are indexed.
+    /// Cheap postings path for a plain field whose inverted and fast-field dictionaries hold the
+    /// same keys. Returns `None` when postings are unavailable, the field is a JSON subfield
+    /// (shared term dictionary, ordinals diverge), or any value was dropped from the index.
+    fn plain_complete_matching_postings(
+        &self,
+        reader: &SegmentReader,
+        str_column: &StrColumn,
+    ) -> tantivy::Result<Option<(BitSet, MatchingPostings)>> {
+        let Some(postings_target) = &self.plan.postings_target else {
+            return Ok(None);
+        };
+        // A non-empty prefix means a JSON path: terms of other paths share this inverted index,
+        // so whole-dictionary sizes and term ordinals are not comparable to the subfield column.
+        if !postings_target.term_prefix.is_empty() {
+            return Ok(None);
+        }
+        let inverted_index = reader.inverted_index(postings_target.field)?;
+        // Equal counts mean the raw tokenizer dropped no value, so both dictionaries hold the same
+        // keys in the same order and term ordinals are fast-field ordinals.
+        if inverted_index.terms().num_terms() != str_column.dictionary().num_terms() {
+            return Ok(None);
+        }
+        let num_values = str_column.dictionary().num_terms() as u32;
+        let mut matching_ords = BitSet::with_max_value(num_values);
+        let mut term_infos: Vec<TermInfo> = Vec::new();
+        let mut term_stream = inverted_index
+            .terms()
+            .search(self.plan.prefilter_automaton.as_ref())
+            .into_stream()?;
+        while term_stream.advance() {
+            if self.plan.value_matches(term_stream.key()) {
+                // Safe only because the dictionaries are identical: this term ordinal is the
+                // fast-field ordinal used by `first_value_matches` on multivalued columns.
+                matching_ords.insert(term_stream.term_ord() as u32);
+                term_infos.push(term_stream.value().clone());
+            }
+        }
+        Ok(Some((
+            matching_ords,
+            MatchingPostings {
+                inverted_index,
+                term_infos,
+            },
+        )))
+    }
+
+    /// Postings path when term ordinals are not fast-field ordinals: collect matching terms under
+    /// the path prefix and accept them only if their count equals `num_matching_values`. Every
+    /// term is verbatim one of the fast-field values (raw indexing), so equal counts mean every
+    /// matching value is indexed. Used for JSON subfields and for plain fields with dropped values.
     fn complete_matching_postings(
         &self,
         reader: &SegmentReader,
@@ -287,7 +358,7 @@ impl RegexExtractEqWeight {
             return Ok(None);
         };
         let inverted_index = reader.inverted_index(postings_target.field)?;
-        // The same automaton as the one warmed from the prefilter query.
+        // Same automaton leaf warmup loads from the prefilter `RegexQuery` (path prefix + pattern).
         let automaton = JsonPathPrefix {
             prefix: postings_target.term_prefix.clone(),
             automaton: self.plan.prefilter_automaton.clone(),
@@ -295,13 +366,12 @@ impl RegexExtractEqWeight {
         let mut term_infos: Vec<TermInfo> = Vec::new();
         let mut term_stream = inverted_index.terms().search(automaton).into_stream()?;
         while term_stream.advance() {
+            // Strip the JSON path and string-type bytes; the remainder is the indexed value.
             let value = &term_stream.key()[postings_target.term_prefix.len()..];
             if self.plan.value_matches(value) {
                 term_infos.push(term_stream.value().clone());
             }
         }
-        // Every matching term is a matching fast-field value, so equal counts mean that every
-        // matching value is indexed, in every document holding it.
         if term_infos.len() != num_matching_values {
             return Ok(None);
         }
@@ -312,14 +382,15 @@ impl RegexExtractEqWeight {
     }
 }
 
-/// Inserts the documents of `matching_postings` whose first value matches.
+/// Inserts documents that hold a matching term, keeping JIT first-value semantics.
 fn collect_from_postings(
     matching_postings: &MatchingPostings,
     ords: &Column<u64>,
     matching_ords: &BitSet,
     doc_bitset: &mut BitSet,
 ) -> tantivy::Result<()> {
-    // A document of a single-valued column holds only the value of the term, which matches.
+    // Single-valued: the posting's value is the document's only (hence first) value.
+    // Multivalued: the matching term may appear after a non-matching first value.
     let check_first_value = ords.get_cardinality() == Cardinality::Multivalued;
     for term_info in &matching_postings.term_infos {
         let mut postings = matching_postings
@@ -327,7 +398,6 @@ fn collect_from_postings(
             .read_postings_from_terminfo(term_info, IndexRecordOption::Basic)?;
         let mut doc = postings.doc();
         while doc != TERMINATED {
-            // A multivalued document may hold the matching value after its first value.
             if !check_first_value || first_value_matches(ords, matching_ords, doc) {
                 doc_bitset.insert(doc);
             }
@@ -337,7 +407,7 @@ fn collect_from_postings(
     Ok(())
 }
 
-/// Inserts the documents whose first value matches, checking every document.
+/// Fallback when at least one matching value has no term: check every document's first value.
 fn collect_from_first_values(
     ords: &Column<u64>,
     matching_ords: &BitSet,
@@ -841,7 +911,16 @@ mod tests {
             let Some(str_column) = reader.fast_fields().str(&plan.fast_field_name).unwrap() else {
                 return false;
             };
+            if let Some((matching_ords, _)) = weight
+                .plain_complete_matching_postings(reader, &str_column)
+                .unwrap()
+            {
+                return matching_ords.len() > 0;
+            }
             let matching_ords = weight.matching_value_ords(&str_column).unwrap();
+            if matching_ords.len() == 0 {
+                return false;
+            }
             weight
                 .complete_matching_postings(reader, matching_ords.len())
                 .unwrap()

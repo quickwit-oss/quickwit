@@ -135,11 +135,11 @@ fn is_raw_fast_and_indexed(
     indexing_options: Option<&TextFieldIndexing>,
 ) -> bool {
     let fast_field_is_raw = matches!(fast_field_tokenizer_name, None | Some(RAW_TOKENIZER_NAME));
-    fast_field_is_raw
-        && matches!(
-            indexing_options,
-            Some(text_indexing) if text_indexing.tokenizer() == RAW_TOKENIZER_NAME
-        )
+    let indexing_is_raw = matches!(
+        indexing_options,
+        Some(text_indexing) if text_indexing.tokenizer() == RAW_TOKENIZER_NAME
+    );
+    fast_field_is_raw && indexing_is_raw
 }
 
 impl BuildTantivyAst for CalcFieldQuery {
