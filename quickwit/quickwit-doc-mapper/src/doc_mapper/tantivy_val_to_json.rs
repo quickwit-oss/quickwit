@@ -243,6 +243,10 @@ pub fn formatted_tantivy_value_to_json(
         LeafType::IpAddr(_) => value_to_ip(value),
         LeafType::F64(numeric_options) => value_to_float(value, numeric_options),
         LeafType::U64(numeric_options) => value_to_u64(value, numeric_options),
+        LeafType::TieBreaker => match value {
+            TantivyValue::U64(val) => Ok(JsonValue::Number(val.into())),
+            other => Err(other),
+        },
         LeafType::I64(numeric_options) => value_to_i64(value, numeric_options),
         LeafType::Json(_) => {
             if let TantivyValue::Object(obj) = value {

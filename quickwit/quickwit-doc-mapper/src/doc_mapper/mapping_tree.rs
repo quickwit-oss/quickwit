@@ -48,6 +48,7 @@ pub enum LeafType {
     IpAddr(QuickwitIpAddrOptions),
     Json(QuickwitJsonOptions),
     Text(QuickwitTextOptions),
+    TieBreaker,
 }
 
 enum MapOrArrayIter {
@@ -215,6 +216,7 @@ impl LeafType {
                     Err(format!("expected object, got `{json_val}`"))
                 }
             }
+            LeafType::TieBreaker => Ok(()),
         }
     }
 
@@ -260,6 +262,9 @@ impl LeafType {
                 } else {
                     Err(format!("expected object, got `{json_val}`"))
                 }
+            }
+            LeafType::TieBreaker => {
+                Err("tie_breaker values are generated during segment serialization".to_string())
             }
         }
     }
@@ -312,6 +317,7 @@ impl LeafType {
                     Err(format!("expected object, got `{json_val}`"))
                 }
             }
+            LeafType::TieBreaker => Err("unsupported concat type: TieBreaker".to_string()),
         }
     }
 
@@ -376,6 +382,9 @@ impl MappingLeaf {
         document: &mut Document,
         path: &mut [String],
     ) -> Result<(), DocParsingError> {
+        if matches!(self.typ, LeafType::TieBreaker) {
+            return Ok(());
+        }
         if json_val.is_null() {
             // We just ignore `null`.
             return Ok(());
@@ -917,6 +926,7 @@ impl From<MappingLeaf> for FieldMappingType {
             LeafType::DateTime(opt) => FieldMappingType::DateTime(opt, leaf.cardinality),
             LeafType::Bytes(opt) => FieldMappingType::Bytes(opt, leaf.cardinality),
             LeafType::Json(opt) => FieldMappingType::Json(opt, leaf.cardinality),
+            LeafType::TieBreaker => FieldMappingType::TieBreaker,
         }
     }
 }
@@ -1239,6 +1249,16 @@ fn build_mapping_from_field_type<'a>(
                 field,
                 typ: LeafType::U64(options.clone()),
                 cardinality: *cardinality,
+                concatenate: Vec::new(),
+            };
+            Ok((MappingTree::Leaf(mapping_leaf), Vec::new()))
+        }
+        FieldMappingType::TieBreaker => {
+            let field = schema_builder.add_tie_breaker_field(&field_name);
+            let mapping_leaf = MappingLeaf {
+                field,
+                typ: LeafType::TieBreaker,
+                cardinality: Cardinality::SingleValued,
                 concatenate: Vec::new(),
             };
             Ok((MappingTree::Leaf(mapping_leaf), Vec::new()))
@@ -1589,6 +1609,23 @@ mod tests {
             .flat_map(|val| val.as_i64())
             .collect();
         assert_eq!(&values, &[10i64, 20i64]);
+    }
+
+    #[test]
+    fn test_tie_breaker_document_value_is_ignored() {
+        let field = Field::from_field_id(10);
+        let leaf_entry = MappingLeaf {
+            field,
+            typ: LeafType::TieBreaker,
+            cardinality: Cardinality::SingleValued,
+            concatenate: Vec::new(),
+        };
+        let mut document = Document::default();
+        let mut path = Vec::new();
+        leaf_entry
+            .doc_from_json(json!(42u64), &mut document, &mut path)
+            .unwrap();
+        assert!(document.get_all(field).next().is_none());
     }
 
     #[test]

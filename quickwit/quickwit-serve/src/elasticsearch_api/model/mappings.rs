@@ -108,6 +108,7 @@ fn field_mapping_from_entry(entry: &FieldMappingEntry) -> Option<FieldMapping> {
         FieldMappingType::Text(..) => Some(FieldMapping::Leaf { typ: "keyword" }),
         FieldMappingType::I64(..) => Some(FieldMapping::Leaf { typ: "long" }),
         FieldMappingType::U64(..) => Some(FieldMapping::Leaf { typ: "long" }),
+        FieldMappingType::TieBreaker => Some(FieldMapping::Leaf { typ: "long" }),
         FieldMappingType::F64(..) => Some(FieldMapping::Leaf { typ: "double" }),
         FieldMappingType::Bool(..) => Some(FieldMapping::Leaf { typ: "boolean" }),
         FieldMappingType::DateTime(..) => Some(FieldMapping::Leaf { typ: "date" }),

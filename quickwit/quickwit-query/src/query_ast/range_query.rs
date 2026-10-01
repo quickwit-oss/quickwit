@@ -143,7 +143,7 @@ impl BuildTantivyAst for RangeQuery {
                 )
                 .into()
             }
-            tantivy::schema::FieldType::U64(_) => {
+            tantivy::schema::FieldType::U64(_) | tantivy::schema::FieldType::TieBreaker => {
                 let (lower_bound, upper_bound) =
                     convert_bounds(&self.lower_bound, &self.upper_bound, field_entry.name())?;
                 FastFieldRangeQuery::new(
