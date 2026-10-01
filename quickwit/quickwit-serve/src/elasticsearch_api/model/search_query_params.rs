@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use quickwit_query::BooleanOperand;
 use quickwit_search::SearchError;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::super::TrackTotalHits;
 use super::MultiSearchHeader;
@@ -144,7 +144,7 @@ pub struct SearchQueryParams {
     pub timeout: Option<String>,
     #[serde(default)]
     pub track_scores: Option<bool>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_track_total_hits")]
     pub track_total_hits: Option<TrackTotalHits>,
     #[serde(default)]
     pub typed_keys: Option<bool>,
@@ -226,6 +226,27 @@ pub struct DeleteQueryParams {
     pub master_timeout: Option<String>,
     #[serde(default)]
     pub timeout: Option<String>,
+}
+
+// URL query deserializers expose untagged enum inputs as strings. Preserve native JSON values
+// for callers using this model directly, while parsing the URL representation explicitly.
+fn deserialize_track_total_hits<'de, D>(
+    deserializer: D,
+) -> Result<Option<TrackTotalHits>, D::Error>
+where D: Deserializer<'de> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Input {
+        Literal(TrackTotalHits),
+        String(String),
+    }
+    match Option::<Input>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(Input::Literal(value)) => Ok(Some(value)),
+        Some(Input::String(value)) => serde_json::from_str(&value)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
 }
 
 /// Parses a string as if it was a json value string.
@@ -389,6 +410,40 @@ mod tests {
     enum TestEnum {
         FirstItem,
         SecondItem,
+    }
+
+    #[tokio::test]
+    async fn test_track_total_hits_query_parameter() {
+        for (value, expected) in [
+            ("true", TrackTotalHits::Track(true)),
+            ("false", TrackTotalHits::Track(false)),
+            ("0", TrackTotalHits::Count(0)),
+            ("42", TrackTotalHits::Count(42)),
+        ] {
+            let query = format!("track_total_hits={value}");
+            let from_http: SearchQueryParams = warp::test::request()
+                .path(&format!("/?{query}"))
+                .filter(&warp::query())
+                .await
+                .unwrap();
+            assert_eq!(from_http.track_total_hits, Some(expected));
+            let from_mcp: SearchQueryParams = serde_qs::from_str(&query).unwrap();
+            assert_eq!(from_mcp.track_total_hits, Some(expected));
+            let from_json: SearchQueryParams =
+                serde_json::from_str(&format!("{{\"track_total_hits\":{value}}}")).unwrap();
+            assert_eq!(from_json.track_total_hits, Some(expected));
+        }
+        for value in ["all", "1.5", "null", ""] {
+            let query = format!("track_total_hits={value}");
+            assert!(serde_qs::from_str::<SearchQueryParams>(&query).is_err());
+            assert!(
+                warp::test::request()
+                    .path(&format!("/?{query}"))
+                    .filter(&warp::query::<SearchQueryParams>())
+                    .await
+                    .is_err()
+            );
+        }
     }
 
     #[test]
