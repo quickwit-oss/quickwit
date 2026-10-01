@@ -683,7 +683,7 @@ impl Ingester {
         }
         report_wal_usage(wal_usage, self.disk_capacity, self.memory_capacity);
 
-        let source_shard_updates = open_shard_counts
+        let mut source_shard_updates: Vec<SourceShardUpdate> = open_shard_counts
             .into_iter()
             .map(|(index_uid, source_id, count)| SourceShardUpdate {
                 index_uid: Some(index_uid),
@@ -691,6 +691,20 @@ impl Ingester {
                 open_shard_count: count as u32,
             })
             .collect();
+
+        for persist_failure in &persist_failures {
+            let is_listed = source_shard_updates.iter().any(|source_shard_update| {
+                source_shard_update.index_uid() == persist_failure.index_uid()
+                    && source_shard_update.source_id == persist_failure.source_id
+            });
+            if !is_listed {
+                source_shard_updates.push(SourceShardUpdate {
+                    index_uid: persist_failure.index_uid.clone(),
+                    source_id: persist_failure.source_id.clone(),
+                    open_shard_count: 0,
+                });
+            }
+        }
 
         let routing_update = RoutingUpdate {
             capacity_score,
@@ -2118,6 +2132,15 @@ mod tests {
             PersistFailureReason::NodeUnavailable
         );
 
+        let source_shard_updates = persist_response
+            .routing_update
+            .unwrap()
+            .source_shard_updates;
+        assert_eq!(source_shard_updates.len(), 1);
+        assert_eq!(source_shard_updates[0].index_uid(), &index_uid);
+        assert_eq!(source_shard_updates[0].source_id, "test-source");
+        assert_eq!(source_shard_updates[0].open_shard_count, 0);
+
         let state_guard = ingester.state.lock_fully("test").await.unwrap();
         assert_eq!(state_guard.shards.len(), 0);
     }
@@ -2419,6 +2442,69 @@ mod tests {
         assert_eq!(source_shard_updates[1].open_shard_count, 1);
 
         assert!(routing_update.closed_shards.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_ingester_persist_reports_sources_without_open_shards() {
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
+
+        let index_uid_0 = IndexUid::for_test("test-index-0", 0);
+        let index_uid_1 = IndexUid::for_test("test-index-1", 0);
+        let source_id = SourceId::from("test-source");
+
+        let closed_shard =
+            IngesterShard::builder(index_uid_1.clone(), source_id.clone(), ShardId::from(1))
+                .with_state(ShardState::Closed)
+                .advertisable()
+                .build();
+        let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
+        state_guard
+            .shards
+            .insert(closed_shard.queue_id(), closed_shard);
+        drop(state_guard);
+
+        let persist_request = PersistRequest {
+            ingester_id: ingester_ctx.node_id.to_string(),
+            commit_type: CommitTypeV2::Auto as i32,
+            subrequests: vec![
+                PersistSubrequest {
+                    subrequest_id: 0,
+                    index_uid: Some(index_uid_0.clone()),
+                    source_id: source_id.clone(),
+                    doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
+                },
+                PersistSubrequest {
+                    subrequest_id: 1,
+                    index_uid: Some(index_uid_1.clone()),
+                    source_id: source_id.clone(),
+                    doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-110"}"#])),
+                },
+            ],
+        };
+        let persist_response = ingester.persist(persist_request).await.unwrap();
+        assert!(persist_response.successes.is_empty());
+
+        let mut open_shard_counts: Vec<(String, String, u32)> = persist_response
+            .routing_update
+            .unwrap()
+            .source_shard_updates
+            .iter()
+            .map(|update| {
+                (
+                    update.index_uid().index_id.clone(),
+                    update.source_id.clone(),
+                    update.open_shard_count,
+                )
+            })
+            .collect();
+        open_shard_counts.sort();
+        assert_eq!(
+            open_shard_counts,
+            [
+                ("test-index-0".to_string(), "test-source".to_string(), 0),
+                ("test-index-1".to_string(), "test-source".to_string(), 0)
+            ]
+        );
     }
 
     #[tokio::test]
