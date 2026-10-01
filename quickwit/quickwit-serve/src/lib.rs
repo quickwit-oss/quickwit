@@ -28,6 +28,7 @@ mod indexing_api;
 mod ingest_api;
 mod jaeger_api;
 mod load_shield;
+mod mcp_api;
 mod metastore;
 mod metrics;
 mod metrics_api;
