@@ -177,8 +177,8 @@ pub enum Priority {
     High,
 }
 
-/// Default tasks have zero priority and cost so short metadata operations, such as
-/// list-fields processing, run before split searches.
+/// Default tasks have zero priority and cost so short operations, such as
+/// list-fields result merging, run before split searches.
 impl Default for Priority {
     fn default() -> Self {
         Priority::Normal {
