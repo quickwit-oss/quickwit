@@ -20,7 +20,9 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use google_cloud_auth::credentials::CredentialsFile;
 use google_cloud_gax::retry::RetrySetting;
+use google_cloud_googleapis::pubsub::v1::PubsubMessage;
 use google_cloud_pubsub::client::{Client, ClientConfig};
+use google_cloud_pubsub::subscriber::ReceivedMessage;
 use google_cloud_pubsub::subscription::Subscription;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_common::rand::append_random_suffix;
@@ -166,20 +168,37 @@ impl Source for GcpPubSubSource {
         // TODO: ensure we ACK the message after being commit: at least once
         // TODO: ensure we increase_ack_deadline for the items
         loop {
-            tokio::select! {
-                resp = self.pull_message_batch(&mut batch_builder) => {
-                    if let Err(err) = resp {
-                        warn!("failed to pull messages from subscription `{}`: {:?}", self.subscription_name, err);
-                    }
-                    if batch_builder.num_bytes >= BATCH_NUM_BYTES_LIMIT {
-                        break;
+            // Only the pull is raced against the deadline: dropping it before it resolves leaves
+            // no trace in Pub/Sub. Once messages are pulled, they must be acknowledged and added
+            // to the batch without cancellation, otherwise acknowledged documents could be
+            // dropped before being sent along with their checkpoint delta.
+            let pull_result = tokio::select! {
+                pull_result = self.subscription.pull(self.max_messages_per_pull, None) => pull_result,
+                _ = &mut deadline => break,
+            };
+            match pull_result {
+                Ok(messages) => {
+                    if let Err(error) = self
+                        .ack_and_add_messages(messages, &mut batch_builder)
+                        .await
+                    {
+                        warn!(
+                            "failed to process messages from subscription `{}`: {:?}",
+                            self.subscription_name, error
+                        );
                     }
                 }
-                _ = &mut deadline => {
-                    break;
+                Err(error) => {
+                    warn!(
+                        "failed to pull messages from subscription `{}`: {:?}",
+                        self.subscription_name, error
+                    );
                 }
             }
             ctx.record_progress();
+            if batch_builder.num_bytes >= BATCH_NUM_BYTES_LIMIT {
+                break;
+            }
         }
 
         if batch_builder.num_bytes > 0 {
@@ -233,46 +252,149 @@ impl Source for GcpPubSubSource {
 }
 
 impl GcpPubSubSource {
-    async fn pull_message_batch(&mut self, batch: &mut BatchBuilder) -> anyhow::Result<()> {
-        let messages = self
-            .subscription
-            .pull(self.max_messages_per_pull, None)
-            .await
-            .context("failed to pull messages from subscription")?;
-
-        let Some(last_message) = messages.last() else {
+    /// Acknowledges the pulled messages, then adds them to the batch along with the matching
+    /// checkpoint delta.
+    ///
+    /// If the acknowledgement fails or times out, neither the batch nor the source state is
+    /// modified and the messages will be redelivered by Pub/Sub once their ack deadline expires.
+    /// An acknowledgement that timed out on our side may still have been applied by Pub/Sub, in
+    /// which case the messages are lost: this source is at-most-once until ACKs are deferred to
+    /// `suggest_truncate`.
+    async fn ack_and_add_messages(
+        &mut self,
+        messages: Vec<ReceivedMessage>,
+        batch: &mut BatchBuilder,
+    ) -> anyhow::Result<()> {
+        if messages.is_empty() {
             return Ok(());
-        };
-        let message_id = last_message.message.message_id.clone();
-        let publish_timestamp_millis = last_message
-            .message
-            .publish_time
-            .as_ref()
-            .map(|timestamp| timestamp.seconds * 1_000 + (timestamp.nanos as i64 / 1_000_000))
-            .unwrap_or(0); // TODO: Replace with now UTC millis.
-
-        for message in messages {
-            message.ack().await?; // TODO: remove ACK here when doing at least once
-            self.state.num_messages_processed += 1;
-            self.state.num_bytes_processed += message.message.data.len() as u64;
-            let doc: Bytes = Bytes::from(message.message.data);
-            if doc.is_empty() {
-                self.state.num_invalid_messages += 1;
-            } else {
-                batch.add_doc(doc);
-            }
         }
-        let to_position = Position::from(format!(
-            "{}:{message_id}:{publish_timestamp_millis}",
-            self.state.num_messages_processed
-        ));
-        let from_position = mem::replace(&mut self.state.current_position, to_position.clone());
+        let ack_ids: Vec<String> = messages
+            .iter()
+            .map(|message| message.ack_id().to_string())
+            .collect();
+        // The ACK is not raced against the emit deadline, so we bound it here. Otherwise, a stuck
+        // request would block the source until the supervisor kills the pipeline.
+        let ack_timeout = *quickwit_actors::HEARTBEAT / 2;
+        // TODO: remove ACK here when doing at least once
+        time::timeout(ack_timeout, self.subscription.ack(ack_ids))
+            .await
+            .context("timed out acknowledging messages")?
+            .context("failed to acknowledge messages")?;
 
-        batch
-            .checkpoint_delta
-            .record_partition_delta(self.partition_id.clone(), from_position, to_position)
-            .context("failed to record partition delta")?;
-        Ok(())
+        let pubsub_messages: Vec<PubsubMessage> = messages
+            .into_iter()
+            .map(|message| message.message)
+            .collect();
+        add_acked_messages(&mut self.state, &self.partition_id, pubsub_messages, batch)
+    }
+}
+
+/// Adds acknowledged messages to the batch and records the corresponding checkpoint delta.
+///
+/// This function is synchronous on purpose: once messages are acknowledged, the documents and
+/// the checkpoint delta must be added to the batch atomically with respect to cancellation.
+fn add_acked_messages(
+    state: &mut GcpPubSubSourceState,
+    partition_id: &PartitionId,
+    messages: Vec<PubsubMessage>,
+    batch: &mut BatchBuilder,
+) -> anyhow::Result<()> {
+    let Some(last_message) = messages.last() else {
+        return Ok(());
+    };
+    let message_id = last_message.message_id.clone();
+    let publish_timestamp_millis = last_message
+        .publish_time
+        .as_ref()
+        .map(|timestamp| timestamp.seconds * 1_000 + (timestamp.nanos as i64 / 1_000_000))
+        .unwrap_or(0); // TODO: Replace with now UTC millis.
+
+    for message in messages {
+        state.num_messages_processed += 1;
+        state.num_bytes_processed += message.data.len() as u64;
+        let doc: Bytes = Bytes::from(message.data);
+        if doc.is_empty() {
+            state.num_invalid_messages += 1;
+        } else {
+            batch.add_doc(doc);
+        }
+    }
+    let to_position = Position::from(format!(
+        "{}:{message_id}:{publish_timestamp_millis}",
+        state.num_messages_processed
+    ));
+    let from_position = mem::replace(&mut state.current_position, to_position.clone());
+
+    batch
+        .checkpoint_delta
+        .record_partition_delta(partition_id.clone(), from_position, to_position)
+        .context("failed to record partition delta")?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use quickwit_metastore::checkpoint::SourceCheckpointDelta;
+
+    use super::*;
+
+    fn pubsub_message(message_id: &str, data: &'static [u8]) -> PubsubMessage {
+        PubsubMessage {
+            data: data.to_vec(),
+            message_id: message_id.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_add_acked_messages() {
+        let mut state = GcpPubSubSourceState::default();
+        let partition_id = PartitionId::from("test-partition");
+        let mut batch = BatchBuilder::new(SourceType::PubSub);
+
+        add_acked_messages(&mut state, &partition_id, Vec::new(), &mut batch).unwrap();
+        assert!(batch.docs.is_empty());
+        assert!(batch.checkpoint_delta.is_empty());
+        assert_eq!(state.current_position, Position::Beginning);
+
+        let messages = vec![
+            pubsub_message("message-1", b"doc-1"),
+            pubsub_message("message-2", b""),
+            pubsub_message("message-3", b"doc-3"),
+        ];
+        add_acked_messages(&mut state, &partition_id, messages, &mut batch).unwrap();
+
+        assert_eq!(
+            batch.docs,
+            vec![Bytes::from_static(b"doc-1"), Bytes::from_static(b"doc-3")]
+        );
+        assert_eq!(batch.num_bytes, 10);
+        assert_eq!(state.num_messages_processed, 3);
+        assert_eq!(state.num_bytes_processed, 10);
+        assert_eq!(state.num_invalid_messages, 1);
+
+        let expected_position = Position::from("3:message-3:0".to_string());
+        assert_eq!(state.current_position, expected_position);
+        let expected_checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
+            partition_id.clone(),
+            Position::Beginning,
+            expected_position.clone(),
+        )
+        .unwrap();
+        assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
+
+        // A second batch of messages picks up where the previous one left off.
+        let mut batch = BatchBuilder::new(SourceType::PubSub);
+        let messages = vec![pubsub_message("message-4", b"doc-4")];
+        add_acked_messages(&mut state, &partition_id, messages, &mut batch).unwrap();
+
+        let expected_checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
+            partition_id,
+            expected_position,
+            Position::from("4:message-4:0".to_string()),
+        )
+        .unwrap();
+        assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
     }
 }
 
