@@ -202,6 +202,9 @@ pub(crate) async fn start_rest_server(
     // `/api/v1/*` routes.
     let api_v1_root_route = api_v1_routes(quickwit_services.clone());
 
+    // `/mcp` route.
+    let mcp_route = mcp_routes(quickwit_services.clone());
+
     let redirect_root_to_ui_route = warp::path::end()
         .and(warp::get())
         .map(|| redirect(http::Uri::from_static("/ui/search")))
@@ -218,6 +221,7 @@ pub(crate) async fn start_rest_server(
 
     // Combine all the routes together.
     let rest_routes = api_v1_root_route
+        .or(mcp_route)
         .or(api_doc)
         .or(redirect_root_to_ui_route)
         .or(ui_handler())
@@ -492,6 +496,23 @@ fn search_routes(
         .boxed()
 }
 
+/// `/mcp` route. MCP negotiates its protocol version in-band (`initialize` and the
+/// `MCP-Protocol-Version` header), so the endpoint is not nested under the versioned REST API.
+fn mcp_routes(
+    quickwit_services: Arc<QuickwitServices>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    crate::mcp_api::mcp_api_handlers(
+        quickwit_services.search_service.clone(),
+        quickwit_services.metastore_client.clone(),
+        quickwit_services
+            .node_config
+            .rest_config
+            .cors_allow_origins
+            .clone(),
+    )
+    .boxed()
+}
+
 fn api_v1_routes(
     quickwit_services: Arc<QuickwitServices>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -508,15 +529,6 @@ fn api_v1_routes(
             !disable_ingest_v1(),
             enable_ingest_v2(),
         )
-        .or(crate::mcp_api::mcp_api_handlers(
-            quickwit_services.search_service.clone(),
-            quickwit_services.metastore_client.clone(),
-            quickwit_services
-                .node_config
-                .rest_config
-                .cors_allow_origins
-                .clone(),
-        ))
         .or(cluster_handler(quickwit_services.cluster.clone()))
         .boxed()
         .or(node_info_handler(
@@ -833,7 +845,7 @@ mod tests {
     fn cors_request(origin: &'static str) -> Request<()> {
         let mut request = Request::new(());
         (*request.method_mut()) = Method::OPTIONS;
-        *request.uri_mut() = "/api/v1/mcp".parse().unwrap();
+        *request.uri_mut() = "/mcp".parse().unwrap();
         request
             .headers_mut()
             .insert("Origin", HeaderValue::from_static(origin));
@@ -916,7 +928,9 @@ mod tests {
             env_filter_reload_fn: crate::do_nothing_env_filter_reload_fn(),
         };
 
-        let handler = api_v1_routes(Arc::new(quickwit_services))
+        let quickwit_services = Arc::new(quickwit_services);
+        let handler = api_v1_routes(quickwit_services.clone())
+            .or(mcp_routes(quickwit_services))
             .recover(recover_fn_final)
             .with(warp::reply::with::headers(
                 node_config.rest_config.extra_headers.clone(),
@@ -939,7 +953,7 @@ mod tests {
 
         let mcp_response = warp::test::request()
             .method("POST")
-            .path("/api/v1/mcp")
+            .path("/mcp")
             .header("accept", "application/json, text/event-stream")
             .header("mcp-protocol-version", "2025-06-18")
             .json(&serde_json::json!({"jsonrpc":"2.0", "id":1, "method":"ping"}))
@@ -952,6 +966,17 @@ mod tests {
             body,
             serde_json::json!({"jsonrpc":"2.0", "id":1, "result":{}})
         );
+
+        // MCP is served at `/mcp`, not under the versioned REST API.
+        let legacy_mcp_response = warp::test::request()
+            .method("POST")
+            .path("/api/v1/mcp")
+            .header("accept", "application/json, text/event-stream")
+            .header("mcp-protocol-version", "2025-06-18")
+            .json(&serde_json::json!({"jsonrpc":"2.0", "id":1, "method":"ping"}))
+            .reply(&handler)
+            .await;
+        assert_eq!(legacy_mcp_response.status(), 404);
 
         let resp_404 = warp::test::request()
             .path("/api/v1/version404")

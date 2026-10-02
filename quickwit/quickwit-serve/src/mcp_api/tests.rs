@@ -27,18 +27,18 @@ use super::{BODY_LENGTH_LIMIT, mcp_api_handlers, protocol};
 pub(super) fn request() -> RequestBuilder {
     warp::test::request()
         .method("POST")
-        .path("/api/v1/mcp")
+        .path("/mcp")
         .header("content-type", "application/json")
         .header("accept", "application/json, text/event-stream")
         .header("mcp-protocol-version", protocol::PROTOCOL_VERSION)
 }
 
 fn routes(origins: &[&str]) -> impl Filter<Extract = (Response,), Error = warp::Rejection> + Clone {
-    warp::path!("api" / "v1" / ..).and(mcp_api_handlers(
+    mcp_api_handlers(
         Arc::new(MockSearchService::new()),
         MetastoreServiceClient::mocked(),
         origins.iter().map(|origin| origin.to_string()).collect(),
-    ))
+    )
 }
 
 #[tokio::test]
@@ -47,7 +47,7 @@ async fn test_mcp_initialize_and_discovery() {
     for offered_version in [protocol::PROTOCOL_VERSION, "unknown-future-version"] {
         let response = warp::test::request()
             .method("POST")
-            .path("/api/v1/mcp")
+            .path("/mcp")
             .header("accept", "application/json, text/event-stream")
             .json(&json!({
                 "jsonrpc": "2.0", "id": "init", "method": "initialize",
@@ -161,7 +161,7 @@ async fn test_mcp_protocol_errors() {
     for version in [None, Some("2025-03-26"), Some("bad")] {
         let mut request = warp::test::request()
             .method("POST")
-            .path("/api/v1/mcp")
+            .path("/mcp")
             .header("accept", "application/json, text/event-stream");
         if let Some(version) = version {
             request = request.header("mcp-protocol-version", version);
@@ -199,7 +199,7 @@ async fn test_mcp_transport_guards() {
     for method in ["GET", "DELETE", "PUT", "PATCH", "HEAD"] {
         let response = warp::test::request()
             .method(method)
-            .path("/api/v1/mcp")
+            .path("/mcp")
             .reply(&routes)
             .await;
         assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
