@@ -793,6 +793,116 @@ async fn test_sort_by_static_and_dynamic_field() {
 }
 
 #[tokio::test]
+async fn test_sort_by_tie_breaker() {
+    let index_id = "sort_by_tie_breaker".to_string();
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: tie_breaker
+                type: tie_breaker
+            "#;
+    let test_sandbox = TestSandbox::create(&index_id, doc_mapping_yaml, "{}", &["body"])
+        .await
+        .unwrap();
+    // Each call creates a separate split. The value supplied for `tie_breaker` is ignored.
+    test_sandbox
+        .add_documents(vec![
+            json!({"body": "a", "tie_breaker": 0u64}),
+            json!({"body": "b"}),
+            json!({"body": "c"}),
+        ])
+        .await
+        .unwrap();
+    test_sandbox
+        .add_documents(vec![json!({"body": "d"}), json!({"body": "e"})])
+        .await
+        .unwrap();
+
+    let search_hits = |order: SortOrder| {
+        let search_request = SearchRequest {
+            index_id_patterns: vec![index_id.to_string()],
+            query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
+            max_hits: 1_000,
+            sort_fields: vec![SortField {
+                field_name: "tie_breaker".to_string(),
+                sort_order: order as i32,
+                sort_datetime_format: None,
+            }],
+            ..Default::default()
+        };
+        let metastore = test_sandbox.metastore();
+        let storage_resolver = test_sandbox.storage_resolver();
+        async move {
+            let search_resp = single_node_search(search_request, metastore, storage_resolver)
+                .await
+                .unwrap();
+            assert_eq!(search_resp.num_hits, 5);
+            search_resp
+                .hits
+                .into_iter()
+                .map(|hit| {
+                    let partial_hit = hit.partial_hit.unwrap();
+                    let Some(SortByValue {
+                        sort_value: Some(SortValue::U64(tie_breaker)),
+                    }) = partial_hit.sort_value
+                    else {
+                        panic!("expected a u64 tie_breaker sort value");
+                    };
+                    (partial_hit.split_id, partial_hit.doc_id, tie_breaker)
+                })
+                .collect::<Vec<(String, u32, u64)>>()
+        }
+    };
+
+    let ascending_hits = search_hits(SortOrder::Asc).await;
+    assert!(ascending_hits.is_sorted_by_key(|(_, _, tie_breaker)| *tie_breaker));
+    let mut tie_breakers_per_split: BTreeMap<String, Vec<(u32, u64)>> = BTreeMap::new();
+    for (split_id, doc_id, tie_breaker) in &ascending_hits {
+        tie_breakers_per_split
+            .entry(split_id.clone())
+            .or_default()
+            .push((*doc_id, *tie_breaker));
+    }
+    assert_eq!(tie_breakers_per_split.len(), 2);
+    // Within a split, values are consecutive in doc id order.
+    for tie_breakers in tie_breakers_per_split.values_mut() {
+        tie_breakers.sort();
+        for (doc_offset, (doc_id, tie_breaker)) in tie_breakers.iter().enumerate() {
+            assert_eq!(*doc_id as usize, doc_offset);
+            assert_eq!(*tie_breaker, tie_breakers[0].1 + doc_offset as u64);
+        }
+    }
+
+    let descending_hits = search_hits(SortOrder::Desc).await;
+    let mut expected_descending_hits = ascending_hits.clone();
+    expected_descending_hits.reverse();
+    assert_eq!(descending_hits, expected_descending_hits);
+
+    // Term queries on the fast-only tie-breaker field run as exact range queries.
+    let (split_id, doc_id, tie_breaker) = &ascending_hits[0];
+    let search_request = SearchRequest {
+        index_id_patterns: vec![index_id.to_string()],
+        query_ast: qast_json_helper(&format!("tie_breaker:{tie_breaker}"), &[]),
+        max_hits: 10,
+        ..Default::default()
+    };
+    let search_resp = single_node_search(
+        search_request,
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await
+    .unwrap();
+    assert!(search_resp.hits.iter().any(|hit| {
+        let partial_hit = hit.partial_hit.as_ref().unwrap();
+        partial_hit.split_id == *split_id && partial_hit.doc_id == *doc_id
+    }));
+
+    test_sandbox.assert_quit().await;
+}
+
+#[tokio::test]
 async fn test_sort_by_2_field() {
     let index_id = "sort_by_dynamic_field".to_string();
     // In this test, we will try sorting docs by several fields.

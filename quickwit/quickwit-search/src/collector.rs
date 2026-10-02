@@ -1061,10 +1061,7 @@ pub(crate) fn make_merge_collector(
 ) -> crate::Result<QuickwitCollector> {
     // Note: at this point the tokenizer manager is not used anymore by aggregations (filter query),
     // so we can create an empty one. So if it will ever be used, it would panic.
-    let agg_context_params = AggContextParams {
-        limits: agg_limits,
-        tokenizers: TokenizerManager::new(),
-    };
+    let agg_context_params = AggContextParams::new(agg_limits, TokenizerManager::new());
 
     let aggregation = match &search_request.aggregation_request {
         Some(aggregation) => Some(serde_json::from_str(aggregation)?),
