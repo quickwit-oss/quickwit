@@ -692,17 +692,29 @@ impl Ingester {
             })
             .collect();
 
-        for persist_failure in &persist_failures {
-            let is_listed = source_shard_updates.iter().any(|source_shard_update| {
-                source_shard_update.index_uid() == persist_failure.index_uid()
-                    && source_shard_update.source_id == persist_failure.source_id
-            });
-            if !is_listed {
-                source_shard_updates.push(SourceShardUpdate {
-                    index_uid: persist_failure.index_uid.clone(),
-                    source_id: persist_failure.source_id.clone(),
-                    open_shard_count: 0,
-                });
+        if !persist_failures.is_empty() {
+            let mut listed_sources: HashSet<(IndexUid, SourceId)> = source_shard_updates
+                .iter()
+                .map(|source_shard_update| {
+                    (
+                        source_shard_update.index_uid().clone(),
+                        source_shard_update.source_id.clone(),
+                    )
+                })
+                .collect();
+
+            for persist_failure in &persist_failures {
+                let source = (
+                    persist_failure.index_uid().clone(),
+                    persist_failure.source_id.clone(),
+                );
+                if listed_sources.insert(source) {
+                    source_shard_updates.push(SourceShardUpdate {
+                        index_uid: persist_failure.index_uid.clone(),
+                        source_id: persist_failure.source_id.clone(),
+                        open_shard_count: 0,
+                    });
+                }
             }
         }
 
