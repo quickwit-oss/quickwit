@@ -85,10 +85,8 @@ pub const DEFAULT_SHARD_THROUGHPUT_LIMIT: ByteSize = ByteSize::mib(5);
 /// Large enough to absorb small bursts but should remain defensive against unbalanced shards.
 pub const DEFAULT_SHARD_BURST_LIMIT: ByteSize = ByteSize::mib(50);
 
-/// Scale ingest shards aggressively on sustained bursts. Starting from one shard, a factor of 4
-/// reaches 16 shards in two scaling rounds instead of six with a factor of 1.5, which avoids long
-/// rate-limited warm-up phases on high-throughput ingest workloads.
-pub const DEFAULT_SHARD_SCALE_UP_FACTOR: f32 = 4.0;
+/// A compromise between "exponential" scale up and moderate shard count increase.
+pub const DEFAULT_SHARD_SCALE_UP_FACTOR: f32 = 1.5;
 
 // (Just a reexport).
 pub use bytesize::MIB;
