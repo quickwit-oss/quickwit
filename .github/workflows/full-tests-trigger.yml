@@ -29,7 +29,16 @@ jobs:
               sha: process.env.PR_SHA,
               state: 'success',
               context: 'full-test-suite',
-              description: 'Full suite runs in the merge queue',
+              description: 'Full tests run in the merge queue',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: process.env.PR_SHA,
+              state: 'success',
+              context: 'code-coverage',
+              description: 'Code coverage runs in the merge queue',
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             });
 
