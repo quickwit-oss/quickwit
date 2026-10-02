@@ -18,7 +18,7 @@ jobs:
     steps:
       - name: Find merge queue coverage report
         id: artifact
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             // The current merge queue puts its tested head SHA on main.
@@ -50,7 +50,7 @@ jobs:
               core.warning(`No merge queue coverage report found for ${context.sha}`);
             }
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: ${{ steps.artifact.outputs.run_id != '' }}
         with:
           persist-credentials: false
@@ -63,7 +63,7 @@ jobs:
           run-id: ${{ steps.artifact.outputs.run_id }}
           github-token: ${{ github.token }}
 
-      - uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
+      - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         if: ${{ steps.artifact.outputs.run_id != '' }}
         with:
           token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
