@@ -414,7 +414,7 @@ type: tie_breaker
 
 The field has no parameters. Values provided in documents are ignored, and generated values are preserved across merges. Values are almost always distinct but not guaranteed to be unique, so they should not be used as document identifiers. In particular, paginating with `search_after` on a primary sort field and a `tie_breaker` field can skip documents that share both values. Sort on `_shard_doc` instead when every document must be returned exactly once.
 
-The field is not stored and only supports range queries. `array<tie_breaker>` is not supported, and a `tie_breaker` field cannot be added to an existing index by updating its doc mapping: the index must be created with it.
+The field is not stored and only supports range queries. `array<tie_breaker>` is not supported. When a `tie_breaker` field is added to an existing index by updating its doc mapping, documents indexed before the update have no value for it.
 
 ### Composite types
 
