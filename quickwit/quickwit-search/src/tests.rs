@@ -856,7 +856,7 @@ async fn test_sort_by_tie_breaker() {
     };
 
     let ascending_hits = search_hits(SortOrder::Asc).await;
-    assert!(ascending_hits.windows(2).all(|hits| hits[0].2 <= hits[1].2));
+    assert!(ascending_hits.is_sorted_by_key(|(_, _, tie_breaker)| *tie_breaker));
     let mut tie_breakers_per_split: BTreeMap<String, Vec<(u32, u64)>> = BTreeMap::new();
     for (split_id, doc_id, tie_breaker) in &ascending_hits {
         tie_breakers_per_split
