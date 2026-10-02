@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::{env, fmt};
 
@@ -119,6 +120,14 @@ impl StorageConfigs {
                 left != right,
                 "{left:?} storage config is defined multiple times",
             );
+        }
+        if let Some(s3_storage_config) = self.find_s3() {
+            for (bucket, bucket_config) in &s3_storage_config.buckets {
+                ensure!(
+                    bucket_config.buckets.is_empty(),
+                    "S3 bucket config `{bucket}` cannot define nested `buckets`",
+                );
+            }
         }
         Ok(())
     }
@@ -401,116 +410,16 @@ pub struct S3StorageConfig {
     /// Per-bucket S3-compatible backend overrides, keyed by bucket name. When an
     /// `s3://<bucket>/...` URI is resolved, an exact match here supplies that
     /// bucket's own endpoint, credentials, region, and flags; any bucket not
-    /// listed falls back to the fields on this (primary) backend.
+    /// listed falls back to the fields on this (primary) backend. Bucket configs
+    /// cannot themselves define `buckets`.
     #[serde(default)]
-    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    pub profiles: std::collections::BTreeMap<String, S3ProfileConfig>,
-    /// Set when this config is the projection of a per-bucket profile. Profiles
-    /// are self-contained, so the process-wide `QW_S3_ENDPOINT` /
-    /// `QW_S3_FORCE_PATH_STYLE_ACCESS` overrides apply to the primary backend
-    /// only. Not serialized; defaults to `false` (the primary backend).
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub buckets: BTreeMap<String, S3StorageConfig>,
+    /// Set on the configs returned by [`S3StorageConfig::bucket_configs`]. Bucket
+    /// configs are self-contained, so the process-wide `QW_S3_ENDPOINT` and
+    /// `QW_S3_FORCE_PATH_STYLE_ACCESS` overrides apply to the primary backend only.
     #[serde(skip)]
-    pub is_profile: bool,
-}
-
-/// Per-bucket S3-compatible backend override nested under
-/// `storage.s3.profiles.<bucket>`. Mirrors `S3StorageConfig` but cannot itself
-/// nest further profiles (no recursion).
-#[derive(Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct S3ProfileConfig {
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub flavor: Option<StorageBackendFlavor>,
-    #[serde(default)]
-    pub access_key_id: Option<String>,
-    #[serde(default)]
-    pub secret_access_key: Option<String>,
-    #[serde(default)]
-    pub region: Option<String>,
-    #[serde(default)]
-    pub endpoint: Option<String>,
-    #[serde(default)]
-    pub force_path_style_access: bool,
-    #[serde(alias = "disable_multi_object_delete_requests")]
-    #[serde(default)]
-    pub disable_multi_object_delete: bool,
-    #[serde(default)]
-    pub disable_multipart_upload: bool,
-    #[serde(default)]
-    pub checksum_algorithm: ChecksumAlgorithm,
-    /// Deprecated: applies into `checksum_algorithm: disabled`.
-    #[serde(default, skip_serializing)]
-    pub disable_checksums: bool,
-    #[serde(default)]
-    pub disable_stalled_stream_protection_upload: bool,
-    #[serde(default)]
-    pub disable_stalled_stream_protection_download: bool,
-}
-
-impl S3ProfileConfig {
-    /// Project this profile back into a full `S3StorageConfig`
-    /// (with an empty `profiles` map) so it can flow through the existing
-    /// S3 client construction code unchanged.
-    pub fn as_s3_config(&self) -> S3StorageConfig {
-        let mut s3_config = S3StorageConfig {
-            flavor: self.flavor,
-            access_key_id: self.access_key_id.clone(),
-            secret_access_key: self.secret_access_key.clone(),
-            region: self.region.clone(),
-            endpoint: self.endpoint.clone(),
-            force_path_style_access: self.force_path_style_access,
-            disable_multi_object_delete: self.disable_multi_object_delete,
-            disable_multipart_upload: self.disable_multipart_upload,
-            checksum_algorithm: self.checksum_algorithm,
-            disable_checksums: self.disable_checksums,
-            disable_stalled_stream_protection_upload: self.disable_stalled_stream_protection_upload,
-            disable_stalled_stream_protection_download: self
-                .disable_stalled_stream_protection_download,
-            profiles: Default::default(),
-            is_profile: true,
-        };
-        // Expand `flavor` shortcuts (region/path-style/checksum defaults) the
-        // same way the primary backend does at config load time.
-        s3_config.apply_flavor();
-        s3_config
-    }
-
-    pub fn redact(&mut self) {
-        if let Some(secret_access_key) = self.secret_access_key.as_mut() {
-            *secret_access_key = "***redacted***".to_string();
-        }
-    }
-}
-
-impl fmt::Debug for S3ProfileConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("S3ProfileConfig")
-            .field("flavor", &self.flavor)
-            .field("access_key_id", &self.access_key_id)
-            .field(
-                "secret_access_key",
-                &self.secret_access_key.as_ref().map(|_| "***redacted***"),
-            )
-            .field("region", &self.region)
-            .field("endpoint", &self.endpoint)
-            .field("force_path_style_access", &self.force_path_style_access)
-            .field(
-                "disable_multi_object_delete",
-                &self.disable_multi_object_delete,
-            )
-            .field("disable_multipart_upload", &self.disable_multipart_upload)
-            .field("checksum_algorithm", &self.checksum_algorithm)
-            .field(
-                "disable_stalled_stream_protection_upload",
-                &self.disable_stalled_stream_protection_upload,
-            )
-            .field(
-                "disable_stalled_stream_protection_download",
-                &self.disable_stalled_stream_protection_download,
-            )
-            .finish()
-    }
+    pub is_bucket_config: bool,
 }
 
 impl S3StorageConfig {
@@ -540,21 +449,34 @@ impl S3StorageConfig {
         if self.disable_checksums {
             self.checksum_algorithm = ChecksumAlgorithm::Disabled;
         }
+        for bucket_config in self.buckets.values_mut() {
+            bucket_config.apply_flavor();
+        }
     }
 
     pub fn redact(&mut self) {
         if let Some(secret_access_key) = self.secret_access_key.as_mut() {
             *secret_access_key = "***redacted***".to_string();
         }
-        for profile in self.profiles.values_mut() {
-            profile.redact();
+        for bucket_config in self.buckets.values_mut() {
+            bucket_config.redact();
         }
     }
 
+    pub fn bucket_configs(&self) -> impl Iterator<Item = (&str, S3StorageConfig)> + '_ {
+        self.buckets.iter().map(|(bucket, bucket_config)| {
+            let bucket_config = S3StorageConfig {
+                is_bucket_config: true,
+                ..bucket_config.clone()
+            };
+            (bucket.as_str(), bucket_config)
+        })
+    }
+
     pub fn endpoint(&self) -> Option<String> {
-        // `QW_S3_ENDPOINT` overrides the primary backend only; per-bucket
-        // profiles are self-contained and use their own configured endpoint.
-        if !self.is_profile
+        // `QW_S3_ENDPOINT` overrides the primary backend only; bucket configs
+        // are self-contained and use their own configured endpoint.
+        if !self.is_bucket_config
             && let Ok(endpoint) = env::var("QW_S3_ENDPOINT")
         {
             return Some(endpoint);
@@ -565,7 +487,7 @@ impl S3StorageConfig {
     pub fn force_path_style_access(&self) -> Option<bool> {
         // `QW_S3_FORCE_PATH_STYLE_ACCESS` overrides the primary backend only.
         // No process-wide cache: each backend must honor its own setting.
-        if self.is_profile {
+        if self.is_bucket_config {
             return Some(self.force_path_style_access);
         }
         Some(get_bool_from_env(
@@ -600,7 +522,7 @@ impl fmt::Debug for S3StorageConfig {
                 "disable_stalled_stream_protection_download",
                 &self.disable_stalled_stream_protection_download,
             )
-            .field("profiles", &self.profiles)
+            .field("buckets", &self.buckets)
             .finish()
     }
 }
@@ -954,11 +876,11 @@ mod tests {
     }
 
     #[test]
-    fn test_storage_s3_profiles_serde() {
+    fn test_storage_s3_buckets_serde() {
         let s3_storage_config_yaml = r#"
             endpoint: https://primary.example.com
             region: us-east-1
-            profiles:
+            buckets:
               logs-bucket-eu:
                 endpoint: https://alt.example.com
                 region: eu-west-3
@@ -972,122 +894,126 @@ mod tests {
         "#;
         let s3_storage_config: S3StorageConfig =
             serde_yaml::from_str(s3_storage_config_yaml).unwrap();
-        assert_eq!(s3_storage_config.profiles.len(), 2);
+        assert_eq!(s3_storage_config.buckets.len(), 2);
 
-        let eu = s3_storage_config.profiles.get("logs-bucket-eu").unwrap();
+        let eu = s3_storage_config.buckets.get("logs-bucket-eu").unwrap();
         assert_eq!(eu.region.as_deref(), Some("eu-west-3"));
         assert_eq!(eu.access_key_id.as_deref(), Some("alt-key"));
         assert!(eu.force_path_style_access);
+        assert!(!eu.is_bucket_config);
 
-        // `as_s3_config` projects a profile back into a full S3StorageConfig
-        // (with an empty `profiles` map) so it can drive the S3 client builder
-        // unchanged.
-        let projected = eu.as_s3_config();
-        assert_eq!(projected.region.as_deref(), Some("eu-west-3"));
-        assert_eq!(projected.access_key_id.as_deref(), Some("alt-key"));
-        assert!(projected.force_path_style_access);
-        assert!(projected.profiles.is_empty());
+        let bucket_configs: Vec<(&str, S3StorageConfig)> =
+            s3_storage_config.bucket_configs().collect();
+        assert_eq!(bucket_configs.len(), 2);
+        let (bucket, bucket_config) = &bucket_configs[0];
+        assert_eq!(*bucket, "logs-bucket-eu");
+        assert_eq!(bucket_config.region.as_deref(), Some("eu-west-3"));
+        assert!(bucket_config.is_bucket_config);
     }
 
     #[test]
-    fn test_storage_s3_profiles_bucket_name_keys() {
-        // The map key is a bucket name, so dotted bucket names are accepted as-is
-        // — no URI-scheme syntax is imposed on the key.
+    fn test_storage_s3_buckets_dotted_bucket_name() {
+        // The map key is a bucket name, so dotted bucket names are accepted as-is.
         let s3_storage_config_yaml = r#"
-            profiles:
+            buckets:
               my.dotted.bucket:
                 endpoint: https://logs.example.com
         "#;
         let s3_storage_config: S3StorageConfig =
             serde_yaml::from_str(s3_storage_config_yaml).unwrap();
-        assert!(s3_storage_config.profiles.contains_key("my.dotted.bucket"));
+        assert!(s3_storage_config.buckets.contains_key("my.dotted.bucket"));
         let storage_configs = StorageConfigs::new(vec![s3_storage_config.into()]);
         storage_configs.validate().unwrap();
     }
 
     #[test]
-    fn test_storage_s3_profiles_redact() {
-        let mut profile = S3ProfileConfig {
-            access_key_id: Some("public-key".to_string()),
-            secret_access_key: Some("super-secret".to_string()),
-            ..Default::default()
-        };
-        profile.redact();
-        assert_eq!(profile.access_key_id.as_deref(), Some("public-key"));
-        assert_eq!(profile.secret_access_key.as_deref(), Some("***redacted***"));
-    }
-
-    #[test]
-    fn test_storage_s3_profiles_field_parity() {
-        // Profiles accept the same fields as the primary S3 block, including the
-        // legacy `disable_multi_object_delete_requests` alias and the
-        // stalled-stream toggles, and project them through `as_s3_config`.
+    fn test_storage_s3_buckets_reject_nested_buckets() {
         let s3_storage_config_yaml = r#"
-            profiles:
+            buckets:
               logs-bucket:
-                endpoint: https://alt.example.com
-                disable_multi_object_delete_requests: true
-                disable_stalled_stream_protection_upload: true
-                disable_stalled_stream_protection_download: true
-                checksum_algorithm: disabled
+                buckets:
+                  nested-bucket:
+                    endpoint: https://nested.example.com
         "#;
         let s3_storage_config: S3StorageConfig =
             serde_yaml::from_str(s3_storage_config_yaml).unwrap();
-        let profile = s3_storage_config.profiles.get("logs-bucket").unwrap();
-        assert!(profile.disable_multi_object_delete);
-        assert!(profile.disable_stalled_stream_protection_upload);
-        assert!(profile.disable_stalled_stream_protection_download);
-
-        let projected = profile.as_s3_config();
-        assert!(projected.is_profile);
-        assert!(projected.disable_multi_object_delete);
-        assert!(projected.disable_stalled_stream_protection_upload);
-        assert!(projected.disable_stalled_stream_protection_download);
-        assert_eq!(projected.checksum_algorithm, ChecksumAlgorithm::Disabled);
-
-        // A genuinely unknown field is still rejected.
-        let invalid_yaml = r#"
-            profiles:
-              logs-bucket:
-                bogus_field: true
-        "#;
-        assert!(serde_yaml::from_str::<S3StorageConfig>(invalid_yaml).is_err());
+        let storage_configs = StorageConfigs::new(vec![s3_storage_config.into()]);
+        let error = storage_configs.validate().unwrap_err();
+        assert!(error.to_string().contains("logs-bucket"));
     }
 
     #[test]
-    fn test_storage_s3_profile_applies_flavor() {
-        // `flavor` shortcuts expand for profiles just like the primary backend.
+    fn test_storage_s3_buckets_redact() {
+        let mut s3_storage_config = S3StorageConfig {
+            buckets: BTreeMap::from([(
+                "logs-bucket".to_string(),
+                S3StorageConfig {
+                    access_key_id: Some("public-key".to_string()),
+                    secret_access_key: Some("super-secret".to_string()),
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        assert!(!format!("{s3_storage_config:?}").contains("super-secret"));
+
+        s3_storage_config.redact();
+        let bucket_config = &s3_storage_config.buckets["logs-bucket"];
+        assert_eq!(bucket_config.access_key_id.as_deref(), Some("public-key"));
+        assert_eq!(
+            bucket_config.secret_access_key.as_deref(),
+            Some("***redacted***")
+        );
+    }
+
+    #[test]
+    fn test_storage_s3_buckets_apply_flavor() {
+        // `flavor` shortcuts expand for bucket configs just like the primary backend.
         let s3_storage_config_yaml = r#"
-            profiles:
+            buckets:
               minio-bucket:
                 flavor: minio
                 endpoint: http://minio.example.com:9000
+              legacy-bucket:
+                disable_checksums: true
         "#;
         let s3_storage_config: S3StorageConfig =
             serde_yaml::from_str(s3_storage_config_yaml).unwrap();
-        let projected = s3_storage_config
-            .profiles
-            .get("minio-bucket")
-            .unwrap()
-            .as_s3_config();
-        assert_eq!(projected.region.as_deref(), Some("minio"));
-        assert!(projected.force_path_style_access);
+        let mut storage_configs = StorageConfigs::new(vec![s3_storage_config.into()]);
+        storage_configs.apply_flavors();
+        let s3_storage_config = storage_configs.find_s3().unwrap();
+
+        let minio_bucket_config = &s3_storage_config.buckets["minio-bucket"];
+        assert_eq!(minio_bucket_config.region.as_deref(), Some("minio"));
+        assert!(minio_bucket_config.force_path_style_access);
+
+        let legacy_bucket_config = &s3_storage_config.buckets["legacy-bucket"];
+        assert_eq!(
+            legacy_bucket_config.checksum_algorithm,
+            ChecksumAlgorithm::Disabled
+        );
     }
 
     #[test]
-    fn test_storage_s3_profile_uses_own_endpoint() {
-        // A profile is self-contained: `endpoint()` returns its configured
-        // endpoint regardless of the process-wide `QW_S3_ENDPOINT` override,
-        // which applies to the primary backend only.
-        let profile = S3ProfileConfig {
-            endpoint: Some("https://profile.example.com".to_string()),
+    fn test_storage_s3_bucket_config_uses_own_endpoint() {
+        // A bucket config is self-contained: `endpoint()` and
+        // `force_path_style_access()` skip the process-wide env overrides, which
+        // apply to the primary backend only.
+        let s3_storage_config = S3StorageConfig {
+            buckets: BTreeMap::from([(
+                "logs-bucket".to_string(),
+                S3StorageConfig {
+                    endpoint: Some("https://bucket.example.com".to_string()),
+                    ..Default::default()
+                },
+            )]),
             ..Default::default()
         };
-        let projected = profile.as_s3_config();
-        assert!(projected.is_profile);
+        let (_, bucket_config) = s3_storage_config.bucket_configs().next().unwrap();
         assert_eq!(
-            projected.endpoint(),
-            Some("https://profile.example.com".to_string())
+            bucket_config.endpoint(),
+            Some("https://bucket.example.com".to_string())
         );
+        assert_eq!(bucket_config.force_path_style_access(), Some(false));
     }
 }
