@@ -741,7 +741,15 @@ fn deserialize_mapping_type(
             }
             return Ok(FieldMappingType::Concatenate(concatenate_options));
         }
-        QuickwitFieldType::TieBreaker => return Ok(FieldMappingType::TieBreaker),
+        QuickwitFieldType::TieBreaker => {
+            if let JsonValue::Object(options) = &json
+                && !options.is_empty()
+            {
+                let option_names: Vec<&String> = options.keys().collect();
+                bail!("tie_breaker type does not accept any parameters, got {option_names:?}");
+            }
+            return Ok(FieldMappingType::TieBreaker);
+        }
     };
     match typ {
         Type::Str => {
@@ -1433,6 +1441,25 @@ mod tests {
             })
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_deserialize_tie_breaker_mapping_with_options() {
+        let error = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "tie_breaker",
+                "type": "tie_breaker",
+                "fast": false
+            }
+            "#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("tie_breaker type does not accept any parameters"),
+            "{error}"
+        );
     }
 
     #[test]

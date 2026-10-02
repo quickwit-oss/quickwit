@@ -28,7 +28,9 @@ use cron::Schedule;
 use humantime::parse_duration;
 use quickwit_common::uri::Uri;
 use quickwit_common::{is_true, true_fn};
-use quickwit_doc_mapper::{DocMapper, DocMapperBuilder, DocMapping};
+use quickwit_doc_mapper::{
+    DocMapper, DocMapperBuilder, DocMapping, FieldMappingEntry, FieldMappingType,
+};
 use quickwit_proto::types::IndexId;
 use rand::{RngExt, distr, rng};
 use serde::{Deserialize, Serialize};
@@ -609,6 +611,7 @@ pub(super) fn validate_index_config(
 ///    - The doc mapping UID should differ from the current one
 ///    - The timestamp field should remain the same
 ///    - The tokenizers should be a superset of the current tokenizers
+///    - No `tie_breaker` field should be added
 ///    - A doc mapper can be built from the new doc mapping
 pub fn prepare_doc_mapping_update(
     mut new_doc_mapping: DocMapping,
@@ -649,8 +652,50 @@ pub fn prepare_doc_mapping_update(
         "updating tokenizers is allowed only if adding new tokenizers, current tokenizers \
          `{current_tokenizers:?}`, new tokenizers `{new_tokenizers:?}`",
     );
+    // Tie-breaker values are only generated for newly indexed documents, so existing splits would
+    // have no values for a tie-breaker field added by an update.
+    let current_tie_breaker_fields = tie_breaker_field_paths(current_doc_mapping);
+    let added_tie_breaker_fields: Vec<String> = tie_breaker_field_paths(&new_doc_mapping)
+        .into_iter()
+        .filter(|field_path| !current_tie_breaker_fields.contains(field_path))
+        .collect();
+    ensure!(
+        added_tie_breaker_fields.is_empty(),
+        "adding `tie_breaker` fields is not allowed when updating a doc mapping, the index must \
+         be recreated instead, added fields `{added_tie_breaker_fields:?}`",
+    );
     build_doc_mapper(&new_doc_mapping, search_settings).context("invalid doc mapping")?;
     Ok((new_doc_mapping, true))
+}
+
+/// Returns the full paths of the `tie_breaker` fields, including those nested in objects.
+fn tie_breaker_field_paths(doc_mapping: &DocMapping) -> HashSet<String> {
+    let mut field_paths = HashSet::new();
+    collect_tie_breaker_field_paths(&doc_mapping.field_mappings, "", &mut field_paths);
+    field_paths
+}
+
+fn collect_tie_breaker_field_paths(
+    field_mappings: &[FieldMappingEntry],
+    path_prefix: &str,
+    field_paths: &mut HashSet<String>,
+) {
+    for field_mapping in field_mappings {
+        let field_path = format!("{path_prefix}{}", field_mapping.name);
+        match &field_mapping.mapping_type {
+            FieldMappingType::TieBreaker => {
+                field_paths.insert(field_path);
+            }
+            FieldMappingType::Object(object_options) => {
+                collect_tie_breaker_field_paths(
+                    &object_options.field_mappings,
+                    &format!("{field_path}."),
+                    field_paths,
+                );
+            }
+            _ => {}
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1256,6 +1301,18 @@ mod tests {
                 .unwrap_err()
                 .to_string();
         assert!(error.contains("tokenizers"));
+
+        // The new doc mapping should not add a tie-breaker field.
+        let mut new_doc_mapping = current_doc_mapping.clone();
+        new_doc_mapping.doc_mapping_uid = DocMappingUid::random();
+        new_doc_mapping.field_mappings.push(
+            serde_json::from_str(r#"{"name": "tie_breaker", "type": "tie_breaker"}"#).unwrap(),
+        );
+        let error =
+            prepare_doc_mapping_update(new_doc_mapping, &current_doc_mapping, &search_settings)
+                .unwrap_err()
+                .to_string();
+        assert!(error.contains("adding `tie_breaker` fields is not allowed"));
 
         // The new doc mapping should be "buildable" into a doc mapper.
         let mut new_doc_mapping = current_doc_mapping.clone();
