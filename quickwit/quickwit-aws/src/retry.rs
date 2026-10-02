@@ -62,13 +62,18 @@ where E: AwsRetryable
     }
 }
 
-pub async fn aws_retry<U, E, Fut>(retry_params: &RetryParams, f: impl Fn() -> Fut) -> Result<U, E>
+pub async fn aws_retry<U, E, Fut>(
+    request_name: &'static str,
+    retry_params: &RetryParams,
+    f: impl Fn() -> Fut,
+) -> Result<U, E>
 where
     Fut: Future<Output = Result<U, E>>,
     E: AwsRetryable + Debug + 'static,
 {
     retry_with_mockable_sleep(
         retry_params,
+        request_name,
         || f().map_err(AwsRetryableWrapper),
         TokioSleep,
     )
