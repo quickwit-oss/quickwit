@@ -1594,19 +1594,21 @@ impl CanSplitDoBetter {
             CanSplitDoBetter::SplitTimestampHigher(timestamp)
             | CanSplitDoBetter::FindTraceIdsAggregation(timestamp) => {
                 if let Some(SortValue::I64(timestamp_ns)) = hit.sort_value() {
-                    // if we get a timestamp of, says 1.5s, we need to check up to 2s to make
-                    // sure we don't throw away something like 1.2s, so we should round up while
-                    // dividing.
-                    *timestamp = Some(quickwit_common::div_ceil(timestamp_ns, 1_000_000_000));
+                    // Split time ranges are in whole seconds and inclusive: a split whose
+                    // `timestamp_end` is S can hold documents up to S.999999999. If the worst
+                    // top-K hit is at 1.5s, a split ending at S=1 may still hold a 1.7s
+                    // document, which beats it. So the split must be kept whenever
+                    // `timestamp_end >= floor(worst)`: round DOWN. Rounding up here discarded
+                    // every split ending in the same second as the worst hit.
+                    *timestamp = Some(timestamp_ns.div_euclid(1_000_000_000));
                 }
             }
             CanSplitDoBetter::SplitTimestampLower(timestamp) => {
                 if let Some(SortValue::I64(timestamp_ns)) = hit.sort_value() {
-                    // if we get a timestamp of, says 1.5s, we need to check down to 1s to make
-                    // sure we don't throw away something like 1.7s, so we should truncate,
-                    // which is the default behavior of division
-                    let timestamp_s = timestamp_ns / 1_000_000_000;
-                    *timestamp = Some(timestamp_s);
+                    // A split whose `timestamp_start` is S holds documents >= S.0. It can beat
+                    // a worst hit at 1.5s only if S <= 1.5, i.e. S <= floor(worst). Round down
+                    // (`div_euclid`, so that pre-epoch timestamps also round toward -inf).
+                    *timestamp = Some(timestamp_ns.div_euclid(1_000_000_000));
                 }
             }
         }
@@ -3275,5 +3277,45 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_can_split_do_better_timestamp_same_second() {
+        // Regression: the worst top-K hit and a split's end both fall in second 1601.
+        let worst_hit = PartialHit {
+            sort_value: Some(quickwit_proto::search::SortByValue {
+                sort_value: Some(SortValue::I64(1_601_758_000_000)),
+            }),
+            ..Default::default()
+        };
+        let split_in_same_second = SplitIdAndFooterOffsets {
+            timestamp_start: Some(1_601),
+            timestamp_end: Some(1_601),
+            ..Default::default()
+        };
+        let split_in_previous_second = SplitIdAndFooterOffsets {
+            timestamp_start: Some(1_600),
+            timestamp_end: Some(1_600),
+            ..Default::default()
+        };
+        let split_in_next_second = SplitIdAndFooterOffsets {
+            timestamp_start: Some(1_602),
+            timestamp_end: Some(1_602),
+            ..Default::default()
+        };
+
+        // sort by timestamp desc: the same-second split may hold 1601.9 > 1601.758
+        let mut desc = CanSplitDoBetter::SplitTimestampHigher(None);
+        desc.record_new_worst_hit(&worst_hit);
+        assert!(desc.can_be_better(&split_in_same_second));
+        assert!(desc.can_be_better(&split_in_next_second));
+        assert!(!desc.can_be_better(&split_in_previous_second));
+
+        // sort by timestamp asc: the same-second split may hold 1601.1 < 1601.758
+        let mut asc = CanSplitDoBetter::SplitTimestampLower(None);
+        asc.record_new_worst_hit(&worst_hit);
+        assert!(asc.can_be_better(&split_in_same_second));
+        assert!(asc.can_be_better(&split_in_previous_second));
+        assert!(!asc.can_be_better(&split_in_next_second));
     }
 }
