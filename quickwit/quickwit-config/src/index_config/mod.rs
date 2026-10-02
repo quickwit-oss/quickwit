@@ -681,7 +681,10 @@ fn collect_tie_breaker_field_paths(
     field_paths: &mut HashSet<String>,
 ) {
     for field_mapping in field_mappings {
-        let field_path = format!("{path_prefix}{}", field_mapping.name);
+        // Dots in field names are escaped like in Tantivy schema field names, so that a field named
+        // `a.b` and a field `b` nested in an object `a` map to distinct paths.
+        let escaped_field_name = field_mapping.name.replace('.', r"\.");
+        let field_path = format!("{path_prefix}{escaped_field_name}");
         match &field_mapping.mapping_type {
             FieldMappingType::TieBreaker => {
                 field_paths.insert(field_path);
@@ -1310,6 +1313,29 @@ mod tests {
         );
         let error =
             prepare_doc_mapping_update(new_doc_mapping, &current_doc_mapping, &search_settings)
+                .unwrap_err()
+                .to_string();
+        assert!(error.contains("adding `tie_breaker` fields is not allowed"));
+
+        // A tie-breaker field named `a.b` is a different field than `b` nested in an object `a`.
+        let mut dotted_doc_mapping = current_doc_mapping.clone();
+        dotted_doc_mapping
+            .field_mappings
+            .push(serde_json::from_str(r#"{"name": "a.b", "type": "tie_breaker"}"#).unwrap());
+        let mut new_doc_mapping = current_doc_mapping.clone();
+        new_doc_mapping.doc_mapping_uid = DocMappingUid::random();
+        new_doc_mapping.field_mappings.push(
+            serde_json::from_str(
+                r#"{
+                    "name": "a",
+                    "type": "object",
+                    "field_mappings": [{"name": "b", "type": "tie_breaker"}]
+                }"#,
+            )
+            .unwrap(),
+        );
+        let error =
+            prepare_doc_mapping_update(new_doc_mapping, &dotted_doc_mapping, &search_settings)
                 .unwrap_err()
                 .to_string();
         assert!(error.contains("adding `tie_breaker` fields is not allowed"));

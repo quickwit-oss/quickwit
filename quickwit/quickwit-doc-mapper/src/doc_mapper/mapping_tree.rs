@@ -349,6 +349,10 @@ impl MappingLeaf {
         json_value: &BorrowedJsonValue,
         path: &[&str],
     ) -> Result<(), DocParsingError> {
+        // Must stay consistent with `doc_from_json`, which ignores any supplied tie-breaker value.
+        if matches!(self.typ, LeafType::TieBreaker) {
+            return Ok(());
+        }
         if json_value.is_null() {
             // We just ignore `null`.
             return Ok(());
@@ -1620,12 +1624,24 @@ mod tests {
             cardinality: Cardinality::SingleValued,
             concatenate: Vec::new(),
         };
-        let mut document = Document::default();
-        let mut path = Vec::new();
-        leaf_entry
-            .doc_from_json(json!(42u64), &mut document, &mut path)
-            .unwrap();
-        assert!(document.get_all(field).next().is_none());
+        for json_str in ["42", "[1, 2]"] {
+            let borrowed_json_value: serde_json_borrow::Value =
+                serde_json::from_str(json_str).unwrap();
+            leaf_entry
+                .validate_from_json(&borrowed_json_value, &["tie_breaker"])
+                .unwrap();
+
+            let mut document = Document::default();
+            let mut path = Vec::new();
+            leaf_entry
+                .doc_from_json(
+                    serde_json::from_str(json_str).unwrap(),
+                    &mut document,
+                    &mut path,
+                )
+                .unwrap();
+            assert!(document.get_all(field).next().is_none());
+        }
     }
 
     #[test]
