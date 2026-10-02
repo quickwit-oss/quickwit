@@ -198,6 +198,15 @@ mod tests {
     }
 
     #[test]
+    fn test_field_mapping_from_entry_tie_breaker() {
+        let entry_json = json!({ "name": "tie_breaker", "type": "tie_breaker" });
+        let entry: FieldMappingEntry = serde_json::from_value(entry_json).unwrap();
+        let mapping = field_mapping_from_entry(&entry).unwrap();
+        let serialized = serde_json::to_value(&mapping).unwrap();
+        assert_eq!(serialized, json!({ "type": "long" }));
+    }
+
+    #[test]
     fn test_field_mapping_from_entry_object() {
         let entry_json = json!({
             "name": "nested",
