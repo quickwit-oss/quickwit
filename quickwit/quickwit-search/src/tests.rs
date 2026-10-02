@@ -875,9 +875,29 @@ async fn test_sort_by_tie_breaker() {
     }
 
     let descending_hits = search_hits(SortOrder::Desc).await;
-    let mut expected_descending_hits = ascending_hits;
+    let mut expected_descending_hits = ascending_hits.clone();
     expected_descending_hits.reverse();
     assert_eq!(descending_hits, expected_descending_hits);
+
+    // Term queries on the fast-only tie-breaker field run as exact range queries.
+    let (split_id, doc_id, tie_breaker) = &ascending_hits[0];
+    let search_request = SearchRequest {
+        index_id_patterns: vec![index_id.to_string()],
+        query_ast: qast_json_helper(&format!("tie_breaker:{tie_breaker}"), &[]),
+        max_hits: 10,
+        ..Default::default()
+    };
+    let search_resp = single_node_search(
+        search_request,
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await
+    .unwrap();
+    assert!(search_resp.hits.iter().any(|hit| {
+        let partial_hit = hit.partial_hit.as_ref().unwrap();
+        partial_hit.split_id == *split_id && partial_hit.doc_id == *doc_id
+    }));
 
     test_sandbox.assert_quit().await;
 }

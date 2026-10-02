@@ -118,7 +118,6 @@ impl From<TermQuery> for HashMap<String, TermQueryValue> {
 mod tests {
     use tantivy::schema::{INDEXED, Schema};
 
-    use crate::InvalidQuery;
     use crate::query_ast::{BuildTantivyAst, BuildTantivyAstContext, TermQuery};
 
     #[test]
@@ -218,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn test_term_query_with_tie_breaker_is_rejected() {
+    fn test_term_query_with_tie_breaker() {
         let term_query = TermQuery {
             field: "tie_breaker".to_string(),
             value: "42".to_string(),
@@ -226,12 +225,13 @@ mod tests {
         let mut schema_builder = Schema::builder();
         schema_builder.add_tie_breaker_field("tie_breaker");
         let schema = schema_builder.build();
-        let error = term_query
+        let tantivy_query_ast = term_query
             .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
-            .unwrap_err();
-        assert!(
-            matches!(&error, InvalidQuery::SchemaError(message) if message == "tie_breaker fields are not term-searchable"),
-            "{error:?}"
+            .unwrap();
+        let leaf = tantivy_query_ast.as_leaf().unwrap();
+        assert_eq!(
+            &format!("{leaf:?}"),
+            "TermQuery(Term(field=0, type=U64, 42))"
         );
     }
 }
