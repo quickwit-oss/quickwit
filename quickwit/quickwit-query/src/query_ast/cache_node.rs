@@ -127,7 +127,7 @@ impl BuildTantivyAst for CacheNode {
 use tantivy::directory::OwnedBytes;
 use tantivy::index::SegmentId;
 use tantivy::query::{EnableScoring, Explanation, Query, Scorer, Weight};
-use tantivy::{DocId, DocSet, Score, SegmentReader, TantivyError, Term};
+use tantivy::{DocId, DocSet, Score, SeekDangerResult, SegmentReader, TantivyError, Term};
 
 #[derive(Clone, Debug)]
 pub struct CacheHitQuery {
@@ -294,8 +294,40 @@ impl DocSet for HitSet {
         self.current_block[0]
     }
 
-    // fn seek(&mut self, target: DocId) -> DocId {
-    // }
+    fn seek(&mut self, target: DocId) -> DocId {
+        debug_assert!(self.doc() <= target);
+        while self.current_block[BitPacker1x::BLOCK_LEN - 1] < target {
+            self.load_new_block();
+            self.block_pos = 0;
+        }
+        self.block_pos += self.current_block[self.block_pos..].partition_point(|&doc| doc < target);
+        self.doc()
+    }
+
+    fn seek_danger(&mut self, target: DocId) -> SeekDangerResult {
+        if target == tantivy::TERMINATED {
+            return SeekDangerResult::SeekLowerBound(tantivy::TERMINATED);
+        }
+        while self.current_block[BitPacker1x::BLOCK_LEN - 1] < target {
+            self.load_new_block();
+            self.block_pos = 0;
+        }
+        if self.doc() > target {
+            return SeekDangerResult::SeekLowerBound(self.doc());
+        }
+        match self.current_block[self.block_pos..].binary_search(&target) {
+            Ok(position) => {
+                self.block_pos += position;
+                SeekDangerResult::Found
+            }
+            Err(_) => SeekDangerResult::SeekLowerBound(target + 1),
+        }
+    }
+
+    // Weight::count uses a fresh scorer. Return the stored total without consuming it.
+    fn count_including_deleted(&mut self) -> u32 {
+        u32::from_ne_bytes(self.buffer[0..4].try_into().unwrap())
+    }
 
     #[inline(always)]
     fn doc(&self) -> DocId {
@@ -578,6 +610,129 @@ mod tests {
         // many blocks, partial last block
         test_hit_set_roundtrip_helper(generator.clone().take(1024 + 6));
         test_hit_set_roundtrip_helper(generator.clone().skip(10).take(1024 + 6));
+    }
+
+    #[test]
+    fn test_hit_set_count_including_deleted() {
+        for count in [0, 1, 31, 32, 33, 64, 65, 1030] {
+            let mut builder = HitSetBuilder::new();
+            for doc in 0..count {
+                builder.insert(doc * 3);
+            }
+            let mut hits = builder.build();
+            let first_doc = hits.doc();
+            assert_eq!(hits.count_including_deleted(), count);
+            assert_eq!(hits.doc(), first_doc);
+            for doc in 0..count {
+                assert_eq!(hits.doc(), doc * 3);
+                hits.advance();
+            }
+            assert_eq!(hits.doc(), tantivy::TERMINATED);
+            assert_eq!(hits.count_including_deleted(), count);
+            assert_eq!(hits.advance(), tantivy::TERMINATED);
+        }
+    }
+
+    // Compare seeks and subsequent advances with the uncompressed document IDs.
+    #[test]
+    fn test_hit_set_seek() {
+        for count in [0, 1, 31, 32, 33, 64, 65, 1030] {
+            for start in [0, tantivy::TERMINATED - 4 * 1030] {
+                let docs: Vec<DocId> = (0..count).map(|doc| start + doc * 3).collect();
+                let mut builder = HitSetBuilder::new();
+                for &doc in &docs {
+                    builder.insert(doc);
+                }
+                let hits = builder.build();
+                let mut terminated = hits.clone();
+                assert_eq!(terminated.seek(tantivy::TERMINATED), tantivy::TERMINATED);
+                for _ in 0..96 {
+                    assert_eq!(terminated.doc(), tantivy::TERMINATED);
+                    assert_eq!(terminated.seek(tantivy::TERMINATED), tantivy::TERMINATED);
+                    assert_eq!(terminated.advance(), tantivy::TERMINATED);
+                }
+                for step in [1, 97] {
+                    let mut sought = hits.clone();
+                    for target in (start..start + count * 3 + 2).step_by(step) {
+                        let target = target.max(sought.doc());
+                        let position = docs.partition_point(|&doc| doc < target);
+                        let expected = docs.get(position).copied().unwrap_or(tantivy::TERMINATED);
+                        assert_eq!(sought.seek(target), expected);
+                        assert_eq!(sought.doc(), expected);
+                        // Seeking the current document must not advance it.
+                        assert_eq!(sought.seek(expected), expected);
+                        assert_eq!(
+                            sought.advance(),
+                            docs.get(position + 1)
+                                .copied()
+                                .unwrap_or(tantivy::TERMINATED)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_hit_set_seek_danger_miss() {
+        let mut builder = HitSetBuilder::new();
+        for doc in [1, 4, 7] {
+            builder.insert(doc);
+        }
+        let mut hits = builder.build();
+        assert_eq!(hits.seek_danger(2), SeekDangerResult::SeekLowerBound(3));
+        // A miss does not move to the next document. Only seek_danger calls are allowed
+        // until Found restores the valid state.
+        assert_eq!(hits.block_pos, 0);
+        assert_eq!(hits.seek_danger(3), SeekDangerResult::SeekLowerBound(4));
+        assert_eq!(hits.seek_danger(4), SeekDangerResult::Found);
+        assert_eq!(hits.doc(), 4);
+        assert_eq!(hits.advance(), 7);
+    }
+
+    #[test]
+    fn test_hit_set_seek_danger() {
+        for count in [0, 1, 31, 32, 33, 64, 65, 1030] {
+            for start in [0, tantivy::TERMINATED - 4 * 1030] {
+                let docs: Vec<DocId> = (0..count).map(|doc| start + doc * 3).collect();
+                let mut builder = HitSetBuilder::new();
+                for &doc in &docs {
+                    builder.insert(doc);
+                }
+                let hits = builder.build();
+                // Exercise both successive targets and jumps across several blocks.
+                for step in [1, 97] {
+                    let mut sought = hits.clone();
+                    for target in (start..start + count * 3 + 2).step_by(step) {
+                        let position = docs.partition_point(|&doc| doc < target);
+                        let expected = docs.get(position).copied().unwrap_or(tantivy::TERMINATED);
+                        let result = sought.seek_danger(target);
+                        if expected == target {
+                            assert_eq!(result, SeekDangerResult::Found);
+                            assert_eq!(sought.doc(), target);
+                            assert_eq!(
+                                sought.clone().advance(),
+                                docs.get(position + 1)
+                                    .copied()
+                                    .unwrap_or(tantivy::TERMINATED)
+                            );
+                        } else {
+                            let SeekDangerResult::SeekLowerBound(lower_bound) = result else {
+                                panic!("seek_danger found absent target {target}");
+                            };
+                            assert!(lower_bound > target);
+                            assert!(lower_bound <= expected);
+                        }
+                    }
+                    assert_eq!(
+                        sought.seek_danger(tantivy::TERMINATED),
+                        SeekDangerResult::SeekLowerBound(tantivy::TERMINATED)
+                    );
+                    assert_eq!(sought.seek(tantivy::TERMINATED), tantivy::TERMINATED);
+                    assert_eq!(sought.count_including_deleted(), count);
+                }
+            }
+        }
     }
 
     #[test]
