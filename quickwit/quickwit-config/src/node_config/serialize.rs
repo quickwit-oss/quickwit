@@ -58,6 +58,10 @@ fn default_cluster_id() -> ConfigValue<String, QW_CLUSTER_ID> {
     ConfigValue::with_default(DEFAULT_CLUSTER_ID.to_string())
 }
 
+fn default_extra_cluster_ids() -> ConfigValue<List, QW_EXTRA_CLUSTER_IDS> {
+    ConfigValue::with_default(List::default())
+}
+
 fn default_node_id() -> ConfigValue<String, QW_NODE_ID> {
     let node_id = match get_short_hostname() {
         Ok(short_hostname) => short_hostname,
@@ -183,6 +187,8 @@ impl From<VersionedNodeConfig> for NodeConfigBuilder {
 struct NodeConfigBuilder {
     #[serde(default = "default_cluster_id")]
     cluster_id: ConfigValue<String, QW_CLUSTER_ID>,
+    #[serde(default = "default_extra_cluster_ids")]
+    extra_cluster_ids: ConfigValue<List, QW_EXTRA_CLUSTER_IDS>,
     #[serde(default = "default_node_id")]
     node_id: ConfigValue<String, QW_NODE_ID>,
     #[serde(default = "default_availability_zone")]
@@ -374,6 +380,7 @@ impl NodeConfigBuilder {
 
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
+            extra_cluster_ids: self.extra_cluster_ids.resolve(env_vars)?.0,
             node_id,
             availability_zone,
             enabled_services: resolved_enabled_services,
@@ -409,6 +416,9 @@ impl NodeConfigBuilder {
 
 fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
     validate_identifier("cluster", &node_config.cluster_id)?;
+    for cluster_id in &node_config.extra_cluster_ids {
+        validate_identifier("extra cluster", cluster_id)?;
+    }
     validate_node_id(&node_config.node_id)?;
 
     if node_config.cluster_id == DEFAULT_CLUSTER_ID {
@@ -518,6 +528,7 @@ impl Default for NodeConfigBuilder {
     fn default() -> Self {
         Self {
             cluster_id: default_cluster_id(),
+            extra_cluster_ids: default_extra_cluster_ids(),
             node_id: default_node_id(),
             availability_zone: ConfigValue::none(),
             enabled_services: default_enabled_services(),
@@ -671,6 +682,7 @@ pub fn node_config_for_tests_from_ports(
     };
     NodeConfig {
         cluster_id: default_cluster_id().unwrap(),
+        extra_cluster_ids: Vec::new(),
         node_id,
         availability_zone,
         enabled_services,
@@ -1078,6 +1090,10 @@ mod tests {
         let config_yaml = "version: 0.8";
         let mut env_vars = HashMap::new();
         env_vars.insert("QW_CLUSTER_ID".to_string(), "test-cluster".to_string());
+        env_vars.insert(
+            "QW_EXTRA_CLUSTER_IDS".to_string(),
+            "test-cluster,renamed-cluster".to_string(),
+        );
         env_vars.insert("QW_NODE_ID".to_string(), "test-node".to_string());
         env_vars.insert(
             "QW_ENABLED_SERVICES".to_string(),
@@ -1112,6 +1128,10 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(config.cluster_id, "test-cluster");
+        assert_eq!(
+            config.extra_cluster_ids,
+            vec!["test-cluster".to_string(), "renamed-cluster".to_string()]
+        );
         assert_eq!(config.node_id, "test-node");
         assert_eq!(config.enabled_services.len(), 2);
         assert_eq!(
@@ -1167,6 +1187,49 @@ mod tests {
             "postgresql://test-user:test-password@test-host:4321/test-db"
         );
         assert_eq!(config.default_index_root_uri, "s3://quickwit-indexes/prod");
+    }
+
+    #[tokio::test]
+    async fn test_extra_cluster_ids_yaml_and_env_override() {
+        let config_yaml = b"version: 0.8\nextra_cluster_ids: [old-cluster]";
+        let config =
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml, &HashMap::new(), None)
+                .await
+                .unwrap();
+        assert_eq!(config.extra_cluster_ids, ["old-cluster"]);
+
+        let env_vars = HashMap::from([(
+            "QW_EXTRA_CLUSTER_IDS".to_string(),
+            "new-cluster,another-cluster".to_string(),
+        )]);
+        let config = load_node_config_with_env(ConfigFormat::Yaml, config_yaml, &env_vars, None)
+            .await
+            .unwrap();
+        assert_eq!(config.extra_cluster_ids, ["new-cluster", "another-cluster"]);
+
+        let config =
+            load_node_config_with_env(ConfigFormat::Yaml, b"version: 0.8", &HashMap::new(), None)
+                .await
+                .unwrap();
+        assert!(config.extra_cluster_ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_extra_cluster_ids_rejects_invalid_cluster_id() {
+        let mut env_vars = HashMap::new();
+        env_vars.insert("QW_CLUSTER_ID".to_string(), "current-cluster".to_string());
+        env_vars.insert(
+            "QW_EXTRA_CLUSTER_IDS".to_string(),
+            "valid-cluster,invalid cluster".to_string(),
+        );
+
+        let error = load_node_config_with_env(ConfigFormat::Yaml, b"version: 0.8", &env_vars, None)
+            .await
+            .unwrap_err();
+        assert!(
+            format!("{error:?}").contains("extra cluster ID `invalid cluster` is invalid"),
+            "{error:?}"
+        );
     }
 
     #[tokio::test]
