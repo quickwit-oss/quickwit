@@ -24,7 +24,6 @@ use quickwit_proto::search::{
 };
 use quickwit_search::{MockSearchService, SearchError};
 use serde_json::{Value, json};
-use warp::Filter;
 
 use super::tests::request;
 use super::tools::Tools;
@@ -70,11 +69,11 @@ async fn test_mcp_search_uses_es_query_and_response_conversion() {
             ..Default::default()
         })
     });
-    let routes = warp::path!("api" / "v1" / ..).and(mcp_api_handlers(
+    let routes = mcp_api_handlers(
         Arc::new(search),
         MetastoreServiceClient::mocked(),
         Vec::new(),
-    ));
+    );
     let response = request().json(&json!({"jsonrpc":"2.0","id":"search-1","method":"tools/call",
         "params":{"name":"search","arguments":{
             "index":"logs-*,traces",

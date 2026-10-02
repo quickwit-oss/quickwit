@@ -66,7 +66,7 @@ bitpacking = "0.9"
 bytes = { version = "1", features = ["serde"] }
 bytesize = { version = "2.4", features = ["serde"] }
 bytestring = "1.5"
-chitchat = "0.13.0"
+chitchat = { git = "https://github.com/quickwit-oss/chitchat.git", rev = "eaa921d3d4fc344b811c3a73eebd6371cbaff0b8" }
 chrono = { version = "0.4", default-features = false, features = [
   "clock",
   "std",
