@@ -6,12 +6,16 @@ sidebar_position: 21
 Quickwit exposes a read-only Model Context Protocol (MCP) endpoint on its REST port:
 
 ```text
-http://localhost:7280/api/v1/mcp
+http://localhost:7280/mcp
 ```
 
 Configure an MCP client with this URL and the **Streamable HTTP** transport. The
 endpoint is served by `quickwit-serve` wherever the REST API is available; no
 separate process or node role is required.
+
+The endpoint path is intentionally not nested under the versioned `/api/v1` REST
+API: MCP negotiates its protocol revision in-band during `initialize` and through
+the `MCP-Protocol-Version` header.
 
 The tools call the same handlers as Quickwit's
 [Elasticsearch-compatible API](es_compatible_api.md). They use its query DSL,
@@ -82,7 +86,7 @@ exposed.
 Initialize:
 
 ```bash
-curl http://localhost:7280/api/v1/mcp \
+curl http://localhost:7280/mcp \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{
@@ -100,7 +104,7 @@ curl http://localhost:7280/api/v1/mcp \
 Send the initialized notification (HTTP 202, no response body):
 
 ```bash
-curl http://localhost:7280/api/v1/mcp \
+curl http://localhost:7280/mcp \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -H 'MCP-Protocol-Version: 2025-06-18' \
@@ -111,7 +115,7 @@ Discover the tool schemas using `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`
 with the same headers. To search an existing `logs-*` index:
 
 ```bash
-curl http://localhost:7280/api/v1/mcp \
+curl http://localhost:7280/mcp \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -H 'MCP-Protocol-Version: 2025-06-18' \
@@ -136,7 +140,7 @@ It adds **no authentication, OAuth flow, or per-index authorization**. Anyone wh
 can reach it can use its tools to read the same data as the Elasticsearch API.
 Keep it on a trusted network or behind an authenticated, access-controlled proxy;
 do not expose it directly to the public Internet. Existing proxy path allowlists
-must explicitly account for `/api/v1/mcp`.
+must explicitly account for `/mcp`.
 
 When a request includes an `Origin` header, it must exactly match an explicit
 entry in `rest.cors_allow_origins`. Missing `Origin` is permitted for non-browser
