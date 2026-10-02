@@ -126,3 +126,42 @@ ndjson:
   - {"ts": "2022-12-16T10:00:56.297Z"}
   - {"ts": "2022-12-16T10:00:57.000Z"}
   - {"ts": "2022-12-16T10:00:57.297Z"}
+---
+method: DELETE
+endpoint: indexes/cursor
+status_code: null
+---
+method: POST
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: cursor
+  doc_mapping:
+    timestamp_field: ts
+    mode: strict
+    field_mappings:
+      - name: ts
+        type: datetime
+        fast: true
+        input_formats: ["rfc3339"]
+        fast_precision: milliseconds
+      - name: ts_micros
+        type: datetime
+        fast: true
+        input_formats: ["rfc3339"]
+        fast_precision: microseconds
+      - name: id
+        type: u64
+---
+# A single batch lands in a single split, so docs are addressed in ingestion order: the tied docs
+# 2, 3, and 4 keep that order, and the address order differs from the timestamp order.
+method: POST
+endpoint: cursor/ingest
+params:
+  commit: force
+ndjson:
+  - {"ts": "2022-12-16T10:00:00.003Z", "ts_micros": "2022-12-16T10:00:00.003Z", "id": 5}
+  - {"ts": "2022-12-16T10:00:00.002Z", "ts_micros": "2022-12-16T10:00:00.002Z", "id": 2}
+  - {"ts": "2022-12-16T10:00:00.002Z", "ts_micros": "2022-12-16T10:00:00.002Z", "id": 3}
+  - {"ts": "2022-12-16T10:00:00.001Z", "ts_micros": "2022-12-16T10:00:00.001Z", "id": 1}
+  - {"ts": "2022-12-16T10:00:00.002Z", "ts_micros": "2022-12-16T10:00:00.002Z", "id": 4}
