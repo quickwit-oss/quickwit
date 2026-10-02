@@ -32,6 +32,16 @@ use quickwit_metrics::counter;
 use crate::metrics::OBJECT_STORAGE_GET_ERRORS_TOTAL;
 use crate::{StorageError, StorageErrorKind};
 
+/// Maps the HTTP status reported by an S3-compatible store to a storage error kind.
+fn storage_error_kind_from_status(status: u16) -> StorageErrorKind {
+    match status {
+        404 /* NOT_FOUND */ => StorageErrorKind::NotFound,
+        403 /* UNAUTHORIZED */ => StorageErrorKind::Unauthorized,
+        412 /* PRECONDITION_FAILED */ => StorageErrorKind::PreconditionFailed,
+        _ => StorageErrorKind::Internal,
+    }
+}
+
 impl<E> From<SdkError<E>> for StorageError
 where E: std::error::Error + ToStorageErrorKind + Send + Sync + 'static
 {
@@ -48,11 +58,7 @@ where E: std::error::Error + ToStorageErrorKind + Send + Sync + 'static
                 }
             }
             SdkError::ResponseError(response_error) => {
-                match response_error.raw().status().as_u16() {
-                    404 /* NOT_FOUND */ => StorageErrorKind::NotFound,
-                    403 /* UNAUTHORIZED */ => StorageErrorKind::Unauthorized,
-                    _ => StorageErrorKind::Internal,
-                }
+                storage_error_kind_from_status(response_error.raw().status().as_u16())
             }
             SdkError::ServiceError(service_error) => service_error.err().to_storage_error_kind(),
             SdkError::TimeoutError(_) => StorageErrorKind::Timeout,
@@ -132,8 +138,18 @@ impl ToStorageErrorKind for CreateMultipartUploadError {
 
 impl ToStorageErrorKind for PutObjectError {
     fn to_storage_error_kind(&self) -> StorageErrorKind {
-        StorageErrorKind::Service
+        put_object_error_kind(self.code())
     }
+}
+
+/// Maps the error code reported by `PutObject` to a storage error kind.
+fn put_object_error_kind(error_code: Option<&str>) -> StorageErrorKind {
+    // Conditional writes (`If-None-Match` / `If-Match`) are rejected with this code, and losing the
+    // race is an expected outcome that callers retry, not an internal failure.
+    if error_code == Some("PreconditionFailed") {
+        return StorageErrorKind::PreconditionFailed;
+    }
+    StorageErrorKind::Service
 }
 
 impl ToStorageErrorKind for HeadObjectError {
@@ -166,5 +182,47 @@ mod tests {
         let storage_error = StorageError::from(sdk_error);
 
         assert_eq!(storage_error.kind(), StorageErrorKind::Timeout);
+    }
+
+    #[test]
+    fn test_precondition_failed_status_is_preserved() {
+        // A conditional write that loses the race is reported as HTTP 412. Mapping it to
+        // `Internal` would make callers treat a normal lost race as a service failure, and mapping
+        // it to `Service` would hide it from the retry loop that has to re-read and try again.
+        assert_eq!(
+            storage_error_kind_from_status(412),
+            StorageErrorKind::PreconditionFailed
+        );
+        assert_eq!(
+            storage_error_kind_from_status(404),
+            StorageErrorKind::NotFound
+        );
+        assert_eq!(
+            storage_error_kind_from_status(403),
+            StorageErrorKind::Unauthorized
+        );
+        assert_eq!(
+            storage_error_kind_from_status(500),
+            StorageErrorKind::Internal
+        );
+    }
+
+    /// A modelled `PutObjectError` carries the failure in its error code rather than in an HTTP
+    /// status we can read, so the conditional-write path has a second, separate mapping.
+    #[test]
+    fn test_precondition_failed_put_object_error_is_preserved() {
+        // `PutObjectError::Unhandled` is sealed, so the code the SDK parsed out of a 412 response
+        // is what the mapping sees; there is nothing else to construct here. The end-to-end
+        // behaviour (a real 412 from a real endpoint) is covered by the S3 integration
+        // tests.
+        assert_eq!(
+            put_object_error_kind(Some("PreconditionFailed")),
+            StorageErrorKind::PreconditionFailed
+        );
+        assert_eq!(
+            put_object_error_kind(Some("SlowDown")),
+            StorageErrorKind::Service
+        );
+        assert_eq!(put_object_error_kind(None), StorageErrorKind::Service);
     }
 }
