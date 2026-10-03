@@ -88,6 +88,9 @@ pub static IN_FLIGHT_KAFKA_SOURCE: LazyGauge =
 pub static IN_FLIGHT_KINESIS_SOURCE: LazyGauge =
     LazyGauge::new(|| in_flight_data_gauge("kinesis_source"));
 
+pub static IN_FLIGHT_NATS_SOURCE: LazyGauge =
+    LazyGauge::new(|| in_flight_data_gauge("nats_source"));
+
 pub static IN_FLIGHT_PUBSUB_SOURCE: LazyGauge =
     LazyGauge::new(|| in_flight_data_gauge("pubsub_source"));
 

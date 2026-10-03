@@ -33,8 +33,10 @@ mod vrl_processing;
 pub use doc_processor::{DocProcessor, DocProcessorCounters};
 pub use index_serializer::IndexSerializer;
 pub use indexer::{Indexer, IndexerCounters};
-pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineParams};
-pub use indexing_service::{INDEXING_DIR_NAME, IndexingService, IndexingServiceCounters};
+pub use indexing_pipeline::{DrainPipeline, IndexingPipeline, IndexingPipelineParams};
+pub use indexing_service::{
+    DrainAllPipelines, INDEXING_DIR_NAME, IndexingService, IndexingServiceCounters,
+};
 pub use merge_executor::{MergeExecutor, combine_partition_ids, merge_split_attrs};
 pub use merge_pipeline::{
     FinishPendingMergesAndShutdownPipeline, MergePipeline, MergePipelineParams,
