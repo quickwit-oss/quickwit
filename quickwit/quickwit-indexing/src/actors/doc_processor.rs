@@ -511,21 +511,18 @@ impl DocProcessor {
     /// Returns true if raw documents can be converted with
     /// [`DocMapper::doc_from_borrowed_json`], which avoids building an owned JSON object.
     ///
-    /// This requires JSON input, no VRL transform (it operates on owned values), and no
-    /// fingerprinter (it hashes a `serde_json::Value`).
+    /// This requires JSON input and no VRL transform (it operates on owned values).
     fn can_process_borrowed_json(&self) -> bool {
         #[cfg(feature = "vrl")]
         let has_transform = self.transform_opt.is_some();
         #[cfg(not(feature = "vrl"))]
         let has_transform = false;
 
-        self.input_format == SourceInputFormat::Json
-            && !has_transform
-            && self.fingerprinter_opt.is_none()
+        self.input_format == SourceInputFormat::Json && !has_transform
     }
 
     /// Same as `try_into_json_docs` followed by [`Self::process_json_doc`] for JSON input, without
-    /// a transform or a fingerprinter.
+    /// a transform.
     fn process_borrowed_json_doc(&self, raw_doc: &[u8]) -> Result<ProcessedDoc, DocProcessorError> {
         let num_bytes = raw_doc.len();
         let json_doc = BorrowedJsonDoc::parse(raw_doc)?;
@@ -533,9 +530,13 @@ impl DocProcessor {
             .doc_mapper
             .doc_from_borrowed_json(&json_doc, num_bytes as u64)?;
         let timestamp_opt = self.extract_timestamp(&doc)?;
+        let fingerprint_opt = self
+            .fingerprinter_opt
+            .as_ref()
+            .map(|fingerprinter| fingerprinter.fingerprint_borrowed(&json_doc));
         Ok(ProcessedDoc {
             doc,
-            fingerprint_opt: None,
+            fingerprint_opt,
             timestamp_opt,
             partition,
             num_bytes,
@@ -810,11 +811,10 @@ mod tests {
         .unwrap();
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
+        // The duplicate key makes sure the fingerprint is computed on the deduplicated document.
+        let raw_doc = br#"{"body":"sad 1","timestamp":1628837062,"body":"happy 2"}"#;
         doc_processor_mailbox
-            .send_message(RawDocBatch::for_test(
-                &[br#"{"body":"happy","timestamp":1628837062}"#],
-                0..1,
-            ))
+            .send_message(RawDocBatch::for_test(&[raw_doc], 0..1))
             .await
             .unwrap();
         doc_processor_handle.process_pending_and_observe().await;
@@ -822,6 +822,9 @@ mod tests {
         let output_messages: Vec<ProcessedDocBatch> = indexer_inbox.drain_for_test_typed();
         assert_eq!(output_messages.len(), 1);
         let fingerprint = output_messages[0].docs[0].fingerprint_opt.as_ref().unwrap();
+        let json_value: JsonValue = serde_json::from_slice(raw_doc).unwrap();
+        let expected_fingerprint = raw_body_fingerprinter_for_test().fingerprint(&json_value);
+        assert_eq!(fingerprint, &expected_fingerprint);
         assert_eq!(fingerprint.len(), 3);
         universe.assert_quit().await;
     }

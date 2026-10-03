@@ -23,6 +23,8 @@ mod field_mapping_entry;
 mod field_mapping_type;
 mod field_presence;
 mod mapping_tree;
+#[cfg(any(test, feature = "testsuite"))]
+mod random_json;
 mod tantivy_val_to_json;
 mod tokenizer_entry;
 
@@ -30,7 +32,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::ops::Bound;
 
-pub use borrowed_json::BorrowedJsonDoc;
+pub use borrowed_json::{BorrowedJsonDoc, BorrowedObject, BorrowedValue};
 pub use doc_mapper_builder::DocMapperBuilder;
 pub use doc_mapper_impl::DocMapper;
 pub use field_mapping_entry::{
@@ -43,6 +45,8 @@ pub(crate) use field_mapping_entry::{
 #[cfg(test)]
 pub(crate) use field_mapping_entry::{QuickwitNumericOptions, QuickwitTextOptions};
 pub use field_mapping_type::FieldMappingType;
+#[cfg(any(test, feature = "testsuite"))]
+pub use random_json::RandomJsonDocs;
 use serde_json::Value as JsonValue;
 use tantivy::Term;
 use tantivy::schema::{Field, FieldType};
