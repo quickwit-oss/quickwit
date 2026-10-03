@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[cfg(test)]
+mod borrowed_doc_tests;
+pub(crate) mod borrowed_json;
+mod borrowed_value_view;
 mod date_time_type;
 mod doc_mapper_builder;
 mod doc_mapper_impl;
@@ -26,6 +30,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::ops::Bound;
 
+pub use borrowed_json::BorrowedJsonDoc;
 pub use doc_mapper_builder::DocMapperBuilder;
 pub use doc_mapper_impl::DocMapper;
 pub use field_mapping_entry::{

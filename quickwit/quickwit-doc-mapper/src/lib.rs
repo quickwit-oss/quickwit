@@ -30,9 +30,9 @@ mod routing_expression;
 pub mod tag_pruning;
 
 pub use doc_mapper::{
-    Automaton, BinaryFormat, DocMapper, DocMapperBuilder, FastFieldWarmupInfo, FieldMappingEntry,
-    FieldMappingType, JsonObject, NamedField, QuickwitBytesOptions, QuickwitJsonOptions, TermRange,
-    TokenizerConfig, TokenizerEntry, WarmupInfo, analyze_text,
+    Automaton, BinaryFormat, BorrowedJsonDoc, DocMapper, DocMapperBuilder, FastFieldWarmupInfo,
+    FieldMappingEntry, FieldMappingType, JsonObject, NamedField, QuickwitBytesOptions,
+    QuickwitJsonOptions, TermRange, TokenizerConfig, TokenizerEntry, WarmupInfo, analyze_text,
 };
 use doc_mapper::{
     FastFieldOptions, FieldMappingEntryForSerialization, IndexRecordOptionSchema,
