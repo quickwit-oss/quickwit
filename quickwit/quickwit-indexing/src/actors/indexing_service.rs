@@ -62,7 +62,7 @@ use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::{FinishPendingMergesAndShutdownPipeline, MergePlanner, MergeSchedulerService};
 use crate::docs_clustering::Fingerprinter;
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
-use crate::source::{AssignShards, Assignment};
+use crate::source::{AssignShards, Assignment, SourceLoader, quickwit_supported_sources};
 use crate::split_store::IndexingSplitCache;
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
 
@@ -123,6 +123,8 @@ pub struct IndexingService {
     indexing_io_throughput_limiter_opt: Option<io::Limiter>,
     merge_io_throughput_limiter_opt: Option<io::Limiter>,
     event_broker: EventBroker,
+    /// Creates the sources of the indexing pipelines.
+    source_loader: Arc<SourceLoader>,
 }
 
 impl Debug for IndexingService {
@@ -185,7 +187,16 @@ impl IndexingService {
             merge_io_throughput_limiter_opt,
             cooperative_indexing_permits,
             event_broker,
+            source_loader: quickwit_supported_sources().clone(),
         })
+    }
+
+    /// Replaces the loader that creates the sources of the indexing pipelines, which defaults to
+    /// [`quickwit_supported_sources`]. Used by `quickwit tool local-ingest` to feed the pipelines
+    /// from sources that a server cannot run.
+    pub fn with_source_loader(mut self, source_loader: Arc<SourceLoader>) -> Self {
+        self.source_loader = source_loader;
+        self
     }
 
     async fn detach_indexing_pipeline(
@@ -403,6 +414,7 @@ impl IndexingService {
             ingester_pool: self.ingester_pool.clone(),
             queues_dir_path: self.queue_dir_path.clone(),
             source_storage_resolver: self.storage_resolver.clone(),
+            source_loader: self.source_loader.clone(),
             params_fingerprint,
             event_broker: self.event_broker.clone(),
         };

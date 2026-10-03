@@ -13,6 +13,10 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
+# `chrono-tz` is required to format timestamps with a named time zone, e.g. `UTC`.
+arrow-array = { workspace = true, optional = true, features = ["chrono-tz"] }
+arrow-json = { workspace = true, optional = true }
+arrow-schema = { workspace = true, optional = true }
 async-compression = { workspace = true }
 async-trait = { workspace = true }
 aws-sdk-kinesis = { workspace = true, optional = true }
@@ -30,6 +34,7 @@ google-cloud-pubsub = { workspace = true, optional = true }
 itertools = { workspace = true }
 libz-sys = { workspace = true, optional = true }
 oneshot = { workspace = true }
+parquet = { workspace = true, optional = true, features = ["arrow", "snap", "zstd", "lz4"] }
 openssl = { workspace = true, optional = true }
 percent-encoding = { workspace = true }
 pulsar = { workspace = true, optional = true }
@@ -80,6 +85,12 @@ kinesis = [
   "quickwit-aws/kinesis",
 ]
 kinesis-localstack-tests = []
+parquet = [
+  "dep:arrow-array",
+  "dep:arrow-json",
+  "dep:arrow-schema",
+  "dep:parquet",
+]
 pulsar = ["dep:pulsar"]
 pulsar-broker-tests = []
 queue-sources = []
