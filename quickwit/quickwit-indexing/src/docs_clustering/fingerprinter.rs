@@ -65,7 +65,7 @@ use fnv::FnvHasher;
 use quickwit_config::{
     ClusteringMethod, ClusteringPolicy, DocsClusteringConfig, FingerprintPolicy, JsonPath,
 };
-use quickwit_doc_mapper::BorrowedJsonDoc;
+use quickwit_doc_mapper::{BorrowedJsonDoc, serde_json_preserves_order};
 use serde_json::Value as JsonValue;
 use smallvec::SmallVec;
 
@@ -176,6 +176,7 @@ fn is_excluded(exclude: &[JsonPath], path: &[&str]) -> bool {
     })
 }
 
+/// Collects the paths of the leaves of the JSON tree, in iteration order.
 fn collect_leaf_paths<'a, V: JsonView<'a>>(
     json_view: V,
     exclude: &[JsonPath],
@@ -195,19 +196,82 @@ fn collect_leaf_paths<'a, V: JsonView<'a>>(
     });
 }
 
+fn hash_leaf_path(path: &[&str], hasher: &mut FnvHasher) {
+    for component in path {
+        hasher.write(component.as_bytes());
+        hasher.write_u8(PATH_COMPONENT_SEPARATOR);
+    }
+    hasher.write_u8(PATH_SEPARATOR);
+}
+
+/// Hashes the paths of the leaves of the JSON tree, in iteration order, without collecting them.
+fn hash_leaf_paths_in_iteration_order<'a, V: JsonView<'a>>(
+    json_view: V,
+    exclude: &[JsonPath],
+    current: &mut Vec<&'a str>,
+    hasher: &mut FnvHasher,
+) {
+    if !matches!(json_view.kind(), JsonViewKind::Object { .. }) {
+        hash_leaf_path(current, hasher);
+        return;
+    }
+    json_view.for_each_entry(|key, child_view| {
+        current.push(key);
+        if !is_excluded(exclude, current) {
+            hash_leaf_paths_in_iteration_order(child_view, exclude, current, hasher);
+        }
+        current.pop();
+    });
+}
+
+/// Hashes the sorted list of the leaf paths of the JSON tree.
+///
+/// When object entries iterate in sorted key order (the default `serde_json::Map`), a depth-first
+/// walk already visits the leaf paths in sorted order:
+/// - the paths of the subtree of a key are compared on that key first, and keys of an object are
+///   unique and visited in increasing order;
+/// - a leaf path is never a prefix of another leaf path, because a leaf has no children.
+///
+/// The paths can then be hashed as they are visited. Otherwise (with the `preserve_order` feature
+/// of `serde_json`), they are collected and sorted first.
 fn hash_structure<'a>(json_view: impl JsonView<'a>, exclude: &[JsonPath], hasher: &mut FnvHasher) {
     let mut current = Vec::with_capacity(16);
+    if !serde_json_preserves_order() {
+        hash_leaf_paths_in_iteration_order(json_view, exclude, &mut current, hasher);
+        return;
+    }
     let mut paths = Vec::with_capacity(32);
     collect_leaf_paths(json_view, exclude, &mut current, &mut paths);
     paths.sort_unstable();
-
     for path in paths {
-        for component in path {
-            hasher.write(component.as_bytes());
-            hasher.write_u8(PATH_COMPONENT_SEPARATOR);
-        }
-        hasher.write_u8(PATH_SEPARATOR);
+        hash_leaf_path(&path, hasher);
     }
+}
+
+#[cfg(test)]
+pub(super) fn hash_structure_collecting_paths<'a>(
+    json_view: impl JsonView<'a>,
+    exclude: &[JsonPath],
+) -> u64 {
+    let mut hasher = FnvHasher::default();
+    let mut current = Vec::new();
+    let mut paths = Vec::new();
+    collect_leaf_paths(json_view, exclude, &mut current, &mut paths);
+    paths.sort_unstable();
+    for path in paths {
+        hash_leaf_path(&path, &mut hasher);
+    }
+    hasher.finish()
+}
+
+#[cfg(test)]
+pub(super) fn hash_structure_for_test<'a>(
+    json_view: impl JsonView<'a>,
+    exclude: &[JsonPath],
+) -> u64 {
+    let mut hasher = FnvHasher::default();
+    hash_structure(json_view, exclude, &mut hasher);
+    hasher.finish()
 }
 
 fn hash_raw_value_inner<'a, V: JsonView<'a>>(json_view: V, hasher: &mut FnvHasher) {

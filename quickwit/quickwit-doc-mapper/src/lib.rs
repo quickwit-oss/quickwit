@@ -35,7 +35,7 @@ pub use doc_mapper::{
     Automaton, BinaryFormat, BorrowedJsonDoc, BorrowedObject, BorrowedValue, DocMapper,
     DocMapperBuilder, FastFieldWarmupInfo, FieldMappingEntry, FieldMappingType, JsonObject,
     NamedField, QuickwitBytesOptions, QuickwitJsonOptions, TermRange, TokenizerConfig,
-    TokenizerEntry, WarmupInfo, analyze_text,
+    TokenizerEntry, WarmupInfo, analyze_text, serde_json_preserves_order,
 };
 use doc_mapper::{
     FastFieldOptions, FieldMappingEntryForSerialization, IndexRecordOptionSchema,
