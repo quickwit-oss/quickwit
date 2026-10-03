@@ -1638,6 +1638,28 @@ fn collect_str_terms(response: LeafListTermsResponse) -> Vec<String> {
         .collect()
 }
 
+#[allow(deprecated)]
+fn collect_json_str_terms(response: LeafListTermsResponse) -> Vec<(String, String)> {
+    response
+        .terms
+        .into_iter()
+        .map(|serialized_term| {
+            let term = Term::wrap(&serialized_term);
+            let json_path = term.get_json_path().unwrap();
+            assert_eq!(
+                term.value().json_path_type(),
+                Some(tantivy::schema::Type::Str)
+            );
+            let value_bytes = term.serialized_value_bytes();
+            let end_of_path = value_bytes.iter().position(|byte| *byte == 0).unwrap();
+            let value = std::str::from_utf8(&value_bytes[end_of_path + 2..])
+                .unwrap()
+                .to_string();
+            (json_path, value)
+        })
+        .collect()
+}
+
 #[tokio::test]
 async fn test_single_node_list_terms() -> anyhow::Result<()> {
     let doc_mapping_yaml = r#"
@@ -1759,6 +1781,138 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         let terms = collect_str_terms(search_response);
         assert_eq!(terms, &["beagle"]);
     }
+    test_sandbox.assert_quit().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_single_node_list_terms_json_subfield() -> anyhow::Result<()> {
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: title
+                type: text
+                tokenizer: raw
+              - name: attributes
+                type: json
+                tokenizer: raw
+        "#;
+    let test_sandbox = TestSandbox::create(
+        "single-node-list-terms-json-subfield",
+        doc_mapping_yaml,
+        "{}",
+        &[],
+    )
+    .await?;
+    test_sandbox
+        .add_documents(vec![
+            json!({
+                "title": "first",
+                "attributes": {
+                    "http_method": "GET",
+                    "http_status": "200",
+                    "http_method_extra": "PREFIX"
+                }
+            }),
+            json!({"title": "second", "attributes": {"http_method": "PATCH"}}),
+            json!({"title": "third", "attributes": {"http_method": "POST"}}),
+            json!({"title": "fourth", "attributes": {"http_method": {"child": "CHILD"}}}),
+        ])
+        .await?;
+
+    let splits = test_sandbox
+        .metastore()
+        .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
+        .await?
+        .collect_splits()
+        .await?;
+    let split_offsets: Vec<_> = splits
+        .into_iter()
+        .map(|split| extract_split_and_footer_offsets(&split.split_metadata))
+        .collect();
+    let searcher_context = Arc::new(SearcherContext::new_without_invoker(
+        SearcherConfig::default(),
+        None,
+    ));
+    let mut request = ListTermsRequest {
+        index_id_patterns: vec![test_sandbox.index_uid().index_id.to_string()],
+        field: "attributes.http_method".to_string(),
+        max_hits: Some(100),
+        ..Default::default()
+    };
+
+    let response = leaf_list_terms(
+        searcher_context.clone(),
+        &request,
+        test_sandbox.storage(),
+        &split_offsets,
+    )
+    .await?;
+    // Decoding serialized Tantivy terms here also guards the generic response contract.
+    assert_eq!(
+        collect_json_str_terms(response),
+        &[
+            ("http_method".to_string(), "GET".to_string()),
+            ("http_method".to_string(), "PATCH".to_string()),
+            ("http_method".to_string(), "POST".to_string()),
+        ]
+    );
+
+    request.start_key = Some(b"PATCH".to_vec());
+    let response = leaf_list_terms(
+        searcher_context.clone(),
+        &request,
+        test_sandbox.storage(),
+        &split_offsets,
+    )
+    .await?;
+    assert_eq!(
+        collect_json_str_terms(response)
+            .into_iter()
+            .map(|(_, value)| value)
+            .collect::<Vec<_>>(),
+        &["PATCH", "POST"]
+    );
+
+    request.start_key = None;
+    request.end_key = Some(b"POST".to_vec());
+    let response = leaf_list_terms(
+        searcher_context.clone(),
+        &request,
+        test_sandbox.storage(),
+        &split_offsets,
+    )
+    .await?;
+    assert_eq!(
+        collect_json_str_terms(response)
+            .into_iter()
+            .map(|(_, value)| value)
+            .collect::<Vec<_>>(),
+        &["GET", "PATCH"]
+    );
+
+    request.field = "title.missing".to_string();
+    request.end_key = None;
+    let response = leaf_list_terms(
+        searcher_context.clone(),
+        &request,
+        test_sandbox.storage(),
+        &split_offsets,
+    )
+    .await?;
+    assert_eq!(response.failed_splits.len(), 1);
+
+    request.field = "attributes.http_method".to_string();
+    request.start_key = Some(vec![0xff]);
+    let response = leaf_list_terms(
+        searcher_context,
+        &request,
+        test_sandbox.storage(),
+        &split_offsets,
+    )
+    .await?;
+    assert_eq!(response.failed_splits.len(), 1);
+    assert!(response.failed_splits[0].error.contains("not valid UTF-8"));
+
     test_sandbox.assert_quit().await;
     Ok(())
 }
