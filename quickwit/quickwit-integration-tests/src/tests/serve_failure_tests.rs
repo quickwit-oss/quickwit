@@ -154,6 +154,7 @@ async fn test_serve_quickwit_shuts_down_sibling_servers_after_server_failure() {
         ca_path: String::new(),
         expected_name: None,
         verify_client_cert: false,
+        allowed_client_identities: None,
         cert_poll_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
     });
     node_config.cluster_id = new_coolid("test-cluster");

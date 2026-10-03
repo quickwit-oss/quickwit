@@ -42,6 +42,8 @@ use rustls::{ClientConfig, RootCertStore, ServerConfig, SignatureScheme};
 use tokio::sync::watch;
 use tracing::{error, info, warn};
 
+use crate::client_cert_verifier::IdentityClientCertVerifier;
+
 static TLS_CERT_RELOADS_TOTAL: LazyCounter = lazy_counter!(
         name: "cert_reloads_total",
         description: "Total number of TLS certificate hot-reload attempts, labeled by `result` \
@@ -196,13 +198,25 @@ pub fn make_tls_server_config(
     tls_config: &TlsConfig,
     alpn_protocols: &[&[u8]],
 ) -> anyhow::Result<Arc<ServerConfig>> {
+    // Rejects invalid directly constructed configs, including identity rules without mTLS.
+    tls_config.validate()?;
     let resolver = ReloadableCertResolver::load(&tls_config.cert_path, &tls_config.key_path)?;
 
     let builder = ServerConfig::builder();
     let builder = if tls_config.verify_client_cert {
         let roots = load_root_cert_store(&tls_config.ca_path)?;
-        let client_cert_verifier = WebPkiClientVerifier::builder(Arc::new(roots)).build()?;
-        builder.with_client_cert_verifier(client_cert_verifier)
+        let cert_verifier = WebPkiClientVerifier::builder(Arc::new(roots)).build()?;
+        let cert_and_identity_verifier = match &tls_config.allowed_client_identities {
+            Some(allowed_client_identities) => {
+                let identity_matcher = allowed_client_identities.compile()?;
+                Arc::new(IdentityClientCertVerifier {
+                    cert_verifier,
+                    identity_matcher,
+                })
+            }
+            None => cert_verifier,
+        };
+        builder.with_client_cert_verifier(cert_and_identity_verifier)
     } else {
         builder.with_no_client_auth()
     };
@@ -369,6 +383,7 @@ mod tests {
             ca_path: ca_path.to_string(),
             expected_name: None,
             verify_client_cert: true,
+            allowed_client_identities: None,
             cert_poll_interval: HumanDuration::try_from("5m".to_string()).unwrap(),
         }
     }

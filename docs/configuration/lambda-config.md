@@ -49,7 +49,7 @@ searcher:
 | `function_name` | Name of the AWS Lambda function to invoke. | `quickwit-lambda-search` |
 | `max_splits_per_invocation` | Maximum number of splits to send in a single Lambda invocation. Must be at least 1. | `10` |
 | `offload_threshold` | Number of pending local searches before offloading to Lambda. A value of `0` offloads everything to Lambda. | `100` |
-| `auto_deploy` | Auto-deployment configuration. If set, Quickwit automatically deploys or updates the Lambda function at startup. | (none) |
+| `auto_deploy` | Auto-deployment configuration. If set, Quickwit automatically deploys or updates the Lambda function at startup. | `null` |
 
 ### Auto-deploy configuration options
 
