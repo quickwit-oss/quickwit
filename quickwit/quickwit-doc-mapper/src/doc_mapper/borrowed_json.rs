@@ -47,7 +47,9 @@ static SERDE_JSON_PRESERVES_ORDER: LazyLock<bool> = LazyLock::new(|| {
     json_obj.keys().next().map(String::as_str) == Some("b")
 });
 
-pub(crate) fn serde_json_preserves_order() -> bool {
+/// Returns true if `serde_json::Map` (and therefore [`BorrowedObject`]) iterates in insertion order
+/// rather than in sorted key order.
+pub fn serde_json_preserves_order() -> bool {
     *SERDE_JSON_PRESERVES_ORDER
 }
 

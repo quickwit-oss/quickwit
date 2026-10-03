@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use quickwit_config::DocsClusteringConfig;
+use quickwit_config::{DocsClusteringConfig, JsonPath};
 use quickwit_doc_mapper::{BorrowedJsonDoc, RandomJsonDocs};
 use serde_json::Value as JsonValue;
 
-use super::fingerprinter::Fingerprinter;
+use super::fingerprinter::{
+    Fingerprinter, hash_structure_collecting_paths, hash_structure_for_test,
+};
+use super::json_view::BorrowedJsonNode;
 
 fn parse(s: &str) -> JsonValue {
     serde_json::from_str(s).unwrap()
@@ -331,5 +334,82 @@ fn borrowed_fingerprint_same_as_owned_fingerprint_random() {
     for _ in 0..20_000 {
         let json_doc = random_json_docs.next_doc();
         assert_same_fingerprint(&fingerprinter, &json_doc);
+    }
+}
+
+/// Documents with nested objects, keys sharing prefixes, and excluded paths, for the structure
+/// policy.
+const STRUCTURE_DOCS: &[&str] = &[
+    r#"{}"#,
+    r#"{"a": 1}"#,
+    r#"{"a": {}, "b": 1}"#,
+    r#"{"b": 1, "a": {"y": 1, "x": {"z": null}}, "ab": [1, {"k": 2}], "a.b": 3}"#,
+    r#"{"attributes": {"z": 1, "a": 2}, "inner": {"body": "x", "zone": "eu"}, "": {"": 1}}"#,
+    r#"{"é": 1, "e": 2, "Z": 3, "z": {"é": {"a": 1}, "e": 4}, "z": {"b": 1}}"#,
+];
+
+/// Structure fingerprints computed before hashing leaf paths in iteration order: the hash must not
+/// change, as fingerprints of a split are compared with each other.
+#[test]
+fn structure_fingerprints_are_stable() {
+    let expected_fingerprints: [[u64; 2]; 6] = [
+        [14695981039346656037, 14695981039346656037],
+        [16538397715120493737, 16538397715120493737],
+        [18363328632233708152, 18363328632233708152],
+        [17645136403288981598, 17645136403288981598],
+        [1195699640648630522, 546240098895012005],
+        [1896699566821316143, 1896699566821316143],
+    ];
+    let fingerprinter = Fingerprinter::new(&differential_docs_clustering_config());
+    for (json_doc, expected_fingerprint) in STRUCTURE_DOCS.iter().zip(expected_fingerprints) {
+        let json_value: JsonValue = serde_json::from_str(json_doc).unwrap();
+        let borrowed_json_doc = BorrowedJsonDoc::parse(json_doc.as_bytes()).unwrap();
+        assert_eq!(
+            fingerprinter.fingerprint(&json_value)[..2],
+            expected_fingerprint,
+            "doc: {json_doc}"
+        );
+        assert_eq!(
+            fingerprinter.fingerprint_borrowed(&borrowed_json_doc)[..2],
+            expected_fingerprint,
+            "doc: {json_doc}"
+        );
+    }
+}
+
+fn assert_same_structure_hash(json_doc: &str, exclude: &[JsonPath]) {
+    let json_value: JsonValue = serde_json::from_str(json_doc).unwrap();
+    let borrowed_json_doc = BorrowedJsonDoc::parse(json_doc.as_bytes()).unwrap();
+    let borrowed_json_node = BorrowedJsonNode::Root(&borrowed_json_doc);
+    let expected_hash = hash_structure_collecting_paths(&json_value, exclude);
+    assert_eq!(
+        hash_structure_for_test(&json_value, exclude),
+        expected_hash,
+        "doc: {json_doc}"
+    );
+    assert_eq!(
+        hash_structure_for_test(borrowed_json_node, exclude),
+        expected_hash,
+        "doc: {json_doc}"
+    );
+}
+
+/// Hashing leaf paths as they are visited must be equivalent to collecting and sorting them.
+#[test]
+fn structure_hash_same_as_sorted_leaf_paths_hash() {
+    let excludes: Vec<Vec<JsonPath>> = vec![
+        Vec::new(),
+        serde_json::from_str(r#"["a", "attributes", "inner.body", "z.é"]"#).unwrap(),
+    ];
+    let mut random_json_docs = RandomJsonDocs::new(0x51_7cc1_b727_220a);
+    let random_docs: Vec<String> = (0..10_000).map(|_| random_json_docs.next_doc()).collect();
+    let json_docs = STRUCTURE_DOCS
+        .iter()
+        .copied()
+        .chain(random_docs.iter().map(String::as_str));
+    for json_doc in json_docs {
+        for exclude in &excludes {
+            assert_same_structure_hash(json_doc, exclude);
+        }
     }
 }

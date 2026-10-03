@@ -32,7 +32,9 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::ops::Bound;
 
-pub use borrowed_json::{BorrowedJsonDoc, BorrowedObject, BorrowedValue};
+pub use borrowed_json::{
+    BorrowedJsonDoc, BorrowedObject, BorrowedValue, serde_json_preserves_order,
+};
 pub use doc_mapper_builder::DocMapperBuilder;
 pub use doc_mapper_impl::DocMapper;
 pub use field_mapping_entry::{
