@@ -18,7 +18,7 @@
 use tantivy::TantivyDocument as Document;
 use tantivy::schema::OwnedValue;
 
-use crate::doc_mapper::{BorrowedJsonDoc, DocMapper, JsonObject};
+use crate::doc_mapper::{BorrowedJsonDoc, DocMapper, JsonObject, RandomJsonDocs};
 
 /// A field mapping exercising every leaf type, arrays, objects, concatenate fields, coercion and
 /// the partition key. `{mode}` is replaced by each mode.
@@ -201,150 +201,13 @@ fn test_borrowed_doc_same_as_owned_doc_hand_written() {
     }
 }
 
-/// Deterministic xorshift generator, to keep failures reproducible without a new dependency.
-struct Rng(u64);
-
-impl Rng {
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
-    }
-
-    fn below(&mut self, bound: u64) -> u64 {
-        self.next() % bound
-    }
-
-    fn pick<'a>(&mut self, items: &[&'a str]) -> &'a str {
-        items[self.below(items.len() as u64) as usize]
-    }
-}
-
-const KEYS: &[&str] = &[
-    "timestamp",
-    "service",
-    "body",
-    "count",
-    "delta",
-    "ratio",
-    "flag",
-    "ip",
-    "payload",
-    "hex_payload",
-    "tags",
-    "values",
-    "attributes",
-    "events",
-    "resource",
-    "host",
-    "pid",
-    "inner",
-    "zone",
-    "all_text",
-    "unmapped",
-    "a",
-    "b",
-    "é",
-    "",
-    "timestamp_nanos",
-    "service_name",
-    "severity_text",
-    "k.with.dots",
-];
-
-const STRINGS: &[&str] = &[
-    "",
-    "text",
-    "2024-01-02T03:04:05Z",
-    "2024-01-02T03:04:05.123+02:00",
-    "2024-01-02 03:04:05",
-    "1704164645",
-    "-12",
-    "1.5",
-    "192.168.1.1",
-    "::ffff:10.0.0.1",
-    "aGVsbG8=",
-    "deadbeef",
-    "true",
-    "9 lives",
-    "esc\\\"aped\\n",
-    "\\u00e9t\\u00e9",
-    "\\ud83d\\ude00",
-];
-
-const NUMBERS: &[&str] = &[
-    "0",
-    "1",
-    "-1",
-    "42",
-    "1704164645",
-    "1704164645123",
-    "-9223372036854775808",
-    "9223372036854775808",
-    "18446744073709551615",
-    "18446744073709551616",
-    "0.5",
-    "-0.0",
-    "1e3",
-    "1.7976931348623157e308",
-    "3.0",
-];
-
-fn write_random_value(rng: &mut Rng, depth: usize, output: &mut String) {
-    let kind = if depth >= 3 {
-        rng.below(5)
-    } else {
-        rng.below(8)
-    };
-    match kind {
-        0 => output.push_str("null"),
-        1 => output.push_str(if rng.below(2) == 0 { "true" } else { "false" }),
-        2 | 3 => output.push_str(rng.pick(NUMBERS)),
-        4 => {
-            output.push('"');
-            output.push_str(rng.pick(STRINGS));
-            output.push('"');
-        }
-        5 => {
-            output.push('[');
-            let num_elements = rng.below(4);
-            for i in 0..num_elements {
-                if i > 0 {
-                    output.push(',');
-                }
-                write_random_value(rng, depth + 1, output);
-            }
-            output.push(']');
-        }
-        _ => write_random_object(rng, depth + 1, output),
-    }
-}
-
-/// Keys are drawn from a small vocabulary, so objects regularly contain duplicate keys.
-fn write_random_object(rng: &mut Rng, depth: usize, output: &mut String) {
-    output.push('{');
-    let num_entries = rng.below(6);
-    for i in 0..num_entries {
-        if i > 0 {
-            output.push(',');
-        }
-        output.push('"');
-        output.push_str(rng.pick(KEYS));
-        output.push_str("\":");
-        write_random_value(rng, depth, output);
-    }
-    output.push('}');
-}
-
 #[test]
 fn test_borrowed_doc_same_as_owned_doc_random() {
     let doc_mappers = build_doc_mappers();
-    let mut rng = Rng(0x2545_f491_4f6c_dd1d);
+    let mut random_json_docs = RandomJsonDocs::new(0x2545_f491_4f6c_dd1d);
     let mut num_successes = 0;
     for _ in 0..20_000 {
-        let mut json_doc = String::new();
-        write_random_object(&mut rng, 0, &mut json_doc);
+        let json_doc = random_json_docs.next_doc();
         for (doc_mapper_name, doc_mapper) in &doc_mappers {
             assert_same_conversion(doc_mapper_name, doc_mapper, &json_doc);
         }

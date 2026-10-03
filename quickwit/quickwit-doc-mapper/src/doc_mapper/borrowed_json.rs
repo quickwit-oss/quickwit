@@ -52,21 +52,35 @@ pub(crate) fn serde_json_preserves_order() -> bool {
 }
 
 /// A JSON object whose entries have unique keys and are ordered like in `serde_json::Map`.
-pub(crate) type BorrowedObject<'a> = Vec<(Cow<'a, str>, BorrowedValue<'a>)>;
+pub type BorrowedObject<'a> = Vec<(Cow<'a, str>, BorrowedValue<'a>)>;
 
 /// A JSON value borrowing strings from the input when they do not contain escape sequences.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum BorrowedValue<'a> {
+pub enum BorrowedValue<'a> {
+    /// JSON `null`.
     Null,
+    /// JSON boolean.
     Bool(bool),
+    /// JSON number, as built by `serde_json`.
     Number(Number),
+    /// JSON string, borrowed from the input unless it contains escape sequences.
     Str(Cow<'a, str>),
+    /// JSON array.
     Array(Vec<BorrowedValue<'a>>),
     /// Entries have unique keys and are ordered like in `serde_json::Map`.
     Object(BorrowedObject<'a>),
 }
 
-impl BorrowedValue<'_> {
+impl<'a> BorrowedValue<'a> {
+    /// Returns the value associated with `key` if `self` is an object.
+    pub fn get(&self, key: &str) -> Option<&BorrowedValue<'a>> {
+        let BorrowedValue::Object(entries) = self else {
+            return None;
+        };
+        get_in_object(entries, key)
+    }
+
+    /// Returns true if the value is JSON `null`.
     pub fn is_null(&self) -> bool {
         matches!(self, BorrowedValue::Null)
     }
@@ -143,8 +157,15 @@ impl<'a> BorrowedJsonDoc<'a> {
         Ok(BorrowedJsonDoc { root })
     }
 
-    pub(crate) fn root(&self) -> &BorrowedObject<'a> {
+    /// Returns the entries of the root object. They have unique keys and are ordered like in
+    /// `serde_json::Map`.
+    pub fn root(&self) -> &BorrowedObject<'a> {
         &self.root
+    }
+
+    /// Returns the value associated with `key` in the root object.
+    pub fn get(&self, key: &str) -> Option<&BorrowedValue<'a>> {
+        get_in_object(&self.root, key)
     }
 }
 

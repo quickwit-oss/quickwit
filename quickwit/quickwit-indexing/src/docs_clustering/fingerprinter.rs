@@ -69,9 +69,11 @@ type FingerprintHasher = rustc_hash::FxHasher;
 use quickwit_config::{
     ClusteringMethod, ClusteringPolicy, DocsClusteringConfig, FingerprintPolicy, JsonPath,
 };
+use quickwit_doc_mapper::BorrowedJsonDoc;
 use serde_json::Value as JsonValue;
 use smallvec::SmallVec;
 
+use super::json_view::{BorrowedJsonNode, JsonView, JsonViewKind};
 use super::tokenize;
 
 const PATH_COMPONENT_SEPARATOR: u8 = 0xF9;
@@ -144,7 +146,19 @@ impl Fingerprinter {
             })
     }
 
+
+    /// Computes the fingerprint of a document parsed as an owned JSON value.
     pub fn fingerprint(&self, json_value: &JsonValue) -> Fingerprint {
+        self.fingerprint_view(json_value)
+    }
+
+    /// Computes the fingerprint of a document parsed as a [`BorrowedJsonDoc`]. Returns the same
+    /// fingerprint as [`Self::fingerprint`] for the same JSON input.
+    pub fn fingerprint_borrowed(&self, json_doc: &BorrowedJsonDoc) -> Fingerprint {
+        self.fingerprint_view(BorrowedJsonNode::Root(json_doc))
+    }
+
+    fn fingerprint_view<'a>(&self, json_view: impl JsonView<'a>) -> Fingerprint {
         let mut fingerprint = SmallVec::new();
         for policy in self.policies.iter() {
             let mut hasher = FingerprintHasher::default();
@@ -152,13 +166,13 @@ impl Fingerprinter {
             for method in policy.fingerprint.iter() {
                 match method {
                     ClusteringMethod::Structure { exclude } => {
-                        self.hash_structure(json_value, exclude, &mut hasher);
+                        hash_structure(json_view, exclude, &mut hasher);
                     }
                     ClusteringMethod::Raw { path } => {
-                        self.hash_raw_value(json_value, path, &mut hasher);
+                        hash_raw_value(json_view, path, &mut hasher);
                     }
                     ClusteringMethod::Tokenized { path, max_tokens } => {
-                        self.hash_string_tokenized(json_value, path, *max_tokens, &mut hasher);
+                        hash_string_tokenized(json_view, path, *max_tokens, &mut hasher);
                     }
                 }
             }
@@ -168,139 +182,138 @@ impl Fingerprinter {
 
         Fingerprint(fingerprint)
     }
+}
 
-    fn hash_structure(
-        &self,
-        value: &JsonValue,
-        exclude: &[JsonPath],
-        hasher: &mut FingerprintHasher,
-    ) {
-        fn walk<'a>(
-            json_value: &'a JsonValue,
-            exclude: &[JsonPath],
-            current: &mut Vec<&'a str>,
-            paths: &mut Vec<Vec<&'a str>>,
-        ) {
-            fn is_excluded(exclude: &[JsonPath], path: &[&str]) -> bool {
-                exclude.iter().any(|excluded_path| {
-                    excluded_path.len() == path.len()
-                        && excluded_path.iter().zip(path.iter()).all(
-                            |(excluded_component, component)| {
-                                excluded_component.as_str() == *component
-                            },
-                        )
-                })
-            }
+fn is_excluded(exclude: &[JsonPath], path: &[&str]) -> bool {
+    exclude.iter().any(|excluded_path| {
+        excluded_path.len() == path.len()
+            && excluded_path
+                .iter()
+                .zip(path.iter())
+                .all(|(excluded_component, component)| excluded_component.as_str() == *component)
+    })
+}
 
-            match json_value {
-                JsonValue::Object(obj) => {
-                    for (key, child_value) in obj.iter() {
-                        current.push(key.as_str());
-                        if !is_excluded(exclude, current) {
-                            walk(child_value, exclude, current, paths);
-                        }
-                        current.pop();
-                    }
-                }
-                _ => paths.push(current.clone()),
-            }
+fn collect_leaf_paths<'a, V: JsonView<'a>>(
+    json_view: V,
+    exclude: &[JsonPath],
+    current: &mut Vec<&'a str>,
+    paths: &mut Vec<Vec<&'a str>>,
+) {
+    if !matches!(json_view.kind(), JsonViewKind::Object { .. }) {
+        paths.push(current.clone());
+        return;
+    }
+    json_view.for_each_entry(|key, child_view| {
+        current.push(key);
+        if !is_excluded(exclude, current) {
+            collect_leaf_paths(child_view, exclude, current, paths);
         }
+        current.pop();
+    });
+}
 
-        let mut current = Vec::with_capacity(16);
-        let mut paths = Vec::with_capacity(32);
-        walk(value, exclude, &mut current, &mut paths);
-        paths.sort_unstable();
+fn hash_structure<'a>(json_view: impl JsonView<'a>, exclude: &[JsonPath], hasher: &mut FingerprintHasher) {
+    let mut current = Vec::with_capacity(16);
+    let mut paths = Vec::with_capacity(32);
+    collect_leaf_paths(json_view, exclude, &mut current, &mut paths);
+    paths.sort_unstable();
 
-        for path in paths {
-            for component in path {
-                hasher.write(component.as_bytes());
-                hasher.write_u8(PATH_COMPONENT_SEPARATOR);
-            }
-            hasher.write_u8(PATH_SEPARATOR);
+    for path in paths {
+        for component in path {
+            hasher.write(component.as_bytes());
+            hasher.write_u8(PATH_COMPONENT_SEPARATOR);
+        }
+        hasher.write_u8(PATH_SEPARATOR);
+    }
+}
+
+fn hash_raw_value_inner<'a, V: JsonView<'a>>(json_view: V, hasher: &mut FingerprintHasher) {
+    const RAW_NULL: u8 = 0;
+    const RAW_BOOL: u8 = 1;
+    const RAW_NUMBER: u8 = 2;
+    const RAW_STRING: u8 = 3;
+    const RAW_ARRAY: u8 = 4;
+    const RAW_OBJECT: u8 = 5;
+
+    match json_view.kind() {
+        JsonViewKind::Null => hasher.write_u8(RAW_NULL),
+        JsonViewKind::Bool(value) => {
+            hasher.write_u8(RAW_BOOL);
+            hasher.write_u8(value as u8);
+        }
+        JsonViewKind::Number(value) => {
+            hasher.write_u8(RAW_NUMBER);
+            let number = value.to_string();
+            hasher.write(number.as_bytes());
+        }
+        JsonViewKind::Str(value) => {
+            hasher.write_u8(RAW_STRING);
+            hasher.write_usize(value.len());
+            hasher.write(value.as_bytes());
+        }
+        JsonViewKind::Array { len } => {
+            hasher.write_u8(RAW_ARRAY);
+            hasher.write_usize(len);
+            json_view.for_each_element(|element_view| hash_raw_value_inner(element_view, hasher));
+        }
+        JsonViewKind::Object { len } => {
+            hasher.write_u8(RAW_OBJECT);
+            hasher.write_usize(len);
+            json_view.for_each_entry(|key, child_view| {
+                hasher.write_usize(key.len());
+                hasher.write(key.as_bytes());
+                hash_raw_value_inner(child_view, hasher);
+            });
         }
     }
+}
 
-    fn hash_raw_value(
-        &self,
-        json_value: &JsonValue,
-        path: &JsonPath,
-        hasher: &mut FingerprintHasher,
-    ) {
-        fn hash_raw_value_inner(json_value: &JsonValue, hasher: &mut FingerprintHasher) {
-            const RAW_NULL: u8 = 0;
-            const RAW_BOOL: u8 = 1;
-            const RAW_NUMBER: u8 = 2;
-            const RAW_STRING: u8 = 3;
-            const RAW_ARRAY: u8 = 4;
-            const RAW_OBJECT: u8 = 5;
-
-            match json_value {
-                JsonValue::Null => hasher.write_u8(RAW_NULL),
-                JsonValue::Bool(value) => {
-                    hasher.write_u8(RAW_BOOL);
-                    hasher.write_u8(*value as u8);
-                }
-                JsonValue::Number(value) => {
-                    hasher.write_u8(RAW_NUMBER);
-                    let number = value.to_string();
-                    hasher.write(number.as_bytes());
-                }
-                JsonValue::String(value) => {
-                    hasher.write_u8(RAW_STRING);
-                    hasher.write_usize(value.len());
-                    hasher.write(value.as_bytes());
-                }
-                JsonValue::Array(values) => {
-                    hasher.write_u8(RAW_ARRAY);
-                    hasher.write_usize(values.len());
-                    for value in values {
-                        hash_raw_value_inner(value, hasher);
-                    }
-                }
-                JsonValue::Object(map) => {
-                    hasher.write_u8(RAW_OBJECT);
-                    hasher.write_usize(map.len());
-                    for (key, value) in map.iter() {
-                        hasher.write_usize(key.len());
-                        hasher.write(key.as_bytes());
-                        hash_raw_value_inner(value, hasher);
-                    }
-                }
-            }
-        }
-
-        let Some(json_value) = get_leaf_json_value(json_value, path) else {
-            hasher.write_u8(FIELD_ABSENT);
-            hasher.write_u8(FIELD_BOUNDARY);
-            return;
-        };
-        hasher.write_u8(FIELD_PRESENT);
-        hash_raw_value_inner(json_value, hasher);
+fn hash_raw_value<'a>(json_view: impl JsonView<'a>, path: &JsonPath, hasher: &mut FingerprintHasher) {
+    let Some(leaf_view) = get_leaf_json_view(json_view, path) else {
+        hasher.write_u8(FIELD_ABSENT);
         hasher.write_u8(FIELD_BOUNDARY);
-    }
+        return;
+    };
+    hasher.write_u8(FIELD_PRESENT);
+    hash_raw_value_inner(leaf_view, hasher);
+    hasher.write_u8(FIELD_BOUNDARY);
+}
 
-    fn hash_string_tokenized(
-        &self,
-        json_value: &JsonValue,
-        path: &JsonPath,
-        max_tokens: Option<usize>,
-        hasher: &mut FingerprintHasher,
-    ) {
-        let Some(value) = get_leaf_string(json_value, path) else {
-            hasher.write_u8(FIELD_ABSENT);
-            hasher.write_u8(FIELD_BOUNDARY);
-            return;
-        };
-        hasher.write_u8(FIELD_PRESENT);
-
-        let max_tokens = max_tokens.unwrap_or(DEFAULT_MAX_GROUPING_TOKENS);
-        for span in tokenize(value).take(max_tokens) {
-            hasher.write_u8(span.token_type as u8);
-            hasher.write_u8(TOKENIZED_TOKEN_SEPARATOR);
-        }
-
+fn hash_string_tokenized<'a>(
+    json_view: impl JsonView<'a>,
+    path: &JsonPath,
+    max_tokens: Option<usize>,
+    hasher: &mut FingerprintHasher,
+) {
+    let Some(value) = get_leaf_string(json_view, path) else {
+        hasher.write_u8(FIELD_ABSENT);
         hasher.write_u8(FIELD_BOUNDARY);
+        return;
+    };
+    hasher.write_u8(FIELD_PRESENT);
+
+    let max_tokens = max_tokens.unwrap_or(DEFAULT_MAX_GROUPING_TOKENS);
+    for span in tokenize(value).take(max_tokens) {
+        hasher.write_u8(span.token_type as u8);
+        hasher.write_u8(TOKENIZED_TOKEN_SEPARATOR);
     }
+
+    hasher.write_u8(FIELD_BOUNDARY);
+}
+
+fn get_leaf_json_view<'a, V: JsonView<'a>>(json_view: V, path: &[String]) -> Option<V> {
+    let Some((first_component, remaining_components)) = path.split_first() else {
+        return Some(json_view);
+    };
+    get_leaf_json_view(json_view.get(first_component)?, remaining_components)
+}
+
+fn get_leaf_string<'a>(json_view: impl JsonView<'a>, path: &[String]) -> Option<&'a str> {
+    let JsonViewKind::Str(value) = get_leaf_json_view(json_view, path)?.kind() else {
+        return None;
+    };
+    Some(value)
 }
 
 /// Fingerprints of Arrow rows (Parquet bulk load), without building a `serde_json::Value`.
@@ -450,437 +463,5 @@ fn row_hash_raw(value: quickwit_doc_mapper::RowValue<'_>, hasher: &mut Fingerpri
             hasher.write_u8(RAW_STRING);
             hasher.write_usize(0);
         }
-    }
-}
-
-fn get_leaf_json_value<'a>(json_value: &'a JsonValue, path: &[String]) -> Option<&'a JsonValue> {
-    if path.is_empty() {
-        return Some(json_value);
-    }
-    let JsonValue::Object(obj) = json_value else {
-        return None;
-    };
-    get_leaf_json_value(obj.get(path.first()?)?, &path[1..])
-}
-
-fn get_leaf_string<'a>(json_value: &'a JsonValue, path: &[String]) -> Option<&'a str> {
-    get_leaf_json_value(json_value, path)?.as_str()
-}
-
-#[cfg(test)]
-mod tests {
-    use quickwit_config::DocsClusteringConfig;
-    use serde_json::Value as JsonValue;
-
-    use super::Fingerprinter;
-
-    fn parse(s: &str) -> JsonValue {
-        serde_json::from_str(s).unwrap()
-    }
-
-    fn test_docs_clustering_config() -> DocsClusteringConfig {
-        docs_clustering_config(serde_json::json!([
-            {
-                "fingerprint": [{
-                    "kind": "structure",
-                    "exclude": ["tag", "custom"]
-                }]
-            },
-            {
-                "fingerprint": [{
-                    "path": "message",
-                    "kind": "tokenized"
-                },
-                {
-                    "path": "service",
-                    "kind": "raw"
-                }]
-            }
-        ]))
-    }
-
-    fn test_fingerprinter() -> Fingerprinter {
-        let docs_clustering_config = test_docs_clustering_config();
-        Fingerprinter::new(&docs_clustering_config)
-    }
-
-    fn docs_clustering_config(json_value: JsonValue) -> DocsClusteringConfig {
-        serde_json::from_value(json_value).unwrap()
-    }
-
-    /// `fingerprint_row` on an Arrow row equals `fingerprint` on its `arrow_json` encoding.
-    #[cfg(feature = "parquet")]
-    #[test]
-    fn arrow_row_fingerprint_matches_json_fingerprint() {
-        use std::sync::Arc;
-
-        use arrow_array::builder::{MapBuilder, StringBuilder};
-        use arrow_array::{
-            ArrayRef, Float64Array, Int64Array, RecordBatch, StringArray, TimestampNanosecondArray,
-            UInt64Array,
-        };
-        use quickwit_doc_mapper::{ArrowDocBuilder, DocMapper};
-
-        let doc_mapper: DocMapper = serde_json::from_value(serde_json::json!({
-            "mode": "dynamic",
-            "dynamic_mapping": {"indexed": false, "stored": true},
-            "field_mappings": [
-                {"name": "Timestamp", "type": "datetime", "fast": true},
-                {"name": "Body", "type": "text"},
-                {"name": "ServiceName", "type": "text", "tokenizer": "raw"}
-            ],
-            "timestamp_field": "Timestamp"
-        }))
-        .unwrap();
-        let mut attributes = MapBuilder::new(None, StringBuilder::new(), StringBuilder::new());
-        let rows: [&[(&str, Option<&str>)]; 5] = [
-            &[("k8s.pod.name", Some("cart-1")), ("app", Some("cart"))],
-            &[],
-            &[("b", Some("2")), ("a", Some("1")), ("a", Some("3"))],
-            &[("x", None), ("y", Some("2026-01-01T00:00:00Z"))],
-            // Keys that are prefixes of one another, and a key sorting between column names.
-            &[
-                ("ab", Some("1")),
-                ("a.b", Some("2")),
-                ("a", Some("3")),
-                ("", Some("4")),
-                ("Body", Some("5")),
-            ],
-        ];
-        for (row_idx, row) in rows.iter().enumerate() {
-            for (key, value) in row.iter() {
-                attributes.keys().append_value(key);
-                match value {
-                    Some(value) => attributes.values().append_value(value),
-                    None => attributes.values().append_null(),
-                }
-            }
-            attributes.append(row_idx != 1).unwrap();
-        }
-        let batch = RecordBatch::try_from_iter(vec![
-            (
-                "Timestamp",
-                Arc::new(
-                    TimestampNanosecondArray::from(vec![1i64, 2, 3, 4, 5]).with_timezone("UTC"),
-                ) as ArrayRef,
-            ),
-            (
-                "Body",
-                Arc::new(StringArray::from(vec![
-                    Some("server started at 8080"),
-                    Some("job 123 finished in 42ms"),
-                    None,
-                    Some("connection from 1.2.3.4"),
-                    Some("server started at 9090"),
-                ])),
-            ),
-            (
-                "ServiceName",
-                Arc::new(StringArray::from(vec![
-                    Some("api"),
-                    Some("worker"),
-                    Some("api"),
-                    None,
-                    Some("api"),
-                ])),
-            ),
-            (
-                "Count",
-                Arc::new(Int64Array::from(vec![
-                    Some(-1),
-                    None,
-                    Some(7),
-                    Some(0),
-                    Some(1),
-                ])),
-            ),
-            (
-                "Big",
-                Arc::new(UInt64Array::from(vec![
-                    Some(u64::MAX),
-                    Some(1),
-                    None,
-                    Some(2),
-                    Some(3),
-                ])),
-            ),
-            (
-                "Score",
-                Arc::new(Float64Array::from(vec![
-                    Some(0.1),
-                    Some(1e300),
-                    Some(-0.0),
-                    None,
-                    Some(2.5),
-                ])),
-            ),
-            ("ResourceAttributes", Arc::new(attributes.finish())),
-        ])
-        .unwrap();
-        let builder = ArrowDocBuilder::try_new(&doc_mapper, &batch.schema()).unwrap();
-
-        // The searchbench policy, plus raw values on a map, an integer and a float column.
-        let fingerprinter = Fingerprinter::new(&docs_clustering_config(serde_json::json!([
-            {"fingerprint": [{"kind": "structure"}]},
-            {"fingerprint": [{"kind": "raw", "path": "ServiceName"}]},
-            {"fingerprint": [{"kind": "tokenized", "path": "Body"}]},
-            {"fingerprint": [{"kind": "raw", "path": "ResourceAttributes"}]},
-            {"fingerprint": [{"kind": "raw", "path": "ResourceAttributes.app"}]},
-            {"fingerprint": [{"kind": "raw", "path": "Count"}, {"kind": "raw", "path": "Big"}]},
-            {"fingerprint": [{"kind": "raw", "path": "Score"}]},
-            {"fingerprint": [{"kind": "structure", "exclude": ["ResourceAttributes"]}]},
-            {"fingerprint": [{"kind": "raw", "path": "Missing"}, {"kind": "tokenized", "path": "Count"}]}
-        ])));
-        assert!(
-            fingerprinter
-                .value_root_fields()
-                .all(|field| field != "Timestamp")
-        );
-
-        let mut writer = arrow_json::WriterBuilder::new()
-            .with_explicit_nulls(false)
-            .build::<_, arrow_json::writer::LineDelimited>(Vec::new());
-        writer.write(&batch).unwrap();
-        writer.finish().unwrap();
-        let ndjson = writer.into_inner();
-        let mut num_checked = 0;
-        for (row, line) in ndjson
-            .split(|byte| *byte == b'\n')
-            .filter(|line| !line.is_empty())
-            .enumerate()
-        {
-            let json_doc: JsonValue = serde_json::from_slice(line).unwrap();
-            let Some(json_row) = builder.json_row(&batch, row) else {
-                continue;
-            };
-            assert_eq!(
-                fingerprinter.fingerprint_row(json_row.root()),
-                fingerprinter.fingerprint(&json_doc),
-                "row {row}: {json_doc}"
-            );
-            num_checked += 1;
-        }
-        assert_eq!(num_checked, 5);
-    }
-
-    #[test]
-    fn configured_fingerprinter_returns_config() {
-        let docs_clustering_config = test_docs_clustering_config();
-        let fingerprinter = test_fingerprinter();
-        assert_eq!(fingerprinter.config(), &docs_clustering_config);
-    }
-
-    #[test]
-    fn identical_logs_have_equal_fingerprint() {
-        let fingerprinter = test_fingerprinter();
-        let doc = parse(r#"{"message":"server started at 8080","service":"api"}"#);
-        assert_eq!(
-            fingerprinter.fingerprint(&doc),
-            fingerprinter.fingerprint(&doc)
-        );
-    }
-
-    #[test]
-    fn dotted_key_and_nested_path_have_different_schema_fingerprints() {
-        let fingerprinter = test_fingerprinter();
-        let dotted_key_doc = parse(r#"{"a.b":1}"#);
-        let nested_path_doc = parse(r#"{"a":{"b":1}}"#);
-        let dotted_key_fingerprint = fingerprinter.fingerprint(&dotted_key_doc);
-        let nested_path_fingerprint = fingerprinter.fingerprint(&nested_path_doc);
-
-        assert_ne!(dotted_key_fingerprint[0], nested_path_fingerprint[0]);
-        assert_eq!(dotted_key_fingerprint[1], nested_path_fingerprint[1]);
-    }
-
-    #[test]
-    fn same_message_template_has_equal_fingerprint() {
-        let fingerprinter = test_fingerprinter();
-        let doc1 = parse(r#"{"message":"server started at 8080","service":"api"}"#);
-        let doc2 = parse(r#"{"message":"server started at 9090","service":"api"}"#);
-        assert_eq!(
-            fingerprinter.fingerprint(&doc1),
-            fingerprinter.fingerprint(&doc2)
-        );
-    }
-
-    #[test]
-    fn different_message_template_changes_grouping_fingerprint_only() {
-        let fingerprinter = test_fingerprinter();
-        let doc1 = parse(r#"{"message":"server started at 8080","service":"api"}"#);
-        let doc2 = parse(r#"{"message":"connection from 1.2.3.4","service":"api"}"#);
-        let doc1_fingerprint = fingerprinter.fingerprint(&doc1);
-        let doc2_fingerprint = fingerprinter.fingerprint(&doc2);
-        assert_eq!(doc1_fingerprint[0], doc2_fingerprint[0]);
-        assert_ne!(doc1_fingerprint[1], doc2_fingerprint[1]);
-    }
-
-    #[test]
-    fn tokenized_field_respects_hardcoded_grouping_token_limit() {
-        let docs_clustering_config = docs_clustering_config(serde_json::json!([
-            {
-                "fingerprint": [{
-                    "kind": "structure"
-                }]
-            },
-            {
-                "fingerprint": [{
-                    "path": "message",
-                    "kind": "tokenized"
-                }]
-            }
-        ]));
-        let fingerprinter = Fingerprinter::new(&docs_clustering_config);
-        let prefix = "alpha ".repeat(25);
-        let doc1 = parse(&format!(r#"{{"message":"{prefix}123"}}"#));
-        let doc2 = parse(&format!(r#"{{"message":"{prefix}beta"}}"#));
-        assert_eq!(
-            fingerprinter.fingerprint(&doc1)[1],
-            fingerprinter.fingerprint(&doc2)[1]
-        );
-    }
-
-    #[test]
-    fn different_service_changes_grouping_fingerprint_only() {
-        let fingerprinter = test_fingerprinter();
-        let doc1 = parse(r#"{"message":"server started at 8080","service":"api"}"#);
-        let doc2 = parse(r#"{"message":"server started at 8080","service":"worker"}"#);
-        let doc1_fingerprint = fingerprinter.fingerprint(&doc1);
-        let doc2_fingerprint = fingerprinter.fingerprint(&doc2);
-        assert_eq!(doc1_fingerprint[0], doc2_fingerprint[0]);
-        assert_ne!(doc1_fingerprint[1], doc2_fingerprint[1]);
-    }
-
-    #[test]
-    fn ignored_custom_shape_does_not_change_fingerprint() {
-        let fingerprinter = test_fingerprinter();
-        let doc1 =
-            parse(r#"{"message":"server started at 8080","service":"api","custom":{"a":1}}"#);
-        let doc2 =
-            parse(r#"{"message":"server started at 8080","service":"api","custom":{"b":2}}"#);
-        assert_eq!(
-            fingerprinter.fingerprint(&doc1),
-            fingerprinter.fingerprint(&doc2)
-        );
-    }
-
-    #[test]
-    fn extra_non_ignored_shape_changes_schema_fingerprint_only() {
-        let fingerprinter = test_fingerprinter();
-        let doc1 = parse(r#"{"message":"server started at 8080","service":"api"}"#);
-        let doc2 = parse(r#"{"message":"server started at 8080","service":"api","host":"web-1"}"#);
-        let doc1_fingerprint = fingerprinter.fingerprint(&doc1);
-        let doc2_fingerprint = fingerprinter.fingerprint(&doc2);
-        assert_ne!(doc1_fingerprint[0], doc2_fingerprint[0]);
-        assert_eq!(doc1_fingerprint[1], doc2_fingerprint[1]);
-    }
-
-    #[test]
-    fn configured_raw_field_changes_grouping_fingerprint_only() {
-        let docs_clustering_config = docs_clustering_config(serde_json::json!([
-            {
-                "fingerprint": [{
-                    "kind": "structure"
-                }]
-            },
-            {
-                "fingerprint": [{
-                    "path": "host",
-                    "kind": "raw"
-                }]
-            }
-        ]));
-        let fingerprinter = Fingerprinter::new(&docs_clustering_config);
-        let doc1 = parse(r#"{"message":"same","host":"web-1"}"#);
-        let doc2 = parse(r#"{"message":"same","host":"web-2"}"#);
-        let doc1_fingerprint = fingerprinter.fingerprint(&doc1);
-        let doc2_fingerprint = fingerprinter.fingerprint(&doc2);
-        assert_eq!(doc1_fingerprint[0], doc2_fingerprint[0]);
-        assert_ne!(doc1_fingerprint[1], doc2_fingerprint[1]);
-    }
-
-    #[test]
-    fn raw_field_hashes_non_string_values() {
-        let docs_clustering_config = docs_clustering_config(serde_json::json!([
-            {
-                "fingerprint": [{
-                    "kind": "structure"
-                }]
-            },
-            {
-                "fingerprint": [{
-                    "path": "status",
-                    "kind": "raw"
-                }]
-            }
-        ]));
-        let fingerprinter = Fingerprinter::new(&docs_clustering_config);
-        let doc1 = parse(r#"{"status":200}"#);
-        let doc2 = parse(r#"{"status":500}"#);
-        let doc1_fingerprint = fingerprinter.fingerprint(&doc1);
-        let doc2_fingerprint = fingerprinter.fingerprint(&doc2);
-        assert_eq!(doc1_fingerprint[0], doc2_fingerprint[0]);
-        assert_ne!(doc1_fingerprint[1], doc2_fingerprint[1]);
-    }
-
-    #[test]
-    fn raw_field_preserves_json_type_and_structure_boundaries() {
-        let docs_clustering_config = docs_clustering_config(serde_json::json!([
-            {
-                "fingerprint": [{
-                    "path": "value",
-                    "kind": "raw"
-                }]
-            }
-        ]));
-        let fingerprinter = Fingerprinter::new(&docs_clustering_config);
-        let docs = [
-            parse(r#"{"value":"null"}"#),
-            parse(r#"{"value":null}"#),
-            parse(r#"{"value":""}"#),
-            parse(r#"{"value":[]}"#),
-            parse(r#"{"value":{}}"#),
-            parse(r#"{"value":false}"#),
-            parse(r#"{"value":-1}"#),
-            parse(r#"{"value":18446744073709551615}"#),
-        ];
-        let fingerprints: Vec<_> = docs
-            .iter()
-            .map(|doc| fingerprinter.fingerprint(doc))
-            .collect();
-
-        for (left_idx, left_fingerprint) in fingerprints.iter().enumerate() {
-            for right_fingerprint in &fingerprints[left_idx + 1..] {
-                assert_ne!(left_fingerprint, right_fingerprint);
-            }
-        }
-    }
-
-    #[test]
-    fn absent_grouping_values_preserve_field_position() {
-        let docs_clustering_config = docs_clustering_config(serde_json::json!([
-            {
-                "fingerprint": [{
-                    "kind": "structure"
-                }]
-            },
-            {
-                "fingerprint": [{
-                    "path": "a",
-                    "kind": "raw"
-                },
-                {
-                    "path": "b",
-                    "kind": "raw"
-                }]
-            }
-        ]));
-        let fingerprinter = Fingerprinter::new(&docs_clustering_config);
-        let doc1 = parse(r#"{"a":"x","b":null}"#);
-        let doc2 = parse(r#"{"a":null,"b":"x"}"#);
-        let doc1_fingerprint = fingerprinter.fingerprint(&doc1);
-        let doc2_fingerprint = fingerprinter.fingerprint(&doc2);
-
-        assert_eq!(doc1_fingerprint[0], doc2_fingerprint[0]);
-        assert_ne!(doc1_fingerprint[1], doc2_fingerprint[1]);
     }
 }

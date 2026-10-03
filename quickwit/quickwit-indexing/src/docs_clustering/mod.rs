@@ -117,6 +117,9 @@
 mod chunked;
 mod clusterer;
 mod fingerprinter;
+#[cfg(test)]
+mod fingerprinter_tests;
+mod json_view;
 mod tokenizer;
 
 pub use chunked::ChunkedDocsClusterer;
