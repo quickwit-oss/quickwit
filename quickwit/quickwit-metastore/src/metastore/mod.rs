@@ -491,6 +491,7 @@ impl StageSplitsRequestExt for StageSplitsRequest {
         let request = Self {
             index_uid: Some(index_uid.into()),
             split_metadata_list_serialized_json,
+            create_only: false,
         };
         Ok(request)
     }
@@ -504,6 +505,7 @@ impl StageSplitsRequestExt for StageSplitsRequest {
         let request = Self {
             index_uid: Some(index_uid.into()),
             split_metadata_list_serialized_json,
+            create_only: false,
         };
         Ok(request)
     }
