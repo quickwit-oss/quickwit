@@ -30,6 +30,10 @@ use tantivy::query::Query;
 use tantivy::schema::{Field, FieldType, INDEXED, OwnedValue as TantivyValue, STORED, Schema};
 
 use super::DocMapperBuilder;
+use super::borrowed_json::BorrowedJsonDoc;
+use super::borrowed_value_view::{
+    DynamicObject, add_borrowed_object, add_dynamic_concatenate_values, add_dynamic_object,
+};
 use super::field_mapping_entry::RAW_TOKENIZER_NAME;
 use super::field_presence::populate_field_presence;
 use super::tantivy_val_to_json::tantivy_value_to_json;
@@ -561,18 +565,68 @@ impl DocMapper {
             document.add_field_value(dynamic_field, &serde_json::Value::Object(dynamic_json_obj));
         }
 
+        self.add_document_size_and_field_presence(&mut document, document_len);
+        Ok((partition, document))
+    }
+
+    /// Same as [`Self::doc_from_json_obj`] for a borrowed JSON document, without allocating
+    /// intermediate JSON or tantivy values.
+    ///
+    /// Produces exactly the same partition, document (same field values in the same order) and
+    /// errors as `doc_from_json_obj` applied to the equivalent `serde_json::Map`.
+    pub fn doc_from_borrowed_json(
+        &self,
+        json_doc: &BorrowedJsonDoc,
+        document_len: u64,
+    ) -> Result<(Partition, Document), DocParsingError> {
+        let partition: Partition = self.partition_key.eval_hash(json_doc);
+
+        let mut dynamic_obj = DynamicObject::new();
+        let mut field_path = Vec::new();
+        let mut document = Document::default();
+
+        if let Some(source_field) = self.source_field {
+            add_borrowed_object(&mut document, source_field, json_doc.root());
+        }
+
+        let mode = self.mode.mode_type();
+        self.field_mappings.doc_from_borrowed_json(
+            json_doc.root(),
+            mode,
+            &mut document,
+            &mut field_path,
+            &mut dynamic_obj,
+        )?;
+
+        if let Some(dynamic_field) = self.dynamic_field
+            && !dynamic_obj.is_empty()
+        {
+            if !self.concatenate_dynamic_fields.is_empty() {
+                add_dynamic_concatenate_values(
+                    &mut document,
+                    &self.concatenate_dynamic_fields,
+                    &dynamic_obj,
+                );
+            }
+            add_dynamic_object(&mut document, dynamic_field, &dynamic_obj);
+        }
+
+        self.add_document_size_and_field_presence(&mut document, document_len);
+        Ok((partition, document))
+    }
+
+    fn add_document_size_and_field_presence(&self, document: &mut Document, document_len: u64) {
         if let Some(document_size_field) = self.document_size_field {
             document.add_u64(document_size_field, document_len);
         }
 
         if self.index_field_presence {
             let field_presence_hashes: FnvHashSet<u64> =
-                populate_field_presence(&document, &self.schema, true);
+                populate_field_presence(document, &self.schema, true);
             for field_presence_hash in field_presence_hashes {
                 document.add_field_value(FIELD_PRESENCE_FIELD, &field_presence_hash);
             }
         }
-        Ok((partition, document))
     }
 
     /// Converts a tantivy named Document to the json format.
