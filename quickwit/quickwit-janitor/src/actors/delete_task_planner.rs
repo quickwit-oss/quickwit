@@ -327,6 +327,7 @@ impl DeleteTaskPlanner {
                 IndexMetasForLeafSearch {
                     doc_mapper_str: doc_mapper_str.to_string(),
                     index_uri,
+                    retention_timestamp_cutoff_opt: None,
                 },
             );
             let leaf_search_request =
