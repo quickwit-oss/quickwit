@@ -13,14 +13,17 @@
 // limitations under the License.
 
 use std::collections::HashSet;
+use std::future::Future;
 use std::iter::FromIterator;
 use std::mem;
+use std::panic::{AssertUnwindSafe, resume_unwind};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use anyhow::{Context, bail};
 use async_trait::async_trait;
 use fail::fail_point;
+use futures::FutureExt;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::pubsub::EventBroker;
@@ -38,6 +41,7 @@ use quickwit_storage::{SplitPayload, SplitPayloadBuilder};
 use serde::Serialize;
 use tokio::sync::oneshot::Sender;
 use tokio::sync::{Semaphore, SemaphorePermit, oneshot};
+use tokio_util::task::TaskTracker;
 use tracing::{Instrument, Span, debug, error, info, instrument, warn};
 
 use crate::actors::Publisher;
@@ -171,6 +175,7 @@ pub struct Uploader {
     max_concurrent_split_uploads: usize,
     counters: UploaderCounters,
     event_broker: EventBroker,
+    upload_tasks: TaskTracker,
 }
 
 impl Uploader {
@@ -195,6 +200,7 @@ impl Uploader {
             max_concurrent_split_uploads,
             counters: Default::default(),
             event_broker,
+            upload_tasks: TaskTracker::new(),
         }
     }
     async fn acquire_semaphore(
@@ -257,6 +263,17 @@ impl Actor for Uploader {
     fn name(&self) -> String {
         format!("{:?}", self.uploader_type)
     }
+
+    async fn finalize(
+        &mut self,
+        _exit_status: &ActorExitStatus,
+        ctx: &ActorContext<Self>,
+    ) -> anyhow::Result<()> {
+        // Joining an uploader must also quiesce its storage and metastore writes.
+        self.upload_tasks.close();
+        ctx.protect_future(self.upload_tasks.wait()).await;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -267,6 +284,21 @@ impl Handler<PackagedSplitBatch> for Uploader {
         parent=batch.batch_parent_span.id(),
         skip_all)]
     async fn handle(
+        &mut self,
+        batch: PackagedSplitBatch,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        drain_uploads_on_panic(
+            self.upload_tasks.clone(),
+            ctx,
+            self.handle_batch(batch, ctx),
+        )
+        .await
+    }
+}
+
+impl Uploader {
+    async fn handle_batch(
         &mut self,
         batch: PackagedSplitBatch,
         ctx: &ActorContext<Self>,
@@ -301,8 +333,10 @@ impl Handler<PackagedSplitBatch> for Uploader {
         let retention_policy = self.retention_policy.clone();
         debug!(split_ids=?split_ids, "start-stage-and-store-splits");
         let event_broker = self.event_broker.clone();
+        let upload_task = self.upload_tasks.token();
         spawn_named_task(
             async move {
+                let _upload_task = upload_task;
                 fail_point!("uploader:intask:before");
 
                 let mut split_metadata_list = Vec::with_capacity(batch.splits.len());
@@ -511,6 +545,21 @@ impl Handler<EmptySplit> for Uploader {
         empty_split: EmptySplit,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        drain_uploads_on_panic(
+            self.upload_tasks.clone(),
+            ctx,
+            self.handle_empty_split(empty_split, ctx),
+        )
+        .await
+    }
+}
+
+impl Uploader {
+    async fn handle_empty_split(
+        &mut self,
+        empty_split: EmptySplit,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
         let split_update_sender = self
             .split_update_mailbox
             .get_split_update_sender(ctx)
@@ -527,6 +576,22 @@ impl Handler<EmptySplit> for Uploader {
 
         split_update_sender.send(splits_update, ctx).await?;
         Ok(())
+    }
+}
+
+async fn drain_uploads_on_panic<T>(
+    upload_tasks: TaskTracker,
+    ctx: &ActorContext<Uploader>,
+    work: impl Future<Output = T>,
+) -> T {
+    match AssertUnwindSafe(work).catch_unwind().await {
+        Ok(result) => result,
+        Err(panic) => {
+            // Actor finalization is skipped on panic, but uploads must still finish before join.
+            upload_tasks.close();
+            ctx.protect_future(upload_tasks.wait()).await;
+            resume_unwind(panic)
+        }
     }
 }
 
@@ -580,6 +645,10 @@ async fn upload_split(
     counters.num_uploaded_splits.fetch_add(1, Ordering::SeqCst);
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "uploader_lifecycle_tests.rs"]
+mod lifecycle_tests;
 
 #[cfg(test)]
 mod tests {
