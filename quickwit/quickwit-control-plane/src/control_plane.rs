@@ -59,8 +59,8 @@ use crate::IndexerPool;
 use crate::cooldown_map::{CooldownMap, CooldownStatus};
 use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
-use crate::ingest::IngestController;
 use crate::ingest::ingest_controller::{IngestControllerStats, RebalanceShardsCallback};
+use crate::ingest::{IngestController, LegacyScalingController};
 use crate::metrics::{METASTORE_ERROR_ABORTED, METASTORE_ERROR_MAYBE_EXECUTED, RESTART_TOTAL};
 use crate::model::ControlPlaneModel;
 
@@ -98,6 +98,7 @@ pub struct ControlPlane {
     // the different ingesters.
     indexing_scheduler: IndexingScheduler,
     ingest_controller: IngestController,
+    legacy_scaling_controller: LegacyScalingController,
     metastore: MetastoreServiceClient,
     model: ControlPlaneModel,
     prune_shard_cooldown: CooldownMap<(IndexId, SourceId)>,
@@ -131,9 +132,9 @@ impl ControlPlane {
                 let cluster_id = cluster_config.cluster_id.clone();
                 let indexing_scheduler =
                     IndexingScheduler::new(cluster_id, self_node_id.clone(), indexer_pool.clone());
-                let ingest_controller = IngestController::new(
-                    metastore.clone(),
-                    ingester_pool.clone(),
+                let ingest_controller =
+                    IngestController::new(metastore.clone(), ingester_pool.clone());
+                let legacy_scaling_controller = LegacyScalingController::new(
                     cluster_config.shard_throughput_limit,
                     cluster_config.shard_scale_up_factor,
                 );
@@ -145,6 +146,7 @@ impl ControlPlane {
                     cluster_config: cluster_config.clone(),
                     indexing_scheduler,
                     ingest_controller,
+                    legacy_scaling_controller,
                     metastore: metastore.clone(),
                     model: Default::default(),
                     prune_shard_cooldown: CooldownMap::new(NonZeroUsize::new(1024).unwrap()),
@@ -950,8 +952,9 @@ impl Handler<LocalShardsUpdate> for ControlPlane {
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         if let Err(metastore_error) = self
-            .ingest_controller
-            .update_source_shards(
+            .legacy_scaling_controller
+            .update_local_shards(
+                &mut self.ingest_controller,
                 local_shards_update.source_uid,
                 &local_shards_update.shard_infos,
                 &mut self.model,
@@ -993,8 +996,9 @@ impl DeferableReplyHandler<ReportIndexerStateRequest> for ControlPlane {
         }
         if let Some(shards_update) = request.shards_update
             && let Err(metastore_error) = self
-                .ingest_controller
+                .legacy_scaling_controller
                 .handle_shards_update(
+                    &mut self.ingest_controller,
                     &request.node_id,
                     request.generation_id,
                     shards_update,
@@ -1178,9 +1182,8 @@ mod tests {
                 NodeId::from_str("cp"),
                 indexer_pool,
             ),
-            ingest_controller: IngestController::new(
-                metastore.clone(),
-                ingester_pool,
+            ingest_controller: IngestController::new(metastore.clone(), ingester_pool),
+            legacy_scaling_controller: LegacyScalingController::new(
                 cluster_config.shard_throughput_limit,
                 cluster_config.shard_scale_up_factor,
             ),

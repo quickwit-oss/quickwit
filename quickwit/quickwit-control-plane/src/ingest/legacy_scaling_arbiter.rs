@@ -18,7 +18,7 @@ use bytesize::ByteSize;
 
 use crate::model::{ScalingMode, ShardStats};
 
-pub(crate) struct ScalingArbiter {
+pub(crate) struct LegacyScalingArbiter {
     // Threshold in B/s below which we decrease the number of shards.
     scale_down_shards_threshold: ByteSize,
 
@@ -38,13 +38,13 @@ pub(crate) struct ScalingArbiter {
     shard_scale_up_factor: f32,
 }
 
-impl ScalingArbiter {
+impl LegacyScalingArbiter {
     pub fn with_max_shard_ingestion_throughput(
         max_shard_throughput: ByteSize,
         shard_scale_up_factor: f32,
-    ) -> ScalingArbiter {
+    ) -> LegacyScalingArbiter {
         let max_shard_throughput_bytes = max_shard_throughput.as_u64();
-        ScalingArbiter {
+        LegacyScalingArbiter {
             scale_up_shards_short_term_threshold: ByteSize::b(max_shard_throughput_bytes * 8 / 10),
             scale_up_shards_long_term_threshold: ByteSize::b(max_shard_throughput_bytes * 3 / 10),
             scale_down_shards_threshold: ByteSize::b(max_shard_throughput_bytes * 2 / 10),
@@ -120,7 +120,7 @@ mod tests {
 
     use bytesize::ByteSize;
 
-    use super::ScalingArbiter;
+    use super::LegacyScalingArbiter;
     use crate::model::{ScalingMode, ShardStats};
 
     #[test]
@@ -128,7 +128,7 @@ mod tests {
         // use shard throughput 10MiB to simplify calculations
         // with a factor close to 1 shards are effectively added 1 by 1
         let scaling_arbiter =
-            ScalingArbiter::with_max_shard_ingestion_throughput(ByteSize::mib(10), 1.01);
+            LegacyScalingArbiter::with_max_shard_ingestion_throughput(ByteSize::mib(10), 1.01);
         assert_eq!(
             scaling_arbiter.should_scale(
                 ShardStats {
@@ -219,7 +219,7 @@ mod tests {
     fn test_scaling_arbiter_2x() {
         // use shard throughput 10MiB to simplify calculations
         let scaling_arbiter =
-            ScalingArbiter::with_max_shard_ingestion_throughput(ByteSize::mib(10), 2.);
+            LegacyScalingArbiter::with_max_shard_ingestion_throughput(ByteSize::mib(10), 2.);
         assert_eq!(
             scaling_arbiter.should_scale(
                 ShardStats {
@@ -323,7 +323,7 @@ mod tests {
     fn test_scale_up_computations() {
         // use shard throughput 10MiB to simplify calculations
         let scaling_arbiter =
-            ScalingArbiter::with_max_shard_ingestion_throughput(ByteSize::mib(10), 1.5);
+            LegacyScalingArbiter::with_max_shard_ingestion_throughput(ByteSize::mib(10), 1.5);
 
         let shard_stats = ShardStats {
             num_open_shards: 0,
@@ -404,7 +404,7 @@ mod tests {
     #[test]
     fn test_scaling_arbiter_idle() {
         let scaling_arbiter =
-            ScalingArbiter::with_max_shard_ingestion_throughput(ByteSize::mib(10), 1.5);
+            LegacyScalingArbiter::with_max_shard_ingestion_throughput(ByteSize::mib(10), 1.5);
 
         let shard_stats = ShardStats {
             num_open_shards: 0,
@@ -430,7 +430,7 @@ mod tests {
     #[test]
     fn test_scaling_arbiter_min_shards() {
         let scaling_arbiter =
-            ScalingArbiter::with_max_shard_ingestion_throughput(ByteSize::mib(10), 1.5);
+            LegacyScalingArbiter::with_max_shard_ingestion_throughput(ByteSize::mib(10), 1.5);
 
         let shard_stats = ShardStats {
             num_open_shards: 1,

@@ -451,6 +451,12 @@ impl ShardTable {
         Some(open_shards)
     }
 
+    pub fn legacy_shard_stats(&self, source_uid: &SourceUid) -> Option<ShardStats> {
+        let table_entry = self.table_entries.get(source_uid)?;
+        let shard_stats = table_entry.shards_stats();
+        Some(shard_stats)
+    }
+
     pub fn update_shard_metrics_for_source_uid(&self, source_uid: &SourceUid) {
         let Some(table_entry) = self.table_entries.get(source_uid) else {
             return;
@@ -484,13 +490,9 @@ impl ShardTable {
         gauge!(parent: CLOSED_SHARDS, labels: [labels]).set(num_closed_shards as f64);
     }
 
-    pub fn update_shards(
-        &mut self,
-        source_uid: &SourceUid,
-        shard_infos: &ShardInfos,
-    ) -> ShardStats {
+    pub fn update_shards(&mut self, source_uid: &SourceUid, shard_infos: &ShardInfos) {
         let Some(table_entry) = self.table_entries.get_mut(source_uid) else {
-            return ShardStats::default();
+            return;
         };
         for shard_info in shard_infos {
             let ShardInfo {
@@ -510,7 +512,6 @@ impl ShardTable {
                 }
             }
         }
-        table_entry.shards_stats()
     }
 
     /// Sets the state of the shards identified by their index UID, source ID, and shard IDs to
@@ -924,7 +925,8 @@ mod tests {
                 long_term_ingestion_rate: ByteSize::mib(5),
             },
         ]);
-        let shard_stats = shard_table.update_shards(&source_uid, &shard_infos);
+        shard_table.update_shards(&source_uid, &shard_infos);
+        let shard_stats = shard_table.legacy_shard_stats(&source_uid).unwrap();
         assert_eq!(shard_stats.num_open_shards, 2);
         assert_eq!(
             shard_stats.avg_short_term_ingestion_rate,
