@@ -2918,20 +2918,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ingest_controller_handle_local_shards_update_for_deleted_index() {
+    async fn test_ingest_controller_handle_shards_update_for_deleted_index() {
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
         let ingester_pool = IngesterPool::default();
 
         let mut controller = IngestController::new(
             metastore,
             ingester_pool,
-            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            DEFAULT_SHARD_THROUGHPUT_LIMIT,
             1.001,
         );
 
         let mut model = ControlPlaneModel::default();
-        let local_shards_update = LocalShardsUpdate {
-            ingester_id: NodeId::from_str("test-ingester"),
+        let source_shard_report = SourceShardReport {
             source_uid: SourceUid {
                 index_uid: IndexUid::for_test("test-index", 0),
                 source_id: "test-source".to_string(),
@@ -2939,7 +2938,15 @@ mod tests {
             shard_infos: BTreeSet::new(),
         };
         controller
-            .handle_local_shards_update(local_shards_update, &mut model, &Progress::default())
+            .handle_shards_update(
+                "test-ingester",
+                1,
+                ShardsUpdate {
+                    shard_infos_by_source: vec![source_shard_report.into()],
+                },
+                &mut model,
+                &Progress::default(),
+            )
             .await
             .unwrap();
     }
