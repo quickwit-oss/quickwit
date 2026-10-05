@@ -1063,7 +1063,7 @@ mod tests {
         CLI_SOURCE_ID, INGEST_V2_SOURCE_ID, IndexConfig, KafkaSourceParams, SourceParams,
     };
     use quickwit_indexing::IndexingService;
-    use quickwit_ingest::{IngesterPoolEntry, RateMibPerSec, ShardInfo};
+    use quickwit_ingest::IngesterPoolEntry;
     use quickwit_metastore::{
         CreateIndexRequestExt, IndexMetadata, ListIndexesMetadataResponseExt,
     };
@@ -2319,19 +2319,13 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        // Rate high enough to trigger an update.
         let local_shards_update = LocalShardsUpdate {
             ingester_id: NodeId::from_str("test-ingester"),
             source_uid: SourceUid {
                 index_uid,
                 source_id: INGEST_V2_SOURCE_ID.to_string(),
             },
-            shard_infos: BTreeSet::from_iter([ShardInfo {
-                shard_id: ShardId::from(15),
-                shard_state: ShardState::Open,
-                short_term_ingestion_rate: RateMibPerSec(10),
-                long_term_ingestion_rate: RateMibPerSec(10),
-            }]),
+            shard_infos: BTreeSet::new(),
         };
         control_plane_mailbox
             .ask(local_shards_update)

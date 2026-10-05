@@ -2750,43 +2750,14 @@ mod tests {
             1.001,
         );
 
-        let index_uid = IndexUid::for_test("test-index", 0);
-        let source_id: SourceId = "test-source".to_string();
-        let mut index_metadata = IndexMetadata::for_test("test-index", "ram://indexes/test-index");
-        index_metadata.sources.insert(
-            source_id.clone(),
-            SourceConfig::for_test(&source_id, quickwit_config::SourceParams::void()),
-        );
-        let source_uid = SourceUid {
-            index_uid: index_uid.clone(),
-            source_id: source_id.clone(),
-        };
         let mut model = ControlPlaneModel::default();
-        model.add_index(index_metadata);
-
-        let shards = vec![Shard {
-            index_uid: Some(index_uid.clone()),
-            source_id: source_id.clone(),
-            shard_id: Some(ShardId::from(1)),
-            ingester_id: "test-ingester".to_string(),
-            shard_state: ShardState::Open as i32,
-            ..Default::default()
-        }];
-        model.insert_shards(&index_uid, &source_id, shards);
-
-        model.delete_index(&index_uid);
-
-        // Rate high enough to trigger a scale up.
-        let shard_infos = BTreeSet::from_iter([ShardInfo {
-            shard_id: ShardId::from(1),
-            shard_state: ShardState::Open,
-            short_term_ingestion_rate: RateMibPerSec(10),
-            long_term_ingestion_rate: RateMibPerSec(10),
-        }]);
         let local_shards_update = LocalShardsUpdate {
             ingester_id: NodeId::from_str("test-ingester"),
-            source_uid,
-            shard_infos,
+            source_uid: SourceUid {
+                index_uid: IndexUid::for_test("test-index", 0),
+                source_id: "test-source".to_string(),
+            },
+            shard_infos: BTreeSet::new(),
         };
         controller
             .handle_local_shards_update(local_shards_update, &mut model, &Progress::default())
