@@ -26,7 +26,6 @@ use mrecordlog::error::{DeleteQueueError, TruncateError};
 use quickwit_cluster::Cluster;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::rate_limited_warn;
-use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metrics::{counter, gauge, histogram, label_values, labels};
@@ -303,7 +302,6 @@ impl IngesterState {
         wal_dir_path: &Path,
         disk_capacity: ByteSize,
         memory_capacity: ByteSize,
-        rate_limiter_settings: RateLimiterSettings,
         local_shards_tx: watch::Sender<Option<Arc<ShardThroughputReadings>>>,
     ) -> Self {
         let state = Self::create(cluster, disk_capacity, memory_capacity, local_shards_tx).await;
@@ -312,12 +310,7 @@ impl IngesterState {
 
         let init_future = async move {
             state_clone
-                .init(
-                    &wal_dir_path,
-                    disk_capacity,
-                    memory_capacity,
-                    rate_limiter_settings,
-                )
+                .init(&wal_dir_path, disk_capacity, memory_capacity)
                 .await;
         };
         tokio::spawn(init_future);
@@ -341,7 +334,6 @@ impl IngesterState {
             temp_dir.path(),
             disk_capacity,
             ByteSize::mb(256),
-            RateLimiterSettings::default(),
             watch::Sender::new(None),
         )
         .await;
@@ -358,7 +350,6 @@ impl IngesterState {
         wal_dir_path: &Path,
         disk_capacity: ByteSize,
         memory_capacity: ByteSize,
-        rate_limiter_settings: RateLimiterSettings,
     ) {
         // Acquire locks in the same order as `lock_fully` (mrecordlog first, then inner) to
         // prevent ABBA deadlocks with the broadcast capacity task.
@@ -423,7 +414,6 @@ impl IngesterState {
                 .map(Position::offset)
                 .unwrap_or(Position::Beginning);
             let queue_size = read_queue_size(&mrecordlog, &queue_id);
-            let rate_limiter = RateLimiter::from_settings(rate_limiter_settings);
             let rate_meter = RateMeter::default();
 
             let shard =
@@ -432,7 +422,6 @@ impl IngesterState {
                     .with_replication_position_inclusive(replication_position_inclusive)
                     .with_truncation_position_inclusive(truncation_position_inclusive)
                     .with_queue_size(queue_size)
-                    .with_rate_limiter(rate_limiter)
                     .with_rate_meter(rate_meter)
                     .with_last_write(now)
                     .advertisable() // We want to advertise the shard as read-only right away.

@@ -32,7 +32,7 @@ pub(super) struct IngesterNode {
     pub node_id: NodeId,
     pub generation_id: GenerationId,
     pub index_uid: IndexUid,
-    /// Score from 0-10. Higher means more available capacity.
+    /// Score from 0-100. Higher means more available capacity.
     pub capacity_score: usize,
     /// Number of open shards on this node for this (index, source) pair. Tiebreaker for power of
     /// two choices comparison - we favor a node with more open shards.
@@ -293,7 +293,7 @@ impl RoutingTable {
     /// Merges routing updates from a GetOrCreateOpenShards control plane response into the
     /// table. For existing nodes, updates their open shard count, including if the count is 0, from
     /// the CP response while preserving capacity scores if they already exist.
-    /// New nodes get a default capacity_score of 5.
+    /// New nodes get a default capacity_score of 50.
     pub fn merge_from_shards(
         &mut self,
         ingester_pool: &IngesterPool,
@@ -341,7 +341,7 @@ impl RoutingTable {
                     node_id,
                     generation_id,
                     index_uid: index_uid.clone(),
-                    capacity_score: 5,
+                    capacity_score: 50,
                     open_shard_count,
                 });
         }

@@ -16,7 +16,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use bytesize::ByteSize;
-use quickwit_common::rate_limiter::RateLimiter;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::ingest::ShardState;
 use quickwit_proto::types::{IndexUid, Position, QueueId, ShardId, SourceId, queue_id};
@@ -39,7 +38,6 @@ pub(super) struct IngesterShard {
     /// Position up to which the shard has been truncated.
     pub truncation_position_inclusive: Position,
     pub queue_size: ByteSize,
-    pub rate_limiter: RateLimiter,
     pub rate_meter: RateMeter,
     /// Whether the shard should be advertised to other nodes (routers) via gossip.
     ///
@@ -59,9 +57,6 @@ pub(super) struct IngesterShard {
     pub last_write_instant: Instant,
 }
 
-/// Builder for `IngesterShard`. By default, the shard is open, is empty (i.e. the replication and
-/// truncation positions are at the beginning), uses the default rate limiter and rate meter, has no
-/// doc mapper, does not validate documents, and is not advertisable.
 pub(super) struct IngesterShardBuilder {
     index_uid: IndexUid,
     source_id: SourceId,
@@ -70,7 +65,6 @@ pub(super) struct IngesterShardBuilder {
     replication_position_inclusive: Position,
     truncation_position_inclusive: Position,
     queue_size: ByteSize,
-    rate_limiter: RateLimiter,
     rate_meter: RateMeter,
     doc_mapper_opt: Option<Arc<DocMapper>>,
     validate_docs: bool,
@@ -82,12 +76,6 @@ impl IngesterShardBuilder {
     /// Sets the shard state. Defaults to `ShardState::Open`.
     pub fn with_state(mut self, shard_state: ShardState) -> Self {
         self.shard_state = shard_state;
-        self
-    }
-
-    /// Sets the rate limiter. Defaults to `RateLimiter::default()`.
-    pub fn with_rate_limiter(mut self, rate_limiter: RateLimiter) -> Self {
-        self.rate_limiter = rate_limiter;
         self
     }
 
@@ -153,7 +141,6 @@ impl IngesterShardBuilder {
             replication_position_inclusive: self.replication_position_inclusive,
             truncation_position_inclusive: self.truncation_position_inclusive,
             queue_size: self.queue_size,
-            rate_limiter: self.rate_limiter,
             rate_meter: self.rate_meter,
             is_advertisable: self.is_advertisable,
             doc_mapper_opt: self.doc_mapper_opt,
@@ -180,7 +167,6 @@ impl IngesterShard {
             replication_position_inclusive: Position::Beginning,
             truncation_position_inclusive: Position::Beginning,
             queue_size: ByteSize::default(),
-            rate_limiter: RateLimiter::default(),
             rate_meter: RateMeter::default(),
             doc_mapper_opt: None,
             validate_docs: false,

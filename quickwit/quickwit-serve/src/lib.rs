@@ -65,7 +65,6 @@ use quickwit_cluster::{
     Cluster, ClusterChange, ClusterChangeStream, ClusterNode, ListenerHandle, start_cluster_service,
 };
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
-use quickwit_common::rate_limiter::RateLimiterSettings;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, CircuitBreakerEvaluator,
@@ -1163,15 +1162,6 @@ async fn setup_ingest_v2(
         .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
         .build(ingest_router.clone());
 
-    let rate_limit =
-        ConstantRate::bytes_per_sec(node_config.ingest_api_config.shard_throughput_limit);
-    let rate_limiter_settings = RateLimiterSettings {
-        burst_limit: node_config.ingest_api_config.shard_burst_limit.as_u64(),
-        rate_limit,
-        // Refill every 100ms.
-        refill_period: Duration::from_millis(100),
-    };
-
     // Instantiate ingester.
     let ingester_opt: Option<Ingester> = if node_config.is_service_enabled(QuickwitService::Indexer)
     {
@@ -1185,7 +1175,6 @@ async fn setup_ingest_v2(
             &wal_dir_path,
             node_config.ingest_api_config.max_queue_disk_usage,
             node_config.ingest_api_config.max_queue_memory_usage,
-            rate_limiter_settings,
             idle_shard_timeout,
             local_shards_tx,
         )

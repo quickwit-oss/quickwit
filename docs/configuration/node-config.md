@@ -262,6 +262,10 @@ indexer:
 
 ## Ingest API configuration
 
+The legacy `ingest_api.shard_burst_limit` setting is accepted and silently ignored. Per-shard ingestion rate limits have been removed; WAL memory and disk capacity limits still apply.
+
+Ingesters broadcast their WAL capacity score every second. Scores range from 0 to 100, with higher scores indicating more available capacity. The score accounts for remaining memory and disk capacity and their change over a 30-second lookback window.
+
 | Property | Description | Default value |
 | --- | --- | --- |
 | `max_queue_memory_usage` | Maximum size in bytes of the in-memory Ingest queue. | `2GiB` |

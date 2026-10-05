@@ -26,7 +26,7 @@ use bytesize::ByteSize;
 use http::HeaderMap;
 use quickwit_common::net::HostAddr;
 use quickwit_common::shared_consts::{
-    DEFAULT_SHARD_BURST_LIMIT, DEFAULT_SHARD_SCALE_UP_FACTOR, DEFAULT_SHARD_THROUGHPUT_LIMIT,
+    DEFAULT_SHARD_SCALE_UP_FACTOR, DEFAULT_SHARD_THROUGHPUT_LIMIT,
 };
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
@@ -720,9 +720,8 @@ pub struct IngestApiConfig {
     pub content_length_limit: ByteSize,
     /// (hidden) Targeted throughput for each shard
     pub shard_throughput_limit: ByteSize,
-    /// (hidden) Maximum accumulated throughput capacity for underutilized
-    /// shards, allowing the throughput limit to be temporarily exceeded
-    pub shard_burst_limit: ByteSize,
+    #[serde(default, rename = "shard_burst_limit", skip_serializing)]
+    _shard_burst_limit: Option<serde::de::IgnoredAny>,
     /// (hidden) new_shard_count = ceil(old_shard_count * shard_scale_up_factor)
     ///
     /// Setting this too high will be cancelled out by the arbiter that prevents
@@ -744,7 +743,7 @@ impl Default for IngestApiConfig {
             _replication_factor: None,
             content_length_limit: ByteSize::mib(10),
             shard_throughput_limit: DEFAULT_SHARD_THROUGHPUT_LIMIT,
-            shard_burst_limit: DEFAULT_SHARD_BURST_LIMIT,
+            _shard_burst_limit: None,
             shard_scale_up_factor: DEFAULT_SHARD_SCALE_UP_FACTOR,
             grpc_compression_algorithm: None,
             decommission_timeout: HumanDuration::try_from("300s".to_string())
@@ -808,15 +807,6 @@ impl IngestApiConfig {
                 && self.shard_throughput_limit <= ByteSize::mib(20),
             "shard_throughput_limit ({}) must be within 1mb and 20mb",
             self.shard_throughput_limit.display().si()
-        );
-        // The newline delimited format is persisted as something a bit larger
-        // (lines prefixed with their length)
-        let estimated_persist_size = ByteSize::b(3 * self.content_length_limit.as_u64() / 2);
-        ensure!(
-            self.shard_burst_limit >= estimated_persist_size,
-            "shard_burst_limit ({}) must be at least 1.5*content_length_limit ({})",
-            self.shard_burst_limit,
-            estimated_persist_size,
         );
         ensure!(
             self.shard_scale_up_factor > 1.0,

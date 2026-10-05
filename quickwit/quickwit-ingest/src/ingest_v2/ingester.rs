@@ -26,7 +26,6 @@ use quickwit_cluster::Cluster;
 use quickwit_common::metrics::IN_FLIGHT_INGESTER_PERSIST;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
-use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::{ServiceStream, rate_limited_error};
 use quickwit_metrics::{GaugeGuard, counter, label_values};
 use quickwit_proto::control_plane::{
@@ -92,7 +91,6 @@ pub struct Ingester {
     state: IngesterState,
     disk_capacity: ByteSize,
     memory_capacity: ByteSize,
-    rate_limiter_settings: RateLimiterSettings,
     // This semaphore ensures that the ingester that not run two reset shards operations
     // concurrently.
     reset_shards_permits: Arc<Semaphore>,
@@ -156,14 +154,12 @@ impl Ingester {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn try_new(
         cluster: Cluster,
         control_plane: ControlPlaneServiceClient,
         wal_dir_path: &Path,
         disk_capacity: ByteSize,
         memory_capacity: ByteSize,
-        rate_limiter_settings: RateLimiterSettings,
         idle_shard_timeout: Duration,
         local_shards_tx: watch::Sender<Option<Arc<ShardThroughputReadings>>>,
     ) -> IngestV2Result<Self> {
@@ -173,7 +169,6 @@ impl Ingester {
             wal_dir_path,
             disk_capacity,
             memory_capacity,
-            rate_limiter_settings,
             local_shards_tx,
         )
         .await;
@@ -191,7 +186,6 @@ impl Ingester {
             state,
             disk_capacity,
             memory_capacity,
-            rate_limiter_settings,
             reset_shards_permits: Arc::new(Semaphore::new(1)),
         };
         ingester.background_reset_shards();
@@ -241,11 +235,9 @@ impl Ingester {
         let index_uid = shard.index_uid().clone();
         let source_id = shard.source_id.clone();
         let shard_id = shard.shard_id().clone();
-        let rate_limiter = RateLimiter::from_settings(self.rate_limiter_settings);
         let rate_meter = RateMeter::default();
 
         let shard = IngesterShard::builder(index_uid, source_id, shard_id)
-            .with_rate_limiter(rate_limiter)
             .with_rate_meter(rate_meter)
             .with_doc_mapper(doc_mapper)
             .with_validate_docs(validate_docs)
