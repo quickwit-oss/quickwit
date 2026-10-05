@@ -92,7 +92,10 @@ pub(super) async fn local_ingest_parquet_cli(args: LocalIngestDocsArgs) -> anyho
     .await?;
 
     let mut index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
-    let index_metadata = fetch_index_metadata(&metastore, &args.index_id).await?;
+    let index_metadata = metastore
+        .index_metadata(IndexMetadataRequest::for_index_id(args.index_id.clone()))
+        .await?
+        .deserialize_index_metadata()?;
     if args.overwrite {
         lifecycle::clear_index_checked(&mut index_service, &index_metadata.index_uid).await?;
     }
@@ -116,7 +119,6 @@ pub(super) async fn local_ingest_parquet_cli(args: LocalIngestDocsArgs) -> anyho
         ByteSize(plan.num_uncompressed_bytes()),
     );
     let plan = Arc::new(plan);
-    // All sources share the same row-group plan.
     let mut source_loader = SourceLoader::default();
     source_loader.add_source(SourceType::File, ParquetSourceFactory::new(plan.clone()));
     let universe = Universe::new();
@@ -152,7 +154,6 @@ pub(super) async fn local_ingest_parquet_cli(args: LocalIngestDocsArgs) -> anyho
     .await
 }
 
-/// Runs indexing without merges. The caller handles cleanup on failure.
 async fn run_load(
     indexing_server_mailbox: &Mailbox<IndexingService>,
     plan: &ParquetLoadPlan,
@@ -178,7 +179,6 @@ async fn run_load(
     report.check()
 }
 
-/// Detaches each pipeline immediately after spawning it.
 async fn spawn_pipelines(
     indexing_server_mailbox: &Mailbox<IndexingService>,
     args: &LocalIngestDocsArgs,
@@ -201,8 +201,6 @@ async fn spawn_pipelines(
     Ok(handles)
 }
 
-/// Waits for all pipelines, reporting progress and summing statistics.
-/// Aborts on restart because claimed row groups cannot be replayed.
 async fn wait_for_indexing_pipelines(
     pipeline_handles: Vec<ActorHandle<IndexingPipeline>>,
 ) -> anyhow::Result<IndexingStatistics> {
@@ -243,7 +241,7 @@ async fn wait_for_indexing_pipelines(
     Ok(statistics)
 }
 
-/// Aborts on restart or spawn retry; supervisors otherwise retry indefinitely.
+/// Claimed row groups cannot be replayed, so a restart or spawn retry must abort the load.
 fn check_no_restart(pipeline_statistics: &IndexingStatistics) -> anyhow::Result<()> {
     if pipeline_statistics.generation > 1 || pipeline_statistics.num_spawn_attempts > 1 {
         bail!("an indexing pipeline failed and restarted, see the logs for the cause");
@@ -263,17 +261,6 @@ fn add_indexing_statistics(total: &mut IndexingStatistics, statistics: &Indexing
     total.total_size_splits += statistics.total_size_splits;
 }
 
-async fn fetch_index_metadata(
-    metastore: &MetastoreServiceClient,
-    index_id: &str,
-) -> anyhow::Result<IndexMetadata> {
-    let index_metadata = metastore
-        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
-        .await?
-        .deserialize_index_metadata()?;
-    Ok(index_metadata)
-}
-
 async fn list_published_splits(
     metastore: &MetastoreServiceClient,
     index_metadata: &IndexMetadata,
@@ -281,10 +268,9 @@ async fn list_published_splits(
     let query = ListSplitsQuery::for_index(index_metadata.index_uid.clone())
         .with_split_state(SplitState::Published);
     let request = ListSplitsRequest::try_from_list_splits_query(&query)?;
-    let splits = metastore
+    Ok(metastore
         .list_splits(request)
         .await?
         .collect_splits_metadata()
-        .await?;
-    Ok(splits)
+        .await?)
 }

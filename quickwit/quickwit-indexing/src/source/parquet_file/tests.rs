@@ -113,7 +113,13 @@ async fn test_parquet_source() {
         .filter_map(|message| message.downcast_ref::<RawDocBatch>())
         .collect();
     // Row groups of 4, 4 and 2 rows, read in batches of 3 rows.
-    assert_eq!(raw_doc_batches.len(), 5);
+    assert_eq!(
+        raw_doc_batches
+            .iter()
+            .map(|batch| batch.docs.len())
+            .collect::<Vec<_>>(),
+        [3, 1, 3, 1, 2]
+    );
     assert!(
         raw_doc_batches
             .iter()
@@ -184,29 +190,85 @@ async fn test_parquet_reader_acquisition_runs_on_blocking_runtime() {
 
     let temp_dir = tempfile::tempdir().unwrap();
     let path = temp_dir.path().join("test.parquet");
-    let file_uri = write_parquet_file(&path, 3, 3);
-    let plan = Arc::new(ParquetLoadPlan::try_new(file_uri, 1).unwrap());
-    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
-    let (release_tx, release_rx) = std::sync::mpsc::channel();
-    // The test runtime has one blocking worker. Hold it before polling the decode future.
-    let blocker = RuntimeType::Blocking
-        .get_runtime_handle()
-        .spawn(async move {
-            started_tx.send(()).unwrap();
-            let _ = release_rx.recv();
-        });
-    started_rx.await.unwrap();
-    let decode = super::source::decode_next_batch(plan, None);
-    tokio::pin!(decode);
-    assert!(futures::poll!(&mut decode).is_pending());
-    // An async-thread acquisition would already have opened the now-unlinked file.
-    std::fs::remove_file(&path).unwrap();
-    release_tx.send(()).unwrap();
-    blocker.await.unwrap();
-    let Err(error) = decode.await else {
-        panic!("reader must be acquired after dispatch");
-    };
-    assert!(format!("{error:#}").contains("failed to open file"));
+    for exhaust_first_group in [false, true] {
+        let file_uri = write_parquet_file(&path, 6, 3);
+        let plan = Arc::new(ParquetLoadPlan::try_new(file_uri, 3).unwrap());
+        let current_opt = if exhaust_first_group {
+            let (row_group_idx, mut reader) = plan.next_row_group_reader().unwrap().unwrap();
+            assert_eq!(reader.next().unwrap().unwrap().num_rows(), 3);
+            assert!(reader.next().is_none());
+            Some((row_group_idx, reader))
+        } else {
+            None
+        };
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        // The test runtime has one blocking worker. Hold it before polling the decode future.
+        let blocker = RuntimeType::Blocking
+            .get_runtime_handle()
+            .spawn(async move {
+                started_tx.send(()).unwrap();
+                let _ = release_rx.recv();
+            });
+        started_rx.await.unwrap();
+        let decode = super::source::decode_next_batch(plan, current_opt);
+        tokio::pin!(decode);
+        assert!(futures::poll!(&mut decode).is_pending());
+        // An async-thread acquisition would already have opened the now-unlinked file.
+        std::fs::remove_file(&path).unwrap();
+        release_tx.send(()).unwrap();
+        blocker.await.unwrap();
+        let Err(error) = decode.await else {
+            panic!("reader must be acquired after dispatch");
+        };
+        assert!(format!("{error:#}").contains("failed to open file"));
+    }
+}
+
+#[tokio::test]
+async fn test_parquet_decode_empty_file() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let path = temp_dir.path().join("empty.parquet");
+    write_f64_values_as_parquet_file(&path, &[], 3).unwrap();
+    let file_uri = Uri::from_str(path.to_str().unwrap()).unwrap();
+    let plan = Arc::new(ParquetLoadPlan::try_new(file_uri, 3).unwrap());
+    assert_eq!(plan.num_row_groups(), 0);
+    assert!(
+        super::source::decode_next_batch(plan, None)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn test_parquet_source_requires_a_file_path_source() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let file_uri = write_parquet_file(&temp_dir.path().join("test.parquet"), 3, 2);
+    let plan = Arc::new(ParquetLoadPlan::try_new(file_uri.clone(), 3).unwrap());
+    let notifications = serde_json::from_value(json!({
+        "notifications": [{
+            "type": "sqs", "queue_url": "http://localhost/queue", "message_type": "raw_uri"
+        }]
+    }))
+    .unwrap();
+    for (source_params, expected_error) in [
+        (SourceParams::void(), "requires a file source"),
+        (SourceParams::File(notifications), "not file notifications"),
+    ] {
+        let mut source_runtime = parquet_source_runtime(
+            IndexUid::new_with_random_ulid("test-index"),
+            &file_uri,
+            SourceInputFormat::Json,
+        );
+        source_runtime.source_config.source_params = source_params;
+        let error = ParquetSourceFactory::new(plan.clone())
+            .create_source(source_runtime)
+            .await
+            .err()
+            .unwrap();
+        assert!(error.to_string().contains(expected_error), "{error:#}");
+    }
 }
 
 #[tokio::test]

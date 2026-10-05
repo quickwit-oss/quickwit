@@ -88,7 +88,7 @@ impl LoadReport<'_> {
         println!("  Merging:      disabled for Parquet bulk loads");
     }
 
-    /// Fails if the load is not a valid benchmark run.
+    /// Rejects invalid documents or row counts that disagree with the Parquet footer.
     pub fn check(&self) -> anyhow::Result<()> {
         let statistics = &self.indexing_statistics;
         if statistics.num_invalid_docs > 0 {
