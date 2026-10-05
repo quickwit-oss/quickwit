@@ -761,20 +761,13 @@ impl IngestController {
             return Ok(());
         }
         let new_num_open_shards = shard_stats.num_open_shards + num_shards_to_open;
-        let num_shards_to_open_by_source: SourceShardCount =
-            HashMap::from_iter([(source_uid.clone(), num_shards_to_open)]);
-        let try_open_shards_result = self
-            .try_open_shards(
-                ShardPlacement::Balanced(num_shards_to_open_by_source),
-                model,
-                &Default::default(),
-                progress,
-            )
+        let open_shards_result = self
+            .open_shards_for_source(&source_uid, num_shards_to_open, model, progress)
             .await;
 
-        match try_open_shards_result {
-            Ok(opened_shards) => {
-                if opened_shards.is_empty() {
+        match open_shards_result {
+            Ok(num_opened_shards) => {
+                if num_opened_shards == 0 {
                     // We did not manage to create the shard.
                     // We can release our permit.
                     model.release_scaling_permits(&source_uid, ScalingMode::Up(num_shards_to_open));
@@ -1022,31 +1015,23 @@ impl IngestController {
             source_id=%source_uid.source_id,
             "scaling down number of shards to {new_num_open_shards}"
         );
-        let Some((ingester_id, shard_id)) = find_scale_down_candidate(&source_uid, model) else {
+        let Some(shard) = find_scale_down_candidate(&source_uid, model) else {
             model.release_scaling_permits(&source_uid, ScalingMode::Down);
             return Ok(());
         };
-        info!("scaling down shard {shard_id} from {ingester_id}");
-        let Some(ingester) = self.ingester_pool.get(&ingester_id) else {
-            model.release_scaling_permits(&source_uid, ScalingMode::Down);
-            return Ok(());
-        };
-        let shard_pkeys = vec![ShardPKey {
-            index_uid: Some(source_uid.index_uid.clone()),
-            source_id: source_uid.source_id.clone(),
-            shard_id: Some(shard_id.clone()),
-        }];
-        let close_shards_request = CloseShardsRequest { shard_pkeys };
+        info!(
+            "scaling down shard {} from {}",
+            shard.shard_id(),
+            shard.ingester_id
+        );
+        let closed_shard_ids = self
+            .close_source_shards(&source_uid, vec![shard], model, progress)
+            .await;
 
-        if let Err(error) = progress
-            .protect_future(ingester.client.close_shards(close_shards_request))
-            .await
-        {
-            warn!("failed to scale down number of shards: {error}");
+        if closed_shard_ids.is_empty() {
+            warn!("failed to scale down number of shards");
             model.release_scaling_permits(&source_uid, ScalingMode::Down);
-            return Ok(());
         }
-        model.close_shards(&source_uid, &[shard_id]);
         Ok(())
     }
 
@@ -1129,6 +1114,43 @@ impl IngestController {
             shards_to_delete,
             shards_to_truncate,
         }
+    }
+
+    pub(crate) async fn open_shards_for_source(
+        &mut self,
+        source_uid: &SourceUid,
+        num_shards: usize,
+        model: &mut ControlPlaneModel,
+        progress: &Progress,
+    ) -> MetastoreResult<usize> {
+        let num_shards_by_source: SourceShardCount =
+            HashMap::from_iter([(source_uid.clone(), num_shards)]);
+        let opened_shards_by_zone = self
+            .try_open_shards(
+                ShardPlacement::Balanced(num_shards_by_source),
+                model,
+                &Default::default(),
+                progress,
+            )
+            .await?;
+        let num_opened_shards: usize = opened_shards_by_zone.values().map(total_shards).sum();
+        Ok(num_opened_shards)
+    }
+
+    pub(crate) async fn close_source_shards(
+        &self,
+        source_uid: &SourceUid,
+        shards: Vec<Shard>,
+        model: &mut ControlPlaneModel,
+        progress: &Progress,
+    ) -> Vec<ShardId> {
+        let closed_shard_pkeys = progress.protect_future(self.close_shards(shards)).await;
+        let closed_shard_ids: Vec<ShardId> = closed_shard_pkeys
+            .iter()
+            .map(|shard_pkey| shard_pkey.shard_id().clone())
+            .collect();
+        model.close_shards(source_uid, &closed_shard_ids);
+        closed_shard_ids
     }
 
     /// Rebalances shards from ingesters with too many shards to ingesters with too few shards.
@@ -1406,10 +1428,7 @@ pub(crate) struct RebalanceShardsCallback {
 ///
 /// If multiple shards are hosted on that ingester, the shard with the lowest (oldest)
 /// shard ID is chosen.
-fn find_scale_down_candidate(
-    source_uid: &SourceUid,
-    model: &ControlPlaneModel,
-) -> Option<(NodeId, ShardId)> {
+fn find_scale_down_candidate(source_uid: &SourceUid, model: &ControlPlaneModel) -> Option<Shard> {
     let mut shard_entries_by_ingester_id: HashMap<NodeId, Vec<&ShardEntry>> = HashMap::new();
     let mut rng = rng();
 
@@ -1426,12 +1445,7 @@ fn find_scale_down_candidate(
         // We use a random number to break ties... The HashMap is randomly seeded so this is
         // should not make much difference, but we might want to be as explicit as possible.
         .max_by_key(|(_ingester_id, shard_entries)| (shard_entries.len(), rng.next_u32()))
-        .map(|(ingester_id, shard_entries)| {
-            (
-                ingester_id,
-                shard_entries.choose(&mut rng).unwrap().shard_id().clone(),
-            )
-        })
+        .map(|(_ingester_id, shard_entries)| shard_entries.choose(&mut rng).unwrap().shard.clone())
 }
 
 #[cfg(test)]
@@ -3458,9 +3472,9 @@ mod tests {
         ]);
         model.update_shards(&source_uid, &shard_infos);
 
-        let (ingester_id, _shard_id) = find_scale_down_candidate(&source_uid, &model).unwrap();
+        let shard = find_scale_down_candidate(&source_uid, &model).unwrap();
         // We pick ingester 1 has it has more open shard
-        assert_eq!(ingester_id, "test-ingester-1");
+        assert_eq!(shard.ingester_id, "test-ingester-1");
     }
 
     #[tokio::test]
