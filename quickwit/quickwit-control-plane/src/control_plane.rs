@@ -2264,21 +2264,14 @@ mod tests {
         universe.assert_quit().await;
     }
 
-    // Same race as `test_ingest_controller_handle_local_shards_update_for_deleted_index`, but
-    // going through the real delete handler, so that the state the unit test builds by hand is
-    // proven reachable. When the stale update panics the control plane, its supervisor only
-    // respawns it at the next health check, and every ingest that needs a shard opened in the
-    // meantime hangs or returns 503.
     #[tokio::test]
     async fn test_control_plane_survives_local_shards_update_for_deleted_index() {
         quickwit_common::setup_logging_for_tests();
-        // Real time on purpose: with accelerated time, the supervisor could respawn a panicked
-        // control plane and hide the failure.
+        // Real time on purpose: accelerated time would let the supervisor respawn the actor and
+        // hide the panic.
         let universe = Universe::default();
         let node_id = NodeId::from_str("test-control-plane");
         let indexer_pool = IndexerPool::default();
-        // The ingester is left out of the pool: the control plane merely logs that it cannot sync
-        // with it.
         let ingester_pool = IngesterPool::default();
 
         let mut index = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
@@ -2288,8 +2281,6 @@ mod tests {
         let index_uid = index.index_uid.clone();
 
         let mut mock_metastore = MockMetastoreService::new();
-        // The startup calls are not bounded with `times(1)`: a panicked control plane is
-        // respawned and reloads its state, which would fail the mock instead of the assertions.
         let index_clone = index.clone();
         mock_metastore
             .expect_list_indexes_metadata()
@@ -2328,7 +2319,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        // The stale shard update lands after the deletion.
+        // Rate high enough to trigger an update.
         let local_shards_update = LocalShardsUpdate {
             ingester_id: NodeId::from_str("test-ingester"),
             source_uid: SourceUid {
@@ -2342,8 +2333,6 @@ mod tests {
                 long_term_ingestion_rate: RateMibPerSec(10),
             }]),
         };
-        // A panicking handler kills the actor mid-message and drops the reply channel, so this
-        // `ask` fails with `AskError::ProcessMessageError`.
         control_plane_mailbox
             .ask(local_shards_update)
             .await

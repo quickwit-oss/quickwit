@@ -500,8 +500,7 @@ impl IngestController {
             &local_shards_update.source_uid,
             &local_shards_update.shard_infos,
         );
-        // The index may have been deleted between the ingester emitting this update and the
-        // control plane handling it. The update is stale, there is nothing left to scale.
+        // The index may have been deleted since the ingester sent this update.
         let Some(min_shards) = model
             .index_metadata(&local_shards_update.source_uid.index_uid)
             .map(|index_metadata| index_metadata.index_config.ingest_settings.min_shards)
@@ -2739,12 +2738,8 @@ mod tests {
             .unwrap();
     }
 
-    // A shard update sent by an ingester can reach the control plane after the index it refers
-    // to was deleted. The update is stale, and must not panic the control plane.
     #[tokio::test]
     async fn test_ingest_controller_handle_local_shards_update_for_deleted_index() {
-        // No metastore expectation: the mock fails the test if the handler attempts to scale the
-        // deleted index.
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
         let ingester_pool = IngesterPool::default();
 
@@ -2779,10 +2774,9 @@ mod tests {
         }];
         model.insert_shards(&index_uid, &source_id, shards);
 
-        // The control plane handles the index deletion first, see `Handler<DeleteIndexRequest>`.
         model.delete_index(&index_uid);
 
-        // The ingestion rates are above the scale up threshold on purpose.
+        // Rate high enough to trigger a scale up.
         let shard_infos = BTreeSet::from_iter([ShardInfo {
             shard_id: ShardId::from(1),
             shard_state: ShardState::Open,
