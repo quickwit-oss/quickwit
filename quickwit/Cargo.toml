@@ -140,7 +140,7 @@ numfmt = "1.2"
 oneshot = { version = "0.2", features = ["async", "std"] }
 openssl = { version = "0.10", default-features = false }
 openssl-probe = "0.2"
-opentelemetry = "0.32"
+opentelemetry = "0.33"
 opentelemetry-appender-tracing = "0.32"
 opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
 # `default-features = false` drops the default `reqwest-blocking-client`:
