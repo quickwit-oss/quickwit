@@ -235,6 +235,9 @@ impl ScalingController {
         model: &mut ControlPlaneModel,
         progress: &Progress,
     ) {
+        if ingest_controller.is_rebalancing() {
+            return;
+        }
         let num_shards_to_close = num_open_shards - target_num_open_shards;
         let shards_to_close =
             find_scale_down_candidates(source_uid, num_shards_to_close, live_ingesters, model);

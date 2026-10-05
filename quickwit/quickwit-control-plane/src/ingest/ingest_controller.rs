@@ -958,6 +958,10 @@ impl IngestController {
         Ok(num_opened_shards)
     }
 
+    pub(crate) fn is_rebalancing(&self) -> bool {
+        self.rebalance_semaphore.available_permits() == 0
+    }
+
     pub(crate) async fn close_source_shards(
         &self,
         source_uid: &SourceUid,

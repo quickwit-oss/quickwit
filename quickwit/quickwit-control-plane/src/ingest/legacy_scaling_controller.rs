@@ -219,7 +219,7 @@ impl LegacyScalingController {
     ) -> MetastoreResult<()> {
         // The scaling arbiter should not suggest scaling down if the number of shards is already
         // below the minimum, but we're just being defensive here.
-        if shard_stats.num_open_shards <= min_shards.get() {
+        if ingest_controller.is_rebalancing() || shard_stats.num_open_shards <= min_shards.get() {
             return Ok(());
         }
         if !model
