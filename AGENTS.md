@@ -140,7 +140,7 @@ Run `cargo check` after editing `Cargo.toml` to update `Cargo.lock`.
 ### Testing
 
 - Single crate test: `cargo nextest run -p quickwit-search my_test_name`
-- `make test-all` — starts Docker services (LocalStack S3, PostgreSQL, Pub/Sub emulator) and runs the full test suite with `cargo nextest run --all-features --retries 5`.
+- `make test-all` — starts Docker services (LocalStack S3, PostgreSQL, Pub/Sub emulator) and runs the full test suite with `cargo nextest run --all-features --profile ci` (the `ci` profile in `quickwit/.config/nextest.toml` retries failing tests twice).
 - `make test-failpoints` — runs failpoint tests only: `cargo nextest run --test failpoints --features fail/failpoints`.
 - Docker services: `make docker-compose-up` / `make docker-compose-down` (subset: `DOCKER_SERVICES=kafka,postgres`).
 - Integration tests are under `rest-api-tests`; compile and run the `quickwit-cli` binary to have an instance available to test against.

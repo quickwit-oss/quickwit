@@ -467,7 +467,17 @@ mod tests {
         assert!(weak_mailbox.upgrade().is_none());
     }
 
-    struct BackPressureActor;
+    struct BackPressureActor {
+        queue_capacity: QueueCapacity,
+    }
+
+    impl Default for BackPressureActor {
+        fn default() -> Self {
+            BackPressureActor {
+                queue_capacity: QueueCapacity::Bounded(0),
+            }
+        }
+    }
 
     impl Actor for BackPressureActor {
         type ObservableState = ();
@@ -475,7 +485,7 @@ mod tests {
         fn observable_state(&self) -> Self::ObservableState {}
 
         fn queue_capacity(&self) -> QueueCapacity {
-            QueueCapacity::Bounded(0)
+            self.queue_capacity
         }
 
         fn yield_after_each_message(&self) -> bool {
@@ -504,7 +514,9 @@ mod tests {
     #[tokio::test]
     async fn test_mailbox_send_with_backpressure_counter_low_backpressure() {
         let universe = Universe::with_accelerated_time();
-        let back_pressure_actor = BackPressureActor;
+        let back_pressure_actor = BackPressureActor {
+            queue_capacity: QueueCapacity::Bounded(1),
+        };
         let (mailbox, _handle) = universe.spawn_builder().spawn(back_pressure_actor);
         // We send a first message to make sure the actor has been properly spawned and is listening
         // for new messages.
@@ -526,16 +538,16 @@ mod tests {
             )
             .await
             .unwrap();
-        assert!(backpressure_micros_counter.get() < 500);
+        assert_eq!(backpressure_micros_counter.get(), 0);
         processed.await.unwrap();
-        assert!(backpressure_micros_counter.get() < 500);
+        assert_eq!(backpressure_micros_counter.get(), 0);
         universe.assert_quit().await;
     }
 
     #[tokio::test]
     async fn test_mailbox_send_with_backpressure_counter_backpressure() {
         let universe = Universe::with_accelerated_time();
-        let back_pressure_actor = BackPressureActor;
+        let back_pressure_actor = BackPressureActor::default();
         let (mailbox, _handle) = universe.spawn_builder().spawn(back_pressure_actor);
         // We send a first message to make sure the actor has been properly spawned and is listening
         // for new messages.
@@ -572,7 +584,7 @@ mod tests {
     #[tokio::test]
     async fn test_mailbox_waiting_for_processing_does_not_counter_as_backpressure() {
         let universe = Universe::with_accelerated_time();
-        let back_pressure_actor = BackPressureActor;
+        let back_pressure_actor = BackPressureActor::default();
         let (mailbox, _handle) = universe.spawn_builder().spawn(back_pressure_actor);
         mailbox
             .ask_with_backpressure_counter(Duration::default(), None)
