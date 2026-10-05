@@ -22,7 +22,7 @@ use arrow_array::cast::AsArray;
 use arrow_array::types::{ArrowDictionaryKeyType, Float16Type, Float32Type, Float64Type};
 use arrow_array::{Array, ArrayAccessor, DictionaryArray, RecordBatch, downcast_dictionary_array};
 use arrow_json::writer::{
-    Encoder, EncoderFactory, EncoderOptions, LineDelimited, NullableEncoder, Writer, WriterBuilder,
+    Encoder, EncoderFactory, EncoderOptions, LineDelimited, NullableEncoder, WriterBuilder,
     make_encoder,
 };
 use arrow_schema::{ArrowError, DataType, FieldRef};
@@ -33,7 +33,7 @@ use bytes::Bytes;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReader;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_common::runtimes::RuntimeType;
-use quickwit_config::{FileSourceParams, SourceInputFormat};
+use quickwit_config::{FileSourceParams, SourceInputFormat, SourceParams};
 use quickwit_proto::metastore::SourceType;
 use serde_json::json;
 
@@ -60,11 +60,29 @@ impl SourceFactory for ParquetSourceFactory {
         &self,
         source_runtime: SourceRuntime,
     ) -> anyhow::Result<Box<dyn Source>> {
-        let source_params: FileSourceParams =
-            serde_json::from_value(source_runtime.source_config.params())?;
-        let parquet_source =
-            ParquetSource::try_new(self.plan.clone(), &source_runtime, source_params)?;
-        Ok(Box::new(parquet_source))
+        let file_uri = match &source_runtime.source_config.source_params {
+            SourceParams::File(FileSourceParams::Filepath(file_uri)) => file_uri,
+            SourceParams::File(_) => {
+                bail!("a Parquet load reads a file path, not file notifications");
+            }
+            _ => bail!("a Parquet load requires a file source"),
+        };
+        if file_uri != self.plan.file_uri() {
+            bail!(
+                "the Parquet load plan reads `{}`, not `{file_uri}`",
+                self.plan.file_uri()
+            );
+        }
+        let input_format = source_runtime.source_config.input_format;
+        if input_format != SourceInputFormat::Json {
+            bail!("Parquet files require the `json` input format, got `{input_format:?}`");
+        }
+        Ok(Box::new(ParquetSource {
+            plan: self.plan.clone(),
+            current_opt: None,
+            num_rows_emitted: 0,
+            num_bytes_emitted: 0,
+        }))
     }
 }
 
@@ -72,7 +90,7 @@ impl SourceFactory for ParquetSourceFactory {
 /// Checkpoints are empty: restarts lose claimed groups, so the CLI must abort the load.
 pub struct ParquetSource {
     plan: Arc<ParquetLoadPlan>,
-    /// Current row group; absent between groups and while borrowed by the decoding task.
+    /// Current row group, taken while the blocking task owns the reader.
     current_opt: Option<(usize, ParquetRecordBatchReader)>,
     num_rows_emitted: u64,
     num_bytes_emitted: u64,
@@ -88,56 +106,26 @@ impl fmt::Debug for ParquetSource {
     }
 }
 
-impl ParquetSource {
-    /// Requires the plan's file and the `json` input format.
-    fn try_new(
-        plan: Arc<ParquetLoadPlan>,
-        source_runtime: &SourceRuntime,
-        source_params: FileSourceParams,
-    ) -> anyhow::Result<Self> {
-        let FileSourceParams::Filepath(file_uri) = source_params else {
-            bail!("a Parquet load reads a file path, not file notifications");
-        };
-        if &file_uri != plan.file_uri() {
-            bail!(
-                "the Parquet load plan reads `{}`, not `{file_uri}`",
-                plan.file_uri()
-            );
-        }
-        let input_format = source_runtime.source_config.input_format;
-        if input_format != SourceInputFormat::Json {
-            bail!("Parquet files require the `json` input format, got `{input_format:?}`");
-        }
-        Ok(Self {
-            plan,
-            current_opt: None,
-            num_rows_emitted: 0,
-            num_bytes_emitted: 0,
-        })
-    }
-
-    /// Emits one record batch in byte-limited messages (one document may exceed the limit).
-    /// Returns `false` when this source has no remaining row groups.
-    async fn emit_record_batch(
+#[async_trait]
+impl Source for ParquetSource {
+    async fn emit_batches(
         &mut self,
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
-    ) -> Result<bool, ActorExitStatus> {
+    ) -> Result<Duration, ActorExitStatus> {
         let next_batch = ctx
             .protect_future(decode_next_batch(
                 self.plan.clone(),
                 self.current_opt.take(),
             ))
             .await?;
-        let Some((row_group_idx, reader, docs_opt)) = next_batch else {
-            return Ok(false);
-        };
-        let Some(docs) = docs_opt else {
-            // Advance to the next row group on the next call.
-            return Ok(true);
+        let Some((row_group_idx, reader, docs)) = next_batch else {
+            ctx.send_exit_with_success(doc_processor_mailbox).await?;
+            return Err(ActorExitStatus::Success);
         };
         self.current_opt = Some((row_group_idx, reader));
 
+        // Split between documents; a single document may exceed the byte limit.
         let mut batch_builder = BatchBuilder::new(SourceType::File);
         let num_docs = docs.len();
         for (doc_idx, doc) in docs.into_iter().enumerate() {
@@ -152,22 +140,6 @@ impl ParquetSource {
                 std::mem::replace(&mut batch_builder, BatchBuilder::new(SourceType::File)).build();
             ctx.send_message(doc_processor_mailbox, raw_doc_batch)
                 .await?;
-        }
-        Ok(true)
-    }
-}
-
-#[async_trait]
-impl Source for ParquetSource {
-    async fn emit_batches(
-        &mut self,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
-        ctx: &SourceContext,
-    ) -> Result<Duration, ActorExitStatus> {
-        let has_more = self.emit_record_batch(doc_processor_mailbox, ctx).await?;
-        if !has_more {
-            ctx.send_exit_with_success(doc_processor_mailbox).await?;
-            return Err(ActorExitStatus::Success);
         }
         Ok(Duration::ZERO)
     }
@@ -185,33 +157,35 @@ impl Source for ParquetSource {
 }
 
 /// Acquires readers, decodes and JSON-encodes on the blocking runtime.
-/// Outer `None` marks EOF; absent documents mark an exhausted row group.
+/// Advances past exhausted row groups; `None` marks EOF.
 pub(super) async fn decode_next_batch(
     plan: Arc<ParquetLoadPlan>,
-    current_opt: Option<(usize, ParquetRecordBatchReader)>,
-) -> anyhow::Result<Option<(usize, ParquetRecordBatchReader, Option<Vec<Bytes>>)>> {
+    mut current_opt: Option<(usize, ParquetRecordBatchReader)>,
+) -> anyhow::Result<Option<(usize, ParquetRecordBatchReader, Vec<Bytes>)>> {
     let join_handle = RuntimeType::Blocking
         .get_runtime_handle()
         .spawn(async move {
-            let current_opt = match current_opt {
-                Some(current) => Some(current),
-                None => plan.next_row_group_reader()?,
-            };
-            let Some((row_group_idx, mut reader)) = current_opt else {
-                return Ok(None);
-            };
-            let docs_res = match reader.next() {
-                Some(Ok(record_batch)) => record_batch_to_ndjson_docs(&record_batch).map(Some),
-                Some(Err(error)) => Err(anyhow::Error::from(error)),
-                None => Ok(None),
-            };
-            let docs_opt = docs_res.with_context(|| {
-                format!(
-                    "failed to decode row group {row_group_idx} of `{}`",
-                    plan.file_uri()
-                )
-            })?;
-            Ok(Some((row_group_idx, reader, docs_opt)))
+            loop {
+                let current = match current_opt.take() {
+                    Some(current) => Some(current),
+                    None => plan.next_row_group_reader()?,
+                };
+                let Some((row_group_idx, mut reader)) = current else {
+                    return Ok(None);
+                };
+                let docs_res = match reader.next() {
+                    Some(Ok(record_batch)) => record_batch_to_ndjson_docs(&record_batch),
+                    Some(Err(error)) => Err(anyhow::Error::from(error)),
+                    None => continue,
+                };
+                let docs = docs_res.with_context(|| {
+                    format!(
+                        "failed to decode row group {row_group_idx} of `{}`",
+                        plan.file_uri()
+                    )
+                })?;
+                return Ok(Some((row_group_idx, reader, docs)));
+            }
         });
     join_handle
         .await
@@ -220,17 +194,6 @@ pub(super) async fn decode_next_batch(
 
 /// Treat naive timestamps as UTC for RFC 3339 parsing; zoned timestamps keep their offset.
 const NAIVE_TIMESTAMP_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.fZ";
-
-fn new_ndjson_writer(
-    buffer: Vec<u8>,
-    encoder_factory: Arc<ParquetEncoderFactory>,
-) -> Writer<Vec<u8>, LineDelimited> {
-    WriterBuilder::new()
-        .with_explicit_nulls(false)
-        .with_timestamp_format(NAIVE_TIMESTAMP_FORMAT.to_string())
-        .with_encoder_factory(encoder_factory)
-        .build::<_, LineDelimited>(buffer)
-}
 
 struct Base64Encoder<B>(B);
 
@@ -333,7 +296,11 @@ pub(super) fn record_batch_to_ndjson_docs(
 ) -> anyhow::Result<Vec<Bytes>> {
     let num_rows = record_batch.num_rows();
     let encoder_factory = Arc::new(ParquetEncoderFactory::default());
-    let mut writer = new_ndjson_writer(Vec::new(), encoder_factory.clone());
+    let mut writer = WriterBuilder::new()
+        .with_explicit_nulls(false)
+        .with_timestamp_format(NAIVE_TIMESTAMP_FORMAT.to_string())
+        .with_encoder_factory(encoder_factory.clone())
+        .build::<_, LineDelimited>(Vec::new());
     writer
         .write(record_batch)
         .context("failed to encode Parquet rows as JSON")?;
