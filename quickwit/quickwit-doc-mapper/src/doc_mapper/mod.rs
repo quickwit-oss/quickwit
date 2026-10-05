@@ -82,6 +82,30 @@ pub enum Automaton {
     // we could add termset query here, instead of downloading the whole dictionary
 }
 
+/// Work to perform when warming an automaton's postings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AutomatonWarmup {
+    /// Load postings without caching hits. Calculated-field prefilters match any indexed value
+    /// in a multivalued column, but the predicate evaluates only the first value. Prefilter hits
+    /// therefore cannot be cached as final calculated-field predicate hits.
+    PostingsOnly,
+    /// Also cache final predicate hits under these serialized predicate keys.
+    CacheHits(HashSet<String>),
+}
+
+impl AutomatonWarmup {
+    /// Caching hits also warms postings, so it subsumes a postings-only request.
+    pub(crate) fn merge(&mut self, other: Self) {
+        let Self::CacheHits(keys) = other else {
+            return;
+        };
+        match self {
+            Self::PostingsOnly => *self = Self::CacheHits(keys),
+            Self::CacheHits(existing_keys) => existing_keys.extend(keys),
+        }
+    }
+}
+
 /// Description of how a fast field should be warmed up
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FastFieldWarmupInfo {
@@ -106,8 +130,9 @@ pub struct WarmupInfo {
     pub terms_grouped_by_field: HashMap<Field, HashMap<Term, bool>>,
     /// Term ranges to warmup, and whether their position is needed too.
     pub term_ranges_grouped_by_field: HashMap<Field, HashMap<TermRange, bool>>,
-    /// Automatons to warmup
-    pub automatons_grouped_by_field: HashMap<Field, HashSet<Automaton>>,
+    /// Automatons to warmup and the work to perform for each. Requests sharing an
+    /// automaton are merged so warmup runs only once and predicate cache keys accumulate.
+    pub automatons_grouped_by_field: HashMap<Field, HashMap<Automaton, AutomatonWarmup>>,
     /// Terms that must all be present for the query to match any document.
     ///
     /// If any of these terms has an empty posting list in a split, the query
@@ -150,9 +175,14 @@ impl WarmupInfo {
             }
         }
 
-        for (field, automatons) in other.automatons_grouped_by_field.into_iter() {
+        for (field, automatons) in other.automatons_grouped_by_field {
             let sub_map = self.automatons_grouped_by_field.entry(field).or_default();
-            sub_map.extend(automatons);
+            for (automaton, warmup) in automatons {
+                sub_map
+                    .entry(automaton)
+                    .or_insert(AutomatonWarmup::PostingsOnly)
+                    .merge(warmup);
+            }
         }
 
         // Required terms come from the query; a collector's `WarmupInfo` carries
@@ -626,10 +656,15 @@ mod tests {
             .collect()
     }
 
-    fn automaton_hashset(elements: &[&str]) -> HashSet<Automaton> {
+    fn automaton_map(elements: &[&str]) -> HashMap<Automaton, AutomatonWarmup> {
         elements
             .iter()
-            .map(|elem| Automaton::Regex(None, elem.to_string()))
+            .map(|regex| {
+                (
+                    Automaton::Regex(None, regex.to_string()),
+                    AutomatonWarmup::PostingsOnly,
+                )
+            })
             .collect()
     }
 
@@ -684,7 +719,7 @@ mod tests {
             ]),
             automatons_grouped_by_field: [(
                 Field::from_field_id(1),
-                automaton_hashset(&["my_reg.*ex"]),
+                automaton_map(&["my_reg.*ex"]),
             )]
             .into_iter()
             .collect(),
@@ -707,8 +742,8 @@ mod tests {
                 (2, "term2", true),
             ]),
             automatons_grouped_by_field: [
-                (Field::from_field_id(1), automaton_hashset(&["other-re.ex"])),
-                (Field::from_field_id(2), automaton_hashset(&["my_reg.*ex"])),
+                (Field::from_field_id(1), automaton_map(&["other-re.ex"])),
+                (Field::from_field_id(2), automaton_map(&["my_reg.*ex"])),
             ]
             .into_iter()
             .collect(),
@@ -769,7 +804,7 @@ mod tests {
                     .automatons_grouped_by_field
                     .get(&field)
                     .unwrap()
-                    .contains(&automaton)
+                    .contains_key(&automaton)
             );
         }
 
@@ -777,6 +812,43 @@ mod tests {
         let mut wi_cloned = wi_base.clone();
         wi_cloned.merge(wi_2);
         assert_eq!(wi_cloned, wi_base);
+    }
+
+    #[test]
+    fn test_warmup_info_merge_automaton_cache_keys() {
+        let field = Field::from_field_id(1);
+        let automaton = Automaton::Regex(None, "api".to_string());
+        let mut warmup = WarmupInfo::default();
+        for request in [
+            AutomatonWarmup::PostingsOnly,
+            AutomatonWarmup::CacheHits(HashSet::from(["regex".to_string()])),
+            AutomatonWarmup::PostingsOnly,
+            AutomatonWarmup::CacheHits(HashSet::from([
+                "wildcard".to_string(),
+                "regex".to_string(),
+            ])),
+        ] {
+            warmup.merge(WarmupInfo {
+                automatons_grouped_by_field: HashMap::from([(
+                    field,
+                    HashMap::from([(automaton.clone(), request)]),
+                )]),
+                ..Default::default()
+            });
+        }
+        assert_eq!(
+            warmup.automatons_grouped_by_field,
+            HashMap::from([(
+                field,
+                HashMap::from([(
+                    automaton,
+                    AutomatonWarmup::CacheHits(HashSet::from([
+                        "regex".to_string(),
+                        "wildcard".to_string(),
+                    ])),
+                )]),
+            )])
+        );
     }
 
     #[test]
@@ -796,9 +868,9 @@ mod tests {
                 (2, "term3", false),
             ]),
             automatons_grouped_by_field: [
-                (Field::from_field_id(1), automaton_hashset(&["other-re.ex"])),
-                (Field::from_field_id(1), automaton_hashset(&["other-re.ex"])),
-                (Field::from_field_id(2), automaton_hashset(&["my_reg.ex"])),
+                (Field::from_field_id(1), automaton_map(&["other-re.ex"])),
+                (Field::from_field_id(1), automaton_map(&["other-re.ex"])),
+                (Field::from_field_id(2), automaton_map(&["my_reg.ex"])),
             ]
             .into_iter()
             .collect(),
@@ -814,8 +886,8 @@ mod tests {
                 (2, "term3", false),
             ]),
             automatons_grouped_by_field: [
-                (Field::from_field_id(1), automaton_hashset(&["other-re.ex"])),
-                (Field::from_field_id(2), automaton_hashset(&["my_reg.ex"])),
+                (Field::from_field_id(1), automaton_map(&["other-re.ex"])),
+                (Field::from_field_id(2), automaton_map(&["my_reg.ex"])),
             ]
             .into_iter()
             .collect(),

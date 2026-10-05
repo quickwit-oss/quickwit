@@ -126,8 +126,8 @@ impl BuildTantivyAst for CacheNode {
 
 use tantivy::directory::OwnedBytes;
 use tantivy::index::SegmentId;
-use tantivy::query::{EnableScoring, Explanation, Query, Scorer, Weight};
-use tantivy::{DocId, DocSet, Score, SegmentReader, TantivyError, Term};
+use tantivy::query::{BitSetDocSet, EnableScoring, Explanation, Query, Scorer, Weight};
+use tantivy::{BitSet, DocId, DocSet, Score, SegmentReader, TantivyError, Term};
 
 #[derive(Clone, Debug)]
 pub struct CacheHitQuery {
@@ -223,6 +223,21 @@ impl HitSet {
     /// Returns true if this hit set matches no document.
     pub fn is_empty(&self) -> bool {
         self.size_hint() == 0
+    }
+
+    /// Compresses the document IDs in a bitset; run this on a CPU executor.
+    pub fn from_bitset(hits: BitSet) -> Self {
+        // BitSetDocSet cannot initialize a bitset with zero buckets.
+        if hits.len() == 0 {
+            return Self::empty();
+        }
+        let mut docs = BitSetDocSet::from(hits);
+        let mut builder = HitSetBuilder::new();
+        while docs.doc() != tantivy::TERMINATED {
+            builder.insert(docs.doc());
+            docs.advance();
+        }
+        builder.build()
     }
 
     /// Build a HitSet from its serialized form.
@@ -446,6 +461,16 @@ pub struct CacheFillerWeight {
 
 impl Weight for CacheFillerWeight {
     fn scorer(&self, reader: &SegmentReader, boost: Score) -> tantivy::Result<Box<dyn Scorer>> {
+        // Query construction may have seen a miss before warmup populated the cache.
+        if let Some((segment_id, mut hits)) = self.cache_filler.cache.get(
+            self.cache_filler.split_id.clone(),
+            self.cache_filler.query.clone(),
+        ) {
+            if segment_id == reader.segment_id() {
+                hits.boost = boost;
+                return Ok(Box::new(hits));
+            }
+        }
         let mut hit_set_builder = HitSetBuilder::new();
         let mut scorer = self.inner_weight.scorer(reader, 1.0)?;
         let mut doc_id = scorer.doc();
@@ -478,11 +503,34 @@ pub struct PredicateCacheInjector {
 impl crate::query_ast::QueryAstTransformer for PredicateCacheInjector {
     type Err = std::convert::Infallible;
 
+    fn transform_regex(
+        &mut self,
+        regex_query: super::RegexQuery,
+    ) -> Result<Option<QueryAst>, Self::Err> {
+        self.transform_cache_node(CacheNode::new(QueryAst::Regex(regex_query)))
+    }
+
+    fn transform_wildcard(
+        &mut self,
+        wildcard_query: super::WildcardQuery,
+    ) -> Result<Option<QueryAst>, Self::Err> {
+        self.transform_cache_node(CacheNode::new(QueryAst::Wildcard(wildcard_query)))
+    }
+
     fn transform_cache_node(
         &mut self,
         mut cache_node: CacheNode,
     ) -> Result<Option<QueryAst>, Self::Err> {
         cache_node.fill_cache_state(&self.cache, &self.split_id);
+        // Do not nest another cache node around an already wrapped automaton predicate.
+        if matches!(cache_node.state, CacheState::CacheHit(_))
+            || matches!(
+                *cache_node.inner,
+                QueryAst::Regex(_) | QueryAst::Wildcard(_)
+            )
+        {
+            return Ok(Some(cache_node.into()));
+        }
         self.transform(*cache_node.inner).map(|maybe_ast| {
             maybe_ast.map(|inner| {
                 QueryAst::Cache(CacheNode {
@@ -578,6 +626,31 @@ mod tests {
         // many blocks, partial last block
         test_hit_set_roundtrip_helper(generator.clone().take(1024 + 6));
         test_hit_set_roundtrip_helper(generator.clone().skip(10).take(1024 + 6));
+    }
+
+    #[test]
+    fn test_hit_set_from_bitset() {
+        for docs in [
+            vec![],
+            vec![0],
+            vec![63, 64, 127, 128, 1024],
+            (0..32).collect(),
+            (0..65).collect(),
+            (0..1030).map(|doc| doc * 3).collect(),
+        ] {
+            let max_doc = docs.last().map_or(0, |doc| doc + 1);
+            let mut bitset = BitSet::with_max_value(max_doc);
+            for &doc in &docs {
+                bitset.insert(doc);
+            }
+            let mut hits = HitSet::from_bitset(bitset);
+            assert_eq!(hits.size_hint() as usize, docs.len());
+            for doc in docs {
+                assert_eq!(hits.doc(), doc);
+                hits.advance();
+            }
+            assert_eq!(hits.doc(), tantivy::TERMINATED);
+        }
     }
 
     #[test]
