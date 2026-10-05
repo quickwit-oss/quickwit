@@ -167,7 +167,7 @@ mod tests {
             .key_values
             .sort_unstable_by(|left, right| left.key.cmp(&right.key));
 
-        assert_eq!(node_state.key_values.len(), 5);
+        assert_eq!(node_state.key_values.len(), 6);
         assert_eq!(node_state.key_values[0].key, ENABLED_SERVICES_KEY);
         assert_eq!(node_state.key_values[0].value, "indexer");
 
@@ -179,8 +179,11 @@ mod tests {
         assert_eq!(node_state.key_values[3].key, READINESS_KEY);
         assert_eq!(node_state.key_values[3].value, "READY");
 
-        assert_eq!(node_state.key_values[4].key, STANDALONE_COMPACTORS_KEY);
+        assert_eq!(node_state.key_values[4].key, "shard_scaling_v2");
         assert_eq!(node_state.key_values[4].value, "false");
+
+        assert_eq!(node_state.key_values[5].key, STANDALONE_COMPACTORS_KEY);
+        assert_eq!(node_state.key_values[5].value, "false");
     }
 
     #[tokio::test]

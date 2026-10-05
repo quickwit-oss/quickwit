@@ -70,6 +70,7 @@ pub struct IngesterPoolEntry {
     pub status: IngesterStatus,
     pub availability_zone: Option<AvailabilityZone>,
     pub generation_id: GenerationId,
+    pub enable_shard_scaling_v2: bool,
 }
 
 impl IngesterPoolEntry {
@@ -80,6 +81,7 @@ impl IngesterPoolEntry {
             status: IngesterStatus::Ready,
             availability_zone: None,
             generation_id: GenerationId::from(1u64),
+            enable_shard_scaling_v2: false,
         }
     }
 
@@ -90,6 +92,7 @@ impl IngesterPoolEntry {
             status: IngesterStatus::Ready,
             availability_zone: None,
             generation_id: GenerationId::from(1u64),
+            enable_shard_scaling_v2: false,
         }
     }
 }

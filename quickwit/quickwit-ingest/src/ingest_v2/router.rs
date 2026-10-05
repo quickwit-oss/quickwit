@@ -1368,6 +1368,7 @@ mod tests {
                 status: IngesterStatus::Ready,
                 availability_zone: None,
                 generation_id: GenerationId::from(1u64),
+                enable_shard_scaling_v2: false,
             },
         );
 
@@ -1405,6 +1406,7 @@ mod tests {
                 availability_zone: None,
                 status: IngesterStatus::Ready,
                 generation_id: GenerationId::from(1u64),
+                enable_shard_scaling_v2: false,
             },
         );
 
@@ -1531,6 +1533,7 @@ mod tests {
                 status: IngesterStatus::Ready,
                 availability_zone: None,
                 generation_id: GenerationId::from(1u64),
+                enable_shard_scaling_v2: false,
             },
         );
 
@@ -1692,6 +1695,7 @@ mod tests {
                 availability_zone: None,
                 status: IngesterStatus::Ready,
                 generation_id: GenerationId::from(1u64),
+                enable_shard_scaling_v2: false,
             },
         );
 
@@ -1757,6 +1761,7 @@ mod tests {
             NodeId::from_str("test-ingester-0"),
             IngesterPoolEntry {
                 generation_id: GenerationId::from(2u64),
+                enable_shard_scaling_v2: false,
                 ..IngesterPoolEntry::mocked_ingester()
             },
         );
@@ -1912,6 +1917,7 @@ mod tests {
             NodeId::from_str("test-ingester-0"),
             IngesterPoolEntry {
                 generation_id: GenerationId::from(3u64),
+                enable_shard_scaling_v2: false,
                 ..IngesterPoolEntry::mocked_ingester()
             },
         );
@@ -1929,6 +1935,7 @@ mod tests {
             NodeId::from_str("test-ingester-0"),
             IngesterPoolEntry {
                 generation_id: GenerationId::from(7u64),
+                enable_shard_scaling_v2: false,
                 ..IngesterPoolEntry::mocked_ingester()
             },
         );

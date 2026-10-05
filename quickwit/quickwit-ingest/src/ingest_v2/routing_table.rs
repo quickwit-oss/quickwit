@@ -364,6 +364,7 @@ mod tests {
             status: IngesterStatus::Ready,
             availability_zone: availability_zone.map(AvailabilityZone::from),
             generation_id: GenerationId::from(1u64),
+            enable_shard_scaling_v2: false,
         }
     }
 

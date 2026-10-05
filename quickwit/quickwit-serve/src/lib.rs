@@ -1280,6 +1280,7 @@ fn build_ingester_insert_change(
         status: node.ingester_status,
         availability_zone: node.availability_zone(),
         generation_id: node.generation_id,
+        enable_shard_scaling_v2: node.enable_shard_scaling_v2(),
     };
     Change::Insert(node_id, pool_entry)
 }

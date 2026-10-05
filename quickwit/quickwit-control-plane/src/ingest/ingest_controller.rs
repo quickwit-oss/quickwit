@@ -395,6 +395,13 @@ impl IngestController {
         }
     }
 
+    pub(crate) fn all_indexers_migrated(&self) -> bool {
+        self.ingester_pool
+            .keys_values()
+            .iter()
+            .all(|(_node_id, ingester)| ingester.enable_shard_scaling_v2)
+    }
+
     /// Sends a retain shard request to the given list of ingesters.
     ///
     /// If the request fails, we just log an error.
@@ -1273,6 +1280,7 @@ mod tests {
             status,
             availability_zone: availability_zone.map(AvailabilityZone::from),
             generation_id: GenerationId::from(1u64),
+            enable_shard_scaling_v2: false,
         }
     }
 
@@ -1681,6 +1689,7 @@ mod tests {
                 status: IngesterStatus::Retiring,
                 availability_zone: None,
                 generation_id: quickwit_cluster::GenerationId::from(1u64),
+                enable_shard_scaling_v2: false,
             },
         );
         let open_shard_opt =
@@ -2253,6 +2262,7 @@ mod tests {
                     status: IngesterStatus::Ready,
                     availability_zone: Some(AvailabilityZone::from(zone)),
                     generation_id: GenerationId::from(1u64),
+                    enable_shard_scaling_v2: false,
                 },
             );
         }
@@ -3013,6 +3023,7 @@ mod tests {
                 status: IngesterStatus::Ready,
                 availability_zone: None,
                 generation_id: quickwit_cluster::GenerationId::from(1u64),
+                enable_shard_scaling_v2: false,
             };
             ingester_pool.insert(NodeId::from_str(ingester_id), ingester);
         }
@@ -3031,6 +3042,7 @@ mod tests {
                 status: IngesterStatus::Retiring,
                 availability_zone: None,
                 generation_id: quickwit_cluster::GenerationId::from(1u64),
+                enable_shard_scaling_v2: false,
             };
             ingester_pool.insert(NodeId::from_str(ingester_id), ingester);
         }
@@ -3169,6 +3181,7 @@ mod tests {
                     status: IngesterStatus::Decommissioned,
                     availability_zone: None,
                     generation_id: quickwit_cluster::GenerationId::from(1u64),
+                    enable_shard_scaling_v2: false,
                 };
                 ingester_pool.insert(NodeId::from_str(ingester_id), ingester);
             }

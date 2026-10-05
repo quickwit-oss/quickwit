@@ -138,6 +138,7 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         ingester_status: IngesterStatus::default(),
         availability_zone: node_config.availability_zone.clone(),
         enable_standalone_compactors: node_config.enable_standalone_compactors,
+        enable_shard_scaling_v2: node_config.enable_shard_scaling_v2,
     };
     let failure_detector_config = FailureDetectorConfig {
         dead_node_grace_period: Duration::from_mins(15),
