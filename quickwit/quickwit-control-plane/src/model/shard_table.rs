@@ -139,6 +139,28 @@ impl ShardTableEntry {
             avg_long_term_ingestion_rate,
         }
     }
+
+    fn shard_throughput_stats(&self, live_ingesters: &FnvHashSet<NodeId>) -> ShardThroughputStats {
+        let mut num_open_shards = 0;
+        let mut total_short_term_ingestion_rate = ByteSize::default();
+        let mut total_long_term_ingestion_rate = ByteSize::default();
+
+        for shard_entry in self.shard_entries.values() {
+            if !live_ingesters.contains(shard_entry.ingester_id.as_str()) {
+                continue;
+            }
+            if shard_entry.is_open() {
+                num_open_shards += 1;
+            }
+            total_short_term_ingestion_rate += shard_entry.short_term_ingestion_rate;
+            total_long_term_ingestion_rate += shard_entry.long_term_ingestion_rate;
+        }
+        ShardThroughputStats {
+            num_open_shards,
+            total_short_term_ingestion_rate,
+            total_long_term_ingestion_rate,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -451,6 +473,16 @@ impl ShardTable {
         Some(open_shards)
     }
 
+    pub fn shard_throughput_stats(
+        &self,
+        source_uid: &SourceUid,
+        live_ingesters: &FnvHashSet<NodeId>,
+    ) -> Option<ShardThroughputStats> {
+        let table_entry = self.table_entries.get(source_uid)?;
+        let shard_throughput_stats = table_entry.shard_throughput_stats(live_ingesters);
+        Some(shard_throughput_stats)
+    }
+
     pub fn legacy_shard_stats(&self, source_uid: &SourceUid) -> Option<ShardStats> {
         let table_entry = self.table_entries.get(source_uid)?;
         let shard_stats = table_entry.shards_stats();
@@ -607,6 +639,13 @@ pub(crate) struct ShardStats {
     pub avg_short_term_ingestion_rate: ByteSize,
     /// Average long-term ingestion rate (B/s) over all open shards.
     pub avg_long_term_ingestion_rate: ByteSize,
+}
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct ShardThroughputStats {
+    pub num_open_shards: usize,
+    pub total_short_term_ingestion_rate: ByteSize,
+    pub total_long_term_ingestion_rate: ByteSize,
 }
 
 #[cfg(test)]
@@ -847,6 +886,87 @@ mod tests {
             .unwrap();
         assert_eq!(open_shards.len(), 1);
         assert_eq!(open_shards[0].shard, shard_04);
+    }
+
+    #[test]
+    fn test_shard_table_shard_throughput_stats() {
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let source_id = "test-source".to_string();
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: source_id.clone(),
+        };
+        let live_ingesters = FnvHashSet::from_iter([NodeId::from_str("test-ingester-0")]);
+
+        let mut shard_table = ShardTable::default();
+        assert!(
+            shard_table
+                .shard_throughput_stats(&source_uid, &live_ingesters)
+                .is_none()
+        );
+
+        shard_table.add_source(&index_uid, &source_id);
+
+        let shard_01 = Shard {
+            index_uid: index_uid.clone().into(),
+            source_id: source_id.clone(),
+            shard_id: Some(ShardId::from(1)),
+            ingester_id: "test-ingester-0".to_string(),
+            shard_state: ShardState::Open as i32,
+            ..Default::default()
+        };
+        let shard_02 = Shard {
+            index_uid: index_uid.clone().into(),
+            source_id: source_id.clone(),
+            shard_id: Some(ShardId::from(2)),
+            ingester_id: "test-ingester-0".to_string(),
+            shard_state: ShardState::Closed as i32,
+            ..Default::default()
+        };
+        let shard_03 = Shard {
+            index_uid: index_uid.clone().into(),
+            source_id: source_id.clone(),
+            shard_id: Some(ShardId::from(3)),
+            ingester_id: "test-ingester-1".to_string(),
+            shard_state: ShardState::Open as i32,
+            ..Default::default()
+        };
+        shard_table.insert_shards(&index_uid, &source_id, vec![shard_01, shard_02, shard_03]);
+
+        let shard_infos = BTreeSet::from_iter([
+            ShardInfo {
+                shard_id: ShardId::from(1),
+                shard_state: ShardState::Open,
+                short_term_ingestion_rate: ByteSize::mib(2),
+                long_term_ingestion_rate: ByteSize::mib(1),
+            },
+            ShardInfo {
+                shard_id: ShardId::from(2),
+                shard_state: ShardState::Closed,
+                short_term_ingestion_rate: ByteSize::mib(0),
+                long_term_ingestion_rate: ByteSize::mib(3),
+            },
+            ShardInfo {
+                shard_id: ShardId::from(3),
+                shard_state: ShardState::Open,
+                short_term_ingestion_rate: ByteSize::mib(4),
+                long_term_ingestion_rate: ByteSize::mib(4),
+            },
+        ]);
+        shard_table.update_shards(&source_uid, &shard_infos);
+
+        let shard_throughput_stats = shard_table
+            .shard_throughput_stats(&source_uid, &live_ingesters)
+            .unwrap();
+        assert_eq!(shard_throughput_stats.num_open_shards, 1);
+        assert_eq!(
+            shard_throughput_stats.total_short_term_ingestion_rate,
+            ByteSize::mib(2)
+        );
+        assert_eq!(
+            shard_throughput_stats.total_long_term_ingestion_rate,
+            ByteSize::mib(4)
+        );
     }
 
     #[test]

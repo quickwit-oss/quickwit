@@ -60,7 +60,7 @@ use crate::cooldown_map::{CooldownMap, CooldownStatus};
 use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
 use crate::ingest::ingest_controller::{IngestControllerStats, RebalanceShardsCallback};
-use crate::ingest::{IngestController, LegacyScalingController};
+use crate::ingest::{IngestController, LegacyScalingController, ScalingController};
 use crate::metrics::{METASTORE_ERROR_ABORTED, METASTORE_ERROR_MAYBE_EXECUTED, RESTART_TOTAL};
 use crate::model::ControlPlaneModel;
 
@@ -99,6 +99,7 @@ pub struct ControlPlane {
     indexing_scheduler: IndexingScheduler,
     ingest_controller: IngestController,
     legacy_scaling_controller: LegacyScalingController,
+    scaling_controller: ScalingController,
     metastore: MetastoreServiceClient,
     model: ControlPlaneModel,
     prune_shard_cooldown: CooldownMap<(IndexId, SourceId)>,
@@ -138,6 +139,9 @@ impl ControlPlane {
                     cluster_config.shard_throughput_limit,
                     cluster_config.shard_scale_up_factor,
                 );
+                let scaling_controller = ScalingController::with_shard_throughput_limit(
+                    cluster_config.shard_throughput_limit,
+                );
 
                 let readiness_tx = readiness_tx.clone();
                 let _ = readiness_tx.send(false);
@@ -147,6 +151,7 @@ impl ControlPlane {
                     indexing_scheduler,
                     ingest_controller,
                     legacy_scaling_controller,
+                    scaling_controller,
                     metastore: metastore.clone(),
                     model: Default::default(),
                     prune_shard_cooldown: CooldownMap::new(NonZeroUsize::new(1024).unwrap()),
@@ -491,11 +496,26 @@ impl Handler<ControlPlaneLoop> for ControlPlane {
         _message: ControlPlaneLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if let Err(metastore_error) = self
-            .ingest_controller
-            .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
-            .await
-        {
+        let reconcile_shards_result = if self.ingest_controller.all_indexers_migrated() {
+            self.scaling_controller
+                .reconcile_shards(
+                    &mut self.ingest_controller,
+                    &mut self.model,
+                    ctx.mailbox(),
+                    ctx.progress(),
+                )
+                .await
+        } else {
+            self.legacy_scaling_controller
+                .reconcile_shards(
+                    &mut self.ingest_controller,
+                    &mut self.model,
+                    ctx.mailbox(),
+                    ctx.progress(),
+                )
+                .await
+        };
+        if let Err(metastore_error) = reconcile_shards_result {
             if let Err(actor_exit_status) = convert_metastore_error::<()>(metastore_error) {
                 // See convert_metastore_error's spec. If it returns an error, it
                 // means we do not know if all metastore tx were aborted or not.
@@ -507,6 +527,7 @@ impl Handler<ControlPlaneLoop> for ControlPlane {
                 return Err(actor_exit_status);
             }
         }
+        let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
         self.indexing_scheduler.control_running_plan(&self.model);
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlaneLoop);
         Ok(())
@@ -983,7 +1004,7 @@ impl DeferableReplyHandler<ReportIndexerStateRequest> for ControlPlane {
         &mut self,
         request: ReportIndexerStateRequest,
         reply: impl FnOnce(Self::Reply) + Send + Sync + 'static,
-        ctx: &ActorContext<Self>,
+        _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         reply(Ok(ReportIndexerStateResponse {}));
 
@@ -994,23 +1015,15 @@ impl DeferableReplyHandler<ReportIndexerStateRequest> for ControlPlane {
                 indexing_tasks_update.indexing_tasks,
             );
         }
-        if let Some(shards_update) = request.shards_update
-            && let Err(metastore_error) = self
-                .legacy_scaling_controller
-                .handle_shards_update(
-                    &mut self.ingest_controller,
-                    &request.node_id,
-                    request.generation_id,
-                    shards_update,
-                    &mut self.model,
-                    ctx.progress(),
-                )
-                .await
-        {
-            // Return () if there's no metastore error; return the error if there is one.
-            return convert_metastore_error::<()>(metastore_error).map(|_| ());
+        if let Some(shards_update) = request.shards_update {
+            self.scaling_controller.handle_shards_update(
+                &self.ingest_controller,
+                &request.node_id,
+                request.generation_id,
+                shards_update,
+                &mut self.model,
+            );
         }
-        let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
         Ok(())
     }
 }
@@ -1183,6 +1196,9 @@ mod tests {
                 indexer_pool,
             ),
             ingest_controller: IngestController::new(metastore.clone(), ingester_pool),
+            scaling_controller: ScalingController::with_shard_throughput_limit(
+                cluster_config.shard_throughput_limit,
+            ),
             legacy_scaling_controller: LegacyScalingController::new(
                 cluster_config.shard_throughput_limit,
                 cluster_config.shard_scale_up_factor,
@@ -1217,7 +1233,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_report_acknowledged_before_io_and_processing_errors() {
+    async fn test_report_acknowledged_before_periodic_reconciliation() {
         for outcome in ["success", "aborted", "uncertain"] {
             let universe = Universe::new();
             let (mailbox, _inbox) = universe.create_test_mailbox();
@@ -1289,17 +1305,22 @@ mod tests {
                 2,
             );
             let (reply_tx, mut reply_rx) = tokio::sync::oneshot::channel();
-            let result = {
-                let handling = control_plane.handle_message(
+            control_plane
+                .handle_message(
                     report_for_test(),
                     move |reply| {
                         reply_tx.send(reply).unwrap();
                     },
                     &ctx,
-                );
+                )
+                .await
+                .unwrap();
+            assert!(reply_rx.try_recv().unwrap().is_ok());
+            assert_eq!(control_plane.model.all_shards().count(), 1);
+            let result = {
+                let handling = Handler::handle(&mut control_plane, ControlPlaneLoop, &ctx);
                 tokio::pin!(handling);
                 assert!(futures::poll!(handling.as_mut()).is_pending());
-                assert!(reply_rx.try_recv().unwrap().is_ok());
                 handling.await
             };
             assert_eq!(result.is_err(), outcome == "uncertain");

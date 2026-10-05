@@ -36,7 +36,9 @@ use quickwit_proto::metastore::{
     MetastoreServiceClient, SourceType, ToggleSourceRequest,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
-pub(super) use shard_table::{ScalingMode, ShardEntry, ShardLocations, ShardStats, ShardTable};
+pub(super) use shard_table::{
+    ScalingMode, ShardEntry, ShardLocations, ShardStats, ShardTable, ShardThroughputStats,
+};
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::metrics::INDEXES_TOTAL;
@@ -368,6 +370,15 @@ impl ControlPlaneModel {
     ) -> Option<Vec<ShardEntry>> {
         self.shard_table
             .find_open_shards(index_uid, source_id, unavailable_ingesters)
+    }
+
+    pub fn shard_throughput_stats(
+        &self,
+        source_uid: &SourceUid,
+        live_ingesters: &FnvHashSet<NodeId>,
+    ) -> Option<ShardThroughputStats> {
+        self.shard_table
+            .shard_throughput_stats(source_uid, live_ingesters)
     }
 
     pub fn legacy_shard_stats(&self, source_uid: &SourceUid) -> Option<ShardStats> {
