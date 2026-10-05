@@ -17,10 +17,9 @@ First, create a `docker-compose.yml` file. This file will define the services ne
 Below is the complete Docker Compose configuration:
 
 ```yaml
-version: '3.0'
 services:
   quickwit:
-    image: quickwit/quickwit
+    image: quickwit/quickwit:0.9.0
     environment:
       QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:7281"
@@ -29,15 +28,12 @@ services:
     command: ["run"]
 
   grafana:
-    image: grafana/grafana-oss
+    image: grafana/grafana-oss:13.0.2
     container_name: grafana
     ports:
       - "${MAP_HOST_GRAFANA:-127.0.0.1}:3000:3000"
     environment:
-      GF_INSTALL_PLUGINS: https://github.com/quickwit-oss/quickwit-datasource/releases/download/v0.4.6/quickwit-quickwit-datasource-0.4.6.zip;quickwit-quickwit-datasource
-      GF_AUTH_DISABLE_LOGIN_FORM: "true"
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_PLUGINS_PREINSTALL_SYNC: quickwit-quickwit-datasource@@https://github.com/quickwit-oss/quickwit-datasource/releases/download/v0.4.6/quickwit-quickwit-datasource-0.4.6.zip
 ```
 
 The default Grafana port is 3000. If this port is already taken, you can modify the port mapping, for example, changing 3000:3000 to 3100:3000 or any other available port.
@@ -50,14 +46,20 @@ $ docker compose up
 
 You should be able to access Quickwit's UI on `http://localhost:7280/` and Grafana's UI on `http://localhost:3000/`.
 
+:::caution
+
+This local self-observability setup sends Quickwit's telemetry back into the same Quickwit instance and can generate data rapidly. Stop the services with `docker compose down` when you finish the tutorial.
+
+:::
+
 ## Setting up the datasource
 
-In Grafana, head to [Data Sources](http://localhost:3000/connections/datasources). If the plugin is installed correctly you should be able to find Quickwit in the list.
+In Grafana, sign in with the default credentials (`admin` / `admin`) and choose a new password. Then head to [Data sources](http://localhost:3000/connections/datasources). If the plugin is installed correctly, you should be able to find Quickwit in the list.
 
 We're going to set up a new Quickwit data source looking at Quickwit's own OpenTelemetry traces, let's configure the datasource with the following parameters:
 
 - URL : `http://quickwit:7280/api/v1` _This uses the docker service name as the host_
-- Index ID : `otel-traces-v0_7`
+- Index ID : `otel-traces-v0_9`
 
 Save and test, you should obtain a confirmation that the datasource is correctly set up.
 
@@ -68,7 +70,7 @@ Save and test, you should obtain a confirmation that the datasource is correctly
 You can also set up a new Quickwit data source looking at Quickwit's own OpenTelemetry logs (or your own logs index), let's configure the datasource with the following parameters:
 
 - URL : `http://quickwit:7280/api/v1` _This uses the docker service name as the host_
-- Index ID : `otel-logs-v0_7`
+- Index ID : `otel-logs-v0_9`
 
 
 ## Creating a dashboard
@@ -77,7 +79,7 @@ You can then [create a new dashboard](http://localhost:3000/dashboard/new) and a
 
 Quickwit sends itself its own traces, so you should already have data to display. Let's configure some panels !
 
-- a Table counting span_names 
+- a Table counting `span_name` values
   - **Panel type** : Table
   - **Query**: _empty_
   - **Metric** : Count
@@ -89,9 +91,9 @@ Quickwit sends itself its own traces, so you should already have data to display
   - **Group by** : Date Histogram : `span_start_timestamp_nanos` : Interval 1h
 - a Bar Chart showing the amount of ERROR logs per hour for the last 6 hours :
   - **Panel type**: Bar Chart
-  - **Query**: "service_name:quickwit AND events.event_attributes.level:ERROR"
+  - **Query**: "service_name:quickwit AND severity_text:ERROR"
   - **Metric**: Count
-  - **Group by** : Terms : `span_start_timestamp_nanos` : Interval 1h
+  - **Group by** : Date Histogram : `timestamp_nanos` : Interval 1h
 - another query on the same Bar Chart for WARN logs
 
 ## The result
@@ -100,4 +102,10 @@ Here's what your first dashboard can look like :
 
 ![Quickwit Panel in Grafana Dashboard](../../assets/images/screenshot-grafana-tutorial-dashboard.png)
 
+## Clean up
 
+Stop and remove the tutorial containers:
+
+```bash
+docker compose down
+```

@@ -84,7 +84,7 @@ fn position_from_offset(offset: usize) -> Position {
 impl Source for VecSource {
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<DocProcessor>,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_builder = BatchBuilder::new(SourceType::Vec);
@@ -98,7 +98,7 @@ impl Source for VecSource {
         }
         if batch_builder.docs.is_empty() {
             info!("reached end of source");
-            ctx.send_exit_with_success(batch_sink).await?;
+            ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
         let from_item_idx = self.next_item_idx;
@@ -111,7 +111,8 @@ impl Source for VecSource {
             position_from_offset(to_item_idx),
         )
         .unwrap();
-        ctx.send_message(batch_sink, batch_builder.build()).await?;
+        ctx.send_message(doc_processor_mailbox, batch_builder.build())
+            .await?;
 
         Ok(Duration::default())
     }
@@ -138,6 +139,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
     use crate::source::SourceActor;
     use crate::source::tests::SourceRuntimeBuilder;
@@ -145,7 +147,8 @@ mod tests {
     #[tokio::test]
     async fn test_vec_source() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
-        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
         let docs = std::iter::repeat_with(|| Bytes::from_static(b"{}"))
             .take(100)
             .collect();
@@ -165,10 +168,7 @@ mod tests {
         };
         let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
         let vec_source = VecSourceFactory::typed_create_source(source_runtime, params).await?;
-        let vec_source_actor = SourceActor {
-            source: Box::new(vec_source),
-            doc_processor_mailbox,
-        };
+        let vec_source_actor = SourceActor::new(Box::new(vec_source), doc_processor_mailbox);
         assert_eq!(
             vec_source_actor.name(),
             r#"VecSource { source_id: "test-vec-source" }"#
@@ -195,7 +195,8 @@ mod tests {
     #[tokio::test]
     async fn test_vec_source_from_checkpoint() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
-        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
         let docs = (0..10).map(|i| Bytes::from(format!("{i}"))).collect();
         let params = VecSourceParams {
             docs,
@@ -216,10 +217,7 @@ mod tests {
             .with_mock_metastore(Some(source_delta))
             .build();
         let vec_source = VecSourceFactory::typed_create_source(source_runtime, params).await?;
-        let vec_source_actor = SourceActor {
-            source: Box::new(vec_source),
-            doc_processor_mailbox,
-        };
+        let vec_source_actor = SourceActor::new(Box::new(vec_source), doc_processor_mailbox);
         let (_vec_source_mailbox, vec_source_handle) =
             universe.spawn_builder().spawn(vec_source_actor);
         let (actor_termination, last_observation) = vec_source_handle.join().await;

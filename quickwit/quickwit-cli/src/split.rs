@@ -261,9 +261,10 @@ impl SplitCliCommand {
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
-        let split_id = matches
+        let split_id: SplitId = matches
             .remove_one::<String>("split")
-            .expect("`split` should be a required arg.");
+            .expect("`split` should be a required arg.")
+            .into();
         let client_args = ClientArgs::parse(&mut matches)?;
         let verbose = matches.get_flag("verbose");
 
@@ -345,7 +346,7 @@ async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
         .await
         .expect("Failed to fetch splits.")
         .into_iter()
-        .find(|split| split.split_id() == args.split_id)
+        .find(|split| split.split_id() == args.split_id.as_str())
         .with_context(|| {
             format!(
                 "could not find split metadata in metastore {}",
@@ -418,7 +419,7 @@ fn make_split_table(splits: &[Split], title: &str) -> Table {
 }
 
 fn parse_date(date_arg: &str, option_name: &str) -> anyhow::Result<OffsetDateTime> {
-    let description = format_description::parse("[year]-[month]-[day]")?;
+    let description = format_description::parse_borrowed::<2>("[year]-[month]-[day]")?;
     if let Ok(date) = Date::parse(date_arg, &description) {
         return Ok(date.with_hms(0, 0, 0)?.assume_utc());
     }
@@ -429,7 +430,7 @@ fn parse_date(date_arg: &str, option_name: &str) -> anyhow::Result<OffsetDateTim
         "[year]-[month]-[day]T[hour]:[minute]",
         "[year]-[month]-[day]T[hour]:[minute]:[second]",
     ] {
-        let description = format_description::parse(datetime_format)?;
+        let description = format_description::parse_borrowed::<2>(datetime_format)?;
         if let Ok(datetime) = PrimitiveDateTime::parse(date_arg, &description) {
             return Ok(datetime.assume_utc());
         }

@@ -20,6 +20,7 @@ pub mod postgres;
 pub mod control_plane_metastore;
 
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
@@ -676,13 +677,42 @@ pub struct ListSplitsQuery {
 
     /// Only return splits whose (index_uid, split_id) are lexicographically after this split
     pub after_split: Option<(IndexUid, SplitId)>,
+
+    /// Include only splits whose `split_id` appears in this set. An empty set means no inclusion
+    /// filter.
+    ///
+    /// `#[serde(default)]` keeps this field optional on the wire: the query crosses nodes as JSON,
+    /// so during a rolling upgrade an older caller serializes it without this key and an upgraded
+    /// metastore must still deserialize the query (an absent set defaults to an empty set).
+    #[serde(default, skip_serializing_if = "HashSet::is_empty")]
+    pub included_split_ids: HashSet<SplitId>,
+
+    /// Exclude any split whose `split_id` appears in this set. Empty means no
+    /// exclusion.
+    ///
+    /// `#[serde(default)]` keeps this field optional on the wire: the query crosses nodes as JSON,
+    /// so during a rolling upgrade an older caller serializes it without this key and an upgraded
+    /// metastore must still deserialize the query (an absent set means "no exclusion").
+    #[serde(default)]
+    pub excluded_split_ids: HashSet<SplitId>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+/// Ordering applied to the result of a [`ListSplitsQuery`].
 pub enum SortBy {
+    /// No ordering — the metastore may return splits in any order.
     None,
+    /// Order by `(delete_opstamp ASC, publish_timestamp ASC)`. Used by the
+    /// delete pipeline to process the splits with the most pending delete
+    /// work first.
     Staleness,
+    /// Order by `(index_uid ASC, split_id ASC)`, matching the splits-table
+    /// primary key. Used for stable pagination across all indexes.
     IndexUid,
+    /// Order by `(maturity_timestamp ASC, split_id ASC)`. Used by the
+    /// compaction planner so that under a backlog the splits closest to
+    /// becoming mature are processed first.
+    MaturityTimestamp,
 }
 
 impl SortBy {
@@ -702,6 +732,16 @@ impl SortBy {
                 .split_metadata
                 .index_uid
                 .cmp(&right_split.split_metadata.index_uid)
+                .then_with(|| {
+                    left_split
+                        .split_metadata
+                        .split_id
+                        .cmp(&right_split.split_metadata.split_id)
+                }),
+            SortBy::MaturityTimestamp => left_split
+                .split_metadata
+                .maturity_unix_timestamp()
+                .cmp(&right_split.split_metadata.maturity_unix_timestamp())
                 .then_with(|| {
                     left_split
                         .split_metadata
@@ -731,6 +771,8 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            included_split_ids: HashSet::new(),
+            excluded_split_ids: HashSet::new(),
         }
     }
 
@@ -755,6 +797,8 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            included_split_ids: HashSet::new(),
+            excluded_split_ids: HashSet::new(),
         })
     }
 
@@ -775,6 +819,8 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            included_split_ids: HashSet::new(),
+            excluded_split_ids: HashSet::new(),
         }
     }
 
@@ -958,10 +1004,29 @@ impl ListSplitsQuery {
         self
     }
 
+    /// Sorts the splits by maturity_timestamp ascending, with split_id as a tiebreaker.
+    pub fn sort_by_maturity_timestamp(mut self) -> Self {
+        self.sort_by = SortBy::MaturityTimestamp;
+        self
+    }
+
     /// Only return splits whose (index_uid, split_id) are lexicographically after this split.
     /// This is only useful if results are sorted by index_uid and split_id.
     pub fn after_split(mut self, split_meta: &SplitMetadata) -> Self {
         self.after_split = Some((split_meta.index_uid.clone(), split_meta.split_id.clone()));
+        self
+    }
+
+    /// Excludes splits whose `split_id` is in the provided set. Used by the
+    /// compaction planner to skip splits it is already tracking locally.
+    pub fn with_excluded_split_ids(mut self, excluded_split_ids: HashSet<SplitId>) -> Self {
+        self.excluded_split_ids = excluded_split_ids;
+        self
+    }
+
+    /// Includes only splits whose `split_id` is in the provided set.
+    pub fn with_included_split_ids(mut self, included_split_ids: HashSet<SplitId>) -> Self {
+        self.included_split_ids = included_split_ids;
         self
     }
 }
@@ -1187,5 +1252,52 @@ mod tests {
         let indexes_metadata = response.deserialize_indexes_metadata().await.unwrap();
         assert_eq!(indexes_metadata.len(), 1);
         assert_eq!(indexes_metadata[0], index_metadata);
+    }
+
+    #[test]
+    fn test_list_splits_query_excluded_split_ids_backward_compatible_serde() {
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
+        let query = ListSplitsQuery::for_index(index_uid)
+            .with_excluded_split_ids(HashSet::from([SplitId::new()]));
+
+        let mut query_value: serde_json::Value =
+            serde_json::from_str(&serde_utils::to_json_str(&query).unwrap()).unwrap();
+        query_value
+            .as_object_mut()
+            .unwrap()
+            .remove("excluded_split_ids")
+            .expect("freshly serialized query should contain the field before removal");
+
+        let request = ListSplitsRequest {
+            query_json: query_value.to_string(),
+        };
+        let deserialized = request.deserialize_list_splits_query().unwrap();
+        assert!(deserialized.excluded_split_ids.is_empty());
+    }
+
+    #[test]
+    fn test_list_splits_query_included_split_ids_backward_compatible_serde() {
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
+        let query = ListSplitsQuery::for_index(index_uid)
+            .with_included_split_ids(HashSet::from([SplitId::new()]));
+
+        let mut query_value: serde_json::Value =
+            serde_json::from_str(&serde_utils::to_json_str(&query).unwrap()).unwrap();
+        query_value
+            .as_object_mut()
+            .unwrap()
+            .remove("included_split_ids")
+            .expect("freshly serialized query should contain the field before removal");
+
+        let request = ListSplitsRequest {
+            query_json: query_value.to_string(),
+        };
+        let deserialized = request.deserialize_list_splits_query().unwrap();
+        assert!(deserialized.included_split_ids.is_empty());
+
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"));
+        let query_value: serde_json::Value =
+            serde_json::from_str(&serde_utils::to_json_str(&query).unwrap()).unwrap();
+        assert!(query_value.get("included_split_ids").is_none());
     }
 }

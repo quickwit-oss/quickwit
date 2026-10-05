@@ -12,61 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use once_cell::sync::Lazy;
-use quickwit_common::metrics::{
-    IntCounter, IntCounterVec, IntGaugeVec, new_counter, new_counter_vec, new_gauge_vec,
-};
+use quickwit_metrics::{LazyCounter, LazyGauge, lazy_counter, lazy_gauge};
 
-pub struct JanitorMetrics {
-    pub ongoing_num_delete_operations_total: IntGaugeVec<1>,
-    pub gc_deleted_splits: IntCounterVec<1>,
-    pub gc_deleted_bytes: IntCounter,
-    pub gc_runs: IntCounterVec<1>,
-    pub gc_seconds_total: IntCounter,
-    // TODO having a current run duration which is 0|undefined out of run, and returns `now -
-    // start_time` during a run would be nice
-}
+pub(crate) static ONGOING_NUM_DELETE_OPERATIONS_TOTAL: LazyGauge = lazy_gauge!(
+        name: "ongoing_num_delete_operations_total",
+        description: "Num of ongoing delete operations (per index).",
+        subsystem: "janitor",
+);
 
-impl Default for JanitorMetrics {
-    fn default() -> Self {
-        JanitorMetrics {
-            ongoing_num_delete_operations_total: new_gauge_vec(
-                "ongoing_num_delete_operations_total",
-                "Num of ongoing delete operations (per index).",
-                "quickwit_janitor",
-                &[],
-                ["index"],
-            ),
-            gc_deleted_splits: new_counter_vec(
-                "gc_deleted_splits_total",
-                "Total number of splits deleted by the garbage collector.",
-                "quickwit_janitor",
-                &[],
-                ["result"],
-            ),
-            gc_deleted_bytes: new_counter(
-                "gc_deleted_bytes_total",
-                "Total number of bytes deleted by the garbage collector.",
-                "quickwit_janitor",
-                &[],
-            ),
-            gc_runs: new_counter_vec(
-                "gc_runs_total",
-                "Total number of garbage collector execition.",
-                "quickwit_janitor",
-                &[],
-                ["result"],
-            ),
-            gc_seconds_total: new_counter(
-                "gc_seconds_total",
-                "Total time spent running the garbage collector",
-                "quickwit_janitor",
-                &[],
-            ),
-        }
-    }
-}
+pub(crate) static GC_DELETED_SPLITS: LazyCounter = lazy_counter!(
+        name: "gc_deleted_splits_total",
+        description: "Total number of splits deleted by the garbage collector.",
+        subsystem: "janitor",
+);
 
-/// `JANITOR_METRICS` exposes a bunch of related metrics through a prometheus
-/// endpoint.
-pub static JANITOR_METRICS: Lazy<JanitorMetrics> = Lazy::new(JanitorMetrics::default);
+pub(crate) static GC_DELETED_BYTES: LazyCounter = lazy_counter!(
+        name: "gc_deleted_bytes_total",
+        description: "Total number of bytes deleted by the garbage collector.",
+        subsystem: "janitor",
+);
+
+pub(crate) static GC_RUNS: LazyCounter = lazy_counter!(
+        name: "gc_runs_total",
+        description: "Total number of garbage collector execition.",
+        subsystem: "janitor",
+);
+
+pub(crate) static GC_SECONDS_TOTAL: LazyCounter = lazy_counter!(
+        name: "gc_seconds_total",
+        description: "Total time spent running the garbage collector",
+        subsystem: "janitor",
+);

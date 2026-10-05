@@ -39,6 +39,8 @@ use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, Source
 pub(super) use shard_table::{ScalingMode, ShardEntry, ShardLocations, ShardStats, ShardTable};
 use tracing::{debug, error, info, instrument, warn};
 
+use crate::metrics::INDEXES_TOTAL;
+
 /// The control plane maintains a model in sync with the metastore.
 ///
 /// The model stays consistent with the metastore, because all
@@ -167,9 +169,7 @@ impl ControlPlaneModel {
     }
 
     fn update_metrics(&self) {
-        crate::metrics::CONTROL_PLANE_METRICS
-            .indexes_total
-            .set(self.index_table.len() as i64);
+        INDEXES_TOTAL.set(self.index_table.len() as f64);
     }
 
     pub(crate) fn source_configs(&self) -> impl Iterator<Item = (SourceUid, &SourceConfig)> + '_ {
@@ -358,16 +358,16 @@ impl ControlPlaneModel {
             .insert_shards(index_uid, source_id, opened_shards);
     }
 
-    /// Finds open shards for a given index and source and whose leaders are not in the set of
+    /// Finds open shards for a given index and source and whose ingesters are not in the set of
     /// unavailable ingesters.
     pub fn find_open_shards(
         &self,
         index_uid: &IndexUid,
         source_id: &SourceId,
-        unavailable_leaders: &FnvHashSet<NodeId>,
+        unavailable_ingesters: &FnvHashSet<NodeId>,
     ) -> Option<Vec<ShardEntry>> {
         self.shard_table
-            .find_open_shards(index_uid, source_id, unavailable_leaders)
+            .find_open_shards(index_uid, source_id, unavailable_ingesters)
     }
 
     /// Updates the state and ingestion rate of the shards according to the given shard infos.
@@ -667,7 +667,7 @@ mod tests {
                             index_uid: Some(index_uid0_clone.clone()),
                             source_id: INGEST_V2_SOURCE_ID.to_string(),
                             shard_state: ShardState::Open as i32,
-                            leader_id: "node1".to_string(),
+                            ingester_id: "test-ingester".to_string(),
                             ..Default::default()
                         }],
                     },
@@ -770,7 +770,7 @@ mod tests {
 
         // Update the index config
         let mut index_config = index_metadata.index_config.clone();
-        index_config.search_settings.default_search_fields = vec!["myfield".to_string()];
+        index_config.search_settings.default_search_fields = vec!["test-field".to_string()];
         model
             .update_index_config(&index_uid, index_config.clone())
             .unwrap();
@@ -786,8 +786,8 @@ mod tests {
     fn test_control_plane_model_update_sources() {
         let mut model = ControlPlaneModel::default();
         let mut index_metadata = IndexMetadata::for_test("test-index", "ram:///indexes");
-        let mut my_source = SourceConfig::for_test("my-source", SourceParams::void());
-        index_metadata.add_source(my_source.clone()).unwrap();
+        let mut source_config = SourceConfig::for_test("test-source", SourceParams::void());
+        index_metadata.add_source(source_config.clone()).unwrap();
         index_metadata
             .add_source(SourceConfig::ingest_v2())
             .unwrap();
@@ -795,8 +795,11 @@ mod tests {
         model.add_index(index_metadata.clone());
 
         // Update a source
-        my_source.transform_config = Some(TransformConfig::new("del(.username)".to_string(), None));
-        model.update_source(&index_uid, my_source.clone()).unwrap();
+        source_config.transform_config =
+            Some(TransformConfig::new("del(.username)".to_string(), None));
+        model
+            .update_source(&index_uid, source_config.clone())
+            .unwrap();
 
         assert_eq!(model.index_table.len(), 1);
         assert_eq!(
@@ -805,9 +808,9 @@ mod tests {
                 .get(&index_uid)
                 .unwrap()
                 .sources
-                .get("my-source")
+                .get("test-source")
                 .unwrap(),
-            &my_source
+            &source_config
         );
     }
 

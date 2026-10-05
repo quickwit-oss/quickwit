@@ -137,6 +137,7 @@ impl DeveloperServiceClient {
 }
 #[async_trait::async_trait]
 impl DeveloperService for DeveloperServiceClient {
+    #[tracing::instrument(skip_all, name = "developer.get_debug_info")]
     async fn get_debug_info(
         &self,
         request: GetDebugInfoRequest,
@@ -465,9 +466,13 @@ where
         &self,
         request: GetDebugInfoRequest,
     ) -> crate::developer::DeveloperResult<GetDebugInfoResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .get_debug_info(request)
+            .get_debug_info(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -495,14 +500,26 @@ impl developer_service_grpc_server::DeveloperServiceGrpc
 for DeveloperServiceGrpcServerAdapter {
     async fn get_debug_info(
         &self,
-        request: tonic::Request<GetDebugInfoRequest>,
+        tonic_request: tonic::Request<GetDebugInfoRequest>,
     ) -> Result<tonic::Response<GetDebugInfoResponse>, tonic::Status> {
-        self.inner
-            .0
-            .get_debug_info(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("developer.get_debug_info");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .get_debug_info(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
 }
 /// Generated client implementations.

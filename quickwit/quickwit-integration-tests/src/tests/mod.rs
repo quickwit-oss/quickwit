@@ -13,10 +13,12 @@
 // limitations under the License.
 
 mod basic_tests;
+mod compactor_tests;
 mod ingest_v1_tests;
 mod ingest_v2_tests;
 mod no_cp_tests;
 mod otlp_tests;
+mod serve_failure_tests;
 #[cfg(feature = "sqs-localstack-tests")]
 mod sqs_tests;
 mod tls_tests;

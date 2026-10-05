@@ -19,7 +19,9 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
+use anyhow::{bail, ensure};
 use bytesize::ByteSize;
+use quickwit_proto::metastore::SplitRecoveryMetadata;
 use quickwit_proto::types::{DocMappingUid, IndexUid, SourceId, SplitId};
 use serde::{Deserialize, Serialize};
 use serde_with::{DurationMilliSeconds, serde_as};
@@ -47,7 +49,7 @@ pub struct Split {
 
 impl Split {
     /// Returns the split_id.
-    pub fn split_id(&self) -> &str {
+    pub fn split_id(&self) -> &SplitId {
         &self.split_metadata.split_id
     }
 }
@@ -181,6 +183,70 @@ impl fmt::Debug for SplitMetadata {
 }
 
 impl SplitMetadata {
+    /// Reconstructs metastore split metadata and its direct parents from metadata embedded in a
+    /// split bundle.
+    pub fn try_from_recovery_metadata(
+        recovery_metadata: SplitRecoveryMetadata,
+        footer_offsets: Range<u64>,
+    ) -> anyhow::Result<(Self, Vec<SplitId>)> {
+        let SplitRecoveryMetadata {
+            split_id,
+            index_uid,
+            source_id,
+            node_id,
+            doc_mapping_uid,
+            partition_id,
+            num_docs,
+            uncompressed_docs_size_bytes,
+            time_range_start_inclusive,
+            time_range_end_inclusive,
+            create_timestamp,
+            tags,
+            delete_opstamp,
+            num_merge_ops,
+            parent_split_ids,
+            maturation_period_millis,
+        } = recovery_metadata;
+        let time_range = match (time_range_start_inclusive, time_range_end_inclusive) {
+            (Some(start), Some(end)) if start <= end => Some(start..=end),
+            (None, None) => None,
+            (Some(start), Some(end)) => {
+                bail!("invalid recovery time range: start {start} is after end {end}")
+            }
+            _ => bail!("recovery time range must contain both start and end"),
+        };
+        ensure!(
+            !footer_offsets.is_empty(),
+            "invalid recovery footer offsets"
+        );
+        let maturity = match maturation_period_millis {
+            Some(maturation_period_millis) => SplitMaturity::Immature {
+                maturation_period: Duration::from_millis(maturation_period_millis),
+            },
+            None => SplitMaturity::Mature,
+        };
+        let split_metadata = Self {
+            split_id: split_id.into(),
+            index_uid: index_uid.ok_or_else(|| anyhow::anyhow!("missing recovery index UID"))?,
+            partition_id,
+            source_id,
+            node_id,
+            num_docs: num_docs.try_into()?,
+            uncompressed_docs_size_in_bytes: uncompressed_docs_size_bytes,
+            time_range,
+            create_timestamp,
+            maturity,
+            tags: tags.into_iter().collect(),
+            footer_offsets,
+            delete_opstamp,
+            num_merge_ops: num_merge_ops.try_into()?,
+            doc_mapping_uid: doc_mapping_uid
+                .ok_or_else(|| anyhow::anyhow!("missing recovery doc mapping UID"))?,
+        };
+        let parent_split_ids = parent_split_ids.into_iter().map(SplitId::from).collect();
+        Ok((split_metadata, parent_split_ids))
+    }
+
     /// Creates a new instance of split metadata.
     pub fn new(
         split_id: SplitId,
@@ -201,7 +267,7 @@ impl SplitMetadata {
     }
 
     /// Returns the split_id.
-    pub fn split_id(&self) -> &str {
+    pub fn split_id(&self) -> &SplitId {
         &self.split_id
     }
 
@@ -214,6 +280,18 @@ impl SplitMetadata {
             } => {
                 self.create_timestamp + time_to_maturity.as_secs() as i64
                     <= datetime.unix_timestamp()
+            }
+        }
+    }
+
+    /// Returns the unix timestamp at which the split becomes mature, or 0 if
+    /// the split is already mature (matching the metastore's stored
+    /// `maturity_timestamp` column).
+    pub fn maturity_unix_timestamp(&self) -> i64 {
+        match self.maturity {
+            SplitMaturity::Mature => 0,
+            SplitMaturity::Immature { maturation_period } => {
+                self.create_timestamp + maturation_period.as_secs() as i64
             }
         }
     }
@@ -264,7 +342,7 @@ pub struct SplitInfo {
 impl quickwit_config::TestableForRegression for SplitMetadata {
     fn sample_for_regression() -> Self {
         SplitMetadata {
-            split_id: "split".to_string(),
+            split_id: "split".into(),
             index_uid: IndexUid::for_test("my-index", 1),
             source_id: "source".to_string(),
             node_id: "node".to_string(),
@@ -398,7 +476,7 @@ mod tests {
     #[test]
     fn test_split_metadata_debug() {
         let split_metadata = SplitMetadata {
-            split_id: "split-1".to_string(),
+            split_id: "split-1".into(),
             index_uid: IndexUid::for_test("00000000-0000-0000-0000-000000000000", 0),
             partition_id: 0,
             source_id: "source-1".to_string(),

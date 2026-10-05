@@ -134,7 +134,7 @@ pub async fn test_metastore_publish_splits<
 
     let split_id_1 = format!("{index_id}--split-1");
     let split_metadata_1 = SplitMetadata {
-        split_id: split_id_1.clone(),
+        split_id: split_id_1.clone().into(),
         index_uid: index_uid.clone(),
         time_range: Some(0..=99),
         create_timestamp: current_timestamp,
@@ -143,7 +143,7 @@ pub async fn test_metastore_publish_splits<
 
     let split_id_2 = format!("{index_id}--split-2");
     let split_metadata_2 = SplitMetadata {
-        split_id: split_id_2.clone(),
+        split_id: split_id_2.clone().into(),
         index_uid: index_uid.clone(),
         time_range: Some(30..=99),
         create_timestamp: current_timestamp,
@@ -715,7 +715,7 @@ pub async fn test_metastore_publish_splits_concurrency<
             async move {
                 let split_id = format!("{index_id}--split-{partition_id}");
                 let split_metadata = SplitMetadata {
-                    split_id: split_id.clone(),
+                    split_id: split_id.clone().into(),
                     index_uid: index_uid.clone(),
                     ..Default::default()
                 };
@@ -784,7 +784,7 @@ pub async fn test_metastore_replace_splits<
 
     let split_id_1 = format!("{index_id}--split-1");
     let split_metadata_1 = SplitMetadata {
-        split_id: split_id_1.clone(),
+        split_id: split_id_1.clone().into(),
         index_uid: index_uid.clone(),
         time_range: None,
         create_timestamp: current_timestamp,
@@ -793,7 +793,7 @@ pub async fn test_metastore_replace_splits<
 
     let split_id_2 = format!("{index_id}--split-2");
     let split_metadata_2 = SplitMetadata {
-        split_id: split_id_2.clone(),
+        split_id: split_id_2.clone().into(),
         index_uid: index_uid.clone(),
         time_range: None,
         create_timestamp: current_timestamp,
@@ -802,7 +802,7 @@ pub async fn test_metastore_replace_splits<
 
     let split_id_3 = format!("{index_id}--split-3");
     let split_metadata_3 = SplitMetadata {
-        split_id: split_id_3.clone(),
+        split_id: split_id_3.clone().into(),
         index_uid: index_uid.clone(),
         time_range: None,
         create_timestamp: current_timestamp,
@@ -1135,7 +1135,7 @@ pub async fn test_metastore_mark_splits_for_deletion<
         "index-not-found:00000000000000000000000000"
             .parse()
             .unwrap(),
-        Vec::new(),
+        Vec::<String>::new(),
     );
     let error = metastore
         .mark_splits_for_deletion(mark_splits_for_deletion_request)
@@ -1155,7 +1155,7 @@ pub async fn test_metastore_mark_splits_for_deletion<
 
     let split_id_1 = format!("{index_id}--split-1");
     let split_metadata_1 = SplitMetadata {
-        split_id: split_id_1.clone(),
+        split_id: split_id_1.clone().into(),
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         ..Default::default()
@@ -1166,7 +1166,7 @@ pub async fn test_metastore_mark_splits_for_deletion<
 
     let split_id_2 = format!("{index_id}--split-2");
     let split_metadata_2 = SplitMetadata {
-        split_id: split_id_2.clone(),
+        split_id: split_id_2.clone().into(),
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         ..Default::default()
@@ -1186,7 +1186,7 @@ pub async fn test_metastore_mark_splits_for_deletion<
 
     let split_id_3 = format!("{index_id}--split-3");
     let split_metadata_3 = SplitMetadata {
-        split_id: split_id_3.clone(),
+        split_id: split_id_3.clone().into(),
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         ..Default::default()
@@ -1228,7 +1228,7 @@ pub async fn test_metastore_mark_splits_for_deletion<
         .unwrap();
 
     assert_eq!(marked_splits.len(), 1);
-    assert_eq!(marked_splits[0].split_id(), split_id_3);
+    assert_eq!(marked_splits[0].split_id().as_str(), split_id_3);
 
     let split_3_update_timestamp = marked_splits[0].update_timestamp;
     assert!(current_timestamp < split_3_update_timestamp);
@@ -1267,13 +1267,13 @@ pub async fn test_metastore_mark_splits_for_deletion<
 
     assert_eq!(marked_splits.len(), 3);
 
-    assert_eq!(marked_splits[0].split_id(), split_id_1);
+    assert_eq!(marked_splits[0].split_id().as_str(), split_id_1);
     assert!(current_timestamp + 2 <= marked_splits[0].update_timestamp);
 
-    assert_eq!(marked_splits[1].split_id(), split_id_2);
+    assert_eq!(marked_splits[1].split_id().as_str(), split_id_2);
     assert!(current_timestamp + 2 <= marked_splits[1].update_timestamp);
 
-    assert_eq!(marked_splits[2].split_id(), split_id_3);
+    assert_eq!(marked_splits[2].split_id().as_str(), split_id_3);
     assert_eq!(marked_splits[2].update_timestamp, split_3_update_timestamp);
 
     cleanup_index(&mut metastore, index_uid).await;
@@ -1335,7 +1335,7 @@ pub async fn test_metastore_delete_splits<MetastoreToTest: MetastoreServiceExt +
 
     let split_id_1 = format!("{index_id}--split-1");
     let split_metadata_1 = SplitMetadata {
-        split_id: split_id_1.clone(),
+        split_id: split_id_1.clone().into(),
         index_uid: index_uid.clone(),
         ..Default::default()
     };
@@ -1354,7 +1354,7 @@ pub async fn test_metastore_delete_splits<MetastoreToTest: MetastoreServiceExt +
 
     let split_id_2 = format!("{index_id}--split-2");
     let split_metadata_2 = SplitMetadata {
-        split_id: split_id_2.clone(),
+        split_id: split_id_2.clone().into(),
         index_uid: index_uid.clone(),
         ..Default::default()
     };
@@ -1445,7 +1445,7 @@ pub async fn test_metastore_split_update_timestamp<
 
     let split_id = format!("{index_id}--split");
     let split_metadata = SplitMetadata {
-        split_id: split_id.clone(),
+        split_id: split_id.clone().into(),
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         ..Default::default()
@@ -1546,7 +1546,7 @@ pub async fn test_metastore_stage_splits<MetastoreToTest: MetastoreServiceExt + 
 
     let split_id_1 = format!("{index_id}--split-1");
     let split_metadata_1 = SplitMetadata {
-        split_id: split_id_1.clone(),
+        split_id: split_id_1.clone().into(),
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         delete_opstamp: 20,
@@ -1555,7 +1555,7 @@ pub async fn test_metastore_stage_splits<MetastoreToTest: MetastoreServiceExt + 
     };
     let split_id_2 = format!("{index_id}--split-2");
     let split_metadata_2 = SplitMetadata {
-        split_id: split_id_2.clone(),
+        split_id: split_id_2.clone().into(),
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         delete_opstamp: 10,
@@ -1606,10 +1606,10 @@ pub async fn test_metastore_stage_splits<MetastoreToTest: MetastoreServiceExt + 
     assert_eq!(splits.len(), 2);
     splits.sort_unstable_by(|left, right| left.split_id().cmp(right.split_id()));
 
-    assert_eq!(splits[0].split_id(), &split_id_1);
+    assert_eq!(splits[0].split_id().as_str(), &split_id_1);
     assert_eq!(splits[0].split_metadata.node_id, "node-1");
 
-    assert_eq!(splits[1].split_id(), &split_id_2);
+    assert_eq!(splits[1].split_id().as_str(), &split_id_2);
     assert_eq!(splits[1].split_metadata.node_id, "node-2");
 
     // Stage a existent-staged-split on an index
@@ -1681,7 +1681,7 @@ pub async fn test_metastore_update_splits_delete_opstamp<
 
     let split_id_1 = format!("{index_id}--split-1");
     let split_metadata_1 = SplitMetadata {
-        split_id: split_id_1.clone(),
+        split_id: split_id_1.clone().into(),
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         delete_opstamp: 20,
@@ -1689,7 +1689,7 @@ pub async fn test_metastore_update_splits_delete_opstamp<
     };
     let split_id_2 = format!("{index_id}--split-2");
     let split_metadata_2 = SplitMetadata {
-        split_id: split_id_2.clone(),
+        split_id: split_id_2.clone().into(),
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         delete_opstamp: 10,
@@ -1697,7 +1697,7 @@ pub async fn test_metastore_update_splits_delete_opstamp<
     };
     let split_id_3 = format!("{index_id}--split-3");
     let split_metadata_3 = SplitMetadata {
-        split_id: split_id_3.clone(),
+        split_id: split_id_3.clone().into(),
         index_uid: index_uid.clone(),
         create_timestamp: current_timestamp,
         delete_opstamp: 0,

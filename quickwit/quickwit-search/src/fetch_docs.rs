@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use anyhow::{Context, Ok};
-use futures::{StreamExt, TryStreamExt};
+use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use itertools::Itertools;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::search::{
@@ -28,7 +28,7 @@ use tantivy::schema::document::CompactDocValue;
 use tantivy::schema::{Document as DocumentTrait, Field, TantivyDocument, Value};
 use tantivy::snippet::SnippetGenerator;
 use tantivy::{ReloadPolicy, Score, Searcher, Term};
-use tracing::{Instrument, error};
+use tracing::{Instrument, error, instrument};
 
 use crate::leaf::open_index_with_caches;
 use crate::service::SearcherContext;
@@ -65,32 +65,27 @@ async fn fetch_docs_to_map(
         let split_and_offset = split_offsets_map
             .get(split_id)
             .ok_or_else(|| anyhow::anyhow!("failed to find offset for split {}", split_id))?;
-        split_fetch_docs_futures.push(fetch_docs_in_split(
-            searcher_context.clone(),
-            global_doc_addrs,
-            index_storage.clone(),
-            split_and_offset,
-            doc_mapper.clone(),
-            snippet_request_opt,
-        ));
+        let split_id = split_id.to_string();
+        split_fetch_docs_futures.push(
+            fetch_docs_in_split(
+                searcher_context.clone(),
+                global_doc_addrs,
+                index_storage.clone(),
+                split_and_offset,
+                doc_mapper.clone(),
+                snippet_request_opt,
+            )
+            .map_err(move |e| e.context(format!("split_id={split_id}"))),
+        );
     }
 
-    let split_fetch_docs: Vec<Vec<(GlobalDocAddress, Document)>> = futures::future::try_join_all(
-        split_fetch_docs_futures,
-    )
-    .await
-    .map_err(|error| {
-        let split_ids = splits
-            .iter()
-            .map(|split| split.split_id.clone())
-            .collect_vec();
-        error!(split_ids = ?split_ids, error = ?error, "error when fetching docs in splits");
-        anyhow::anyhow!(
-            "error when fetching docs for splits {:?}: {:?}",
-            split_ids,
-            error
-        )
-    })?;
+    let split_fetch_docs: Vec<Vec<(GlobalDocAddress, Document)>> =
+        futures::future::try_join_all(split_fetch_docs_futures)
+            .await
+            .map_err(|error| {
+                error!(error = ?error, "error when fetching docs in a split");
+                error
+            })?;
 
     let global_doc_addr_to_doc_json: HashMap<GlobalDocAddress, Document> = split_fetch_docs
         .into_iter()
@@ -158,6 +153,7 @@ struct Document {
 }
 
 /// Fetching docs from a specific split.
+#[instrument(skip_all, fields(split_id = split.split_id, num_docs = global_doc_addrs.len()))]
 async fn fetch_docs_in_split(
     searcher_context: Arc<SearcherContext>,
     mut global_doc_addrs: Vec<GlobalDocAddress>,
@@ -180,9 +176,7 @@ async fn fetch_docs_in_split(
     .context("open-index-for-split")?;
     // we add an executor here, we could add it in open_index_with_caches, though we should verify
     // the side-effect before
-    let tantivy_executor = crate::search_thread_pool()
-        .get_underlying_rayon_thread_pool()
-        .into();
+    let tantivy_executor = quickwit_common::thread_pool::get_underlying_rayon_thread_pool().into();
     index.set_executor(tantivy_executor);
     let index_reader = index
         .reader_builder()

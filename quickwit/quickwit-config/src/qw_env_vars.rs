@@ -13,8 +13,7 @@
 // limitations under the License.
 
 use std::collections::HashMap;
-
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 /// Expands the list of QW environment variables into constants of the form `const <ENV_VAR_KEY>:
 /// usize = <env var index>;` and builds the map `QW_EN_VARS` of environment variable index to
@@ -31,7 +30,7 @@ macro_rules! qw_env_vars {
     ($($ident:ident),*) => {
         qw_env_vars!(@step 0usize, $($ident,)*);
 
-        pub(crate) static QW_ENV_VARS: Lazy<HashMap<usize, &'static str>> = Lazy::new(|| {
+        pub(crate) static QW_ENV_VARS: LazyLock<HashMap<usize, &'static str>> = LazyLock::new(|| {
             let mut env_vars = HashMap::new();
             $(env_vars.insert($ident, stringify!($ident));)*
             env_vars
@@ -43,20 +42,26 @@ macro_rules! qw_env_vars {
 // which must be declared first.
 qw_env_vars!(
     QW_NONE,
-    QW_CLUSTER_ID,
-    QW_NODE_ID,
-    QW_AVAILABILITY_ZONE,
-    QW_ENABLED_SERVICES,
-    QW_LISTEN_ADDRESS,
     QW_ADVERTISE_ADDRESS,
-    QW_REST_LISTEN_PORT,
-    QW_GOSSIP_LISTEN_PORT,
-    QW_GRPC_LISTEN_PORT,
-    QW_GOSSIP_INTERVAL_MS,
-    QW_PEER_SEEDS,
+    QW_AVAILABILITY_ZONE,
+    QW_CLUSTER_ID,
     QW_DATA_DIR,
+    QW_DEFAULT_INDEX_ROOT_URI,
+    QW_DISABLE_DOCS_CLUSTERING,
+    QW_ENABLED_SERVICES,
+    QW_ENABLE_STANDALONE_COMPACTORS,
+    QW_EXTRA_CLUSTER_IDS,
+    QW_GOSSIP_INTERVAL_MS,
+    QW_GOSSIP_LISTEN_PORT,
+    QW_GOSSIP_PROTOCOL_VERSION,
+    QW_GRPC_LISTEN_PORT,
+    QW_HEALTH_LISTEN_PORT,
+    QW_LISTEN_ADDRESS,
+    QW_METASTORE_READ_REPLICA_URI,
     QW_METASTORE_URI,
-    QW_DEFAULT_INDEX_ROOT_URI
+    QW_NODE_ID,
+    QW_PEER_SEEDS,
+    QW_REST_LISTEN_PORT
 );
 
 #[cfg(test)]
@@ -68,10 +73,16 @@ mod tests {
     fn test_qw_env_vars_expansion() {
         assert_eq!(QW_NONE, 0);
 
-        assert_eq!(QW_CLUSTER_ID, 1);
+        assert_eq!(QW_CLUSTER_ID, 3);
         assert_eq!(QW_ENV_VARS.get(&QW_CLUSTER_ID).unwrap(), &"QW_CLUSTER_ID");
 
+        assert_eq!(
+            QW_ENV_VARS.get(&QW_METASTORE_READ_REPLICA_URI).unwrap(),
+            &"QW_METASTORE_READ_REPLICA_URI"
+        );
+        assert_eq!(QW_METASTORE_READ_REPLICA_URI, 16);
+
         assert_eq!(QW_ENV_VARS.get(&QW_NODE_ID).unwrap(), &"QW_NODE_ID");
-        assert_eq!(QW_NODE_ID, 2);
+        assert_eq!(QW_NODE_ID, 18);
     }
 }

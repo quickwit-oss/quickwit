@@ -48,7 +48,7 @@ This section contains one configuration subsection per storage provider. If a st
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| `flavor` |  The optional storage flavor to use. Available flavors are `digital_ocean`, `garage`, `gcs`, and `minio`. | |
+| `flavor` | The optional storage flavor to use. Available flavors are `digital_ocean`, `garage`, `gcs`, and `minio`. | |
 | `access_key_id` | The AWS access key ID. | |
 | `secret_access_key` | The AWS secret access key. | |
 | `region` | The AWS region to send requests to. | `us-east-1` (SDK default) |
@@ -56,6 +56,8 @@ This section contains one configuration subsection per storage provider. If a st
 | `force_path_style_access` | Disables [virtual-hosted–style](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html) requests. Required by some S3-compatible providers (Ceph, MinIO). | `false` |
 | `disable_multi_object_delete` | Disables [Multi-Object Delete](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html) requests. Required by some S3-compatible providers (GCS). | `false` |
 | `disable_multipart_upload` | Disables [multipart upload](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html) of objects. Required by some S3-compatible providers (GCS). | `false` |
+| `checksum_algorithm` | Upload [checksum](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html) algorithm. Allowed values: `crc32c` (computed and validated by the AWS SDK), `md5` (sent client-side via `Content-MD5`; useful for S3-compatible providers that predate `x-amz-checksum-*`), or `disabled`.  | `crc32c` |
+| `disable_checksums` | **Deprecated.** Previously a boolean that disabled all request/response checksums. Equivalent to setting `checksum_algorithm: disabled`. | `false` |
 
 :::warning
 Hardcoding credentials into configuration files is not secure and strongly discouraged. Prefer the alternative authentication methods that your storage backend may provide.
@@ -66,7 +68,7 @@ Hardcoding credentials into configuration files is not secure and strongly disco
 | Env variable | Description |
 | --- | --- |
 | `QW_S3_ENDPOINT` | Custom S3 endpoint. |
-| `QW_S3_MAX_CONCURRENCY` | Limit the number of concurrent requests to S3 |
+| `QW_S3_MAX_CONCURRENCY` | Limit the number of concurrent requests to object storages, including S3 and GCS |
 
 #### Storage flavors
 
@@ -86,7 +88,7 @@ The Garage flavor (`garage`) overrides the `region` parameter to `garage` and fo
 
 *Google Cloud Storage*
 
-The Google Cloud Storage flavor (`gcs`) turns off multi-object delete requests and multipart uploads.
+The Google Cloud Storage flavor (`gcs`) turns off multi-object delete requests, multipart uploads, and disables checksums.
 
 *MinIO flavor*
 
@@ -108,6 +110,8 @@ storage:
 | --- | --- | --- |
 | `account` | The Azure storage account name. | |
 | `access_key` | The Azure storage account access key. | |
+| `endpoint` | Custom blob service endpoint URL. | SDK default (`https://<account>.blob.core.windows.net`) |
+| `endpoint_suffix` | Blob service endpoint suffix for sovereign clouds. Ignored when `endpoint` is set. | SDK default (`core.windows.net`) |
 
 #### Environment variables
 
@@ -115,6 +119,8 @@ storage:
 | --- | --- |
 | `QW_AZURE_STORAGE_ACCOUNT` | Azure Blob Storage account name. |
 | `QW_AZURE_STORAGE_ACCESS_KEY` | Azure Blob Storage account access key. |
+| `QW_AZURE_ENDPOINT` | Custom blob service endpoint URL. |
+| `QW_AZURE_ENDPOINT_SUFFIX` | Blob service endpoint suffix for sovereign clouds. |
 
 Example of a storage configuration for Azure in YAML format:
 
@@ -123,6 +129,24 @@ storage:
   azure:
     account: your-azure-account-name
     access_key: your-azure-access-key
+```
+
+Example for Azure US Government:
+
+```yaml
+storage:
+  azure:
+    account: your-azure-account-name
+    endpoint_suffix: core.usgovcloudapi.net
+```
+
+Example for Azure China:
+
+```yaml
+storage:
+  azure:
+    account: your-azure-account-name
+    endpoint_suffix: core.chinacloudapi.cn
 ```
 
 ## Storage configuration examples for various object storage providers

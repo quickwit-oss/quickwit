@@ -129,7 +129,9 @@ impl SourceConfigForSerialization {
             | SourceParams::File(FileSourceParams::Notifications(_)) => {}
             _ => {
                 if self.num_pipelines > 1 {
-                    bail!("Quickwit currently supports multiple pipelines only for GCP PubSub or Kafka sources. open an issue https://github.com/quickwit-oss/quickwit/issues if you need the feature for other source types");
+                    bail!(
+                        "Quickwit currently supports multiple pipelines only for GCP PubSub or Kafka sources. open an issue https://github.com/quickwit-oss/quickwit/issues if you need the feature for other source types"
+                    );
                 }
             }
         }

@@ -18,9 +18,12 @@ use tantivy::aggregation::Key as TantivyKey;
 use tantivy::aggregation::agg_result::{
     AggregationResult as TantivyAggregationResult, AggregationResults as TantivyAggregationResults,
     BucketEntries as TantivyBucketEntries, BucketEntry as TantivyBucketEntry,
-    BucketResult as TantivyBucketResult, MetricResult as TantivyMetricResult,
+    BucketResult as TantivyBucketResult, CompositeBucketEntry as TantivyCompositeBucketEntry,
+    CompositeKey as TantivyCompositeKey, MetricResult as TantivyMetricResult,
+    MultiTermsBucketEntry as TantivyMultiTermsBucketEntry,
     RangeBucketEntry as TantivyRangeBucketEntry,
 };
+use tantivy::aggregation::bucket::AfterKey as TantivyAfterKey;
 use tantivy::aggregation::metric::{
     ExtendedStats, PercentileValues as TantivyPercentileValues, PercentileValuesVecEntry,
     PercentilesMetricResult as TantivyPercentilesMetricResult, SingleMetricResult, Stats,
@@ -169,6 +172,26 @@ pub enum BucketResult {
         /// The upper bound error for the doc count of each term.
         doc_count_error_upper_bound: Option<u64>,
     },
+    /// This is the composite aggregation result
+    Composite {
+        /// The buckets
+        buckets: Vec<CompositeBucketEntry>,
+        /// The key to start after when paginating.
+        /// Uses tantivy's AfterKey directly since it carries type-tagged
+        /// serialization needed for correct pagination round-tripping.
+        after_key: FxHashMap<String, TantivyAfterKey>,
+    },
+    /// This is the multi_terms result
+    MultiTerms {
+        /// The buckets, one per unique combination of field values.
+        ///
+        /// See `MultiTermsAggregation`
+        buckets: Vec<MultiTermsBucketEntry>,
+        /// The number of documents that didn’t make it into to TOP N due to shard_size or size
+        sum_other_doc_count: u64,
+        /// The upper bound error for the doc count of each term combination.
+        doc_count_error_upper_bound: Option<u64>,
+    },
 }
 
 impl From<TantivyBucketResult> for BucketResult {
@@ -192,6 +215,19 @@ impl From<TantivyBucketResult> for BucketResult {
             TantivyBucketResult::Filter(_filter_bucket_result) => {
                 unimplemented!("filter aggregation is not yet supported in quickwit")
             }
+            TantivyBucketResult::Composite { buckets, after_key } => BucketResult::Composite {
+                buckets: buckets.into_iter().map(Into::into).collect(),
+                after_key,
+            },
+            TantivyBucketResult::MultiTerms {
+                buckets,
+                sum_other_doc_count,
+                doc_count_error_upper_bound,
+            } => BucketResult::MultiTerms {
+                buckets: buckets.into_iter().map(Into::into).collect(),
+                sum_other_doc_count,
+                doc_count_error_upper_bound,
+            },
         }
     }
 }
@@ -210,6 +246,19 @@ impl From<BucketResult> for TantivyBucketResult {
                 sum_other_doc_count,
                 doc_count_error_upper_bound,
             } => TantivyBucketResult::Terms {
+                buckets: buckets.into_iter().map(Into::into).collect(),
+                sum_other_doc_count,
+                doc_count_error_upper_bound,
+            },
+            BucketResult::Composite { buckets, after_key } => TantivyBucketResult::Composite {
+                buckets: buckets.into_iter().map(Into::into).collect(),
+                after_key,
+            },
+            BucketResult::MultiTerms {
+                buckets,
+                sum_other_doc_count,
+                doc_count_error_upper_bound,
+            } => TantivyBucketResult::MultiTerms {
                 buckets: buckets.into_iter().map(Into::into).collect(),
                 sum_other_doc_count,
                 doc_count_error_upper_bound,
@@ -340,6 +389,40 @@ impl From<BucketEntry> for TantivyBucketEntry {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MultiTermsBucketEntry {
+    /// Pipe-joined string representation of all key elements, e.g. `"rock|Product A"`.
+    pub key_as_string: String,
+    /// The composite key: one [`Key`] per field in declaration order.
+    pub key: Vec<Key>,
+    /// Number of documents in the bucket.
+    pub doc_count: u64,
+    /// Sub-aggregations in this bucket.
+    pub sub_aggregation: AggregationResults,
+}
+
+impl From<TantivyMultiTermsBucketEntry> for MultiTermsBucketEntry {
+    fn from(value: TantivyMultiTermsBucketEntry) -> MultiTermsBucketEntry {
+        MultiTermsBucketEntry {
+            key_as_string: value.key_as_string,
+            key: value.key.into_iter().map(Into::into).collect(),
+            doc_count: value.doc_count,
+            sub_aggregation: value.sub_aggregation.into(),
+        }
+    }
+}
+
+impl From<MultiTermsBucketEntry> for TantivyMultiTermsBucketEntry {
+    fn from(value: MultiTermsBucketEntry) -> TantivyMultiTermsBucketEntry {
+        TantivyMultiTermsBucketEntry {
+            key_as_string: value.key_as_string,
+            key: value.key.into_iter().map(Into::into).collect(),
+            doc_count: value.doc_count,
+            sub_aggregation: value.sub_aggregation.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Key {
     /// String key
     Str(String),
@@ -411,5 +494,77 @@ impl From<PercentilesMetricResult> for TantivyPercentilesMetricResult {
             PercentileValues::HashMap(map) => TantivyPercentileValues::HashMap(map),
         };
         TantivyPercentilesMetricResult { values }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum CompositeKey {
+    /// Boolean key
+    Bool(bool),
+    /// String key
+    Str(String),
+    /// `i64` key
+    I64(i64),
+    /// `u64` key
+    U64(u64),
+    /// `f64` key
+    F64(f64),
+    /// Null key
+    Null,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CompositeBucketEntry {
+    /// The identifier of the bucket.
+    pub key: FxHashMap<String, CompositeKey>,
+    /// Number of documents in the bucket.
+    pub doc_count: u64,
+    /// Sub-aggregations in this bucket.
+    pub sub_aggregation: AggregationResults,
+}
+
+impl From<TantivyCompositeKey> for CompositeKey {
+    fn from(value: TantivyCompositeKey) -> CompositeKey {
+        match value {
+            TantivyCompositeKey::Bool(b) => CompositeKey::Bool(b),
+            TantivyCompositeKey::Str(s) => CompositeKey::Str(s),
+            TantivyCompositeKey::I64(i) => CompositeKey::I64(i),
+            TantivyCompositeKey::U64(u) => CompositeKey::U64(u),
+            TantivyCompositeKey::F64(f) => CompositeKey::F64(f),
+            TantivyCompositeKey::Null => CompositeKey::Null,
+        }
+    }
+}
+
+impl From<CompositeKey> for TantivyCompositeKey {
+    fn from(value: CompositeKey) -> TantivyCompositeKey {
+        match value {
+            CompositeKey::Bool(b) => TantivyCompositeKey::Bool(b),
+            CompositeKey::Str(s) => TantivyCompositeKey::Str(s),
+            CompositeKey::I64(i) => TantivyCompositeKey::I64(i),
+            CompositeKey::U64(u) => TantivyCompositeKey::U64(u),
+            CompositeKey::F64(f) => TantivyCompositeKey::F64(f),
+            CompositeKey::Null => TantivyCompositeKey::Null,
+        }
+    }
+}
+
+impl From<TantivyCompositeBucketEntry> for CompositeBucketEntry {
+    fn from(value: TantivyCompositeBucketEntry) -> CompositeBucketEntry {
+        CompositeBucketEntry {
+            key: value.key.into_iter().map(|(k, v)| (k, v.into())).collect(),
+            doc_count: value.doc_count,
+            sub_aggregation: value.sub_aggregation.into(),
+        }
+    }
+}
+
+impl From<CompositeBucketEntry> for TantivyCompositeBucketEntry {
+    fn from(value: CompositeBucketEntry) -> TantivyCompositeBucketEntry {
+        TantivyCompositeBucketEntry {
+            key: value.key.into_iter().map(|(k, v)| (k, v.into())).collect(),
+            doc_count: value.doc_count,
+            sub_aggregation: value.sub_aggregation.into(),
+        }
     }
 }

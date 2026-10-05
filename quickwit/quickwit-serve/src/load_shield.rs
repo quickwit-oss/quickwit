@@ -14,22 +14,23 @@
 
 use std::time::Duration;
 
-use quickwit_common::metrics::{GaugeGuard, IntGauge};
+use quickwit_metrics::{Gauge, GaugeGuard, gauge, labels};
 use tokio::sync::{Semaphore, SemaphorePermit};
 
+use crate::metrics::{ONGOING_REQUESTS, PENDING_REQUESTS};
 use crate::rest::TooManyRequests;
 
 pub struct LoadShield {
     in_flight_semaphore_opt: Option<Semaphore>, // This one is doing the load shedding.
     concurrency_semaphore_opt: Option<Semaphore>,
-    ongoing_gauge: IntGauge,
-    pending_gauge: IntGauge,
+    ongoing_gauge: Gauge,
+    pending_gauge: Gauge,
 }
 
 pub struct LoadShieldPermit {
     _concurrency_permit_opt: Option<SemaphorePermit<'static>>,
     _in_flight_permit_opt: Option<SemaphorePermit<'static>>,
-    _ongoing_gauge_guard: GaugeGuard<'static>,
+    _ongoing_gauge_guard: GaugeGuard,
 }
 
 impl LoadShield {
@@ -43,12 +44,9 @@ impl LoadShield {
             quickwit_common::get_from_env_opt(&max_concurrency_env_key, false);
         let in_flight_semaphore_opt = max_in_flight_opt.map(Semaphore::new);
         let concurrency_semaphore_opt = max_concurrency_opt.map(Semaphore::new);
-        let pending_gauge = crate::metrics::SERVE_METRICS
-            .pending_requests
-            .with_label_values([endpoint_group]);
-        let ongoing_gauge = crate::metrics::SERVE_METRICS
-            .ongoing_requests
-            .with_label_values([endpoint_group]);
+        let labels = labels!("endpoint_group" => endpoint_group);
+        let pending_gauge = gauge!(parent: PENDING_REQUESTS, labels: [labels]);
+        let ongoing_gauge = gauge!(parent: ONGOING_REQUESTS, labels: [labels]);
         LoadShield {
             in_flight_semaphore_opt,
             concurrency_semaphore_opt,
@@ -78,13 +76,11 @@ impl LoadShield {
     }
 
     pub async fn acquire_permit(&'static self) -> Result<LoadShieldPermit, warp::Rejection> {
-        let mut pending_gauge_guard = GaugeGuard::from_gauge(&self.pending_gauge);
-        pending_gauge_guard.add(1);
+        let pending_gauge_guard = GaugeGuard::new(&self.pending_gauge, 1.0);
         let in_flight_permit_opt = self.acquire_in_flight_permit().await?;
         let concurrency_permit_opt = self.acquire_concurrency_permit().await;
         drop(pending_gauge_guard);
-        let mut ongoing_gauge_guard = GaugeGuard::from_gauge(&self.ongoing_gauge);
-        ongoing_gauge_guard.add(1);
+        let ongoing_gauge_guard = GaugeGuard::new(&self.ongoing_gauge, 1.0);
         Ok(LoadShieldPermit {
             _in_flight_permit_opt: in_flight_permit_opt,
             _concurrency_permit_opt: concurrency_permit_opt,

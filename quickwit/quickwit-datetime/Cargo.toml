@@ -16,4 +16,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tantivy = { workspace = true }
 time = { workspace = true }
-time-fmt = "0.3.8"
+time-fmt = { workspace = true }

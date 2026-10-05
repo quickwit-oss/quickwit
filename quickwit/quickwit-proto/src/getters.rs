@@ -102,15 +102,13 @@ generate_getters! {
     PersistFailure,
     PersistSubrequest,
     PersistSuccess,
-    ReplicateFailure,
-    ReplicateSubrequest,
-    ReplicateSuccess,
     RetainShardsForSource,
     Shard,
     ShardIdPositions,
     ShardIds,
     ShardPKey,
     TruncateShardsSubrequest,
+    SourceShardUpdate,
 
     // Metastore API
     AcquireShardsRequest,
@@ -157,8 +155,7 @@ generate_clone_getters! {
     impl fn from_position_exclusive() -> Position {} for
 
     FetchPayload,
-    OpenFetchStreamRequest,
-    ReplicateSubrequest
+    OpenFetchStreamRequest
 }
 
 generate_clone_getters! {
@@ -172,12 +169,6 @@ generate_clone_getters! {
 
     Shard,
     ShardIdPosition
-}
-
-generate_clone_getters! {
-    impl fn replication_position_inclusive() -> Position {} for
-
-    ReplicateSuccess
 }
 
 generate_clone_getters! {
@@ -209,12 +200,7 @@ generate_getters! {
     InitShardFailure,
     OpenFetchStreamRequest,
     OpenShardSubrequest,
-    PersistFailure,
-    PersistSubrequest,
     PersistSuccess,
-    ReplicateFailure,
-    ReplicateSubrequest,
-    ReplicateSuccess,
     Shard,
     ShardIdPosition,
     ShardPKey,

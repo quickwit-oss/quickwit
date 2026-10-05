@@ -15,7 +15,7 @@
 </p>
 
 <h2 align="center">
-Cloud-native search engine for observability (logs, traces, and soon metrics!). An open-source alternative to Datadog, Elasticsearch,  Loki, and Tempo.
+Open-source search engine for observability (logs, traces, and soon metrics!).
 </h2>
 
 <h4 align="center">
@@ -92,18 +92,6 @@ Cloud-native search engine for observability (logs, traces, and soon metrics!). 
 - [Blog posts](https://quickwit.io/blog/)
 - [Youtube channel](https://www.youtube.com/@quickwit8103)
 - [Discord](https://discord.quickwit.io)
-
-# 🔮 Roadmap
-
-- Quickwit 0.9 (July 2024)
-  - Indexing and search performance improvements
-  - Index configuration updates (retention policy, indexing and search settings)
-  - Concatenated field
-
-- Quickwit 0.10 (October 2024)
-  - Schema (doc mapping) updates
-  - Native distributed ingestion
-  - Index templates
 
 # 🙋 FAQ
 

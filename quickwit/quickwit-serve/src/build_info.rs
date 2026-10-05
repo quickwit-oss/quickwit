@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use once_cell::sync::OnceCell;
+use std::sync::LazyLock;
+
 use quickwit_common::runtimes::RuntimesConfig;
 use serde::Serialize;
 
@@ -34,9 +35,7 @@ impl BuildInfo {
     pub fn get() -> &'static Self {
         const UNKNOWN: &str = "unknown";
 
-        static INSTANCE: OnceCell<BuildInfo> = OnceCell::new();
-
-        INSTANCE.get_or_init(|| {
+        static INSTANCE: LazyLock<BuildInfo> = LazyLock::new(|| {
             let commit_date = option_env!("QW_COMMIT_DATE")
                 .filter(|commit_date| !commit_date.is_empty())
                 .unwrap_or(UNKNOWN);
@@ -63,7 +62,7 @@ impl BuildInfo {
                 .cloned()
                 .unwrap_or_else(|| concat!(env!("CARGO_PKG_VERSION"), "-nightly").to_string());
 
-            Self {
+            BuildInfo {
                 build_date: env!("BUILD_DATE"),
                 build_profile: env!("BUILD_PROFILE"),
                 build_target: env!("BUILD_TARGET"),
@@ -74,7 +73,9 @@ impl BuildInfo {
                 commit_tags,
                 version,
             }
-        })
+        });
+
+        &INSTANCE
     }
 
     pub fn get_version_text() -> String {
@@ -101,16 +102,16 @@ pub struct RuntimeInfo {
 impl RuntimeInfo {
     /// Returns the properties of the node.
     pub fn get() -> &'static Self {
-        static INSTANCE: OnceCell<RuntimeInfo> = OnceCell::new();
-
-        INSTANCE.get_or_init(|| {
+        static INSTANCE: LazyLock<RuntimeInfo> = LazyLock::new(|| {
             let num_cpus = quickwit_common::num_cpus();
             let runtimes_config = RuntimesConfig::with_num_cpus(num_cpus);
-            Self {
+            RuntimeInfo {
                 num_cpus,
                 num_threads_blocking: runtimes_config.num_threads_blocking,
                 num_threads_non_blocking: runtimes_config.num_threads_non_blocking,
             }
-        })
+        });
+
+        &INSTANCE
     }
 }

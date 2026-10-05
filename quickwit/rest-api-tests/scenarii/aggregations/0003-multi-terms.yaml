@@ -1,0 +1,78 @@
+# Test multi_terms aggregation, ordered by key for a deterministic bucket order.
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query: { match_all: {} }
+  aggs:
+    host_response:
+      multi_terms:
+        terms:
+          - field: "host"
+          - field: "response"
+        order: { _key: asc }
+expected:
+  aggregations:
+    host_response:
+      buckets:
+        - key: ["192.168.0.1", 30]
+          key_as_string: "192.168.0.1|30"
+          doc_count: 1
+        - key: ["192.168.0.1", 100]
+          key_as_string: "192.168.0.1|100"
+          doc_count: 1
+        - key: ["192.168.0.10", 20]
+          key_as_string: "192.168.0.10|20"
+          doc_count: 1
+        - key: ["192.168.0.10", 30]
+          key_as_string: "192.168.0.10|30"
+          doc_count: 1
+        - key: ["192.168.0.10", 100]
+          key_as_string: "192.168.0.10|100"
+          doc_count: 1
+        - key: ["192.168.0.11", 120]
+          key_as_string: "192.168.0.11|120"
+          doc_count: 1
+      sum_other_doc_count: 0
+---
+# Test multi_terms aggregation with a multi-valued field and a sub-aggregation.
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query: { match_all: {} }
+  aggs:
+    tags_response:
+      multi_terms:
+        terms:
+          - field: "tags"
+          - field: "response"
+        order: { _key: asc }
+      aggs:
+        avg_response:
+          avg:
+            field: "response"
+expected:
+  aggregations:
+    tags_response:
+      buckets:
+        # Horst has tags [nice, cool] but no response, so he contributes no bucket.
+        - key: ["cool", 30]
+          key_as_string: "cool|30"
+          doc_count: 1
+          avg_response: { value: 30.0 }
+        - key: ["nice", 30]
+          key_as_string: "nice|30"
+          doc_count: 1
+          avg_response: { value: 30.0 }
+        - key: ["nice", 100]
+          key_as_string: "nice|100"
+          doc_count: 2
+          avg_response: { value: 100.0 }
+        - key: ["nice", 120]
+          key_as_string: "nice|120"
+          doc_count: 1
+          avg_response: { value: 120.0 }
+      sum_other_doc_count: 0

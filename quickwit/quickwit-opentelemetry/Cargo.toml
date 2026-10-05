@@ -13,7 +13,6 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-once_cell = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -24,6 +23,7 @@ tonic = { workspace = true }
 tracing = { workspace = true }
 
 quickwit-common = { workspace = true }
+quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-ingest = { workspace = true }
 quickwit-proto = { workspace = true }

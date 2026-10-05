@@ -22,7 +22,7 @@ use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::uri::Uri;
-use quickwit_common::{ServiceStream, get_bool_from_env, rate_limited_error};
+use quickwit_common::{ServiceStream, get_bool_from_env_cached, rate_limited_error};
 use quickwit_config::{
     IndexTemplate, IndexTemplateId, PostgresMetastoreConfig, validate_index_id_pattern,
 };
@@ -47,7 +47,9 @@ use quickwit_proto::metastore::{
     ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
     UpdateSplitsDeleteOpstampResponse, serde_utils,
 };
-use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, ShardId, SourceId};
+use quickwit_proto::types::{
+    IndexId, IndexUid, Position, PublishToken, ShardId, SourceId, queue_id,
+};
 use sea_query::{Alias, Asterisk, Expr, Func, PostgresQueryBuilder, Query, UnionType};
 use sea_query_binder::SqlxBinder;
 use sqlx::{Acquire, Executor, Postgres, Transaction};
@@ -56,14 +58,17 @@ use tracing::{debug, info, instrument, warn};
 use uuid::Uuid;
 
 use super::error::convert_sqlx_err;
-use super::migrator::run_migrations;
+use super::metrics::MetastoreKind;
+use super::migrator::Migrations;
 use super::model::{PgDeleteTask, PgIndex, PgIndexTemplate, PgShard, PgSplit, Splits};
 use super::pool::TrackedPool;
 use super::split_stream::SplitStream;
-use super::utils::{append_query_filters_and_order_by, establish_connection};
+use super::utils::{
+    PostgresqlConnectionOptions, append_query_filters_and_order_by, establish_connection,
+};
 use super::{
-    QW_POSTGRES_READ_ONLY_ENV_KEY, QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY,
-    QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY,
+    QW_POSTGRES_READ_ONLY_ENV_KEY, QW_POSTGRES_SKIP_DEFERRED_MIGRATIONS_ENV_KEY,
+    QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY, QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY,
 };
 use crate::checkpoint::{
     IndexCheckpointDelta, PartitionId, SourceCheckpoint, SourceCheckpointDelta,
@@ -96,11 +101,83 @@ impl fmt::Debug for PostgresqlMetastore {
     }
 }
 
+/// Connection/migration options for a [`PostgresqlMetastore`].
+#[derive(Clone, Copy, Debug)]
+struct PostgresqlMetastoreOptions {
+    metastore_kind: MetastoreKind,
+    read_only: bool,
+    skip_migrations: bool,
+    skip_locking: bool,
+    skip_deferred: bool,
+}
+
+impl PostgresqlMetastoreOptions {
+    /// Default options, with the read-only and migration flags read from the environment.
+    fn from_env() -> Self {
+        Self {
+            // The environment can make the connection read-only, but only the explicit
+            // `new_read_only` path represents the read-replica service kind.
+            metastore_kind: MetastoreKind::Primary,
+            // These environment variables are process-global and don't change over a process's
+            // lifetime, so they're read (and logged) once rather than on every metastore
+            // construction, which can recur frequently.
+            read_only: get_bool_from_env_cached!(QW_POSTGRES_READ_ONLY_ENV_KEY, false),
+            skip_migrations: get_bool_from_env_cached!(QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY, false),
+            skip_locking: get_bool_from_env_cached!(
+                QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY,
+                false
+            ),
+            skip_deferred: get_bool_from_env_cached!(
+                QW_POSTGRES_SKIP_DEFERRED_MIGRATIONS_ENV_KEY,
+                false
+            ),
+        }
+    }
+
+    /// Options for a read-only metastore: the connection is read-only and migrations are skipped,
+    /// since the read replica cannot be written to and is migrated by the primary.
+    fn read_only() -> Self {
+        Self {
+            metastore_kind: MetastoreKind::ReadReplica,
+            read_only: true,
+            skip_migrations: true,
+            skip_locking: false,
+            skip_deferred: true,
+        }
+    }
+}
+
 impl PostgresqlMetastore {
     /// Creates a metastore given a database URI.
     pub async fn new(
         postgres_metastore_config: &PostgresMetastoreConfig,
         connection_uri: &Uri,
+    ) -> MetastoreResult<Self> {
+        Self::new_with_options(
+            postgres_metastore_config,
+            connection_uri,
+            PostgresqlMetastoreOptions::from_env(),
+        )
+        .await
+    }
+
+    /// Creates a read-only metastore given a database URI.
+    pub async fn new_read_only(
+        postgres_metastore_config: &PostgresMetastoreConfig,
+        connection_uri: &Uri,
+    ) -> MetastoreResult<Self> {
+        Self::new_with_options(
+            postgres_metastore_config,
+            connection_uri,
+            PostgresqlMetastoreOptions::read_only(),
+        )
+        .await
+    }
+
+    async fn new_with_options(
+        postgres_metastore_config: &PostgresMetastoreConfig,
+        connection_uri: &Uri,
+        options: PostgresqlMetastoreOptions,
     ) -> MetastoreResult<Self> {
         let min_connections = postgres_metastore_config.min_connections;
         let max_connections = postgres_metastore_config.max_connections.get();
@@ -114,22 +191,26 @@ impl PostgresqlMetastore {
             .max_connection_lifetime_opt()
             .expect("PostgreSQL metastore config should have been validated");
 
-        let read_only = get_bool_from_env(QW_POSTGRES_READ_ONLY_ENV_KEY, false);
-        let skip_migrations = get_bool_from_env(QW_POSTGRES_SKIP_MIGRATIONS_ENV_KEY, false);
-        let skip_locking = get_bool_from_env(QW_POSTGRES_SKIP_MIGRATION_LOCKING_ENV_KEY, false);
-
-        let connection_pool = establish_connection(
+        let connection_pool = establish_connection(PostgresqlConnectionOptions {
             connection_uri,
             min_connections,
             max_connections,
             acquire_timeout,
             idle_timeout_opt,
             max_lifetime_opt,
-            read_only,
-        )
+            read_only: options.read_only,
+            metastore_kind: options.metastore_kind,
+        })
         .await?;
 
-        run_migrations(&connection_pool, skip_migrations, skip_locking).await?;
+        Migrations::new(
+            connection_pool.clone(),
+            options.skip_migrations,
+            options.skip_locking,
+            options.skip_deferred,
+        )
+        .run()
+        .await?;
 
         let metastore = PostgresqlMetastore {
             uri: connection_uri.clone(),
@@ -215,7 +296,7 @@ async fn try_apply_delta_v2(
         .map(|partition_id| partition_id.to_string())
         .collect();
 
-    let shards: Vec<(String, String, Option<PublishToken>)> = sqlx::query_as(
+    let shards: Vec<(String, String, Option<String>)> = sqlx::query_as(
         r#"
         SELECT
             shard_id, publish_position_inclusive, publish_token
@@ -242,11 +323,14 @@ async fn try_apply_delta_v2(
     let mut current_checkpoint = SourceCheckpoint::default();
 
     for (shard_id, current_position, current_publish_token_opt) in shards {
-        if current_publish_token_opt.is_none()
-            || current_publish_token_opt.unwrap() != publish_token
-        {
-            let message = "failed to apply checkpoint delta: invalid publish token".to_string();
-            return Err(MetastoreError::InvalidArgument { message });
+        let token_matches = match &current_publish_token_opt {
+            Some(current_publish_token) => *current_publish_token == *publish_token,
+            None => false,
+        };
+        if !token_matches {
+            return Err(MetastoreError::InvalidPublishToken {
+                queue_id: queue_id(index_uid, source_id, &ShardId::from(shard_id.as_str())),
+            });
         }
         let partition_id = PartitionId::from(shard_id);
         let current_position = Position::from(current_position);
@@ -382,7 +466,7 @@ impl MetastoreService for PostgresqlMetastore {
     // - `indexes_metadata`
     // - `list_indexes_metadata`
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.create_index", skip(self))]
     async fn create_index(
         &self,
         request: CreateIndexRequest,
@@ -414,6 +498,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.postgres.update_index", skip_all, fields(index_uid = %request.index_uid()))]
     async fn update_index(
         &self,
         request: UpdateIndexRequest,
@@ -441,7 +526,7 @@ impl MetastoreService for PostgresqlMetastore {
         IndexMetadataResponse::try_from_index_metadata(&updated_index_metadata)
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.index_metadata", skip(self))]
     async fn index_metadata(
         &self,
         request: IndexMetadataRequest,
@@ -468,7 +553,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.indexes_metadata", skip(self))]
     async fn indexes_metadata(
         &self,
         request: IndexesMetadataRequest,
@@ -542,7 +627,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.list_indexes_metadata", skip(self))]
     async fn list_indexes_metadata(
         &self,
         request: ListIndexesMetadataRequest,
@@ -566,7 +651,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
-    #[instrument(skip_all, fields(index_id=%request.index_uid()))]
+    #[instrument(name = "metastore.postgres.delete_index", skip_all, fields(index_id=%request.index_uid()))]
     async fn delete_index(&self, request: DeleteIndexRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid: IndexUid = request.index_uid().clone();
         let delete_result = sqlx::query("DELETE FROM indexes WHERE index_uid = $1")
@@ -583,7 +668,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
-    #[instrument(skip_all, fields(split_ids))]
+    #[instrument(name = "metastore.postgres.stage_splits", skip_all, fields(split_ids))]
     async fn stage_splits(&self, request: StageSplitsRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid: IndexUid = request.index_uid().clone();
         let splits_metadata = request.deserialize_splits_metadata()?;
@@ -616,7 +701,7 @@ impl MetastoreService for PostgresqlMetastore {
 
             let tags: Vec<String> = split_metadata.tags.into_iter().collect();
             tags_list.push(sqlx::types::Json(tags));
-            split_ids.push(split_metadata.split_id);
+            split_ids.push(split_metadata.split_id.to_string());
             delete_opstamps.push(split_metadata.delete_opstamp as i64);
             node_ids.push(split_metadata.node_id);
         }
@@ -688,7 +773,7 @@ impl MetastoreService for PostgresqlMetastore {
         })
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.publish_splits", skip(self))]
     async fn publish_splits(
         &self,
         request: PublishSplitsRequest,
@@ -728,7 +813,7 @@ impl MetastoreService for PostgresqlMetastore {
                         &index_uid,
                         &source_id,
                         checkpoint_delta.source_delta,
-                        publish_token,
+                        publish_token.into(),
                     )
                     .await?;
                 } else {
@@ -856,7 +941,7 @@ impl MetastoreService for PostgresqlMetastore {
         })
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.list_splits", skip(self))]
     async fn list_splits(
         &self,
         request: ListSplitsRequest,
@@ -864,7 +949,7 @@ impl MetastoreService for PostgresqlMetastore {
         let list_splits_query = request.deserialize_list_splits_query()?;
         let mut sql_query_builder = Query::select();
         sql_query_builder.column(Asterisk).from(Splits::Table);
-        append_query_filters_and_order_by(&mut sql_query_builder, &list_splits_query);
+        append_query_filters_and_order_by(&mut sql_query_builder, list_splits_query);
 
         let (sql_query, values) = sql_query_builder.build_sqlx(PostgresQueryBuilder);
         let pg_split_stream = SplitStream::new(
@@ -906,6 +991,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(service_stream)
     }
 
+    #[instrument(name = "metastore.postgres.list_index_stats", skip_all, fields(index_id_patterns = ?request.index_id_patterns))]
     async fn list_index_stats(
         &self,
         request: ListIndexStatsRequest,
@@ -982,7 +1068,7 @@ impl MetastoreService for PostgresqlMetastore {
         })
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.mark_splits_for_deletion", skip(self))]
     async fn mark_splits_for_deletion(
         &self,
         request: MarkSplitsForDeletionRequest,
@@ -1058,7 +1144,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.delete_splits", skip(self))]
     async fn delete_splits(&self, request: DeleteSplitsRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid: IndexUid = request.index_uid().clone();
         let split_ids = request.split_ids;
@@ -1144,7 +1230,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.add_source", skip(self))]
     async fn add_source(&self, request: AddSourceRequest) -> MetastoreResult<EmptyResponse> {
         let source_config = request.deserialize_source_config()?;
         let index_uid: IndexUid = request.index_uid().clone();
@@ -1159,7 +1245,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.update_source", skip(self))]
     async fn update_source(&self, request: UpdateSourceRequest) -> MetastoreResult<EmptyResponse> {
         let source_config = request.deserialize_source_config()?;
         let index_uid: IndexUid = request.index_uid().clone();
@@ -1174,7 +1260,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.toggle_source", skip(self))]
     async fn toggle_source(&self, request: ToggleSourceRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid: IndexUid = request.index_uid().clone();
         run_with_tx!(self.connection_pool, tx, "toggle source", {
@@ -1191,7 +1277,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.delete_source", skip(self))]
     async fn delete_source(&self, request: DeleteSourceRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid: IndexUid = request.index_uid().clone();
         let source_id = request.source_id.clone();
@@ -1218,7 +1304,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.reset_source_checkpoint", skip(self))]
     async fn reset_source_checkpoint(
         &self,
         request: ResetSourceCheckpointRequest,
@@ -1239,7 +1325,7 @@ impl MetastoreService for PostgresqlMetastore {
     }
 
     /// Retrieves the last delete opstamp for a given `index_id`.
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.last_delete_opstamp", skip(self))]
     async fn last_delete_opstamp(
         &self,
         request: LastDeleteOpstampRequest,
@@ -1262,7 +1348,7 @@ impl MetastoreService for PostgresqlMetastore {
     }
 
     /// Creates a delete task from a delete query.
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.create_delete_task", skip(self))]
     async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask> {
         let delete_query_json = serde_utils::to_json_str(&delete_query)?;
         let (create_timestamp, opstamp): (sqlx::types::time::PrimitiveDateTime, i64) =
@@ -1286,7 +1372,7 @@ impl MetastoreService for PostgresqlMetastore {
     }
 
     /// Update splits delete opstamps.
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.update_splits_delete_opstamp", skip(self))]
     async fn update_splits_delete_opstamp(
         &self,
         request: UpdateSplitsDeleteOpstampRequest,
@@ -1331,7 +1417,7 @@ impl MetastoreService for PostgresqlMetastore {
     }
 
     /// Lists the delete tasks with opstamp > `opstamp_start`.
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.list_delete_tasks", skip(self))]
     async fn list_delete_tasks(
         &self,
         request: ListDeleteTasksRequest,
@@ -1359,7 +1445,7 @@ impl MetastoreService for PostgresqlMetastore {
     /// Returns `num_splits` published splits with `split.delete_opstamp` < `delete_opstamp`.
     /// Results are ordered by ascending `split.delete_opstamp` and `split.publish_timestamp`
     /// values.
-    #[instrument(skip(self))]
+    #[instrument(name = "metastore.postgres.list_stale_splits", skip(self))]
     async fn list_stale_splits(
         &self,
         request: ListStaleSplitsRequest,
@@ -1394,6 +1480,7 @@ impl MetastoreService for PostgresqlMetastore {
     }
 
     // TODO: Issue a single SQL query.
+    #[instrument(name = "metastore.postgres.open_shards", skip_all, fields(num_subrequests = request.subrequests.len()))]
     async fn open_shards(&self, request: OpenShardsRequest) -> MetastoreResult<OpenShardsResponse> {
         let mut subresponses = Vec::with_capacity(request.subrequests.len());
 
@@ -1408,6 +1495,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(OpenShardsResponse { subresponses })
     }
 
+    #[instrument(name = "metastore.postgres.acquire_shards", skip_all, fields(index_uid = %request.index_uid()))]
     async fn acquire_shards(
         &self,
         request: AcquireShardsRequest,
@@ -1424,6 +1512,11 @@ impl MetastoreService for PostgresqlMetastore {
             .bind(&request.publish_token)
             .fetch_all(&self.connection_pool)
             .await?;
+
+        if pg_shards.len() != request.shard_ids.len() {
+            warn_on_unacquired_shards(&request, &pg_shards);
+        }
+
         let acquired_shards = pg_shards
             .into_iter()
             .map(|pg_shard| pg_shard.into())
@@ -1432,6 +1525,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.postgres.list_shards", skip_all, fields(num_subrequests = request.subrequests.len()))]
     async fn list_shards(&self, request: ListShardsRequest) -> MetastoreResult<ListShardsResponse> {
         if request.subrequests.is_empty() {
             return Ok(Default::default());
@@ -1504,6 +1598,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.postgres.delete_shards", skip_all, fields(index_uid = %request.index_uid()))]
     async fn delete_shards(
         &self,
         request: DeleteShardsRequest,
@@ -1576,6 +1671,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.postgres.prune_shards", skip_all, fields(index_uid = %request.index_uid()))]
     async fn prune_shards(&self, request: PruneShardsRequest) -> MetastoreResult<EmptyResponse> {
         const PRUNE_AGE_SHARDS_QUERY: &str = include_str!("queries/shards/prune_age.sql");
         const PRUNE_COUNT_SHARDS_QUERY: &str = include_str!("queries/shards/prune_count.sql");
@@ -1604,6 +1700,7 @@ impl MetastoreService for PostgresqlMetastore {
 
     // Index Template API
 
+    #[instrument(name = "metastore.postgres.create_index_template", skip(self))]
     async fn create_index_template(
         &self,
         request: CreateIndexTemplateRequest,
@@ -1664,6 +1761,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
+    #[instrument(name = "metastore.postgres.get_index_template", skip(self))]
     async fn get_index_template(
         &self,
         request: GetIndexTemplateRequest,
@@ -1684,6 +1782,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.postgres.find_index_template_matches", skip(self))]
     async fn find_index_template_matches(
         &self,
         request: FindIndexTemplateMatchesRequest,
@@ -1714,6 +1813,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.postgres.list_index_templates", skip_all)]
     async fn list_index_templates(
         &self,
         _request: ListIndexTemplatesRequest,
@@ -1733,6 +1833,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.postgres.delete_index_templates", skip(self))]
     async fn delete_index_templates(
         &self,
         request: DeleteIndexTemplatesRequest,
@@ -1744,6 +1845,7 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(EmptyResponse {})
     }
 
+    #[instrument(name = "metastore.postgres.get_cluster_identity", skip_all)]
     async fn get_cluster_identity(
         &self,
         _: GetClusterIdentityRequest,
@@ -1765,6 +1867,28 @@ impl MetastoreService for PostgresqlMetastore {
     }
 }
 
+/// Best-effort diagnostics for the acquire error path: logs the shards from `request` that were not
+/// acquired — those absent from `acquired_pg_shards` because a more recent publish token owns them,
+/// or because they no longer exist. Does not touch the database.
+fn warn_on_unacquired_shards(request: &AcquireShardsRequest, acquired_pg_shards: &[PgShard]) {
+    let not_acquired_shard_ids: Vec<&ShardId> = request
+        .shard_ids
+        .iter()
+        .filter(|shard_id| {
+            !acquired_pg_shards
+                .iter()
+                .any(|pg_shard| &pg_shard.shard_id == *shard_id)
+        })
+        .collect();
+    info!(
+        index_uid=%request.index_uid(),
+        source_id=%request.source_id,
+        shard_ids=?not_acquired_shard_ids,
+        publish_token=%request.publish_token,
+        "failed to acquire shards: held by a more recent publish token, or no longer present"
+    );
+}
+
 async fn open_or_fetch_shard<'e>(
     executor: impl Executor<'e, Database = Postgres> + Clone,
     subrequest: &OpenShardSubrequest,
@@ -1775,8 +1899,9 @@ async fn open_or_fetch_shard<'e>(
         .bind(subrequest.index_uid())
         .bind(&subrequest.source_id)
         .bind(subrequest.shard_id().as_str())
-        .bind(&subrequest.leader_id)
-        .bind(&subrequest.follower_id)
+        .bind(&subrequest.ingester_id)
+        // The legacy `follower_id` column is retained; new shards always store NULL.
+        .bind(Option::<&str>::None)
         .bind(subrequest.doc_mapping_uid)
         .bind(&subrequest.publish_token)
         // Use a timestamp generated by the metastore node to avoid clock drift issues
@@ -1790,8 +1915,7 @@ async fn open_or_fetch_shard<'e>(
             index_uid=%shard.index_uid(),
             source_id=%shard.source_id,
             shard_id=%shard.shard_id(),
-            leader_id=%shard.leader_id,
-            follower_id=?shard.follower_id,
+            ingester_id=%shard.ingester_id,
             "opened shard"
         );
         return Ok(shard);
@@ -1910,12 +2034,14 @@ impl crate::tests::DefaultForTest for PostgresqlMetastore {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use async_trait::async_trait;
     use quickwit_common::uri::Protocol;
     use quickwit_doc_mapper::tag_pruning::TagFilterAst;
     use quickwit_proto::ingest::Shard;
     use quickwit_proto::metastore::MetastoreService;
-    use quickwit_proto::types::{IndexUid, SourceId};
+    use quickwit_proto::types::{IndexUid, SourceId, SplitId};
     use sea_query::{Asterisk, PostgresQueryBuilder, Query};
     use time::OffsetDateTime;
 
@@ -1942,9 +2068,8 @@ mod tests {
                 // explicit destructuring to ensure new fields are properly handled
                 let Shard {
                     doc_mapping_uid,
-                    follower_id,
                     index_uid,
-                    leader_id,
+                    ingester_id,
                     publish_position_inclusive,
                     publish_token,
                     shard_id,
@@ -1962,8 +2087,9 @@ mod tests {
                     .bind(source_id)
                     .bind(shard_id.unwrap())
                     .bind(shard_state_name)
-                    .bind(leader_id)
-                    .bind(follower_id)
+                    .bind(ingester_id)
+                    // The legacy `follower_id` column is retained; new shards always store NULL.
+                    .bind(Option::<&str>::None)
                     .bind(doc_mapping_uid)
                     .bind(publish_position_inclusive.unwrap().to_string())
                     .bind(publish_token)
@@ -2014,7 +2140,7 @@ mod tests {
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -2028,7 +2154,7 @@ mod tests {
 
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Published);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -2042,7 +2168,7 @@ mod tests {
 
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2054,7 +2180,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_update_timestamp_lt(51);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2066,7 +2192,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_create_timestamp_lte(55);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2080,7 +2206,7 @@ mod tests {
         let maturity_evaluation_datetime = OffsetDateTime::from_unix_timestamp(55).unwrap();
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .retain_mature(maturity_evaluation_datetime);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -2094,7 +2220,7 @@ mod tests {
 
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .retain_immature(maturity_evaluation_datetime);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2106,7 +2232,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_delete_opstamp_gte(4);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2118,7 +2244,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_time_range_start_gt(45);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2130,7 +2256,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_time_range_end_lt(45);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2146,7 +2272,7 @@ mod tests {
                 is_present: false,
                 tag: "tag-2".to_string(),
             });
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -2159,7 +2285,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_offset(4);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -2172,7 +2298,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).sort_by_index_uid();
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -2187,10 +2313,10 @@ mod tests {
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).after_split(&crate::SplitMetadata {
                 index_uid: index_uid.clone(),
-                split_id: "my_split".to_string(),
+                split_id: "my_split".into(),
                 ..Default::default()
             });
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -2203,7 +2329,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_all_indexes().with_split_state(SplitState::Staged);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -2214,7 +2340,7 @@ mod tests {
         let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_all_indexes().with_max_time_range_end(42);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
 
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
@@ -2231,7 +2357,8 @@ mod tests {
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_time_range_start_gt(0)
             .with_time_range_end_lt(40);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
+
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2245,7 +2372,7 @@ mod tests {
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_time_range_start_gt(45)
             .with_delete_opstamp_gt(0);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2259,7 +2386,7 @@ mod tests {
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_update_timestamp_lt(51)
             .with_create_timestamp_lte(63);
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2276,7 +2403,7 @@ mod tests {
                 is_present: true,
                 tag: "tag-1".to_string(),
             });
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
@@ -2291,12 +2418,40 @@ mod tests {
         let query =
             ListSplitsQuery::try_from_index_uids(vec![index_uid.clone(), index_uid_2.clone()])
                 .unwrap();
-        append_query_filters_and_order_by(sql, &query);
+        append_query_filters_and_order_by(sql, query);
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
                 r#"SELECT * FROM "splits" WHERE "index_uid" IN ('{index_uid}', '{index_uid_2}')"#
             )
+        );
+    }
+
+    #[test]
+    fn test_list_splits_query_excluded_split_ids() {
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
+
+        let query = ListSplitsQuery::for_all_indexes()
+            .with_excluded_split_ids(HashSet::from([SplitId::from("s1"), SplitId::from("s2")]));
+        append_query_filters_and_order_by(sql, query);
+        assert_eq!(
+            sql.to_string(PostgresQueryBuilder),
+            r#"SELECT * FROM "splits" WHERE split_id <> ALL(ARRAY ['s1','s2']::text[])"#
+        );
+    }
+
+    #[test]
+    fn test_list_splits_query_included_split_ids() {
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
+
+        let query = ListSplitsQuery::for_all_indexes()
+            .with_included_split_ids(HashSet::from([SplitId::from("s1"), SplitId::from("s2")]));
+        append_query_filters_and_order_by(sql, query);
+        assert_eq!(
+            sql.to_string(PostgresQueryBuilder),
+            r#"SELECT * FROM "splits" WHERE split_id = ANY(ARRAY ['s1','s2']::text[])"#
         );
     }
 

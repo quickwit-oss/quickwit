@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
+use tantivy::Term;
 use tantivy::query::BoostQuery as TantivyBoostQuery;
 use tantivy::schema::Schema as TantivySchema;
 
@@ -20,11 +23,14 @@ use crate::tokenizers::TokenizerManager;
 
 mod bool_query;
 mod cache_node;
+mod calc_field_query;
 mod field_presence;
 mod full_text_query;
 mod phrase_prefix_query;
 mod range_query;
+mod regex_extract_eq;
 mod regex_query;
+mod required_terms;
 mod tantivy_query_ast;
 mod term_query;
 mod term_set_query;
@@ -35,11 +41,13 @@ mod wildcard_query;
 
 pub use bool_query::BoolQuery;
 pub use cache_node::{CacheNode, HitSet, PredicateCache, PredicateCacheInjector};
+pub use calc_field_query::CalcFieldQuery;
 pub use field_presence::FieldPresenceQuery;
 pub use full_text_query::{FullTextMode, FullTextParams, FullTextQuery};
 pub use phrase_prefix_query::PhrasePrefixQuery;
 pub use range_query::RangeQuery;
-pub use regex_query::{AutomatonQuery, JsonPathPrefix, RegexQuery};
+pub use regex_extract_eq::get_or_compile_cached_fst_regex;
+pub use regex_query::{AutomatonQuery, JsonPathPrefix, RegexQuery, ResolvedRegex};
 use tantivy_query_ast::TantivyQueryAst;
 pub use term_query::TermQuery;
 pub use term_set_query::TermSetQuery;
@@ -49,7 +57,7 @@ pub use wildcard_query::WildcardQuery;
 
 use crate::{BooleanOperand, InvalidQuery, NotNaNf32};
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 pub enum QueryAst {
@@ -70,6 +78,7 @@ pub enum QueryAst {
         boost: NotNaNf32,
     },
     Cache(CacheNode),
+    CalcField(CalcFieldQuery),
 }
 
 impl QueryAst {
@@ -107,7 +116,8 @@ impl QueryAst {
             | ast @ QueryAst::FieldPresence(_)
             | ast @ QueryAst::Range(_)
             | ast @ QueryAst::Wildcard(_)
-            | ast @ QueryAst::Regex(_) => Ok(ast),
+            | ast @ QueryAst::Regex(_)
+            | ast @ QueryAst::CalcField(_) => Ok(ast),
             QueryAst::UserInput(user_text_query) => {
                 user_text_query.parse_user_query(default_search_fields)
             }
@@ -181,11 +191,11 @@ pub struct BuildTantivyAstContext<'a> {
 
 impl<'a> BuildTantivyAstContext<'a> {
     pub fn for_test(schema: &'a TantivySchema) -> Self {
-        use once_cell::sync::Lazy;
+        use std::sync::LazyLock;
 
         // we do that to have a TokenizerManager with a long enough lifetime
-        static DEFAULT_TOKENIZER_MANAGER: Lazy<TokenizerManager> =
-            Lazy::new(crate::create_default_quickwit_tokenizer_manager);
+        static DEFAULT_TOKENIZER_MANAGER: LazyLock<TokenizerManager> =
+            LazyLock::new(crate::create_default_quickwit_tokenizer_manager);
 
         BuildTantivyAstContext {
             schema,
@@ -255,6 +265,9 @@ impl BuildTantivyAst for QueryAst {
             QueryAst::Wildcard(wildcard) => wildcard.build_tantivy_ast_call(context),
             QueryAst::Regex(regex) => regex.build_tantivy_ast_call(context),
             QueryAst::Cache(cache_node) => cache_node.build_tantivy_ast_call(context),
+            QueryAst::CalcField(calc_field_query) => {
+                calc_field_query.build_tantivy_ast_call(context)
+            }
         }
     }
 }
@@ -266,6 +279,25 @@ impl QueryAst {
     ) -> Result<Box<dyn crate::TantivyQuery>, InvalidQuery> {
         let tantivy_query_ast = self.build_tantivy_ast_call(context)?;
         Ok(tantivy_query_ast.simplify().into())
+    }
+
+    /// Like [`Self::build_tantivy_query`], but additionally returns the set of
+    /// *required terms*: terms that must all be present in a split for the query
+    /// to match any document. A leaf search uses this to abort warmup early when
+    /// a required term turns out to have an empty posting list. See
+    /// [`required_terms`] for the contract.
+    pub fn build_tantivy_query_and_required_terms(
+        &self,
+        context: &BuildTantivyAstContext,
+    ) -> Result<(Box<dyn crate::TantivyQuery>, HashSet<Term>), InvalidQuery> {
+        let tantivy_query_ast = self.build_tantivy_ast_call(context)?.simplify();
+        let mut required_terms = HashSet::new();
+        required_terms::collect_required_terms(
+            &tantivy_query_ast,
+            context.schema,
+            &mut required_terms,
+        );
+        Ok((tantivy_query_ast.into(), required_terms))
     }
 }
 

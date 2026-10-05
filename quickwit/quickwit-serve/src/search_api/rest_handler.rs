@@ -265,6 +265,8 @@ pub fn search_request_from_api_request(
         search_after: None,
         count_hits: search_request.count_all.into(),
         ignore_missing_indexes: false,
+        skip_aggregation_finalization: false,
+        ..Default::default()
     };
     Ok(search_request)
 }

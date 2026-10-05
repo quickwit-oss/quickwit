@@ -16,39 +16,41 @@ use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::{fmt, io};
 
 use async_trait::async_trait;
 use azure_core::error::ErrorKind;
 use azure_core::{Pageable, StatusCode};
-use azure_storage::Error as AzureError;
 use azure_storage::prelude::*;
+use azure_storage::{CloudLocation, Error as AzureError};
 use azure_storage_blobs::blob::operations::GetBlobResponse;
 use azure_storage_blobs::prelude::*;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
+use bytesize::ByteSize;
 use futures::io::Error as FutureError;
 use futures::stream::{StreamExt, TryStreamExt};
 use md5::Digest;
-use once_cell::sync::OnceCell;
 use quickwit_common::retry::{RetryParams, Retryable, retry};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, ignore_error_kind, into_u64_range};
 use quickwit_config::{AzureStorageConfig, StorageBackend};
+use quickwit_metrics::HistogramTimer;
 use regex::Regex;
 use tantivy::directory::OwnedBytes;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWriteExt, BufReader};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tokio_util::io::StreamReader;
-use tracing::{instrument, warn};
+use tracing::{info, instrument, warn};
 
 use crate::debouncer::DebouncedStorage;
 use crate::metrics::object_storage_get_slice_in_flight_guards;
+use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, STORAGE_METRICS, Storage,
-    StorageError, StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
+    BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, Storage, StorageError,
+    StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
 };
 
 /// Azure object storage resolver.
@@ -98,11 +100,16 @@ impl AzureBlobStorage {
     pub fn new(
         storage_account_name: String,
         storage_credentials: StorageCredentials,
+        blob_service_uri: Option<String>,
         uri: Uri,
         container_name: String,
     ) -> Self {
-        let container_client = BlobServiceClient::new(storage_account_name, storage_credentials)
-            .container_client(container_name);
+        let container_client = build_container_client(
+            storage_account_name,
+            storage_credentials,
+            blob_service_uri,
+            container_name,
+        );
         Self {
             container_client,
             uri,
@@ -110,10 +117,11 @@ impl AzureBlobStorage {
             multipart_policy: MultiPartPolicy {
                 // Azure max part size is 100MB
                 // https://azure.microsoft.com/en-us/blog/general-availability-larger-block-blobs-in-azure-storage/
-                target_part_num_bytes: 100_000_000,
-                multipart_threshold_num_bytes: 100_000_000,
+                target_part_num_bytes: ByteSize::mb(100),
+                multipart_threshold_num_bytes: ByteSize::mb(100),
                 max_num_parts: 50_000, // Azure allows up to 50,000 blocks
-                max_object_num_bytes: 4_770_000_000_000u64, // Azure allows up to 4.77TB objects
+                max_object_num_bytes: ByteSize::b(4_770_000_000_000), /* Azure allows up to
+                                        * 4.77TB objects */
                 max_concurrent_uploads: 100,
             },
             retry_params: RetryParams::aggressive(),
@@ -189,9 +197,11 @@ impl AzureBlobStorage {
             let message = format!("failed to extract container name from Azure URI `{uri}`");
             StorageResolverError::InvalidUri(message)
         })?;
+        let blob_service_uri = azure_storage_config.resolve_blob_service_uri(&storage_account_name);
         let azure_blob_storage = AzureBlobStorage::new(
             storage_account_name,
             storage_credentials,
+            blob_service_uri,
             uri.clone(),
             container_name,
         );
@@ -204,15 +214,16 @@ impl AzureBlobStorage {
         key_path.to_string_lossy().to_string()
     }
 
-    /// Downloads a blob as vector of bytes.
-    async fn get_to_vec(
+    /// Downloads a blob as `Bytes` — zero-copy when the blob arrives as a single chunk.
+    async fn get_to_bytes(
         &self,
         path: &Path,
         range_opt: Option<Range<usize>>,
-    ) -> StorageResult<Vec<u8>> {
+    ) -> StorageResult<Bytes> {
         let name = self.blob_name(path);
         let capacity = range_opt.as_ref().map(Range::len).unwrap_or(0);
         retry(&self.retry_params, || async {
+            let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_GET_OBJECT_DURATION);
             let (mut response_stream, _in_flight_guards) = if let Some(range) = range_opt.as_ref() {
                 let stream = self
                     .container_client
@@ -227,10 +238,8 @@ impl AzureBlobStorage {
                 let stream = self.container_client.blob_client(&name).get().into_stream();
                 (stream, None)
             };
-            let mut buf: Vec<u8> = Vec::with_capacity(capacity);
-            download_all(&mut response_stream, &mut buf).await?;
-
-            Result::<_, AzureErrorWrapper>::Ok(buf)
+            let bytes = download_all(&mut response_stream).await?;
+            Result::<_, AzureErrorWrapper>::Ok(bytes)
         })
         .await
         .map_err(StorageError::from)
@@ -242,10 +251,9 @@ impl AzureBlobStorage {
         name: &'a str,
         payload: Box<dyn crate::PutPayload>,
     ) -> StorageResult<()> {
-        crate::STORAGE_METRICS.object_storage_put_parts.inc();
-        crate::STORAGE_METRICS
-            .object_storage_upload_num_bytes
-            .inc_by(payload.len());
+        crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
+        crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(payload.len());
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_PUT_OBJECT_DURATION);
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
             let hash = azure_storage_blobs::prelude::Hash::from(md5::compute(&data[..]).0);
@@ -278,11 +286,11 @@ impl AzureBlobStorage {
             .map(|(num, range)| {
                 let moved_blob_client = blob_client.clone();
                 let moved_payload = payload.clone();
-                crate::STORAGE_METRICS.object_storage_put_parts.inc();
-                crate::STORAGE_METRICS
-                    .object_storage_upload_num_bytes
-                    .inc_by(range.end - range.start);
+                crate::metrics::OBJECT_STORAGE_PUT_PARTS.inc();
+                crate::metrics::OBJECT_STORAGE_UPLOAD_NUM_BYTES.inc_by(range.end - range.start);
                 async move {
+                    let _timer =
+                        HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_UPLOAD_PART_DURATION);
                     retry(&self.retry_params, || async {
                         // zero pad block ids to make them sortable as strings
                         let block_id = format!("block:{:05}", num);
@@ -346,12 +354,13 @@ impl Storage for AzureBlobStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.azure.put", level = "debug", skip(self, payload), fields(payload_len = payload.len()))]
     async fn put(
         &self,
         path: &Path,
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
-        crate::STORAGE_METRICS.object_storage_put_total.inc();
+        crate::metrics::OBJECT_STORAGE_PUT_TOTAL.inc();
         let name = self.blob_name(path);
         let total_len = payload.len();
         let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
@@ -365,6 +374,7 @@ impl Storage for AzureBlobStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.azure.copy_to", level = "debug", skip(self, output))]
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let name = self.blob_name(path);
         let mut output_stream = self.container_client.blob_client(name).get().into_stream();
@@ -378,15 +388,18 @@ impl Storage for AzureBlobStorage {
                 .compat();
             let mut body_stream_reader = BufReader::new(chunk_response_body_stream);
             let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
-            STORAGE_METRICS
-                .object_storage_download_num_bytes
-                .inc_by(num_bytes_copied);
+            crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_copied);
         }
         output.flush().await?;
         Ok(())
     }
 
+    #[instrument(name = "storage.azure.delete", level = "debug", skip(self))]
     async fn delete(&self, path: &Path) -> StorageResult<()> {
+        // The Azure SDK has no batch delete, so bulk_delete also funnels through
+        // here one blob at a time.
+        crate::metrics::OBJECT_STORAGE_DELETE_REQUESTS_TOTAL.inc();
+        let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_DELETE_REQUEST_DURATION);
         let blob_name = self.blob_name(path);
         let delete_res: Result<_, StorageError> = self
             .container_client
@@ -399,6 +412,7 @@ impl Storage for AzureBlobStorage {
         Ok(())
     }
 
+    #[instrument(name = "storage.azure.bulk_delete", level = "debug", skip(self, paths), fields(num_paths = paths.len()))]
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
         // See https://github.com/Azure/azure-sdk-for-rust/issues/1068
         warn!(
@@ -441,11 +455,11 @@ impl Storage for AzureBlobStorage {
         }
     }
 
-    #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
+    #[instrument(name = "storage.azure.get_slice", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
-        self.get_to_vec(path, Some(range.clone()))
+        self.get_to_bytes(path, Some(range.clone()))
             .await
-            .map(OwnedBytes::new)
+            .map(into_owned_bytes)
             .map_err(|err| {
                 err.add_context(format!(
                     "failed to fetch slice {:?} for object: {}/{}",
@@ -456,7 +470,7 @@ impl Storage for AzureBlobStorage {
             })
     }
 
-    #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
+    #[instrument(name = "storage.azure.get_slice_stream", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice_stream(
         &self,
         path: &Path,
@@ -491,12 +505,17 @@ impl Storage for AzureBlobStorage {
         .map_err(|e| e.into())
     }
 
-    #[instrument(level = "debug", skip(self), fields(fetched_bytes_len))]
+    #[instrument(
+        name = "storage.azure.get_all",
+        level = "debug",
+        skip(self),
+        fields(fetched_bytes_len)
+    )]
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let data = self
-            .get_to_vec(path, None)
+            .get_to_bytes(path, None)
             .await
-            .map(OwnedBytes::new)
+            .map(into_owned_bytes)
             .map_err(|err| {
                 err.add_context(format!(
                     "failed to fetch object: {}/{}",
@@ -508,6 +527,7 @@ impl Storage for AzureBlobStorage {
         Ok(data)
     }
 
+    #[instrument(name = "storage.azure.file_num_bytes", level = "debug", skip(self))]
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
         let name = self.blob_name(path);
         let properties_result = self
@@ -543,16 +563,33 @@ async fn extract_range_data_and_hash(
     Ok((data, hash))
 }
 
+fn build_container_client(
+    storage_account_name: String,
+    storage_credentials: StorageCredentials,
+    blob_service_uri: Option<String>,
+    container_name: String,
+) -> ContainerClient {
+    let mut builder = ClientBuilder::new(storage_account_name.clone(), storage_credentials);
+    if let Some(uri) = blob_service_uri {
+        info!(endpoint=%uri, "using Azure blob storage endpoint defined in storage config or environment variable");
+        builder = builder.cloud_location(CloudLocation::Custom {
+            account: storage_account_name,
+            uri,
+        });
+    }
+    builder
+        .blob_service_client()
+        .container_client(container_name)
+}
+
 pub fn parse_azure_uri(uri: &Uri) -> Option<(String, PathBuf)> {
     // Ex: azure://container/prefix.
-    static URI_PTN: OnceCell<Regex> = OnceCell::new();
+    static URI_PTN: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"azure(\+[^:]+)?://(?P<container>[^/]+)(/(?P<prefix>.+))?")
+            .expect("The regular expression should compile.")
+    });
 
-    let captures = URI_PTN
-        .get_or_init(|| {
-            Regex::new(r"azure(\+[^:]+)?://(?P<container>[^/]+)(/(?P<prefix>.+))?")
-                .expect("The regular expression should compile.")
-        })
-        .captures(uri.as_str())?;
+    let captures = URI_PTN.captures(uri.as_str())?;
 
     let container = captures.name("container")?.as_str().to_string();
     let prefix = captures
@@ -562,28 +599,43 @@ pub fn parse_azure_uri(uri: &Uri) -> Option<(String, PathBuf)> {
     Some((container, prefix))
 }
 
-/// Collect a download stream into an output buffer.
+/// Collect a download stream into a single [`Bytes`].
+///
+/// `Bytes` segments yielded by the SDK are preserved so that the single-segment case avoids the
+/// extra copy into a contiguous buffer. When more than one segment is received, they are
+/// concatenated exactly once into a freshly allocated `Bytes`.
 async fn download_all(
     chunk_stream: &mut Pageable<GetBlobResponse, AzureError>,
-    output: &mut Vec<u8>,
-) -> Result<(), AzureErrorWrapper> {
-    output.clear();
+) -> Result<Bytes, AzureErrorWrapper> {
+    let mut segments: Vec<Bytes> = Vec::new();
+    let mut total_num_bytes: usize = 0;
     while let Some(chunk_result) = chunk_stream.next().await {
         let chunk_response = chunk_result?;
-        let chunk_response_body_stream = chunk_response
-            .data
-            .map_err(FutureError::other)
-            .into_async_read()
-            .compat();
-        let mut body_stream_reader = BufReader::new(chunk_response_body_stream);
-        let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
-        crate::STORAGE_METRICS
-            .object_storage_download_num_bytes
-            .inc_by(num_bytes_copied);
+        let mut data_stream = chunk_response.data;
+        while let Some(bytes_res) = data_stream.next().await {
+            let bytes = bytes_res?;
+            total_num_bytes += bytes.len();
+            segments.push(bytes);
+        }
     }
-    // When calling `get_all`, the Vec capacity is not properly set.
-    output.shrink_to_fit();
-    Ok(())
+    crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(total_num_bytes as u64);
+    Ok(coalesce_segments(segments, total_num_bytes))
+}
+
+/// Returns a single [`Bytes`] covering `segments`. Zero-copy when there is at most one segment;
+/// otherwise a single allocation concatenates them.
+fn coalesce_segments(mut segments: Vec<Bytes>, total_num_bytes: usize) -> Bytes {
+    match segments.len() {
+        0 => Bytes::new(),
+        1 => segments.remove(0),
+        _ => {
+            let mut out = BytesMut::with_capacity(total_num_bytes);
+            for segment in segments {
+                out.extend_from_slice(&segment);
+            }
+            out.freeze()
+        }
+    }
 }
 
 #[derive(Error, Debug)]

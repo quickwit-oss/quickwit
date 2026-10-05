@@ -13,33 +13,34 @@
 // limitations under the License.
 
 use std::net::SocketAddr;
+use std::sync::LazyLock;
 
 use bytesize::ByteSize;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
-use quickwit_common::tower::{ClientGrpcConfig, GrpcMetricsLayer, make_channel};
+use quickwit_common::tower::GrpcMetricsLayer;
 use quickwit_proto::cluster::cluster_service_grpc_server::ClusterServiceGrpcServer;
 use quickwit_proto::cluster::{
     ChitchatId as ProtoChitchatId, ClusterError, ClusterResult, ClusterService,
     ClusterServiceClient, ClusterServiceGrpcServerAdapter, FetchClusterStateRequest,
     FetchClusterStateResponse, NodeState as ProtoNodeState, VersionedKeyValue,
 };
+use quickwit_transport::ChannelFactory;
 use tonic::async_trait;
 
 use crate::Cluster;
 
 const MAX_MESSAGE_SIZE: ByteSize = ByteSize::mib(64);
 
-static CLUSTER_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("cluster", "client"));
-static CLUSTER_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("cluster", "server"));
+static CLUSTER_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("cluster", "client"));
+static CLUSTER_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("cluster", "server"));
 
 pub(crate) async fn cluster_grpc_client(
     socket_addr: SocketAddr,
-    client_grpc_config: ClientGrpcConfig,
+    channel_factory: ChannelFactory,
 ) -> ClusterServiceClient {
-    let channel = make_channel(socket_addr, client_grpc_config).await;
+    let channel = channel_factory.make_channel(socket_addr).await;
 
     ClusterServiceClient::tower()
         .stack_layer(CLUSTER_GRPC_CLIENT_METRICS_LAYER.clone())
@@ -61,7 +62,7 @@ impl ClusterService for Cluster {
         &self,
         request: FetchClusterStateRequest,
     ) -> ClusterResult<FetchClusterStateResponse> {
-        if request.cluster_id != self.cluster_id() {
+        if self.rejects_cluster_id(&request.cluster_id) {
             return Err(ClusterError::Internal("wrong cluster".to_string()));
         }
         let chitchat = self.chitchat().await;
@@ -72,7 +73,7 @@ impl ClusterService for Cluster {
 
         for (chitchat_id, node_state) in chitchat_guard.node_states() {
             let proto_chitchat_id = ProtoChitchatId {
-                node_id: chitchat_id.node_id.clone(),
+                node_id: chitchat_id.node_id.to_string(),
                 generation_id: chitchat_id.generation_id,
                 gossip_advertise_addr: chitchat_id.gossip_advertise_addr.to_string(),
             };
@@ -111,6 +112,8 @@ impl ClusterService for Cluster {
             };
             proto_node_states.push(proto_node_state);
         }
+        // Echo the accepted request ID so catch-up clients can validate responses even when
+        // the server announces a different ID during a rolling rename.
         let response = FetchClusterStateResponse {
             cluster_id: request.cluster_id,
             node_states: proto_node_states,
@@ -121,21 +124,23 @@ impl ClusterService for Cluster {
 
 #[cfg(test)]
 mod tests {
-    use chitchat::transport::ChannelTransport;
+    use quickwit_proto::types::NodeId;
 
     use super::*;
-    use crate::create_cluster_for_test;
-    use crate::member::{ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY, READINESS_KEY};
+    use crate::member::{
+        ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY, READINESS_KEY, STANDALONE_COMPACTORS_KEY,
+    };
+    use crate::{ChitchatTransport, TestClusterBuilder, create_cluster_for_test};
 
     #[tokio::test]
     async fn test_fetch_cluster_state() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
 
         let cluster_id = cluster.cluster_id().to_string();
-        let node_id = cluster.self_node_id().to_owned();
+        let node_id = cluster.self_node_id().to_string();
 
         cluster.set_self_key_value("foo", "bar").await;
 
@@ -162,7 +167,7 @@ mod tests {
             .key_values
             .sort_unstable_by(|left, right| left.key.cmp(&right.key));
 
-        assert_eq!(node_state.key_values.len(), 4);
+        assert_eq!(node_state.key_values.len(), 5);
         assert_eq!(node_state.key_values[0].key, ENABLED_SERVICES_KEY);
         assert_eq!(node_state.key_values[0].value, "indexer");
 
@@ -173,5 +178,36 @@ mod tests {
 
         assert_eq!(node_state.key_values[3].key, READINESS_KEY);
         assert_eq!(node_state.key_values[3].value, "READY");
+
+        assert_eq!(node_state.key_values[4].key, STANDALONE_COMPACTORS_KEY);
+        assert_eq!(node_state.key_values[4].value, "false");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_cluster_state_accepts_extra_cluster_id() {
+        let transport = ChitchatTransport::default();
+        let cluster = TestClusterBuilder::new(NodeId::from_str("node-1"), 1, &transport)
+            .with_cluster_id("new-cluster")
+            .with_extra_cluster_ids(["old-cluster".to_string()])
+            .with_readiness(true)
+            .build()
+            .await
+            .unwrap();
+
+        let response = cluster
+            .fetch_cluster_state(FetchClusterStateRequest {
+                cluster_id: "old-cluster".to_string(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.cluster_id, "old-cluster");
+
+        let error = cluster
+            .fetch_cluster_state(FetchClusterStateRequest {
+                cluster_id: "unrelated-cluster".to_string(),
+            })
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("wrong cluster"));
     }
 }

@@ -19,7 +19,7 @@ mod indexer;
 mod indexing_pipeline;
 mod indexing_service;
 mod merge_executor;
-mod merge_pipeline;
+pub(crate) mod merge_pipeline;
 mod merge_planner;
 mod merge_scheduler_service;
 mod merge_split_downloader;
@@ -36,8 +36,12 @@ pub use indexer::{Indexer, IndexerCounters};
 pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineParams};
 pub use indexing_service::{INDEXING_DIR_NAME, IndexingService, IndexingServiceCounters};
 pub use merge_executor::{MergeExecutor, combine_partition_ids, merge_split_attrs};
-pub use merge_pipeline::{FinishPendingMergesAndShutdownPipeline, MergePipeline};
-pub(crate) use merge_planner::{MergePlanner, RunFinalizeMergePolicyAndQuit};
+pub use merge_pipeline::{
+    FinishPendingMergesAndShutdownPipeline, MergePipeline, MergePipelineParams,
+};
+pub(crate) use merge_planner::MergePlanner;
+#[cfg(test)]
+pub(crate) use merge_planner::RunFinalizeMergePolicyAndQuit;
 pub use merge_scheduler_service::{MergePermit, MergeSchedulerService, schedule_merge};
 pub use merge_split_downloader::MergeSplitDownloader;
 pub use packager::Packager;

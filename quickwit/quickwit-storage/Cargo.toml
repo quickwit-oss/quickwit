@@ -11,12 +11,12 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
-fnv = { workspace = true }
 futures = { workspace = true }
 http-body-util = { workspace = true}
 hyper = { workspace = true }
@@ -24,12 +24,14 @@ lru = { workspace = true }
 md5 = { workspace = true }
 mini-moka = { workspace = true }
 mockall = { workspace = true, optional = true }
-once_cell = { workspace = true }
+percent-encoding = { workspace = true }
 pin-project = { workspace = true }
 quick_cache = { workspace = true }
 regex = { workspace = true }
+rustc-hash = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+stable_deref_trait = { workspace = true }
 tantivy = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
@@ -51,17 +53,29 @@ azure_storage_blobs = { workspace = true, optional = true }
 
 quickwit-aws = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-proto = { workspace = true }
 
 opendal = { workspace = true, optional = true }
+reqsign-core = { workspace = true, optional = true }
+reqsign-google = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
 http = { workspace = true }
 mockall = { workspace = true }
 proptest = { workspace = true }
+# Match OpenDAL's internal reqwest major. `default-features = false` is
+# intentional: the HTTPS regression test should get TLS only from OpenDAL's
+# `reqwest-rustls-tls` feature, not from this dev-dependency.
+reqwest-013 = { package = "reqwest", version = "0.13", default-features = false }
+# Used by the HTTPS TLS regression test to inject a custom reqwest client via
+# OpenDAL's HttpTransporter API (split out of opendal in 0.58).
+opendal-http-transport-reqwest = "0.58"
+rustls = { workspace = true }
 tokio = { workspace = true }
+tokio-rustls = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 aws-sdk-s3 = { workspace = true }
@@ -73,6 +87,7 @@ quickwit-common = { workspace = true, features = ["testsuite"] }
 azure = [
   "azure_core",
   "azure_identity",
+  "azure_identity/enable_reqwest_rustls",
   "azure_storage",
   "azure_storage_blobs",
   "azure_core/hmac_rust",
@@ -80,7 +95,7 @@ azure = [
   "azure_storage/enable_reqwest_rustls",
   "azure_storage_blobs/enable_reqwest_rustls",
 ]
-gcs = ["dep:opendal", "opendal/services-gcs"]
+gcs = ["dep:opendal", "opendal/services-gcs", "dep:reqsign-core", "dep:reqsign-google"]
 ci-test = []
 integration-testsuite = [
   "azure",

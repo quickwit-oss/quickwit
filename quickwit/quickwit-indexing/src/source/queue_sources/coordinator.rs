@@ -23,10 +23,9 @@ use quickwit_config::{FileSourceMessageType, FileSourceSqs};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::types::SourceUid;
+use quickwit_proto::types::{PublishToken, SourceUid};
 use quickwit_storage::StorageResolver;
 use serde::Serialize;
-use ulid::Ulid;
 
 use super::Queue;
 use super::helpers::QueueReceiver;
@@ -35,7 +34,7 @@ use super::message::{MessageType, PreProcessingError, ReadyMessage};
 use super::shared_state::{QueueSharedState, checkpoint_messages};
 use super::visibility::{VisibilitySettings, spawn_visibility_task};
 use crate::actors::DocProcessor;
-use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
+use crate::models::{NewPublishLock, PublishLock};
 use crate::source::{SourceContext, SourceRuntime};
 
 /// Maximum duration that the `emit_batches()` callback can wait for
@@ -96,6 +95,15 @@ impl QueueCoordinator {
         shard_max_count: Option<u32>,
         shard_pruning_interval: Duration,
     ) -> Self {
+        // Queue sources own their shards through the reacquire grace period, not through the
+        // indexing plan. `resolve` without a plan ID mints a token that `AcquireShards` does not
+        // order against the token already recorded on the shard, so a stale shard can always be
+        // reclaimed.
+        let publish_token =
+            PublishToken::resolve(source_runtime.pipeline_id.node_id.as_str(), "").to_string();
+        source_runtime
+            .publish_token
+            .store(Some(Arc::new(publish_token.clone().into())));
         Self {
             shared_state: QueueSharedState::new(
                 source_runtime.metastore,
@@ -117,7 +125,7 @@ impl QueueCoordinator {
             observable_state: QueueCoordinatorObservableState::default(),
             message_type,
             publish_lock: PublishLock::default(),
-            publish_token: Ulid::new().to_string(),
+            publish_token,
             visibility_settings: VisibilitySettings::from_commit_timeout(
                 source_runtime.indexing_setting.commit_timeout_secs,
             ),
@@ -154,11 +162,6 @@ impl QueueCoordinator {
         let publish_lock = self.publish_lock.clone();
         ctx.send_message(doc_processor_mailbox, NewPublishLock(publish_lock))
             .await?;
-        ctx.send_message(
-            doc_processor_mailbox,
-            NewPublishToken(self.publish_token.clone()),
-        )
-        .await?;
         Ok(())
     }
 
@@ -262,8 +265,7 @@ impl QueueCoordinator {
                 .await?;
             self.observable_state.num_lines_processed += batch_builder.docs.len() as u64;
             self.observable_state.num_bytes_processed += batch_builder.num_bytes;
-            doc_processor_mailbox
-                .send_message(batch_builder.build())
+            ctx.send_message(doc_processor_mailbox, batch_builder.build())
                 .await?;
             if in_progress_ref.batch_reader.is_eof() {
                 self.local_state.drop_currently_read().await?;
@@ -326,6 +328,7 @@ mod tests {
     use ulid::Ulid;
 
     use super::*;
+    use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
     use crate::source::doc_file_reader::file_test_helpers::{DUMMY_DOC, generate_dummy_doc_file};
     use crate::source::queue_sources::memory_queue::MemoryQueueForTests;
@@ -338,7 +341,7 @@ mod tests {
         shared_state: QueueSharedState,
     ) -> QueueCoordinator {
         let pipeline_id = IndexingPipelineId {
-            node_id: NodeId::from_str("test-node").unwrap(),
+            node_id: NodeId::from_str("test-node"),
             index_uid: shared_state.source_uid.index_uid.clone(),
             source_id: shared_state.source_uid.source_id.clone(),
             pipeline_uid: PipelineUid::random(),

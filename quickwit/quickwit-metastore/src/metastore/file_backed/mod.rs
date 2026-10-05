@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! Module for [`FileBackedMetastore`]. It is public so that the crate `quickwit-backward-compat`
-//! can import [`FileBackedIndex`] and run backward-compatibility tests. You should not have to
+//! can import `FileBackedIndex` and run backward-compatibility tests. You should not have to
 //! import anything from here directly.
 
 pub mod file_backed_index;
@@ -62,6 +62,7 @@ use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
 use time::OffsetDateTime;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
+use tracing::instrument;
 use ulid::Ulid;
 use uuid::Uuid;
 
@@ -112,9 +113,9 @@ impl From<bool> for MutationOccurred<()> {
 /// into as many files and stores a map of indexes
 /// (index_id, index_status) in a dedicated file `manifest.json`.
 ///
-/// A [`LazyIndexStatus`] describes the lifecycle of an index: [`LazyIndexStatus::Creating`] and
-/// [`LazyIndexStatus::Deleting`] are transitioning states that indicates that the index is not
-/// yet available. On the contrary, the [`LazyIndexStatus::Active`] status indicates the index is
+/// A `LazyIndexStatus` describes the lifecycle of an index: `LazyIndexStatus::Creating` and
+/// `LazyIndexStatus::Deleting` are transitioning states that indicates that the index is not
+/// yet available. On the contrary, the `LazyIndexStatus::Active` status indicates the index is
 /// ready to be fetched and updated.
 ///
 /// Transitioning states are useful to track inconsistencies between the in-memory and on-disk data
@@ -476,6 +477,7 @@ impl MetastoreService for FileBackedMetastore {
     // -------------------------------------------------------------------------------
     // Mutations over the high-level index.
 
+    #[instrument(name = "metastore.file_backed.create_index", skip_all)]
     async fn create_index(
         &self,
         request: CreateIndexRequest,
@@ -556,6 +558,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.file_backed.update_index", skip_all, fields(index_uid = %request.index_uid()))]
     async fn update_index(
         &self,
         request: UpdateIndexRequest,
@@ -588,6 +591,7 @@ impl MetastoreService for FileBackedMetastore {
         IndexMetadataResponse::try_from_index_metadata(&index_metadata)
     }
 
+    #[instrument(name = "metastore.file_backed.delete_index", skip_all, fields(index_uid = %request.index_uid()))]
     async fn delete_index(&self, request: DeleteIndexRequest) -> MetastoreResult<EmptyResponse> {
         // We pick the outer lock here, so that we enter a critical section.
         let mut state_wlock_guard = self.state.write().await;
@@ -642,6 +646,7 @@ impl MetastoreService for FileBackedMetastore {
     // -------------------------------------------------------------------------------
     // Mutations over a single index
 
+    #[instrument(name = "metastore.file_backed.stage_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn stage_splits(&self, request: StageSplitsRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid = request.index_uid().clone();
         let splits_metadata = request.deserialize_splits_metadata()?;
@@ -675,6 +680,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(EmptyResponse {})
     }
 
+    #[instrument(name = "metastore.file_backed.publish_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn publish_splits(
         &self,
         request: PublishSplitsRequest,
@@ -687,7 +693,7 @@ impl MetastoreService for FileBackedMetastore {
                 request.staged_split_ids,
                 request.replaced_split_ids,
                 index_checkpoint_delta,
-                request.publish_token_opt,
+                request.publish_token_opt.map(|token| token.into()),
             )?;
             Ok(MutationOccurred::Yes(()))
         })
@@ -695,6 +701,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(EmptyResponse {})
     }
 
+    #[instrument(name = "metastore.file_backed.mark_splits_for_deletion", skip_all, fields(index_uid = %request.index_uid()))]
     async fn mark_splits_for_deletion(
         &self,
         request: MarkSplitsForDeletionRequest,
@@ -718,6 +725,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(EmptyResponse {})
     }
 
+    #[instrument(name = "metastore.file_backed.delete_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn delete_splits(&self, request: DeleteSplitsRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid = request.index_uid().clone();
 
@@ -729,6 +737,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(EmptyResponse {})
     }
 
+    #[instrument(name = "metastore.file_backed.add_source", skip_all, fields(index_uid = %request.index_uid()))]
     async fn add_source(&self, request: AddSourceRequest) -> MetastoreResult<EmptyResponse> {
         let source_config = request.deserialize_source_config()?;
         let index_uid = request.index_uid();
@@ -741,6 +750,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(EmptyResponse {})
     }
 
+    #[instrument(name = "metastore.file_backed.update_source", skip_all, fields(index_uid = %request.index_uid()))]
     async fn update_source(&self, request: UpdateSourceRequest) -> MetastoreResult<EmptyResponse> {
         let source_config = request.deserialize_source_config()?;
         let index_uid = request.index_uid();
@@ -753,6 +763,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(EmptyResponse {})
     }
 
+    #[instrument(name = "metastore.file_backed.toggle_source", skip_all, fields(index_uid = %request.index_uid(), source_id = %request.source_id))]
     async fn toggle_source(&self, request: ToggleSourceRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid = request.index_uid();
 
@@ -765,6 +776,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(EmptyResponse {})
     }
 
+    #[instrument(name = "metastore.file_backed.delete_source", skip_all, fields(index_uid = %request.index_uid(), source_id = %request.source_id))]
     async fn delete_source(&self, request: DeleteSourceRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid = request.index_uid();
 
@@ -776,6 +788,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(EmptyResponse {})
     }
 
+    #[instrument(name = "metastore.file_backed.reset_source_checkpoint", skip_all, fields(index_uid = %request.index_uid(), source_id = %request.source_id))]
     async fn reset_source_checkpoint(
         &self,
         request: ResetSourceCheckpointRequest,
@@ -796,6 +809,7 @@ impl MetastoreService for FileBackedMetastore {
 
     /// Streams of splits for the given request.
     /// No error is returned if any of the requested `index_uid` does not exist.
+    #[instrument(name = "metastore.file_backed.list_splits", skip_all)]
     async fn list_splits(
         &self,
         request: ListSplitsRequest,
@@ -809,6 +823,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(ServiceStream::new(splits_responses_stream))
     }
 
+    #[instrument(name = "metastore.file_backed.list_index_stats", skip_all, fields(index_id_patterns = ?request.index_id_patterns))]
     async fn list_index_stats(
         &self,
         request: ListIndexStatsRequest,
@@ -854,6 +869,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(ListIndexStatsResponse { index_stats })
     }
 
+    #[instrument(name = "metastore.file_backed.list_stale_splits", skip_all, fields(index_uid = %request.index_uid()))]
     async fn list_stale_splits(
         &self,
         request: ListStaleSplitsRequest,
@@ -870,6 +886,7 @@ impl MetastoreService for FileBackedMetastore {
         ListSplitsResponse::try_from_splits(splits)
     }
 
+    #[instrument(name = "metastore.file_backed.index_metadata", skip(self))]
     async fn index_metadata(
         &self,
         request: IndexMetadataRequest,
@@ -882,6 +899,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.file_backed.indexes_metadata", skip_all, fields(num_subrequests = request.subrequests.len()))]
     async fn indexes_metadata(
         &self,
         request: IndexesMetadataRequest,
@@ -928,6 +946,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.file_backed.list_indexes_metadata", skip_all, fields(index_id_patterns = ?request.index_id_patterns))]
     async fn list_indexes_metadata(
         &self,
         request: ListIndexesMetadataRequest,
@@ -968,6 +987,7 @@ impl MetastoreService for FileBackedMetastore {
 
     // Shard API
 
+    #[instrument(name = "metastore.file_backed.open_shards", skip_all, fields(num_subrequests = request.subrequests.len()))]
     async fn open_shards(&self, request: OpenShardsRequest) -> MetastoreResult<OpenShardsResponse> {
         let mut response = OpenShardsResponse {
             subresponses: Vec::with_capacity(request.subrequests.len()),
@@ -988,6 +1008,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.file_backed.acquire_shards", skip_all, fields(index_uid = %request.index_uid()))]
     async fn acquire_shards(
         &self,
         request: AcquireShardsRequest,
@@ -999,6 +1020,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.file_backed.delete_shards", skip_all, fields(index_uid = %request.index_uid()))]
     async fn delete_shards(
         &self,
         request: DeleteShardsRequest,
@@ -1010,6 +1032,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.file_backed.prune_shards", skip_all, fields(index_uid = %request.index_uid()))]
     async fn prune_shards(&self, request: PruneShardsRequest) -> MetastoreResult<EmptyResponse> {
         let index_uid = request.index_uid().clone();
         self.mutate(&index_uid, |index| index.prune_shards(request))
@@ -1017,6 +1040,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(EmptyResponse {})
     }
 
+    #[instrument(name = "metastore.file_backed.list_shards", skip_all, fields(num_subrequests = request.subrequests.len()))]
     async fn list_shards(&self, request: ListShardsRequest) -> MetastoreResult<ListShardsResponse> {
         let mut subresponses = Vec::with_capacity(request.subrequests.len());
 
@@ -1034,6 +1058,7 @@ impl MetastoreService for FileBackedMetastore {
     // -------------------------------------------------------------------------------
     // Delete tasks
 
+    #[instrument(name = "metastore.file_backed.last_delete_opstamp", skip_all, fields(index_uid = %request.index_uid()))]
     async fn last_delete_opstamp(
         &self,
         request: LastDeleteOpstampRequest,
@@ -1044,6 +1069,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
     }
 
+    #[instrument(name = "metastore.file_backed.create_delete_task", skip_all, fields(index_uid = %delete_query.index_uid()))]
     async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask> {
         let index_uid = delete_query.index_uid().clone();
         let delete_task = self
@@ -1056,6 +1082,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(delete_task)
     }
 
+    #[instrument(name = "metastore.file_backed.update_splits_delete_opstamp", skip_all, fields(index_uid = %request.index_uid()))]
     async fn update_splits_delete_opstamp(
         &self,
         request: UpdateSplitsDeleteOpstampRequest,
@@ -1076,6 +1103,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(UpdateSplitsDeleteOpstampResponse {})
     }
 
+    #[instrument(name = "metastore.file_backed.list_delete_tasks", skip_all, fields(index_uid = %request.index_uid()))]
     async fn list_delete_tasks(
         &self,
         request: ListDeleteTasksRequest,
@@ -1093,6 +1121,7 @@ impl MetastoreService for FileBackedMetastore {
 
     // Index Template API
 
+    #[instrument(name = "metastore.file_backed.create_index_template", skip(self))]
     async fn create_index_template(
         &self,
         request: CreateIndexTemplateRequest,
@@ -1150,6 +1179,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(EmptyResponse {})
     }
 
+    #[instrument(name = "metastore.file_backed.get_index_template", skip(self))]
     async fn get_index_template(
         &self,
         request: GetIndexTemplateRequest,
@@ -1170,6 +1200,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.file_backed.find_index_template_matches", skip(self))]
     async fn find_index_template_matches(
         &self,
         request: FindIndexTemplateMatchesRequest,
@@ -1201,6 +1232,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.file_backed.list_index_templates", skip_all)]
     async fn list_index_templates(
         &self,
         _request: ListIndexTemplatesRequest,
@@ -1218,6 +1250,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(response)
     }
 
+    #[instrument(name = "metastore.file_backed.delete_index_templates", skip(self))]
     async fn delete_index_templates(
         &self,
         request: DeleteIndexTemplatesRequest,
@@ -1254,6 +1287,7 @@ impl MetastoreService for FileBackedMetastore {
 
     // this returns a constant uuid. on first call, it generate said uuid if it doesn't already
     // exists
+    #[instrument(name = "metastore.file_backed.get_cluster_identity", skip_all)]
     async fn get_cluster_identity(
         &self,
         _: GetClusterIdentityRequest,
@@ -1351,7 +1385,7 @@ mod tests {
     use quickwit_proto::types::SourceId;
     use quickwit_query::query_ast::qast_helper;
     use quickwit_storage::{MockStorage, RamStorage, Storage, StorageErrorKind};
-    use rand::Rng;
+    use rand::RngExt;
     use tests::manifest::{IndexStatus, Manifest};
     use time::OffsetDateTime;
     use tokio::time::Duration;
@@ -1529,7 +1563,7 @@ mod tests {
         let split_id = "split-one";
         let split_metadata = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_id: split_id.to_string(),
+            split_id: split_id.into(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(0, 99)),
@@ -1631,7 +1665,7 @@ mod tests {
 
         let split_metadata = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_id: "split1".to_string(),
+            split_id: "split1".into(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
@@ -1694,7 +1728,7 @@ mod tests {
 
         let split_metadata = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_id: "split1".to_string(),
+            split_id: "split1".into(),
             num_docs: 1,
             uncompressed_docs_size_in_bytes: 2,
             time_range: Some(0..=99),
@@ -1753,7 +1787,7 @@ mod tests {
                 async move {
                     let split_metadata = SplitMetadata {
                         footer_offsets: 1000..2000,
-                        split_id: format!("split-{i}"),
+                        split_id: format!("split-{i}").into(),
                         num_docs: 1,
                         uncompressed_docs_size_in_bytes: 2,
                         time_range: Some(RangeInclusive::new(0, 99)),

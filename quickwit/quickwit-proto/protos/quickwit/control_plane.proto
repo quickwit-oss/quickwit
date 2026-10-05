@@ -61,7 +61,7 @@ service ControlPlaneService {
   // Shard API
 
   // Returns the list of open shards for one or several sources. If the control plane is not able to find any
-  // for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
+  // for a source, it will pick an ingester and open a new shard.
   rpc GetOrCreateOpenShards(GetOrCreateOpenShardsRequest) returns (GetOrCreateOpenShardsResponse);
 
   // Asks the control plane whether the shards listed in the request should be deleted or truncated.
@@ -77,11 +77,11 @@ message GetOrCreateOpenShardsRequest {
   // There should be at most one subrequest per index per request.
   repeated GetOrCreateOpenShardsSubrequest subrequests = 1;
   repeated quickwit.ingest.ShardIds closed_shards = 2;
-  // The control plane should return shards that are not present on the supplied leaders.
+  // The control plane should return shards that are not present on the supplied ingesters.
   //
-  // The control plane does not change the status of those leaders just from this signal.
+  // The control plane does not change the status of those ingesters just from this signal.
   // It will check the status of its own ingester pool.
-  repeated string unavailable_leaders = 3;
+  repeated string unavailable_ingesters = 3;
 }
 
 message GetOrCreateOpenShardsSubrequest {

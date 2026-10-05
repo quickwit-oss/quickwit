@@ -14,19 +14,19 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use anyhow::Context;
 use futures::{Future, StreamExt};
 use itertools::Itertools;
-use quickwit_common::metrics::IntCounter;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::{Progress, rate_limited_info};
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitInfo,
     SplitMetadata, SplitState,
 };
+use quickwit_metrics::Counter;
 use quickwit_proto::metastore::{
     DeleteSplitsRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
     MetastoreService, MetastoreServiceClient,
@@ -41,12 +41,12 @@ use tracing::{error, instrument};
 const DELETE_SPLITS_BATCH_SIZE: usize = 10_000;
 
 pub struct GcMetrics {
-    pub deleted_splits: IntCounter,
-    pub deleted_bytes: IntCounter,
-    pub failed_splits: IntCounter,
+    pub deleted_splits: Counter,
+    pub deleted_bytes: Counter,
+    pub failed_splits: Counter,
 }
 
-trait RecordGcMetrics {
+pub(crate) trait RecordGcMetrics {
     fn record(&self, num_delete_splits: usize, num_deleted_bytes: u64, num_failed_splits: usize);
 }
 
@@ -72,7 +72,7 @@ pub struct DeleteSplitsError {
     metastore_failures: Vec<SplitInfo>,
 }
 
-async fn protect_future<Fut, T>(progress: Option<&Progress>, future: Fut) -> T
+pub(crate) async fn protect_future<Fut, T>(progress: Option<&Progress>, future: Fut) -> T
 where Fut: Future<Output = T> {
     match progress {
         None => future.await,
@@ -289,18 +289,18 @@ async fn list_splits_metadata(
 
 /// In order to avoid hammering the load on the metastore, we can throttle the rate of split
 /// deletion by setting this environment variable.
-fn get_maximum_split_deletion_rate_per_sec() -> Option<usize> {
-    static MAX_SPLIT_DELETION_RATE_PER_SEC: OnceLock<Option<usize>> = OnceLock::new();
-    *MAX_SPLIT_DELETION_RATE_PER_SEC.get_or_init(|| {
+pub(crate) fn get_maximum_split_deletion_rate_per_sec() -> Option<usize> {
+    static MAX_SPLIT_DELETION_RATE_PER_SEC: LazyLock<Option<usize>> = LazyLock::new(|| {
         quickwit_common::get_from_env_opt::<usize>("QW_MAX_SPLIT_DELETION_RATE_PER_SEC", false)
-    })
+    });
+    *MAX_SPLIT_DELETION_RATE_PER_SEC
 }
 
 fn get_index_gc_concurrency() -> Option<usize> {
-    static INDEX_GC_CONCURRENCY: OnceLock<Option<usize>> = OnceLock::new();
-    *INDEX_GC_CONCURRENCY.get_or_init(|| {
+    static INDEX_GC_CONCURRENCY: LazyLock<Option<usize>> = LazyLock::new(|| {
         quickwit_common::get_from_env_opt::<usize>("QW_INDEX_GC_CONCURRENCY", false)
-    })
+    });
+    *INDEX_GC_CONCURRENCY
 }
 
 /// Removes any splits marked for deletion which haven't been
@@ -423,12 +423,15 @@ pub async fn delete_splits_from_storage_and_metastore(
     splits: Vec<SplitMetadata>,
     progress_opt: Option<&Progress>,
 ) -> Result<Vec<SplitInfo>, DeleteSplitsError> {
+    if splits.is_empty() {
+        return Ok(Vec::new());
+    }
     let mut split_infos: HashMap<PathBuf, SplitInfo> = HashMap::with_capacity(splits.len());
-
     for split in splits {
         let split_info = split.as_split_info();
         split_infos.insert(split_info.file_name.clone(), split_info);
     }
+
     let split_paths = split_infos
         .keys()
         .map(|split_path_buf| split_path_buf.as_path())
@@ -468,7 +471,7 @@ pub async fn delete_splits_from_storage_and_metastore(
         }
     };
     if !successes.is_empty() {
-        let split_ids: Vec<SplitId> = successes
+        let split_ids: Vec<String> = successes
             .iter()
             .map(|split_info| split_info.split_id.to_string())
             .collect();
@@ -510,6 +513,7 @@ pub async fn delete_splits_from_storage_and_metastore(
 }
 
 #[cfg(test)]
+#[allow(clippy::result_large_err)] // BulkDeleteError is large; acceptable in mock closures
 mod tests {
     use std::time::Duration;
 
@@ -556,7 +560,7 @@ mod tests {
 
         let split_id = "test-run-gc--split";
         let split_metadata = SplitMetadata {
-            split_id: split_id.to_string(),
+            split_id: split_id.into(),
             index_uid: index_uid.clone(),
             ..Default::default()
         };
@@ -656,7 +660,7 @@ mod tests {
 
         let split_id = "test-run-gc--split";
         let split_metadata = SplitMetadata {
-            split_id: split_id.to_string(),
+            split_id: split_id.into(),
             index_uid: index_uid.clone(),
             ..Default::default()
         };
@@ -786,7 +790,7 @@ mod tests {
 
         let split_id = "test-delete-splits-happy--split";
         let split_metadata = SplitMetadata {
-            split_id: split_id.to_string(),
+            split_id: split_id.into(),
             index_uid: IndexUid::new_with_random_ulid(index_id),
             ..Default::default()
         };
@@ -891,13 +895,13 @@ mod tests {
 
         let split_id_0 = "test-delete-splits-storage-error--split-0";
         let split_metadata_0 = SplitMetadata {
-            split_id: split_id_0.to_string(),
+            split_id: split_id_0.into(),
             index_uid: index_uid.clone(),
             ..Default::default()
         };
         let split_id_1 = "test-delete-splits-storage-error--split-1";
         let split_metadata_1 = SplitMetadata {
-            split_id: split_id_1.to_string(),
+            split_id: split_id_1.into(),
             index_uid: index_uid.clone(),
             ..Default::default()
         };
@@ -979,13 +983,13 @@ mod tests {
 
         let split_id_0 = "test-delete-splits-storage-error--split-0";
         let split_metadata_0 = SplitMetadata {
-            split_id: split_id_0.to_string(),
+            split_id: split_id_0.into(),
             index_uid: index_uid.clone(),
             ..Default::default()
         };
         let split_id_1 = "test-delete-splits-storage-error--split-1";
         let split_metadata_1 = SplitMetadata {
-            split_id: split_id_1.to_string(),
+            split_id: split_id_1.into(),
             index_uid: index_uid.clone(),
             ..Default::default()
         };

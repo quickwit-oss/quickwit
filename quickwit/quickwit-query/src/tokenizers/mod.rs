@@ -14,11 +14,11 @@
 
 mod chinese_compatible;
 mod code_tokenizer;
-#[cfg(feature = "multilang")]
-mod multilang;
 mod tokenizer_manager;
+mod unicode_segmenter_tokenizer;
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
+
 use tantivy::tokenizer::{
     AsciiFoldingFilter, LowerCaser, RawTokenizer, RemoveLongFilter, SimpleTokenizer, TextAnalyzer,
     WhitespaceTokenizer,
@@ -26,9 +26,8 @@ use tantivy::tokenizer::{
 
 use self::chinese_compatible::ChineseTokenizer;
 pub use self::code_tokenizer::CodeTokenizer;
-#[cfg(feature = "multilang")]
-pub use self::multilang::MultiLangTokenizer;
 pub use self::tokenizer_manager::{RAW_TOKENIZER_NAME, TokenizerManager};
+pub use self::unicode_segmenter_tokenizer::UnicodeSegmenterTokenizer;
 
 pub const DEFAULT_REMOVE_TOKEN_LENGTH: usize = 255;
 
@@ -58,17 +57,6 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
         .filter(LowerCaser)
         .build();
     tokenizer_manager.register("default", default_tokenizer, true);
-    #[cfg(feature = "multilang")]
-    {
-        let en_stem_tokenizer = TextAnalyzer::builder(SimpleTokenizer::default())
-            .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
-            .filter(LowerCaser)
-            .filter(tantivy::tokenizer::Stemmer::new(
-                tantivy::tokenizer::Language::English,
-            ))
-            .build();
-        tokenizer_manager.register("en_stem", en_stem_tokenizer, true);
-    }
     tokenizer_manager.register("whitespace", WhitespaceTokenizer::default(), false);
 
     let chinese_tokenizer = TextAnalyzer::builder(ChineseTokenizer)
@@ -94,15 +82,16 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
             .build(),
         true,
     );
-    #[cfg(feature = "multilang")]
+    let unicode_segmenter_tokenizer = TextAnalyzer::builder(UnicodeSegmenterTokenizer)
+        .filter(LowerCaser)
+        .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
+        .build();
     tokenizer_manager.register(
-        "multilang_default",
-        TextAnalyzer::builder(MultiLangTokenizer::default())
-            .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
-            .filter(LowerCaser)
-            .build(),
+        "unicode_segmenter",
+        unicode_segmenter_tokenizer.clone(),
         true,
     );
+    tokenizer_manager.register("datadog", unicode_segmenter_tokenizer, true);
     tokenizer_manager
 }
 
@@ -121,8 +110,8 @@ fn create_quickwit_fastfield_normalizer_manager() -> TokenizerManager {
 }
 
 pub fn get_quickwit_fastfield_normalizer_manager() -> &'static TokenizerManager {
-    static QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER: Lazy<TokenizerManager> =
-        Lazy::new(create_quickwit_fastfield_normalizer_manager);
+    static QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER: LazyLock<TokenizerManager> =
+        LazyLock::new(create_quickwit_fastfield_normalizer_manager);
     &QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER
 }
 

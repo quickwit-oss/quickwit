@@ -19,6 +19,14 @@ use quickwit_proto::metastore::MetastoreServiceClient;
 
 use crate::MetastoreResolverError;
 
+/// Options controlling how a metastore client is resolved.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct MetastoreFactoryOptions {
+    /// Whether the resolved metastore client should use a read-only connection. Only supported by
+    /// the PostgreSQL backend.
+    pub read_only: bool,
+}
+
 /// A metastore factory builds a [`MetastoreServiceClient`] object for a target [`MetastoreBackend`]
 /// from a [`MetastoreConfig`] and a [`Uri`].
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
@@ -27,11 +35,13 @@ pub trait MetastoreFactory: Send + Sync + 'static {
     /// Returns the metastore backend targeted by the factory.
     fn backend(&self) -> MetastoreBackend;
 
-    /// Returns the appropriate [`MetastoreServiceClient`] object for the `uri`.
+    /// Returns the appropriate [`MetastoreServiceClient`] object for the `uri` and resolution
+    /// `options`.
     async fn resolve(
         &self,
         metastore_config: &MetastoreConfig,
         uri: &Uri,
+        options: MetastoreFactoryOptions,
     ) -> Result<MetastoreServiceClient, MetastoreResolverError>;
 }
 
@@ -59,6 +69,7 @@ impl MetastoreFactory for UnsupportedMetastore {
         &self,
         _metastore_config: &MetastoreConfig,
         _uri: &Uri,
+        _options: MetastoreFactoryOptions,
     ) -> Result<MetastoreServiceClient, MetastoreResolverError> {
         Err(MetastoreResolverError::UnsupportedBackend(
             self.message.to_string(),

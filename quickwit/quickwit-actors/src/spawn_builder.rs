@@ -16,10 +16,10 @@ use std::fmt;
 use std::time::Duration;
 
 use anyhow::Context;
-use quickwit_common::metrics::IntCounter;
+use quickwit_metrics::Counter;
 use sync_wrapper::SyncWrapper;
 use tokio::sync::watch;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 use crate::envelope::Envelope;
 use crate::mailbox::{Inbox, create_mailbox};
@@ -91,7 +91,7 @@ pub struct SpawnBuilder<A: Actor> {
     spawn_ctx: SpawnContext,
     #[allow(clippy::type_complexity)]
     mailboxes: Option<(Mailbox<A>, Inbox<A>)>,
-    backpressure_micros_counter_opt: Option<IntCounter>,
+    backpressure_micros_counter_opt: Option<Counter>,
 }
 
 impl<A: Actor> SpawnBuilder<A> {
@@ -129,10 +129,7 @@ impl<A: Actor> SpawnBuilder<A> {
     ///
     /// When using `.ask` the amount of time counted may be misleading.
     /// (See `Mailbox::ask_with_backpressure_counter` for more details)
-    pub fn set_backpressure_micros_counter(
-        mut self,
-        backpressure_micros_counter: IntCounter,
-    ) -> Self {
+    pub fn set_backpressure_micros_counter(mut self, backpressure_micros_counter: Counter) -> Self {
         self.backpressure_micros_counter_opt = Some(backpressure_micros_counter);
         self
     }
@@ -403,23 +400,24 @@ async fn actor_loop<A: Actor>(
             actor_env.process_messages().await
         };
 
-    let actor_id = actor_env.ctx.actor_instance_id();
-    match after_process_exit_status {
-        ActorExitStatus::Success
-        | ActorExitStatus::Quit
-        | ActorExitStatus::DownstreamClosed
-        | ActorExitStatus::Killed => {
-            info!(actor_id, phase = ?exit_phase, exit_status = ?after_process_exit_status, "actor-exit");
-        }
-        ActorExitStatus::Failure(_) | ActorExitStatus::Panicked => {
-            error!(actor_id, phase = ?exit_phase, exit_status = ?after_process_exit_status, "actor-exit");
-        }
-    };
+    let actor_name = actor_env.actor.get_mut().name();
 
     // TODO the no advance time guard for finalize has a race condition. Ideally we would
     // like to have the guard before we drop the last envelope.
     let final_exit_status = actor_env.finalize(after_process_exit_status).await;
+    let fault_opt: Option<anyhow::Error> = match &final_exit_status {
+        ActorExitStatus::Failure(cause) => Some(anyhow::anyhow!(
+            "{actor_name} failed while {exit_phase:?}: {cause:#}"
+        )),
+        ActorExitStatus::Panicked => Some(anyhow::anyhow!(
+            "{actor_name} panicked while {exit_phase:?}"
+        )),
+        ActorExitStatus::Success
+        | ActorExitStatus::Quit
+        | ActorExitStatus::DownstreamClosed
+        | ActorExitStatus::Killed => None,
+    };
     // The last observation is collected on `ActorExecutionEnv::Drop`.
-    actor_env.ctx.exit(&final_exit_status);
+    actor_env.ctx.exit(&final_exit_status, fault_opt);
     final_exit_status
 }

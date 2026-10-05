@@ -27,12 +27,10 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_directories::write_hotcache;
 use quickwit_doc_mapper::NamedField;
 use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
-use quickwit_proto::search::{
-    ListFieldType, ListFields, ListFieldsEntryResponse, serialize_split_fields,
-};
+use quickwit_proto::search::{ListFieldsEntry, ListFieldsMetadata, ListFieldsType};
 use tantivy::index::FieldMetadata;
 use tantivy::schema::{FieldType, Type};
-use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentMeta};
+use tantivy::{IndexMeta, InvertedIndexReader, ReloadPolicy};
 use tokio::runtime::Handle;
 use tracing::{debug, info, instrument, warn};
 
@@ -85,10 +83,9 @@ impl Packager {
         split: IndexedSplit,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<PackagedSplit> {
-        let segment_metas = split.index.searchable_segment_metas()?;
-        assert_eq!(segment_metas.len(), 1);
-        let packaged_split =
-            create_packaged_split(&segment_metas[..], split, &self.tag_fields, ctx)?;
+        let index_meta = split.index.load_metas()?;
+        assert_eq!(index_meta.segments.len(), 1);
+        let packaged_split = create_packaged_split(&index_meta, split, &self.tag_fields, ctx)?;
         Ok(packaged_split)
     }
 }
@@ -154,7 +151,6 @@ impl Handler<IndexedSplitBatch> for Packager {
                 packaged_splits,
                 batch.checkpoint_delta_opt,
                 batch.publish_lock,
-                batch.publish_token_opt,
                 batch.merge_task_opt,
                 batch.batch_parent_span,
             ),
@@ -186,25 +182,21 @@ impl Handler<EmptySplit> for Packager {
 }
 
 fn list_split_files(
-    segment_metas: &[SegmentMeta],
+    index_meta: &IndexMeta,
     scratch_directory: &TempDirectory,
 ) -> io::Result<Vec<PathBuf>> {
-    let mut index_files = vec![scratch_directory.path().join("meta.json")];
+    let mut split_files = vec![scratch_directory.path().join("meta.json")];
 
-    // list the segment files
-    for segment_meta in segment_metas {
-        for relative_path in segment_meta.list_files() {
-            let filepath = scratch_directory.path().join(relative_path);
-            if filepath.try_exists()? {
-                // If the file is missing, this is fine.
-                // segment_meta.list_files() may actually returns files that
-                // may not exist.
-                index_files.push(filepath);
-            }
+    for relative_path in index_meta.list_segment_files() {
+        let filepath = scratch_directory.path().join(relative_path);
+        // Tantivy lists candidate component paths, including optional files
+        // that may not exist.
+        if filepath.try_exists()? {
+            split_files.push(filepath);
         }
     }
-    index_files.sort();
-    Ok(index_files)
+    split_files.sort();
+    Ok(split_files)
 }
 
 fn build_hotcache<W: io::Write>(split_path: &Path, out: &mut W) -> anyhow::Result<()> {
@@ -269,17 +261,17 @@ fn try_extract_terms(
 }
 
 fn create_packaged_split(
-    segment_metas: &[SegmentMeta],
+    index_meta: &IndexMeta,
     split: IndexedSplit,
     tag_fields: &[NamedField],
     ctx: &ActorContext<Packager>,
 ) -> anyhow::Result<PackagedSplit> {
-    debug!(split_id = split.split_id(), "create-packaged-split");
-    let split_files = list_split_files(segment_metas, &split.split_scratch_directory)?;
+    debug!(split_id = %split.split_id(), "create-packaged-split");
+    let split_files = list_split_files(index_meta, &split.split_scratch_directory)?;
 
     // Extracts tag values from inverted indexes only when a field cardinality is less
     // than `MAX_VALUES_PER_TAG_FIELD`.
-    debug!(split_id = split.split_id(), tag_fields =? tag_fields, "extract-tags-values");
+    debug!(split_id = %split.split_id(), tag_fields =? tag_fields, "extract-tags-values");
     let index_reader = split
         .index
         .reader_builder()
@@ -309,12 +301,12 @@ fn create_packaged_split(
 
     ctx.record_progress();
 
-    debug!(split_id = split.split_id(), "build-hotcache");
+    debug!(split_id = %split.split_id(), "build-hotcache");
     let mut hotcache_bytes = Vec::new();
     build_hotcache(split.split_scratch_directory.path(), &mut hotcache_bytes)?;
     ctx.record_progress();
 
-    let serialized_split_fields = serialize_field_metadata(&fields_metadata);
+    let serialized_split_fields = serialize_fields_metadata(&fields_metadata);
 
     let packaged_split = PackagedSplit {
         serialized_split_fields,
@@ -327,37 +319,19 @@ fn create_packaged_split(
     Ok(packaged_split)
 }
 
-/// Serializes the Split fields.
-///
-/// `fields_metadata` has to be sorted.
-fn serialize_field_metadata(fields_metadata: &[FieldMetadata]) -> Vec<u8> {
-    let fields = fields_metadata
+/// Serializes the fields metadata from a split sorted by (name, type).
+fn serialize_fields_metadata(fields_metadata: &[FieldMetadata]) -> Vec<u8> {
+    let entries = fields_metadata
         .iter()
-        .map(field_metadata_to_list_field_serialized)
+        .map(field_metadata_to_list_fields_entry)
+        .sorted_unstable_by(|left, right| left.cmp_by_name_and_type(right))
         .collect::<Vec<_>>();
 
-    serialize_split_fields(ListFields { fields })
+    ListFieldsMetadata { entries }.serialize()
 }
 
-fn tantivy_type_to_list_field_type(typ: Type) -> ListFieldType {
-    match typ {
-        Type::Str => ListFieldType::Str,
-        Type::U64 => ListFieldType::U64,
-        Type::I64 => ListFieldType::I64,
-        Type::F64 => ListFieldType::F64,
-        Type::Bool => ListFieldType::Bool,
-        Type::Date => ListFieldType::Date,
-        Type::Facet => ListFieldType::Facet,
-        Type::Bytes => ListFieldType::Bytes,
-        Type::Json => ListFieldType::Json,
-        Type::IpAddr => ListFieldType::IpAddr,
-    }
-}
-
-fn field_metadata_to_list_field_serialized(
-    field_metadata: &FieldMetadata,
-) -> ListFieldsEntryResponse {
-    ListFieldsEntryResponse {
+fn field_metadata_to_list_fields_entry(field_metadata: &FieldMetadata) -> ListFieldsEntry {
+    ListFieldsEntry {
         field_name: field_metadata.field_name.to_string(),
         field_type: tantivy_type_to_list_field_type(field_metadata.typ) as i32,
         searchable: field_metadata.is_indexed(),
@@ -365,6 +339,25 @@ fn field_metadata_to_list_field_serialized(
         index_ids: Vec::new(),
         non_searchable_index_ids: Vec::new(),
         non_aggregatable_index_ids: Vec::new(),
+        // Split counts are populated by the search leaf when it reads this metadata.
+        num_splits: 0,
+    }
+}
+
+fn tantivy_type_to_list_field_type(typ: Type) -> ListFieldsType {
+    match typ {
+        Type::Bool => ListFieldsType::Bool,
+        Type::Bytes => ListFieldsType::Bytes,
+        Type::Date => ListFieldsType::Date,
+        Type::F64 => ListFieldsType::F64,
+        Type::Facet => ListFieldsType::Facet,
+        Type::I64 => ListFieldsType::I64,
+        Type::IpAddr => ListFieldsType::IpAddr,
+        Type::Json => ListFieldsType::Json,
+        Type::Str => ListFieldsType::Str,
+        Type::U64 => ListFieldsType::U64,
+        // Packaged fields originate from Quickwit mappings, which cannot define custom types.
+        Type::Custom => unimplemented!("custom fields are not supported in Quickwit"),
     }
 }
 
@@ -381,8 +374,9 @@ mod tests {
     use std::ops::RangeInclusive;
 
     use quickwit_actors::{ObservationType, Universe};
+    use quickwit_common::io::IoControls;
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-    use quickwit_proto::search::{ListFieldsEntryResponse, deserialize_split_fields};
+    use quickwit_proto::search::{ListFieldsEntry, ListFieldsMetadata};
     use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId};
     use tantivy::directory::MmapDirectory;
     use tantivy::schema::{FAST, NumericOptions, STRING, Schema, TEXT, Type};
@@ -390,6 +384,7 @@ mod tests {
     use tracing::Span;
 
     use super::*;
+    use crate::controlled_directory::ControlledDirectory;
     use crate::models::{PublishLock, SplitAttrs};
 
     #[test]
@@ -424,24 +419,24 @@ mod tests {
             },
         ];
 
-        let out = serialize_field_metadata(&fields_metadata);
+        let out = serialize_fields_metadata(&fields_metadata);
 
-        let deserialized: Vec<ListFieldsEntryResponse> =
-            deserialize_split_fields(&mut &out[..]).unwrap().fields;
+        let deserialized: Vec<ListFieldsEntry> =
+            ListFieldsMetadata::deserialize(&out[..]).unwrap().entries;
 
         assert_eq!(fields_metadata.len(), deserialized.len());
         assert_eq!(deserialized[0].field_name, "test");
-        assert_eq!(deserialized[0].field_type, ListFieldType::Str as i32);
+        assert_eq!(deserialized[0].field_type, ListFieldsType::Str as i32);
         assert!(deserialized[0].searchable);
         assert!(deserialized[0].aggregatable);
 
         assert_eq!(deserialized[1].field_name, "test2");
-        assert_eq!(deserialized[1].field_type, ListFieldType::Str as i32);
+        assert_eq!(deserialized[1].field_type, ListFieldsType::Str as i32);
         assert!(deserialized[1].searchable);
         assert!(!deserialized[1].aggregatable);
 
         assert_eq!(deserialized[2].field_name, "test3");
-        assert_eq!(deserialized[2].field_type, ListFieldType::U64 as i32);
+        assert_eq!(deserialized[2].field_type, ListFieldsType::U64 as i32);
         assert!(deserialized[2].searchable);
         assert!(deserialized[2].aggregatable);
     }
@@ -478,8 +473,10 @@ mod tests {
                     .clone(),
             );
         let index_directory = MmapDirectory::open(split_scratch_directory.path())?;
+        let controlled_directory =
+            ControlledDirectory::new(Box::new(index_directory), IoControls::default());
         let mut index_writer =
-            index_builder.single_segment_index_writer(index_directory, 100_000_000)?;
+            index_builder.single_segment_index_writer(controlled_directory.clone(), 100_000_000)?;
         let mut timerange_opt: Option<RangeInclusive<DateTime>> = None;
         let mut num_docs = 0;
         for &timestamp in segment_timestamps {
@@ -509,7 +506,7 @@ mod tests {
         }
         let index = index_writer.finalize()?;
 
-        let node_id = NodeId::from("test-node");
+        let node_id = NodeId::from_str("test-node");
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let source_id = "test-source".to_string();
 
@@ -521,7 +518,7 @@ mod tests {
                 index_uid,
                 source_id,
                 doc_mapping_uid: DocMappingUid::default(),
-                split_id: "test-split".to_string(),
+                split_id: "test-split".into(),
                 partition_id: 17u64,
                 num_docs,
                 uncompressed_docs_size_in_bytes: num_docs * 15,
@@ -532,7 +529,7 @@ mod tests {
             },
             index,
             split_scratch_directory,
-            controlled_directory_opt: None,
+            controlled_directory,
         };
         Ok(indexed_split)
     }
@@ -574,7 +571,6 @@ mod tests {
                 splits: vec![indexed_split],
                 checkpoint_delta_opt: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
                 publish_lock: PublishLock::default(),
-                publish_token_opt: None,
                 merge_task_opt: None,
                 batch_parent_span: Span::none(),
             })

@@ -35,54 +35,29 @@ pub fn sort_by_rendez_vous_hash<T: Hash, U: Hash>(nodes: &mut [T], key: U) {
 
 #[cfg(test)]
 mod tests {
-    use std::net::SocketAddr;
-
     use super::*;
-    use crate::SocketAddrLegacyHash;
-
-    fn test_socket_addr(last_byte: u8) -> SocketAddr {
-        ([127, 0, 0, last_byte], 10_000u16).into()
-    }
 
     #[test]
     fn test_utils_sort_by_rendez_vous_hash() {
-        let socket1 = test_socket_addr(1);
-        let socket2 = test_socket_addr(2);
-        let socket3 = test_socket_addr(3);
-        let socket4 = test_socket_addr(4);
+        let mut nodes_four = vec!["node-4", "node-3", "node-1", "node-2"];
+        sort_by_rendez_vous_hash(&mut nodes_four, "key");
 
-        let legacy_socket1 = SocketAddrLegacyHash(&socket1);
-        let legacy_socket2 = SocketAddrLegacyHash(&socket2);
-        let legacy_socket3 = SocketAddrLegacyHash(&socket3);
-        let legacy_socket4 = SocketAddrLegacyHash(&socket4);
+        let mut nodes_three = vec!["node-1", "node-2", "node-4"];
+        sort_by_rendez_vous_hash(&mut nodes_three, "key");
+        let expected_three: Vec<&str> = nodes_four
+            .iter()
+            .copied()
+            .filter(|node| *node != "node-3")
+            .collect();
+        assert_eq!(nodes_three, expected_three);
 
-        let mut socket_set1 = vec![
-            legacy_socket4,
-            legacy_socket3,
-            legacy_socket1,
-            legacy_socket2,
-        ];
-        sort_by_rendez_vous_hash(&mut socket_set1, "key");
-
-        let mut socket_set2 = vec![legacy_socket1, legacy_socket2, legacy_socket4];
-        sort_by_rendez_vous_hash(&mut socket_set2, "key");
-
-        let mut socket_set3 = vec![legacy_socket1, legacy_socket4];
-        sort_by_rendez_vous_hash(&mut socket_set3, "key");
-
-        assert_eq!(
-            socket_set1,
-            &[
-                legacy_socket1,
-                legacy_socket2,
-                legacy_socket3,
-                legacy_socket4
-            ]
-        );
-        assert_eq!(
-            socket_set2,
-            &[legacy_socket1, legacy_socket2, legacy_socket4]
-        );
-        assert_eq!(socket_set3, &[legacy_socket1, legacy_socket4]);
+        let mut nodes_two = vec!["node-1", "node-4"];
+        sort_by_rendez_vous_hash(&mut nodes_two, "key");
+        let expected_two: Vec<&str> = nodes_four
+            .iter()
+            .copied()
+            .filter(|node| *node == "node-1" || *node == "node-4")
+            .collect();
+        assert_eq!(nodes_two, expected_two);
     }
 }

@@ -27,7 +27,7 @@ defaultable_clause = term | term_prefix | term_set | phrase | phrase_prefix
 ## Writing Queries
 ### Escaping Special Characters
 
-Some characters need to be escaped in non quoted terms because they are syntactically significant otherwise: special reserved characters are: `+` , `^`, `` ` ``, `:`, `{`, `}`, `"`, `[`, `]`, `(`, `)`, `~`, `!`, `\\`, `*`, `SPACE`. If such such characters appear in query terms, they need to be escaped by prefixing them with an anti-slash `\`.
+Some characters need to be escaped in non quoted terms because they are syntactically significant otherwise: special reserved characters are: `+` , `^`, `` ` ``, `:`, `{`, `}`, `"`, `[`, `]`, `(`, `)`, `~`, `!`, `\\`, `*`, `SPACE`. If such characters appear in query terms, they need to be escaped by prefixing them with an anti-slash `\`.
 
 In quoted terms, the quote character in use `'` or `"` needs to be escaped.
 
@@ -128,7 +128,7 @@ The field must have been configured with `record: position` when indexing.
 :::
 
 ###### Slop operator
-Is is also possible to add a slop, which allow matching a sequence with some distance. For instance `"looks to me"~1` will match "looks good to me", but not "looks very good to me".
+It is also possible to add a slop, which allow matching a sequence with some distance. For instance `"looks to me"~1` will match "looks good to me", but not "looks very good to me".
 Transposition costs 2, e.g. `"A B"~1` will not match `"B A"` but it would with `"A B"~2`.
 Transposition is not a special case, in the example above A is moved 1 position and B is moved 1 position, so the slop is 2.
 

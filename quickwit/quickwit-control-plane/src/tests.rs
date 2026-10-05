@@ -18,10 +18,11 @@ use std::time::Duration;
 use fnv::FnvHashMap;
 use futures::{Stream, StreamExt};
 use quickwit_actors::{Inbox, Mailbox, Observe, Universe};
-use quickwit_cluster::{ChannelTransport, Cluster, ClusterChange, create_cluster_for_test};
+use quickwit_cluster::{
+    ChitchatTransport, Cluster, ClusterChange, ClusterMember, create_cluster_for_test,
+};
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::tower::{Change, Pool};
-use quickwit_config::service::QuickwitService;
 use quickwit_config::{
     ClusterConfig, KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams,
 };
@@ -34,7 +35,7 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::NodeId;
 use serde_json::json;
 
-use crate::IndexerNodeInfo;
+use crate::IndexerPoolEntry;
 use crate::control_plane::{CONTROL_PLAN_LOOP_INTERVAL, ControlPlane};
 use crate::indexing_scheduler::MIN_DURATION_BETWEEN_SCHEDULING;
 
@@ -65,32 +66,32 @@ fn index_metadata_for_test(index_id: &str, source_id: &str, num_pipelines: usize
 pub fn test_indexer_change_stream(
     cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
     indexing_clients: FnvHashMap<NodeId, Mailbox<IndexingService>>,
-) -> impl Stream<Item = Change<NodeId, IndexerNodeInfo>> + Send + 'static {
+) -> impl Stream<Item = Change<NodeId, IndexerPoolEntry>> + Send + 'static {
     cluster_change_stream.filter_map(move |cluster_change| {
         let indexing_clients = indexing_clients.clone();
         Box::pin(async move {
             match cluster_change {
-                ClusterChange::Add(node)
-                    if node.enabled_services().contains(&QuickwitService::Indexer) =>
-                {
-                    let node_id = node.node_id().to_owned();
+                ClusterChange::Add(node) if node.is_indexer() => {
+                    let node_id = node.node_id.clone();
                     let generation_id = node.chitchat_id().generation_id;
-                    let indexing_tasks = node.indexing_tasks().to_vec();
+                    let indexing_tasks = node.indexing_tasks.to_vec();
                     let client_mailbox = indexing_clients.get(&node_id).unwrap().clone();
                     let client = IndexingServiceClient::from_mailbox(client_mailbox);
                     let change = Change::Insert(
                         node_id.clone(),
-                        IndexerNodeInfo {
+                        IndexerPoolEntry {
                             node_id,
                             generation_id,
                             client,
                             indexing_tasks,
                             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+                            ingester_status: node.ingester_status,
+                            availability_zone: None,
                         },
                     );
                     Some(change)
                 }
-                ClusterChange::Remove(node) => Some(Change::Remove(node.node_id().to_owned())),
+                ClusterChange::Remove(node) => Some(Change::Remove(node.node_id.clone())),
                 _ => None,
             }
         })
@@ -144,7 +145,6 @@ async fn start_control_plane(
         universe,
         cluster_config,
         self_node_id,
-        cluster,
         indexer_pool,
         ingester_pool,
         MetastoreServiceClient::from_mock(mock_metastore),
@@ -156,7 +156,7 @@ async fn start_control_plane(
 #[tokio::test]
 async fn test_scheduler_scheduling_and_control_loop_apply_plan_again() {
     quickwit_common::setup_logging_for_tests();
-    let transport = ChannelTransport::default();
+    let transport = ChitchatTransport::default();
     let cluster =
         create_cluster_for_test(Vec::new(), &["indexer", "control_plane"], &transport, true)
             .await
@@ -248,7 +248,7 @@ async fn test_scheduler_scheduling_and_control_loop_apply_plan_again() {
 
 #[tokio::test]
 async fn test_scheduler_scheduling_no_indexer() {
-    let transport = ChannelTransport::default();
+    let transport = ChitchatTransport::default();
     let cluster = create_cluster_for_test(Vec::new(), &["control_plane"], &transport, true)
         .await
         .unwrap();
@@ -270,7 +270,7 @@ async fn test_scheduler_scheduling_no_indexer() {
 
     // There is no indexer, we should observe no
     // scheduling.
-    universe.sleep(Duration::from_secs(60)).await;
+    universe.sleep(Duration::from_mins(1)).await;
     let scheduler_state = control_plane_mailbox
         .ask(Observe)
         .await
@@ -284,7 +284,7 @@ async fn test_scheduler_scheduling_no_indexer() {
 
 #[tokio::test]
 async fn test_scheduler_scheduling_multiple_indexers() {
-    let transport = ChannelTransport::default();
+    let transport = ChitchatTransport::default();
     let cluster = create_cluster_for_test(Vec::new(), &["control_plane"], &transport, true)
         .await
         .unwrap();
@@ -329,11 +329,7 @@ async fn test_scheduler_scheduling_multiple_indexers() {
 
     cluster
         .wait_for_ready_members(
-            |members| {
-                members
-                    .iter()
-                    .any(|member| member.enabled_services.contains(&QuickwitService::Indexer))
-            },
+            |members| members.iter().any(ClusterMember::is_indexer),
             Duration::from_secs(5),
         )
         .await
@@ -391,13 +387,7 @@ async fn test_scheduler_scheduling_multiple_indexers() {
 
     cluster
         .wait_for_ready_members(
-            |members| {
-                members
-                    .iter()
-                    .filter(|member| member.enabled_services.contains(&QuickwitService::Indexer))
-                    .count()
-                    == 1
-            },
+            |members| members.iter().filter(|member| member.is_indexer()).count() == 1,
             Duration::from_secs(5),
         )
         .await

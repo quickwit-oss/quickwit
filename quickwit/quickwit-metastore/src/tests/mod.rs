@@ -110,7 +110,7 @@ async fn create_channel(client: tokio::io::DuplexStream) -> anyhow::Result<Chann
 fn collect_split_ids(splits: &[Split]) -> Vec<&str> {
     splits
         .iter()
-        .map(|split| split.split_id())
+        .map(|split| split.split_id().as_str())
         .sorted()
         .collect()
 }
@@ -575,6 +575,7 @@ macro_rules! metastore_test_suite {
                 let _ = tracing_subscriber::fmt::try_init();
                 $crate::tests::get_identity::test_metastore_get_identity::<$metastore_type>().await;
             }
+
         }
     };
 }

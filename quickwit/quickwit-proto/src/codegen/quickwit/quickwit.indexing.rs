@@ -4,6 +4,12 @@
 pub struct ApplyIndexingPlanRequest {
     #[prost(message, repeated, tag = "1")]
     pub indexing_tasks: ::prost::alloc::vec::Vec<IndexingTask>,
+    /// Identifier of the indexing plan, minted by the control plane as a ULID when the plan is
+    /// applied. Indexers use it as the publish token for the shards they acquire: since ULIDs are
+    /// monotonic, `AcquireShards` only succeeds for a token greater than or equal to the one already
+    /// recorded, so a stale plan can never steal a shard from a more recent one.
+    #[prost(string, tag = "2")]
+    pub indexing_plan_id: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -148,6 +154,7 @@ impl IndexingServiceClient {
 }
 #[async_trait::async_trait]
 impl IndexingService for IndexingServiceClient {
+    #[tracing::instrument(skip_all, name = "indexing.apply_indexing_plan")]
     async fn apply_indexing_plan(
         &self,
         request: ApplyIndexingPlanRequest,
@@ -477,9 +484,13 @@ where
         &self,
         request: ApplyIndexingPlanRequest,
     ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .apply_indexing_plan(request)
+            .apply_indexing_plan(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -507,14 +518,26 @@ impl indexing_service_grpc_server::IndexingServiceGrpc
 for IndexingServiceGrpcServerAdapter {
     async fn apply_indexing_plan(
         &self,
-        request: tonic::Request<ApplyIndexingPlanRequest>,
+        tonic_request: tonic::Request<ApplyIndexingPlanRequest>,
     ) -> Result<tonic::Response<ApplyIndexingPlanResponse>, tonic::Status> {
-        self.inner
-            .0
-            .apply_indexing_plan(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("indexing.apply_indexing_plan");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .apply_indexing_plan(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
 }
 /// Generated client implementations.

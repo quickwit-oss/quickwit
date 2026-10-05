@@ -21,8 +21,8 @@ use std::time::{Duration, Instant};
 use chitchat::{Chitchat, ChitchatId, NodeState, VersionedValue};
 use futures::Future;
 use quickwit_common::pretty::PrettyDisplay;
-use quickwit_common::tower::ClientGrpcConfig;
 use quickwit_proto::cluster::{ClusterService, ClusterServiceClient, FetchClusterStateRequest};
+use quickwit_transport::ChannelFactory;
 use rand::seq::IteratorRandom;
 use tokio::sync::{Mutex, watch};
 use tokio_stream::StreamExt;
@@ -31,7 +31,7 @@ use tracing::{info, warn};
 
 use crate::grpc_service::cluster_grpc_client;
 use crate::member::NodeStateExt;
-use crate::metrics::CLUSTER_METRICS;
+use crate::metrics::GRPC_GOSSIP_ROUNDS_TOTAL;
 
 const MAX_GOSSIP_PEERS: usize = 3;
 
@@ -42,10 +42,10 @@ pub(crate) async fn spawn_catchup_callback_task(
     weak_chitchat: Weak<Mutex<Chitchat>>,
     live_nodes_rx: watch::Receiver<BTreeMap<ChitchatId, NodeState>>,
     mut catchup_callback_rx: watch::Receiver<()>,
-    client_grpc_config: ClientGrpcConfig,
+    channel_factory: ChannelFactory,
 ) {
     let catchup_callback_future = async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        let mut interval = tokio::time::interval(Duration::from_mins(1));
         interval.tick().await;
 
         loop {
@@ -57,7 +57,7 @@ pub(crate) async fn spawn_catchup_callback_task(
                 &self_chitchat_id,
                 chitchat,
                 live_nodes_rx.clone(),
-                |socket_addr| cluster_grpc_client(socket_addr, client_grpc_config.clone()),
+                |socket_addr| cluster_grpc_client(socket_addr, channel_factory.clone()),
             )
             .await;
 
@@ -108,7 +108,15 @@ async fn perform_grpc_gossip_rounds<ClusterServiceClientFactory, Fut>(
             warn!("failed to fetch cluster state from node `{node_id}`");
             continue;
         };
-        CLUSTER_METRICS.grpc_gossip_rounds_total.inc();
+        if response.cluster_id != cluster_id {
+            warn!(
+                expected_cluster_id=%cluster_id,
+                response_cluster_id=%response.cluster_id,
+                "received cluster state for an unexpected cluster"
+            );
+            continue;
+        }
+        GRPC_GOSSIP_ROUNDS_TOTAL.inc();
 
         let mut chitchat_guard = chitchat.lock().await;
 
@@ -117,7 +125,7 @@ async fn perform_grpc_gossip_rounds<ClusterServiceClientFactory, Fut>(
                 .chitchat_id
                 .expect("`chitchat_id` should be a required field");
             let chitchat_id = ChitchatId {
-                node_id: proto_chitchat_id.node_id.clone(),
+                node_id: Arc::<str>::from(proto_chitchat_id.node_id),
                 generation_id: proto_chitchat_id.generation_id,
                 gossip_advertise_addr: proto_chitchat_id
                     .gossip_advertise_addr
@@ -193,9 +201,9 @@ fn select_gossip_candidates(
             find_gossip_candidate_grpc_addr(self_chitchat_id, node_state)
                 .map(|grpc_addr| (&node_state.chitchat_id().node_id, grpc_addr))
         })
-        .choose_multiple(&mut rand::rng(), MAX_GOSSIP_PEERS)
+        .sample(&mut rand::rng(), MAX_GOSSIP_PEERS)
         .into_iter()
-        .map(|(node_id, grpc_addr)| (node_id.clone(), grpc_addr))
+        .map(|(node_id, grpc_addr)| (node_id.to_string(), grpc_addr))
         .unzip()
 }
 
@@ -213,7 +221,6 @@ fn find_gossip_candidate_grpc_addr(
 
 #[cfg(test)]
 mod tests {
-    use chitchat::transport::ChannelTransport;
     use quickwit_proto::cluster::{
         ChitchatId as ProtoChitchatId, DeletionStatus, FetchClusterStateResponse,
         MockClusterService, NodeState as ProtoNodeState, VersionedKeyValue,
@@ -221,8 +228,8 @@ mod tests {
 
     use super::*;
     use crate::change::tests::NodeStateBuilder;
-    use crate::create_cluster_for_test;
     use crate::member::{GRPC_ADVERTISE_ADDR_KEY, READINESS_KEY, READINESS_VALUE_READY};
+    use crate::{ChitchatTransport, create_cluster_for_test};
 
     #[tokio::test]
     async fn test_find_gossip_candidate_grpc_addr() {
@@ -261,7 +268,7 @@ mod tests {
     #[tokio::test]
     async fn test_perform_grpc_gossip_rounds() {
         let peer_seeds = Vec::new();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(peer_seeds, &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -274,8 +281,9 @@ mod tests {
                 let mut mock_cluster_service = MockClusterService::new();
                 mock_cluster_service
                     .expect_fetch_cluster_state()
-                    .returning(|_request| {
+                    .returning(|request| {
                         let response = FetchClusterStateResponse {
+                            cluster_id: request.cluster_id,
                             node_states: vec![ProtoNodeState {
                                 chitchat_id: Some(ProtoChitchatId {
                                     node_id: "node-4".to_string(),
@@ -292,7 +300,6 @@ mod tests {
                                 max_version: 2,
                                 last_gc_version: 1,
                             }],
-                            ..Default::default()
                         };
                         Ok(response)
                     });
@@ -338,7 +345,7 @@ mod tests {
 
         let chitchat_mutex_guard = chitchat.lock().await;
         let chitchat_id = ChitchatId {
-            node_id: "node-4".to_string(),
+            node_id: Arc::from("node-4"),
             generation_id: 0,
             gossip_advertise_addr: "127.0.0.1:14000".parse().unwrap(),
         };
@@ -347,5 +354,68 @@ mod tests {
         assert_eq!(node_state.get("foo").unwrap(), "bar");
         assert_eq!(node_state.max_version(), 2);
         assert_eq!(node_state.last_gc_version(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_perform_grpc_gossip_rounds_rejects_wrong_cluster_response() {
+        let transport = ChitchatTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        let cluster_id = cluster.cluster_id().to_string();
+        let self_chitchat_id = cluster.self_chitchat_id();
+        let chitchat = cluster.chitchat().await;
+
+        let grpc_client_factory = |_: SocketAddr| {
+            Box::pin(async {
+                let mut mock_cluster_service = MockClusterService::new();
+                mock_cluster_service
+                    .expect_fetch_cluster_state()
+                    .returning(|_request| {
+                        Ok(FetchClusterStateResponse {
+                            cluster_id: "wrong-cluster".to_string(),
+                            node_states: vec![ProtoNodeState {
+                                chitchat_id: Some(ProtoChitchatId {
+                                    node_id: "foreign-node".to_string(),
+                                    generation_id: 0,
+                                    gossip_advertise_addr: "127.0.0.1:14000".to_string(),
+                                }),
+                                key_values: vec![VersionedKeyValue {
+                                    key: "foo".to_string(),
+                                    value: "bar".to_string(),
+                                    version: 1,
+                                    status: DeletionStatus::Set as i32,
+                                }],
+                                max_version: 1,
+                                last_gc_version: 0,
+                            }],
+                        })
+                    });
+                ClusterServiceClient::from_mock(mock_cluster_service)
+            })
+        };
+        let candidate_id = ChitchatId::for_local_test(11_000);
+        let mut candidate_state = NodeState::for_test();
+        candidate_state.set(GRPC_ADVERTISE_ADDR_KEY, "127.0.0.1:11001");
+        candidate_state.set(READINESS_KEY, READINESS_VALUE_READY);
+        let (_live_nodes_tx, live_nodes_rx) =
+            watch::channel(BTreeMap::from_iter([(candidate_id, candidate_state)]));
+
+        perform_grpc_gossip_rounds(
+            cluster_id,
+            self_chitchat_id,
+            chitchat.clone(),
+            live_nodes_rx,
+            grpc_client_factory,
+        )
+        .await;
+
+        let chitchat_guard = chitchat.lock().await;
+        let foreign_id = ChitchatId {
+            node_id: Arc::from("foreign-node"),
+            generation_id: 0,
+            gossip_advertise_addr: "127.0.0.1:14000".parse().unwrap(),
+        };
+        assert!(chitchat_guard.node_state(&foreign_id).is_none());
     }
 }

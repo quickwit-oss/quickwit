@@ -14,23 +14,31 @@
 
 use std::fmt::Formatter;
 use std::io;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
+use futures_util::{Stream, StreamExt};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
+use hyper_util::server::graceful::GracefulConnection;
 use hyper_util::service::TowerToHyperService;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
+use quickwit_metrics::{counter, histogram, labels};
 use quickwit_search::SearchService;
-use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinSet;
 use tokio_rustls::TlsAcceptor;
+use tokio_rustls::server::TlsStream;
 use tokio_util::either::Either;
+use tokio_util::sync::CancellationToken;
 use tower::ServiceBuilder;
 use tower_http::compression::CompressionLayer;
 use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove};
 use tower_http::cors::{AllowOrigin, CorsLayer};
-use tracing::{error, info};
+use tower_http::trace::TraceLayer;
+use tracing::{error, info, warn};
 use warp::filters::log::Info;
 use warp::hyper::http::HeaderValue;
 use warp::hyper::{Method, StatusCode, http};
@@ -46,9 +54,11 @@ use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
 use crate::jaeger_api::jaeger_api_handlers;
+use crate::metrics::{HTTP_REQUESTS_TOTAL, REQUEST_DURATION_SECS};
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
 use crate::otlp_api::otlp_ingest_api_handlers;
+use crate::rest_api_request_span::{make_http_request_span, set_status_code_on_request_span};
 use crate::rest_api_response::{RestApiError, RestApiResponse};
 use crate::search_api::{
     search_get_handler, search_plan_get_handler, search_plan_post_handler, search_post_handler,
@@ -111,18 +121,27 @@ impl Predicate for CompressionPredicate {
     }
 }
 
-async fn apply_tls_if_necessary(
-    tcp_stream: TcpStream,
-    tls_acceptor_opt: &Option<TlsAcceptor>,
-) -> io::Result<impl AsyncRead + AsyncWrite + Unpin + 'static> {
-    let Some(tls_acceptor) = &tls_acceptor_opt else {
-        return Ok(Either::Right(tcp_stream));
-    };
-    let tls_stream_res = tls_acceptor
-        .accept(tcp_stream)
-        .await
-        .inspect_err(|err| error!("failed to perform tls handshake: {err:#}"))?;
-    Ok(Either::Left(tls_stream_res))
+/// A ready-to-serve connection: TLS-terminated (`Left`) or plaintext (`Right`). Both implement
+/// `AsyncRead`/`AsyncWrite`, so the serve loop handles them uniformly.
+type MaybeTlsStream = Either<TlsStream<TcpStream>, TcpStream>;
+
+/// Wraps a stream of accepted TCP connections into the stream of connections the serve loop reads.
+///
+/// When TLS is configured we terminate it ourselves (so the certificate can be hot-reloaded),
+/// running the handshakes off the accept path so a client that connects but stalls its handshake
+/// cannot block new connections; otherwise the plaintext stream is served directly. Either way the
+/// result is a single stream of [`MaybeTlsStream`]s.
+fn accept_connections(
+    tcp_incoming: impl Stream<Item = io::Result<TcpStream>> + Send + 'static,
+    tls_acceptor_opt: Option<TlsAcceptor>,
+) -> Pin<Box<dyn Stream<Item = io::Result<MaybeTlsStream>> + Send>> {
+    match tls_acceptor_opt {
+        Some(tls_acceptor) => {
+            let tls_incoming = quickwit_transport::accept_tls_incoming(tcp_incoming, tls_acceptor);
+            Box::pin(tls_incoming.map(|stream_res| stream_res.map(Either::Left)))
+        }
+        None => Box::pin(tcp_incoming.map(|stream_res| stream_res.map(Either::Right))),
+    }
 }
 
 /// Starts REST services.
@@ -134,16 +153,20 @@ pub(crate) async fn start_rest_server(
 ) -> anyhow::Result<()> {
     let request_counter = warp::log::custom(|info: Info| {
         let elapsed = info.elapsed();
-        let status = info.status();
-        let label_values: [&str; 2] = [info.method().as_str(), status.as_str()];
-        crate::SERVE_METRICS
-            .request_duration_secs
-            .with_label_values(label_values)
-            .observe(elapsed.as_secs_f64());
-        crate::SERVE_METRICS
-            .http_requests_total
-            .with_label_values(label_values)
-            .inc();
+        let labels = labels!(
+            "method" => info.method().as_str().to_string(),
+            "status_code" => info.status().as_str().to_string()
+        );
+        histogram!(
+            parent: REQUEST_DURATION_SECS,
+            labels: [labels],
+        )
+        .observe(elapsed.as_secs_f64());
+        counter!(
+            parent: HTTP_REQUESTS_TOTAL,
+            labels: [labels],
+        )
+        .inc();
     });
     // Docs routes
     let api_doc = warp::path("openapi.json")
@@ -157,6 +180,8 @@ pub(crate) async fn start_rest_server(
         quickwit_services.cluster.clone(),
         quickwit_services.indexing_service_opt.clone(),
         quickwit_services.janitor_service_opt.clone(),
+        quickwit_services.compactor_service_opt.clone(),
+        quickwit_services.ingester_opt.clone(),
     )
     .boxed();
 
@@ -177,6 +202,9 @@ pub(crate) async fn start_rest_server(
     // `/api/v1/*` routes.
     let api_v1_root_route = api_v1_routes(quickwit_services.clone());
 
+    // `/mcp` route.
+    let mcp_route = mcp_routes(quickwit_services.clone());
+
     let redirect_root_to_ui_route = warp::path::end()
         .and(warp::get())
         .map(|| redirect(http::Uri::from_static("/ui/search")))
@@ -193,6 +221,7 @@ pub(crate) async fn start_rest_server(
 
     // Combine all the routes together.
     let rest_routes = api_v1_root_route
+        .or(mcp_route)
         .or(api_doc)
         .or(redirect_root_to_ui_route)
         .or(ui_handler())
@@ -204,11 +233,120 @@ pub(crate) async fn start_rest_server(
         .with(extra_headers)
         .boxed();
 
-    let warp_service = warp::service(rest_routes);
+    let tls_acceptor_opt: Option<TlsAcceptor> = if let Some(tls_config) =
+        &quickwit_services.node_config.rest_config.tls_config
+    {
+        let alpn_protocols: &[&[u8]] = &[b"h2", b"http/1.1", b"http/1.0"];
+        let rustls_config = quickwit_transport::make_tls_server_config(tls_config, alpn_protocols)?;
+        Some(TlsAcceptor::from(rustls_config))
+    } else {
+        None
+    };
+    let rest_config = &quickwit_services.node_config.rest_config;
+    // `max_connection_age_grace` without `max_connection_age` is rejected at config validation, so
+    // the grace is only carried when an age is present.
+    let max_connection_age_opt =
+        rest_config
+            .max_connection_age
+            .as_ref()
+            .map(|max_connection_age| MaxConnectionAge {
+                age: **max_connection_age,
+                grace: rest_config
+                    .max_connection_age_grace
+                    .as_ref()
+                    .map(|max_connection_age_grace| **max_connection_age_grace),
+            });
+    serve_warp_routes(
+        "REST",
+        tcp_listener,
+        rest_routes,
+        rest_config.cors_allow_origins.clone(),
+        tls_acceptor_opt,
+        max_connection_age_opt,
+        readiness_trigger,
+        shutdown_signal,
+    )
+    .await
+}
+
+/// Starts the optional plaintext health-check server.
+///
+/// This server exposes only the `/health/livez` and `/health/readyz` endpoints over plain HTTP
+/// (no TLS). It lets liveness/readiness probes reach the node even when the main REST API is put
+/// behind mTLS. The same routes remain mounted on the main REST server.
+pub(crate) async fn start_health_check_server(
+    tcp_listener: TcpListener,
+    quickwit_services: Arc<QuickwitServices>,
+    readiness_trigger: BoxFutureInfaillible<()>,
+    shutdown_signal: BoxFutureInfaillible<()>,
+) -> anyhow::Result<()> {
+    let health_check_routes = health_check_handlers(
+        quickwit_services.cluster.clone(),
+        quickwit_services.indexing_service_opt.clone(),
+        quickwit_services.janitor_service_opt.clone(),
+        quickwit_services.compactor_service_opt.clone(),
+        quickwit_services.ingester_opt.clone(),
+    )
+    .recover(recover_fn_final)
+    .boxed();
+    // No TLS: the whole point of this server is to offer a plaintext probe surface that bypasses
+    // the mTLS configured on the main REST server.
+    serve_warp_routes(
+        "health check",
+        tcp_listener,
+        health_check_routes,
+        Vec::new(),
+        None,
+        None,
+        readiness_trigger,
+        shutdown_signal,
+    )
+    .await
+}
+
+/// Bounds the lifetime of an accepted connection so a hot-reloaded TLS certificate eventually
+/// reaches long-lived clients, which only pick up a new certificate when they reconnect. `grace`
+/// is how long the connection may keep draining after the GOAWAY before it is forcefully closed;
+/// `None` waits indefinitely. Grouping the two fields makes a grace-without-age combination
+/// unrepresentable.
+#[derive(Clone, Copy)]
+struct MaxConnectionAge {
+    age: Duration,
+    grace: Option<Duration>,
+}
+
+/// Serves a set of warp `routes` over `tcp_listener` until `shutdown_signal` resolves, optionally
+/// terminating TLS. Shared by the main REST server and the health-check server.
+// `serve_warp_routes` wires together several independent concerns (routing, CORS, TLS, connection
+// lifetime, readiness, shutdown); bundling them further would not aid readability.
+#[allow(clippy::too_many_arguments)]
+async fn serve_warp_routes<F>(
+    server_name: &str,
+    tcp_listener: TcpListener,
+    routes: F,
+    cors_allow_origins: Vec<String>,
+    tls_acceptor_opt: Option<TlsAcceptor>,
+    max_connection_age_opt: Option<MaxConnectionAge>,
+    readiness_trigger: BoxFutureInfaillible<()>,
+    shutdown_signal: BoxFutureInfaillible<()>,
+) -> anyhow::Result<()>
+where
+    F: Filter<Error = Rejection> + Clone + Send + Sync + 'static,
+    F::Extract: Reply,
+{
+    let warp_service = warp::service(routes);
     let compression_predicate = CompressionPredicate::from_env().and(NotForContentType::IMAGES);
-    let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
+    let cors = build_cors(&cors_allow_origins);
+
+    let trace_layer = TraceLayer::new_for_http()
+        .make_span_with(make_http_request_span as fn(&http::Request<_>) -> tracing::Span)
+        .on_response(
+            set_status_code_on_request_span
+                as fn(&http::Response<_>, std::time::Duration, &tracing::Span),
+        );
 
     let service = ServiceBuilder::new()
+        .layer(trace_layer)
         .layer(
             CompressionLayer::new()
                 .zstd(true)
@@ -219,61 +357,132 @@ pub(crate) async fn start_rest_server(
         .layer(cors)
         .service(warp_service);
 
-    let rest_listen_addr = tcp_listener.local_addr()?;
-    info!(
-        rest_listen_addr=?rest_listen_addr,
-        "starting REST server listening on {rest_listen_addr}"
-    );
+    let listen_addr = tcp_listener.local_addr()?;
+    info!(listen_addr=?listen_addr, "starting {server_name} server listening on {listen_addr}");
 
     let service = TowerToHyperService::new(service);
 
     let server = Builder::new(TokioExecutor::new());
-    let graceful = hyper_util::server::graceful::GracefulShutdown::new();
+    // Triggers a graceful shutdown (HTTP/2 GOAWAY) on every live connection. Fired once on server
+    // shutdown; each connection also drains on its own when `max_connection_age` elapses.
+    let cancellation_token = CancellationToken::new();
+    // Tracks in-flight connection tasks so we can wait for them to drain on shutdown. We do not use
+    // `hyper_util`'s `GracefulShutdown` helper because it takes ownership of each connection, which
+    // would prevent us from also triggering a per-connection `graceful_shutdown` when the
+    // connection's max age elapses (the `GracefulConnection` trait is sealed, so we cannot wrap
+    // it).
+    let mut connection_tasks: JoinSet<()> = JoinSet::new();
     let mut shutdown_signal = std::pin::pin!(shutdown_signal);
     readiness_trigger.await;
 
-    let tls_acceptor_opt: Option<TlsAcceptor> =
-        if let Some(tls_config) = &quickwit_services.node_config.rest_config.tls {
-            let rustls_config = tls::make_rustls_config(tls_config)?;
-            Some(TlsAcceptor::from(rustls_config))
-        } else {
-            None
-        };
+    // A stream of accepted TCP connections, preserving the previous raw-`accept` semantics.
+    let tcp_incoming = futures_util::stream::unfold(tcp_listener, |tcp_listener| async move {
+        let tcp_accept_res = tcp_listener
+            .accept()
+            .await
+            .map(|(tcp_stream, _remote_addr)| tcp_stream);
+        Some((tcp_accept_res, tcp_listener))
+    });
+    let mut incoming_connections = accept_connections(tcp_incoming, tls_acceptor_opt);
 
     loop {
         tokio::select! {
-            tcp_accept_res = tcp_listener.accept() => {
-                let tcp_stream = match tcp_accept_res {
-                    Ok((tcp_stream, _remote_addr)) => tcp_stream,
-                    Err(err) => {
-                        error!("failed to accept connection: {err:#}");
+            next_connection_opt = incoming_connections.next() => {
+                let Some(connection_res) = next_connection_opt else {
+                    break;
+                };
+                let connection = match connection_res {
+                    Ok(connection) => connection,
+                    Err(accept_error) => {
+                        error!("failed to accept connection: {accept_error:#}");
                         continue;
                     }
                 };
-
-                let Ok(tcp_or_tls_stream) = apply_tls_if_necessary(tcp_stream, &tls_acceptor_opt).await else {
-                    continue;
-                };
-
-                let serve_fut = server.serve_connection_with_upgrades(TokioIo::new(tcp_or_tls_stream), service.clone());
-                let serve_with_shutdown_fut = graceful.watch(serve_fut.into_owned());
-                tokio::spawn(async move {
-                    if let Err(err) = serve_with_shutdown_fut.await {
-                        error!("failed to serve connection: {err:#}");
-                    }
-                });
+                let serve_connection_fut = server
+                    .serve_connection_with_upgrades(TokioIo::new(connection), service.clone())
+                    .into_owned();
+                let cancellation_token = cancellation_token.clone();
+                connection_tasks.spawn(serve_connection(
+                    serve_connection_fut,
+                    cancellation_token,
+                    max_connection_age_opt,
+                ));
             },
+            // Reap finished connection tasks so the set does not grow without bound on a
+            // long-running server. Disabled while empty so the branch does not busy-loop.
+            _ = connection_tasks.join_next(), if !connection_tasks.is_empty() => {},
             _ = &mut shutdown_signal => {
-                info!("REST server shutdown signal received");
+                info!("{server_name} server shutdown signal received");
                 break;
             }
         }
     }
-
-    graceful.shutdown().await;
-    info!("gracefully shutdown");
+    info!("shutting down {server_name} server");
+    // Ask every live connection to drain, then wait for the tasks to finish.
+    cancellation_token.cancel();
+    while connection_tasks.join_next().await.is_some() {}
+    info!("{server_name} server successfully shut down");
 
     Ok(())
+}
+
+/// Drives a single accepted connection to completion, sending an HTTP/2 GOAWAY and then waiting for
+/// it to drain when either the connection's max age (`max_connection_age_opt`) elapses or a global
+/// drain is requested via `cancellation_token`. When a grace period is configured, the connection
+/// is forcefully closed (dropped) if it has not finished draining within that period.
+///
+/// Bounding the connection lifetime is what lets a hot-reloaded TLS certificate eventually reach
+/// long-lived clients: the new certificate is only presented on a fresh handshake, so the client
+/// must reconnect to pick it up.
+async fn serve_connection<C>(
+    connection: C,
+    cancellation_token: CancellationToken,
+    max_connection_age_opt: Option<MaxConnectionAge>,
+) where
+    C: GracefulConnection,
+    C::Error: std::fmt::Display,
+{
+    let mut connection = std::pin::pin!(connection);
+
+    let max_age_sleep = match max_connection_age_opt {
+        Some(max_connection_age) => Either::Left(tokio::time::sleep(max_connection_age.age)),
+        None => Either::Right(std::future::pending::<()>()),
+    };
+    // Phase 1: serve until the connection ends on its own, its max age elapses, or a global drain
+    // is requested.
+    let max_age_exceeded = tokio::select! {
+        connection_res = connection.as_mut() => {
+            if let Err(serve_error) = connection_res {
+                error!("failed to serve connection: {serve_error:#}");
+            }
+            return;
+        }
+        _ = max_age_sleep => true,
+        _ = cancellation_token.cancelled() => false,
+    };
+    // Phase 2: we asked the peer to reconnect; send GOAWAY and let in-flight requests drain.
+    connection.as_mut().graceful_shutdown();
+
+    let max_connection_age_grace_opt = match max_connection_age_opt {
+        Some(max_connection_age) if max_age_exceeded => max_connection_age.grace,
+        _ => None,
+    };
+    let max_connection_age_grace_sleep = match max_connection_age_grace_opt {
+        Some(max_connection_age_grace) => {
+            Either::Left(tokio::time::sleep(max_connection_age_grace))
+        }
+        None => Either::Right(std::future::pending::<()>()),
+    };
+    tokio::select! {
+        connection_res = connection.as_mut() => {
+            if let Err(serve_error) = connection_res {
+                error!("failed to serve connection: {serve_error:#}");
+            }
+        }
+        _ = max_connection_age_grace_sleep => {
+            warn!("connection did not drain within the grace period; closing it forcefully");
+        }
+    }
 }
 
 fn search_routes(
@@ -285,6 +494,23 @@ fn search_routes(
         .or(search_plan_post_handler(search_service.clone()))
         .recover(recover_fn)
         .boxed()
+}
+
+/// `/mcp` route. MCP negotiates its protocol version in-band (`initialize` and the
+/// `MCP-Protocol-Version` header), so the endpoint is not nested under the versioned REST API.
+fn mcp_routes(
+    quickwit_services: Arc<QuickwitServices>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    crate::mcp_api::mcp_api_handlers(
+        quickwit_services.search_service.clone(),
+        quickwit_services.metastore_client.clone(),
+        quickwit_services
+            .node_config
+            .rest_config
+            .cors_allow_origins
+            .clone(),
+    )
+    .boxed()
 }
 
 fn api_v1_routes(
@@ -480,7 +706,12 @@ fn get_status_with_error(rejection: Rejection) -> Result<RestApiError, Rejection
 }
 
 fn build_cors(cors_origins: &[String]) -> CorsLayer {
-    let debug_mode = quickwit_common::get_bool_from_env("QW_ENABLE_CORS_DEBUG", false);
+    // MCP Streamable HTTP uses JSON POSTs with an explicit protocol version header.
+    let allowed_headers = [
+        http::header::CONTENT_TYPE,
+        http::header::HeaderName::from_static("mcp-protocol-version"),
+    ];
+    let debug_mode = quickwit_common::get_bool_from_env_cached!("QW_ENABLE_CORS_DEBUG", false);
     if debug_mode {
         info!("CORS debug mode is enabled, localhost and 127.0.0.1 origins will be allowed");
         return CorsLayer::new()
@@ -496,16 +727,18 @@ fn build_cors(cors_origins: &[String]) -> CorsLayer {
                     .iter()
                     .any(|prefix| origin.as_bytes().starts_with(*prefix))
             }))
-            .allow_headers([http::header::CONTENT_TYPE]);
+            .allow_headers(allowed_headers);
     }
 
-    let mut cors = CorsLayer::new().allow_methods([
-        Method::GET,
-        Method::POST,
-        Method::PUT,
-        Method::DELETE,
-        Method::OPTIONS,
-    ]);
+    let mut cors = CorsLayer::new()
+        .allow_headers(allowed_headers)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::OPTIONS,
+        ]);
     if !cors_origins.is_empty() {
         let allow_any = cors_origins.iter().any(|origin| origin.as_str() == "*");
 
@@ -524,69 +757,13 @@ fn build_cors(cors_origins: &[String]) -> CorsLayer {
     cors
 }
 
-mod tls {
-    // most of this module is copied from hyper-tls examples, licensed under Apache 2.0, MIT or ISC
-
-    use std::sync::Arc;
-    use std::vec::Vec;
-    use std::{fs, io};
-
-    use quickwit_config::TlsConfig;
-    use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-    use tokio_rustls::rustls::ServerConfig;
-
-    fn io_error(error: String) -> io::Error {
-        io::Error::other(error)
-    }
-
-    // Load public certificate from file.
-    fn load_certs(filename: &str) -> io::Result<Vec<CertificateDer<'static>>> {
-        // Open certificate file.
-        let certfile = fs::File::open(filename)
-            .map_err(|error| io_error(format!("failed to open {filename}: {error}")))?;
-        let mut reader = io::BufReader::new(certfile);
-        // Load and return certificate.
-        rustls_pemfile::certs(&mut reader).collect()
-    }
-
-    // Load private key from file.
-    fn load_private_key(filename: &str) -> io::Result<PrivateKeyDer<'static>> {
-        // Open keyfile.
-        let keyfile = fs::File::open(filename)
-            .map_err(|error| io_error(format!("failed to open {filename}: {error}")))?;
-        let mut reader = io::BufReader::new(keyfile);
-
-        // Load and return a single private key.
-        rustls_pemfile::private_key(&mut reader).map(|key| key.unwrap())
-    }
-
-    pub fn make_rustls_config(config: &TlsConfig) -> anyhow::Result<Arc<ServerConfig>> {
-        let certs = load_certs(&config.cert_path)?;
-        let key = load_private_key(&config.key_path)?;
-
-        // TODO we could add support for client authorization, it seems less important than on the
-        // gRPC side though
-        if config.validate_client {
-            anyhow::bail!("mTLS isn't supported on rest api");
-        }
-
-        let mut cfg = rustls::ServerConfig::builder()
-            .with_no_client_auth()
-            .with_single_cert(certs, key)
-            .map_err(|error| io_error(error.to_string()))?;
-        // Configure ALPN to accept HTTP/2, HTTP/1.1, and HTTP/1.0 in that order.
-        cfg.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
-        Ok(Arc::new(cfg))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::future::Future;
     use std::pin::Pin;
     use std::task::{Context, Poll};
 
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_config::NodeConfig;
     use quickwit_index_management::IndexService;
     use quickwit_ingest::{IngestApiService, IngestServiceClient};
@@ -610,189 +787,76 @@ mod tests {
 
     #[tokio::test]
     async fn test_cors() {
-        // No cors enabled
-        {
-            let cors = build_cors(&[]);
-
+        // Cover disabled, wildcard, single-origin, and multiple-origin configurations.
+        for origins in [
+            vec![],
+            vec!["*"],
+            vec!["https://quickwit.io"],
+            vec!["https://quickwit.io", "http://localhost:3000"],
+        ] {
+            let configured_origins: Vec<String> =
+                origins.iter().map(|origin| origin.to_string()).collect();
+            let cors = build_cors(&configured_origins);
             let mut layer = ServiceBuilder::new().layer(cors).service(HelloWorld);
+            let wildcard = origins.contains(&"*");
 
             let resp = layer.call(Request::new(())).await.unwrap();
             let headers = resp.headers();
-            assert_eq!(headers.get("Access-Control-Allow-Origin"), None);
-            assert_eq!(headers.get("Access-Control-Allow-Methods"), None);
-            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
-            assert_eq!(headers.get("Access-Control-Max-Age"), None);
-
-            let resp = layer
-                .call(cors_request("http://localhost:3000"))
-                .await
-                .unwrap();
-            let headers = resp.headers();
-            assert_eq!(headers.get("Access-Control-Allow-Origin"), None);
-            assert_eq!(
-                headers.get("Access-Control-Allow-Methods"),
-                Some(
-                    &"GET,POST,PUT,DELETE,OPTIONS"
-                        .parse::<HeaderValue>()
-                        .unwrap()
-                )
-            );
-            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
-            assert_eq!(headers.get("Access-Control-Max-Age"), None);
-        }
-
-        // Wildcard cors enabled
-        {
-            let cors = build_cors(&["*".to_string()]);
-
-            let mut layer = ServiceBuilder::new().layer(cors).service(HelloWorld);
-
-            let resp = layer.call(Request::new(())).await.unwrap();
-            let headers = resp.headers();
+            let expected_origin = wildcard.then(|| HeaderValue::from_static("*"));
             assert_eq!(
                 headers.get("Access-Control-Allow-Origin"),
-                Some(&"*".parse::<HeaderValue>().unwrap())
+                expected_origin.as_ref()
             );
             assert_eq!(headers.get("Access-Control-Allow-Methods"), None);
             assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
             assert_eq!(headers.get("Access-Control-Max-Age"), None);
 
-            let resp = layer
-                .call(cors_request("http://localhost:3000"))
-                .await
-                .unwrap();
-            let headers = resp.headers();
-            assert_eq!(
-                headers.get("Access-Control-Allow-Origin"),
-                Some(&"*".parse::<HeaderValue>().unwrap())
-            );
-            assert_eq!(
-                headers.get("Access-Control-Allow-Methods"),
-                Some(
-                    &"GET,POST,PUT,DELETE,OPTIONS"
-                        .parse::<HeaderValue>()
-                        .unwrap()
-                )
-            );
-            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
-            assert_eq!(headers.get("Access-Control-Max-Age"), None);
-        }
-
-        // Specific origin cors enabled
-        {
-            let cors = build_cors(&["https://quickwit.io".to_string()]);
-
-            let mut layer = ServiceBuilder::new().layer(cors).service(HelloWorld);
-
-            let resp = layer.call(Request::new(())).await.unwrap();
-            let headers = resp.headers();
-            assert_eq!(headers.get("Access-Control-Allow-Origin"), None);
-            assert_eq!(headers.get("Access-Control-Allow-Methods"), None);
-            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
-            assert_eq!(headers.get("Access-Control-Max-Age"), None);
-
-            let resp = layer
-                .call(cors_request("http://localhost:3000"))
-                .await
-                .unwrap();
-            let headers = resp.headers();
-            assert_eq!(headers.get("Access-Control-Allow-Origin"), None);
-            assert_eq!(
-                headers.get("Access-Control-Allow-Methods"),
-                Some(
-                    &"GET,POST,PUT,DELETE,OPTIONS"
-                        .parse::<HeaderValue>()
-                        .unwrap()
-                )
-            );
-            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
-            assert_eq!(headers.get("Access-Control-Max-Age"), None);
-
-            let resp = layer
-                .call(cors_request("https://quickwit.io"))
-                .await
-                .unwrap();
-            let headers = resp.headers();
-            assert_eq!(
-                headers.get("Access-Control-Allow-Origin"),
-                Some(&"https://quickwit.io".parse::<HeaderValue>().unwrap())
-            );
-            assert_eq!(
-                headers.get("Access-Control-Allow-Methods"),
-                Some(
-                    &"GET,POST,PUT,DELETE,OPTIONS"
-                        .parse::<HeaderValue>()
-                        .unwrap()
-                )
-            );
-            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
-            assert_eq!(headers.get("Access-Control-Max-Age"), None);
-        }
-
-        // Specific multiple-origin cors enabled
-        {
-            let cors = build_cors(&[
-                "https://quickwit.io".to_string(),
-                "http://localhost:3000".to_string(),
-            ]);
-
-            let mut layer = ServiceBuilder::new().layer(cors).service(HelloWorld);
-
-            let resp = layer.call(Request::new(())).await.unwrap();
-            let headers = resp.headers();
-            assert_eq!(headers.get("Access-Control-Allow-Origin"), None);
-            assert_eq!(headers.get("Access-Control-Allow-Methods"), None);
-            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
-            assert_eq!(headers.get("Access-Control-Max-Age"), None);
-
-            let resp = layer
-                .call(cors_request("http://localhost:3000"))
-                .await
-                .unwrap();
-            let headers = resp.headers();
-            assert_eq!(
-                headers.get("Access-Control-Allow-Origin"),
-                Some(&"http://localhost:3000".parse::<HeaderValue>().unwrap())
-            );
-            assert_eq!(
-                headers.get("Access-Control-Allow-Methods"),
-                Some(
-                    &"GET,POST,PUT,DELETE,OPTIONS"
-                        .parse::<HeaderValue>()
-                        .unwrap()
-                )
-            );
-            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
-            assert_eq!(headers.get("Access-Control-Max-Age"), None);
-
-            let resp = layer
-                .call(cors_request("https://quickwit.io"))
-                .await
-                .unwrap();
-            let headers = resp.headers();
-            assert_eq!(
-                headers.get("Access-Control-Allow-Origin"),
-                Some(&"https://quickwit.io".parse::<HeaderValue>().unwrap())
-            );
-            assert_eq!(
-                headers.get("Access-Control-Allow-Methods"),
-                Some(
-                    &"GET,POST,PUT,DELETE,OPTIONS"
-                        .parse::<HeaderValue>()
-                        .unwrap()
-                )
-            );
-            assert_eq!(headers.get("Access-Control-Allow-Headers"), None);
-            assert_eq!(headers.get("Access-Control-Max-Age"), None);
+            for origin in [
+                "http://localhost:3000",
+                "https://quickwit.io",
+                "https://untrusted.example",
+            ] {
+                let resp = layer.call(cors_request(origin)).await.unwrap();
+                let headers = resp.headers();
+                let expected_origin = if wildcard {
+                    Some(HeaderValue::from_static("*"))
+                } else if origins.contains(&origin) {
+                    Some(HeaderValue::from_static(origin))
+                } else {
+                    None
+                };
+                assert_eq!(
+                    headers.get("Access-Control-Allow-Origin"),
+                    expected_origin.as_ref()
+                );
+                assert_eq!(
+                    headers["Access-Control-Allow-Methods"],
+                    "GET,POST,PUT,DELETE,OPTIONS"
+                );
+                assert_eq!(
+                    headers["Access-Control-Allow-Headers"],
+                    "content-type,mcp-protocol-version"
+                );
+                assert_eq!(headers.get("Access-Control-Max-Age"), None);
+            }
         }
     }
 
     fn cors_request(origin: &'static str) -> Request<()> {
         let mut request = Request::new(());
         (*request.method_mut()) = Method::OPTIONS;
+        *request.uri_mut() = "/mcp".parse().unwrap();
         request
             .headers_mut()
             .insert("Origin", HeaderValue::from_static(origin));
+        request.headers_mut().insert(
+            "Access-Control-Request-Method",
+            HeaderValue::from_static("POST"),
+        );
+        request.headers_mut().insert(
+            "Access-Control-Request-Headers",
+            HeaderValue::from_static("content-type,mcp-protocol-version"),
+        );
         request
     }
 
@@ -835,7 +899,7 @@ mod tests {
         let index_service =
             IndexService::new(metastore_client.clone(), StorageResolver::unconfigured());
         let control_plane_client = ControlPlaneServiceClient::mocked();
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
             .await
             .unwrap();
@@ -843,6 +907,7 @@ mod tests {
             _report_splits_subscription_handle_opt: None,
             _local_shards_update_listener_handle_opt: None,
             cluster,
+            compaction_service_client_opt: None,
             control_plane_server_opt: None,
             control_plane_client,
             indexing_service_opt: None,
@@ -859,10 +924,13 @@ mod tests {
             node_config: Arc::new(node_config.clone()),
             search_service: Arc::new(MockSearchService::new()),
             jaeger_service_opt: None,
+            compactor_service_opt: None,
             env_filter_reload_fn: crate::do_nothing_env_filter_reload_fn(),
         };
 
-        let handler = api_v1_routes(Arc::new(quickwit_services))
+        let quickwit_services = Arc::new(quickwit_services);
+        let handler = api_v1_routes(quickwit_services.clone())
+            .or(mcp_routes(quickwit_services))
             .recover(recover_fn_final)
             .with(warp::reply::with::headers(
                 node_config.rest_config.extra_headers.clone(),
@@ -882,6 +950,33 @@ mod tests {
             resp.headers().get("x-custom-header-2").unwrap(),
             "custom-value-2"
         );
+
+        let mcp_response = warp::test::request()
+            .method("POST")
+            .path("/mcp")
+            .header("accept", "application/json, text/event-stream")
+            .header("mcp-protocol-version", "2025-06-18")
+            .json(&serde_json::json!({"jsonrpc":"2.0", "id":1, "method":"ping"}))
+            .reply(&handler)
+            .await;
+        assert_eq!(mcp_response.status(), 200);
+        assert_eq!(mcp_response.headers()["x-custom-header"], "custom-value");
+        let body: serde_json::Value = serde_json::from_slice(mcp_response.body()).unwrap();
+        assert_eq!(
+            body,
+            serde_json::json!({"jsonrpc":"2.0", "id":1, "result":{}})
+        );
+
+        // MCP is served at `/mcp`, not under the versioned REST API.
+        let legacy_mcp_response = warp::test::request()
+            .method("POST")
+            .path("/api/v1/mcp")
+            .header("accept", "application/json, text/event-stream")
+            .header("mcp-protocol-version", "2025-06-18")
+            .json(&serde_json::json!({"jsonrpc":"2.0", "id":1, "method":"ping"}))
+            .reply(&handler)
+            .await;
+        assert_eq!(legacy_mcp_response.status(), 404);
 
         let resp_404 = warp::test::request()
             .path("/api/v1/version404")

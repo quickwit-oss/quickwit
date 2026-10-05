@@ -134,6 +134,11 @@ impl RoutingExpr {
         })
     }
 
+    /// Returns `true` if no routing expression is configured.
+    pub fn is_empty(&self) -> bool {
+        self.inner_opt.is_none()
+    }
+
     /// Evaluates the expression applied to the given
     /// context and returns a u64 hash.
     ///

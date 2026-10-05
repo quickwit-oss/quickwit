@@ -42,19 +42,42 @@ Create a short, descriptive branch name based on the changes (e.g., `fix-typo-in
 
 Create and checkout the branch: `git checkout -b {username}/{short-descriptive-name}`
 
-## Step 6: Commit changes
+## Step 6: Run pre-PR checks
 
-Commit with the message from step 3:
+Before committing, run these checks and fix any failures:
+
+```bash
+# License headers (every .rs, .proto, .py file needs the Apache 2.0 header)
+bash scripts/check_license_headers.sh
+
+# Clippy (must pass with no warnings)
+cargo clippy --workspace --all-features --tests
+
+# Format check
+cargo +nightly fmt --all -- --check
+```
+
+Fix any issues found before proceeding. For license headers, the correct header for `.rs` files is:
+```
+// Copyright 2021-Present Datadog, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// ...
+```
+
+## Step 7: Commit changes
+
+Commit with the message from step 4:
 ```
 git commit -m "{commit-message}"
 ```
 
-## Step 7: Push and open a PR
+## Step 8: Push and open a PR
 
 Push the branch and open a PR:
 ```
 git push -u origin {branch-name}
-gh pr create --title "{commit-message-title}" --body "{longer-description-if-needed}"
+gh pr create --draft --title "{commit-message-title}" --body "{longer-description-if-needed}"
 ```
 
 Report the PR URL to the user when complete.

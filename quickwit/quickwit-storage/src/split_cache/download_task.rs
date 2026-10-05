@@ -21,7 +21,7 @@ use quickwit_common::split_file;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::split_cache::split_table::{CandidateSplit, DownloadOpportunity};
-use crate::{SplitCache, StorageResolver};
+use crate::{SearchSplitCache, StorageResolver};
 
 async fn download_split(
     root_path: &Path,
@@ -29,11 +29,11 @@ async fn download_split(
     storage_resolver: StorageResolver,
 ) -> anyhow::Result<u64> {
     let CandidateSplit {
-        split_ulid,
+        split_id,
         storage_uri,
         living_token: _,
     } = candidate_split;
-    let split_filename = split_file(*split_ulid);
+    let split_filename = split_file(split_id);
     let target_filepath = root_path.join(&split_filename);
     let storage = storage_resolver.resolve(storage_uri).await?;
     let num_bytes = storage
@@ -44,7 +44,7 @@ async fn download_split(
 
 async fn perform_eviction_and_download(
     download_opportunity: DownloadOpportunity,
-    split_cache: Arc<SplitCache>,
+    split_cache: Arc<SearchSplitCache>,
     storage_resolver: StorageResolver,
     _download_permit: OwnedSemaphorePermit,
 ) -> anyhow::Result<()> {
@@ -52,7 +52,7 @@ async fn perform_eviction_and_download(
         splits_to_delete,
         split_to_download,
     } = download_opportunity;
-    let split_ulid = split_to_download.split_ulid;
+    let split_id = split_to_download.split_id.clone();
     // tokio io runs on `spawn_blocking` threads anyway.
     let split_cache_clone = split_cache.clone();
     let _ = tokio::task::spawn_blocking(move || {
@@ -62,12 +62,12 @@ async fn perform_eviction_and_download(
     let num_bytes =
         download_split(&split_cache.root_path, &split_to_download, storage_resolver).await?;
     let mut shared_split_table_lock = split_cache.split_table.lock().unwrap();
-    shared_split_table_lock.register_as_downloaded(split_ulid, num_bytes);
+    shared_split_table_lock.register_as_downloaded(split_id, num_bytes);
     Ok(())
 }
 
 pub(crate) fn spawn_download_task(
-    split_cache: Arc<SplitCache>,
+    split_cache: Arc<SearchSplitCache>,
     storage_resolver: StorageResolver,
     num_concurrent_downloads: NonZeroU32,
 ) {

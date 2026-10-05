@@ -48,13 +48,13 @@ pub async fn get_kinesis_client(region_or_endpoint: RegionOrEndpoint) -> anyhow:
 #[cfg(all(test, feature = "kinesis-localstack-tests"))]
 pub(crate) mod tests {
     use std::collections::HashMap;
+    use std::sync::LazyLock;
     use std::time::Duration;
 
     use anyhow::bail;
     use aws_sdk_kinesis::Client as KinesisClient;
     use aws_sdk_kinesis::primitives::Blob;
     use aws_sdk_kinesis::types::{PutRecordsRequestEntry, StreamStatus};
-    use once_cell::sync::Lazy;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_common::retry::RetryParams;
     use quickwit_config::RegionOrEndpoint;
@@ -66,7 +66,7 @@ pub(crate) mod tests {
     };
     use crate::source::kinesis::helpers::get_kinesis_client;
 
-    pub static DEFAULT_RETRY_PARAMS: Lazy<RetryParams> = Lazy::new(RetryParams::standard);
+    pub static DEFAULT_RETRY_PARAMS: LazyLock<RetryParams> = LazyLock::new(RetryParams::standard);
 
     pub async fn get_localstack_client() -> anyhow::Result<KinesisClient> {
         let endpoint = RegionOrEndpoint::Endpoint("http://localhost:4566".to_string());

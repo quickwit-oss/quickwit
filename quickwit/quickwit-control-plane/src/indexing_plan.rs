@@ -14,19 +14,18 @@
 
 use fnv::FnvHashMap;
 use quickwit_proto::indexing::IndexingTask;
+use quickwit_proto::types::NodeId;
 use serde::Serialize;
 
 /// A [`PhysicalIndexingPlan`] defines the list of indexing tasks
 /// each indexer, identified by its node ID, should run.
-/// TODO(fmassot): a metastore version number will be attached to the plan
-/// to identify if the plan is up to date with the metastore.
 #[derive(Debug, PartialEq, Clone, Serialize)]
 pub struct PhysicalIndexingPlan {
-    indexing_tasks_per_indexer_id: FnvHashMap<String, Vec<IndexingTask>>,
+    indexing_tasks_per_indexer_id: FnvHashMap<NodeId, Vec<IndexingTask>>,
 }
 
 impl PhysicalIndexingPlan {
-    pub fn with_indexer_ids(indexer_ids: &[String]) -> PhysicalIndexingPlan {
+    pub fn with_indexer_ids(indexer_ids: &[NodeId]) -> PhysicalIndexingPlan {
         PhysicalIndexingPlan {
             indexing_tasks_per_indexer_id: indexer_ids
                 .iter()
@@ -35,15 +34,15 @@ impl PhysicalIndexingPlan {
         }
     }
 
-    pub fn add_indexing_task(&mut self, indexer_id: &str, indexing_task: IndexingTask) {
+    pub fn add_indexing_task(&mut self, indexer_id: &NodeId, indexing_task: IndexingTask) {
         self.indexing_tasks_per_indexer_id
-            .entry(indexer_id.to_string())
+            .entry(indexer_id.clone())
             .or_default()
             .push(indexing_task);
     }
 
     /// Returns the hashmap of (indexer ID, indexing tasks).
-    pub fn indexing_tasks_per_indexer(&self) -> &FnvHashMap<String, Vec<IndexingTask>> {
+    pub fn indexing_tasks_per_indexer(&self) -> &FnvHashMap<NodeId, Vec<IndexingTask>> {
         &self.indexing_tasks_per_indexer_id
     }
 
@@ -52,12 +51,12 @@ impl PhysicalIndexingPlan {
     }
 
     /// Returns the hashmap of (indexer ID, indexing tasks).
-    pub fn indexing_tasks_per_indexer_mut(&mut self) -> &mut FnvHashMap<String, Vec<IndexingTask>> {
+    pub fn indexing_tasks_per_indexer_mut(&mut self) -> &mut FnvHashMap<NodeId, Vec<IndexingTask>> {
         &mut self.indexing_tasks_per_indexer_id
     }
 
     /// Returns the hashmap of (indexer ID, indexing tasks).
-    pub fn indexer(&self, indexer_id: &str) -> Option<&[IndexingTask]> {
+    pub fn indexer(&self, indexer_id: &NodeId) -> Option<&[IndexingTask]> {
         self.indexing_tasks_per_indexer_id
             .get(indexer_id)
             .map(Vec::as_slice)

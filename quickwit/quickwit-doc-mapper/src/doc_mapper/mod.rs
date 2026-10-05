@@ -28,8 +28,6 @@ use std::ops::Bound;
 
 pub use doc_mapper_builder::DocMapperBuilder;
 pub use doc_mapper_impl::DocMapper;
-#[cfg(all(test, feature = "multilang"))]
-pub(crate) use field_mapping_entry::TextIndexingOptions;
 pub use field_mapping_entry::{
     BinaryFormat, FastFieldOptions, FieldMappingEntry, QuickwitBytesOptions, QuickwitJsonOptions,
     QuickwitTextNormalizer,
@@ -110,6 +108,13 @@ pub struct WarmupInfo {
     pub term_ranges_grouped_by_field: HashMap<Field, HashMap<TermRange, bool>>,
     /// Automatons to warmup
     pub automatons_grouped_by_field: HashMap<Field, HashSet<Automaton>>,
+    /// Terms that must all be present for the query to match any document.
+    ///
+    /// If any of these terms has an empty posting list in a split, the query
+    /// provably matches nothing there, so the leaf search can abort warmup
+    /// early. This is a conservative subset (see
+    /// `quickwit_query::query_ast::required_terms`).
+    pub required_terms: HashSet<Term>,
 }
 
 impl WarmupInfo {
@@ -149,6 +154,10 @@ impl WarmupInfo {
             let sub_map = self.automatons_grouped_by_field.entry(field).or_default();
             sub_map.extend(automatons);
         }
+
+        // Required terms come from the query; a collector's `WarmupInfo` carries
+        // none, so this union simply preserves the query's set.
+        self.required_terms.extend(other.required_terms);
     }
 
     /// Simplify a WarmupInfo, removing some redundant tasks
@@ -679,6 +688,7 @@ mod tests {
             )]
             .into_iter()
             .collect(),
+            ..Default::default()
         };
 
         // merging with default has no impact
@@ -702,6 +712,7 @@ mod tests {
             ]
             .into_iter()
             .collect(),
+            ..Default::default()
         };
         wi_base.merge(wi_2.clone());
 
@@ -791,6 +802,7 @@ mod tests {
             ]
             .into_iter()
             .collect(),
+            ..Default::default()
         };
         let expected = WarmupInfo {
             term_dict_fields: hashset_field(&[1]),
@@ -807,60 +819,10 @@ mod tests {
             ]
             .into_iter()
             .collect(),
+            ..Default::default()
         };
 
         warmup_info.simplify();
         assert_eq!(warmup_info, expected);
-    }
-
-    #[test]
-    #[cfg(feature = "multilang")]
-    fn test_doc_mapper_query_with_multilang_field() {
-        use quickwit_query::query_ast::TermQuery;
-        use tantivy::schema::IndexRecordOption;
-
-        use crate::doc_mapper::{
-            QuickwitTextOptions, QuickwitTextTokenizer, TextIndexingOptions, TokenizerType,
-        };
-        use crate::{TokenizerConfig, TokenizerEntry};
-        let mut doc_mapper_builder = DocMapperBuilder::default();
-        doc_mapper_builder
-            .doc_mapping
-            .field_mappings
-            .push(FieldMappingEntry {
-                name: "multilang".to_string(),
-                mapping_type: FieldMappingType::Text(
-                    QuickwitTextOptions {
-                        indexing_options: Some(TextIndexingOptions {
-                            tokenizer: QuickwitTextTokenizer::from_static("multilang"),
-                            record: IndexRecordOption::Basic,
-                            fieldnorms: false,
-                        }),
-                        ..Default::default()
-                    },
-                    Cardinality::SingleValued,
-                ),
-            });
-        doc_mapper_builder
-            .doc_mapping
-            .tokenizers
-            .push(TokenizerEntry {
-                name: "multilang".to_string(),
-                config: TokenizerConfig {
-                    tokenizer_type: TokenizerType::Multilang,
-                    filters: Vec::new(),
-                },
-            });
-        let doc_mapper = doc_mapper_builder.try_build().unwrap();
-        let schema = doc_mapper.schema();
-        let query_ast = quickwit_query::query_ast::QueryAst::Term(TermQuery {
-            field: "multilang".to_string(),
-            value: "JPN:す".to_string(),
-        });
-        let (query, _) = doc_mapper.query(schema, query_ast, false, None).unwrap();
-        assert_eq!(
-            format!("{query:?}"),
-            r#"TermQuery(Term(field=2, type=Str, "JPN:す"))"#
-        );
     }
 }

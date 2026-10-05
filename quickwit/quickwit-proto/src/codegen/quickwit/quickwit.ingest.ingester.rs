@@ -22,7 +22,7 @@ pub struct RetainShardsResponse {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PersistRequest {
     #[prost(string, tag = "1")]
-    pub leader_id: ::prost::alloc::string::String,
+    pub ingester_id: ::prost::alloc::string::String,
     #[prost(enumeration = "super::CommitTypeV2", tag = "3")]
     pub commit_type: i32,
     #[prost(message, repeated, tag = "4")]
@@ -37,8 +37,6 @@ pub struct PersistSubrequest {
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "4")]
-    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(message, optional, tag = "5")]
     pub doc_batch: ::core::option::Option<super::DocBatchV2>,
 }
@@ -46,11 +44,33 @@ pub struct PersistSubrequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PersistResponse {
     #[prost(string, tag = "1")]
-    pub leader_id: ::prost::alloc::string::String,
+    pub ingester_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     pub successes: ::prost::alloc::vec::Vec<PersistSuccess>,
     #[prost(message, repeated, tag = "3")]
     pub failures: ::prost::alloc::vec::Vec<PersistFailure>,
+    #[prost(message, optional, tag = "4")]
+    pub routing_update: ::core::option::Option<RoutingUpdate>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RoutingUpdate {
+    #[prost(uint32, tag = "1")]
+    pub capacity_score: u32,
+    #[prost(message, repeated, tag = "2")]
+    pub source_shard_updates: ::prost::alloc::vec::Vec<SourceShardUpdate>,
+    #[prost(message, repeated, tag = "3")]
+    pub closed_shards: ::prost::alloc::vec::Vec<super::ShardIds>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SourceShardUpdate {
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "3")]
+    pub open_shard_count: u32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -79,153 +99,7 @@ pub struct PersistFailure {
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "4")]
-    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(enumeration = "PersistFailureReason", tag = "5")]
-    pub reason: i32,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SynReplicationMessage {
-    #[prost(oneof = "syn_replication_message::Message", tags = "1, 2, 3")]
-    pub message: ::core::option::Option<syn_replication_message::Message>,
-}
-/// Nested message and enum types in `SynReplicationMessage`.
-pub mod syn_replication_message {
-    #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-    #[serde(rename_all = "snake_case")]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Message {
-        #[prost(message, tag = "1")]
-        OpenRequest(super::OpenReplicationStreamRequest),
-        #[prost(message, tag = "2")]
-        InitRequest(super::InitReplicaRequest),
-        #[prost(message, tag = "3")]
-        ReplicateRequest(super::ReplicateRequest),
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AckReplicationMessage {
-    #[prost(oneof = "ack_replication_message::Message", tags = "1, 2, 3")]
-    pub message: ::core::option::Option<ack_replication_message::Message>,
-}
-/// Nested message and enum types in `AckReplicationMessage`.
-pub mod ack_replication_message {
-    #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-    #[serde(rename_all = "snake_case")]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Message {
-        #[prost(message, tag = "1")]
-        OpenResponse(super::OpenReplicationStreamResponse),
-        #[prost(message, tag = "2")]
-        InitResponse(super::InitReplicaResponse),
-        #[prost(message, tag = "3")]
-        ReplicateResponse(super::ReplicateResponse),
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct OpenReplicationStreamRequest {
-    #[prost(string, tag = "1")]
-    pub leader_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub follower_id: ::prost::alloc::string::String,
-    /// Position of the request in the replication stream.
-    #[prost(uint64, tag = "3")]
-    pub replication_seqno: u64,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct OpenReplicationStreamResponse {
-    /// Position of the response in the replication stream. It should match the position of the request.
-    #[prost(uint64, tag = "1")]
-    pub replication_seqno: u64,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct InitReplicaRequest {
-    #[prost(message, optional, tag = "1")]
-    pub replica_shard: ::core::option::Option<super::Shard>,
-    #[prost(uint64, tag = "2")]
-    pub replication_seqno: u64,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct InitReplicaResponse {
-    #[prost(uint64, tag = "1")]
-    pub replication_seqno: u64,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ReplicateRequest {
-    #[prost(string, tag = "1")]
-    pub leader_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub follower_id: ::prost::alloc::string::String,
-    #[prost(enumeration = "super::CommitTypeV2", tag = "3")]
-    pub commit_type: i32,
-    #[prost(message, repeated, tag = "4")]
-    pub subrequests: ::prost::alloc::vec::Vec<ReplicateSubrequest>,
-    /// Position of the request in the replication stream.
-    #[prost(uint64, tag = "5")]
-    pub replication_seqno: u64,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ReplicateSubrequest {
-    #[prost(uint32, tag = "1")]
-    pub subrequest_id: u32,
-    #[prost(message, optional, tag = "2")]
-    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
-    #[prost(string, tag = "3")]
-    pub source_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "4")]
-    pub shard_id: ::core::option::Option<crate::types::ShardId>,
-    #[prost(message, optional, tag = "5")]
-    pub from_position_exclusive: ::core::option::Option<crate::types::Position>,
-    #[prost(message, optional, tag = "6")]
-    pub doc_batch: ::core::option::Option<super::DocBatchV2>,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ReplicateResponse {
-    #[prost(string, tag = "1")]
-    pub follower_id: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "2")]
-    pub successes: ::prost::alloc::vec::Vec<ReplicateSuccess>,
-    #[prost(message, repeated, tag = "3")]
-    pub failures: ::prost::alloc::vec::Vec<ReplicateFailure>,
-    /// Position of the response in the replication stream. It should match the position of the request.
-    #[prost(uint64, tag = "4")]
-    pub replication_seqno: u64,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ReplicateSuccess {
-    #[prost(uint32, tag = "1")]
-    pub subrequest_id: u32,
-    #[prost(message, optional, tag = "2")]
-    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
-    #[prost(string, tag = "3")]
-    pub source_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "4")]
-    pub shard_id: ::core::option::Option<crate::types::ShardId>,
-    #[prost(message, optional, tag = "5")]
-    pub replication_position_inclusive: ::core::option::Option<crate::types::Position>,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ReplicateFailure {
-    #[prost(uint32, tag = "1")]
-    pub subrequest_id: u32,
-    #[prost(message, optional, tag = "2")]
-    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
-    #[prost(string, tag = "3")]
-    pub source_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "4")]
-    pub shard_id: ::core::option::Option<crate::types::ShardId>,
-    #[prost(enumeration = "ReplicateFailureReason", tag = "5")]
     pub reason: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -381,27 +255,15 @@ pub struct DecommissionRequest {}
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DecommissionResponse {}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct OpenObservationStreamRequest {}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ObservationMessage {
-    #[prost(string, tag = "1")]
-    pub node_id: ::prost::alloc::string::String,
-    #[prost(enumeration = "IngesterStatus", tag = "2")]
-    pub status: i32,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum PersistFailureReason {
     Unspecified = 0,
-    ShardNotFound = 1,
-    ShardClosed = 2,
-    ShardRateLimited = 3,
     WalFull = 4,
     Timeout = 5,
+    NoShardsAvailable = 6,
+    NodeUnavailable = 7,
 }
 impl PersistFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -411,56 +273,20 @@ impl PersistFailureReason {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             Self::Unspecified => "PERSIST_FAILURE_REASON_UNSPECIFIED",
-            Self::ShardNotFound => "PERSIST_FAILURE_REASON_SHARD_NOT_FOUND",
-            Self::ShardClosed => "PERSIST_FAILURE_REASON_SHARD_CLOSED",
-            Self::ShardRateLimited => "PERSIST_FAILURE_REASON_SHARD_RATE_LIMITED",
             Self::WalFull => "PERSIST_FAILURE_REASON_WAL_FULL",
             Self::Timeout => "PERSIST_FAILURE_REASON_TIMEOUT",
+            Self::NoShardsAvailable => "PERSIST_FAILURE_REASON_NO_SHARDS_AVAILABLE",
+            Self::NodeUnavailable => "PERSIST_FAILURE_REASON_NODE_UNAVAILABLE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "PERSIST_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
-            "PERSIST_FAILURE_REASON_SHARD_NOT_FOUND" => Some(Self::ShardNotFound),
-            "PERSIST_FAILURE_REASON_SHARD_CLOSED" => Some(Self::ShardClosed),
-            "PERSIST_FAILURE_REASON_SHARD_RATE_LIMITED" => Some(Self::ShardRateLimited),
             "PERSIST_FAILURE_REASON_WAL_FULL" => Some(Self::WalFull),
             "PERSIST_FAILURE_REASON_TIMEOUT" => Some(Self::Timeout),
-            _ => None,
-        }
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "snake_case")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum ReplicateFailureReason {
-    Unspecified = 0,
-    ShardNotFound = 1,
-    ShardClosed = 2,
-    WalFull = 4,
-}
-impl ReplicateFailureReason {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "REPLICATE_FAILURE_REASON_UNSPECIFIED",
-            Self::ShardNotFound => "REPLICATE_FAILURE_REASON_SHARD_NOT_FOUND",
-            Self::ShardClosed => "REPLICATE_FAILURE_REASON_SHARD_CLOSED",
-            Self::WalFull => "REPLICATE_FAILURE_REASON_WAL_FULL",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "REPLICATE_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
-            "REPLICATE_FAILURE_REASON_SHARD_NOT_FOUND" => Some(Self::ShardNotFound),
-            "REPLICATE_FAILURE_REASON_SHARD_CLOSED" => Some(Self::ShardClosed),
-            "REPLICATE_FAILURE_REASON_WAL_FULL" => Some(Self::WalFull),
+            "PERSIST_FAILURE_REASON_NO_SHARDS_AVAILABLE" => Some(Self::NoShardsAvailable),
+            "PERSIST_FAILURE_REASON_NODE_UNAVAILABLE" => Some(Self::NodeUnavailable),
             _ => None,
         }
     }
@@ -475,6 +301,8 @@ pub enum IngesterStatus {
     Initializing = 1,
     /// The ingester is ready and accepts read and write requests.
     Ready = 2,
+    /// The ingester is about to be decommissioned. It still accepts read and write requests, but will not accept write requests in a few seconds and should be avoided by future write requests.
+    Retiring = 6,
     /// The ingester is being decommissioned. It accepts read requests but rejects write requests
     /// (open shards, persist, and replicate requests). It will transition to `Decommissioned` once
     /// all shards are fully indexed.
@@ -495,6 +323,7 @@ impl IngesterStatus {
             Self::Unspecified => "INGESTER_STATUS_UNSPECIFIED",
             Self::Initializing => "INGESTER_STATUS_INITIALIZING",
             Self::Ready => "INGESTER_STATUS_READY",
+            Self::Retiring => "INGESTER_STATUS_RETIRING",
             Self::Decommissioning => "INGESTER_STATUS_DECOMMISSIONING",
             Self::Decommissioned => "INGESTER_STATUS_DECOMMISSIONED",
             Self::Failed => "INGESTER_STATUS_FAILED",
@@ -506,6 +335,7 @@ impl IngesterStatus {
             "INGESTER_STATUS_UNSPECIFIED" => Some(Self::Unspecified),
             "INGESTER_STATUS_INITIALIZING" => Some(Self::Initializing),
             "INGESTER_STATUS_READY" => Some(Self::Ready),
+            "INGESTER_STATUS_RETIRING" => Some(Self::Retiring),
             "INGESTER_STATUS_DECOMMISSIONING" => Some(Self::Decommissioning),
             "INGESTER_STATUS_DECOMMISSIONED" => Some(Self::Decommissioned),
             "INGESTER_STATUS_FAILED" => Some(Self::Failed),
@@ -523,19 +353,9 @@ impl RpcName for PersistRequest {
         "persist"
     }
 }
-impl RpcName for SynReplicationMessage {
-    fn rpc_name() -> &'static str {
-        "open_replication_stream"
-    }
-}
 impl RpcName for OpenFetchStreamRequest {
     fn rpc_name() -> &'static str {
         "open_fetch_stream"
-    }
-}
-impl RpcName for OpenObservationStreamRequest {
-    fn rpc_name() -> &'static str {
-        "open_observation_stream"
     }
 }
 impl RpcName for InitShardsRequest {
@@ -569,28 +389,18 @@ pub type IngesterServiceStream<T> = quickwit_common::ServiceStream<
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait IngesterService: std::fmt::Debug + Send + Sync + 'static {
-    ///Persists batches of documents to primary shards hosted on a leader.
+    ///Persists batches of documents to shards hosted on an ingester.
     async fn persist(
         &self,
         request: PersistRequest,
     ) -> crate::ingest::IngestV2Result<PersistResponse>;
-    ///Opens a replication stream from a leader to a follower.
-    async fn open_replication_stream(
-        &self,
-        request: quickwit_common::ServiceStream<SynReplicationMessage>,
-    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<AckReplicationMessage>>;
-    ///Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch,
+    ///Streams records from an ingester. The client can optionally specify a range of positions to fetch,
     ///otherwise the stream will go indefinitely or until the shard is closed.
     async fn open_fetch_stream(
         &self,
         request: OpenFetchStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchMessage>>;
-    ///Streams status updates, called "observations", from an ingester.
-    async fn open_observation_stream(
-        &self,
-        request: OpenObservationStreamRequest,
-    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<ObservationMessage>>;
-    ///Creates and initializes a set of newly opened shards. This RPC is called by the control plane on leaders.
+    ///Creates and initializes a set of newly opened shards. This RPC is called by the control plane on ingesters.
     async fn init_shards(
         &self,
         request: InitShardsRequest,
@@ -601,7 +411,7 @@ pub trait IngesterService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: RetainShardsRequest,
     ) -> crate::ingest::IngestV2Result<RetainShardsResponse>;
-    ///Truncates a set of shards at the given positions. This RPC is called by indexers on leaders AND followers.
+    ///Truncates a set of shards at the given positions. This RPC is called by indexers on ingesters.
     async fn truncate_shards(
         &self,
         request: TruncateShardsRequest,
@@ -724,54 +534,53 @@ impl IngesterServiceClient {
 }
 #[async_trait::async_trait]
 impl IngesterService for IngesterServiceClient {
+    #[tracing::instrument(
+        skip_all,
+        name = "ingest.ingester.persist",
+        fields(ingester_id = %request.ingester_id, commit_type = ?request.commit_type)
+    )]
     async fn persist(
         &self,
         request: PersistRequest,
     ) -> crate::ingest::IngestV2Result<PersistResponse> {
         self.inner.0.persist(request).await
     }
-    async fn open_replication_stream(
-        &self,
-        request: quickwit_common::ServiceStream<SynReplicationMessage>,
-    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<AckReplicationMessage>> {
-        self.inner.0.open_replication_stream(request).await
-    }
+    #[tracing::instrument(skip_all, name = "ingest.ingester.open_fetch_stream")]
     async fn open_fetch_stream(
         &self,
         request: OpenFetchStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchMessage>> {
         self.inner.0.open_fetch_stream(request).await
     }
-    async fn open_observation_stream(
-        &self,
-        request: OpenObservationStreamRequest,
-    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<ObservationMessage>> {
-        self.inner.0.open_observation_stream(request).await
-    }
+    #[tracing::instrument(skip_all, name = "ingest.ingester.init_shards")]
     async fn init_shards(
         &self,
         request: InitShardsRequest,
     ) -> crate::ingest::IngestV2Result<InitShardsResponse> {
         self.inner.0.init_shards(request).await
     }
+    #[tracing::instrument(skip_all, name = "ingest.ingester.retain_shards")]
     async fn retain_shards(
         &self,
         request: RetainShardsRequest,
     ) -> crate::ingest::IngestV2Result<RetainShardsResponse> {
         self.inner.0.retain_shards(request).await
     }
+    #[tracing::instrument(skip_all, name = "ingest.ingester.truncate_shards")]
     async fn truncate_shards(
         &self,
         request: TruncateShardsRequest,
     ) -> crate::ingest::IngestV2Result<TruncateShardsResponse> {
         self.inner.0.truncate_shards(request).await
     }
+    #[tracing::instrument(skip_all, name = "ingest.ingester.close_shards")]
     async fn close_shards(
         &self,
         request: CloseShardsRequest,
     ) -> crate::ingest::IngestV2Result<CloseShardsResponse> {
         self.inner.0.close_shards(request).await
     }
+    #[tracing::instrument(skip_all, name = "ingest.ingester.decommission")]
     async fn decommission(
         &self,
         request: DecommissionRequest,
@@ -794,27 +603,11 @@ pub mod mock_ingester_service {
         ) -> crate::ingest::IngestV2Result<super::PersistResponse> {
             self.inner.lock().await.persist(request).await
         }
-        async fn open_replication_stream(
-            &self,
-            request: quickwit_common::ServiceStream<super::SynReplicationMessage>,
-        ) -> crate::ingest::IngestV2Result<
-            IngesterServiceStream<super::AckReplicationMessage>,
-        > {
-            self.inner.lock().await.open_replication_stream(request).await
-        }
         async fn open_fetch_stream(
             &self,
             request: super::OpenFetchStreamRequest,
         ) -> crate::ingest::IngestV2Result<IngesterServiceStream<super::FetchMessage>> {
             self.inner.lock().await.open_fetch_stream(request).await
-        }
-        async fn open_observation_stream(
-            &self,
-            request: super::OpenObservationStreamRequest,
-        ) -> crate::ingest::IngestV2Result<
-            IngesterServiceStream<super::ObservationMessage>,
-        > {
-            self.inner.lock().await.open_observation_stream(request).await
         }
         async fn init_shards(
             &self,
@@ -867,26 +660,6 @@ impl tower::Service<PersistRequest> for InnerIngesterServiceClient {
         Box::pin(fut)
     }
 }
-impl tower::Service<quickwit_common::ServiceStream<SynReplicationMessage>>
-for InnerIngesterServiceClient {
-    type Response = IngesterServiceStream<AckReplicationMessage>;
-    type Error = crate::ingest::IngestV2Error;
-    type Future = BoxFuture<Self::Response, Self::Error>;
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-    fn call(
-        &mut self,
-        request: quickwit_common::ServiceStream<SynReplicationMessage>,
-    ) -> Self::Future {
-        let svc = self.clone();
-        let fut = async move { svc.0.open_replication_stream(request).await };
-        Box::pin(fut)
-    }
-}
 impl tower::Service<OpenFetchStreamRequest> for InnerIngesterServiceClient {
     type Response = IngesterServiceStream<FetchMessage>;
     type Error = crate::ingest::IngestV2Error;
@@ -900,22 +673,6 @@ impl tower::Service<OpenFetchStreamRequest> for InnerIngesterServiceClient {
     fn call(&mut self, request: OpenFetchStreamRequest) -> Self::Future {
         let svc = self.clone();
         let fut = async move { svc.0.open_fetch_stream(request).await };
-        Box::pin(fut)
-    }
-}
-impl tower::Service<OpenObservationStreamRequest> for InnerIngesterServiceClient {
-    type Response = IngesterServiceStream<ObservationMessage>;
-    type Error = crate::ingest::IngestV2Error;
-    type Future = BoxFuture<Self::Response, Self::Error>;
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-    fn call(&mut self, request: OpenObservationStreamRequest) -> Self::Future {
-        let svc = self.clone();
-        let fut = async move { svc.0.open_observation_stream(request).await };
         Box::pin(fut)
     }
 }
@@ -1009,19 +766,9 @@ struct IngesterServiceTowerServiceStack {
         PersistResponse,
         crate::ingest::IngestV2Error,
     >,
-    open_replication_stream_svc: quickwit_common::tower::BoxService<
-        quickwit_common::ServiceStream<SynReplicationMessage>,
-        IngesterServiceStream<AckReplicationMessage>,
-        crate::ingest::IngestV2Error,
-    >,
     open_fetch_stream_svc: quickwit_common::tower::BoxService<
         OpenFetchStreamRequest,
         IngesterServiceStream<FetchMessage>,
-        crate::ingest::IngestV2Error,
-    >,
-    open_observation_stream_svc: quickwit_common::tower::BoxService<
-        OpenObservationStreamRequest,
-        IngesterServiceStream<ObservationMessage>,
         crate::ingest::IngestV2Error,
     >,
     init_shards_svc: quickwit_common::tower::BoxService<
@@ -1058,23 +805,11 @@ impl IngesterService for IngesterServiceTowerServiceStack {
     ) -> crate::ingest::IngestV2Result<PersistResponse> {
         self.persist_svc.clone().ready().await?.call(request).await
     }
-    async fn open_replication_stream(
-        &self,
-        request: quickwit_common::ServiceStream<SynReplicationMessage>,
-    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<AckReplicationMessage>> {
-        self.open_replication_stream_svc.clone().ready().await?.call(request).await
-    }
     async fn open_fetch_stream(
         &self,
         request: OpenFetchStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchMessage>> {
         self.open_fetch_stream_svc.clone().ready().await?.call(request).await
-    }
-    async fn open_observation_stream(
-        &self,
-        request: OpenObservationStreamRequest,
-    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<ObservationMessage>> {
-        self.open_observation_stream_svc.clone().ready().await?.call(request).await
     }
     async fn init_shards(
         &self,
@@ -1117,16 +852,6 @@ type PersistLayer = quickwit_common::tower::BoxLayer<
     PersistResponse,
     crate::ingest::IngestV2Error,
 >;
-type OpenReplicationStreamLayer = quickwit_common::tower::BoxLayer<
-    quickwit_common::tower::BoxService<
-        quickwit_common::ServiceStream<SynReplicationMessage>,
-        IngesterServiceStream<AckReplicationMessage>,
-        crate::ingest::IngestV2Error,
-    >,
-    quickwit_common::ServiceStream<SynReplicationMessage>,
-    IngesterServiceStream<AckReplicationMessage>,
-    crate::ingest::IngestV2Error,
->;
 type OpenFetchStreamLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         OpenFetchStreamRequest,
@@ -1135,16 +860,6 @@ type OpenFetchStreamLayer = quickwit_common::tower::BoxLayer<
     >,
     OpenFetchStreamRequest,
     IngesterServiceStream<FetchMessage>,
-    crate::ingest::IngestV2Error,
->;
-type OpenObservationStreamLayer = quickwit_common::tower::BoxLayer<
-    quickwit_common::tower::BoxService<
-        OpenObservationStreamRequest,
-        IngesterServiceStream<ObservationMessage>,
-        crate::ingest::IngestV2Error,
-    >,
-    OpenObservationStreamRequest,
-    IngesterServiceStream<ObservationMessage>,
     crate::ingest::IngestV2Error,
 >;
 type InitShardsLayer = quickwit_common::tower::BoxLayer<
@@ -1200,9 +915,7 @@ type DecommissionLayer = quickwit_common::tower::BoxLayer<
 #[derive(Debug, Default)]
 pub struct IngesterServiceTowerLayerStack {
     persist_layers: Vec<PersistLayer>,
-    open_replication_stream_layers: Vec<OpenReplicationStreamLayer>,
     open_fetch_stream_layers: Vec<OpenFetchStreamLayer>,
-    open_observation_stream_layers: Vec<OpenObservationStreamLayer>,
     init_shards_layers: Vec<InitShardsLayer>,
     retain_shards_layers: Vec<RetainShardsLayer>,
     truncate_shards_layers: Vec<TruncateShardsLayer>,
@@ -1239,33 +952,6 @@ impl IngesterServiceTowerLayerStack {
         >>::Service as tower::Service<PersistRequest>>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
-                    quickwit_common::ServiceStream<SynReplicationMessage>,
-                    IngesterServiceStream<AckReplicationMessage>,
-                    crate::ingest::IngestV2Error,
-                >,
-            > + Clone + Send + Sync + 'static,
-        <L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                quickwit_common::ServiceStream<SynReplicationMessage>,
-                IngesterServiceStream<AckReplicationMessage>,
-                crate::ingest::IngestV2Error,
-            >,
-        >>::Service: tower::Service<
-                quickwit_common::ServiceStream<SynReplicationMessage>,
-                Response = IngesterServiceStream<AckReplicationMessage>,
-                Error = crate::ingest::IngestV2Error,
-            > + Clone + Send + Sync + 'static,
-        <<L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                quickwit_common::ServiceStream<SynReplicationMessage>,
-                IngesterServiceStream<AckReplicationMessage>,
-                crate::ingest::IngestV2Error,
-            >,
-        >>::Service as tower::Service<
-            quickwit_common::ServiceStream<SynReplicationMessage>,
-        >>::Future: Send + 'static,
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
                     OpenFetchStreamRequest,
                     IngesterServiceStream<FetchMessage>,
                     crate::ingest::IngestV2Error,
@@ -1289,33 +975,6 @@ impl IngesterServiceTowerLayerStack {
                 crate::ingest::IngestV2Error,
             >,
         >>::Service as tower::Service<OpenFetchStreamRequest>>::Future: Send + 'static,
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
-                    OpenObservationStreamRequest,
-                    IngesterServiceStream<ObservationMessage>,
-                    crate::ingest::IngestV2Error,
-                >,
-            > + Clone + Send + Sync + 'static,
-        <L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                OpenObservationStreamRequest,
-                IngesterServiceStream<ObservationMessage>,
-                crate::ingest::IngestV2Error,
-            >,
-        >>::Service: tower::Service<
-                OpenObservationStreamRequest,
-                Response = IngesterServiceStream<ObservationMessage>,
-                Error = crate::ingest::IngestV2Error,
-            > + Clone + Send + Sync + 'static,
-        <<L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                OpenObservationStreamRequest,
-                IngesterServiceStream<ObservationMessage>,
-                crate::ingest::IngestV2Error,
-            >,
-        >>::Service as tower::Service<
-            OpenObservationStreamRequest,
-        >>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     InitShardsRequest,
@@ -1443,11 +1102,7 @@ impl IngesterServiceTowerLayerStack {
         >>::Service as tower::Service<DecommissionRequest>>::Future: Send + 'static,
     {
         self.persist_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
-        self.open_replication_stream_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.open_fetch_stream_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
-        self.open_observation_stream_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.init_shards_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -1480,28 +1135,6 @@ impl IngesterServiceTowerLayerStack {
         self.persist_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn stack_open_replication_stream_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
-                    quickwit_common::ServiceStream<SynReplicationMessage>,
-                    IngesterServiceStream<AckReplicationMessage>,
-                    crate::ingest::IngestV2Error,
-                >,
-            > + Send + Sync + 'static,
-        L::Service: tower::Service<
-                quickwit_common::ServiceStream<SynReplicationMessage>,
-                Response = IngesterServiceStream<AckReplicationMessage>,
-                Error = crate::ingest::IngestV2Error,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            quickwit_common::ServiceStream<SynReplicationMessage>,
-        >>::Future: Send + 'static,
-    {
-        self.open_replication_stream_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
     pub fn stack_open_fetch_stream_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<
@@ -1519,28 +1152,6 @@ impl IngesterServiceTowerLayerStack {
         <L::Service as tower::Service<OpenFetchStreamRequest>>::Future: Send + 'static,
     {
         self.open_fetch_stream_layers.push(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn stack_open_observation_stream_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
-                    OpenObservationStreamRequest,
-                    IngesterServiceStream<ObservationMessage>,
-                    crate::ingest::IngestV2Error,
-                >,
-            > + Send + Sync + 'static,
-        L::Service: tower::Service<
-                OpenObservationStreamRequest,
-                Response = IngesterServiceStream<ObservationMessage>,
-                Error = crate::ingest::IngestV2Error,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            OpenObservationStreamRequest,
-        >>::Future: Send + 'static,
-    {
-        self.open_observation_stream_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn stack_init_shards_layer<L>(mut self, layer: L) -> Self
@@ -1706,24 +1317,8 @@ impl IngesterServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
-        let open_replication_stream_svc = self
-            .open_replication_stream_layers
-            .into_iter()
-            .rev()
-            .fold(
-                quickwit_common::tower::BoxService::new(inner_client.clone()),
-                |svc, layer| layer.layer(svc),
-            );
         let open_fetch_stream_svc = self
             .open_fetch_stream_layers
-            .into_iter()
-            .rev()
-            .fold(
-                quickwit_common::tower::BoxService::new(inner_client.clone()),
-                |svc, layer| layer.layer(svc),
-            );
-        let open_observation_stream_svc = self
-            .open_observation_stream_layers
             .into_iter()
             .rev()
             .fold(
@@ -1773,9 +1368,7 @@ impl IngesterServiceTowerLayerStack {
         let tower_svc_stack = IngesterServiceTowerServiceStack {
             inner: inner_client,
             persist_svc,
-            open_replication_stream_svc,
             open_fetch_stream_svc,
-            open_observation_stream_svc,
             init_shards_svc,
             retain_shards_svc,
             truncate_shards_svc,
@@ -1864,29 +1457,11 @@ where
             Future = BoxFuture<PersistResponse, crate::ingest::IngestV2Error>,
         >
         + tower::Service<
-            quickwit_common::ServiceStream<SynReplicationMessage>,
-            Response = IngesterServiceStream<AckReplicationMessage>,
-            Error = crate::ingest::IngestV2Error,
-            Future = BoxFuture<
-                IngesterServiceStream<AckReplicationMessage>,
-                crate::ingest::IngestV2Error,
-            >,
-        >
-        + tower::Service<
             OpenFetchStreamRequest,
             Response = IngesterServiceStream<FetchMessage>,
             Error = crate::ingest::IngestV2Error,
             Future = BoxFuture<
                 IngesterServiceStream<FetchMessage>,
-                crate::ingest::IngestV2Error,
-            >,
-        >
-        + tower::Service<
-            OpenObservationStreamRequest,
-            Response = IngesterServiceStream<ObservationMessage>,
-            Error = crate::ingest::IngestV2Error,
-            Future = BoxFuture<
-                IngesterServiceStream<ObservationMessage>,
                 crate::ingest::IngestV2Error,
             >,
         >
@@ -1927,22 +1502,10 @@ where
     ) -> crate::ingest::IngestV2Result<PersistResponse> {
         self.clone().call(request).await
     }
-    async fn open_replication_stream(
-        &self,
-        request: quickwit_common::ServiceStream<SynReplicationMessage>,
-    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<AckReplicationMessage>> {
-        self.clone().call(request).await
-    }
     async fn open_fetch_stream(
         &self,
         request: OpenFetchStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchMessage>> {
-        self.clone().call(request).await
-    }
-    async fn open_observation_stream(
-        &self,
-        request: OpenObservationStreamRequest,
-    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<ObservationMessage>> {
         self.clone().call(request).await
     }
     async fn init_shards(
@@ -2014,9 +1577,13 @@ where
         &self,
         request: PersistRequest,
     ) -> crate::ingest::IngestV2Result<PersistResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .persist(request)
+            .persist(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2024,35 +1591,17 @@ where
                 PersistRequest::rpc_name(),
             ))
     }
-    async fn open_replication_stream(
-        &self,
-        request: quickwit_common::ServiceStream<SynReplicationMessage>,
-    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<AckReplicationMessage>> {
-        self.inner
-            .clone()
-            .open_replication_stream(request)
-            .await
-            .map(|response| {
-                let streaming: tonic::Streaming<_> = response.into_inner();
-                let stream = quickwit_common::ServiceStream::from(streaming);
-                stream
-                    .map_err(|status| crate::error::grpc_status_to_service_error(
-                        status,
-                        SynReplicationMessage::rpc_name(),
-                    ))
-            })
-            .map_err(|status| crate::error::grpc_status_to_service_error(
-                status,
-                SynReplicationMessage::rpc_name(),
-            ))
-    }
     async fn open_fetch_stream(
         &self,
         request: OpenFetchStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchMessage>> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .open_fetch_stream(request)
+            .open_fetch_stream(tonic_request)
             .await
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
@@ -2068,35 +1617,17 @@ where
                 OpenFetchStreamRequest::rpc_name(),
             ))
     }
-    async fn open_observation_stream(
-        &self,
-        request: OpenObservationStreamRequest,
-    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<ObservationMessage>> {
-        self.inner
-            .clone()
-            .open_observation_stream(request)
-            .await
-            .map(|response| {
-                let streaming: tonic::Streaming<_> = response.into_inner();
-                let stream = quickwit_common::ServiceStream::from(streaming);
-                stream
-                    .map_err(|status| crate::error::grpc_status_to_service_error(
-                        status,
-                        OpenObservationStreamRequest::rpc_name(),
-                    ))
-            })
-            .map_err(|status| crate::error::grpc_status_to_service_error(
-                status,
-                OpenObservationStreamRequest::rpc_name(),
-            ))
-    }
     async fn init_shards(
         &self,
         request: InitShardsRequest,
     ) -> crate::ingest::IngestV2Result<InitShardsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .init_shards(request)
+            .init_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2108,9 +1639,13 @@ where
         &self,
         request: RetainShardsRequest,
     ) -> crate::ingest::IngestV2Result<RetainShardsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .retain_shards(request)
+            .retain_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2122,9 +1657,13 @@ where
         &self,
         request: TruncateShardsRequest,
     ) -> crate::ingest::IngestV2Result<TruncateShardsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .truncate_shards(request)
+            .truncate_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2136,9 +1675,13 @@ where
         &self,
         request: CloseShardsRequest,
     ) -> crate::ingest::IngestV2Result<CloseShardsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .close_shards(request)
+            .close_shards(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2150,9 +1693,13 @@ where
         &self,
         request: DecommissionRequest,
     ) -> crate::ingest::IngestV2Result<DecommissionResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
         self.inner
             .clone()
-            .decommission(request)
+            .decommission(tonic_request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
@@ -2180,120 +1727,172 @@ impl ingester_service_grpc_server::IngesterServiceGrpc
 for IngesterServiceGrpcServerAdapter {
     async fn persist(
         &self,
-        request: tonic::Request<PersistRequest>,
+        tonic_request: tonic::Request<PersistRequest>,
     ) -> Result<tonic::Response<PersistResponse>, tonic::Status> {
-        self.inner
-            .0
-            .persist(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
-    }
-    type OpenReplicationStreamStream = quickwit_common::ServiceStream<
-        tonic::Result<AckReplicationMessage>,
-    >;
-    async fn open_replication_stream(
-        &self,
-        request: tonic::Request<tonic::Streaming<SynReplicationMessage>>,
-    ) -> Result<tonic::Response<Self::OpenReplicationStreamStream>, tonic::Status> {
-        self.inner
-            .0
-            .open_replication_stream({
-                let streaming: tonic::Streaming<_> = request.into_inner();
-                quickwit_common::ServiceStream::from(streaming)
-            })
-            .await
-            .map(|stream| tonic::Response::new(
-                stream.map_err(crate::error::grpc_error_to_grpc_status),
-            ))
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!(
+            "ingest.ingester.persist", ingester_id = % request.ingester_id, commit_type =
+            ? request.commit_type
+        );
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .persist(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     type OpenFetchStreamStream = quickwit_common::ServiceStream<
         tonic::Result<FetchMessage>,
     >;
     async fn open_fetch_stream(
         &self,
-        request: tonic::Request<OpenFetchStreamRequest>,
+        tonic_request: tonic::Request<OpenFetchStreamRequest>,
     ) -> Result<tonic::Response<Self::OpenFetchStreamStream>, tonic::Status> {
-        self.inner
-            .0
-            .open_fetch_stream(request.into_inner())
-            .await
-            .map(|stream| tonic::Response::new(
-                stream.map_err(crate::error::grpc_error_to_grpc_status),
-            ))
-            .map_err(crate::error::grpc_error_to_grpc_status)
-    }
-    type OpenObservationStreamStream = quickwit_common::ServiceStream<
-        tonic::Result<ObservationMessage>,
-    >;
-    async fn open_observation_stream(
-        &self,
-        request: tonic::Request<OpenObservationStreamRequest>,
-    ) -> Result<tonic::Response<Self::OpenObservationStreamStream>, tonic::Status> {
-        self.inner
-            .0
-            .open_observation_stream(request.into_inner())
-            .await
-            .map(|stream| tonic::Response::new(
-                stream.map_err(crate::error::grpc_error_to_grpc_status),
-            ))
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("ingest.ingester.open_fetch_stream");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .open_fetch_stream(request)
+                .await
+                .map(|stream| tonic::Response::new(
+                    stream.map_err(crate::error::grpc_error_to_grpc_status),
+                ))
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn init_shards(
         &self,
-        request: tonic::Request<InitShardsRequest>,
+        tonic_request: tonic::Request<InitShardsRequest>,
     ) -> Result<tonic::Response<InitShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .init_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("ingest.ingester.init_shards");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .init_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn retain_shards(
         &self,
-        request: tonic::Request<RetainShardsRequest>,
+        tonic_request: tonic::Request<RetainShardsRequest>,
     ) -> Result<tonic::Response<RetainShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .retain_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("ingest.ingester.retain_shards");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .retain_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn truncate_shards(
         &self,
-        request: tonic::Request<TruncateShardsRequest>,
+        tonic_request: tonic::Request<TruncateShardsRequest>,
     ) -> Result<tonic::Response<TruncateShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .truncate_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("ingest.ingester.truncate_shards");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .truncate_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn close_shards(
         &self,
-        request: tonic::Request<CloseShardsRequest>,
+        tonic_request: tonic::Request<CloseShardsRequest>,
     ) -> Result<tonic::Response<CloseShardsResponse>, tonic::Status> {
-        self.inner
-            .0
-            .close_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("ingest.ingester.close_shards");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .close_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn decommission(
         &self,
-        request: tonic::Request<DecommissionRequest>,
+        tonic_request: tonic::Request<DecommissionRequest>,
     ) -> Result<tonic::Response<DecommissionResponse>, tonic::Status> {
-        self.inner
-            .0
-            .decommission(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("ingest.ingester.decommission");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .decommission(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
     }
 }
 /// Generated client implementations.
@@ -2387,7 +1986,7 @@ pub mod ingester_service_grpc_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        /// Persists batches of documents to primary shards hosted on a leader.
+        /// Persists batches of documents to shards hosted on an ingester.
         pub async fn persist(
             &mut self,
             request: impl tonic::IntoRequest<super::PersistRequest>,
@@ -2417,39 +2016,7 @@ pub mod ingester_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Opens a replication stream from a leader to a follower.
-        pub async fn open_replication_stream(
-            &mut self,
-            request: impl tonic::IntoStreamingRequest<
-                Message = super::SynReplicationMessage,
-            >,
-        ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::AckReplicationMessage>>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.ingest.ingester.IngesterService/OpenReplicationStream",
-            );
-            let mut req = request.into_streaming_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "quickwit.ingest.ingester.IngesterService",
-                        "OpenReplicationStream",
-                    ),
-                );
-            self.inner.streaming(req, path, codec).await
-        }
-        /// Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch,
+        /// Streams records from an ingester. The client can optionally specify a range of positions to fetch,
         /// otherwise the stream will go indefinitely or until the shard is closed.
         pub async fn open_fetch_stream(
             &mut self,
@@ -2480,37 +2047,7 @@ pub mod ingester_service_grpc_client {
                 );
             self.inner.server_streaming(req, path, codec).await
         }
-        /// Streams status updates, called "observations", from an ingester.
-        pub async fn open_observation_stream(
-            &mut self,
-            request: impl tonic::IntoRequest<super::OpenObservationStreamRequest>,
-        ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::ObservationMessage>>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.ingest.ingester.IngesterService/OpenObservationStream",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "quickwit.ingest.ingester.IngesterService",
-                        "OpenObservationStream",
-                    ),
-                );
-            self.inner.server_streaming(req, path, codec).await
-        }
-        /// Creates and initializes a set of newly opened shards. This RPC is called by the control plane on leaders.
+        /// Creates and initializes a set of newly opened shards. This RPC is called by the control plane on ingesters.
         pub async fn init_shards(
             &mut self,
             request: impl tonic::IntoRequest<super::InitShardsRequest>,
@@ -2571,7 +2108,7 @@ pub mod ingester_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Truncates a set of shards at the given positions. This RPC is called by indexers on leaders AND followers.
+        /// Truncates a set of shards at the given positions. This RPC is called by indexers on ingesters.
         pub async fn truncate_shards(
             &mut self,
             request: impl tonic::IntoRequest<super::TruncateShardsRequest>,
@@ -2676,32 +2213,18 @@ pub mod ingester_service_grpc_server {
     /// Generated trait containing gRPC methods that should be implemented for use with IngesterServiceGrpcServer.
     #[async_trait]
     pub trait IngesterServiceGrpc: std::marker::Send + std::marker::Sync + 'static {
-        /// Persists batches of documents to primary shards hosted on a leader.
+        /// Persists batches of documents to shards hosted on an ingester.
         async fn persist(
             &self,
             request: tonic::Request<super::PersistRequest>,
         ) -> std::result::Result<tonic::Response<super::PersistResponse>, tonic::Status>;
-        /// Server streaming response type for the OpenReplicationStream method.
-        type OpenReplicationStreamStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<super::AckReplicationMessage, tonic::Status>,
-            >
-            + std::marker::Send
-            + 'static;
-        /// Opens a replication stream from a leader to a follower.
-        async fn open_replication_stream(
-            &self,
-            request: tonic::Request<tonic::Streaming<super::SynReplicationMessage>>,
-        ) -> std::result::Result<
-            tonic::Response<Self::OpenReplicationStreamStream>,
-            tonic::Status,
-        >;
         /// Server streaming response type for the OpenFetchStream method.
         type OpenFetchStreamStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::FetchMessage, tonic::Status>,
             >
             + std::marker::Send
             + 'static;
-        /// Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch,
+        /// Streams records from an ingester. The client can optionally specify a range of positions to fetch,
         /// otherwise the stream will go indefinitely or until the shard is closed.
         async fn open_fetch_stream(
             &self,
@@ -2710,21 +2233,7 @@ pub mod ingester_service_grpc_server {
             tonic::Response<Self::OpenFetchStreamStream>,
             tonic::Status,
         >;
-        /// Server streaming response type for the OpenObservationStream method.
-        type OpenObservationStreamStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<super::ObservationMessage, tonic::Status>,
-            >
-            + std::marker::Send
-            + 'static;
-        /// Streams status updates, called "observations", from an ingester.
-        async fn open_observation_stream(
-            &self,
-            request: tonic::Request<super::OpenObservationStreamRequest>,
-        ) -> std::result::Result<
-            tonic::Response<Self::OpenObservationStreamStream>,
-            tonic::Status,
-        >;
-        /// Creates and initializes a set of newly opened shards. This RPC is called by the control plane on leaders.
+        /// Creates and initializes a set of newly opened shards. This RPC is called by the control plane on ingesters.
         async fn init_shards(
             &self,
             request: tonic::Request<super::InitShardsRequest>,
@@ -2741,7 +2250,7 @@ pub mod ingester_service_grpc_server {
             tonic::Response<super::RetainShardsResponse>,
             tonic::Status,
         >;
-        /// Truncates a set of shards at the given positions. This RPC is called by indexers on leaders AND followers.
+        /// Truncates a set of shards at the given positions. This RPC is called by indexers on ingesters.
         async fn truncate_shards(
             &self,
             request: tonic::Request<super::TruncateShardsRequest>,
@@ -2887,58 +2396,6 @@ pub mod ingester_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.ingest.ingester.IngesterService/OpenReplicationStream" => {
-                    #[allow(non_camel_case_types)]
-                    struct OpenReplicationStreamSvc<T: IngesterServiceGrpc>(pub Arc<T>);
-                    impl<
-                        T: IngesterServiceGrpc,
-                    > tonic::server::StreamingService<super::SynReplicationMessage>
-                    for OpenReplicationStreamSvc<T> {
-                        type Response = super::AckReplicationMessage;
-                        type ResponseStream = T::OpenReplicationStreamStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<
-                                tonic::Streaming<super::SynReplicationMessage>,
-                            >,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as IngesterServiceGrpc>::open_replication_stream(
-                                        &inner,
-                                        request,
-                                    )
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = OpenReplicationStreamSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
                 "/quickwit.ingest.ingester.IngesterService/OpenFetchStream" => {
                     #[allow(non_camel_case_types)]
                     struct OpenFetchStreamSvc<T: IngesterServiceGrpc>(pub Arc<T>);
@@ -2975,57 +2432,6 @@ pub mod ingester_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = OpenFetchStreamSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.server_streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/quickwit.ingest.ingester.IngesterService/OpenObservationStream" => {
-                    #[allow(non_camel_case_types)]
-                    struct OpenObservationStreamSvc<T: IngesterServiceGrpc>(pub Arc<T>);
-                    impl<
-                        T: IngesterServiceGrpc,
-                    > tonic::server::ServerStreamingService<
-                        super::OpenObservationStreamRequest,
-                    > for OpenObservationStreamSvc<T> {
-                        type Response = super::ObservationMessage;
-                        type ResponseStream = T::OpenObservationStreamStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::OpenObservationStreamRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as IngesterServiceGrpc>::open_observation_stream(
-                                        &inner,
-                                        request,
-                                    )
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = OpenObservationStreamSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

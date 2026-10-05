@@ -137,6 +137,7 @@ impl prost::Message for IndexUid {
                 )?;
                 let ulid_bytes: [u8; ULID_SIZE] =
                     buffer.try_into().map_err(|buffer: Vec<u8>| {
+                        #[allow(deprecated)]
                         prost::DecodeError::new(format!(
                             "invalid length for field `incarnation_id`, expected 16 bytes, got {}",
                             buffer.len()

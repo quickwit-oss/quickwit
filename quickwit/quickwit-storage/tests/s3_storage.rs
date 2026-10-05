@@ -20,9 +20,9 @@ pub mod s3_storage_test_suite {
 
     use std::path::PathBuf;
     use std::str::FromStr;
+    use std::sync::LazyLock;
 
     use anyhow::Context;
-    use once_cell::sync::OnceCell;
     use quickwit_common::setup_logging_for_tests;
     use quickwit_common::uri::Uri;
     use quickwit_config::S3StorageConfig;
@@ -36,14 +36,14 @@ pub mod s3_storage_test_suite {
     // This object packs a smithy connector which itself includes a
     // hyper client pool. A hyper client cannot be used from multiple runtimes.
     fn test_runtime_singleton() -> &'static Runtime {
-        static RUNTIME_CACHE: OnceCell<tokio::runtime::Runtime> = OnceCell::new();
-        RUNTIME_CACHE.get_or_init(|| {
+        static RUNTIME_CACHE: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
             tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(1)
                 .enable_all()
                 .build()
                 .unwrap()
-        })
+        });
+        &RUNTIME_CACHE
     }
 
     async fn run_s3_storage_test_suite(s3_storage_config: S3StorageConfig, bucket_uri: &str) {
@@ -72,10 +72,10 @@ pub mod s3_storage_test_suite {
             .unwrap();
 
         object_storage.set_policy(MultiPartPolicy {
-            target_part_num_bytes: 5 * 1_024 * 1_024, //< the minimum on S3 is 5MB.
+            target_part_num_bytes: bytesize::ByteSize::mib(5), //< the minimum on S3 is 5MB.
             max_num_parts: 10_000,
-            multipart_threshold_num_bytes: 10_000_000,
-            max_object_num_bytes: 5_000_000_000_000,
+            multipart_threshold_num_bytes: bytesize::ByteSize::mb(10),
+            max_object_num_bytes: bytesize::ByteSize::tb(5),
             max_concurrent_uploads: 100,
         });
 

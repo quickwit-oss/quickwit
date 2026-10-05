@@ -28,6 +28,9 @@ mod raw_doc_batch;
 mod shard_positions;
 mod split_attrs;
 
+use std::sync::Arc;
+
+use arc_swap::ArcSwapOption;
 pub use indexed_split::{
     CommitTrigger, EmptySplit, IndexedSplit, IndexedSplitBatch, IndexedSplitBatchBuilder,
     IndexedSplitBuilder,
@@ -49,5 +52,7 @@ pub(crate) use shard_positions::LocalShardPositionsUpdate;
 pub use shard_positions::ShardPositionsService;
 pub use split_attrs::{SplitAttrs, create_split_metadata};
 
-#[derive(Debug)]
-pub struct NewPublishToken(pub PublishToken);
+/// Shared, live publish token owned by an indexing pipeline. The source writes it on reset and
+/// shard re-acquisition; the publisher reads it at publish time. `None` means no token (merge
+/// pipelines, or sources without a publish token such as file/kafka).
+pub type SharedPublishToken = Arc<ArcSwapOption<PublishToken>>;

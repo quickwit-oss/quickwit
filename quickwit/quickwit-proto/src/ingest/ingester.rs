@@ -72,10 +72,38 @@ impl IngesterStatus {
             Self::Unspecified => "unspecified",
             Self::Initializing => "initializing",
             Self::Ready => "ready",
+            Self::Retiring => "retiring",
             Self::Decommissioning => "decommissioning",
             Self::Decommissioned => "decommissioned",
             Self::Failed => "failed",
         }
+    }
+
+    pub fn from_json_str_name(value: &str) -> Option<Self> {
+        match value {
+            "unspecified" => Some(Self::Unspecified),
+            "initializing" => Some(Self::Initializing),
+            "ready" => Some(Self::Ready),
+            "retiring" => Some(Self::Retiring),
+            "decommissioning" => Some(Self::Decommissioning),
+            "decommissioned" => Some(Self::Decommissioned),
+            "failed" => Some(Self::Failed),
+            _ => None,
+        }
+    }
+
+    pub fn is_ready(&self) -> bool {
+        matches!(self, Self::Ready)
+    }
+
+    pub fn accepts_write_requests(&self) -> bool {
+        matches!(self, Self::Ready | Self::Retiring)
+    }
+}
+
+impl std::fmt::Display for IngesterStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_json_str_name())
     }
 }
 
@@ -85,95 +113,7 @@ impl OpenFetchStreamRequest {
     }
 }
 
-impl PersistSubrequest {
-    pub fn queue_id(&self) -> QueueId {
-        queue_id(self.index_uid(), &self.source_id, self.shard_id())
-    }
-}
-
 impl PersistSuccess {
-    pub fn queue_id(&self) -> QueueId {
-        queue_id(self.index_uid(), &self.source_id, self.shard_id())
-    }
-}
-
-impl SynReplicationMessage {
-    pub fn into_open_request(self) -> Option<OpenReplicationStreamRequest> {
-        match self.message {
-            Some(syn_replication_message::Message::OpenRequest(open_request)) => Some(open_request),
-            _ => None,
-        }
-    }
-
-    pub fn new_open_request(open_request: OpenReplicationStreamRequest) -> Self {
-        Self {
-            message: Some(syn_replication_message::Message::OpenRequest(open_request)),
-        }
-    }
-
-    pub fn new_init_replica_request(init_replica_request: InitReplicaRequest) -> Self {
-        Self {
-            message: Some(syn_replication_message::Message::InitRequest(
-                init_replica_request,
-            )),
-        }
-    }
-
-    pub fn new_replicate_request(replicate_request: ReplicateRequest) -> Self {
-        Self {
-            message: Some(syn_replication_message::Message::ReplicateRequest(
-                replicate_request,
-            )),
-        }
-    }
-}
-
-impl AckReplicationMessage {
-    pub fn into_open_response(self) -> Option<OpenReplicationStreamResponse> {
-        match self.message {
-            Some(ack_replication_message::Message::OpenResponse(open_response)) => {
-                Some(open_response)
-            }
-            _ => None,
-        }
-    }
-
-    pub fn new_open_response(open_response: OpenReplicationStreamResponse) -> Self {
-        Self {
-            message: Some(ack_replication_message::Message::OpenResponse(
-                open_response,
-            )),
-        }
-    }
-
-    pub fn new_init_replica_response(init_replica_response: InitReplicaResponse) -> Self {
-        Self {
-            message: Some(ack_replication_message::Message::InitResponse(
-                init_replica_response,
-            )),
-        }
-    }
-
-    pub fn new_replicate_response(replicate_response: ReplicateResponse) -> Self {
-        Self {
-            message: Some(ack_replication_message::Message::ReplicateResponse(
-                replicate_response,
-            )),
-        }
-    }
-}
-
-impl ReplicateRequest {
-    pub fn num_bytes(&self) -> usize {
-        self.subrequests
-            .iter()
-            .flat_map(|subrequest| &subrequest.doc_batch)
-            .map(|doc_batch| doc_batch.num_bytes())
-            .sum()
-    }
-}
-
-impl ReplicateSubrequest {
     pub fn queue_id(&self) -> QueueId {
         queue_id(self.index_uid(), &self.source_id, self.shard_id())
     }

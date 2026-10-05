@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! [`FileBackedIndex`] module. It is public so that the crate `quickwit-backward-compat` can
-//! import [`FileBackedIndex`] and run backward-compatibility tests. You should not have to import
+//! `FileBackedIndex` module. It is public so that the crate `quickwit-backward-compat` can
+//! import `FileBackedIndex` and run backward-compatibility tests. You should not have to import
 //! anything from here directly.
 
 mod serialize;
@@ -100,8 +100,7 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
             source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
-            leader_id: "leader-ingester".to_string(),
-            follower_id: Some("follower-ingester".to_string()),
+            ingester_id: "ingester".to_string(),
             doc_mapping_uid: Some(DocMappingUid::for_test(1)),
             publish_position_inclusive: Some(Position::Beginning),
             update_timestamp: 1724240908,
@@ -163,7 +162,6 @@ enum DeleteSplitOutcome {
 }
 
 impl FileBackedIndex {
-    /// Constructor.
     pub fn new(
         metadata: IndexMetadata,
         splits: Vec<Split>,
@@ -175,9 +173,9 @@ impl FileBackedIndex {
             .map(|delete_task| delete_task.opstamp)
             .max()
             .unwrap_or(0) as usize;
-        let splits = splits
+        let splits: HashMap<SplitId, Split> = splits
             .into_iter()
-            .map(|split| (split.split_id().to_string(), split))
+            .map(|split| (split.split_id().clone(), split))
             .collect();
         Self {
             metadata,
@@ -263,7 +261,7 @@ impl FileBackedIndex {
             publish_timestamp: None,
             split_metadata,
         };
-        self.splits.insert(split.split_id().to_string(), split);
+        self.splits.insert(split.split_id().clone(), split);
         Ok(())
     }
 
@@ -724,6 +722,22 @@ impl Debug for Stamper {
 }
 
 fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
+    if !query.included_split_ids.is_empty()
+        && !query
+            .included_split_ids
+            .contains(&split.split_metadata.split_id)
+    {
+        return false;
+    }
+
+    if !query.excluded_split_ids.is_empty()
+        && query
+            .excluded_split_ids
+            .contains(&split.split_metadata.split_id)
+    {
+        return false;
+    }
+
     if !split_tag_filter(&split.split_metadata, query.tags.as_ref()) {
         return false;
     }
@@ -828,7 +842,7 @@ mod tests {
         [
             Split {
                 split_metadata: SplitMetadata {
-                    split_id: "split-1".to_string(),
+                    split_id: "split-1".into(),
                     delete_opstamp: 9,
                     time_range: Some(32..=40),
                     tags: BTreeSet::from(["tag-1".to_string()]),
@@ -842,7 +856,7 @@ mod tests {
             },
             Split {
                 split_metadata: SplitMetadata {
-                    split_id: "split-2".to_string(),
+                    split_id: "split-2".into(),
                     delete_opstamp: 4,
                     time_range: None,
                     tags: BTreeSet::from(["tag-2".to_string(), "tag-3".to_string()]),
@@ -856,7 +870,7 @@ mod tests {
             },
             Split {
                 split_metadata: SplitMetadata {
-                    split_id: "split-3".to_string(),
+                    split_id: "split-3".into(),
                     delete_opstamp: 0,
                     time_range: Some(0..=90),
                     tags: BTreeSet::from(["tag-2".to_string(), "tag-4".to_string()]),

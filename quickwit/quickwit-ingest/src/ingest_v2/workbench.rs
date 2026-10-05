@@ -23,8 +23,8 @@ use quickwit_proto::ingest::ingester::{PersistFailure, PersistFailureReason, Per
 use quickwit_proto::ingest::router::{
     IngestFailure, IngestFailureReason, IngestResponseV2, IngestSubrequest, IngestSuccess,
 };
-use quickwit_proto::ingest::{IngestV2Error, RateLimitingCause};
-use quickwit_proto::types::{NodeId, ShardId, SubrequestId};
+use quickwit_proto::ingest::{IngestV2Error, RateLimitingCause, ShardIds};
+use quickwit_proto::types::{NodeId, SubrequestId};
 use tracing::warn;
 
 use super::publish_tracker::PublishTracker;
@@ -35,19 +35,19 @@ use super::router::PersistRequestSummary;
 #[derive(Default)]
 pub(super) struct IngestWorkbench {
     pub subworkbenches: BTreeMap<SubrequestId, IngestSubworkbench>,
-    pub rate_limited_shards: HashSet<ShardId>,
     pub num_successes: usize,
     /// The number of batch persist attempts. This is not sum of the number of attempts for each
     /// subrequest.
     pub num_attempts: usize,
     pub max_num_attempts: usize,
-    /// List of leaders that have been marked as temporarily unavailable.
-    /// These leaders have encountered a transport error during an attempt and will be treated as
+    /// List of ingesters that have been marked as temporarily unavailable.
+    /// These ingesters have encountered a transport error during an attempt and will be treated as
     /// if they were out of the pool for subsequent attempts.
     ///
     /// (The point here is to make sure we do not wait for the failure detection to kick the node
     /// out of the ingest node.)
-    pub unavailable_leaders: HashSet<NodeId>,
+    pub unavailable_ingesters: HashSet<NodeId>,
+    pub closed_shards: Vec<ShardIds>,
     publish_tracker: Option<PublishTracker>,
 }
 
@@ -185,7 +185,8 @@ impl IngestWorkbench {
                 }
             }
             IngestV2Error::Unavailable(_) => {
-                self.unavailable_leaders.insert(persist_summary.leader_id);
+                self.unavailable_ingesters
+                    .insert(persist_summary.ingester_id);
                 for subrequest_id in persist_summary.subrequest_ids {
                     self.record_ingester_unavailable(subrequest_id);
                 }
@@ -226,13 +227,6 @@ impl IngestWorkbench {
 
     pub fn record_no_shards_available(&mut self, subrequest_id: SubrequestId) {
         self.record_failure(subrequest_id, SubworkbenchFailure::NoShardsAvailable);
-    }
-
-    pub fn record_rate_limited(&mut self, subrequest_id: SubrequestId) {
-        self.record_failure(
-            subrequest_id,
-            SubworkbenchFailure::RateLimited(RateLimitingCause::ShardRateLimiting),
-        );
     }
 
     /// Marks a node as unavailable for the span of the workbench.
@@ -318,7 +312,7 @@ pub(super) enum SubworkbenchFailure {
     IndexNotFound,
     // There is no entry in the routing table for this source.
     SourceNotFound,
-    // The routing table entry for this source is empty, shards are all closed, or their leaders
+    // The routing table entry for this source is empty, shards are all closed, or their ingesters
     // are unavailable.
     NoShardsAvailable,
     // This is an error returned by the ingester: e.g. shard not found, shard closed, rate
@@ -433,7 +427,7 @@ mod tests {
         assert!(!subworkbench.last_failure_is_transient());
 
         subworkbench.last_failure_opt = Some(SubworkbenchFailure::Persist(
-            PersistFailureReason::ShardRateLimited,
+            PersistFailureReason::NoShardsAvailable,
         ));
         assert!(subworkbench.is_pending());
         assert!(subworkbench.last_failure_is_transient());
@@ -567,7 +561,6 @@ mod tests {
 
         let persist_failure = PersistFailure {
             subrequest_id: 1,
-            shard_id: Some(shard_id_2.clone()),
             ..Default::default()
         };
         workbench.record_persist_failure(&persist_failure);
@@ -727,9 +720,10 @@ mod tests {
         let mut workbench = IngestWorkbench::new(ingest_subrequests, 1);
 
         let persist_error = IngestV2Error::Timeout("request timed out".to_string());
-        let leader_id = NodeId::from("test-leader");
+        let ingester_id = NodeId::from_str("test-ingester");
         let persist_summary = PersistRequestSummary {
-            leader_id: leader_id.clone(),
+            ingester_id: ingester_id.clone(),
+            generation_id: quickwit_cluster::GenerationId::from(1u64),
             subrequest_ids: vec![0],
         };
         workbench.record_persist_error(persist_error, persist_summary);
@@ -753,14 +747,15 @@ mod tests {
         let mut workbench = IngestWorkbench::new(ingest_subrequests, 1);
 
         let persist_error = IngestV2Error::Unavailable("connection error".to_string());
-        let leader_id = NodeId::from("test-leader");
+        let ingester_id = NodeId::from_str("test-ingester");
         let persist_summary = PersistRequestSummary {
-            leader_id: leader_id.clone(),
+            ingester_id: ingester_id.clone(),
+            generation_id: quickwit_cluster::GenerationId::from(1u64),
             subrequest_ids: vec![0],
         };
         workbench.record_persist_error(persist_error, persist_summary);
 
-        assert!(workbench.unavailable_leaders.contains(&leader_id));
+        assert!(workbench.unavailable_ingesters.contains(&ingester_id));
 
         let subworkbench = workbench.subworkbenches.get(&0).unwrap();
         assert_eq!(subworkbench.num_attempts, 1);
@@ -782,7 +777,8 @@ mod tests {
 
         let persist_error = IngestV2Error::Internal("IO error".to_string());
         let persist_summary = PersistRequestSummary {
-            leader_id: NodeId::from("test-leader"),
+            ingester_id: NodeId::from_str("test-ingester"),
+            generation_id: quickwit_cluster::GenerationId::from(1u64),
             subrequest_ids: vec![0],
         };
         workbench.record_persist_error(persist_error, persist_summary);
@@ -807,14 +803,13 @@ mod tests {
 
         let persist_failure = PersistFailure {
             subrequest_id: 42,
-            reason: PersistFailureReason::ShardRateLimited as i32,
+            reason: PersistFailureReason::NoShardsAvailable as i32,
             ..Default::default()
         };
         workbench.record_persist_failure(&persist_failure);
 
         let persist_failure = PersistFailure {
             subrequest_id: 0,
-            shard_id: Some(ShardId::from(1)),
             reason: PersistFailureReason::WalFull as i32,
             ..Default::default()
         };

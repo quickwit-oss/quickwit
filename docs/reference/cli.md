@@ -855,14 +855,6 @@ Specifies the path to the [quickwit config](../configuration/node-config.md). Co
 
 `export QW_CONFIG=config/quickwit.yaml`
 
-### QW_DISABLE_TELEMETRY
-
-Disables [telemetry](../telemetry.md) when set to any non-empty value.
-
-*Example*
-
-`QW_DISABLE_TELEMETRY=1 quickwit help`
-
 ### QW_POSTGRES_SKIP_MIGRATIONS
 
 Don't run database migrations (but verify that migrations were run successfully before, and no that unknown migration was run).
@@ -884,3 +876,13 @@ RUST_LOG=debug quickwit run
 # run with log level info, except for indexing related logs
 RUST_LOG=info,quickwit_indexing=debug quickwit run
 ```
+
+### QW_METRICS_LABELS
+
+Attach the same labels to every Quickwit metric. Specify labels as a comma-separated list of `name=value` pairs. Label names and values must not be empty.
+
+*Example*
+
+`QW_METRICS_LABELS="environment=production,region=us-east-1" quickwit run`
+
+The environment variable is read once during telemetry initialization. Set it before starting Quickwit; changing it while Quickwit is running has no effect. If any entry does not use the `name=value` format, telemetry initialization fails.

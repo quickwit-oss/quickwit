@@ -22,7 +22,7 @@ use google_cloud_auth::credentials::CredentialsFile;
 use google_cloud_gax::retry::RetrySetting;
 use google_cloud_pubsub::client::{Client, ClientConfig};
 use google_cloud_pubsub::subscription::Subscription;
-use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
+use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::PubSubSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
@@ -32,7 +32,7 @@ use serde_json::{Value as JsonValue, json};
 use tokio::time;
 use tracing::{debug, info, warn};
 
-use super::{BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT, SourceActor};
+use super::{BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT};
 use crate::actors::DocProcessor;
 use crate::source::{BatchBuilder, Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
@@ -209,7 +209,7 @@ impl Source for GcpPubSubSource {
     async fn suggest_truncate(
         &mut self,
         _checkpoint: SourceCheckpoint,
-        _ctx: &ActorContext<SourceActor>,
+        _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         // TODO: add ack of ids
         Ok(())
@@ -292,9 +292,10 @@ mod gcp_pubsub_emulator_tests {
     use serde_json::json;
 
     use super::*;
+    use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
-    use crate::source::quickwit_supported_sources;
     use crate::source::tests::SourceRuntimeBuilder;
+    use crate::source::{SourceActor, quickwit_supported_sources};
 
     static GCP_TEST_PROJECT: &str = "quickwit-emulator";
 
@@ -388,11 +389,9 @@ mod gcp_pubsub_emulator_tests {
         let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
         let source = source_loader.load_source(source_runtime).await.unwrap();
 
-        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
-        let source_actor = SourceActor {
-            source,
-            doc_processor_mailbox: doc_processor_mailbox.clone(),
-        };
+        let (doc_processor_mailbox, doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
+        let source_actor = SourceActor::new(source, doc_processor_mailbox);
         let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
         let (exit_status, exit_state) = source_handle.join().await;
         assert!(exit_status.is_success());

@@ -1,0 +1,70 @@
+name: Publish code coverage
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Upload merged coverage to Codecov
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Find merge queue coverage report
+        id: artifact
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            // The current merge queue puts its tested head SHA on main.
+            const name = `coverage-report-${context.sha}`;
+            const { data } = await github.rest.actions.listArtifactsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name,
+              per_page: 100,
+            });
+            const artifacts = data.artifacts
+              .filter((artifact) => artifact.name === name && !artifact.expired)
+              .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+            let found = false;
+            for (const artifact of artifacts) {
+              const { data: run } = await github.rest.actions.getWorkflowRun({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: artifact.workflow_run.id,
+              });
+              if (run.path === '.github/workflows/full-tests.yml' && run.event === 'workflow_run') {
+                core.setOutput('run_id', run.id);
+                found = true;
+                break;
+              }
+            }
+            if (!found) {
+              // Direct pushes and the merge introducing this workflow have no queued report.
+              core.warning(`No merge queue coverage report found for ${context.sha}`);
+            }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ steps.artifact.outputs.run_id != '' }}
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: ${{ steps.artifact.outputs.run_id != '' }}
+        with:
+          name: coverage-report-${{ github.sha }}
+          path: ./quickwit
+          run-id: ${{ steps.artifact.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        if: ${{ steps.artifact.outputs.run_id != '' }}
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
+          files: ./quickwit/lcov.info

@@ -12,16 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use regex::Regex;
 use warp::Filter;
 
 fn remove_trailing_numbers(thread_name: &mut String) {
-    static REMOVE_TRAILING_NUMBER_PTN: OnceLock<Regex> = OnceLock::new();
-    let captures_opt = REMOVE_TRAILING_NUMBER_PTN
-        .get_or_init(|| Regex::new(r"^(.*?)[-\d]+$").unwrap())
-        .captures(thread_name);
+    static REMOVE_TRAILING_NUMBER_PTN: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^(.*?)[-\d]+$").unwrap());
+    let captures_opt = REMOVE_TRAILING_NUMBER_PTN.captures(thread_name);
     if let Some(captures) = captures_opt {
         *thread_name = captures[1].to_string();
     }

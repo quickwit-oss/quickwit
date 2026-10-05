@@ -444,7 +444,7 @@ mod tests {
         use std::iter::repeat_with;
 
         use rand::rngs::StdRng;
-        use rand::{Rng, SeedableRng};
+        use rand::{RngExt, SeedableRng};
         use rand_distr::weighted::WeightedIndex;
         use rand_distr::{Distribution, LogNormal};
 

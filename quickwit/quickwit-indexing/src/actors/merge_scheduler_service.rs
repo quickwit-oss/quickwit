@@ -25,7 +25,8 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::error;
 
 use super::MergeSplitDownloader;
-use crate::merge_policy::{MergeOperation, MergeTask};
+use crate::merge_policy::{MergeOperation, MergeSource, MergeTask, compute_merge_score};
+use crate::metrics::{ONGOING_MERGE_OPERATIONS, PENDING_MERGE_BYTES, PENDING_MERGE_OPERATIONS};
 
 pub struct MergePermit {
     _semaphore_permit: Option<OwnedSemaphorePermit>,
@@ -165,13 +166,9 @@ impl MergeSchedulerService {
                 _merge_permit: merge_permit,
             };
             self.pending_merge_bytes -= merge_task.merge_operation.total_num_bytes();
-            crate::metrics::INDEXER_METRICS
-                .pending_merge_operations
-                .set(self.pending_merge_queue.len() as i64);
-            crate::metrics::INDEXER_METRICS
-                .pending_merge_bytes
-                .set(self.pending_merge_bytes as i64);
-            match split_downloader_mailbox.try_send_message(merge_task) {
+            PENDING_MERGE_OPERATIONS.set(self.pending_merge_queue.len() as f64);
+            PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
+            match split_downloader_mailbox.try_send_message(MergeSource::Task(merge_task)) {
                 Ok(_) => {}
                 Err(quickwit_actors::TrySendError::Full(_)) => {
                     // The split downloader mailbox has an unbounded queue capacity,
@@ -185,9 +182,7 @@ impl MergeSchedulerService {
         }
         let num_merges =
             self.merge_concurrency as i64 - self.merge_semaphore.available_permits() as i64;
-        crate::metrics::INDEXER_METRICS
-            .ongoing_merge_operations
-            .set(num_merges);
+        ONGOING_MERGE_OPERATIONS.set(num_merges as f64);
     }
 }
 
@@ -209,30 +204,17 @@ struct ScheduleMerge {
     split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
 }
 
-/// The higher, the sooner we will execute the merge operation.
-/// A good merge operation
-/// - strongly reduces the number splits
-/// - is light.
-fn score_merge_operation(merge_operation: &MergeOperation) -> u64 {
-    let total_num_bytes: u64 = merge_operation.total_num_bytes();
-    if total_num_bytes == 0 {
-        // Silly corner case that should never happen.
-        return u64::MAX;
-    }
-    // We will remove splits.len() and add 1 merge splits.
-    let delta_num_splits = (merge_operation.splits.len() - 1) as u64;
-    // We use integer arithmetic to avoid `f64 are not ordered` silliness.
-    (delta_num_splits << 48)
-        .checked_div(total_num_bytes)
-        .unwrap_or(1u64)
-}
-
 impl ScheduleMerge {
     pub fn new(
         merge_operation: TrackedObject<MergeOperation>,
         split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     ) -> ScheduleMerge {
-        let score = score_merge_operation(&merge_operation);
+        let total_num_bytes: u64 = merge_operation
+            .splits
+            .iter()
+            .map(|split| split.footer_offsets.end)
+            .sum();
+        let score = compute_merge_score(merge_operation.splits.len(), total_num_bytes);
         ScheduleMerge {
             score,
             merge_operation,
@@ -265,12 +247,8 @@ impl Handler<ScheduleMerge> for MergeSchedulerService {
         };
         self.pending_merge_bytes += scheduled_merge.merge_operation.total_num_bytes();
         self.pending_merge_queue.push(scheduled_merge);
-        crate::metrics::INDEXER_METRICS
-            .pending_merge_operations
-            .set(self.pending_merge_queue.len() as i64);
-        crate::metrics::INDEXER_METRICS
-            .pending_merge_bytes
-            .set(self.pending_merge_bytes as i64);
+        PENDING_MERGE_OPERATIONS.set(self.pending_merge_queue.len() as f64);
+        PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
         self.schedule_pending_merges(ctx);
         Ok(())
     }
@@ -303,7 +281,7 @@ mod tests {
     use tokio::time::timeout;
 
     use super::*;
-    use crate::merge_policy::{MergeOperation, MergeTask};
+    use crate::merge_policy::{MergeOperation, MergeSource};
 
     fn build_merge_operation(num_splits: usize, num_bytes_per_split: u64) -> MergeOperation {
         let splits: Vec<SplitMetadata> = std::iter::repeat_with(|| SplitMetadata {
@@ -313,24 +291,6 @@ mod tests {
         .take(num_splits)
         .collect();
         MergeOperation::new_merge_operation(splits)
-    }
-
-    #[test]
-    fn test_score_merge_operation() {
-        let score_merge_operation_aux = |num_splits, num_bytes_per_split| {
-            let merge_operation = build_merge_operation(num_splits, num_bytes_per_split);
-            score_merge_operation(&merge_operation)
-        };
-        assert!(score_merge_operation_aux(10, 10_000_000) < score_merge_operation_aux(10, 999_999));
-        assert!(
-            score_merge_operation_aux(10, 10_000_000) > score_merge_operation_aux(9, 10_000_000)
-        );
-        assert_eq!(
-            // 9 - 1 = 8 splits removed.
-            score_merge_operation_aux(9, 10_000_000),
-            // 5 - 1  = 4 splits removed.
-            score_merge_operation_aux(5, 10_000_000 * 9 / 10)
-        );
     }
 
     #[tokio::test]
@@ -399,58 +359,58 @@ mod tests {
             .unwrap();
         }
         {
-            let merge_task: MergeTask = merge_split_downloader_inbox
-                .recv_typed_message::<MergeTask>()
+            let merge_source = merge_split_downloader_inbox
+                .recv_typed_message::<MergeSource>()
                 .await
                 .unwrap();
             assert_eq!(
-                merge_task.merge_operation.splits[0].footer_offsets.end,
+                merge_source.as_operation().splits[0].footer_offsets.end,
                 4_000_000
             );
-            let merge_task2: MergeTask = merge_split_downloader_inbox
-                .recv_typed_message::<MergeTask>()
+            let merge_source2 = merge_split_downloader_inbox
+                .recv_typed_message::<MergeSource>()
                 .await
                 .unwrap();
             assert_eq!(
-                merge_task2.merge_operation.splits[0].footer_offsets.end,
+                merge_source2.as_operation().splits[0].footer_offsets.end,
                 3_000_000
             );
             assert!(
                 timeout(
                     Duration::from_millis(200),
-                    merge_split_downloader_inbox.recv_typed_message::<MergeTask>()
+                    merge_split_downloader_inbox.recv_typed_message::<MergeSource>()
                 )
                 .await
                 .is_err()
             );
         }
         {
-            let merge_task: MergeTask = merge_split_downloader_inbox
-                .recv_typed_message::<MergeTask>()
+            let merge_source = merge_split_downloader_inbox
+                .recv_typed_message::<MergeSource>()
                 .await
                 .unwrap();
             assert_eq!(
-                merge_task.merge_operation.splits[0].footer_offsets.end,
+                merge_source.as_operation().splits[0].footer_offsets.end,
                 1_000_000
             );
         }
         {
-            let merge_task: MergeTask = merge_split_downloader_inbox
-                .recv_typed_message::<MergeTask>()
+            let merge_source = merge_split_downloader_inbox
+                .recv_typed_message::<MergeSource>()
                 .await
                 .unwrap();
             assert_eq!(
-                merge_task.merge_operation.splits[0].footer_offsets.end,
+                merge_source.as_operation().splits[0].footer_offsets.end,
                 2_000_000
             );
         }
         {
-            let merge_task: MergeTask = merge_split_downloader_inbox
-                .recv_typed_message::<MergeTask>()
+            let merge_source = merge_split_downloader_inbox
+                .recv_typed_message::<MergeSource>()
                 .await
                 .unwrap();
             assert_eq!(
-                merge_task.merge_operation.splits[0].footer_offsets.end,
+                merge_source.as_operation().splits[0].footer_offsets.end,
                 5_000_000
             );
         }

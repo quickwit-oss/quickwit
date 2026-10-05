@@ -85,8 +85,7 @@ impl Source for StdinSource {
         let batch_builder = self.reader.read_batch(ctx.progress()).await?;
         self.num_bytes_processed += batch_builder.num_bytes;
         self.num_lines_processed += batch_builder.docs.len() as u64;
-        doc_processor_mailbox
-            .send_message(batch_builder.build())
+        ctx.send_message(doc_processor_mailbox, batch_builder.build())
             .await?;
         if self.reader.is_eof() {
             ctx.send_exit_with_success(doc_processor_mailbox).await?;

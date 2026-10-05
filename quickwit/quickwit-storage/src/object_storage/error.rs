@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Duration;
+
 use aws_sdk_s3::error::{DisplayErrorContext, ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::abort_multipart_upload::AbortMultipartUploadError;
 use aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadError;
@@ -20,9 +22,14 @@ use aws_sdk_s3::operation::delete_object::DeleteObjectError;
 use aws_sdk_s3::operation::delete_objects::DeleteObjectsError;
 use aws_sdk_s3::operation::get_object::GetObjectError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
+use aws_sdk_s3::operation::list_objects_v2::ListObjectsV2Error;
 use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_s3::operation::upload_part::UploadPartError;
+use quickwit_aws::error::retry_after_from_sdk_error;
+use quickwit_aws::retry::AwsRetryable;
+use quickwit_metrics::counter;
 
+use crate::metrics::OBJECT_STORAGE_GET_ERRORS_TOTAL;
 use crate::{StorageError, StorageErrorKind};
 
 impl<E> From<SdkError<E>> for StorageError
@@ -51,8 +58,16 @@ where E: std::error::Error + ToStorageErrorKind + Send + Sync + 'static
             SdkError::TimeoutError(_) => StorageErrorKind::Timeout,
             _ => StorageErrorKind::Internal,
         };
+        // Extract the server-suggested retry delay before consuming the error.
+        let retry_after = retry_after_from_sdk_error(&error);
         let source = anyhow::anyhow!("{}", DisplayErrorContext(error));
-        error_kind.with_error(source)
+        error_kind.with_error(source).with_retry_after(retry_after)
+    }
+}
+
+impl AwsRetryable for StorageError {
+    fn retry_after(&self) -> Option<Duration> {
+        self.retry_after
     }
 }
 
@@ -62,11 +77,12 @@ pub trait ToStorageErrorKind {
 
 impl ToStorageErrorKind for GetObjectError {
     fn to_storage_error_kind(&self) -> StorageErrorKind {
-        let error_code = self.code().unwrap_or("unknown");
-        crate::STORAGE_METRICS
-            .object_storage_get_errors_total
-            .with_label_values([error_code])
-            .inc();
+        let error_code = self.code().unwrap_or("unknown").to_string();
+        counter!(
+            parent: OBJECT_STORAGE_GET_ERRORS_TOTAL,
+            "code" => error_code,
+        )
+        .inc();
         match self {
             GetObjectError::InvalidObjectState(_) => StorageErrorKind::Service,
             GetObjectError::NoSuchKey(_) => StorageErrorKind::NotFound,
@@ -126,5 +142,29 @@ impl ToStorageErrorKind for HeadObjectError {
             HeadObjectError::NotFound(_) => StorageErrorKind::NotFound,
             _ => StorageErrorKind::Service,
         }
+    }
+}
+
+impl ToStorageErrorKind for ListObjectsV2Error {
+    fn to_storage_error_kind(&self) -> StorageErrorKind {
+        match self {
+            ListObjectsV2Error::NoSuchBucket(_) => StorageErrorKind::NotFound,
+            _ => StorageErrorKind::Service,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+
+    use super::*;
+
+    #[test]
+    fn test_list_objects_v2_timeout_error_is_preserved() {
+        let sdk_error = SdkError::<ListObjectsV2Error>::timeout_error(io::Error::other("timeout"));
+        let storage_error = StorageError::from(sdk_error);
+
+        assert_eq!(storage_error.kind(), StorageErrorKind::Timeout);
     }
 }

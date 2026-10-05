@@ -6,13 +6,29 @@ updates:
     schedule:
       interval: "monthly"
     groups:
-      rust-dependencies:
+      aws:
+        applies-to: version-updates
+        patterns:
+          - "aws-*"
+      google-cloud:
+        applies-to: version-updates
+        patterns:
+          - "google-cloud-*"
+      reqwest:
+        applies-to: version-updates
+        patterns:
+          - "reqwest"
+          - "reqwest-*"
+      rust-security:
+        applies-to: security-updates
         patterns:
           - "*"
     open-pull-requests-limit: 10
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
+    cooldown:
+      default-days: 2
 
   # Docker dependencies
   - package-ecosystem: docker
@@ -20,6 +36,8 @@ updates:
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 10
+    cooldown:
+      default-days: 2
 
   # GitHub Actions
   - package-ecosystem: github-actions
@@ -30,15 +48,27 @@ updates:
       github-actions:
         patterns:
           - "*"
+      github-actions-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
     open-pull-requests-limit: 10
+    cooldown:
+      default-days: 2
 
   # NPM dependencies
   - package-ecosystem: npm
-    directory: "/"
+    directory: "/quickwit/quickwit-ui"
     schedule:
       interval: "monthly"
     groups:
       npm-dependencies:
         patterns:
           - "*"
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
     open-pull-requests-limit: 10
+    cooldown:
+      default-days: 2

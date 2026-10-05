@@ -20,7 +20,7 @@ use std::task::{Context, Poll};
 use pin_project::pin_project;
 use tokio::task::{JoinError, JoinHandle};
 use tower::{Layer, Service};
-use tracing::error;
+use tracing::{Instrument, error};
 
 use crate::tower::RpcName;
 
@@ -72,7 +72,11 @@ where
     fn call(&mut self, request: Request) -> Self::Future {
         let request_name: &'static str = Request::rpc_name();
         let future = self.service.call(request);
-        let join_handle = tokio::spawn(future);
+        // `tokio::spawn` does not propagate the caller's tracing span — task
+        // locals are reset on a fresh task. `in_current_span` re-enters the
+        // caller's span inside the spawned future so emitted events and
+        // child spans stay attached to the same trace.
+        let join_handle = tokio::spawn(future.in_current_span());
         UnwrapOrElseFuture {
             request_name,
             join_handle,

@@ -16,10 +16,10 @@ use std::any::Any;
 use std::convert::Infallible;
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, OnceLock, Weak};
+use std::sync::{Arc, Weak};
 use std::time::Instant;
 
-use quickwit_common::metrics::{GaugeGuard, IntCounter, IntGauge};
+use quickwit_metrics::{Counter, GaugeGuard, LazyGauge, lazy_gauge};
 use tokio::sync::oneshot;
 
 use crate::channel_with_priority::{Receiver, Sender, TrySendError};
@@ -191,7 +191,7 @@ impl<A: Actor> Mailbox<A> {
     pub async fn send_message_with_backpressure_counter<M>(
         &self,
         message: M,
-        backpressure_micros_counter_opt: Option<&IntCounter>,
+        backpressure_micros_counter_opt: Option<&Counter>,
     ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
         A: DeferableReplyHandler<M>,
@@ -273,7 +273,7 @@ impl<A: Actor> Mailbox<A> {
     pub async fn ask_with_backpressure_counter<M, T>(
         &self,
         message: M,
-        backpressure_micros_counter_opt: Option<&IntCounter>,
+        backpressure_micros_counter_opt: Option<&Counter>,
     ) -> Result<T, AskError<Infallible>>
     where
         A: DeferableReplyHandler<M, Reply = T>,
@@ -308,8 +308,14 @@ impl<A: Actor> Mailbox<A> {
 
 struct InboxInner<A: Actor> {
     rx: Receiver<Envelope<A>>,
-    _inboxes_count_gauge_guard: GaugeGuard<'static>,
+    _inboxes_count_gauge_guard: GaugeGuard,
 }
+
+static INBOX_GAUGE: LazyGauge = lazy_gauge!(
+        name: "inboxes_count",
+        description: "overall count of actors",
+        subsystem: "actor",
+);
 
 pub struct Inbox<A: Actor> {
     inner: Arc<InboxInner<A>>,
@@ -385,21 +391,6 @@ impl<A: Actor> Inbox<A> {
     }
 }
 
-fn get_actor_inboxes_count_gauge_guard() -> GaugeGuard<'static> {
-    static INBOX_GAUGE: std::sync::OnceLock<IntGauge> = OnceLock::new();
-    let gauge = INBOX_GAUGE.get_or_init(|| {
-        quickwit_common::metrics::new_gauge(
-            "inboxes_count",
-            "overall count of actors",
-            "actor",
-            &[],
-        )
-    });
-    let mut gauge_guard = GaugeGuard::from_gauge(gauge);
-    gauge_guard.add(1);
-    gauge_guard
-}
-
 pub(crate) fn create_mailbox<A: Actor>(
     actor_name: String,
     queue_capacity: QueueCapacity,
@@ -417,7 +408,7 @@ pub(crate) fn create_mailbox<A: Actor>(
     };
     let inner = InboxInner {
         rx,
-        _inboxes_count_gauge_guard: get_actor_inboxes_count_gauge_guard(),
+        _inboxes_count_gauge_guard: GaugeGuard::new(&INBOX_GAUGE, 1.0),
     };
     let inbox = Inbox {
         inner: Arc::new(inner),
@@ -452,6 +443,8 @@ impl<A: Actor> WeakMailbox<A> {
 mod tests {
     use std::mem;
     use std::time::Duration;
+
+    use quickwit_metrics::counter;
 
     use super::*;
     use crate::tests::{Ping, PingReceiverActor};
@@ -520,8 +513,11 @@ mod tests {
             .await
             .unwrap();
         // At this point the actor was started and even processed a message entirely.
-        let backpressure_micros_counter =
-            IntCounter::new("test_counter", "help for test_counter").unwrap();
+        let backpressure_micros_counter = counter!(
+            name: "test_counter_low_backpressure",
+            description: "help for test_counter",
+            subsystem: "actor",
+        );
         let wait_duration = Duration::from_millis(1);
         let processed = mailbox
             .send_message_with_backpressure_counter(
@@ -547,8 +543,11 @@ mod tests {
             .ask_with_backpressure_counter(Duration::default(), None)
             .await
             .unwrap();
-        let backpressure_micros_counter =
-            IntCounter::new("test_counter", "help for test_counter").unwrap();
+        let backpressure_micros_counter = counter!(
+            name: "test_counter_backpressure",
+            description: "help for test_counter",
+            subsystem: "actor",
+        );
         let wait_duration = Duration::from_millis(1);
         mailbox
             .send_message_with_backpressure_counter(
@@ -579,8 +578,11 @@ mod tests {
             .ask_with_backpressure_counter(Duration::default(), None)
             .await
             .unwrap();
-        let backpressure_micros_counter =
-            IntCounter::new("test_counter", "help for test_counter").unwrap();
+        let backpressure_micros_counter = counter!(
+            name: "test_counter_no_waiting_backpressure",
+            description: "help for test_counter",
+            subsystem: "actor",
+        );
         let start = Instant::now();
         mailbox
             .ask_with_backpressure_counter(Duration::from_millis(1), None)

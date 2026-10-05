@@ -24,8 +24,8 @@
 
 use std::fmt;
 use std::num::NonZeroU64;
+use std::sync::LazyLock;
 
-use once_cell::sync::Lazy;
 use tokio::time::Duration;
 mod actor;
 mod actor_context;
@@ -70,7 +70,7 @@ pub use self::supervisor::{Supervisor, SupervisorMetrics, SupervisorState};
 /// If an actor does not advertise a progress within an interval of duration `HEARTBEAT`,
 /// its supervisor will consider it as blocked and will proceed to kill it, as well
 /// as all of the actors all the actors that share the killswitch.
-pub static HEARTBEAT: Lazy<Duration> = Lazy::new(heartbeat_from_env_or_default);
+pub static HEARTBEAT: LazyLock<Duration> = LazyLock::new(heartbeat_from_env_or_default);
 
 /// Returns the actor's heartbeat duration:
 /// - Derived from `QW_ACTOR_HEARTBEAT_SECS` if set and valid.

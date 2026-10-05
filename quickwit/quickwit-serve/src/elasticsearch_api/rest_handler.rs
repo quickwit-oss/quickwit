@@ -27,7 +27,7 @@ use quickwit_common::truncate_str;
 use quickwit_config::{NodeConfig, validate_index_id_pattern};
 use quickwit_index_management::IndexService;
 use quickwit_metastore::*;
-use quickwit_proto::metastore::MetastoreServiceClient;
+use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::search::{
     CountHits, ListFieldsResponse, PartialHit, ScrollRequest, SearchResponse, SortByValue,
     SortDatetimeFormat,
@@ -39,33 +39,58 @@ use quickwit_search::{
     AggregationResults, SearchError, SearchService, list_all_splits, resolve_index_patterns,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Map, Value, json};
 use warp::hyper::StatusCode;
 use warp::reply::with_status;
 use warp::{Filter, Rejection};
 
 use super::filter::{
-    elastic_cat_indices_filter, elastic_cluster_health_filter, elastic_cluster_info_filter,
-    elastic_delete_index_filter, elastic_field_capabilities_filter,
-    elastic_index_cat_indices_filter, elastic_index_count_filter,
-    elastic_index_field_capabilities_filter, elastic_index_search_filter,
-    elastic_index_stats_filter, elastic_multi_search_filter, elastic_resolve_index_filter,
-    elastic_scroll_filter, elastic_stats_filter, elasticsearch_filter,
+    elastic_aliases_filter, elastic_cat_indices_filter, elastic_cluster_health_filter,
+    elastic_cluster_info_filter, elastic_delete_index_filter, elastic_delete_scroll_filter,
+    elastic_field_capabilities_filter, elastic_index_cat_indices_filter,
+    elastic_index_count_filter, elastic_index_field_capabilities_filter,
+    elastic_index_mapping_filter, elastic_index_search_filter, elastic_index_stats_filter,
+    elastic_multi_search_filter, elastic_nodes_filter, elastic_resolve_index_filter,
+    elastic_scroll_filter, elastic_search_shards_filter, elastic_stats_filter,
+    elasticsearch_filter,
 };
 use super::model::{
     CatIndexQueryParams, DeleteQueryParams, ElasticsearchCatIndexResponse, ElasticsearchError,
     ElasticsearchResolveIndexEntryResponse, ElasticsearchResolveIndexResponse,
     ElasticsearchResponse, ElasticsearchStatsResponse, FieldCapabilityQueryParams,
-    FieldCapabilityRequestBody, FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams,
-    MultiSearchResponse, MultiSearchSingleResponse, ScrollQueryParams, SearchBody,
-    SearchQueryParams, SearchQueryParamsCount, StatsResponseEntry,
+    FieldCapabilityRequestBody, FieldCapabilityResponse, IndexMappingQueryParams,
+    MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse, MultiSearchSingleResponse,
+    ScrollQueryParams, SearchBody, SearchQueryParams, SearchQueryParamsCount, StatsResponseEntry,
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
 };
 use super::{TrackTotalHits, make_elastic_api_response};
+use crate::elasticsearch_api::model::ElasticsearchMappingsResponse;
 use crate::format::BodyFormat;
 use crate::rest::recover_fn;
 use crate::rest_api_response::{RestApiError, RestApiResponse};
 use crate::{BuildInfo, with_arg};
+
+pub(crate) fn es_compat_cluster_info(
+    config: Arc<NodeConfig>,
+    build_info: &'static BuildInfo,
+) -> Value {
+    json!({
+        "name" : config.node_id,
+        "cluster_name" : config.cluster_id,
+        "cluster_uuid" : config.cluster_id,
+        "tagline" : "You Know, for Search",
+        "version" : {
+            "distribution" : "quickwit",
+            "number" : "7.17.0",
+            "build_hash" : build_info.commit_hash,
+            "build_date" : build_info.build_date,
+            "build_snapshot" : false,
+            "lucene_version" : "8.11.1",
+            "minimum_wire_compatibility_version" : "6.8.0",
+            "minimum_index_compatibility_version" : "6.0.0-beta1",
+        }
+    })
+}
 
 /// Elastic compatible cluster info handler.
 pub fn es_compat_cluster_info_handler(
@@ -77,19 +102,144 @@ pub fn es_compat_cluster_info_handler(
         .and(with_arg(build_info))
         .then(
             |config: Arc<NodeConfig>, build_info: &'static BuildInfo| async move {
-                warp::reply::json(&json!({
-                    "name" : config.node_id,
-                    "cluster_name" : config.cluster_id,
-                    "version" : {
-                        "distribution" : "quickwit",
-                        "number" : build_info.version,
-                        "build_hash" : build_info.commit_hash,
-                        "build_date" : build_info.build_date,
-                    }
-                }))
+                warp::reply::json(&es_compat_cluster_info(config, build_info))
             },
         )
         .boxed()
+}
+
+pub(crate) fn es_compat_nodes_info(config: Arc<NodeConfig>) -> Value {
+    let advertise_addr = std::net::SocketAddr::new(
+        config.grpc_advertise_addr.ip(),
+        config.rest_config.listen_addr.port(),
+    );
+    json!({
+        "nodes": {
+            config.node_id.as_str(): {
+                "roles": ["data", "ingest"],
+                "http": {
+                    "publish_address": advertise_addr.to_string()
+                }
+            }
+        }
+    })
+}
+
+/// GET _elastic/_nodes/http
+pub fn es_compat_nodes_handler(
+    node_config: Arc<NodeConfig>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_nodes_filter()
+        .and(with_arg(node_config))
+        .then(|config: Arc<NodeConfig>| async move {
+            warp::reply::json(&es_compat_nodes_info(config))
+        })
+        .boxed()
+}
+
+pub(crate) fn es_compat_search_shards(index_id: String, config: Arc<NodeConfig>) -> Value {
+    json!({
+        "shards": [[{
+            "index": index_id,
+            "shard": 0,
+            "primary": true,
+            "node": config.node_id.as_str()
+        }]]
+    })
+}
+
+/// GET _elastic/{index}/_search_shards
+pub fn es_compat_search_shards_handler(
+    node_config: Arc<NodeConfig>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_search_shards_filter()
+        .and(with_arg(node_config))
+        .then(|index_id: String, config: Arc<NodeConfig>| async move {
+            warp::reply::json(&es_compat_search_shards(index_id, config))
+        })
+        .boxed()
+}
+
+pub(crate) fn es_compat_aliases() -> Value {
+    Value::Object(Map::new())
+}
+
+/// GET _elastic/_aliases
+pub fn es_compat_aliases_handler()
+-> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_aliases_filter()
+        .then(|| async { Ok(es_compat_aliases()) })
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
+        .boxed()
+}
+
+/// GET _elastic/{index}/_mapping or _elastic/{index}/_mappings
+pub fn es_compat_index_mapping_handler(
+    metastore: MetastoreServiceClient,
+    search_service: Arc<dyn SearchService>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_index_mapping_filter()
+        .and(with_arg(metastore))
+        .and(with_arg(search_service))
+        .then(es_compat_index_mapping)
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
+}
+
+async fn get_index_metadata(
+    index_id: String,
+    metastore: MetastoreServiceClient,
+) -> Result<IndexMetadata, SearchError> {
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id);
+    let index_metadata = MetastoreService::index_metadata(&metastore, index_metadata_request)
+        .await?
+        .deserialize_index_metadata()?;
+    Ok(index_metadata)
+}
+
+/// `_mapping(s)` handler. Pushes `field_patterns`, `start_timestamp`, and
+/// `end_timestamp` down to `root_list_fields` so splits can be pruned and
+/// dynamic fields filtered at the leaves.
+pub(crate) async fn es_compat_index_mapping(
+    index_id: String,
+    params: IndexMappingQueryParams,
+    metastore: MetastoreServiceClient,
+    search_service: Arc<dyn SearchService>,
+) -> Result<ElasticsearchMappingsResponse, ElasticsearchError> {
+    let indexes_metadata = if index_id.contains('*') || index_id.contains(',') {
+        let patterns: Vec<String> = index_id.split(',').map(|s| s.trim().to_string()).collect();
+        resolve_index_patterns(&patterns, &metastore).await?
+    } else {
+        vec![get_index_metadata(index_id.clone(), metastore).await?]
+    };
+    let index_id_patterns: Vec<String> = indexes_metadata
+        .iter()
+        .map(|m| m.index_id().to_string())
+        .collect();
+
+    let list_fields_request = quickwit_proto::search::ListFieldsRequest {
+        index_id_patterns,
+        field_patterns: params.field_patterns(),
+        start_timestamp: params.start_timestamp,
+        end_timestamp: params.end_timestamp,
+        query_ast: None,
+        limit: None,
+    };
+    let list_fields_response = match search_service.root_list_fields(list_fields_request).await {
+        Ok(response) => Some(response),
+        // Bad field pattern supplied by the caller — surface as 400.
+        Err(err @ SearchError::InvalidArgument(_)) => {
+            return Err(ElasticsearchError::from(err));
+        }
+        // Infrastructure / timeout failures degrade gracefully.
+        Err(_) => None,
+    };
+    let response = ElasticsearchMappingsResponse::from_doc_mapping(
+        indexes_metadata,
+        list_fields_response.as_ref(),
+    );
+    Ok(response)
 }
 
 /// GET or POST _elastic/_search
@@ -175,6 +325,15 @@ pub fn es_compat_cluster_health_handler(
         (status = 503, description = "The cluster is unhealthy.", body = bool),
     ),
 )]
+pub(crate) async fn es_compat_cluster_health_check(cluster: &Cluster) -> (Value, StatusCode) {
+    let is_ready = cluster.is_self_node_ready().await;
+    if is_ready {
+        (json!({"status": "green"}), StatusCode::OK)
+    } else {
+        (json!({"status": "red"}), StatusCode::SERVICE_UNAVAILABLE)
+    }
+}
+
 /// Get Node Liveliness
 async fn es_compat_cluster_health(
     query_params: HashMap<String, String>,
@@ -187,18 +346,8 @@ async fn es_compat_cluster_health(
         }));
         return with_status(error_body, StatusCode::BAD_REQUEST);
     }
-    let is_ready = cluster.is_self_node_ready().await;
-    if is_ready {
-        with_status(
-            warp::reply::json(&json!({"status": "green"})),
-            StatusCode::OK,
-        )
-    } else {
-        with_status(
-            warp::reply::json(&json!({"status": "red"})),
-            StatusCode::SERVICE_UNAVAILABLE,
-        )
-    }
+    let (body, status) = es_compat_cluster_health_check(&cluster).await;
+    with_status(warp::reply::json(&body), status)
 }
 
 /// GET _elastic/{index}/_stats
@@ -297,6 +446,26 @@ pub fn es_compat_scroll_handler(
     elastic_scroll_filter()
         .and(with_arg(search_service))
         .then(es_scroll)
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
+        .boxed()
+}
+
+pub(crate) fn es_compat_delete_scroll() -> Value {
+    json!({
+        "succeeded": true,
+        "num_freed": 0
+    })
+}
+
+/// DELETE _elastic/_search/scroll
+///
+/// Clears a scroll context. Quickwit manages scroll lifetime via TTL,
+/// so this is a no-op that returns success.
+pub fn es_compat_delete_scroll_handler()
+-> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_delete_scroll_filter()
+        .then(|| async { Ok::<_, ElasticsearchError>(es_compat_delete_scroll()) })
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
         .recover(recover_fn)
         .boxed()
@@ -412,6 +581,8 @@ fn build_request_for_es_api(
             search_after,
             count_hits,
             ignore_missing_indexes,
+            skip_aggregation_finalization: false,
+            ..Default::default()
         },
         has_doc_id_field,
     ))
@@ -481,11 +652,11 @@ fn partial_hit_from_search_after_param(
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct ElasticsearchCountResponse {
-    count: u64,
+pub(crate) struct ElasticsearchCountResponse {
+    pub(crate) count: u64,
 }
 
-async fn es_compat_index_count(
+pub(crate) async fn es_compat_index_count(
     index_id_patterns: Vec<String>,
     search_params: SearchQueryParamsCount,
     search_body: SearchBody,
@@ -502,7 +673,7 @@ async fn es_compat_index_count(
     Ok(search_response_rest)
 }
 
-async fn es_compat_index_search(
+pub(crate) async fn es_compat_index_search(
     index_id_patterns: Vec<String>,
     search_params: SearchQueryParams,
     search_body: SearchBody,
@@ -564,11 +735,11 @@ async fn es_compat_stats(
     es_compat_index_stats(vec!["*".to_string()], metastore).await
 }
 
-async fn es_compat_index_stats(
+pub(crate) async fn es_compat_index_stats(
     index_id_patterns: Vec<String>,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> Result<ElasticsearchStatsResponse, ElasticsearchError> {
-    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &mut metastore).await?;
+    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &metastore).await?;
 
     // Index uid to index id mapping
     let index_uid_to_index_id: HashMap<IndexUid, String> = indexes_metadata
@@ -581,7 +752,7 @@ async fn es_compat_index_stats(
         .map(|index_metadata| index_metadata.index_uid)
         .collect_vec();
     // calling into the search module is not necessary, but reuses established patterns
-    let splits_metadata = list_all_splits(index_uids, &mut metastore).await?;
+    let splits_metadata = list_all_splits(index_uids, &metastore).await?;
 
     let search_response_rest: ElasticsearchStatsResponse =
         convert_to_es_stats_response(index_uid_to_index_id, splits_metadata);
@@ -589,20 +760,20 @@ async fn es_compat_index_stats(
     Ok(search_response_rest)
 }
 
-async fn es_compat_cat_indices(
+pub(crate) async fn es_compat_cat_indices(
     query_params: CatIndexQueryParams,
     metastore: MetastoreServiceClient,
 ) -> Result<Vec<serde_json::Value>, ElasticsearchError> {
     es_compat_index_cat_indices(vec!["*".to_string()], query_params, metastore).await
 }
 
-async fn es_compat_index_cat_indices(
+pub(crate) async fn es_compat_index_cat_indices(
     index_id_patterns: Vec<String>,
     query_params: CatIndexQueryParams,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> Result<Vec<serde_json::Value>, ElasticsearchError> {
     query_params.validate()?;
-    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &mut metastore).await?;
+    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &metastore).await?;
     let mut index_id_to_resp: HashMap<IndexUid, ElasticsearchCatIndexResponse> = indexes_metadata
         .iter()
         .map(|metadata| (metadata.index_uid.to_owned(), metadata.clone().into()))
@@ -615,7 +786,7 @@ async fn es_compat_index_cat_indices(
             .collect_vec();
 
         // calling into the search module is not necessary, but reuses established patterns
-        list_all_splits(index_uids, &mut metastore).await?
+        list_all_splits(index_uids, &metastore).await?
     };
 
     let search_response_rest: Vec<ElasticsearchCatIndexResponse> =
@@ -643,11 +814,11 @@ async fn es_compat_index_cat_indices(
     Ok(search_response_rest)
 }
 
-async fn es_compat_resolve_index(
+pub(crate) async fn es_compat_resolve_index(
     index_id_patterns: Vec<String>,
-    mut metastore: MetastoreServiceClient,
+    metastore: MetastoreServiceClient,
 ) -> Result<ElasticsearchResolveIndexResponse, ElasticsearchError> {
-    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &mut metastore).await?;
+    let indexes_metadata = resolve_index_patterns(&index_id_patterns, &metastore).await?;
     let mut indices: Vec<ElasticsearchResolveIndexEntryResponse> = indexes_metadata
         .into_iter()
         .map(|metadata| metadata.into())
@@ -661,7 +832,7 @@ async fn es_compat_resolve_index(
     })
 }
 
-async fn es_compat_index_field_capabilities(
+pub(crate) async fn es_compat_index_field_capabilities(
     index_id_patterns: Vec<String>,
     search_params: FieldCapabilityQueryParams,
     search_body: FieldCapabilityRequestBody,
@@ -806,7 +977,7 @@ fn convert_hit(
     }
 }
 
-async fn es_compat_index_multi_search(
+pub(crate) async fn es_compat_index_multi_search(
     payload: Bytes,
     multi_search_params: MultiSearchQueryParams,
     search_service: Arc<dyn SearchService>,
@@ -910,7 +1081,7 @@ async fn es_compat_index_multi_search(
     Ok(multi_search_response)
 }
 
-async fn es_scroll(
+pub(crate) async fn es_scroll(
     scroll_query_params: ScrollQueryParams,
     search_service: Arc<dyn SearchService>,
 ) -> Result<ElasticsearchResponse, ElasticsearchError> {

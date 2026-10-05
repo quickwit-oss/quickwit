@@ -29,7 +29,6 @@ google-cloud-googleapis = { workspace = true, optional = true }
 google-cloud-pubsub = { workspace = true, optional = true }
 itertools = { workspace = true }
 libz-sys = { workspace = true, optional = true }
-once_cell = { workspace = true }
 oneshot = { workspace = true }
 openssl = { workspace = true, optional = true }
 percent-encoding = { workspace = true }
@@ -39,6 +38,7 @@ regex = { workspace = true }
 rdkafka = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+smallvec = { workspace = true }
 tantivy = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
@@ -50,10 +50,12 @@ utoipa = { workspace = true }
 vrl = { workspace = true, optional = true }
 warp = { workspace = true, optional = true }
 
+
 quickwit-actors = { workspace = true }
 quickwit-aws = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
@@ -104,6 +106,7 @@ testsuite = [
   "quickwit-storage/testsuite"
 ]
 vrl = ["dep:vrl", "quickwit-config/vrl"]
+postgres = ["quickwit-metastore/postgres"]
 ci-test = []
 
 [dev-dependencies]
@@ -114,7 +117,9 @@ proptest = { workspace = true }
 prost = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
+sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
 tempfile = { workspace = true }
+unicode-segmentation = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }

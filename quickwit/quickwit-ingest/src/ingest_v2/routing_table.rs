@@ -12,1080 +12,1104 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::hash_map::Entry;
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
-use quickwit_proto::ingest::{Shard, ShardIds, ShardState};
-use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId};
-use serde_json::{Value as JsonValue, json};
-use tracing::{info, warn};
+use itertools::Itertools;
+use quickwit_cluster::GenerationId;
+use quickwit_proto::ingest::Shard;
+use quickwit_proto::types::{AvailabilityZone, IndexId, IndexUid, NodeId, SourceId};
+use rand::rng;
+use rand::seq::IndexedRandom;
 
 use crate::IngesterPool;
+
+/// A single ingester node's routing-relevant data for a specific (index, source) pair.
+/// Each entry is self-describing: it carries its own node_id, index_uid, and source_id
+/// so it can always be attributed back to a specific source on a specific node.
+#[derive(Debug, Clone)]
+pub(super) struct IngesterNode {
+    pub node_id: NodeId,
+    pub generation_id: GenerationId,
+    pub index_uid: IndexUid,
+    /// Score from 0-10. Higher means more available capacity.
+    pub capacity_score: usize,
+    /// Number of open shards on this node for this (index, source) pair. Tiebreaker for power of
+    /// two choices comparison - we favor a node with more open shards.
+    pub open_shard_count: usize,
+}
+
+impl IngesterNode {
+    fn is_routing_candidate(
+        &self,
+        ingester_pool: &IngesterPool,
+        unavailable_ingesters: &mut HashSet<NodeId>,
+    ) -> bool {
+        if self.capacity_score == 0 || self.open_shard_count == 0 {
+            return false;
+        }
+        if unavailable_ingesters.contains(&self.node_id) {
+            return false;
+        }
+        let Some(ingester) = ingester_pool
+            .get(&self.node_id)
+            .filter(|ingester| ingester.status.is_ready())
+        else {
+            unavailable_ingesters.insert(self.node_id.clone());
+            return false;
+        };
+        ingester.generation_id == self.generation_id
+    }
+}
 
 #[derive(Debug)]
 pub(super) struct RoutingEntry {
     pub index_uid: IndexUid,
-    pub source_id: SourceId,
-    pub shard_id: ShardId,
-    pub shard_state: ShardState,
-    pub leader_id: NodeId,
+    pub nodes: HashMap<NodeId, IngesterNode>,
+    /// Whether this entry has been seeded from a control plane response. During a rolling
+    /// deployment, Chitchat broadcasts from already-upgraded nodes may populate the table
+    /// before the router ever asks the CP, causing it to miss old-version nodes. This flag
+    /// ensures the router asks the CP at least once per (index, source) pair.
+    seeded_from_cp: bool,
 }
 
-impl From<Shard> for RoutingEntry {
-    fn from(shard: Shard) -> Self {
-        let shard_id = shard.shard_id().clone();
-        let shard_state = shard.shard_state();
+impl RoutingEntry {
+    fn new(index_uid: IndexUid) -> Self {
         Self {
-            index_uid: shard.index_uid().clone(),
-            source_id: shard.source_id,
-            shard_id,
-            shard_state,
-            leader_id: shard.leader_id.into(),
+            index_uid,
+            nodes: HashMap::new(),
+            seeded_from_cp: false,
         }
     }
 }
 
-/// The set of shards the router is aware of for the given index and source.
+/// Given a slice of candidates, picks the better of two random choices.
+/// Higher capacity_score wins; tiebreak on more open_shard_count (more landing spots).
+fn power_of_two_choices<'a>(candidates: &[&'a IngesterNode]) -> &'a IngesterNode {
+    debug_assert!(candidates.len() >= 2);
+    let mut iter = candidates.sample(&mut rng(), 2);
+    let (&a, &b) = (iter.next().unwrap(), iter.next().unwrap());
+
+    if (a.capacity_score, a.open_shard_count) >= (b.capacity_score, b.open_shard_count) {
+        a
+    } else {
+        b
+    }
+}
+
+fn pick_from(candidates: Vec<&IngesterNode>) -> Option<&IngesterNode> {
+    match candidates.len() {
+        0 => None,
+        1 => Some(candidates[0]),
+        _ => Some(power_of_two_choices(&candidates)),
+    }
+}
+
+fn is_ingester_eligible(
+    node: &IngesterNode,
+    ingester_pool: &IngesterPool,
+    unavailable_ingesters: &HashSet<NodeId>,
+) -> bool {
+    node.capacity_score > 0
+        && node.open_shard_count > 0
+        && ingester_pool
+            .get(&node.node_id)
+            .map(|entry| entry.status.is_ready() && entry.generation_id == node.generation_id)
+            .unwrap_or(false)
+        && !unavailable_ingesters.contains(&node.node_id)
+}
+
+impl RoutingEntry {
+    /// Pick an ingester node to persist the request to. Uses power of two choices based on reported
+    /// ingester capacity, if more than one eligible node exists. Prefers nodes in the same
+    /// availability zone, falling back to remote nodes.
+    fn pick_node(
+        &self,
+        ingester_pool: &IngesterPool,
+        unavailable_ingesters: &HashSet<NodeId>,
+        self_availability_zone: &Option<AvailabilityZone>,
+    ) -> Option<&IngesterNode> {
+        let (local_ingesters, remote_ingesters): (Vec<&IngesterNode>, Vec<&IngesterNode>) = self
+            .nodes
+            .values()
+            .filter(|node| is_ingester_eligible(node, ingester_pool, unavailable_ingesters))
+            .partition(|node| {
+                let node_az = ingester_pool
+                    .get(&node.node_id)
+                    .and_then(|h| h.availability_zone.clone());
+                node_az == *self_availability_zone
+            });
+
+        pick_from(local_ingesters).or_else(|| pick_from(remote_ingesters))
+    }
+}
+
 #[derive(Debug, Default)]
-pub(super) struct RoutingTableEntry {
-    /// Index UID of the shards.
-    pub index_uid: IndexUid,
-    /// Source ID of the shards.
-    pub source_id: SourceId,
-    /// Shards located on this node.
-    pub local_shards: Vec<RoutingEntry>,
-    pub local_round_robin_idx: AtomicUsize,
-    /// Shards located on remote nodes.
-    pub remote_shards: Vec<RoutingEntry>,
-    pub remote_round_robin_idx: AtomicUsize,
-}
-
-impl RoutingTableEntry {
-    /// Creates a new entry and ensures that the shards are open, unique, and sorted by shard ID.
-    fn new(
-        self_node_id: &NodeId,
-        index_uid: IndexUid,
-        source_id: SourceId,
-        mut shards: Vec<Shard>,
-    ) -> Self {
-        let num_shards = shards.len();
-
-        shards.sort_unstable_by(|left, right| left.shard_id.cmp(&right.shard_id));
-        shards.dedup_by(|left, right| left.shard_id == right.shard_id);
-
-        let (local_shards, remote_shards): (Vec<_>, Vec<_>) = shards
-            .into_iter()
-            .filter(|shard| shard.is_open())
-            .map(RoutingEntry::from)
-            .partition(|shard| *self_node_id == shard.leader_id);
-
-        if num_shards > local_shards.len() + remote_shards.len() {
-            warn!("input shards should not contain closed shards or duplicates");
-        }
-
-        Self {
-            index_uid,
-            source_id,
-            local_shards,
-            remote_shards,
-            ..Default::default()
-        }
-    }
-
-    fn empty(index_uid: IndexUid, source_id: SourceId) -> Self {
-        Self {
-            index_uid,
-            source_id,
-            ..Default::default()
-        }
-    }
-
-    /// Returns `true` if at least one shard in the table entry is open and has a leader available.
-    /// As it goes through the list of shards in the entry, it populates `closed_shard_ids` and
-    /// `unavailable_leaders` with the shard IDs of the closed shards and the node ID of the
-    /// unavailable ingesters encountered along the way.
-    pub fn has_open_shards(
-        &self,
-        ingester_pool: &IngesterPool,
-        closed_shard_ids: &mut Vec<ShardId>,
-        unavailable_leaders: &mut HashSet<NodeId>,
-    ) -> bool {
-        let shards = self.local_shards.iter().chain(self.remote_shards.iter());
-
-        for shard in shards {
-            match shard.shard_state {
-                ShardState::Closed => {
-                    closed_shard_ids.push(shard.shard_id.clone());
-                    continue;
-                }
-                ShardState::Unavailable | ShardState::Unspecified => {
-                    continue;
-                }
-                ShardState::Open => {
-                    if unavailable_leaders.contains(&shard.leader_id) {
-                        continue;
-                    }
-                    if ingester_pool.contains_key(&shard.leader_id) {
-                        return true;
-                    } else {
-                        let leader_id: NodeId = shard.leader_id.clone();
-                        unavailable_leaders.insert(leader_id);
-                    }
-                }
-            }
-        }
-        false
-    }
-
-    /// Returns the next open and available shard in the table entry in a round-robin fashion.
-    pub fn next_open_shard_round_robin(
-        &self,
-        ingester_pool: &IngesterPool,
-        rate_limited_shards: &HashSet<ShardId>,
-    ) -> Result<&RoutingEntry, NextOpenShardError> {
-        let mut error = NextOpenShardError::NoShardsAvailable;
-
-        for (shards, round_robin_idx) in [
-            (&self.local_shards, &self.local_round_robin_idx),
-            (&self.remote_shards, &self.remote_round_robin_idx),
-        ] {
-            if shards.is_empty() {
-                continue;
-            }
-            for _attempt in 0..shards.len() {
-                let shard_idx = round_robin_idx.fetch_add(1, Ordering::Relaxed);
-                let shard_routing_entry: &RoutingEntry = &shards[shard_idx % shards.len()];
-
-                if !shard_routing_entry.shard_state.is_open() {
-                    continue;
-                }
-                if rate_limited_shards.contains(&shard_routing_entry.shard_id) {
-                    error = NextOpenShardError::RateLimited;
-                    continue;
-                }
-                if ingester_pool.contains_key(&shard_routing_entry.leader_id) {
-                    return Ok(shard_routing_entry);
-                }
-            }
-        }
-        Err(error)
-    }
-
-    /// Inserts the open shards the routing table is not aware of.
-    fn insert_open_shards(
-        &mut self,
-        self_node_id: &NodeId,
-        leader_id: &NodeId,
-        index_uid: &IndexUid,
-        shard_ids: &[ShardId],
-    ) {
-        match self.index_uid.cmp(index_uid) {
-            // If we receive an update for a new incarnation of the index, then we clear the entry
-            // and insert all the shards.
-            std::cmp::Ordering::Less => {
-                self.index_uid = index_uid.clone();
-                self.clear_shards();
-            }
-            // If we receive an update for a previous incarnation of the index, then we ignore it.
-            std::cmp::Ordering::Greater => {
-                return;
-            }
-            std::cmp::Ordering::Equal => {}
-        };
-        let target_shards = if self_node_id == leader_id {
-            &mut self.local_shards
-        } else {
-            &mut self.remote_shards
-        };
-        let mut num_inserted_shards = 0;
-        let num_target_shards = target_shards.len();
-
-        if num_target_shards == 0 {
-            target_shards.reserve(num_target_shards);
-            target_shards.extend(shard_ids.iter().map(|shard_id| RoutingEntry {
-                index_uid: self.index_uid.clone(),
-                source_id: self.source_id.clone(),
-                shard_id: shard_id.clone(),
-                shard_state: ShardState::Open,
-                leader_id: leader_id.clone(),
-            }));
-            num_inserted_shards = target_shards.len();
-        } else {
-            let shard_ids_range = target_shards[0].shard_id.clone()
-                ..=target_shards[num_target_shards - 1].shard_id.clone();
-
-            for shard_id in shard_ids {
-                // If we can't find the shard, then we insert it.
-                if shard_ids_range.contains(shard_id) {
-                    continue;
-                }
-                if target_shards[..num_target_shards]
-                    .binary_search_by(|shard| shard.shard_id.cmp(shard_id))
-                    .is_err()
-                {
-                    target_shards.push(RoutingEntry {
-                        index_uid: self.index_uid.clone(),
-                        source_id: self.source_id.clone(),
-                        shard_id: shard_id.clone(),
-                        shard_state: ShardState::Open,
-                        leader_id: leader_id.clone(),
-                    });
-                    num_inserted_shards += 1;
-                }
-            }
-        }
-        if num_inserted_shards > 0 {
-            target_shards.sort_unstable_by(|left, right| left.shard_id.cmp(&right.shard_id));
-
-            info!(
-                index_uid=%self.index_uid,
-                source_id=%self.source_id,
-                "inserted {num_inserted_shards} shards into routing table"
-            );
-        }
-    }
-
-    /// Clears local and remote shards.
-    fn clear_shards(&mut self) {
-        self.local_shards.clear();
-        self.local_round_robin_idx = AtomicUsize::default();
-        self.remote_shards.clear();
-        self.remote_round_robin_idx = AtomicUsize::default();
-    }
-
-    /// Closes the shards identified by their shard IDs.
-    fn close_shards(&mut self, index_uid: &IndexUid, shard_ids: &[ShardId]) {
-        // If the shard table was just recently updated with shards for a new index UID, then we can
-        // safely discard this request.
-        if self.index_uid != *index_uid {
-            return;
-        }
-        for shards in [&mut self.local_shards, &mut self.remote_shards] {
-            if shards.is_empty() {
-                continue;
-            }
-            let num_shards = shards.len();
-            let shard_ids_range =
-                shards[0].shard_id.clone()..=shards[num_shards - 1].shard_id.clone();
-
-            for shard_id in shard_ids {
-                if !shard_ids_range.contains(shard_id) {
-                    continue;
-                }
-                if let Ok(shard_idx) = shards.binary_search_by(|shard| shard.shard_id.cmp(shard_id))
-                {
-                    shards[shard_idx].shard_state = ShardState::Closed;
-                }
-            }
-        }
-    }
-
-    /// Shards the shards identified by their shard IDs.
-    fn delete_shards(&mut self, index_uid: &IndexUid, shard_ids: &[ShardId]) {
-        // If the shard table was just recently updated with shards for a new index UID, then we can
-        // safely discard this request.
-        if self.index_uid != *index_uid {
-            return;
-        }
-        for shards in [&mut self.local_shards, &mut self.remote_shards] {
-            if shards.is_empty() {
-                continue;
-            }
-            let num_shards = shards.len();
-            let shard_ids_range =
-                shards[0].shard_id.clone()..=shards[num_shards - 1].shard_id.clone();
-            let mut deleted_any = false;
-
-            for shard_id in shard_ids {
-                if !shard_ids_range.contains(shard_id) {
-                    continue;
-                }
-                if let Ok(shard_idx) = shards.binary_search_by(|shard| shard.shard_id.cmp(shard_id))
-                {
-                    // We use `Unspecified` as a tombstone.
-                    shards[shard_idx].shard_state = ShardState::Unspecified;
-                    deleted_any = true;
-                }
-            }
-            if deleted_any {
-                shards.retain(|shard| shard.shard_state != ShardState::Unspecified);
-            }
-        }
-    }
-
-    #[cfg(test)]
-    pub fn len(&self) -> usize {
-        self.local_shards.len() + self.remote_shards.len()
-    }
-
-    #[cfg(test)]
-    pub fn all_shards(&self) -> Vec<&RoutingEntry> {
-        let mut shards = Vec::with_capacity(self.len());
-        shards.extend(&self.local_shards);
-        shards.extend(&self.remote_shards);
-        shards
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub(super) enum NextOpenShardError {
-    NoShardsAvailable,
-    RateLimited,
-}
-
-/// Stores the list of shards the router is aware of for each index and source. The resolution from
-/// index and source to shards is performed using index ID (not index UID) and source ID.
-#[derive(Debug)]
 pub(super) struct RoutingTable {
-    pub self_node_id: NodeId,
-    pub table: HashMap<(IndexId, SourceId), RoutingTableEntry>,
+    table: HashMap<(IndexId, SourceId), RoutingEntry>,
+    self_availability_zone: Option<AvailabilityZone>,
 }
 
 impl RoutingTable {
-    pub fn find_entry(
-        &self,
-        index_id: impl Into<IndexId>,
-        source_id: impl Into<SourceId>,
-    ) -> Option<&RoutingTableEntry> {
-        let key = (index_id.into(), source_id.into());
-        self.table.get(&key)
+    pub fn new(self_availability_zone: Option<AvailabilityZone>) -> Self {
+        Self {
+            self_availability_zone,
+            ..Default::default()
+        }
     }
 
-    /// Returns `true` if the router already knows about a shard for a given source that has
-    /// an available `leader`.
-    ///
-    /// If this function returns false, it populates the set of unavailable leaders and closed
-    /// shards. These will be joined to the GetOrCreate shard request emitted to the control
-    /// plane.
-    pub fn has_open_shards(
+    pub fn pick_node(
         &self,
-        index_id: impl Into<IndexId>,
-        source_id: impl Into<SourceId>,
+        index_id: &str,
+        source_id: &str,
         ingester_pool: &IngesterPool,
-        closed_shards: &mut Vec<ShardIds>,
-        unavailable_leaders: &mut HashSet<NodeId>,
-    ) -> bool {
-        let Some(entry) = self.find_entry(index_id, source_id) else {
-            return false;
+        unavailable_ingesters: &HashSet<NodeId>,
+    ) -> Option<&IngesterNode> {
+        let key = (index_id.to_string(), source_id.to_string());
+        let entry = self.table.get(&key)?;
+        entry.pick_node(
+            ingester_pool,
+            unavailable_ingesters,
+            &self.self_availability_zone,
+        )
+    }
+
+    pub fn classify_az_locality(
+        &self,
+        target_node_id: &NodeId,
+        ingester_pool: &IngesterPool,
+    ) -> &'static str {
+        let Some(self_az) = &self.self_availability_zone else {
+            return "az_unaware";
         };
-        let mut closed_shard_ids: Vec<ShardId> = Vec::new();
-
-        let result =
-            entry.has_open_shards(ingester_pool, &mut closed_shard_ids, unavailable_leaders);
-
-        if !closed_shard_ids.is_empty() {
-            closed_shards.push(ShardIds {
-                index_uid: entry.index_uid.clone().into(),
-                source_id: entry.source_id.clone(),
-                shard_ids: closed_shard_ids,
-            });
-        }
-        result
-    }
-
-    /// Replaces the routing table entry for the source with the provided shards.
-    pub fn replace_shards(
-        &mut self,
-        index_uid: IndexUid,
-        source_id: impl Into<SourceId>,
-        shards: Vec<Shard>,
-    ) {
-        let index_id: IndexId = index_uid.index_id.to_string();
-        let source_id: SourceId = source_id.into();
-        let key = (index_id, source_id.clone());
-
-        match self.table.entry(key) {
-            Entry::Vacant(entry) => {
-                entry.insert(RoutingTableEntry::new(
-                    &self.self_node_id,
-                    index_uid,
-                    source_id,
-                    shards,
-                ));
-            }
-            Entry::Occupied(mut entry) => {
-                assert!(
-                    entry.get().index_uid <= index_uid,
-                    "new index incarnation should be greater or equal"
-                );
-
-                entry.insert(RoutingTableEntry::new(
-                    &self.self_node_id,
-                    index_uid,
-                    source_id,
-                    shards,
-                ));
-            }
-        };
-    }
-
-    /// Inserts the shards the routing table is not aware of.
-    pub fn insert_open_shards(
-        &mut self,
-        leader_id: &NodeId,
-        index_uid: IndexUid,
-        source_id: impl Into<SourceId>,
-        shard_ids: &[ShardId],
-    ) {
-        let index_id: IndexId = index_uid.index_id.to_string();
-        let source_id: SourceId = source_id.into();
-        let key = (index_id, source_id.clone());
-
-        self.table
-            .entry(key.clone())
-            .or_insert_with(|| RoutingTableEntry::empty(index_uid.clone(), source_id))
-            .insert_open_shards(&self.self_node_id, leader_id, &index_uid, shard_ids);
-    }
-
-    /// Closes the targeted shards.
-    pub fn close_shards(
-        &mut self,
-        index_uid: &IndexUid,
-        source_id: impl Into<SourceId>,
-        shard_ids: &[ShardId],
-    ) {
-        let key = (index_uid.index_id.clone(), source_id.into());
-        if let Some(entry) = self.table.get_mut(&key) {
-            entry.close_shards(index_uid, shard_ids);
+        let target_az = ingester_pool
+            .get(target_node_id)
+            .and_then(|entry| entry.availability_zone.clone());
+        match target_az {
+            Some(ref az) if az == self_az => "same_az",
+            Some(_) => "cross_az",
+            None => "az_unaware",
         }
     }
 
-    /// Deletes the targeted shards.
-    pub fn delete_shards(
-        &mut self,
-        index_uid: &IndexUid,
-        source_id: impl Into<SourceId>,
-        shard_ids: &[ShardId],
-    ) {
-        let key = (index_uid.index_id.clone(), source_id.into());
-        if let Some(entry) = self.table.get_mut(&key) {
-            entry.delete_shards(index_uid, shard_ids);
-        }
-    }
-
-    pub fn debug_info(&self) -> HashMap<IndexId, Vec<JsonValue>> {
-        let mut per_index_shards_json: HashMap<IndexId, Vec<JsonValue>> = HashMap::new();
-
+    pub fn debug_info(
+        &self,
+        ingester_pool: &IngesterPool,
+    ) -> HashMap<IndexId, Vec<serde_json::Value>> {
+        let mut per_index: HashMap<IndexId, Vec<serde_json::Value>> = HashMap::new();
         for ((index_id, source_id), entry) in &self.table {
-            for (shards, is_local) in &[(&entry.local_shards, true), (&entry.remote_shards, false)]
-            {
-                let shards_json = shards.iter().map(|shard| {
-                    json!({
-                        "index_uid": shard.index_uid,
-                        "source_id": source_id,
-                        "shard_id": shard.shard_id,
-                        "shard_state": shard.shard_state.as_json_str_name(),
-                        "is_local": is_local,
-                    })
-                });
-                per_index_shards_json
+            for (node_id, node) in &entry.nodes {
+                let az = ingester_pool
+                    .get(node_id)
+                    .and_then(|h| h.availability_zone.clone());
+                per_index
                     .entry(index_id.clone())
                     .or_default()
-                    .extend(shards_json);
+                    .push(serde_json::json!({
+                        "source_id": source_id,
+                        "node_id": node_id,
+                        "capacity_score": node.capacity_score,
+                        "open_shard_count": node.open_shard_count,
+                        "availability_zone": az,
+                    }));
             }
         }
-        per_index_shards_json
+        per_index
     }
 
-    #[cfg(test)]
-    pub fn len(&self) -> usize {
-        self.table.len()
+    /// Returns `true` if the entry has at least one routing candidate, i.e. an available node with
+    /// at least one open shard and a capacity score greater than 0. As it scans the entry, it
+    /// records any ingester that has open shards but is no longer in the ingester pool or is not
+    /// ready into `unavailable_ingesters`, so they can be reported to the control plane.
+    pub fn has_any_routing_candidate(
+        &self,
+        index_id: &str,
+        source_id: &str,
+        ingester_pool: &IngesterPool,
+        unavailable_ingesters: &mut HashSet<NodeId>,
+    ) -> bool {
+        let key = (index_id.to_string(), source_id.to_string());
+        let Some(entry) = self.table.get(&key) else {
+            return false;
+        };
+        // Routers must sync with the control plane at least once per (index, source).
+        if !entry.seeded_from_cp {
+            return false;
+        }
+        // We scan every node (rather than short-circuiting with `any`) so that all unavailable
+        // nodes are recorded and reported to the control plane in a single round.
+        let mut has_any_candidate = false;
+
+        for node in entry.nodes.values() {
+            has_any_candidate |= node.is_routing_candidate(ingester_pool, unavailable_ingesters);
+        }
+        has_any_candidate
+    }
+
+    /// Applies a capacity update from the IngesterCapacityScoreUpdate broadcast. This is the
+    /// primary way the table learns about node availability and capacity.
+    pub fn apply_capacity_update(
+        &mut self,
+        node_id: NodeId,
+        generation_id: GenerationId,
+        index_uid: IndexUid,
+        source_id: SourceId,
+        capacity_score: usize,
+        open_shard_count: usize,
+    ) {
+        let key = (index_uid.index_id.to_string(), source_id);
+
+        let entry = self
+            .table
+            .entry(key)
+            .or_insert_with(|| RoutingEntry::new(index_uid.clone()));
+        match entry.index_uid.cmp(&index_uid) {
+            // If we receive an update for a new incarnation of the index, then we clear the entry.
+            Ordering::Less => {
+                entry.index_uid = index_uid.clone();
+                entry.nodes.clear();
+                entry.seeded_from_cp = false;
+            }
+            // If we receive an update for a previous incarnation of the index, then we ignore it.
+            Ordering::Greater => return,
+            Ordering::Equal => {}
+        }
+        if let Some(existing) = entry.nodes.get(&node_id)
+            && existing.generation_id.as_u64() > generation_id.as_u64()
+        {
+            // drop a capacity update from an older incarantion of an ingester.
+            return;
+        }
+        let ingester_node = IngesterNode {
+            node_id: node_id.clone(),
+            generation_id,
+            index_uid,
+            capacity_score,
+            open_shard_count,
+        };
+        entry.nodes.insert(node_id, ingester_node);
+    }
+
+    /// Merges routing updates from a GetOrCreateOpenShards control plane response into the
+    /// table. For existing nodes, updates their open shard count, including if the count is 0, from
+    /// the CP response while preserving capacity scores if they already exist.
+    /// New nodes get a default capacity_score of 5.
+    pub fn merge_from_shards(
+        &mut self,
+        ingester_pool: &IngesterPool,
+        index_uid: IndexUid,
+        source_id: SourceId,
+        shards: Vec<Shard>,
+    ) {
+        let key = (index_uid.index_id.to_string(), source_id);
+        let entry = self
+            .table
+            .entry(key)
+            .or_insert_with(|| RoutingEntry::new(index_uid.clone()));
+        match entry.index_uid.cmp(&index_uid) {
+            // If we receive an update for a new incarnation of the index, then we clear the entry.
+            Ordering::Less => {
+                entry.index_uid = index_uid.clone();
+                entry.nodes.clear();
+            }
+            // If we receive an update for a previous incarnation of the index, then we ignore it.
+            Ordering::Greater => return,
+            Ordering::Equal => {}
+        }
+
+        let per_ingester_count: HashMap<NodeId, usize> = shards
+            .iter()
+            .map(|shard| {
+                let num_open_shards = shard.is_open() as usize;
+                let ingester_id = NodeId::from_str(&shard.ingester_id);
+                (ingester_id, num_open_shards)
+            })
+            .into_grouping_map()
+            .sum();
+
+        for (node_id, open_shard_count) in per_ingester_count {
+            let Some(generation_id) = ingester_pool.get(&node_id).map(|entry| entry.generation_id)
+            else {
+                // TODO: decide what you want to do here exactly. This might be important
+                continue;
+            };
+            entry
+                .nodes
+                .entry(node_id.clone())
+                .and_modify(|node| node.open_shard_count = open_shard_count)
+                .or_insert_with(|| IngesterNode {
+                    node_id,
+                    generation_id,
+                    index_uid: index_uid.clone(),
+                    capacity_score: 5,
+                    open_shard_count,
+                });
+        }
+        entry.seeded_from_cp = true;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use quickwit_proto::ingest::ShardState;
-    use quickwit_proto::ingest::ingester::IngesterServiceClient;
+    use quickwit_proto::ingest::ingester::{IngesterServiceClient, IngesterStatus};
+    use quickwit_proto::types::ShardId;
 
     use super::*;
+    use crate::IngesterPoolEntry;
+
+    fn mocked_ingester(availability_zone: Option<&str>) -> IngesterPoolEntry {
+        IngesterPoolEntry {
+            client: IngesterServiceClient::mocked(),
+            status: IngesterStatus::Ready,
+            availability_zone: availability_zone.map(AvailabilityZone::from),
+            generation_id: GenerationId::from(1u64),
+        }
+    }
+
+    fn mocked_ingester_gen(availability_zone: Option<&str>, generation: u64) -> IngesterPoolEntry {
+        IngesterPoolEntry {
+            generation_id: GenerationId::from(generation),
+            ..mocked_ingester(availability_zone)
+        }
+    }
+
+    fn ingester_node(
+        node_id: &str,
+        capacity_score: usize,
+        open_shard_count: usize,
+    ) -> IngesterNode {
+        IngesterNode {
+            node_id: NodeId::from_str(node_id),
+            generation_id: GenerationId::from(1u64),
+            index_uid: IndexUid::for_test("test-index", 0),
+            capacity_score,
+            open_shard_count,
+        }
+    }
 
     #[test]
-    fn test_routing_table_entry_new() {
-        let self_node_id: NodeId = "test-node-0".into();
-        let index_uid = IndexUid::for_test("test-index", 0);
-        let source_id: SourceId = "test-source".into();
-        let table_entry = RoutingTableEntry::new(
-            &self_node_id,
-            index_uid.clone(),
-            source_id.clone(),
-            Vec::new(),
-        );
-        assert_eq!(table_entry.len(), 0);
+    fn test_ingester_node_is_routing_candidate() {
+        let pool = IngesterPool::default();
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester(None));
 
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        // No capacity or no open shards: not a routing candidate, not reported as unavailable.
+        let mut unavailable_ingesters = HashSet::new();
+        assert!(
+            !ingester_node("node-1", 0, 3).is_routing_candidate(&pool, &mut unavailable_ingesters)
+        );
+        assert!(
+            !ingester_node("node-1", 5, 0).is_routing_candidate(&pool, &mut unavailable_ingesters)
+        );
+        assert!(unavailable_ingesters.is_empty());
+
+        // Open shards and a ready ingester: open, not reported as unavailable.
+        assert!(
+            ingester_node("node-1", 5, 3).is_routing_candidate(&pool, &mut unavailable_ingesters)
+        );
+        assert!(unavailable_ingesters.is_empty());
+
+        // Open shards but the ingester is missing from the pool: not open, reported as unavailable.
+        assert!(
+            !ingester_node("node-2", 5, 3).is_routing_candidate(&pool, &mut unavailable_ingesters)
+        );
+        assert_eq!(
+            unavailable_ingesters,
+            HashSet::from([NodeId::from_str("node-2")])
+        );
+
+        // A ingester already known to be unavailable is skipped without re-inserting.
+        assert!(
+            !ingester_node("node-2", 5, 3).is_routing_candidate(&pool, &mut unavailable_ingesters)
+        );
+        assert_eq!(
+            unavailable_ingesters,
+            HashSet::from([NodeId::from_str("node-2")])
+        );
+
+        let mut unavailable_ingesters = HashSet::new();
+        let mismatched = IngesterNode {
+            generation_id: GenerationId::from(2u64),
+            ..ingester_node("node-1", 5, 3)
+        };
+        assert!(!mismatched.is_routing_candidate(&pool, &mut unavailable_ingesters));
+        assert!(unavailable_ingesters.is_empty());
+    }
+
+    #[test]
+    fn test_apply_capacity_update() {
+        let mut table = RoutingTable::default();
+        let key = ("test-index".to_string(), "test-source".into());
+
+        // Insert first node.
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            8,
+            3,
+        );
+        let entry = table.table.get(&key).unwrap();
+        assert_eq!(entry.nodes.len(), 1);
+        assert_eq!(entry.nodes.get("node-1").unwrap().capacity_score, 8);
+
+        // Update existing node.
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            4,
+            5,
+        );
+        let node = table.table.get(&key).unwrap().nodes.get("node-1").unwrap();
+        assert_eq!(node.capacity_score, 4);
+        assert_eq!(node.open_shard_count, 5);
+
+        // Add second node.
+        table.apply_capacity_update(
+            NodeId::from_str("node-2"),
+            GenerationId::from(1u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            6,
+            2,
+        );
+        assert_eq!(table.table.get(&key).unwrap().nodes.len(), 2);
+
+        // Zero shards: node stays in table but becomes ineligible for routing.
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            0,
+            0,
+        );
+        let entry = table.table.get(&key).unwrap();
+        assert_eq!(entry.nodes.len(), 2);
+        assert_eq!(entry.nodes.get("node-1").unwrap().open_shard_count, 0);
+        assert_eq!(entry.nodes.get("node-1").unwrap().capacity_score, 0);
+    }
+
+    #[test]
+    fn test_apply_capacity_update_generation_ordering() {
+        let mut table = RoutingTable::default();
+        let key = ("test-index".to_string(), "test-source".to_string());
+
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(5u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            8,
+            3,
+        );
+
+        // Older generation is dropped.
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(2u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            1,
+            1,
+        );
+        let node = table.table.get(&key).unwrap().nodes.get("node-1").unwrap();
+        assert_eq!(node.generation_id, GenerationId::from(5u64));
+        assert_eq!(node.capacity_score, 8);
+
+        // Newer generation replaces.
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(9u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            2,
+            2,
+        );
+        let node = table.table.get(&key).unwrap().nodes.get("node-1").unwrap();
+        assert_eq!(node.generation_id, GenerationId::from(9u64));
+        assert_eq!(node.capacity_score, 2);
+        assert_eq!(node.open_shard_count, 2);
+    }
+
+    #[test]
+    fn test_has_any_routing_candidate() {
+        let mut table = RoutingTable::default();
+        let pool = IngesterPool::default();
+        let index_uid = IndexUid::for_test("test-index", 0);
+
+        // Empty table.
+        assert!(!table.has_any_routing_candidate(
+            "test-index",
+            "test-source",
+            &pool,
+            &mut HashSet::new()
+        ));
+
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
+            index_uid.clone(),
+            "test-source".into(),
+            5,
+            3,
+        );
+        table.apply_capacity_update(
+            NodeId::from_str("node-2"),
+            GenerationId::from(1u64),
+            index_uid.clone(),
+            "test-source".into(),
+            5,
+            3,
+        );
+        // Seed from CP so has_any_routing_candidate can return true.
         let shards = vec![
             Shard {
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(3)),
+                shard_id: Some(ShardId::from(1u64)),
                 shard_state: ShardState::Open as i32,
-                leader_id: "test-node-0".to_string(),
+                ingester_id: "node-1".to_string(),
                 ..Default::default()
             },
             Shard {
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(1)),
+                shard_id: Some(ShardId::from(2u64)),
                 shard_state: ShardState::Open as i32,
-                leader_id: "test-node-0".to_string(),
-                ..Default::default()
-            },
-            Shard {
-                index_uid: Some(index_uid.clone()),
-                source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(2)),
-                shard_state: ShardState::Open as i32,
-                leader_id: "test-node-1".to_string(),
-                ..Default::default()
-            },
-            Shard {
-                index_uid: Some(index_uid.clone()),
-                source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(1)),
-                shard_state: ShardState::Open as i32,
-                leader_id: "test-node-0".to_string(),
-                ..Default::default()
-            },
-            Shard {
-                index_uid: Some(index_uid.clone()),
-                source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(4)),
-                shard_state: ShardState::Closed as i32,
-                leader_id: "test-node-0".to_string(),
+                ingester_id: "node-2".to_string(),
                 ..Default::default()
             },
         ];
-        let table_entry = RoutingTableEntry::new(&self_node_id, index_uid, source_id, shards);
-        assert_eq!(table_entry.local_shards.len(), 2);
-        assert_eq!(table_entry.local_shards[0].shard_id, ShardId::from(1));
-        assert_eq!(table_entry.local_shards[1].shard_id, ShardId::from(3));
+        table.merge_from_shards(&pool, index_uid.clone(), "test-source".into(), shards);
 
-        assert_eq!(table_entry.remote_shards.len(), 1);
-        assert_eq!(table_entry.remote_shards[0].shard_id, ShardId::from(2));
-    }
-
-    #[test]
-    fn test_routing_table_entry_has_open_shards() {
-        let index_uid = IndexUid::for_test("test-index", 0);
-        let source_id: SourceId = "test-source".into();
-        let table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
-
-        let mut closed_shard_ids = Vec::new();
-        let ingester_pool = IngesterPool::default();
-        let mut unavailable_leaders = HashSet::new();
-
-        assert!(!table_entry.has_open_shards(
-            &ingester_pool,
-            &mut closed_shard_ids,
-            &mut unavailable_leaders
+        // Neither node is in the pool: both ingesters are recorded as unavailable and reported to
+        // the control plane.
+        let mut unavailable_ingesters: HashSet<NodeId> = HashSet::new();
+        assert!(!table.has_any_routing_candidate(
+            "test-index",
+            "test-source",
+            &pool,
+            &mut unavailable_ingesters
         ));
-        assert!(closed_shard_ids.is_empty());
-        assert!(unavailable_leaders.is_empty());
+        assert_eq!(unavailable_ingesters.len(), 2);
+        assert!(unavailable_ingesters.contains(&NodeId::from_str("node-1")));
+        assert!(unavailable_ingesters.contains(&NodeId::from_str("node-2")));
 
-        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
-        ingester_pool.insert("test-ingester-1".into(), IngesterServiceClient::mocked());
-
-        let table_entry = RoutingTableEntry {
-            index_uid: index_uid.clone(),
-            source_id: source_id.clone(),
-            local_shards: vec![
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(1),
-                    shard_state: ShardState::Closed,
-                    leader_id: "test-ingester-0".into(),
-                },
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(2),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
-                },
-            ],
-            local_round_robin_idx: AtomicUsize::default(),
-            remote_shards: Vec::new(),
-            remote_round_robin_idx: AtomicUsize::default(),
-        };
-        assert!(table_entry.has_open_shards(
-            &ingester_pool,
-            &mut closed_shard_ids,
-            &mut unavailable_leaders
+        // node-1 is in pool → true. node-2 is still missing from the pool and gets recorded.
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester(None));
+        let mut unavailable_ingesters = HashSet::new();
+        assert!(table.has_any_routing_candidate(
+            "test-index",
+            "test-source",
+            &pool,
+            &mut unavailable_ingesters
         ));
-        assert_eq!(closed_shard_ids.len(), 1);
-        assert_eq!(closed_shard_ids[0], ShardId::from(1));
-        assert!(unavailable_leaders.is_empty());
+        assert_eq!(
+            unavailable_ingesters,
+            HashSet::from([NodeId::from_str("node-2")])
+        );
 
-        closed_shard_ids.clear();
-
-        let table_entry = RoutingTableEntry {
-            index_uid: index_uid.clone(),
-            source_id,
-            local_shards: Vec::new(),
-            local_round_robin_idx: AtomicUsize::default(),
-            remote_shards: vec![
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(1),
-                    shard_state: ShardState::Closed,
-                    leader_id: "test-ingester-1".into(),
-                },
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(2),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-2".into(),
-                },
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(3),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
-                },
-            ],
-            remote_round_robin_idx: AtomicUsize::default(),
-        };
-        assert!(table_entry.has_open_shards(
-            &ingester_pool,
-            &mut closed_shard_ids,
-            &mut unavailable_leaders
+        // node-1 is already known to be unavailable, and node-2 is not in the pool → false. The
+        // ingester already in the set is left untouched.
+        let mut unavailable_ingesters: HashSet<NodeId> =
+            HashSet::from([NodeId::from_str("node-1")]);
+        assert!(!table.has_any_routing_candidate(
+            "test-index",
+            "test-source",
+            &pool,
+            &mut unavailable_ingesters
         ));
-        assert_eq!(closed_shard_ids.len(), 1);
-        assert_eq!(closed_shard_ids[0], ShardId::from(1));
-        assert_eq!(unavailable_leaders.len(), 1);
-        assert!(unavailable_leaders.contains("test-ingester-2"));
+
+        // Second node available → true despite first being unavailable.
+        pool.insert(NodeId::from_str("node-2"), mocked_ingester(None));
+        let mut unavailable_ingesters: HashSet<NodeId> =
+            HashSet::from([NodeId::from_str("node-1")]);
+        assert!(table.has_any_routing_candidate(
+            "test-index",
+            "test-source",
+            &pool,
+            &mut unavailable_ingesters
+        ));
+
+        // Node with capacity_score=0 is not eligible and is not reported as unavailable.
+        table.apply_capacity_update(
+            NodeId::from_str("node-2"),
+            GenerationId::from(1u64),
+            index_uid.clone(),
+            "test-source".into(),
+            0,
+            2,
+        );
+        let mut unavailable_ingesters: HashSet<NodeId> =
+            HashSet::from([NodeId::from_str("node-1")]);
+        assert!(!table.has_any_routing_candidate(
+            "test-index",
+            "test-source",
+            &pool,
+            &mut unavailable_ingesters
+        ));
+        assert_eq!(
+            unavailable_ingesters,
+            HashSet::from([NodeId::from_str("node-1")])
+        );
     }
 
     #[test]
-    fn test_routing_table_entry_next_open_shard_round_robin() {
+    fn test_has_any_routing_candidate_requires_cp_seed() {
+        let mut table = RoutingTable::default();
+        let pool = IngesterPool::default();
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester(None));
+
+        // Chitchat broadcast populates the entry, but has_any_routing_candidate still returns false
+        // because the entry hasn't been seeded from the control plane yet.
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            8,
+            3,
+        );
+        assert!(!table.has_any_routing_candidate(
+            "test-index",
+            "test-source",
+            &pool,
+            &mut HashSet::new()
+        ));
+
+        // After merge_from_shards (CP response), has_any_routing_candidate returns true.
+        let shards = vec![Shard {
+            index_uid: Some(IndexUid::for_test("test-index", 0)),
+            source_id: "test-source".to_string(),
+            shard_id: Some(ShardId::from(1u64)),
+            shard_state: ShardState::Open as i32,
+            ingester_id: "node-1".to_string(),
+            ..Default::default()
+        }];
+        table.merge_from_shards(
+            &pool,
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            shards,
+        );
+        assert!(table.has_any_routing_candidate(
+            "test-index",
+            "test-source",
+            &pool,
+            &mut HashSet::new()
+        ));
+    }
+
+    #[test]
+    fn test_pick_node_prefers_same_az() {
+        let mut table = RoutingTable::new(Some(AvailabilityZone::from("az-1")));
+        let pool = IngesterPool::default();
+
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            5,
+            1,
+        );
+        table.apply_capacity_update(
+            NodeId::from_str("node-2"),
+            GenerationId::from(1u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            5,
+            1,
+        );
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester(Some("az-1")));
+        pool.insert(NodeId::from_str("node-2"), mocked_ingester(Some("az-2")));
+
+        let picked = table
+            .pick_node("test-index", "test-source", &pool, &HashSet::new())
+            .unwrap();
+        assert_eq!(picked.node_id, NodeId::from_str("node-1"));
+    }
+
+    #[test]
+    fn test_pick_node_falls_back_to_cross_az() {
+        let mut table = RoutingTable::new(Some(AvailabilityZone::from("az-1")));
+        let pool = IngesterPool::default();
+
+        table.apply_capacity_update(
+            NodeId::from_str("node-2"),
+            GenerationId::from(1u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            5,
+            1,
+        );
+        pool.insert(NodeId::from_str("node-2"), mocked_ingester(Some("az-2")));
+
+        let picked = table
+            .pick_node("test-index", "test-source", &pool, &HashSet::new())
+            .unwrap();
+        assert_eq!(picked.node_id, NodeId::from_str("node-2"));
+    }
+
+    #[test]
+    fn test_pick_node_no_az_awareness() {
+        let mut table = RoutingTable::default();
+        let pool = IngesterPool::default();
+
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            5,
+            1,
+        );
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester(Some("az-1")));
+
+        let picked = table
+            .pick_node("test-index", "test-source", &pool, &HashSet::new())
+            .unwrap();
+        assert_eq!(picked.node_id, NodeId::from_str("node-1"));
+    }
+
+    #[test]
+    fn test_pick_node_missing_entry() {
+        let table = RoutingTable::new(Some(AvailabilityZone::from("az-1")));
+        let pool = IngesterPool::default();
+
+        assert!(
+            table
+                .pick_node("nonexistent", "source", &pool, &HashSet::new())
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_pick_node_generation_mismatch() {
+        let mut table = RoutingTable::default();
+        let pool = IngesterPool::default();
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester_gen(None, 2));
+
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            5,
+            3,
+        );
+
+        assert!(
+            table
+                .pick_node("test-index", "test-source", &pool, &HashSet::new())
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_power_of_two_choices() {
+        // 3 candidates: best appears in the random pair 2/3 of the time and always
+        // wins when it does, so it should win ~67% of 1000 runs. Asserting > 550
+        // is ~7.5 standard deviations from the mean — effectively impossible to flake.
+        let high = IngesterNode {
+            node_id: NodeId::from_str("high"),
+            generation_id: GenerationId::from(1u64),
+            index_uid: IndexUid::for_test("idx", 0),
+            capacity_score: 9,
+            open_shard_count: 2,
+        };
+        let mid = IngesterNode {
+            node_id: NodeId::from_str("mid"),
+            generation_id: GenerationId::from(1u64),
+            index_uid: IndexUid::for_test("idx", 0),
+            capacity_score: 5,
+            open_shard_count: 2,
+        };
+        let low = IngesterNode {
+            node_id: NodeId::from_str("low"),
+            generation_id: GenerationId::from(1u64),
+            index_uid: IndexUid::for_test("idx", 0),
+            capacity_score: 1,
+            open_shard_count: 2,
+        };
+        let candidates: Vec<&IngesterNode> = vec![&high, &mid, &low];
+
+        let mut high_wins = 0;
+        for _ in 0..1000 {
+            if power_of_two_choices(&candidates).node_id == "high" {
+                high_wins += 1;
+            }
+        }
+        assert!(high_wins > 550, "high won only {high_wins}/1000 times");
+    }
+
+    #[test]
+    fn test_merge_from_shards() {
+        let mut table = RoutingTable::default();
+        let pool = IngesterPool::default();
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester(None));
+        pool.insert(NodeId::from_str("node-2"), mocked_ingester(None));
+        pool.insert(NodeId::from_str("node-3"), mocked_ingester(None));
+        pool.insert(NodeId::from_str("node-4"), mocked_ingester(None));
         let index_uid = IndexUid::for_test("test-index", 0);
-        let source_id: SourceId = "test-source".into();
-        let table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
-        let ingester_pool = IngesterPool::default();
-        let mut rate_limited_shards = HashSet::new();
+        let key = ("test-index".to_string(), "test-source".to_string());
 
-        let error = table_entry
-            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
-            .unwrap_err();
-        assert_eq!(error, NextOpenShardError::NoShardsAvailable);
-
-        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
-        ingester_pool.insert("test-ingester-1".into(), IngesterServiceClient::mocked());
-
-        let table_entry = RoutingTableEntry {
-            index_uid: index_uid.clone(),
-            source_id: source_id.clone(),
-            local_shards: vec![
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(1),
-                    shard_state: ShardState::Closed,
-                    leader_id: "test-ingester-0".into(),
-                },
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(2),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
-                },
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(3),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
-                },
-            ],
-            local_round_robin_idx: AtomicUsize::default(),
-            remote_shards: Vec::new(),
-            remote_round_robin_idx: AtomicUsize::default(),
+        let make_shard = |id: u64, ingester: &str, open: bool| Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: "test-source".to_string(),
+            shard_id: Some(ShardId::from(id)),
+            shard_state: if open {
+                ShardState::Open as i32
+            } else {
+                ShardState::Closed as i32
+            },
+            ingester_id: ingester.to_string(),
+            ..Default::default()
         };
-        let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
-            .unwrap();
-        assert_eq!(shard.shard_id, ShardId::from(2));
 
-        let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
-            .unwrap();
-        assert_eq!(shard.shard_id, ShardId::from(3));
+        // Two open shards on node-1, one open + one closed on node-2, only closed on node-3.
+        let shards = vec![
+            make_shard(1, "node-1", true),
+            make_shard(2, "node-1", true),
+            make_shard(3, "node-2", true),
+            make_shard(4, "node-2", false),
+            make_shard(5, "node-3", false),
+        ];
+        table.merge_from_shards(&pool, index_uid.clone(), "test-source".into(), shards);
 
-        let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
-            .unwrap();
-        assert_eq!(shard.shard_id, ShardId::from(2));
+        let entry = table.table.get(&key).unwrap();
+        assert_eq!(entry.nodes.len(), 3);
 
-        let table_entry = RoutingTableEntry {
-            index_uid: index_uid.clone(),
-            source_id: source_id.clone(),
-            local_shards: vec![RoutingEntry {
-                index_uid: index_uid.clone(),
-                source_id: "test-source".to_string(),
-                shard_id: ShardId::from(1),
-                shard_state: ShardState::Closed,
-                leader_id: "test-ingester-0".into(),
-            }],
-            local_round_robin_idx: AtomicUsize::default(),
-            remote_shards: vec![
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(2),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
-                },
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(3),
-                    shard_state: ShardState::Closed,
-                    leader_id: "test-ingester-1".into(),
-                },
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(4),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-2".into(),
-                },
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(5),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
-                },
-            ],
-            remote_round_robin_idx: AtomicUsize::default(),
-        };
-        let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
-            .unwrap();
-        assert_eq!(shard.shard_id, ShardId::from(2));
+        let n1 = entry.nodes.get("node-1").unwrap();
+        assert_eq!(n1.open_shard_count, 2);
+        assert_eq!(n1.capacity_score, 5);
 
-        let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
-            .unwrap();
-        assert_eq!(shard.shard_id, ShardId::from(5));
+        let n2 = entry.nodes.get("node-2").unwrap();
+        assert_eq!(n2.open_shard_count, 1);
 
-        let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
-            .unwrap();
-        assert_eq!(shard.shard_id, ShardId::from(2));
+        let n3 = entry.nodes.get("node-3").unwrap();
+        assert_eq!(n3.open_shard_count, 0);
 
-        rate_limited_shards.insert(ShardId::from(5));
+        // Merging again adds new nodes but preserves existing ones.
+        let shards = vec![make_shard(10, "node-4", true)];
+        table.merge_from_shards(&pool, index_uid, "test-source".into(), shards);
 
-        let shard = table_entry
-            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
-            .unwrap();
-        assert_eq!(shard.shard_id, ShardId::from(2));
+        let entry = table.table.get(&key).unwrap();
+        assert_eq!(entry.nodes.len(), 4);
+        assert!(entry.nodes.contains_key("node-1"));
+        assert!(entry.nodes.contains_key("node-2"));
+        assert!(entry.nodes.contains_key("node-3"));
+        assert!(entry.nodes.contains_key("node-4"));
     }
 
     #[test]
-    fn test_routing_table_entry_next_open_shard_round_robin_rate_limited_error() {
+    fn test_merge_from_shards_skips_nodes_absent_from_pool() {
+        let mut table = RoutingTable::default();
+        let pool = IngesterPool::default();
+        let key = ("test-index".to_string(), "test-source".to_string());
+
+        let shards = vec![Shard {
+            index_uid: Some(IndexUid::for_test("test-index", 0)),
+            source_id: "test-source".to_string(),
+            shard_id: Some(ShardId::from(1u64)),
+            shard_state: ShardState::Open as i32,
+            ingester_id: "node-1".to_string(),
+            ..Default::default()
+        }];
+        table.merge_from_shards(
+            &pool,
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            shards,
+        );
+
+        let entry = table.table.get(&key).unwrap();
+        assert!(entry.nodes.is_empty());
+        assert!(entry.seeded_from_cp);
+    }
+
+    #[test]
+    fn test_merge_from_shards_stamps_pool_generation_and_preserves_it() {
+        let mut table = RoutingTable::default();
+        let pool = IngesterPool::default();
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester_gen(None, 7));
+        let key = ("test-index".to_string(), "test-source".to_string());
         let index_uid = IndexUid::for_test("test-index", 0);
-        let source_id: SourceId = "test-source".into();
 
-        let ingester_pool = IngesterPool::default();
-        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
-
-        let rate_limited_shards = HashSet::from_iter([ShardId::from(1)]);
-
-        let table_entry = RoutingTableEntry {
-            index_uid: index_uid.clone(),
-            source_id: source_id.clone(),
-            local_shards: vec![RoutingEntry {
-                index_uid: index_uid.clone(),
-                source_id: "test-source".to_string(),
-                shard_id: ShardId::from(1),
-                shard_state: ShardState::Open,
-                leader_id: "test-ingester-0".into(),
-            }],
-            local_round_robin_idx: AtomicUsize::default(),
-            remote_shards: Vec::new(),
-            remote_round_robin_idx: AtomicUsize::default(),
+        let shard = Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: "test-source".to_string(),
+            shard_id: Some(ShardId::from(1u64)),
+            shard_state: ShardState::Open as i32,
+            ingester_id: "node-1".to_string(),
+            ..Default::default()
         };
-        let error = table_entry
-            .next_open_shard_round_robin(&ingester_pool, &rate_limited_shards)
-            .unwrap_err();
-        assert_eq!(error, NextOpenShardError::RateLimited);
+        table.merge_from_shards(
+            &pool,
+            index_uid.clone(),
+            "test-source".into(),
+            vec![shard.clone()],
+        );
+        let node = table.table.get(&key).unwrap().nodes.get("node-1").unwrap();
+        assert_eq!(node.generation_id, GenerationId::from(7u64));
+
+        // A subsequent pool churn (gen 9) does not overwrite the existing entry's generation on a
+        // subsequent merge — only open_shard_count is refreshed. The routing entry keeps whatever
+        // generation it was created at; explicit apply_capacity_update is the only mutator.
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester_gen(None, 9));
+        let shard_2 = Shard {
+            shard_id: Some(ShardId::from(2u64)),
+            ..shard.clone()
+        };
+        table.merge_from_shards(&pool, index_uid, "test-source".into(), vec![shard, shard_2]);
+        let node = table.table.get(&key).unwrap().nodes.get("node-1").unwrap();
+        assert_eq!(node.generation_id, GenerationId::from(7u64));
+        assert_eq!(node.open_shard_count, 2);
     }
 
     #[test]
-    fn test_routing_table_entry_insert_open_shards() {
-        let index_uid_0 = IndexUid::for_test("test-index", 0);
-        let source_id: SourceId = "test-source".into();
-        let mut table_entry = RoutingTableEntry::empty(index_uid_0.clone(), source_id.clone());
+    fn test_classify_az_locality() {
+        let table = RoutingTable::new(Some(AvailabilityZone::from("az-1")));
+        let pool = IngesterPool::default();
+        pool.insert(
+            NodeId::from_str("node-local"),
+            mocked_ingester(Some("az-1")),
+        );
+        pool.insert(
+            NodeId::from_str("node-remote"),
+            mocked_ingester(Some("az-2")),
+        );
+        pool.insert(NodeId::from_str("node-no-az"), mocked_ingester(None));
 
-        let local_node_id: NodeId = "test-ingester-0".into();
-        let remote_node_id: NodeId = "test-ingester-1".into();
-        table_entry.insert_open_shards(&local_node_id, &local_node_id, &index_uid_0, &[]);
-
-        assert_eq!(table_entry.local_shards.len(), 0);
-        assert_eq!(table_entry.remote_shards.len(), 0);
-
-        table_entry.insert_open_shards(
-            &local_node_id,
-            &local_node_id,
-            &index_uid_0,
-            &[ShardId::from(2)],
+        assert_eq!(
+            table.classify_az_locality(&NodeId::from_str("node-local"), &pool),
+            "same_az"
+        );
+        assert_eq!(
+            table.classify_az_locality(&NodeId::from_str("node-remote"), &pool),
+            "cross_az"
+        );
+        assert_eq!(
+            table.classify_az_locality(&NodeId::from_str("node-no-az"), &pool),
+            "az_unaware"
         );
 
-        assert_eq!(table_entry.local_shards.len(), 1);
-        assert_eq!(table_entry.remote_shards.len(), 0);
-
-        assert_eq!(table_entry.local_shards[0].index_uid, index_uid_0);
-        assert_eq!(table_entry.local_shards[0].source_id, source_id);
-        assert_eq!(table_entry.local_shards[0].shard_id, ShardId::from(2));
-        assert_eq!(table_entry.local_shards[0].shard_state, ShardState::Open);
-        assert_eq!(table_entry.local_shards[0].leader_id, local_node_id);
-
-        table_entry.local_shards[0].shard_state = ShardState::Closed;
-        table_entry.insert_open_shards(
-            &local_node_id,
-            &local_node_id,
-            &index_uid_0,
-            &[ShardId::from(1), ShardId::from(2)],
+        let table_no_az = RoutingTable::default();
+        assert_eq!(
+            table_no_az.classify_az_locality(&NodeId::from_str("node-local"), &pool),
+            "az_unaware"
         );
-
-        assert_eq!(table_entry.local_shards.len(), 2);
-        assert_eq!(table_entry.remote_shards.len(), 0);
-
-        assert_eq!(table_entry.local_shards[0].shard_id, ShardId::from(1));
-        assert_eq!(table_entry.local_shards[0].shard_state, ShardState::Open);
-        assert_eq!(table_entry.local_shards[1].shard_id, ShardId::from(2));
-        assert_eq!(table_entry.local_shards[1].shard_state, ShardState::Closed);
-
-        table_entry.local_shards.clear();
-        table_entry.insert_open_shards(
-            &local_node_id,
-            &remote_node_id,
-            &index_uid_0,
-            &[ShardId::from(2)],
-        );
-
-        assert_eq!(table_entry.local_shards.len(), 0);
-        assert_eq!(table_entry.remote_shards.len(), 1);
-
-        assert_eq!(table_entry.remote_shards[0].index_uid, index_uid_0);
-        assert_eq!(table_entry.remote_shards[0].source_id, source_id);
-        assert_eq!(table_entry.remote_shards[0].shard_id, ShardId::from(2));
-        assert_eq!(table_entry.remote_shards[0].shard_state, ShardState::Open);
-        assert_eq!(table_entry.remote_shards[0].leader_id, remote_node_id);
-
-        table_entry.remote_shards[0].shard_state = ShardState::Closed;
-        table_entry.insert_open_shards(
-            &local_node_id,
-            &remote_node_id,
-            &index_uid_0,
-            &[ShardId::from(1), ShardId::from(2)],
-        );
-
-        assert_eq!(table_entry.local_shards.len(), 0);
-        assert_eq!(table_entry.remote_shards.len(), 2);
-
-        assert_eq!(table_entry.remote_shards[0].shard_id, ShardId::from(1));
-        assert_eq!(table_entry.remote_shards[0].shard_state, ShardState::Open);
-        assert_eq!(table_entry.remote_shards[1].shard_id, ShardId::from(2));
-        assert_eq!(table_entry.remote_shards[1].shard_state, ShardState::Closed);
-
-        // Update index incarnation.
-        let index_uid_1 = IndexUid::for_test("test-index", 1);
-        table_entry.insert_open_shards(
-            &local_node_id,
-            &local_node_id,
-            &index_uid_1,
-            &[ShardId::from(1)],
-        );
-
-        assert_eq!(table_entry.index_uid, index_uid_1);
-        assert_eq!(table_entry.local_shards.len(), 1);
-        assert_eq!(table_entry.remote_shards.len(), 0);
-
-        assert_eq!(table_entry.local_shards[0].index_uid, index_uid_1);
-        assert_eq!(table_entry.local_shards[0].source_id, source_id);
-        assert_eq!(table_entry.local_shards[0].shard_id, ShardId::from(1));
-        assert_eq!(table_entry.local_shards[0].shard_state, ShardState::Open);
-        assert_eq!(table_entry.local_shards[0].leader_id, local_node_id);
-
-        // Ignore previous index incarnation.
-        table_entry.insert_open_shards(
-            &local_node_id,
-            &local_node_id,
-            &index_uid_0,
-            &[ShardId::from(12), ShardId::from(42), ShardId::from(1337)],
-        );
-        assert_eq!(table_entry.index_uid, index_uid_1);
-        assert_eq!(table_entry.local_shards.len(), 1);
-        assert_eq!(table_entry.remote_shards.len(), 0);
     }
 
     #[test]
-    fn test_routing_table_entry_close_shards() {
-        let index_uid = IndexUid::for_test("test-index", 0);
-        let source_id: SourceId = "test-source".into();
+    fn test_incarnation_check_clears_stale_nodes() {
+        let mut table = RoutingTable::default();
+        let pool = IngesterPool::default();
+        pool.insert(NodeId::from_str("node-4"), mocked_ingester(None));
+        let key = ("test-index".to_string(), "test-source".to_string());
 
-        let mut table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
-        table_entry.close_shards(&index_uid, &[]);
-        table_entry.close_shards(&index_uid, &[ShardId::from(1)]);
-        assert!(table_entry.local_shards.is_empty());
-        assert!(table_entry.remote_shards.is_empty());
-
-        let mut table_entry = RoutingTableEntry {
-            index_uid: index_uid.clone(),
-            source_id: source_id.clone(),
-            local_shards: vec![
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(1),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
-                },
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(2),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
-                },
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(3),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
-                },
-            ],
-            local_round_robin_idx: AtomicUsize::default(),
-            remote_shards: vec![
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(5),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
-                },
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(6),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
-                },
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(7),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
-                },
-            ],
-            remote_round_robin_idx: AtomicUsize::default(),
-        };
-        table_entry.close_shards(
-            &index_uid,
-            &[
-                ShardId::from(1),
-                ShardId::from(3),
-                ShardId::from(4),
-                ShardId::from(6),
-                ShardId::from(8),
-            ],
+        // Populate with incarnation 0: two nodes.
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            8,
+            3,
         );
-        assert!(table_entry.local_shards[0].shard_state.is_closed());
-        assert!(table_entry.local_shards[1].shard_state.is_open());
-        assert!(table_entry.local_shards[2].shard_state.is_closed());
-        assert!(table_entry.remote_shards[0].shard_state.is_open());
-        assert!(table_entry.remote_shards[1].shard_state.is_closed());
-        assert!(table_entry.remote_shards[2].shard_state.is_open());
+        table.apply_capacity_update(
+            NodeId::from_str("node-2"),
+            GenerationId::from(1u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            6,
+            2,
+        );
+        let entry = table.table.get(&key).unwrap();
+        assert_eq!(entry.nodes.len(), 2);
+        assert_eq!(entry.index_uid, IndexUid::for_test("test-index", 0));
+
+        // Capacity update with incarnation 1 clears stale nodes.
+        table.apply_capacity_update(
+            NodeId::from_str("node-3"),
+            GenerationId::from(1u64),
+            IndexUid::for_test("test-index", 1),
+            "test-source".into(),
+            5,
+            1,
+        );
+        let entry = table.table.get(&key).unwrap();
+        assert_eq!(entry.nodes.len(), 1);
+        assert!(entry.nodes.contains_key("node-3"));
+        assert!(!entry.nodes.contains_key("node-1"));
+        assert!(!entry.nodes.contains_key("node-2"));
+        assert_eq!(entry.index_uid, IndexUid::for_test("test-index", 1));
+
+        // merge_from_shards with incarnation 2 clears stale nodes.
+        let shards = vec![Shard {
+            index_uid: Some(IndexUid::for_test("test-index", 2)),
+            source_id: "test-source".to_string(),
+            shard_id: Some(ShardId::from(1u64)),
+            shard_state: ShardState::Open as i32,
+            ingester_id: "node-4".to_string(),
+            ..Default::default()
+        }];
+        table.merge_from_shards(
+            &pool,
+            IndexUid::for_test("test-index", 2),
+            "test-source".into(),
+            shards,
+        );
+        let entry = table.table.get(&key).unwrap();
+        assert_eq!(entry.nodes.len(), 1);
+        assert!(entry.nodes.contains_key("node-4"));
+        assert!(!entry.nodes.contains_key("node-3"));
+        assert_eq!(entry.index_uid, IndexUid::for_test("test-index", 2));
     }
 
     #[test]
-    fn test_routing_table_entry_delete_shards() {
-        let index_uid = IndexUid::for_test("test-index", 0);
-        let source_id: SourceId = "test-source".into();
+    fn test_rolling_restart_generation_switch() {
+        let mut table = RoutingTable::default();
+        let pool = IngesterPool::default();
 
-        let mut table_entry = RoutingTableEntry::empty(index_uid.clone(), source_id.clone());
-        table_entry.delete_shards(&index_uid, &[]);
-        table_entry.delete_shards(&index_uid, &[ShardId::from(1)]);
-        assert!(table_entry.local_shards.is_empty());
-        assert!(table_entry.remote_shards.is_empty());
-
-        let mut table_entry = RoutingTableEntry {
-            index_uid: index_uid.clone(),
-            source_id: source_id.clone(),
-            local_shards: vec![
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(1),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
-                },
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(2),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
-                },
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(3),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-0".into(),
-                },
-            ],
-            local_round_robin_idx: AtomicUsize::default(),
-            remote_shards: vec![
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(5),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
-                },
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(6),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
-                },
-                RoutingEntry {
-                    index_uid: index_uid.clone(),
-                    source_id: "test-source".to_string(),
-                    shard_id: ShardId::from(7),
-                    shard_state: ShardState::Open,
-                    leader_id: "test-ingester-1".into(),
-                },
-            ],
-            remote_round_robin_idx: AtomicUsize::default(),
-        };
-        table_entry.delete_shards(
-            &index_uid,
-            &[
-                ShardId::from(1),
-                ShardId::from(3),
-                ShardId::from(4),
-                ShardId::from(6),
-                ShardId::from(8),
-            ],
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester_gen(None, 1));
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(1u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            5,
+            3,
         );
-        assert_eq!(table_entry.local_shards.len(), 1);
-        assert_eq!(table_entry.local_shards[0].shard_id, ShardId::from(2));
-        assert_eq!(table_entry.remote_shards.len(), 2);
-        assert_eq!(table_entry.remote_shards[0].shard_id, ShardId::from(5));
-        assert_eq!(table_entry.remote_shards[1].shard_id, ShardId::from(7));
+        let picked = table
+            .pick_node("test-index", "test-source", &pool, &HashSet::new())
+            .unwrap();
+        assert_eq!(picked.generation_id, GenerationId::from(1u64));
+
+        // Pool advances to gen 2 (simulated rolling restart); table still holds gen 1.
+        pool.insert(NodeId::from_str("node-1"), mocked_ingester_gen(None, 2));
+        assert!(
+            table
+                .pick_node("test-index", "test-source", &pool, &HashSet::new())
+                .is_none()
+        );
+
+        // Gen-2 broadcast lands and routing recovers.
+        table.apply_capacity_update(
+            NodeId::from_str("node-1"),
+            GenerationId::from(2u64),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            5,
+            3,
+        );
+        let picked = table
+            .pick_node("test-index", "test-source", &pool, &HashSet::new())
+            .unwrap();
+        assert_eq!(picked.generation_id, GenerationId::from(2u64));
     }
 }

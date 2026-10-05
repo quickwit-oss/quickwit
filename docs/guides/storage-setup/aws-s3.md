@@ -15,7 +15,7 @@ Here is an example of how to set up your [node config file](../../configuration/
 
 ```yaml
 metastore_uri: s3://{my-bucket}/indexes
-default_index_uri: s3://{my-bucket}/indexes
+default_index_root_uri: s3://{my-bucket}/indexes
 ```
 
 ## Set the Index URI

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::num::NonZero;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use tracing::{error, info, warn};
 
@@ -27,8 +27,8 @@ const KUBERNETES_LIMITS_CPU: &str = "KUBERNETES_LIMITS_CPU";
 /// - from the operating system
 /// - default to 2.
 pub fn num_cpus() -> usize {
-    static NUM_CPUS: OnceLock<usize> = OnceLock::new();
-    *NUM_CPUS.get_or_init(num_cpus_aux)
+    static NUM_CPUS: LazyLock<usize> = LazyLock::new(num_cpus_aux);
+    *NUM_CPUS
 }
 
 fn num_cpus_aux() -> usize {

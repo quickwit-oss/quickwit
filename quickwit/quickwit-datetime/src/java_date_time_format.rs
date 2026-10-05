@@ -14,12 +14,12 @@
 
 use std::collections::HashMap;
 use std::num::NonZeroU8;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use time::error::{Format, TryFromParsed};
 use time::format_description::modifier::{
-    Day, Hour, Minute, Month as MonthModifier, Padding, Second, Subsecond, SubsecondDigits,
-    WeekNumber, WeekNumberRepr, Weekday, WeekdayRepr, Year, YearRepr,
+    CalendarYearFullExtendedRange, Day, Hour24, Minute, MonthNumerical, Padding, Second, Subsecond,
+    SubsecondDigits, WeekNumberMonday, WeekdayMonday,
 };
 use time::format_description::{Component, OwnedFormatItem};
 use time::parsing::Parsed;
@@ -32,8 +32,9 @@ const JAVA_DATE_FORMAT_TOKENS: &[&str] = &[
     "yyyy",
     "xxxx",
     "SSSSSSSSS", // For nanoseconds
-    "SSSSSSS",   // For microseconds
-    "SSSSSS",    // For fractional seconds up to six digits
+    "SSSSSSSS",
+    "SSSSSSS", // For microseconds
+    "SSSSSS",  // For fractional seconds up to six digits
     "SSSSS",
     "SSSS",
     "SSS",
@@ -63,10 +64,8 @@ const JAVA_DATE_FORMAT_TOKENS: &[&str] = &[
     "e",
 ];
 
-fn literal(s: &[u8]) -> OwnedFormatItem {
-    // builds a boxed slice from a slice
-    let boxed_slice: Box<[u8]> = s.to_vec().into_boxed_slice();
-    OwnedFormatItem::Literal(boxed_slice)
+fn literal(s: &str) -> OwnedFormatItem {
+    OwnedFormatItem::StringLiteral(Box::from(s))
 }
 
 #[inline]
@@ -80,12 +79,12 @@ fn get_padding(ptn: &str) -> Padding {
 
 fn build_zone_offset(_: &str) -> Option<OwnedFormatItem> {
     // 'Z' literal to represent UTC offset
-    let z_literal = OwnedFormatItem::Literal(Box::from(b"Z".as_ref()));
+    let z_literal = OwnedFormatItem::StringLiteral(Box::from("Z"));
 
     // Offset in '+/-HH:MM' format
     let offset_with_delimiter_items: Box<[OwnedFormatItem]> = vec![
         OwnedFormatItem::Component(Component::OffsetHour(Default::default())),
-        OwnedFormatItem::Literal(Box::from(b":".as_ref())),
+        OwnedFormatItem::StringLiteral(Box::from(":")),
         OwnedFormatItem::Component(Component::OffsetMinute(Default::default())),
     ]
     .into_boxed_slice();
@@ -104,64 +103,56 @@ fn build_zone_offset(_: &str) -> Option<OwnedFormatItem> {
     ))
 }
 
-// There is a `YearRepr::LastTwo` representation in the time crate, but the parser is unreliable, so
-// we only support `YearRepr::Full` for now. See also https://github.com/time-rs/time/issues/649.
+// The time crate offers other year representations (e.g. last-two-digits), but their parser is
+// unreliable, so we only support the full calendar year for now. See also
+// https://github.com/time-rs/time/issues/649.
 const fn year_item() -> Option<OwnedFormatItem> {
-    let mut year_component = Year::default();
-    year_component.repr = YearRepr::Full;
-    Some(OwnedFormatItem::Component(Component::Year(year_component)))
+    Some(OwnedFormatItem::Component(
+        Component::CalendarYearFullExtendedRange(CalendarYearFullExtendedRange::default()),
+    ))
 }
 
 fn build_month_item(ptn: &str) -> Option<OwnedFormatItem> {
-    let mut month: MonthModifier = Default::default();
-    month.padding = get_padding(ptn);
-    Some(OwnedFormatItem::Component(Component::Month(month)))
+    let month = MonthNumerical::default().with_padding(get_padding(ptn));
+    Some(OwnedFormatItem::Component(Component::MonthNumerical(month)))
 }
 
 fn build_day_item(ptn: &str) -> Option<OwnedFormatItem> {
-    let mut day = Day::default();
-    day.padding = get_padding(ptn);
+    let day = Day::default().with_padding(get_padding(ptn));
     Some(OwnedFormatItem::Component(Component::Day(day)))
 }
 
 fn build_day_of_week_item(_: &str) -> Option<OwnedFormatItem> {
-    let mut weekday = Weekday::default();
-    weekday.repr = WeekdayRepr::Monday;
-    weekday.one_indexed = false;
-    Some(OwnedFormatItem::Component(Component::Weekday(weekday)))
+    let weekday = WeekdayMonday::default().with_one_indexed(false);
+    Some(OwnedFormatItem::Component(Component::WeekdayMonday(
+        weekday,
+    )))
 }
 
 fn build_week_of_year_item(ptn: &str) -> Option<OwnedFormatItem> {
-    let mut week_number = WeekNumber::default();
-    week_number.repr = WeekNumberRepr::Monday;
-    week_number.padding = get_padding(ptn);
-    Some(OwnedFormatItem::Component(Component::WeekNumber(
+    let week_number = WeekNumberMonday::default().with_padding(get_padding(ptn));
+    Some(OwnedFormatItem::Component(Component::WeekNumberMonday(
         week_number,
     )))
 }
 
 fn build_hour_item(ptn: &str) -> Option<OwnedFormatItem> {
-    let mut hour = Hour::default();
-    hour.padding = get_padding(ptn);
-    hour.is_12_hour_clock = false;
-    Some(OwnedFormatItem::Component(Component::Hour(hour)))
+    let hour = Hour24::default().with_padding(get_padding(ptn));
+    Some(OwnedFormatItem::Component(Component::Hour24(hour)))
 }
 
 fn build_minute_item(ptn: &str) -> Option<OwnedFormatItem> {
-    let mut minute: Minute = Default::default();
-    minute.padding = get_padding(ptn);
+    let minute = Minute::default().with_padding(get_padding(ptn));
     Some(OwnedFormatItem::Component(Component::Minute(minute)))
 }
 
 fn build_second_item(ptn: &str) -> Option<OwnedFormatItem> {
-    let mut second: Second = Default::default();
-    second.padding = get_padding(ptn);
+    let second = Second::default().with_padding(get_padding(ptn));
     Some(OwnedFormatItem::Component(Component::Second(second)))
 }
 
 fn build_fraction_of_second_item(_ptn: &str) -> Option<OwnedFormatItem> {
-    let mut subsecond: Subsecond = Default::default();
-    subsecond.digits = SubsecondDigits::OneOrMore;
+    let subsecond = Subsecond::default().with_digits(SubsecondDigits::OneOrMore);
     Some(OwnedFormatItem::Component(Component::Subsecond(subsecond)))
 }
 
@@ -195,14 +186,15 @@ fn parse_java_datetime_format_items_recursive(
                         chars.next();
                     }
                 }
-                items.push(literal(literal_str.as_bytes()));
+                items.push(OwnedFormatItem::StringLiteral(literal_str.into_boxed_str()));
             }
             _ => {
                 if let Some(format_item) = match_java_date_format_token(chars)? {
                     items.push(format_item);
                 } else {
                     // Treat as a literal character
-                    items.push(literal(c.to_string().as_bytes()));
+                    let mut char_buffer = [0u8; 4];
+                    items.push(literal(c.encode_utf8(&mut char_buffer)));
                     chars.next();
                 }
             }
@@ -210,6 +202,18 @@ fn parse_java_datetime_format_items_recursive(
     }
 
     Ok(items)
+}
+
+// Returns `true` if the upcoming characters in `chars` match `prefix`, without consuming any of
+// them.
+fn chars_start_with(chars: &std::iter::Peekable<std::str::Chars>, prefix: &str) -> bool {
+    let mut lookahead = chars.clone();
+    for expected_char in prefix.chars() {
+        if lookahead.next() != Some(expected_char) {
+            return false;
+        }
+    }
+    true
 }
 
 // Elasticsearch/OpenSearch uses a set of preconfigured formats, more information could be found
@@ -221,11 +225,9 @@ fn match_java_date_format_token(
         return Ok(None);
     }
 
-    let remaining: String = chars.clone().collect();
-
     // Try to match the longest possible token
     for token in JAVA_DATE_FORMAT_TOKENS {
-        if remaining.starts_with(token) {
+        if chars_start_with(chars, token) {
             for _ in 0..token.len() {
                 chars.next();
             }
@@ -237,9 +239,8 @@ fn match_java_date_format_token(
                 "HH" | "H" => build_hour_item(token),
                 "mm" | "m" => build_minute_item(token),
                 "ss" | "s" => build_second_item(token),
-                "SSSSSSSSS" | "SSSSSSS" | "SSSSSS" | "SSSSS" | "SSSS" | "SSS" | "SS" | "S" => {
-                    build_fraction_of_second_item(token)
-                }
+                "SSSSSSSSS" | "SSSSSSSS" | "SSSSSSS" | "SSSSSS" | "SSSSS" | "SSSS" | "SSS"
+                | "SS" | "S" => build_fraction_of_second_item(token),
                 "Z" => build_zone_offset(token),
                 "ww" | "w[w]" | "w" => build_week_of_year_item(token),
                 "e" => build_day_of_week_item(token),
@@ -257,38 +258,37 @@ fn match_java_date_format_token(
 // If the java_datetime_format is not an alias, it is expected to be a
 // java date time format and should be returned as is.
 fn resolve_java_datetime_format_alias(java_datetime_format: &str) -> &str {
-    static JAVA_DATE_FORMAT_ALIASES: OnceLock<HashMap<&'static str, &'static str>> =
-        OnceLock::new();
-    let java_datetime_format_map = JAVA_DATE_FORMAT_ALIASES.get_or_init(|| {
-        let mut m = HashMap::new();
-        m.insert("date_optional_time", "yyyy-MM-dd['T'HH:mm:ss.SSSZ]");
-        m.insert(
-            "strict_date_optional_time",
-            "yyyy[-MM[-dd['T'HH[:mm[:ss[.SSS[Z]]]]]]]",
-        );
-        m.insert(
-            "strict_date_optional_time_nanos",
-            "yyyy[-MM[-dd['T'HH:mm:ss.SSSSSSZ]]]",
-        );
-        m.insert("basic_date", "yyyyMMdd");
+    static JAVA_DATE_FORMAT_ALIASES: LazyLock<HashMap<&'static str, &'static str>> =
+        LazyLock::new(|| {
+            let mut m = HashMap::new();
+            m.insert("date_optional_time", "yyyy-MM-dd['T'HH:mm:ss.SSSZ]");
+            m.insert(
+                "strict_date_optional_time",
+                "yyyy[-MM[-dd['T'HH[:mm[:ss[.SSS[Z]]]]]]]",
+            );
+            m.insert(
+                "strict_date_optional_time_nanos",
+                "yyyy[-MM[-dd['T'HH:mm:ss.SSSSSSZ]]]",
+            );
+            m.insert("basic_date", "yyyyMMdd");
 
-        m.insert("strict_basic_week_date", "xxxx'W'wwe");
-        m.insert("basic_week_date", "xxxx'W'wwe");
+            m.insert("strict_basic_week_date", "xxxx'W'wwe");
+            m.insert("basic_week_date", "xxxx'W'wwe");
 
-        m.insert("strict_basic_week_date_time", "xxxx'W'wwe'T'HHmmss.SSSZ");
-        m.insert("basic_week_date_time", "xxxx'W'wwe'T'HHmmss.SSSZ");
+            m.insert("strict_basic_week_date_time", "xxxx'W'wwe'T'HHmmss.SSSZ");
+            m.insert("basic_week_date_time", "xxxx'W'wwe'T'HHmmss.SSSZ");
 
-        m.insert(
-            "strict_basic_week_date_time_no_millis",
-            "xxxx'W'wwe'T'HHmmssZ",
-        );
-        m.insert("basic_week_date_time_no_millis", "xxxx'W'wwe'T'HHmmssZ");
+            m.insert(
+                "strict_basic_week_date_time_no_millis",
+                "xxxx'W'wwe'T'HHmmssZ",
+            );
+            m.insert("basic_week_date_time_no_millis", "xxxx'W'wwe'T'HHmmssZ");
 
-        m.insert("strict_week_date", "xxxx-'W'ww-e");
-        m.insert("week_date", "xxxx-'W'w[w]-e");
-        m
-    });
-    java_datetime_format_map
+            m.insert("strict_week_date", "xxxx-'W'ww-e");
+            m.insert("week_date", "xxxx-'W'w[w]-e");
+            m
+        });
+    JAVA_DATE_FORMAT_ALIASES
         .get(java_datetime_format)
         .copied()
         .unwrap_or(java_datetime_format)
@@ -483,6 +483,18 @@ mod tests {
         let parser = StrptimeParser::from_java_datetime_format(java_date_time_format).unwrap();
         let datetime = parser.parse_date_time(date_str).unwrap();
         assert_eq!(datetime, expected_datetime);
+    }
+
+    #[test]
+    fn test_parse_java_datetime_format_every_subsecond_width() {
+        for num_digits in 1..=9 {
+            let format = format!("yyyy-MM-dd HH:mm:ss.{}", "S".repeat(num_digits));
+            test_parse_java_datetime_aux(
+                &format,
+                "2021-01-01 11:00:03.123456789",
+                datetime!(2021-01-01 11:00:03.123456789 UTC),
+            );
+        }
     }
 
     #[test]
@@ -725,21 +737,19 @@ mod tests {
 
         // Verify each token
         match &result[0] {
-            OwnedFormatItem::Component(Component::Year(year)) => {
-                assert_eq!(year.repr, YearRepr::Full);
-            }
+            OwnedFormatItem::Component(Component::CalendarYearFullExtendedRange(_)) => {}
             unexpected => panic!("expected Year, but found: {unexpected:?}",),
         }
         match &result[1] {
-            OwnedFormatItem::Literal(lit) => assert_eq!(lit.as_ref(), b"W"),
+            OwnedFormatItem::StringLiteral(lit) => assert_eq!(lit.as_ref(), "W"),
             unexpected => panic!("expected literal 'W', but found: {unexpected:?}"),
         }
         match &result[2] {
-            OwnedFormatItem::Component(Component::WeekNumber(_)) => {}
+            OwnedFormatItem::Component(Component::WeekNumberMonday(_)) => {}
             unexpected => panic!("expected WeekNumber component, but found: {unexpected:?}"),
         }
         match &result[3] {
-            OwnedFormatItem::Component(Component::Weekday(_)) => {}
+            OwnedFormatItem::Component(Component::WeekdayMonday(_)) => {}
             unexpected => panic!("expected Weekday component, but found: {unexpected:?}"),
         }
     }

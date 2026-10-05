@@ -1,0 +1,11 @@
+DROP INDEX IF EXISTS idx_sketch_splits_compaction_scope;
+DROP INDEX IF EXISTS idx_sketch_splits_tag_host;
+DROP INDEX IF EXISTS idx_sketch_splits_tag_region;
+DROP INDEX IF EXISTS idx_sketch_splits_tag_datacenter;
+DROP INDEX IF EXISTS idx_sketch_splits_tag_env;
+DROP INDEX IF EXISTS idx_sketch_splits_tag_service;
+DROP INDEX IF EXISTS idx_sketch_splits_metric_names;
+DROP INDEX IF EXISTS idx_sketch_splits_time;
+DROP TRIGGER IF EXISTS set_publish_timestamp_on_sketch_split_publish ON sketch_splits CASCADE;
+DROP FUNCTION IF EXISTS set_publish_timestamp_for_sketch_split();
+DROP TABLE IF EXISTS sketch_splits;

@@ -273,6 +273,7 @@ impl prost::Message for Position {
                         error
                     },
                 )?;
+                #[allow(deprecated)]
                 let byte_string = ByteString::try_from(value)
                     .map_err(|_| DecodeError::new("position is not valid UTF-8"))?;
                 *self = Self::from(byte_string);
@@ -306,6 +307,10 @@ mod tests {
         assert!(Position::Beginning < Position::eof(0u64));
 
         assert!(Position::offset(0u64) < Position::offset(1u64));
+
+        assert!(Position::offset(0u64) < Position::Eof(None));
+        assert!(Position::offset(1u64) < Position::eof(1u64));
+        assert!(Position::offset(1u64) < Position::eof(0u64)); //< this should not happen, but let's test it still.
 
         assert!(Position::Eof(None) < Position::eof(0u64));
         assert!(Position::eof(0u64) < Position::eof(1u64));

@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
+
 use anyhow::ensure;
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use proc_macro2::TokenStream;
@@ -30,6 +32,7 @@ impl Codegen {
             args.error_type_path,
             args.generate_extra_service_methods,
             args.generate_prom_labels_for_requests,
+            args.traced_request_fields,
         ));
         args.prost_config
             .protoc_arg("--experimental_allow_proto3_optional")
@@ -67,6 +70,12 @@ pub struct CodegenBuilder {
     error_type_path: String,
     generate_extra_service_methods: bool,
     generate_prom_labels_for_requests: bool,
+    /// Maps a request message type (short name, e.g. `IngestRequestV2`) to the
+    /// list of top-level fields that should be recorded on the generated
+    /// tracing span. Each entry pairs a field name with `use_debug_format`:
+    /// `false` emits `%request.<field>` (Display), `true` emits `?request.<field>`
+    /// (Debug). Default is empty: spans carry only the method name.
+    traced_request_fields: HashMap<String, Vec<(String, bool)>>,
 }
 
 impl CodegenBuilder {
@@ -111,6 +120,38 @@ impl CodegenBuilder {
         self
     }
 
+    /// Records the value of a top-level scalar field of the given request
+    /// message on the generated tracing span using the field's `Display`
+    /// representation. Use [`Self::with_traced_request_field_debug`] for
+    /// types that only implement `Debug` (e.g. prost-generated enums).
+    ///
+    /// `message` is the short, unqualified Rust type name of the request
+    /// (e.g. `"IngestRequestV2"`). `field` is a top-level field name (no
+    /// nested paths). Repeat the call to record multiple fields.
+    pub fn with_traced_request_field(self, message: &str, field: &str) -> Self {
+        self.with_traced_request_field_inner(message, field, false)
+    }
+
+    /// Like [`Self::with_traced_request_field`] but records the field via
+    /// its `Debug` representation. Use this for proto enums and other types
+    /// that don't implement `Display`.
+    pub fn with_traced_request_field_debug(self, message: &str, field: &str) -> Self {
+        self.with_traced_request_field_inner(message, field, true)
+    }
+
+    fn with_traced_request_field_inner(
+        mut self,
+        message: &str,
+        field: &str,
+        use_debug_format: bool,
+    ) -> Self {
+        self.traced_request_fields
+            .entry(message.to_string())
+            .or_default()
+            .push((field.to_string(), use_debug_format));
+        self
+    }
+
     pub fn run(self) -> anyhow::Result<()> {
         ensure!(!self.protos.is_empty(), "proto file list is empty");
         ensure!(!self.output_dir.is_empty(), "output directory is undefined");
@@ -126,6 +167,7 @@ struct QuickwitServiceGenerator {
     error_type_path: String,
     generate_extra_service_methods: bool,
     generate_prom_labels_for_requests: bool,
+    traced_request_fields: HashMap<String, Vec<(String, bool)>>,
     inner: Box<dyn ServiceGenerator>,
 }
 
@@ -135,6 +177,7 @@ impl QuickwitServiceGenerator {
         error_type_path: String,
         generate_extra_service_methods: bool,
         generate_prom_labels_for_requests: bool,
+        traced_request_fields: HashMap<String, Vec<(String, bool)>>,
     ) -> Self {
         let inner = Box::new(WithSuffixServiceGenerator::new(
             "Grpc",
@@ -145,6 +188,7 @@ impl QuickwitServiceGenerator {
             error_type_path,
             generate_extra_service_methods,
             generate_prom_labels_for_requests,
+            traced_request_fields,
             inner,
         }
     }
@@ -158,6 +202,7 @@ impl ServiceGenerator for QuickwitServiceGenerator {
             &self.error_type_path,
             self.generate_extra_service_methods,
             self.generate_prom_labels_for_requests,
+            &self.traced_request_fields,
         );
         let ast: syn::File = syn::parse2(tokens).expect("Tokenstream should be a valid Syn AST.");
         let pretty_code = prettyplease::unparse(&ast);
@@ -194,6 +239,7 @@ struct CodegenContext {
     grpc_server_package_name: Ident,
     grpc_service_name: Ident,
     generate_extra_service_methods: bool,
+    traced_request_fields: HashMap<String, Vec<(String, bool)>>,
 }
 
 impl CodegenContext {
@@ -202,6 +248,7 @@ impl CodegenContext {
         result_type_path: &str,
         error_type_path: &str,
         generate_extra_service_methods: bool,
+        traced_request_fields: HashMap<String, Vec<(String, bool)>>,
     ) -> Self {
         let service_name = quote::format_ident!("{}", service.name);
         let mock_mod_name = quote::format_ident!("mock_{}", service.name.to_snake_case());
@@ -264,6 +311,7 @@ impl CodegenContext {
             grpc_server_package_name,
             grpc_service_name,
             generate_extra_service_methods,
+            traced_request_fields,
         }
     }
 }
@@ -274,12 +322,14 @@ fn generate_all(
     error_type_path: &str,
     generate_extra_service_methods: bool,
     generate_prom_labels_for_requests: bool,
+    traced_request_fields: &HashMap<String, Vec<(String, bool)>>,
 ) -> TokenStream {
     let context = CodegenContext::from_service(
         service,
         result_type_path,
         error_type_path,
         generate_extra_service_methods,
+        traced_request_fields.clone(),
     );
     let stream_type_alias = &context.stream_type_alias;
     let service_trait = generate_service_trait(&context);
@@ -399,6 +449,59 @@ impl SynMethod {
         }
         syn_methods
     }
+
+    /// Short, unqualified Rust type name of the request message
+    /// (e.g. `IngestRequestV2`). Used as the lookup key for opt-in span
+    /// fields configured via `with_traced_request_field`.
+    fn request_type_short_name(&self) -> String {
+        self.request_type
+            .segments
+            .last()
+            .map(|segment| segment.ident.to_string())
+            .unwrap_or_default()
+    }
+}
+
+/// Builds the span name for a method: `"{package}.{method}"`,
+/// where `{package}` is the proto package with any leading `quickwit.`
+/// prefix stripped (e.g. `quickwit.ingest.ingester` becomes
+/// `ingest.ingester`). The service name is omitted to keep span names
+/// short and readable.
+fn span_name(context: &CodegenContext, method: &SynMethod) -> String {
+    let package = context
+        .package_name
+        .strip_prefix("quickwit.")
+        .unwrap_or(&context.package_name);
+    format!("{}.{}", package, method.name)
+}
+
+/// Builds the contents of `fields(...)` for a method's tracing span,
+/// recording opt-in scalar fields from the request using their `Debug`
+/// representation. Returns an empty `TokenStream` when the method has no
+/// configured fields or has a streaming request (where the wrapping
+/// `quickwit_common::ServiceStream` has no per-call value).
+fn traced_request_fields_tokens(context: &CodegenContext, method: &SynMethod) -> TokenStream {
+    if method.client_streaming {
+        return TokenStream::new();
+    }
+    let Some(fields) = context
+        .traced_request_fields
+        .get(&method.request_type_short_name())
+    else {
+        return TokenStream::new();
+    };
+    let tokens: Vec<TokenStream> = fields
+        .iter()
+        .map(|(field, use_debug_format)| {
+            let ident = quote::format_ident!("{field}");
+            if *use_debug_format {
+                quote! { #ident = ?request.#ident }
+            } else {
+                quote! { #ident = %request.#ident }
+            }
+        })
+        .collect();
+    quote! { #(#tokens),* }
 }
 
 fn generate_prom_labels_impl_for_requests(context: &CodegenContext) -> TokenStream {
@@ -676,7 +779,27 @@ fn generate_client_methods(context: &CodegenContext, mock: bool) -> TokenStream 
                 self.inner.lock().await.#method_name(request).await
             }
         };
+
+        // Spans go on the user-facing client only — not the mock wrapper, to
+        // keep test output free of incidental spans.
+        let instrument_attr = if !mock {
+            let span_name = span_name(context, syn_method);
+            let traced_fields = traced_request_fields_tokens(context, syn_method);
+            if traced_fields.is_empty() {
+                quote! {
+                    #[tracing::instrument(skip_all, name = #span_name)]
+                }
+            } else {
+                quote! {
+                    #[tracing::instrument(skip_all, name = #span_name, fields(#traced_fields))]
+                }
+            }
+        } else {
+            TokenStream::new()
+        };
+
         let method = quote! {
+            #instrument_attr
             async fn #method_name(&self, request: #request_type) -> #result_type<#response_type> {
                 #body
             }
@@ -1197,11 +1320,16 @@ fn generate_grpc_client_adapter_methods(context: &CodegenContext) -> TokenStream
         } else {
             quote! { |response| response.into_inner() }
         };
+        // Wrap the request and inject the active span's W3C trace context into
+        // the gRPC metadata so the receiving server can stitch its span into
+        // the same trace. No-op when no propagator is installed (tests).
         let method = quote! {
             async fn #method_name(&self, request: #request_type) -> #result_type<#response_type> {
+                let mut tonic_request = tonic::Request::new(request);
+                quickwit_common::tracing_utils::inject_current_context(tonic_request.metadata_mut());
                 self.inner
                     .clone()
-                    .#method_name(request)
+                    .#method_name(tonic_request)
                     .await
                     .map(#into_response_type)
                     .map_err(|status| crate::error::grpc_status_to_service_error(status, #rpc_name))
@@ -1253,15 +1381,18 @@ fn generate_grpc_server_adapter_methods(context: &CodegenContext) -> TokenStream
         } else {
             syn_method.request_type.to_token_stream()
         };
-        let method_arg = if syn_method.client_streaming {
+        // Bind the inner request *outside* the instrumented future so opt-in
+        // span fields can reference `request.<field>` synchronously when the
+        // span is constructed.
+        let inner_binding = if syn_method.client_streaming {
             quote! {
-                {
-                    let streaming: tonic::Streaming<_> = request.into_inner();
-                    quickwit_common::ServiceStream::from(streaming)
-                }
+                let streaming: tonic::Streaming<_> = tonic_request.into_inner();
+                let request = quickwit_common::ServiceStream::from(streaming);
             }
         } else {
-            quote! { request.into_inner() }
+            quote! {
+                let request = tonic_request.into_inner();
+            }
         };
         let response_type = if syn_method.server_streaming {
             let associated_type_name = quote::format_ident!("{}Stream", syn_method.proto_name);
@@ -1283,16 +1414,35 @@ fn generate_grpc_server_adapter_methods(context: &CodegenContext) -> TokenStream
         } else {
             quote! { tonic::Response::new }
         };
+        let span_name = span_name(context, syn_method);
+        let traced_fields = traced_request_fields_tokens(context, syn_method);
+        let span_macro = if traced_fields.is_empty() {
+            quote! { tracing::info_span!(#span_name) }
+        } else {
+            quote! { tracing::info_span!(#span_name, #traced_fields) }
+        };
+        // Extract the W3C trace context from incoming metadata and link the
+        // server-side span to the caller's trace via `set_parent`. Then run
+        // the inner handler inside that span. When no propagator is
+        // installed, the parent context is empty and the span becomes a
+        // local root.
         let method = quote! {
             #associated_type
 
-            async fn #method_name(&self, request: tonic::Request<#request_type>) -> Result<tonic::Response<#response_type>, tonic::Status> {
-                self.inner
-                    .0
-                    .#method_name(#method_arg)
-                    .await
-                    .map(#into_response_type)
-                    .map_err(crate::error::grpc_error_to_grpc_status)
+            async fn #method_name(&self, tonic_request: tonic::Request<#request_type>) -> Result<tonic::Response<#response_type>, tonic::Status> {
+                let parent_context = quickwit_common::tracing_utils::extract_context(tonic_request.metadata());
+                #inner_binding
+                let span = #span_macro;
+                let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(&span, parent_context);
+                let fut = async move {
+                    self.inner
+                        .0
+                        .#method_name(request)
+                        .await
+                        .map(#into_response_type)
+                        .map_err(crate::error::grpc_error_to_grpc_status)
+                };
+                <_ as tracing::Instrument>::instrument(fut, span).await
             }
         };
         stream.extend(method);

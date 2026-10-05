@@ -14,10 +14,10 @@
 
 use std::borrow::Cow;
 use std::convert::TryFrom;
+use std::sync::LazyLock;
 
 use anyhow::bail;
 use base64::prelude::{BASE64_STANDARD, Engine};
-use once_cell::sync::Lazy;
 use quickwit_common::true_fn;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -529,7 +529,7 @@ impl From<QuickwitTextOptions> for TextOptions {
         }
         match &quickwit_text_options.fast {
             FastFieldOptions::EnabledWithNormalizer { normalizer } => {
-                text_options = text_options.set_fast(Some(normalizer.get_name()));
+                text_options = text_options.set_fast(normalizer.get_name());
             }
             FastFieldOptions::Disabled => {}
         }
@@ -647,7 +647,7 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
         }
         match &quickwit_json_options.fast {
             FastFieldOptions::EnabledWithNormalizer { normalizer } => {
-                json_options = json_options.set_fast(Some(normalizer.get_name()));
+                json_options = json_options.set_fast(normalizer.get_name());
             }
             FastFieldOptions::Disabled => {}
         }
@@ -741,6 +741,15 @@ fn deserialize_mapping_type(
             }
             return Ok(FieldMappingType::Concatenate(concatenate_options));
         }
+        QuickwitFieldType::TieBreaker => {
+            if let JsonValue::Object(options) = &json
+                && !options.is_empty()
+            {
+                let option_names: Vec<&String> = options.keys().collect();
+                bail!("tie_breaker type does not accept any parameters, got {option_names:?}");
+            }
+            return Ok(FieldMappingType::TieBreaker);
+        }
     };
     match typ {
         Type::Str => {
@@ -772,6 +781,7 @@ fn deserialize_mapping_type(
             Ok(FieldMappingType::DateTime(date_time_options, cardinality))
         }
         Type::Facet => unimplemented!("Facet are not supported in quickwit yet."),
+        Type::Custom => bail!("custom fields are not supported in Quickwit"),
         Type::Bytes => {
             let numeric_options: QuickwitBytesOptions = serde_json::from_value(json)?;
             if numeric_options.fast && cardinality == Cardinality::MultiValued {
@@ -837,6 +847,7 @@ fn typed_mapping_to_json_params(
         FieldMappingType::Concatenate(concatenate_options) => {
             serialize_to_map(&concatenate_options)
         }
+        FieldMappingType::TieBreaker => Some(serde_json::Map::new()),
     }
     .unwrap()
 }
@@ -870,8 +881,8 @@ pub const FIELD_MAPPING_NAME_PATTERN: &str = r"^[@$_\-a-zA-Z][@$_/\.\-a-zA-Z0-9]
 ///   `_field_presence`;
 /// - must not be longer than 255 characters.
 pub fn validate_field_mapping_name(field_mapping_name: &str) -> anyhow::Result<()> {
-    static FIELD_MAPPING_NAME_PTN: Lazy<Regex> =
-        Lazy::new(|| Regex::new(FIELD_MAPPING_NAME_PATTERN).unwrap());
+    static FIELD_MAPPING_NAME_PTN: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(FIELD_MAPPING_NAME_PATTERN).unwrap());
 
     if QW_RESERVED_FIELD_NAMES.contains(&field_mapping_name) {
         bail!(
@@ -1152,7 +1163,7 @@ mod tests {
             "type": "text",
             "stored": true,
             "record": "basic",
-            "tokenizer": "en_stem"
+            "tokenizer": "lowercase"
         }
         "#,
         )?;
@@ -1161,7 +1172,7 @@ mod tests {
             FieldMappingType::Text(options, _) => {
                 assert_eq!(options.stored, true);
                 let indexing_options = options.indexing_options.unwrap();
-                assert_eq!(indexing_options.tokenizer.name(), "en_stem");
+                assert_eq!(indexing_options.tokenizer.name(), "lowercase");
                 assert_eq!(indexing_options.record, IndexRecordOption::Basic);
             }
             _ => panic!("wrong property type"),
@@ -1409,6 +1420,46 @@ mod tests {
             })
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_serialize_tie_breaker_mapping() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "tie_breaker",
+                "type": "tie_breaker"
+            }
+            "#,
+        )?;
+        assert!(matches!(entry.mapping_type, FieldMappingType::TieBreaker));
+        assert_eq!(
+            serde_json::to_value(&entry)?,
+            serde_json::json!({
+                "name": "tie_breaker",
+                "type": "tie_breaker"
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_deserialize_tie_breaker_mapping_with_options() {
+        let error = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "tie_breaker",
+                "type": "tie_breaker",
+                "fast": false
+            }
+            "#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("tie_breaker type does not accept any parameters"),
+            "{error}"
+        );
     }
 
     #[test]

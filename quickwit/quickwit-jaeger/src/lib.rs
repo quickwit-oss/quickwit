@@ -22,6 +22,7 @@ use itertools::{Either, Itertools};
 use prost::Message;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
 use quickwit_config::JaegerConfig;
+use quickwit_metrics::{counter, histogram, label_values};
 use quickwit_opentelemetry::otlp::{
     Event as QwEvent, Link as QwLink, OTEL_TRACES_INDEX_ID, Span as QwSpan, SpanFingerprint,
     SpanId, SpanKind as QwSpanKind, SpanStatus as QwSpanStatus, TraceId,
@@ -39,7 +40,7 @@ use quickwit_proto::opentelemetry::proto::trace::v1::status::StatusCode as OtlpS
 use quickwit_proto::search::{CountHits, ListTermsRequest, SearchRequest};
 use quickwit_query::BooleanOperand;
 use quickwit_query::query_ast::{BoolQuery, QueryAst, RangeQuery, TermQuery, UserInputQuery};
-use quickwit_search::{FindTraceIdsCollector, SearchService};
+use quickwit_search::{FindTraceIdsCollector, MAX_NUM_TRACES, SearchService};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use tantivy::collector::Collector;
@@ -51,7 +52,11 @@ use tonic::Status;
 use tracing::field::Empty;
 use tracing::{Span as RuntimeSpan, debug, error, instrument, warn};
 
-pub(crate) use crate::metrics::JAEGER_SERVICE_METRICS;
+use crate::metrics::{
+    FETCHED_SPANS_TOTAL, FETCHED_TRACES_TOTAL, OPERATION_INDEX_ERROR_LABEL_NAMES,
+    OPERATION_INDEX_LABEL_NAMES, REQUEST_DURATION_SECONDS, REQUEST_ERRORS_TOTAL,
+    TRANSFERRED_BYTES_TOTAL,
+};
 
 mod metrics;
 mod v1;
@@ -229,7 +234,7 @@ impl JaegerService {
             max_start_secs,
             min_duration_millis,
             max_duration_millis,
-            trace_query.num_traces as usize,
+            trace_query.num_traces,
             index_id_patterns,
         )
         .await
@@ -247,9 +252,16 @@ pub(crate) async fn find_trace_ids_common(
     max_start_secs: Option<i64>,
     min_duration_millis: Option<i64>,
     max_duration_millis: Option<i64>,
-    num_traces: usize,
+    num_traces: i32,
     index_id_patterns: Vec<String>,
 ) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
+    if num_traces < 0 || num_traces > MAX_NUM_TRACES as i32 {
+        return Err(Status::invalid_argument(format!(
+            "`num_traces` must be between 0 and {MAX_NUM_TRACES}, got `{num_traces}`"
+        )));
+    }
+    let num_traces = num_traces as usize;
+
     let query_ast = build_search_query(
         service_name,
         None,
@@ -415,43 +427,37 @@ impl JaegerService {
             current_span.record("num_spans", num_spans_total);
             current_span.record("num_bytes", num_bytes_total);
 
-            JAEGER_SERVICE_METRICS
-                .fetched_traces_total
-                .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
-                .inc_by(num_traces);
+            let labels = label_values!(
+                OPERATION_INDEX_LABEL_NAMES => operation_name, OTEL_TRACES_INDEX_ID
+            );
+            counter!(parent: FETCHED_TRACES_TOTAL, labels: [labels]).inc_by(num_traces);
 
             let elapsed = request_start.elapsed().as_secs_f64();
-            JAEGER_SERVICE_METRICS
-                .request_duration_seconds
-                .with_label_values([operation_name, OTEL_TRACES_INDEX_ID, "false"])
-                .observe(elapsed);
+            let err_labels = label_values!(
+                OPERATION_INDEX_ERROR_LABEL_NAMES =>
+                operation_name, OTEL_TRACES_INDEX_ID, "false"
+            );
+            histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels]).observe(elapsed);
         });
         Ok(ReceiverStream::new(rx))
     }
 }
 
 pub(crate) fn record_error(operation_name: &'static str, request_start: Instant) {
-    JAEGER_SERVICE_METRICS
-        .request_errors_total
-        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
-        .inc();
+    let labels = label_values!(OPERATION_INDEX_LABEL_NAMES => operation_name, OTEL_TRACES_INDEX_ID);
+    counter!(parent: REQUEST_ERRORS_TOTAL, labels: [labels]).inc();
 
     let elapsed = request_start.elapsed().as_secs_f64();
-    JAEGER_SERVICE_METRICS
-        .request_duration_seconds
-        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID, "true"])
-        .observe(elapsed);
+    let err_labels = label_values!(
+        OPERATION_INDEX_ERROR_LABEL_NAMES => operation_name, OTEL_TRACES_INDEX_ID, "true"
+    );
+    histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels]).observe(elapsed);
 }
 
 pub(crate) fn record_send(operation_name: &'static str, num_spans: usize, num_bytes: usize) {
-    JAEGER_SERVICE_METRICS
-        .fetched_spans_total
-        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
-        .inc_by(num_spans as u64);
-    JAEGER_SERVICE_METRICS
-        .transferred_bytes_total
-        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
-        .inc_by(num_bytes as u64);
+    let labels = label_values!(OPERATION_INDEX_LABEL_NAMES => operation_name, OTEL_TRACES_INDEX_ID);
+    counter!(parent: FETCHED_SPANS_TOTAL, labels: [labels]).inc_by(num_spans as u64);
+    counter!(parent: TRANSFERRED_BYTES_TOTAL, labels: [labels]).inc_by(num_bytes as u64);
 }
 
 #[allow(deprecated)]
@@ -1963,6 +1969,49 @@ mod tests {
         );
     }
 
+    fn jaeger_with_no_search() -> JaegerService {
+        let mut search_service = MockSearchService::new();
+        search_service.expect_root_search().never();
+        JaegerService::new(JaegerConfig::default(), Arc::new(search_service))
+    }
+
+    #[tokio::test]
+    async fn test_v1_rejects_invalid_num_traces() {
+        let jaeger = jaeger_with_no_search();
+        for num_traces in [-1, MAX_NUM_TRACES as i32 + 1] {
+            let request = FindTraceIDsRequest {
+                query: Some(TraceQueryParameters {
+                    num_traces,
+                    ..Default::default()
+                }),
+            };
+            let error = SpanReaderPlugin::find_trace_i_ds(&jaeger, tonic::Request::new(request))
+                .await
+                .unwrap_err();
+            assert_eq!(error.code(), tonic::Code::InvalidArgument);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_v2_rejects_invalid_search_depth() {
+        use quickwit_proto::jaeger::storage::v2;
+        use quickwit_proto::jaeger::storage::v2::trace_reader_server::TraceReader;
+
+        let jaeger = jaeger_with_no_search();
+        for search_depth in [-1, MAX_NUM_TRACES as i32 + 1] {
+            let request = v2::FindTracesRequest {
+                query: Some(v2::TraceQueryParameters {
+                    search_depth,
+                    ..Default::default()
+                }),
+            };
+            let error = TraceReader::find_trace_i_ds(&jaeger, tonic::Request::new(request))
+                .await
+                .unwrap_err();
+            assert_eq!(error.code(), tonic::Code::InvalidArgument);
+        }
+    }
+
     #[test]
     fn test_to_duration_millis() {
         {
@@ -2723,6 +2772,7 @@ mod tests {
                     scroll_id: None,
                     failed_splits: Vec::new(),
                     num_successful_splits: 1,
+                    resource_stats: None,
                 })
             });
 

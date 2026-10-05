@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -23,6 +22,7 @@ use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_common::shared_consts::split_deletion_grace_period;
 use quickwit_index_management::{GcMetrics, run_garbage_collect};
 use quickwit_metastore::ListIndexesMetadataResponseExt;
+use quickwit_metrics::{counter, label_names, label_values};
 use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
@@ -31,14 +31,33 @@ use quickwit_storage::{Storage, StorageResolver};
 use serde::Serialize;
 use tracing::{debug, error, info};
 
-use crate::metrics::JANITOR_METRICS;
+use crate::metrics::{GC_DELETED_BYTES, GC_DELETED_SPLITS, GC_RUNS, GC_SECONDS_TOTAL};
 
-const RUN_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
+const RUN_INTERVAL: Duration = Duration::from_mins(10);
+
+fn gc_metrics() -> GcMetrics {
+    GcMetrics {
+        deleted_splits: counter!(
+            parent: GC_DELETED_SPLITS,
+            "result" => "success",
+            "split_type" => "tantivy",
+        ),
+        failed_splits: counter!(
+            parent: GC_DELETED_SPLITS,
+            "result" => "error",
+            "split_type" => "tantivy",
+        ),
+        deleted_bytes: counter!(
+            parent: GC_DELETED_BYTES,
+            "split_type" => "tantivy",
+        ),
+    }
+}
 
 /// Staged files needs to be deleted if there was a failure.
 /// TODO ideally we want clean up all staged splits every time we restart the indexing pipeline, but
 /// the grace period strategy should do the job for the moment.
-const STAGED_GRACE_PERIOD: Duration = Duration::from_secs(60 * 60 * 24); // 24 hours
+const STAGED_GRACE_PERIOD: Duration = Duration::from_hours(24);
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct GarbageCollectorCounters {
@@ -83,8 +102,6 @@ impl GarbageCollector {
         debug!("loading indexes from the metastore");
         self.counters.num_passes += 1;
 
-        let start = Instant::now();
-
         let response = match self
             .metastore
             .list_indexes_metadata(ListIndexesMetadataRequest::all())
@@ -106,7 +123,8 @@ impl GarbageCollector {
         info!("loaded {} indexes from the metastore", indexes.len());
 
         let expected_count = indexes.len();
-        let index_storages: HashMap<IndexUid, Arc<dyn Storage>> = stream::iter(indexes).filter_map(|index| {
+
+        let storages: HashMap<IndexUid, Arc<dyn Storage>> = stream::iter(indexes).filter_map(|index| {
             let storage_resolver = self.storage_resolver.clone();
             async move {
                 let index_uid = index.index_uid.clone();
@@ -114,7 +132,7 @@ impl GarbageCollector {
                 let storage = match storage_resolver.resolve(index_uri).await {
                     Ok(storage) => storage,
                     Err(error) => {
-                        error!(index=%index.index_id(), error=?error, "failed to resolve the index storage Uri");
+                        error!(index=%index_uid.index_id, error=?error, "failed to resolve the index storage Uri");
                         return None;
                     }
                 };
@@ -122,68 +140,65 @@ impl GarbageCollector {
             }}).collect()
             .await;
 
-        let storage_got_count = index_storages.len();
-        self.counters.num_failed_storage_resolution += expected_count - storage_got_count;
+        self.counters.num_failed_storage_resolution += expected_count - storages.len();
 
-        if index_storages.is_empty() {
+        if storages.is_empty() {
             return;
         }
 
-        let gc_res = run_garbage_collect(
-            index_storages,
+        let labels_result = label_names!("result");
+        let labels_split = label_values!(label_names!("split_type") => "tantivy");
+        let start = Instant::now();
+        let gc_result = run_garbage_collect(
+            storages,
             self.metastore.clone(),
             STAGED_GRACE_PERIOD,
             split_deletion_grace_period(),
             false,
             Some(ctx.progress()),
-            Some(GcMetrics {
-                deleted_splits: JANITOR_METRICS
-                    .gc_deleted_splits
-                    .with_label_values(["success"])
-                    .clone(),
-                deleted_bytes: JANITOR_METRICS.gc_deleted_bytes.clone(),
-                failed_splits: JANITOR_METRICS
-                    .gc_deleted_splits
-                    .with_label_values(["error"])
-                    .clone(),
-            }),
+            Some(gc_metrics()),
         )
         .await;
-
-        let run_duration = start.elapsed().as_secs();
-        JANITOR_METRICS.gc_seconds_total.inc_by(run_duration);
-
-        let deleted_file_entries = match gc_res {
+        counter!(parent: GC_SECONDS_TOTAL, labels: [labels_split])
+            .inc_by(start.elapsed().as_secs());
+        match gc_result {
             Ok(removal_info) => {
                 self.counters.num_successful_gc_run += 1;
-                JANITOR_METRICS.gc_runs.with_label_values(["success"]).inc();
+                counter!(
+                    parent: GC_RUNS,
+                    labels: [labels_split, label_values!(labels_result => "success")],
+                )
+                .inc();
                 self.counters.num_failed_splits += removal_info.failed_splits.len();
-                removal_info.removed_split_entries
+                let num_deleted_splits = removal_info.removed_split_entries.len();
+                if num_deleted_splits > 0 {
+                    let sample_deleted_files: Vec<String> = removal_info
+                        .removed_split_entries
+                        .iter()
+                        .take(5)
+                        .map(|split| split.file_name.display().to_string())
+                        .collect();
+                    info!(
+                        ?sample_deleted_files,
+                        num_deleted_splits, "Janitor deleted splits"
+                    );
+                    self.counters.num_deleted_files += num_deleted_splits;
+                    self.counters.num_deleted_bytes += removal_info
+                        .removed_split_entries
+                        .iter()
+                        .map(|split| split.file_size_bytes.as_u64() as usize)
+                        .sum::<usize>();
+                }
             }
             Err(error) => {
                 self.counters.num_failed_gc_run += 1;
-                JANITOR_METRICS.gc_runs.with_label_values(["error"]).inc();
+                counter!(
+                    parent: GC_RUNS,
+                    labels: [labels_split, label_values!(labels_result => "error")],
+                )
+                .inc();
                 error!(error=?error, "failed to run garbage collection");
-                return;
             }
-        };
-        if !deleted_file_entries.is_empty() {
-            let num_deleted_splits = deleted_file_entries.len();
-            let num_deleted_bytes = deleted_file_entries
-                .iter()
-                .map(|entry| entry.file_size_bytes.as_u64() as usize)
-                .sum::<usize>();
-            let deleted_files: HashSet<&Path> = deleted_file_entries
-                .iter()
-                .map(|deleted_entry| deleted_entry.file_name.as_path())
-                .take(5)
-                .collect();
-            info!(
-                num_deleted_splits = num_deleted_splits,
-                "Janitor deleted {:?} and {} other splits.", deleted_files, num_deleted_splits,
-            );
-            self.counters.num_deleted_files += num_deleted_splits;
-            self.counters.num_deleted_bytes += num_deleted_bytes;
         }
     }
 }
@@ -225,7 +240,9 @@ impl Handler<Loop> for GarbageCollector {
 }
 
 #[cfg(test)]
+#[allow(clippy::result_large_err)] // BulkDeleteError is large; acceptable in mock closures
 mod tests {
+    use std::collections::HashSet;
     use std::ops::Bound;
     use std::path::Path;
     use std::sync::Arc;
@@ -258,7 +275,7 @@ mod tests {
             .iter()
             .map(|split_id| Split {
                 split_metadata: SplitMetadata {
-                    split_id: split_id.to_string(),
+                    split_id: (*split_id).into(),
                     index_uid: IndexUid::for_test(index_id, 0),
                     footer_offsets: 5..20,
                     ..Default::default()
