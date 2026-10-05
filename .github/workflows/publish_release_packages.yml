@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-lambda:
     name: Build Lambda ARM64
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       actions: write
@@ -63,7 +63,7 @@ jobs:
 
   build-macos-binaries:
     name: Build ${{ matrix.target }}
-    runs-on: macos-latest
+    runs-on: macos-26
     needs: [build-lambda]
     permissions:
       contents: write
@@ -94,7 +94,7 @@ jobs:
       matrix:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
     name: Build ${{ matrix.target }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [build-lambda]
     permissions:
       contents: write
