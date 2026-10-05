@@ -292,12 +292,13 @@ impl IngestRouter {
                         workbench.record_persist_failure(&persist_failure);
 
                         match persist_failure.reason() {
-                            PersistFailureReason::NoShardsAvailable => {
+                            PersistFailureReason::NoShardsForSource => {
                                 // For non-critical failures, we don't mark the nodes unavailable;
                                 // a routing update is piggybacked on PersistResponses, so shard
                                 // counts and capacity scores will be fresh on the next try.
                             }
                             PersistFailureReason::NodeUnavailable
+                            | PersistFailureReason::Internal
                             | PersistFailureReason::WalFull
                             | PersistFailureReason::Timeout => {
                                 unavailable_ingesters.insert(ingester_id.clone());

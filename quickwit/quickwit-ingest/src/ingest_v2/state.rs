@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
@@ -21,31 +21,41 @@ use std::time::{Duration, Instant};
 
 use bytesize::ByteSize;
 use itertools::Itertools;
+use mrecordlog::ResourceUsage;
 use mrecordlog::error::{DeleteQueueError, TruncateError};
 use quickwit_cluster::Cluster;
 use quickwit_common::pretty::PrettyDisplay;
+use quickwit_common::rate_limited_warn;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metrics::{gauge, histogram, labels};
+use quickwit_metrics::{counter, gauge, histogram, label_values, labels};
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
-use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardIds, ShardState};
+use quickwit_proto::ingest::ingester::{
+    IngesterStatus, PersistFailure, PersistFailureReason, PersistSubrequest, PersistSuccess,
+    RoutingUpdate, SourceShardUpdate,
+};
+use quickwit_proto::ingest::{
+    DocBatchV2, IngestV2Error, IngestV2Result, ParseFailure, ShardIds, ShardState,
+};
 use quickwit_proto::types::{
-    DocMappingUid, IndexUid, Position, QueueId, SourceId, SourceUid, split_queue_id,
+    DocMappingUid, IndexUid, Position, QueueId, ShardId, SourceId, SourceUid, split_queue_id,
 };
 use tokio::sync::{Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, watch};
 use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, warn};
 
 use super::local_shards::{ShardInfo, ShardInfos, ShardThroughputReadings};
 use super::metrics::report_local_shards_metrics;
 use super::models::IngesterShard;
-use super::mrecordlog_utils::read_queue_size;
+use super::mrecordlog_utils::{
+    AppendDocBatchError, append_non_empty_doc_batch, doc_batch_size, read_queue_size,
+};
 use super::rate_meter::RateMeter;
 use super::wal_capacity_tracker::WalCapacityTracker;
 use crate::OpenShardCounts;
+use crate::metrics::{DOCS_BYTES_TOTAL, DOCS_TOTAL, VALIDITY};
 use crate::mrecordlog_async::MultiRecordLogAsync;
 
 const LOCAL_SHARDS_SAMPLE_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
@@ -110,7 +120,7 @@ impl InnerIngesterState {
         }
     }
 
-    /// Returns the shard with the most available permits for this index and source.
+    /// Returns the shard with the smallesy queue size for this index and source.
     pub fn find_most_capacity_shard_mut(
         &mut self,
         index_uid: &IndexUid,
@@ -121,9 +131,7 @@ impl InnerIngesterState {
             .filter(|shard| {
                 shard.is_open() && shard.index_uid == *index_uid && shard.source_id == *source_id
             })
-            .map(|shard| (shard.rate_limiter.available_permits(), shard))
-            .max_by_key(|(available_permits, _)| *available_permits)
-            .map(|(_, shard)| shard)
+            .min_by_key(|shard| shard.queue_size)
     }
 
     /// Returns per-source open shard counts and closed shard IDs for all advertisable shards.
@@ -159,6 +167,27 @@ impl InnerIngesterState {
             }
         }
         (open_counts, closed_shards)
+    }
+
+    pub fn routing_update(&self, wal_usage: &ResourceUsage) -> RoutingUpdate {
+        let capacity_score = self.wal_capacity_tracker.score(
+            ByteSize::b(wal_usage.disk_used_bytes as u64),
+            ByteSize::b(wal_usage.memory_used_bytes as u64),
+        ) as u32;
+        let (open_shard_counts, closed_shards) = self.get_shard_snapshot();
+        let source_shard_updates = open_shard_counts
+            .into_iter()
+            .map(|(index_uid, source_id, count)| SourceShardUpdate {
+                index_uid: Some(index_uid),
+                source_id,
+                open_shard_count: count as u32,
+            })
+            .collect();
+        RoutingUpdate {
+            capacity_score,
+            source_shard_updates,
+            closed_shards,
+        }
     }
 
     /// Every LOCAL_SHARDS_SAMPLE_INTERVAL, measure how much work each shard did, per source, to
@@ -648,6 +677,167 @@ where
 }
 
 impl FullyLockedIngesterState<'_> {
+    pub fn begin_persist(&self, force_commit: bool) -> PersistContext {
+        PersistContext {
+            force_commit,
+            wal_usage: self.mrecordlog.resource_usage(),
+            reserved_capacity: ByteSize::default(),
+            shards_to_close: HashSet::new(),
+            shards_to_delete: HashSet::new(),
+        }
+    }
+
+    pub async fn stage_persist_subrequest(
+        &mut self,
+        mut subrequest: PersistSubrequest,
+        context: &mut PersistContext,
+    ) -> Result<StagedPersistRequest, PersistFailure> {
+        let doc_batch = match subrequest.doc_batch.take() {
+            Some(doc_batch) if !doc_batch.is_empty() => doc_batch,
+            _ => {
+                warn!("received empty persist request");
+                DocBatchV2::default()
+            }
+        };
+        let failure = |reason: PersistFailureReason| PersistFailure {
+            subrequest_id: subrequest.subrequest_id,
+            index_uid: subrequest.index_uid.clone(),
+            source_id: subrequest.source_id.clone(),
+            reason: reason as i32,
+        };
+        let requested_capacity = doc_batch_size(&doc_batch, context.force_commit);
+        let total_requested_capacity = context.reserved_capacity + requested_capacity;
+        let disk_used = ByteSize::b(context.wal_usage.disk_used_bytes as u64);
+        let memory_used = ByteSize::b(context.wal_usage.memory_used_bytes as u64);
+        if disk_used + total_requested_capacity > self.disk_capacity
+            || memory_used + total_requested_capacity > self.memory_capacity
+        {
+            rate_limited_warn!(
+                limit_per_min = 10,
+                "failed to stage persist request: WAL disk usage {}, disk capacity {}, memory \
+                 usage {}, memory capacity {}, requested capacity {}",
+                disk_used,
+                self.disk_capacity,
+                memory_used,
+                self.memory_capacity,
+                total_requested_capacity
+            );
+            return Err(failure(PersistFailureReason::WalFull));
+        }
+
+        let Some(shard) = self
+            .inner
+            .find_most_capacity_shard_mut(subrequest.index_uid(), &subrequest.source_id)
+        else {
+            warn!(
+                index_uid=%subrequest.index_uid(),
+                source_id=%subrequest.source_id,
+                "no open shard found on ingester"
+            );
+            return Err(failure(PersistFailureReason::NoShardsForSource));
+        };
+        shard.is_advertisable = true;
+        let (valid_doc_batch, parse_failures) = match validate_doc_batch(shard, doc_batch).await {
+            Ok(validated) => validated,
+            Err(error) => {
+                error!(queue_id=%shard.queue_id(), "failed to validate documents: {error}");
+                return Err(failure(PersistFailureReason::Internal));
+            }
+        };
+        let batch_size = if parse_failures.is_empty() {
+            requested_capacity
+        } else {
+            doc_batch_size(&valid_doc_batch, context.force_commit)
+        };
+        context.reserved_capacity += batch_size;
+        shard.queue_size += batch_size;
+
+        Ok(StagedPersistRequest {
+            subrequest_id: subrequest.subrequest_id,
+            index_uid: subrequest.index_uid,
+            source_id: subrequest.source_id,
+            shard_id: shard.shard_id.clone(),
+            queue_id: shard.queue_id(),
+            num_docs: valid_doc_batch.num_docs() as u32,
+            doc_batch: valid_doc_batch,
+            batch_size,
+            parse_failures,
+            from_position_exclusive: shard.replication_position_inclusive.clone(),
+        })
+    }
+
+    pub async fn persist_subrequest(
+        &mut self,
+        staged_request: StagedPersistRequest,
+        context: &mut PersistContext,
+    ) -> Result<PersistSuccess, PersistFailure> {
+        let replication_position_inclusive = if staged_request.num_docs > 0 {
+            let append_result = append_non_empty_doc_batch(
+                &mut self.mrecordlog,
+                &staged_request.queue_id,
+                staged_request.doc_batch,
+                context.force_commit,
+            )
+            .await;
+            let position = match append_result {
+                Ok(position) => position,
+                Err(append_error) => {
+                    self.shards
+                        .get_mut(&staged_request.queue_id)
+                        .expect("shard should exist")
+                        .queue_size -= staged_request.batch_size;
+                    match append_error {
+                        AppendDocBatchError::Io(io_error) => {
+                            error!(queue_id=%staged_request.queue_id, "failed to persist records: {io_error}");
+                            context.shards_to_close.insert(staged_request.queue_id);
+                        }
+                        AppendDocBatchError::QueueNotFound(_) => {
+                            error!(queue_id=%staged_request.queue_id, "failed to persist records: WAL queue not found");
+                            context.shards_to_delete.insert(staged_request.queue_id);
+                        }
+                    }
+                    return Err(PersistFailure {
+                        subrequest_id: staged_request.subrequest_id,
+                        index_uid: staged_request.index_uid,
+                        source_id: staged_request.source_id,
+                        reason: PersistFailureReason::Internal as i32,
+                    });
+                }
+            };
+            self.shards
+                .get_mut(&staged_request.queue_id)
+                .expect("shard should exist")
+                .set_replication_position_inclusive(position.clone(), Instant::now());
+            position
+        } else {
+            staged_request.from_position_exclusive
+        };
+
+        Ok(PersistSuccess {
+            subrequest_id: staged_request.subrequest_id,
+            index_uid: staged_request.index_uid,
+            source_id: staged_request.source_id,
+            shard_id: Some(staged_request.shard_id),
+            replication_position_inclusive: Some(replication_position_inclusive),
+            num_persisted_docs: staged_request.num_docs,
+            parse_failures: staged_request.parse_failures,
+        })
+    }
+
+    pub fn finish_persist(&mut self, context: PersistContext) {
+        for queue_id in context.shards_to_close {
+            self.shards
+                .get_mut(&queue_id)
+                .expect("shard should exist")
+                .close();
+            warn!("closed shard `{queue_id}` following IO error");
+        }
+        for queue_id in context.shards_to_delete {
+            self.shards.remove(&queue_id);
+            warn!("deleted dangling shard `{queue_id}`");
+        }
+    }
+
     /// Reports the current WAL disk/memory usage and usage-ratio metrics against the configured
     /// capacity limits. Called after any operation that grows or shrinks WAL usage so that
     /// dashboards and alerts relying on these metrics stay accurate even when the ingester is
@@ -785,6 +975,81 @@ impl WeakIngesterState {
             status_rx,
         };
         Some(state)
+    }
+}
+
+pub(super) struct PersistContext {
+    force_commit: bool,
+    wal_usage: ResourceUsage,
+    reserved_capacity: ByteSize,
+    shards_to_close: HashSet<QueueId>,
+    shards_to_delete: HashSet<QueueId>,
+}
+
+pub(super) struct StagedPersistRequest {
+    subrequest_id: u32,
+    index_uid: Option<IndexUid>,
+    source_id: SourceId,
+    shard_id: ShardId,
+    queue_id: QueueId,
+    doc_batch: DocBatchV2,
+    batch_size: ByteSize,
+    num_docs: u32,
+    parse_failures: Vec<ParseFailure>,
+    from_position_exclusive: Position,
+}
+
+async fn validate_doc_batch(
+    shard: &mut IngesterShard,
+    doc_batch: DocBatchV2,
+) -> IngestV2Result<(DocBatchV2, Vec<ParseFailure>)> {
+    let original_batch_num_bytes = doc_batch.num_bytes() as u64;
+    let doc_mapper = shard.doc_mapper_opt.clone().expect("shard should be open");
+    let (valid_doc_batch, parse_failures) = if shard.validate_docs {
+        super::doc_mapper::validate_doc_batch(doc_batch, doc_mapper).await?
+    } else {
+        (doc_batch, Vec::new())
+    };
+    doc_batch_metrics(
+        shard,
+        original_batch_num_bytes,
+        &valid_doc_batch,
+        &parse_failures,
+    );
+    Ok((valid_doc_batch, parse_failures))
+}
+
+fn doc_batch_metrics(
+    shard: &mut IngesterShard,
+    original_batch_num_bytes: u64,
+    valid_doc_batch: &DocBatchV2,
+    parse_failures: &[ParseFailure],
+) {
+    let valid_batch_num_bytes = valid_doc_batch.num_bytes() as u64;
+    if valid_doc_batch.is_empty() || !parse_failures.is_empty() {
+        counter!(
+            parent: DOCS_TOTAL,
+            labels: [label_values!(VALIDITY => "invalid")],
+        )
+        .inc_by(parse_failures.len() as u64);
+        counter!(
+            parent: DOCS_BYTES_TOTAL,
+            labels: [label_values!(VALIDITY => "invalid")],
+        )
+        .inc_by(original_batch_num_bytes - valid_batch_num_bytes);
+    }
+    if !valid_doc_batch.is_empty() {
+        counter!(
+            parent: DOCS_TOTAL,
+            labels: [label_values!(VALIDITY => "valid")],
+        )
+        .inc_by(valid_doc_batch.num_docs() as u64);
+        counter!(
+            parent: DOCS_BYTES_TOTAL,
+            labels: [label_values!(VALIDITY => "valid")],
+        )
+        .inc_by(valid_batch_num_bytes);
+        shard.rate_meter.update(valid_batch_num_bytes);
     }
 }
 

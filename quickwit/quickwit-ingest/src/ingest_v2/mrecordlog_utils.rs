@@ -24,8 +24,8 @@ use quickwit_proto::types::{Position, QueueId};
 use tracing::instrument;
 
 use super::mrecord::MRECORD_HEADER_LEN;
+use crate::MRecord;
 use crate::mrecordlog_async::MultiRecordLogAsync;
-use crate::{MRecord, estimate_size};
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum AppendDocBatchError {
@@ -100,12 +100,23 @@ pub(super) async fn append_non_empty_doc_batch(
 }
 
 pub(super) fn doc_batch_size(doc_batch: &DocBatchV2, force_commit: bool) -> ByteSize {
-    let estimated_size = estimate_size(doc_batch);
-    if force_commit {
-        estimated_size + ByteSize::b(MRECORD_HEADER_LEN as u64)
-    } else {
-        estimated_size
+    encoded_doc_batch_size(
+        doc_batch.num_bytes() as u64,
+        doc_batch.num_docs(),
+        force_commit,
+    )
+}
+
+pub(super) fn encoded_doc_batch_size(
+    num_bytes: u64,
+    num_docs: usize,
+    force_commit: bool,
+) -> ByteSize {
+    if num_docs == 0 {
+        return ByteSize::default();
     }
+    let num_records = num_docs as u64 + u64::from(force_commit);
+    ByteSize::b(num_bytes + num_records * MRECORD_HEADER_LEN as u64)
 }
 
 pub(super) fn read_queue_size(mrecordlog: &MultiRecordLogAsync, queue_id: &QueueId) -> ByteSize {
