@@ -66,7 +66,7 @@ bitpacking = "0.9"
 bytes = { version = "1", features = ["serde"] }
 bytesize = { version = "2.4", features = ["serde"] }
 bytestring = "1.5"
-chitchat = "0.13.0"
+chitchat = { git = "https://github.com/quickwit-oss/chitchat.git", rev = "eaa921d3d4fc344b811c3a73eebd6371cbaff0b8" }
 chrono = { version = "0.4", default-features = false, features = [
   "clock",
   "std",
@@ -378,7 +378,7 @@ quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-transport = { path = "quickwit-transport" }
 
 # This is the tip of tantivy main.
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "3b5ab82e2058db20b9c56e054e2879e5ad76b2eb", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "4abc20f924e031a91f89c8cb44575e302e68fb38", default-features = false, features = [
   "jitexpr",
   "lz4-compression",
   "mmap",
@@ -387,7 +387,7 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "3b5ab82e205
   "columnar-zstd-compression",
 ] }
 # Must stay on the same rev as `tantivy`.
-tantivy-common = { git = "https://github.com/quickwit-oss/tantivy/", rev = "3b5ab82e2058db20b9c56e054e2879e5ad76b2eb" }
+tantivy-common = { git = "https://github.com/quickwit-oss/tantivy/", rev = "4abc20f924e031a91f89c8cb44575e302e68fb38" }
 tantivy-fst = "0.5"
 
 # This is actually not used directly the goal is to fix the version

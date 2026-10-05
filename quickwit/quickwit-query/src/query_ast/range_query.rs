@@ -143,7 +143,7 @@ impl BuildTantivyAst for RangeQuery {
                 )
                 .into()
             }
-            tantivy::schema::FieldType::U64(_) => {
+            tantivy::schema::FieldType::U64(_) | tantivy::schema::FieldType::TieBreaker => {
                 let (lower_bound, upper_bound) =
                     convert_bounds(&self.lower_bound, &self.upper_bound, field_entry.name())?;
                 FastFieldRangeQuery::new(
@@ -353,6 +353,28 @@ mod tests {
             JsonLiteral::String("1989".to_string()),
             "FastFieldRangeQuery { bounds: BoundsRange { lower_bound: Included(Term(field=2, \
              type=F64, 1980.0)), upper_bound: Included(Term(field=2, type=F64, 1989.0)) } }",
+        );
+    }
+
+    #[test]
+    fn test_range_query_tie_breaker_field() {
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_tie_breaker_field("tie_breaker");
+        let schema = schema_builder.build();
+        let range_query = RangeQuery {
+            field: "tie_breaker".to_string(),
+            lower_bound: Bound::Included(JsonLiteral::String("1980".to_string())),
+            upper_bound: Bound::Included(JsonLiteral::String("1989".to_string())),
+        };
+        let tantivy_ast = range_query
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
+            .unwrap()
+            .simplify();
+        let leaf = tantivy_ast.as_leaf().unwrap();
+        assert_eq!(
+            format!("{leaf:?}"),
+            "FastFieldRangeQuery { bounds: BoundsRange { lower_bound: Included(Term(field=0, \
+             type=U64, 1980)), upper_bound: Included(Term(field=0, type=U64, 1989)) } }"
         );
     }
 
