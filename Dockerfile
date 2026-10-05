@@ -1,5 +1,7 @@
 FROM node:26@sha256:e3ffe0cbaeebdcddbfe1ee7bca9b564a92863a8386d5b99a3d72677b3667b61d AS ui-builder
 
+RUN npm install --global yarn@1.22.22
+
 COPY quickwit/quickwit-ui /quickwit/quickwit-ui
 
 WORKDIR /quickwit/quickwit-ui
