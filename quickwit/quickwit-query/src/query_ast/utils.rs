@@ -121,7 +121,7 @@ fn compute_query_with_field(
 ) -> Result<TantivyQueryAst, InvalidQuery> {
     let field_type = field_entry.field_type();
     match field_type {
-        FieldType::U64(_) => {
+        FieldType::U64(_) | FieldType::TieBreaker => {
             let val = parse_value_from_user_text::<u64>(value, field_entry.name())?;
             let term = Term::from_field_u64(field, val);
             Ok(make_term_query(term))
