@@ -133,7 +133,6 @@ Run `cargo check` after editing `Cargo.toml` to update `Cargo.lock`.
 **MUST**:
 
 - [ ] Run `make fmt`.
-- [ ] Keep new files under 500 lines (split by responsibility if larger).
 - [ ] Ensure tests pass (see below).
 - [ ] Update documentation for new public behavior, configuration, protocols, or architecture.
 
@@ -144,4 +143,3 @@ Run `cargo check` after editing `Cargo.toml` to update `Cargo.lock`.
 - `make test-failpoints` — runs failpoint tests only: `cargo nextest run --test failpoints --features fail/failpoints`.
 - Docker services: `make docker-compose-up` / `make docker-compose-down` (subset: `DOCKER_SERVICES=kafka,postgres`).
 - Integration tests are under `rest-api-tests`; compile and run the `quickwit-cli` binary to have an instance available to test against.
-

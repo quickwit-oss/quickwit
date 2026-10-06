@@ -470,6 +470,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         EventBroker::default(),
         split_cache,
         fingerprinter_opt,
+        tokio::sync::watch::Sender::new(None),
     )
     .await?;
     let (indexing_server_mailbox, indexing_server_handle) =
@@ -615,6 +616,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         EventBroker::default(),
         Arc::new(IndexingSplitCache::no_caching()),
         fingerprinter_opt,
+        tokio::sync::watch::Sender::new(None),
     )
     .await?;
     let (indexing_service_mailbox, indexing_service_handle) =
@@ -963,6 +965,7 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         ingester_status: IngesterStatus::default(),
         availability_zone: None,
         enable_standalone_compactors: false,
+        enable_shard_scaling_v2: false,
     };
     let channel_factory = ChannelFactory::for_grpc(&config.grpc_config)?;
     let cluster = Cluster::join(

@@ -17,6 +17,7 @@ use std::ops::RangeBounds;
 use std::path::Path;
 
 use bytes::Buf;
+use bytesize::ByteSize;
 use mrecordlog::error::*;
 use mrecordlog::{MultiRecordLog, PersistAction, PersistPolicy, Record, ResourceUsage};
 use tokio::task::JoinError;
@@ -151,7 +152,11 @@ impl MultiRecordLogAsync {
     }
 
     #[instrument(name = "mrecordlog.truncate_async", skip_all, fields(queue, position))]
-    pub async fn truncate(&mut self, queue: &str, position: u64) -> Result<usize, TruncateError> {
+    pub async fn truncate(
+        &mut self,
+        queue: &str,
+        position: u64,
+    ) -> Result<ByteSize, TruncateError> {
         let span = info_span!("mrecordlog.truncate", queue, position);
         let queue = queue.to_string();
         self.run_operation(span, move |mrecordlog| {
@@ -160,7 +165,7 @@ impl MultiRecordLogAsync {
                 .inspect(|outcome| {
                     WAL_BYTES_WRITTEN_TRUNCATE.inc_by(outcome.wal_bytes_written);
                 })
-                .map(|outcome| outcome.evicted_records)
+                .map(|outcome| ByteSize::b(outcome.evicted_bytes as u64))
         })
         .await
     }

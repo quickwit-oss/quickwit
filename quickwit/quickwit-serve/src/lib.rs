@@ -65,7 +65,6 @@ use quickwit_cluster::{
     Cluster, ClusterChange, ClusterChangeStream, ClusterNode, ListenerHandle, start_cluster_service,
 };
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
-use quickwit_common::rate_limiter::RateLimiterSettings;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, CircuitBreakerEvaluator,
@@ -86,10 +85,10 @@ use quickwit_control_plane::{IndexerPool, IndexerPoolEntry};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
 use quickwit_indexing::actors::{IndexingService, MergeSchedulerService};
 use quickwit_indexing::models::ShardPositionsService;
-use quickwit_indexing::{IndexingSplitCache, start_indexing_service};
+use quickwit_indexing::{IndexerStateReporter, IndexingSplitCache, start_indexing_service};
 use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
-    IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout,
+    IngesterPoolEntry, LocalShardsUpdate, ShardThroughputReadings, get_idle_shard_timeout,
     setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
     start_ingest_api_service,
 };
@@ -122,7 +121,7 @@ use quickwit_storage::{SearchSplitCache, StorageResolver};
 pub use quickwit_telemetry_exporters::{EnvFilterReloadFn, do_nothing_env_filter_reload_fn};
 pub use quickwit_transport::reload_tls_cert;
 use tcp_listener::TcpListenerResolver;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use tonic::codec::CompressionEncoding;
 use tonic_health::ServingStatus;
@@ -636,6 +635,7 @@ pub async fn serve_quickwit(
 
     let indexing_split_cache = indexing_split_cache_for_config(&node_config).await?;
 
+    let (indexing_tasks_tx, indexing_tasks_rx) = watch::channel(None);
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
         // if standalone compactors is enabled, indexing pipelines don't perform any merges.
         // if standalone compactors is disabled, indexing pipelines perform all merges as before.
@@ -657,6 +657,7 @@ pub async fn serve_quickwit(
             event_broker.clone(),
             merge_scheduler_mailbox_opt,
             split_cache,
+            indexing_tasks_tx,
         )
         .await
         .context("failed to start indexing service")?;
@@ -674,15 +675,28 @@ pub async fn serve_quickwit(
     );
 
     // Setup ingest service v2.
+    let (local_shards_tx, local_shards_rx) = watch::channel(None);
     let (ingest_router, ingest_router_service, ingester_opt) = setup_ingest_v2(
         &node_config,
         &cluster,
         &event_broker,
         control_plane_client.clone(),
-        ingester_pool,
+        ingester_pool.clone(),
+        local_shards_tx,
     )
     .await
     .context("failed to start ingest v2 service")?;
+
+    if node_config.is_service_enabled(QuickwitService::Indexer) {
+        IndexerStateReporter::start_reporting(
+            cluster.self_node_id(),
+            cluster.self_chitchat_id().generation_id,
+            local_shards_rx,
+            indexing_tasks_rx,
+            control_plane_client.clone(),
+            ingester_pool,
+        );
+    }
 
     if node_config.is_service_enabled(QuickwitService::Indexer)
         || node_config.is_service_enabled(QuickwitService::ControlPlane)
@@ -1125,6 +1139,7 @@ async fn setup_ingest_v2(
     event_broker: &EventBroker,
     control_plane: ControlPlaneServiceClient,
     ingester_pool: IngesterPool,
+    local_shards_tx: watch::Sender<Option<Arc<ShardThroughputReadings>>>,
 ) -> anyhow::Result<(IngestRouter, IngestRouterServiceClient, Option<Ingester>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().to_owned();
@@ -1148,15 +1163,6 @@ async fn setup_ingest_v2(
         .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
         .build(ingest_router.clone());
 
-    let rate_limit =
-        ConstantRate::bytes_per_sec(node_config.ingest_api_config.shard_throughput_limit);
-    let rate_limiter_settings = RateLimiterSettings {
-        burst_limit: node_config.ingest_api_config.shard_burst_limit.as_u64(),
-        rate_limit,
-        // Refill every 100ms.
-        refill_period: Duration::from_millis(100),
-    };
-
     // Instantiate ingester.
     let ingester_opt: Option<Ingester> = if node_config.is_service_enabled(QuickwitService::Indexer)
     {
@@ -1170,8 +1176,8 @@ async fn setup_ingest_v2(
             &wal_dir_path,
             node_config.ingest_api_config.max_queue_disk_usage,
             node_config.ingest_api_config.max_queue_memory_usage,
-            rate_limiter_settings,
             idle_shard_timeout,
+            local_shards_tx,
         )
         .await?;
         ingester.subscribe(event_broker);
@@ -1221,12 +1227,7 @@ fn setup_ingester_pool(
                     );
                     Some(change)
                 }
-                // only update the ingester pool when the ingester status changes, to avoid
-                // unnecessary churn
-                ClusterChange::Update { previous, updated }
-                    if updated.is_indexer()
-                        && previous.ingester_status != updated.ingester_status =>
-                {
+                ClusterChange::Update { previous, updated } if should_update_ingester(&previous, &updated) => {
                     let change = build_ingester_insert_change(
                         &updated,
                         ingester_opt_clone,
@@ -1244,6 +1245,13 @@ fn setup_ingester_pool(
         })
     });
     ingester_pool.listen_for_changes(ingester_change_stream);
+}
+
+fn should_update_ingester(previous: &ClusterNode, updated: &ClusterNode) -> bool {
+    let ingester_status_changed = previous.ingester_status != updated.ingester_status;
+    let enable_shard_scaling_v2_changed = previous.enable_shard_scaling_v2() != updated.enable_shard_scaling_v2();
+    return updated.is_indexer()
+        && (enable_shard_scaling_v2_changed || ingester_status_changed);
 }
 
 fn build_ingester_insert_change(
@@ -1264,6 +1272,7 @@ fn build_ingester_insert_change(
         status: node.ingester_status,
         availability_zone: node.availability_zone(),
         generation_id: node.generation_id,
+        enable_shard_scaling_v2: node.enable_shard_scaling_v2(),
     };
     Change::Insert(node_id, pool_entry)
 }

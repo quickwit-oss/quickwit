@@ -19,6 +19,9 @@ use quickwit_metrics::{
     LabelNames, LazyCounter, LazyGauge, LazyHistogram, label_names, lazy_counter, lazy_gauge,
     lazy_histogram,
 };
+use quickwit_proto::ingest::ShardState;
+
+use super::local_shards_utils::ShardThroughputReadings;
 
 pub(super) const STATUS: LabelNames<1> = label_names!("status");
 

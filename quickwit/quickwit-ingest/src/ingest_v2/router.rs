@@ -292,12 +292,13 @@ impl IngestRouter {
                         workbench.record_persist_failure(&persist_failure);
 
                         match persist_failure.reason() {
-                            PersistFailureReason::NoShardsAvailable => {
+                            PersistFailureReason::NoShardsForSource => {
                                 // For non-critical failures, we don't mark the nodes unavailable;
                                 // a routing update is piggybacked on PersistResponses, so shard
                                 // counts and capacity scores will be fresh on the next try.
                             }
                             PersistFailureReason::NodeUnavailable
+                            | PersistFailureReason::Internal
                             | PersistFailureReason::WalFull
                             | PersistFailureReason::Timeout => {
                                 unavailable_ingesters.insert(ingester_id.clone());
@@ -1368,6 +1369,7 @@ mod tests {
                 status: IngesterStatus::Ready,
                 availability_zone: None,
                 generation_id: GenerationId::from(1u64),
+                enable_shard_scaling_v2: false,
             },
         );
 
@@ -1405,6 +1407,7 @@ mod tests {
                 availability_zone: None,
                 status: IngesterStatus::Ready,
                 generation_id: GenerationId::from(1u64),
+                enable_shard_scaling_v2: false,
             },
         );
 
@@ -1531,6 +1534,7 @@ mod tests {
                 status: IngesterStatus::Ready,
                 availability_zone: None,
                 generation_id: GenerationId::from(1u64),
+                enable_shard_scaling_v2: false,
             },
         );
 
@@ -1692,6 +1696,7 @@ mod tests {
                 availability_zone: None,
                 status: IngesterStatus::Ready,
                 generation_id: GenerationId::from(1u64),
+                enable_shard_scaling_v2: false,
             },
         );
 
@@ -1757,6 +1762,7 @@ mod tests {
             NodeId::from_str("test-ingester-0"),
             IngesterPoolEntry {
                 generation_id: GenerationId::from(2u64),
+                enable_shard_scaling_v2: false,
                 ..IngesterPoolEntry::mocked_ingester()
             },
         );
@@ -1912,6 +1918,7 @@ mod tests {
             NodeId::from_str("test-ingester-0"),
             IngesterPoolEntry {
                 generation_id: GenerationId::from(3u64),
+                enable_shard_scaling_v2: false,
                 ..IngesterPoolEntry::mocked_ingester()
             },
         );
@@ -1929,6 +1936,7 @@ mod tests {
             NodeId::from_str("test-ingester-0"),
             IngesterPoolEntry {
                 generation_id: GenerationId::from(7u64),
+                enable_shard_scaling_v2: false,
                 ..IngesterPoolEntry::mocked_ingester()
             },
         );

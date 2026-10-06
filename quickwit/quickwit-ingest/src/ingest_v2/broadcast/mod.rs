@@ -24,7 +24,7 @@ pub(in crate::ingest_v2) const BROADCAST_INTERVAL_PERIOD: Duration =
     if cfg!(any(test, feature = "testsuite")) {
         Duration::from_millis(50)
     } else {
-        Duration::from_secs(5)
+        Duration::from_secs(1)
     };
 
 pub use capacity_score::{

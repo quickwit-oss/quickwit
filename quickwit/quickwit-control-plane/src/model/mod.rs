@@ -36,9 +36,10 @@ use quickwit_proto::metastore::{
     MetastoreServiceClient, SourceType, ToggleSourceRequest,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
-pub(super) use shard_table::{ScalingMode, ShardEntry, ShardLocations, ShardStats, ShardTable};
+pub(super) use shard_table::{ShardEntry, ShardLocations, ShardStats, ShardTable};
 use tracing::{debug, error, info, instrument, warn};
 
+pub(super) use crate::ingest::ScalingMode;
 use crate::metrics::INDEXES_TOTAL;
 
 /// The control plane maintains a model in sync with the metastore.
@@ -370,18 +371,28 @@ impl ControlPlaneModel {
             .find_open_shards(index_uid, source_id, unavailable_ingesters)
     }
 
-    /// Updates the state and ingestion rate of the shards according to the given shard infos.
-    pub fn update_shards(
-        &mut self,
+    // Used by the new scaling controller.
+    pub fn shard_throughput_stats(
+        &self,
         source_uid: &SourceUid,
-        shard_infos: &ShardInfos,
-    ) -> ShardStats {
+        live_ingesters: &FnvHashSet<NodeId>,
+    ) -> Option<ShardStats> {
+        self.shard_table.shard_throughput_stats(source_uid, live_ingesters)
+    }
+
+    // Used by the legacy scaling controller.
+    pub fn legacy_shard_stats(&self, source_uid: &SourceUid) -> Option<ShardStats> {
+        self.shard_table.legacy_shard_stats(source_uid)
+    }
+
+    /// Updates the state and ingestion rate of the shards according to the given shard infos.
+    pub fn update_shards(&mut self, source_uid: &SourceUid, shard_infos: &ShardInfos) {
         debug!(
             index_uid=%source_uid.index_uid,
             source_id=%source_uid.source_id,
             "updating shards"
         );
-        self.shard_table.update_shards(source_uid, shard_infos)
+        self.shard_table.update_shards(source_uid, shard_infos);
     }
 
     /// Sets the state of the shards identified by their index UID, source ID, and shard IDs to

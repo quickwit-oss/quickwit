@@ -16,9 +16,9 @@ use bytesize::ByteSize;
 use quickwit_common::ring_buffer::RingBuffer;
 
 /// The lookback window length is meant to capture readings far enough back in time to give
-/// a rough rate of change estimate. At size 6, with broadcast interval of 5 seconds, this would be
+/// a rough rate of change estimate. At size 30, with broadcast interval of 1 second, this would be
 /// 30 seconds of readings.
-const WAL_CAPACITY_LOOKBACK_WINDOW_LEN: usize = 6;
+const WAL_CAPACITY_LOOKBACK_WINDOW_LEN: usize = 30;
 
 /// The ring buffer stores one extra element so that `delta()` can compare the newest reading
 /// with the one that is exactly `WAL_CAPACITY_LOOKBACK_WINDOW_LEN` steps ago. Otherwise, that
@@ -98,7 +98,7 @@ impl WalCapacityTracker {
     }
 }
 
-/// Computes a capacity score from 0 to 10 using a PD controller.
+/// Computes a capacity score from 0 to 100 using a PD controller.
 ///
 /// The score has two components:
 ///
@@ -112,16 +112,16 @@ impl WalCapacityTracker {
 ///   converts it into a 0–1 bonus. Multiplied by `DERIVATIVE_WEIGHT`, a stable node gets the full
 ///   bonus and a node draining at `MAX_DRAIN_RATE` or faster gets nothing.
 ///
-/// Putting it together: a completely idle ingester scores 10 (8 + 2).
-/// One that is full but stable scores ~2. One that is draining rapidly scores less.
+/// Putting it together: a completely idle ingester scores 100 (80 + 20).
+/// One that is full but stable scores ~20. One that is draining rapidly scores less.
 /// A score of 0 means the ingester is at or below minimum permissible capacity.
 ///
 /// Below this remaining capacity fraction, the score is immediately 0.
 const MIN_PERMISSIBLE_CAPACITY: f64 = 0.05;
 /// Weight of the proportional term (max points from P).
-const PROPORTIONAL_WEIGHT: f64 = 8.0;
+const PROPORTIONAL_WEIGHT: f64 = 80.0;
 /// Weight of the derivative term (max points from D).
-const DERIVATIVE_WEIGHT: f64 = 2.0;
+const DERIVATIVE_WEIGHT: f64 = 20.0;
 /// The drain rate (as a fraction of total capacity over the lookback window) at which the
 /// derivative penalty is fully applied. Drain rates beyond this are clamped.
 const MAX_DRAIN_RATE: f64 = 0.10;
@@ -133,7 +133,7 @@ fn compute_capacity_score(remaining_capacity: f64, capacity_delta: f64) -> usize
     let p = PROPORTIONAL_WEIGHT * remaining_capacity;
     let drain = (-capacity_delta).clamp(0.0, MAX_DRAIN_RATE);
     let d = DERIVATIVE_WEIGHT * (1.0 - drain / MAX_DRAIN_RATE);
-    (p + d).clamp(0.0, 10.0) as usize
+    (p + d).clamp(0.0, 100.0) as usize
 }
 
 #[cfg(test)]

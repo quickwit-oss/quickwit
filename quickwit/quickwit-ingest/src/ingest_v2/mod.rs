@@ -18,6 +18,7 @@ mod doc_mapper;
 mod fetch;
 mod idle;
 mod ingester;
+mod local_shards_utils;
 pub(crate) mod metrics;
 mod models;
 mod mrecord;
@@ -26,6 +27,7 @@ mod publish_tracker;
 mod rate_meter;
 mod router;
 mod routing_table;
+mod shard_readings;
 mod state;
 mod wal_capacity_tracker;
 mod workbench;
@@ -43,6 +45,7 @@ pub use broadcast::{
 use bytes::buf::Writer;
 use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
+pub use local_shards_utils::{ShardThroughputReadings, SourceShardReport};
 use quickwit_cluster::GenerationId;
 use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::{IngesterServiceClient, IngesterStatus};
@@ -59,6 +62,7 @@ pub use self::fetch::{FetchStreamError, MultiFetchStream};
 pub use self::ingester::Ingester;
 use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{MRecord, decoded_mrecords};
+pub use self::rate_meter::SharedRateMeter;
 pub use self::router::IngestRouter;
 
 /// An ingester as represented in the pool, bundling the gRPC client with node metadata.
@@ -68,6 +72,7 @@ pub struct IngesterPoolEntry {
     pub status: IngesterStatus,
     pub availability_zone: Option<AvailabilityZone>,
     pub generation_id: GenerationId,
+    pub enable_shard_scaling_v2: bool,
 }
 
 impl IngesterPoolEntry {
@@ -78,6 +83,7 @@ impl IngesterPoolEntry {
             status: IngesterStatus::Ready,
             availability_zone: None,
             generation_id: GenerationId::from(1u64),
+            enable_shard_scaling_v2: false,
         }
     }
 
@@ -88,11 +94,19 @@ impl IngesterPoolEntry {
             status: IngesterStatus::Ready,
             availability_zone: None,
             generation_id: GenerationId::from(1u64),
+            enable_shard_scaling_v2: false,
         }
     }
 }
 
 pub type IngesterPool = Pool<NodeId, IngesterPoolEntry>;
+
+pub fn all_indexers_enable_shard_scaling_v2(ingester_pool: &IngesterPool) -> bool {
+    ingester_pool
+        .keys_values()
+        .iter()
+        .all(|(_node_id, ingester)| ingester.enable_shard_scaling_v2)
+}
 
 /// Identifies an ingester client, typically a source, for logging and debugging purposes.
 pub type ClientId = String;

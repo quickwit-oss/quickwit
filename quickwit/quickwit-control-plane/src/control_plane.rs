@@ -28,16 +28,17 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, DeferableReplyHandler, Handler, Mailbox,
     Supervisor, Universe, WeakMailbox,
 };
+use quickwit_common::Progress;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::uri::Uri;
-use quickwit_common::{Progress, shared_consts};
 use quickwit_config::{ClusterConfig, IndexConfig, IndexTemplate, SourceConfig};
-use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
+use quickwit_ingest::{IngesterPool, LocalShardsUpdate, all_indexers_enable_shard_scaling_v2};
 use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadataResponseExt};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, ControlPlaneError, ControlPlaneResult,
     GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
+    ReportIndexerStateRequest, ReportIndexerStateResponse,
 };
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::IngesterStatus;
@@ -58,8 +59,8 @@ use crate::IndexerPool;
 use crate::cooldown_map::{CooldownMap, CooldownStatus};
 use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
-use crate::ingest::IngestController;
 use crate::ingest::ingest_controller::{IngestControllerStats, RebalanceShardsCallback};
+use crate::ingest::{IngestController, LegacyScalingController, ScalingController};
 use crate::metrics::{METASTORE_ERROR_ABORTED, METASTORE_ERROR_MAYBE_EXECUTED, RESTART_TOTAL};
 use crate::model::ControlPlaneModel;
 
@@ -97,6 +98,12 @@ pub struct ControlPlane {
     // the different ingesters.
     indexing_scheduler: IndexingScheduler,
     ingest_controller: IngestController,
+    // The legacy scaling controller handles gossip-based ingest updates.
+    // Unused when enable_shard_scaling_v2 is enabled.
+    legacy_scaling_controller: LegacyScalingController,
+    // The scaling controller handles gRPC-based ingest updates.
+    // Unused when enable_shard_scaling_v2 is disabled.
+    scaling_controller: ScalingController,
     metastore: MetastoreServiceClient,
     model: ControlPlaneModel,
     prune_shard_cooldown: CooldownMap<(IndexId, SourceId)>,
@@ -128,16 +135,16 @@ impl ControlPlane {
         let (control_plane_mailbox, control_plane_handle) =
             universe.spawn_builder().supervise_fn(move || {
                 let cluster_id = cluster_config.cluster_id.clone();
-                let shard_throughput_limit_mib: f32 = cluster_config.shard_throughput_limit.as_u64()
-                    as f32
-                    / shared_consts::MIB as f32;
                 let indexing_scheduler =
                     IndexingScheduler::new(cluster_id, self_node_id.clone(), indexer_pool.clone());
-                let ingest_controller = IngestController::new(
-                    metastore.clone(),
-                    ingester_pool.clone(),
-                    shard_throughput_limit_mib,
+                let ingest_controller =
+                    IngestController::new(metastore.clone(), ingester_pool.clone());
+                let legacy_scaling_controller = LegacyScalingController::new(
+                    cluster_config.shard_throughput_limit,
                     cluster_config.shard_scale_up_factor,
+                );
+                let scaling_controller = ScalingController::with_shard_throughput_limit(
+                    cluster_config.shard_throughput_limit,
                 );
 
                 let readiness_tx = readiness_tx.clone();
@@ -147,6 +154,8 @@ impl ControlPlane {
                     cluster_config: cluster_config.clone(),
                     indexing_scheduler,
                     ingest_controller,
+                    legacy_scaling_controller,
+                    scaling_controller,
                     metastore: metastore.clone(),
                     model: Default::default(),
                     prune_shard_cooldown: CooldownMap::new(NonZeroUsize::new(1024).unwrap()),
@@ -363,6 +372,8 @@ impl ControlPlane {
                     "shard_state": shard_entry.shard_state().as_json_str_name(),
                     "ingester_id": shard_entry.ingester_id,
                     "publish_position_inclusive": shard_entry.publish_position_inclusive(),
+                    "short_term_ingestion_rate_bytes_per_sec": shard_entry.short_term_ingestion_rate.as_u64(),
+                    "long_term_ingestion_rate_bytes_per_sec": shard_entry.long_term_ingestion_rate.as_u64(),
                 });
                 per_index_and_leader_shards_json
                     .entry(source_uid.index_uid.clone())
@@ -489,11 +500,33 @@ impl Handler<ControlPlaneLoop> for ControlPlane {
         _message: ControlPlaneLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if let Err(metastore_error) = self
-            .ingest_controller
-            .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
-            .await
-        {
+        // If enable_shard_scaling_v2 is off, use the legacy controller for gossip-based scaling
+        // decisions. If it's on, and all indexers are migrated to the gRPC-based approach, use the
+        // new scaling controller.
+        //
+        // The initial rollout of a cluster from the legacy controller to the new controller requires a little more touch. Due to the nature of different reporting intervals
+        // and logic differences (the legacy flow would reconcile shards on every update), keep using the legacy controller until all indexers are ready and report via gRPC; at that point, cut over everything all at once.
+        let reconcile_shards_result =
+            if all_indexers_enable_shard_scaling_v2(&self.ingest_controller.ingester_pool) {
+                self.scaling_controller
+                    .reconcile_shards(
+                        &mut self.ingest_controller,
+                        &mut self.model,
+                        ctx.mailbox(),
+                        ctx.progress(),
+                    )
+                    .await
+            } else {
+                self.legacy_scaling_controller
+                    .reconcile_shards(
+                        &mut self.ingest_controller,
+                        &mut self.model,
+                        ctx.mailbox(),
+                        ctx.progress(),
+                    )
+                    .await
+            };
+        if let Err(metastore_error) = reconcile_shards_result {
             if let Err(actor_exit_status) = convert_metastore_error::<()>(metastore_error) {
                 // See convert_metastore_error's spec. If it returns an error, it
                 // means we do not know if all metastore tx were aborted or not.
@@ -505,6 +538,7 @@ impl Handler<ControlPlaneLoop> for ControlPlane {
                 return Err(actor_exit_status);
             }
         }
+        let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
         self.indexing_scheduler.control_running_plan(&self.model);
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlaneLoop);
         Ok(())
@@ -937,6 +971,7 @@ impl Handler<AdviseResetShardsRequest> for ControlPlane {
     }
 }
 
+/// Handler for the legacy gossip based ingest shard updates.
 #[async_trait]
 impl Handler<LocalShardsUpdate> for ControlPlane {
     type Reply = ControlPlaneResult<()>;
@@ -946,15 +981,67 @@ impl Handler<LocalShardsUpdate> for ControlPlane {
         local_shards_update: LocalShardsUpdate,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
+        // Once all indexers report that enable_shard_scaling_v2 is complete, this becomes a no-op.
+        if all_indexers_enable_shard_scaling_v2(&self.ingest_controller.ingester_pool) {
+            return Ok(Ok(()));
+        }
         if let Err(metastore_error) = self
-            .ingest_controller
-            .handle_local_shards_update(local_shards_update, &mut self.model, ctx.progress())
+            .legacy_scaling_controller
+            .update_local_shards(
+                &mut self.ingest_controller,
+                local_shards_update.source_uid,
+                &local_shards_update.shard_infos,
+                &mut self.model,
+                ctx.progress(),
+            )
             .await
         {
             return convert_metastore_error(metastore_error);
         }
         let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
         Ok(Ok(()))
+    }
+}
+
+/// Handler for indexer-level data that was previously gossiped. The indexing pipeline data is used
+/// to control the indexing pipeline plan scheduling, while the shard updates are used to affect
+/// shard scale-up/down decisions.
+///
+/// Since this is a best-effort report endpoint, the control plane immediately responds Ok on
+/// receipt, to not linger on the connection while processing the data (which has no response).
+/// 
+/// The ingest data received here is only actioned on in the control plane loop.
+#[async_trait]
+impl DeferableReplyHandler<ReportIndexerStateRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<ReportIndexerStateResponse>;
+
+    async fn handle_message(
+        &mut self,
+        request: ReportIndexerStateRequest,
+        reply: impl FnOnce(Self::Reply) + Send + Sync + 'static,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        reply(Ok(ReportIndexerStateResponse {}));
+
+        if let Some(indexing_tasks_update) = request.indexing_tasks_update {
+            self.indexing_scheduler.record_reported_tasks(
+                &request.node_id,
+                request.generation_id,
+                indexing_tasks_update.indexing_tasks,
+            );
+        }
+        if let Some(shards_update) = request.shards_update
+            && all_indexers_enable_shard_scaling_v2(&self.ingest_controller.ingester_pool)
+        {
+            self.scaling_controller.handle_shards_update(
+                &self.ingest_controller,
+                &request.node_id,
+                request.generation_id,
+                shards_update,
+                &mut self.model,
+            );
+        }
+        Ok(())
     }
 }
 
@@ -1090,6 +1177,342 @@ mod tests {
 
     use super::*;
     use crate::IndexerPoolEntry;
+
+    fn control_plane_for_reports(
+        metastore: MetastoreServiceClient,
+        ingester_pool: IngesterPool,
+        indexer_pool: IndexerPool,
+        min_shards: usize,
+    ) -> ControlPlane {
+        let cluster_config = ClusterConfig::for_test();
+        let mut metadata = IndexMetadata::for_test("index", "ram:///index");
+        metadata.index_config.ingest_settings.min_shards = NonZeroUsize::new(min_shards).unwrap();
+        let mut source = SourceConfig::ingest_v2();
+        source.enabled = true;
+        metadata.add_source(source).unwrap();
+        let index_uid = metadata.index_uid.clone();
+        let mut model = ControlPlaneModel::default();
+        model.add_index(metadata);
+        model.insert_shards(
+            &index_uid,
+            &INGEST_V2_SOURCE_ID.to_string(),
+            vec![Shard {
+                index_uid: Some(index_uid.clone()),
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
+                shard_id: Some(ShardId::from(1)),
+                shard_state: ShardState::Open as i32,
+                ingester_id: "indexer".to_string(),
+                publish_position_inclusive: Some(Position::Beginning),
+                ..Default::default()
+            }],
+        );
+        ControlPlane {
+            indexing_scheduler: IndexingScheduler::new(
+                cluster_config.cluster_id.clone(),
+                NodeId::from_str("cp"),
+                indexer_pool,
+            ),
+            ingest_controller: IngestController::new(metastore.clone(), ingester_pool),
+            scaling_controller: ScalingController::with_shard_throughput_limit(
+                cluster_config.shard_throughput_limit,
+            ),
+            legacy_scaling_controller: LegacyScalingController::new(
+                cluster_config.shard_throughput_limit,
+                cluster_config.shard_scale_up_factor,
+            ),
+            cluster_config,
+            metastore,
+            model,
+            prune_shard_cooldown: CooldownMap::new(NonZeroUsize::new(1024).unwrap()),
+            rebuild_plan_debouncer: Debouncer::new(REBUILD_PLAN_COOLDOWN_PERIOD),
+            readiness_tx: watch::Sender::new(true),
+        }
+    }
+
+    fn report_for_test() -> ReportIndexerStateRequest {
+        ReportIndexerStateRequest {
+            node_id: "indexer".to_string(),
+            generation_id: 1,
+            shards_update: Some(quickwit_proto::control_plane::ShardsUpdate {
+                shard_infos_by_source: vec![quickwit_proto::control_plane::ShardInfosBySource {
+                    index_uid: Some(IndexUid::for_test("index", 0)),
+                    source_id: INGEST_V2_SOURCE_ID.to_string(),
+                    shard_infos: vec![quickwit_proto::control_plane::ShardInfo {
+                        shard_id: Some(ShardId::from(1)),
+                        shard_state: ShardState::Open as i32,
+                        short_term_ingestion_rate_bytes_per_sec: 123,
+                        long_term_ingestion_rate_bytes_per_sec: 456,
+                    }],
+                }],
+            }),
+            indexing_tasks_update: None,
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_report_acknowledged_before_periodic_reconciliation() {
+        for outcome in ["success", "aborted", "uncertain"] {
+            let universe = Universe::new();
+            let (mailbox, _inbox) = universe.create_test_mailbox();
+            let ctx = ActorContext::for_test(
+                &universe,
+                mailbox,
+                watch::Sender::new(ControlPlaneObservableState::default()),
+            );
+            let mut mock_ingester = MockIngesterService::new();
+            mock_ingester
+                .expect_init_shards()
+                .once()
+                .returning(|request| {
+                    Ok(InitShardsResponse {
+                        successes: request
+                            .subrequests
+                            .into_iter()
+                            .map(|request| InitShardSuccess {
+                                subrequest_id: request.subrequest_id,
+                                shard: request.shard,
+                            })
+                            .collect(),
+                        failures: Vec::new(),
+                    })
+                });
+            let ingester = IngesterServiceClient::tower()
+                .stack_init_shards_layer(quickwit_common::tower::DelayLayer::new(
+                    Duration::from_millis(10),
+                ))
+                .build_from_mock(mock_ingester);
+            let pool = IngesterPool::default();
+            pool.insert(
+                NodeId::from_str("indexer"),
+                IngesterPoolEntry::ready_with_client(ingester),
+            );
+            let mut mock_metastore = MockMetastoreService::new();
+            mock_metastore
+                .expect_open_shards()
+                .once()
+                .returning(move |request| match outcome {
+                    "aborted" => Err(MetastoreError::InvalidArgument {
+                        message: "aborted".to_string(),
+                    }),
+                    "uncertain" => Err(MetastoreError::Connection {
+                        message: "uncertain".to_string(),
+                    }),
+                    _ => Ok(OpenShardsResponse {
+                        subresponses: request
+                            .subrequests
+                            .into_iter()
+                            .map(|request| OpenShardSubresponse {
+                                subrequest_id: request.subrequest_id,
+                                open_shard: Some(Shard {
+                                    index_uid: request.index_uid,
+                                    source_id: request.source_id,
+                                    shard_id: request.shard_id,
+                                    ingester_id: request.ingester_id,
+                                    shard_state: ShardState::Open as i32,
+                                    ..Default::default()
+                                }),
+                            })
+                            .collect(),
+                    }),
+                });
+            let mut control_plane = control_plane_for_reports(
+                MetastoreServiceClient::from_mock(mock_metastore),
+                pool,
+                IndexerPool::default(),
+                2,
+            );
+            let (reply_tx, mut reply_rx) = tokio::sync::oneshot::channel();
+            control_plane
+                .handle_message(
+                    report_for_test(),
+                    move |reply| {
+                        reply_tx.send(reply).unwrap();
+                    },
+                    &ctx,
+                )
+                .await
+                .unwrap();
+            assert!(reply_rx.try_recv().unwrap().is_ok());
+            assert_eq!(control_plane.model.all_shards().count(), 1);
+            let result = {
+                let handling = Handler::handle(&mut control_plane, ControlPlaneLoop, &ctx);
+                tokio::pin!(handling);
+                assert!(futures::poll!(handling.as_mut()).is_pending());
+                handling.await
+            };
+            assert_eq!(result.is_err(), outcome == "uncertain");
+            assert_eq!(
+                control_plane.model.all_shards().count(),
+                if outcome == "success" { 2 } else { 1 }
+            );
+            assert_eq!(
+                control_plane
+                    .model
+                    .all_shards()
+                    .find(|shard| shard.shard_id() == ShardId::from(1))
+                    .unwrap()
+                    .short_term_ingestion_rate,
+                bytesize::ByteSize::b(123)
+            );
+            universe.assert_quit().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_report_optional_updates_and_legacy_shard_updates() {
+        let universe = Universe::new();
+        let (mailbox, _inbox) = universe.create_test_mailbox();
+        let ctx = ActorContext::for_test(
+            &universe,
+            mailbox,
+            watch::Sender::new(ControlPlaneObservableState::default()),
+        );
+        let (applied_tx, mut applied_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut mock_indexer = MockIndexingService::new();
+        mock_indexer
+            .expect_apply_indexing_plan()
+            .times(2)
+            .returning(move |request| {
+                applied_tx.send(request).unwrap();
+                Ok(ApplyIndexingPlanResponse {})
+            });
+        let pool = IndexerPool::default();
+        pool.insert(
+            NodeId::from_str("indexer"),
+            IndexerPoolEntry {
+                node_id: NodeId::from_str("indexer"),
+                generation_id: 1,
+                client: IndexingServiceClient::from_mock(mock_indexer),
+                indexing_tasks: Vec::new(),
+                indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+                ingester_status: IngesterStatus::Ready,
+                availability_zone: None,
+            },
+        );
+        let mut control_plane = control_plane_for_reports(
+            MetastoreServiceClient::mocked(),
+            IngesterPool::default(),
+            pool,
+            1,
+        );
+        control_plane
+            .indexing_scheduler
+            .rebuild_plan(&control_plane.model);
+        let plan = tokio::time::timeout(Duration::from_secs(1), applied_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!plan.indexing_tasks.is_empty());
+        let mut report = report_for_test();
+        report.indexing_tasks_update = Some(quickwit_proto::control_plane::IndexingTasksUpdate {
+            indexing_tasks: plan.indexing_tasks.clone(),
+        });
+        control_plane
+            .handle_message(
+                report,
+                |reply| {
+                    reply.unwrap();
+                },
+                &ctx,
+            )
+            .await
+            .unwrap();
+        tokio::time::sleep(crate::indexing_scheduler::MIN_DURATION_BETWEEN_SCHEDULING * 2).await;
+
+        for shards_update in [report_for_test().shards_update, None] {
+            control_plane
+                .handle_message(
+                    ReportIndexerStateRequest {
+                        shards_update,
+                        node_id: "indexer".to_string(),
+                        generation_id: 1,
+                        indexing_tasks_update: None,
+                    },
+                    |reply| {
+                        reply.unwrap();
+                    },
+                    &ctx,
+                )
+                .await
+                .unwrap();
+            control_plane
+                .indexing_scheduler
+                .control_running_plan(&control_plane.model);
+            assert_eq!(
+                control_plane
+                    .indexing_scheduler
+                    .observable_state()
+                    .num_applied_physical_indexing_plan,
+                1
+            );
+        }
+        let debug = control_plane.debug_info();
+        let shard = &debug["shard_table"]["index:00000000000000000000000000"]["indexer"][0];
+        assert_eq!(shard["short_term_ingestion_rate_bytes_per_sec"], 123);
+        assert_eq!(shard["long_term_ingestion_rate_bytes_per_sec"], 456);
+
+        let legacy = LocalShardsUpdate {
+            ingester_id: NodeId::from_str("indexer"),
+            source_uid: SourceUid {
+                index_uid: IndexUid::for_test("index", 0),
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
+            },
+            shard_infos: BTreeSet::from([quickwit_ingest::ShardInfo {
+                shard_id: ShardId::from(1),
+                shard_state: ShardState::Open,
+                short_term_ingestion_rate: bytesize::ByteSize::mib(1),
+                long_term_ingestion_rate: bytesize::ByteSize::mib(2),
+            }]),
+        };
+        Handler::handle(&mut control_plane, legacy, &ctx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            control_plane
+                .model
+                .all_shards()
+                .next()
+                .unwrap()
+                .long_term_ingestion_rate,
+            bytesize::ByteSize::mib(2)
+        );
+        control_plane
+            .handle_message(
+                ReportIndexerStateRequest {
+                    node_id: "indexer".to_string(),
+                    generation_id: 1,
+                    indexing_tasks_update: Some(
+                        quickwit_proto::control_plane::IndexingTasksUpdate::default(),
+                    ),
+                    shards_update: None,
+                },
+                |reply| {
+                    reply.unwrap();
+                },
+                &ctx,
+            )
+            .await
+            .unwrap();
+        control_plane
+            .indexing_scheduler
+            .control_running_plan(&control_plane.model);
+        let reapplied = tokio::time::timeout(Duration::from_secs(1), applied_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(reapplied.indexing_tasks, plan.indexing_tasks);
+        assert_eq!(
+            control_plane
+                .model
+                .all_shards()
+                .next()
+                .unwrap()
+                .long_term_ingestion_rate,
+            bytesize::ByteSize::mib(2)
+        );
+        universe.assert_quit().await;
+    }
 
     #[tokio::test]
     async fn test_control_plane_create_index() {
@@ -1784,6 +2207,7 @@ mod tests {
                 status: IngesterStatus::Retiring,
                 availability_zone: None,
                 generation_id: quickwit_cluster::GenerationId::from(1u64),
+                enable_shard_scaling_v2: false,
             },
         );
         ingester_pool.insert(

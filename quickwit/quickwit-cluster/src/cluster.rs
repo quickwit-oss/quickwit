@@ -42,7 +42,7 @@ use crate::grpc_gossip::spawn_catchup_callback_task;
 use crate::member::{
     AVAILABILITY_ZONE_KEY, ClusterMember, ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY,
     NodeStateExt, PIPELINE_METRICS_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY,
-    READINESS_VALUE_READY, STANDALONE_COMPACTORS_KEY,
+    READINESS_VALUE_READY, SHARD_SCALING_V2_KEY, STANDALONE_COMPACTORS_KEY,
 };
 use crate::metrics::spawn_metrics_task;
 use crate::{ClusterChangeStream, ClusterNode};
@@ -241,6 +241,10 @@ impl Cluster {
             STANDALONE_COMPACTORS_KEY.to_string(),
             self_node.enable_standalone_compactors.to_string(),
         ));
+        initial_key_values.push((
+            SHARD_SCALING_V2_KEY.to_string(),
+            self_node.enable_shard_scaling_v2.to_string(),
+        ));
         let chitchat_handle =
             spawn_chitchat(chitchat_config, initial_key_values, transport).await?;
 
@@ -280,6 +284,22 @@ impl Cluster {
         };
         spawn_change_stream_task(cluster.clone()).await;
         Ok(cluster)
+    }
+
+    pub async fn all_indexers_migrated(&self) -> bool {
+        let inner = self.inner.read().await;
+        if !inner
+            .live_nodes
+            .get(&self.self_node_id())
+            .is_some_and(|node| node.is_ready)
+        {
+            return false;
+        }
+        inner
+            .live_nodes
+            .values()
+            .filter(|node| node.is_ready && node.is_indexer())
+            .all(|node| node.enable_shard_scaling_v2())
     }
 
     pub async fn ready_nodes(&self) -> Vec<ClusterNode> {
@@ -776,6 +796,7 @@ impl<'a> TestClusterBuilder<'a> {
                 ingester_status: IngesterStatus::default(),
                 availability_zone: None,
                 enable_standalone_compactors: false,
+                enable_shard_scaling_v2: false,
             },
             peer_seed_addrs: Vec::new(),
             transport,

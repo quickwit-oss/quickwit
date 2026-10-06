@@ -42,6 +42,8 @@ pub(crate) const AVAILABILITY_ZONE_KEY: &str = "availability_zone";
 
 pub(crate) const STANDALONE_COMPACTORS_KEY: &str = "standalone_compactors";
 
+pub(crate) const SHARD_SCALING_V2_KEY: &str = "shard_scaling_v2";
+
 pub const INDEXING_CPU_CAPACITY_KEY: &str = "indexing_cpu_capacity";
 
 pub(crate) trait NodeStateExt {
@@ -56,6 +58,8 @@ pub(crate) trait NodeStateExt {
     fn availability_zone(&self) -> Option<AvailabilityZone>;
 
     fn enable_standalone_compactors(&self) -> bool;
+
+    fn enable_shard_scaling_v2(&self) -> bool;
 }
 
 impl NodeStateExt for NodeState {
@@ -100,6 +104,10 @@ impl NodeStateExt for NodeState {
     fn enable_standalone_compactors(&self) -> bool {
         matches!(self.get(STANDALONE_COMPACTORS_KEY), Some(value) if value == "true")
     }
+
+    fn enable_shard_scaling_v2(&self) -> bool {
+        matches!(self.get(SHARD_SCALING_V2_KEY), Some(value) if value == "true")
+    }
 }
 
 /// Cluster member.
@@ -135,6 +143,7 @@ pub struct ClusterMember {
     pub availability_zone: Option<AvailabilityZone>,
     /// Whether the node was started with standalone compactors enabled.
     pub enable_standalone_compactors: bool,
+    pub enable_shard_scaling_v2: bool,
 }
 
 impl ClusterMember {
@@ -205,6 +214,7 @@ pub(crate) fn build_cluster_member(
     let ingester_status = node_state.ingester_status();
     let availability_zone = node_state.availability_zone();
     let enable_standalone_compactors = node_state.enable_standalone_compactors();
+    let enable_shard_scaling_v2 = node_state.enable_shard_scaling_v2();
 
     let member = ClusterMember {
         node_id: NodeId::from_arc_str(chitchat_id.node_id.clone()),
@@ -218,6 +228,7 @@ pub(crate) fn build_cluster_member(
         ingester_status,
         availability_zone,
         enable_standalone_compactors,
+        enable_shard_scaling_v2,
     };
     Ok(member)
 }

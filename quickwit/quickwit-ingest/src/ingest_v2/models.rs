@@ -15,14 +15,14 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use quickwit_common::rate_limiter::RateLimiter;
+use bytesize::ByteSize;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::ingest::ShardState;
-use quickwit_proto::types::{IndexUid, Position, QueueId, ShardId, SourceId, queue_id};
+use quickwit_proto::types::{IndexUid, Position, QueueId, ShardId, SourceId, SourceUid, queue_id};
 use tokio::sync::watch;
 use tracing::error;
 
-use crate::ingest_v2::rate_meter::RateMeter;
+use crate::ingest_v2::rate_meter::SharedRateMeter;
 
 /// Status of a shard: state + position of the last record written.
 pub(super) type ShardStatus = (ShardState, Position);
@@ -37,8 +37,11 @@ pub(super) struct IngesterShard {
     pub replication_position_inclusive: Position,
     /// Position up to which the shard has been truncated.
     pub truncation_position_inclusive: Position,
-    pub rate_limiter: RateLimiter,
-    pub rate_meter: RateMeter,
+    /// The queue size is the amount of total in-flight bytes on this shard that are yet to be indexed.
+    pub queue_size: ByteSize,
+    /// The shared rate meter contains throughput and status readings for all shards, centralized
+    /// to be able to report to the control plane.
+    shared_rate_meter: Arc<SharedRateMeter>,
     /// Whether the shard should be advertised to other nodes (routers) via gossip.
     ///
     /// Because shards  are created in multiple steps, (e.g., init shard on ingester, create shard
@@ -57,9 +60,6 @@ pub(super) struct IngesterShard {
     pub last_write_instant: Instant,
 }
 
-/// Builder for `IngesterShard`. By default, the shard is open, is empty (i.e. the replication and
-/// truncation positions are at the beginning), uses the default rate limiter and rate meter, has no
-/// doc mapper, does not validate documents, and is not advertisable.
 pub(super) struct IngesterShardBuilder {
     index_uid: IndexUid,
     source_id: SourceId,
@@ -67,8 +67,8 @@ pub(super) struct IngesterShardBuilder {
     shard_state: ShardState,
     replication_position_inclusive: Position,
     truncation_position_inclusive: Position,
-    rate_limiter: RateLimiter,
-    rate_meter: RateMeter,
+    queue_size: ByteSize,
+    shared_rate_meter: Arc<SharedRateMeter>,
     doc_mapper_opt: Option<Arc<DocMapper>>,
     validate_docs: bool,
     is_advertisable: bool,
@@ -79,18 +79,6 @@ impl IngesterShardBuilder {
     /// Sets the shard state. Defaults to `ShardState::Open`.
     pub fn with_state(mut self, shard_state: ShardState) -> Self {
         self.shard_state = shard_state;
-        self
-    }
-
-    /// Sets the rate limiter. Defaults to `RateLimiter::default()`.
-    pub fn with_rate_limiter(mut self, rate_limiter: RateLimiter) -> Self {
-        self.rate_limiter = rate_limiter;
-        self
-    }
-
-    /// Sets the rate meter. Defaults to `RateMeter::default()`.
-    pub fn with_rate_meter(mut self, rate_meter: RateMeter) -> Self {
-        self.rate_meter = rate_meter;
         self
     }
 
@@ -109,6 +97,11 @@ impl IngesterShardBuilder {
     /// Sets the truncation position. Defaults to `Position::Beginning`.
     pub fn with_truncation_position_inclusive(mut self, position: Position) -> Self {
         self.truncation_position_inclusive = position;
+        self
+    }
+
+    pub fn with_queue_size(mut self, queue_size: ByteSize) -> Self {
+        self.queue_size = queue_size;
         self
     }
 
@@ -137,6 +130,15 @@ impl IngesterShardBuilder {
             self.replication_position_inclusive.clone(),
         );
         let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
+        self.shared_rate_meter.insert(
+            SourceUid {
+                index_uid: self.index_uid.clone(),
+                source_id: self.source_id.clone(),
+            },
+            self.shard_id.clone(),
+            self.shard_state,
+            self.is_advertisable,
+        );
         IngesterShard {
             index_uid: self.index_uid,
             source_id: self.source_id,
@@ -144,8 +146,8 @@ impl IngesterShardBuilder {
             shard_state: self.shard_state,
             replication_position_inclusive: self.replication_position_inclusive,
             truncation_position_inclusive: self.truncation_position_inclusive,
-            rate_limiter: self.rate_limiter,
-            rate_meter: self.rate_meter,
+            queue_size: self.queue_size,
+            shared_rate_meter: self.shared_rate_meter,
             is_advertisable: self.is_advertisable,
             doc_mapper_opt: self.doc_mapper_opt,
             validate_docs: self.validate_docs,
@@ -162,6 +164,7 @@ impl IngesterShard {
         index_uid: IndexUid,
         source_id: SourceId,
         shard_id: ShardId,
+        shared_rate_meter: Arc<SharedRateMeter>,
     ) -> IngesterShardBuilder {
         IngesterShardBuilder {
             index_uid,
@@ -170,8 +173,8 @@ impl IngesterShard {
             shard_state: ShardState::Open,
             replication_position_inclusive: Position::Beginning,
             truncation_position_inclusive: Position::Beginning,
-            rate_limiter: RateLimiter::default(),
-            rate_meter: RateMeter::default(),
+            queue_size: ByteSize::default(),
+            shared_rate_meter,
             doc_mapper_opt: None,
             validate_docs: false,
             is_advertisable: false,
@@ -181,7 +184,21 @@ impl IngesterShard {
 
     pub fn close(&mut self) {
         self.shard_state = ShardState::Closed;
+        self.shared_rate_meter.close(&self.shard_id);
         self.notify_shard_status();
+    }
+
+    pub fn make_advertisable(&mut self) {
+        if self.is_advertisable {
+            return;
+        }
+        self.is_advertisable = true;
+        self.shared_rate_meter.make_advertisable(&self.shard_id);
+    }
+
+    pub fn record_persisted_bytes(&self, num_bytes: u64) {
+        self.shared_rate_meter
+            .record_persisted_bytes(&self.shard_id, num_bytes);
     }
 
     pub fn is_closed(&self) -> bool {
@@ -245,6 +262,14 @@ impl IngesterShard {
         self.replication_position_inclusive = replication_position_inclusive;
         self.last_write_instant = now;
         self.notify_shard_status();
+    }
+}
+
+impl Drop for IngesterShard {
+    // Removing deleted shards from the rate meter is important so we don't report inaccurate
+    // throughput readings to the control plane.
+    fn drop(&mut self) {
+        self.shared_rate_meter.remove(&self.shard_id);
     }
 }
 

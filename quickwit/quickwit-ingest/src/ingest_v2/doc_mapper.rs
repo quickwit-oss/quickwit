@@ -20,6 +20,7 @@ use quickwit_common::rate_limited_error;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_config::{DocMapping, SearchSettings, build_doc_mapper};
 use quickwit_doc_mapper::DocMapper;
+use quickwit_metrics::{counter, label_values};
 use quickwit_proto::ingest::{
     DocBatchV2, IngestV2Error, IngestV2Result, ParseFailure, ParseFailureReason,
 };
@@ -28,6 +29,7 @@ use serde_json_borrow::Value as JsonValue;
 use tracing::{info, instrument};
 
 use crate::DocBatchV2Builder;
+use crate::metrics::{DOCS_BYTES_TOTAL, DOCS_TOTAL, VALIDITY};
 
 /// Attempts to get the doc mapper identified by the given doc mapping UID `doc_mapping_uid` from
 /// the `doc_mappers` cache. If it is not found, it is built from the specified JSON doc mapping
@@ -74,11 +76,48 @@ pub(super) fn try_build_doc_mapper(doc_mapping_json: &str) -> IngestV2Result<Arc
 pub(super) async fn validate_doc_batch(
     doc_batch: DocBatchV2,
     doc_mapper: Arc<DocMapper>,
+    validate_docs: bool,
 ) -> IngestV2Result<(DocBatchV2, Vec<ParseFailure>)> {
-    if is_document_validation_enabled() {
-        return validate_doc_batch_cpu_intensive(doc_batch, doc_mapper).await;
+    let original_batch_num_bytes = doc_batch.num_bytes() as u64;
+    let (valid_doc_batch, parse_failures) = if validate_docs && is_document_validation_enabled() {
+        validate_doc_batch_cpu_intensive(doc_batch, doc_mapper).await?
+    } else {
+        (doc_batch, Vec::new())
+    };
+    doc_batch_metrics(original_batch_num_bytes, &valid_doc_batch, &parse_failures);
+    Ok((valid_doc_batch, parse_failures))
+}
+
+fn doc_batch_metrics(
+    original_batch_num_bytes: u64,
+    valid_doc_batch: &DocBatchV2,
+    parse_failures: &[ParseFailure],
+) {
+    let valid_batch_num_bytes = valid_doc_batch.num_bytes() as u64;
+    if valid_doc_batch.is_empty() || !parse_failures.is_empty() {
+        counter!(
+            parent: DOCS_TOTAL,
+            labels: [label_values!(VALIDITY => "invalid")],
+        )
+        .inc_by(parse_failures.len() as u64);
+        counter!(
+            parent: DOCS_BYTES_TOTAL,
+            labels: [label_values!(VALIDITY => "invalid")],
+        )
+        .inc_by(original_batch_num_bytes - valid_batch_num_bytes);
     }
-    Ok((doc_batch, Vec::new()))
+    if !valid_doc_batch.is_empty() {
+        counter!(
+            parent: DOCS_TOTAL,
+            labels: [label_values!(VALIDITY => "valid")],
+        )
+        .inc_by(valid_doc_batch.num_docs() as u64);
+        counter!(
+            parent: DOCS_BYTES_TOTAL,
+            labels: [label_values!(VALIDITY => "valid")],
+        )
+        .inc_by(valid_batch_num_bytes);
+    }
 }
 
 fn is_document_validation_enabled() -> bool {

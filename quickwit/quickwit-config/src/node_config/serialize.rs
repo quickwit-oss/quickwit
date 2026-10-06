@@ -216,6 +216,8 @@ struct NodeConfigBuilder {
     default_index_root_uri: ConfigValue<Uri, QW_DEFAULT_INDEX_ROOT_URI>,
     #[serde(default)]
     enable_standalone_compactors: ConfigValue<bool, QW_ENABLE_STANDALONE_COMPACTORS>,
+    #[serde(default)]
+    enable_shard_scaling_v2: ConfigValue<bool, QW_ENABLE_SHARD_SCALING_V2>,
     #[serde(rename = "rest")]
     #[serde(default)]
     rest_config_builder: RestConfigBuilder,
@@ -274,6 +276,7 @@ impl NodeConfigBuilder {
                 });
 
         let enable_standalone_compactors = self.enable_standalone_compactors.resolve(env_vars)?;
+        let enable_shard_scaling_v2 = self.enable_shard_scaling_v2.resolve(env_vars)?;
         let docs_clustering_config =
             DocsClusteringConfigBuilder::build_optional(self.docs_clustering_config, env_vars)?;
 
@@ -406,6 +409,7 @@ impl NodeConfigBuilder {
             jaeger_config: self.jaeger_config,
             compactor_config: self.compactor_config,
             enable_standalone_compactors,
+            enable_shard_scaling_v2,
             docs_clustering_config,
         };
 
@@ -545,6 +549,7 @@ impl Default for NodeConfigBuilder {
             metastore_read_replica_uri: default_metastore_read_replica_uri(),
             default_index_root_uri: ConfigValue::none(),
             enable_standalone_compactors: Default::default(),
+            enable_shard_scaling_v2: Default::default(),
             rest_config_builder: RestConfigBuilder::default(),
             health_config_builder: HealthConfigBuilder::default(),
             grpc_config: GrpcConfig::default(),
@@ -708,6 +713,7 @@ pub fn node_config_for_tests_from_ports(
         jaeger_config: JaegerConfig::default(),
         compactor_config: CompactorConfig::default(),
         enable_standalone_compactors: false,
+        enable_shard_scaling_v2: false,
         docs_clustering_config: None,
     }
 }

@@ -18,11 +18,13 @@ use std::iter::once;
 use bytesize::ByteSize;
 #[cfg(feature = "failpoints")]
 use fail::fail_point;
+use mrecordlog::ResourceUsage;
 use mrecordlog::error::AppendError;
 use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::types::{Position, QueueId};
 use tracing::instrument;
 
+use super::mrecord::MRECORD_HEADER_LEN;
 use crate::MRecord;
 use crate::mrecordlog_async::MultiRecordLogAsync;
 
@@ -98,6 +100,35 @@ pub(super) async fn append_non_empty_doc_batch(
     }
 }
 
+pub(super) fn doc_batch_size(doc_batch: &DocBatchV2, force_commit: bool) -> ByteSize {
+    encoded_doc_batch_size(
+        doc_batch.num_bytes() as u64,
+        doc_batch.num_docs(),
+        force_commit,
+    )
+}
+
+pub(super) fn encoded_doc_batch_size(
+    num_bytes: u64,
+    num_docs: usize,
+    force_commit: bool,
+) -> ByteSize {
+    if num_docs == 0 {
+        return ByteSize::default();
+    }
+    let num_records = num_docs as u64 + u64::from(force_commit);
+    ByteSize::b(num_bytes + num_records * MRECORD_HEADER_LEN as u64)
+}
+
+pub(super) fn read_queue_size(mrecordlog: &MultiRecordLogAsync, queue_id: &QueueId) -> ByteSize {
+    let num_bytes: usize = mrecordlog
+        .range(queue_id, ..)
+        .expect("queue should exist")
+        .map(|record| record.payload.len())
+        .sum();
+    ByteSize::b(num_bytes as u64)
+}
+
 /// Error returned when the mrecordlog does not have enough capacity to store some records.
 #[derive(Debug, Clone, Copy, thiserror::Error)]
 pub(super) enum NotEnoughCapacityError {
@@ -122,12 +153,11 @@ pub(super) enum NotEnoughCapacityError {
 
 /// Checks whether the log has enough capacity to store some records.
 pub(super) fn check_enough_capacity(
-    mrecordlog: &MultiRecordLogAsync,
+    wal_usage: &ResourceUsage,
     disk_capacity: ByteSize,
     memory_capacity: ByteSize,
     requested_capacity: ByteSize,
 ) -> Result<(), NotEnoughCapacityError> {
-    let wal_usage = mrecordlog.resource_usage();
     let disk_used = ByteSize(wal_usage.disk_used_bytes as u64);
 
     if disk_used + requested_capacity > disk_capacity {
@@ -208,6 +238,31 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(position, Position::offset(2u64));
+    }
+
+    #[cfg(not(feature = "failpoints"))]
+    #[tokio::test]
+    async fn test_doc_batch_size_and_read_queue_size() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let mut mrecordlog = MultiRecordLogAsync::open(tempdir.path()).await.unwrap();
+
+        let queue_id = "test-queue".to_string();
+        mrecordlog.create_queue(&queue_id).await.unwrap();
+        assert_eq!(read_queue_size(&mrecordlog, &queue_id), ByteSize::b(0));
+
+        let doc_batch = DocBatchV2::for_test(["test-doc-foo", "test-doc-bar"]);
+        assert_eq!(doc_batch_size(&doc_batch, false), ByteSize::b(28));
+        assert_eq!(doc_batch_size(&doc_batch, true), ByteSize::b(30));
+
+        append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch.clone(), false)
+            .await
+            .unwrap();
+        assert_eq!(read_queue_size(&mrecordlog, &queue_id), ByteSize::b(28));
+
+        append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch, true)
+            .await
+            .unwrap();
+        assert_eq!(read_queue_size(&mrecordlog, &queue_id), ByteSize::b(58));
     }
 
     // This test should be run manually and independently of other tests with the `failpoints`
