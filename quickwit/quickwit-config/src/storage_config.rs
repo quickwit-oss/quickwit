@@ -944,7 +944,12 @@ mod tests {
             serde_yaml::from_str(s3_storage_config_yaml).unwrap();
         let storage_configs = StorageConfigs::new(vec![s3_storage_config.into()]);
         let error = storage_configs.validate().unwrap_err();
-        assert!(error.to_string().contains("logs-bucket"));
+        let error_message = error.to_string();
+        assert!(error_message.contains("logs-bucket"));
+        assert!(
+            error_message.contains("nested"),
+            "unexpected error: {error_message}"
+        );
     }
 
     #[test]
@@ -952,7 +957,7 @@ mod tests {
         let s3_storage_config_yaml = r#"
             buckets:
               logs-bucket:
-                endpiont: https://typo.example.com
+                endpoint_url: https://typo.example.com
         "#;
         serde_yaml::from_str::<S3StorageConfig>(s3_storage_config_yaml).unwrap_err();
     }

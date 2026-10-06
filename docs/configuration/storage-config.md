@@ -68,8 +68,8 @@ Hardcoding credentials into configuration files is not secure and strongly disco
 
 | Env variable | Description |
 | --- | --- |
-| `QW_S3_ENDPOINT` | Custom S3 endpoint. |
-| `QW_S3_FORCE_PATH_STYLE_ACCESS` | Overrides `force_path_style_access`. |
+| `QW_S3_ENDPOINT` | Custom S3 endpoint. Applies to the primary `s3:` backend only, not to `buckets` entries. |
+| `QW_S3_FORCE_PATH_STYLE_ACCESS` | Overrides `force_path_style_access`. Applies to the primary `s3:` backend only, not to `buckets` entries. |
 | `QW_S3_MAX_CONCURRENCY` | Limit the number of concurrent requests to S3 |
 
 #### Storage flavors
@@ -112,7 +112,11 @@ In addition to the primary `s3:` block, you can declare per-bucket overrides und
 
 Each bucket entry accepts the same fields as the primary `s3:` block, *except* `buckets` itself (no nesting). Bucket entries do not inherit fields from the primary block. If `access_key_id` / `secret_access_key` are omitted on a bucket entry, the global AWS SDK credential chain is used (env vars, instance metadata, etc.).
 
-Bucket entries are self-contained: the process-wide `QW_S3_ENDPOINT` and `QW_S3_FORCE_PATH_STYLE_ACCESS` overrides apply to the primary `s3:` backend only. A bucket entry always uses its own `endpoint` and `force_path_style_access` values.
+Bucket entries are self-contained: the process-wide `QW_S3_ENDPOINT` and `QW_S3_FORCE_PATH_STYLE_ACCESS` overrides apply to the primary `s3:` backend only. A bucket entry always uses its own `endpoint` and `force_path_style_access` values. A bucket entry without an `endpoint` uses the default AWS endpoint for its region, even when `QW_S3_ENDPOINT` is set.
+
+Routing is decided from each node's own configuration. Every node that reads or writes a bucket (indexers, searchers, janitor, metastore) must declare the same `storage.s3.buckets` entry; a node without it uses the primary backend for that bucket.
+
+In YAML, quote bucket names that YAML would read as a number, boolean, or null (for example `"123"`, `"true"`, or `"null"`). Unquoted, they fail to parse.
 
 > Because routing keys on bucket name, a given bucket name maps to exactly one backend. If you need the *same* bucket name on two different endpoints, give the buckets distinct names.
 
