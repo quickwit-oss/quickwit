@@ -20,7 +20,7 @@ use std::ops::Bound;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, LazyLock, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
@@ -40,7 +40,7 @@ use quickwit_proto::search::{
 use quickwit_proto::types::SplitId;
 use quickwit_query::query_ast::{
     BoolQuery, CacheNode, HitSet, PredicateCache, QueryAst, QueryAstTransformer, RangeQuery,
-    TermQuery,
+    TermQuery, get_or_compile_cached_fst_regex,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
@@ -59,6 +59,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::*;
 
 use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
+use crate::cost::{compute_query_complexity_factor, compute_split_query_cost};
 use crate::leaf_cache::LeafSearchCache;
 use crate::metrics::{
     LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES, LEAF_SEARCH_SPLIT_DURATION_SECS,
@@ -192,6 +193,25 @@ pub(crate) async fn open_split_bundle(
     Ok((hotcache_bytes, bundle_storage))
 }
 
+/// Returns the process-wide expression compilation cache.
+///
+/// Its capacity can be overridden via the `QW_EXPR_COMPILATION_CACHE_CAPACITY`
+/// environment variable. Compilation is cheap. The main point of this cache is to
+/// avoid recompiling expression across splits within a same leaf search request.
+fn set_expr_compilation_cache(index: &mut Index) {
+    use tantivy::jitexpr::compile::ExprCompilationCache;
+    static GLOBAL_EXPR_COMPILATION_CACHE: LazyLock<ExprCompilationCache> = LazyLock::new(|| {
+        const DEFAULT_EXPR_COMPILATION_CACHE_CAPACITY: usize = 256;
+        let capacity: usize = quickwit_common::get_from_env(
+            "QW_EXPR_COMPILATION_CACHE_CAPACITY",
+            DEFAULT_EXPR_COMPILATION_CACHE_CAPACITY,
+            false,
+        );
+        ExprCompilationCache::with_capacity(capacity)
+    });
+    index.set_expr_compilation_cache(GLOBAL_EXPR_COMPILATION_CACHE.clone());
+}
+
 /// Add a storage proxy to retry `get_slice` requests if they are taking too long,
 /// if configured in the searcher config.
 ///
@@ -255,6 +275,7 @@ pub(crate) async fn open_index_with_caches(
             .tantivy_manager()
             .clone(),
     );
+    set_expr_compilation_cache(&mut index);
     Ok((index, hot_directory))
 }
 
@@ -297,11 +318,17 @@ async fn run_cancellable(
 /// the (immutable, query-independent) absence — see [`term_absence_cache_key`]. It only ever
 /// fires for a single-segment split, where "absent in the split" is sound.
 ///
+/// `priority` schedules the CPU-intensive part of warmup. Warmup is mostly IO-bound, but
+/// resolving automatons walks the term dictionary on the search thread pool, so the originating
+/// request's priority has to be forwarded for that work to be scheduled against the rest of the
+/// queue. Callers without a request priority to forward pass [`Priority::default`].
+///
 /// Returns whether the query is provably empty in this split (i.e. `on_absent` fired and
 /// warmup was short-circuited).
 pub(crate) async fn warmup(
     searcher: &Searcher,
     warmup_info: &WarmupInfo,
+    priority: Priority,
     on_absent: &(dyn Fn(&Term, SegmentId) + Sync),
 ) -> anyhow::Result<bool> {
     debug!(warmup_info=?warmup_info);
@@ -332,11 +359,11 @@ pub(crate) async fn warmup(
         warm_up_term_ranges(searcher, &warmup_info.term_ranges_grouped_by_field),
     )
     .instrument(debug_span!("warm_up_term_ranges"));
-    let warm_up_term_dict_future = run_cancellable(
+    let warm_up_full_term_dictionaries_future = run_cancellable(
         abort_token.as_ref(),
-        warm_up_term_dict_fields(searcher, &warmup_info.term_dict_fields),
+        warm_up_full_term_dictionaries(searcher, &warmup_info.term_dict_fields),
     )
-    .instrument(debug_span!("warm_up_term_dicts"));
+    .instrument(debug_span!("warm_up_full_term_dictionaries"));
     let warm_up_fastfields_future = run_cancellable(
         abort_token.as_ref(),
         warm_up_fastfields(searcher, &warmup_info.fast_fields),
@@ -347,15 +374,15 @@ pub(crate) async fn warmup(
         warm_up_fieldnorms(searcher, warmup_info.field_norms),
     )
     .instrument(debug_span!("warm_up_fieldnorms"));
-    // TODO merge warm_up_postings into warm_up_term_dict_fields
-    let warm_up_postings_future = run_cancellable(
+    // TODO merge warm_up_all_postings into warm_up_full_term_dictionaries
+    let warm_up_all_postings_future = run_cancellable(
         abort_token.as_ref(),
-        warm_up_postings(searcher, &warmup_info.term_dict_fields),
+        warm_up_all_postings(searcher, &warmup_info.term_dict_fields),
     )
-    .instrument(debug_span!("warm_up_postings"));
+    .instrument(debug_span!("warm_up_all_postings"));
     let warm_up_automatons_future = run_cancellable(
         abort_token.as_ref(),
-        warm_up_automatons(searcher, &warmup_info.automatons_grouped_by_field),
+        warm_up_automatons(searcher, &warmup_info.automatons_grouped_by_field, priority),
     )
     .instrument(debug_span!("warm_up_automatons"));
 
@@ -363,9 +390,9 @@ pub(crate) async fn warmup(
         warm_up_terms_future,
         warm_up_term_ranges_future,
         warm_up_fastfields_future,
-        warm_up_term_dict_future,
+        warm_up_full_term_dictionaries_future,
         warm_up_fieldnorms_future,
-        warm_up_postings_future,
+        warm_up_all_postings_future,
         warm_up_automatons_future,
     )?;
 
@@ -376,7 +403,8 @@ pub(crate) async fn warmup(
     Ok(provably_empty)
 }
 
-async fn warm_up_term_dict_fields(
+/// Warm up the full term dictionary for each supplied field in every segment.
+async fn warm_up_full_term_dictionaries(
     searcher: &Searcher,
     term_dict_fields: &HashSet<Field>,
 ) -> anyhow::Result<()> {
@@ -394,7 +422,8 @@ async fn warm_up_term_dict_fields(
     Ok(())
 }
 
-async fn warm_up_postings(searcher: &Searcher, fields: &HashSet<Field>) -> anyhow::Result<()> {
+/// Warm up all postings, without positions, for each supplied field in every segment.
+async fn warm_up_all_postings(searcher: &Searcher, fields: &HashSet<Field>) -> anyhow::Result<()> {
     let mut warm_up_futures = Vec::new();
     for field in fields {
         for segment_reader in searcher.segment_readers() {
@@ -515,11 +544,12 @@ async fn warm_up_term_ranges(
 async fn warm_up_automatons(
     searcher: &Searcher,
     terms_grouped_by_field: &HashMap<Field, HashSet<Automaton>>,
+    priority: Priority,
 ) -> anyhow::Result<()> {
     let mut warm_up_futures = Vec::new();
-    let cpu_intensive_executor = |task| async {
+    let cpu_intensive_executor = |task| async move {
         crate::search_thread_pool()
-            .run_cpu_intensive(task)
+            .run_cpu_intensive_with_priority(priority, task)
             .await
             .map_err(|_| std::io::Error::other("task panicked"))?
     };
@@ -531,12 +561,12 @@ async fn warm_up_automatons(
                 warm_up_futures.push(async move {
                     match automaton {
                         Automaton::Regex(path, regex_str) => {
-                            let regex = tantivy_fst::Regex::new(regex_str)
+                            let regex = get_or_compile_cached_fst_regex(regex_str)
                                 .context("failed to parse regex during warmup")?;
                             inv_idx_clone
                                 .warm_postings_automaton(
                                     quickwit_query::query_ast::JsonPathPrefix {
-                                        automaton: regex.into(),
+                                        automaton: regex,
                                         prefix: path.clone().unwrap_or_default(),
                                     },
                                     cpu_intensive_executor,
@@ -719,32 +749,28 @@ async fn leaf_search_single_split(
         })?
         .searcher();
 
-    let agg_context_params = AggContextParams {
-        limits: ctx.searcher_context.get_aggregation_limits(),
-        tokenizers: ctx.doc_mapper.tokenizer_manager().tantivy_manager().clone(),
-    };
+    let agg_context_params = AggContextParams::new(
+        ctx.searcher_context.get_aggregation_limits(),
+        ctx.doc_mapper.tokenizer_manager().tantivy_manager().clone(),
+    );
     let mut collector = make_collector_for_split(
         SplitId::from(split_id.as_str()),
         &search_request,
         agg_context_params,
     )?;
 
-    let predicate_cache = if collector.requires_scoring() {
-        // at the moment the predicate cache doesn't support scoring
-        None
-    } else {
-        Some((
-            ctx.searcher_context.predicate_cache.clone() as _,
-            split.split_id.clone(),
-        ))
-    };
-    let split_schema = index.schema();
-    let (query, mut warmup_info) = ctx.doc_mapper.query(
-        split_schema.clone(),
-        query_ast.clone(),
-        false,
-        predicate_cache,
-    )?;
+    let predicate_cache =
+        if collector.requires_scoring() || !ctx.searcher_context.predicate_cache.is_enabled() {
+            None
+        } else {
+            Some((
+                ctx.searcher_context.predicate_cache.clone() as Arc<dyn PredicateCache>,
+                split.split_id.clone(),
+            ))
+        };
+    let (query, mut warmup_info) =
+        ctx.doc_mapper
+            .query(index.schema(), query_ast.clone(), false, predicate_cache)?;
 
     let collector_warmup_info = collector.warmup_info();
     warmup_info.merge(collector_warmup_info);
@@ -801,13 +827,20 @@ async fn leaf_search_single_split(
             downloaded_mb = tracing::field::Empty,
             total_mb = tracing::field::Empty
         );
-        let provably_empty = warmup(&searcher, &warmup_info, &record_absence)
-            .instrument(warmup_span.clone())
-            .await
-            .inspect_err(|_| {
-                leaf_search_state_guard
-                    .set_state(SplitSearchState::Error(SplitSearchErrorKind::Warmup))
-            })?;
+        let provably_empty = warmup(
+            &searcher,
+            &warmup_info,
+            Priority::Normal {
+                priority: search_request.priority,
+                job_cost: search_permit.job_cost(),
+            },
+            &record_absence,
+        )
+        .instrument(warmup_span.clone())
+        .await
+        .inspect_err(|_| {
+            leaf_search_state_guard.set_state(SplitSearchState::Error(SplitSearchErrorKind::Warmup))
+        })?;
         warmup_span.record(
             "downloaded_mb",
             download_counters
@@ -896,9 +929,13 @@ async fn leaf_search_single_split(
     let download_counters_clone = download_counters.clone();
     leaf_search_state_guard.set_state(SplitSearchState::CpuQueue);
     let wait_for_search_permit: Duration = search_permit.wait_for_acquisition();
+    let cpu_priority = Priority::Normal {
+        priority: search_request.priority,
+        job_cost: search_permit.job_cost(),
+    };
     let search_request_and_result: Option<(SearchRequest, LeafSearchResponse)> =
         crate::search_thread_pool()
-            .run_cpu_intensive(move || {
+            .run_cpu_intensive_with_priority(cpu_priority, move || {
                 // The CPU-pool queue wait ends as this closure starts executing.
                 drop(cpu_wait_span);
                 leaf_search_state_guard.set_state(SplitSearchState::Cpu);
@@ -974,7 +1011,7 @@ async fn leaf_search_single_split(
 ///
 /// This include things such as sorting result by a field or _score when no document is requested,
 /// or applying date range when the range covers the entire split.
-fn rewrite_request(
+pub(crate) fn rewrite_request(
     search_request: &mut SearchRequest,
     split: &SplitIdAndFooterOffsets,
     timestamp_field: Option<&str>,
@@ -983,7 +1020,7 @@ fn rewrite_request(
         search_request.sort_fields = Vec::new();
     }
     if let Some(timestamp_field) = timestamp_field {
-        remove_redundant_timestamp_range(search_request, split, timestamp_field);
+        normalize_timestamp_range(search_request, split, timestamp_field);
     }
     rewrite_aggregation(search_request);
     // we add a top level cache node when search_after is set, this won't help for this query (which
@@ -1099,11 +1136,7 @@ fn min_bound<T: Ord + Copy>(left: Bound<T>, right: Bound<T>) -> Bound<T> {
     }
 }
 
-/// remove timestamp range that would be present both in QueryAst and SearchRequest
-///
-/// this can save us from doing double the work in some cases, and help with the partial request
-/// cache.
-fn remove_redundant_timestamp_range(
+fn normalize_timestamp_range(
     search_request: &mut SearchRequest,
     split: &SplitIdAndFooterOffsets,
     timestamp_field: &str,
@@ -1133,6 +1166,8 @@ fn remove_redundant_timestamp_range(
         .transform(query_ast)
         .expect("can't fail unwrapping Infallible")
         .unwrap_or(QueryAst::MatchAll);
+    let is_time_bounded =
+        visitor.start_timestamp != Bound::Unbounded || visitor.end_timestamp != Bound::Unbounded;
 
     let final_start_timestamp = match (
         visitor.start_timestamp,
@@ -1172,12 +1207,20 @@ fn remove_redundant_timestamp_range(
         (Bound::Unbounded, Some(_)) => Bound::Unbounded,
         (query_bound, None) => query_bound,
     };
+    if is_time_bounded && !matches!(&new_ast, QueryAst::MatchAll | QueryAst::MatchNone) {
+        new_ast = BoolQuery {
+            must: vec![QueryAst::from(CacheNode::new(new_ast))],
+            ..Default::default()
+        }
+        .into();
+    }
+
     if final_start_timestamp != Bound::Unbounded || final_end_timestamp != Bound::Unbounded {
-        let range = RangeQuery {
+        let time_range = QueryAst::from(RangeQuery {
             field: timestamp_field.to_string(),
             lower_bound: final_start_timestamp.map(|bound| bound.into_timestamp_nanos().into()),
             upper_bound: final_end_timestamp.map(|bound| bound.into_timestamp_nanos().into()),
-        };
+        });
         new_ast = if let QueryAst::Bool(mut bool_query) = new_ast {
             if bool_query.must.is_empty()
                 && bool_query.filter.is_empty()
@@ -1187,22 +1230,22 @@ fn remove_redundant_timestamp_range(
                 // add a new layer of bool query
                 BoolQuery {
                     must: vec![bool_query.into()],
-                    filter: vec![range.into()],
+                    filter: vec![time_range],
                     ..Default::default()
                 }
                 .into()
             } else {
-                bool_query.filter.push(range.into());
+                bool_query.filter.push(time_range);
                 QueryAst::Bool(bool_query)
             }
         } else {
             BoolQuery {
                 must: vec![new_ast],
-                filter: vec![range.into()],
+                filter: vec![time_range],
                 ..Default::default()
             }
             .into()
-        }
+        };
     }
 
     search_request.query_ast = serde_json::to_string(&new_ast).unwrap();
@@ -1271,6 +1314,27 @@ impl QueryAstTransformer for RemoveTimestampRange<'_> {
             .into_iter()
             .filter_map(|query_ast| self.transform(query_ast).transpose())
             .collect::<Result<Vec<_>, _>>()?;
+
+        if bool_query
+            .must
+            .iter()
+            .chain(&bool_query.filter)
+            .any(|query_ast| matches!(query_ast, QueryAst::MatchNone))
+        {
+            return Ok(Some(QueryAst::MatchNone));
+        }
+        let only_matches_all = bool_query
+            .must
+            .iter()
+            .chain(&bool_query.filter)
+            .all(|query_ast| matches!(query_ast, QueryAst::MatchAll));
+        if only_matches_all
+            && bool_query.should.is_empty()
+            && bool_query.must_not.is_empty()
+            && bool_query.minimum_should_match.unwrap_or(0) == 0
+        {
+            return Ok(Some(QueryAst::MatchAll));
+        }
 
         Ok(Some(QueryAst::Bool(bool_query)))
     }
@@ -1886,9 +1950,12 @@ struct ScheduleSearchTaskResult {
 /// - locally
 /// - remotely on lambdas, if lambda are configured, and the number of tasks scheduled exceed the
 ///   offload threshold.
+///
+/// `query_complexity_factor` is computed once from the original request, before per-split rewrites.
 async fn schedule_search_tasks(
     mut splits: Vec<(SplitIdAndFooterOffsets, SearchRequest)>,
     searcher_context: &SearcherContext,
+    query_complexity_factor: f32,
 ) -> ScheduleSearchTaskResult {
     let priority = splits
         .first()
@@ -1903,7 +1970,7 @@ async fn schedule_search_tasks(
                     .searcher_config
                     .warmup_single_split_initial_allocation,
             );
-            let job_cost = crate::root::compute_split_cost(split.num_docs);
+            let job_cost = compute_split_query_cost(split.num_docs, query_complexity_factor);
             crate::search_permit_provider::SplitSearchTaskMetadata {
                 memory_allocation,
                 job_cost,
@@ -1992,14 +2059,24 @@ pub async fn single_doc_mapping_leaf_search(
             split_outcome_counters.clone(),
             &mut incremental_merge_collector,
         )?;
+    // Cached hits can already rule out uncached splits before they start warming up.
+    if let Some(last_hit) = incremental_merge_collector.peek_worst_hit() {
+        split_filter_arc
+            .write()
+            .unwrap()
+            .record_new_worst_hit(last_hit.as_ref());
+    }
     let incremental_merge_collector_arc: Arc<Mutex<IncrementalCollector>> =
         Arc::new(Mutex::new(incremental_merge_collector));
+
+    // Use the original request to compute `query_complexity_factor` once.
+    let query_complexity_factor = compute_query_complexity_factor(&request)?;
 
     // Determine which uncached splits to process locally vs offload.
     let ScheduleSearchTaskResult {
         local_search_tasks,
         offloaded_search_tasks,
-    } = schedule_search_tasks(uncached_splits, &searcher_context).await;
+    } = schedule_search_tasks(uncached_splits, &searcher_context, query_complexity_factor).await;
 
     let has_offloaded_tasks = !offloaded_search_tasks.is_empty();
 
@@ -2380,299 +2457,245 @@ mod tests {
         assert_eq!(counters.cancel_warmup.get(), 1);
     }
 
-    fn bool_filter(ast: impl Into<QueryAst>) -> QueryAst {
-        BoolQuery {
-            must: vec![QueryAst::MatchAll],
-            filter: vec![ast.into()],
-            ..Default::default()
+    #[track_caller]
+    fn assert_normalized_timestamp_range(
+        mut request: SearchRequest,
+        split: &SplitIdAndFooterOffsets,
+        expected_range: Option<RangeQuery>,
+    ) {
+        normalize_timestamp_range(&mut request, split, "timestamp");
+        let actual_ast: QueryAst = serde_json::from_str(&request.query_ast).unwrap();
+        let expected_ast = expected_range
+            .map(|range_query| {
+                QueryAst::from(BoolQuery {
+                    must: vec![QueryAst::MatchAll],
+                    filter: vec![range_query.into()],
+                    ..Default::default()
+                })
+            })
+            .unwrap_or(QueryAst::MatchAll);
+        assert_eq!(actual_ast, expected_ast);
+        assert!(request.start_timestamp.is_none());
+        assert!(request.end_timestamp.is_none());
+    }
+
+    fn timestamp_range(lower_bound: Bound<i64>, upper_bound: Bound<i64>) -> QueryAst {
+        RangeQuery {
+            field: "timestamp".to_string(),
+            lower_bound: lower_bound.map(Into::into),
+            upper_bound: upper_bound.map(Into::into),
         }
         .into()
     }
 
-    #[track_caller]
-    fn assert_ast_eq(got: &SearchRequest, expected: &QueryAst) {
-        let got_ast: QueryAst = serde_json::from_str(&got.query_ast).unwrap();
-        assert_eq!(&got_ast, expected);
-        assert!(got.start_timestamp.is_none());
-        assert!(got.end_timestamp.is_none());
-    }
-
-    #[track_caller]
-    fn remove_timestamp_test_case(
-        request: &SearchRequest,
-        split: &SplitIdAndFooterOffsets,
-        expected: Option<RangeQuery>,
-    ) {
-        let timestamp_field = "timestamp";
-
-        // test the query directly
-        let mut request_direct = request.clone();
-        remove_redundant_timestamp_range(&mut request_direct, split, timestamp_field);
-        let expected_direct = expected
-            .clone()
-            .map(bool_filter)
-            .unwrap_or(QueryAst::MatchAll);
-        assert_ast_eq(&request_direct, &expected_direct);
-    }
-
     #[test]
-    fn test_remove_timestamp_range() {
+    fn test_normalize_timestamp_range_clips_to_split_and_preserves_bound_types() {
         const S_TO_NS: i64 = 1_000_000_000;
-        let time1 = 1700001000;
-        let time2 = 1700002000;
-        let time3 = 1700003000;
-        let time4 = 1700004000;
-
-        let timestamp_field = "timestamp".to_string();
-
-        // cases where the bounds are larger than the split: no bound is emitted
+        let time1 = 1_700_001_000;
+        let time2 = 1_700_002_000;
+        let time3 = 1_700_003_000;
+        let time4 = 1_700_004_000;
         let split = SplitIdAndFooterOffsets {
             timestamp_start: Some(time2),
             timestamp_end: Some(time3),
-            ..SplitIdAndFooterOffsets::default()
+            ..Default::default()
         };
 
-        let search_request = SearchRequest {
-            query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
-                field: timestamp_field.to_string(),
-                lower_bound: Bound::Included(time1.into()),
-                // *1000 has no impact, we detect timestamp in ms instead of s
-                upper_bound: Bound::Included((time4 * 1000).into()),
-            }))
-            .unwrap(),
-            ..SearchRequest::default()
-        };
-        remove_timestamp_test_case(&search_request, &split, None);
-
-        let expected_upper_inclusive = RangeQuery {
-            field: timestamp_field.to_string(),
-            lower_bound: Bound::Unbounded,
-            upper_bound: Bound::Included((time3 * S_TO_NS).into()),
-        };
-        let search_request = SearchRequest {
-            query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
-                field: timestamp_field.to_string(),
-                lower_bound: Bound::Included(time1.into()),
-                upper_bound: Bound::Included(time3.into()),
-            }))
-            .unwrap(),
-            ..SearchRequest::default()
-        };
-        remove_timestamp_test_case(&search_request, &split, Some(expected_upper_inclusive));
-
-        let search_request = SearchRequest {
-            query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
-            start_timestamp: Some(time1),
-            end_timestamp: Some(time4),
-            ..SearchRequest::default()
-        };
-        remove_timestamp_test_case(&search_request, &split, None);
-
-        // request bound that are exclusive are treated properly
-        let expected_upper_exclusive = RangeQuery {
-            field: timestamp_field.to_string(),
-            lower_bound: Bound::Unbounded,
-            upper_bound: Bound::Excluded((time3 * S_TO_NS).into()),
-        };
-        let search_request = SearchRequest {
-            query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
-                field: timestamp_field.to_string(),
-                lower_bound: Bound::Included(time1.into()),
-                upper_bound: Bound::Excluded(time3.into()),
-            }))
-            .unwrap(),
-            ..SearchRequest::default()
-        };
-        remove_timestamp_test_case(
-            &search_request,
+        // A query covering the split is removed. The millisecond upper bound also exercises
+        // timestamp unit detection.
+        assert_normalized_timestamp_range(
+            SearchRequest {
+                query_ast: serde_json::to_string(&timestamp_range(
+                    Bound::Included(time1),
+                    Bound::Included(time4 * 1_000),
+                ))
+                .unwrap(),
+                ..Default::default()
+            },
             &split,
-            Some(expected_upper_exclusive.clone()),
+            None,
+        );
+        assert_normalized_timestamp_range(
+            SearchRequest {
+                query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
+                start_timestamp: Some(time1),
+                end_timestamp: Some(time4),
+                ..Default::default()
+            },
+            &split,
+            None,
         );
 
-        let search_request = SearchRequest {
-            query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
-            start_timestamp: Some(time1),
-            end_timestamp: Some(time3),
-            ..SearchRequest::default()
-        };
-        remove_timestamp_test_case(
-            &search_request,
-            &split,
-            Some(expected_upper_exclusive.clone()),
-        );
+        for (query_ast, expected_range) in [
+            (
+                timestamp_range(Bound::Included(time1), Bound::Included(time3)),
+                RangeQuery {
+                    field: "timestamp".to_string(),
+                    lower_bound: Bound::Unbounded,
+                    upper_bound: Bound::Included((time3 * S_TO_NS).into()),
+                },
+            ),
+            (
+                timestamp_range(Bound::Included(time1), Bound::Excluded(time3)),
+                RangeQuery {
+                    field: "timestamp".to_string(),
+                    lower_bound: Bound::Unbounded,
+                    upper_bound: Bound::Excluded((time3 * S_TO_NS).into()),
+                },
+            ),
+            (
+                timestamp_range(Bound::Excluded(time2), Bound::Included(time3)),
+                RangeQuery {
+                    field: "timestamp".to_string(),
+                    lower_bound: Bound::Excluded((time2 * S_TO_NS).into()),
+                    upper_bound: Bound::Included((time3 * S_TO_NS).into()),
+                },
+            ),
+        ] {
+            assert_normalized_timestamp_range(
+                SearchRequest {
+                    query_ast: serde_json::to_string(&query_ast).unwrap(),
+                    ..Default::default()
+                },
+                &split,
+                Some(expected_range),
+            );
+        }
 
-        let expected_lower_excl_upper_incl = RangeQuery {
-            field: timestamp_field.to_string(),
-            lower_bound: Bound::Excluded((time2 * S_TO_NS).into()),
-            upper_bound: Bound::Included((time3 * S_TO_NS).into()),
-        };
-        let search_request = SearchRequest {
-            query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
-                field: timestamp_field.to_string(),
-                lower_bound: Bound::Excluded(time2.into()),
-                upper_bound: Bound::Included(time3.into()),
-            }))
-            .unwrap(),
-            ..SearchRequest::default()
-        };
-        remove_timestamp_test_case(
-            &search_request,
+        // Request end timestamps are exclusive.
+        assert_normalized_timestamp_range(
+            SearchRequest {
+                query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
+                start_timestamp: Some(time1),
+                end_timestamp: Some(time3),
+                ..Default::default()
+            },
             &split,
-            Some(expected_lower_excl_upper_incl.clone()),
+            Some(RangeQuery {
+                field: "timestamp".to_string(),
+                lower_bound: Bound::Unbounded,
+                upper_bound: Bound::Excluded((time3 * S_TO_NS).into()),
+            }),
         );
     }
 
     #[test]
-    fn test_remove_timestamp_range_multiple_bounds() {
-        // When bounds are defined both in the AST and in the search request,
-        // make sure we take the most restrictive ones.
+    fn test_normalize_timestamp_range_intersects_request_and_ast_bounds() {
         const S_TO_NS: i64 = 1_000_000_000;
-        let time1 = 1700001000;
-        let time2 = 1700002000;
-        let time3 = 1700003000;
-        let time4 = 1700004000;
-
-        let timestamp_field = "timestamp".to_string();
-
+        let time1 = 1_700_001_000;
+        let time2 = 1_700_002_000;
+        let time3 = 1_700_003_000;
+        let time4 = 1_700_004_000;
         let split = SplitIdAndFooterOffsets {
             timestamp_start: Some(time1),
             timestamp_end: Some(time4),
-            ..SplitIdAndFooterOffsets::default()
+            ..Default::default()
         };
 
-        let expected_upper_2_ex = RangeQuery {
-            field: timestamp_field.to_string(),
-            lower_bound: Bound::Unbounded,
-            upper_bound: Bound::Excluded((time2 * S_TO_NS).into()),
-        };
-        let search_request = SearchRequest {
-            query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
-                field: timestamp_field.to_string(),
-                lower_bound: Bound::Included(time1.into()),
-                upper_bound: Bound::Included(time3.into()),
-            }))
-            .unwrap(),
-            start_timestamp: Some(time1),
-            end_timestamp: Some(time2),
-            ..SearchRequest::default()
-        };
-        remove_timestamp_test_case(&search_request, &split, Some(expected_upper_2_ex));
+        let test_cases = [
+            (
+                timestamp_range(Bound::Included(time1), Bound::Included(time3)),
+                Some(time1),
+                Some(time2),
+                RangeQuery {
+                    field: "timestamp".to_string(),
+                    lower_bound: Bound::Unbounded,
+                    upper_bound: Bound::Excluded((time2 * S_TO_NS).into()),
+                },
+            ),
+            (
+                timestamp_range(Bound::Included(time1), Bound::Included(time2)),
+                Some(time1),
+                Some(time3),
+                RangeQuery {
+                    field: "timestamp".to_string(),
+                    lower_bound: Bound::Unbounded,
+                    upper_bound: Bound::Included((time2 * S_TO_NS).into()),
+                },
+            ),
+            (
+                timestamp_range(Bound::Included(time2), Bound::Included(time4)),
+                Some(time3),
+                Some(time4 + 1),
+                RangeQuery {
+                    field: "timestamp".to_string(),
+                    lower_bound: Bound::Included((time3 * S_TO_NS).into()),
+                    upper_bound: Bound::Included((time4 * S_TO_NS).into()),
+                },
+            ),
+            (
+                timestamp_range(Bound::Included(time3), Bound::Included(time4)),
+                Some(time2),
+                Some(time4 + 1),
+                RangeQuery {
+                    field: "timestamp".to_string(),
+                    lower_bound: Bound::Included((time3 * S_TO_NS).into()),
+                    upper_bound: Bound::Included((time4 * S_TO_NS).into()),
+                },
+            ),
+        ];
+        for (query_ast, start_timestamp, end_timestamp, expected_range) in test_cases {
+            assert_normalized_timestamp_range(
+                SearchRequest {
+                    query_ast: serde_json::to_string(&query_ast).unwrap(),
+                    start_timestamp,
+                    end_timestamp,
+                    ..Default::default()
+                },
+                &split,
+                Some(expected_range),
+            );
+        }
 
-        let expected_upper_2_inc = RangeQuery {
-            field: timestamp_field.to_string(),
-            lower_bound: Bound::Unbounded,
-            upper_bound: Bound::Included((time2 * S_TO_NS).into()),
-        };
-        let search_request = SearchRequest {
-            query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
-                field: timestamp_field.to_string(),
-                lower_bound: Bound::Included(time1.into()),
-                upper_bound: Bound::Included(time2.into()),
-            }))
-            .unwrap(),
-            start_timestamp: Some(time1),
-            end_timestamp: Some(time3),
-            ..SearchRequest::default()
-        };
-        remove_timestamp_test_case(&search_request, &split, Some(expected_upper_2_inc));
-
-        let expected_lower_3_upper_4 = RangeQuery {
-            field: timestamp_field.to_string(),
-            lower_bound: Bound::Included((time3 * S_TO_NS).into()),
-            upper_bound: Bound::Included((time4 * S_TO_NS).into()),
-        };
-
-        let search_request = SearchRequest {
-            query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
-                field: timestamp_field.to_string(),
-                lower_bound: Bound::Included(time2.into()),
-                upper_bound: Bound::Included(time4.into()),
-            }))
-            .unwrap(),
-            start_timestamp: Some(time3),
-            end_timestamp: Some(time4 + 1),
-            ..SearchRequest::default()
-        };
-        remove_timestamp_test_case(
-            &search_request,
-            &split,
-            Some(expected_lower_3_upper_4.clone()),
-        );
-
-        let search_request = SearchRequest {
-            query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
-                field: timestamp_field.to_string(),
-                lower_bound: Bound::Included(time3.into()),
-                upper_bound: Bound::Included(time4.into()),
-            }))
-            .unwrap(),
-            start_timestamp: Some(time2),
-            end_timestamp: Some(time4 + 1),
-            ..SearchRequest::default()
-        };
-        remove_timestamp_test_case(&search_request, &split, Some(expected_lower_3_upper_4));
-
-        let mut search_request = SearchRequest {
-            query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
-            start_timestamp: Some(time1),
-            end_timestamp: Some(time4),
-            ..SearchRequest::default()
-        };
-        let split = SplitIdAndFooterOffsets {
+        let inner_split = SplitIdAndFooterOffsets {
             timestamp_start: Some(time2),
             timestamp_end: Some(time3),
-            ..SplitIdAndFooterOffsets::default()
+            ..Default::default()
         };
-        remove_redundant_timestamp_range(&mut search_request, &split, &timestamp_field);
-        assert_ast_eq(&search_request, &QueryAst::MatchAll);
+        assert_normalized_timestamp_range(
+            SearchRequest {
+                query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
+                start_timestamp: Some(time1),
+                end_timestamp: Some(time4),
+                ..Default::default()
+            },
+            &inner_split,
+            None,
+        );
     }
 
-    // regression test for #4935
+    // Regression test for #4935: adding the timestamp filter must not turn `should` into an
+    // optional clause by putting it alongside the filter in the same bool query.
     #[test]
-    fn test_remove_timestamp_range_keep_should() {
-        let time1 = 1700001000;
-        let time2 = 1700002000;
-        let time3 = 1700003000;
-
-        let timestamp_field = "timestamp".to_string();
-
-        // cases where the bounds are larger than the split: no bound is emitted
+    fn test_normalize_timestamp_range_keeps_should_semantics() {
+        let original_ast = QueryAst::from(BoolQuery {
+            should: vec![QueryAst::MatchAll],
+            ..Default::default()
+        });
+        let mut request = SearchRequest {
+            query_ast: serde_json::to_string(&original_ast).unwrap(),
+            start_timestamp: Some(1_700_002_000),
+            ..Default::default()
+        };
         let split = SplitIdAndFooterOffsets {
-            timestamp_start: Some(time1),
-            timestamp_end: Some(time3),
-            ..SplitIdAndFooterOffsets::default()
+            timestamp_start: Some(1_700_001_000),
+            timestamp_end: Some(1_700_003_000),
+            ..Default::default()
         };
 
-        let mut search_request = SearchRequest {
-            query_ast: serde_json::to_string(&QueryAst::Bool(BoolQuery {
-                should: vec![QueryAst::MatchAll],
-                ..BoolQuery::default()
-            }))
-            .unwrap(),
-            start_timestamp: Some(time2),
-            end_timestamp: None,
-            ..SearchRequest::default()
-        };
-        remove_redundant_timestamp_range(&mut search_request, &split, &timestamp_field);
-        assert_ast_eq(
-            &search_request,
-            &QueryAst::Bool(BoolQuery {
-                // original request
-                must: vec![QueryAst::Bool(BoolQuery {
-                    should: vec![QueryAst::MatchAll],
-                    ..BoolQuery::default()
-                })],
-                // time bound
-                filter: vec![
-                    RangeQuery {
-                        field: "timestamp".to_string(),
-                        lower_bound: Bound::Included(1_700_002_000_000_000_000u64.into()),
-                        upper_bound: Bound::Unbounded,
-                    }
-                    .into(),
-                ],
-                ..BoolQuery::default()
-            }),
+        normalize_timestamp_range(&mut request, &split, "timestamp");
+
+        let actual_ast: QueryAst = serde_json::from_str(&request.query_ast).unwrap();
+        assert_eq!(
+            actual_ast,
+            QueryAst::from(BoolQuery {
+                must: vec![QueryAst::from(CacheNode::new(original_ast))],
+                filter: vec![timestamp_range(
+                    Bound::Included(1_700_002_000_000_000_000),
+                    Bound::Unbounded,
+                )],
+                ..Default::default()
+            })
         );
     }
 
@@ -2983,9 +3006,14 @@ mod tests {
         // `on_absent` was invoked with.
         async fn run(searcher: &Searcher, warmup_info: &WarmupInfo) -> (bool, Vec<Term>) {
             let reported = std::sync::Mutex::new(Vec::new());
-            let provably_empty = warmup(searcher, warmup_info, &|term: &Term, _segment_id| {
-                reported.lock().unwrap().push(term.clone());
-            })
+            let provably_empty = warmup(
+                searcher,
+                warmup_info,
+                Priority::default(),
+                &|term: &Term, _segment_id| {
+                    reported.lock().unwrap().push(term.clone());
+                },
+            )
             .await
             .unwrap();
             (provably_empty, reported.into_inner().unwrap())
@@ -3094,7 +3122,7 @@ mod tests {
     async fn test_schedule_search_tasks_no_lambda_all_local() {
         let searcher_context = SearcherContext::for_test();
         let splits = make_splits_with_requests(5);
-        let result = super::schedule_search_tasks(splits, &searcher_context).await;
+        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0).await;
         assert_eq!(result.local_search_tasks.len(), 5);
         assert!(result.offloaded_search_tasks.is_empty());
         for (idx, task) in result.local_search_tasks.iter().enumerate() {
@@ -3122,7 +3150,7 @@ mod tests {
         });
         let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(7);
-        let result = super::schedule_search_tasks(splits, &searcher_context).await;
+        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0).await;
         assert_eq!(result.local_search_tasks.len(), 3);
         assert_eq!(result.offloaded_search_tasks.len(), 4);
         for (idx, task) in result.local_search_tasks.iter().enumerate() {
@@ -3142,7 +3170,7 @@ mod tests {
         });
         let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(5);
-        let result = super::schedule_search_tasks(splits, &searcher_context).await;
+        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0).await;
         assert!(result.local_search_tasks.is_empty());
         assert_eq!(result.offloaded_search_tasks.len(), 5);
     }
@@ -3156,7 +3184,7 @@ mod tests {
         });
         let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(5);
-        let result = super::schedule_search_tasks(splits, &searcher_context).await;
+        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0).await;
         assert_eq!(result.local_search_tasks.len(), 5);
         assert!(result.offloaded_search_tasks.is_empty());
     }
@@ -3164,7 +3192,7 @@ mod tests {
     #[tokio::test]
     async fn test_schedule_search_tasks_empty() {
         let searcher_context = SearcherContext::for_test();
-        let result = super::schedule_search_tasks(Vec::new(), &searcher_context).await;
+        let result = super::schedule_search_tasks(Vec::new(), &searcher_context, 1.0).await;
         assert!(result.local_search_tasks.is_empty());
         assert!(result.offloaded_search_tasks.is_empty());
     }

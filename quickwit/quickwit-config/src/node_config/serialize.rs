@@ -24,7 +24,7 @@ use quickwit_common::fs::get_disk_size;
 use quickwit_common::net::{Host, find_private_ip, get_short_hostname};
 use quickwit_common::new_coolid;
 use quickwit_common::uri::Uri;
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{AvailabilityZone, NodeId};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
@@ -56,6 +56,10 @@ const DEFAULT_GOSSIP_PROTOCOL_VERSION: u8 = 0;
 // Default config values in the order they appear in [`NodeConfigBuilder`].
 fn default_cluster_id() -> ConfigValue<String, QW_CLUSTER_ID> {
     ConfigValue::with_default(DEFAULT_CLUSTER_ID.to_string())
+}
+
+fn default_extra_cluster_ids() -> ConfigValue<List, QW_EXTRA_CLUSTER_IDS> {
+    ConfigValue::with_default(List::default())
 }
 
 fn default_node_id() -> ConfigValue<String, QW_NODE_ID> {
@@ -183,6 +187,8 @@ impl From<VersionedNodeConfig> for NodeConfigBuilder {
 struct NodeConfigBuilder {
     #[serde(default = "default_cluster_id")]
     cluster_id: ConfigValue<String, QW_CLUSTER_ID>,
+    #[serde(default = "default_extra_cluster_ids")]
+    extra_cluster_ids: ConfigValue<List, QW_EXTRA_CLUSTER_IDS>,
     #[serde(default = "default_node_id")]
     node_id: ConfigValue<String, QW_NODE_ID>,
     #[serde(default = "default_availability_zone")]
@@ -255,7 +261,17 @@ impl NodeConfigBuilder {
             .node_id
             .resolve(env_vars)
             .map(|node_id_str| NodeId::from_str(&node_id_str))?;
-        let availability_zone = self.availability_zone.resolve_optional(env_vars)?;
+        let availability_zone =
+            self.availability_zone
+                .resolve_optional(env_vars)?
+                .and_then(|availability_zone| {
+                    let availability_zone = availability_zone.trim();
+                    if availability_zone.is_empty() {
+                        None
+                    } else {
+                        Some(AvailabilityZone::from(availability_zone))
+                    }
+                });
 
         let enable_standalone_compactors = self.enable_standalone_compactors.resolve(env_vars)?;
         let docs_clustering_config =
@@ -364,6 +380,7 @@ impl NodeConfigBuilder {
 
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
+            extra_cluster_ids: self.extra_cluster_ids.resolve(env_vars)?.0,
             node_id,
             availability_zone,
             enabled_services: resolved_enabled_services,
@@ -399,6 +416,9 @@ impl NodeConfigBuilder {
 
 fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
     validate_identifier("cluster", &node_config.cluster_id)?;
+    for cluster_id in &node_config.extra_cluster_ids {
+        validate_identifier("extra cluster", cluster_id)?;
+    }
     validate_node_id(&node_config.node_id)?;
 
     if node_config.cluster_id == DEFAULT_CLUSTER_ID {
@@ -508,6 +528,7 @@ impl Default for NodeConfigBuilder {
     fn default() -> Self {
         Self {
             cluster_id: default_cluster_id(),
+            extra_cluster_ids: default_extra_cluster_ids(),
             node_id: default_node_id(),
             availability_zone: ConfigValue::none(),
             enabled_services: default_enabled_services(),
@@ -629,7 +650,7 @@ pub fn node_config_for_tests_from_ports(
 ) -> NodeConfig {
     let node_id = NodeId::from_str(&default_node_id().unwrap());
     let enabled_services = QuickwitService::default_services();
-    let availability_zone = Some(String::from("az-1"));
+    let availability_zone = Some(AvailabilityZone::from("az-1"));
     let listen_address = Host::default();
     let rest_listen_addr = listen_address
         .with_port(rest_listen_port)
@@ -661,6 +682,7 @@ pub fn node_config_for_tests_from_ports(
     };
     NodeConfig {
         cluster_id: default_cluster_id().unwrap(),
+        extra_cluster_ids: Vec::new(),
         node_id,
         availability_zone,
         enabled_services,
@@ -725,7 +747,7 @@ mod tests {
         assert!(config.is_service_enabled(QuickwitService::Janitor));
         assert!(config.is_service_enabled(QuickwitService::Metastore));
 
-        assert_eq!(config.availability_zone.unwrap(), "az-1");
+        assert_eq!(config.availability_zone.as_deref(), Some("az-1"));
         assert_eq!(
             config.rest_config.listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 1111)
@@ -868,7 +890,6 @@ mod tests {
                 cpu_capacity: IndexerConfig::default_cpu_capacity(),
                 enable_cooperative_indexing: false,
                 max_merge_write_throughput: Some(ByteSize::mb(100)),
-                parquet_merge_use_streaming_engine: true,
             }
         );
         assert_eq!(
@@ -1016,10 +1037,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_availability_zone_is_normalized() {
+        let test_cases = [
+            ("version: 0.8", None),
+            ("version: 0.8\navailability_zone:", None),
+            ("version: 0.8\navailability_zone: ''", None),
+            ("version: 0.8\navailability_zone: '   '", None),
+            (
+                "version: 0.8\navailability_zone: ' us-east-1a '",
+                Some("us-east-1a"),
+            ),
+        ];
+        for (config_yaml, expected_availability_zone) in test_cases {
+            let config = load_node_config_with_env(
+                ConfigFormat::Yaml,
+                config_yaml.as_bytes(),
+                &Default::default(),
+                None,
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                config.availability_zone.as_deref(),
+                expected_availability_zone
+            );
+        }
+
+        let test_cases = [
+            ("", None),
+            ("   ", None),
+            (" us-east-1a ", Some("us-east-1a")),
+        ];
+        for (availability_zone, expected_availability_zone) in test_cases {
+            let mut env_vars = HashMap::new();
+            env_vars.insert(
+                "QW_AVAILABILITY_ZONE".to_string(),
+                availability_zone.to_string(),
+            );
+            let config =
+                load_node_config_with_env(ConfigFormat::Yaml, b"version: 0.8", &env_vars, None)
+                    .await
+                    .unwrap();
+            assert_eq!(
+                config.availability_zone.as_deref(),
+                expected_availability_zone
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn test_node_config_env_var_override() {
         let config_yaml = "version: 0.8";
         let mut env_vars = HashMap::new();
         env_vars.insert("QW_CLUSTER_ID".to_string(), "test-cluster".to_string());
+        env_vars.insert(
+            "QW_EXTRA_CLUSTER_IDS".to_string(),
+            "test-cluster,renamed-cluster".to_string(),
+        );
         env_vars.insert("QW_NODE_ID".to_string(), "test-node".to_string());
         env_vars.insert(
             "QW_ENABLED_SERVICES".to_string(),
@@ -1054,6 +1128,10 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(config.cluster_id, "test-cluster");
+        assert_eq!(
+            config.extra_cluster_ids,
+            vec!["test-cluster".to_string(), "renamed-cluster".to_string()]
+        );
         assert_eq!(config.node_id, "test-node");
         assert_eq!(config.enabled_services.len(), 2);
         assert_eq!(
@@ -1109,6 +1187,49 @@ mod tests {
             "postgresql://test-user:test-password@test-host:4321/test-db"
         );
         assert_eq!(config.default_index_root_uri, "s3://quickwit-indexes/prod");
+    }
+
+    #[tokio::test]
+    async fn test_extra_cluster_ids_yaml_and_env_override() {
+        let config_yaml = b"version: 0.8\nextra_cluster_ids: [old-cluster]";
+        let config =
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml, &HashMap::new(), None)
+                .await
+                .unwrap();
+        assert_eq!(config.extra_cluster_ids, ["old-cluster"]);
+
+        let env_vars = HashMap::from([(
+            "QW_EXTRA_CLUSTER_IDS".to_string(),
+            "new-cluster,another-cluster".to_string(),
+        )]);
+        let config = load_node_config_with_env(ConfigFormat::Yaml, config_yaml, &env_vars, None)
+            .await
+            .unwrap();
+        assert_eq!(config.extra_cluster_ids, ["new-cluster", "another-cluster"]);
+
+        let config =
+            load_node_config_with_env(ConfigFormat::Yaml, b"version: 0.8", &HashMap::new(), None)
+                .await
+                .unwrap();
+        assert!(config.extra_cluster_ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_extra_cluster_ids_rejects_invalid_cluster_id() {
+        let mut env_vars = HashMap::new();
+        env_vars.insert("QW_CLUSTER_ID".to_string(), "current-cluster".to_string());
+        env_vars.insert(
+            "QW_EXTRA_CLUSTER_IDS".to_string(),
+            "valid-cluster,invalid cluster".to_string(),
+        );
+
+        let error = load_node_config_with_env(ConfigFormat::Yaml, b"version: 0.8", &env_vars, None)
+            .await
+            .unwrap_err();
+        assert!(
+            format!("{error:?}").contains("extra cluster ID `invalid cluster` is invalid"),
+            "{error:?}"
+        );
     }
 
     #[tokio::test]

@@ -60,6 +60,7 @@ const INDEXING_TASK_PREFIX: &str = "indexer.task:";
 #[derive(Clone)]
 pub struct Cluster {
     cluster_id: String,
+    extra_cluster_ids: HashSet<String>,
     self_chitchat_id: ChitchatId,
     /// Socket address (UDP) the node listens on for receiving gossip messages.
     pub gossip_listen_addr: SocketAddr,
@@ -147,6 +148,10 @@ impl Cluster {
         &self.cluster_id
     }
 
+    pub(crate) fn rejects_cluster_id(&self, cluster_id: &str) -> bool {
+        self.cluster_id != cluster_id && !self.extra_cluster_ids.contains(cluster_id)
+    }
+
     pub fn self_chitchat_id(&self) -> &ChitchatId {
         &self.self_chitchat_id
     }
@@ -166,6 +171,7 @@ impl Cluster {
     #[allow(clippy::too_many_arguments)]
     pub async fn join(
         cluster_id: String,
+        extra_cluster_ids: HashSet<String>,
         self_node: ClusterMember,
         gossip_listen_addr: SocketAddr,
         peer_seed_addrs: Vec<String>,
@@ -202,6 +208,7 @@ impl Cluster {
             })?;
         let chitchat_config = ChitchatConfig {
             cluster_id: cluster_id.clone(),
+            extra_cluster_ids: extra_cluster_ids.clone(),
             chitchat_id: self_node.chitchat_id(),
             listen_addr: gossip_listen_addr,
             seed_nodes: peer_seed_addrs,
@@ -228,7 +235,7 @@ impl Cluster {
         ];
 
         if let Some(az) = &self_node.availability_zone {
-            initial_key_values.push((AVAILABILITY_ZONE_KEY.to_string(), az.clone()));
+            initial_key_values.push((AVAILABILITY_ZONE_KEY.to_string(), az.to_string()));
         }
         initial_key_values.push((
             STANDALONE_COMPACTORS_KEY.to_string(),
@@ -264,6 +271,7 @@ impl Cluster {
         };
         let cluster = Cluster {
             cluster_id,
+            extra_cluster_ids,
             self_chitchat_id: self_node.chitchat_id(),
             gossip_listen_addr,
             gossip_interval,
@@ -727,37 +735,100 @@ pub async fn create_cluster_for_test_with_id(
     transport: &dyn Transport,
     self_node_readiness: bool,
 ) -> anyhow::Result<Cluster> {
-    use quickwit_proto::indexing::PIPELINE_FULL_CAPACITY;
-    use quickwit_proto::ingest::ingester::IngesterStatus;
-    let gossip_advertise_addr: SocketAddr = ([127, 0, 0, 1], gossip_advertise_port).into();
-    let self_node = ClusterMember {
-        node_id,
-        generation_id: crate::GenerationId(1),
-        is_ready: self_node_readiness,
-        enabled_services: enabled_services.clone(),
-        gossip_advertise_addr,
-        grpc_advertise_addr: grpc_addr_from_listen_addr_for_test(gossip_advertise_addr),
-        indexing_tasks: Vec::new(),
-        indexing_cpu_capacity: PIPELINE_FULL_CAPACITY,
-        ingester_status: IngesterStatus::default(),
-        availability_zone: None,
-        enable_standalone_compactors: false,
-    };
-    let failure_detector_config = create_failure_detector_config_for_test();
-    let cluster = Cluster::join(
-        cluster_id,
-        self_node,
-        gossip_advertise_addr,
-        peer_seed_addrs,
-        Duration::from_millis(25),
-        ProtocolVersion::V0.to_code(),
-        failure_detector_config,
-        transport,
-        crate::change::for_test::channel_factory_for_test(),
-    )
-    .await?;
-    cluster.set_self_node_readiness(self_node_readiness).await;
-    Ok(cluster)
+    TestClusterBuilder::new(node_id, gossip_advertise_port, transport)
+        .with_cluster_id(cluster_id)
+        .with_peer_seeds(peer_seed_addrs)
+        .with_services(enabled_services.clone())
+        .with_readiness(self_node_readiness)
+        .build()
+        .await
+}
+
+/// Builds a test cluster node with optional cluster and membership settings.
+#[cfg(any(test, feature = "testsuite"))]
+pub struct TestClusterBuilder<'a> {
+    cluster_id: String,
+    extra_cluster_ids: HashSet<String>,
+    self_node: ClusterMember,
+    peer_seed_addrs: Vec<String>,
+    transport: &'a dyn Transport,
+}
+
+#[cfg(any(test, feature = "testsuite"))]
+impl<'a> TestClusterBuilder<'a> {
+    pub fn new(node_id: NodeId, gossip_advertise_port: u16, transport: &'a dyn Transport) -> Self {
+        use quickwit_proto::indexing::PIPELINE_FULL_CAPACITY;
+        use quickwit_proto::ingest::ingester::IngesterStatus;
+
+        let gossip_advertise_addr: SocketAddr = ([127, 0, 0, 1], gossip_advertise_port).into();
+        Self {
+            cluster_id: "test-cluster".to_string(),
+            extra_cluster_ids: HashSet::new(),
+            self_node: ClusterMember {
+                node_id,
+                generation_id: crate::GenerationId(1),
+                is_ready: false,
+                enabled_services: HashSet::new(),
+                gossip_advertise_addr,
+                grpc_advertise_addr: grpc_addr_from_listen_addr_for_test(gossip_advertise_addr),
+                indexing_tasks: Vec::new(),
+                indexing_cpu_capacity: PIPELINE_FULL_CAPACITY,
+                ingester_status: IngesterStatus::default(),
+                availability_zone: None,
+                enable_standalone_compactors: false,
+            },
+            peer_seed_addrs: Vec::new(),
+            transport,
+        }
+    }
+
+    pub fn with_cluster_id(mut self, cluster_id: impl Into<String>) -> Self {
+        self.cluster_id = cluster_id.into();
+        self
+    }
+
+    pub fn with_extra_cluster_ids(mut self, cluster_ids: impl IntoIterator<Item = String>) -> Self {
+        self.extra_cluster_ids = cluster_ids.into_iter().collect();
+        self
+    }
+
+    pub fn with_peer_seeds(mut self, peer_seed_addrs: Vec<String>) -> Self {
+        self.peer_seed_addrs = peer_seed_addrs;
+        self
+    }
+
+    pub fn with_services(
+        mut self,
+        services: HashSet<quickwit_config::service::QuickwitService>,
+    ) -> Self {
+        self.self_node.enabled_services = services;
+        self
+    }
+
+    pub fn with_readiness(mut self, is_ready: bool) -> Self {
+        self.self_node.is_ready = is_ready;
+        self
+    }
+
+    pub async fn build(self) -> anyhow::Result<Cluster> {
+        let gossip_advertise_addr = self.self_node.gossip_advertise_addr;
+        let is_ready = self.self_node.is_ready;
+        let cluster = Cluster::join(
+            self.cluster_id,
+            self.extra_cluster_ids,
+            self.self_node,
+            gossip_advertise_addr,
+            self.peer_seed_addrs,
+            Duration::from_millis(25),
+            ProtocolVersion::V0.to_code(),
+            create_failure_detector_config_for_test(),
+            self.transport,
+            crate::change::for_test::channel_factory_for_test(),
+        )
+        .await?;
+        cluster.set_self_node_readiness(is_ready).await;
+        Ok(cluster)
+    }
 }
 
 /// Creates a failure detector config for tests.
@@ -819,6 +890,35 @@ mod tests {
 
     use super::*;
     use crate::ChitchatTransport;
+
+    #[tokio::test]
+    async fn test_extra_cluster_ids_keep_old_and_new_nodes_in_one_cluster() -> anyhow::Result<()> {
+        let transport = ChitchatTransport::default();
+        let old_cluster = TestClusterBuilder::new(NodeId::from_str("old-node"), 31_001, &transport)
+            .with_cluster_id("old-cluster")
+            .with_extra_cluster_ids(["new-cluster".to_string()])
+            .with_readiness(true)
+            .build()
+            .await?;
+        let new_cluster = TestClusterBuilder::new(NodeId::from_str("new-node"), 31_003, &transport)
+            .with_cluster_id("new-cluster")
+            .with_extra_cluster_ids(["old-cluster".to_string()])
+            .with_peer_seeds(vec![old_cluster.gossip_listen_addr.to_string()])
+            .with_readiness(true)
+            .build()
+            .await?;
+
+        let wait_duration = Duration::from_secs(10);
+        old_cluster
+            .wait_for_ready_members(|members| members.len() == 2, wait_duration)
+            .await?;
+        new_cluster
+            .wait_for_ready_members(|members| members.len() == 2, wait_duration)
+            .await?;
+        assert_eq!(old_cluster.cluster_id(), "old-cluster");
+        assert_eq!(new_cluster.cluster_id(), "new-cluster");
+        Ok(())
+    }
 
     #[test]
     fn test_max_gossip_protocol_version_matches_chitchat() {

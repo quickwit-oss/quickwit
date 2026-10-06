@@ -20,6 +20,7 @@
 mod client;
 mod cluster_client;
 mod collector;
+mod cost;
 mod error;
 mod fetch_docs;
 mod find_trace_ids_collector;
@@ -61,7 +62,7 @@ use std::hash::{Hash, Hasher};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::{Arc, LazyLock};
 
-pub use find_trace_ids_collector::{FindTraceIdsCollector, Span};
+pub use find_trace_ids_collector::{FindTraceIdsCollector, MAX_NUM_TRACES, Span};
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_metastore::{
@@ -82,6 +83,7 @@ pub use crate::client::{
     SearchServiceClient, create_search_client_from_channel, create_search_client_from_grpc_addr,
 };
 pub use crate::cluster_client::ClusterClient;
+pub use crate::cost::compute_query_complexity_factor;
 pub use crate::error::{SearchError, parse_grpc_error};
 use crate::fetch_docs::fetch_docs;
 pub use crate::invoker::LambdaLeafSearchInvoker;
@@ -138,7 +140,7 @@ pub type SearcherPool = Pool<SocketAddr, SearcherNode>;
 
 fn search_thread_pool() -> &'static ThreadPoolWithPriority {
     static SEARCH_THREAD_POOL: LazyLock<ThreadPoolWithPriority> =
-        LazyLock::new(|| ThreadPoolWithPriority::new("search", None));
+        LazyLock::new(|| ThreadPoolWithPriority::new("search", Some(quickwit_common::num_cpus())));
     &SEARCH_THREAD_POOL
 }
 

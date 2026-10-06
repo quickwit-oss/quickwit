@@ -22,20 +22,21 @@ pub(crate) mod model;
 use quickwit_common::tower::Pool;
 use quickwit_proto::indexing::{CpuCapacity, IndexingServiceClient, IndexingTask};
 use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{AvailabilityZone, NodeId};
 
 /// Indexer-node specific information stored in the pool of available indexer nodes
 #[derive(Debug, Clone)]
-pub struct IndexerNodeInfo {
+pub struct IndexerPoolEntry {
     pub node_id: NodeId,
     pub generation_id: u64,
     pub client: IndexingServiceClient,
     pub indexing_tasks: Vec<IndexingTask>,
     pub indexing_capacity: CpuCapacity,
     pub ingester_status: IngesterStatus,
+    pub availability_zone: Option<AvailabilityZone>,
 }
 
-pub type IndexerPool = Pool<NodeId, IndexerNodeInfo>;
+pub type IndexerPool = Pool<NodeId, IndexerPoolEntry>;
 
 mod cooldown_map;
 mod debouncer;

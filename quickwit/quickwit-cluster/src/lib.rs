@@ -44,7 +44,8 @@ pub use crate::change::{ClusterChange, ClusterChangeStream};
 pub use crate::cluster::{Cluster, ClusterSnapshot, NodeIdSchema};
 #[cfg(any(test, feature = "testsuite"))]
 pub use crate::cluster::{
-    create_cluster_for_test, create_cluster_for_test_with_id, grpc_addr_from_listen_addr_for_test,
+    TestClusterBuilder, create_cluster_for_test, create_cluster_for_test_with_id,
+    grpc_addr_from_listen_addr_for_test,
 };
 pub use crate::member::{ClusterMember, INDEXING_CPU_CAPACITY_KEY};
 use crate::metrics::{
@@ -145,6 +146,7 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
     let channel_factory = ChannelFactory::for_grpc(&node_config.grpc_config)?;
     let cluster = Cluster::join(
         cluster_id,
+        node_config.extra_cluster_ids.iter().cloned().collect(),
         self_node,
         gossip_listen_addr,
         peer_seed_addrs,

@@ -1543,6 +1543,41 @@ mod tests {
     }
 
     #[test]
+    fn test_tie_breaker_value_rejected_only_in_strict_mode() {
+        let json_doc = r#"{ "body": "hello", "tie_breaker": 42 }"#;
+        for mode in ["lenient", "dynamic", "strict"] {
+            let doc_mapper: DocMapper = serde_json::from_str(&format!(
+                r#"{{
+                    "field_mappings": [
+                        {{ "name": "body", "type": "text" }},
+                        {{ "name": "tie_breaker", "type": "tie_breaker" }}
+                    ],
+                    "mode": "{mode}"
+                }}"#
+            ))
+            .unwrap();
+            let borrowed_json_value: serde_json_borrow::Value =
+                serde_json::from_str(json_doc).unwrap();
+            let validation_result =
+                doc_mapper.validate_json_obj(borrowed_json_value.as_object().unwrap());
+            let parsing_result = doc_mapper.doc_from_json_str(json_doc);
+            if mode == "strict" {
+                assert!(matches!(
+                    validation_result,
+                    Err(DocParsingError::ValueError(field_path, _)) if field_path == "tie_breaker"
+                ));
+                assert!(matches!(
+                    parsing_result,
+                    Err(DocParsingError::ValueError(field_path, _)) if field_path == "tie_breaker"
+                ));
+            } else {
+                validation_result.unwrap();
+                parsing_result.unwrap();
+            }
+        }
+    }
+
+    #[test]
     fn test_strict_mode_inner() {
         let default_doc_mapper: DocMapper = serde_json::from_str(
             r#"{

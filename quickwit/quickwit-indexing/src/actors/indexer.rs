@@ -26,7 +26,7 @@ use itertools::Itertools;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, Command, Handler, Mailbox, QueueCapacity,
 };
-use quickwit_common::io::IoControls;
+use quickwit_common::io::{IoControls, Limiter};
 use quickwit_common::metrics::IN_FLIGHT_INDEX_WRITER;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::temp_dir::TempDirectory;
@@ -101,6 +101,7 @@ struct IndexerState {
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
     cooperative_indexing_opt: Option<CooperativeIndexingCycle>,
+    indexing_io_throughput_limiter_opt: Option<Limiter>,
 }
 
 impl IndexerState {
@@ -121,6 +122,7 @@ impl IndexerState {
             );
 
         let io_controls = IoControls::default()
+            .set_throughput_limiter_opt(self.indexing_io_throughput_limiter_opt.clone())
             .set_progress(ctx.progress().clone())
             .set_kill_switch(ctx.kill_switch().clone())
             .set_component("indexer");
@@ -317,7 +319,7 @@ impl IndexerState {
                 counters,
                 ctx,
             )?;
-            let mem_usage_before = indexed_split.index_writer.mem_usage() as u64;
+            let mem_usage_before = indexed_split.mem_usage() as u64;
             if split_created {
                 // The split was just created. We need to account for the initial index writer's
                 // memory usage.
@@ -338,7 +340,7 @@ impl IndexerState {
                 .index_writer
                 .add_document(doc)
                 .context("failed to add document")?;
-            let mem_usage_after = indexed_split.index_writer.mem_usage() as u64;
+            let mem_usage_after = indexed_split.mem_usage() as u64;
             memory_usage_delta += mem_usage_after as i64 - mem_usage_before as i64;
             ctx.record_progress();
         }
@@ -534,6 +536,7 @@ impl Indexer {
         cooperative_indexing_permits_opt: Option<Arc<Semaphore>>,
         index_serializer_mailbox: Mailbox<IndexSerializer>,
         fingerprinter_opt: Option<Fingerprinter>,
+        indexing_io_throughput_limiter_opt: Option<Limiter>,
     ) -> Self {
         let schema = doc_mapper.schema();
         let tokenizer_manager = doc_mapper.tokenizer_manager().clone();
@@ -570,6 +573,7 @@ impl Indexer {
                 index_settings,
                 max_num_partitions: doc_mapper.max_num_partitions(),
                 cooperative_indexing_opt,
+                indexing_io_throughput_limiter_opt,
             },
             index_serializer_mailbox,
             indexing_workbench_opt: None,
@@ -713,6 +717,30 @@ mod tests {
     use super::{IndexerCounters, record_timestamp, *};
     use crate::docs_clustering::Fingerprint;
 
+    #[allow(clippy::too_many_arguments)]
+    fn create_indexer_for_test(
+        pipeline_id: IndexingPipelineId,
+        doc_mapper: Arc<DocMapper>,
+        metastore: MetastoreServiceClient,
+        indexing_directory: TempDirectory,
+        indexing_settings: IndexingSettings,
+        cooperative_indexing_permits_opt: Option<Arc<Semaphore>>,
+        index_serializer_mailbox: Mailbox<IndexSerializer>,
+        fingerprinter_opt: Option<Fingerprinter>,
+    ) -> Indexer {
+        Indexer::new(
+            pipeline_id,
+            doc_mapper,
+            metastore,
+            indexing_directory,
+            indexing_settings,
+            cooperative_indexing_permits_opt,
+            index_serializer_mailbox,
+            fingerprinter_opt,
+            None,
+        )
+    }
+
     #[test]
     fn test_record_timestamp() {
         let mut time_range = None;
@@ -771,7 +799,7 @@ mod tests {
                 Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             });
         mock_metastore.expect_publish_splits().never();
-        let indexer = Indexer::new(
+        let indexer = create_indexer_for_test(
             pipeline_id,
             doc_mapper,
             MetastoreServiceClient::from_mock(mock_metastore),
@@ -912,7 +940,7 @@ mod tests {
                 Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             });
         mock_metastore.expect_publish_splits().never();
-        let indexer = Indexer::new(
+        let indexer = create_indexer_for_test(
             pipeline_id,
             doc_mapper,
             MetastoreServiceClient::from_mock(mock_metastore),
@@ -990,7 +1018,7 @@ mod tests {
             },
         );
         mock_metastore.expect_publish_splits().never();
-        let indexer = Indexer::new(
+        let indexer = create_indexer_for_test(
             pipeline_id,
             doc_mapper,
             MetastoreServiceClient::from_mock(mock_metastore),
@@ -1074,7 +1102,7 @@ mod tests {
                 Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             },
         );
-        let indexer = Indexer::new(
+        let indexer = create_indexer_for_test(
             pipeline_id,
             doc_mapper,
             MetastoreServiceClient::from_mock(mock_metastore),
@@ -1163,7 +1191,7 @@ mod tests {
             .once()
             .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         mock_metastore.expect_publish_splits().never();
-        let indexer = Indexer::new(
+        let indexer = create_indexer_for_test(
             pipeline_id,
             doc_mapper,
             MetastoreServiceClient::from_mock(mock_metastore),
@@ -1231,7 +1259,7 @@ mod tests {
             .expect_last_delete_opstamp()
             .once()
             .returning(|_| Ok(LastDeleteOpstampResponse::new(10)));
-        let indexer = Indexer::new(
+        let indexer = create_indexer_for_test(
             pipeline_id,
             doc_mapper,
             MetastoreServiceClient::from_mock(mock_metastore),
@@ -1314,8 +1342,9 @@ mod tests {
             index_serializer_inbox.drain_for_test_typed();
         let mut split_batch = split_batches.pop().unwrap();
         let split_builder = split_batch.splits.pop().unwrap();
-
+        let split_path = split_builder.path().to_path_buf();
         let indexed_split = split_builder.finalize()?;
+        assert!(split_path.join("meta.json").try_exists()?);
         let reader = indexed_split.index.reader()?;
         let searcher = reader.searcher();
         let mut bodies = Vec::new();
@@ -1367,7 +1396,7 @@ mod tests {
             .once()
             .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         mock_metastore.expect_publish_splits().never();
-        let indexer = Indexer::new(
+        let indexer = create_indexer_for_test(
             pipeline_id,
             doc_mapper,
             MetastoreServiceClient::from_mock(mock_metastore),
@@ -1466,7 +1495,7 @@ mod tests {
             .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         mock_metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let indexer = Indexer::new(
+        let indexer = create_indexer_for_test(
             pipeline_id,
             doc_mapper,
             MetastoreServiceClient::from_mock(mock_metastore),
@@ -1539,7 +1568,7 @@ mod tests {
             .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         mock_metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let indexer = Indexer::new(
+        let indexer = create_indexer_for_test(
             pipeline_id,
             doc_mapper,
             MetastoreServiceClient::from_mock(mock_metastore),
@@ -1613,7 +1642,7 @@ mod tests {
             .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         mock_metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let indexer = Indexer::new(
+        let indexer = create_indexer_for_test(
             pipeline_id,
             doc_mapper,
             MetastoreServiceClient::from_mock(mock_metastore),
@@ -1679,7 +1708,7 @@ mod tests {
             .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         mock_metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let indexer = Indexer::new(
+        let indexer = create_indexer_for_test(
             pipeline_id,
             doc_mapper,
             MetastoreServiceClient::from_mock(mock_metastore),
@@ -1749,7 +1778,7 @@ mod tests {
                 Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             },
         );
-        let indexer = Indexer::new(
+        let indexer = create_indexer_for_test(
             pipeline_id,
             doc_mapper,
             MetastoreServiceClient::from_mock(mock_metastore),

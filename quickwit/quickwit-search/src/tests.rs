@@ -14,6 +14,7 @@
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Bound;
 
 use assert_json_diff::{assert_json_eq, assert_json_include};
 use quickwit_config::SearcherConfig;
@@ -21,16 +22,17 @@ use quickwit_doc_mapper::DocMapper;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_indexing::TestSandbox;
 use quickwit_proto::search::{
-    LeafListTermsResponse, ListTermsRequest, SearchRequest, SortByValue, SortField, SortOrder,
-    SortValue, TraceId,
+    CountHits, LeafListTermsResponse, ListTermsRequest, SearchRequest, SortByValue, SortField,
+    SortOrder, SortValue, TraceId,
 };
 use quickwit_query::query_ast::{
-    HitSet, PredicateCache, QueryAst, qast_helper, qast_json_helper, query_ast_from_user_text,
+    BoolQuery, HitSet, PredicateCache, QueryAst, RangeQuery, qast_helper, qast_json_helper,
+    query_ast_from_user_text,
 };
 use serde_json::{Value as JsonValue, json};
-use tantivy::Term;
 use tantivy::schema::OwnedValue as TantivyValue;
 use tantivy::time::OffsetDateTime;
+use tantivy::{DocSet, Term};
 
 use self::leaf::single_doc_mapping_leaf_search;
 use super::*;
@@ -787,6 +789,116 @@ async fn test_sort_by_static_and_dynamic_field() {
         let ordered_docs: Vec<u32> = search_hits("dynamic_i64", SortOrder::Asc).await;
         assert_eq!(&ordered_docs[..], &[1, 0, 3, 2]);
     }
+    test_sandbox.assert_quit().await;
+}
+
+#[tokio::test]
+async fn test_sort_by_tie_breaker() {
+    let index_id = "sort_by_tie_breaker".to_string();
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: tie_breaker
+                type: tie_breaker
+            "#;
+    let test_sandbox = TestSandbox::create(&index_id, doc_mapping_yaml, "{}", &["body"])
+        .await
+        .unwrap();
+    // Each call creates a separate split. The value supplied for `tie_breaker` is ignored.
+    test_sandbox
+        .add_documents(vec![
+            json!({"body": "a", "tie_breaker": 0u64}),
+            json!({"body": "b"}),
+            json!({"body": "c"}),
+        ])
+        .await
+        .unwrap();
+    test_sandbox
+        .add_documents(vec![json!({"body": "d"}), json!({"body": "e"})])
+        .await
+        .unwrap();
+
+    let search_hits = |order: SortOrder| {
+        let search_request = SearchRequest {
+            index_id_patterns: vec![index_id.to_string()],
+            query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
+            max_hits: 1_000,
+            sort_fields: vec![SortField {
+                field_name: "tie_breaker".to_string(),
+                sort_order: order as i32,
+                sort_datetime_format: None,
+            }],
+            ..Default::default()
+        };
+        let metastore = test_sandbox.metastore();
+        let storage_resolver = test_sandbox.storage_resolver();
+        async move {
+            let search_resp = single_node_search(search_request, metastore, storage_resolver)
+                .await
+                .unwrap();
+            assert_eq!(search_resp.num_hits, 5);
+            search_resp
+                .hits
+                .into_iter()
+                .map(|hit| {
+                    let partial_hit = hit.partial_hit.unwrap();
+                    let Some(SortByValue {
+                        sort_value: Some(SortValue::U64(tie_breaker)),
+                    }) = partial_hit.sort_value
+                    else {
+                        panic!("expected a u64 tie_breaker sort value");
+                    };
+                    (partial_hit.split_id, partial_hit.doc_id, tie_breaker)
+                })
+                .collect::<Vec<(String, u32, u64)>>()
+        }
+    };
+
+    let ascending_hits = search_hits(SortOrder::Asc).await;
+    assert!(ascending_hits.is_sorted_by_key(|(_, _, tie_breaker)| *tie_breaker));
+    let mut tie_breakers_per_split: BTreeMap<String, Vec<(u32, u64)>> = BTreeMap::new();
+    for (split_id, doc_id, tie_breaker) in &ascending_hits {
+        tie_breakers_per_split
+            .entry(split_id.clone())
+            .or_default()
+            .push((*doc_id, *tie_breaker));
+    }
+    assert_eq!(tie_breakers_per_split.len(), 2);
+    // Within a split, values are consecutive in doc id order.
+    for tie_breakers in tie_breakers_per_split.values_mut() {
+        tie_breakers.sort();
+        for (doc_offset, (doc_id, tie_breaker)) in tie_breakers.iter().enumerate() {
+            assert_eq!(*doc_id as usize, doc_offset);
+            assert_eq!(*tie_breaker, tie_breakers[0].1 + doc_offset as u64);
+        }
+    }
+
+    let descending_hits = search_hits(SortOrder::Desc).await;
+    let mut expected_descending_hits = ascending_hits.clone();
+    expected_descending_hits.reverse();
+    assert_eq!(descending_hits, expected_descending_hits);
+
+    // Term queries on the fast-only tie-breaker field run as exact range queries.
+    let (split_id, doc_id, tie_breaker) = &ascending_hits[0];
+    let search_request = SearchRequest {
+        index_id_patterns: vec![index_id.to_string()],
+        query_ast: qast_json_helper(&format!("tie_breaker:{tie_breaker}"), &[]),
+        max_hits: 10,
+        ..Default::default()
+    };
+    let search_resp = single_node_search(
+        search_request,
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await
+    .unwrap();
+    assert!(search_resp.hits.iter().any(|hit| {
+        let partial_hit = hit.partial_hit.as_ref().unwrap();
+        partial_hit.split_id == *split_id && partial_hit.doc_id == *doc_id
+    }));
+
     test_sandbox.assert_quit().await;
 }
 
@@ -1874,6 +1986,106 @@ async fn test_search_in_text_field_with_custom_tokenizer() -> anyhow::Result<()>
     Ok(())
 }
 
+#[tokio::test]
+async fn test_cached_hits_prune_uncached_splits_before_warmup() {
+    let doc_mapping_yaml = r#"
+        field_mappings:
+          - name: body
+            type: text
+          - name: ts
+            type: datetime
+            fast: true
+        timestamp_field: ts
+    "#;
+    let test_sandbox = TestSandbox::create("cached-hit-pruning", doc_mapping_yaml, "{}", &["body"])
+        .await
+        .unwrap();
+    for timestamp in [1_700_000_000i64, 1_700_000_100] {
+        test_sandbox
+            .add_documents(vec![json!({"body": "hello", "ts": timestamp})])
+            .await
+            .unwrap();
+    }
+    let splits_metadata =
+        list_all_splits(vec![test_sandbox.index_uid()], &test_sandbox.metastore())
+            .await
+            .unwrap();
+    let mut splits: Vec<SplitIdAndFooterOffsets> = splits_metadata
+        .iter()
+        .map(extract_split_and_footer_offsets)
+        .collect();
+    assert_eq!(splits.len(), 2);
+
+    for sort_order in [SortOrder::Asc, SortOrder::Desc] {
+        splits.sort_by_key(|split| split.timestamp_start());
+        if sort_order == SortOrder::Desc {
+            splits.reverse();
+        }
+        for max_hits in [1, 2] {
+            for count_hits in [CountHits::Underestimate, CountHits::CountAll] {
+                let searcher_context = Arc::new(SearcherContext::for_test());
+                // A term query avoids the upfront match-all optimization.
+                let request = SearchRequest {
+                    query_ast: qast_json_helper("hello", &["body"]),
+                    max_hits,
+                    count_hits: count_hits.into(),
+                    sort_fields: vec![SortField {
+                        field_name: "ts".to_string(),
+                        sort_order: sort_order.into(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                };
+                let cached_response = single_doc_mapping_leaf_search(
+                    searcher_context.clone(),
+                    Arc::new(request.clone()),
+                    test_sandbox.storage(),
+                    vec![splits[0].clone()],
+                    test_sandbox.doc_mapper(),
+                )
+                .await
+                .unwrap();
+                assert!(cached_response.failed_splits.is_empty());
+                assert_eq!(cached_response.partial_hits.len(), 1);
+
+                let response = single_doc_mapping_leaf_search(
+                    searcher_context.clone(),
+                    Arc::new(request.clone()),
+                    test_sandbox.storage(),
+                    splits.clone(),
+                    test_sandbox.doc_mapper(),
+                )
+                .await
+                .unwrap();
+                assert!(response.failed_splits.is_empty());
+                assert_eq!(response.partial_hits.len(), max_hits as usize);
+                assert_eq!(response.partial_hits[0], cached_response.partial_hits[0]);
+                let must_search = max_hits == 2 || count_hits == CountHits::CountAll;
+                assert_eq!(response.num_hits, 1 + u64::from(must_search));
+                let stats = response.resource_stats.unwrap();
+                assert_eq!(stats.partial_result_cache_num_splits, 1);
+                assert_eq!(stats.localexec_num_splits, u64::from(must_search));
+
+                if max_hits == 1 && count_hits == CountHits::CountAll {
+                    // The remaining split still counts matches, but no longer collects hits.
+                    let count_request = SearchRequest {
+                        max_hits: 0,
+                        sort_fields: Vec::new(),
+                        ..request
+                    };
+                    let count_response = searcher_context
+                        .leaf_search_cache
+                        .get(splits[1].clone(), count_request)
+                        .expect("the uncached split should have executed a count-only request");
+                    assert_eq!(count_response.num_hits, 1);
+                    assert!(count_response.partial_hits.is_empty());
+                }
+            }
+        }
+    }
+    test_sandbox.assert_quit().await;
+}
+
 /// Indexes a single split holding one `body: "hello world"` document and returns
 /// the pieces needed to drive `single_doc_mapping_leaf_search` directly, so the
 /// test owns the `SearcherContext` (and therefore its predicate cache).
@@ -2135,6 +2347,312 @@ async fn negative_cache_ts_test_setup() -> (
         doc_mapper,
         start_timestamp,
     )
+}
+
+// Inspects the normalized AST shape for cache-placement assertions only.
+fn time_bounded_cached_predicate(query_ast: &QueryAst, timestamp_field: &str) -> Option<QueryAst> {
+    match query_ast {
+        QueryAst::Cache(cache_node) => {
+            time_bounded_cached_predicate(&cache_node.inner, timestamp_field)
+        }
+        QueryAst::Bool(bool_query)
+            if bool_query.must.len() == 1
+                && bool_query.filter.len() <= 1
+                && bool_query.must_not.is_empty()
+                && bool_query.should.is_empty() =>
+        {
+            let QueryAst::Cache(cache_node) = &bool_query.must[0] else {
+                return None;
+            };
+            if let Some(time_filter) = bool_query.filter.first() {
+                let QueryAst::Range(time_range) = time_filter else {
+                    return None;
+                };
+                if time_range.field != timestamp_field {
+                    return None;
+                }
+            }
+            Some((*cache_node.inner).clone())
+        }
+        _ => None,
+    }
+}
+
+#[test]
+fn test_time_bounded_predicate_cache_eligibility_after_split_normalization() {
+    let split = SplitIdAndFooterOffsets {
+        timestamp_start: Some(100),
+        timestamp_end: Some(199),
+        ..Default::default()
+    };
+    let predicate_ast = qast_helper("info", &["body"]);
+
+    let mut partial_request = SearchRequest {
+        query_ast: serde_json::to_string(&predicate_ast).unwrap(),
+        start_timestamp: Some(120),
+        end_timestamp: Some(180),
+        ..Default::default()
+    };
+    leaf::rewrite_request(&mut partial_request, &split, Some("ts"));
+    let partial_ast: QueryAst = serde_json::from_str(&partial_request.query_ast).unwrap();
+    let QueryAst::Bool(partial_bool_query) = &partial_ast else {
+        panic!("expected a bool combining the cached predicate and timestamp range");
+    };
+    assert_eq!(
+        partial_bool_query.filter,
+        vec![QueryAst::from(RangeQuery {
+            field: "ts".to_string(),
+            lower_bound: Bound::Included(120_000_000_000i64.into()),
+            upper_bound: Bound::Excluded(180_000_000_000i64.into()),
+        })]
+    );
+    let partial_predicate = time_bounded_cached_predicate(&partial_ast, "ts")
+        .expect("a partial range should install a cached predicate");
+
+    let mut full_split_request = SearchRequest {
+        query_ast: serde_json::to_string(&predicate_ast).unwrap(),
+        start_timestamp: Some(50),
+        end_timestamp: Some(250),
+        ..Default::default()
+    };
+    leaf::rewrite_request(&mut full_split_request, &split, Some("ts"));
+    let full_split_ast: QueryAst = serde_json::from_str(&full_split_request.query_ast).unwrap();
+    let full_split_predicate = time_bounded_cached_predicate(&full_split_ast, "ts")
+        .expect("a full-split range should install a cached predicate");
+    assert_eq!(full_split_predicate, partial_predicate);
+
+    let mut full_split_search_after_request = SearchRequest {
+        query_ast: serde_json::to_string(&predicate_ast).unwrap(),
+        start_timestamp: Some(50),
+        end_timestamp: Some(250),
+        search_after: Some(Default::default()),
+        ..Default::default()
+    };
+    leaf::rewrite_request(&mut full_split_search_after_request, &split, Some("ts"));
+    let full_split_search_after_ast: QueryAst =
+        serde_json::from_str(&full_split_search_after_request.query_ast).unwrap();
+    assert_eq!(
+        time_bounded_cached_predicate(&full_split_search_after_ast, "ts"),
+        Some(partial_predicate.clone())
+    );
+
+    let mut timeless_search_after_request = SearchRequest {
+        query_ast: serde_json::to_string(&predicate_ast).unwrap(),
+        search_after: Some(Default::default()),
+        ..Default::default()
+    };
+    leaf::rewrite_request(&mut timeless_search_after_request, &split, Some("ts"));
+    let timeless_search_after_ast: QueryAst =
+        serde_json::from_str(&timeless_search_after_request.query_ast).unwrap();
+    assert!(
+        time_bounded_cached_predicate(&timeless_search_after_ast, "ts").is_none(),
+        "the search-after cache node should not be treated as a predicate cache node"
+    );
+
+    for trivial_predicate in [QueryAst::MatchAll, QueryAst::MatchNone] {
+        let mut time_only_request = SearchRequest {
+            query_ast: serde_json::to_string(&trivial_predicate).unwrap(),
+            start_timestamp: Some(120),
+            end_timestamp: Some(180),
+            ..Default::default()
+        };
+        leaf::rewrite_request(&mut time_only_request, &split, Some("ts"));
+        let time_only_ast: QueryAst = serde_json::from_str(&time_only_request.query_ast).unwrap();
+        assert!(time_bounded_cached_predicate(&time_only_ast, "ts").is_none());
+    }
+
+    let bool_wrapped_time_range = QueryAst::from(BoolQuery {
+        filter: vec![QueryAst::from(RangeQuery {
+            field: "ts".to_string(),
+            lower_bound: Bound::Included(120i64.into()),
+            upper_bound: Bound::Excluded(180i64.into()),
+        })],
+        ..Default::default()
+    });
+    let mut bool_wrapped_time_only_request = SearchRequest {
+        query_ast: serde_json::to_string(&bool_wrapped_time_range).unwrap(),
+        ..Default::default()
+    };
+    leaf::rewrite_request(&mut bool_wrapped_time_only_request, &split, Some("ts"));
+    let bool_wrapped_time_only_ast: QueryAst =
+        serde_json::from_str(&bool_wrapped_time_only_request.query_ast).unwrap();
+    assert!(time_bounded_cached_predicate(&bool_wrapped_time_only_ast, "ts").is_none());
+
+    let mut bool_wrapped_match_none_request = SearchRequest {
+        query_ast: serde_json::to_string(&QueryAst::from(BoolQuery {
+            must: vec![QueryAst::MatchNone],
+            ..Default::default()
+        }))
+        .unwrap(),
+        start_timestamp: Some(120),
+        end_timestamp: Some(180),
+        ..Default::default()
+    };
+    leaf::rewrite_request(&mut bool_wrapped_match_none_request, &split, Some("ts"));
+    let bool_wrapped_match_none_ast: QueryAst =
+        serde_json::from_str(&bool_wrapped_match_none_request.query_ast).unwrap();
+    assert!(time_bounded_cached_predicate(&bool_wrapped_match_none_ast, "ts").is_none());
+
+    let user_semantic_time_range = QueryAst::from(RangeQuery {
+        field: "ts".to_string(),
+        lower_bound: Bound::Included(130i64.into()),
+        upper_bound: Bound::Unbounded,
+    });
+    let nested_semantic_ast = QueryAst::from(BoolQuery {
+        must: vec![predicate_ast],
+        should: vec![user_semantic_time_range.clone()],
+        ..Default::default()
+    });
+    let mut nested_semantic_request = SearchRequest {
+        query_ast: serde_json::to_string(&nested_semantic_ast).unwrap(),
+        start_timestamp: Some(120),
+        end_timestamp: Some(180),
+        ..Default::default()
+    };
+    leaf::rewrite_request(&mut nested_semantic_request, &split, Some("ts"));
+    let nested_rewritten_ast: QueryAst =
+        serde_json::from_str(&nested_semantic_request.query_ast).unwrap();
+    let cached_predicate = time_bounded_cached_predicate(&nested_rewritten_ast, "ts")
+        .expect("the non-time predicate should be cached");
+    let QueryAst::Bool(cached_bool) = cached_predicate else {
+        panic!("expected normalized bool predicate");
+    };
+    assert_eq!(cached_bool.should, vec![user_semantic_time_range]);
+}
+
+#[tokio::test]
+async fn test_time_bounded_query_populates_and_reuses_complete_predicate_cache() {
+    let (test_sandbox, searcher_context, storage, splits, doc_mapper, start_timestamp) =
+        negative_cache_ts_test_setup().await;
+    let split_id = splits[0].split_id.clone();
+
+    let first_window_request = SearchRequest {
+        index_id_patterns: vec!["negative-cache-ts-index".to_string()],
+        query_ast: qast_json_helper("info", &["body"]),
+        start_timestamp: Some(start_timestamp),
+        end_timestamp: Some(start_timestamp + 3),
+        max_hits: 10,
+        ..Default::default()
+    };
+    let mut rewritten_request = first_window_request.clone();
+    leaf::rewrite_request(
+        &mut rewritten_request,
+        &splits[0],
+        doc_mapper.timestamp_field_name(),
+    );
+    let rewritten_ast: QueryAst = serde_json::from_str(&rewritten_request.query_ast).unwrap();
+    let predicate_ast = time_bounded_cached_predicate(&rewritten_ast, "ts")
+        .expect("a partial time range should install a cached predicate");
+    let predicate_key = serde_json::to_string(&predicate_ast).unwrap();
+
+    let first_response = single_doc_mapping_leaf_search(
+        searcher_context.clone(),
+        std::sync::Arc::new(first_window_request),
+        storage.clone(),
+        splits.clone(),
+        doc_mapper.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(first_response.num_hits, 3);
+    let first_input_memory_bytes = first_response
+        .resource_stats
+        .as_ref()
+        .and_then(|stats| stats.split_resources_sum)
+        .expect("the split should report resource stats")
+        .input_memory_bytes;
+
+    let (_segment_id, complete_hits) = searcher_context
+        .predicate_cache
+        .get(split_id.clone(), predicate_key)
+        .expect("the first window should populate the predicate cache");
+    assert_eq!(complete_hits.size_hint(), 10);
+
+    let full_split_window_request = SearchRequest {
+        index_id_patterns: vec!["negative-cache-ts-index".to_string()],
+        query_ast: qast_json_helper("info", &["body"]),
+        start_timestamp: Some(start_timestamp - 10),
+        end_timestamp: Some(start_timestamp + 20),
+        max_hits: 10,
+        ..Default::default()
+    };
+    let full_split_response = single_doc_mapping_leaf_search(
+        searcher_context.clone(),
+        std::sync::Arc::new(full_split_window_request),
+        storage.clone(),
+        splits.clone(),
+        doc_mapper.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(full_split_response.num_hits, 10);
+    let full_split_input_memory_bytes = full_split_response
+        .resource_stats
+        .as_ref()
+        .and_then(|stats| stats.split_resources_sum)
+        .expect("the split should report resource stats")
+        .input_memory_bytes;
+    assert!(
+        full_split_input_memory_bytes < first_input_memory_bytes,
+        "a full-split predicate-cache hit should not warm the predicate posting lists"
+    );
+
+    let different_predicate_request = SearchRequest {
+        index_id_patterns: vec!["negative-cache-ts-index".to_string()],
+        query_ast: qast_json_helper("0", &["body"]),
+        start_timestamp: Some(start_timestamp - 10),
+        end_timestamp: Some(start_timestamp + 20),
+        max_hits: 10,
+        ..Default::default()
+    };
+    let mut different_rewritten_request = different_predicate_request.clone();
+    leaf::rewrite_request(
+        &mut different_rewritten_request,
+        &splits[0],
+        doc_mapper.timestamp_field_name(),
+    );
+    let different_rewritten_ast: QueryAst =
+        serde_json::from_str(&different_rewritten_request.query_ast).unwrap();
+    let different_predicate_ast = time_bounded_cached_predicate(&different_rewritten_ast, "ts")
+        .expect("a full-split time range should install a cached predicate");
+    let different_predicate_key = serde_json::to_string(&different_predicate_ast).unwrap();
+
+    let different_predicate_response = single_doc_mapping_leaf_search(
+        searcher_context.clone(),
+        std::sync::Arc::new(different_predicate_request),
+        test_sandbox.storage(),
+        splits.clone(),
+        doc_mapper.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(different_predicate_response.num_hits, 1);
+    let (_segment_id, different_hits) = searcher_context
+        .predicate_cache
+        .get(split_id, different_predicate_key)
+        .expect("a different predicate should populate a separate entry");
+    assert_eq!(different_hits.size_hint(), 1);
+
+    let different_partial_request = SearchRequest {
+        index_id_patterns: vec!["negative-cache-ts-index".to_string()],
+        query_ast: qast_json_helper("0", &["body"]),
+        start_timestamp: Some(start_timestamp),
+        end_timestamp: Some(start_timestamp + 2),
+        max_hits: 10,
+        ..Default::default()
+    };
+    let different_partial_response = single_doc_mapping_leaf_search(
+        searcher_context,
+        std::sync::Arc::new(different_partial_request),
+        storage,
+        splits,
+        doc_mapper,
+    )
+    .await
+    .unwrap();
+    assert_eq!(different_partial_response.num_hits, 1);
+
+    test_sandbox.assert_quit().await;
 }
 
 #[tokio::test]

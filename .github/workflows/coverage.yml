@@ -1,15 +1,11 @@
 name: Code coverage
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-      - trigger-coverage-workflow
-    paths:
-      - quickwit/Cargo.toml
-      - quickwit/Cargo.lock
-      - quickwit/quickwit-*/**
+  workflow_call:
+    inputs:
+      sha:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -32,7 +28,6 @@ jobs:
     timeout-minutes: 40
     permissions:
       contents: read
-      actions: write
     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
     services:
       localstack:
@@ -107,7 +102,10 @@ jobs:
           PUBSUB_PROJECT1: "quickwit-emulator,emulator_topic:emulator_subscription"
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
 
       - name: Install lib libsasl2
         run: |
@@ -116,18 +114,18 @@ jobs:
           sudo apt install libsasl2-2
           sudo apt install libcurl4-openssl-dev
 
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v.6.2.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v.7.0.0
         with:
           python-version: '3.11'
 
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/git
             ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('quickwit/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
+            ${{ runner.os }}-cargo-test-${{ hashFiles('quickwit/Cargo.lock') }}
             ${{ runner.os }}-cargo-test
 
       - name: Install python packages
@@ -158,9 +156,35 @@ jobs:
         working-directory: ./quickwit
 
       - name: Install cargo-llvm-cov, cargo-nextest, and protoc
-        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1 # v2.75.27
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: cargo-llvm-cov,nextest,protoc
+
+      - name: Ensure coverage Rust toolchain is complete
+        run: |
+          needs_reinstall=false
+          if ! rustc --version >/dev/null 2>&1 || ! cargo --version >/dev/null 2>&1; then
+            needs_reinstall=true
+          else
+            if ! target_libdir=$(rustc --print target-libdir 2>/dev/null) ||
+               ! compgen -G "$target_libdir/libstd-*.rlib" >/dev/null; then
+              needs_reinstall=true
+            fi
+          fi
+          if [ "$needs_reinstall" = true ]; then
+            # A runner can have a partial installation that rustup considers installed.
+            active_toolchain=$(rustup show active-toolchain | cut -d ' ' -f 1)
+            rustup toolchain uninstall "$active_toolchain"
+            rustup toolchain install
+          fi
+          rustup component add rustc cargo llvm-tools-preview
+          rustup show active-toolchain
+          rustup component list --installed
+          rustc --version
+          cargo --version
+          target_libdir=$(rustc --print target-libdir)
+          compgen -G "$target_libdir/libstd-*.rlib" >/dev/null
+        working-directory: ./quickwit
 
       # We limit the number of jobs to 4 to avoid OOM errors when linking the binary.
       - name: Generate code coverage
@@ -172,37 +196,11 @@ jobs:
           cargo llvm-cov report --lcov --output-path lcov.info
         working-directory: ./quickwit
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
+      - name: Upload coverage report artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
-          files: ./quickwit/lcov.info
-
-  on-failure:
-    if: ${{ github.repository_owner == 'quickwit-oss' && failure() }}
-    name: On Failure
-    needs: [test]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Send Message
-        uses: sarisia/actions-status-discord@eb045afee445dc055c18d3d90bd0f244fd062708 # v1.16.0
-        with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          nodetail: true
-          color: "#FF0000"
-          title: ""
-          description: |
-            ### ❌ [${{ github.event.pull_request.title }}](${{ github.event.pull_request.html_url }})
-
-            @${{ github.actor }} quickwit coverage CI failed on your PR.
-
-            Coverage CI contains tests that are not running in the regular CI because they are too lengthy.
-            For this reason it is possible for it to break even if the tests were passing on your PR.
-            This is not a catastrophy, but you are responsible for fixing it!
-
-            You can run the full test suite locally with `make test-all`.
-
-            Please report in this channel that you are working on it/fixed it/or if it is a flaky test/
-            or if you need help.
-
-            **[View logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})**
+          name: coverage-report-${{ inputs.sha }}
+          path: quickwit/lcov.info
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7

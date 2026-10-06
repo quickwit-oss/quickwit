@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::VecDeque;
+use std::cmp::Ordering as CmpOrdering;
+use std::collections::{BinaryHeap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -42,17 +43,59 @@ struct ThreadPoolInner {
 }
 
 struct State {
+    /// High-priority tasks are served first, in FIFO order.
     high_priority_tasks: VecDeque<Box<dyn RunnableTask>>,
-    normal_priority_tasks: VecDeque<Box<dyn RunnableTask>>,
+    /// Normal-priority tasks are served by priority, then by lowest estimated query cost,
+    /// then in FIFO order.
+    normal_priority_tasks: BinaryHeap<NormalQueueEntry>,
+    /// Monotonically increasing counter stamped on each task entering
+    /// `normal_priority_tasks`; used as a tie-breaker.
+    next_normal_sequence: u64,
 }
 
 impl State {
     fn pop_next_task(&mut self) -> Option<Box<dyn RunnableTask>> {
         self.high_priority_tasks
             .pop_front()
-            .or_else(|| self.normal_priority_tasks.pop_front())
+            .or_else(|| self.normal_priority_tasks.pop().map(|entry| entry.task))
     }
 }
+
+/// A normal-priority task waiting to be scheduled on the thread pool.
+///
+/// The ordering is defined over `(priority, job_cost, sequence)`.
+struct NormalQueueEntry {
+    /// Lower values have higher priority.
+    priority: i32,
+    /// Within a priority, cheaper tasks are scheduled first.
+    job_cost: usize,
+    sequence: u64,
+    task: Box<dyn RunnableTask>,
+}
+
+impl Ord for NormalQueueEntry {
+    fn cmp(&self, other: &Self) -> CmpOrdering {
+        other
+            .priority
+            .cmp(&self.priority)
+            .then_with(|| other.job_cost.cmp(&self.job_cost))
+            .then_with(|| other.sequence.cmp(&self.sequence))
+    }
+}
+
+impl PartialOrd for NormalQueueEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<CmpOrdering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for NormalQueueEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+impl Eq for NormalQueueEntry {}
 
 struct QueuedTask<F, R> {
     cpu_intensive_fn: F,
@@ -120,10 +163,29 @@ impl Drop for Permit {
 /// The priority of a task submitted to a [`ThreadPoolWithPriority`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Priority {
-    /// The default priority.
-    Normal,
+    /// The default priority, carrying the priority and the estimated cost of the originating
+    /// request.
+    Normal {
+        /// Lower values have higher priority.
+        priority: i32,
+        /// Within a priority, cheaper tasks are scheduled first.
+        job_cost: usize,
+    },
     /// A high-priority task is scheduled before normal-priority tasks that are still pending.
+    /// This is reserved for short tasks sitting on the critical path of a request (e.g. merging
+    /// partial results).
     High,
+}
+
+/// Default tasks have zero priority and cost so short operations, such as
+/// list-fields result merging, run before split searches.
+impl Default for Priority {
+    fn default() -> Self {
+        Priority::Normal {
+            priority: 0,
+            job_cost: 0,
+        }
+    }
 }
 
 impl ThreadPoolWithPriority {
@@ -150,7 +212,8 @@ impl ThreadPoolWithPriority {
                 num_running_tasks: AtomicUsize::new(0),
                 state: Mutex::new(State {
                     high_priority_tasks: VecDeque::new(),
-                    normal_priority_tasks: VecDeque::new(),
+                    normal_priority_tasks: BinaryHeap::new(),
+                    next_normal_sequence: 0,
                 }),
                 ongoing_tasks,
                 pending_tasks,
@@ -162,7 +225,7 @@ impl ThreadPoolWithPriority {
         self.inner.max_running_tasks
     }
 
-    /// Schedules a cpu intensive function with a normal priority.
+    /// Schedules a cpu intensive function with [`Priority::default`].
     /// If the result future is dropped before it is scheduled on the
     /// underlying thread pool, the task will be cancelled.
     pub fn run_cpu_intensive<F, R>(
@@ -173,7 +236,7 @@ impl ThreadPoolWithPriority {
         F: FnOnce() -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.run_cpu_intensive_with_priority(Priority::Normal, cpu_intensive_fn)
+        self.run_cpu_intensive_with_priority(Priority::default(), cpu_intensive_fn)
     }
 
     /// Function similar to [`Self::run_cpu_intensive`], but with explicit priority.
@@ -205,7 +268,16 @@ impl ThreadPoolInner {
     fn enqueue(&self, priority: Priority, task: Box<dyn RunnableTask>) {
         let mut state = self.state.lock().unwrap();
         match priority {
-            Priority::Normal => state.normal_priority_tasks.push_back(task),
+            Priority::Normal { priority, job_cost } => {
+                let sequence = state.next_normal_sequence;
+                state.next_normal_sequence += 1;
+                state.normal_priority_tasks.push(NormalQueueEntry {
+                    priority,
+                    job_cost,
+                    sequence,
+                    task,
+                });
+            }
             Priority::High => state.high_priority_tasks.push_back(task),
         }
     }
@@ -296,13 +368,13 @@ mod tests {
 
         let execution_order_clone = execution_order.clone();
         let normal_task_1 =
-            thread_pool.run_cpu_intensive_with_priority(Priority::Normal, move || {
+            thread_pool.run_cpu_intensive_with_priority(Priority::default(), move || {
                 execution_order_clone.lock().unwrap().push(1);
             });
 
         let execution_order_clone = execution_order.clone();
         let normal_task_2 =
-            thread_pool.run_cpu_intensive_with_priority(Priority::Normal, move || {
+            thread_pool.run_cpu_intensive_with_priority(Priority::default(), move || {
                 execution_order_clone.lock().unwrap().push(2);
             });
 
@@ -319,6 +391,81 @@ mod tests {
         normal_task_2.await.unwrap();
 
         assert_eq!(*execution_order.lock().unwrap(), vec![0, 1, 2]);
+    }
+
+    /// Saturates a single-threaded pool, then enqueues `priorities` while
+    /// the pool is busy, so they all pile up in the pending queue. Returns the order in which
+    /// they were eventually executed, as indices into `priorities`.
+    async fn execution_order_for_pending_priorities(
+        name: &'static str,
+        priorities: &[Priority],
+    ) -> Vec<usize> {
+        let thread_pool = ThreadPoolWithPriority::new(name, Some(1));
+        let execution_order: Arc<std::sync::Mutex<Vec<usize>>> = Default::default();
+        let (started_tx, started_rx) = oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+
+        // Occupies the single thread of the pool, so every task below stays pending.
+        let blocking_task = thread_pool.run_cpu_intensive(move || {
+            let _ = started_tx.send(());
+            release_rx.recv().unwrap();
+        });
+        started_rx.await.unwrap();
+
+        let mut pending_tasks = Vec::new();
+        for (index, &priority) in priorities.iter().enumerate() {
+            let execution_order_clone = execution_order.clone();
+            pending_tasks.push(
+                thread_pool.run_cpu_intensive_with_priority(priority, move || {
+                    execution_order_clone.lock().unwrap().push(index);
+                }),
+            );
+        }
+
+        release_tx.send(()).unwrap();
+        blocking_task.await.unwrap();
+        for pending_task in pending_tasks {
+            pending_task.await.unwrap();
+        }
+        execution_order.lock().unwrap().clone()
+    }
+
+    #[tokio::test]
+    async fn test_normal_priority_tasks_are_served_by_priority() {
+        let priorities = [5, -3, 0, 10, -8].map(|priority| Priority::Normal {
+            priority,
+            job_cost: 0,
+        });
+        let execution_order =
+            execution_order_for_pending_priorities("priority_heap_order_test", &priorities).await;
+        assert_eq!(execution_order, vec![4, 1, 2, 0, 3]);
+    }
+
+    #[tokio::test]
+    async fn test_normal_tasks_order_by_priority_cost_then_fifo() {
+        let priorities = [
+            Priority::Normal {
+                priority: 0,
+                job_cost: 100,
+            },
+            Priority::Normal {
+                priority: 0,
+                job_cost: 10,
+            },
+            Priority::Normal {
+                priority: -1,
+                job_cost: 1000,
+            },
+            Priority::Normal {
+                priority: 0,
+                job_cost: 10,
+            },
+            Priority::default(),
+        ];
+        let execution_order =
+            execution_order_for_pending_priorities("priority_heap_fifo_test", &priorities).await;
+
+        assert_eq!(execution_order, vec![2, 4, 1, 3, 0]);
     }
 
     #[tokio::test]

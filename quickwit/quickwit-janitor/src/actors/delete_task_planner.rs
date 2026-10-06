@@ -33,7 +33,10 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::search::SearchRequest;
 use quickwit_proto::types::IndexUid;
-use quickwit_search::{IndexMetasForLeafSearch, SearchJob, SearchJobPlacer, jobs_to_leaf_request};
+use quickwit_search::{
+    IndexMetasForLeafSearch, SearchJob, SearchJobPlacer, compute_query_complexity_factor,
+    jobs_to_leaf_request,
+};
 use serde::Serialize;
 use tantivy::Inventory;
 use tracing::{debug, info};
@@ -298,11 +301,6 @@ impl DeleteTaskPlanner {
         index_uri: &str,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<bool> {
-        let search_job = SearchJob::from(&stale_split.split_metadata);
-        let mut search_client = self
-            .search_job_placer
-            .assign_job(search_job.clone(), &HashSet::new())
-            .await?;
         for delete_task in delete_tasks {
             let delete_query = delete_task
                 .delete_query
@@ -316,6 +314,12 @@ impl DeleteTaskPlanner {
                 end_timestamp: delete_query.end_timestamp,
                 ..Default::default()
             };
+            let query_complexity_factor = compute_query_complexity_factor(&search_request)?;
+            let search_job = SearchJob::new(&stale_split.split_metadata, query_complexity_factor);
+            let mut search_client = self
+                .search_job_placer
+                .assign_job(search_job.clone(), &HashSet::new())
+                .await?;
             let mut search_indexes_metas = HashMap::new();
             let index_uri = Uri::from_str(index_uri).context("invalid index URI")?;
             search_indexes_metas.insert(
@@ -325,11 +329,8 @@ impl DeleteTaskPlanner {
                     index_uri,
                 },
             );
-            let leaf_search_request = jobs_to_leaf_request(
-                &search_request,
-                &search_indexes_metas,
-                vec![search_job.clone()],
-            )?;
+            let leaf_search_request =
+                jobs_to_leaf_request(&search_request, &search_indexes_metas, vec![search_job])?;
             let response = search_client.leaf_search(leaf_search_request).await?;
             ctx.record_progress();
             if response.num_hits > 0 {

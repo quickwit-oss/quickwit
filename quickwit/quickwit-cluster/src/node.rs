@@ -21,6 +21,7 @@ use quickwit_config::service::QuickwitService;
 use quickwit_proto::indexing::IndexingTask;
 #[cfg(any(test, feature = "testsuite"))]
 use quickwit_proto::ingest::ingester::IngesterStatus;
+use quickwit_proto::types::AvailabilityZone;
 use tonic::transport::Channel;
 
 use crate::member::{ClusterMember, build_cluster_member};
@@ -106,8 +107,8 @@ impl ClusterNode {
         self.inner.is_self_node
     }
 
-    pub fn availability_zone(&self) -> Option<&str> {
-        self.inner.member.availability_zone.as_deref()
+    pub fn availability_zone(&self) -> Option<AvailabilityZone> {
+        self.inner.member.availability_zone.clone()
     }
 
     pub fn enable_standalone_compactors(&self) -> bool {

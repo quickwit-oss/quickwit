@@ -45,12 +45,9 @@ pub use metastore::postgres::PostgresqlMetastore;
 pub use metastore::{
     AddSourceRequestExt, CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadata,
     IndexMetadataResponseExt, IndexesMetadataResponseExt, ListIndexesMetadataResponseExt,
-    ListParquetSplitsQuery, ListParquetSplitsRequestExt, ListParquetSplitsResponseExt,
     ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, MetastoreServiceExt,
-    MetastoreServiceStreamSplitsExt, PARQUET_SPLITS_PAGE_SIZE, ParquetSplitRecord,
-    ParquetSplitsPage, PublishParquetSplitsRequestExt, PublishSplitsRequestExt, SortBy,
-    StageParquetSplitsRequestExt, StageSplitsRequestExt, UpdateIndexRequestExt,
-    UpdateSourceRequestExt, file_backed, list_parquet_splits_page, list_parquet_splits_paginated,
+    MetastoreServiceStreamSplitsExt, PublishSplitsRequestExt, SortBy, StageSplitsRequestExt,
+    UpdateIndexRequestExt, UpdateSourceRequestExt, file_backed,
 };
 pub use metastore_factory::{MetastoreFactory, MetastoreFactoryOptions, UnsupportedMetastore};
 pub use metastore_resolver::MetastoreResolver;

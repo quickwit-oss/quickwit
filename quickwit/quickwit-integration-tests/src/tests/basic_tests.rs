@@ -17,9 +17,12 @@ use std::time::Duration;
 use hyper::{Method, Request, StatusCode};
 use hyper_util::rt::TokioExecutor;
 use quickwit_config::service::QuickwitService;
+use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::SearchRequestQueryString;
+use serde_json::json;
 
-use crate::test_utils::ClusterSandboxBuilder;
+use crate::ingest_json;
+use crate::test_utils::{ClusterSandboxBuilder, ingest};
 
 #[tokio::test]
 async fn test_ui_redirect_on_get() {
@@ -99,6 +102,65 @@ async fn test_standalone_server() {
         );
         sandbox.wait_for_indexing_pipelines(1).await.unwrap();
     }
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_multi_nodes_cluster_during_cluster_id_migration() {
+    quickwit_common::setup_logging_for_tests();
+    let mut cluster_config = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Searcher])
+        .add_node([QuickwitService::Metastore])
+        .add_node([QuickwitService::Indexer])
+        .add_node([QuickwitService::ControlPlane])
+        .add_node([QuickwitService::Janitor])
+        .build_config()
+        .await;
+
+    // Separate the metastore and control plane from their clients across the rename.
+    for (node_config, services) in &mut cluster_config.node_configs {
+        let (cluster_id, accepted_id) = if services.contains(&QuickwitService::Metastore)
+            || services.contains(&QuickwitService::ControlPlane)
+        {
+            ("new-cluster", "old-cluster")
+        } else {
+            ("old-cluster", "new-cluster")
+        };
+        node_config.cluster_id = cluster_id.to_string();
+        node_config.extra_cluster_ids = vec![accepted_id.to_string()];
+    }
+
+    let sandbox = cluster_config.start().await;
+    let index_id = "cluster-id-migration-index";
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .create(
+            r#"
+            version: 0.8
+            index_id: cluster-id-migration-index
+            doc_mapping:
+              field_mappings:
+              - name: body
+                type: text
+            "#,
+            quickwit_config::ConfigFormat::Yaml,
+            false,
+        )
+        .await
+        .unwrap();
+    sandbox.wait_for_indexing_pipelines(1).await.unwrap();
+    ingest(
+        &sandbox.rest_client(QuickwitService::Indexer),
+        index_id,
+        ingest_json!({"body": "mixed cluster ids remain operational"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
+    sandbox
+        .assert_hit_count(index_id, "body:operational", 1)
+        .await;
     sandbox.shutdown().await.unwrap();
 }
 

@@ -21,6 +21,7 @@ A commented example is available here: [quickwit.yaml](https://github.com/quickw
 | --- | --- | --- | --- |
 | `version` | Config file version. `0.7` is the only available value with a retro compatibility on `0.5` and `0.4`. | | |
 | `cluster_id` | Unique identifier of the cluster the node will be joining. Clusters sharing the same network should use distinct cluster IDs.| `QW_CLUSTER_ID` | `quickwit-default-cluster` |
+| `extra_cluster_ids` | Additional cluster IDs accepted during a rolling rename: first accept the new ID, then switch `cluster_id` while accepting the old ID, then clear this list. Complete each rollout on all nodes before starting the next. The environment variable accepts a comma-separated list of IDs. | `QW_EXTRA_CLUSTER_IDS` | `[]` |
 | `node_id` | Unique identifier of the node. It must be distinct from the node IDs of its cluster peers. Searchers hash this ID for split affinity, so keep it stable across restarts (for example a StatefulSet pod name) if the same splits should keep landing on the same node. Defaults to the instance's short hostname if not set. | `QW_NODE_ID` | short hostname |
 | `enabled_services` | Enabled services (control_plane, indexer, janitor, metastore, metastore_read_replica, searcher) | `QW_ENABLED_SERVICES` | all services except metastore_read_replica |
 | `listen_address` | The IP address or hostname that Quickwit service binds to for starting REST and GRPC server and connecting this node to other nodes. By default, Quickwit binds itself to 127.0.0.1 (localhost). This default is not valid when trying to form a cluster. | `QW_LISTEN_ADDRESS` | `127.0.0.1` |
@@ -92,7 +93,9 @@ We advise changing the default value of 20 MiB only if you encounter the followi
 
 ## Health check configuration
 
-This section configures an optional, **plaintext (no TLS)** HTTP server that exposes only the health endpoints `/health/livez` (liveness) and `/health/readyz` (readiness). Its purpose is to let liveness/readiness probes (for example from Kubernetes or a load balancer) reach the node even when the main REST API is put behind [TLS or mTLS](#tls-configuration), which a simple HTTP probe cannot negotiate.
+This section configures an optional, **plaintext (no TLS)** HTTP server that exposes only the health endpoints `/health/livez` (liveness) and `/health/startupz` (startup completion), plus `/health/readyz`, a deprecated alias for `/health/startupz`. Its purpose is to let liveness and startup probes (for example from Kubernetes or a load balancer) reach the node even when the main REST API is put behind [TLS or mTLS](#tls-configuration), which a simple HTTP probe cannot negotiate.
+
+`/health/startupz` reports whether the node has finished starting up. It latches once and never returns to a not-started state, so it is suited to a Kubernetes **startup probe** rather than a readiness probe. There is no readiness endpoint: a node that is up but degraded is restarted, not removed from rotation.
 
 The health server is **disabled by default**. It starts only when `listen_port` is set (or the `QW_HEALTH_LISTEN_PORT` environment variable is provided). The same `/health/*` endpoints always remain available on the main REST API as well.
 
@@ -245,6 +248,8 @@ This section contains the configuration options for an indexer. The split store 
 | `cpu_capacity` | Advisory parameter used by the control plane. The value can expressed be in threads (e.g. `2`) or in term of millicpus (`2000m`). The control plane will attempt to schedule indexing pipelines on the different nodes proportionally to the cpu capacity advertised by the indexer. It is NOT used as a limit. All pipelines will be scheduled regardless of whether the cluster has sufficient capacity or not. The control plane does not attempt to spread the work equally when the load is well below the `cpu_capacity`. Users who need a balanced load on all of their indexer nodes can set the `cpu_capacity` to an arbitrarily low value as long as they keep it proportional to the number of threads available. | `num threads available` |
 | `enable_cooperative_indexing` | Enable sharing resources more efficiently when the number of indexes actively written to is significantly higher than the number of cores but might decrease the overall indexing throughput. | `false` |
 
+Set the `QW_INDEXING_MAX_WRITE_THROUGHPUT` environment variable to limit the aggregate indexing IO throughput on a node. It accepts human-readable byte sizes per second, such as `500mb`, and is unlimited by default.
+
 Example:
 
 ```yaml
@@ -311,7 +316,7 @@ This section contains the configuration options for a Searcher.
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `split_cache` | Searcher split cache configuration options defined in the section below. Cache disabled if unspecified. | |
 | `request_timeout_secs` | The time before a search request is cancelled. This should match the timeout of the stack calling into quickwit if there is one set.  | `30` |
-| `use_metastore_read_replica` | If true, routes read-only metastore requests from searchers, including DataFusion when enabled, to nodes running the `metastore_read_replica` service. Searchers require at least one `metastore_read_replica` node at startup and do not fall back to the primary metastore. | `false` |
+| `use_metastore_read_replica` | If true, routes read-only metastore requests from searchers to nodes running the `metastore_read_replica` service. Searchers require at least one `metastore_read_replica` node at startup and do not fall back to the primary metastore. | `false` |
 
 ### Searcher split cache configuration
 
