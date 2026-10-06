@@ -14,7 +14,7 @@ permissions:
 jobs:
   build-cross-images:
     name: Publish cross images
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
         name: production
     steps:
