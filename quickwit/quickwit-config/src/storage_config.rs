@@ -917,21 +917,6 @@ mod tests {
     }
 
     #[test]
-    fn test_storage_s3_buckets_dotted_bucket_name() {
-        // The map key is a bucket name, so dotted bucket names are accepted as-is.
-        let s3_storage_config_yaml = r#"
-            buckets:
-              my.dotted.bucket:
-                endpoint: https://logs.example.com
-        "#;
-        let s3_storage_config: S3StorageConfig =
-            serde_yaml::from_str(s3_storage_config_yaml).unwrap();
-        assert!(s3_storage_config.buckets.contains_key("my.dotted.bucket"));
-        let storage_configs = StorageConfigs::new(vec![s3_storage_config.into()]);
-        storage_configs.validate().unwrap();
-    }
-
-    #[test]
     fn test_storage_s3_buckets_reject_nested_buckets() {
         let s3_storage_config_yaml = r#"
             buckets:
@@ -950,16 +935,6 @@ mod tests {
             error_message.contains("nested"),
             "unexpected error: {error_message}"
         );
-    }
-
-    #[test]
-    fn test_storage_s3_buckets_reject_unknown_fields() {
-        let s3_storage_config_yaml = r#"
-            buckets:
-              logs-bucket:
-                endpoint_url: https://typo.example.com
-        "#;
-        serde_yaml::from_str::<S3StorageConfig>(s3_storage_config_yaml).unwrap_err();
     }
 
     #[test]

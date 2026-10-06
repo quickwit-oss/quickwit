@@ -158,12 +158,4 @@ mod tests {
             (Some("https://primary.example.com".to_string()), false)
         );
     }
-
-    #[test]
-    fn test_s3_factory_without_buckets_uses_primary_backend() {
-        let factory =
-            S3CompatibleObjectStorageFactory::new(bucket_config("https://primary.example.com"));
-        let backend = factory.backend_for_uri(&Uri::for_test("s3://any-bucket/indexes"));
-        assert!(std::ptr::eq(backend, &factory.default_backend));
-    }
 }

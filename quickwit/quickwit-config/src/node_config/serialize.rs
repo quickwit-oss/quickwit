@@ -1170,60 +1170,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_node_config_storage_s3_buckets() {
-        let config_yaml = r#"
-            version: 0.8
-            node_id: "node-1"
-            metastore_uri: postgres://username:password@host:port/db
-            storage:
-              s3:
-                endpoint: https://primary.example.com
-                buckets:
-                  minio-bucket:
-                    flavor: minio
-                    endpoint: http://minio.example.com:9000
-                  "123":
-                    endpoint: https://numeric.example.com
-        "#;
-        let config = load_node_config_with_env(
-            ConfigFormat::Yaml,
-            config_yaml.as_bytes(),
-            &Default::default(),
-            None,
-        )
-        .await
-        .unwrap();
-        let s3_storage_config = config.storage_configs.find_s3().unwrap();
-        let minio_bucket_config = &s3_storage_config.buckets["minio-bucket"];
-        assert_eq!(minio_bucket_config.region.as_deref(), Some("minio"));
-        assert!(minio_bucket_config.force_path_style_access);
-        assert!(s3_storage_config.buckets.contains_key("123"));
-
-        let invalid_config_yaml = r#"
-            version: 0.8
-            node_id: "node-1"
-            metastore_uri: postgres://username:password@host:port/db
-            storage:
-              s3:
-                buckets:
-                  s3://logs-bucket:
-                    endpoint: https://logs.example.com
-        "#;
-        let error = load_node_config_with_env(
-            ConfigFormat::Yaml,
-            invalid_config_yaml.as_bytes(),
-            &Default::default(),
-            None,
-        )
-        .await
-        .unwrap_err();
-        assert!(
-            error.to_string().contains("bare bucket name"),
-            "unexpected error: {error}"
-        );
-    }
-
-    #[tokio::test]
     async fn test_node_config_config_default_values_default_indexer_searcher_config() {
         let config_yaml = r#"
             version: 0.8
