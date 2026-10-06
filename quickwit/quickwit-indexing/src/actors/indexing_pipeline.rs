@@ -46,9 +46,7 @@ use crate::docs_clustering::Fingerprinter;
 use crate::merge_policy::MergePolicy;
 use crate::metrics::{ACTOR_NAME, BACKPRESSURE_MICROS, INDEXING_PIPELINES};
 use crate::models::{IndexingStatistics, SharedPublishToken};
-use crate::source::{
-    AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
-};
+use crate::source::{AssignShards, Assignment, SourceActor, SourceLoader, SourceRuntime};
 use crate::split_store::IndexingSplitStore;
 
 pub(crate) const SUPERVISE_INTERVAL: Duration = Duration::from_secs(1);
@@ -440,7 +438,7 @@ impl IndexingPipeline {
             publish_token: self.publish_token.clone(),
         };
         let source = ctx
-            .protect_future(quickwit_supported_sources().load_source(source_runtime))
+            .protect_future(self.params.source_loader.load_source(source_runtime))
             .await?;
         let actor_source = SourceActor::new(source, doc_processor_mailbox);
         let (source_mailbox, source_handle) = ctx
@@ -600,6 +598,9 @@ pub struct IndexingPipelineParams {
 
     // Source-related parameters
     pub source_config: SourceConfig,
+    /// Creates the source of the pipeline. Servers use
+    /// [`quickwit_supported_sources`](crate::source::quickwit_supported_sources).
+    pub source_loader: Arc<SourceLoader>,
     pub source_storage_resolver: StorageResolver,
     pub ingester_pool: IngesterPool,
     pub queues_dir_path: PathBuf,
@@ -632,6 +633,7 @@ mod tests {
     use super::{IndexingPipeline, *};
     use crate::actors::{MergePipeline, MergePipelineParams};
     use crate::merge_policy::default_merge_policy;
+    use crate::source::quickwit_supported_sources;
 
     #[test]
     fn test_wait_duration() {
@@ -722,6 +724,7 @@ mod tests {
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             source_storage_resolver: StorageResolver::for_test(),
+            source_loader: quickwit_supported_sources().clone(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             fingerprinter_opt: None,
@@ -830,6 +833,7 @@ mod tests {
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             source_storage_resolver: StorageResolver::for_test(),
+            source_loader: quickwit_supported_sources().clone(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             fingerprinter_opt: None,
@@ -961,6 +965,7 @@ mod tests {
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             source_storage_resolver: StorageResolver::for_test(),
+            source_loader: quickwit_supported_sources().clone(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             fingerprinter_opt: None,
@@ -1063,6 +1068,7 @@ mod tests {
             doc_mapper,
             source_config,
             source_storage_resolver: StorageResolver::for_test(),
+            source_loader: quickwit_supported_sources().clone(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             fingerprinter_opt: None,
@@ -1148,6 +1154,7 @@ mod tests {
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
             source_storage_resolver: StorageResolver::for_test(),
+            source_loader: quickwit_supported_sources().clone(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             fingerprinter_opt: None,
@@ -1303,6 +1310,7 @@ mod tests {
             doc_mapper: Arc::new(broken_mapper),
             source_config,
             source_storage_resolver: StorageResolver::for_test(),
+            source_loader: quickwit_supported_sources().clone(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             fingerprinter_opt: None,

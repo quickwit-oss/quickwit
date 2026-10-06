@@ -62,6 +62,8 @@ mod ingest_api_source;
 mod kafka_source;
 #[cfg(feature = "kinesis")]
 mod kinesis;
+#[cfg(feature = "parquet")]
+pub mod parquet_file;
 #[cfg(feature = "pulsar")]
 mod pulsar_source;
 #[cfg(feature = "queue-sources")]
@@ -73,7 +75,7 @@ mod void_source;
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -418,8 +420,8 @@ impl Handler<AssignShards> for SourceActor {
 }
 
 // TODO: Use `SourceType` instead of `&str``.
-pub fn quickwit_supported_sources() -> &'static SourceLoader {
-    static SOURCE_LOADER: LazyLock<SourceLoader> = LazyLock::new(|| {
+pub fn quickwit_supported_sources() -> &'static Arc<SourceLoader> {
+    static SOURCE_LOADER: LazyLock<Arc<SourceLoader>> = LazyLock::new(|| {
         let mut source_factory = SourceLoader::default();
         source_factory.add_source(SourceType::File, FileSourceFactory);
         #[cfg(feature = "gcp-pubsub")]
@@ -435,7 +437,7 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source(SourceType::Stdin, StdinSourceFactory);
         source_factory.add_source(SourceType::Vec, VecSourceFactory);
         source_factory.add_source(SourceType::Void, VoidSourceFactory);
-        source_factory
+        Arc::new(source_factory)
     });
     &SOURCE_LOADER
 }
