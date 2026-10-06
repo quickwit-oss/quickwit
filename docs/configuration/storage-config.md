@@ -58,6 +58,7 @@ This section contains one configuration subsection per storage provider. If a st
 | `disable_multipart_upload` | Disables [multipart upload](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html) of objects. Required by some S3-compatible providers (GCS). | `false` |
 | `checksum_algorithm` | Upload [checksum](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html) algorithm. Allowed values: `crc32c` (computed and validated by the AWS SDK), `md5` (sent client-side via `Content-MD5`; useful for S3-compatible providers that predate `x-amz-checksum-*`), or `disabled`.  | `crc32c` |
 | `disable_checksums` | **Deprecated.** Previously a boolean that disabled all request/response checksums. Equivalent to setting `checksum_algorithm: disabled`. | `false` |
+| `buckets` | Per-bucket S3 configurations keyed by bucket name. See [Per-bucket S3 configuration](#per-bucket-s3-configuration). | |
 
 :::warning
 Hardcoding credentials into configuration files is not secure and strongly discouraged. Prefer the alternative authentication methods that your storage backend may provide.
@@ -68,6 +69,7 @@ Hardcoding credentials into configuration files is not secure and strongly disco
 | Env variable | Description |
 | --- | --- |
 | `QW_S3_ENDPOINT` | Custom S3 endpoint. |
+| `QW_S3_FORCE_PATH_STYLE_ACCESS` | Overrides `force_path_style_access`. |
 | `QW_S3_MAX_CONCURRENCY` | Limit the number of concurrent requests to S3 |
 
 #### Storage flavors
@@ -106,7 +108,7 @@ storage:
 
 #### Per-bucket S3 configuration
 
-In addition to the primary `s3:` block, you can declare per-bucket overrides under `storage.s3.buckets`. The map key is the bucket name; when an `s3://<bucket>/...` URI is resolved, an exact match supplies that bucket's own endpoint, credentials, region, and flags. Any bucket not listed falls back to the fields on the primary `s3:` block. URIs stay canonical `s3://` — routing is by bucket name, so nothing extra is persisted in the index metadata.
+In addition to the primary `s3:` block, you can declare per-bucket overrides under `storage.s3.buckets`. The map key is the bare bucket name (no `s3://` prefix or path; such keys are rejected at startup); when an `s3://<bucket>/...` URI is resolved, an exact match supplies that bucket's own endpoint, credentials, region, and flags. Any bucket not listed falls back to the fields on the primary `s3:` block. URIs stay canonical `s3://` — routing is by bucket name, so nothing extra is persisted in the index metadata.
 
 Each bucket entry accepts the same fields as the primary `s3:` block, *except* `buckets` itself (no nesting). Bucket entries do not inherit fields from the primary block. If `access_key_id` / `secret_access_key` are omitted on a bucket entry, the global AWS SDK credential chain is used (env vars, instance metadata, etc.).
 

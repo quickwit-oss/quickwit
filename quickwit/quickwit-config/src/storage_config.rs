@@ -124,6 +124,11 @@ impl StorageConfigs {
         if let Some(s3_storage_config) = self.find_s3() {
             for (bucket, bucket_config) in &s3_storage_config.buckets {
                 ensure!(
+                    !bucket.is_empty() && !bucket.contains('/'),
+                    "S3 bucket config key `{bucket}` must be a bare bucket name, without `s3://` \
+                     or `/`",
+                );
+                ensure!(
                     bucket_config.buckets.is_empty(),
                     "S3 bucket config `{bucket}` cannot define nested `buckets`",
                 );
@@ -943,6 +948,32 @@ mod tests {
     }
 
     #[test]
+    fn test_storage_s3_buckets_reject_unknown_fields() {
+        let s3_storage_config_yaml = r#"
+            buckets:
+              logs-bucket:
+                endpiont: https://typo.example.com
+        "#;
+        serde_yaml::from_str::<S3StorageConfig>(s3_storage_config_yaml).unwrap_err();
+    }
+
+    #[test]
+    fn test_storage_s3_buckets_reject_unmatchable_bucket_keys() {
+        for bucket_key in ["", "s3://logs-bucket", "logs-bucket/prefix"] {
+            let s3_storage_config = S3StorageConfig {
+                buckets: BTreeMap::from([(bucket_key.to_string(), S3StorageConfig::default())]),
+                ..Default::default()
+            };
+            let storage_configs = StorageConfigs::new(vec![s3_storage_config.into()]);
+            let error = storage_configs.validate().unwrap_err();
+            assert!(
+                error.to_string().contains("bare bucket name"),
+                "unexpected error for key `{bucket_key}`: {error}"
+            );
+        }
+    }
+
+    #[test]
     fn test_storage_s3_buckets_redact() {
         let mut s3_storage_config = S3StorageConfig {
             buckets: BTreeMap::from([(
@@ -1000,6 +1031,7 @@ mod tests {
         // `force_path_style_access()` skip the process-wide env overrides, which
         // apply to the primary backend only.
         let s3_storage_config = S3StorageConfig {
+            endpoint: Some("https://primary.example.com".to_string()),
             buckets: BTreeMap::from([(
                 "logs-bucket".to_string(),
                 S3StorageConfig {
@@ -1010,10 +1042,42 @@ mod tests {
             ..Default::default()
         };
         let (_, bucket_config) = s3_storage_config.bucket_configs().next().unwrap();
+
+        // SAFETY: this test may not be entirely sound if not run with nextest or --test-threads=1
+        // as this is only a test, and it would be extremely inconvenient to run it in a different
+        // way, we are keeping it that way
+        let previous_endpoint = env::var("QW_S3_ENDPOINT").ok();
+        let previous_force_path_style = env::var("QW_S3_FORCE_PATH_STYLE_ACCESS").ok();
+        unsafe {
+            env::set_var("QW_S3_ENDPOINT", "https://env.example.com");
+            env::set_var("QW_S3_FORCE_PATH_STYLE_ACCESS", "true");
+        }
+        let primary_endpoint = s3_storage_config.endpoint();
+        let primary_force_path_style = s3_storage_config.force_path_style_access();
+        let bucket_endpoint = bucket_config.endpoint();
+        let bucket_force_path_style = bucket_config.force_path_style_access();
+        unsafe {
+            match previous_endpoint {
+                Some(endpoint) => env::set_var("QW_S3_ENDPOINT", endpoint),
+                None => env::remove_var("QW_S3_ENDPOINT"),
+            }
+            match previous_force_path_style {
+                Some(force_path_style) => {
+                    env::set_var("QW_S3_FORCE_PATH_STYLE_ACCESS", force_path_style)
+                }
+                None => env::remove_var("QW_S3_FORCE_PATH_STYLE_ACCESS"),
+            }
+        }
+
         assert_eq!(
-            bucket_config.endpoint(),
+            primary_endpoint,
+            Some("https://env.example.com".to_string())
+        );
+        assert_eq!(primary_force_path_style, Some(true));
+        assert_eq!(
+            bucket_endpoint,
             Some("https://bucket.example.com".to_string())
         );
-        assert_eq!(bucket_config.force_path_style_access(), Some(false));
+        assert_eq!(bucket_force_path_style, Some(false));
     }
 }
