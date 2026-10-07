@@ -20,12 +20,12 @@ permissions:
 jobs:
   checks:
     name: Lint, type check & unit tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: 26
           cache: "yarn"
           cache-dependency-path: quickwit/quickwit-ui/yarn.lock
       - name: Install JS dependencies
@@ -43,7 +43,7 @@ jobs:
 
   e2e:
     name: Playwright e2e
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: write
@@ -71,7 +71,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: 26
           cache: "yarn"
           cache-dependency-path: quickwit/quickwit-ui/yarn.lock
       - name: Setup stable Rust Toolchain
