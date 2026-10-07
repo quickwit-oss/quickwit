@@ -15,6 +15,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use bytesize::ByteSize;
 use quickwit_common::rate_limiter::RateLimiter;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::ingest::ShardState;
@@ -37,6 +38,9 @@ pub(super) struct IngesterShard {
     pub replication_position_inclusive: Position,
     /// Position up to which the shard has been truncated.
     pub truncation_position_inclusive: Position,
+    /// The queue size is the amount of total in-flight bytes on this shard that are yet to be
+    /// indexed.
+    pub queue_size: ByteSize,
     pub rate_limiter: RateLimiter,
     pub rate_meter: RateMeter,
     /// Whether the shard should be advertised to other nodes (routers) via gossip.
@@ -58,8 +62,8 @@ pub(super) struct IngesterShard {
 }
 
 /// Builder for `IngesterShard`. By default, the shard is open, is empty (i.e. the replication and
-/// truncation positions are at the beginning), uses the default rate limiter and rate meter, has no
-/// doc mapper, does not validate documents, and is not advertisable.
+/// truncation positions are at the beginning), has a zero queue size, uses the default rate limiter
+/// and rate meter, has no doc mapper, does not validate documents, and is not advertisable.
 pub(super) struct IngesterShardBuilder {
     index_uid: IndexUid,
     source_id: SourceId,
@@ -67,6 +71,7 @@ pub(super) struct IngesterShardBuilder {
     shard_state: ShardState,
     replication_position_inclusive: Position,
     truncation_position_inclusive: Position,
+    queue_size: ByteSize,
     rate_limiter: RateLimiter,
     rate_meter: RateMeter,
     doc_mapper_opt: Option<Arc<DocMapper>>,
@@ -79,6 +84,12 @@ impl IngesterShardBuilder {
     /// Sets the shard state. Defaults to `ShardState::Open`.
     pub fn with_state(mut self, shard_state: ShardState) -> Self {
         self.shard_state = shard_state;
+        self
+    }
+
+    /// Sets the queue size. Defaults to zero. Should only be used when restoring closed shards.
+    pub fn with_queue_size(mut self, queue_size: ByteSize) -> Self {
+        self.queue_size = queue_size;
         self
     }
 
@@ -144,6 +155,7 @@ impl IngesterShardBuilder {
             shard_state: self.shard_state,
             replication_position_inclusive: self.replication_position_inclusive,
             truncation_position_inclusive: self.truncation_position_inclusive,
+            queue_size: self.queue_size,
             rate_limiter: self.rate_limiter,
             rate_meter: self.rate_meter,
             is_advertisable: self.is_advertisable,
@@ -170,6 +182,7 @@ impl IngesterShard {
             shard_state: ShardState::Open,
             replication_position_inclusive: Position::Beginning,
             truncation_position_inclusive: Position::Beginning,
+            queue_size: ByteSize::default(),
             rate_limiter: RateLimiter::default(),
             rate_meter: RateMeter::default(),
             doc_mapper_opt: None,
@@ -308,6 +321,7 @@ mod tests {
         );
         assert_eq!(shard.truncation_position_inclusive, Position::Beginning);
         assert!(!shard.is_advertisable);
+        assert_eq!(shard.queue_size.as_u64(), 0);
     }
 
     #[test]

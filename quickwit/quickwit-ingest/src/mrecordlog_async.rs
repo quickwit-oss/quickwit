@@ -136,7 +136,7 @@ impl MultiRecordLogAsync {
         queue: &str,
         position_opt: Option<u64>,
         payloads: T,
-    ) -> Result<Option<u64>, AppendError> {
+    ) -> Result<mrecordlog::AppendOutcome, AppendError> {
         let span = info_span!("mrecordlog.append_records", queue);
         let queue = queue.to_string();
         self.run_operation(span, move |mrecordlog| {
@@ -145,22 +145,22 @@ impl MultiRecordLogAsync {
                 .inspect(|outcome| {
                     WAL_BYTES_WRITTEN_APPEND.inc_by(outcome.wal_bytes_written);
                 })
-                .map(|outcome| outcome.last_position)
         })
         .await
     }
 
     #[instrument(name = "mrecordlog.truncate_async", skip_all, fields(queue, position))]
-    pub async fn truncate(&mut self, queue: &str, position: u64) -> Result<usize, TruncateError> {
+    pub async fn truncate(
+        &mut self,
+        queue: &str,
+        position: u64,
+    ) -> Result<mrecordlog::TruncateOutcome, TruncateError> {
         let span = info_span!("mrecordlog.truncate", queue, position);
         let queue = queue.to_string();
         self.run_operation(span, move |mrecordlog| {
-            mrecordlog
-                .truncate(&queue, ..=position)
-                .inspect(|outcome| {
-                    WAL_BYTES_WRITTEN_TRUNCATE.inc_by(outcome.wal_bytes_written);
-                })
-                .map(|outcome| outcome.evicted_records)
+            mrecordlog.truncate(&queue, ..=position).inspect(|outcome| {
+                WAL_BYTES_WRITTEN_TRUNCATE.inc_by(outcome.wal_bytes_written);
+            })
         })
         .await
     }
@@ -234,5 +234,38 @@ impl MultiRecordLogAsync {
                 "expected record payload, `{expected_payload}`, got `{payload}`",
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_truncate_returns_actual_removed_bytes_after_reopening() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut wal = MultiRecordLogAsync::open(dir.path()).await.unwrap();
+        wal.create_queue("queue").await.unwrap();
+        wal.append_records(
+            "queue",
+            None,
+            [b"a".as_slice(), b"three", b"seven77"].into_iter(),
+        )
+        .await
+        .unwrap();
+        let outcome = wal.truncate("queue", 0).await.unwrap();
+        assert_eq!((outcome.evicted_bytes, outcome.queue_size_bytes), (1, 12));
+        let outcome = wal.truncate("queue", 0).await.unwrap();
+        assert_eq!((outcome.evicted_bytes, outcome.queue_size_bytes), (0, 12));
+        drop(wal);
+        let mut wal = MultiRecordLogAsync::open(dir.path()).await.unwrap();
+        assert_eq!(wal.summary().queues["queue"].num_bytes, 12);
+        let outcome = wal.truncate("queue", 1).await.unwrap();
+        assert_eq!((outcome.evicted_bytes, outcome.queue_size_bytes), (5, 7));
+        let outcome = wal.truncate("queue", 100).await.unwrap();
+        assert_eq!((outcome.evicted_bytes, outcome.queue_size_bytes), (7, 0));
+        let outcome = wal.truncate("queue", 100).await.unwrap();
+        assert_eq!((outcome.evicted_bytes, outcome.queue_size_bytes), (0, 0));
+        assert_eq!(wal.range("queue", ..).unwrap().count(), 0);
     }
 }
