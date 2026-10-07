@@ -123,7 +123,8 @@ fn build_day_item(ptn: &str) -> Option<OwnedFormatItem> {
 }
 
 fn build_day_of_week_item(_: &str) -> Option<OwnedFormatItem> {
-    let weekday = WeekdayMonday::default().with_one_indexed(false);
+    // Java's `e` is the ISO day-of-week: Monday is 1 and Sunday is 7.
+    let weekday = WeekdayMonday::default().with_one_indexed(true);
     Some(OwnedFormatItem::Component(Component::WeekdayMonday(
         weekday,
     )))
@@ -574,7 +575,7 @@ mod tests {
         test_parse_java_datetime_aux(
             "basic_week_date",
             "2024W313",
-            datetime!(2024-08-01 0:00:00.0 +00:00:00),
+            datetime!(2024-07-31 0:00:00.0 +00:00:00),
         );
         let parser = StrptimeParser::from_java_datetime_format("basic_week_date").unwrap();
         parser.parse_date_time("24W313").unwrap_err();
@@ -585,56 +586,71 @@ mod tests {
         test_parse_java_datetime_aux(
             "basic_week_date_time",
             "2018W313T121212.1Z",
-            datetime!(2018-08-02 12:12:12.1 +00:00:00),
+            datetime!(2018-08-01 12:12:12.1 +00:00:00),
         );
         test_parse_java_datetime_aux(
             "basic_week_date_time",
             "2018W313T121212.123Z",
-            datetime!(2018-08-02 12:12:12.123 +00:00:00),
+            datetime!(2018-08-01 12:12:12.123 +00:00:00),
         );
         test_parse_java_datetime_aux(
             "basic_week_date_time",
             "2018W313T121212.123456789Z",
-            datetime!(2018-08-02 12:12:12.123456789 +00:00:00),
+            datetime!(2018-08-01 12:12:12.123456789 +00:00:00),
         );
         test_parse_java_datetime_aux(
             "basic_week_date_time",
             "2018W313T121212.123+0100",
-            datetime!(2018-08-02 12:12:12.123 +01:00:00),
+            datetime!(2018-08-01 12:12:12.123 +01:00:00),
         );
         test_parse_java_datetime_aux(
             "basic_week_date_time_no_millis",
             "2018W313T121212Z",
-            datetime!(2018-08-02 12:12:12.0 +00:00:00),
+            datetime!(2018-08-01 12:12:12.0 +00:00:00),
         );
         test_parse_java_datetime_aux(
             "basic_week_date_time_no_millis",
             "2018W313T121212+0100",
-            datetime!(2018-08-02 12:12:12.0 +01:00:00),
+            datetime!(2018-08-01 12:12:12.0 +01:00:00),
         );
         test_parse_java_datetime_aux(
             "basic_week_date_time_no_millis",
             "2018W313T121212+01:00",
-            datetime!(2018-08-02 12:12:12.0 +01:00:00),
+            datetime!(2018-08-01 12:12:12.0 +01:00:00),
         );
 
         test_parse_java_datetime_aux(
             "week_date",
             "2012-W48-6",
-            datetime!(2012-12-02 0:00:00.0 +00:00:00),
+            datetime!(2012-12-01 0:00:00.0 +00:00:00),
         );
 
         test_parse_java_datetime_aux(
             "week_date",
             "2012-W01-6",
-            datetime!(2012-01-08 0:00:00.0 +00:00:00),
+            datetime!(2012-01-07 0:00:00.0 +00:00:00),
         );
 
         test_parse_java_datetime_aux(
             "week_date",
             "2012-W1-6",
-            datetime!(2012-01-08 0:00:00.0 +00:00:00),
+            datetime!(2012-01-07 0:00:00.0 +00:00:00),
         );
+
+        // `e` is the ISO day-of-week, so Monday is 1 and Sunday is 7. Day 0 is not a
+        // valid ISO day-of-week and Java rejects it.
+        test_parse_java_datetime_aux(
+            "basic_week_date",
+            "2024W311",
+            datetime!(2024-07-29 0:00:00.0 +00:00:00),
+        );
+        test_parse_java_datetime_aux(
+            "basic_week_date",
+            "2024W317",
+            datetime!(2024-08-04 0:00:00.0 +00:00:00),
+        );
+        let parser = StrptimeParser::from_java_datetime_format("basic_week_date").unwrap();
+        parser.parse_date_time("2024W310").unwrap_err();
     }
 
     #[test]
@@ -642,19 +658,19 @@ mod tests {
         test_parse_java_datetime_aux(
             "strict_basic_week_date",
             "2024W313",
-            datetime!(2024-08-01 0:00:00.0 +00:00:00),
+            datetime!(2024-07-31 0:00:00.0 +00:00:00),
         );
 
         test_parse_java_datetime_aux(
             "strict_week_date",
             "2012-W48-6",
-            datetime!(2012-12-02 0:00:00.0 +00:00:00),
+            datetime!(2012-12-01 0:00:00.0 +00:00:00),
         );
 
         test_parse_java_datetime_aux(
             "strict_week_date",
             "2012-W01-6",
-            datetime!(2012-01-08 0:00:00.0 +00:00:00),
+            datetime!(2012-01-07 0:00:00.0 +00:00:00),
         );
     }
 
@@ -778,3 +794,4 @@ mod tests {
         );
     }
 }
+
