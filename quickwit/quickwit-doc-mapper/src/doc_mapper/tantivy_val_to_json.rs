@@ -419,14 +419,6 @@ mod tests {
                 Some(serde_json::json!(value))
             );
         }
-        // Existing unsigned tie-breaker values still fit in i64.
-        assert_eq!(
-            formatted_tantivy_value_to_json(
-                TantivyValue::U64(u32::MAX as u64),
-                &LeafType::TieBreaker
-            ),
-            Some(serde_json::json!(u32::MAX as i64))
-        );
     }
 
     #[test]

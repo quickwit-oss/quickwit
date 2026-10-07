@@ -412,7 +412,7 @@ name: tie_breaker
 type: tie_breaker
 ```
 
-Generated values lie in the signed 32-bit range (`i32::MIN` through `i32::MAX`), preserving 32 bits of entropy. Values provided in documents are ignored, except in `strict` mode where such documents are rejected. Once generated, a document's value never changes: it is preserved across merges and is not affected by index sorting.
+Values provided in documents are ignored, except in `strict` mode where such documents are rejected. Once generated, a document's value never changes: it is preserved across merges and is not affected by index sorting.
 
 Values are almost always distinct but not guaranteed to be unique, so they should not be used as document identifiers. In particular, paginating with `search_after` on a primary sort field and a `tie_breaker` field can skip documents that share both values.
 
