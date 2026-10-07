@@ -440,6 +440,17 @@ mod tests {
                 0
             );
         }
+        {
+            // An empty export is accepted as a no-op and does not reach the ingest router.
+            let resp = warp::test::request()
+                .path("/otlp/v1/logs")
+                .method("POST")
+                .header("content-type", "application/x-protobuf")
+                .body(Vec::new())
+                .reply(&otlp_traces_api_handler)
+                .await;
+            assert_eq!(resp.status(), 200);
+        }
     }
 
     #[tokio::test]
