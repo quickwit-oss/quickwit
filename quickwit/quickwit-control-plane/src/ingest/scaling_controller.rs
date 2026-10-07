@@ -51,7 +51,8 @@ pub(crate) struct ScalingController {
 }
 
 impl ScalingController {
-    /// Given a throughput limit, scale up/down logic is as followed. Example with the default 5MiB/s:
+    /// Given a throughput limit, scale up/down logic is as followed. Example with the default
+    /// 5MiB/s:
     /// * Target: 80% of limit: 4mib/s per shard. We're happy if every shard is here.
     /// * Scale up: >=100% of limit: 5mib/s per shard. At this level, scale-up is required.
     /// * Scale down: <40% of limit: 2mib/s per shard. At this level, we can scale down.
@@ -60,7 +61,9 @@ impl ScalingController {
         ScalingController {
             target_shard_throughput: ByteSize::b(shard_throughput_limit_bytes * 8 / 10),
             scale_up_shard_throughput_threshold: shard_throughput_limit,
-            scale_down_shard_throughput_threshold: ByteSize::b(shard_throughput_limit_bytes * 4 / 10),
+            scale_down_shard_throughput_threshold: ByteSize::b(
+                shard_throughput_limit_bytes * 4 / 10,
+            ),
             last_shard_count_changes: HashMap::new(),
         }
     }
@@ -75,7 +78,8 @@ impl ScalingController {
 
     /// Any scaling operation resets the scaling cooldown.
     fn restart_scale_down_cooldown(&mut self, source_uid: &SourceUid, now: Instant) {
-        self.last_shard_count_changes.insert(source_uid.clone(), now);
+        self.last_shard_count_changes
+            .insert(source_uid.clone(), now);
     }
 
     /// Receive a single ingester's update. Update the control plane model.
@@ -180,7 +184,9 @@ impl ScalingController {
         let num_open_shards = shard_throughput_stats.num_open_shards;
 
         match scaling_decision {
-            ScalingDecision::ScaleUp { target_num_open_shards } => {
+            ScalingDecision::ScaleUp {
+                target_num_open_shards,
+            } => {
                 self.scale_up_shards(
                     ingest_controller,
                     source_uid,
@@ -191,7 +197,9 @@ impl ScalingController {
                 )
                 .await
             }
-            ScalingDecision::ScaleDown { target_num_open_shards} => {
+            ScalingDecision::ScaleDown {
+                target_num_open_shards,
+            } => {
                 self.scale_down_shards(
                     ingest_controller,
                     source_uid,
@@ -281,9 +289,9 @@ impl ScalingController {
     /// Determine whether a shard scaling action should be taken. Derived from the observed shard
     /// throughput readings, and the target per-shard threshold.
     ///
-    /// First, compute the target rate. This is purely a function of the ingestion rate (and min_shards).
-    /// Then, it is a decision based on whether the given scale up/down throughput buffer has been
-    /// exceeded.
+    /// First, compute the target rate. This is purely a function of the ingestion rate (and
+    /// min_shards). Then, it is a decision based on whether the given scale up/down throughput
+    /// buffer has been exceeded.
     pub fn should_scale(
         &self,
         shard_throughput_stats: ShardStats,
@@ -340,8 +348,9 @@ impl ScalingController {
     }
 }
 
-/// Pick individual shards to close, by taking shards off the ingesters that have the most open shards.
-/// This is a candidate to eventually become an ingester-level decision rather than a control plane one.
+/// Pick individual shards to close, by taking shards off the ingesters that have the most open
+/// shards. This is a candidate to eventually become an ingester-level decision rather than a
+/// control plane one.
 fn find_scale_down_candidates(
     source_uid: &SourceUid,
     num_shards_to_close: usize,

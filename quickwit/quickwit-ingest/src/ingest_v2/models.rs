@@ -37,7 +37,8 @@ pub(super) struct IngesterShard {
     pub replication_position_inclusive: Position,
     /// Position up to which the shard has been truncated.
     pub truncation_position_inclusive: Position,
-    /// The queue size is the amount of total in-flight bytes on this shard that are yet to be indexed.
+    /// The queue size is the amount of total in-flight bytes on this shard that are yet to be
+    /// indexed.
     pub queue_size: ByteSize,
     /// The shared rate meter contains throughput and status readings for all shards, centralized
     /// to be able to report to the control plane.

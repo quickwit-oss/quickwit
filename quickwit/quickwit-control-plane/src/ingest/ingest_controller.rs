@@ -262,7 +262,7 @@ fn match_shards_to_close(
 ) -> Vec<Shard> {
     let mut shards_to_close: Vec<Shard> = Vec::new();
     // All we are doing here is trying to find a shard from the zone we requested in. This ugly
-    // nested logic is just because everything is partitioned: by zone, by source, by number of 
+    // nested logic is just because everything is partitioned: by zone, by source, by number of
     // shards opened.
     for (original_zone, num_opened_by_source) in opened_by_original_zone {
         for (source_uid, &num_opened) in num_opened_by_source {
@@ -1248,7 +1248,6 @@ pub(crate) struct RebalanceShardsCallback {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
-    use std::str::FromStr;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 

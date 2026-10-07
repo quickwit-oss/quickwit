@@ -16,7 +16,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use quickwit_common::{rate_limited_error, rate_limited_info};
-use quickwit_ingest::{IngesterPool, ShardThroughputReadings, all_indexers_enable_shard_scaling_v2};
+use quickwit_ingest::{
+    IngesterPool, ShardThroughputReadings, all_indexers_enable_shard_scaling_v2,
+};
 use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, IndexingTasksUpdate, ReportIndexerStateRequest,
 };
@@ -51,7 +53,7 @@ pub struct IndexerStateReporter {
 /// throughput snapshot, and the running indexing pipelines. We report those to the control plane,
 /// even if they're unchanged from our last run. If both are empty, we don't report anything;
 /// if one is empty, we report it as None.
-/// 
+///
 /// This task reports running indexing tasks immediately. It only starts to report shard throughput
 /// readings once all indexers broadcast enable_shard_scaling_v2 as true via chitchat.
 impl IndexerStateReporter {
@@ -89,7 +91,8 @@ impl IndexerStateReporter {
     /// Wait until all indexers report enable_shard_scaling_v2, so that the control plane continues
     /// to employ the legacy gossip-based scaling logic.
     fn observe_indexer_state(&self) -> Option<ReportIndexerStateRequest> {
-        let shard_throughput_readings = if all_indexers_enable_shard_scaling_v2(&self.ingester_pool) {
+        let shard_throughput_readings = if all_indexers_enable_shard_scaling_v2(&self.ingester_pool)
+        {
             self.local_shards_rx.borrow().clone()
         } else {
             None
@@ -102,7 +105,8 @@ impl IndexerStateReporter {
         Some(ReportIndexerStateRequest {
             node_id: self.node_id.to_string(),
             generation_id: self.generation_id,
-            shards_update: shard_throughput_readings.map(|readings| readings.as_ref().clone().into()),
+            shards_update: shard_throughput_readings
+                .map(|readings| readings.as_ref().clone().into()),
             indexing_tasks_update: indexing_tasks.map(|tasks| IndexingTasksUpdate {
                 indexing_tasks: tasks.as_ref().clone(),
             }),

@@ -377,7 +377,8 @@ impl ControlPlaneModel {
         source_uid: &SourceUid,
         live_ingesters: &FnvHashSet<NodeId>,
     ) -> Option<ShardStats> {
-        self.shard_table.shard_throughput_stats(source_uid, live_ingesters)
+        self.shard_table
+            .shard_throughput_stats(source_uid, live_ingesters)
     }
 
     // Used by the legacy scaling controller.

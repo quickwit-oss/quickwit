@@ -906,7 +906,7 @@ mod tests {
         let metastore = MetastoreServiceClient::mocked();
         let ingester_pool = IngesterPool::default();
 
-        let mut controller = IngestController::new(metastore, ingester_pool.clone());
+        let controller = IngestController::new(metastore, ingester_pool.clone());
         let scaling_controller =
             LegacyScalingController::new(DEFAULT_SHARD_THROUGHPUT_LIMIT, 1.001);
 

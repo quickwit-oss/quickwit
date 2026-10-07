@@ -78,7 +78,7 @@ pub(super) async fn validate_doc_batch(
     doc_mapper: Arc<DocMapper>,
     validate_docs: bool,
 ) -> IngestV2Result<(DocBatchV2, Vec<ParseFailure>)> {
-    let original_batch_num_bytes = doc_batch.num_bytes() as u64;
+    let original_batch_num_bytes = doc_batch.doc_buffer.len() as u64;
     let (valid_doc_batch, parse_failures) = if validate_docs && is_document_validation_enabled() {
         validate_doc_batch_cpu_intensive(doc_batch, doc_mapper).await?
     } else {
@@ -93,7 +93,7 @@ fn doc_batch_metrics(
     valid_doc_batch: &DocBatchV2,
     parse_failures: &[ParseFailure],
 ) {
-    let valid_batch_num_bytes = valid_doc_batch.num_bytes() as u64;
+    let valid_batch_num_bytes = valid_doc_batch.doc_buffer.len() as u64;
     if valid_doc_batch.is_empty() || !parse_failures.is_empty() {
         counter!(
             parent: DOCS_TOTAL,
@@ -124,7 +124,7 @@ fn is_document_validation_enabled() -> bool {
     !quickwit_common::get_bool_from_env_cached!("QW_DISABLE_DOCUMENT_VALIDATION", false)
 }
 
-#[instrument(name = "ingester.validate_doc_batch", skip_all, fields(num_docs = doc_batch.num_docs(), num_bytes = doc_batch.num_bytes()))]
+#[instrument(name = "ingester.validate_doc_batch", skip_all, fields(num_docs = doc_batch.num_docs(), num_bytes = doc_batch.doc_buffer.len()))]
 async fn validate_doc_batch_cpu_intensive(
     doc_batch: DocBatchV2,
     doc_mapper: Arc<DocMapper>,
@@ -250,9 +250,9 @@ mod tests {
             };
             let expected_bytes: u64 = expected_indices
                 .iter()
-                .map(|&index| (docs[index].len() + 4) as u64)
+                .map(|&index| docs[index].len() as u64)
                 .sum();
-            let original_bytes = batch.num_bytes() as u64;
+            let original_bytes = batch.doc_buffer.len() as u64;
             let (result, failures) = validate_doc_batch(batch, mapper.clone(), validate)
                 .await
                 .unwrap();

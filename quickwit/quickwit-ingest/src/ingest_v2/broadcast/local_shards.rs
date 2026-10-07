@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
-use tracing::{debug, instrument, warn, info};
+use tracing::{debug, info, instrument, warn};
 
 use super::{make_key, parse_key};
 use crate::ingest_v2::local_shards_utils::ShardThroughputReadings;
@@ -209,7 +209,7 @@ impl BroadcastLocalShardsTask {
         loop {
             interval.tick().await;
             if self.cluster.all_indexers_migrated().await {
-                info!("Cluster is fully migrated. Stopping local shards task");
+                info!("cluster is fully migrated, stopping local shards task");
                 return;
             }
             if !self.run_once().await {
@@ -724,9 +724,7 @@ mod tests {
         tokio::time::timeout(
             Duration::from_secs(5),
             task.local_shards_rx.wait_for(|snapshot| {
-                snapshot
-                    .as_ref()
-                    .is_some_and(|snapshot| !snapshot.per_source_shard_infos.is_empty())
+                matches!(snapshot, Some(snapshot) if !snapshot.per_source_shard_infos.is_empty())
             }),
         )
         .await
@@ -751,9 +749,7 @@ mod tests {
         tokio::time::timeout(
             Duration::from_secs(5),
             task.local_shards_rx.wait_for(|snapshot| {
-                snapshot
-                    .as_ref()
-                    .is_some_and(|snapshot| snapshot.per_source_shard_infos.is_empty())
+                matches!(snapshot, Some(snapshot) if snapshot.per_source_shard_infos.is_empty())
             }),
         )
         .await

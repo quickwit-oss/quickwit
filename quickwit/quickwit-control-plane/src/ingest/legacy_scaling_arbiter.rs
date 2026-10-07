@@ -27,9 +27,9 @@ pub(crate) enum ScalingMode {
 }
 
 pub(crate) struct LegacyScalingArbiter {
+    // Threshold in B/s below which we decrease the number of shards.
     scale_down_shards_threshold_mib_per_sec: f32,
-
-    //
+    // Per shard threshold in B/s above which we increase the number of shards.
     // We want scaling up to be reactive, so we first inspect the short
     // term threshold.
     //
@@ -52,7 +52,8 @@ impl LegacyScalingArbiter {
         let max_shard_throughput_mib_per_sec =
             max_shard_throughput.as_u64() as f32 / ByteSize::mib(1).as_u64() as f32;
         LegacyScalingArbiter {
-            scale_up_shards_short_term_threshold_mib_per_sec: max_shard_throughput_mib_per_sec * 0.8,
+            scale_up_shards_short_term_threshold_mib_per_sec: max_shard_throughput_mib_per_sec
+                * 0.8,
             scale_up_shards_long_term_threshold_mib_per_sec: max_shard_throughput_mib_per_sec * 0.3,
             scale_down_shards_threshold_mib_per_sec: max_shard_throughput_mib_per_sec * 0.2,
             shard_scale_up_factor,
@@ -92,10 +93,12 @@ impl LegacyScalingArbiter {
         if shard_stats.num_open_shards == 0 {
             return None;
         }
-        let avg_short_term_ingestion_rate = shard_stats.total_short_term_ingestion_rate.as_u64() as f32
+        let avg_short_term_ingestion_rate = shard_stats.total_short_term_ingestion_rate.as_u64()
+            as f32
             / ByteSize::mib(1).as_u64() as f32
             / shard_stats.num_open_shards as f32;
-        let avg_long_term_ingestion_rate = shard_stats.total_long_term_ingestion_rate.as_u64() as f32
+        let avg_long_term_ingestion_rate = shard_stats.total_long_term_ingestion_rate.as_u64()
+            as f32
             / ByteSize::mib(1).as_u64() as f32
             / shard_stats.num_open_shards as f32;
         // If ingest is idle, there is nothing to do. Idle shards are automatically closed by
@@ -173,8 +176,8 @@ mod tests {
                 ShardStats {
                     num_open_shards: 0,
                     num_closed_shards: 0,
-                    total_short_term_ingestion_rate: ByteSize::b((ByteSize::mib(0)).as_u64() * 0),
-                    total_long_term_ingestion_rate: ByteSize::b((ByteSize::mib(0)).as_u64() * 0),
+                    total_short_term_ingestion_rate: ByteSize::b(0),
+                    total_long_term_ingestion_rate: ByteSize::b(0),
                 },
                 NonZeroUsize::MIN
             ),
@@ -276,8 +279,8 @@ mod tests {
                 ShardStats {
                     num_open_shards: 0,
                     num_closed_shards: 0,
-                    total_short_term_ingestion_rate: ByteSize::b((ByteSize::mib(0)).as_u64() * 0),
-                    total_long_term_ingestion_rate: ByteSize::b((ByteSize::mib(0)).as_u64() * 0),
+                    total_short_term_ingestion_rate: ByteSize::b(0),
+                    total_long_term_ingestion_rate: ByteSize::b(0),
                 },
                 NonZeroUsize::MIN
             ),
@@ -395,8 +398,8 @@ mod tests {
         let shard_stats = ShardStats {
             num_open_shards: 0,
             num_closed_shards: 0,
-            total_short_term_ingestion_rate: ByteSize::b((ByteSize::mib(0)).as_u64() * 0),
-            total_long_term_ingestion_rate: ByteSize::b((ByteSize::mib(0)).as_u64() * 0),
+            total_short_term_ingestion_rate: ByteSize::b(0),
+            total_long_term_ingestion_rate: ByteSize::b(0),
         };
         assert_eq!(
             scaling_arbiter.long_term_scale_up_threshold_max_shards(shard_stats),
@@ -484,8 +487,8 @@ mod tests {
         let shard_stats = ShardStats {
             num_open_shards: 0,
             num_closed_shards: 0,
-            total_short_term_ingestion_rate: ByteSize::b((ByteSize::mib(0)).as_u64() * 0),
-            total_long_term_ingestion_rate: ByteSize::b((ByteSize::mib(0)).as_u64() * 0),
+            total_short_term_ingestion_rate: ByteSize::b(0),
+            total_long_term_ingestion_rate: ByteSize::b(0),
         };
         let min_shards = NonZeroUsize::MIN;
         let scaling_mode = scaling_arbiter.should_scale(shard_stats, min_shards);

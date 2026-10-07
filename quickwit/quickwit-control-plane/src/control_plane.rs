@@ -504,8 +504,11 @@ impl Handler<ControlPlaneLoop> for ControlPlane {
         // decisions. If it's on, and all indexers are migrated to the gRPC-based approach, use the
         // new scaling controller.
         //
-        // The initial rollout of a cluster from the legacy controller to the new controller requires a little more touch. Due to the nature of different reporting intervals
-        // and logic differences (the legacy flow would reconcile shards on every update), keep using the legacy controller until all indexers are ready and report via gRPC; at that point, cut over everything all at once.
+        // The initial rollout of a cluster from the legacy controller to the new controller
+        // requires a little more touch. Due to the nature of different reporting intervals
+        // and logic differences (the legacy flow would reconcile shards on every update), keep
+        // using the legacy controller until all indexers are ready and report via gRPC; at that
+        // point, cut over everything all at once.
         let reconcile_shards_result =
             if all_indexers_enable_shard_scaling_v2(&self.ingest_controller.ingester_pool) {
                 self.scaling_controller
@@ -1009,7 +1012,7 @@ impl Handler<LocalShardsUpdate> for ControlPlane {
 ///
 /// Since this is a best-effort report endpoint, the control plane immediately responds Ok on
 /// receipt, to not linger on the connection while processing the data (which has no response).
-/// 
+///
 /// The ingest data received here is only actioned on in the control plane loop.
 #[async_trait]
 impl DeferableReplyHandler<ReportIndexerStateRequest> for ControlPlane {
@@ -1485,27 +1488,47 @@ mod tests {
                 .map(|shard| shard.shard_id().clone())
                 .collect();
             assert_eq!(open.len(), expected);
-            let all_shards = cp.model.all_shards().map(|shard| shard.shard_id().clone()).collect();
+            let all_shards = cp
+                .model
+                .all_shards()
+                .map(|shard| shard.shard_id().clone())
+                .collect();
             assert_eq!(planned, all_shards);
             assert_eq!(planned.len(), 5);
             if bytes == 0 {
-                let closed: Vec<_> = cp.model.all_shards()
+                let closed: Vec<_> = cp
+                    .model
+                    .all_shards()
                     .filter(|shard| shard.is_closed())
                     .map(|shard| (shard.shard_id().clone(), Position::eof(0u64)))
                     .collect();
                 assert_eq!(closed.len(), 4);
-                Handler::handle(&mut cp, ShardPositionsUpdate {
-                    source_uid: SourceUid {
-                        index_uid: IndexUid::for_test("index", 0),
-                        source_id: INGEST_V2_SOURCE_ID.to_string(),
+                Handler::handle(
+                    &mut cp,
+                    ShardPositionsUpdate {
+                        source_uid: SourceUid {
+                            index_uid: IndexUid::for_test("index", 0),
+                            source_id: INGEST_V2_SOURCE_ID.to_string(),
+                        },
+                        updated_shard_positions: closed,
                     },
-                    updated_shard_positions: closed,
-                }, &ctx).await.unwrap();
+                    &ctx,
+                )
+                .await
+                .unwrap();
                 tokio::time::sleep(REBUILD_PLAN_COOLDOWN_PERIOD).await;
                 Handler::handle(&mut cp, RebuildPlan, &ctx).await.unwrap();
-                let plan = cp.indexing_scheduler.observable_state().last_applied_physical_plan.unwrap();
-                let planned: std::collections::HashSet<_> = plan.indexing_tasks_per_indexer()
-                    .values().flatten().flat_map(|task| task.shard_ids.iter().cloned()).collect();
+                let plan = cp
+                    .indexing_scheduler
+                    .observable_state()
+                    .last_applied_physical_plan
+                    .unwrap();
+                let planned: std::collections::HashSet<_> = plan
+                    .indexing_tasks_per_indexer()
+                    .values()
+                    .flatten()
+                    .flat_map(|task| task.shard_ids.iter().cloned())
+                    .collect();
                 assert_eq!(planned, open);
             }
         }

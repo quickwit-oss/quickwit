@@ -47,7 +47,6 @@ use super::doc_mapper::validate_doc_batch;
 use super::models::IngesterShard;
 use super::mrecordlog_utils::{
     AppendDocBatchError, append_non_empty_doc_batch, check_enough_capacity, doc_batch_size,
-    read_queue_size,
 };
 use super::rate_meter::SharedRateMeter;
 use super::wal_capacity_tracker::WalCapacityTracker;
@@ -114,7 +113,8 @@ impl InnerIngesterState {
         }
     }
 
-    /// Returns the shard with the least loaded (highest capacity) queue size for this index and source.
+    /// Returns the shard with the least loaded (highest capacity) queue size for this index and
+    /// source.
     pub fn find_most_capacity_shard_mut(
         &mut self,
         index_uid: &IndexUid,
@@ -227,7 +227,9 @@ impl IngesterState {
         let wal_dir_path = wal_dir_path.to_path_buf();
 
         let init_future = async move {
-            state_clone.init(&wal_dir_path, disk_capacity, memory_capacity).await;
+            state_clone
+                .init(&wal_dir_path, disk_capacity, memory_capacity)
+                .await;
         };
         tokio::spawn(init_future);
 
@@ -245,13 +247,8 @@ impl IngesterState {
         disk_capacity: ByteSize,
     ) -> (tempfile::TempDir, Self) {
         let temp_dir = tempfile::tempdir().unwrap();
-        let mut state = IngesterState::load(
-            cluster,
-            temp_dir.path(),
-            disk_capacity,
-            ByteSize::mb(256),
-        )
-        .await;
+        let mut state =
+            IngesterState::load(cluster, temp_dir.path(), disk_capacity, ByteSize::mb(256)).await;
 
         state.wait_for_ready().await;
 
@@ -328,7 +325,7 @@ impl IngesterState {
                 .checked_sub(1)
                 .map(Position::offset)
                 .unwrap_or(Position::Beginning);
-            let queue_size = read_queue_size(&mrecordlog, &queue_id);
+            let queue_size = ByteSize::b(queue_summary.num_bytes as u64);
             let shard = IngesterShard::builder(
                 index_uid.clone(),
                 source_id.clone(),
@@ -699,13 +696,36 @@ impl FullyLockedIngesterState<'_> {
         })
     }
 
-    pub async fn persist_subrequest(
+    pub async fn persist_prepared_requests(
+        &mut self,
+        prepared_requests: Vec<PreparedPersistRequest>,
+        mut context: PersistContext,
+    ) -> (Vec<PersistSuccess>, Vec<PersistFailure>) {
+        for request in &prepared_requests {
+            self.shards
+                .get_mut(&request.queue_id)
+                .expect("prepared shard should exist")
+                .queue_size -= request.batch_size;
+        }
+        let mut successes = Vec::with_capacity(prepared_requests.len());
+        let mut failures = Vec::new();
+        for request in prepared_requests {
+            match self.persist_subrequest(request, &mut context).await {
+                Ok(success) => successes.push(success),
+                Err(failure) => failures.push(failure),
+            }
+        }
+        self.finish_persist(context);
+        (successes, failures)
+    }
+
+    async fn persist_subrequest(
         &mut self,
         staged_request: PreparedPersistRequest,
         context: &mut PersistContext,
     ) -> Result<PersistSuccess, PersistFailure> {
         let replication_position_inclusive = if staged_request.num_docs > 0 {
-            let num_ingested_bytes = staged_request.doc_batch.num_bytes() as u64;
+            let num_ingested_bytes = staged_request.doc_batch.doc_buffer.len() as u64;
             let append_result = append_non_empty_doc_batch(
                 &mut self.mrecordlog,
                 &staged_request.queue_id,
@@ -713,13 +733,9 @@ impl FullyLockedIngesterState<'_> {
                 context.force_commit,
             )
             .await;
-            let position = match append_result {
-                Ok(position) => position,
+            let (position, queue_size) = match append_result {
+                Ok(outcome) => outcome,
                 Err(append_error) => {
-                    self.shards
-                        .get_mut(&staged_request.queue_id)
-                        .expect("shard should exist")
-                        .queue_size -= staged_request.batch_size;
                     match append_error {
                         AppendDocBatchError::Io(io_error) => {
                             error!(queue_id=%staged_request.queue_id, "failed to persist records: {io_error}");
@@ -743,6 +759,7 @@ impl FullyLockedIngesterState<'_> {
                 .get_mut(&staged_request.queue_id)
                 .expect("shard should exist");
             shard.record_persisted_bytes(num_ingested_bytes);
+            shard.queue_size = queue_size;
             shard.set_replication_position_inclusive(position.clone(), Instant::now());
             position
         } else {
@@ -760,7 +777,7 @@ impl FullyLockedIngesterState<'_> {
         })
     }
 
-    pub fn finish_persist(&mut self, context: PersistContext) {
+    fn finish_persist(&mut self, context: PersistContext) {
         for queue_id in context.shards_to_close {
             self.shards
                 .get_mut(&queue_id)
@@ -843,12 +860,8 @@ impl FullyLockedIngesterState<'_> {
                 .truncate(queue_id, truncate_up_to_offset_inclusive)
                 .await
             {
-                Ok(evicted_size) => {
-                    let queue_size = shard
-                        .queue_size
-                        .as_u64()
-                        .saturating_sub(evicted_size.as_u64());
-                    shard.queue_size = ByteSize::b(queue_size);
+                Ok(outcome) => {
+                    shard.queue_size = ByteSize::b(outcome.queue_size_bytes as u64);
                 }
                 Err(TruncateError::MissingQueue(_)) => {
                     error!("failed to truncate shard `{queue_id}`: WAL queue not found");
@@ -1011,13 +1024,18 @@ mod tests {
                             .unwrap();
                         prepared.push(smaller);
                     }
-                    for request in prepared {
-                        guard
-                            .persist_subrequest(request, &mut context)
-                            .await
-                            .unwrap();
-                    }
-                    guard.finish_persist(context);
+                    let reserved = context.reserved_capacity;
+                    assert_eq!(guard.shards.values().next().unwrap().queue_size, reserved);
+                    let (successes, failures) =
+                        guard.persist_prepared_requests(prepared, context).await;
+                    assert_eq!(successes.len(), 2);
+                    assert!(failures.is_empty());
+                    let shard = guard.shards.values().next().unwrap();
+                    assert_eq!(shard.queue_size, reserved);
+                    assert_eq!(
+                        shard.queue_size.as_u64(),
+                        guard.mrecordlog.summary().queues[&shard.queue_id()].num_bytes as u64
+                    );
                 }
             }
         }

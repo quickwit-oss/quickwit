@@ -60,7 +60,6 @@ use workbench::pending_subrequests;
 
 pub use self::fetch::{FetchStreamError, MultiFetchStream};
 pub use self::ingester::Ingester;
-use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{MRecord, decoded_mrecords};
 pub use self::rate_meter::SharedRateMeter;
 pub use self::router::IngestRouter;
@@ -292,11 +291,6 @@ impl IngestRequestV2Builder {
     }
 }
 
-pub(super) fn estimate_size(doc_batch: &DocBatchV2) -> ByteSize {
-    let estimate = doc_batch.num_bytes() + doc_batch.num_docs() * MRECORD_HEADER_LEN;
-    ByteSize(estimate as u64)
-}
-
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct RateMibPerSec(pub u16);
 
@@ -347,7 +341,7 @@ mod tests {
         let doc_batch = doc_batch_builder.build().unwrap();
 
         assert_eq!(doc_batch.num_docs(), 2);
-        assert_eq!(doc_batch.num_bytes(), 21);
+        assert_eq!(doc_batch.doc_buffer.len(), 13);
         assert_eq!(doc_batch.doc_lengths, [7, 6]);
         assert_eq!(doc_batch.doc_buffer, Bytes::from(&b"Hello, World!"[..]));
     }
@@ -403,8 +397,9 @@ mod tests {
                 .doc_batch
                 .as_ref()
                 .unwrap()
-                .num_bytes(),
-            21
+                .doc_buffer
+                .len(),
+            13
         );
         assert_eq!(
             ingest_request.subrequests[0]
@@ -446,8 +441,9 @@ mod tests {
                 .doc_batch
                 .as_ref()
                 .unwrap()
-                .num_bytes(),
-            20
+                .doc_buffer
+                .len(),
+            12
         );
         assert_eq!(
             ingest_request.subrequests[1]
@@ -473,23 +469,6 @@ mod tests {
                 .doc_uids,
             [hola_doc_uid, mundo_doc_uid]
         );
-    }
-
-    #[test]
-    fn test_estimate_size() {
-        let doc_batch = DocBatchV2 {
-            doc_buffer: Vec::new().into(),
-            doc_lengths: Vec::new(),
-            doc_uids: Vec::new(),
-        };
-        assert_eq!(estimate_size(&doc_batch), ByteSize(0));
-
-        let doc_batch = DocBatchV2 {
-            doc_buffer: vec![0u8; 100].into(),
-            doc_lengths: vec![10, 20, 30],
-            doc_uids: Vec::new(),
-        };
-        assert_eq!(estimate_size(&doc_batch), ByteSize(118));
     }
 
     #[tokio::test]

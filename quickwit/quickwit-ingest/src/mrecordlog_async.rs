@@ -17,7 +17,6 @@ use std::ops::RangeBounds;
 use std::path::Path;
 
 use bytes::Buf;
-use bytesize::ByteSize;
 use mrecordlog::error::*;
 use mrecordlog::{MultiRecordLog, PersistAction, PersistPolicy, Record, ResourceUsage};
 use tokio::task::JoinError;
@@ -137,7 +136,7 @@ impl MultiRecordLogAsync {
         queue: &str,
         position_opt: Option<u64>,
         payloads: T,
-    ) -> Result<Option<u64>, AppendError> {
+    ) -> Result<mrecordlog::AppendOutcome, AppendError> {
         let span = info_span!("mrecordlog.append_records", queue);
         let queue = queue.to_string();
         self.run_operation(span, move |mrecordlog| {
@@ -146,7 +145,6 @@ impl MultiRecordLogAsync {
                 .inspect(|outcome| {
                     WAL_BYTES_WRITTEN_APPEND.inc_by(outcome.wal_bytes_written);
                 })
-                .map(|outcome| outcome.last_position)
         })
         .await
     }
@@ -156,16 +154,13 @@ impl MultiRecordLogAsync {
         &mut self,
         queue: &str,
         position: u64,
-    ) -> Result<ByteSize, TruncateError> {
+    ) -> Result<mrecordlog::TruncateOutcome, TruncateError> {
         let span = info_span!("mrecordlog.truncate", queue, position);
         let queue = queue.to_string();
         self.run_operation(span, move |mrecordlog| {
-            mrecordlog
-                .truncate(&queue, ..=position)
-                .inspect(|outcome| {
-                    WAL_BYTES_WRITTEN_TRUNCATE.inc_by(outcome.wal_bytes_written);
-                })
-                .map(|outcome| ByteSize::b(outcome.evicted_bytes as u64))
+            mrecordlog.truncate(&queue, ..=position).inspect(|outcome| {
+                WAL_BYTES_WRITTEN_TRUNCATE.inc_by(outcome.wal_bytes_written);
+            })
         })
         .await
     }
@@ -258,13 +253,19 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(wal.truncate("queue", 0).await.unwrap(), ByteSize::b(1));
-        assert_eq!(wal.truncate("queue", 0).await.unwrap(), ByteSize::b(0));
+        let outcome = wal.truncate("queue", 0).await.unwrap();
+        assert_eq!((outcome.evicted_bytes, outcome.queue_size_bytes), (1, 12));
+        let outcome = wal.truncate("queue", 0).await.unwrap();
+        assert_eq!((outcome.evicted_bytes, outcome.queue_size_bytes), (0, 12));
         drop(wal);
         let mut wal = MultiRecordLogAsync::open(dir.path()).await.unwrap();
-        assert_eq!(wal.truncate("queue", 1).await.unwrap(), ByteSize::b(5));
-        assert_eq!(wal.truncate("queue", 100).await.unwrap(), ByteSize::b(7));
-        assert_eq!(wal.truncate("queue", 100).await.unwrap(), ByteSize::b(0));
+        assert_eq!(wal.summary().queues["queue"].num_bytes, 12);
+        let outcome = wal.truncate("queue", 1).await.unwrap();
+        assert_eq!((outcome.evicted_bytes, outcome.queue_size_bytes), (5, 7));
+        let outcome = wal.truncate("queue", 100).await.unwrap();
+        assert_eq!((outcome.evicted_bytes, outcome.queue_size_bytes), (7, 0));
+        let outcome = wal.truncate("queue", 100).await.unwrap();
+        assert_eq!((outcome.evicted_bytes, outcome.queue_size_bytes), (0, 0));
         assert_eq!(wal.range("queue", ..).unwrap().count(), 0);
     }
 }

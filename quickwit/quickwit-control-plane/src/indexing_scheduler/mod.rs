@@ -22,7 +22,6 @@ use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
 use fnv::{FnvHashMap, FnvHashSet};
-use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
 use quickwit_config::{
     FileSourceParams, SourceParams, disable_ingest_v1, indexing_pipeline_params_fingerprint,
@@ -991,11 +990,20 @@ fn get_indexing_tasks_diff<'a>(
     }
     let grouped_running_tasks = group_tasks(running_tasks);
     let grouped_last_applied_tasks = group_tasks(last_applied_tasks);
-    let all_tasks: FnvHashSet<&IndexingTask> =
-        FnvHashSet::from_iter(grouped_running_tasks.keys().chain(grouped_last_applied_tasks.keys()));
+    let all_tasks: FnvHashSet<&IndexingTask> = FnvHashSet::from_iter(
+        grouped_running_tasks
+            .keys()
+            .chain(grouped_last_applied_tasks.keys()),
+    );
     for task in all_tasks {
-        let running = grouped_running_tasks.get(task).map(Vec::as_slice).unwrap_or_default();
-        let desired = grouped_last_applied_tasks.get(task).map(Vec::as_slice).unwrap_or_default();
+        let running = grouped_running_tasks
+            .get(task)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let desired = grouped_last_applied_tasks
+            .get(task)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
         match running.len().cmp(&desired.len()) {
             Ordering::Greater => {
                 unplanned_tasks.extend_from_slice(&running[desired.len()..]);

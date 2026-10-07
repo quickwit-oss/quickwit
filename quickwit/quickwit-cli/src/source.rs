@@ -639,7 +639,7 @@ mod tests {
             vec![("".to_string(), JsonValue::Null)]
         );
         let mut flattened = flatten_json(
-            json!({"foo": {"bar": JsonValue::Bool(true)}, "baz": JsonValue::Bool(false)})
+            json!({"foo": {"bar": JsonValue::Bool(true)}, "baz": JsonValue::Bool(false)}),
         );
         flattened.sort_by(|left, right| left.0.cmp(&right.0));
         assert_eq!(

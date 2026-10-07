@@ -20,7 +20,6 @@ use quickwit_metrics::{
     lazy_histogram,
 };
 
-
 pub(super) const STATUS: LabelNames<1> = label_names!("status");
 
 static INGEST_RESULT_TOTAL: LazyCounter = lazy_counter!(

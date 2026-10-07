@@ -1227,7 +1227,9 @@ fn setup_ingester_pool(
                     );
                     Some(change)
                 }
-                ClusterChange::Update { previous, updated } if should_update_ingester(&previous, &updated) => {
+                ClusterChange::Update { previous, updated }
+                    if should_update_ingester(&previous, &updated) =>
+                {
                     let change = build_ingester_insert_change(
                         &updated,
                         ingester_opt_clone,
@@ -1249,9 +1251,9 @@ fn setup_ingester_pool(
 
 fn should_update_ingester(previous: &ClusterNode, updated: &ClusterNode) -> bool {
     let ingester_status_changed = previous.ingester_status != updated.ingester_status;
-    let enable_shard_scaling_v2_changed = previous.enable_shard_scaling_v2() != updated.enable_shard_scaling_v2();
-    updated.is_indexer()
-        && (enable_shard_scaling_v2_changed || ingester_status_changed)
+    let enable_shard_scaling_v2_changed =
+        previous.enable_shard_scaling_v2() != updated.enable_shard_scaling_v2();
+    updated.is_indexer() && (enable_shard_scaling_v2_changed || ingester_status_changed)
 }
 
 fn build_ingester_insert_change(
