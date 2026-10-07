@@ -18,6 +18,17 @@ use bytesize::ByteSize;
 
 use crate::model::ShardStats;
 
+fn ingestion_rate_mib_per_sec(rate: ByteSize) -> f32 {
+    rate.as_u64() as f32 / ByteSize::mib(1).as_u64() as f32
+}
+
+fn average_ingestion_rate_mib_per_sec(total_rate: ByteSize, num_shards: usize) -> f32 {
+    if num_shards == 0 {
+        return 0.0;
+    }
+    ingestion_rate_mib_per_sec(total_rate) / num_shards as f32
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(crate) enum ScalingMode {
     /// Scale up by adding this number of shards
@@ -49,8 +60,7 @@ impl LegacyScalingArbiter {
         max_shard_throughput: ByteSize,
         shard_scale_up_factor: f32,
     ) -> LegacyScalingArbiter {
-        let max_shard_throughput_mib_per_sec =
-            max_shard_throughput.as_u64() as f32 / ByteSize::mib(1).as_u64() as f32;
+        let max_shard_throughput_mib_per_sec = ingestion_rate_mib_per_sec(max_shard_throughput);
         LegacyScalingArbiter {
             scale_up_shards_short_term_threshold_mib_per_sec: max_shard_throughput_mib_per_sec
                 * 0.8,
@@ -63,13 +73,10 @@ impl LegacyScalingArbiter {
     /// Computes the maximum number of shards we can have without going below
     /// the long term scale up threshold
     fn long_term_scale_up_threshold_max_shards(&self, shard_stats: ShardStats) -> usize {
-        let avg_long_term_ingestion_rate = if shard_stats.num_open_shards > 0 {
-            shard_stats.total_long_term_ingestion_rate.as_u64() as f32
-                / ByteSize::mib(1).as_u64() as f32
-                / shard_stats.num_open_shards as f32
-        } else {
-            0.0
-        };
+        let avg_long_term_ingestion_rate = average_ingestion_rate_mib_per_sec(
+            shard_stats.total_long_term_ingestion_rate,
+            shard_stats.num_open_shards,
+        );
         let total_long_term_ingestion_rate =
             avg_long_term_ingestion_rate * shard_stats.num_open_shards as f32;
         (total_long_term_ingestion_rate / self.scale_up_shards_long_term_threshold_mib_per_sec)
@@ -93,14 +100,14 @@ impl LegacyScalingArbiter {
         if shard_stats.num_open_shards == 0 {
             return None;
         }
-        let avg_short_term_ingestion_rate = shard_stats.total_short_term_ingestion_rate.as_u64()
-            as f32
-            / ByteSize::mib(1).as_u64() as f32
-            / shard_stats.num_open_shards as f32;
-        let avg_long_term_ingestion_rate = shard_stats.total_long_term_ingestion_rate.as_u64()
-            as f32
-            / ByteSize::mib(1).as_u64() as f32
-            / shard_stats.num_open_shards as f32;
+        let avg_short_term_ingestion_rate = average_ingestion_rate_mib_per_sec(
+            shard_stats.total_short_term_ingestion_rate,
+            shard_stats.num_open_shards,
+        );
+        let avg_long_term_ingestion_rate = average_ingestion_rate_mib_per_sec(
+            shard_stats.total_long_term_ingestion_rate,
+            shard_stats.num_open_shards,
+        );
         // If ingest is idle, there is nothing to do. Idle shards are automatically closed by
         // ingesters (see `quickwit_ingest::ingest_v2::idle::CloseIdleShardsTask`).
         if avg_long_term_ingestion_rate == 0.0 {
