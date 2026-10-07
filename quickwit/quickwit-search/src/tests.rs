@@ -808,7 +808,7 @@ async fn test_sort_by_tie_breaker() {
     // Each call creates a separate split. The value supplied for `tie_breaker` is ignored.
     test_sandbox
         .add_documents(vec![
-            json!({"body": "a", "tie_breaker": 0u64}),
+            json!({"body": "a", "tie_breaker": 0i64}),
             json!({"body": "b"}),
             json!({"body": "c"}),
         ])
@@ -844,20 +844,20 @@ async fn test_sort_by_tie_breaker() {
                 .map(|hit| {
                     let partial_hit = hit.partial_hit.unwrap();
                     let Some(SortByValue {
-                        sort_value: Some(SortValue::U64(tie_breaker)),
+                        sort_value: Some(SortValue::I64(tie_breaker)),
                     }) = partial_hit.sort_value
                     else {
-                        panic!("expected a u64 tie_breaker sort value");
+                        panic!("expected an i64 tie_breaker sort value");
                     };
                     (partial_hit.split_id, partial_hit.doc_id, tie_breaker)
                 })
-                .collect::<Vec<(String, u32, u64)>>()
+                .collect::<Vec<(String, u32, i64)>>()
         }
     };
 
     let ascending_hits = search_hits(SortOrder::Asc).await;
     assert!(ascending_hits.is_sorted_by_key(|(_, _, tie_breaker)| *tie_breaker));
-    let mut tie_breakers_per_split: BTreeMap<String, Vec<(u32, u64)>> = BTreeMap::new();
+    let mut tie_breakers_per_split: BTreeMap<String, Vec<(u32, i64)>> = BTreeMap::new();
     for (split_id, doc_id, tie_breaker) in &ascending_hits {
         tie_breakers_per_split
             .entry(split_id.clone())
@@ -870,7 +870,7 @@ async fn test_sort_by_tie_breaker() {
         tie_breakers.sort();
         for (doc_offset, (doc_id, tie_breaker)) in tie_breakers.iter().enumerate() {
             assert_eq!(*doc_id as usize, doc_offset);
-            assert_eq!(*tie_breaker, tie_breakers[0].1 + doc_offset as u64);
+            assert_eq!(*tie_breaker, tie_breakers[0].1 + doc_offset as i64);
         }
     }
 
@@ -898,6 +898,86 @@ async fn test_sort_by_tie_breaker() {
         let partial_hit = hit.partial_hit.as_ref().unwrap();
         partial_hit.split_id == *split_id && partial_hit.doc_id == *doc_id
     }));
+
+    test_sandbox.assert_quit().await;
+}
+
+#[tokio::test]
+async fn test_search_after_with_tie_breaker() {
+    let index_id = "search_after_with_tie_breaker";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: timestamp
+                type: datetime
+                fast: true
+              - name: tie_breaker
+                type: tie_breaker
+            "#;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &[])
+        .await
+        .unwrap();
+    // All documents share the primary sort value. Each call creates a separate split.
+    for num_docs in [3, 2] {
+        test_sandbox
+            .add_documents(vec![json!({"timestamp": "2025-04-01T00:00:00Z"}); num_docs])
+            .await
+            .unwrap();
+    }
+
+    for order in [SortOrder::Asc, SortOrder::Desc] {
+        let mut request = SearchRequest {
+            index_id_patterns: vec![index_id.to_string()],
+            query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
+            max_hits: 10,
+            sort_fields: ["timestamp", "tie_breaker"]
+                .into_iter()
+                .map(|field_name| SortField {
+                    field_name: field_name.to_string(),
+                    sort_order: order as i32,
+                    sort_datetime_format: None,
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let response = single_node_search(
+            request.clone(),
+            test_sandbox.metastore(),
+            test_sandbox.storage_resolver(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.num_hits, 5);
+        assert_eq!(response.hits.len(), 5);
+
+        request.max_hits = 1;
+        for hit in response.hits {
+            let expected_hit = hit.partial_hit.unwrap();
+            assert!(matches!(
+                expected_hit.sort_value2,
+                Some(SortByValue {
+                    sort_value: Some(SortValue::I64(_)),
+                })
+            ));
+            let page = single_node_search(
+                request.clone(),
+                test_sandbox.metastore(),
+                test_sandbox.storage_resolver(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(page.hits.len(), 1);
+            assert_eq!(page.hits[0].partial_hit.as_ref(), Some(&expected_hit));
+            request.search_after = Some(expected_hit);
+        }
+        let page = single_node_search(
+            request,
+            test_sandbox.metastore(),
+            test_sandbox.storage_resolver(),
+        )
+        .await
+        .unwrap();
+        assert!(page.hits.is_empty());
+    }
 
     test_sandbox.assert_quit().await;
 }
