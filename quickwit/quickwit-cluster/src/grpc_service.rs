@@ -62,7 +62,7 @@ impl ClusterService for Cluster {
         &self,
         request: FetchClusterStateRequest,
     ) -> ClusterResult<FetchClusterStateResponse> {
-        if request.cluster_id != self.cluster_id() {
+        if self.rejects_cluster_id(&request.cluster_id) {
             return Err(ClusterError::Internal("wrong cluster".to_string()));
         }
         let chitchat = self.chitchat().await;
@@ -112,6 +112,8 @@ impl ClusterService for Cluster {
             };
             proto_node_states.push(proto_node_state);
         }
+        // Echo the accepted request ID so catch-up clients can validate responses even when
+        // the server announces a different ID during a rolling rename.
         let response = FetchClusterStateResponse {
             cluster_id: request.cluster_id,
             node_states: proto_node_states,
@@ -122,11 +124,13 @@ impl ClusterService for Cluster {
 
 #[cfg(test)]
 mod tests {
+    use quickwit_proto::types::NodeId;
+
     use super::*;
     use crate::member::{
         ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY, READINESS_KEY, STANDALONE_COMPACTORS_KEY,
     };
-    use crate::{ChitchatTransport, create_cluster_for_test};
+    use crate::{ChitchatTransport, TestClusterBuilder, create_cluster_for_test};
 
     #[tokio::test]
     async fn test_fetch_cluster_state() {
@@ -177,5 +181,33 @@ mod tests {
 
         assert_eq!(node_state.key_values[4].key, STANDALONE_COMPACTORS_KEY);
         assert_eq!(node_state.key_values[4].value, "false");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_cluster_state_accepts_extra_cluster_id() {
+        let transport = ChitchatTransport::default();
+        let cluster = TestClusterBuilder::new(NodeId::from_str("node-1"), 1, &transport)
+            .with_cluster_id("new-cluster")
+            .with_extra_cluster_ids(["old-cluster".to_string()])
+            .with_readiness(true)
+            .build()
+            .await
+            .unwrap();
+
+        let response = cluster
+            .fetch_cluster_state(FetchClusterStateRequest {
+                cluster_id: "old-cluster".to_string(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.cluster_id, "old-cluster");
+
+        let error = cluster
+            .fetch_cluster_state(FetchClusterStateRequest {
+                cluster_id: "unrelated-cluster".to_string(),
+            })
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("wrong cluster"));
     }
 }

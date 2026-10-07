@@ -126,7 +126,7 @@ fn compute_query_with_field(
             let term = Term::from_field_u64(field, val);
             Ok(make_term_query(term))
         }
-        FieldType::I64(_) => {
+        FieldType::I64(_) | FieldType::TieBreaker => {
             let val = parse_value_from_user_text::<i64>(value, field_entry.name())?;
             let term = Term::from_field_i64(field, val);
             Ok(make_term_query(term))

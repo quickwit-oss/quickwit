@@ -18,7 +18,7 @@ use anyhow::Context;
 pub use prefix::{AutomatonQuery, JsonPathPrefix};
 use serde::{Deserialize, Serialize};
 use tantivy::Term;
-use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
+use tantivy::schema::{Field, FieldType, JsonObjectOptions, Schema as TantivySchema};
 
 use super::{BuildTantivyAst, BuildTantivyAstContext, QueryAst};
 use crate::query_ast::TantivyQueryAst;
@@ -45,6 +45,22 @@ fn regex_has_case_insensitive_flag(regex: &str) -> bool {
         return false;
     };
     rest[..flags_end].contains('i')
+}
+
+/// Returns the bytes that start, in the term dictionary of the JSON field `field`, every string
+/// term indexed under `json_path`.
+pub(crate) fn json_str_term_prefix(
+    field: Field,
+    json_path: &str,
+    json_options: &JsonObjectOptions,
+) -> Vec<u8> {
+    let mut term_for_path =
+        Term::from_field_json_path(field, json_path, json_options.is_expand_dots_enabled());
+    term_for_path.append_type_and_str("");
+    let value = term_for_path.value();
+    // We skip the 1st byte which is a marker to tell this is json.
+    // This isn't present in the dictionary.
+    value.as_serialized()[1..].to_owned()
 }
 
 /// A Regex query
@@ -109,18 +125,7 @@ impl RegexQuery {
                         ))
                     })?;
                 let tokenizer_name = text_field_indexing.tokenizer().to_string();
-
-                let mut term_for_path = Term::from_field_json_path(
-                    field,
-                    json_path,
-                    json_options.is_expand_dots_enabled(),
-                );
-                term_for_path.append_type_and_str("");
-
-                let value = term_for_path.value();
-                // We skip the 1st byte which is a marker to tell this is json.
-                // This isn't present in the dictionary.
-                let byte_path_prefix = value.as_serialized()[1..].to_owned();
+                let byte_path_prefix = json_str_term_prefix(field, json_path, json_options);
                 (tokenizer_name, Some(byte_path_prefix))
             }
             _ => {

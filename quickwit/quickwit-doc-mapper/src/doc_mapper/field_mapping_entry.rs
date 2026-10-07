@@ -741,6 +741,15 @@ fn deserialize_mapping_type(
             }
             return Ok(FieldMappingType::Concatenate(concatenate_options));
         }
+        QuickwitFieldType::TieBreaker => {
+            if let JsonValue::Object(options) = &json
+                && !options.is_empty()
+            {
+                let option_names: Vec<&String> = options.keys().collect();
+                bail!("tie_breaker type does not accept any parameters, got {option_names:?}");
+            }
+            return Ok(FieldMappingType::TieBreaker);
+        }
     };
     match typ {
         Type::Str => {
@@ -838,6 +847,7 @@ fn typed_mapping_to_json_params(
         FieldMappingType::Concatenate(concatenate_options) => {
             serialize_to_map(&concatenate_options)
         }
+        FieldMappingType::TieBreaker => Some(serde_json::Map::new()),
     }
     .unwrap()
 }
@@ -1410,6 +1420,46 @@ mod tests {
             })
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_serialize_tie_breaker_mapping() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "tie_breaker",
+                "type": "tie_breaker"
+            }
+            "#,
+        )?;
+        assert!(matches!(entry.mapping_type, FieldMappingType::TieBreaker));
+        assert_eq!(
+            serde_json::to_value(&entry)?,
+            serde_json::json!({
+                "name": "tie_breaker",
+                "type": "tie_breaker"
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_deserialize_tie_breaker_mapping_with_options() {
+        let error = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "tie_breaker",
+                "type": "tie_breaker",
+                "fast": false
+            }
+            "#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("tie_breaker type does not accept any parameters"),
+            "{error}"
+        );
     }
 
     #[test]

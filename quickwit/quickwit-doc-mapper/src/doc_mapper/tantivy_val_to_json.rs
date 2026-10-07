@@ -243,6 +243,19 @@ pub fn formatted_tantivy_value_to_json(
         LeafType::IpAddr(_) => value_to_ip(value),
         LeafType::F64(numeric_options) => value_to_float(value, numeric_options),
         LeafType::U64(numeric_options) => value_to_u64(value, numeric_options),
+        LeafType::TieBreaker => {
+            // Only `output_format` is read by `value_to_i64`. The other options describe what a
+            // tie-breaker field is: a fast-only `i64` whose values are never parsed from documents.
+            let numeric_options = QuickwitNumericOptions {
+                description: None,
+                stored: false,
+                indexed: false,
+                fast: true,
+                coerce: false,
+                output_format: NumericOutputFormat::Number,
+            };
+            value_to_i64(value, &numeric_options)
+        }
         LeafType::I64(numeric_options) => value_to_i64(value, numeric_options),
         LeafType::Json(_) => {
             if let TantivyValue::Object(obj) = value {
@@ -396,6 +409,16 @@ mod tests {
             .unwrap(),
             serde_json::json!("-1")
         );
+    }
+
+    #[test]
+    fn test_tantivy_value_to_json_value_tie_breaker() {
+        for value in [i32::MIN as i64, -1, 0, i32::MAX as i64] {
+            assert_eq!(
+                formatted_tantivy_value_to_json(TantivyValue::I64(value), &LeafType::TieBreaker),
+                Some(serde_json::json!(value))
+            );
+        }
     }
 
     #[test]
