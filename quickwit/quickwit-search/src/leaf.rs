@@ -34,8 +34,9 @@ use quickwit_doc_mapper::{Automaton, DocMapper, FastFieldWarmupInfo, TermRange, 
 use quickwit_metrics::{GaugeGuard, HistogramTimer};
 use quickwit_proto::search::lambda_single_split_result::Outcome;
 use quickwit_proto::search::{
-    CountHits, LeafResourceStats, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest,
-    SortOrder, SortValue, SplitIdAndFooterOffsets, SplitResourceStats, SplitSearchError,
+    CountHits, FieldDownloadStats, LeafResourceStats, LeafSearchRequest, LeafSearchResponse,
+    PartialHit, SearchRequest, SortOrder, SortValue, SplitIdAndFooterOffsets, SplitResourceStats,
+    SplitSearchError,
 };
 use quickwit_proto::types::SplitId;
 use quickwit_query::query_ast::{
@@ -44,8 +45,9 @@ use quickwit_query::query_ast::{
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
-    BundleStorage, ByteRangeCache, CountingStorage, MemorySizedCache, OwnedBytes, SearchSplitCache,
-    Storage, StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
+    BundleStorage, ByteRangeCache, CountingStorage, DownloadCounters, FieldComponent,
+    MemorySizedCache, OwnedBytes, SearchSplitCache, Storage, StorageResolver,
+    TimeoutAndRetryStorage, count_reads_for_field, wrap_storage_with_cache,
 };
 use tantivy::aggregation::AggContextParams;
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
@@ -235,13 +237,17 @@ fn configure_storage_retries(
 /// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
 /// - An ephemeral unbounded cache directory (whose lifetime is tied to the returned `Index` if no
 ///   `ByteRangeCache` is provided).
+///
+/// Also returns the counters of the reads that missed the ephemeral cache. Its
+/// storage wrapper is the outermost one, so it resolves the field component of
+/// the reads (see [`count_reads_for_field`]).
 pub(crate) async fn open_index_with_caches(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     tokenizer_manager: Option<&TokenizerManager>,
     ephemeral_unbounded_cache: Option<ByteRangeCache>,
-) -> anyhow::Result<(Index, HotDirectory)> {
+) -> anyhow::Result<(Index, HotDirectory, Arc<DownloadCounters>)> {
     let index_storage_with_retry_on_timeout =
         configure_storage_retries(searcher_context, index_storage);
 
@@ -257,7 +263,9 @@ pub(crate) async fn open_index_with_caches(
         Arc::new(bundle_storage),
     );
 
-    let directory = StorageDirectory::new(bundle_storage_with_cache);
+    let (requested_storage, requested_counters) =
+        CountingStorage::instrument_storage(bundle_storage_with_cache);
+    let directory = StorageDirectory::new(requested_storage);
 
     let hot_directory = if let Some(cache) = ephemeral_unbounded_cache {
         let caching_directory = CachingDirectory::new(Arc::new(directory), cache);
@@ -276,7 +284,7 @@ pub(crate) async fn open_index_with_caches(
             .clone(),
     );
     set_expr_compilation_cache(&mut index);
-    Ok((index, hot_directory))
+    Ok((index, hot_directory, requested_counters))
 }
 
 /// Runs `fut`, racing it against `cancel`. If cancellation fires first, the
@@ -410,12 +418,14 @@ async fn warm_up_full_term_dictionaries(
 ) -> anyhow::Result<()> {
     let mut warm_up_futures = Vec::new();
     for field in term_dict_fields {
+        let field_name = searcher.schema().get_field_name(*field);
         for segment_reader in searcher.segment_readers() {
             let inverted_index = segment_reader.inverted_index(*field)?.clone();
-            warm_up_futures.push(async move {
+            let warm_up_fut = async move {
                 let dict = inverted_index.terms();
                 dict.warm_up_dictionary().await
-            });
+            };
+            warm_up_futures.push(count_reads_for_field(field_name.to_string(), warm_up_fut));
         }
     }
     try_join_all(warm_up_futures).await?;
@@ -426,9 +436,11 @@ async fn warm_up_full_term_dictionaries(
 async fn warm_up_all_postings(searcher: &Searcher, fields: &HashSet<Field>) -> anyhow::Result<()> {
     let mut warm_up_futures = Vec::new();
     for field in fields {
+        let field_name = searcher.schema().get_field_name(*field);
         for segment_reader in searcher.segment_readers() {
             let inverted_index = segment_reader.inverted_index(*field)?.clone();
-            warm_up_futures.push(async move { inverted_index.warm_postings_full(false).await });
+            let warm_up_fut = async move { inverted_index.warm_postings_full(false).await };
+            warm_up_futures.push(count_reads_for_field(field_name.to_string(), warm_up_fut));
         }
     }
     try_join_all(warm_up_futures).await?;
@@ -468,7 +480,10 @@ async fn warm_up_fastfields(
         let fast_field_reader = segment_reader.fast_fields();
         for fast_field in fast_fields {
             let warm_up_fut = warm_up_fastfield(fast_field_reader, fast_field);
-            warm_up_futures.push(Box::pin(warm_up_fut));
+            warm_up_futures.push(Box::pin(count_reads_for_field(
+                fast_field.name.clone(),
+                warm_up_fut,
+            )));
         }
     }
     futures::future::try_join_all(warm_up_futures).await?;
@@ -484,6 +499,7 @@ async fn warm_up_terms(
 ) -> anyhow::Result<()> {
     let mut warm_up_futures = Vec::new();
     for (field, terms) in terms_grouped_by_field {
+        let field_name = searcher.schema().get_field_name(*field);
         for segment_reader in searcher.segment_readers() {
             let inv_idx = segment_reader.inverted_index(*field)?;
             let segment_id = segment_reader.segment_id();
@@ -496,7 +512,7 @@ async fn warm_up_terms(
                     Some(abort_token) if required_terms.contains(term) => Some(abort_token),
                     _ => None,
                 };
-                warm_up_futures.push(async move {
+                let warm_up_fut = async move {
                     let found = inv_idx_clone.warm_postings(term, *position_needed).await?;
                     if !found && let Some(abort_token) = cancel_on_empty {
                         // Report the absence and fire the abort token. Both are synchronous, so
@@ -505,7 +521,8 @@ async fn warm_up_terms(
                         abort_token.cancel();
                     }
                     anyhow::Ok(())
-                });
+                };
+                warm_up_futures.push(count_reads_for_field(field_name.to_string(), warm_up_fut));
             }
         }
     }
@@ -524,16 +541,18 @@ async fn warm_up_term_ranges(
 ) -> anyhow::Result<()> {
     let mut warm_up_futures = Vec::new();
     for (field, terms) in terms_grouped_by_field {
+        let field_name = searcher.schema().get_field_name(*field);
         for segment_reader in searcher.segment_readers() {
             let inv_idx = segment_reader.inverted_index(*field)?;
             for (term_range, position_needed) in terms.iter() {
                 let inv_idx_clone = inv_idx.clone();
                 let range = (term_range.start.as_ref(), term_range.end.as_ref());
-                warm_up_futures.push(async move {
+                let warm_up_fut = async move {
                     inv_idx_clone
                         .warm_postings_range(range, term_range.limit, *position_needed)
                         .await
-                });
+                };
+                warm_up_futures.push(count_reads_for_field(field_name.to_string(), warm_up_fut));
             }
         }
     }
@@ -554,11 +573,12 @@ async fn warm_up_automatons(
             .map_err(|_| std::io::Error::other("task panicked"))?
     };
     for (field, automatons) in terms_grouped_by_field {
+        let field_name = searcher.schema().get_field_name(*field);
         for segment_reader in searcher.segment_readers() {
             let inv_idx = segment_reader.inverted_index(*field)?;
             for automaton in automatons {
                 let inv_idx_clone = inv_idx.clone();
-                warm_up_futures.push(async move {
+                let warm_up_fut = async move {
                     match automaton {
                         Automaton::Regex(path, regex_str) => {
                             let regex = get_or_compile_cached_fst_regex(regex_str)
@@ -575,7 +595,8 @@ async fn warm_up_automatons(
                                 .context("failed to load automaton")
                         }
                     }
-                });
+                };
+                warm_up_futures.push(count_reads_for_field(field_name.to_string(), warm_up_fut));
             }
         }
     }
@@ -588,17 +609,58 @@ async fn warm_up_fieldnorms(searcher: &Searcher, requires_scoring: bool) -> anyh
         return Ok(());
     }
     let mut warm_up_futures = Vec::new();
-    for field in searcher.schema().fields() {
+    for (field, field_entry) in searcher.schema().fields() {
         for segment_reader in searcher.segment_readers() {
             let fieldnorm_readers = segment_reader.fieldnorms_readers();
-            let file_handle_opt = fieldnorm_readers.get_inner_file().open_read(field.0);
+            let file_handle_opt = fieldnorm_readers.get_inner_file().open_read(field);
             if let Some(file_handle) = file_handle_opt {
-                warm_up_futures.push(async move { file_handle.read_bytes_async().await })
+                let warm_up_fut = async move { file_handle.read_bytes_async().await };
+                warm_up_futures.push(count_reads_for_field(
+                    field_entry.name().to_string(),
+                    warm_up_fut,
+                ));
             }
         }
     }
     try_join_all(warm_up_futures).await?;
     Ok(())
+}
+
+/// Returns the warmup reads per field component: `requested` counts the reads
+/// that missed the ephemeral cache, `downloaded` the reads that reached object
+/// storage.
+fn field_download_stats(
+    requested_counters: &DownloadCounters,
+    download_counters: &DownloadCounters,
+) -> Vec<FieldDownloadStats> {
+    fn stats_entry(
+        stats_per_field_component: &mut HashMap<FieldComponent, FieldDownloadStats>,
+        field_component: FieldComponent,
+    ) -> &mut FieldDownloadStats {
+        stats_per_field_component
+            .entry(field_component)
+            .or_insert_with_key(|field_component| FieldDownloadStats {
+                field_name: field_component.field_name.clone(),
+                component: field_component.component.clone(),
+                ..Default::default()
+            })
+    }
+    let mut stats_per_field_component: HashMap<FieldComponent, FieldDownloadStats> = HashMap::new();
+    for (field_component, (num_bytes, num_requests)) in
+        requested_counters.per_field_component_snapshot()
+    {
+        let stats = stats_entry(&mut stats_per_field_component, field_component);
+        stats.requested_num_bytes = num_bytes;
+        stats.requested_num_requests = num_requests;
+    }
+    for (field_component, (num_bytes, num_requests)) in
+        download_counters.per_field_component_snapshot()
+    {
+        let stats = stats_entry(&mut stats_per_field_component, field_component);
+        stats.download_num_bytes = num_bytes;
+        stats.download_num_requests = num_requests;
+    }
+    stats_per_field_component.into_values().collect()
 }
 
 fn get_leaf_resp_from_count(count: u64) -> LeafSearchResponse {
@@ -632,12 +694,12 @@ fn leaf_resource_stats_for_split(split_stats: SplitResourceStats) -> LeafResourc
         LeafResourceStats {
             localexec_num_splits: 1,
             localexec_num_docs: split_stats.split_num_docs,
-            split_resources_sum: Some(split_stats),
-            split_resources_worst: Some(split_stats),
             min_wait_for_search_permit_microsecs: Some(
                 split_stats.wait_for_search_permit_microsecs,
             ),
             min_wait_for_cpu_pool_microsecs: Some(split_stats.wait_for_cpu_pool_microsecs),
+            split_resources_worst: Some(split_stats.clone()),
+            split_resources_sum: Some(split_stats),
             ..Default::default()
         }
     }
@@ -721,7 +783,7 @@ async fn leaf_search_single_split(
     // ABOVE this wrapper, so reads served from cache do not contribute to the
     // counters — that is the desired "downloaded from object storage" semantics.
     let (storage, download_counters) = CountingStorage::instrument_storage(storage);
-    let (index, hot_directory) = open_index_with_caches(
+    let (index, hot_directory, requested_counters) = open_index_with_caches(
         &ctx.searcher_context,
         storage,
         &split,
@@ -859,6 +921,7 @@ async fn leaf_search_single_split(
         provably_empty
     };
     let warmup_end = Instant::now();
+    let field_download_stats = field_download_stats(&requested_counters, &download_counters);
     let warmup_duration: Duration = warmup_end.duration_since(warmup_start);
     let warmup_size = ByteSize(byte_range_cache.get_num_bytes());
     if warmup_size > search_permit.memory_allocation() {
@@ -902,6 +965,7 @@ async fn leaf_search_single_split(
             warmup_microsecs: warmup_duration.as_micros() as u64,
             wait_for_cpu_pool_microsecs: 0,
             cpu_search_microsecs: 0,
+            field_download_stats,
         };
         let mut leaf_search_response = get_leaf_resp_from_count(0);
         leaf_search_response.resource_stats = Some(leaf_resource_stats_for_split(split_stats));
@@ -981,6 +1045,7 @@ async fn leaf_search_single_split(
                     warmup_microsecs: warmup_duration.as_micros() as u64,
                     wait_for_cpu_pool_microsecs: cpu_thread_pool_wait_microsecs.as_micros() as u64,
                     cpu_search_microsecs: cpu_start.elapsed().as_micros() as u64,
+                    field_download_stats,
                 };
                 leaf_search_response.resource_stats =
                     Some(leaf_resource_stats_for_split(split_stats));

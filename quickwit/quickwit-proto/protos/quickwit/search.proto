@@ -389,6 +389,24 @@ message LeafSearchRequest {
   repeated string index_uris = 9;
 }
 
+// Warmup reads of one segment component of one field.
+message FieldDownloadStats {
+    // Field name, or JSON path for fast fields.
+    string field_name = 1;
+    // Tantivy segment component, as file extension: `term` (term dictionary),
+    // `idx` (postings), `pos` (positions), `fast` (fast fields), `fieldnorm`.
+    string component = 2;
+    // Bytes read that missed the warmup short-lived cache, served by the
+    // long-term caches or object storage.
+    uint64 requested_num_bytes = 3;
+    // Number of read requests counted in `requested_num_bytes`.
+    uint64 requested_num_requests = 4;
+    // Bytes downloaded from object storage. Part of `download_num_bytes`.
+    uint64 download_num_bytes = 5;
+    // Number of read requests counted in `download_num_bytes`.
+    uint64 download_num_requests = 6;
+}
+
 // Per-split resource statistics.
 //
 // All fields are extensive (sum across splits is meaningful) except where noted.
@@ -417,6 +435,12 @@ message SplitResourceStats {
     // Excludes any cross-split finalize work performed outside the single-split
     // search.
     uint64 cpu_search_microsecs = 9;
+
+    // Warmup reads per field and segment component, merged by
+    // `(field_name, component)` when summed. Reads of the split footer and
+    // hotcache are not attributed to a field: they are only part of
+    // `download_num_bytes`.
+    repeated FieldDownloadStats field_download_stats = 10;
 }
 
 // Resource statistics for a single leaf-search call (over one or more splits).
