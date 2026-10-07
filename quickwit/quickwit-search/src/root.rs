@@ -46,7 +46,7 @@ use tantivy::TantivyError;
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
-use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
+use tantivy::schema::{DateTimePrecision, Field, FieldEntry, FieldType, Schema};
 use tracing::{Span, debug, error, info, info_span, instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -248,6 +248,7 @@ fn validate_request_and_build_metadata(
         validate_sort_field_types(
             &schema,
             &search_request.sort_fields,
+            search_request.search_after.is_some(),
             &mut sort_fields_is_datetime,
         )?;
 
@@ -289,6 +290,7 @@ fn validate_request_and_build_metadata(
 fn validate_sort_field_types(
     schema: &Schema,
     sort_fields: &[SortField],
+    has_search_after: bool,
     sort_field_is_datetime: &mut HashMap<String, bool>,
 ) -> crate::Result<()> {
     for sort_field in sort_fields.iter() {
@@ -297,6 +299,9 @@ fn validate_sort_field_types(
                 sort_field_entry,
                 sort_field.sort_datetime_format.is_some(),
             )?;
+            if has_search_after {
+                validate_search_after_datetime_precision(sort_field, sort_field_entry)?;
+            }
             // If sort field type is a date, ensure it's true for all indexes.
             if let Some(is_datetime) = sort_field_is_datetime.get(&sort_field.field_name) {
                 if *is_datetime != sort_field_entry.field_type().is_date() {
@@ -316,6 +321,36 @@ fn validate_sort_field_types(
         }
     }
     Ok(())
+}
+
+/// Rejects `search_after` on a datetime sort field with a sub-millisecond precision, unless its
+/// sort values are in nanoseconds.
+///
+/// Datetime sort values are returned in milliseconds by default and converted back into
+/// nanoseconds when parsing `search_after`. For such fields, that round trip truncates the cursor
+/// and silently skips the documents falling within the same millisecond.
+fn validate_search_after_datetime_precision(
+    sort_field: &SortField,
+    sort_field_entry: &FieldEntry,
+) -> crate::Result<()> {
+    let FieldType::Date(date_options) = sort_field_entry.field_type() else {
+        return Ok(());
+    };
+    let is_millisecond_or_coarser = matches!(
+        date_options.get_precision(),
+        DateTimePrecision::Seconds | DateTimePrecision::Milliseconds
+    );
+    let has_nanosecond_sort_values =
+        sort_field.sort_datetime_format() == SortDatetimeFormat::UnixTimestampNanos;
+    if is_millisecond_or_coarser || has_nanosecond_sort_values {
+        return Ok(());
+    }
+    Err(SearchError::InvalidArgument(format!(
+        "search_after is not supported on the datetime sort field `{}` because its precision is \
+         finer than milliseconds, unless sort values are in nanoseconds (Elasticsearch API: \
+         `\"format\": \"epoch_nanos_int\"`)",
+        sort_field.field_name
+    )))
 }
 
 fn validate_requested_snippet_fields(
@@ -382,14 +417,13 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
 
 /// Validates sort fields and search after values.
 /// - validate sort fields length.
-/// - search after values must be set for all sort fields.
+/// - search after values are positional: the leaf search compares the n-th one with the n-th sort
+///   field. They must be set for all sort fields except `_doc`, which has no sort value, and only
+///   for them. Without sort fields, hits are sorted by `_doc`.
 fn validate_sort_by_fields_and_search_after(
     sort_fields: &[SortField],
     search_after: &Option<PartialHit>,
 ) -> crate::Result<()> {
-    if sort_fields.is_empty() {
-        return Ok(());
-    }
     if sort_fields.len() > 2 {
         return Err(SearchError::InvalidArgument(format!(
             "sort by field must be up to 2 fields, got {}",
@@ -400,11 +434,15 @@ fn validate_sort_by_fields_and_search_after(
         return Ok(());
     };
 
-    let sort_fields_without_doc_count = sort_fields
+    let sort_field_names: Vec<&str> = sort_fields
         .iter()
-        .filter(|sort_field| !SORT_DOC_FIELD_NAMES.contains(&sort_field.field_name.as_str()))
-        .count();
-    let has_doc_sort_field = sort_fields_without_doc_count != sort_fields.len();
+        .map(|sort_field| sort_field.field_name.as_str())
+        .collect();
+    let is_doc_field = |field_name: &str| SORT_DOC_FIELD_NAMES.contains(&field_name);
+    let has_doc_sort_field = sort_field_names.is_empty()
+        || sort_field_names
+            .iter()
+            .any(|field_name| is_doc_field(field_name));
     if has_doc_sort_field && search_after_partial_hit.split_id.is_empty() {
         return Err(SearchError::InvalidArgument(
             "search_after with a sort field `_doc` must define a split ID, segment ID and doc ID \
@@ -413,27 +451,42 @@ fn validate_sort_by_fields_and_search_after(
         ));
     }
 
-    let mut search_after_sort_value_count = 0;
-    // TODO: we could validate if the search after sort value types of consistent with the sort
-    // field types.
-    if let Some(sort_by_value) = search_after_partial_hit.sort_value.as_ref() {
-        sort_by_value.sort_value.context("sort value must be set")?;
-        search_after_sort_value_count += 1;
-    }
-    if let Some(sort_by_value_2) = search_after_partial_hit.sort_value2.as_ref() {
-        sort_by_value_2
-            .sort_value
-            .context("sort value must be set")?;
-        search_after_sort_value_count += 1;
-    }
-    if search_after_sort_value_count != sort_fields_without_doc_count {
-        return Err(SearchError::InvalidArgument(format!(
-            "`search_after` must have the same number of sort values as sort by fields {:?}",
-            sort_fields
-                .iter()
-                .map(|sort_field| &sort_field.field_name)
-                .collect_vec()
-        )));
+    let number_of_sort_values_error = || {
+        SearchError::InvalidArgument(format!(
+            "`search_after` must have the same number of sort values as sort by fields \
+             {sort_field_names:?}"
+        ))
+    };
+    // Like the leaf search, a `SortByValue` without a value counts as no sort value.
+    let search_after_sort_values = [
+        &search_after_partial_hit.sort_value,
+        &search_after_partial_hit.sort_value2,
+    ]
+    .map(|sort_by_value_opt| {
+        sort_by_value_opt
+            .as_ref()
+            .and_then(|sort_by_value| sort_by_value.sort_value.as_ref())
+    });
+    for (position, sort_value_opt) in search_after_sort_values.into_iter().enumerate() {
+        match (sort_field_names.get(position).copied(), sort_value_opt) {
+            (Some(field_name), Some(_)) if is_doc_field(field_name) => {
+                return Err(SearchError::InvalidArgument(format!(
+                    "`search_after` cannot have a sort value for the sort field `{field_name}`"
+                )));
+            }
+            // The leaf search panics on scores that are not floats, while it converts the other
+            // fast field values leniently.
+            (Some("_score"), Some(sort_value)) if !matches!(sort_value, SortValue::F64(_)) => {
+                return Err(SearchError::InvalidArgument(format!(
+                    "`search_after` sort value for `_score` must be a float, got `{sort_value:?}`"
+                )));
+            }
+            (Some(field_name), None) if !is_doc_field(field_name) => {
+                return Err(number_of_sort_values_error());
+            }
+            (None, Some(_)) => return Err(number_of_sort_values_error()),
+            _ => {}
+        }
     }
     Ok(())
 }
@@ -1538,8 +1591,9 @@ fn convert_search_after_datetime_values(
     Ok(())
 }
 
-/// Convert sort values from input datetime format into nanoseconds.
+/// Convert `search_after` sort values from input datetime format into nanoseconds.
 /// The conversion is done only for U64 and I64 sort values, an error is returned for other types.
+/// Errors are invalid arguments since the values come from the request.
 fn convert_sort_datetime_value_into_nanos(
     sort_value: &mut SortValue,
     input_format: SortDatetimeFormat,
@@ -1548,7 +1602,7 @@ fn convert_sort_datetime_value_into_nanos(
         SortValue::U64(value) => match input_format {
             SortDatetimeFormat::UnixTimestampMillis => {
                 *value = value.checked_mul(1_000_000).ok_or_else(|| {
-                    SearchError::Internal(format!(
+                    SearchError::InvalidArgument(format!(
                         "sort value defined in milliseconds is too large and cannot be converted \
                          into nanoseconds: {value}"
                     ))
@@ -1561,7 +1615,7 @@ fn convert_sort_datetime_value_into_nanos(
         SortValue::I64(value) => match input_format {
             SortDatetimeFormat::UnixTimestampMillis => {
                 *value = value.checked_mul(1_000_000).ok_or_else(|| {
-                    SearchError::Internal(format!(
+                    SearchError::InvalidArgument(format!(
                         "sort value defined in milliseconds is too large and cannot be converted \
                          into nanoseconds: {value}"
                     ))
@@ -1572,7 +1626,7 @@ fn convert_sort_datetime_value_into_nanos(
             }
         },
         _ => {
-            return Err(SearchError::Internal(format!(
+            return Err(SearchError::InvalidArgument(format!(
                 "datetime conversion are only support for u64 and i64 sort values, not \
                  `{sort_value:?}`"
             )));
@@ -1918,7 +1972,7 @@ mod tests {
         ScrollRequest, SortByValue, SortOrder, SortValue, SplitSearchError,
     };
     use quickwit_query::query_ast::{qast_helper, qast_json_helper, query_ast_from_user_text};
-    use tantivy::schema::{FAST, STORED, TEXT};
+    use tantivy::schema::{DateOptions, FAST, STORED, TEXT};
 
     use super::*;
     use crate::{MockSearchService, searcher_pool_for_test};
@@ -2271,8 +2325,8 @@ mod tests {
         .unwrap_err();
         assert_eq!(
             error.to_string(),
-            "internal error: `sort value defined in milliseconds is too large and cannot be \
-             converted into nanoseconds: 1617000000000000`"
+            "Invalid argument: sort value defined in milliseconds is too large and cannot be \
+             converted into nanoseconds: 1617000000000000"
         );
         // conversion with float values should fail.
         let mut sort_value = SortValue::F64(1617000000000000.0);
@@ -2283,8 +2337,8 @@ mod tests {
         .unwrap_err();
         assert_eq!(
             error.to_string(),
-            "internal error: `datetime conversion are only support for u64 and i64 sort values, \
-             not `F64(1617000000000000.0)``"
+            "Invalid argument: datetime conversion are only support for u64 and i64 sort values, \
+             not `F64(1617000000000000.0)`"
         );
     }
 
@@ -2307,7 +2361,8 @@ mod tests {
         schema_builder.add_u64_field("id", FAST);
         let schema = schema_builder.build();
         let mut sort_field_are_datetime = HashMap::new();
-        validate_sort_field_types(&schema, &sort_fields, &mut sort_field_are_datetime).unwrap();
+        validate_sort_field_types(&schema, &sort_fields, false, &mut sort_field_are_datetime)
+            .unwrap();
         assert_eq!(sort_field_are_datetime.get("_doc"), Some(&false));
         assert_eq!(sort_field_are_datetime.get("_shard_doc"), Some(&false));
     }
@@ -2331,9 +2386,71 @@ mod tests {
         schema_builder.add_u64_field("id", FAST);
         let schema = schema_builder.build();
         let mut sort_field_are_datetime = HashMap::new();
-        validate_sort_field_types(&schema, &sort_fields, &mut sort_field_are_datetime).unwrap();
+        validate_sort_field_types(&schema, &sort_fields, false, &mut sort_field_are_datetime)
+            .unwrap();
         assert_eq!(sort_field_are_datetime.get("timestamp"), Some(&true));
         assert_eq!(sort_field_are_datetime.get("id"), Some(&false));
+    }
+
+    fn sort_field(field_name: &str, sort_datetime_format: Option<SortDatetimeFormat>) -> SortField {
+        SortField {
+            field_name: field_name.to_string(),
+            sort_order: 0,
+            sort_datetime_format: sort_datetime_format.map(|format| format as i32),
+        }
+    }
+
+    #[test]
+    fn test_validate_sort_field_types_search_after_datetime_precision() {
+        let mut schema_builder = Schema::builder();
+        for (field_name, precision) in [
+            ("ts_seconds", DateTimePrecision::Seconds),
+            ("ts_millis", DateTimePrecision::Milliseconds),
+            ("ts_micros", DateTimePrecision::Microseconds),
+        ] {
+            schema_builder.add_date_field(
+                field_name,
+                DateOptions::default().set_fast().set_precision(precision),
+            );
+        }
+        schema_builder.add_u64_field("id", FAST);
+        let schema = schema_builder.build();
+
+        for (sort_field, has_search_after) in [
+            (sort_field("ts_seconds", None), true),
+            (sort_field("ts_millis", None), true),
+            (sort_field("id", None), true),
+            (sort_field("_shard_doc", None), true),
+            (sort_field("ts_micros", None), false),
+            (
+                sort_field("ts_micros", Some(SortDatetimeFormat::UnixTimestampNanos)),
+                true,
+            ),
+        ] {
+            validate_sort_field_types(
+                &schema,
+                std::slice::from_ref(&sort_field),
+                has_search_after,
+                &mut HashMap::new(),
+            )
+            .unwrap_or_else(|error| panic!("{sort_field:?}: {error}"));
+        }
+        for sort_field in [
+            sort_field("ts_micros", None),
+            sort_field("ts_micros", Some(SortDatetimeFormat::UnixTimestampMillis)),
+        ] {
+            let error = validate_sort_field_types(
+                &schema,
+                std::slice::from_ref(&sort_field),
+                true,
+                &mut HashMap::new(),
+            )
+            .unwrap_err();
+            assert!(
+                matches!(error, SearchError::InvalidArgument(_)),
+                "{sort_field:?}: {error:?}"
+            );
+        }
     }
 
     #[test]
@@ -2358,9 +2475,13 @@ mod tests {
             let mut sort_field_are_datetime = HashMap::new();
             sort_field_are_datetime.insert("timestamp".to_string(), false);
             sort_field_are_datetime.insert("id".to_string(), false);
-            let error =
-                validate_sort_field_types(&schema, &sort_fields, &mut sort_field_are_datetime)
-                    .unwrap_err();
+            let error = validate_sort_field_types(
+                &schema,
+                &sort_fields,
+                false,
+                &mut sort_field_are_datetime,
+            )
+            .unwrap_err();
             assert_eq!(
                 error.to_string(),
                 "sort datetime field `timestamp` must be of type datetime on all indexes"
@@ -2369,9 +2490,13 @@ mod tests {
         {
             let mut sort_field_are_datetime = HashMap::new();
             sort_field_are_datetime.insert("id".to_string(), true);
-            let error =
-                validate_sort_field_types(&schema, &sort_fields, &mut sort_field_are_datetime)
-                    .unwrap_err();
+            let error = validate_sort_field_types(
+                &schema,
+                &sort_fields,
+                false,
+                &mut sort_field_are_datetime,
+            )
+            .unwrap_err();
             assert_eq!(
                 error.to_string(),
                 "sort datetime field `id` must be of type datetime on all indexes"
@@ -2604,6 +2729,71 @@ mod tests {
             "Invalid argument: sort by field with a timestamp format must be a datetime field and \
              the field `timestamp` is not"
         );
+    }
+
+    #[test]
+    fn test_validate_sort_by_fields_and_search_after_checks_each_sort_value_position() {
+        let search_after = |sort_value: Option<SortValue>, sort_value2: Option<SortValue>| {
+            Some(PartialHit {
+                sort_value: sort_value.map(SortByValue::from),
+                sort_value2: sort_value2.map(SortByValue::from),
+                split_id: "split".to_string(),
+                segment_ord: 0,
+                doc_id: 0,
+            })
+        };
+        let valid_cases = [
+            (vec![], search_after(None, None)),
+            (
+                vec![sort_field("_score", None)],
+                search_after(Some(SortValue::F64(1.5)), None),
+            ),
+            // `_doc` has no sort value, so the value of `ts` is the second one.
+            (
+                vec![sort_field("_doc", None), sort_field("ts", None)],
+                search_after(None, Some(SortValue::I64(5))),
+            ),
+        ];
+        for (sort_fields, search_after) in valid_cases {
+            validate_sort_by_fields_and_search_after(&sort_fields, &search_after)
+                .unwrap_or_else(|error| panic!("{sort_fields:?}: {error}"));
+        }
+        let invalid_cases = [
+            // Without sort fields, hits are sorted by address, which a split ID is needed for.
+            (vec![], Some(PartialHit::default())),
+            // A cursor of `sort_by=ts` reused without `sort_by`.
+            (vec![], search_after(Some(SortValue::I64(5)), None)),
+            // A second sort value without a second sort field.
+            (
+                vec![sort_field("ts", None)],
+                search_after(None, Some(SortValue::I64(5))),
+            ),
+            (
+                vec![sort_field("_doc", None), sort_field("ts", None)],
+                search_after(Some(SortValue::U64(5)), None),
+            ),
+            // A cursor of `sort_by=ts` reused with `sort_by=_score`.
+            (
+                vec![sort_field("_score", None)],
+                search_after(Some(SortValue::I64(5)), None),
+            ),
+            (
+                vec![sort_field("ts", None)],
+                Some(PartialHit {
+                    sort_value: Some(SortByValue { sort_value: None }),
+                    split_id: "split".to_string(),
+                    ..Default::default()
+                }),
+            ),
+        ];
+        for (sort_fields, search_after) in invalid_cases {
+            let error =
+                validate_sort_by_fields_and_search_after(&sort_fields, &search_after).unwrap_err();
+            assert!(
+                matches!(error, SearchError::InvalidArgument(_)),
+                "{sort_fields:?}: {error:?}"
+            );
+        }
     }
 
     #[test]

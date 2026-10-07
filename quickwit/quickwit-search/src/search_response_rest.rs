@@ -13,9 +13,14 @@
 // limitations under the License.
 
 use std::convert::TryFrom;
+use std::fmt;
+use std::str::FromStr;
 
+use base64::Engine;
+use base64::prelude::BASE64_URL_SAFE_NO_PAD;
+use prost::Message;
 use quickwit_common::truncate_str;
-use quickwit_proto::search::SearchResponse;
+use quickwit_proto::search::{PartialHit, SearchResponse};
 use quickwit_query::aggregations::AggregationResults as AggregationResultsProxy;
 use quickwit_query::query_ast::QueryAst;
 use serde::{Deserialize, Serialize};
@@ -46,6 +51,8 @@ pub struct SearchResponseRest {
     #[schema(value_type = Vec<Object>)]
     /// List of hits returned.
     pub hits: Vec<JsonValue>,
+    /// [`SearchAfterCursor`] of each hit, in the same order as `hits`.
+    pub cursors: Vec<String>,
     /// List of snippets
     #[schema(value_type = Vec<Object>)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -65,8 +72,13 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
 
     fn try_from(search_response: SearchResponse) -> Result<Self, Self::Error> {
         let mut documents = Vec::with_capacity(search_response.hits.len());
+        let mut cursors = Vec::with_capacity(search_response.hits.len());
         let mut snippets = Vec::new();
         for hit in search_response.hits {
+            let partial_hit = hit.partial_hit.ok_or_else(|| {
+                SearchError::Internal("search response hit is missing its partial hit".to_string())
+            })?;
+            cursors.push(SearchAfterCursor(partial_hit).to_string());
             let document: JsonValue = serde_json::from_str(&hit.json).map_err(|err| {
                 SearchError::Internal(format!(
                     "failed to serialize document `{}` to JSON: `{}`",
@@ -105,11 +117,43 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
         Ok(SearchResponseRest {
             num_hits: search_response.num_hits,
             hits: documents,
+            cursors,
             snippets: snippet_opt,
             elapsed_time_micros: search_response.elapsed_time_micros,
             errors: search_response.errors,
             aggregations: aggregations_opt,
         })
+    }
+}
+
+/// Opaque cursor of a hit, i.e. its sort values and address, passed as `search_after` to get the
+/// hits sorted after it.
+///
+/// It is written as the URL-safe base64 of the `PartialHit` protobuf. Datetime sort values are
+/// kept as returned by the root search, i.e. in the sort datetime format of the request, which is
+/// also how the root parses `search_after`. A cursor is only meaningful for the indexes, query, and
+/// sort fields of the search that returned it: the root search rejects the sort values that cannot
+/// match the sort fields, but cannot tell whether the cursor comes from another sort.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SearchAfterCursor(pub PartialHit);
+
+impl fmt::Display for SearchAfterCursor {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        let b64_payload = BASE64_URL_SAFE_NO_PAD.encode(self.0.encode_to_vec());
+        write!(formatter, "{b64_payload}")
+    }
+}
+
+impl FromStr for SearchAfterCursor {
+    type Err = &'static str;
+
+    fn from_str(cursor_str: &str) -> Result<Self, Self::Err> {
+        let base64_decoded: Vec<u8> = BASE64_URL_SAFE_NO_PAD
+            .decode(cursor_str)
+            .map_err(|_| "search_after cursor is invalid base64")?;
+        let partial_hit = PartialHit::decode(base64_decoded.as_slice())
+            .map_err(|_| "search_after cursor is malformed")?;
+        Ok(SearchAfterCursor(partial_hit))
     }
 }
 
@@ -147,4 +191,124 @@ pub struct StorageRequestCount {
     pub posting: usize,
     /// Number of position list downloaded
     pub position: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use quickwit_proto::search::{Hit, SortByValue, SortValue};
+
+    use super::*;
+
+    fn partial_hit(sort_value: Option<SortValue>, sort_value2: Option<SortValue>) -> PartialHit {
+        PartialHit {
+            sort_value: sort_value.map(SortByValue::from),
+            sort_value2: sort_value2.map(SortByValue::from),
+            split_id: "01HZ7Q0K9Y5X2M3N4P5Q6R7S8T".to_string(),
+            segment_ord: 1,
+            doc_id: 42,
+        }
+    }
+
+    #[test]
+    fn test_search_after_cursor_round_trip() {
+        let partial_hits = [
+            partial_hit(None, None),
+            partial_hit(Some(SortValue::I64(1_695_890_000_123)), None),
+            partial_hit(Some(SortValue::I64(-5)), Some(SortValue::U64(u64::MAX))),
+            partial_hit(Some(SortValue::F64(0.1)), Some(SortValue::Boolean(true))),
+        ];
+        for partial_hit in partial_hits {
+            let cursor = SearchAfterCursor(partial_hit.clone()).to_string();
+            assert!(
+                cursor
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_'),
+                "cursor `{cursor}` is not URL-safe"
+            );
+            assert_eq!(
+                SearchAfterCursor::from_str(&cursor).unwrap(),
+                SearchAfterCursor(partial_hit)
+            );
+        }
+    }
+
+    #[test]
+    fn test_search_after_cursor_encoding_is_stable() {
+        // Cursors outlive the node that issued them (rolling upgrades, clients holding them), so
+        // the encoding is a compatibility contract.
+        let partial_hit = PartialHit {
+            sort_value: Some(SortValue::I64(5).into()),
+            sort_value2: None,
+            split_id: "a".to_string(),
+            segment_ord: 1,
+            doc_id: 2,
+        };
+        assert_eq!(
+            SearchAfterCursor(partial_hit).to_string(),
+            "EgFhGAEgAlICEAU"
+        );
+    }
+
+    #[test]
+    fn test_search_after_cursor_rejects_invalid_cursors() {
+        assert_eq!(
+            SearchAfterCursor::from_str("not a cursor!").unwrap_err(),
+            "search_after cursor is invalid base64"
+        );
+        // `_w` is valid base64 for the truncated varint `0xff`.
+        assert_eq!(
+            SearchAfterCursor::from_str("_w").unwrap_err(),
+            "search_after cursor is malformed"
+        );
+    }
+
+    #[test]
+    fn test_search_response_rest_has_one_cursor_per_hit() {
+        let first_partial_hit = partial_hit(Some(SortValue::I64(2)), None);
+        let second_partial_hit = PartialHit {
+            doc_id: 43,
+            ..partial_hit(Some(SortValue::I64(1)), None)
+        };
+        let search_response = SearchResponse {
+            num_hits: 2,
+            hits: vec![
+                Hit {
+                    json: r#"{"body": "first"}"#.to_string(),
+                    partial_hit: Some(first_partial_hit.clone()),
+                    ..Default::default()
+                },
+                Hit {
+                    json: r#"{"body": "second"}"#.to_string(),
+                    partial_hit: Some(second_partial_hit.clone()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let search_response_rest = SearchResponseRest::try_from(search_response).unwrap();
+        let decoded_partial_hits: Vec<PartialHit> = search_response_rest
+            .cursors
+            .iter()
+            .map(|cursor| SearchAfterCursor::from_str(cursor).unwrap().0)
+            .collect();
+        assert_eq!(
+            decoded_partial_hits,
+            vec![first_partial_hit, second_partial_hit]
+        );
+    }
+
+    #[test]
+    fn test_search_response_rest_rejects_hit_without_partial_hit() {
+        let search_response = SearchResponse {
+            num_hits: 1,
+            hits: vec![Hit {
+                json: "{}".to_string(),
+                partial_hit: None,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let error = SearchResponseRest::try_from(search_response).unwrap_err();
+        assert!(matches!(error, SearchError::Internal(_)), "{error:?}");
+    }
 }
