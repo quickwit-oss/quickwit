@@ -1475,7 +1475,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_exceeding_max_num_partitions() {
-        let universe = Universe::with_accelerated_time();
+        let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),

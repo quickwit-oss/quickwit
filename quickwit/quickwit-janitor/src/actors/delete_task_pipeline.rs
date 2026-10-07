@@ -282,10 +282,13 @@ impl Handler<Observe> for DeleteTaskPipeline {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use async_trait::async_trait;
     use quickwit_actors::{Handler, Universe};
     use quickwit_common::pubsub::EventBroker;
     use quickwit_common::temp_dir::TempDirectory;
+    use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_indexing::TestSandbox;
     use quickwit_indexing::actors::MergeSchedulerService;
     use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitState};
@@ -400,9 +403,35 @@ mod tests {
         let (pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
         // Ensure that the message sent by initialize method is processed.
         let _ = pipeline_handler.process_pending_and_observe().await.state;
-        // Pipeline will first fail and we need to wait a OBSERVE_PIPELINE_INTERVAL * some number
-        // for the pipeline state to be updated.
-        universe.sleep(OBSERVE_PIPELINE_INTERVAL * 5).await;
+        // Pipeline will first fail, then publish the split with the delete applied. We wait for
+        // that split, then a OBSERVE_PIPELINE_INTERVAL * some number for the pipeline state to be
+        // updated.
+        wait_until_predicate(
+            || {
+                let metastore = metastore.clone();
+                let index_uid = index_uid.clone();
+                async move {
+                    let Ok(splits) = metastore
+                        .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
+                        .await
+                        .unwrap()
+                        .collect_splits()
+                        .await
+                    else {
+                        return false;
+                    };
+                    splits.iter().any(|split| {
+                        split.split_state == SplitState::Published
+                            && split.split_metadata.delete_opstamp == 1
+                    })
+                }
+            },
+            Duration::from_secs(30),
+            Duration::from_millis(50),
+        )
+        .await
+        .expect("the split with the delete applied should be published");
+        universe.sleep(OBSERVE_PIPELINE_INTERVAL * 2).await;
         let pipeline_state = pipeline_handler.process_pending_and_observe().await.state;
         assert_eq!(pipeline_state.delete_task_planner.metrics.num_errors, 1);
         assert_eq!(pipeline_state.downloader.metrics.num_errors, 0);

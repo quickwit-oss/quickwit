@@ -12,10 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Duration;
+
+use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_config::ConfigFormat;
 use quickwit_config::service::QuickwitService;
 use quickwit_metastore::SplitState;
+use quickwit_rest_client::error::Error as RestClientError;
 use quickwit_rest_client::rest_client::CommitType;
+use reqwest::StatusCode;
 use serde_json::json;
 
 use crate::ingest_json;
@@ -58,14 +63,34 @@ async fn test_ingest_v1_happy_path() {
         .await
         .unwrap();
 
-    ingest(
-        &indexer_client,
-        index_id,
-        ingest_json!({"body": "my-doc"}),
-        CommitType::Auto,
+    let indexer_client_ref = &indexer_client;
+    wait_until_predicate(
+        || async move {
+            let ingest_result = ingest(
+                indexer_client_ref,
+                index_id,
+                ingest_json!({"body": "my-doc"}),
+                CommitType::Auto,
+            )
+            .await;
+            let Err(error) = ingest_result else {
+                return true;
+            };
+            let status_code_opt = error
+                .downcast_ref::<RestClientError>()
+                .and_then(RestClientError::status_code);
+            assert_eq!(
+                status_code_opt,
+                Some(StatusCode::NOT_FOUND),
+                "unexpected ingest error: {error:?}"
+            );
+            false
+        },
+        Duration::from_secs(10),
+        Duration::from_millis(100),
     )
     .await
-    .unwrap();
+    .expect("the indexer should create the ingest v1 queue of the index");
 
     sandbox
         .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)

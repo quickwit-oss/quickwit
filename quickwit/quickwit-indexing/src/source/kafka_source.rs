@@ -759,9 +759,11 @@ fn message_payload_to_doc(message: &BorrowedMessage) -> Option<Bytes> {
 #[cfg(all(test, feature = "kafka-broker-tests"))]
 mod kafka_broker_tests {
     use std::num::NonZeroUsize;
+    use std::sync::Arc;
 
     use quickwit_actors::{ActorContext, Universe};
     use quickwit_common::rand::append_random_suffix;
+    use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_metastore::metastore_for_test;
@@ -817,7 +819,45 @@ mod kafka_broker_tests {
                     err_code
                 )
             })?;
-        Ok(())
+        wait_for_topic_ready(topic, num_partitions).await
+    }
+
+    async fn wait_for_topic_ready(topic: &str, num_partitions: i32) -> anyhow::Result<()> {
+        let consumer = Arc::new(create_base_consumer("quickwit-test-wait-for-topic-ready"));
+        let is_topic_ready = || {
+            let consumer = consumer.clone();
+            let topic = topic.to_string();
+            async move {
+                spawn_blocking(move || {
+                    let Ok(cluster_metadata) =
+                        consumer.fetch_metadata(Some(&topic), Duration::from_secs(1))
+                    else {
+                        return false;
+                    };
+                    cluster_metadata.topics().iter().any(|topic_metadata| {
+                        topic_metadata.name() == topic
+                            && topic_metadata.error().is_none()
+                            && topic_metadata.partitions().len() == num_partitions as usize
+                            && topic_metadata
+                                .partitions()
+                                .iter()
+                                .all(|partition_metadata| {
+                                    partition_metadata.error().is_none()
+                                        && partition_metadata.leader() >= 0
+                                })
+                    })
+                })
+                .await
+                .unwrap_or(false)
+            }
+        };
+        wait_until_predicate(
+            is_topic_ready,
+            Duration::from_secs(30),
+            Duration::from_millis(100),
+        )
+        .await
+        .with_context(|| format!("topic `{topic}` is not ready after 30 seconds"))
     }
 
     async fn populate_topic<K, M, J, Q>(
@@ -1280,7 +1320,10 @@ mod kafka_broker_tests {
             let source_actor = SourceActor::new(source, doc_processor_mailbox);
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
-            assert!(exit_status.is_success());
+            assert!(
+                exit_status.is_success(),
+                "unexpected exit status: {exit_status:?}"
+            );
 
             let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
             assert!(messages.is_empty());
@@ -1330,7 +1373,10 @@ mod kafka_broker_tests {
             let source_actor = SourceActor::new(source, doc_processor_mailbox);
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
-            assert!(exit_status.is_success());
+            assert!(
+                exit_status.is_success(),
+                "unexpected exit status: {exit_status:?}"
+            );
 
             let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
             assert!(!messages.is_empty());
@@ -1402,7 +1448,10 @@ mod kafka_broker_tests {
             let source_actor = SourceActor::new(source, doc_processor_mailbox);
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
-            assert!(exit_status.is_success());
+            assert!(
+                exit_status.is_success(),
+                "unexpected exit status: {exit_status:?}"
+            );
 
             let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
             assert!(!messages.is_empty());
@@ -1453,7 +1502,10 @@ mod kafka_broker_tests {
             let source_actor = SourceActor::new(source, doc_processor_mailbox);
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
-            assert!(exit_status.is_success());
+            assert!(
+                exit_status.is_success(),
+                "unexpected exit status: {exit_status:?}"
+            );
 
             let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
             assert!(messages.is_empty());
