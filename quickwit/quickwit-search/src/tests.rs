@@ -808,7 +808,7 @@ async fn test_sort_by_tie_breaker() {
     // Each call creates a separate split. The value supplied for `tie_breaker` is ignored.
     test_sandbox
         .add_documents(vec![
-            json!({"body": "a", "tie_breaker": 0u64}),
+            json!({"body": "a", "tie_breaker": 0i64}),
             json!({"body": "b"}),
             json!({"body": "c"}),
         ])
@@ -844,20 +844,20 @@ async fn test_sort_by_tie_breaker() {
                 .map(|hit| {
                     let partial_hit = hit.partial_hit.unwrap();
                     let Some(SortByValue {
-                        sort_value: Some(SortValue::U64(tie_breaker)),
+                        sort_value: Some(SortValue::I64(tie_breaker)),
                     }) = partial_hit.sort_value
                     else {
-                        panic!("expected a u64 tie_breaker sort value");
+                        panic!("expected an i64 tie_breaker sort value");
                     };
                     (partial_hit.split_id, partial_hit.doc_id, tie_breaker)
                 })
-                .collect::<Vec<(String, u32, u64)>>()
+                .collect::<Vec<(String, u32, i64)>>()
         }
     };
 
     let ascending_hits = search_hits(SortOrder::Asc).await;
     assert!(ascending_hits.is_sorted_by_key(|(_, _, tie_breaker)| *tie_breaker));
-    let mut tie_breakers_per_split: BTreeMap<String, Vec<(u32, u64)>> = BTreeMap::new();
+    let mut tie_breakers_per_split: BTreeMap<String, Vec<(u32, i64)>> = BTreeMap::new();
     for (split_id, doc_id, tie_breaker) in &ascending_hits {
         tie_breakers_per_split
             .entry(split_id.clone())
@@ -870,7 +870,8 @@ async fn test_sort_by_tie_breaker() {
         tie_breakers.sort();
         for (doc_offset, (doc_id, tie_breaker)) in tie_breakers.iter().enumerate() {
             assert_eq!(*doc_id as usize, doc_offset);
-            assert_eq!(*tie_breaker, tie_breakers[0].1 + doc_offset as u64);
+            assert!(i32::try_from(*tie_breaker).is_ok());
+            assert_eq!(*tie_breaker, tie_breakers[0].1 + doc_offset as i64);
         }
     }
 
@@ -879,25 +880,76 @@ async fn test_sort_by_tie_breaker() {
     expected_descending_hits.reverse();
     assert_eq!(descending_hits, expected_descending_hits);
 
-    // Term queries on the fast-only tie-breaker field run as exact range queries.
+    // Signed sort values must survive search_after round-trips in both directions.
+    for (order, expected_hits) in [
+        (SortOrder::Asc, &ascending_hits),
+        (SortOrder::Desc, &descending_hits),
+    ] {
+        let mut request = SearchRequest {
+            index_id_patterns: vec![index_id.to_string()],
+            query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
+            max_hits: 1,
+            sort_fields: vec![SortField {
+                field_name: "tie_breaker".to_string(),
+                sort_order: order as i32,
+                sort_datetime_format: None,
+            }],
+            ..Default::default()
+        };
+        for (split_id, doc_id, tie_breaker) in expected_hits {
+            let response = single_node_search(
+                request.clone(),
+                test_sandbox.metastore(),
+                test_sandbox.storage_resolver(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(response.hits.len(), 1);
+            let partial_hit = response.hits[0].partial_hit.as_ref().unwrap();
+            assert_eq!(&partial_hit.split_id, split_id);
+            assert_eq!(partial_hit.doc_id, *doc_id);
+            assert_eq!(
+                partial_hit.sort_value,
+                Some(SortByValue {
+                    sort_value: Some(SortValue::I64(*tie_breaker)),
+                })
+            );
+            request.search_after = Some(partial_hit.clone());
+        }
+        let response = single_node_search(
+            request,
+            test_sandbox.metastore(),
+            test_sandbox.storage_resolver(),
+        )
+        .await
+        .unwrap();
+        assert!(response.hits.is_empty());
+    }
+
+    // Term and range queries use signed bounds on the fast-only tie-breaker field.
     let (split_id, doc_id, tie_breaker) = &ascending_hits[0];
-    let search_request = SearchRequest {
-        index_id_patterns: vec![index_id.to_string()],
-        query_ast: qast_json_helper(&format!("tie_breaker:{tie_breaker}"), &[]),
-        max_hits: 10,
-        ..Default::default()
-    };
-    let search_resp = single_node_search(
-        search_request,
-        test_sandbox.metastore(),
-        test_sandbox.storage_resolver(),
-    )
-    .await
-    .unwrap();
-    assert!(search_resp.hits.iter().any(|hit| {
-        let partial_hit = hit.partial_hit.as_ref().unwrap();
-        partial_hit.split_id == *split_id && partial_hit.doc_id == *doc_id
-    }));
+    for query in [
+        format!("tie_breaker:{tie_breaker}"),
+        format!("tie_breaker:[{tie_breaker} TO {tie_breaker}]"),
+    ] {
+        let search_request = SearchRequest {
+            index_id_patterns: vec![index_id.to_string()],
+            query_ast: qast_json_helper(&query, &[]),
+            max_hits: 10,
+            ..Default::default()
+        };
+        let search_resp = single_node_search(
+            search_request,
+            test_sandbox.metastore(),
+            test_sandbox.storage_resolver(),
+        )
+        .await
+        .unwrap();
+        assert!(search_resp.hits.iter().any(|hit| {
+            let partial_hit = hit.partial_hit.as_ref().unwrap();
+            partial_hit.split_id == *split_id && partial_hit.doc_id == *doc_id
+        }));
+    }
 
     test_sandbox.assert_quit().await;
 }
