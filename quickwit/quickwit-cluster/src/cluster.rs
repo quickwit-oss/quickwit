@@ -288,11 +288,10 @@ impl Cluster {
 
     pub async fn all_indexers_migrated(&self) -> bool {
         let inner = self.inner.read().await;
-        if !inner
-            .live_nodes
-            .get(&self.self_node_id())
-            .is_some_and(|node| node.is_ready)
-        {
+        let Some(self_node) = inner.live_nodes.get(&self.self_node_id()) else {
+            return false;
+        };
+        if !self_node.is_ready {
             return false;
         }
         inner
@@ -1084,6 +1083,86 @@ mod tests {
         assert!(matches!(&cluster_changes[4], ClusterChange::Remove(_)));
         assert!(matches!(&cluster_changes[5], ClusterChange::Remove(_)));
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_migration_requires_ready_self_membership() {
+        let cluster = create_cluster_for_test(
+            Vec::new(),
+            &["indexer"],
+            &ChitchatTransport::default(),
+            false,
+        )
+        .await
+        .unwrap();
+        cluster.set_self_key_value("shard_scaling_v2", "true").await;
+        assert!(!cluster.all_indexers_migrated().await);
+        cluster.set_self_node_readiness(true).await;
+        cluster
+            .wait_for_ready_members(
+                |members| members.len() == 1 && members[0].enable_shard_scaling_v2,
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap();
+        assert!(cluster.all_indexers_migrated().await);
+        cluster
+            .inner
+            .write()
+            .await
+            .live_nodes
+            .remove(&cluster.self_node_id());
+        assert!(!cluster.all_indexers_migrated().await);
+        cluster.leave().await;
+    }
+
+    #[tokio::test]
+    async fn test_migration_uses_ready_indexers_only() {
+        let transport = ChitchatTransport::default();
+        let first = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        let seeds = vec![first.gossip_listen_addr.to_string()];
+        let second = create_cluster_for_test(seeds.clone(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        let searcher = create_cluster_for_test(seeds.clone(), &["searcher"], &transport, true)
+            .await
+            .unwrap();
+        let unready = create_cluster_for_test(seeds, &["indexer"], &transport, false)
+            .await
+            .unwrap();
+        first.set_self_key_value("shard_scaling_v2", "true").await;
+        first
+            .wait_for_ready_members(
+                |members| {
+                    members.len() == 3
+                        && members.iter().any(|member| member.enable_shard_scaling_v2)
+                },
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap();
+        assert!(!first.all_indexers_migrated().await);
+        second.set_self_key_value("shard_scaling_v2", "true").await;
+        first
+            .wait_for_ready_members(
+                |members| {
+                    members.len() == 3
+                        && members
+                            .iter()
+                            .filter(|member| member.is_indexer())
+                            .all(|member| member.enable_shard_scaling_v2)
+                },
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap();
+        assert!(first.all_indexers_migrated().await);
+        unready.leave().await;
+        searcher.leave().await;
+        second.leave().await;
+        first.leave().await;
     }
 
     #[tokio::test]

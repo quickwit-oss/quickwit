@@ -1096,6 +1096,28 @@ mod tests {
     }
 
     #[test]
+    fn test_deprecated_shard_burst_limit_is_ignored() {
+        for value in ["0", "1B", "100GiB", "invalid", "null"] {
+            let config: IngestApiConfig =
+                serde_yaml::from_str(&format!("shard_burst_limit: {value}")).unwrap();
+            config.validate().unwrap();
+            let serialized = serde_json::to_value(&config).unwrap();
+            assert!(serialized.get("shard_burst_limit").is_none());
+            let invalid: IngestApiConfig = serde_yaml::from_str(&format!(
+                "shard_burst_limit: {value}\nmax_queue_disk_usage: 1B"
+            ))
+            .unwrap();
+            assert!(
+                invalid
+                    .validate()
+                    .unwrap_err()
+                    .to_string()
+                    .contains("max_queue_disk_usage")
+            );
+        }
+    }
+
+    #[test]
     fn test_validate_ingest_api_config() {
         {
             let ingest_api_config: IngestApiConfig = serde_yaml::from_str(

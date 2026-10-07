@@ -322,6 +322,36 @@ impl From<PersistFailureReason> for IngestFailureReason {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_persist_failure_wire_compatibility() {
+        use super::{IngestFailureReason, PersistFailureReason};
+        assert_eq!(
+            PersistFailureReason::try_from(6).unwrap(),
+            PersistFailureReason::NoShardsForSource
+        );
+        for (persist, ingest) in [
+            (
+                PersistFailureReason::Unspecified,
+                IngestFailureReason::Unspecified,
+            ),
+            (
+                PersistFailureReason::NoShardsForSource,
+                IngestFailureReason::NoShardsAvailable,
+            ),
+            (
+                PersistFailureReason::NodeUnavailable,
+                IngestFailureReason::NoShardsAvailable,
+            ),
+            (PersistFailureReason::WalFull, IngestFailureReason::WalFull),
+            (PersistFailureReason::Timeout, IngestFailureReason::Timeout),
+            (
+                PersistFailureReason::Internal,
+                IngestFailureReason::Internal,
+            ),
+        ] {
+            assert_eq!(IngestFailureReason::from(persist), ingest);
+        }
+    }
     use super::*;
 
     #[test]

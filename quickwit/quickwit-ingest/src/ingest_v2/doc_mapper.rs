@@ -208,6 +208,92 @@ mod tests {
 
     use super::*;
 
+    #[tokio::test]
+    async fn test_validation_preserves_order_and_records_metrics_once() {
+        let mapper = try_build_doc_mapper(
+            r#"{"mode":"strict","field_mappings":[{"name":"doc","type":"text"}]}"#,
+        )
+        .unwrap();
+        let valid_docs = counter!(parent: DOCS_TOTAL, labels: [label_values!(VALIDITY => "valid")]);
+        let invalid_docs =
+            counter!(parent: DOCS_TOTAL, labels: [label_values!(VALIDITY => "invalid")]);
+        let valid_bytes =
+            counter!(parent: DOCS_BYTES_TOTAL, labels: [label_values!(VALIDITY => "valid")]);
+        let invalid_bytes =
+            counter!(parent: DOCS_BYTES_TOTAL, labels: [label_values!(VALIDITY => "invalid")]);
+        for (docs, validate, valid_indices) in [
+            (vec![], true, vec![]),
+            (
+                vec![r#"{"doc":"one"}"#, r#"{"doc":"two"}"#],
+                true,
+                vec![0, 1],
+            ),
+            (
+                vec!["[]", r#"{"doc":"one"}"#, "bad", r#"{"doc":"two"}"#],
+                true,
+                vec![1, 3],
+            ),
+            (vec!["[]", "bad"], true, vec![]),
+            (vec!["[]", r#"{"doc":"one"}"#], false, vec![0, 1]),
+        ] {
+            let batch = DocBatchV2::for_test(docs.iter().copied());
+            let before = (
+                valid_docs.get(),
+                invalid_docs.get(),
+                valid_bytes.get(),
+                invalid_bytes.get(),
+            );
+            let expected_indices = if is_document_validation_enabled() {
+                valid_indices
+            } else {
+                (0..docs.len()).collect()
+            };
+            let expected_bytes: u64 = expected_indices
+                .iter()
+                .map(|&index| (docs[index].len() + 4) as u64)
+                .sum();
+            let original_bytes = batch.num_bytes() as u64;
+            let (result, failures) = validate_doc_batch(batch, mapper.clone(), validate)
+                .await
+                .unwrap();
+            assert_eq!(
+                result.doc_uids,
+                expected_indices
+                    .iter()
+                    .map(|&index| DocUid::for_test(index as u128))
+                    .collect::<Vec<_>>()
+            );
+            let actual: Vec<_> = result.docs().map(|(_, bytes)| bytes.to_vec()).collect();
+            assert_eq!(
+                actual,
+                expected_indices
+                    .iter()
+                    .map(|&index| docs[index].as_bytes().to_vec())
+                    .collect::<Vec<_>>()
+            );
+            let invalid_indices: Vec<_> = (0..docs.len())
+                .filter(|index| !expected_indices.contains(index))
+                .collect();
+            assert_eq!(
+                failures
+                    .iter()
+                    .map(|failure| failure.doc_uid())
+                    .collect::<Vec<_>>(),
+                invalid_indices
+                    .iter()
+                    .map(|&index| DocUid::for_test(index as u128))
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(valid_docs.get() - before.0, expected_indices.len() as u64);
+            assert_eq!(invalid_docs.get() - before.1, invalid_indices.len() as u64);
+            assert_eq!(valid_bytes.get() - before.2, expected_bytes);
+            assert_eq!(
+                invalid_bytes.get() - before.3,
+                original_bytes - expected_bytes
+            );
+        }
+    }
+
     #[test]
     fn test_get_or_try_build_doc_mapper() {
         let mut doc_mappers: HashMap<DocMappingUid, Weak<DocMapper>> = HashMap::new();

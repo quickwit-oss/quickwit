@@ -945,6 +945,41 @@ mod tests {
             shard_throughput_stats.total_long_term_ingestion_rate,
             ByteSize::mib(4)
         );
+        let legacy = shard_table.legacy_shard_stats(&source_uid).unwrap();
+        assert_eq!(legacy.num_open_shards, 2);
+        assert_eq!(legacy.total_short_term_ingestion_rate, ByteSize::mib(6));
+        assert_eq!(legacy.total_long_term_ingestion_rate, ByteSize::mib(5));
+        shard_table.insert_shards(
+            &index_uid,
+            &source_id,
+            vec![Shard {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(4)),
+                ingester_id: "test-ingester-0".to_string(),
+                shard_state: ShardState::Unavailable as i32,
+                ..Default::default()
+            }],
+        );
+        shard_table.update_shards(
+            &source_uid,
+            &BTreeSet::from([ShardInfo {
+                shard_id: ShardId::from(4),
+                shard_state: ShardState::Unavailable,
+                short_term_ingestion_rate: ByteSize::mib(5),
+                long_term_ingestion_rate: ByteSize::mib(6),
+            }]),
+        );
+        let stats = shard_table
+            .shard_throughput_stats(&source_uid, &live_ingesters)
+            .unwrap();
+        assert_eq!(stats.num_open_shards, 1);
+        assert_eq!(stats.num_closed_shards, 1);
+        assert_eq!(stats.total_short_term_ingestion_rate, ByteSize::mib(7));
+        assert_eq!(stats.total_long_term_ingestion_rate, ByteSize::mib(10));
+        let legacy = shard_table.legacy_shard_stats(&source_uid).unwrap();
+        assert_eq!(legacy.total_short_term_ingestion_rate, ByteSize::mib(6));
+        assert_eq!(legacy.total_long_term_ingestion_rate, ByteSize::mib(5));
     }
 
     #[test]
@@ -1027,14 +1062,11 @@ mod tests {
         let shard_stats = shard_table.legacy_shard_stats(&source_uid).unwrap();
         assert_eq!(shard_stats.num_open_shards, 2);
         assert_eq!(
-            shard_stats.avg_short_term_ingestion_rate,
-            ByteSize::b(3 * bytesize::MIB / 2)
+            shard_stats.total_short_term_ingestion_rate,
+            ByteSize::mib(3)
         );
 
-        assert_eq!(
-            shard_stats.avg_long_term_ingestion_rate,
-            ByteSize::b(3 * bytesize::MIB / 2)
-        );
+        assert_eq!(shard_stats.total_long_term_ingestion_rate, ByteSize::mib(3));
 
         let shard_entries: Vec<ShardEntry> = shard_table
             .get_shards(&source_uid)

@@ -25,7 +25,7 @@ use mrecordlog::ResourceUsage;
 use mrecordlog::error::{DeleteQueueError, TruncateError};
 use quickwit_cluster::Cluster;
 use quickwit_common::pretty::PrettyDisplay;
-use quickwit_common::{rate_limited_error, rate_limited_warn};
+use quickwit_common::rate_limited_warn;
 use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metrics::{gauge, histogram, labels};
@@ -250,7 +250,6 @@ impl IngesterState {
             temp_dir.path(),
             disk_capacity,
             ByteSize::mb(256),
-            watch::Sender::new(None),
         )
         .await;
 
@@ -939,137 +938,138 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_publish_local_shards_cadence_and_snapshot() {
-        let (sender, mut receiver) = watch::channel(None);
-        let state = IngesterState::create(
-            test_cluster().await,
-            ByteSize::mb(256),
-            ByteSize::mb(256),
-            sender,
-        )
-        .await;
-        tokio::time::pause();
-        let mut inner = state.inner.lock().await;
-        let index_uid = IndexUid::for_test("index", 0);
-        for (source_id, shard_id, advertisable) in [
-            ("source-a", 1, true),
-            ("source-a", 2, false),
-            ("source-b", 3, true),
-        ] {
-            let mut shard = IngesterShard::builder(
-                index_uid.clone(),
-                source_id.to_string(),
-                ShardId::from(shard_id),
-            )
-            .build();
-            shard.is_advertisable = advertisable;
-            shard.rate_meter.update(100);
-            inner.shards.insert(shard.queue_id(), shard);
-        }
-        assert!(inner.harvest_shard_throughput_readings().is_none());
-        assert!(receiver.borrow().is_none());
-        tokio::time::advance(LOCAL_SHARDS_SAMPLE_INTERVAL).await;
-        let snapshot = inner.harvest_shard_throughput_readings().unwrap();
-        assert_eq!(snapshot.per_source_shard_infos.len(), 2);
-        for shards in snapshot.per_source_shard_infos.values() {
-            assert_eq!(shards.len(), 1);
-            let shard = shards.first().unwrap();
-            assert_ne!(shard.shard_id, ShardId::from(2));
-            assert_eq!(shard.short_term_ingestion_rate, ByteSize::b(2_000));
-            assert_eq!(shard.long_term_ingestion_rate, ByteSize::b(2_000));
-        }
-        assert!(Arc::ptr_eq(
-            receiver.borrow_and_update().as_ref().unwrap(),
-            &snapshot
-        ));
-        assert!(inner.harvest_shard_throughput_readings().is_none());
-        assert!(!receiver.has_changed().unwrap());
-
-        inner.shards.clear();
-        tokio::time::advance(LOCAL_SHARDS_SAMPLE_INTERVAL).await;
-        assert!(
-            inner
-                .harvest_shard_throughput_readings()
-                .unwrap()
-                .per_source_shard_infos
-                .is_empty()
-        );
-        assert!(
-            receiver
-                .borrow()
-                .as_ref()
-                .unwrap()
-                .per_source_shard_infos
-                .is_empty()
-        );
-        assert_eq!(snapshot.per_source_shard_infos.len(), 2);
+    async fn test_failed_wal_open_does_not_publish_meter() {
+        let state =
+            IngesterState::create(test_cluster().await, ByteSize::mb(256), ByteSize::mb(256)).await;
+        let file = tempfile::NamedTempFile::new().unwrap();
+        state
+            .init(file.path(), ByteSize::mb(256), ByteSize::mb(256))
+            .await;
+        assert_eq!(*state.status_rx.borrow(), IngesterStatus::Failed);
+        assert!(state.shared_rate_meter_rx.borrow().is_none());
+        assert!(state.lock_fully("test").await.is_err());
     }
 
     #[tokio::test]
-    async fn test_local_shards_publisher_skips_busy_state_and_stops() {
-        let (sender, receiver) = watch::channel(None);
-        let state = IngesterState::create(
-            test_cluster().await,
-            ByteSize::mb(256),
-            ByteSize::mb(256),
-            sender,
-        )
-        .await;
-        tokio::time::pause();
-        let publisher = state.spawn_shards_readings_publisher();
-        tokio::task::yield_now().await;
-        tokio::time::advance(LOCAL_SHARDS_SAMPLE_INTERVAL).await;
-        tokio::task::yield_now().await;
-        assert!(receiver.borrow().is_none());
+    async fn test_request_wide_wal_admission_and_recovery() {
+        for force in [false, true] {
+            for disk in [false, true] {
+                for (capacity, expected_successes) in [(28, 2), (27, 1)] {
+                    let (_dir, state) = IngesterState::for_test(test_cluster().await).await;
+                    let mut guard = state.lock_fully("test").await.unwrap();
+                    let index = IndexUid::for_test("index", 0);
+                    let mapper = crate::ingest_v2::doc_mapper::try_build_doc_mapper("{}").unwrap();
+                    let shard = IngesterShard::builder(
+                        index.clone(),
+                        "source".to_string(),
+                        ShardId::from(1),
+                        guard.shared_rate_meter.clone(),
+                    )
+                    .with_doc_mapper(mapper)
+                    .build();
+                    let queue = shard.queue_id();
+                    guard.mrecordlog.create_queue(&queue).await.unwrap();
+                    guard.shards.insert(queue, shard);
+                    let usage = guard.mrecordlog.resource_usage();
+                    let allowance = capacity + if force { 4 } else { 0 };
+                    if disk {
+                        guard.disk_capacity = ByteSize::b(usage.disk_used_bytes as u64 + allowance);
+                    } else {
+                        guard.memory_capacity =
+                            ByteSize::b(usage.memory_used_bytes as u64 + allowance);
+                    }
+                    let mut context = guard.begin_persist(force);
+                    let mut prepared = Vec::new();
+                    for id in 0..2 {
+                        let request = PersistSubrequest {
+                            subrequest_id: id,
+                            index_uid: Some(index.clone()),
+                            source_id: "source".to_string(),
+                            doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
+                        };
+                        match guard
+                            .prepare_persist_subrequest(request, &mut context)
+                            .await
+                        {
+                            Ok(request) => prepared.push(request),
+                            Err(failure) => {
+                                assert_eq!(failure.reason(), PersistFailureReason::WalFull)
+                            }
+                        }
+                    }
+                    assert_eq!(prepared.len(), expected_successes);
+                    if expected_successes == 1 {
+                        let request = PersistSubrequest {
+                            subrequest_id: 2,
+                            index_uid: Some(index.clone()),
+                            source_id: "source".to_string(),
+                            doc_batch: Some(DocBatchV2::for_test(["x"])),
+                        };
+                        let smaller = guard
+                            .prepare_persist_subrequest(request, &mut context)
+                            .await
+                            .unwrap();
+                        prepared.push(smaller);
+                    }
+                    for request in prepared {
+                        guard
+                            .persist_subrequest(request, &mut context)
+                            .await
+                            .unwrap();
+                    }
+                    guard.finish_persist(context);
+                }
+            }
+        }
+    }
 
-        let mut inner = state.inner.lock().await;
-        inner.set_status(IngesterStatus::Ready).await;
-        tokio::time::advance(LOCAL_SHARDS_SAMPLE_INTERVAL).await;
-        tokio::task::yield_now().await;
-        assert!(receiver.borrow().is_none());
-        drop(inner);
-        let inner = state
-            .inner
-            .try_lock()
-            .expect("publisher must not queue for the lock");
-        drop(inner);
-
-        tokio::time::advance(LOCAL_SHARDS_SAMPLE_INTERVAL).await;
-        tokio::task::yield_now().await;
-        assert!(receiver.borrow().is_some());
-
-        state
-            .inner
-            .lock()
-            .await
-            .set_status(IngesterStatus::Failed)
-            .await;
-        tokio::time::advance(LOCAL_SHARDS_SAMPLE_INTERVAL).await;
-        timeout(LOCAL_SHARDS_SAMPLE_INTERVAL, publisher)
-            .await
-            .unwrap()
-            .unwrap();
-
-        let publisher = state.spawn_shards_readings_publisher();
-        let weak = state.weak();
-        drop(state);
-        assert!(weak.upgrade().is_none());
-        timeout(LOCAL_SHARDS_SAMPLE_INTERVAL, publisher)
-            .await
-            .unwrap()
-            .unwrap();
+    #[tokio::test]
+    async fn test_deletion_releases_readings_and_last_doc_mapper() {
+        let (_dir, state) = IngesterState::for_test(test_cluster().await).await;
+        let mut guard = state.lock_fully("test").await.unwrap();
+        let mapper = crate::ingest_v2::doc_mapper::try_build_doc_mapper("{}").unwrap();
+        let mapping = mapper.doc_mapping_uid();
+        guard.doc_mappers.insert(mapping, Arc::downgrade(&mapper));
+        let meter = guard.shared_rate_meter.clone();
+        let mut queues = Vec::new();
+        for id in 1..=2 {
+            let shard = IngesterShard::builder(
+                IndexUid::for_test("index", 0),
+                "source".to_string(),
+                ShardId::from(id),
+                meter.clone(),
+            )
+            .with_doc_mapper(mapper.clone())
+            .advertisable()
+            .build();
+            let queue = shard.queue_id();
+            if id == 1 {
+                guard.mrecordlog.create_queue(&queue).await.unwrap();
+            }
+            guard.shards.insert(queue.clone(), shard);
+            queues.push(queue);
+        }
+        drop(mapper);
+        guard.delete_shard(&queues[0], "test").await;
+        assert!(guard.doc_mappers[&mapping].upgrade().is_some());
+        let readings = meter.harvest();
+        assert_eq!(
+            readings.per_source_shard_infos.values().flatten().count(),
+            1
+        );
+        guard.delete_shard(&queues[1], "test").await;
+        assert!(!guard.doc_mappers.contains_key(&mapping));
+        assert!(meter.harvest().per_source_shard_infos.is_empty());
+        for queue in queues {
+            guard.delete_shard(&queue, "test").await;
+        }
+        assert!(guard.shards.is_empty());
     }
 
     #[tokio::test]
     async fn test_ingester_state_does_not_lock_while_initializing() {
         let cluster = test_cluster().await;
-        let state = IngesterState::create(
-            cluster,
-            ByteSize::mb(256),
-            ByteSize::mb(256),
-            watch::Sender::new(None),
-        )
-        .await;
+        let state = IngesterState::create(cluster, ByteSize::mb(256), ByteSize::mb(256)).await;
         let inner_guard = state.inner.lock().await;
 
         assert_eq!(inner_guard.status(), IngesterStatus::Initializing);
@@ -1085,13 +1085,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingester_state_failed() {
         let cluster = test_cluster().await;
-        let state = IngesterState::create(
-            cluster,
-            ByteSize::mb(256),
-            ByteSize::mb(256),
-            watch::Sender::new(None),
-        )
-        .await;
+        let state = IngesterState::create(cluster, ByteSize::mb(256), ByteSize::mb(256)).await;
 
         state
             .inner
@@ -1157,20 +1151,9 @@ mod tests {
             mrecordlog.create_queue(&queue_id_03).await.unwrap();
         }
         let cluster = test_cluster().await;
-        let mut state = IngesterState::create(
-            cluster,
-            ByteSize::mb(256),
-            ByteSize::mb(256),
-            watch::Sender::new(None),
-        )
-        .await;
+        let mut state = IngesterState::create(cluster, ByteSize::mb(256), ByteSize::mb(256)).await;
         state
-            .init(
-                temp_dir.path(),
-                ByteSize::mb(256),
-                ByteSize::mb(256),
-                RateLimiterSettings::default(),
-            )
+            .init(temp_dir.path(), ByteSize::mb(256), ByteSize::mb(256))
             .await;
         timeout(Duration::from_millis(100), state.wait_for_ready())
             .await
@@ -1222,10 +1205,15 @@ mod tests {
         shard_state: ShardState,
         used_capacity: ByteSize,
     ) {
-        let mut shard = IngesterShard::builder(index_uid, source_id, shard_id)
-            .with_state(shard_state)
-            .build();
-        shard.rate_limiter.acquire_bytes(used_capacity);
+        let shard = IngesterShard::builder(
+            index_uid,
+            source_id,
+            shard_id,
+            state.shared_rate_meter.clone(),
+        )
+        .with_queue_size(used_capacity)
+        .with_state(shard_state)
+        .build();
 
         let queue_id = shard.queue_id();
         state.shards.insert(queue_id, shard);
@@ -1269,12 +1257,7 @@ mod tests {
         assert_eq!(shard.shard_id, ShardId::from(1));
         assert_eq!(shard.shard_state, ShardState::Open);
 
-        let expected_available_permits =
-            RateLimiterSettings::default().burst_limit - ByteSize::kb(1).as_u64();
-        assert_eq!(
-            shard.rate_limiter.available_permits(),
-            expected_available_permits
-        );
+        assert_eq!(shard.queue_size, ByteSize::kb(1));
     }
 
     #[tokio::test]
@@ -1364,22 +1347,12 @@ mod tests {
     #[tokio::test]
     async fn test_ingester_state_set_status() {
         let cluster = test_cluster().await;
-        let state = IngesterState::create(
-            cluster.clone(),
-            ByteSize::mb(256),
-            ByteSize::mb(256),
-            watch::Sender::new(None),
-        )
-        .await;
+        let state =
+            IngesterState::create(cluster.clone(), ByteSize::mb(256), ByteSize::mb(256)).await;
         let temp_dir = tempfile::tempdir().unwrap();
 
         state
-            .init(
-                temp_dir.path(),
-                ByteSize::mb(256),
-                ByteSize::mb(256),
-                RateLimiterSettings::default(),
-            )
+            .init(temp_dir.path(), ByteSize::mb(256), ByteSize::mb(256))
             .await;
 
         let mut state_guard = state.lock_fully("test").await.unwrap();
@@ -1395,8 +1368,13 @@ mod tests {
         assert_eq!(status, IngesterStatus::Failed);
     }
 
-    fn open_shard(index_uid: IndexUid, source_id: SourceId, shard_id: ShardId) -> IngesterShard {
-        IngesterShard::builder(index_uid, source_id, shard_id)
+    fn open_shard(
+        index_uid: IndexUid,
+        source_id: SourceId,
+        shard_id: ShardId,
+        meter: Arc<SharedRateMeter>,
+    ) -> IngesterShard {
+        IngesterShard::builder(index_uid, source_id, shard_id, meter)
             .advertisable()
             .build()
     }
@@ -1410,26 +1388,51 @@ mod tests {
         let index_uid = IndexUid::for_test("test-index", 0);
 
         // source-a: 2 open shards + 1 closed shard.
-        let shard = open_shard(index_uid.clone(), "source-a".into(), ShardId::from(1));
+        let shard = open_shard(
+            index_uid.clone(),
+            "source-a".into(),
+            ShardId::from(1),
+            state_guard.shared_rate_meter.clone(),
+        );
         state_guard.shards.insert(shard.queue_id(), shard);
-        let shard = open_shard(index_uid.clone(), "source-a".into(), ShardId::from(2));
+        let shard = open_shard(
+            index_uid.clone(),
+            "source-a".into(),
+            ShardId::from(2),
+            state_guard.shared_rate_meter.clone(),
+        );
         state_guard.shards.insert(shard.queue_id(), shard);
-        let shard = IngesterShard::builder(index_uid.clone(), "source-a".into(), ShardId::from(3))
-            .with_state(ShardState::Closed)
-            .advertisable()
-            .build();
+        let shard = IngesterShard::builder(
+            index_uid.clone(),
+            "source-a".into(),
+            ShardId::from(3),
+            state_guard.shared_rate_meter.clone(),
+        )
+        .with_state(ShardState::Closed)
+        .advertisable()
+        .build();
         state_guard.shards.insert(shard.queue_id(), shard);
 
         // source-b: 2 closed shards, no open shards.
-        let shard = IngesterShard::builder(index_uid.clone(), "source-b".into(), ShardId::from(5))
-            .with_state(ShardState::Closed)
-            .advertisable()
-            .build();
+        let shard = IngesterShard::builder(
+            index_uid.clone(),
+            "source-b".into(),
+            ShardId::from(5),
+            state_guard.shared_rate_meter.clone(),
+        )
+        .with_state(ShardState::Closed)
+        .advertisable()
+        .build();
         state_guard.shards.insert(shard.queue_id(), shard);
-        let shard = IngesterShard::builder(index_uid.clone(), "source-b".into(), ShardId::from(6))
-            .with_state(ShardState::Closed)
-            .advertisable()
-            .build();
+        let shard = IngesterShard::builder(
+            index_uid.clone(),
+            "source-b".into(),
+            ShardId::from(6),
+            state_guard.shared_rate_meter.clone(),
+        )
+        .with_state(ShardState::Closed)
+        .advertisable()
+        .build();
         state_guard.shards.insert(shard.queue_id(), shard);
 
         let (mut open_counts, mut closed_shards) = state_guard.get_shard_snapshot();
@@ -1493,17 +1496,25 @@ mod tests {
             .await
             .unwrap();
 
-        let shard_01 =
-            IngesterShard::builder(index_uid.clone(), source_id.clone(), ShardId::from(1))
-                .with_state(ShardState::Closed)
-                .build();
+        let shard_01 = IngesterShard::builder(
+            index_uid.clone(),
+            source_id.clone(),
+            ShardId::from(1),
+            state_guard.shared_rate_meter.clone(),
+        )
+        .with_state(ShardState::Closed)
+        .build();
         state_guard.shards.insert(queue_id_01.clone(), shard_01);
-        let shard_02 =
-            IngesterShard::builder(index_uid.clone(), source_id.clone(), ShardId::from(2))
-                .with_state(ShardState::Closed)
-                .with_replication_position_inclusive(Position::offset(1u64))
-                .with_queue_size(ByteSize::b(24))
-                .build();
+        let shard_02 = IngesterShard::builder(
+            index_uid.clone(),
+            source_id.clone(),
+            ShardId::from(2),
+            state_guard.shared_rate_meter.clone(),
+        )
+        .with_state(ShardState::Closed)
+        .with_replication_position_inclusive(Position::offset(1u64))
+        .with_queue_size(ByteSize::b(24))
+        .build();
         state_guard.shards.insert(queue_id_02.clone(), shard_02);
 
         state_guard

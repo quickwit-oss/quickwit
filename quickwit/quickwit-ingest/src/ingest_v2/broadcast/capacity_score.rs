@@ -243,6 +243,7 @@ mod tests {
             index_uid.clone(),
             SourceId::from("test-source"),
             ShardId::from(0),
+            state_guard.shared_rate_meter.clone(),
         )
         .advertisable()
         .build();
@@ -253,7 +254,7 @@ mod tests {
             .record_and_score(ByteSize::b(500), ByteSize::b(0));
         drop(state_guard);
 
-        assert_eq!(capacity_score, 6);
+        assert_eq!(capacity_score, 60);
 
         let task = BroadcastIngesterCapacityScoreTask {
             cluster: cluster.clone(),
@@ -268,7 +269,7 @@ mod tests {
             update_counter_clone.fetch_add(1, Ordering::Release);
             assert_eq!(event.source_uid.index_uid, index_uid_clone);
             assert_eq!(event.source_uid.source_id, "test-source");
-            assert_eq!(event.capacity_score, 6);
+            assert_eq!(event.capacity_score, 60);
             assert_eq!(event.open_shard_count, 1);
             assert_eq!(event.generation_id, GenerationId::from(1u64));
         });
@@ -290,7 +291,7 @@ mod tests {
         let key = make_key(INGESTER_CAPACITY_SCORE_PREFIX, &source_uid);
         let value = cluster.get_self_key_value(&key).await.unwrap();
         let deserialized: IngesterCapacityScore = serde_json::from_str(&value).unwrap();
-        assert_eq!(deserialized.capacity_score, 6);
+        assert_eq!(deserialized.capacity_score, 60);
         assert_eq!(deserialized.open_shard_count, 1);
     }
 

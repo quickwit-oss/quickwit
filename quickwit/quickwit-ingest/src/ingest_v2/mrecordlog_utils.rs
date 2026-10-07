@@ -102,7 +102,7 @@ pub(super) async fn append_non_empty_doc_batch(
 
 pub(super) fn doc_batch_size(doc_batch: &DocBatchV2, force_commit: bool) -> ByteSize {
     encoded_doc_batch_size(
-        doc_batch.num_bytes() as u64,
+        doc_batch.doc_buffer.len() as u64,
         doc_batch.num_docs(),
         force_commit,
     )
@@ -297,21 +297,36 @@ mod tests {
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = MultiRecordLogAsync::open(tempdir.path()).await.unwrap();
 
-        let disk_error =
-            check_enough_capacity(&mrecordlog, ByteSize(0), ByteSize(0), ByteSize(12)).unwrap_err();
+        let disk_error = check_enough_capacity(
+            &mrecordlog.resource_usage(),
+            ByteSize(0),
+            ByteSize(0),
+            ByteSize(12),
+        )
+        .unwrap_err();
 
         assert!(matches!(disk_error, NotEnoughCapacityError::Disk { .. }));
 
-        let memory_error =
-            check_enough_capacity(&mrecordlog, ByteSize::mb(256), ByteSize(11), ByteSize(12))
-                .unwrap_err();
+        let memory_error = check_enough_capacity(
+            &mrecordlog.resource_usage(),
+            ByteSize::mb(256),
+            ByteSize(11),
+            ByteSize(12),
+        )
+        .unwrap_err();
 
         assert!(matches!(
             memory_error,
             NotEnoughCapacityError::Memory { .. }
         ));
 
-        check_enough_capacity(&mrecordlog, ByteSize::mb(256), ByteSize(12), ByteSize(12)).unwrap();
+        check_enough_capacity(
+            &mrecordlog.resource_usage(),
+            ByteSize::mb(256),
+            ByteSize(12),
+            ByteSize(12),
+        )
+        .unwrap();
     }
 
     #[tokio::test]

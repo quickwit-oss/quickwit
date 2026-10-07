@@ -638,10 +638,12 @@ mod tests {
             flatten_json(json!(JsonValue::Null)),
             vec![("".to_string(), JsonValue::Null)]
         );
+        let mut flattened = flatten_json(
+            json!({"foo": {"bar": JsonValue::Bool(true)}, "baz": JsonValue::Bool(false)})
+        );
+        flattened.sort_by(|left, right| left.0.cmp(&right.0));
         assert_eq!(
-            flatten_json(
-                json!({"foo": {"bar": JsonValue::Bool(true)}, "baz": JsonValue::Bool(false)})
-            ),
+            flattened,
             vec![
                 ("baz".to_string(), JsonValue::Bool(false)),
                 ("foo.bar".to_string(), JsonValue::Bool(true)),

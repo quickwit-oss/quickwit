@@ -1161,7 +1161,7 @@ mod tests {
                     subrequest_id: 0,
                     index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
-                    reason: PersistFailureReason::NoShardsAvailable as i32,
+                    reason: PersistFailureReason::NoShardsForSource as i32,
                 }],
                 routing_update: Some(RoutingUpdate {
                     capacity_score: 6,
@@ -1442,6 +1442,117 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_internal_failure_retries_only_unfinished_work_on_another_node() {
+        let pool = IngesterPool::default();
+        let index = IndexUid::for_test("index", 0);
+        for (node, first) in [("first", true), ("second", false)] {
+            let mut mock = MockIngesterService::new();
+            let index = index.clone();
+            mock.expect_persist().once().returning(move |request| {
+                let ids: Vec<_> = request
+                    .subrequests
+                    .iter()
+                    .map(|request| request.subrequest_id)
+                    .collect();
+                assert_eq!(ids, if first { vec![0, 1] } else { vec![1] });
+                Ok(PersistResponse {
+                    ingester_id: request.ingester_id,
+                    successes: vec![PersistSuccess {
+                        subrequest_id: if first { 0 } else { 1 },
+                        index_uid: Some(index.clone()),
+                        source_id: "source".to_string(),
+                        shard_id: Some(ShardId::from(if first { 1 } else { 2 })),
+                        replication_position_inclusive: Some(Position::offset(0u64)),
+                        num_persisted_docs: 1,
+                        parse_failures: Vec::new(),
+                    }],
+                    failures: if first {
+                        vec![PersistFailure {
+                            subrequest_id: 1,
+                            index_uid: Some(index.clone()),
+                            source_id: "source".to_string(),
+                            reason: PersistFailureReason::Internal as i32,
+                        }]
+                    } else {
+                        Vec::new()
+                    },
+                    routing_update: None,
+                })
+            });
+            pool.insert(
+                NodeId::from_str(node),
+                IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock)),
+            );
+        }
+        let router = IngestRouter::new(
+            NodeId::from_str("router"),
+            ControlPlaneServiceClient::mocked(),
+            pool.clone(),
+            EventBroker::default(),
+            None,
+        );
+        {
+            let mut state = router.state.lock().await;
+            state.routing_table.merge_from_shards(
+                &pool,
+                index.clone(),
+                "source".to_string(),
+                vec![
+                    Shard {
+                        index_uid: Some(index.clone()),
+                        source_id: "source".to_string(),
+                        shard_id: Some(ShardId::from(1)),
+                        ingester_id: "first".to_string(),
+                        shard_state: ShardState::Open as i32,
+                        ..Default::default()
+                    },
+                    Shard {
+                        index_uid: Some(index.clone()),
+                        source_id: "source".to_string(),
+                        shard_id: Some(ShardId::from(2)),
+                        ingester_id: "second".to_string(),
+                        shard_state: ShardState::Open as i32,
+                        ..Default::default()
+                    },
+                ],
+            );
+            state.routing_table.apply_capacity_update(
+                NodeId::from_str("first"),
+                GenerationId::from(1u64),
+                index.clone(),
+                "source".to_string(),
+                100,
+                1,
+            );
+            state.routing_table.apply_capacity_update(
+                NodeId::from_str("second"),
+                GenerationId::from(1u64),
+                index.clone(),
+                "source".to_string(),
+                1,
+                1,
+            );
+        }
+        let response = router
+            .ingest(IngestRequestV2 {
+                subrequests: (0..2)
+                    .map(|id| IngestSubrequest {
+                        subrequest_id: id,
+                        index_id: "index".to_string(),
+                        source_id: "source".to_string(),
+                        doc_batch: Some(DocBatchV2::for_test(["document"])),
+                    })
+                    .collect(),
+                commit_type: CommitTypeV2::Auto as i32,
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.successes.len(), 2);
+        assert!(response.failures.is_empty());
+        assert_eq!(pool.len(), 2);
+    }
+
+    #[tokio::test]
     async fn test_router_ingest_retry() {
         let self_node_id = NodeId::from_str("test-router");
         let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
@@ -1490,7 +1601,7 @@ mod tests {
                         subrequest_id: 0,
                         index_uid: Some(index_uid_clone.clone()),
                         source_id: "test-source".to_string(),
-                        reason: PersistFailureReason::NoShardsAvailable as i32,
+                        reason: PersistFailureReason::NoShardsForSource as i32,
                     }],
                     routing_update: Some(RoutingUpdate {
                         capacity_score: 6,
@@ -1612,7 +1723,7 @@ mod tests {
         let index_0_entries = routing_table["test-index-0"].as_array().unwrap();
         assert_eq!(index_0_entries.len(), 1);
         assert_eq!(index_0_entries[0]["node_id"], "test-ingester-0");
-        assert_eq!(index_0_entries[0]["capacity_score"], 5);
+        assert_eq!(index_0_entries[0]["capacity_score"], 50);
 
         let index_1_entries = routing_table["test-index-1"].as_array().unwrap();
         assert_eq!(index_1_entries.len(), 1);
@@ -1620,7 +1731,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_router_returns_rate_limited_failure() {
+    async fn test_router_returns_no_shards_after_exhausting_retries() {
         let self_node_id = NodeId::from_str("test-router");
         let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
         let ingester_pool = IngesterPool::default();
@@ -1674,7 +1785,7 @@ mod tests {
                     subrequest_id: 0,
                     index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
-                    reason: PersistFailureReason::NoShardsAvailable as i32,
+                    reason: PersistFailureReason::NoShardsForSource as i32,
                 }],
                 routing_update: Some(RoutingUpdate {
                     capacity_score: 6,
@@ -1815,7 +1926,7 @@ mod tests {
                     subrequest_id: 0,
                     index_uid: Some(IndexUid::for_test("test-index-0", 0)),
                     source_id: "test-source".to_string(),
-                    reason: PersistFailureReason::NoShardsAvailable as i32,
+                    reason: PersistFailureReason::NoShardsForSource as i32,
                 }],
                 routing_update: Some(RoutingUpdate {
                     capacity_score: 6,

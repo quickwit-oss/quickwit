@@ -1250,6 +1250,513 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn test_reports_after_source_or_index_deletion_do_not_restore_state() {
+        for delete_index in [false, true] {
+            let universe = Universe::new();
+            let (mailbox, _inbox) = universe.create_test_mailbox();
+            let ctx = ActorContext::for_test(
+                &universe,
+                mailbox,
+                watch::Sender::new(ControlPlaneObservableState::default()),
+            );
+            let pool = IngesterPool::default();
+            pool.insert(
+                NodeId::from_str("indexer"),
+                IngesterPoolEntry {
+                    enable_shard_scaling_v2: true,
+                    ..IngesterPoolEntry::mocked_ingester()
+                },
+            );
+            let mut cp = control_plane_for_reports(
+                MetastoreServiceClient::mocked(),
+                pool,
+                IndexerPool::default(),
+                1,
+            );
+            let source = SourceUid {
+                index_uid: IndexUid::for_test("index", 0),
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
+            };
+            if delete_index {
+                cp.model.delete_index(&source.index_uid);
+            } else {
+                cp.model.delete_source(&source);
+            }
+            cp.handle_message(
+                report_for_test(),
+                |reply| {
+                    reply.unwrap();
+                },
+                &ctx,
+            )
+            .await
+            .unwrap();
+            Handler::handle(&mut cp, ControlPlaneLoop, &ctx)
+                .await
+                .unwrap();
+            assert_eq!(cp.model.all_shards().count(), 0);
+            assert!(cp.model.get_shards_for_source(&source).is_none());
+            universe.assert_quit().await;
+        }
+    }
+
+    fn scaling_clients(migrated: bool) -> (MetastoreServiceClient, IngesterPool) {
+        let mut metastore = MockMetastoreService::new();
+        metastore.expect_delete_shards().returning(|request| {
+            Ok(quickwit_proto::metastore::DeleteShardsResponse {
+                index_uid: request.index_uid,
+                source_id: request.source_id,
+                successes: request.shard_ids,
+                failures: Vec::new(),
+            })
+        });
+        metastore.expect_open_shards().returning(|request| {
+            Ok(OpenShardsResponse {
+                subresponses: request
+                    .subrequests
+                    .into_iter()
+                    .map(|request| OpenShardSubresponse {
+                        subrequest_id: request.subrequest_id,
+                        open_shard: Some(Shard {
+                            index_uid: request.index_uid,
+                            source_id: request.source_id,
+                            shard_id: request.shard_id,
+                            ingester_id: request.ingester_id,
+                            shard_state: ShardState::Open as i32,
+                            ..Default::default()
+                        }),
+                    })
+                    .collect(),
+            })
+        });
+        let mut ingester = MockIngesterService::new();
+        ingester.expect_init_shards().returning(|request| {
+            Ok(InitShardsResponse {
+                successes: request
+                    .subrequests
+                    .into_iter()
+                    .map(|request| InitShardSuccess {
+                        subrequest_id: request.subrequest_id,
+                        shard: request.shard,
+                    })
+                    .collect(),
+                failures: Vec::new(),
+            })
+        });
+        ingester.expect_close_shards().returning(|request| {
+            Ok(quickwit_proto::ingest::ingester::CloseShardsResponse {
+                successes: request.shard_pkeys,
+            })
+        });
+        let pool = IngesterPool::default();
+        pool.insert(
+            NodeId::from_str("indexer"),
+            IngesterPoolEntry {
+                enable_shard_scaling_v2: migrated,
+                ..IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(ingester))
+            },
+        );
+        (MetastoreServiceClient::from_mock(metastore), pool)
+    }
+
+    #[tokio::test]
+    async fn test_legacy_periodic_ticks_do_not_rescale_cached_readings() {
+        let universe = Universe::new();
+        let (mailbox, _inbox) = universe.create_test_mailbox();
+        let ctx = ActorContext::for_test(
+            &universe,
+            mailbox,
+            watch::Sender::new(ControlPlaneObservableState::default()),
+        );
+        let (metastore, pool) = scaling_clients(false);
+        let mut cp = control_plane_for_reports(metastore, pool, IndexerPool::default(), 2);
+        let source = SourceUid {
+            index_uid: IndexUid::for_test("index", 0),
+            source_id: INGEST_V2_SOURCE_ID.to_string(),
+        };
+        let shards = BTreeSet::from([quickwit_ingest::ShardInfo {
+            shard_id: ShardId::from(1),
+            shard_state: ShardState::Open,
+            short_term_ingestion_rate: bytesize::ByteSize::mib(1),
+            long_term_ingestion_rate: bytesize::ByteSize::mib(1),
+        }]);
+        cp.model.update_shards(&source, &shards);
+        for _ in 0..3 {
+            Handler::handle(&mut cp, ControlPlaneLoop, &ctx)
+                .await
+                .unwrap();
+        }
+        assert_eq!(
+            cp.model
+                .all_shards()
+                .filter(|shard| shard.is_open())
+                .count(),
+            1
+        );
+        Handler::handle(
+            &mut cp,
+            LocalShardsUpdate {
+                ingester_id: NodeId::from_str("indexer"),
+                source_uid: source,
+                shard_infos: shards,
+            },
+            &ctx,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            cp.model
+                .all_shards()
+                .filter(|shard| shard.is_open())
+                .count(),
+            2
+        );
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_physical_plan_refreshes_after_shard_scaling() {
+        let universe = Universe::new();
+        let (mailbox, _inbox) = universe.create_test_mailbox();
+        let ctx = ActorContext::for_test(
+            &universe,
+            mailbox,
+            watch::Sender::new(ControlPlaneObservableState::default()),
+        );
+        let (metastore, pool) = scaling_clients(true);
+        let indexers = IndexerPool::default();
+        let mut mock = MockIndexingService::new();
+        mock.expect_apply_indexing_plan()
+            .returning(|_| Ok(ApplyIndexingPlanResponse {}));
+        indexers.insert(
+            NodeId::from_str("indexer"),
+            IndexerPoolEntry {
+                node_id: NodeId::from_str("indexer"),
+                generation_id: 1,
+                client: IndexingServiceClient::from_mock(mock),
+                indexing_tasks: Vec::new(),
+                indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+                ingester_status: IngesterStatus::Ready,
+                availability_zone: None,
+            },
+        );
+        let mut cp = control_plane_for_reports(metastore, pool, indexers, 1);
+        for (bytes, expected) in [(bytesize::ByteSize::mib(20).as_u64(), 5), (0, 1)] {
+            let mut report = report_for_test();
+            let readings =
+                &mut report.shards_update.as_mut().unwrap().shard_infos_by_source[0].shard_infos[0];
+            readings.short_term_ingestion_rate_bytes_per_sec = bytes;
+            readings.long_term_ingestion_rate_bytes_per_sec = bytes;
+            cp.handle_message(
+                report,
+                |reply| {
+                    reply.unwrap();
+                },
+                &ctx,
+            )
+            .await
+            .unwrap();
+            if bytes == 0 {
+                cp.scaling_controller = ScalingController::with_shard_throughput_limit(
+                    cp.cluster_config.shard_throughput_limit,
+                );
+            }
+            Handler::handle(&mut cp, ControlPlaneLoop, &ctx)
+                .await
+                .unwrap();
+            tokio::time::sleep(REBUILD_PLAN_COOLDOWN_PERIOD).await;
+            Handler::handle(&mut cp, RebuildPlan, &ctx).await.unwrap();
+            let plan = cp
+                .indexing_scheduler
+                .observable_state()
+                .last_applied_physical_plan
+                .unwrap();
+            let planned: std::collections::HashSet<_> = plan
+                .indexing_tasks_per_indexer()
+                .values()
+                .flatten()
+                .flat_map(|task| task.shard_ids.iter().cloned())
+                .collect();
+            let open: std::collections::HashSet<_> = cp
+                .model
+                .all_shards()
+                .filter(|shard| shard.is_open())
+                .map(|shard| shard.shard_id().clone())
+                .collect();
+            assert_eq!(open.len(), expected);
+            let all_shards = cp.model.all_shards().map(|shard| shard.shard_id().clone()).collect();
+            assert_eq!(planned, all_shards);
+            assert_eq!(planned.len(), 5);
+            if bytes == 0 {
+                let closed: Vec<_> = cp.model.all_shards()
+                    .filter(|shard| shard.is_closed())
+                    .map(|shard| (shard.shard_id().clone(), Position::eof(0u64)))
+                    .collect();
+                assert_eq!(closed.len(), 4);
+                Handler::handle(&mut cp, ShardPositionsUpdate {
+                    source_uid: SourceUid {
+                        index_uid: IndexUid::for_test("index", 0),
+                        source_id: INGEST_V2_SOURCE_ID.to_string(),
+                    },
+                    updated_shard_positions: closed,
+                }, &ctx).await.unwrap();
+                tokio::time::sleep(REBUILD_PLAN_COOLDOWN_PERIOD).await;
+                Handler::handle(&mut cp, RebuildPlan, &ctx).await.unwrap();
+                let plan = cp.indexing_scheduler.observable_state().last_applied_physical_plan.unwrap();
+                let planned: std::collections::HashSet<_> = plan.indexing_tasks_per_indexer()
+                    .values().flatten().flat_map(|task| task.shard_ids.iter().cloned()).collect();
+                assert_eq!(planned, open);
+            }
+        }
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_gossip_listener_and_reporter_rollout_reach_control_plane() {
+        use quickwit_proto::control_plane::{MockControlPlaneService, ReportIndexerStateResponse};
+        use quickwit_proto::ingest::ingester::IngesterService;
+        let universe = Universe::new();
+        let (mailbox, _inbox) = universe.create_test_mailbox();
+        let ctx = ActorContext::for_test(
+            &universe,
+            mailbox,
+            watch::Sender::new(ControlPlaneObservableState::default()),
+        );
+        let (metastore, pool) = scaling_clients(false);
+        let mut cp = control_plane_for_reports(metastore, pool.clone(), IndexerPool::default(), 2);
+        let cluster = quickwit_cluster::create_cluster_for_test(
+            Vec::new(),
+            &["indexer"],
+            &quickwit_cluster::ChitchatTransport::default(),
+            true,
+        )
+        .await
+        .unwrap();
+        let broker = quickwit_common::pubsub::EventBroker::default();
+        let (gossip_tx, mut gossip_rx) = tokio::sync::mpsc::unbounded_channel();
+        broker
+            .subscribe(move |event: LocalShardsUpdate| {
+                gossip_tx.send(event).unwrap();
+            })
+            .forever();
+        quickwit_ingest::setup_local_shards_update_listener(cluster.clone(), broker)
+            .await
+            .forever();
+        let source = SourceUid {
+            index_uid: IndexUid::for_test("index", 0),
+            source_id: INGEST_V2_SOURCE_ID.to_string(),
+        };
+        let shards = BTreeSet::from([quickwit_ingest::ShardInfo {
+            shard_id: ShardId::from(1),
+            shard_state: ShardState::Open,
+            short_term_ingestion_rate: bytesize::ByteSize::b(123),
+            long_term_ingestion_rate: bytesize::ByteSize::b(456),
+        }]);
+        cluster
+            .set_self_key_value(
+                format!(
+                    "{}{}:{}",
+                    quickwit_common::shared_consts::INGESTER_SHARDS_PREFIX,
+                    source.index_uid,
+                    source.source_id
+                ),
+                serde_json::to_string(&shards).unwrap(),
+            )
+            .await;
+        let gossip = tokio::time::timeout(Duration::from_secs(5), gossip_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        Handler::handle(&mut cp, gossip.clone(), &ctx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(cp.model.all_shards().count(), 2);
+        cp.handle_message(
+            report_for_test(),
+            |reply| {
+                reply.unwrap();
+            },
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            cp.model
+                .all_shards()
+                .find(|shard| shard.shard_id() == ShardId::from(1))
+                .unwrap()
+                .long_term_ingestion_rate,
+            bytesize::ByteSize::mib(1)
+        );
+        let (reports_tx, mut reports_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut mock = MockControlPlaneService::new();
+        mock.expect_report_indexer_state()
+            .returning(move |request| {
+                reports_tx.send(request).unwrap();
+                Ok(ReportIndexerStateResponse {})
+            });
+        let (shards_tx, mut shards_rx) = watch::channel(None);
+        let dir = quickwit_common::temp_dir::Builder::default()
+            .tempdir()
+            .unwrap();
+        let mut reset = MockControlPlaneService::new();
+        reset
+            .expect_advise_reset_shards()
+            .returning(|_| Ok(quickwit_proto::control_plane::AdviseResetShardsResponse::default()));
+        let real_ingester = quickwit_ingest::Ingester::try_new(
+            cluster.clone(),
+            quickwit_proto::control_plane::ControlPlaneServiceClient::from_mock(reset),
+            dir.path(),
+            bytesize::ByteSize::mb(256),
+            bytesize::ByteSize::mb(64),
+            Duration::from_secs(60),
+            shards_tx,
+        )
+        .await
+        .unwrap();
+        real_ingester
+            .wait_for_status(IngesterStatus::Ready, Duration::from_secs(5))
+            .await
+            .unwrap();
+        let mapping = quickwit_proto::types::DocMappingUid::random();
+        real_ingester
+            .init_shards(quickwit_proto::ingest::ingester::InitShardsRequest {
+                subrequests: vec![quickwit_proto::ingest::ingester::InitShardSubrequest {
+                    subrequest_id: 0,
+                    shard: Some(Shard {
+                        index_uid: Some(source.index_uid.clone()),
+                        source_id: source.source_id.clone(),
+                        shard_id: Some(ShardId::from(1)),
+                        ingester_id: cluster.self_node_id().to_string(),
+                        shard_state: ShardState::Open as i32,
+                        doc_mapping_uid: Some(mapping),
+                        ..Default::default()
+                    }),
+                    doc_mapping_json: format!(r#"{{"doc_mapping_uid":"{mapping}"}}"#),
+                    validate_docs: false,
+                }],
+            })
+            .await
+            .unwrap();
+        real_ingester
+            .persist(quickwit_proto::ingest::ingester::PersistRequest {
+                ingester_id: cluster.self_node_id().to_string(),
+                commit_type: quickwit_proto::ingest::CommitTypeV2::Auto as i32,
+                subrequests: vec![quickwit_proto::ingest::ingester::PersistSubrequest {
+                    subrequest_id: 0,
+                    index_uid: Some(source.index_uid.clone()),
+                    source_id: source.source_id.clone(),
+                    doc_batch: Some(quickwit_proto::ingest::DocBatchV2 {
+                        doc_buffer: vec![b'x'; 4 * 1024 * 1024].into(),
+                        doc_lengths: vec![4 * 1024 * 1024],
+                        doc_uids: vec![quickwit_proto::types::DocUid::for_test(0)],
+                    }),
+                }],
+            })
+            .await
+            .unwrap();
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            shards_rx.wait_for(|snapshot| {
+                snapshot
+                    .as_ref()
+                    .map(|snapshot| {
+                        let report: quickwit_proto::control_plane::ShardsUpdate =
+                            snapshot.as_ref().clone().into();
+                        report
+                            .shard_infos_by_source
+                            .iter()
+                            .flat_map(|source| &source.shard_infos)
+                            .any(|shard| shard.short_term_ingestion_rate_bytes_per_sec > 0)
+                    })
+                    .unwrap_or(false)
+            }),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let (_tasks_tx, tasks_rx) = watch::channel(Some(std::sync::Arc::new(Vec::new())));
+        let reporter = quickwit_indexing::IndexerStateReporter::start_reporting(
+            NodeId::from_str("indexer"),
+            1,
+            shards_rx,
+            tasks_rx,
+            quickwit_proto::control_plane::ControlPlaneServiceClient::from_mock(mock),
+            pool.clone(),
+        );
+        let report = tokio::time::timeout(Duration::from_secs(5), reports_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(report.shards_update.is_none());
+        assert!(report.indexing_tasks_update.is_some());
+        cp.handle_message(
+            report,
+            |reply| {
+                reply.unwrap();
+            },
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let mut entry = pool.get(&NodeId::from_str("indexer")).unwrap();
+        entry.enable_shard_scaling_v2 = true;
+        pool.insert(NodeId::from_str("indexer"), entry);
+        let report = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let report = reports_rx.recv().await.unwrap();
+                if report.shards_update.is_some() {
+                    break report;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert!(report.indexing_tasks_update.is_some());
+        let reported_rate = report.shards_update.as_ref().unwrap().shard_infos_by_source[0]
+            .shard_infos[0]
+            .long_term_ingestion_rate_bytes_per_sec;
+        assert!(reported_rate > 2 * cp.cluster_config.shard_throughput_limit.as_u64());
+        cp.handle_message(
+            report,
+            |reply| {
+                reply.unwrap();
+            },
+            &ctx,
+        )
+        .await
+        .unwrap();
+        Handler::handle(&mut cp, gossip, &ctx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            cp.model
+                .all_shards()
+                .find(|shard| shard.shard_id() == ShardId::from(1))
+                .unwrap()
+                .long_term_ingestion_rate,
+            bytesize::ByteSize::b(reported_rate)
+        );
+        assert_eq!(cp.model.all_shards().count(), 2);
+        Handler::handle(&mut cp, ControlPlaneLoop, &ctx)
+            .await
+            .unwrap();
+        assert!(
+            cp.model
+                .all_shards()
+                .filter(|shard| shard.is_open())
+                .count()
+                > 2
+        );
+        reporter.abort();
+        assert!(reporter.await.unwrap_err().is_cancelled());
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
     async fn test_report_acknowledged_before_periodic_reconciliation() {
         for outcome in ["success", "aborted", "uncertain"] {
             let universe = Universe::new();
@@ -1284,7 +1791,10 @@ mod tests {
             let pool = IngesterPool::default();
             pool.insert(
                 NodeId::from_str("indexer"),
-                IngesterPoolEntry::ready_with_client(ingester),
+                IngesterPoolEntry {
+                    enable_shard_scaling_v2: true,
+                    ..IngesterPoolEntry::ready_with_client(ingester)
+                },
             );
             let mut mock_metastore = MockMetastoreService::new();
             mock_metastore
@@ -1389,12 +1899,16 @@ mod tests {
                 availability_zone: None,
             },
         );
-        let mut control_plane = control_plane_for_reports(
-            MetastoreServiceClient::mocked(),
-            IngesterPool::default(),
-            pool,
-            1,
+        let ingester_pool = IngesterPool::default();
+        ingester_pool.insert(
+            NodeId::from_str("indexer"),
+            IngesterPoolEntry {
+                enable_shard_scaling_v2: true,
+                ..IngesterPoolEntry::mocked_ingester()
+            },
         );
+        let mut control_plane =
+            control_plane_for_reports(MetastoreServiceClient::mocked(), ingester_pool, pool, 1);
         control_plane
             .indexing_scheduler
             .rebuild_plan(&control_plane.model);
@@ -1475,7 +1989,7 @@ mod tests {
                 .next()
                 .unwrap()
                 .long_term_ingestion_rate,
-            bytesize::ByteSize::mib(2)
+            bytesize::ByteSize::b(456)
         );
         control_plane
             .handle_message(
@@ -1509,7 +2023,7 @@ mod tests {
                 .next()
                 .unwrap()
                 .long_term_ingestion_rate,
-            bytesize::ByteSize::mib(2)
+            bytesize::ByteSize::b(456)
         );
         universe.assert_quit().await;
     }
@@ -2697,6 +3211,10 @@ mod tests {
         let node_id = NodeId::from_str("test-control-plane");
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester"),
+            IngesterPoolEntry::mocked_ingester(),
+        );
 
         let mut index = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
         let mut source = SourceConfig::ingest_v2();

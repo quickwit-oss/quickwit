@@ -1946,4 +1946,56 @@ mod tests {
                 .contains(&QuickwitService::Compactor)
         );
     }
+
+    #[tokio::test]
+    async fn test_shard_scaling_v2_resolution() {
+        for (configured, environment, expected) in [
+            (None, None, false),
+            (Some(false), None, false),
+            (Some(true), None, true),
+            (Some(false), Some("true"), true),
+            (Some(true), Some("false"), false),
+        ] {
+            let mut yaml = "version: 0.8\n".to_string();
+            if let Some(value) = configured {
+                yaml.push_str(&format!("enable_shard_scaling_v2: {value}\n"));
+            }
+            let mut env = HashMap::new();
+            if let Some(value) = environment {
+                env.insert("QW_ENABLE_SHARD_SCALING_V2".to_string(), value.to_string());
+            }
+            let config = load_node_config_with_env(ConfigFormat::Yaml, yaml.as_bytes(), &env, None)
+                .await
+                .unwrap();
+            assert_eq!(config.enable_shard_scaling_v2, expected);
+        }
+        let env = HashMap::from([(
+            "QW_ENABLE_SHARD_SCALING_V2".to_string(),
+            "invalid".to_string(),
+        )]);
+        assert!(
+            load_node_config_with_env(ConfigFormat::Yaml, b"version: 0.8", &env, None)
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_shard_scaling_v2_is_not_serialized() {
+        let config = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            b"version: 0.8\nenable_shard_scaling_v2: true",
+            &HashMap::new(),
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(config.enable_shard_scaling_v2);
+        assert!(
+            serde_json::to_value(config)
+                .unwrap()
+                .get("enable_shard_scaling_v2")
+                .is_none()
+        );
+    }
 }

@@ -495,6 +495,65 @@ mod tests {
     }
 
     #[test]
+    fn test_current_capacity_scores_replace_defaults_and_old_ranges() {
+        let pool = IngesterPool::default();
+        let index = IndexUid::for_test("test-index", 0);
+        let mut table = RoutingTable::default();
+        for node in ["node-1", "node-2"] {
+            pool.insert(NodeId::from_str(node), mocked_ingester(None));
+        }
+        table.merge_from_shards(
+            &pool,
+            index.clone(),
+            "test-source".to_string(),
+            vec![
+                Shard {
+                    index_uid: Some(index.clone()),
+                    source_id: "test-source".to_string(),
+                    shard_id: Some(ShardId::from(1)),
+                    ingester_id: "node-1".to_string(),
+                    shard_state: ShardState::Open as i32,
+                    ..Default::default()
+                },
+                Shard {
+                    index_uid: Some(index.clone()),
+                    source_id: "test-source".to_string(),
+                    shard_id: Some(ShardId::from(2)),
+                    ingester_id: "node-2".to_string(),
+                    shard_state: ShardState::Open as i32,
+                    ..Default::default()
+                },
+            ],
+        );
+        for node in table.table.values().next().unwrap().nodes.values() {
+            assert_eq!(node.capacity_score, 50);
+        }
+        for (first, second, expected) in [
+            (8, 80, "node-2"),
+            (100, 10, "node-1"),
+            (0, 1, "node-2"),
+            (1, 0, "node-1"),
+        ] {
+            for (node, score) in [("node-1", first), ("node-2", second)] {
+                table.apply_capacity_update(
+                    NodeId::from_str(node),
+                    GenerationId::from(1u64),
+                    index.clone(),
+                    "test-source".to_string(),
+                    score,
+                    1,
+                );
+            }
+            for _ in 0..20 {
+                let picked = table
+                    .pick_node("test-index", "test-source", &pool, &HashSet::new())
+                    .unwrap();
+                assert_eq!(picked.node_id, NodeId::from_str(expected));
+            }
+        }
+    }
+
+    #[test]
     fn test_apply_capacity_update_generation_ordering() {
         let mut table = RoutingTable::default();
         let key = ("test-index".to_string(), "test-source".to_string());
@@ -887,7 +946,7 @@ mod tests {
 
         let n1 = entry.nodes.get("node-1").unwrap();
         assert_eq!(n1.open_shard_count, 2);
-        assert_eq!(n1.capacity_score, 5);
+        assert_eq!(n1.capacity_score, 50);
 
         let n2 = entry.nodes.get("node-2").unwrap();
         assert_eq!(n2.open_shard_count, 1);

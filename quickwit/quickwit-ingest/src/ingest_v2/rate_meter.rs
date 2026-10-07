@@ -214,6 +214,71 @@ mod tests {
     use super::*;
 
     #[tokio::test(start_paused = true)]
+    async fn test_shared_meter_isolates_shards_and_sources() {
+        let meter = SharedRateMeter::default();
+        let source_a = SourceUid {
+            index_uid: quickwit_proto::types::IndexUid::for_test("index", 0),
+            source_id: "a".to_string(),
+        };
+        let source_b = SourceUid {
+            source_id: "b".to_string(),
+            ..source_a.clone()
+        };
+        for (id, source, visible, bytes) in [
+            (1, &source_a, true, 100),
+            (2, &source_a, false, 200),
+            (3, &source_b, true, 300),
+        ] {
+            meter.insert(source.clone(), ShardId::from(id), ShardState::Open, visible);
+            meter.record_persisted_bytes(&ShardId::from(id), bytes);
+        }
+        tokio::time::advance(Duration::from_secs(1)).await;
+        let readings = meter.harvest();
+        assert_eq!(readings.per_source_shard_infos[&source_a].len(), 1);
+        assert_eq!(
+            readings.per_source_shard_infos[&source_a]
+                .first()
+                .unwrap()
+                .short_term_ingestion_rate,
+            ByteSize::b(100)
+        );
+        assert_eq!(
+            readings.per_source_shard_infos[&source_b]
+                .first()
+                .unwrap()
+                .short_term_ingestion_rate,
+            ByteSize::b(300)
+        );
+        meter.remove(&ShardId::from(1));
+        meter.make_advertisable(&ShardId::from(2));
+        meter.record_persisted_bytes(&ShardId::from(3), 500);
+        tokio::time::advance(Duration::from_secs(1)).await;
+        let readings = meter.harvest();
+        assert_eq!(readings.per_source_shard_infos[&source_a].len(), 1);
+        assert_eq!(
+            readings.per_source_shard_infos[&source_a]
+                .first()
+                .unwrap()
+                .shard_id,
+            ShardId::from(2)
+        );
+        assert_eq!(
+            readings.per_source_shard_infos[&source_a]
+                .first()
+                .unwrap()
+                .short_term_ingestion_rate,
+            ByteSize::b(100)
+        );
+        assert_eq!(
+            readings.per_source_shard_infos[&source_b]
+                .first()
+                .unwrap()
+                .short_term_ingestion_rate,
+            ByteSize::b(400)
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn test_sample_normalizes_elapsed_time() {
         let mut meter = RateMeter::default();
         meter.update(100);

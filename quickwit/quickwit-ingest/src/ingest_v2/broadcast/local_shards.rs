@@ -308,6 +308,251 @@ mod tests {
     use crate::ingest_v2::models::IngesterShard;
     use crate::ingest_v2::state::IngesterState;
 
+    fn readings(bytes: u64, state: ShardState) -> ShardThroughputReadings {
+        ShardThroughputReadings {
+            per_source_shard_infos: [(
+                SourceUid {
+                    index_uid: IndexUid::for_test("index", 0),
+                    source_id: "source".to_string(),
+                },
+                BTreeSet::from([ShardInfo {
+                    shard_id: ShardId::from(1),
+                    shard_state: state,
+                    short_term_ingestion_rate: ByteSize::b(bytes),
+                    long_term_ingestion_rate: ByteSize::b(bytes),
+                }]),
+            )]
+            .into_iter()
+            .collect(),
+        }
+    }
+
+    #[test]
+    fn test_legacy_wire_rate_rounding() {
+        for (bytes, mib) in [
+            (0, 0),
+            (1, 1),
+            (bytesize::MIB - 1, 1),
+            (bytesize::MIB, 1),
+            (bytesize::MIB + 1, 2),
+        ] {
+            let snapshot = readings(bytes, ShardState::Open);
+            let shard = snapshot
+                .per_source_shard_infos
+                .values()
+                .next()
+                .unwrap()
+                .first()
+                .unwrap();
+            let json = serde_json::to_string(shard).unwrap();
+            assert_eq!(json, format!("\"00000000000000000001:open:{mib}:{mib}\""));
+            let decoded: ShardInfo = serde_json::from_str(&json).unwrap();
+            assert_eq!(decoded.short_term_ingestion_rate, ByteSize::mib(mib));
+            assert_eq!(decoded.long_term_ingestion_rate, ByteSize::mib(mib));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_gossip_change_detection_uses_rounded_buckets() {
+        let cluster = create_cluster_for_test(
+            Vec::new(),
+            &["indexer"],
+            &ChitchatTransport::default(),
+            true,
+        )
+        .await
+        .unwrap();
+        let (_dir, state) = IngesterState::for_test(cluster.clone()).await;
+        let (sender, receiver) = watch::channel(None);
+        let mut task = BroadcastLocalShardsTask {
+            cluster: cluster.clone(),
+            weak_state: state.weak(),
+            local_shards_rx: receiver,
+            previous_snapshot: LocalShardsSnapshot::default(),
+        };
+        let initial = readings(1, ShardState::Open);
+        let source = initial
+            .per_source_shard_infos
+            .keys()
+            .next()
+            .unwrap()
+            .clone();
+        let key = make_key(INGESTER_SHARDS_PREFIX, &source);
+        sender.send_replace(Some(Arc::new(initial)));
+        assert!(task.run_once().await);
+        let original = cluster.get_self_key_value(&key).await.unwrap();
+        let same_bucket =
+            LocalShardsSnapshot::from_readings(&readings(bytesize::MIB, ShardState::Open));
+        assert_eq!(task.previous_snapshot.diff(&same_bucket).count(), 0);
+        sender.send_replace(Some(Arc::new(readings(bytesize::MIB, ShardState::Open))));
+        assert!(task.run_once().await);
+        assert_eq!(cluster.get_self_key_value(&key).await.unwrap(), original);
+        for (bytes, status, expected) in [
+            (bytesize::MIB + 1, ShardState::Open, "open:2:2"),
+            (bytesize::MIB + 1, ShardState::Closed, "closed:2:2"),
+        ] {
+            sender.send_replace(Some(Arc::new(readings(bytes, status))));
+            assert!(task.run_once().await);
+            assert!(
+                cluster
+                    .get_self_key_value(&key)
+                    .await
+                    .unwrap()
+                    .contains(expected)
+            );
+        }
+        sender.send_replace(Some(Arc::new(ShardThroughputReadings::default())));
+        assert!(task.run_once().await);
+        assert!(cluster.get_self_key_value(&key).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_gossip_cutover_stops_outer_loop_and_retains_keys() {
+        for migrated_at_start in [false, true] {
+            let cluster = create_cluster_for_test(
+                Vec::new(),
+                &["indexer"],
+                &ChitchatTransport::default(),
+                true,
+            )
+            .await
+            .unwrap();
+            let (_dir, state) = IngesterState::for_test(cluster.clone()).await;
+            cluster
+                .wait_for_ready_members(|members| members.len() == 1, Duration::from_secs(5))
+                .await
+                .unwrap();
+            let snapshot = readings(1, ShardState::Open);
+            let key = make_key(
+                INGESTER_SHARDS_PREFIX,
+                snapshot.per_source_shard_infos.keys().next().unwrap(),
+            );
+            cluster.set_self_key_value(&key, "retained").await;
+            if migrated_at_start {
+                cluster.set_self_key_value("shard_scaling_v2", "true").await;
+                cluster
+                    .wait_for_ready_members(
+                        |members| members.len() == 1 && members[0].enable_shard_scaling_v2,
+                        Duration::from_secs(5),
+                    )
+                    .await
+                    .unwrap();
+            }
+            let (sender, receiver) = watch::channel(None);
+            let handle = BroadcastLocalShardsTask::spawn(cluster.clone(), state.weak(), receiver);
+            if !migrated_at_start {
+                tokio::task::yield_now().await;
+                assert!(!handle.is_finished());
+                cluster.set_self_key_value("shard_scaling_v2", "true").await;
+                cluster
+                    .wait_for_ready_members(
+                        |members| members.len() == 1 && members[0].enable_shard_scaling_v2,
+                        Duration::from_secs(5),
+                    )
+                    .await
+                    .unwrap();
+            }
+            sender.send_replace(Some(Arc::new(snapshot)));
+            tokio::time::timeout(Duration::from_secs(5), handle)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                cluster.get_self_key_value(&key).await.as_deref(),
+                Some("retained")
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_broadcaster_waits_for_snapshots_and_stops_with_state() {
+        let cluster = create_cluster_for_test(
+            Vec::new(),
+            &["indexer"],
+            &ChitchatTransport::default(),
+            true,
+        )
+        .await
+        .unwrap();
+        let (_dir, state) = IngesterState::for_test(cluster.clone()).await;
+        let (sender, receiver) = watch::channel(None);
+        let mut task = BroadcastLocalShardsTask {
+            cluster: cluster.clone(),
+            weak_state: state.weak(),
+            local_shards_rx: receiver,
+            previous_snapshot: LocalShardsSnapshot::default(),
+        };
+        let mut guard = state.lock_partially("test").await.unwrap();
+        let shard = IngesterShard::builder(
+            IndexUid::for_test("index", 0),
+            "source".to_string(),
+            ShardId::from(1),
+            guard.shared_rate_meter.clone(),
+        )
+        .advertisable()
+        .build();
+        guard.shards.insert(shard.queue_id(), shard);
+        let meter = guard.shared_rate_meter.clone();
+        drop(guard);
+        assert!(task.run_once().await);
+        assert!(task.previous_snapshot.per_source_shard_infos.is_empty());
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        sender.send_replace(Some(Arc::new(meter.harvest())));
+        assert!(task.run_once().await);
+        assert_eq!(task.previous_snapshot.per_source_shard_infos.len(), 1);
+        drop(state);
+        assert!(!task.run_once().await);
+    }
+
+    #[tokio::test]
+    async fn test_malformed_gossip_does_not_break_listener() {
+        let cluster = create_cluster_for_test(
+            Vec::new(),
+            &["indexer"],
+            &ChitchatTransport::default(),
+            true,
+        )
+        .await
+        .unwrap();
+        let broker = EventBroker::default();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        broker
+            .subscribe(move |event: LocalShardsUpdate| {
+                sender.send(event).unwrap();
+            })
+            .forever();
+        setup_local_shards_update_listener(cluster.clone(), broker)
+            .await
+            .forever();
+        let snapshot = readings(1, ShardState::Open);
+        let source = snapshot.per_source_shard_infos.keys().next().unwrap();
+        let key = make_key(INGESTER_SHARDS_PREFIX, source);
+        for (key, value) in [
+            (format!("{INGESTER_SHARDS_PREFIX}invalid"), "[]"),
+            (key.clone(), "invalid json"),
+            (key.clone(), "[\"1:invalid:1:1\"]"),
+            (key.clone(), "[\"1:open:bad:1\"]"),
+        ] {
+            cluster.set_self_key_value(key, value).await;
+        }
+        cluster
+            .set_self_key_value(
+                key,
+                serde_json::to_string(&snapshot.per_source_shard_infos[source]).unwrap(),
+            )
+            .await;
+        let event = tokio::time::timeout(Duration::from_secs(5), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(&event.source_uid, source);
+        assert_eq!(
+            event.shard_infos.first().unwrap().short_term_ingestion_rate,
+            ByteSize::mib(1)
+        );
+        assert!(receiver.try_recv().is_err());
+    }
+
     #[test]
     fn test_shard_info_serde() {
         let shard_info = ShardInfo {
@@ -440,7 +685,10 @@ mod tests {
             .await
             .unwrap();
         let (local_shards_tx, local_shards_rx) = watch::channel(None);
-        let publisher = state.spawn_shards_readings_publisher(local_shards_tx);
+        let publisher = crate::ingest_v2::shard_readings::ShardReadingsPublisher::spawn(
+            state.weak(),
+            local_shards_tx,
+        );
         let mut task = BroadcastLocalShardsTask {
             cluster,
             weak_state: state.weak(),
@@ -455,7 +703,7 @@ mod tests {
             index_uid.clone(),
             SourceId::from("test-source"),
             ShardId::from(0),
-            state_guard.shard_rate_meter.clone(),
+            state_guard.shared_rate_meter.clone(),
         )
         .build();
         state_guard.shards.insert(shard_00.queue_id(), shard_00);
@@ -464,7 +712,7 @@ mod tests {
             index_uid.clone(),
             SourceId::from("test-source"),
             ShardId::from(1),
-            state_guard.shard_rate_meter.clone(),
+            state_guard.shared_rate_meter.clone(),
         )
         .advertisable()
         .build();

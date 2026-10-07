@@ -491,4 +491,43 @@ mod tests {
         };
         assert_eq!(estimate_size(&doc_batch), ByteSize(118));
     }
+
+    #[tokio::test]
+    async fn test_pool_migration_uses_current_advertisements() {
+        let pool = IngesterPool::default();
+        assert!(all_indexers_enable_shard_scaling_v2(&pool));
+        let first = NodeId::from_str("first");
+        let second = NodeId::from_str("second");
+        let mut entry = IngesterPoolEntry::mocked_ingester();
+        pool.insert(first.clone(), entry.clone());
+        assert!(!all_indexers_enable_shard_scaling_v2(&pool));
+        entry.enable_shard_scaling_v2 = true;
+        pool.insert(second.clone(), entry.clone());
+        assert!(!all_indexers_enable_shard_scaling_v2(&pool));
+        pool.insert(first.clone(), entry.clone());
+        assert!(all_indexers_enable_shard_scaling_v2(&pool));
+        for status in [
+            IngesterStatus::Initializing,
+            IngesterStatus::Ready,
+            IngesterStatus::Decommissioning,
+            IngesterStatus::Failed,
+        ] {
+            entry.status = status;
+            pool.insert(first.clone(), entry.clone());
+            assert!(all_indexers_enable_shard_scaling_v2(&pool));
+        }
+        entry.enable_shard_scaling_v2 = false;
+        pool.insert(first.clone(), entry);
+        assert!(!all_indexers_enable_shard_scaling_v2(&pool));
+        pool.listen_for_changes(futures::stream::iter([
+            quickwit_common::tower::Change::Remove(first),
+        ]));
+        tokio::task::yield_now().await;
+        assert!(all_indexers_enable_shard_scaling_v2(&pool));
+        pool.listen_for_changes(futures::stream::iter([
+            quickwit_common::tower::Change::Remove(second),
+        ]));
+        tokio::task::yield_now().await;
+        assert!(all_indexers_enable_shard_scaling_v2(&pool));
+    }
 }

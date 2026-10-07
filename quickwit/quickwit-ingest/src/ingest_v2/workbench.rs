@@ -427,7 +427,7 @@ mod tests {
         assert!(!subworkbench.last_failure_is_transient());
 
         subworkbench.last_failure_opt = Some(SubworkbenchFailure::Persist(
-            PersistFailureReason::NoShardsAvailable,
+            PersistFailureReason::NoShardsForSource,
         ));
         assert!(subworkbench.is_pending());
         assert!(subworkbench.last_failure_is_transient());
@@ -803,7 +803,7 @@ mod tests {
 
         let persist_failure = PersistFailure {
             subrequest_id: 42,
-            reason: PersistFailureReason::NoShardsAvailable as i32,
+            reason: PersistFailureReason::NoShardsForSource as i32,
             ..Default::default()
         };
         workbench.record_persist_failure(&persist_failure);

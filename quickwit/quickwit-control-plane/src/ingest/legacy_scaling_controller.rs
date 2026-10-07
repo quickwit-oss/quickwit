@@ -24,7 +24,7 @@ use quickwit_proto::metastore::MetastoreResult;
 use quickwit_proto::types::{NodeId, SourceUid};
 use rand::prelude::IndexedRandom;
 use rand::{Rng, rng};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use super::legacy_scaling_arbiter::{LegacyScalingArbiter, ScalingMode};
 use crate::control_plane::ControlPlane;
@@ -62,13 +62,6 @@ impl LegacyScalingController {
             .await
     }
 
-    /// Reconcile shards is the entrypoint for the control plane loop. It first makes scaling
-    /// decisions for each source, and then makes rebalancing decisions.
-    /// It primarily differs from the new scaling controller in scaling up less aggressively, and
-    /// scaling down shards one at a time.
-    ///
-    /// While shard scale-up tries to strategically place shards, it can still violate global
-    /// balance constraints, so rebalance follows, if needed.
     pub(crate) async fn reconcile_shards(
         &self,
         // TODO: hold the ingest controller on the struct instead of passing it in.
@@ -77,23 +70,6 @@ impl LegacyScalingController {
         mailbox: &Mailbox<ControlPlane>,
         progress: &Progress,
     ) -> MetastoreResult<()> {
-        let source_uids: Vec<SourceUid> = model
-            .source_configs()
-            .map(|(source_uid, _source_config)| source_uid)
-            .collect();
-
-        for source_uid in source_uids {
-            let scale_source_shards_result = self
-                .scale_source_shards(ingest_controller, source_uid, model, progress)
-                .await;
-            let Err(metastore_error) = scale_source_shards_result else {
-                continue;
-            };
-            if !metastore_error.is_transaction_certainly_aborted() {
-                return Err(metastore_error);
-            }
-            error!(error=?metastore_error, "failed to scale source shards");
-        }
         ingest_controller
             .rebalance_shards(model, mailbox, progress)
             .await?;
@@ -316,6 +292,82 @@ mod tests {
 
     use super::*;
 
+    #[tokio::test(start_paused = true)]
+    async fn test_unacknowledged_closes_leave_permits_reusable() {
+        for outcome in ["empty", "timeout", "acknowledged"] {
+            let index = IndexUid::for_test("index", 0);
+            let source = SourceUid {
+                index_uid: index.clone(),
+                source_id: "source".to_string(),
+            };
+            let mut model = ControlPlaneModel::default();
+            model.insert_shards(
+                &index,
+                &source.source_id,
+                (1..=2)
+                    .map(|id| Shard {
+                        index_uid: Some(index.clone()),
+                        source_id: source.source_id.clone(),
+                        shard_id: Some(ShardId::from(id)),
+                        ingester_id: "ingester".to_string(),
+                        shard_state: ShardState::Open as i32,
+                        ..Default::default()
+                    })
+                    .collect(),
+            );
+            let mut mock = MockIngesterService::new();
+            mock.expect_close_shards()
+                .times(if outcome == "timeout" { 0 } else { 1 })
+                .returning(move |request| {
+                    Ok(CloseShardsResponse {
+                        successes: if outcome == "acknowledged" {
+                            request.shard_pkeys
+                        } else {
+                            Vec::new()
+                        },
+                    })
+                });
+            let client = if outcome == "timeout" {
+                IngesterServiceClient::tower()
+                    .stack_close_shards_layer(quickwit_common::tower::DelayLayer::new(
+                        std::time::Duration::from_secs(60),
+                    ))
+                    .build_from_mock(mock)
+            } else {
+                IngesterServiceClient::from_mock(mock)
+            };
+            let pool = IngesterPool::default();
+            pool.insert(
+                NodeId::from_str("ingester"),
+                IngesterPoolEntry::ready_with_client(client),
+            );
+            let controller = IngestController::new(MetastoreServiceClient::mocked(), pool);
+            let scaling = LegacyScalingController::new(DEFAULT_SHARD_THROUGHPUT_LIMIT, 1.5);
+            scaling
+                .try_scale_down_shards(
+                    &controller,
+                    source.clone(),
+                    ShardStats {
+                        num_open_shards: 2,
+                        ..Default::default()
+                    },
+                    NonZeroUsize::MIN,
+                    &mut model,
+                    &Progress::default(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                model.all_shards().filter(|shard| shard.is_closed()).count(),
+                usize::from(outcome == "acknowledged")
+            );
+            assert_eq!(
+                model.acquire_scaling_permits(&source, ScalingMode::Down),
+                Some(outcome != "acknowledged")
+            );
+        }
+    }
+
     #[tokio::test]
     async fn test_handle_shards_update_for_deleted_index() {
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
@@ -324,7 +376,7 @@ mod tests {
         let scaling_controller =
             LegacyScalingController::new(DEFAULT_SHARD_THROUGHPUT_LIMIT, 1.001);
         let mut model = ControlPlaneModel::default();
-        let source_shard_report = SourceShardReport {
+        let source_shard_report = quickwit_ingest::SourceShardReport {
             source_uid: SourceUid {
                 index_uid: IndexUid::for_test("test-index", 0),
                 source_id: "test-source".to_string(),
@@ -332,13 +384,10 @@ mod tests {
             shard_infos: BTreeSet::new(),
         };
         scaling_controller
-            .handle_shards_update(
+            .update_local_shards(
                 &mut controller,
-                "test-ingester",
-                1,
-                ShardsUpdate {
-                    shard_infos_by_source: vec![source_shard_report.into()],
-                },
+                source_shard_report.source_uid,
+                &source_shard_report.shard_infos,
                 &mut model,
                 &Progress::default(),
             )
@@ -876,10 +925,28 @@ mod tests {
         let mut model = ControlPlaneModel::default();
         let progress = Progress::default();
 
+        model.insert_shards(&index_uid, &source_id, Vec::new());
+        scaling_controller
+            .try_scale_down_shards(
+                &controller,
+                source_uid.clone(),
+                shard_stats,
+                NonZeroUsize::new(2).unwrap(),
+                &mut model,
+                &progress,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            model.acquire_scaling_permits(&source_uid, ScalingMode::Down),
+            Some(true)
+        );
+        model.release_scaling_permits(&source_uid, ScalingMode::Down);
+
         // Test could not find a scale down candidate.
         scaling_controller
             .try_scale_down_shards(
-                &mut controller,
+                &controller,
                 source_uid.clone(),
                 shard_stats,
                 min_shards,
@@ -902,7 +969,7 @@ mod tests {
         // Test ingester is unavailable.
         scaling_controller
             .try_scale_down_shards(
-                &mut controller,
+                &controller,
                 source_uid.clone(),
                 shard_stats,
                 min_shards,
@@ -950,7 +1017,7 @@ mod tests {
         // Test failed to close shard.
         scaling_controller
             .try_scale_down_shards(
-                &mut controller,
+                &controller,
                 source_uid.clone(),
                 shard_stats,
                 min_shards,
@@ -964,7 +1031,7 @@ mod tests {
         // Test successfully closed shard.
         scaling_controller
             .try_scale_down_shards(
-                &mut controller,
+                &controller,
                 source_uid.clone(),
                 shard_stats,
                 min_shards,
@@ -988,7 +1055,7 @@ mod tests {
         // Test rate limited.
         scaling_controller
             .try_scale_down_shards(
-                &mut controller,
+                &controller,
                 source_uid.clone(),
                 shard_stats,
                 min_shards,

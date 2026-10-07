@@ -165,12 +165,12 @@ impl ScalingController {
         else {
             return Ok(());
         };
-        let min_shards = model
+        let Some(min_shards) = model
             .index_metadata(&source_uid.index_uid)
-            .expect("index should exist")
-            .index_config
-            .ingest_settings
-            .min_shards;
+            .map(|metadata| metadata.index_config.ingest_settings.min_shards)
+        else {
+            return Ok(());
+        };
         let cooldown_expired = self.is_scale_down_cooldown_expired(source_uid, Instant::now());
         let scaling_decision_opt =
             self.should_scale(shard_throughput_stats, min_shards, cooldown_expired);
@@ -309,7 +309,7 @@ impl ScalingController {
         // This is the rate, for the number of shards open, above which a scale-up is needed.
         let scale_up_ingestion_rate =
             self.scale_up_shard_throughput_threshold * num_open_shards as u64;
-        if ingestion_rate > scale_up_ingestion_rate {
+        if ingestion_rate >= scale_up_ingestion_rate {
             let scale_up = ScalingDecision::ScaleUp {
                 target_num_open_shards,
             };
@@ -398,6 +398,126 @@ fn find_scale_down_candidates(
 mod tests {
     use std::collections::BTreeSet;
 
+    #[test]
+    fn test_scaling_decision_boundaries() {
+        use ScalingDecision::{ScaleDown, ScaleUp};
+        let controller = ScalingController::with_shard_throughput_limit(ByteSize::b(100));
+        for (open, minimum, short, long, expired, expected) in [
+            (0, 1, 1000, 1000, true, None),
+            (
+                1,
+                3,
+                0,
+                0,
+                false,
+                Some(ScaleUp {
+                    target_num_open_shards: 3,
+                }),
+            ),
+            (2, 1, 199, 0, true, None),
+            (
+                2,
+                1,
+                200,
+                0,
+                false,
+                Some(ScaleUp {
+                    target_num_open_shards: 3,
+                }),
+            ),
+            (
+                2,
+                1,
+                0,
+                201,
+                false,
+                Some(ScaleUp {
+                    target_num_open_shards: 3,
+                }),
+            ),
+            (2, 1, 0, 80, true, None),
+            (
+                2,
+                1,
+                79,
+                0,
+                true,
+                Some(ScaleDown {
+                    target_num_open_shards: 1,
+                }),
+            ),
+            (2, 1, 79, 0, false, None),
+            (2, 2, 0, 0, true, None),
+            (
+                10,
+                1,
+                0,
+                0,
+                true,
+                Some(ScaleDown {
+                    target_num_open_shards: 1,
+                }),
+            ),
+            (
+                1,
+                1,
+                801,
+                0,
+                false,
+                Some(ScaleUp {
+                    target_num_open_shards: 11,
+                }),
+            ),
+            (
+                1,
+                1,
+                80000,
+                0,
+                true,
+                Some(ScaleUp {
+                    target_num_open_shards: 1000,
+                }),
+            ),
+        ] {
+            let stats = ShardStats {
+                num_open_shards: open,
+                num_closed_shards: 0,
+                total_short_term_ingestion_rate: ByteSize::b(short),
+                total_long_term_ingestion_rate: ByteSize::b(long),
+            };
+            assert_eq!(
+                controller.should_scale(stats, NonZeroUsize::new(minimum).unwrap(), expired),
+                expected,
+                "open={open}, minimum={minimum}, short={short}, long={long}, expired={expired}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_source_cooldown_expiry_and_restart() {
+        let mut controller = ScalingController::with_shard_throughput_limit(ByteSize::b(100));
+        let source = SourceUid {
+            index_uid: IndexUid::for_test("index", 0),
+            source_id: "a".to_string(),
+        };
+        let other = SourceUid {
+            source_id: "b".to_string(),
+            ..source.clone()
+        };
+        let now = Instant::now();
+        assert!(controller.is_scale_down_cooldown_expired(&source, now));
+        controller.restart_scale_down_cooldown(&source, now);
+        assert!(!controller.is_scale_down_cooldown_expired(
+            &source,
+            now + SCALE_DOWN_COOLDOWN - Duration::from_nanos(1)
+        ));
+        assert!(controller.is_scale_down_cooldown_expired(&source, now + SCALE_DOWN_COOLDOWN));
+        assert!(controller.is_scale_down_cooldown_expired(&other, now));
+        controller.restart_scale_down_cooldown(&source, now + SCALE_DOWN_COOLDOWN);
+        assert!(!controller.is_scale_down_cooldown_expired(&source, now + SCALE_DOWN_COOLDOWN));
+        assert!(controller.is_scale_down_cooldown_expired(&source, now + SCALE_DOWN_COOLDOWN * 2));
+    }
+
     use bytesize::ByteSize;
     use quickwit_actors::Universe;
     use quickwit_common::Progress;
@@ -411,11 +531,359 @@ mod tests {
     };
     use quickwit_proto::ingest::{Shard, ShardState};
     use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient, MockMetastoreService};
-    use quickwit_proto::types::{NodeId, ShardId, SourceUid};
+    use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 
-    use super::{IngestController, ScalingController};
-    use crate::ingest::LegacyScalingController;
+    use super::*;
     use crate::model::ControlPlaneModel;
+
+    fn scaling_model(count: u64) -> (ControlPlaneModel, SourceUid) {
+        let (mut model, _) = shard_reports_for_test(1);
+        let index_uid = model.all_shards().next().unwrap().index_uid().clone();
+        let source = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: "source-a".to_string(),
+        };
+        for id in 2..=count {
+            model.insert_shards(
+                &index_uid,
+                &source.source_id,
+                vec![Shard {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: source.source_id.clone(),
+                    shard_id: Some(ShardId::from(id)),
+                    ingester_id: "ingester".to_string(),
+                    shard_state: ShardState::Open as i32,
+                    ..Default::default()
+                }],
+            );
+        }
+        (model, source)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_scale_down_only_acknowledged_shards_start_cooldown() {
+        for (outcome, closed) in [
+            ("full", 2),
+            ("partial", 1),
+            ("empty", 0),
+            ("error", 0),
+            ("timeout", 0),
+        ] {
+            let (mut model, source) = scaling_model(3);
+            let mut mock = MockIngesterService::new();
+            mock.expect_close_shards()
+                .times(if outcome == "timeout" { 0 } else { 1 })
+                .returning(move |request| {
+                    if outcome == "error" {
+                        return Err(quickwit_proto::ingest::IngestV2Error::Internal(
+                            "close failed".to_string(),
+                        ));
+                    }
+                    Ok(quickwit_proto::ingest::ingester::CloseShardsResponse {
+                        successes: request.shard_pkeys.into_iter().take(closed).collect(),
+                    })
+                });
+            let client = if outcome == "timeout" {
+                IngesterServiceClient::tower()
+                    .stack_close_shards_layer(quickwit_common::tower::DelayLayer::new(
+                        Duration::from_secs(60),
+                    ))
+                    .build_from_mock(mock)
+            } else {
+                IngesterServiceClient::from_mock(mock)
+            };
+            let pool = IngesterPool::default();
+            pool.insert(
+                NodeId::from_str("ingester"),
+                IngesterPoolEntry::ready_with_client(client),
+            );
+            let controller = IngestController::new(MetastoreServiceClient::mocked(), pool);
+            let mut scaling =
+                ScalingController::with_shard_throughput_limit(DEFAULT_SHARD_THROUGHPUT_LIMIT);
+            scaling
+                .scale_down_shards(
+                    &controller,
+                    &source,
+                    3,
+                    1,
+                    &FnvHashSet::from_iter([NodeId::from_str("ingester")]),
+                    &mut model,
+                    &Progress::default(),
+                )
+                .await;
+            assert_eq!(
+                model
+                    .get_shards_for_source(&source)
+                    .unwrap()
+                    .values()
+                    .filter(|shard| shard.is_closed())
+                    .count(),
+                closed
+            );
+            assert_eq!(
+                scaling.last_shard_count_changes.contains_key(&source),
+                closed > 0
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_scale_up_progress_controls_cooldown() {
+        for (outcome, opened) in [
+            ("full", 2),
+            ("partial", 1),
+            ("unavailable", 0),
+            ("init-error", 0),
+            ("metastore-error", 0),
+        ] {
+            let (mut model, source) = scaling_model(1);
+            let mut metastore = MockMetastoreService::new();
+            metastore
+                .expect_open_shards()
+                .times(if matches!(outcome, "unavailable" | "init-error") {
+                    0
+                } else {
+                    1
+                })
+                .returning(move |request| {
+                    if outcome == "metastore-error" {
+                        return Err(MetastoreError::InvalidArgument {
+                            message: "open failed".to_string(),
+                        });
+                    }
+                    Ok(quickwit_proto::metastore::OpenShardsResponse {
+                        subresponses: request
+                            .subrequests
+                            .into_iter()
+                            .map(|request| quickwit_proto::metastore::OpenShardSubresponse {
+                                subrequest_id: request.subrequest_id,
+                                open_shard: Some(Shard {
+                                    index_uid: request.index_uid,
+                                    source_id: request.source_id,
+                                    shard_id: request.shard_id,
+                                    ingester_id: request.ingester_id,
+                                    shard_state: ShardState::Open as i32,
+                                    ..Default::default()
+                                }),
+                            })
+                            .collect(),
+                    })
+                });
+            let pool = IngesterPool::default();
+            if outcome != "unavailable" {
+                let mut ingester = MockIngesterService::new();
+                ingester
+                    .expect_init_shards()
+                    .once()
+                    .returning(move |request| {
+                        if outcome == "init-error" {
+                            return Err(quickwit_proto::ingest::IngestV2Error::Internal(
+                                "init failed".to_string(),
+                            ));
+                        }
+                        let count = if outcome == "partial" { 1 } else { 2 };
+                        Ok(InitShardsResponse {
+                            successes: request
+                                .subrequests
+                                .into_iter()
+                                .take(count)
+                                .map(|request| InitShardSuccess {
+                                    subrequest_id: request.subrequest_id,
+                                    shard: request.shard,
+                                })
+                                .collect(),
+                            failures: Vec::new(),
+                        })
+                    });
+                pool.insert(
+                    NodeId::from_str("ingester"),
+                    IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(
+                        ingester,
+                    )),
+                );
+            }
+            let mut controller =
+                IngestController::new(MetastoreServiceClient::from_mock(metastore), pool);
+            let mut scaling =
+                ScalingController::with_shard_throughput_limit(DEFAULT_SHARD_THROUGHPUT_LIMIT);
+            let result = scaling
+                .scale_up_shards(
+                    &mut controller,
+                    &source,
+                    1,
+                    3,
+                    &mut model,
+                    &Progress::default(),
+                )
+                .await;
+            assert_eq!(result.is_err(), outcome == "metastore-error");
+            assert_eq!(
+                model
+                    .get_shards_for_source(&source)
+                    .unwrap()
+                    .values()
+                    .filter(|shard| shard.is_open())
+                    .count(),
+                1 + opened
+            );
+            assert_eq!(
+                scaling.last_shard_count_changes.contains_key(&source),
+                opened > 0
+            );
+        }
+    }
+
+    #[test]
+    fn test_candidates_reduce_global_imbalance_and_exclude_ineligible_shards() {
+        let (mut model, source) = scaling_model(3);
+        for (id, node, state) in [
+            (4, "other", ShardState::Open),
+            (5, "other", ShardState::Closed),
+            (6, "departed", ShardState::Open),
+            (7, "ingester", ShardState::Unavailable),
+        ] {
+            model.insert_shards(
+                &source.index_uid,
+                &source.source_id,
+                vec![Shard {
+                    index_uid: Some(source.index_uid.clone()),
+                    source_id: source.source_id.clone(),
+                    shard_id: Some(ShardId::from(id)),
+                    ingester_id: node.to_string(),
+                    shard_state: state as i32,
+                    ..Default::default()
+                }],
+            );
+        }
+        let live = FnvHashSet::from_iter([NodeId::from_str("ingester"), NodeId::from_str("other")]);
+        let candidates = find_scale_down_candidates(&source, 2, &live, &model);
+        assert_eq!(candidates.len(), 2);
+        assert!(
+            candidates
+                .iter()
+                .all(|shard| shard.ingester_id == "ingester")
+        );
+        let candidates = find_scale_down_candidates(&source, 20, &live, &model);
+        assert_eq!(candidates.len(), 4);
+        assert!(
+            candidates
+                .iter()
+                .all(|shard| shard.shard_state() == ShardState::Open
+                    && live.contains(shard.ingester_id.as_str()))
+        );
+        assert!(
+            find_scale_down_candidates(
+                &SourceUid {
+                    source_id: "missing".to_string(),
+                    ..source
+                },
+                1,
+                &live,
+                &model
+            )
+            .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_deleted_and_departed_inputs_cannot_drive_scaling() {
+        let (mut model, source) = scaling_model(1);
+        let mut scaling =
+            ScalingController::with_shard_throughput_limit(DEFAULT_SHARD_THROUGHPUT_LIMIT);
+        let pool = IngesterPool::default();
+        let mut controller = IngestController::new(MetastoreServiceClient::mocked(), pool);
+        model.update_shards(
+            &source,
+            &BTreeSet::from([ShardInfo {
+                shard_id: ShardId::from(1),
+                shard_state: ShardState::Open,
+                short_term_ingestion_rate: ByteSize::mib(100),
+                long_term_ingestion_rate: ByteSize::mib(100),
+            }]),
+        );
+        scaling
+            .scale_source_shards(
+                &mut controller,
+                &source,
+                &FnvHashSet::default(),
+                &mut model,
+                &Progress::default(),
+            )
+            .await
+            .unwrap();
+        assert!(scaling.last_shard_count_changes.is_empty());
+        assert_eq!(model.get_shards_for_source(&source).unwrap().len(), 1);
+        model.delete_source(&source);
+        scaling
+            .scale_source_shards(
+                &mut controller,
+                &source,
+                &FnvHashSet::default(),
+                &mut model,
+                &Progress::default(),
+            )
+            .await
+            .unwrap();
+        assert!(model.get_shards_for_source(&source).is_none());
+        model.delete_index(&source.index_uid);
+        scaling
+            .scale_source_shards(
+                &mut controller,
+                &source,
+                &FnvHashSet::default(),
+                &mut model,
+                &Progress::default(),
+            )
+            .await
+            .unwrap();
+        assert!(scaling.last_shard_count_changes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_rebalance_after_scaling_preserves_target_count() {
+        let (mut model, source) = scaling_model(3);
+        let mut ingester = MockIngesterService::new();
+        ingester.expect_close_shards().once().returning(|request| {
+            Ok(quickwit_proto::ingest::ingester::CloseShardsResponse {
+                successes: request.shard_pkeys,
+            })
+        });
+        let pool = IngesterPool::default();
+        pool.insert(
+            NodeId::from_str("ingester"),
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(ingester)),
+        );
+        let mut controller = IngestController::new(MetastoreServiceClient::mocked(), pool);
+        let mut scaling =
+            ScalingController::with_shard_throughput_limit(DEFAULT_SHARD_THROUGHPUT_LIMIT);
+        scaling
+            .scale_down_shards(
+                &controller,
+                &source,
+                3,
+                1,
+                &FnvHashSet::from_iter([NodeId::from_str("ingester")]),
+                &mut model,
+                &Progress::default(),
+            )
+            .await;
+        let universe = Universe::new();
+        let (mailbox, _inbox) = universe.create_test_mailbox();
+        controller
+            .rebalance_shards(&mut model, &mailbox, &Progress::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            model
+                .get_shards_for_source(&source)
+                .unwrap()
+                .values()
+                .filter(|shard| shard.is_open())
+                .count(),
+            1
+        );
+        universe.assert_quit().await;
+    }
 
     fn shard_reports_for_test(min_shards: usize) -> (ControlPlaneModel, ShardsUpdate) {
         let mut model = ControlPlaneModel::default();
@@ -564,8 +1032,8 @@ mod tests {
             );
             let mut controller =
                 IngestController::new(MetastoreServiceClient::from_mock(mock_metastore), pool);
-            let scaling_controller =
-                LegacyScalingController::new(DEFAULT_SHARD_THROUGHPUT_LIMIT, 1.5);
+            let mut scaling_controller =
+                ScalingController::with_shard_throughput_limit(DEFAULT_SHARD_THROUGHPUT_LIMIT);
             ScalingController::with_shard_throughput_limit(DEFAULT_SHARD_THROUGHPUT_LIMIT)
                 .handle_shards_update(&controller, "ingester", 1, update, &mut model);
             let result = scaling_controller

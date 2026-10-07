@@ -241,3 +241,30 @@ impl MultiRecordLogAsync {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_truncate_returns_actual_removed_bytes_after_reopening() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut wal = MultiRecordLogAsync::open(dir.path()).await.unwrap();
+        wal.create_queue("queue").await.unwrap();
+        wal.append_records(
+            "queue",
+            None,
+            [b"a".as_slice(), b"three", b"seven77"].into_iter(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(wal.truncate("queue", 0).await.unwrap(), ByteSize::b(1));
+        assert_eq!(wal.truncate("queue", 0).await.unwrap(), ByteSize::b(0));
+        drop(wal);
+        let mut wal = MultiRecordLogAsync::open(dir.path()).await.unwrap();
+        assert_eq!(wal.truncate("queue", 1).await.unwrap(), ByteSize::b(5));
+        assert_eq!(wal.truncate("queue", 100).await.unwrap(), ByteSize::b(7));
+        assert_eq!(wal.truncate("queue", 100).await.unwrap(), ByteSize::b(0));
+        assert_eq!(wal.range("queue", ..).unwrap().count(), 0);
+    }
+}

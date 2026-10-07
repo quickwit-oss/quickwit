@@ -116,6 +116,7 @@ mod tests {
             index_uid.clone(),
             "test-source".to_string(),
             ShardId::from(1),
+            state_guard.shared_rate_meter.clone(),
         )
         .with_last_write(now - idle_shard_timeout)
         .build();
@@ -126,6 +127,7 @@ mod tests {
             index_uid.clone(),
             "test-source".to_string(),
             ShardId::from(2),
+            state_guard.shared_rate_meter.clone(),
         )
         .build();
         let queue_id_02 = shard_02.queue_id();

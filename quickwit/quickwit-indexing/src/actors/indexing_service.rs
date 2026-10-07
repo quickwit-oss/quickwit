@@ -1301,6 +1301,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_partial_plan_reports_only_running_tasks() {
+        let transport = ChitchatTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        let metastore = metastore_for_test();
+        let config = IndexConfig::for_test("partial-plan", "ram:///partial-plan");
+        let index = metastore
+            .create_index(CreateIndexRequest::try_from_index_config(&config).unwrap())
+            .await
+            .unwrap()
+            .index_uid()
+            .clone();
+        let source = SourceConfig::for_test("valid", SourceParams::void());
+        metastore
+            .add_source(AddSourceRequest::try_from_source_config(index.clone(), &source).unwrap())
+            .await
+            .unwrap();
+        let universe = Universe::new();
+        let dir = tempfile::tempdir().unwrap();
+        let (sender, receiver) = watch::channel(None);
+        let (mailbox, _handle) = spawn_indexing_service_for_test(
+            dir.path(),
+            &universe,
+            metastore,
+            cluster.clone(),
+            sender,
+        )
+        .await;
+        let valid = IndexingTask {
+            index_uid: Some(index.clone()),
+            source_id: source.source_id.clone(),
+            pipeline_uid: Some(PipelineUid::for_test(1)),
+            shard_ids: Vec::new(),
+            params_fingerprint: indexing_pipeline_params_fingerprint(&config, &source),
+        };
+        let invalid = IndexingTask {
+            source_id: "missing-source".to_string(),
+            pipeline_uid: Some(PipelineUid::for_test(2)),
+            ..valid.clone()
+        };
+        assert!(
+            mailbox
+                .ask_for_res(ApplyIndexingPlanRequest {
+                    indexing_tasks: vec![valid.clone(), invalid],
+                    indexing_plan_id: "01ARZ3NDEKTSV4RRFFQ69G5FA1".to_string()
+                })
+                .await
+                .is_err()
+        );
+        assert_eq!(receiver.borrow().as_ref().unwrap().as_ref(), &vec![valid]);
+        let snapshot = cluster.snapshot().await;
+        let self_state = snapshot
+            .chitchat_state_snapshot
+            .node_states
+            .into_iter()
+            .find(|state| state.chitchat_id().node_id.as_ref() == cluster.self_node_id().as_str())
+            .unwrap();
+        assert!(
+            !self_state
+                .key_values()
+                .any(|(key, _)| key.starts_with("indexing_task:"))
+        );
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
     async fn test_indexing_service_apply_plan() {
         quickwit_common::setup_logging_for_tests();
         // The expected fingerprints are computed dynamically from the actual

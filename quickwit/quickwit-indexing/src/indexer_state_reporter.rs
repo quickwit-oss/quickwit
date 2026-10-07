@@ -155,10 +155,115 @@ mod tests {
     }
 
     #[test]
+    fn test_transport_gate_tracks_current_membership() {
+        let pool = IngesterPool::default();
+        let node = NodeId::from_str("indexer");
+        let mut entry = quickwit_ingest::IngesterPoolEntry::mocked_ingester();
+        pool.insert(node.clone(), entry.clone());
+        let (shards_tx, shards_rx) =
+            watch::channel(Some(Arc::new(ShardThroughputReadings::default())));
+        let (tasks_tx, tasks_rx) = watch::channel(None);
+        let reporter = IndexerStateReporter {
+            node_id: node.clone(),
+            generation_id: 1,
+            local_shards_rx: shards_rx,
+            indexing_tasks_rx: tasks_rx,
+            control_plane_client: ControlPlaneServiceClient::mocked(),
+            ingester_pool: pool.clone(),
+        };
+        assert!(reporter.observe_indexer_state().is_none());
+        tasks_tx.send_replace(Some(Arc::new(vec![task(1)])));
+        let report = reporter.observe_indexer_state().unwrap();
+        assert!(report.shards_update.is_none());
+        assert_eq!(
+            report.indexing_tasks_update.unwrap().indexing_tasks,
+            vec![task(1)]
+        );
+        tasks_tx.send_replace(None);
+        entry.enable_shard_scaling_v2 = true;
+        pool.insert(node.clone(), entry.clone());
+        let report = reporter.observe_indexer_state().unwrap();
+        assert!(
+            report
+                .shards_update
+                .unwrap()
+                .shard_infos_by_source
+                .is_empty()
+        );
+        assert!(report.indexing_tasks_update.is_none());
+        shards_tx.send_replace(None);
+        assert!(reporter.observe_indexer_state().is_none());
+        shards_tx.send_replace(Some(Arc::new(ShardThroughputReadings::default())));
+        entry.enable_shard_scaling_v2 = false;
+        pool.insert(node, entry);
+        assert!(reporter.observe_indexer_state().is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_missed_ticks_send_current_snapshot_without_burst() {
+        let (_shards_tx, shards_rx) = watch::channel(None);
+        let (tasks_tx, tasks_rx) = watch::channel(Some(Arc::new(vec![task(1)])));
+        let (requests_tx, mut requests_rx) = mpsc::unbounded_channel();
+        let mut mock = MockControlPlaneService::new();
+        mock.expect_report_indexer_state()
+            .times(3)
+            .returning(move |request| {
+                requests_tx.send(request).unwrap();
+                Ok(ReportIndexerStateResponse {})
+            });
+        let handle = IndexerStateReporter::start_reporting(
+            NodeId::from_str("indexer"),
+            1,
+            shards_rx,
+            tasks_rx,
+            ControlPlaneServiceClient::from_mock(mock),
+            IngesterPool::default(),
+        );
+        tokio::task::yield_now().await;
+        assert_eq!(
+            requests_rx
+                .try_recv()
+                .unwrap()
+                .indexing_tasks_update
+                .unwrap()
+                .indexing_tasks,
+            vec![task(1)]
+        );
+        tasks_tx.send_replace(Some(Arc::new(vec![task(2)])));
+        tokio::time::advance(REPORT_INTERVAL * 10).await;
+        tokio::task::yield_now().await;
+        assert_eq!(
+            requests_rx
+                .try_recv()
+                .unwrap()
+                .indexing_tasks_update
+                .unwrap()
+                .indexing_tasks,
+            vec![task(2)]
+        );
+        tokio::task::yield_now().await;
+        assert!(requests_rx.try_recv().is_err());
+        tokio::time::advance(REPORT_INTERVAL).await;
+        tokio::task::yield_now().await;
+        assert_eq!(
+            requests_rx
+                .try_recv()
+                .unwrap()
+                .indexing_tasks_update
+                .unwrap()
+                .indexing_tasks,
+            vec![task(2)]
+        );
+        handle.abort();
+        assert!(handle.await.unwrap_err().is_cancelled());
+    }
+
+    #[test]
     fn test_observe_latest_optional_snapshots() {
         let (shards_tx, shards_rx) = watch::channel(None);
         let (tasks_tx, tasks_rx) = watch::channel(None);
         let reporter = IndexerStateReporter {
+            ingester_pool: IngesterPool::default(),
             node_id: NodeId::from_str("indexer"),
             generation_id: 42,
             local_shards_rx: shards_rx,
@@ -232,6 +337,7 @@ mod tests {
             shards_rx,
             tasks_rx,
             ControlPlaneServiceClient::from_mock(mock),
+            IngesterPool::default(),
         );
         tokio::task::yield_now().await;
         tokio::time::advance(REPORT_INTERVAL).await;
@@ -279,6 +385,7 @@ mod tests {
         let mut delayed_mock = MockControlPlaneService::new();
         delayed_mock.expect_report_indexer_state().never();
         let mut reporter = IndexerStateReporter {
+            ingester_pool: IngesterPool::default(),
             node_id: NodeId::from_str("indexer"),
             generation_id: 42,
             local_shards_rx: shards_rx,

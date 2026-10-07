@@ -279,6 +279,53 @@ mod tests {
 
     use super::*;
 
+    #[tokio::test(start_paused = true)]
+    async fn test_shard_meter_lifecycle_and_id_reuse() {
+        let meter = Arc::new(SharedRateMeter::default());
+        let source = quickwit_proto::types::SourceUid {
+            index_uid: IndexUid::for_test("index", 0),
+            source_id: "source".to_string(),
+        };
+        let mut shard = IngesterShard::builder(
+            source.index_uid.clone(),
+            source.source_id.clone(),
+            ShardId::from(1),
+            meter.clone(),
+        )
+        .build();
+        shard.record_persisted_bytes(100);
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert!(meter.harvest().per_source_shard_infos.is_empty());
+        shard.make_advertisable();
+        let readings = meter.harvest();
+        let reading = readings.per_source_shard_infos[&source].first().unwrap();
+        assert_eq!(reading.shard_state, ShardState::Open);
+        assert_eq!(reading.short_term_ingestion_rate, ByteSize::b(100));
+        shard.close();
+        tokio::time::advance(Duration::from_secs(1)).await;
+        let readings = meter.harvest();
+        let reading = readings.per_source_shard_infos[&source].first().unwrap();
+        assert_eq!(reading.shard_state, ShardState::Closed);
+        assert_eq!(reading.long_term_ingestion_rate, ByteSize::b(50));
+        drop(shard);
+        assert!(meter.harvest().per_source_shard_infos.is_empty());
+        let shard = IngesterShard::builder(
+            source.index_uid.clone(),
+            source.source_id.clone(),
+            ShardId::from(1),
+            meter.clone(),
+        )
+        .advertisable()
+        .build();
+        tokio::time::advance(Duration::from_secs(1)).await;
+        let readings = meter.harvest();
+        let reading = readings.per_source_shard_infos[&source].first().unwrap();
+        assert_eq!(reading.shard_state, ShardState::Open);
+        assert_eq!(reading.short_term_ingestion_rate, ByteSize::b(0));
+        assert_eq!(reading.long_term_ingestion_rate, ByteSize::b(0));
+        drop(shard);
+    }
+
     impl IngesterShard {
         #[track_caller]
         pub fn assert_is_open(&self) {
@@ -311,6 +358,7 @@ mod tests {
 
     #[test]
     fn test_shard_builder() {
+        let meter = Arc::new(SharedRateMeter::default());
         let doc_mapping: DocMapping = serde_json::from_str("{}").unwrap();
         let search_settings = SearchSettings::default();
         let doc_mapper = build_doc_mapper(&doc_mapping, &search_settings).unwrap();
@@ -319,6 +367,7 @@ mod tests {
             IndexUid::for_test("test-index", 0),
             SourceId::from("test-source"),
             ShardId::from(1),
+            meter.clone(),
         )
         .with_state(ShardState::Closed)
         .with_replication_position_inclusive(Position::offset(42u64))
@@ -337,10 +386,12 @@ mod tests {
 
     #[test]
     fn test_is_empty_orphan() {
+        let meter = Arc::new(SharedRateMeter::default());
         let non_advertisable_empty_shard = IngesterShard::builder(
             IndexUid::for_test("test-index", 0),
             SourceId::from("test-source"),
             ShardId::from(1),
+            meter.clone(),
         )
         .with_state(ShardState::Closed)
         .build();
@@ -350,6 +401,7 @@ mod tests {
             IndexUid::for_test("test-index", 0),
             SourceId::from("test-source"),
             ShardId::from(2),
+            meter.clone(),
         )
         .with_state(ShardState::Closed)
         .advertisable()
@@ -360,6 +412,7 @@ mod tests {
             IndexUid::for_test("test-index", 0),
             SourceId::from("test-source"),
             ShardId::from(3),
+            meter.clone(),
         )
         .with_state(ShardState::Closed)
         .with_replication_position_inclusive(Position::offset(42u64))

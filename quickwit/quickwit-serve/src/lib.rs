@@ -1250,8 +1250,8 @@ fn setup_ingester_pool(
 fn should_update_ingester(previous: &ClusterNode, updated: &ClusterNode) -> bool {
     let ingester_status_changed = previous.ingester_status != updated.ingester_status;
     let enable_shard_scaling_v2_changed = previous.enable_shard_scaling_v2() != updated.enable_shard_scaling_v2();
-    return updated.is_indexer()
-        && (enable_shard_scaling_v2_changed || ingester_status_changed);
+    updated.is_indexer()
+        && (enable_shard_scaling_v2_changed || ingester_status_changed)
 }
 
 fn build_ingester_insert_change(
@@ -2080,6 +2080,57 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(1)).await;
 
         assert!(ingester_pool.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_ingester_pool_refreshes_capability_without_status_change() {
+        let transport = ChitchatTransport::default();
+        let observer = create_cluster_for_test(Vec::new(), &["searcher"], &transport, true)
+            .await
+            .unwrap();
+        let cluster = create_cluster_for_test(
+            vec![observer.gossip_listen_addr.to_string()],
+            &["indexer"],
+            &transport,
+            true,
+        )
+        .await
+        .unwrap();
+        let pool = IngesterPool::default();
+        setup_ingester_pool(
+            observer.change_stream(),
+            None::<Ingester>,
+            pool.clone(),
+            None,
+            ByteSize::mib(20),
+        );
+        let node = cluster.self_node_id();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while pool.get(&node).is_none() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let before = pool.get(&node).unwrap();
+        assert!(!before.enable_shard_scaling_v2);
+        cluster.set_self_key_value("shard_scaling_v2", "true").await;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !pool.get(&node).unwrap().enable_shard_scaling_v2 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(pool.get(&node).unwrap().status, before.status);
+        cluster.set_self_node_readiness(false).await;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while pool.get(&node).is_some() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
     }
 
     #[tokio::test]

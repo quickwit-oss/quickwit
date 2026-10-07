@@ -287,4 +287,21 @@ mod tests {
         disabled.set(STANDALONE_COMPACTORS_KEY, "false");
         assert!(!disabled.enable_standalone_compactors());
     }
+
+    #[test]
+    fn test_shard_scaling_capability_parsing() {
+        assert!(!NodeState::for_test().enable_shard_scaling_v2());
+        for (value, expected) in [
+            ("false", false),
+            ("true", true),
+            ("TRUE", false),
+            ("1", false),
+            ("", false),
+            ("invalid", false),
+        ] {
+            let mut state = NodeState::for_test();
+            state.set(super::SHARD_SCALING_V2_KEY, value);
+            assert_eq!(state.enable_shard_scaling_v2(), expected, "{value}");
+        }
+    }
 }

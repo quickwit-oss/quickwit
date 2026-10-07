@@ -48,13 +48,15 @@ impl WalCapacityTimeSeries {
     }
 
     fn score(&self, used: ByteSize) -> usize {
-        let remaining = 1.0 - (used.as_u64() as f64 / self.capacity.as_u64() as f64);
+        let remaining = self.capacity.as_u64().saturating_sub(used.as_u64()) as f64
+            / self.capacity.as_u64() as f64;
         let delta = self.delta().unwrap_or(0.0);
         compute_capacity_score(remaining, delta)
     }
 
     fn record(&mut self, used: ByteSize) {
-        let remaining = 1.0 - (used.as_u64() as f64 / self.capacity.as_u64() as f64);
+        let remaining = self.capacity.as_u64().saturating_sub(used.as_u64()) as f64
+            / self.capacity.as_u64() as f64;
         self.readings.push_back(remaining.clamp(0.0, 1.0));
     }
 
@@ -211,10 +213,8 @@ mod tests {
         let b_delta = node_b.delta().unwrap();
         let b_score = compute_capacity_score(b_remaining, b_delta);
 
-        // p=2.4, d=0 (max drain) => 2
-        assert_eq!(a_score, 2);
-        // p=4, d=2 (stable) => 6
-        assert_eq!(b_score, 6);
+        assert_eq!(a_score, 24);
+        assert_eq!(b_score, 60);
         assert!(b_score > a_score);
     }
 
@@ -235,15 +235,75 @@ mod tests {
         // 8th reading evicts the oldest 50-remaining. Delta still spans 6 intervals.
         record(&mut series, 0);
         assert_eq!(series.delta(), Some(0.50));
+
+        for _ in 0..28 {
+            record(&mut series, 0);
+            assert_eq!(series.delta(), Some(0.50));
+        }
+        record(&mut series, 0);
+        assert_eq!(series.delta(), Some(0.0));
+    }
+
+    #[test]
+    fn test_capacity_boundaries_and_recovery() {
+        for (used, expected) in [(0, 100), (50, 60), (94, 24), (95, 0), (100, 0), (120, 0)] {
+            let mut tracker = WalCapacityTracker::new(ByteSize::b(100), ByteSize::b(100));
+            assert_eq!(
+                tracker.record_and_score(ByteSize::b(used), ByteSize::b(used)),
+                expected,
+                "used={used}"
+            );
+        }
+        for (remaining, delta, expected) in [
+            (1.0, 0.0, 100),
+            (0.5, -0.1, 40),
+            (0.5, 0.1, 60),
+            (0.05, 0.0, 0),
+            (0.0, 0.0, 0),
+        ] {
+            assert_eq!(compute_capacity_score(remaining, delta), expected);
+        }
+        let mut tracker = WalCapacityTracker::new(ByteSize::b(100), ByteSize::b(100));
+        assert_eq!(
+            tracker.record_and_score(ByteSize::b(100), ByteSize::b(100)),
+            0
+        );
+        assert_eq!(
+            tracker.record_and_score(ByteSize::b(50), ByteSize::b(50)),
+            60
+        );
+        assert_eq!(
+            tracker.record_and_score(ByteSize::b(0), ByteSize::b(0)),
+            100
+        );
+    }
+
+    #[test]
+    fn test_piggyback_scoring_does_not_advance_history() {
+        let mut tracker = WalCapacityTracker::new(ByteSize::b(100), ByteSize::b(100));
+        tracker.record_and_score(ByteSize::b(0), ByteSize::b(0));
+        tracker.record_and_score(ByteSize::b(50), ByteSize::b(50));
+        for _ in 0..100 {
+            assert_eq!(tracker.score(ByteSize::b(50), ByteSize::b(50)), 40);
+        }
+        for _ in 0..29 {
+            assert_eq!(
+                tracker.record_and_score(ByteSize::b(50), ByteSize::b(50)),
+                40
+            );
+        }
+        assert_eq!(
+            tracker.record_and_score(ByteSize::b(50), ByteSize::b(50)),
+            60
+        );
     }
 
     #[test]
     fn test_wal_capacity_tracker_returns_min() {
         let mut tracker = WalCapacityTracker::new(ByteSize::b(100), ByteSize::b(100));
-        // Disk 10% used (score 9), memory 90% used (score 2) → returns 2.
         assert_eq!(
             tracker.record_and_score(ByteSize::b(10), ByteSize::b(90)),
-            2
+            28
         );
     }
 }

@@ -1252,9 +1252,11 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use bytesize::ByteSize;
     use itertools::Itertools;
     use quickwit_actors::Universe;
     use quickwit_common::setup_logging_for_tests;
+    use quickwit_common::shared_consts::DEFAULT_SHARD_THROUGHPUT_LIMIT;
     use quickwit_common::tower::DelayLayer;
     use quickwit_config::{DocMapping, INGEST_V2_SOURCE_ID, SourceConfig};
     use quickwit_ingest::IngesterPoolEntry;
@@ -1271,6 +1273,111 @@ mod tests {
     use quickwit_proto::types::{DocMappingUid, Position, SourceId};
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_both_scaling_controllers_respect_rebalance_permit() {
+        for migrated in [false, true] {
+            let mut metadata = IndexMetadata::for_test("index", "ram:///index");
+            metadata.add_source(SourceConfig::ingest_v2()).unwrap();
+            let index = metadata.index_uid.clone();
+            let source = SourceUid {
+                index_uid: index.clone(),
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
+            };
+            let mut model = ControlPlaneModel::default();
+            model.add_index(metadata);
+            model.insert_shards(
+                &index,
+                &source.source_id,
+                (1..=2)
+                    .map(|id| Shard {
+                        index_uid: Some(index.clone()),
+                        source_id: source.source_id.clone(),
+                        shard_id: Some(ShardId::from(id)),
+                        ingester_id: "ingester".to_string(),
+                        shard_state: ShardState::Open as i32,
+                        ..Default::default()
+                    })
+                    .collect(),
+            );
+            let readings = (1..=2)
+                .map(|id| quickwit_ingest::ShardInfo {
+                    shard_id: ShardId::from(id),
+                    shard_state: ShardState::Open,
+                    short_term_ingestion_rate: ByteSize::b(1),
+                    long_term_ingestion_rate: ByteSize::b(1),
+                })
+                .collect();
+            model.update_shards(&source, &readings);
+            let mut mock = MockIngesterService::new();
+            mock.expect_close_shards().once().returning(|request| {
+                Ok(CloseShardsResponse {
+                    successes: request.shard_pkeys,
+                })
+            });
+            let pool = IngesterPool::default();
+            pool.insert(
+                NodeId::from_str("ingester"),
+                IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock)),
+            );
+            let mut controller = IngestController::new(MetastoreServiceClient::mocked(), pool);
+            let permit = controller
+                .rebalance_semaphore
+                .clone()
+                .acquire_owned()
+                .await
+                .unwrap();
+            let universe = Universe::new();
+            let (mailbox, _inbox) = universe.create_test_mailbox();
+            let mut v2 = crate::ingest::ScalingController::with_shard_throughput_limit(
+                DEFAULT_SHARD_THROUGHPUT_LIMIT,
+            );
+            let legacy =
+                crate::ingest::LegacyScalingController::new(DEFAULT_SHARD_THROUGHPUT_LIMIT, 1.5);
+            if migrated {
+                v2.reconcile_shards(&mut controller, &mut model, &mailbox, &Progress::default())
+                    .await
+                    .unwrap();
+            } else {
+                legacy
+                    .update_local_shards(
+                        &mut controller,
+                        source.clone(),
+                        &readings,
+                        &mut model,
+                        &Progress::default(),
+                    )
+                    .await
+                    .unwrap();
+            }
+            assert_eq!(
+                model.all_shards().filter(|shard| shard.is_open()).count(),
+                2
+            );
+            drop(permit);
+            if migrated {
+                v2.reconcile_shards(&mut controller, &mut model, &mailbox, &Progress::default())
+                    .await
+                    .unwrap();
+            } else {
+                legacy
+                    .update_local_shards(
+                        &mut controller,
+                        source,
+                        &readings,
+                        &mut model,
+                        &Progress::default(),
+                    )
+                    .await
+                    .unwrap();
+            }
+            assert_eq!(
+                model.all_shards().filter(|shard| shard.is_open()).count(),
+                1
+            );
+            universe.assert_quit().await;
+        }
+    }
 
     fn ingester_pool_entry(
         status: IngesterStatus,

@@ -980,31 +980,28 @@ fn get_indexing_tasks_diff<'a>(
 ) -> (Vec<&'a IndexingTask>, Vec<&'a IndexingTask>) {
     let mut missing_tasks: Vec<&IndexingTask> = Vec::new();
     let mut unplanned_tasks: Vec<&IndexingTask> = Vec::new();
-    let grouped_running_tasks: FnvHashMap<&IndexingTask, usize> = running_tasks
-        .iter()
-        .chunk_by(|&task| task)
-        .into_iter()
-        .map(|(key, group)| (key, group.count()))
-        .collect();
-    let grouped_last_applied_tasks: FnvHashMap<&IndexingTask, usize> = last_applied_tasks
-        .iter()
-        .chunk_by(|&task| task)
-        .into_iter()
-        .map(|(key, group)| (key, group.count()))
-        .collect();
+    fn group_tasks(tasks: &[IndexingTask]) -> FnvHashMap<IndexingTask, Vec<&IndexingTask>> {
+        let mut grouped: FnvHashMap<IndexingTask, Vec<&IndexingTask>> = FnvHashMap::default();
+        for task in tasks {
+            let mut key = task.clone();
+            key.shard_ids.sort_unstable();
+            grouped.entry(key).or_default().push(task);
+        }
+        grouped
+    }
+    let grouped_running_tasks = group_tasks(running_tasks);
+    let grouped_last_applied_tasks = group_tasks(last_applied_tasks);
     let all_tasks: FnvHashSet<&IndexingTask> =
-        FnvHashSet::from_iter(running_tasks.iter().chain(last_applied_tasks.iter()));
+        FnvHashSet::from_iter(grouped_running_tasks.keys().chain(grouped_last_applied_tasks.keys()));
     for task in all_tasks {
-        let running_task_count = grouped_running_tasks.get(task).unwrap_or(&0);
-        let desired_task_count = grouped_last_applied_tasks.get(task).unwrap_or(&0);
-        match running_task_count.cmp(desired_task_count) {
+        let running = grouped_running_tasks.get(task).map(Vec::as_slice).unwrap_or_default();
+        let desired = grouped_last_applied_tasks.get(task).map(Vec::as_slice).unwrap_or_default();
+        match running.len().cmp(&desired.len()) {
             Ordering::Greater => {
-                unplanned_tasks
-                    .extend_from_slice(&vec![task; running_task_count - desired_task_count]);
+                unplanned_tasks.extend_from_slice(&running[desired.len()..]);
             }
             Ordering::Less => {
-                missing_tasks
-                    .extend_from_slice(&vec![task; desired_task_count - running_task_count])
+                missing_tasks.extend_from_slice(&desired[running.len()..]);
             }
             _ => {}
         }
@@ -1049,6 +1046,124 @@ mod tests {
             compute_load_per_shard(&[&shard], true).get(),
             PIPELINE_FULL_CAPACITY.cpu_millis()
         );
+        for (bytes, expected) in [
+            (0, 50),
+            (1, 50),
+            (bytesize::MIB - 1, 209),
+            (bytesize::MIB, 209),
+            (bytesize::MIB + 1, 209),
+        ] {
+            shard.long_term_ingestion_rate = bytesize::ByteSize::b(bytes);
+            assert_eq!(compute_load_per_shard(&[&shard], true).get(), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_task_cache_prunes_before_early_returns() {
+        for with_plan in [false, true] {
+            let pool = IndexerPool::default();
+            let mut scheduler =
+                IndexingScheduler::new("cluster".to_string(), NodeId::from_str("cp"), pool.clone());
+            for (node, reported, current) in [("stale", 1, 2), ("current", 2, 2), ("future", 3, 2)]
+            {
+                scheduler.record_reported_tasks(node, reported, Vec::new());
+                let mut entry = mock_indexer_node_info(node, IngesterStatus::Ready);
+                entry.generation_id = current;
+                pool.insert(entry.node_id.clone(), entry);
+            }
+            scheduler.record_reported_tasks("departed", 1, Vec::new());
+            if with_plan {
+                scheduler.state.last_applied_physical_plan =
+                    Some(PhysicalIndexingPlan::with_indexer_ids(&pool.keys()));
+                scheduler.state.last_applied_plan_timestamp = Some(Instant::now());
+            }
+            scheduler.control_running_plan(&ControlPlaneModel::default());
+            assert!(
+                !scheduler
+                    .reported_tasks
+                    .contains_key(&NodeId::from_str("departed"))
+            );
+            assert!(
+                !scheduler
+                    .reported_tasks
+                    .contains_key(&NodeId::from_str("stale"))
+            );
+            assert_eq!(scheduler.reported_tasks.len(), 2);
+            assert_eq!(
+                scheduler.reported_tasks[&NodeId::from_str("future")].generation_id,
+                3
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_running_plan_combines_gossip_and_matching_rpc_tasks() {
+        let pool = IndexerPool::default();
+        let mut scheduler =
+            IndexingScheduler::new("cluster".to_string(), NodeId::from_str("cp"), pool.clone());
+        let ids = [
+            NodeId::from_str("legacy"),
+            NodeId::from_str("migrated"),
+            NodeId::from_str("future"),
+        ];
+        let mut plan = PhysicalIndexingPlan::with_indexer_ids(&ids);
+        for (number, id) in ids.iter().enumerate() {
+            let task = IndexingTask {
+                index_uid: Some(IndexUid::for_test("index", 0)),
+                source_id: "source".to_string(),
+                pipeline_uid: Some(PipelineUid::for_test(number as u128)),
+                ..Default::default()
+            };
+            plan.add_indexing_task(id, task.clone());
+            let mut entry = mock_indexer_node_info(id.as_str(), IngesterStatus::Ready);
+            entry.generation_id = 2;
+            if number != 1 {
+                entry.indexing_tasks = vec![task.clone()];
+            }
+            pool.insert(id.clone(), entry);
+            if number == 1 {
+                scheduler.record_reported_tasks(id.as_str(), 2, vec![task]);
+            }
+            if number == 2 {
+                scheduler.record_reported_tasks(id.as_str(), 3, Vec::new());
+            }
+        }
+        scheduler.state.last_applied_physical_plan = Some(plan);
+        scheduler.state.last_applied_indexer_statuses = build_indexer_statuses(&pool.values());
+        scheduler.control_running_plan(&ControlPlaneModel::default());
+        assert_eq!(scheduler.state.num_applied_physical_indexing_plan, 0);
+    }
+
+    #[tokio::test]
+    async fn test_reordered_tasks_and_shards_do_not_reapply_plan() {
+        let pool = IndexerPool::default();
+        let indexer = mock_indexer_node_info("indexer", IngesterStatus::Ready);
+        pool.insert(indexer.node_id.clone(), indexer.clone());
+        let mut scheduler =
+            IndexingScheduler::new("cluster".to_string(), NodeId::from_str("cp"), pool.clone());
+        let mut tasks: Vec<_> = (0..2)
+            .map(|id| IndexingTask {
+                index_uid: Some(IndexUid::for_test("index", 0)),
+                source_id: "source".to_string(),
+                pipeline_uid: Some(PipelineUid::for_test(id)),
+                shard_ids: vec![ShardId::from(1), ShardId::from(2)],
+                ..Default::default()
+            })
+            .collect();
+        let mut plan =
+            PhysicalIndexingPlan::with_indexer_ids(std::slice::from_ref(&indexer.node_id));
+        for task in &tasks {
+            plan.add_indexing_task(&indexer.node_id, task.clone());
+        }
+        scheduler.state.last_applied_physical_plan = Some(plan);
+        scheduler.state.last_applied_indexer_statuses = build_indexer_statuses(&pool.values());
+        tasks.reverse();
+        for task in &mut tasks {
+            task.shard_ids.reverse();
+        }
+        scheduler.record_reported_tasks("indexer", 0, tasks);
+        scheduler.control_running_plan(&ControlPlaneModel::default());
+        assert_eq!(scheduler.state.num_applied_physical_indexing_plan, 0);
     }
 
     #[test]
