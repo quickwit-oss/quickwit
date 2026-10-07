@@ -133,7 +133,7 @@ metrics-util = "0.20"
 mime_guess = "2.0"
 mini-moka = "0.10"
 mockall = "0.14"
-mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "e79bed2dbe4077f02479d073574c9f7a7ab03b85" }
+mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "582ddb131181a053635e6904d3190491a3ee556c" }
 new_string_template = "1.5"
 nom = "8.0"
 numfmt = "1.2"

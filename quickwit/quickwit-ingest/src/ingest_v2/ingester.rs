@@ -58,7 +58,6 @@ use super::mrecordlog_utils::{
 };
 use super::rate_meter::RateMeter;
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
-use crate::estimate_size;
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
 use crate::ingest_v2::metrics::{
     DECOMMISSION_FAILED, DECOMMISSION_SUCCEEDED, RESET_SHARDS_OPERATIONS_TOTAL, STATUS,
@@ -477,7 +476,7 @@ impl Ingester {
                         DocBatchV2::default()
                     }
                 };
-                let requested_capacity = estimate_size(&doc_batch);
+                let requested_capacity = doc_batch_size(&doc_batch, force_commit);
 
                 if let Err(error) = check_enough_capacity(
                     &state_guard.mrecordlog,
@@ -518,7 +517,7 @@ impl Ingester {
                 }
 
                 // Total number of bytes (valid and invalid documents)
-                let original_batch_num_bytes = doc_batch.num_bytes() as u64;
+                let original_batch_num_bytes = doc_batch.doc_buffer.len() as u64;
 
                 let (valid_doc_batch, parse_failures) = if validate_docs {
                     validate_doc_batch(doc_batch, doc_mapper).await?
@@ -559,7 +558,7 @@ impl Ingester {
                     parent: DOCS_BYTES_TOTAL,
                     labels: [label_values!(VALIDITY => "valid")],
                 )
-                .inc_by(valid_doc_batch.num_bytes() as u64);
+                .inc_by(valid_doc_batch.doc_buffer.len() as u64);
                 if !parse_failures.is_empty() {
                     counter!(
                         parent: DOCS_TOTAL,
@@ -570,9 +569,9 @@ impl Ingester {
                         parent: DOCS_BYTES_TOTAL,
                         labels: [label_values!(VALIDITY => "invalid")],
                     )
-                    .inc_by(original_batch_num_bytes - valid_doc_batch.num_bytes() as u64);
+                    .inc_by(original_batch_num_bytes - valid_doc_batch.doc_buffer.len() as u64);
                 }
-                let valid_batch_num_bytes = valid_doc_batch.num_bytes() as u64;
+                let valid_batch_num_bytes = valid_doc_batch.doc_buffer.len() as u64;
                 shard.rate_meter.update(valid_batch_num_bytes);
                 total_requested_capacity += requested_capacity;
 
@@ -598,7 +597,6 @@ impl Ingester {
                 let queue_id = subrequest.queue_id;
 
                 let batch_num_docs = subrequest.doc_batch.num_docs() as u64;
-                let batch_size = doc_batch_size(&subrequest.doc_batch, force_commit);
 
                 let append_result = append_non_empty_doc_batch(
                     &mut state_guard.mrecordlog,
@@ -608,8 +606,8 @@ impl Ingester {
                 )
                 .await;
 
-                let current_position_inclusive = match append_result {
-                    Ok(current_position_inclusive) => current_position_inclusive,
+                let (current_position_inclusive, queue_size) = match append_result {
+                    Ok(outcome) => outcome,
                     Err(append_error) => {
                         let reason = match &append_error {
                             AppendDocBatchError::Io(io_error) => {
@@ -644,7 +642,7 @@ impl Ingester {
                     .get_mut(&queue_id)
                     .expect("shard should exist");
                 shard.set_replication_position_inclusive(current_position_inclusive.clone(), now);
-                shard.queue_size += batch_size;
+                shard.queue_size = queue_size;
 
                 let persist_success = PersistSuccess {
                     subrequest_id: subrequest.subrequest_id,
@@ -928,7 +926,9 @@ impl IngesterService for Ingester {
             .subrequests
             .iter()
             .flat_map(|subrequest| match &subrequest.doc_batch {
-                Some(doc_batch) if doc_batch.doc_buffer.is_unique() => Some(doc_batch.num_bytes()),
+                Some(doc_batch) if doc_batch.doc_buffer.is_unique() => {
+                    Some(doc_batch.doc_buffer.len())
+                }
                 _ => None,
             })
             .sum::<usize>();
@@ -1202,7 +1202,6 @@ mod tests {
     use crate::ingest_v2::DEFAULT_IDLE_SHARD_TIMEOUT;
     use crate::ingest_v2::doc_mapper::try_build_doc_mapper;
     use crate::ingest_v2::fetch::tests::{into_fetch_eof, into_fetch_payload};
-    use crate::ingest_v2::mrecordlog_utils::read_queue_size;
 
     pub(super) struct IngesterForTest {
         node_id: NodeId,
@@ -1688,6 +1687,87 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_queue_size_does_not_drift_after_persist_and_truncate() {
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+        let doc_mapping_uid = DocMappingUid::random();
+        let response = ingester
+            .init_shards(InitShardsRequest {
+                subrequests: vec![InitShardSubrequest {
+                    subrequest_id: 0,
+                    shard: Some(Shard {
+                        index_uid: Some(index_uid.clone()),
+                        source_id: source_id.clone(),
+                        shard_id: Some(ShardId::from(1)),
+                        shard_state: ShardState::Open as i32,
+                        ingester_id: ingester_ctx.node_id.to_string(),
+                        doc_mapping_uid: Some(doc_mapping_uid),
+                        ..Default::default()
+                    }),
+                    doc_mapping_json: format!(r#"{{"doc_mapping_uid":"{doc_mapping_uid}"}}"#),
+                    validate_docs: false,
+                }],
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.successes.len(), 1);
+        assert!(response.failures.is_empty());
+
+        let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
+        let mut next_position = 0u64;
+        let mut retained_bytes = 0u64;
+        for iteration in 0..32 {
+            let force_commit = iteration % 2 == 0;
+            let commit_type = if force_commit {
+                CommitTypeV2::Force
+            } else {
+                CommitTypeV2::Auto
+            };
+            let response = ingester
+                .persist(PersistRequest {
+                    ingester_id: ingester_ctx.node_id.to_string(),
+                    commit_type: commit_type as i32,
+                    subrequests: vec![PersistSubrequest {
+                        subrequest_id: 0,
+                        index_uid: Some(index_uid.clone()),
+                        source_id: source_id.clone(),
+                        doc_batch: Some(DocBatchV2::for_test(["a", "longer", "last"])),
+                    }],
+                })
+                .await
+                .unwrap();
+            assert_eq!(response.successes.len(), 1);
+            assert!(response.failures.is_empty());
+
+            let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
+            let commit_bytes = u64::from(force_commit) * 2;
+            assert_eq!(
+                state_guard.shards[&queue_id].queue_size,
+                ByteSize::b(retained_bytes + 17 + commit_bytes)
+            );
+            state_guard
+                .truncate_shard(&queue_id, Position::offset(next_position + 1), "test")
+                .await;
+            retained_bytes = 6 + commit_bytes;
+            assert_eq!(
+                state_guard.mrecordlog.summary().queues[&queue_id].num_bytes as u64,
+                retained_bytes
+            );
+            assert_eq!(
+                state_guard.shards[&queue_id].queue_size,
+                ByteSize::b(retained_bytes)
+            );
+            next_position += 3 + u64::from(force_commit);
+        }
+        let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
+        state_guard
+            .truncate_shard(&queue_id, Position::offset(next_position - 1), "test")
+            .await;
+        assert_eq!(state_guard.shards[&queue_id].queue_size, ByteSize::b(0));
+    }
+
+    #[tokio::test]
     async fn test_ingester_persist() {
         let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
@@ -1788,7 +1868,7 @@ mod tests {
         shard_01.assert_replication_position(Position::offset(1u64));
         assert_eq!(
             shard_01.queue_size,
-            read_queue_size(&state_guard.mrecordlog, &queue_id_01)
+            ByteSize::b(state_guard.mrecordlog.summary().queues[&queue_id_01].num_bytes as u64)
         );
 
         state_guard.mrecordlog.assert_records_eq(
@@ -1803,7 +1883,7 @@ mod tests {
         shard_11.assert_replication_position(Position::offset(2u64));
         assert_eq!(
             shard_11.queue_size,
-            read_queue_size(&state_guard.mrecordlog, &queue_id_11)
+            ByteSize::b(state_guard.mrecordlog.summary().queues[&queue_id_11].num_bytes as u64)
         );
 
         state_guard.mrecordlog.assert_records_eq(

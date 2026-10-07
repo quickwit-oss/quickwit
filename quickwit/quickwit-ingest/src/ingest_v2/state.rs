@@ -42,7 +42,6 @@ use tracing::{error, info, instrument};
 use super::local_shards::{ShardInfo, ShardInfos, ShardThroughputReadings};
 use super::metrics::report_local_shards_metrics;
 use super::models::IngesterShard;
-use super::mrecordlog_utils::read_queue_size;
 use super::rate_meter::RateMeter;
 use super::wal_capacity_tracker::WalCapacityTracker;
 use crate::OpenShardCounts;
@@ -393,7 +392,7 @@ impl IngesterState {
                 .checked_sub(1)
                 .map(Position::offset)
                 .unwrap_or(Position::Beginning);
-            let queue_size = read_queue_size(&mrecordlog, &queue_id);
+            let queue_size = ByteSize::b(queue_summary.num_bytes as u64);
             let rate_limiter = RateLimiter::from_settings(rate_limiter_settings);
             let rate_meter = RateMeter::default();
 
@@ -717,12 +716,8 @@ impl FullyLockedIngesterState<'_> {
                 .truncate(queue_id, truncate_up_to_offset_inclusive)
                 .await
             {
-                Ok(evicted_size) => {
-                    let queue_size = shard
-                        .queue_size
-                        .as_u64()
-                        .saturating_sub(evicted_size.as_u64());
-                    shard.queue_size = ByteSize::b(queue_size);
+                Ok(outcome) => {
+                    shard.queue_size = ByteSize::b(outcome.queue_size_bytes as u64);
                 }
                 Err(TruncateError::MissingQueue(_)) => {
                     error!("failed to truncate shard `{queue_id}`: WAL queue not found");

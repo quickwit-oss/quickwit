@@ -143,14 +143,14 @@ impl Queues {
         let real_queue_id = format!("{QUICKWIT_CF_PREFIX}{queue_id}");
 
         // TODO None means we don't have itempotent inserts
-        let max_position = ctx
+        let outcome = ctx
             .protect_future(
                 self.record_log
                     .append_records(&real_queue_id, None, records_it),
             )
             .await?;
 
-        Ok(max_position)
+        Ok(outcome.last_position)
     }
 
     // Streams messages from in `]after_position, +∞[`.

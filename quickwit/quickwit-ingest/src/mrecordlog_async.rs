@@ -17,7 +17,6 @@ use std::ops::RangeBounds;
 use std::path::Path;
 
 use bytes::Buf;
-use bytesize::ByteSize;
 use mrecordlog::error::*;
 use mrecordlog::{MultiRecordLog, PersistAction, PersistPolicy, Record, ResourceUsage};
 use tokio::task::JoinError;
@@ -137,7 +136,7 @@ impl MultiRecordLogAsync {
         queue: &str,
         position_opt: Option<u64>,
         payloads: T,
-    ) -> Result<Option<u64>, AppendError> {
+    ) -> Result<mrecordlog::AppendOutcome, AppendError> {
         let span = info_span!("mrecordlog.append_records", queue);
         let queue = queue.to_string();
         self.run_operation(span, move |mrecordlog| {
@@ -146,7 +145,6 @@ impl MultiRecordLogAsync {
                 .inspect(|outcome| {
                     WAL_BYTES_WRITTEN_APPEND.inc_by(outcome.wal_bytes_written);
                 })
-                .map(|outcome| outcome.last_position)
         })
         .await
     }
@@ -156,16 +154,13 @@ impl MultiRecordLogAsync {
         &mut self,
         queue: &str,
         position: u64,
-    ) -> Result<ByteSize, TruncateError> {
+    ) -> Result<mrecordlog::TruncateOutcome, TruncateError> {
         let span = info_span!("mrecordlog.truncate", queue, position);
         let queue = queue.to_string();
         self.run_operation(span, move |mrecordlog| {
-            mrecordlog
-                .truncate(&queue, ..=position)
-                .inspect(|outcome| {
-                    WAL_BYTES_WRITTEN_TRUNCATE.inc_by(outcome.wal_bytes_written);
-                })
-                .map(|outcome| ByteSize::b(outcome.evicted_bytes as u64))
+            mrecordlog.truncate(&queue, ..=position).inspect(|outcome| {
+                WAL_BYTES_WRITTEN_TRUNCATE.inc_by(outcome.wal_bytes_written);
+            })
         })
         .await
     }
