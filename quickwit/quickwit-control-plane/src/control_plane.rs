@@ -38,6 +38,7 @@ use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt, IndexMet
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, ControlPlaneError, ControlPlaneResult,
     GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
+    ReportIndexerStateRequest, ReportIndexerStateResponse,
 };
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::IngesterStatus;
@@ -934,6 +935,22 @@ impl Handler<AdviseResetShardsRequest> for ControlPlane {
             .ingest_controller
             .advise_reset_shards(request, &self.model);
         Ok(Ok(response))
+    }
+}
+
+#[async_trait]
+impl DeferableReplyHandler<ReportIndexerStateRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<ReportIndexerStateResponse>;
+
+    async fn handle_message(
+        &mut self,
+        _request: ReportIndexerStateRequest,
+        reply: impl FnOnce(Self::Reply) + Send + Sync + 'static,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        // TODO: implement me
+        reply(Ok(ReportIndexerStateResponse {}));
+        Ok(())
     }
 }
 

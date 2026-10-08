@@ -16,20 +16,21 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use bytesize::ByteSize;
-use quickwit_cluster::{Cluster, ListenerHandle};
+use quickwit_cluster::{Cluster, ClusterNode, ListenerHandle};
 use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_common::shared_consts::INGESTER_SHARDS_PREFIX;
 use quickwit_common::sorted_iter::{KeyDiff, SortedByKeyIterator};
+use quickwit_config::service::QuickwitService;
 use quickwit_proto::ingest::ShardState;
 use quickwit_proto::types::{NodeId, ShardId, SourceUid};
 use serde::{Deserialize, Serialize, Serializer};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
-use tracing::{debug, instrument, warn};
+use tracing::{debug, info, instrument, warn};
 
 use super::{BROADCAST_INTERVAL_PERIOD, make_key, parse_key};
 use crate::RateMibPerSec;
-use crate::ingest_v2::shard_readings::{ShardThroughputReading, ShardThroughputReadings};
+use crate::ingest_v2::shard_readings::{ShardReadingsBySource, ShardThroughputReading};
 use crate::ingest_v2::state::WeakIngesterState;
 
 const ONE_MIB: ByteSize = ByteSize::mib(1);
@@ -141,10 +142,10 @@ enum ShardInfosChange<'a> {
     },
 }
 
-impl From<&ShardThroughputReadings> for LocalShardsSnapshot {
-    fn from(readings: &ShardThroughputReadings) -> Self {
+impl From<&ShardReadingsBySource> for LocalShardsSnapshot {
+    fn from(readings: &ShardReadingsBySource) -> Self {
         let mut per_source_shard_infos = BTreeMap::new();
-        for (source_uid, shard_readings) in &readings.per_source_readings {
+        for (source_uid, shard_readings) in &readings.readings_by_source {
             let shard_infos: ShardInfos = shard_readings.iter().map(ShardInfo::from).collect();
             per_source_shard_infos.insert(source_uid.clone(), shard_infos);
         }
@@ -186,7 +187,7 @@ impl LocalShardsSnapshot {
 pub struct BroadcastLocalShardsTask {
     cluster: Cluster,
     weak_state: WeakIngesterState,
-    local_shards_rx: watch::Receiver<Option<Arc<ShardThroughputReadings>>>,
+    local_shards_rx: watch::Receiver<Option<Arc<ShardReadingsBySource>>>,
     /// Snapshot broadcast on the previous tick. Carried across iterations so
     /// we can diff against the new snapshot and only broadcast changes.
     previous_snapshot: LocalShardsSnapshot,
@@ -196,7 +197,7 @@ impl BroadcastLocalShardsTask {
     pub fn spawn(
         cluster: Cluster,
         weak_state: WeakIngesterState,
-        local_shards_rx: watch::Receiver<Option<Arc<ShardThroughputReadings>>>,
+        local_shards_rx: watch::Receiver<Option<Arc<ShardReadingsBySource>>>,
     ) -> JoinHandle<()> {
         let broadcaster = Self {
             cluster,
@@ -237,6 +238,17 @@ impl BroadcastLocalShardsTask {
         loop {
             interval.tick().await;
 
+            let all_indexers_enable_shard_scaling_v2 = self
+                .cluster
+                .all_service_nodes_satisfy(
+                    QuickwitService::Indexer,
+                    ClusterNode::enable_shard_scaling_v2,
+                )
+                .await;
+            if all_indexers_enable_shard_scaling_v2 {
+                info!("cluster is fully migrated, stopping local shards task");
+                return;
+            }
             if !self.run_once().await {
                 // The state has been dropped, we can stop the task.
                 debug!("stopping local shards broadcast task");
@@ -463,8 +475,8 @@ mod tests {
             short_term_ingestion_rate: ByteSize::b(1),
             long_term_ingestion_rate: ByteSize::mib(2),
         };
-        let readings = ShardThroughputReadings {
-            per_source_readings: BTreeMap::from([(source_uid, vec![reading])]),
+        let readings = ShardReadingsBySource {
+            readings_by_source: BTreeMap::from([(source_uid, vec![reading])]),
         };
         local_shards_tx.send_replace(Some(Arc::new(readings)));
         assert!(task.run_once().await);
@@ -474,12 +486,33 @@ mod tests {
         // Rates are rounded up to the next MiB/s.
         assert_eq!(value, r#"["00000000000000000001:open:1:2"]"#);
 
-        local_shards_tx.send_replace(Some(Arc::new(ShardThroughputReadings::default())));
+        local_shards_tx.send_replace(Some(Arc::new(ShardReadingsBySource::default())));
         assert!(task.run_once().await);
         assert!(task.cluster.get_self_key_value(&key).await.is_none());
 
         drop(state);
         assert!(!task.run_once().await);
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_local_shards_task_stops_once_all_indexers_migrated() {
+        let transport = ChitchatTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        let (_temp_dir, state) = IngesterState::for_test(cluster.clone()).await;
+        let (_local_shards_tx, local_shards_rx) = watch::channel(None);
+        let task_handle =
+            BroadcastLocalShardsTask::spawn(cluster.clone(), state.weak(), local_shards_rx);
+
+        tokio::time::sleep(BROADCAST_INTERVAL_PERIOD * 3).await;
+        assert!(!task_handle.is_finished());
+
+        cluster.set_self_enable_shard_scaling_v2(true).await;
+        tokio::time::timeout(Duration::from_secs(5), task_handle)
+            .await
+            .unwrap()
+            .unwrap();
     }
 
     #[tokio::test]

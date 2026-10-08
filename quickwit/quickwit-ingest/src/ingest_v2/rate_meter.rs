@@ -24,7 +24,7 @@ use quickwit_proto::ingest::ShardState;
 use quickwit_proto::types::{QueueId, ShardId, SourceUid};
 use tokio::time::Instant;
 
-use super::shard_readings::{ShardThroughputReading, ShardThroughputReadings};
+use super::shard_readings::{ShardReadingsBySource, ShardThroughputReading};
 
 const SHORT_TERM_WINDOW_LEN: usize = 5;
 
@@ -102,7 +102,7 @@ impl SharedRateMeter {
     }
     /// Harvest, like the underlying rate meter, resets the current meter to 0 and returns the delta
     /// since the last reading.
-    pub fn harvest(&self) -> ShardThroughputReadings {
+    pub fn harvest(&self) -> ShardReadingsBySource {
         let mut entries_guard = self.lock();
         let shard_readings: Vec<_> = entries_guard
             .values_mut()
@@ -113,10 +113,10 @@ impl SharedRateMeter {
             })
             .collect();
         drop(entries_guard);
-        let mut readings = ShardThroughputReadings::default();
+        let mut readings = ShardReadingsBySource::default();
         for (source_uid, shard_reading) in shard_readings {
             readings
-                .per_source_readings
+                .readings_by_source
                 .entry(source_uid)
                 .or_default()
                 .push(shard_reading);
@@ -251,7 +251,7 @@ mod tests {
         tokio::time::advance(Duration::from_secs(1)).await;
 
         let readings = meter.harvest();
-        let source_readings = &readings.per_source_readings[&source_uid];
+        let source_readings = &readings.readings_by_source[&source_uid];
         assert_eq!(source_readings.len(), 1);
         assert_eq!(source_readings[0].shard_id, shard_id_01);
         assert_eq!(
@@ -264,7 +264,7 @@ mod tests {
         tokio::time::advance(Duration::from_secs(1)).await;
 
         let mut readings = meter.harvest();
-        let source_readings = readings.per_source_readings.get_mut(&source_uid).unwrap();
+        let source_readings = readings.readings_by_source.get_mut(&source_uid).unwrap();
         source_readings.sort_by(|left, right| left.shard_id.cmp(&right.shard_id));
         assert_eq!(source_readings.len(), 2);
         assert_eq!(source_readings[0].shard_state, ShardState::Closed);
@@ -277,7 +277,7 @@ mod tests {
 
         meter.remove(&queue_id_01);
         let readings = meter.harvest();
-        let source_readings = &readings.per_source_readings[&source_uid];
+        let source_readings = &readings.readings_by_source[&source_uid];
         assert_eq!(source_readings.len(), 1);
         assert_eq!(source_readings[0].shard_id, shard_id_02);
     }
