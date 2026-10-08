@@ -53,7 +53,6 @@ use super::models::IngesterShard;
 use super::mrecordlog_utils::{
     AppendDocBatchError, check_enough_capacity, doc_batch_size, wal_stats,
 };
-use super::rate_meter::RateMeter;
 use super::shard_readings::{ShardReadingsPublisher, ShardThroughputReadings};
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
@@ -183,7 +182,11 @@ impl Ingester {
         .await;
 
         let weak_state = state.weak();
-        BroadcastLocalShardsTask::spawn(cluster.clone(), weak_state.clone());
+        BroadcastLocalShardsTask::spawn(
+            cluster.clone(),
+            weak_state.clone(),
+            local_shards_tx.subscribe(),
+        );
         ShardReadingsPublisher::spawn(weak_state.clone(), local_shards_tx);
         BroadcastIngesterCapacityScoreTask::spawn(cluster, weak_state.clone());
         CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
@@ -247,11 +250,9 @@ impl Ingester {
         let source_id = shard.source_id.clone();
         let shard_id = shard.shard_id().clone();
         let rate_limiter = RateLimiter::from_settings(self.rate_limiter_settings);
-        let rate_meter = RateMeter::default();
 
         let shard = IngesterShard::builder(index_uid, source_id, shard_id)
             .with_rate_limiter(rate_limiter)
-            .with_rate_meter(rate_meter)
             .with_shared_rate_meter(state.shared_rate_meter.clone())
             .with_doc_mapper(doc_mapper)
             .with_validate_docs(validate_docs)
@@ -571,7 +572,6 @@ impl Ingester {
                     )
                     .inc_by(original_batch_num_bytes - valid_batch_num_bytes);
                 }
-                shard.rate_meter.update(valid_batch_num_bytes);
                 total_requested_capacity += requested_capacity;
 
                 let pending_persist_subrequest = PendingPersistSubrequest {
@@ -1413,17 +1413,20 @@ mod tests {
         let source_id = SourceId::from("test-source");
 
         let shard_00 =
-            IngesterShard::builder(index_uid.clone(), source_id.clone(), ShardId::from(0)).build();
+            IngesterShard::builder(index_uid.clone(), source_id.clone(), ShardId::from(0))
+                .with_shared_rate_meter(state_guard.shared_rate_meter.clone())
+                .build();
         state_guard.shards.insert(shard_00.queue_id(), shard_00);
 
         let shard_01 = IngesterShard::builder(index_uid.clone(), source_id, ShardId::from(1))
+            .with_shared_rate_meter(state_guard.shared_rate_meter.clone())
             .advertisable()
             .build();
         let queue_id_01 = shard_01.queue_id();
         state_guard.shards.insert(queue_id_01.clone(), shard_01);
         drop(state_guard);
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
 
         let key = format!("{INGESTER_SHARDS_PREFIX}{}:{}", index_uid, "test-source");
         let value = ingester_ctx.cluster.get_self_key_value(&key).await.unwrap();
@@ -1437,14 +1440,10 @@ mod tests {
         assert_eq!(shard_info.short_term_ingestion_rate, 0);
 
         let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
-        state_guard
-            .shards
-            .get_mut(&queue_id_01)
-            .unwrap()
-            .shard_state = ShardState::Closed;
+        state_guard.shards.get_mut(&queue_id_01).unwrap().close();
         drop(state_guard);
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
 
         let value = ingester_ctx.cluster.get_self_key_value(&key).await.unwrap();
 
@@ -1458,7 +1457,7 @@ mod tests {
         state_guard.shards.remove(&queue_id_01).unwrap();
         drop(state_guard);
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
 
         let value_opt = ingester_ctx.cluster.get_self_key_value(&key).await;
         assert!(value_opt.is_none());
