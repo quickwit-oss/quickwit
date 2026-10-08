@@ -30,13 +30,14 @@ use quickwit_doc_mapper::DocMapper;
 use quickwit_metrics::{gauge, histogram, labels};
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardIds, ShardState};
+use quickwit_proto::ingest::{DocBatchV2, IngestV2Error, IngestV2Result, ShardIds, ShardState};
 use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, SourceId, split_queue_id};
 use tokio::sync::{Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, watch};
 use tracing::{error, info, instrument};
 
 use super::models::IngesterShard;
-use super::rate_meter::RateMeter;
+use super::mrecordlog_utils::{AppendDocBatchError, append_non_empty_doc_batch};
+use super::rate_meter::{RateMeter, SharedRateMeter};
 use super::wal_capacity_tracker::WalCapacityTracker;
 use crate::OpenShardCounts;
 use crate::mrecordlog_async::MultiRecordLogAsync;
@@ -47,12 +48,16 @@ use crate::mrecordlog_async::MultiRecordLogAsync;
 /// `lock_partially` locks `inner` only, while `lock_fully` locks both `inner` and `mrecordlog`. Use
 /// the former when you only need to access the in-memory state of the ingester and the latter when
 /// you need to access both the in-memory state AND the WAL.
+///
+/// Ingester status and the shared rate meter live outside the locked state, and don't require
+/// partial or full locking to access.
 #[derive(Clone)]
 pub(super) struct IngesterState {
     // `inner` is a mutex because it's almost always accessed mutably.
     inner: Arc<Mutex<InnerIngesterState>>,
     mrecordlog: Arc<RwLock<Option<MultiRecordLogAsync>>>,
     pub status_rx: watch::Receiver<IngesterStatus>,
+    pub shared_rate_meter_rx: watch::Receiver<Option<Arc<SharedRateMeter>>>,
 }
 
 pub(super) struct InnerIngesterState {
@@ -63,6 +68,8 @@ pub(super) struct InnerIngesterState {
     disk_capacity: ByteSize,
     memory_capacity: ByteSize,
     status_tx: watch::Sender<IngesterStatus>,
+    pub shared_rate_meter: Arc<SharedRateMeter>,
+    shared_rate_meter_tx: watch::Sender<Option<Arc<SharedRateMeter>>>,
 }
 
 impl InnerIngesterState {
@@ -151,6 +158,7 @@ impl IngesterState {
     async fn create(cluster: Cluster, disk_capacity: ByteSize, memory_capacity: ByteSize) -> Self {
         let status = IngesterStatus::Initializing;
         let (status_tx, status_rx) = watch::channel(status);
+        let (shared_rate_meter_tx, shared_rate_meter_rx) = watch::channel(None);
         let mut inner = InnerIngesterState {
             shards: Default::default(),
             doc_mappers: Default::default(),
@@ -159,6 +167,8 @@ impl IngesterState {
             disk_capacity,
             memory_capacity,
             status_tx,
+            shared_rate_meter: Arc::new(SharedRateMeter::default()),
+            shared_rate_meter_tx,
         };
         // We call `set_status` here instead of setting it directly because it also updates the
         // ingester status in chitchat.
@@ -171,6 +181,7 @@ impl IngesterState {
             inner,
             mrecordlog,
             status_rx,
+            shared_rate_meter_rx,
         }
     }
 
@@ -308,6 +319,7 @@ impl IngesterState {
                     .with_queue_size(queue_size)
                     .with_rate_limiter(rate_limiter)
                     .with_rate_meter(rate_meter)
+                    .with_shared_rate_meter(inner_guard.shared_rate_meter.clone())
                     .with_last_write(now)
                     .advertisable() // We want to advertise the shard as read-only right away.
                     .build();
@@ -322,6 +334,9 @@ impl IngesterState {
         mrecordlog_guard.replace(mrecordlog);
         crate::ingest_v2::metrics::report_wal_usage(wal_usage, disk_capacity, memory_capacity);
         inner_guard.set_status(IngesterStatus::Ready).await;
+        inner_guard
+            .shared_rate_meter_tx
+            .send_replace(Some(inner_guard.shared_rate_meter.clone()));
     }
 
     pub async fn wait_for_ready(&mut self) {
@@ -407,6 +422,7 @@ impl IngesterState {
             inner: Arc::downgrade(&self.inner),
             mrecordlog: Arc::downgrade(&self.mrecordlog),
             status_rx: self.status_rx.clone(),
+            shared_rate_meter_rx: self.shared_rate_meter_rx.clone(),
         }
     }
 }
@@ -571,10 +587,10 @@ impl FullyLockedIngesterState<'_> {
         match self.mrecordlog.delete_queue(queue_id).await {
             Ok(_) | Err(DeleteQueueError::MissingQueue(_)) => {
                 // Log only if the shard was actually removed.
-                if let Some(shard) = self.shards.remove(queue_id) {
+                if let Some(mut shard) = self.shards.remove(queue_id) {
                     info!("deleted shard `{queue_id}` initiated via `{initiator}`");
 
-                    if let Some(doc_mapper) = shard.doc_mapper_opt {
+                    if let Some(doc_mapper) = shard.doc_mapper_opt.take() {
                         // At this point, we hold the lock so we can safely check the strong count.
                         // The other locations where the doc mapper is cloned also require holding
                         // the lock.
@@ -593,6 +609,26 @@ impl FullyLockedIngesterState<'_> {
                 error!("failed to delete shard `{queue_id}`: {io_error}");
             }
         };
+    }
+
+    pub async fn append_to_shard(
+        &mut self,
+        queue_id: &QueueId,
+        doc_batch: DocBatchV2,
+        force_commit: bool,
+        time: Instant,
+    ) -> Result<Position, AppendDocBatchError> {
+        let shard = self
+            .inner
+            .shards
+            .get_mut(queue_id)
+            .expect("shard should exist");
+        let num_bytes = doc_batch.doc_buffer.len() as u64;
+        let (position, queue_size) =
+            append_non_empty_doc_batch(&mut self.mrecordlog, queue_id, doc_batch, force_commit)
+                .await?;
+        shard.record_append(position.clone(), queue_size, num_bytes, time);
+        Ok(position)
     }
 
     /// Truncates the shard identified by `queue_id` up to `truncate_up_to_position_inclusive` only
@@ -671,6 +707,7 @@ pub(super) struct WeakIngesterState {
     inner: Weak<Mutex<InnerIngesterState>>,
     mrecordlog: Weak<RwLock<Option<MultiRecordLogAsync>>>,
     status_rx: watch::Receiver<IngesterStatus>,
+    shared_rate_meter_rx: watch::Receiver<Option<Arc<SharedRateMeter>>>,
 }
 
 impl WeakIngesterState {
@@ -682,6 +719,7 @@ impl WeakIngesterState {
             inner,
             mrecordlog,
             status_rx,
+            shared_rate_meter_rx: self.shared_rate_meter_rx.clone(),
         };
         Some(state)
     }
@@ -741,6 +779,24 @@ mod tests {
 
         let error = state.lock_fully("test").await.unwrap_err().to_string();
         assert!(error.contains("failed to initialize ingester"));
+    }
+
+    #[tokio::test]
+    async fn test_failed_wal_open_does_not_publish_meter() {
+        let state =
+            IngesterState::create(test_cluster().await, ByteSize::mb(256), ByteSize::mb(256)).await;
+        let file = tempfile::NamedTempFile::new().unwrap();
+        state
+            .init(
+                file.path(),
+                ByteSize::mb(256),
+                ByteSize::mb(256),
+                RateLimiterSettings::default(),
+            )
+            .await;
+        assert_eq!(*state.status_rx.borrow(), IngesterStatus::Failed);
+        assert!(state.shared_rate_meter_rx.borrow().is_none());
+        assert!(state.lock_fully("test").await.is_err());
     }
 
     #[tokio::test]
@@ -842,6 +898,11 @@ mod tests {
         assert_eq!(shard_03.replication_position_inclusive, Position::Beginning);
         assert_eq!(shard_03.truncation_position_inclusive, Position::Beginning);
         assert_eq!(shard_03.queue_size, ByteSize::b(0));
+
+        let meter = state.shared_rate_meter_rx.borrow().clone().unwrap();
+        let readings = meter.harvest();
+        let num_readings: usize = readings.per_source_readings.values().map(Vec::len).sum();
+        assert_eq!(num_readings, 3);
     }
 
     fn insert_shard_with_used_capacity(

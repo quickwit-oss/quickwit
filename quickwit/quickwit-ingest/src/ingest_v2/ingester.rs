@@ -41,7 +41,7 @@ use quickwit_proto::types::{
     IndexUid, NodeId, Position, QueueId, ShardId, SourceId, SubrequestId, queue_id, split_queue_id,
 };
 use serde_json::{Value as JsonValue, json};
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore, watch};
 use tokio::time::{sleep, timeout};
 use tracing::{Span, debug, error, info, instrument, warn};
 
@@ -51,10 +51,10 @@ use super::fetch::FetchStreamTask;
 use super::idle::CloseIdleShardsTask;
 use super::models::IngesterShard;
 use super::mrecordlog_utils::{
-    AppendDocBatchError, append_non_empty_doc_batch, check_enough_capacity, doc_batch_size,
-    wal_stats,
+    AppendDocBatchError, check_enough_capacity, doc_batch_size, wal_stats,
 };
 use super::rate_meter::RateMeter;
+use super::shard_readings::{ShardReadingsPublisher, ShardThroughputReadings};
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
 use crate::ingest_v2::metrics::{
@@ -170,6 +170,7 @@ impl Ingester {
         memory_capacity: ByteSize,
         rate_limiter_settings: RateLimiterSettings,
         idle_shard_timeout: Duration,
+        local_shards_tx: watch::Sender<Option<Arc<ShardThroughputReadings>>>,
     ) -> IngestV2Result<Self> {
         let self_node_id: NodeId = cluster.self_node_id();
         let state = IngesterState::load(
@@ -183,6 +184,7 @@ impl Ingester {
 
         let weak_state = state.weak();
         BroadcastLocalShardsTask::spawn(cluster.clone(), weak_state.clone());
+        ShardReadingsPublisher::spawn(weak_state.clone(), local_shards_tx);
         BroadcastIngesterCapacityScoreTask::spawn(cluster, weak_state.clone());
         CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
 
@@ -250,6 +252,7 @@ impl Ingester {
         let shard = IngesterShard::builder(index_uid, source_id, shard_id)
             .with_rate_limiter(rate_limiter)
             .with_rate_meter(rate_meter)
+            .with_shared_rate_meter(state.shared_rate_meter.clone())
             .with_doc_mapper(doc_mapper)
             .with_validate_docs(validate_docs)
             .with_last_write(now)
@@ -460,7 +463,7 @@ impl Ingester {
                 // A router can only know about a newly opened shard if it has been informed by the
                 // control plane, which confirms that the shard was correctly opened in the
                 // metastore.
-                shard.is_advertisable = true;
+                shard.make_advertisable();
                 let doc_mapper = shard.doc_mapper_opt.clone().expect("shard should be open");
                 let validate_docs = shard.validate_docs;
                 let from_position_exclusive = shard.replication_position_inclusive.clone();
@@ -591,19 +594,13 @@ impl Ingester {
             let now = Instant::now();
             for subrequest in pending_persist_subrequests.into_values() {
                 let queue_id = subrequest.queue_id;
-
                 let batch_num_docs = subrequest.doc_batch.num_docs() as u64;
+                let append_result = state_guard
+                    .append_to_shard(&queue_id, subrequest.doc_batch, force_commit, now)
+                    .await;
 
-                let append_result = append_non_empty_doc_batch(
-                    &mut state_guard.mrecordlog,
-                    &queue_id,
-                    subrequest.doc_batch,
-                    force_commit,
-                )
-                .await;
-
-                let (current_position_inclusive, queue_size) = match append_result {
-                    Ok(append_outcome) => append_outcome,
+                let current_position_inclusive = match append_result {
+                    Ok(current_position_inclusive) => current_position_inclusive,
                     Err(append_error) => {
                         let reason = match &append_error {
                             AppendDocBatchError::Io(io_error) => {
@@ -632,13 +629,6 @@ impl Ingester {
                         continue;
                     }
                 };
-
-                let shard = state_guard
-                    .shards
-                    .get_mut(&queue_id)
-                    .expect("shard should exist");
-                shard.queue_size = queue_size;
-                shard.set_replication_position_inclusive(current_position_inclusive.clone(), now);
 
                 let persist_success = PersistSuccess {
                     subrequest_id: subrequest.subrequest_id,
@@ -731,7 +721,7 @@ impl Ingester {
         // An indexer can only know about a newly opened shard if it has been scheduled by the
         // control plane, which confirms that the shard was correctly opened in the
         // metastore.
-        shard.is_advertisable = true;
+        shard.make_advertisable();
 
         let shard_status_rx = shard.shard_status_rx.clone();
         let mrecordlog = self.state.mrecordlog();
@@ -1273,6 +1263,7 @@ mod tests {
             .await
             .unwrap();
 
+            let (local_shards_tx, local_shards_rx) = watch::channel(None);
             let ingester = Ingester::try_new(
                 cluster.clone(),
                 self.control_plane.clone(),
@@ -1281,6 +1272,7 @@ mod tests {
                 self.memory_capacity,
                 self.rate_limiter_settings,
                 self.idle_shard_timeout,
+                local_shards_tx,
             )
             .await
             .unwrap();
@@ -1295,6 +1287,7 @@ mod tests {
                 _transport: transport,
                 node_id: self.node_id,
                 cluster,
+                local_shards_rx,
             };
             (ingester_env, ingester)
         }
@@ -1305,6 +1298,7 @@ mod tests {
         _transport: ChitchatTransport,
         node_id: NodeId,
         cluster: Cluster,
+        local_shards_rx: watch::Receiver<Option<Arc<ShardThroughputReadings>>>,
     }
 
     #[tokio::test]
@@ -1612,6 +1606,67 @@ mod tests {
             .truncate_shard(&queue_id, Position::offset(0u64), "test")
             .await;
         assert_eq!(state_guard.shards[&queue_id].queue_size, ByteSize::b(17));
+    }
+
+    #[tokio::test]
+    async fn test_ingester_publishes_shard_readings() {
+        let (mut ingester_ctx, ingester) = IngesterForTest::default().build().await;
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+        let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
+        let shard = IngesterShard::builder(index_uid.clone(), source_id.clone(), ShardId::from(1))
+            .with_shared_rate_meter(state_guard.shared_rate_meter.clone())
+            .with_doc_mapper(try_build_doc_mapper("{}").unwrap())
+            .build();
+        let queue_id = shard.queue_id();
+        state_guard.shards.insert(queue_id.clone(), shard);
+        state_guard
+            .mrecordlog
+            .create_queue(&queue_id)
+            .await
+            .unwrap();
+        drop(state_guard);
+
+        let persist_request = PersistRequest {
+            ingester_id: ingester_ctx.node_id.to_string(),
+            commit_type: CommitTypeV2::Auto as i32,
+            subrequests: vec![PersistSubrequest {
+                subrequest_id: 0,
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
+            }],
+        };
+        ingester.persist(persist_request).await.unwrap();
+
+        let source_uid = SourceUid {
+            index_uid,
+            source_id,
+        };
+        // A harvest can land between `make_advertisable` and the append, so wait for a rate.
+        let snapshot = timeout(
+            Duration::from_secs(1),
+            ingester_ctx.local_shards_rx.wait_for(|snapshot| {
+                let Some(snapshot) = snapshot else {
+                    return false;
+                };
+                let Some(readings) = snapshot.per_source_readings.get(&source_uid) else {
+                    return false;
+                };
+                readings
+                    .iter()
+                    .any(|reading| reading.short_term_ingestion_rate.as_u64() > 0)
+            }),
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .clone()
+        .unwrap();
+        let readings = &snapshot.per_source_readings[&source_uid];
+        assert_eq!(readings.len(), 1);
+        assert_eq!(readings[0].shard_id, ShardId::from(1));
+        assert_eq!(readings[0].shard_state, ShardState::Open);
     }
 
     #[tokio::test]

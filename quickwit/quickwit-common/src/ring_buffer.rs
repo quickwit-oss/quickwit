@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::fmt::{Debug, Formatter};
+use std::iter::Sum;
 
 /// Fixed-size buffer that keeps the last N elements pushed into it.
 ///
@@ -84,6 +85,12 @@ impl<T: Copy + Default, const N: usize> RingBuffer<T, N> {
     pub fn iter(&self) -> impl Iterator<Item = &T> + '_ {
         let start = (self.head + N - self.len) % N;
         (0..self.len).map(move |i| &self.buffer[(start + i) % N])
+    }
+
+    /// Returns the sum of the elements currently in the buffer.
+    pub fn sum(&self) -> T
+    where T: for<'a> Sum<&'a T> {
+        self.iter().sum()
     }
 }
 
@@ -158,6 +165,16 @@ mod tests {
         assert_eq!(rb.last(), Some(100));
         assert_eq!(rb.front(), Some(98));
         assert_eq!(rb.iter().copied().collect::<Vec<_>>(), vec![98, 99, 100]);
+    }
+
+    #[test]
+    fn test_sum() {
+        let mut rb = RingBuffer::<u32, 4>::default();
+        assert_eq!(rb.sum(), 0);
+        for i in 1..=6 {
+            rb.push_back(i);
+        }
+        assert_eq!(rb.sum(), 3 + 4 + 5 + 6);
     }
 
     #[test]
