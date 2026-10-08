@@ -37,7 +37,7 @@ use tracing::{error, info, instrument};
 
 use super::models::IngesterShard;
 use super::mrecordlog_utils::{AppendDocBatchError, append_non_empty_doc_batch};
-use super::rate_meter::{RateMeter, SharedRateMeter};
+use super::rate_meter::SharedRateMeter;
 use super::wal_capacity_tracker::WalCapacityTracker;
 use crate::OpenShardCounts;
 use crate::mrecordlog_async::MultiRecordLogAsync;
@@ -309,7 +309,6 @@ impl IngesterState {
                 .unwrap_or(Position::Beginning);
             let queue_size = ByteSize::b(queue_summary.num_bytes as u64);
             let rate_limiter = RateLimiter::from_settings(rate_limiter_settings);
-            let rate_meter = RateMeter::default();
 
             let shard =
                 IngesterShard::builder(index_uid.clone(), source_id.clone(), shard_id.clone())
@@ -318,7 +317,6 @@ impl IngesterState {
                     .with_truncation_position_inclusive(truncation_position_inclusive)
                     .with_queue_size(queue_size)
                     .with_rate_limiter(rate_limiter)
-                    .with_rate_meter(rate_meter)
                     .with_shared_rate_meter(inner_guard.shared_rate_meter.clone())
                     .with_last_write(now)
                     .advertisable() // We want to advertise the shard as read-only right away.

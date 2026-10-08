@@ -25,6 +25,9 @@ use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
 use tracing::warn;
 
+use super::metrics::{
+    CLOSED_SHARDS, OPEN_SHARDS, SHARD_LT_THROUGHPUT_MIB, SHARD_ST_THROUGHPUT_MIB,
+};
 use super::state::WeakIngesterState;
 
 const SAMPLE_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
@@ -89,17 +92,41 @@ impl ShardReadingsPublisher {
                 // possible, but unlikely if we're initialized but haven't sent a reading yet.
                 continue;
             };
-            let snapshot = Arc::new(shared_rate_meter.harvest());
-            self.local_shards_tx.send_replace(Some(snapshot));
+            let snapshot = shared_rate_meter.harvest();
+            report_local_shards_metrics(&snapshot);
+            self.local_shards_tx.send_replace(Some(Arc::new(snapshot)));
         }
     }
+}
+
+fn report_local_shards_metrics(snapshot: &ShardThroughputReadings) {
+    let mut num_open_shards = 0;
+    let mut num_closed_shards = 0;
+
+    for shard_readings in snapshot.per_source_readings.values() {
+        for shard_reading in shard_readings {
+            match shard_reading.shard_state {
+                ShardState::Open => num_open_shards += 1,
+                ShardState::Closed => num_closed_shards += 1,
+                ShardState::Unavailable | ShardState::Unspecified => {}
+            }
+            SHARD_ST_THROUGHPUT_MIB
+                .observe(shard_reading.short_term_ingestion_rate.as_mib().ceil());
+            SHARD_LT_THROUGHPUT_MIB.observe(shard_reading.long_term_ingestion_rate.as_mib().ceil());
+        }
+    }
+    OPEN_SHARDS.set(num_open_shards as f64);
+    CLOSED_SHARDS.set(num_closed_shards as f64);
 }
 
 #[cfg(test)]
 mod tests {
     use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
+    use quickwit_proto::types::IndexUid;
 
     use super::*;
+    use crate::ingest_v2::models::IngesterShard;
+    use crate::ingest_v2::rate_meter::SharedRateMeter;
     use crate::ingest_v2::state::IngesterState;
 
     async fn state() -> (tempfile::TempDir, IngesterState) {
@@ -151,5 +178,36 @@ mod tests {
             .await;
         tick().await;
         publisher.await.unwrap();
+    }
+
+    #[test]
+    fn test_report_local_shards_metrics() {
+        let shared_rate_meter = Arc::new(SharedRateMeter::default());
+        let mut shards = Vec::new();
+        for (shard_id, shard_state) in [
+            (1, ShardState::Open),
+            (2, ShardState::Open),
+            (3, ShardState::Closed),
+        ] {
+            let shard = IngesterShard::builder(
+                IndexUid::for_test("test-index", 0),
+                "test-source".to_string(),
+                ShardId::from(shard_id),
+            )
+            .with_state(shard_state)
+            .with_shared_rate_meter(shared_rate_meter.clone())
+            .advertisable()
+            .build();
+            shards.push(shard);
+        }
+        report_local_shards_metrics(&shared_rate_meter.harvest());
+        assert_eq!(OPEN_SHARDS.get(), 2.0);
+        assert_eq!(CLOSED_SHARDS.get(), 1.0);
+
+        // Dropped shards are no longer counted.
+        drop(shards);
+        report_local_shards_metrics(&shared_rate_meter.harvest());
+        assert_eq!(OPEN_SHARDS.get(), 0.0);
+        assert_eq!(CLOSED_SHARDS.get(), 0.0);
     }
 }

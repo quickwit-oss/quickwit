@@ -149,15 +149,15 @@ impl SharedRateMeter {
     }
 }
 
-pub(super) struct IngestionRates {
-    pub short_term: ByteSize,
-    pub long_term: ByteSize,
+struct IngestionRates {
+    short_term: ByteSize,
+    long_term: ByteSize,
 }
 
 /// A naive rate meter that tracks how much work was performed during a period of time defined by
 /// two successive calls to `harvest`.
 #[derive(Debug)]
-pub(super) struct RateMeter {
+struct RateMeter {
     total_work: u64,
     harvested_at: Instant,
     short_term_rates: RingBuffer<ByteSize, SHORT_TERM_WINDOW_LEN>,
@@ -177,13 +177,13 @@ impl Default for RateMeter {
 
 impl RateMeter {
     /// Increments the amount of work performed since the last call to `harvest`.
-    pub fn update(&mut self, work: u64) {
+    fn update(&mut self, work: u64) {
         self.total_work += work;
     }
 
     /// Returns the average work rate since the last call to this method and resets the internal
     /// state.
-    pub fn harvest(&mut self) -> ConstantRate {
+    fn harvest(&mut self) -> ConstantRate {
         let now = Instant::now();
         let elapsed = now.duration_since(self.harvested_at);
         let rate = ConstantRate::new(self.total_work, elapsed);
@@ -192,7 +192,7 @@ impl RateMeter {
         rate
     }
 
-    pub fn sample(&mut self) -> IngestionRates {
+    fn sample(&mut self) -> IngestionRates {
         let rate = self.harvest();
         let rate_per_sec = rate.rescale(Duration::from_secs(1)).work_bytes();
         self.short_term_rates.push_back(rate_per_sec);
