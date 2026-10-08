@@ -49,6 +49,7 @@ qw_env_vars!(
     QW_DEFAULT_INDEX_ROOT_URI,
     QW_DISABLE_DOCS_CLUSTERING,
     QW_ENABLED_SERVICES,
+    QW_ENABLE_SHARD_SCALING_V2,
     QW_ENABLE_STANDALONE_COMPACTORS,
     QW_EXTRA_CLUSTER_IDS,
     QW_GOSSIP_INTERVAL_MS,
@@ -80,9 +81,9 @@ mod tests {
             QW_ENV_VARS.get(&QW_METASTORE_READ_REPLICA_URI).unwrap(),
             &"QW_METASTORE_READ_REPLICA_URI"
         );
-        assert_eq!(QW_METASTORE_READ_REPLICA_URI, 16);
+        assert_eq!(QW_METASTORE_READ_REPLICA_URI, 17);
 
         assert_eq!(QW_ENV_VARS.get(&QW_NODE_ID).unwrap(), &"QW_NODE_ID");
-        assert_eq!(QW_NODE_ID, 18);
+        assert_eq!(QW_NODE_ID, 19);
     }
 }

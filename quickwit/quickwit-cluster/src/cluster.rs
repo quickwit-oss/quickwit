@@ -42,7 +42,7 @@ use crate::grpc_gossip::spawn_catchup_callback_task;
 use crate::member::{
     AVAILABILITY_ZONE_KEY, ClusterMember, ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY,
     NodeStateExt, PIPELINE_METRICS_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY,
-    READINESS_VALUE_READY, STANDALONE_COMPACTORS_KEY,
+    READINESS_VALUE_READY, SHARD_SCALING_V2_KEY, STANDALONE_COMPACTORS_KEY,
 };
 use crate::metrics::spawn_metrics_task;
 use crate::{ClusterChangeStream, ClusterNode};
@@ -241,6 +241,10 @@ impl Cluster {
             STANDALONE_COMPACTORS_KEY.to_string(),
             self_node.enable_standalone_compactors.to_string(),
         ));
+        initial_key_values.push((
+            SHARD_SCALING_V2_KEY.to_string(),
+            self_node.enable_shard_scaling_v2.to_string(),
+        ));
         let chitchat_handle =
             spawn_chitchat(chitchat_config, initial_key_values, transport).await?;
 
@@ -304,6 +308,20 @@ impl Cluster {
             .values()
             .cloned()
             .collect()
+    }
+
+    pub async fn all_service_nodes_satisfy(
+        &self,
+        service: quickwit_config::service::QuickwitService,
+        predicate: impl Fn(&ClusterNode) -> bool,
+    ) -> bool {
+        let service_nodes: Vec<ClusterNode> = self
+            .live_nodes()
+            .await
+            .into_iter()
+            .filter(|node| node.is_service_enabled(service))
+            .collect();
+        !service_nodes.is_empty() && service_nodes.iter().all(predicate)
     }
 
     /// Returns a stream of changes affecting the set of ready nodes in the cluster.
@@ -376,6 +394,11 @@ impl Cluster {
     pub async fn set_self_enable_standalone_compactors(&self, enable: bool) {
         self.set_self_key_value(STANDALONE_COMPACTORS_KEY, enable)
             .await;
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub async fn set_self_enable_shard_scaling_v2(&self, enable: bool) {
+        self.set_self_key_value(SHARD_SCALING_V2_KEY, enable).await;
     }
 
     /// Sets a key-value pair on the cluster node's state.
@@ -776,6 +799,7 @@ impl<'a> TestClusterBuilder<'a> {
                 ingester_status: IngesterStatus::default(),
                 availability_zone: None,
                 enable_standalone_compactors: false,
+                enable_shard_scaling_v2: false,
             },
             peer_seed_addrs: Vec::new(),
             transport,
@@ -1063,6 +1087,61 @@ mod tests {
         assert!(matches!(&cluster_changes[4], ClusterChange::Remove(_)));
         assert!(matches!(&cluster_changes[5], ClusterChange::Remove(_)));
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_all_service_nodes_satisfy() {
+        let transport = ChitchatTransport::default();
+        let searcher = create_cluster_for_test(Vec::new(), &["searcher"], &transport, true)
+            .await
+            .unwrap();
+        // No indexers in the cluster.
+        assert!(
+            !searcher
+                .all_service_nodes_satisfy(
+                    QuickwitService::Indexer,
+                    ClusterNode::enable_shard_scaling_v2
+                )
+                .await
+        );
+
+        let indexer = create_cluster_for_test(
+            vec![searcher.gossip_listen_addr.to_string()],
+            &["indexer"],
+            &transport,
+            true,
+        )
+        .await
+        .unwrap();
+        searcher
+            .wait_for_ready_members(|members| members.len() == 2, Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert!(
+            !searcher
+                .all_service_nodes_satisfy(
+                    QuickwitService::Indexer,
+                    ClusterNode::enable_shard_scaling_v2
+                )
+                .await
+        );
+
+        indexer.set_self_enable_shard_scaling_v2(true).await;
+        searcher
+            .wait_for_ready_members(
+                |members| members.iter().any(|member| member.enable_shard_scaling_v2),
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap();
+        assert!(
+            searcher
+                .all_service_nodes_satisfy(
+                    QuickwitService::Indexer,
+                    ClusterNode::enable_shard_scaling_v2
+                )
+                .await
+        );
     }
 
     #[tokio::test]
