@@ -21,9 +21,10 @@ use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_config::NodeConfig;
 use quickwit_ingest::{IngestApiService, IngesterPool};
-use quickwit_proto::indexing::PipelineMetrics;
+use quickwit_proto::indexing::{IndexingTask, PipelineMetrics};
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_storage::StorageResolver;
+use tokio::sync::watch;
 use tracing::info;
 
 use crate::actors::MergeSchedulerService;
@@ -33,6 +34,7 @@ pub use crate::actors::{
 };
 pub use crate::controlled_directory::ControlledDirectory;
 use crate::docs_clustering::Fingerprinter;
+pub use crate::indexer_state_reporter::IndexerStateReporter;
 use crate::models::IndexingStatistics;
 pub use crate::split_store::{
     IndexingSplitCache, IndexingSplitStore, SplitStoreQuota,
@@ -42,6 +44,7 @@ pub use crate::split_store::{
 pub mod actors;
 mod controlled_directory;
 pub mod docs_clustering;
+mod indexer_state_reporter;
 pub mod merge_policy;
 mod metrics;
 pub mod models;
@@ -76,6 +79,7 @@ pub async fn start_indexing_service(
     event_broker: EventBroker,
     merge_scheduler_mailbox_opt: Option<Mailbox<MergeSchedulerService>>,
     indexing_split_cache: Arc<IndexingSplitCache>,
+    indexing_tasks_tx: watch::Sender<Option<Arc<Vec<IndexingTask>>>>,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("starting indexer service");
     let ingest_api_service_mailbox = universe.get_one::<IngestApiService>();
@@ -97,6 +101,7 @@ pub async fn start_indexing_service(
         event_broker,
         indexing_split_cache,
         fingerprinter_opt,
+        indexing_tasks_tx,
     )
     .await?;
     let (indexing_service, _) = universe.spawn_builder().spawn(indexing_service);

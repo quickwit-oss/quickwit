@@ -144,6 +144,12 @@ impl RpcName for AdviseResetShardsRequest {
     }
 }
 
+impl RpcName for ReportIndexerStateRequest {
+    fn rpc_name() -> &'static str {
+        "report_indexer_state"
+    }
+}
+
 impl GetOrCreateOpenShardsFailureReason {
     pub fn create_failure(
         &self,

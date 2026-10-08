@@ -53,7 +53,7 @@ use super::models::IngesterShard;
 use super::mrecordlog_utils::{
     AppendDocBatchError, check_enough_capacity, doc_batch_size, wal_stats,
 };
-use super::shard_readings::{ShardReadingsPublisher, ShardThroughputReadings};
+use super::shard_readings::{ShardReadingsBySource, ShardReadingsPublisher};
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
 use crate::ingest_v2::metrics::{
@@ -169,7 +169,7 @@ impl Ingester {
         memory_capacity: ByteSize,
         rate_limiter_settings: RateLimiterSettings,
         idle_shard_timeout: Duration,
-        local_shards_tx: watch::Sender<Option<Arc<ShardThroughputReadings>>>,
+        local_shards_tx: watch::Sender<Option<Arc<ShardReadingsBySource>>>,
     ) -> IngestV2Result<Self> {
         let self_node_id: NodeId = cluster.self_node_id();
         let state = IngesterState::load(
@@ -1298,7 +1298,7 @@ mod tests {
         _transport: ChitchatTransport,
         node_id: NodeId,
         cluster: Cluster,
-        local_shards_rx: watch::Receiver<Option<Arc<ShardThroughputReadings>>>,
+        local_shards_rx: watch::Receiver<Option<Arc<ShardReadingsBySource>>>,
     }
 
     #[tokio::test]
@@ -1649,7 +1649,7 @@ mod tests {
                 let Some(snapshot) = snapshot else {
                     return false;
                 };
-                let Some(readings) = snapshot.per_source_readings.get(&source_uid) else {
+                let Some(readings) = snapshot.readings_by_source.get(&source_uid) else {
                     return false;
                 };
                 readings
@@ -1662,7 +1662,7 @@ mod tests {
         .unwrap()
         .clone()
         .unwrap();
-        let readings = &snapshot.per_source_readings[&source_uid];
+        let readings = &snapshot.readings_by_source[&source_uid];
         assert_eq!(readings.len(), 1);
         assert_eq!(readings[0].shard_id, ShardId::from(1));
         assert_eq!(readings[0].shard_state, ShardState::Open);

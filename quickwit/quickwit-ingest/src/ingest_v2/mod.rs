@@ -60,7 +60,7 @@ pub use self::fetch::{FetchStreamError, MultiFetchStream};
 pub use self::ingester::Ingester;
 pub use self::mrecord::{MRecord, decoded_mrecords};
 pub use self::router::IngestRouter;
-pub use self::shard_readings::{ShardThroughputReading, ShardThroughputReadings};
+pub use self::shard_readings::{ShardReadingsBySource, ShardThroughputReading};
 
 /// An ingester as represented in the pool, bundling the gRPC client with node metadata.
 #[derive(Debug, Clone)]
