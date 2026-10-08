@@ -52,4 +52,62 @@ describe("Client unit test", () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockFetch).toHaveBeenCalledWith(expectedUrl, expect.any(Object));
   });
+
+  it("Should post the index config as YAML when creating an index", async () => {
+    const mockFetch = jest.fn((_url: string, _options?: unknown) =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
+    );
+    (global as any).fetch = mockFetch;
+
+    const indexConfigYaml = "version: 0.9\nindex_id: my-index\n";
+    const client = new Client();
+    await client.createIndex(indexConfigYaml);
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, params] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${client.apiRoot()}indexes`);
+    expect(params.method).toBe("POST");
+    // The config must be sent verbatim, not JSON-encoded.
+    expect(params.body).toBe(indexConfigYaml);
+    expect((params.headers as Record<string, string>)["content-type"]).toBe(
+      "application/yaml",
+    );
+  });
+
+  it("Should unwrap the message of a JSON error envelope", async () => {
+    const mockFetch = jest.fn((_url: string, _options?: unknown) =>
+      Promise.resolve({
+        ok: false,
+        status: 400,
+        text: () =>
+          Promise.resolve(
+            '{"message":"field `timestamp` has an unknown type"}',
+          ),
+      }),
+    );
+    (global as any).fetch = mockFetch;
+
+    const client = new Client();
+    await expect(client.createIndex("version: 0.9\n")).rejects.toEqual({
+      message: "field `timestamp` has an unknown type",
+      status: 400,
+    });
+  });
+
+  it("Should surface a non-JSON error body verbatim", async () => {
+    const mockFetch = jest.fn((_url: string, _options?: unknown) =>
+      Promise.resolve({
+        ok: false,
+        status: 502,
+        text: () => Promise.resolve("<html>Bad Gateway</html>"),
+      }),
+    );
+    (global as any).fetch = mockFetch;
+
+    const client = new Client();
+    await expect(client.createIndex("version: 0.9\n")).rejects.toEqual({
+      message: "<html>Bad Gateway</html>",
+      status: 502,
+    });
+  });
 });
