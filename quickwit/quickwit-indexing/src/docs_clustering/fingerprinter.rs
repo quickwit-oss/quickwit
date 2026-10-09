@@ -61,7 +61,11 @@ use std::hash::Hasher;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use fnv::FnvHasher;
+/// Fingerprints only live in the indexing pipeline (they order documents inside a split and are
+/// never persisted), so the hash function can change freely. FxHash hashes a word at a time; FNV
+/// (previously) does one multiply per byte, which made fingerprinting long attribute paths cost
+/// as much as indexing them.
+type FingerprintHasher = rustc_hash::FxHasher;
 use quickwit_config::{
     ClusteringMethod, ClusteringPolicy, DocsClusteringConfig, FingerprintPolicy, JsonPath,
 };
@@ -143,7 +147,7 @@ impl Fingerprinter {
     pub fn fingerprint(&self, json_value: &JsonValue) -> Fingerprint {
         let mut fingerprint = SmallVec::new();
         for policy in self.policies.iter() {
-            let mut hasher = FnvHasher::default();
+            let mut hasher = FingerprintHasher::default();
 
             for method in policy.fingerprint.iter() {
                 match method {
@@ -165,7 +169,12 @@ impl Fingerprinter {
         Fingerprint(fingerprint)
     }
 
-    fn hash_structure(&self, value: &JsonValue, exclude: &[JsonPath], hasher: &mut FnvHasher) {
+    fn hash_structure(
+        &self,
+        value: &JsonValue,
+        exclude: &[JsonPath],
+        hasher: &mut FingerprintHasher,
+    ) {
         fn walk<'a>(
             json_value: &'a JsonValue,
             exclude: &[JsonPath],
@@ -211,8 +220,13 @@ impl Fingerprinter {
         }
     }
 
-    fn hash_raw_value(&self, json_value: &JsonValue, path: &JsonPath, hasher: &mut FnvHasher) {
-        fn hash_raw_value_inner(json_value: &JsonValue, hasher: &mut FnvHasher) {
+    fn hash_raw_value(
+        &self,
+        json_value: &JsonValue,
+        path: &JsonPath,
+        hasher: &mut FingerprintHasher,
+    ) {
+        fn hash_raw_value_inner(json_value: &JsonValue, hasher: &mut FingerprintHasher) {
             const RAW_NULL: u8 = 0;
             const RAW_BOOL: u8 = 1;
             const RAW_NUMBER: u8 = 2;
@@ -270,7 +284,7 @@ impl Fingerprinter {
         json_value: &JsonValue,
         path: &JsonPath,
         max_tokens: Option<usize>,
-        hasher: &mut FnvHasher,
+        hasher: &mut FingerprintHasher,
     ) {
         let Some(value) = get_leaf_string(json_value, path) else {
             hasher.write_u8(FIELD_ABSENT);
@@ -299,7 +313,7 @@ impl Fingerprinter {
     pub fn fingerprint_row(&self, row: quickwit_doc_mapper::RowValue<'_>) -> Fingerprint {
         let mut fingerprint = SmallVec::new();
         for policy in self.policies.iter() {
-            let mut hasher = FnvHasher::default();
+            let mut hasher = FingerprintHasher::default();
             for method in policy.fingerprint.iter() {
                 match method {
                     ClusteringMethod::Structure { exclude } => {
@@ -356,14 +370,17 @@ fn row_get<'a>(
 fn row_hash_structure(
     row: quickwit_doc_mapper::RowValue<'_>,
     exclude: &[JsonPath],
-    hasher: &mut FnvHasher,
+    hasher: &mut FingerprintHasher,
 ) {
     use quickwit_doc_mapper::{RowLeaf, RowValue};
+    // `ArrowDocBuilder::json_row` lists entries sorted by key (root columns and map keys), and a
+    // key is either a leaf or an object: a depth-first walk visits the leaf paths in the sorted
+    // order `hash_structure` uses, so they can be hashed on the fly, without collecting them.
     fn walk<'a>(
         value: RowValue<'a>,
         exclude: &[JsonPath],
         current: &mut Vec<&'a str>,
-        paths: &mut Vec<Vec<&'a str>>,
+        hasher: &mut FingerprintHasher,
     ) {
         if let RowLeaf::Object(..) = value.leaf {
             for (key, child) in value.entries() {
@@ -376,29 +393,24 @@ fn row_hash_structure(
                             .all(|(excluded, component)| excluded.as_str() == *component)
                 });
                 if !is_excluded {
-                    walk(child, exclude, current, paths);
+                    walk(child, exclude, current, hasher);
                 }
                 current.pop();
             }
         } else {
-            paths.push(current.clone());
+            for component in current.iter() {
+                hasher.write(component.as_bytes());
+                hasher.write_u8(PATH_COMPONENT_SEPARATOR);
+            }
+            hasher.write_u8(PATH_SEPARATOR);
         }
     }
     let mut current = Vec::with_capacity(16);
-    let mut paths = Vec::with_capacity(32);
-    walk(row, exclude, &mut current, &mut paths);
-    paths.sort_unstable();
-    for path in paths {
-        for component in path {
-            hasher.write(component.as_bytes());
-            hasher.write_u8(PATH_COMPONENT_SEPARATOR);
-        }
-        hasher.write_u8(PATH_SEPARATOR);
-    }
+    walk(row, exclude, &mut current, hasher);
 }
 
 #[cfg(feature = "parquet")]
-fn row_hash_raw(value: quickwit_doc_mapper::RowValue<'_>, hasher: &mut FnvHasher) {
+fn row_hash_raw(value: quickwit_doc_mapper::RowValue<'_>, hasher: &mut FingerprintHasher) {
     use quickwit_doc_mapper::RowLeaf;
     // Same encoding as `hash_raw_value_inner`.
     const RAW_BOOL: u8 = 1;
@@ -526,7 +538,14 @@ mod tests {
             &[],
             &[("b", Some("2")), ("a", Some("1")), ("a", Some("3"))],
             &[("x", None), ("y", Some("2026-01-01T00:00:00Z"))],
-            &[("app", Some("cart")), ("k8s.pod.name", Some("cart-2"))],
+            // Keys that are prefixes of one another, and a key sorting between column names.
+            &[
+                ("ab", Some("1")),
+                ("a.b", Some("2")),
+                ("a", Some("3")),
+                ("", Some("4")),
+                ("Body", Some("5")),
+            ],
         ];
         for (row_idx, row) in rows.iter().enumerate() {
             for (key, value) in row.iter() {

@@ -27,6 +27,7 @@ bytesize = { workspace = true }
 fail = { workspace = true }
 flume = { workspace = true }
 fnv = { workspace = true }
+rustc-hash = { workspace = true }
 futures = { workspace = true }
 google-cloud-auth = { workspace = true, optional = true }
 google-cloud-gax = { workspace = true, optional = true }
