@@ -17,6 +17,7 @@
 
 use tantivy::TantivyDocument as Document;
 use tantivy::schema::OwnedValue;
+use tantivy::schema::document::Document as _;
 
 use crate::doc_mapper::{BorrowedJsonDoc, DocMapper, JsonObject, RandomJsonDocs};
 
@@ -96,13 +97,30 @@ fn build_doc_mappers() -> Vec<(String, DocMapper)> {
     doc_mappers
 }
 
-/// Returns the field values in insertion order. Tantivy's `PartialEq` on documents ignores the
-/// order of the values, which is not strict enough here.
-fn ordered_field_values(document: &Document) -> Vec<(u32, OwnedValue)> {
+/// Returns the values the inverted index and the fast fields see, in insertion order. Tantivy's
+/// `PartialEq` on documents ignores the order of the values, which is not strict enough here.
+/// Stored-only values (a stored-only dynamic field) are not part of it: the borrowed path writes
+/// them in their doc store encoding, compared by [`stored_bytes`].
+fn ordered_field_values(document: &Document, doc_mapper: &DocMapper) -> Vec<(u32, OwnedValue)> {
+    let schema = doc_mapper.schema();
     document
         .field_values()
+        .filter(|(field, _)| {
+            let field_entry = schema.get_field_entry(*field);
+            field_entry.is_indexed() || field_entry.is_fast()
+        })
         .map(|(field, value)| (field.field_id(), OwnedValue::from(value)))
         .collect()
+}
+
+/// The doc store encoding of the document: what search returns.
+fn stored_bytes(document: &Document, doc_mapper: &DocMapper) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    document
+        .serialize_stored_fields(&doc_mapper.schema(), &mut bytes)
+        .unwrap()
+        .unwrap();
+    bytes
 }
 
 fn assert_same_conversion(doc_mapper_name: &str, doc_mapper: &DocMapper, json_doc: &str) {
@@ -120,8 +138,14 @@ fn assert_same_conversion(doc_mapper_name: &str, doc_mapper: &DocMapper, json_do
         (Ok(Ok((owned_partition, owned_document))), Ok(Ok((partition, document)))) => {
             assert_eq!(owned_partition, partition, "{}", context());
             assert_eq!(
-                ordered_field_values(&owned_document),
-                ordered_field_values(&document),
+                ordered_field_values(&owned_document, doc_mapper),
+                ordered_field_values(&document, doc_mapper),
+                "{}",
+                context()
+            );
+            assert_eq!(
+                stored_bytes(&owned_document, doc_mapper),
+                stored_bytes(&document, doc_mapper),
                 "{}",
                 context()
             );
@@ -136,8 +160,10 @@ fn assert_same_conversion(doc_mapper_name: &str, doc_mapper: &DocMapper, json_do
             panic!(
                 "{}: owned: {:?}, borrowed: {:?}",
                 context(),
-                owned_result.map(|result| result.map(|(_, doc)| ordered_field_values(&doc))),
-                borrowed_result.map(|result| result.map(|(_, doc)| ordered_field_values(&doc)))
+                owned_result
+                    .map(|result| result.map(|(_, doc)| ordered_field_values(&doc, doc_mapper))),
+                borrowed_result
+                    .map(|result| result.map(|(_, doc)| ordered_field_values(&doc, doc_mapper)))
             );
         }
     }

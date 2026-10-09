@@ -62,16 +62,28 @@ pub(crate) fn add_borrowed_value(document: &mut Document, field: Field, json_val
 }
 
 /// Adds the unmapped fields to the dynamic field. See [`add_borrowed_object`].
+///
+/// If the field is only stored (not indexed or fast), the object is serialized straight into the
+/// doc store encoding instead of being copied into the document's value tree.
 pub(crate) fn add_dynamic_object(
     document: &mut Document,
     field: Field,
     dynamic_obj: &DynamicObject,
+    stored_only: bool,
 ) {
     let value_view = TantivyValueView::DynamicObject {
         entries: dynamic_obj,
         sort_keys: true,
     };
-    document.add_field_value(field, value_view);
+    if stored_only {
+        // Serializing to memory only fails on values the doc store cannot encode, which a JSON
+        // object cannot hold.
+        document
+            .add_stored_only_value(field, value_view)
+            .expect("serializing a JSON object to memory should not fail");
+    } else {
+        document.add_field_value(field, value_view);
+    }
 }
 
 /// Adds every primitive value of the unmapped fields to the concatenate fields, mirroring

@@ -29,10 +29,10 @@ mod routing_expression;
 /// Pruning tags manipulation.
 pub mod tag_pruning;
 
-#[cfg(feature = "arrow")]
-pub use doc_mapper::{ArrowDocBuilder, JsonRow, RowArena, RowLeaf, RowValue};
 #[cfg(any(test, feature = "testsuite"))]
 pub use doc_mapper::RandomJsonDocs;
+#[cfg(feature = "arrow")]
+pub use doc_mapper::{ArrowDocBuilder, JsonRow, RowArena, RowLeaf, RowValue};
 pub use doc_mapper::{
     Automaton, BinaryFormat, BorrowedJsonDoc, BorrowedObject, BorrowedValue, DocMapper,
     DocMapperBuilder, FastFieldWarmupInfo, FieldMappingEntry, FieldMappingType, JsonObject,

@@ -28,6 +28,7 @@ use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::{ServiceStream, rate_limited_error, rate_limited_warn};
+use quickwit_doc_mapper::DocMapper;
 use quickwit_metrics::{GaugeGuard, counter, label_values};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, ControlPlaneService, ControlPlaneServiceClient,
@@ -38,7 +39,8 @@ use quickwit_proto::ingest::{
     CommitTypeV2, DocBatchV2, IngestV2Error, IngestV2Result, ParseFailure, Shard, ShardIds,
 };
 use quickwit_proto::types::{
-    IndexUid, NodeId, Position, QueueId, ShardId, SourceId, SubrequestId, queue_id, split_queue_id,
+    DocMappingUid, IndexUid, NodeId, Position, QueueId, ShardId, SourceId, SubrequestId, queue_id,
+    split_queue_id,
 };
 use serde_json::{Value as JsonValue, json};
 use tokio::sync::Semaphore;
@@ -88,6 +90,18 @@ fn get_batch_num_bytes() -> usize {
         DEFAULT_BATCH_NUM_BYTES,
         false
     )
+}
+
+/// A subrequest's documents, validated before the ingester-wide lock is taken.
+struct PreValidatedDocBatch {
+    doc_mapping_uid: DocMappingUid,
+    validate_docs: bool,
+    requested_capacity: ByteSize,
+    original_batch_num_bytes: u64,
+    valid_doc_batch: DocBatchV2,
+    parse_failures: Vec<ParseFailure>,
+    /// Used if the shard picked under the lock has another doc mapping.
+    original_doc_batch: Option<DocBatchV2>,
 }
 
 #[derive(Clone)]
@@ -384,9 +398,79 @@ impl Ingester {
             .forever();
     }
 
+    /// Validates the documents of each subrequest against the doc mapper of its source's open
+    /// shards, without holding the ingester-wide lock. Takes the doc batches out of the request.
+    async fn pre_validate_doc_batches(
+        &self,
+        persist_request: &mut PersistRequest,
+    ) -> IngestV2Result<Vec<Option<PreValidatedDocBatch>>> {
+        // Doc mapper of an open shard of each subrequest's source (brief lock, no validation).
+        let doc_mappers: Vec<Option<(Arc<DocMapper>, bool)>> = {
+            let state_guard = self.state.lock_partially("persist_pre_validation").await?;
+            persist_request
+                .subrequests
+                .iter()
+                .map(|subrequest| {
+                    state_guard
+                        .shards
+                        .values()
+                        .find(|shard| {
+                            shard.is_open()
+                                && shard.index_uid == *subrequest.index_uid()
+                                && shard.source_id == subrequest.source_id
+                        })
+                        .and_then(|shard| {
+                            shard
+                                .doc_mapper_opt
+                                .clone()
+                                .map(|doc_mapper| (doc_mapper, shard.validate_docs))
+                        })
+                })
+                .collect()
+        };
+        let validations = persist_request.subrequests.iter_mut().zip(doc_mappers).map(
+            |(subrequest, doc_mapper_opt)| {
+                let doc_batch_opt = match &subrequest.doc_batch {
+                    Some(doc_batch) if !doc_batch.is_empty() && doc_mapper_opt.is_some() => {
+                        subrequest.doc_batch.take()
+                    }
+                    _ => None,
+                };
+                async move {
+                    let (Some(doc_batch), Some((doc_mapper, validate_docs))) =
+                        (doc_batch_opt, doc_mapper_opt)
+                    else {
+                        return Ok(None);
+                    };
+                    let requested_capacity = estimate_size(&doc_batch);
+                    let original_batch_num_bytes = doc_batch.num_bytes() as u64;
+                    let doc_mapping_uid = doc_mapper.doc_mapping_uid();
+                    // Kept in case the shard picked under the lock has another doc mapping.
+                    // Cheap: `DocBatchV2` shares its buffer.
+                    let original_doc_batch = Some(doc_batch.clone());
+                    let (valid_doc_batch, parse_failures) = if validate_docs {
+                        validate_doc_batch(doc_batch, doc_mapper).await?
+                    } else {
+                        (doc_batch, Vec::new())
+                    };
+                    Ok::<_, IngestV2Error>(Some(PreValidatedDocBatch {
+                        doc_mapping_uid,
+                        validate_docs,
+                        requested_capacity,
+                        original_batch_num_bytes,
+                        valid_doc_batch,
+                        parse_failures,
+                        original_doc_batch,
+                    }))
+                }
+            },
+        );
+        futures::future::try_join_all(validations).await
+    }
+
     async fn persist_inner(
         &self,
-        persist_request: PersistRequest,
+        mut persist_request: PersistRequest,
     ) -> IngestV2Result<PersistResponse> {
         if persist_request.ingester_id != self.self_node_id {
             return Err(IngestV2Error::Internal(format!(
@@ -408,6 +492,13 @@ impl Ingester {
 
         let commit_type = persist_request.commit_type();
         let force_commit = commit_type == CommitTypeV2::Force;
+
+        // Validate documents before taking the ingester-wide lock: validation parses every
+        // document, and holding the lock across it serialized all persist requests. Shards of a
+        // source share the source's doc mapper; the shard picked under the lock is checked to use
+        // the same doc mapping, otherwise its documents are validated again there.
+        let mut pre_validated: Vec<Option<PreValidatedDocBatch>> =
+            self.pre_validate_doc_batches(&mut persist_request).await?;
 
         let mut state_guard = self.state.lock_fully("persist").await?;
         let status = state_guard.status();
@@ -436,7 +527,10 @@ impl Ingester {
         {
             let mut total_requested_capacity = ByteSize::b(0);
 
-            for subrequest in persist_request.subrequests {
+            for (subrequest_idx, subrequest) in persist_request.subrequests.into_iter().enumerate()
+            {
+                let pre_validated_opt =
+                    pre_validated.get_mut(subrequest_idx).and_then(Option::take);
                 let Some(shard) = state_guard
                     .inner
                     .find_most_capacity_shard_mut(subrequest.index_uid(), &subrequest.source_id)
@@ -465,14 +559,41 @@ impl Ingester {
                 let validate_docs = shard.validate_docs;
                 let from_position_exclusive = shard.replication_position_inclusive.clone();
 
-                let doc_batch = match subrequest.doc_batch {
-                    Some(doc_batch) if !doc_batch.is_empty() => doc_batch,
-                    _ => {
-                        warn!("received empty persist request");
-                        DocBatchV2::default()
-                    }
-                };
-                let requested_capacity = estimate_size(&doc_batch);
+                let shard_doc_mapping_uid = doc_mapper.doc_mapping_uid();
+                // Documents validated before the lock, if the shard uses the same doc mapping.
+                let (doc_batch, requested_capacity, original_batch_num_bytes, validated_opt) =
+                    match pre_validated_opt {
+                        Some(pre_validated)
+                            if pre_validated.doc_mapping_uid == shard_doc_mapping_uid
+                                && pre_validated.validate_docs == validate_docs =>
+                        {
+                            (
+                                DocBatchV2::default(),
+                                pre_validated.requested_capacity,
+                                pre_validated.original_batch_num_bytes,
+                                Some((pre_validated.valid_doc_batch, pre_validated.parse_failures)),
+                            )
+                        }
+                        Some(pre_validated) => {
+                            // Different doc mapping (mapping update): validate again below.
+                            let doc_batch = pre_validated.original_doc_batch.unwrap_or_default();
+                            let requested_capacity = estimate_size(&doc_batch);
+                            let num_bytes = doc_batch.num_bytes() as u64;
+                            (doc_batch, requested_capacity, num_bytes, None)
+                        }
+                        None => {
+                            let doc_batch = match subrequest.doc_batch {
+                                Some(doc_batch) if !doc_batch.is_empty() => doc_batch,
+                                _ => {
+                                    warn!("received empty persist request");
+                                    DocBatchV2::default()
+                                }
+                            };
+                            let requested_capacity = estimate_size(&doc_batch);
+                            let num_bytes = doc_batch.num_bytes() as u64;
+                            (doc_batch, requested_capacity, num_bytes, None)
+                        }
+                    };
 
                 if let Err(error) = check_enough_capacity(
                     &state_guard.mrecordlog,
@@ -512,13 +633,10 @@ impl Ingester {
                     continue;
                 }
 
-                // Total number of bytes (valid and invalid documents)
-                let original_batch_num_bytes = doc_batch.num_bytes() as u64;
-
-                let (valid_doc_batch, parse_failures) = if validate_docs {
-                    validate_doc_batch(doc_batch, doc_mapper).await?
-                } else {
-                    (doc_batch, Vec::new())
+                let (valid_doc_batch, parse_failures) = match validated_opt {
+                    Some(validated) => validated,
+                    None if validate_docs => validate_doc_batch(doc_batch, doc_mapper).await?,
+                    None => (doc_batch, Vec::new()),
                 };
 
                 if valid_doc_batch.is_empty() {

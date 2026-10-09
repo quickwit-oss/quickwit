@@ -608,7 +608,10 @@ impl DocMapper {
                     &dynamic_obj,
                 );
             }
-            add_dynamic_object(&mut document, dynamic_field, &dynamic_obj);
+            let field_entry = self.schema.get_field_entry(dynamic_field);
+            let stored_only =
+                field_entry.is_stored() && !field_entry.is_indexed() && !field_entry.is_fast();
+            add_dynamic_object(&mut document, dynamic_field, &dynamic_obj, stored_only);
         }
 
         self.add_document_size_and_field_presence(&mut document, document_len);
