@@ -386,9 +386,8 @@ fn arrow_row_fingerprint_matches_json_fingerprint() {
     let batch = RecordBatch::try_from_iter(vec![
         (
             "Timestamp",
-            Arc::new(
-                TimestampNanosecondArray::from(vec![1i64, 2, 3, 4, 5]).with_timezone("UTC"),
-            ) as ArrayRef,
+            Arc::new(TimestampNanosecondArray::from(vec![1i64, 2, 3, 4, 5]).with_timezone("UTC"))
+                as ArrayRef,
         ),
         (
             "Body",

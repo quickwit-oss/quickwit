@@ -146,7 +146,6 @@ impl Fingerprinter {
             })
     }
 
-
     /// Computes the fingerprint of a document parsed as an owned JSON value.
     pub fn fingerprint(&self, json_value: &JsonValue) -> Fingerprint {
         self.fingerprint_view(json_value)
@@ -213,7 +212,11 @@ fn collect_leaf_paths<'a, V: JsonView<'a>>(
     });
 }
 
-fn hash_structure<'a>(json_view: impl JsonView<'a>, exclude: &[JsonPath], hasher: &mut FingerprintHasher) {
+fn hash_structure<'a>(
+    json_view: impl JsonView<'a>,
+    exclude: &[JsonPath],
+    hasher: &mut FingerprintHasher,
+) {
     let mut current = Vec::with_capacity(16);
     let mut paths = Vec::with_capacity(32);
     collect_leaf_paths(json_view, exclude, &mut current, &mut paths);
@@ -269,7 +272,11 @@ fn hash_raw_value_inner<'a, V: JsonView<'a>>(json_view: V, hasher: &mut Fingerpr
     }
 }
 
-fn hash_raw_value<'a>(json_view: impl JsonView<'a>, path: &JsonPath, hasher: &mut FingerprintHasher) {
+fn hash_raw_value<'a>(
+    json_view: impl JsonView<'a>,
+    path: &JsonPath,
+    hasher: &mut FingerprintHasher,
+) {
     let Some(leaf_view) = get_leaf_json_view(json_view, path) else {
         hasher.write_u8(FIELD_ABSENT);
         hasher.write_u8(FIELD_BOUNDARY);
