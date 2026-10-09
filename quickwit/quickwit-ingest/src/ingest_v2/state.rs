@@ -32,7 +32,9 @@ use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardIds, ShardState};
 use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, SourceId, split_queue_id};
-use tokio::sync::{Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, watch};
+use tokio::sync::{
+    Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockReadGuard, RwLockWriteGuard, watch,
+};
 use tracing::{error, info, instrument};
 
 use super::models::IngesterShard;
@@ -40,6 +42,22 @@ use super::rate_meter::RateMeter;
 use super::wal_capacity_tracker::WalCapacityTracker;
 use crate::OpenShardCounts;
 use crate::mrecordlog_async::MultiRecordLogAsync;
+
+/// Number of independent mrecordlog instances of the WAL. Appends to queues of different
+/// instances run in parallel; each instance uses at least one 128 MiB file of disk capacity.
+fn wal_num_instances() -> usize {
+    #[cfg(test)]
+    if let Some(num_instances) = TEST_WAL_NUM_INSTANCES.with(|cell| cell.get()) {
+        return num_instances;
+    }
+    quickwit_common::get_from_env("QW_INGEST_WAL_NUM_INSTANCES", 1usize, false).max(1)
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static TEST_WAL_NUM_INSTANCES: std::cell::Cell<Option<usize>> =
+        const { std::cell::Cell::new(None) };
+}
 
 /// Stores the state of the ingester and attempts to prevent deadlocks by exposing an API that
 /// guarantees that the internal data structures are always locked in the same order.
@@ -184,14 +202,16 @@ impl IngesterState {
         let state = Self::create(cluster, disk_capacity, memory_capacity).await;
         let state_clone = state.clone();
         let wal_dir_path = wal_dir_path.to_path_buf();
+        let num_wal_instances = wal_num_instances();
 
         let init_future = async move {
             state_clone
-                .init(
+                .init_with_wal_instances(
                     &wal_dir_path,
                     disk_capacity,
                     memory_capacity,
                     rate_limiter_settings,
+                    num_wal_instances,
                 )
                 .await;
         };
@@ -234,6 +254,24 @@ impl IngesterState {
         memory_capacity: ByteSize,
         rate_limiter_settings: RateLimiterSettings,
     ) {
+        self.init_with_wal_instances(
+            wal_dir_path,
+            disk_capacity,
+            memory_capacity,
+            rate_limiter_settings,
+            wal_num_instances(),
+        )
+        .await
+    }
+
+    async fn init_with_wal_instances(
+        &self,
+        wal_dir_path: &Path,
+        disk_capacity: ByteSize,
+        memory_capacity: ByteSize,
+        rate_limiter_settings: RateLimiterSettings,
+        num_wal_instances: usize,
+    ) {
         // Acquire locks in the same order as `lock_fully` (mrecordlog first, then inner) to
         // prevent ABBA deadlocks with the broadcast capacity task.
         let mut mrecordlog_guard = self.mrecordlog.write().await;
@@ -249,6 +287,7 @@ impl IngesterState {
                 // TODO maybe we want to fsync too?
                 action: mrecordlog::PersistAction::Flush,
             },
+            num_wal_instances,
         )
         .await;
 
@@ -392,6 +431,35 @@ impl IngesterState {
             acquired_at,
         };
         Ok(fully_locked_state)
+    }
+
+    /// Locks the WAL in shared mode: queues can be appended to concurrently with
+    /// [`MultiRecordLogAsync::append_records_shared`]. Lock the state with
+    /// [`Self::lock_partially`] after this lock, never before.
+    pub async fn read_wal(
+        &self,
+        operation: &'static str,
+    ) -> IngestV2Result<RwLockReadGuard<'_, MultiRecordLogAsync>> {
+        if *self.status_rx.borrow() == IngesterStatus::Initializing {
+            return Err(IngestV2Error::Internal(
+                "ingester is initializing".to_string(),
+            ));
+        }
+        let (wal_opt_guard, _acquired_at) =
+            track_acquire_lock(operation, "wal_read", self.mrecordlog.read()).await;
+        RwLockReadGuard::try_map(wal_opt_guard, Option::as_ref)
+            .map_err(|_| IngestV2Error::Internal("failed to initialize ingester".to_string()))
+    }
+
+    /// Locks the in-memory state, without checking the status of the ingester.
+    pub async fn lock_inner(&self, operation: &'static str) -> PartiallyLockedIngesterState<'_> {
+        let (inner_guard, acquired_at) =
+            track_acquire_lock(operation, "partial", self.inner.lock()).await;
+        PartiallyLockedIngesterState {
+            inner: inner_guard,
+            operation,
+            acquired_at,
+        }
     }
 
     // Leaks the mrecordlog lock for use in fetch tasks. It's safe to do so because fetch tasks

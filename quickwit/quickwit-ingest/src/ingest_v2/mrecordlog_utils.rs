@@ -50,7 +50,7 @@ pub(super) enum AppendDocBatchError {
     )
 )]
 pub(super) async fn append_non_empty_doc_batch(
-    mrecordlog: &mut MultiRecordLogAsync,
+    mrecordlog: &MultiRecordLogAsync,
     queue_id: &QueueId,
     doc_batch: DocBatchV2,
     force_commit: bool,
@@ -68,7 +68,7 @@ pub(super) async fn append_non_empty_doc_batch(
         });
 
         mrecordlog
-            .append_records(queue_id, None, encoded_mrecords)
+            .append_records_shared(queue_id, None, encoded_mrecords)
             .await
     } else {
         let encoded_mrecords = doc_batch
@@ -82,7 +82,7 @@ pub(super) async fn append_non_empty_doc_batch(
         });
 
         mrecordlog
-            .append_records(queue_id, None, encoded_mrecords)
+            .append_records_shared(queue_id, None, encoded_mrecords)
             .await
     };
     match append_result {
@@ -186,7 +186,7 @@ mod tests {
         let doc_batch = DocBatchV2::for_test(["test-doc-foo"]);
 
         let append_error =
-            append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch.clone(), false)
+            append_non_empty_doc_batch(&mrecordlog, &queue_id, doc_batch.clone(), false)
                 .await
                 .unwrap_err();
 
@@ -197,16 +197,14 @@ mod tests {
 
         mrecordlog.create_queue(&queue_id).await.unwrap();
 
-        let position =
-            append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch.clone(), false)
-                .await
-                .unwrap();
+        let position = append_non_empty_doc_batch(&mrecordlog, &queue_id, doc_batch.clone(), false)
+            .await
+            .unwrap();
         assert_eq!(position, Position::offset(0u64));
 
-        let position =
-            append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch.clone(), true)
-                .await
-                .unwrap();
+        let position = append_non_empty_doc_batch(&mrecordlog, &queue_id, doc_batch.clone(), true)
+            .await
+            .unwrap();
         assert_eq!(position, Position::offset(2u64));
     }
 
@@ -228,7 +226,7 @@ mod tests {
         mrecordlog.create_queue(&queue_id).await.unwrap();
 
         let doc_batch = DocBatchV2::for_test(["test-doc-foo"]);
-        let append_error = append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch, false)
+        let append_error = append_non_empty_doc_batch(&mrecordlog, &queue_id, doc_batch, false)
             .await
             .unwrap_err();
 
@@ -275,7 +273,7 @@ mod tests {
         mrecordlog.create_queue(&queue_id).await.unwrap();
 
         let doc_batch = DocBatchV2::for_test(["test-doc-foo"]);
-        append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch, true)
+        append_non_empty_doc_batch(&mrecordlog, &queue_id, doc_batch, true)
             .await
             .unwrap();
 

@@ -168,29 +168,32 @@ impl Queues {
             Some(pos) => Bound::Excluded(pos),
             None => Bound::Unbounded,
         };
-        let records = self
-            .record_log
-            .range(&real_queue_id, (starting_bound, Bound::Unbounded))
-            .map_err(|_| crate::IngestServiceError::IndexNotFound {
-                // we want to return the queue_id, not the real_queue_id, so we can't just
-                // implement From<MissingQueue>
-                index_id: queue_id.to_string(),
-            })?;
-
         let size_limit = num_bytes_limit.unwrap_or(FETCH_PAYLOAD_LIMIT);
         let mut doc_batch = DocBatchBuilder::new(queue_id.to_string());
         let mut num_bytes = 0;
         let mut first_key_opt = None;
 
-        for Record { position, payload } in records {
-            if first_key_opt.is_none() {
-                first_key_opt = Some(position);
-            }
-            num_bytes += doc_batch.command_from_buf(payload.as_ref());
-            if num_bytes > size_limit {
-                break;
-            }
-        }
+        self.record_log
+            .with_range(
+                &real_queue_id,
+                (starting_bound, Bound::Unbounded),
+                |records| {
+                    for Record { position, payload } in records {
+                        if first_key_opt.is_none() {
+                            first_key_opt = Some(position);
+                        }
+                        num_bytes += doc_batch.command_from_buf(payload.as_ref());
+                        if num_bytes > size_limit {
+                            break;
+                        }
+                    }
+                },
+            )
+            .map_err(|_| crate::IngestServiceError::IndexNotFound {
+                // we want to return the queue_id, not the real_queue_id, so we can't just
+                // implement From<MissingQueue>
+                index_id: queue_id.to_string(),
+            })?;
 
         Ok(FetchResponse {
             first_position: first_key_opt,
@@ -208,6 +211,7 @@ impl Queues {
             queues: self
                 .record_log
                 .list_queues()
+                .iter()
                 .flat_map(|real_queue_id| real_queue_id.strip_prefix(QUICKWIT_CF_PREFIX))
                 .map(|queue| queue.to_string())
                 .collect(),

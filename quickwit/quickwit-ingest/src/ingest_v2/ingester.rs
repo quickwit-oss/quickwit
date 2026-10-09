@@ -306,7 +306,7 @@ impl Ingester {
             .expect("ingester should be ready");
 
         for queue_id in state_guard.mrecordlog.list_queues() {
-            let Some((index_uid, source_id, shard_id)) = split_queue_id(queue_id) else {
+            let Some((index_uid, source_id, shard_id)) = split_queue_id(&queue_id) else {
                 // `split_queue_id` already logs an error.
                 continue;
             };
@@ -500,7 +500,11 @@ impl Ingester {
         let mut pre_validated: Vec<Option<PreValidatedDocBatch>> =
             self.pre_validate_doc_batches(&mut persist_request).await?;
 
-        let mut state_guard = self.state.lock_fully("persist").await?;
+        // The WAL is locked in shared mode: persist requests append concurrently to the queues
+        // of different WAL instances. The state lock is only held to pick the shards and check
+        // capacity (before appending), then to publish the new positions (after).
+        let wal_guard = self.state.read_wal("persist").await?;
+        let mut state_guard = self.state.lock_partially("persist").await?;
         let status = state_guard.status();
 
         if !status.accepts_write_requests() {
@@ -596,7 +600,7 @@ impl Ingester {
                     };
 
                 if let Err(error) = check_enough_capacity(
-                    &state_guard.mrecordlog,
+                    &wal_guard,
                     self.disk_capacity,
                     self.memory_capacity,
                     requested_capacity + total_requested_capacity,
@@ -687,6 +691,7 @@ impl Ingester {
                 }
                 let valid_batch_num_bytes = valid_doc_batch.num_bytes() as u64;
                 shard.rate_meter.update(valid_batch_num_bytes);
+                shard.num_in_flight_appends += 1;
                 total_requested_capacity += requested_capacity;
 
                 let pending_persist_subrequest = PendingPersistSubrequest {
@@ -704,80 +709,88 @@ impl Ingester {
                 );
             }
         }
-        // finally write locally
-        {
-            let now = Instant::now();
-            for subrequest in pending_persist_subrequests.into_values() {
-                let queue_id = subrequest.queue_id;
+        drop(state_guard);
 
-                let batch_num_docs = subrequest.doc_batch.num_docs() as u64;
+        // Append to the WAL without holding the state lock.
+        let mut append_results = Vec::with_capacity(pending_persist_subrequests.len());
+        for subrequest in pending_persist_subrequests.into_values() {
+            let append_result = append_non_empty_doc_batch(
+                &wal_guard,
+                &subrequest.queue_id,
+                subrequest.doc_batch.clone(),
+                force_commit,
+            )
+            .await;
+            append_results.push((subrequest, append_result));
+        }
 
-                let append_result = append_non_empty_doc_batch(
-                    &mut state_guard.mrecordlog,
-                    &queue_id,
-                    subrequest.doc_batch,
-                    force_commit,
-                )
-                .await;
+        // Publish the new positions. The status of the ingester is not checked again: the
+        // in-flight appends must be accounted for.
+        let mut state_guard = self.state.lock_inner("persist_publish").await;
+        let now = Instant::now();
+        for (subrequest, append_result) in append_results {
+            let queue_id = subrequest.queue_id;
+            let batch_num_docs = subrequest.doc_batch.num_docs() as u64;
 
-                let current_position_inclusive = match append_result {
-                    Ok(current_position_inclusive) => current_position_inclusive,
-                    Err(append_error) => {
-                        let reason = match &append_error {
-                            AppendDocBatchError::Io(io_error) => {
-                                error!(
-                                    "failed to persist records to shard `{queue_id}`: {io_error}"
-                                );
-                                shards_to_close.insert(queue_id);
-                                PersistFailureReason::NodeUnavailable
-                            }
-                            AppendDocBatchError::QueueNotFound(_) => {
-                                error!(
-                                    "failed to persist records to shard `{queue_id}`: WAL queue \
-                                     not found"
-                                );
-                                shards_to_delete.insert(queue_id);
-                                PersistFailureReason::NodeUnavailable
-                            }
-                        };
-                        let persist_failure = PersistFailure {
-                            subrequest_id: subrequest.subrequest_id,
-                            index_uid: subrequest.index_uid,
-                            source_id: subrequest.source_id,
-                            reason: reason as i32,
-                        };
-                        persist_failures.push(persist_failure);
-                        continue;
-                    }
-                };
-
-                state_guard
-                    .shards
-                    .get_mut(&queue_id)
-                    .expect("shard should exist")
-                    .set_replication_position_inclusive(current_position_inclusive.clone(), now);
-
-                let persist_success = PersistSuccess {
-                    subrequest_id: subrequest.subrequest_id,
-                    index_uid: subrequest.index_uid,
-                    source_id: subrequest.source_id,
-                    shard_id: subrequest.shard_id,
-                    replication_position_inclusive: Some(current_position_inclusive),
-                    num_persisted_docs: batch_num_docs as u32,
-                    parse_failures: subrequest.parse_failures,
-                };
-                persist_successes.push(persist_success);
+            if let Some(shard) = state_guard.shards.get_mut(&queue_id) {
+                shard.num_in_flight_appends -= 1;
+                if let Ok(current_position_inclusive) = &append_result {
+                    shard.set_replication_position_inclusive(
+                        current_position_inclusive.clone(),
+                        now,
+                    );
+                }
+                // A shard closed while appends were in flight is only reported closed to fetch
+                // streams once they are done.
+                if shard.num_in_flight_appends == 0 && shard.is_closed() {
+                    shard.notify_shard_status();
+                }
             }
+            let current_position_inclusive = match append_result {
+                Ok(current_position_inclusive) => current_position_inclusive,
+                Err(append_error) => {
+                    let reason = match &append_error {
+                        AppendDocBatchError::Io(io_error) => {
+                            error!("failed to persist records to shard `{queue_id}`: {io_error}");
+                            shards_to_close.insert(queue_id);
+                            PersistFailureReason::NodeUnavailable
+                        }
+                        AppendDocBatchError::QueueNotFound(_) => {
+                            error!(
+                                "failed to persist records to shard `{queue_id}`: WAL queue not \
+                                 found"
+                            );
+                            shards_to_delete.insert(queue_id);
+                            PersistFailureReason::NodeUnavailable
+                        }
+                    };
+                    let persist_failure = PersistFailure {
+                        subrequest_id: subrequest.subrequest_id,
+                        index_uid: subrequest.index_uid,
+                        source_id: subrequest.source_id,
+                        reason: reason as i32,
+                    };
+                    persist_failures.push(persist_failure);
+                    continue;
+                }
+            };
+            let persist_success = PersistSuccess {
+                subrequest_id: subrequest.subrequest_id,
+                index_uid: subrequest.index_uid,
+                source_id: subrequest.source_id,
+                shard_id: subrequest.shard_id,
+                replication_position_inclusive: Some(current_position_inclusive),
+                num_persisted_docs: batch_num_docs as u32,
+                parse_failures: subrequest.parse_failures,
+            };
+            persist_successes.push(persist_success);
         }
         if !shards_to_close.is_empty() {
             for queue_id in &shards_to_close {
-                let shard = state_guard
-                    .shards
-                    .get_mut(queue_id)
-                    .expect("shard should exist");
-
-                shard.close();
-                warn!("closed shard `{queue_id}` following IO error");
+                if let Some(shard) = state_guard.shards.get_mut(queue_id) {
+                    shard.close();
+                    warn!("closed shard `{queue_id}` following IO error");
+                }
             }
         }
         if !shards_to_delete.is_empty() {
@@ -786,7 +799,7 @@ impl Ingester {
                 warn!("deleted dangling shard `{queue_id}`");
             }
         }
-        let wal_usage = state_guard.mrecordlog.resource_usage();
+        let wal_usage = wal_guard.resource_usage();
         let disk_used = wal_usage.disk_used_bytes as u64;
         let memory_used = wal_usage.memory_used_bytes as u64;
         let (open_shard_counts, closed_shards) = state_guard.get_shard_snapshot();
@@ -795,6 +808,7 @@ impl Ingester {
             .score(ByteSize::b(disk_used), ByteSize::b(memory_used))
             as u32;
         drop(state_guard);
+        drop(wal_guard);
 
         if disk_used >= self.disk_capacity.as_u64() * 90 / 100 {
             self.background_reset_shards();
@@ -1370,7 +1384,10 @@ mod tests {
             static GOSSIP_ADVERTISE_PORT_SEQUENCE: AtomicU16 = AtomicU16::new(1u16);
 
             let tempdir = tempfile::tempdir().unwrap();
-            let wal_dir_path = tempdir.path();
+            // Additional WAL instances are created next to the WAL directory: keep them in the
+            // temporary directory.
+            let wal_dir_path_buf = tempdir.path().join("wal");
+            let wal_dir_path = wal_dir_path_buf.as_path();
             let transport = ChitchatTransport::default();
 
             let gossip_advertise_port =
@@ -1490,7 +1507,7 @@ mod tests {
         ingester
             .state
             .init(
-                ingester_ctx.tempdir.path(),
+                &ingester_ctx.tempdir.path().join("wal"),
                 ByteSize::mb(256),
                 ByteSize::mb(1),
                 RateLimiterSettings::default(),
@@ -1804,6 +1821,102 @@ mod tests {
                 (2, [0, 1], ""),
             ],
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_ingester_concurrent_persists_with_several_wal_instances() {
+        crate::ingest_v2::state::TEST_WAL_NUM_INSTANCES.with(|cell| cell.set(Some(4)));
+        // Each WAL instance uses at least one 128 MiB file.
+        let (ingester_ctx, ingester) = IngesterForTest::default()
+            .with_disk_capacity(ByteSize::gib(1))
+            .build()
+            .await;
+        crate::ingest_v2::state::TEST_WAL_NUM_INSTANCES.with(|cell| cell.set(None));
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+        let doc_mapping_uid = DocMappingUid::random();
+        let doc_mapping_json = format!(r#"{{"doc_mapping_uid": "{doc_mapping_uid}"}}"#);
+        const NUM_SHARDS: u64 = 8;
+        let subrequests = (0..NUM_SHARDS)
+            .map(|shard_id| InitShardSubrequest {
+                subrequest_id: shard_id as u32,
+                shard: Some(Shard {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: source_id.clone(),
+                    shard_id: Some(ShardId::from(shard_id)),
+                    shard_state: ShardState::Open as i32,
+                    ingester_id: ingester_ctx.node_id.to_string(),
+                    doc_mapping_uid: Some(doc_mapping_uid),
+                    ..Default::default()
+                }),
+                doc_mapping_json: doc_mapping_json.clone(),
+                validate_docs: true,
+            })
+            .collect();
+        let response = ingester
+            .init_shards(InitShardsRequest { subrequests })
+            .await
+            .unwrap();
+        assert_eq!(response.successes.len(), NUM_SHARDS as usize);
+
+        const NUM_PERSISTS: usize = 64;
+        let persist_futures = (0..NUM_PERSISTS).map(|persist_idx| {
+            let ingester = ingester.clone();
+            let docs = [
+                format!(r#"{{"doc": "doc-{persist_idx}-0"}}"#),
+                format!(r#"{{"doc": "doc-{persist_idx}-1"}}"#),
+            ];
+            let persist_request = PersistRequest {
+                ingester_id: ingester_ctx.node_id.to_string(),
+                commit_type: CommitTypeV2::Auto as i32,
+                subrequests: vec![PersistSubrequest {
+                    subrequest_id: 0,
+                    index_uid: Some(index_uid.clone()),
+                    source_id: source_id.clone(),
+                    doc_batch: Some(DocBatchV2::for_test(
+                        docs.map(|doc| &*Box::leak(doc.into_boxed_str())),
+                    )),
+                }],
+            };
+            tokio::spawn(async move { ingester.persist(persist_request).await.unwrap() })
+        });
+        let mut num_persisted_docs = 0;
+        for persist_response in futures::future::join_all(persist_futures).await {
+            let persist_response = persist_response.unwrap();
+            assert_eq!(
+                persist_response.failures.len(),
+                0,
+                "{:?}",
+                persist_response.failures
+            );
+            assert_eq!(persist_response.successes.len(), 1);
+            num_persisted_docs += persist_response.successes[0].num_persisted_docs;
+        }
+        assert_eq!(num_persisted_docs as usize, 2 * NUM_PERSISTS);
+
+        // Every record is in the WAL, and each shard's replication position is its last record.
+        let state_guard = ingester.state.lock_fully("test").await.unwrap();
+        assert!(ingester_ctx.tempdir.path().join("wal-3").is_dir());
+        let mut num_records = 0;
+        for shard_id in 0..NUM_SHARDS {
+            let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(shard_id));
+            let positions: Vec<u64> = state_guard
+                .mrecordlog
+                .with_range(&queue_id, .., |records| {
+                    records.map(|record| record.position).collect()
+                })
+                .unwrap();
+            let expected_positions: Vec<u64> = (0..positions.len() as u64).collect();
+            assert_eq!(positions, expected_positions);
+            let shard = state_guard.shards.get(&queue_id).unwrap();
+            assert_eq!(shard.num_in_flight_appends, 0);
+            if let Some(last_position) = positions.last() {
+                shard.assert_replication_position(Position::offset(*last_position));
+            }
+            num_records += positions.len();
+        }
+        assert_eq!(num_records, 2 * NUM_PERSISTS);
     }
 
     #[tokio::test]
@@ -3262,6 +3375,9 @@ mod tests {
         let state_guard = ingester.state.lock_partially("test").await.unwrap();
         let shard = state_guard.shards.get(&queue_id).unwrap();
         shard.assert_is_closed();
+        // The fetch task reads the WAL: holding the state lock while waiting for it could
+        // deadlock with a task holding the WAL lock and waiting for the state lock.
+        drop(state_guard);
 
         let fetch_response = timeout(Duration::from_millis(100), fetch_stream.next())
             .await

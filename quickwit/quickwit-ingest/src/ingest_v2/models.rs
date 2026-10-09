@@ -55,6 +55,10 @@ pub(super) struct IngesterShard {
     pub shard_status_rx: watch::Receiver<ShardStatus>,
     /// Instant at which the shard was last written to.
     pub last_write_instant: Instant,
+    /// Number of persist requests appending to the shard's queue without holding the ingester
+    /// state lock. While some are in flight, fetch streams see a closed shard as open: they must
+    /// not reach EOF before the positions of these records are published.
+    pub num_in_flight_appends: usize,
 }
 
 /// Builder for `IngesterShard`. By default, the shard is open, is empty (i.e. the replication and
@@ -152,6 +156,7 @@ impl IngesterShardBuilder {
             shard_status_tx,
             shard_status_rx,
             last_write_instant: self.last_write_instant.unwrap_or_else(Instant::now),
+            num_in_flight_appends: 0,
         }
     }
 }
@@ -220,10 +225,12 @@ impl IngesterShard {
     }
 
     pub fn notify_shard_status(&self) {
-        let shard_status = (
-            self.shard_state,
-            self.replication_position_inclusive.clone(),
-        );
+        let shard_state = if self.shard_state.is_closed() && self.num_in_flight_appends > 0 {
+            ShardState::Open
+        } else {
+            self.shard_state
+        };
+        let shard_status = (shard_state, self.replication_position_inclusive.clone());
         // `shard_status_tx` is guaranteed to be open because `self` also holds a receiver.
         self.shard_status_tx
             .send(shard_status)
@@ -239,7 +246,8 @@ impl IngesterShard {
         replication_position_inclusive: Position,
         now: Instant,
     ) {
-        if self.replication_position_inclusive == replication_position_inclusive {
+        // Concurrent persist requests may publish their positions out of order.
+        if self.replication_position_inclusive >= replication_position_inclusive {
             return;
         }
         self.replication_position_inclusive = replication_position_inclusive;
@@ -308,6 +316,36 @@ mod tests {
         );
         assert_eq!(shard.truncation_position_inclusive, Position::Beginning);
         assert!(!shard.is_advertisable);
+    }
+
+    #[test]
+    fn test_shard_closed_with_in_flight_appends_is_reported_open() {
+        let mut shard = IngesterShard::builder(
+            IndexUid::for_test("test-index", 0),
+            SourceId::from("test-source"),
+            ShardId::from(1),
+        )
+        .build();
+        let shard_status_rx = shard.shard_status_rx.clone();
+
+        shard.num_in_flight_appends += 1;
+        shard.close();
+        // A fetch stream must not reach EOF before the in-flight append publishes its position.
+        assert_eq!(shard_status_rx.borrow().0, ShardState::Open);
+
+        let now = Instant::now();
+        shard.set_replication_position_inclusive(Position::offset(3u64), now);
+        // Positions published out of order never go backward.
+        shard.set_replication_position_inclusive(Position::offset(1u64), now);
+        assert_eq!(shard_status_rx.borrow().1, Position::offset(3u64));
+        assert_eq!(shard_status_rx.borrow().0, ShardState::Open);
+
+        shard.num_in_flight_appends -= 1;
+        shard.notify_shard_status();
+        assert_eq!(
+            *shard_status_rx.borrow(),
+            (ShardState::Closed, Position::offset(3u64))
+        );
     }
 
     #[test]

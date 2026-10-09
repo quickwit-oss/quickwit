@@ -118,7 +118,6 @@ impl FetchStreamTask {
         } else {
             Position::offset(self.from_position_inclusive - 1)
         };
-
         loop {
             if has_drained_queue && self.shard_status_rx.changed().await.is_err() {
                 // The shard was dropped.
@@ -132,24 +131,33 @@ impl FetchStreamTask {
             let (mrecordlog_guard, acquired_at) =
                 track_acquire_lock("fetch_stream", "partial", self.mrecordlog.read()).await;
 
-            let Ok(mrecords) = mrecordlog_guard
-                .as_ref()
-                .expect("mrecordlog should be initialized")
-                .range(&self.queue_id, self.from_position_inclusive..)
-            else {
+            let queue_exists = {
+                let instance_guard = mrecordlog_guard
+                    .as_ref()
+                    .expect("mrecordlog should be initialized")
+                    .lock_queue_instance(&self.queue_id);
+                match instance_guard.range(&self.queue_id, self.from_position_inclusive..) {
+                    Ok(mrecords) => {
+                        for Record { payload, .. } in mrecords {
+                            // Accept at least one message
+                            if !mrecord_buffer.is_empty()
+                                && (mrecord_buffer.len() + payload.len()
+                                    > mrecord_buffer.capacity())
+                            {
+                                has_drained_queue = false;
+                                break;
+                            }
+                            mrecord_buffer.put(payload.borrow());
+                            mrecord_lengths.push(payload.len() as u32);
+                        }
+                        true
+                    }
+                    Err(_) => false,
+                }
+            };
+            if !queue_exists {
                 // The queue was dropped.
                 break;
-            };
-            for Record { payload, .. } in mrecords {
-                // Accept at least one message
-                if !mrecord_buffer.is_empty()
-                    && (mrecord_buffer.len() + payload.len() > mrecord_buffer.capacity())
-                {
-                    has_drained_queue = false;
-                    break;
-                }
-                mrecord_buffer.put(payload.borrow());
-                mrecord_lengths.push(payload.len() as u32);
             }
             // Drop the lock while we send the message.
             drop(mrecordlog_guard);
