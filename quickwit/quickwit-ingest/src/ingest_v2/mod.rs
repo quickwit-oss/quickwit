@@ -310,6 +310,18 @@ impl AddAssign<RateMibPerSec> for RateMibPerSec {
     }
 }
 
+impl From<ByteSize> for RateMibPerSec {
+    fn from(rate: ByteSize) -> Self {
+        RateMibPerSec(rate.as_u64().div_ceil(ByteSize::mib(1).as_u64()) as u16)
+    }
+}
+
+impl From<RateMibPerSec> for ByteSize {
+    fn from(rate: RateMibPerSec) -> Self {
+        ByteSize::mib(rate.0.into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;

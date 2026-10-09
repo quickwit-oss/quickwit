@@ -17,6 +17,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fmt::Formatter;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -59,8 +61,8 @@ use crate::IndexerPool;
 use crate::cooldown_map::{CooldownMap, CooldownStatus};
 use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
-use crate::ingest::IngestController;
-use crate::ingest::ingest_controller::{IngestControllerStats, RebalanceShardsCallback};
+use crate::ingest::ingest_controller::RebalanceShardsCallback;
+use crate::ingest::{IngestController, LegacyScalingController};
 use crate::metrics::{METASTORE_ERROR_ABORTED, METASTORE_ERROR_MAYBE_EXECUTED, RESTART_TOTAL};
 use crate::model::ControlPlaneModel;
 
@@ -97,7 +99,8 @@ pub struct ControlPlane {
     // - the ingest controller is in charge of managing ingesters: it opens and closes shards on
     // the different ingesters.
     indexing_scheduler: IndexingScheduler,
-    ingest_controller: IngestController,
+    ingest_controller: Arc<IngestController>,
+    legacy_scaling_controller: LegacyScalingController,
     metastore: MetastoreServiceClient,
     model: ControlPlaneModel,
     prune_shard_cooldown: CooldownMap<(IndexId, SourceId)>,
@@ -134,9 +137,12 @@ impl ControlPlane {
                     / shared_consts::MIB as f32;
                 let indexing_scheduler =
                     IndexingScheduler::new(cluster_id, self_node_id.clone(), indexer_pool.clone());
-                let ingest_controller = IngestController::new(
+                let ingest_controller = Arc::new(IngestController::new(
                     metastore.clone(),
                     ingester_pool.clone(),
+                ));
+                let legacy_scaling_controller = LegacyScalingController::new(
+                    ingest_controller.clone(),
                     shard_throughput_limit_mib,
                     cluster_config.shard_scale_up_factor,
                 );
@@ -148,6 +154,7 @@ impl ControlPlane {
                     cluster_config: cluster_config.clone(),
                     indexing_scheduler,
                     ingest_controller,
+                    legacy_scaling_controller,
                     metastore: metastore.clone(),
                     model: Default::default(),
                     prune_shard_cooldown: CooldownMap::new(NonZeroUsize::new(1024).unwrap()),
@@ -162,7 +169,7 @@ impl ControlPlane {
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct ControlPlaneObservableState {
     pub indexing_scheduler: IndexingSchedulerState,
-    pub ingest_controller: IngestControllerStats,
+    pub num_rebalance_shards_ops: usize,
     pub num_indexes: usize,
     pub num_sources: usize,
     pub readiness: bool,
@@ -179,7 +186,10 @@ impl Actor for ControlPlane {
     fn observable_state(&self) -> Self::ObservableState {
         ControlPlaneObservableState {
             indexing_scheduler: self.indexing_scheduler.observable_state(),
-            ingest_controller: self.ingest_controller.stats,
+            num_rebalance_shards_ops: self
+                .ingest_controller
+                .num_rebalance_shards_ops
+                .load(Ordering::Relaxed),
             num_indexes: self.model.num_indexes(),
             num_sources: self.model.num_sources(),
             readiness: *self.readiness_tx.borrow(),
@@ -964,7 +974,7 @@ impl Handler<LocalShardsUpdate> for ControlPlane {
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         if let Err(metastore_error) = self
-            .ingest_controller
+            .legacy_scaling_controller
             .handle_local_shards_update(local_shards_update, &mut self.model, ctx.progress())
             .await
         {
@@ -1829,7 +1839,7 @@ mod tests {
         tokio::time::timeout(Duration::from_secs(2), async {
             loop {
                 let state = control_plane_mailbox.ask(Observe).await.unwrap();
-                if state.ingest_controller.num_rebalance_shards_ops >= 2 {
+                if state.num_rebalance_shards_ops >= 2 {
                     break;
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;
@@ -2597,14 +2607,13 @@ mod tests {
 
         universe.sleep(Duration::from_secs(10)).await;
 
-        let ingest_controller_stats = control_plane_handle
+        let num_rebalance_1 = control_plane_handle
             .process_pending_and_observe()
             .await
             .state_opt
             .as_ref()
             .unwrap()
-            .ingest_controller;
-        let num_rebalance_1 = ingest_controller_stats.num_rebalance_shards_ops;
+            .num_rebalance_shards_ops;
         assert!(num_rebalance_1 >= 1);
 
         ingester_pool_change_tx
@@ -2613,15 +2622,13 @@ mod tests {
 
         universe.sleep(Duration::from_secs(10)).await;
 
-        let ingest_controller_stats = control_plane_handle
+        let num_rebalance_2 = control_plane_handle
             .process_pending_and_observe()
             .await
             .state_opt
             .as_ref()
             .unwrap()
-            .ingest_controller;
-
-        let num_rebalance_2 = ingest_controller_stats.num_rebalance_shards_ops;
+            .num_rebalance_shards_ops;
         assert!(num_rebalance_2 > num_rebalance_1);
 
         universe.assert_quit().await;
