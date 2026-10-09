@@ -34,6 +34,7 @@ pub struct IndexerPoolEntry {
     pub indexing_capacity: CpuCapacity,
     pub ingester_status: IngesterStatus,
     pub availability_zone: Option<AvailabilityZone>,
+    pub enable_shard_scaling_v2: bool,
 }
 
 pub type IndexerPool = Pool<NodeId, IndexerPoolEntry>;
