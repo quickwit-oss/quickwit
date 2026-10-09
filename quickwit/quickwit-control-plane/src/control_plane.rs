@@ -30,10 +30,12 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, DeferableReplyHandler, Handler, Mailbox,
     Supervisor, Universe, WeakMailbox,
 };
+use quickwit_cluster::{Cluster, ClusterNode};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::uri::Uri;
 use quickwit_common::{Progress, shared_consts};
+use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IndexConfig, IndexTemplate, SourceConfig};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadataResponseExt};
@@ -62,7 +64,7 @@ use crate::cooldown_map::{CooldownMap, CooldownStatus};
 use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
 use crate::ingest::ingest_controller::RebalanceShardsCallback;
-use crate::ingest::{IngestController, LegacyScalingController};
+use crate::ingest::{IngestController, LegacyScalingController, ScalingController};
 use crate::metrics::{METASTORE_ERROR_ABORTED, METASTORE_ERROR_MAYBE_EXECUTED, RESTART_TOTAL};
 use crate::model::ControlPlaneModel;
 
@@ -90,6 +92,7 @@ struct ControlPlaneLoop;
 struct RebuildPlan;
 
 pub struct ControlPlane {
+    cluster: Cluster,
     cluster_config: ClusterConfig,
     // The control plane state is split into to independent functions, that we naturally isolated
     // code wise and state wise.
@@ -101,6 +104,7 @@ pub struct ControlPlane {
     indexing_scheduler: IndexingScheduler,
     ingest_controller: Arc<IngestController>,
     legacy_scaling_controller: LegacyScalingController,
+    scaling_controller: ScalingController,
     metastore: MetastoreServiceClient,
     model: ControlPlaneModel,
     prune_shard_cooldown: CooldownMap<(IndexId, SourceId)>,
@@ -117,6 +121,7 @@ impl fmt::Debug for ControlPlane {
 impl ControlPlane {
     pub fn spawn(
         universe: &Universe,
+        cluster: Cluster,
         cluster_config: ClusterConfig,
         self_node_id: NodeId,
         indexer_pool: IndexerPool,
@@ -146,15 +151,21 @@ impl ControlPlane {
                     shard_throughput_limit_mib,
                     cluster_config.shard_scale_up_factor,
                 );
+                let scaling_controller = ScalingController::new(
+                    ingest_controller.clone(),
+                    cluster_config.shard_throughput_limit,
+                );
 
                 let readiness_tx = readiness_tx.clone();
                 let _ = readiness_tx.send(false);
 
                 ControlPlane {
+                    cluster: cluster.clone(),
                     cluster_config: cluster_config.clone(),
                     indexing_scheduler,
                     ingest_controller,
                     legacy_scaling_controller,
+                    scaling_controller,
                     metastore: metastore.clone(),
                     model: Default::default(),
                     prune_shard_cooldown: CooldownMap::new(NonZeroUsize::new(1024).unwrap()),
@@ -216,6 +227,36 @@ impl Actor for ControlPlane {
 }
 
 impl ControlPlane {
+    async fn all_indexers_enable_shard_scaling_v2(&self) -> bool {
+        self.cluster
+            .all_service_nodes_satisfy(
+                QuickwitService::Indexer,
+                ClusterNode::enable_shard_scaling_v2,
+            )
+            .await
+    }
+
+    /// When all indexers enable shard scaling v2, reconcile_shards does both scaling and
+    /// rebalancing. If it's not enabled, the legacy LocalShardsUpdate handler does scaling on every
+    /// update, but rebalancing still needs to occur on a schedule. v2 considers only considers
+    /// scaling decisions on the control plane loop, rather than after every update.
+    async fn reconcile_shards(
+        &mut self,
+        all_indexers_enable_shard_scaling_v2: bool,
+        ctx: &ActorContext<Self>,
+    ) -> MetastoreResult<()> {
+        if all_indexers_enable_shard_scaling_v2 {
+            return self
+                .scaling_controller
+                .reconcile_shards(&mut self.model, ctx.mailbox(), ctx.progress())
+                .await;
+        }
+        self.ingest_controller
+            .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
+            .await?;
+        Ok(())
+    }
+
     async fn auto_create_indexes(
         &mut self,
         subrequests: &[GetOrCreateOpenShardsSubrequest],
@@ -421,7 +462,10 @@ impl Handler<RebuildPlan> for ControlPlane {
         _message: RebuildPlan,
         _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.indexing_scheduler.rebuild_plan(&self.model);
+        let all_indexers_enable_shard_scaling_v2 =
+            self.all_indexers_enable_shard_scaling_v2().await;
+        self.indexing_scheduler
+            .rebuild_plan(&self.model, all_indexers_enable_shard_scaling_v2);
         Ok(())
     }
 }
@@ -500,9 +544,10 @@ impl Handler<ControlPlaneLoop> for ControlPlane {
         _message: ControlPlaneLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        let all_indexers_enable_shard_scaling_v2 =
+            self.all_indexers_enable_shard_scaling_v2().await;
         if let Err(metastore_error) = self
-            .ingest_controller
-            .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
+            .reconcile_shards(all_indexers_enable_shard_scaling_v2, ctx)
             .await
         {
             if let Err(actor_exit_status) = convert_metastore_error::<()>(metastore_error) {
@@ -516,7 +561,9 @@ impl Handler<ControlPlaneLoop> for ControlPlane {
                 return Err(actor_exit_status);
             }
         }
-        self.indexing_scheduler.control_running_plan(&self.model);
+        let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
+        self.indexing_scheduler
+            .control_running_plan(&self.model, all_indexers_enable_shard_scaling_v2);
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlaneLoop);
         Ok(())
     }
@@ -959,8 +1006,18 @@ impl DeferableReplyHandler<ReportIndexerStateRequest> for ControlPlane {
         _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         reply(Ok(ReportIndexerStateResponse {}));
-        // TODO: implement shard update handling
 
+        if let Some(shards_update) = request.shards_update
+            && self.all_indexers_enable_shard_scaling_v2().await
+        {
+            // If not enabled, this data comes in via gossip in the LocalShardsUpdate handler.
+            self.scaling_controller.handle_shards_update(
+                &request.node_id,
+                request.generation_id,
+                shards_update,
+                &mut self.model,
+            );
+        }
         if let Some(indexing_tasks_update) = request.indexing_tasks_update {
             self.indexing_scheduler.record_reported_tasks(
                 &request.node_id,
@@ -981,6 +1038,10 @@ impl Handler<LocalShardsUpdate> for ControlPlane {
         local_shards_update: LocalShardsUpdate,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
+        // Once all indexers report that enable_shard_scaling_v2 is complete, this becomes a no-op.
+        if self.all_indexers_enable_shard_scaling_v2().await {
+            return Ok(Ok(()));
+        }
         if let Err(metastore_error) = self
             .legacy_scaling_controller
             .handle_local_shards_update(local_shards_update, &mut self.model, ctx.progress())
@@ -1093,6 +1154,7 @@ mod tests {
 
     use mockall::Sequence;
     use quickwit_actors::{AskError, Observe, SupervisorMetrics};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_common::tower::Change;
     use quickwit_config::{
         CLI_SOURCE_ID, INGEST_V2_SOURCE_ID, IndexConfig, KafkaSourceParams, SourceParams,
@@ -1125,6 +1187,252 @@ mod tests {
 
     use super::*;
     use crate::IndexerPoolEntry;
+
+    async fn cluster_for_test() -> Cluster {
+        create_cluster_for_test(
+            Vec::new(),
+            &["control_plane"],
+            &ChitchatTransport::default(),
+            true,
+        )
+        .await
+        .unwrap()
+    }
+
+    async fn control_plane_with_shard_for_test(enable_shard_scaling_v2: bool) -> ControlPlane {
+        let cluster = create_cluster_for_test(
+            Vec::new(),
+            &["indexer", "control_plane"],
+            &ChitchatTransport::default(),
+            true,
+        )
+        .await
+        .unwrap();
+        cluster
+            .set_self_enable_shard_scaling_v2(enable_shard_scaling_v2)
+            .await;
+        cluster
+            .wait_for_ready_members(
+                |members| {
+                    !members.is_empty()
+                        && members
+                            .iter()
+                            .all(|member| member.enable_shard_scaling_v2 == enable_shard_scaling_v2)
+                },
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap();
+        let cluster_config = ClusterConfig::for_test();
+        let metastore = MetastoreServiceClient::mocked();
+        let ingester_pool = IngesterPool::default();
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester"),
+            IngesterPoolEntry::mocked_ingester(),
+        );
+        let ingest_controller = Arc::new(IngestController::new(metastore.clone(), ingester_pool));
+
+        let mut model = ControlPlaneModel::default();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let index_uid = index_metadata.index_uid.clone();
+        model.add_index(index_metadata);
+        model
+            .add_source(&index_uid, SourceConfig::ingest_v2())
+            .unwrap();
+        model.insert_shards(
+            &index_uid,
+            &INGEST_V2_SOURCE_ID.to_string(),
+            vec![Shard {
+                index_uid: Some(index_uid.clone()),
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
+                shard_id: Some(ShardId::from(1)),
+                shard_state: ShardState::Open as i32,
+                ingester_id: "test-ingester".to_string(),
+                ..Default::default()
+            }],
+        );
+        ControlPlane {
+            cluster,
+            indexing_scheduler: IndexingScheduler::new(
+                cluster_config.cluster_id.clone(),
+                NodeId::from_str("test-control-plane"),
+                IndexerPool::default(),
+            ),
+            legacy_scaling_controller: LegacyScalingController::new(
+                ingest_controller.clone(),
+                5.0,
+                cluster_config.shard_scale_up_factor,
+            ),
+            scaling_controller: ScalingController::new(
+                ingest_controller.clone(),
+                cluster_config.shard_throughput_limit,
+            ),
+            ingest_controller,
+            cluster_config,
+            metastore,
+            model,
+            prune_shard_cooldown: CooldownMap::new(NonZeroUsize::new(1024).unwrap()),
+            rebuild_plan_debouncer: Debouncer::new(REBUILD_PLAN_COOLDOWN_PERIOD),
+            readiness_tx: watch::Sender::new(true),
+        }
+    }
+
+    fn local_shards_update_for_test(control_plane: &ControlPlane) -> LocalShardsUpdate {
+        let shard_entry = control_plane.model.all_shards().next().unwrap();
+        LocalShardsUpdate {
+            ingester_id: NodeId::from_str("test-ingester"),
+            source_uid: SourceUid {
+                index_uid: shard_entry.index_uid().clone(),
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
+            },
+            shard_infos: BTreeSet::from([quickwit_ingest::ShardInfo {
+                shard_id: ShardId::from(1),
+                shard_state: ShardState::Open,
+                short_term_ingestion_rate: bytesize::ByteSize::mib(1),
+                long_term_ingestion_rate: bytesize::ByteSize::mib(2),
+            }]),
+        }
+    }
+
+    fn report_indexer_state_request_for_test(
+        control_plane: &ControlPlane,
+    ) -> ReportIndexerStateRequest {
+        let shard_entry = control_plane.model.all_shards().next().unwrap();
+        ReportIndexerStateRequest {
+            node_id: "test-ingester".to_string(),
+            generation_id: 1,
+            shards_update: Some(quickwit_proto::control_plane::ShardsUpdate {
+                shard_infos_by_source: vec![quickwit_proto::control_plane::ShardInfosBySource {
+                    index_uid: Some(shard_entry.index_uid().clone()),
+                    source_id: INGEST_V2_SOURCE_ID.to_string(),
+                    shard_infos: vec![quickwit_proto::control_plane::ShardInfo {
+                        shard_id: Some(ShardId::from(1)),
+                        shard_state: ShardState::Open as i32,
+                        short_term_ingestion_rate_bytes_per_sec: 123,
+                        long_term_ingestion_rate_bytes_per_sec: 456,
+                    }],
+                }],
+            }),
+            indexing_tasks_update: None,
+        }
+    }
+
+    fn short_term_ingestion_rate(control_plane: &ControlPlane) -> bytesize::ByteSize {
+        control_plane
+            .model
+            .all_shards()
+            .next()
+            .unwrap()
+            .short_term_ingestion_rate
+    }
+
+    #[tokio::test]
+    async fn test_local_shards_update_before_all_indexers_enable_shard_scaling_v2() {
+        let universe = Universe::new();
+        let (mailbox, _inbox) = universe.create_test_mailbox();
+        let ctx = ActorContext::for_test(
+            &universe,
+            mailbox,
+            watch::Sender::new(ControlPlaneObservableState::default()),
+        );
+        let mut control_plane = control_plane_with_shard_for_test(false).await;
+        let local_shards_update = local_shards_update_for_test(&control_plane);
+
+        Handler::handle(&mut control_plane, local_shards_update, &ctx)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            short_term_ingestion_rate(&control_plane),
+            bytesize::ByteSize::mib(1)
+        );
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_local_shards_update_after_all_indexers_enable_shard_scaling_v2() {
+        let universe = Universe::new();
+        let (mailbox, _inbox) = universe.create_test_mailbox();
+        let ctx = ActorContext::for_test(
+            &universe,
+            mailbox,
+            watch::Sender::new(ControlPlaneObservableState::default()),
+        );
+        let mut control_plane = control_plane_with_shard_for_test(true).await;
+        let local_shards_update = local_shards_update_for_test(&control_plane);
+
+        Handler::handle(&mut control_plane, local_shards_update, &ctx)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            short_term_ingestion_rate(&control_plane),
+            bytesize::ByteSize::b(0)
+        );
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_report_indexer_state_before_all_indexers_enable_shard_scaling_v2() {
+        let universe = Universe::new();
+        let (mailbox, _inbox) = universe.create_test_mailbox();
+        let ctx = ActorContext::for_test(
+            &universe,
+            mailbox,
+            watch::Sender::new(ControlPlaneObservableState::default()),
+        );
+        let mut control_plane = control_plane_with_shard_for_test(false).await;
+        let request = report_indexer_state_request_for_test(&control_plane);
+
+        control_plane
+            .handle_message(
+                request,
+                |reply| {
+                    reply.unwrap();
+                },
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            short_term_ingestion_rate(&control_plane),
+            bytesize::ByteSize::b(0)
+        );
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_report_indexer_state_after_all_indexers_enable_shard_scaling_v2() {
+        let universe = Universe::new();
+        let (mailbox, _inbox) = universe.create_test_mailbox();
+        let ctx = ActorContext::for_test(
+            &universe,
+            mailbox,
+            watch::Sender::new(ControlPlaneObservableState::default()),
+        );
+        let mut control_plane = control_plane_with_shard_for_test(true).await;
+        let request = report_indexer_state_request_for_test(&control_plane);
+
+        control_plane
+            .handle_message(
+                request,
+                |reply| {
+                    reply.unwrap();
+                },
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            short_term_ingestion_rate(&control_plane),
+            bytesize::ByteSize::b(123)
+        );
+        universe.assert_quit().await;
+    }
 
     #[tokio::test]
     async fn test_control_plane_create_index() {
@@ -1160,6 +1468,7 @@ mod tests {
         let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             self_node_id,
             indexer_pool,
@@ -1201,6 +1510,7 @@ mod tests {
         let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             self_node_id,
             indexer_pool,
@@ -1258,6 +1568,7 @@ mod tests {
         let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             self_node_id,
             indexer_pool,
@@ -1306,7 +1617,6 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(1_000),
             ingester_status: IngesterStatus::Ready,
             availability_zone: None,
-            enable_shard_scaling_v2: false,
         };
         indexer_pool.insert(self_node_id.clone(), indexer_info);
 
@@ -1360,6 +1670,7 @@ mod tests {
         let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             self_node_id,
             indexer_pool,
@@ -1427,6 +1738,7 @@ mod tests {
         let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             self_node_id,
             indexer_pool,
@@ -1481,6 +1793,7 @@ mod tests {
         let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             self_node_id,
             indexer_pool,
@@ -1553,6 +1866,7 @@ mod tests {
         let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             self_node_id,
             indexer_pool,
@@ -1643,6 +1957,7 @@ mod tests {
         let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, control_plane_handle, mut readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             node_id,
             indexer_pool,
@@ -1831,6 +2146,7 @@ mod tests {
 
         let (control_plane_mailbox, control_plane_handle, mut readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             ClusterConfig::for_test(),
             NodeId::from_str("test-control-plane"),
             IndexerPool::default(),
@@ -1884,7 +2200,6 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: IngesterStatus::Ready,
             availability_zone: None,
-            enable_shard_scaling_v2: false,
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
@@ -1949,6 +2264,7 @@ mod tests {
         let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             node_id,
             indexer_pool,
@@ -2034,7 +2350,6 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: IngesterStatus::Ready,
             availability_zone: None,
-            enable_shard_scaling_v2: false,
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
@@ -2082,6 +2397,7 @@ mod tests {
         let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             node_id,
             indexer_pool,
@@ -2113,7 +2429,6 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: IngesterStatus::Ready,
             availability_zone: None,
-            enable_shard_scaling_v2: false,
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
@@ -2168,6 +2483,7 @@ mod tests {
         let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             node_id,
             indexer_pool,
@@ -2285,6 +2601,7 @@ mod tests {
         let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             node_id,
             indexer_pool,
@@ -2344,6 +2661,7 @@ mod tests {
         let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             node_id,
             indexer_pool,
@@ -2451,6 +2769,7 @@ mod tests {
         let cluster_config = ClusterConfig::for_test();
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             node_id,
             indexer_pool,
@@ -2532,6 +2851,7 @@ mod tests {
 
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             node_id,
             indexer_pool,
@@ -2585,6 +2905,7 @@ mod tests {
         let metastore = MetastoreServiceClient::from_mock(mock_metastore);
         let (_control_plane_mailbox, control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             node_id,
             indexer_pool.clone(),
@@ -2719,6 +3040,7 @@ mod tests {
         let metastore = MetastoreServiceClient::from_mock(mock_metastore);
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             node_id,
             indexer_pool.clone(),
@@ -2806,7 +3128,6 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(1_000),
             ingester_status: IngesterStatus::Ready,
             availability_zone: None,
-            enable_shard_scaling_v2: false,
         };
         indexer_pool.insert(ingester_id.clone(), indexer_info);
 
@@ -2874,6 +3195,7 @@ mod tests {
         let metastore = MetastoreServiceClient::from_mock(mock_metastore);
         let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
             &universe,
+            cluster_for_test().await,
             cluster_config,
             node_id,
             indexer_pool.clone(),

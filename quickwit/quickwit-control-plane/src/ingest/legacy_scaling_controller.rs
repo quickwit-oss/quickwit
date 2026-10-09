@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
@@ -21,15 +20,13 @@ use quickwit_ingest::LocalShardsUpdate;
 use quickwit_proto::ingest::ShardPKey;
 use quickwit_proto::ingest::ingester::{CloseShardsRequest, IngesterService};
 use quickwit_proto::metastore::MetastoreResult;
-use quickwit_proto::types::{NodeId, ShardId, SourceUid};
-use rand::prelude::IndexedRandom;
-use rand::{Rng, rng};
+use quickwit_proto::types::{NodeId, SourceUid};
 use tracing::{info, warn};
 
-use super::ingest_controller::{ShardPlacement, SourceShardCount};
+use super::ingest_controller::{find_scale_down_candidate, open_shards_by_ingester_id};
 use super::legacy_scaling_arbiter::LegacyScalingArbiter;
 use crate::ingest::IngestController;
-use crate::model::{ControlPlaneModel, ScalingMode, ShardEntry, ShardStats};
+use crate::model::{ControlPlaneModel, ScalingMode, ShardStats};
 
 pub(crate) struct LegacyScalingController {
     ingest_controller: Arc<IngestController>,
@@ -58,7 +55,7 @@ impl LegacyScalingController {
         model: &mut ControlPlaneModel,
         progress: &Progress,
     ) -> MetastoreResult<()> {
-        let shard_stats = model.update_shards(
+        model.update_shards(
             &local_shards_update.source_uid,
             &local_shards_update.shard_infos,
         );
@@ -71,6 +68,11 @@ impl LegacyScalingController {
                 index_uid=%local_shards_update.source_uid.index_uid,
                 "ignoring local shards update for a deleted index"
             );
+            return Ok(());
+        };
+        let live_ingesters = self.ingest_controller.live_ingesters();
+        let Some(shard_stats) = model.shard_stats(&local_shards_update.source_uid, &live_ingesters)
+        else {
             return Ok(());
         };
 
@@ -124,21 +126,14 @@ impl LegacyScalingController {
             return Ok(());
         }
         let new_num_open_shards = shard_stats.num_open_shards + num_shards_to_open;
-        let num_shards_to_open_by_source: SourceShardCount =
-            HashMap::from_iter([(source_uid.clone(), num_shards_to_open)]);
         let try_open_shards_result = self
             .ingest_controller
-            .try_open_shards(
-                ShardPlacement::Balanced(num_shards_to_open_by_source),
-                model,
-                &Default::default(),
-                progress,
-            )
+            .open_shards_for_source(&source_uid, num_shards_to_open, model, progress)
             .await;
 
         match try_open_shards_result {
-            Ok(opened_shards) => {
-                if opened_shards.is_empty() {
+            Ok(num_opened_shards) => {
+                if num_opened_shards == 0 {
                     // We did not manage to create the shard.
                     // We can release our permit.
                     model.release_scaling_permits(&source_uid, ScalingMode::Up(num_shards_to_open));
@@ -199,10 +194,15 @@ impl LegacyScalingController {
             source_id=%source_uid.source_id,
             "scaling down number of shards to {new_num_open_shards}"
         );
-        let Some((ingester_id, shard_id)) = find_scale_down_candidate(&source_uid, model) else {
+        let live_ingesters = self.ingest_controller.live_ingesters();
+        let mut open_shards_by_ingester_id =
+            open_shards_by_ingester_id(&source_uid, &live_ingesters, model);
+        let Some(shard_entry) = find_scale_down_candidate(&mut open_shards_by_ingester_id) else {
             model.release_scaling_permits(&source_uid, ScalingMode::Down);
             return Ok(());
         };
+        let ingester_id = NodeId::from_str(&shard_entry.ingester_id);
+        let shard_id = shard_entry.shard_id().clone();
         info!("scaling down shard {shard_id} from {ingester_id}");
         let Some(ingester) = self.ingest_controller.ingester_pool.get(&ingester_id) else {
             model.release_scaling_permits(&source_uid, ScalingMode::Down);
@@ -228,39 +228,6 @@ impl LegacyScalingController {
     }
 }
 
-/// Finds a shard on the ingester with the highest number of open
-/// shards for this source.
-///
-/// If multiple shards are hosted on that ingester, the shard with the lowest (oldest)
-/// shard ID is chosen.
-fn find_scale_down_candidate(
-    source_uid: &SourceUid,
-    model: &ControlPlaneModel,
-) -> Option<(NodeId, ShardId)> {
-    let mut shard_entries_by_ingester_id: HashMap<NodeId, Vec<&ShardEntry>> = HashMap::new();
-    let mut rng = rng();
-
-    for shard in model.get_shards_for_source(source_uid)?.values() {
-        if shard.is_open() {
-            shard_entries_by_ingester_id
-                .entry(NodeId::from_str(&shard.ingester_id))
-                .or_default()
-                .push(shard);
-        }
-    }
-    shard_entries_by_ingester_id
-        .into_iter()
-        // We use a random number to break ties... The HashMap is randomly seeded so this is
-        // should not make much difference, but we might want to be as explicit as possible.
-        .max_by_key(|(_ingester_id, shard_entries)| (shard_entries.len(), rng.next_u32()))
-        .map(|(ingester_id, shard_entries)| {
-            (
-                ingester_id,
-                shard_entries.choose(&mut rng).unwrap().shard_id().clone(),
-            )
-        })
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -280,9 +247,10 @@ mod tests {
         self, MetastoreError, MetastoreServiceClient, MockMetastoreService, OpenShardSubrequest,
         OpenShardSubresponse, OpenShardsResponse,
     };
-    use quickwit_proto::types::{IndexUid, Position, SourceId};
+    use quickwit_proto::types::{IndexUid, Position, ShardId, SourceId};
 
     use super::*;
+    use crate::model::ShardEntry;
 
     const TEST_SHARD_THROUGHPUT_LIMIT_MIB: f32 =
         DEFAULT_SHARD_THROUGHPUT_LIMIT.as_u64() as f32 / quickwit_common::shared_consts::MIB as f32;
@@ -930,116 +898,5 @@ mod tests {
             .await
             .unwrap();
         assert!(model.all_shards().any(|shard| shard.is_open()));
-    }
-
-    #[test]
-    fn test_find_scale_down_candidate() {
-        let index_uid = IndexUid::for_test("test-index", 0);
-        let source_id: SourceId = "test-source".to_string();
-
-        let source_uid = SourceUid {
-            index_uid: index_uid.clone(),
-            source_id: source_id.clone(),
-        };
-        let mut model = ControlPlaneModel::default();
-
-        assert!(find_scale_down_candidate(&source_uid, &model).is_none());
-
-        let shards = vec![
-            Shard {
-                index_uid: index_uid.clone().into(),
-                source_id: source_id.clone(),
-                shard_id: Some(ShardId::from(1)),
-                shard_state: ShardState::Open as i32,
-                ingester_id: "test-ingester-0".to_string(),
-                ..Default::default()
-            },
-            Shard {
-                index_uid: index_uid.clone().into(),
-                source_id: source_id.clone(),
-                shard_id: Some(ShardId::from(2)),
-                shard_state: ShardState::Open as i32,
-                ingester_id: "test-ingester-0".to_string(),
-                ..Default::default()
-            },
-            Shard {
-                index_uid: index_uid.clone().into(),
-                source_id: source_id.clone(),
-                shard_id: Some(ShardId::from(3)),
-                shard_state: ShardState::Closed as i32, //< this one is closed
-                ingester_id: "test-ingester-0".to_string(),
-                ..Default::default()
-            },
-            Shard {
-                index_uid: index_uid.clone().into(),
-                source_id: source_id.clone(),
-                shard_id: Some(ShardId::from(4)),
-                shard_state: ShardState::Open as i32,
-                ingester_id: "test-ingester-1".to_string(),
-                ..Default::default()
-            },
-            Shard {
-                index_uid: index_uid.clone().into(),
-                source_id: source_id.clone(),
-                shard_id: Some(ShardId::from(5)),
-                shard_state: ShardState::Open as i32,
-                ingester_id: "test-ingester-1".to_string(),
-                ..Default::default()
-            },
-            Shard {
-                index_uid: index_uid.clone().into(),
-                source_id: source_id.clone(),
-                shard_id: Some(ShardId::from(6)),
-                shard_state: ShardState::Open as i32,
-                ingester_id: "test-ingester-1".to_string(),
-                ..Default::default()
-            },
-        ];
-        // That's 3 open shards on indexer-1, 2 open shard and one closed shard on indexer-0..
-        model.insert_shards(&index_uid, &source_id, shards);
-
-        let shard_infos = BTreeSet::from_iter([
-            ShardInfo {
-                shard_id: ShardId::from(1),
-                shard_state: ShardState::Open,
-                short_term_ingestion_rate: ByteSize::mib(1),
-                long_term_ingestion_rate: ByteSize::mib(1),
-            },
-            ShardInfo {
-                shard_id: ShardId::from(2),
-                shard_state: ShardState::Open,
-                short_term_ingestion_rate: ByteSize::mib(2),
-                long_term_ingestion_rate: ByteSize::mib(2),
-            },
-            ShardInfo {
-                shard_id: ShardId::from(3),
-                shard_state: ShardState::Open,
-                short_term_ingestion_rate: ByteSize::mib(3),
-                long_term_ingestion_rate: ByteSize::mib(3),
-            },
-            ShardInfo {
-                shard_id: ShardId::from(4),
-                shard_state: ShardState::Open,
-                short_term_ingestion_rate: ByteSize::mib(4),
-                long_term_ingestion_rate: ByteSize::mib(4),
-            },
-            ShardInfo {
-                shard_id: ShardId::from(5),
-                shard_state: ShardState::Open,
-                short_term_ingestion_rate: ByteSize::mib(5),
-                long_term_ingestion_rate: ByteSize::mib(5),
-            },
-            ShardInfo {
-                shard_id: ShardId::from(6),
-                shard_state: ShardState::Open,
-                short_term_ingestion_rate: ByteSize::mib(6),
-                long_term_ingestion_rate: ByteSize::mib(6),
-            },
-        ]);
-        model.update_shards(&source_uid, &shard_infos);
-
-        let (ingester_id, _shard_id) = find_scale_down_candidate(&source_uid, &model).unwrap();
-        // We pick ingester 1 has it has more open shard
-        assert_eq!(ingester_id, "test-ingester-1");
     }
 }

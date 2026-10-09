@@ -371,18 +371,22 @@ impl ControlPlaneModel {
             .find_open_shards(index_uid, source_id, unavailable_ingesters)
     }
 
-    /// Updates the state and ingestion rate of the shards according to the given shard infos.
-    pub fn update_shards(
-        &mut self,
+    pub fn shard_stats(
+        &self,
         source_uid: &SourceUid,
-        shard_infos: &ShardInfos,
-    ) -> ShardStats {
+        live_ingesters: &FnvHashSet<NodeId>,
+    ) -> Option<ShardStats> {
+        self.shard_table.shard_stats(source_uid, live_ingesters)
+    }
+
+    /// Updates the state and ingestion rate of the shards according to the given shard infos.
+    pub fn update_shards(&mut self, source_uid: &SourceUid, shard_infos: &ShardInfos) {
         debug!(
             index_uid=%source_uid.index_uid,
             source_id=%source_uid.source_id,
             "updating shards"
         );
-        self.shard_table.update_shards(source_uid, shard_infos)
+        self.shard_table.update_shards(source_uid, shard_infos);
     }
 
     /// Sets the state of the shards identified by their index UID, source ID, and shard IDs to
