@@ -27,17 +27,57 @@ use tantivy::directory::{MmapDirectory, RamDirectory};
 use tracing::{Span, error, instrument};
 
 use crate::controlled_directory::ControlledDirectory;
-use crate::docs_clustering::DocIdClusterer;
+use crate::docs_clustering::{ChunkedDocsClusterer, DocIdClusterer, Fingerprint};
 use crate::merge_policy::MergeTask;
 use crate::metrics::INDEX_SOURCE;
 use crate::models::{PublishLock, SplitAttrs};
 
+/// Buffered `TantivyDocument`s use about 1.6x their source JSON size (measured on OTel logs:
+/// 4M buffered docs of 1.2 KB added 7.7 GB of RSS). Round up so the heap limit stays conservative.
+const PENDING_DOC_MEM_FACTOR: usize = 2;
+
+/// How an [`IndexedSplitBuilder`] orders documents for docs clustering.
+pub enum SplitClustering {
+    /// No clustering: documents are indexed in arrival order.
+    Disabled,
+    /// Split-wide clustering: fingerprints are recorded per doc id and the segment is rewritten
+    /// in clustered order at finalization (requires `IndexSettings::manual_doc_id_mapping`).
+    ReorderAtFinalize(DocIdClusterer),
+    /// Chunked clustering: documents are buffered and added to the index writer in clustered
+    /// order, one chunk at a time. The segment is finalized without a doc id mapping.
+    Chunked {
+        clusterer: ChunkedDocsClusterer<tantivy::TantivyDocument>,
+        /// Sum of the source sizes of the buffered documents. Their memory usage, not yet
+        /// accounted for by tantivy, is estimated as `PENDING_DOC_MEM_FACTOR` times this.
+        pending_num_bytes: usize,
+    },
+}
+
+impl SplitClustering {
+    pub fn chunked(chunk_num_docs: usize) -> Self {
+        SplitClustering::Chunked {
+            clusterer: ChunkedDocsClusterer::new(chunk_num_docs),
+            pending_num_bytes: 0,
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        match self {
+            SplitClustering::Disabled => "disabled",
+            SplitClustering::ReorderAtFinalize(_) => "reorder_at_finalize",
+            SplitClustering::Chunked { .. } => "chunked",
+        }
+    }
+}
+
 pub struct IndexedSplitBuilder {
     pub split_attrs: SplitAttrs,
-    pub index_writer: tantivy::SingleSegmentIndexWriter,
+    index_writer: tantivy::SingleSegmentIndexWriter,
     pub split_scratch_directory: TempDirectory,
     pub controlled_directory: ControlledDirectory,
-    pub doc_id_clusterer_opt: Option<DocIdClusterer>,
+    clustering: SplitClustering,
+    // Number of documents added to `index_writer` (buffered documents excluded).
+    num_docs_in_writer: u32,
     ram_directory_opt: Option<RamDirectory>,
 }
 
@@ -72,7 +112,7 @@ impl fmt::Debug for IndexedSplitBuilder {
             .field("split_id", &self.split_attrs.split_id)
             .field("dir", &self.split_scratch_directory.path())
             .field("num_docs", &self.split_attrs.num_docs)
-            .field("doc_id_clusterer_opt", &self.doc_id_clusterer_opt.is_some())
+            .field("clustering", &self.clustering.name())
             .finish()
     }
 }
@@ -87,7 +127,7 @@ impl IndexedSplitBuilder {
         scratch_directory: TempDirectory,
         index_builder: IndexBuilder,
         io_controls: IoControls,
-        doc_id_clusterer_opt: Option<DocIdClusterer>,
+        clustering: SplitClustering,
     ) -> anyhow::Result<Self> {
         // We avoid intermediary merge, and instead merge all segments in the packager.
         // The benefit is that we don't have to wait for potentially existing merges,
@@ -126,11 +166,67 @@ impl IndexedSplitBuilder {
                 num_merge_ops: 0,
             },
             index_writer,
-            doc_id_clusterer_opt,
+            clustering,
+            num_docs_in_writer: 0,
             split_scratch_directory,
             controlled_directory,
             ram_directory_opt,
         })
+    }
+
+    /// Adds a document to the split. `split_attrs` (num docs, size, time range) is the caller's
+    /// responsibility.
+    ///
+    /// In chunked clustering mode, the document may be buffered and only reach the index writer
+    /// when the chunk is full or the split is finalized.
+    pub fn add_document(
+        &mut self,
+        doc: tantivy::TantivyDocument,
+        fingerprint_opt: Option<Fingerprint>,
+        num_bytes: usize,
+    ) -> anyhow::Result<()> {
+        match &mut self.clustering {
+            SplitClustering::Disabled => {
+                self.index_writer.add_document(doc)?;
+                self.num_docs_in_writer += 1;
+            }
+            SplitClustering::ReorderAtFinalize(doc_id_clusterer) => {
+                // Tantivy doc IDs are local to the split and follow insertion order.
+                doc_id_clusterer.push(fingerprint_opt, self.num_docs_in_writer);
+                self.index_writer.add_document(doc)?;
+                self.num_docs_in_writer += 1;
+            }
+            SplitClustering::Chunked {
+                clusterer,
+                pending_num_bytes,
+            } => {
+                *pending_num_bytes += num_bytes;
+                if clusterer.push(fingerprint_opt, doc) {
+                    self.flush_pending_docs()?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Chunked clustering: adds the buffered documents to the index writer, in clustered order.
+    pub fn flush_pending_docs(&mut self) -> anyhow::Result<()> {
+        let SplitClustering::Chunked {
+            clusterer,
+            pending_num_bytes,
+        } = &mut self.clustering
+        else {
+            return Ok(());
+        };
+        if clusterer.is_empty() {
+            return Ok(());
+        }
+        for doc in clusterer.drain_in_cluster_order() {
+            self.index_writer.add_document(doc)?;
+            self.num_docs_in_writer += 1;
+        }
+        *pending_num_bytes = 0;
+        Ok(())
     }
 
     #[instrument(name="serialize_split",
@@ -147,9 +243,10 @@ impl IndexedSplitBuilder {
             num_merge_ops=%self.split_attrs.num_merge_ops,
         )
     )]
-    pub fn finalize(self) -> anyhow::Result<IndexedSplit> {
+    pub fn finalize(mut self) -> anyhow::Result<IndexedSplit> {
+        self.flush_pending_docs()?;
         let split_attrs = self.split_attrs;
-        let index = if let Some(doc_id_clusterer) = self.doc_id_clusterer_opt {
+        let index = if let SplitClustering::ReorderAtFinalize(doc_id_clusterer) = self.clustering {
             // Update metrics for document clustering.
             let index_label = index_label(&split_attrs.index_uid.index_id);
             let labels = label_values!(
@@ -186,7 +283,14 @@ impl IndexedSplitBuilder {
     }
 
     pub fn mem_usage(&self) -> usize {
+        let pending_num_bytes = match &self.clustering {
+            SplitClustering::Chunked {
+                pending_num_bytes, ..
+            } => *pending_num_bytes * PENDING_DOC_MEM_FACTOR,
+            _ => 0,
+        };
         self.index_writer.mem_usage()
+            + pending_num_bytes
             + self
                 .ram_directory_opt
                 .as_ref()

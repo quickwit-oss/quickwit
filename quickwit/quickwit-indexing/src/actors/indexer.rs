@@ -44,7 +44,7 @@ use serde::Serialize;
 use tantivy::schema::Schema;
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::tokenizer::TokenizerManager;
-use tantivy::{DateTime, DocId, IndexBuilder, IndexSettings};
+use tantivy::{DateTime, IndexBuilder, IndexSettings};
 use tokio::runtime::Handle;
 use tokio::sync::Semaphore;
 use tracing::{Span, debug, info_span, warn};
@@ -56,8 +56,17 @@ use crate::docs_clustering::{DocIdClusterer, Fingerprinter};
 use crate::metrics::SPLIT_BUILDERS;
 use crate::models::{
     CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, NewPublishLock,
-    ProcessedDoc, ProcessedDocBatch, PublishLock,
+    ProcessedDoc, ProcessedDocBatch, PublishLock, SplitClustering,
 };
+
+/// Experimental: when set to a positive number, docs clustering orders documents by chunks of
+/// that many documents before indexing them, instead of rewriting each split at finalization.
+const QW_DOCS_CLUSTERING_CHUNK_NUM_DOCS: &str = "QW_DOCS_CLUSTERING_CHUNK_NUM_DOCS";
+
+fn docs_clustering_chunk_num_docs_from_env() -> Option<usize> {
+    quickwit_common::get_from_env_opt::<usize>(QW_DOCS_CLUSTERING_CHUNK_NUM_DOCS, false)
+        .filter(|&chunk_num_docs| chunk_num_docs > 0)
+}
 
 // Random partition ID used to gather partitions exceeding the maximum number of partitions.
 pub(crate) const OTHER_PARTITION_ID: u64 = 3264326757911759461u64;
@@ -94,6 +103,9 @@ struct IndexerState {
     indexing_directory: TempDirectory,
     indexing_settings: IndexingSettings,
     fingerprinter_opt: Option<Fingerprinter>,
+    // Chunked docs clustering: buffer this many docs per split and add them in clustered order,
+    // instead of rewriting the whole split at finalization. `None` keeps split-wide clustering.
+    docs_clustering_chunk_num_docs_opt: Option<usize>,
     publish_lock: PublishLock,
     schema: Schema,
     doc_mapping_uid: DocMappingUid,
@@ -126,10 +138,13 @@ impl IndexerState {
             .set_progress(ctx.progress().clone())
             .set_kill_switch(ctx.kill_switch().clone())
             .set_component("indexer");
-        let doc_id_clusterer_opt = if self.fingerprinter_opt.is_some() {
-            Some(DocIdClusterer::default())
-        } else {
-            None
+        let clustering = match (
+            &self.fingerprinter_opt,
+            self.docs_clustering_chunk_num_docs_opt,
+        ) {
+            (None, _) => SplitClustering::Disabled,
+            (Some(_), None) => SplitClustering::ReorderAtFinalize(DocIdClusterer::default()),
+            (Some(_), Some(chunk_num_docs)) => SplitClustering::chunked(chunk_num_docs),
         };
 
         let indexed_split = IndexedSplitBuilder::new_in_dir(
@@ -140,7 +155,7 @@ impl IndexerState {
             self.indexing_directory.clone(),
             index_builder,
             io_controls,
-            doc_id_clusterer_opt,
+            clustering,
         )?;
         debug!(
             split_id=%indexed_split.split_id(),
@@ -326,19 +341,13 @@ impl IndexerState {
                 memory_usage_delta += mem_usage_before as i64;
             }
             indexed_split.split_attrs.uncompressed_docs_size_in_bytes += num_bytes as u64;
-            // Tantivy doc IDs are local to the split and continue across processed-doc batches.
-            let split_doc_id = indexed_split.split_attrs.num_docs as DocId;
             indexed_split.split_attrs.num_docs += 1;
-            if let Some(doc_id_clusterer) = indexed_split.doc_id_clusterer_opt.as_mut() {
-                doc_id_clusterer.push(fingerprint_opt, split_doc_id);
-            }
             if let Some(timestamp) = timestamp_opt {
                 record_timestamp(timestamp, &mut indexed_split.split_attrs.time_range);
             }
             let _protect_guard = ctx.protect_zone();
             indexed_split
-                .index_writer
-                .add_document(doc)
+                .add_document(doc, fingerprint_opt, num_bytes)
                 .context("failed to add document")?;
             let mem_usage_after = indexed_split.mem_usage() as u64;
             memory_usage_delta += mem_usage_after as i64 - mem_usage_before as i64;
@@ -540,6 +549,9 @@ impl Indexer {
     ) -> Self {
         let schema = doc_mapper.schema();
         let tokenizer_manager = doc_mapper.tokenizer_manager().clone();
+        let docs_clustering_chunk_num_docs_opt = fingerprinter_opt
+            .as_ref()
+            .and_then(|_| docs_clustering_chunk_num_docs_from_env());
         let docstore_compression = Compressor::Zstd(ZstdCompressor {
             compression_level: Some(indexing_settings.docstore_compression_level),
         });
@@ -548,8 +560,10 @@ impl Indexer {
             docstore_blocksize: indexing_settings.docstore_blocksize,
             docstore_compression,
             docstore_compress_dedicated_thread: true,
-            // A configured fingerprinter supplies the mapping when the split is finalized.
-            manual_doc_id_mapping: fingerprinter_opt.is_some(),
+            // Split-wide clustering supplies the mapping when the split is finalized. Chunked
+            // clustering adds documents already in clustered order and needs no mapping.
+            manual_doc_id_mapping: fingerprinter_opt.is_some()
+                && docs_clustering_chunk_num_docs_opt.is_none(),
         };
         let cooperative_indexing_opt: Option<CooperativeIndexingCycle> =
             cooperative_indexing_permits_opt.map(|cooperative_indexing_permits| {
@@ -566,6 +580,7 @@ impl Indexer {
                 indexing_directory,
                 indexing_settings,
                 fingerprinter_opt,
+                docs_clustering_chunk_num_docs_opt,
                 publish_lock: PublishLock::default(),
                 schema,
                 doc_mapping_uid: doc_mapper.doc_mapping_uid(),
@@ -579,6 +594,15 @@ impl Indexer {
             indexing_workbench_opt: None,
             counters: IndexerCounters::default(),
         }
+    }
+
+    /// Test helper: forces chunked docs clustering, as `QW_DOCS_CLUSTERING_CHUNK_NUM_DOCS` would.
+    #[cfg(test)]
+    fn with_docs_clustering_chunk_num_docs(mut self, chunk_num_docs: usize) -> Self {
+        assert!(self.indexer_state.fingerprinter_opt.is_some());
+        self.indexer_state.docs_clustering_chunk_num_docs_opt = Some(chunk_num_docs);
+        self.indexer_state.index_settings.manual_doc_id_mapping = false;
+        self
     }
 
     fn memory_usage(&self) -> ByteSize {
@@ -1241,8 +1265,12 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn test_indexer_collects_fingerprints_when_clustering_is_enabled() -> anyhow::Result<()> {
+    /// Indexes `docs` (body, fingerprint) in a single partition with docs clustering enabled and
+    /// returns the bodies in split doc id order. `chunk_num_docs_opt` selects chunked clustering.
+    async fn index_clustered_docs_for_test(
+        docs: &[(&str, Fingerprint)],
+        chunk_num_docs_opt: Option<usize>,
+    ) -> anyhow::Result<Vec<String>> {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
@@ -1259,7 +1287,7 @@ mod tests {
             .expect_last_delete_opstamp()
             .once()
             .returning(|_| Ok(LastDeleteOpstampResponse::new(10)));
-        let indexer = create_indexer_for_test(
+        let mut indexer = create_indexer_for_test(
             pipeline_id,
             doc_mapper,
             MetastoreServiceClient::from_mock(mock_metastore),
@@ -1290,47 +1318,23 @@ mod tests {
                 .unwrap(),
             )),
         );
+        if let Some(chunk_num_docs) = chunk_num_docs_opt {
+            indexer = indexer.with_docs_clustering_chunk_num_docs(chunk_num_docs);
+        }
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
-        let docs = vec![
-            ProcessedDoc {
-                doc: doc!(body_field=>"first"),
-                fingerprint_opt: Some(Fingerprint::new([1, 1, 1])),
+        let processed_docs = docs
+            .iter()
+            .map(|(body, fingerprint)| ProcessedDoc {
+                doc: doc!(body_field=>*body),
+                fingerprint_opt: Some(fingerprint.clone()),
                 timestamp_opt: None,
                 partition: 0,
-                num_bytes: 5,
-            },
-            ProcessedDoc {
-                doc: doc!(body_field=>"second"),
-                fingerprint_opt: Some(Fingerprint::new([1, 2, 1])),
-                timestamp_opt: None,
-                partition: 0,
-                num_bytes: 6,
-            },
-            ProcessedDoc {
-                doc: doc!(body_field=>"third"),
-                fingerprint_opt: Some(Fingerprint::new([1, 2, 1])),
-                timestamp_opt: None,
-                partition: 0,
-                num_bytes: 5,
-            },
-            ProcessedDoc {
-                doc: doc!(body_field=>"fourth"),
-                fingerprint_opt: Some(Fingerprint::new([1, 1, 1])),
-                timestamp_opt: None,
-                partition: 0,
-                num_bytes: 6,
-            },
-            ProcessedDoc {
-                doc: doc!(body_field=>"fifth"),
-                fingerprint_opt: Some(Fingerprint::new([1, 1, 2])),
-                timestamp_opt: None,
-                partition: 0,
-                num_bytes: 5,
-            },
-        ];
+                num_bytes: body.len(),
+            })
+            .collect();
         indexer_mailbox
             .send_message(ProcessedDocBatch::new(
-                docs,
+                processed_docs,
                 SourceCheckpointDelta::from_range(0..1),
                 false,
             ))
@@ -1342,13 +1346,24 @@ mod tests {
             index_serializer_inbox.drain_for_test_typed();
         let mut split_batch = split_batches.pop().unwrap();
         let split_builder = split_batch.splits.pop().unwrap();
+        assert_eq!(split_builder.split_attrs.num_docs, docs.len() as u64);
         let split_path = split_builder.path().to_path_buf();
         let indexed_split = split_builder.finalize()?;
         assert!(split_path.join("meta.json").try_exists()?);
+        // Chunked clustering never writes the temporary doc store used for remapping.
+        let has_temp_store = std::fs::read_dir(&split_path)?.any(|entry| {
+            entry
+                .unwrap()
+                .path()
+                .to_string_lossy()
+                .ends_with(".store.temp")
+        });
+        assert!(!has_temp_store);
         let reader = indexed_split.index.reader()?;
         let searcher = reader.searcher();
+        assert_eq!(searcher.num_docs(), docs.len() as u64);
         let mut bodies = Vec::new();
-        for doc_id in 0..5 {
+        for doc_id in 0..docs.len() as u32 {
             let doc: TantivyDocument = searcher.doc(DocAddress::new(0, doc_id))?;
             let body = doc
                 .get_first(body_field)
@@ -1356,8 +1371,50 @@ mod tests {
                 .unwrap();
             bodies.push(body.to_string());
         }
-        assert_eq!(bodies, ["first", "fourth", "fifth", "second", "third"]);
         universe.assert_quit().await;
+        Ok(bodies)
+    }
+
+    fn clustering_test_docs() -> Vec<(&'static str, Fingerprint)> {
+        vec![
+            ("first", Fingerprint::new([1, 1, 1])),
+            ("second", Fingerprint::new([1, 2, 1])),
+            ("third", Fingerprint::new([1, 2, 1])),
+            ("fourth", Fingerprint::new([1, 1, 1])),
+            ("fifth", Fingerprint::new([1, 1, 2])),
+        ]
+    }
+
+    #[tokio::test]
+    async fn test_indexer_collects_fingerprints_when_clustering_is_enabled() -> anyhow::Result<()> {
+        let bodies = index_clustered_docs_for_test(&clustering_test_docs(), None).await?;
+        assert_eq!(bodies, ["first", "fourth", "fifth", "second", "third"]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_indexer_chunked_clustering_with_one_chunk_matches_split_clustering()
+    -> anyhow::Result<()> {
+        // A chunk holding the whole split produces exactly the split-wide order.
+        let bodies = index_clustered_docs_for_test(&clustering_test_docs(), Some(100)).await?;
+        assert_eq!(bodies, ["first", "fourth", "fifth", "second", "third"]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_indexer_chunked_clustering_orders_each_chunk() -> anyhow::Result<()> {
+        // Chunks of 3: [a, b, c] then [d, e, f]. Each chunk is ordered on its own (largest group
+        // first), documents never move across chunks.
+        let docs = [
+            ("a", Fingerprint::new([1])),
+            ("b", Fingerprint::new([2])),
+            ("c", Fingerprint::new([2])),
+            ("d", Fingerprint::new([1])),
+            ("e", Fingerprint::new([3])),
+            ("f", Fingerprint::new([3])),
+        ];
+        let bodies = index_clustered_docs_for_test(&docs, Some(3)).await?;
+        assert_eq!(bodies, ["b", "c", "a", "e", "f", "d"]);
         Ok(())
     }
 

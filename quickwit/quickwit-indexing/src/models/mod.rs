@@ -33,7 +33,7 @@ use std::sync::Arc;
 use arc_swap::ArcSwapOption;
 pub use indexed_split::{
     CommitTrigger, EmptySplit, IndexedSplit, IndexedSplitBatch, IndexedSplitBatchBuilder,
-    IndexedSplitBuilder,
+    IndexedSplitBuilder, SplitClustering,
 };
 pub use indexing_service_message::{
     DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline,

@@ -101,7 +101,7 @@ impl DocIdClusterer {
         });
     }
 
-    fn into_sorted_doc_ids(self) -> Vec<DocId> {
+    pub(crate) fn into_sorted_doc_ids(self) -> Vec<DocId> {
         let mut doc_ids = Vec::with_capacity(self.root.num_docs + self.unclustered_docs.len());
         self.root.append_sorted_doc_ids(&mut doc_ids);
         doc_ids.extend_from_slice(&self.unclustered_docs);

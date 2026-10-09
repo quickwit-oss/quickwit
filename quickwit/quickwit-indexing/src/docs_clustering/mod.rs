@@ -86,6 +86,10 @@
 //! 4. At split finalization, [`DocIdClusterer`] creates the Tantivy `DocIdMapping`. Documents
 //!    without fingerprints are appended in insertion order.
 //!
+//! Experimental chunked mode (`QW_DOCS_CLUSTERING_CHUNK_NUM_DOCS=<n>`): instead of remapping at
+//! finalization, the indexer buffers `n` documents per split, orders them with the same policy
+//! and adds them in that order. See [`ChunkedDocsClusterer`].
+//!
 //! Sorting is applied once to each fresh split. Later merges use Tantivy's native merge path and
 //! preserve the ordering of their input splits without repeating the remapping and doc-store
 //! rewrite.
@@ -110,10 +114,12 @@
 //!   Compression gains therefore depend on workload entropy and should be measured on a
 //!   representative corpus together with CPU, memory, and temporary disk writes.
 
+mod chunked;
 mod clusterer;
 mod fingerprinter;
 mod tokenizer;
 
+pub use chunked::ChunkedDocsClusterer;
 pub use clusterer::DocIdClusterer;
 pub use fingerprinter::{Fingerprint, Fingerprinter};
 pub use tokenizer::tokenize;
