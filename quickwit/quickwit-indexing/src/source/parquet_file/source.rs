@@ -81,7 +81,7 @@ impl SourceFactory for ParquetSourceFactory {
         }
         // Transforms (VRL) run on JSON documents.
         let emit_arrow_batches =
-            arrow_docs_enabled() && source_runtime.source_config.transform_config.is_none();
+            self.plan.arrow_docs() && source_runtime.source_config.transform_config.is_none();
         Ok(Box::new(ParquetSource {
             plan: self.plan.clone(),
             current_opt: None,
@@ -103,11 +103,6 @@ pub struct ParquetSource {
     /// Send Arrow record batches (the doc processor builds documents from the columns) instead of
     /// NDJSON documents.
     emit_arrow_batches: bool,
-}
-
-/// Experimental: `QW_PARQUET_ARROW_DOCS=true` builds documents straight from Arrow columns.
-pub(super) fn arrow_docs_enabled() -> bool {
-    quickwit_common::get_bool_from_env("QW_PARQUET_ARROW_DOCS", false)
 }
 
 impl fmt::Debug for ParquetSource {

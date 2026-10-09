@@ -37,6 +37,12 @@ pub struct ParquetLoadPlan {
     file_uri: Uri,
     filepath: PathBuf,
     arrow_metadata: ArrowReaderMetadata,
+    /// Arrow docs mode: the file, memory-mapped once. Page reads are then slices of the page cache
+    /// instead of `read` copies (~4% of the bulk load CPU).
+    mmap_opt: Option<bytes::Bytes>,
+    /// Sources send record batches and documents are built from Arrow columns
+    /// (`QW_PARQUET_ARROW_DOCS`).
+    arrow_docs: bool,
     batch_num_rows: usize,
     next_row_group_idx: AtomicUsize,
 }
@@ -53,7 +59,19 @@ impl std::fmt::Debug for ParquetLoadPlan {
 
 impl ParquetLoadPlan {
     /// Reads metadata and checks one row's JSON conversion. Performs blocking I/O.
+    ///
+    /// Experimental: `QW_PARQUET_ARROW_DOCS=true` builds documents straight from Arrow columns.
     pub fn try_new(file_uri: Uri, batch_num_rows: usize) -> anyhow::Result<Self> {
+        let arrow_docs = quickwit_common::get_bool_from_env("QW_PARQUET_ARROW_DOCS", false);
+        Self::try_new_with_arrow_docs(file_uri, batch_num_rows, arrow_docs)
+    }
+
+    /// [`Self::try_new`] with an explicit Arrow documents mode.
+    pub fn try_new_with_arrow_docs(
+        file_uri: Uri,
+        batch_num_rows: usize,
+        arrow_docs: bool,
+    ) -> anyhow::Result<Self> {
         if file_uri.protocol() != Protocol::File {
             bail!("Parquet input only supports local files, got `{file_uri}`");
         }
@@ -68,7 +86,7 @@ impl ParquetLoadPlan {
             .with_context(|| format!("failed to open file `{}`", filepath.display()))?;
         let mut arrow_metadata = ArrowReaderMetadata::load(&file, Default::default())
             .with_context(|| format!("failed to read Parquet footer of `{file_uri}`"))?;
-        if super::source::arrow_docs_enabled() {
+        if arrow_docs {
             // Decode strings as views: the reader then points into the decompressed pages
             // instead of copying every value into a new buffer (dictionary pages included).
             let view_schema = with_string_views(arrow_metadata.schema());
@@ -81,10 +99,21 @@ impl ParquetLoadPlan {
                         })?;
             }
         }
+        let mmap_opt = if arrow_docs {
+            // SAFETY: the file is opened read-only and not expected to change during the load;
+            // a concurrent truncation would make reads of the mapping fault.
+            let mmap = unsafe { memmap2::Mmap::map(&file) }
+                .with_context(|| format!("failed to memory-map `{}`", filepath.display()))?;
+            Some(bytes::Bytes::from_owner(mmap))
+        } else {
+            None
+        };
         let plan = Self {
             file_uri,
             filepath,
             arrow_metadata,
+            mmap_opt,
+            arrow_docs,
             batch_num_rows,
             next_row_group_idx: AtomicUsize::new(0),
         };
@@ -101,10 +130,7 @@ impl ParquetLoadPlan {
         else {
             return Ok(());
         };
-        let mut reader = self
-            .row_group_reader_builder(row_group_idx)?
-            .with_limit(1)
-            .build()?;
+        let mut reader = self.build_row_group_reader(row_group_idx, Some(1))?;
         if let Some(record_batch) = reader.next() {
             record_batch_to_ndjson_docs(&record_batch?)
                 .with_context(|| format!("unsupported Parquet schema in `{}`", self.file_uri))?;
@@ -112,17 +138,38 @@ impl ParquetLoadPlan {
         Ok(())
     }
 
-    fn row_group_reader_builder(
+    fn row_group_reader_builder<R: parquet::file::reader::ChunkReader + 'static>(
+        &self,
+        reader: R,
+        row_group_idx: usize,
+    ) -> ParquetRecordBatchReaderBuilder<R> {
+        ParquetRecordBatchReaderBuilder::new_with_metadata(reader, self.arrow_metadata.clone())
+            .with_row_groups(vec![row_group_idx])
+            .with_batch_size(self.batch_num_rows)
+    }
+
+    /// A reader for one row group, reading at most `limit_opt` rows.
+    fn build_row_group_reader(
         &self,
         row_group_idx: usize,
-    ) -> anyhow::Result<ParquetRecordBatchReaderBuilder<File>> {
-        let file = File::open(&self.filepath)
-            .with_context(|| format!("failed to open file `{}`", self.filepath.display()))?;
-        let builder =
-            ParquetRecordBatchReaderBuilder::new_with_metadata(file, self.arrow_metadata.clone())
-                .with_row_groups(vec![row_group_idx])
-                .with_batch_size(self.batch_num_rows);
-        Ok(builder)
+        limit_opt: Option<usize>,
+    ) -> anyhow::Result<ParquetRecordBatchReader> {
+        let reader = if let Some(mmap) = &self.mmap_opt {
+            let mut builder = self.row_group_reader_builder(mmap.clone(), row_group_idx);
+            if let Some(limit) = limit_opt {
+                builder = builder.with_limit(limit);
+            }
+            builder.build()?
+        } else {
+            let file = File::open(&self.filepath)
+                .with_context(|| format!("failed to open file `{}`", self.filepath.display()))?;
+            let mut builder = self.row_group_reader_builder(file, row_group_idx);
+            if let Some(limit) = limit_opt {
+                builder = builder.with_limit(limit);
+            }
+            builder.build()?
+        };
+        Ok(reader)
     }
 
     /// Claims the next row group, or returns `None` when all groups have been claimed.
@@ -134,8 +181,7 @@ impl ParquetLoadPlan {
             return Ok(None);
         }
         let reader = self
-            .row_group_reader_builder(row_group_idx)?
-            .build()
+            .build_row_group_reader(row_group_idx, None)
             .with_context(|| {
                 format!(
                     "failed to read row group {row_group_idx} of `{}`",
@@ -143,6 +189,10 @@ impl ParquetLoadPlan {
                 )
             })?;
         Ok(Some((row_group_idx, reader)))
+    }
+
+    pub fn arrow_docs(&self) -> bool {
+        self.arrow_docs
     }
 
     pub fn file_uri(&self) -> &Uri {

@@ -71,7 +71,9 @@ async fn create_parquet_source(
     source_file_uri: &Uri,
     input_format: SourceInputFormat,
 ) -> anyhow::Result<Box<dyn crate::source::Source>> {
-    let plan = Arc::new(ParquetLoadPlan::try_new(plan_file_uri.clone(), 3).unwrap());
+    let plan = Arc::new(
+        ParquetLoadPlan::try_new_with_arrow_docs(plan_file_uri.clone(), 3, false).unwrap(),
+    );
     let index_uid = IndexUid::new_with_random_ulid("test-index");
     let source_runtime = parquet_source_runtime(index_uid, source_file_uri, input_format);
     ParquetSourceFactory::new(plan)
@@ -80,12 +82,62 @@ async fn create_parquet_source(
 }
 
 #[tokio::test]
+async fn test_parquet_source_arrow_docs() {
+    use crate::models::ArrowDocBatch;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let file_uri = write_parquet_file(&temp_dir.path().join("test.parquet"), 10, 4);
+    let index_uid = IndexUid::new_with_random_ulid("test-index");
+    let plan = ParquetLoadPlan::try_new_with_arrow_docs(file_uri.clone(), 3, true).unwrap();
+    assert!(plan.arrow_docs());
+
+    let universe = Universe::with_accelerated_time();
+    let (doc_processor_mailbox, doc_processor_inbox) =
+        universe.create_test_mailbox::<DocProcessor>();
+    let source_runtime = parquet_source_runtime(index_uid, &file_uri, SourceInputFormat::Json);
+    let parquet_source = ParquetSourceFactory::new(Arc::new(plan))
+        .create_source(source_runtime)
+        .await
+        .unwrap();
+    let source_actor = SourceActor::new(parquet_source, doc_processor_mailbox);
+    let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
+    let (exit_status, observable_state) = source_handle.join().await;
+    assert!(exit_status.is_success());
+    assert_eq!(observable_state["num_rows_emitted"], 10);
+
+    let messages = doc_processor_inbox.drain_for_test();
+    assert!(
+        messages
+            .iter()
+            .all(|message| message.downcast_ref::<RawDocBatch>().is_none())
+    );
+    let batches: Vec<&ArrowDocBatch> = messages
+        .iter()
+        .filter_map(|message| message.downcast_ref::<ArrowDocBatch>())
+        .collect();
+    // Row groups of 4, 4 and 2 rows, read in batches of 3 rows.
+    assert_eq!(
+        batches
+            .iter()
+            .map(|batch| batch.record_batch.num_rows())
+            .collect::<Vec<_>>(),
+        [3, 1, 3, 1, 2]
+    );
+    // Strings are decoded as views.
+    let schema = batches[0].record_batch.schema();
+    assert_eq!(
+        schema.field_with_name("message").unwrap().data_type(),
+        &arrow_schema::DataType::Utf8View
+    );
+}
+
+#[tokio::test]
 async fn test_parquet_source() {
     let temp_dir = tempfile::tempdir().unwrap();
     let file_uri = write_parquet_file(&temp_dir.path().join("test.parquet"), 10, 4);
     let index_uid = IndexUid::new_with_random_ulid("test-index");
 
-    let plan = ParquetLoadPlan::try_new(file_uri.clone(), 3).unwrap();
+    let plan = ParquetLoadPlan::try_new_with_arrow_docs(file_uri.clone(), 3, false).unwrap();
     assert_eq!(plan.num_rows(), 10);
     assert_eq!(plan.num_row_groups(), 3);
 
@@ -143,7 +195,8 @@ async fn test_parquet_source_rejects_nonfinite_floats_in_later_batches() {
         let path = temp_dir.path().join("nonfinite.parquet");
         write_f64_values_as_parquet_file(&path, &[1.0, 2.0, value], 3).unwrap();
         let file_uri = Uri::from_str(path.to_str().unwrap()).unwrap();
-        let plan = Arc::new(ParquetLoadPlan::try_new(file_uri.clone(), 1).unwrap());
+        let plan =
+            Arc::new(ParquetLoadPlan::try_new_with_arrow_docs(file_uri.clone(), 1, false).unwrap());
         let source_runtime = parquet_source_runtime(
             IndexUid::new_with_random_ulid("test-index"),
             &file_uri,
@@ -192,7 +245,7 @@ async fn test_parquet_reader_acquisition_runs_on_blocking_runtime() {
     let path = temp_dir.path().join("test.parquet");
     for exhaust_first_group in [false, true] {
         let file_uri = write_parquet_file(&path, 6, 3);
-        let plan = Arc::new(ParquetLoadPlan::try_new(file_uri, 3).unwrap());
+        let plan = Arc::new(ParquetLoadPlan::try_new_with_arrow_docs(file_uri, 3, false).unwrap());
         let current_opt = if exhaust_first_group {
             let (row_group_idx, mut reader) = plan.next_row_group_reader().unwrap().unwrap();
             assert_eq!(reader.next().unwrap().unwrap().num_rows(), 3);
@@ -231,7 +284,7 @@ async fn test_parquet_decode_empty_file() {
     let path = temp_dir.path().join("empty.parquet");
     write_f64_values_as_parquet_file(&path, &[], 3).unwrap();
     let file_uri = Uri::from_str(path.to_str().unwrap()).unwrap();
-    let plan = Arc::new(ParquetLoadPlan::try_new(file_uri, 3).unwrap());
+    let plan = Arc::new(ParquetLoadPlan::try_new_with_arrow_docs(file_uri, 3, false).unwrap());
     assert_eq!(plan.num_row_groups(), 0);
     assert!(
         super::source::decode_next_batch(plan, None)
@@ -245,7 +298,8 @@ async fn test_parquet_decode_empty_file() {
 async fn test_parquet_source_requires_a_file_path_source() {
     let temp_dir = tempfile::tempdir().unwrap();
     let file_uri = write_parquet_file(&temp_dir.path().join("test.parquet"), 3, 2);
-    let plan = Arc::new(ParquetLoadPlan::try_new(file_uri.clone(), 3).unwrap());
+    let plan =
+        Arc::new(ParquetLoadPlan::try_new_with_arrow_docs(file_uri.clone(), 3, false).unwrap());
     let notifications = serde_json::from_value(json!({
         "notifications": [{
             "type": "sqs", "queue_url": "http://localhost/queue", "message_type": "raw_uri"
@@ -301,7 +355,7 @@ async fn test_parquet_source_requires_the_json_input_format() {
 #[test]
 fn test_parquet_load_plan_rejects_remote_files() {
     let file_uri = Uri::for_test("s3://bucket/test.parquet");
-    let error = ParquetLoadPlan::try_new(file_uri, 10).unwrap_err();
+    let error = ParquetLoadPlan::try_new_with_arrow_docs(file_uri, 10, false).unwrap_err();
     assert!(error.to_string().contains("only supports local files"));
 }
 

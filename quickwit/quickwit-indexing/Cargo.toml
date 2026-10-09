@@ -36,6 +36,7 @@ google-cloud-pubsub = { workspace = true, optional = true }
 itertools = { workspace = true }
 libz-sys = { workspace = true, optional = true }
 oneshot = { workspace = true }
+memmap2 = { workspace = true, optional = true }
 parquet = { workspace = true, optional = true, features = ["arrow", "snap", "zstd", "lz4"] }
 openssl = { workspace = true, optional = true }
 percent-encoding = { workspace = true }
@@ -89,6 +90,7 @@ kinesis = [
 kinesis-localstack-tests = []
 parquet = [
   "quickwit-doc-mapper/arrow",
+  "dep:memmap2",
   "dep:arrow-array",
   "dep:arrow-json",
   "dep:arrow-schema",
