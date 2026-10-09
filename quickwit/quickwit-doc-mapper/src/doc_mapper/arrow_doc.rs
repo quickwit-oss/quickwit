@@ -586,6 +586,12 @@ fn json_string_as_date(text: &str) -> Option<DateTime> {
     if !matches!(text.as_bytes().first(), Some(byte) if byte.is_ascii_digit()) {
         return None;
     }
+    // Shortest RFC 3339 date-time: `YYYY-MM-DDTHH:MM:SSZ` (20 bytes), with `-` at 4. Skips the
+    // parser for numbers-as-strings (`"0"`, `"200"`, ...), which never parse.
+    let bytes = text.as_bytes();
+    if bytes.len() < 20 || bytes[4] != b'-' {
+        return None;
+    }
     let date_time =
         time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339).ok()?;
     Some(DateTime::from_utc(
@@ -1260,6 +1266,34 @@ mod tests {
             num_checked += 1;
         }
         assert_eq!(num_checked, 4);
+    }
+
+    #[test]
+    fn test_json_string_as_date_matches_tantivy() {
+        use tantivy::schema::OwnedValue;
+        for text in [
+            "0",
+            "200",
+            "2025",
+            "2025-09-21",
+            "2025-09-21T07:47:47Z",
+            "2025-09-21T07:47:47.123+02:00",
+            "2025-09-21t07:47:47z",
+            "2025-09-21 07:47:47Z",
+            "1999-12-31T23:59:60Z",
+            "9999-99-99T99:99:99Z",
+            "12345678901234567890",
+            "2025-09-21T07:47:47",
+            "0000-01-01T00:00:00Z",
+            "abc",
+        ] {
+            let tantivy_date = OwnedValue::from(serde_json::Value::String(text.to_string()));
+            let expected = match tantivy_date {
+                OwnedValue::Date(date_time) => Some(date_time),
+                _ => None,
+            };
+            assert_eq!(super::json_string_as_date(text), expected, "{text}");
+        }
     }
 
     #[test]

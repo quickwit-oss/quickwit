@@ -304,8 +304,17 @@ impl DocProcessorCounter {
     }
 
     fn record_doc(&self, num_bytes: u64) {
-        self.num_docs.fetch_add(1, Ordering::Relaxed);
-        self.num_docs_metric.inc();
+        self.record_docs(1, num_bytes);
+    }
+
+    /// Several documents at once: the metrics are shared by every pipeline, one update per
+    /// document contends on them.
+    fn record_docs(&self, num_docs: u64, num_bytes: u64) {
+        if num_docs == 0 {
+            return;
+        }
+        self.num_docs.fetch_add(num_docs, Ordering::Relaxed);
+        self.num_docs_metric.inc_by(num_docs);
         self.num_bytes_metric.inc_by(num_bytes);
     }
 }
@@ -381,8 +390,13 @@ impl DocProcessorCounters {
     }
 
     pub fn record_valid(&self, num_bytes: u64) {
+        self.record_valid_docs(1, num_bytes);
+    }
+
+    /// See [`DocProcessorCounter::record_docs`].
+    pub fn record_valid_docs(&self, num_docs: u64, num_bytes: u64) {
         self.num_bytes_total.fetch_add(num_bytes, Ordering::Relaxed);
-        self.valid.record_doc(num_bytes);
+        self.valid.record_docs(num_docs, num_bytes);
     }
 
     pub fn record_error(&self, error: DocProcessorError, num_bytes: u64) {
@@ -663,15 +677,19 @@ impl DocProcessor {
             let doc_capacity = batch.get_array_memory_size() / batch.num_rows().max(1) + 64;
             // Row entries, reused across rows.
             let mut arena = Vec::with_capacity(64);
+            let (mut num_valid_docs, mut num_valid_bytes) = (0u64, 0u64);
             for row in 0..batch.num_rows() {
                 match self.process_arrow_row(&builder, batch, row, doc_capacity, &mut arena) {
                     Some(processed_doc) => {
-                        self.counters.record_valid(processed_doc.num_bytes as u64);
+                        num_valid_docs += 1;
+                        num_valid_bytes += processed_doc.num_bytes as u64;
                         processed_docs.push(processed_doc);
                     }
                     None => json_rows.push(row),
                 }
             }
+            self.counters
+                .record_valid_docs(num_valid_docs, num_valid_bytes);
         } else {
             json_rows.extend(0..batch.num_rows());
         }
