@@ -7703,6 +7703,9 @@ name = "quickwit-doc-mapper"
 version = "0.9.1"
 dependencies = [
  "anyhow",
+ "arrow-array",
+ "arrow-json",
+ "arrow-schema",
  "base64 0.23.0",
  "binggan",
  "fnv",

@@ -127,6 +127,19 @@ impl Fingerprinter {
         &self.config
     }
 
+    /// First path component of every field whose value (not just presence) is hashed.
+    pub fn value_root_fields(&self) -> impl Iterator<Item = &str> {
+        self.policies
+            .iter()
+            .flat_map(|policy| policy.fingerprint.iter())
+            .filter_map(|method| match method {
+                ClusteringMethod::Structure { .. } => None,
+                ClusteringMethod::Raw { path } | ClusteringMethod::Tokenized { path, .. } => {
+                    path.first().map(String::as_str)
+                }
+            })
+    }
+
     pub fn fingerprint(&self, json_value: &JsonValue) -> Fingerprint {
         let mut fingerprint = SmallVec::new();
         for policy in self.policies.iter() {
@@ -276,6 +289,158 @@ impl Fingerprinter {
     }
 }
 
+/// Fingerprints of Arrow rows (Parquet bulk load), without building a `serde_json::Value`.
+///
+/// Produces the same hashes as [`Fingerprinter::fingerprint`] on the row's JSON encoding, as long
+/// as no raw or tokenized policy reads a timestamp column (their JSON text is not reproduced;
+/// see [`Fingerprinter::value_root_fields`]).
+#[cfg(feature = "parquet")]
+impl Fingerprinter {
+    pub fn fingerprint_row(&self, row: quickwit_doc_mapper::RowValue<'_>) -> Fingerprint {
+        let mut fingerprint = SmallVec::new();
+        for policy in self.policies.iter() {
+            let mut hasher = FnvHasher::default();
+            for method in policy.fingerprint.iter() {
+                match method {
+                    ClusteringMethod::Structure { exclude } => {
+                        row_hash_structure(row, exclude, &mut hasher);
+                    }
+                    ClusteringMethod::Raw { path } => {
+                        match row_get(row, path) {
+                            Some(value) => {
+                                hasher.write_u8(FIELD_PRESENT);
+                                row_hash_raw(value, &mut hasher);
+                            }
+                            None => hasher.write_u8(FIELD_ABSENT),
+                        }
+                        hasher.write_u8(FIELD_BOUNDARY);
+                    }
+                    ClusteringMethod::Tokenized { path, max_tokens } => {
+                        let text_opt = row_get(row, path).and_then(|value| match value.leaf {
+                            quickwit_doc_mapper::RowLeaf::Str(text) => Some(text),
+                            _ => None,
+                        });
+                        let Some(text) = text_opt else {
+                            hasher.write_u8(FIELD_ABSENT);
+                            hasher.write_u8(FIELD_BOUNDARY);
+                            continue;
+                        };
+                        hasher.write_u8(FIELD_PRESENT);
+                        let max_tokens = max_tokens.unwrap_or(DEFAULT_MAX_GROUPING_TOKENS);
+                        for span in tokenize(text).take(max_tokens) {
+                            hasher.write_u8(span.token_type as u8);
+                            hasher.write_u8(TOKENIZED_TOKEN_SEPARATOR);
+                        }
+                        hasher.write_u8(FIELD_BOUNDARY);
+                    }
+                }
+            }
+            fingerprint.push(hasher.finish());
+        }
+        Fingerprint(fingerprint)
+    }
+}
+
+#[cfg(feature = "parquet")]
+fn row_get<'a>(
+    mut value: quickwit_doc_mapper::RowValue<'a>,
+    path: &[String],
+) -> Option<quickwit_doc_mapper::RowValue<'a>> {
+    for component in path {
+        value = value.get(component)?;
+    }
+    Some(value)
+}
+
+#[cfg(feature = "parquet")]
+fn row_hash_structure(
+    row: quickwit_doc_mapper::RowValue<'_>,
+    exclude: &[JsonPath],
+    hasher: &mut FnvHasher,
+) {
+    use quickwit_doc_mapper::{RowLeaf, RowValue};
+    fn walk<'a>(
+        value: RowValue<'a>,
+        exclude: &[JsonPath],
+        current: &mut Vec<&'a str>,
+        paths: &mut Vec<Vec<&'a str>>,
+    ) {
+        if let RowLeaf::Object(..) = value.leaf {
+            for (key, child) in value.entries() {
+                current.push(key);
+                let is_excluded = exclude.iter().any(|excluded_path| {
+                    excluded_path.len() == current.len()
+                        && excluded_path
+                            .iter()
+                            .zip(current.iter())
+                            .all(|(excluded, component)| excluded.as_str() == *component)
+                });
+                if !is_excluded {
+                    walk(child, exclude, current, paths);
+                }
+                current.pop();
+            }
+        } else {
+            paths.push(current.clone());
+        }
+    }
+    let mut current = Vec::with_capacity(16);
+    let mut paths = Vec::with_capacity(32);
+    walk(row, exclude, &mut current, &mut paths);
+    paths.sort_unstable();
+    for path in paths {
+        for component in path {
+            hasher.write(component.as_bytes());
+            hasher.write_u8(PATH_COMPONENT_SEPARATOR);
+        }
+        hasher.write_u8(PATH_SEPARATOR);
+    }
+}
+
+#[cfg(feature = "parquet")]
+fn row_hash_raw(value: quickwit_doc_mapper::RowValue<'_>, hasher: &mut FnvHasher) {
+    use quickwit_doc_mapper::RowLeaf;
+    // Same encoding as `hash_raw_value_inner`.
+    const RAW_BOOL: u8 = 1;
+    const RAW_NUMBER: u8 = 2;
+    const RAW_STRING: u8 = 3;
+    const RAW_OBJECT: u8 = 5;
+    let mut write_number = |number: serde_json::Number| {
+        hasher.write_u8(RAW_NUMBER);
+        hasher.write(number.to_string().as_bytes());
+    };
+    match value.leaf {
+        RowLeaf::Bool(value) => {
+            hasher.write_u8(RAW_BOOL);
+            hasher.write_u8(value as u8);
+        }
+        RowLeaf::I64(number) => write_number(number.into()),
+        RowLeaf::U64(number) => write_number(number.into()),
+        RowLeaf::F64(number) => {
+            write_number(serde_json::Number::from_f64(number).expect("finite float"))
+        }
+        RowLeaf::Str(text) => {
+            hasher.write_u8(RAW_STRING);
+            hasher.write_usize(text.len());
+            hasher.write(text.as_bytes());
+        }
+        RowLeaf::Object(start, end) => {
+            hasher.write_u8(RAW_OBJECT);
+            hasher.write_usize((end - start) as usize);
+            for (key, child) in value.entries() {
+                hasher.write_usize(key.len());
+                hasher.write(key.as_bytes());
+                row_hash_raw(child, hasher);
+            }
+        }
+        // Excluded by the caller (`value_root_fields`), and never produced for documents.
+        RowLeaf::TimestampStr | RowLeaf::Date(_) => {
+            hasher.write_u8(RAW_STRING);
+            hasher.write_usize(0);
+        }
+    }
+}
+
 fn get_leaf_json_value<'a>(json_value: &'a JsonValue, path: &[String]) -> Option<&'a JsonValue> {
     if path.is_empty() {
         return Some(json_value);
@@ -329,6 +494,154 @@ mod tests {
 
     fn docs_clustering_config(json_value: JsonValue) -> DocsClusteringConfig {
         serde_json::from_value(json_value).unwrap()
+    }
+
+    /// `fingerprint_row` on an Arrow row equals `fingerprint` on its `arrow_json` encoding.
+    #[cfg(feature = "parquet")]
+    #[test]
+    fn arrow_row_fingerprint_matches_json_fingerprint() {
+        use std::sync::Arc;
+
+        use arrow_array::builder::{MapBuilder, StringBuilder};
+        use arrow_array::{
+            ArrayRef, Float64Array, Int64Array, RecordBatch, StringArray, TimestampNanosecondArray,
+            UInt64Array,
+        };
+        use quickwit_doc_mapper::{ArrowDocBuilder, DocMapper};
+
+        let doc_mapper: DocMapper = serde_json::from_value(serde_json::json!({
+            "mode": "dynamic",
+            "dynamic_mapping": {"indexed": false, "stored": true},
+            "field_mappings": [
+                {"name": "Timestamp", "type": "datetime", "fast": true},
+                {"name": "Body", "type": "text"},
+                {"name": "ServiceName", "type": "text", "tokenizer": "raw"}
+            ],
+            "timestamp_field": "Timestamp"
+        }))
+        .unwrap();
+        let mut attributes = MapBuilder::new(None, StringBuilder::new(), StringBuilder::new());
+        let rows: [&[(&str, Option<&str>)]; 5] = [
+            &[("k8s.pod.name", Some("cart-1")), ("app", Some("cart"))],
+            &[],
+            &[("b", Some("2")), ("a", Some("1")), ("a", Some("3"))],
+            &[("x", None), ("y", Some("2026-01-01T00:00:00Z"))],
+            &[("app", Some("cart")), ("k8s.pod.name", Some("cart-2"))],
+        ];
+        for (row_idx, row) in rows.iter().enumerate() {
+            for (key, value) in row.iter() {
+                attributes.keys().append_value(key);
+                match value {
+                    Some(value) => attributes.values().append_value(value),
+                    None => attributes.values().append_null(),
+                }
+            }
+            attributes.append(row_idx != 1).unwrap();
+        }
+        let batch = RecordBatch::try_from_iter(vec![
+            (
+                "Timestamp",
+                Arc::new(
+                    TimestampNanosecondArray::from(vec![1i64, 2, 3, 4, 5]).with_timezone("UTC"),
+                ) as ArrayRef,
+            ),
+            (
+                "Body",
+                Arc::new(StringArray::from(vec![
+                    Some("server started at 8080"),
+                    Some("job 123 finished in 42ms"),
+                    None,
+                    Some("connection from 1.2.3.4"),
+                    Some("server started at 9090"),
+                ])),
+            ),
+            (
+                "ServiceName",
+                Arc::new(StringArray::from(vec![
+                    Some("api"),
+                    Some("worker"),
+                    Some("api"),
+                    None,
+                    Some("api"),
+                ])),
+            ),
+            (
+                "Count",
+                Arc::new(Int64Array::from(vec![
+                    Some(-1),
+                    None,
+                    Some(7),
+                    Some(0),
+                    Some(1),
+                ])),
+            ),
+            (
+                "Big",
+                Arc::new(UInt64Array::from(vec![
+                    Some(u64::MAX),
+                    Some(1),
+                    None,
+                    Some(2),
+                    Some(3),
+                ])),
+            ),
+            (
+                "Score",
+                Arc::new(Float64Array::from(vec![
+                    Some(0.1),
+                    Some(1e300),
+                    Some(-0.0),
+                    None,
+                    Some(2.5),
+                ])),
+            ),
+            ("ResourceAttributes", Arc::new(attributes.finish())),
+        ])
+        .unwrap();
+        let builder = ArrowDocBuilder::try_new(&doc_mapper, &batch.schema()).unwrap();
+
+        // The searchbench policy, plus raw values on a map, an integer and a float column.
+        let fingerprinter = Fingerprinter::new(&docs_clustering_config(serde_json::json!([
+            {"fingerprint": [{"kind": "structure"}]},
+            {"fingerprint": [{"kind": "raw", "path": "ServiceName"}]},
+            {"fingerprint": [{"kind": "tokenized", "path": "Body"}]},
+            {"fingerprint": [{"kind": "raw", "path": "ResourceAttributes"}]},
+            {"fingerprint": [{"kind": "raw", "path": "ResourceAttributes.app"}]},
+            {"fingerprint": [{"kind": "raw", "path": "Count"}, {"kind": "raw", "path": "Big"}]},
+            {"fingerprint": [{"kind": "raw", "path": "Score"}]},
+            {"fingerprint": [{"kind": "structure", "exclude": ["ResourceAttributes"]}]},
+            {"fingerprint": [{"kind": "raw", "path": "Missing"}, {"kind": "tokenized", "path": "Count"}]}
+        ])));
+        assert!(
+            fingerprinter
+                .value_root_fields()
+                .all(|field| field != "Timestamp")
+        );
+
+        let mut writer = arrow_json::WriterBuilder::new()
+            .with_explicit_nulls(false)
+            .build::<_, arrow_json::writer::LineDelimited>(Vec::new());
+        writer.write(&batch).unwrap();
+        writer.finish().unwrap();
+        let ndjson = writer.into_inner();
+        let mut num_checked = 0;
+        for (row, line) in ndjson
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .enumerate()
+        {
+            let json_doc: JsonValue = serde_json::from_slice(line).unwrap();
+            let Some(json_row) = builder.json_row(&batch, row) else {
+                continue;
+            };
+            assert_eq!(
+                fingerprinter.fingerprint_row(json_row.root()),
+                fingerprinter.fingerprint(&json_doc),
+                "row {row}: {json_doc}"
+            );
+            num_checked += 1;
+        }
+        assert_eq!(num_checked, 5);
     }
 
     #[test]

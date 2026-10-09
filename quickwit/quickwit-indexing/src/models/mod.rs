@@ -14,6 +14,8 @@
 
 #![allow(rustdoc::invalid_html_tags)]
 
+#[cfg(feature = "parquet")]
+mod arrow_doc_batch;
 mod indexed_split;
 mod indexing_service_message;
 mod indexing_statistics;
@@ -31,6 +33,8 @@ mod split_attrs;
 use std::sync::Arc;
 
 use arc_swap::ArcSwapOption;
+#[cfg(feature = "parquet")]
+pub use arrow_doc_batch::ArrowDocBatch;
 pub use indexed_split::{
     CommitTrigger, EmptySplit, IndexedSplit, IndexedSplitBatch, IndexedSplitBatchBuilder,
     IndexedSplitBuilder, SplitClustering,

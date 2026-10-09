@@ -491,6 +491,22 @@ impl DocMapper {
         self.doc_from_json_obj(json_obj, json_doc.len() as u64)
     }
 
+    /// Crate-internal view used by the Arrow document builder.
+    #[cfg(feature = "arrow")]
+    pub(crate) fn arrow_plan_inputs(&self) -> super::arrow_doc::DocMapperView<'_> {
+        super::arrow_doc::DocMapperView {
+            root: &self.field_mappings,
+            mode: self.mode.mode_type(),
+            dynamic_field: self.dynamic_field,
+            has_source_field: self.source_field.is_some(),
+            index_field_presence: self.index_field_presence,
+            has_document_size_field: self.document_size_field.is_some(),
+            has_concatenate_dynamic_fields: !self.concatenate_dynamic_fields.is_empty(),
+            has_partition_key: !self.partition_key.is_empty(),
+            timestamp_field_name: self.timestamp_field_name.as_deref(),
+        }
+    }
+
     /// Transforms a JSON object into a tantivy [`Document`] according to the rules
     /// defined for the `DocMapper`.
     pub fn doc_from_json_obj(
@@ -502,7 +518,9 @@ impl DocMapper {
 
         let mut dynamic_json_obj = serde_json::Map::default();
         let mut field_path = Vec::new();
-        let mut document = Document::default();
+        // The compact doc stores every value: reserve about the source size up front to avoid
+        // repeated reallocations of its buffer (the default reserves 1 KiB).
+        let mut document = Document::with_capacity(document_len as usize + 256);
 
         if let Some(source_field) = self.source_field {
             document.add_object(
@@ -538,13 +556,9 @@ impl DocMapper {
                     }
                 }
             }
-            document.add_object(
-                dynamic_field,
-                dynamic_json_obj
-                    .into_iter()
-                    .map(|(key, val)| (key, TantivyValue::from(val)))
-                    .collect(),
-            );
+            // Write the JSON object straight into the document: going through
+            // `BTreeMap<String, OwnedValue>` re-allocates every key and string value.
+            document.add_field_value(dynamic_field, &serde_json::Value::Object(dynamic_json_obj));
         }
 
         if let Some(document_size_field) = self.document_size_field {

@@ -87,6 +87,7 @@ kinesis = [
 ]
 kinesis-localstack-tests = []
 parquet = [
+  "quickwit-doc-mapper/arrow",
   "dep:arrow-array",
   "dep:arrow-json",
   "dep:arrow-schema",

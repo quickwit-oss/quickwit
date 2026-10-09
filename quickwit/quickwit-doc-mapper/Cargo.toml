@@ -12,6 +12,9 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+arrow-array = { workspace = true, optional = true }
+arrow-schema = { workspace = true, optional = true }
+time = { workspace = true, optional = true }
 base64 = { workspace = true }
 fnv = { workspace = true }
 hex = { workspace = true }
@@ -35,6 +38,8 @@ quickwit-proto = { workspace = true }
 quickwit-query = { workspace = true }
 
 [dev-dependencies]
+arrow-array = { workspace = true, features = ["chrono-tz"] }
+arrow-json = { workspace = true }
 binggan = { workspace = true }
 matches = { workspace = true }
 serde_yaml = { workspace = true }
@@ -45,6 +50,8 @@ quickwit-query = { workspace = true }
 
 [features]
 testsuite = []
+# Builds tantivy documents straight from Arrow record batches (Parquet bulk load).
+arrow = ["dep:arrow-array", "dep:arrow-schema", "dep:time"]
 
 [[bench]]
 name = "doc_to_json_bench"

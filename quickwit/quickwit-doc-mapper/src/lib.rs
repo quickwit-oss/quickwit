@@ -29,6 +29,8 @@ mod routing_expression;
 /// Pruning tags manipulation.
 pub mod tag_pruning;
 
+#[cfg(feature = "arrow")]
+pub use doc_mapper::{ArrowDocBuilder, JsonRow, RowLeaf, RowValue};
 pub use doc_mapper::{
     Automaton, BinaryFormat, DocMapper, DocMapperBuilder, FastFieldWarmupInfo, FieldMappingEntry,
     FieldMappingType, JsonObject, NamedField, QuickwitBytesOptions, QuickwitJsonOptions, TermRange,

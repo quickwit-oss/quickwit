@@ -338,6 +338,18 @@ pub(crate) struct MappingLeaf {
 }
 
 impl MappingLeaf {
+    pub(crate) fn field(&self) -> Field {
+        self.field
+    }
+
+    pub(crate) fn typ(&self) -> &LeafType {
+        &self.typ
+    }
+
+    pub(crate) fn has_concatenate(&self) -> bool {
+        !self.concatenate.is_empty()
+    }
+
     fn validate_from_json(
         &self,
         json_value: &BorrowedJsonValue,

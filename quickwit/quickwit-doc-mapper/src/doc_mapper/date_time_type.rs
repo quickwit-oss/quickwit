@@ -152,6 +152,13 @@ impl QuickwitDateTimeOptions {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct InputFormats(Vec<DateTimeInputFormat>);
 
+impl InputFormats {
+    #[cfg(feature = "arrow")]
+    pub(crate) fn formats(&self) -> &[DateTimeInputFormat] {
+        &self.0
+    }
+}
+
 impl Default for InputFormats {
     fn default() -> Self {
         Self(vec![

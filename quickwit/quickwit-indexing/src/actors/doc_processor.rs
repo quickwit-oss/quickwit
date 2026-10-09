@@ -42,6 +42,8 @@ use super::vrl_processing::*;
 use crate::actors::Indexer;
 use crate::docs_clustering::Fingerprinter;
 use crate::metrics::{PROCESSED_BYTES, PROCESSED_DOCS_TOTAL};
+#[cfg(feature = "parquet")]
+use crate::models::ArrowDocBatch;
 use crate::models::{NewPublishLock, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch};
 
 const PLAIN_TEXT: &str = "plain_text";
@@ -413,6 +415,12 @@ pub struct DocProcessor {
     #[cfg(feature = "vrl")]
     transform_opt: Option<VrlProgram>,
     input_format: SourceInputFormat,
+    // Arrow document builder for the last record batch schema seen (`None` inside: JSON path).
+    #[cfg(feature = "parquet")]
+    arrow_doc_builder_opt: Option<(
+        arrow_schema::SchemaRef,
+        Option<Arc<quickwit_doc_mapper::ArrowDocBuilder>>,
+    )>,
 }
 
 impl DocProcessor {
@@ -441,6 +449,8 @@ impl DocProcessor {
                 .map(VrlProgram::try_from_transform_config)
                 .transpose()?,
             input_format,
+            #[cfg(feature = "parquet")]
+            arrow_doc_builder_opt: None,
         })
     }
 
@@ -594,6 +604,136 @@ impl Handler<RawDocBatch> for DocProcessor {
             processed_docs,
             raw_doc_batch.checkpoint_delta,
             raw_doc_batch.force_commit,
+        );
+        ctx.send_message(&self.indexer_mailbox, processed_doc_batch)
+            .await?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "parquet")]
+impl DocProcessor {
+    /// The Arrow builder for `schema`, if documents can be built natively for it.
+    fn arrow_doc_builder(
+        &mut self,
+        schema: &arrow_schema::SchemaRef,
+    ) -> Option<Arc<quickwit_doc_mapper::ArrowDocBuilder>> {
+        let is_cached =
+            matches!(&self.arrow_doc_builder_opt, Some((cached, _)) if cached == schema);
+        if !is_cached {
+            let builder_opt = quickwit_doc_mapper::ArrowDocBuilder::try_new(
+                &self.doc_mapper,
+                schema,
+            )
+            .filter(|builder| {
+                // Fingerprints hashing a timestamp column's value need the exact JSON text.
+                let Some(fingerprinter) = &self.fingerprinter_opt else {
+                    return true;
+                };
+                if !builder.json_row_is_complete() {
+                    return false;
+                }
+                let timestamp_columns: Vec<&str> = builder.timestamp_column_names().collect();
+                !fingerprinter
+                    .value_root_fields()
+                    .any(|field| timestamp_columns.contains(&field))
+            });
+            if builder_opt.is_none() {
+                tracing::info!(
+                    "Parquet schema not supported by the Arrow document builder: using JSON"
+                );
+            }
+            self.arrow_doc_builder_opt = Some((schema.clone(), builder_opt.map(Arc::new)));
+        }
+        self.arrow_doc_builder_opt
+            .as_ref()
+            .and_then(|(_, builder_opt)| builder_opt.clone())
+    }
+
+    fn process_arrow_batch(
+        &mut self,
+        batch: &arrow_array::RecordBatch,
+        processed_docs: &mut Vec<ProcessedDoc>,
+    ) -> anyhow::Result<()> {
+        let schema = batch.schema();
+        // Rows the builder cannot convert go through the JSON path, which also reports errors.
+        let mut json_rows: Vec<usize> = Vec::new();
+        if let Some(builder) = self.arrow_doc_builder(&schema) {
+            for row in 0..batch.num_rows() {
+                match self.process_arrow_row(&builder, batch, row) {
+                    Some(processed_doc) => {
+                        self.counters.record_valid(processed_doc.num_bytes as u64);
+                        processed_docs.push(processed_doc);
+                    }
+                    None => json_rows.push(row),
+                }
+            }
+        } else {
+            json_rows.extend(0..batch.num_rows());
+        }
+        for row in json_rows {
+            let raw_docs =
+                crate::source::parquet_file::record_batch_to_ndjson_docs(&batch.slice(row, 1))?;
+            for raw_doc in raw_docs {
+                self.process_raw_doc(raw_doc, processed_docs);
+            }
+        }
+        Ok(())
+    }
+
+    fn process_arrow_row(
+        &self,
+        builder: &quickwit_doc_mapper::ArrowDocBuilder,
+        batch: &arrow_array::RecordBatch,
+        row: usize,
+    ) -> Option<ProcessedDoc> {
+        let num_bytes = builder.estimate_num_bytes(batch, row);
+        let fingerprint_opt = match &self.fingerprinter_opt {
+            Some(fingerprinter) => {
+                let json_row = builder.json_row(batch, row)?;
+                Some(fingerprinter.fingerprint_row(json_row.root()))
+            }
+            None => None,
+        };
+        let doc = builder.build_doc(batch, row, num_bytes + 256)?;
+        // A missing timestamp is an error: let the JSON path report it.
+        let timestamp_opt = self.extract_timestamp(&doc).ok()?;
+        Some(ProcessedDoc {
+            doc,
+            fingerprint_opt,
+            timestamp_opt,
+            // `ArrowDocBuilder` declines mappings with a partition key.
+            partition: 0,
+            num_bytes,
+        })
+    }
+}
+
+#[cfg(feature = "parquet")]
+#[async_trait]
+impl Handler<ArrowDocBatch> for DocProcessor {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        arrow_doc_batch: ArrowDocBatch,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        if self.publish_lock.is_dead() {
+            return Ok(());
+        }
+        let num_rows = arrow_doc_batch.record_batch.num_rows();
+        let mut processed_docs: Vec<ProcessedDoc> = Vec::with_capacity(num_rows);
+        {
+            let _protected_zone_guard = ctx.protect_zone();
+            self.process_arrow_batch(&arrow_doc_batch.record_batch, &mut processed_docs)
+                .map_err(|error| ActorExitStatus::Failure(Arc::new(error)))?;
+            ctx.record_progress();
+        }
+        let processed_doc_batch = ProcessedDocBatch::new(
+            processed_docs,
+            arrow_doc_batch.checkpoint_delta,
+            arrow_doc_batch.force_commit,
         );
         ctx.send_message(&self.indexer_mailbox, processed_doc_batch)
             .await?;

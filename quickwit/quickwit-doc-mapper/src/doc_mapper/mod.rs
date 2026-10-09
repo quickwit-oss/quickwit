@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[cfg(feature = "arrow")]
+mod arrow_doc;
 mod date_time_type;
 mod doc_mapper_builder;
 mod doc_mapper_impl;
@@ -26,6 +28,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::ops::Bound;
 
+#[cfg(feature = "arrow")]
+pub use arrow_doc::{ArrowDocBuilder, JsonRow, RowLeaf, RowValue};
 pub use doc_mapper_builder::DocMapperBuilder;
 pub use doc_mapper_impl::DocMapper;
 pub use field_mapping_entry::{

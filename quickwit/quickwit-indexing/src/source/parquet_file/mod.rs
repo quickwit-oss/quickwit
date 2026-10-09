@@ -21,7 +21,7 @@ mod source;
 mod testsuite;
 
 pub use plan::{DEFAULT_PARQUET_BATCH_NUM_ROWS, ParquetLoadPlan};
-pub use source::{ParquetSource, ParquetSourceFactory};
+pub use source::{ParquetSource, ParquetSourceFactory, record_batch_to_ndjson_docs};
 #[cfg(any(test, feature = "testsuite"))]
 pub use testsuite::{write_f64_values_as_parquet_file, write_json_docs_as_parquet_file};
 
