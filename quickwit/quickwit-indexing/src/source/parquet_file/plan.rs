@@ -21,7 +21,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{Context, bail};
 use parquet::arrow::arrow_reader::{
-    ArrowReaderMetadata, ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder,
+    ArrowReaderMetadata, ArrowReaderOptions, ParquetRecordBatchReader,
+    ParquetRecordBatchReaderBuilder,
 };
 use quickwit_common::uri::{Protocol, Uri};
 
@@ -65,8 +66,21 @@ impl ParquetLoadPlan {
             .to_path_buf();
         let file = File::open(&filepath)
             .with_context(|| format!("failed to open file `{}`", filepath.display()))?;
-        let arrow_metadata = ArrowReaderMetadata::load(&file, Default::default())
+        let mut arrow_metadata = ArrowReaderMetadata::load(&file, Default::default())
             .with_context(|| format!("failed to read Parquet footer of `{file_uri}`"))?;
+        if super::source::arrow_docs_enabled() {
+            // Decode strings as views: the reader then points into the decompressed pages
+            // instead of copying every value into a new buffer (dictionary pages included).
+            let view_schema = with_string_views(arrow_metadata.schema());
+            if view_schema.as_ref() != arrow_metadata.schema().as_ref() {
+                let options = ArrowReaderOptions::new().with_schema(view_schema);
+                arrow_metadata =
+                    ArrowReaderMetadata::try_new(arrow_metadata.metadata().clone(), options)
+                        .with_context(|| {
+                            format!("failed to read Parquet footer of `{file_uri}`")
+                        })?;
+            }
+        }
         let plan = Self {
             file_uri,
             filepath,
@@ -160,4 +174,30 @@ impl ParquetLoadPlan {
             .map(|row_group| row_group.total_byte_size().max(0) as u64)
             .sum()
     }
+}
+
+/// `schema` with `Utf8` (also inside maps, lists and structs) replaced by `Utf8View`.
+fn with_string_views(schema: &arrow_schema::SchemaRef) -> arrow_schema::SchemaRef {
+    use arrow_schema::{DataType, Field, Fields, Schema};
+    fn convert(data_type: &DataType) -> DataType {
+        match data_type {
+            DataType::Utf8 => DataType::Utf8View,
+            DataType::Map(entries, sorted) => DataType::Map(convert_field(entries), *sorted),
+            DataType::List(item) => DataType::List(convert_field(item)),
+            DataType::Struct(fields) => {
+                DataType::Struct(fields.iter().map(convert_field).collect::<Fields>())
+            }
+            other => other.clone(),
+        }
+    }
+    fn convert_field(field: &std::sync::Arc<Field>) -> std::sync::Arc<Field> {
+        std::sync::Arc::new(
+            field
+                .as_ref()
+                .clone()
+                .with_data_type(convert(field.data_type())),
+        )
+    }
+    let fields: Fields = schema.fields().iter().map(convert_field).collect();
+    std::sync::Arc::new(Schema::new_with_metadata(fields, schema.metadata().clone()))
 }

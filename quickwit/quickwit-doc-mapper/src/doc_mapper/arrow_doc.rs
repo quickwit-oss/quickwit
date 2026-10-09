@@ -155,7 +155,10 @@ fn column_kind(data_type: &DataType) -> Option<ColumnKind> {
         if fields.len() != 2 {
             return None;
         }
-        if !matches!(fields[0].data_type(), DataType::Utf8 | DataType::LargeUtf8) {
+        if !matches!(
+            fields[0].data_type(),
+            DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
+        ) {
             return None;
         }
         return scalar_kind(fields[1].data_type()).map(ColumnKind::Map);
@@ -1086,6 +1089,96 @@ mod tests {
             doc.iter_fields_and_values()
                 .all(|(field, _)| schema.get_field_name(field) != "_dynamic")
         );
+    }
+
+    #[test]
+    fn test_arrow_docs_with_string_views_match_json_docs() {
+        // The Parquet source can decode strings as `Utf8View` (and map keys/values too).
+        let doc_mapper = otel_doc_mapper();
+        let batch = otel_batch();
+        let view_columns: Vec<ArrayRef> = batch
+            .columns()
+            .iter()
+            .map(|column| to_string_views(column))
+            .collect();
+        let view_fields: Vec<ArrowField> = batch
+            .schema()
+            .fields()
+            .iter()
+            .zip(&view_columns)
+            .map(|(field, column)| ArrowField::new(field.name(), column.data_type().clone(), true))
+            .collect();
+        let view_batch =
+            RecordBatch::try_new(Arc::new(ArrowSchema::new(view_fields)), view_columns).unwrap();
+        assert!(
+            view_batch
+                .schema()
+                .fields()
+                .iter()
+                .any(|field| field.data_type() == &DataType::Utf8View)
+        );
+        let builder = ArrowDocBuilder::try_new(&doc_mapper, &view_batch.schema()).unwrap();
+        let utf8_builder = ArrowDocBuilder::try_new(&doc_mapper, &batch.schema()).unwrap();
+        let mut arena = Vec::new();
+        let mut utf8_arena = Vec::new();
+        for row in 0..batch.num_rows() {
+            let view_doc = builder.build_row(&view_batch, row, 0, false, &mut arena);
+            let utf8_doc = utf8_builder.build_row(&batch, row, 0, false, &mut utf8_arena);
+            assert_eq!(view_doc.is_some(), utf8_doc.is_some(), "row {row}");
+            if let (Some((view_doc, _)), Some((utf8_doc, _))) = (view_doc, utf8_doc) {
+                assert_eq!(
+                    stored_bytes(&view_doc, &doc_mapper),
+                    stored_bytes(&utf8_doc, &doc_mapper),
+                    "row {row}"
+                );
+                assert_eq!(
+                    indexed_values(&view_doc, &doc_mapper),
+                    indexed_values(&utf8_doc, &doc_mapper),
+                    "row {row}"
+                );
+            }
+        }
+    }
+
+    /// Casts `Utf8` to `Utf8View`, including map keys and values.
+    fn to_string_views(column: &ArrayRef) -> ArrayRef {
+        use arrow_array::{Array, MapArray, StringViewArray, StructArray};
+        match column.data_type() {
+            DataType::Utf8 => Arc::new(StringViewArray::from_iter(
+                column
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .unwrap()
+                    .iter(),
+            )),
+            DataType::Map(_, sorted) => {
+                let map = column.as_any().downcast_ref::<MapArray>().unwrap();
+                let entries = map.entries();
+                let keys = to_string_views(entries.column(0));
+                let values = to_string_views(entries.column(1));
+                let fields = vec![
+                    ArrowField::new("key", keys.data_type().clone(), false),
+                    ArrowField::new("value", values.data_type().clone(), true),
+                ];
+                let entries = StructArray::new(fields.clone().into(), vec![keys, values], None);
+                let entries_field = Arc::new(ArrowField::new(
+                    "entries",
+                    DataType::Struct(fields.into()),
+                    false,
+                ));
+                Arc::new(
+                    MapArray::try_new(
+                        entries_field,
+                        map.offsets().clone(),
+                        entries,
+                        map.nulls().cloned(),
+                        *sorted,
+                    )
+                    .unwrap(),
+                )
+            }
+            _ => column.clone(),
+        }
     }
 
     #[test]

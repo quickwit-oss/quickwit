@@ -106,7 +106,7 @@ pub struct ParquetSource {
 }
 
 /// Experimental: `QW_PARQUET_ARROW_DOCS=true` builds documents straight from Arrow columns.
-fn arrow_docs_enabled() -> bool {
+pub(super) fn arrow_docs_enabled() -> bool {
     quickwit_common::get_bool_from_env("QW_PARQUET_ARROW_DOCS", false)
 }
 
