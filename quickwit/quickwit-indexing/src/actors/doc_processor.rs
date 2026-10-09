@@ -659,8 +659,10 @@ impl DocProcessor {
         // Rows the builder cannot convert go through the JSON path, which also reports errors.
         let mut json_rows: Vec<usize> = Vec::new();
         if let Some(builder) = self.arrow_doc_builder(&schema) {
+            // Decoded Arrow size per row: a good first guess for the document buffer.
+            let doc_capacity = batch.get_array_memory_size() / batch.num_rows().max(1) + 64;
             for row in 0..batch.num_rows() {
-                match self.process_arrow_row(&builder, batch, row) {
+                match self.process_arrow_row(&builder, batch, row, doc_capacity) {
                     Some(processed_doc) => {
                         self.counters.record_valid(processed_doc.num_bytes as u64);
                         processed_docs.push(processed_doc);
@@ -686,8 +688,8 @@ impl DocProcessor {
         builder: &quickwit_doc_mapper::ArrowDocBuilder,
         batch: &arrow_array::RecordBatch,
         row: usize,
+        doc_capacity: usize,
     ) -> Option<ProcessedDoc> {
-        let num_bytes = builder.estimate_num_bytes(batch, row);
         let fingerprint_opt = match &self.fingerprinter_opt {
             Some(fingerprinter) => {
                 let json_row = builder.json_row(batch, row)?;
@@ -695,7 +697,10 @@ impl DocProcessor {
             }
             None => None,
         };
-        let doc = builder.build_doc(batch, row, num_bytes + 256)?;
+        let doc = builder.build_doc(batch, row, doc_capacity)?;
+        // The compact document holds every value once: its size tracks the JSON size (~0.9x on
+        // logs) and costs nothing to compute.
+        let num_bytes = doc.node_data.len();
         // A missing timestamp is an error: let the JSON path report it.
         let timestamp_opt = self.extract_timestamp(&doc).ok()?;
         Some(ProcessedDoc {
