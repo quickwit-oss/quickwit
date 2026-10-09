@@ -406,7 +406,7 @@ pub mod busy_detector {
 
     fn emit_debug(delta: u64, now: u64) {
         if NEXT_DEBUG_TIMESTAMP
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next_debug| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |next_debug| {
                 if next_debug < now {
                     Some(now + DEBUG_SUPPRESSION_MICROS)
                 } else {

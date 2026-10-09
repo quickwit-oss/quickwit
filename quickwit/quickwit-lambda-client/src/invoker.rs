@@ -66,16 +66,22 @@ impl From<SearchError> for LambdaInvokeError {
     }
 }
 
+/// Parses the `Retry-After` value (in seconds) returned by Lambda. Returns `None` if the value is
+/// missing, malformed, non-finite, or not positive. The result is capped at `MAX_RETRY_AFTER`.
+fn parse_retry_after(raw_opt: Option<&str>) -> Option<Duration> {
+    let secs: f64 = raw_opt?.parse().ok()?;
+    if !secs.is_finite() || secs <= 0.0 {
+        return None;
+    }
+    Some(Duration::from_secs_f64(secs).min(MAX_RETRY_AFTER))
+}
+
 fn invoke_error_to_lambda_error(error: SdkError<InvokeError>) -> LambdaInvokeError {
     if let SdkError::ServiceError(ref service_error) = error {
         match service_error.err() {
             InvokeError::TooManyRequestsException(exc) => {
-                let retry_after = exc
-                    .retry_after_seconds()
-                    .and_then(|raw| raw.parse::<f64>().ok())
-                    .filter(|secs| secs.is_finite() && *secs > 0.0)
-                    .map(|secs| Duration::from_secs_f64(secs).min(MAX_RETRY_AFTER));
-                return LambdaInvokeError::RateLimited(retry_after);
+                let retry_after_opt = parse_retry_after(exc.retry_after_seconds());
+                return LambdaInvokeError::RateLimited(retry_after_opt);
             }
             InvokeError::EniLimitReachedException(_)
             | InvokeError::SubnetIpAddressLimitReachedException(_)

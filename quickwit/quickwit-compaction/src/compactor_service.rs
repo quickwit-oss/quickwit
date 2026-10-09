@@ -204,7 +204,12 @@ impl CompactorService {
         // Completed/Failed pipelines so their scratch directories and actor
         // handles are released.
         for slot in &mut self.pipelines {
-            slot.take_if(|p| p.status().is_terminal());
+            let Some(pipeline) = slot else {
+                continue;
+            };
+            if pipeline.status().is_terminal() {
+                slot.take();
+            }
         }
         for assignment in assignments {
             let task_id = assignment.task_id.clone();

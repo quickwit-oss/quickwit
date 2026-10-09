@@ -358,13 +358,10 @@ fn msg_id_to_position(msg: &MessageIdData) -> Position {
         msg.batch_index
             .map(|v| format!("{v:010}"))
             .unwrap_or_default(),
-        msg.partition
-            .and_then(|v| if v < 0 {
-                None
-            } else {
-                Some(format!("{v:010}"))
-            })
-            .unwrap_or_default(),
+        match msg.partition {
+            Some(partition) if partition >= 0 => format!("{partition:010}"),
+            _ => String::new(),
+        },
         msg.batch_size
             .map(|v| format!("{v:010}"))
             .unwrap_or_default(),

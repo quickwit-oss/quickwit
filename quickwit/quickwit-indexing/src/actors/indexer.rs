@@ -1350,10 +1350,7 @@ mod tests {
         let mut bodies = Vec::new();
         for doc_id in 0..5 {
             let doc: TantivyDocument = searcher.doc(DocAddress::new(0, doc_id))?;
-            let body = doc
-                .get_first(body_field)
-                .and_then(|value| value.as_str())
-                .unwrap();
+            let body = doc.get_first(body_field).unwrap().as_str().unwrap();
             bodies.push(body.to_string());
         }
         assert_eq!(bodies, ["first", "fourth", "fifth", "second", "third"]);

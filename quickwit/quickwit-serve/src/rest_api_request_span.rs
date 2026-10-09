@@ -22,7 +22,8 @@ struct HeaderMap<'a>(&'a http::HeaderMap);
 
 impl Extractor for HeaderMap<'_> {
     fn get(&self, key: &str) -> Option<&str> {
-        self.0.get(key).and_then(|metadata| metadata.to_str().ok())
+        let metadata = self.0.get(key)?;
+        metadata.to_str().ok()
     }
 
     fn keys(&self) -> Vec<&str> {

@@ -184,11 +184,10 @@ impl RegexExtractEqPlan {
         let Ok(value) = std::str::from_utf8(value_bytes) else {
             return false;
         };
-        let Some(capture) = self
-            .extract_regex
-            .captures(value)
-            .and_then(|captures| captures.get(1))
-        else {
+        let Some(captures) = self.extract_regex.captures(value) else {
+            return false;
+        };
+        let Some(capture) = captures.get(1) else {
             return false;
         };
         capture.as_str() == self.literal

@@ -102,11 +102,10 @@ impl SortByValue {
                     Some(SortValue::U64(number))
                 } else if let Some(number) = number.as_i64() {
                     Some(SortValue::I64(number))
-                } else if let Some(number) = number.as_f64() {
-                    Some(SortValue::F64(number))
                 } else {
-                    // this should never happen as we don't emit such number ourselves
-                    return None;
+                    // `None` should never happen as we don't emit such number ourselves.
+                    let number = number.as_f64()?;
+                    Some(SortValue::F64(number))
                 }
             }
             // Strings that can be converted to a number are accepted.

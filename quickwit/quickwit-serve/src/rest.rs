@@ -802,7 +802,11 @@ mod tests {
 
             let resp = layer.call(Request::new(())).await.unwrap();
             let headers = resp.headers();
-            let expected_origin = wildcard.then(|| HeaderValue::from_static("*"));
+            let expected_origin = if wildcard {
+                Some(HeaderValue::from_static("*"))
+            } else {
+                None
+            };
             assert_eq!(
                 headers.get("Access-Control-Allow-Origin"),
                 expected_origin.as_ref()

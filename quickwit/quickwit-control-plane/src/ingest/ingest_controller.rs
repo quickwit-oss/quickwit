@@ -27,7 +27,7 @@ use itertools::{Itertools as _, MinMaxResult};
 use quickwit_actors::Mailbox;
 use quickwit_common::Progress;
 use quickwit_common::pretty::PrettySample;
-use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
+use quickwit_ingest::{IngesterPool, LocalShardsUpdate, ingester_availability_zone};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, GetOrCreateOpenShardsFailureReason,
     GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
@@ -266,11 +266,11 @@ fn match_shards_to_close(
         for (source_uid, &num_opened) in num_opened_by_source {
             for num_matched in 0..num_opened {
                 let Some(position) = shards_to_rebalance.iter().position(|shard| {
-                    shard.source_uid() == *source_uid
-                        && ingester_pool
-                            .get(shard.ingester_id.as_str())
-                            .and_then(|ingester| ingester.availability_zone.clone())
-                            == *original_zone
+                    if shard.source_uid() != *source_uid {
+                        return false;
+                    }
+                    ingester_availability_zone(ingester_pool, shard.ingester_id.as_str())
+                        == *original_zone
                 }) else {
                     // This would only happen if the ingester pool changed underneath after shards
                     // were opened, and is unlikely, but it is possible.
@@ -1144,12 +1144,10 @@ impl IngestController {
         let mut replacement_counts_by_zone: HashMap<Option<AvailabilityZone>, SourceShardCount> =
             HashMap::new();
         for shard in &shards_to_rebalance {
-            let zone = self
-                .ingester_pool
-                .get(shard.ingester_id.as_str())
-                .and_then(|ingester| ingester.availability_zone.clone());
+            let zone_opt =
+                ingester_availability_zone(&self.ingester_pool, shard.ingester_id.as_str());
             *replacement_counts_by_zone
-                .entry(zone)
+                .entry(zone_opt)
                 .or_default()
                 .entry(shard.source_uid())
                 .or_default() += 1;

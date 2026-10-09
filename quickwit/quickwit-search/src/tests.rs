@@ -2638,7 +2638,8 @@ async fn test_time_bounded_query_populates_and_reuses_complete_predicate_cache()
     let first_input_memory_bytes = first_response
         .resource_stats
         .as_ref()
-        .and_then(|stats| stats.split_resources_sum)
+        .expect("the split should report resource stats")
+        .split_resources_sum
         .expect("the split should report resource stats")
         .input_memory_bytes;
 
@@ -2669,7 +2670,8 @@ async fn test_time_bounded_query_populates_and_reuses_complete_predicate_cache()
     let full_split_input_memory_bytes = full_split_response
         .resource_stats
         .as_ref()
-        .and_then(|stats| stats.split_resources_sum)
+        .expect("the split should report resource stats")
+        .split_resources_sum
         .expect("the split should report resource stats")
         .input_memory_bytes;
     assert!(

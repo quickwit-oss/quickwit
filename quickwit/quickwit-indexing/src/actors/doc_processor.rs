@@ -455,12 +455,15 @@ impl DocProcessor {
         let Some(timestamp_field) = self.timestamp_field_opt else {
             return Ok(None);
         };
-        let timestamp = doc
-            .get_first(timestamp_field)
-            .and_then(|val| val.as_datetime())
-            .ok_or(DocProcessorError::from(DocParsingError::RequiredField(
+        let timestamp_opt = match doc.get_first(timestamp_field) {
+            Some(value) => value.as_datetime(),
+            None => None,
+        };
+        let Some(timestamp) = timestamp_opt else {
+            return Err(DocProcessorError::from(DocParsingError::RequiredField(
                 "timestamp field is required".to_string(),
-            )))?;
+            )));
+        };
         Ok(Some(timestamp))
     }
 

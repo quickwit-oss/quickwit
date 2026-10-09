@@ -181,12 +181,14 @@ impl SplitCliCommand {
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
-        let offset = matches
-            .remove_one::<String>("offset")
-            .and_then(|s| s.parse::<usize>().ok());
-        let limit = matches
-            .remove_one::<String>("limit")
-            .and_then(|s| s.parse::<usize>().ok());
+        let offset_opt = match matches.remove_one::<String>("offset") {
+            Some(value) => value.parse::<usize>().ok(),
+            None => None,
+        };
+        let limit_opt = match matches.remove_one::<String>("limit") {
+            Some(value) => value.parse::<usize>().ok(),
+            None => None,
+        };
         let split_states = matches
             .remove_many::<String>("states")
             .map(|values| {
@@ -228,8 +230,8 @@ impl SplitCliCommand {
         Ok(Self::List(ListSplitArgs {
             client_args,
             index_id,
-            offset,
-            limit,
+            offset: offset_opt,
+            limit: limit_opt,
             split_states,
             start_date,
             end_date,

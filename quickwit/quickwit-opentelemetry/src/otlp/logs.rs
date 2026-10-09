@@ -446,7 +446,10 @@ fn parse_otlp_logs(request: ExportLogsServiceRequest) -> Result<Vec<LogRecord>, 
                     None
                 };
                 let severity_number = log_record.severity_number;
-                let body = log_record.body.and_then(parse_log_record_body);
+                let body_opt = match log_record.body {
+                    Some(body) => parse_log_record_body(body),
+                    None => None,
+                };
                 let attributes = extract_attributes(log_record.attributes);
                 let dropped_attributes_count = log_record.dropped_attributes_count;
 
@@ -456,7 +459,7 @@ fn parse_otlp_logs(request: ExportLogsServiceRequest) -> Result<Vec<LogRecord>, 
                     service_name: service_name.clone(),
                     severity_text,
                     severity_number,
-                    body,
+                    body: body_opt,
                     attributes,
                     trace_id,
                     span_id,

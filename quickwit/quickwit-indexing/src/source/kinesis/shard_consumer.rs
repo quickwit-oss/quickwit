@@ -334,14 +334,14 @@ mod tests {
             &messages[1],
             ShardConsumerMessage::ShardEOF(shard_id) if *shard_id == shard_id_0
         ));
-        let current_sequence_number = sequence_numbers
-            .get(&0)
-            .and_then(|per_shard_sequence_numbers| per_shard_sequence_numbers.last())
-            .cloned();
+        let current_sequence_number_opt = match sequence_numbers.get(&0) {
+            Some(per_shard_sequence_numbers) => per_shard_sequence_numbers.last().cloned(),
+            None => None,
+        };
         let expected_state = json!({
             "stream_name": stream_name,
             "shard_id": shard_id_0,
-            "current_sequence_number": current_sequence_number,
+            "current_sequence_number": current_sequence_number_opt,
             "lag_millis": 0,
             "num_bytes_processed": 20,
             "num_records_processed": 2,
@@ -366,14 +366,14 @@ mod tests {
         )
         .await?;
         let shard_id_0 = make_shard_id(0);
-        let from_sequence_number_exclusive = sequence_numbers
-            .get(&0)
-            .and_then(|sequence_numbers| sequence_numbers.first())
-            .cloned();
+        let from_sequence_number_exclusive_opt = match sequence_numbers.get(&0) {
+            Some(sequence_numbers) => sequence_numbers.first().cloned(),
+            None => None,
+        };
         let shard_consumer = ShardConsumer::new(
             stream_name.clone(),
             shard_id_0.clone(),
-            from_sequence_number_exclusive,
+            from_sequence_number_exclusive_opt,
             true,
             kinesis_client.clone(),
             sink_tx,
@@ -394,14 +394,14 @@ mod tests {
             &messages[1],
             ShardConsumerMessage::ShardEOF(shard_id) if *shard_id == shard_id_0
         ));
-        let current_sequence_number = sequence_numbers
-            .get(&0)
-            .and_then(|per_shard_sequence_numbers| per_shard_sequence_numbers.last())
-            .cloned();
+        let current_sequence_number_opt = match sequence_numbers.get(&0) {
+            Some(per_shard_sequence_numbers) => per_shard_sequence_numbers.last().cloned(),
+            None => None,
+        };
         let expected_state = json!({
             "stream_name": stream_name,
             "shard_id": shard_id_0,
-            "current_sequence_number": current_sequence_number,
+            "current_sequence_number": current_sequence_number_opt,
             "lag_millis": 0,
             "num_bytes_processed": 10,
             "num_records_processed": 1,

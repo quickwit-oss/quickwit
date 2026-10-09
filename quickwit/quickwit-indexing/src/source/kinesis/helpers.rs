@@ -78,10 +78,8 @@ pub(crate) mod tests {
     }
 
     pub fn parse_shard_id<S: AsRef<str>>(shard_id: S) -> Option<usize> {
-        shard_id
-            .as_ref()
-            .strip_prefix("shardId-")
-            .and_then(|shard_id| shard_id.parse::<usize>().ok())
+        let shard_id = shard_id.as_ref().strip_prefix("shardId-")?;
+        shard_id.parse::<usize>().ok()
     }
 
     pub async fn put_records_into_shards<I>(
@@ -123,8 +121,9 @@ pub(crate) mod tests {
         let mut sequence_numbers = HashMap::new();
         for record in response.records {
             if let Some(sequence_number) = record.sequence_number {
+                let shard_id = parse_shard_id(record.shard_id.unwrap()).unwrap();
                 sequence_numbers
-                    .entry(record.shard_id.and_then(parse_shard_id).unwrap())
+                    .entry(shard_id)
                     .or_insert_with(Vec::new)
                     .push(sequence_number);
             } else {

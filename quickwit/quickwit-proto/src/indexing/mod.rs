@@ -137,7 +137,7 @@ impl IndexingPipelineId {
 
 impl Display for IndexingPipelineId {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}:{}", self.index_uid, &self.source_id)
+        write!(f, "{}:{}", self.index_uid, self.source_id)
     }
 }
 
@@ -153,13 +153,13 @@ pub struct MergePipelineId {
 
 impl Display for MergePipelineId {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "merge:{}:{}", self.index_uid, &self.source_id)
+        write!(f, "merge:{}:{}", self.index_uid, self.source_id)
     }
 }
 
 impl Display for IndexingTask {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}:{}", self.index_uid(), &self.source_id)
+        write!(f, "{}:{}", self.index_uid(), self.source_id)
     }
 }
 

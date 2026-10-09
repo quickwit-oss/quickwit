@@ -99,9 +99,8 @@ impl<K: Hash + Eq + Clone, V: Clone> AsyncDebouncer<K, V> {
 
         // A stale entry (left behind by a cancelled future) fails to upgrade and is simply
         // overwritten by the insert below.
-        if let Some(fut) = debouncing_cache_guard
-            .get(&key)
-            .and_then(WeakShared::upgrade)
+        if let Some(weak_future) = debouncing_cache_guard.get(&key)
+            && let Some(fut) = weak_future.upgrade()
         {
             return fut;
         }

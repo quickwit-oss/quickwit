@@ -22,7 +22,7 @@ use quickwit_proto::types::{AvailabilityZone, IndexId, IndexUid, NodeId, SourceI
 use rand::rng;
 use rand::seq::IndexedRandom;
 
-use crate::IngesterPool;
+use crate::{IngesterPool, ingester_availability_zone};
 
 /// A single ingester node's routing-relevant data for a specific (index, source) pair.
 /// Each entry is self-describing: it carries its own node_id, index_uid, and source_id
@@ -134,10 +134,8 @@ impl RoutingEntry {
             .values()
             .filter(|node| is_ingester_eligible(node, ingester_pool, unavailable_ingesters))
             .partition(|node| {
-                let node_az = ingester_pool
-                    .get(&node.node_id)
-                    .and_then(|h| h.availability_zone.clone());
-                node_az == *self_availability_zone
+                ingester_availability_zone(ingester_pool, node.node_id.as_str())
+                    == *self_availability_zone
             });
 
         pick_from(local_ingesters).or_else(|| pick_from(remote_ingesters))
@@ -182,10 +180,8 @@ impl RoutingTable {
         let Some(self_az) = &self.self_availability_zone else {
             return "az_unaware";
         };
-        let target_az = ingester_pool
-            .get(target_node_id)
-            .and_then(|entry| entry.availability_zone.clone());
-        match target_az {
+        let target_az_opt = ingester_availability_zone(ingester_pool, target_node_id.as_str());
+        match target_az_opt {
             Some(ref az) if az == self_az => "same_az",
             Some(_) => "cross_az",
             None => "az_unaware",
@@ -199,9 +195,7 @@ impl RoutingTable {
         let mut per_index: HashMap<IndexId, Vec<serde_json::Value>> = HashMap::new();
         for ((index_id, source_id), entry) in &self.table {
             for (node_id, node) in &entry.nodes {
-                let az = ingester_pool
-                    .get(node_id)
-                    .and_then(|h| h.availability_zone.clone());
+                let az_opt = ingester_availability_zone(ingester_pool, node_id.as_str());
                 per_index
                     .entry(index_id.clone())
                     .or_default()
@@ -210,7 +204,7 @@ impl RoutingTable {
                         "node_id": node_id,
                         "capacity_score": node.capacity_score,
                         "open_shard_count": node.open_shard_count,
-                        "availability_zone": az,
+                        "availability_zone": az_opt,
                     }));
             }
         }

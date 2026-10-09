@@ -42,7 +42,7 @@ impl fmt::Debug for StorageDirectoryFileHandle {
         write!(
             f,
             "StorageDirectoryFileHandle({:?}, dir={:?})",
-            &self.path, self.storage_directory
+            self.path, self.storage_directory
         )
     }
 }

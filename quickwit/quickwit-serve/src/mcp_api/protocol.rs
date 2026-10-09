@@ -61,8 +61,8 @@ pub(super) async fn handle(
     {
         return invalid_request();
     }
-    let method = message.get("method");
-    if let Some(method) = method
+    let method_opt = message.get("method");
+    if let Some(method) = method_opt
         && !method.is_string()
     {
         return invalid_request();
@@ -72,15 +72,18 @@ pub(super) async fn handle(
     {
         return invalid_request();
     }
-    let method = method.and_then(Value::as_str);
-    let is_response = method.is_none()
+    let method_opt = match method_opt {
+        Some(value) => value.as_str(),
+        None => None,
+    };
+    let is_response = method_opt.is_none()
         && id.is_some()
         && message.get("params").is_none()
         && (message.get("result").is_some() ^ message.get("error").is_some());
-    if method.is_none() && !is_response {
+    if method_opt.is_none() && !is_response {
         return invalid_request();
     }
-    if method.is_some() && (message.get("result").is_some() || message.get("error").is_some()) {
+    if method_opt.is_some() && (message.get("result").is_some() || message.get("error").is_some()) {
         return invalid_request();
     }
     if is_response
@@ -91,7 +94,8 @@ pub(super) async fn handle(
     }
     // Without a header, the transport specification's legacy default is 2025-03-26, which is not
     // supported here. Initialization alone is exempt so clients can negotiate the version.
-    if version != Some(PROTOCOL_VERSION) && !(version.is_none() && method == Some("initialize")) {
+    if version != Some(PROTOCOL_VERSION) && !(version.is_none() && method_opt == Some("initialize"))
+    {
         return (
             StatusCode::BAD_REQUEST,
             Some(error(
@@ -108,7 +112,7 @@ pub(super) async fn handle(
     }
     let id = id.cloned().expect("request ID was validated");
     let params = &message["params"];
-    let result = match method.expect("request method was validated") {
+    let result = match method_opt.expect("request method was validated") {
         "initialize" => {
             if !params["protocolVersion"].is_string()
                 || !params["capabilities"].is_object()

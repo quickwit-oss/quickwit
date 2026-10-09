@@ -120,23 +120,25 @@ fn value_to_float(
     value: TantivyValue,
     numeric_options: &QuickwitNumericOptions,
 ) -> Result<JsonValue, TantivyValue> {
-    match &value {
+    let number_opt: Option<f64> = match &value {
         TantivyValue::Str(s) => s.parse().ok(),
         TantivyValue::U64(number) => Some(*number as f64),
         TantivyValue::I64(number) => Some(*number as f64),
         TantivyValue::F64(number) => Some(*number),
         TantivyValue::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
         _ => None,
-    }
-    .and_then(|f64_val| f64_val.to_json(numeric_options.output_format))
-    .ok_or(value)
+    };
+    let Some(number) = number_opt else {
+        return Err(value);
+    };
+    number.to_json(numeric_options.output_format).ok_or(value)
 }
 
 fn value_to_u64(
     value: TantivyValue,
     numeric_options: &QuickwitNumericOptions,
 ) -> Result<JsonValue, TantivyValue> {
-    match &value {
+    let number_opt: Option<u64> = match &value {
         TantivyValue::Str(s) => s.parse().ok(),
         TantivyValue::U64(number) => Some(*number),
         TantivyValue::I64(number) => (*number).try_into().ok(),
@@ -149,16 +151,18 @@ fn value_to_u64(
         }
         TantivyValue::Bool(b) => Some(*b as u64),
         _ => None,
-    }
-    .and_then(|u64_val| u64_val.to_json(numeric_options.output_format))
-    .ok_or(value)
+    };
+    let Some(number) = number_opt else {
+        return Err(value);
+    };
+    number.to_json(numeric_options.output_format).ok_or(value)
 }
 
 fn value_to_i64(
     value: TantivyValue,
     numeric_options: &QuickwitNumericOptions,
 ) -> Result<JsonValue, TantivyValue> {
-    match &value {
+    let number_opt: Option<i64> = match &value {
         TantivyValue::Str(s) => s.parse().ok(),
         TantivyValue::U64(number) => (*number).try_into().ok(),
         TantivyValue::I64(number) => Some(*number),
@@ -171,9 +175,11 @@ fn value_to_i64(
         }
         TantivyValue::Bool(b) => Some(*b as i64),
         _ => None,
-    }
-    .and_then(|u64_val| u64_val.to_json(numeric_options.output_format))
-    .ok_or(value)
+    };
+    let Some(number) = number_opt else {
+        return Err(value);
+    };
+    number.to_json(numeric_options.output_format).ok_or(value)
 }
 
 /// Transforms a tantivy object into a serde_json one, without cloning strings.

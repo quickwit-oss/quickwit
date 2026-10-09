@@ -405,9 +405,10 @@ fn convert_scheduling_solution_to_physical_plan(
         .iter()
         .zip(&mut indexer_assignments)
     {
-        let previous_tasks_for_indexer = previous_plan_opt
-            .and_then(|previous_plan| previous_plan.indexer(indexer_id))
-            .unwrap_or(&[]);
+        let previous_tasks_for_indexer = match previous_plan_opt {
+            Some(previous_plan) => previous_plan.indexer(indexer_id).unwrap_or(&[]),
+            None => &[],
+        };
         // First we attempt to recycle existing pipelines.
         let new_plan_indexing_tasks_for_indexer: Vec<IndexingTask> =
             convert_scheduling_solution_to_physical_plan_single_node(

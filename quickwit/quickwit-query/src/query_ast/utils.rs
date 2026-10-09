@@ -156,7 +156,13 @@ fn compute_query_with_field(
                 .set_tokenizer(RAW_TOKENIZER_NAME);
             let text_field_indexing = text_options
                 .get_indexing_options()
-                .or_else(|| text_options.is_fast().then_some(&columnar_opt))
+                .or_else(|| {
+                    if text_options.is_fast() {
+                        Some(&columnar_opt)
+                    } else {
+                        None
+                    }
+                })
                 .ok_or_else(|| {
                     InvalidQuery::SchemaError(format!(
                         "field {} is not full-text searchable",

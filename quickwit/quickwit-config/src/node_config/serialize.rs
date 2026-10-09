@@ -261,17 +261,17 @@ impl NodeConfigBuilder {
             .node_id
             .resolve(env_vars)
             .map(|node_id_str| NodeId::from_str(&node_id_str))?;
-        let availability_zone =
-            self.availability_zone
-                .resolve_optional(env_vars)?
-                .and_then(|availability_zone| {
-                    let availability_zone = availability_zone.trim();
-                    if availability_zone.is_empty() {
-                        None
-                    } else {
-                        Some(AvailabilityZone::from(availability_zone))
-                    }
-                });
+        let availability_zone_opt = match self.availability_zone.resolve_optional(env_vars)? {
+            Some(availability_zone) => {
+                let availability_zone = availability_zone.trim();
+                if availability_zone.is_empty() {
+                    None
+                } else {
+                    Some(AvailabilityZone::from(availability_zone))
+                }
+            }
+            None => None,
+        };
 
         let enable_standalone_compactors = self.enable_standalone_compactors.resolve(env_vars)?;
         let docs_clustering_config =
@@ -382,7 +382,7 @@ impl NodeConfigBuilder {
             cluster_id: self.cluster_id.resolve(env_vars)?,
             extra_cluster_ids: self.extra_cluster_ids.resolve(env_vars)?.0,
             node_id,
-            availability_zone,
+            availability_zone: availability_zone_opt,
             enabled_services: resolved_enabled_services,
             gossip_listen_addr,
             grpc_listen_addr,

@@ -52,8 +52,10 @@ pub enum IndexServiceError {
     Storage(#[from] StorageResolverError),
     #[error("metastore error `{0}`")]
     Metastore(#[from] MetastoreError),
+    // Boxed because `DeleteSplitsError` is large and would bloat every `Result` carrying this
+    // error.
     #[error("split deletion error `{0}`")]
-    SplitDeletion(#[from] DeleteSplitsError),
+    SplitDeletion(Box<DeleteSplitsError>),
     #[error("invalid config: {0:#}")]
     InvalidConfig(anyhow::Error),
     #[error("invalid identifier: {0}")]
@@ -62,6 +64,12 @@ pub enum IndexServiceError {
     OperationNotAllowed(String),
     #[error("internal error: {0}")]
     Internal(String),
+}
+
+impl From<DeleteSplitsError> for IndexServiceError {
+    fn from(delete_splits_error: DeleteSplitsError) -> Self {
+        Self::SplitDeletion(Box::new(delete_splits_error))
+    }
 }
 
 impl ServiceError for IndexServiceError {

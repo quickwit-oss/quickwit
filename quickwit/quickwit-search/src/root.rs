@@ -1004,19 +1004,19 @@ fn build_hit_with_position(
         partial_hit_ref.segment_ord,
         partial_hit_ref.doc_id,
     );
-    let sort_value_opt = partial_hit_ref
-        .sort_value
-        .as_mut()
-        .and_then(|sort_field| sort_field.sort_value.as_mut());
+    let sort_value_opt = match partial_hit_ref.sort_value.as_mut() {
+        Some(sort_field) => sort_field.sort_value.as_mut(),
+        None => None,
+    };
     if let Some(sort_by_value) = sort_value_opt
         && let Some(output_datetime_format) = &sort_field_1_datetime_format_opt
     {
         convert_sort_datetime_value(sort_by_value, *output_datetime_format)?;
     }
-    let sort_value_2_opt = partial_hit_ref
-        .sort_value2
-        .as_mut()
-        .and_then(|sort_field| sort_field.sort_value.as_mut());
+    let sort_value_2_opt = match partial_hit_ref.sort_value2.as_mut() {
+        Some(sort_field) => sort_field.sort_value.as_mut(),
+        None => None,
+    };
     if let Some(sort_by_value) = sort_value_2_opt
         && let Some(output_datetime_format) = &sort_field_2_datetime_format_opt
     {

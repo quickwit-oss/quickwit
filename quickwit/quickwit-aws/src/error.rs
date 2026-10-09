@@ -38,10 +38,9 @@ pub fn retry_after_from_sdk_error<E>(error: &SdkError<E>) -> Option<std::time::D
         SdkError::ResponseError(e) => e.raw().headers(),
         _ => return None,
     };
-    headers
-        .get("x-amz-retry-after")
-        .and_then(|v| v.parse::<u64>().ok())
-        .map(std::time::Duration::from_millis)
+    let retry_after = headers.get("x-amz-retry-after")?;
+    let retry_after_millis = retry_after.parse::<u64>().ok()?;
+    Some(std::time::Duration::from_millis(retry_after_millis))
 }
 
 impl<E> AwsRetryable for SdkError<E>

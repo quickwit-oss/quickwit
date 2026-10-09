@@ -16,7 +16,6 @@ mod download_task;
 mod split_table;
 
 use std::collections::BTreeMap;
-use std::ffi::OsStr;
 use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -67,7 +66,10 @@ impl SearchSplitCache {
             if meta.is_dir() {
                 continue;
             }
-            let ext = path.extension().and_then(OsStr::to_str).unwrap_or("");
+            let ext = match path.extension() {
+                Some(extension) => extension.to_str().unwrap_or(""),
+                None => "",
+            };
             match ext {
                 "temp" => {
                     // This file is a temporary file that was being downloaded, when Quickwit was

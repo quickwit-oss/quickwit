@@ -148,7 +148,7 @@ impl SplitsUpdateSender {
                 {
                     bail!(
                         "failed to send upload split `{:?}`. the publisher is probably dead",
-                        &publisher_message
+                        publisher_message
                     );
                 }
             }

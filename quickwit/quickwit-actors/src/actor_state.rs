@@ -77,7 +77,7 @@ impl AtomicState {
     pub(crate) fn pause(&self) {
         let _ = self
             .0
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |state| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |state| {
                 if ActorState::from(state).is_running() {
                     return Some(ActorState::Paused as u32);
                 }
