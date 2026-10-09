@@ -871,7 +871,11 @@ mod tests {
                     let const_query = query
                         .downcast_ref::<ConstQuery>()
                         .expect("query wasn't a ConstQuery");
-                    const_query.0.then_some(const_query.1)
+                    if const_query.0 {
+                        Some(const_query.1)
+                    } else {
+                        None
+                    }
                 }
             }
         }
@@ -927,10 +931,15 @@ mod tests {
                     // by convention, an empty query returns all match.
                     return Some(0);
                 }
-                self.should
+                if self
+                    .should
                     .iter()
                     .any(|sub_ast| sub_ast.evaluate_test().is_some())
-                    .then_some(should_score)
+                {
+                    Some(should_score)
+                } else {
+                    None
+                }
             }
         }
     }

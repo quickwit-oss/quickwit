@@ -88,9 +88,12 @@ impl NodeStateExt for NodeState {
     }
 
     fn ingester_status(&self) -> IngesterStatus {
-        self.get(INGESTER_STATUS_KEY)
-            .and_then(IngesterStatus::from_json_str_name)
-            .unwrap_or(IngesterStatus::Ready)
+        match self.get(INGESTER_STATUS_KEY) {
+            Some(status) => {
+                IngesterStatus::from_json_str_name(status).unwrap_or(IngesterStatus::Ready)
+            }
+            None => IngesterStatus::Ready,
+        }
     }
 
     fn availability_zone(&self) -> Option<AvailabilityZone> {

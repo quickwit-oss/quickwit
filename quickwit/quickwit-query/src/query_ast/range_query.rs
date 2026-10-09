@@ -91,8 +91,8 @@ fn query_from_fast_val_range<T: FastValue>(
     )
 }
 
-fn get_normalized_text(normalizer: &mut Option<TextAnalyzer>, text: &str) -> String {
-    if let Some(normalizer) = normalizer {
+fn get_normalized_text(normalizer_opt: &mut Option<TextAnalyzer>, text: &str) -> String {
+    if let Some(normalizer) = normalizer_opt {
         let mut token_stream = normalizer.token_stream(text);
         let mut tokens = Vec::new();
         token_stream.process(&mut |token| {
@@ -123,22 +123,28 @@ impl BuildTantivyAst for RangeQuery {
         }
         Ok(match field_entry.field_type() {
             tantivy::schema::FieldType::Str(options) => {
-                let mut normalizer =
-                    options
-                        .get_fast_field_tokenizer_name()
-                        .and_then(|tokenizer_name| {
-                            context.tokenizer_manager.get_normalizer(tokenizer_name)
-                        });
+                let mut normalizer_opt = match options.get_fast_field_tokenizer_name() {
+                    Some(tokenizer_name) => {
+                        context.tokenizer_manager.get_normalizer(tokenizer_name)
+                    }
+                    None => None,
+                };
 
                 let (lower_bound, upper_bound) =
                     convert_bounds(&self.lower_bound, &self.upper_bound, field_entry.name())?;
 
                 FastFieldRangeQuery::new(
                     lower_bound.map(|text| {
-                        Term::from_field_text(field, &get_normalized_text(&mut normalizer, text))
+                        Term::from_field_text(
+                            field,
+                            &get_normalized_text(&mut normalizer_opt, text),
+                        )
                     }),
                     upper_bound.map(|text| {
-                        Term::from_field_text(field, &get_normalized_text(&mut normalizer, text))
+                        Term::from_field_text(
+                            field,
+                            &get_normalized_text(&mut normalizer_opt, text),
+                        )
                     }),
                 )
                 .into()
@@ -227,25 +233,25 @@ impl BuildTantivyAst for RangeQuery {
                 if let Some(range) = bounds_range_date {
                     sub_queries.push(query_from_fast_val_range(&empty_term, range).into());
                 }
-                let mut normalizer =
-                    options
-                        .get_fast_field_tokenizer_name()
-                        .and_then(|tokenizer_name| {
-                            context.tokenizer_manager.get_normalizer(tokenizer_name)
-                        });
+                let mut normalizer_opt = match options.get_fast_field_tokenizer_name() {
+                    Some(tokenizer_name) => {
+                        context.tokenizer_manager.get_normalizer(tokenizer_name)
+                    }
+                    None => None,
+                };
 
                 let bounds_range_str: Option<(Bound<&str>, Bound<&str>)> =
                     convert_bound(&self.lower_bound).zip(convert_bound(&self.upper_bound));
                 if let Some(range) = bounds_range_str {
                     let str_query = FastFieldRangeQuery::new(
                         range.0.map(|val| {
-                            let val = get_normalized_text(&mut normalizer, val);
+                            let val = get_normalized_text(&mut normalizer_opt, val);
                             let mut term = empty_term.clone();
                             term.append_type_and_str(&val);
                             term
                         }),
                         range.1.map(|val| {
-                            let val = get_normalized_text(&mut normalizer, val);
+                            let val = get_normalized_text(&mut normalizer_opt, val);
                             let mut term = empty_term.clone();
                             term.append_type_and_str(&val);
                             term

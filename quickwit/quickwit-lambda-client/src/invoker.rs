@@ -70,12 +70,13 @@ fn invoke_error_to_lambda_error(error: SdkError<InvokeError>) -> LambdaInvokeErr
     if let SdkError::ServiceError(ref service_error) = error {
         match service_error.err() {
             InvokeError::TooManyRequestsException(exc) => {
-                let retry_after = exc
-                    .retry_after_seconds()
-                    .and_then(|raw| raw.parse::<f64>().ok())
-                    .filter(|secs| secs.is_finite() && *secs > 0.0)
-                    .map(|secs| Duration::from_secs_f64(secs).min(MAX_RETRY_AFTER));
-                return LambdaInvokeError::RateLimited(retry_after);
+                let retry_after_opt = match exc.retry_after_seconds() {
+                    Some(raw) => raw.parse::<f64>().ok(),
+                    None => None,
+                }
+                .filter(|secs| secs.is_finite() && *secs > 0.0)
+                .map(|secs| Duration::from_secs_f64(secs).min(MAX_RETRY_AFTER));
+                return LambdaInvokeError::RateLimited(retry_after_opt);
             }
             InvokeError::EniLimitReachedException(_)
             | InvokeError::SubnetIpAddressLimitReachedException(_)

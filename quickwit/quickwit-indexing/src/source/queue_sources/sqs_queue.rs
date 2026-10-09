@@ -83,12 +83,15 @@ impl Queue for SqsQueue {
         let received_messages = receive_output.messages.unwrap_or_default();
         let mut resulting_raw_messages = Vec::with_capacity(received_messages.len());
         for received_message in received_messages {
-            let delivery_attempts: usize = received_message
-                .attributes
-                .as_ref()
-                .and_then(|attrs| attrs.get(&MessageSystemAttributeName::ApproximateReceiveCount))
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(0);
+            let delivery_attempts: usize = match received_message.attributes.as_ref() {
+                Some(attributes) => {
+                    match attributes.get(&MessageSystemAttributeName::ApproximateReceiveCount) {
+                        Some(count) => count.parse().unwrap_or(0),
+                        None => 0,
+                    }
+                }
+                None => 0,
+            };
             let ack_id = received_message
                 .receipt_handle
                 .context("missing receipt_handle in received message")?;

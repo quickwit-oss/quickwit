@@ -593,11 +593,14 @@ impl IndexingScheduler {
             // We don't want to block on a slow indexer so we apply this change asynchronously.
             // Retiring/decommissioning indexers are time-bound, so a slow or unreachable
             // draining node can't hold the notify guard. Ready indexers get no timeout.
-            let apply_deadline = matches!(
+            let apply_deadline = if matches!(
                 indexer.ingester_status,
                 IngesterStatus::Retiring | IngesterStatus::Decommissioning
-            )
-            .then_some(APPLY_INDEXING_PLAN_TIMEOUT);
+            ) {
+                Some(APPLY_INDEXING_PLAN_TIMEOUT)
+            } else {
+                None
+            };
 
             let notify_on_drop = notify_on_drop.clone();
             let indexing_plan_id = indexing_plan_id.clone();

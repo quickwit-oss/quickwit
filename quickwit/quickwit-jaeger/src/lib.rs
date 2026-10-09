@@ -218,12 +218,14 @@ impl JaegerService {
     ) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
         let min_start_secs = trace_query.start_time_min.map(|ts| ts.seconds);
         let max_start_secs = trace_query.start_time_max.map(|ts| ts.seconds);
-        let min_duration_millis = trace_query
-            .duration_min
-            .and_then(|d| to_duration_millis(&d));
-        let max_duration_millis = trace_query
-            .duration_max
-            .and_then(|d| to_duration_millis(&d));
+        let min_duration_millis_opt = match trace_query.duration_min {
+            Some(duration) => to_duration_millis(&duration),
+            None => None,
+        };
+        let max_duration_millis_opt = match trace_query.duration_max {
+            Some(duration) => to_duration_millis(&duration),
+            None => None,
+        };
 
         find_trace_ids_common(
             self.search_service.clone(),
@@ -232,8 +234,8 @@ impl JaegerService {
             trace_query.tags,
             min_start_secs,
             max_start_secs,
-            min_duration_millis,
-            max_duration_millis,
+            min_duration_millis_opt,
+            max_duration_millis_opt,
             trace_query.num_traces,
             index_id_patterns,
         )

@@ -833,25 +833,19 @@ impl SearchAfterSegment {
     ) -> Option<Self> {
         let search_after = search_after_opt?;
         let mut sort_value = None;
-        if let Some(search_after_sort_value) = search_after
-            .sort_value
-            .and_then(|sort_value| sort_value.sort_value)
+        if let Some(sort_field) = search_after.sort_value
+            && let Some(search_after_sort_value) = sort_field.sort_value
         {
-            if let Some(new_value) = score_extractor
-                .first
-                .convert_to_u64_ff_val(search_after_sort_value, sort_order1)
             {
+                let new_value = score_extractor
+                    .first
+                    .convert_to_u64_ff_val(search_after_sort_value, sort_order1)?;
                 sort_value = Some(new_value);
-            } else {
-                // Value is out of bounds, we ignore sort_value2 and disable the whole
-                // search_after
-                return None;
             }
         }
         let mut sort_value2 = None;
-        if let Some(search_after_sort_value) = search_after
-            .sort_value2
-            .and_then(|sort_value2| sort_value2.sort_value)
+        if let Some(sort_field) = search_after.sort_value2
+            && let Some(search_after_sort_value) = sort_field.sort_value
         {
             let extractor = score_extractor
                 .second

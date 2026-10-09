@@ -46,7 +46,7 @@ fn markdown_for_subcommand(
     let header_level = "#".repeat(level);
     println!("{header_level} {command_name}\n");
 
-    let subcommand_ext: Option<&Value> = {
+    let subcommand_ext_opt: Option<&Value> = {
         let mut val_opt: Option<&Value> = doc_extensions.get(command_group[0].to_string());
         for command in command_group
             .iter()
@@ -59,23 +59,38 @@ fn markdown_for_subcommand(
         }
         val_opt
     };
-    markdown_for_command_helper(subcommand, subcommand_ext, command_name, command_group);
+    markdown_for_command_helper(subcommand, subcommand_ext_opt, command_name, command_group);
 }
 
 fn markdown_for_command_helper(
     subcommand: &Command,
-    subcommand_ext: Option<&Value>,
+    subcommand_ext_opt: Option<&Value>,
     command_name: String,
     command_group: Vec<String>,
 ) {
-    let long_about_opt: Option<&str> =
-        subcommand_ext.and_then(|el| el.get("long_about").and_then(|el| el.as_str()));
+    let long_about_opt: Option<&str> = match subcommand_ext_opt {
+        Some(extension) => match extension.get("long_about") {
+            Some(value) => value.as_str(),
+            None => None,
+        },
+        None => None,
+    };
 
-    let note: Option<&str> =
-        subcommand_ext.and_then(|el| el.get("note").and_then(|el| el.as_str()));
+    let note_opt: Option<&str> = match subcommand_ext_opt {
+        Some(extension) => match extension.get("note") {
+            Some(value) => value.as_str(),
+            None => None,
+        },
+        None => None,
+    };
 
-    let examples_opt: Option<&Vec<Value>> =
-        subcommand_ext.and_then(|el| el.get("examples").and_then(|el| el.as_array()));
+    let examples_opt: Option<&Vec<Value>> = match subcommand_ext_opt {
+        Some(extension) => match extension.get("examples") {
+            Some(value) => value.as_array(),
+            None => None,
+        },
+        None => None,
+    };
 
     if let Some(about) = long_about_opt {
         if !about.trim().is_empty() {
@@ -87,7 +102,7 @@ fn markdown_for_command_helper(
         println!("{about}  ");
     }
 
-    if let Some(note) = note {
+    if let Some(note) = note_opt {
         println!(":::note");
         println!("{note}");
         println!(":::");

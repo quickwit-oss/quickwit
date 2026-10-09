@@ -104,22 +104,22 @@ const IDLE_SHARD_TIMEOUT_ENV_KEY: &str = "QW_IDLE_SHARD_TIMEOUT_SECS";
 const DEFAULT_IDLE_SHARD_TIMEOUT: Duration = Duration::from_mins(15);
 
 pub fn get_idle_shard_timeout() -> Duration {
-    env::var(IDLE_SHARD_TIMEOUT_ENV_KEY)
-        .ok()
-        .and_then(|idle_shard_timeout_str| {
-            if let Ok(idle_shard_timeout_secs) = idle_shard_timeout_str.parse::<u64>() {
-                info!("overriding idle shard timeout to {idle_shard_timeout_secs} seconds");
-                Some(idle_shard_timeout_secs)
-            } else {
-                error!(
-                    "failed to parse environment variable \
-                     `{IDLE_SHARD_TIMEOUT_ENV_KEY}={idle_shard_timeout_str}`"
-                );
-                None
-            }
-        })
-        .map(Duration::from_secs)
-        .unwrap_or(DEFAULT_IDLE_SHARD_TIMEOUT)
+    let Ok(idle_shard_timeout_str) = env::var(IDLE_SHARD_TIMEOUT_ENV_KEY) else {
+        return DEFAULT_IDLE_SHARD_TIMEOUT;
+    };
+    match idle_shard_timeout_str.parse::<u64>() {
+        Ok(idle_shard_timeout_secs) => {
+            info!("overriding idle shard timeout to {idle_shard_timeout_secs} seconds");
+            Duration::from_secs(idle_shard_timeout_secs)
+        }
+        Err(_) => {
+            error!(
+                "failed to parse environment variable \
+                 `{IDLE_SHARD_TIMEOUT_ENV_KEY}={idle_shard_timeout_str}`"
+            );
+            DEFAULT_IDLE_SHARD_TIMEOUT
+        }
+    }
 }
 
 const INGEST_ROUTER_BUFFER_SIZE_ENV_KEY: &str = "QW_INGEST_ROUTER_BUFFER_SIZE_BYTES";
@@ -127,21 +127,22 @@ const INGEST_ROUTER_BUFFER_SIZE_ENV_KEY: &str = "QW_INGEST_ROUTER_BUFFER_SIZE_BY
 const DEFAULT_INGEST_ROUTER_BUFFER_SIZE: ByteSize = ByteSize::mib(if cfg!(test) { 8 } else { 256 }); // 256 MiB
 
 pub(crate) fn get_ingest_router_buffer_size() -> ByteSize {
-    env::var(INGEST_ROUTER_BUFFER_SIZE_ENV_KEY)
-        .ok()
-        .and_then(|buffer_size_bytes_str| {
-            if let Ok(buffer_size) = buffer_size_bytes_str.parse::<ByteSize>() {
-                info!("overriding ingest router buffer size to {buffer_size}");
-                Some(buffer_size)
-            } else {
-                error!(
-                    "failed to parse environment variable \
-                     `{INGEST_ROUTER_BUFFER_SIZE_ENV_KEY}={buffer_size_bytes_str}`"
-                );
-                None
-            }
-        })
-        .unwrap_or(DEFAULT_INGEST_ROUTER_BUFFER_SIZE)
+    let Ok(buffer_size_bytes_str) = env::var(INGEST_ROUTER_BUFFER_SIZE_ENV_KEY) else {
+        return DEFAULT_INGEST_ROUTER_BUFFER_SIZE;
+    };
+    match buffer_size_bytes_str.parse::<ByteSize>() {
+        Ok(buffer_size) => {
+            info!("overriding ingest router buffer size to {buffer_size}");
+            buffer_size
+        }
+        Err(_) => {
+            error!(
+                "failed to parse environment variable \
+                 `{INGEST_ROUTER_BUFFER_SIZE_ENV_KEY}={buffer_size_bytes_str}`"
+            );
+            DEFAULT_INGEST_ROUTER_BUFFER_SIZE
+        }
+    }
 }
 
 /// Helper struct to build a [`DocBatchV2`]`.

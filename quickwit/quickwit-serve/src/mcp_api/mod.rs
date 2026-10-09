@@ -102,10 +102,10 @@ async fn validate_transport(
             "Only POST is supported",
         )));
     }
-    let content_type = headers
-        .get("content-type")
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or("");
+    let content_type = match headers.get("content-type") {
+        Some(value) => value.to_str().unwrap_or(""),
+        None => "",
+    };
     if !content_type
         .split(';')
         .next()
@@ -155,10 +155,7 @@ fn accepts(headers: &HeaderMap, media_type: &str) -> bool {
                     return true;
                 };
                 !name.eq_ignore_ascii_case("q")
-                    || value
-                        .trim()
-                        .parse::<f32>()
-                        .is_ok_and(|quality| quality > 0.0 && quality <= 1.0)
+                    || matches!(value.trim().parse::<f32>(), Ok(quality) if quality > 0.0 && quality <= 1.0)
             })
         })
     })
@@ -174,11 +171,12 @@ async fn handle_post(
             "Request body too large",
         ));
     }
-    let version = headers
-        .get("mcp-protocol-version")
-        .and_then(|value| value.to_str().ok());
-    let (status, body) = protocol::handle(&body, version, &context.tools).await;
-    let response = match body {
+    let version_opt = match headers.get("mcp-protocol-version") {
+        Some(value) => value.to_str().ok(),
+        None => None,
+    };
+    let (status, body_opt) = protocol::handle(&body, version_opt, &context.tools).await;
+    let response = match body_opt {
         Some(body) => warp::reply::with_status(warp::reply::json(&body), status).into_response(),
         None => status.into_response(),
     };

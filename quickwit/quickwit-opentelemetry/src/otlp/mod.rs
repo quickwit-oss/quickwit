@@ -97,10 +97,9 @@ pub(crate) fn extract_attributes(attributes: Vec<OtlpKeyValue>) -> HashMap<Strin
         if attribute.key.is_empty() {
             continue;
         }
-        if let Some(value) = attribute
-            .value
-            .and_then(|any_value| any_value.value)
-            .and_then(oltp_value_to_json_value)
+        if let Some(any_value) = attribute.value
+            && let Some(otlp_value) = any_value.value
+            && let Some(value) = oltp_value_to_json_value(otlp_value)
         {
             attrs.insert(attribute.key, value);
         }
@@ -128,10 +127,9 @@ fn oltp_value_to_json_value(value: OtlpValue) -> Option<JsonValue> {
             let mut map = serde_json::Map::with_capacity(key_values.values.len());
 
             for key_value in key_values.values {
-                if let Some(value) = key_value
-                    .value
-                    .and_then(|any_value| any_value.value)
-                    .and_then(oltp_value_to_json_value)
+                if let Some(any_value) = key_value.value
+                    && let Some(otlp_value) = any_value.value
+                    && let Some(value) = oltp_value_to_json_value(otlp_value)
                 {
                     map.insert(key_value.key, value);
                 }
@@ -147,15 +145,14 @@ fn oltp_value_to_json_value(value: OtlpValue) -> Option<JsonValue> {
 }
 
 pub(crate) fn parse_log_record_body(body: OtlpAnyValue) -> Option<JsonValue> {
-    body.value.and_then(oltp_value_to_json_value).map(|value| {
-        if value.is_string() {
-            let mut map = serde_json::Map::with_capacity(1);
-            map.insert("message".to_string(), value);
-            JsonValue::Object(map)
-        } else {
-            value
-        }
-    })
+    let value = oltp_value_to_json_value(body.value?)?;
+    if value.is_string() {
+        let mut map = serde_json::Map::with_capacity(1);
+        map.insert("message".to_string(), value);
+        Some(JsonValue::Object(map))
+    } else {
+        Some(value)
+    }
 }
 
 fn is_zero(count: &u32) -> bool {

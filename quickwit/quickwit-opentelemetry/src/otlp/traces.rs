@@ -433,10 +433,8 @@ impl SpanFingerprint {
     }
 
     pub fn span_kind(&self) -> Option<SpanKind> {
-        self.0
-            .split(Self::NULL_CHAR)
-            .nth(1)
-            .and_then(|span_kind| SpanKind::from_str(span_kind).ok())
+        let span_kind = self.0.split(Self::NULL_CHAR).nth(1)?;
+        SpanKind::from_str(span_kind).ok()
     }
 
     pub fn span_name(&self) -> Option<&str> {

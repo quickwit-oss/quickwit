@@ -269,13 +269,13 @@ impl FieldsSnippetGenerator {
             let values = field_values
                 .into_iter()
                 .filter_map(|value| {
-                    value.as_str().and_then(|text| {
-                        let snippet = snippet_generator.snippet(text);
-                        match snippet.is_empty() {
-                            false => Some(snippet.to_html()),
-                            _ => None,
-                        }
-                    })
+                    let text = value.as_str()?;
+                    let snippet = snippet_generator.snippet(text);
+                    if snippet.is_empty() {
+                        None
+                    } else {
+                        Some(snippet.to_html())
+                    }
                 })
                 .collect();
             Some(values)

@@ -27,6 +27,17 @@ In that case, simply mark the PR with the tag [WIP] (standing for work in progre
 4. Install protoc https://grpc.io/docs/protoc-installation/ (you may need to install the latest binaries rather than your distro's flavor)
 5. Install nextest https://nexte.st/docs/installation/pre-built-binaries/
 
+The Rust workspace uses Rust 1.99, pinned in `quickwit/rust-toolchain.toml`.
+Clippy enforces the method restrictions in `quickwit/clippy.toml`. Prefer explicit
+pattern matching to `Option::is_some_and`, `Option::is_none_or`,
+`Result::is_ok_and`, and `Result::is_err_and`. Use explicit `if`/`else` expressions
+instead of `bool::then` and `bool::then_some`.
+Keep conditional removal explicit with `if` and `Option::take` rather than
+`Option::take_if`. Use an explicit fallback rather than `Option::map_or_default`
+or `Result::map_or_default`.
+Use explicit pattern matching or `let Some(...) = ... else { ... }` instead of
+`Option::and_then`.
+
 ### GitHub Codespaces
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/quickwit-oss/quickwit?devcontainer_path=.devcontainer/devcontainer.json)

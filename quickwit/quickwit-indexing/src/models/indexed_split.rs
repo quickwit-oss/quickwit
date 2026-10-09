@@ -98,7 +98,11 @@ impl IndexedSplitBuilder {
             scratch_directory.named_temp_child(&split_scratch_directory_prefix)?;
         let use_ram_directory =
             quickwit_common::get_bool_from_env_cached!("QW_ENABLE_IN_MEMORY_INDEXING", false);
-        let ram_directory_opt = use_ram_directory.then(RamDirectory::default);
+        let ram_directory_opt = if use_ram_directory {
+            Some(RamDirectory::default())
+        } else {
+            None
+        };
         let mmap_directory = MmapDirectory::open(split_scratch_directory.path())?;
         let controlled_directory = ControlledDirectory::new(Box::new(mmap_directory), io_controls);
         let indexing_directory: Box<dyn tantivy::Directory> =

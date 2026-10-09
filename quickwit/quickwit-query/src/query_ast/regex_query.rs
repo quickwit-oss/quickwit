@@ -90,13 +90,13 @@ impl RegexQuery {
     /// Resolves this regex query against the given schema and optionally
     /// applies case-insensitive matching when the field's tokenizer lowercases.
     ///
-    /// When `tokenizer_manager` is provided and the field's tokenizer lowercases
+    /// When `tokenizer_manager_opt` is provided and the field's tokenizer lowercases
     /// its output, the regex is automatically prepended with `(?i)` unless it
     /// already contains a case-insensitive flag.
     pub fn to_resolved(
         &self,
         schema: &TantivySchema,
-        tokenizer_manager: Option<&TokenizerManager>,
+        tokenizer_manager_opt: Option<&TokenizerManager>,
     ) -> Result<ResolvedRegex, InvalidQuery> {
         let Some((field, field_entry, json_path)) = find_field_or_hit_dynamic(&self.field, schema)
         else {
@@ -140,9 +140,12 @@ impl RegexQuery {
         // case-insensitive. Without this, a regex like `.*ECONNREFUSED.*`
         // would never match because the inverted index only contains
         // lowercase tokens.
-        let does_lowercasing = tokenizer_manager
-            .and_then(|tm| tm.tokenizer_does_lowercasing(&tokenizer_name))
-            .unwrap_or(false);
+        let does_lowercasing = match tokenizer_manager_opt {
+            Some(tokenizer_manager) => tokenizer_manager
+                .tokenizer_does_lowercasing(&tokenizer_name)
+                .unwrap_or(false),
+            None => false,
+        };
         let regex = if does_lowercasing && !regex_has_case_insensitive_flag(&self.regex) {
             format!("(?i){}", self.regex)
         } else {

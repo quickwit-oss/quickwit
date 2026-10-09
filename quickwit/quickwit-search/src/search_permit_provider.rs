@@ -509,7 +509,7 @@ impl Drop for SearchPermit {
     fn drop(&mut self) {
         let prev = self
             .total_job_cost
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
                 Some(v.saturating_sub(self.job_cost))
             })
             .expect("closure always returns Some");

@@ -1,15 +1,21 @@
 disallowed-methods = [
-    # This function is not sound because it does not return a Result
+    # This function is not sound because it does not return a Result.
     "std::path::Path::exists",
-    # These functions hurt readability (according to Paul)
-    "std::option::Option::is_some_and",
+
+    # These functions hurt readability (according to Adrien and Paul).
+    "bool::then",
+    "bool::then_some",
+    "std::option::Option::and_then",
     "std::option::Option::is_none_or",
-    "std::option::Option::xor",
-    # "std::option::Option::and_then",
-    # .map(..).unwrap_or(..) or let Some(..) else {..}
-    "std::option::Option::map_or",
-    # .map(..).unwrap_or_else(..) or let Some(..) else {..}
+    "std::option::Option::is_some_and",
+    "std::option::Option::map_or_default",
     "std::option::Option::map_or_else",
+    "std::option::Option::map_or",
+    "std::option::Option::take_if",
+    "std::option::Option::xor",
+    "std::result::Result::is_err_and",
+    "std::result::Result::is_ok_and",
+    "std::result::Result::map_or_default",
 ]
 
 ignore-interior-mutability = [

@@ -422,12 +422,12 @@ impl SortingFieldExtractorPair {
         doc_id: DocId,
         score: Score,
     ) -> (Option<u64>, Option<u64>) {
-        let first = self.first.extract_typed_sort_value_opt(doc_id, score);
-        let second = self
-            .second
-            .as_ref()
-            .and_then(|second| second.extract_typed_sort_value_opt(doc_id, score));
-        (first, second)
+        let first_opt = self.first.extract_typed_sort_value_opt(doc_id, score);
+        let second_opt = match self.second.as_ref() {
+            Some(second) => second.extract_typed_sort_value_opt(doc_id, score),
+            None => None,
+        };
+        (first_opt, second_opt)
     }
 }
 
@@ -1168,8 +1168,14 @@ impl SortKeyMapper<PartialHit> for HitSortingMapper {
     type Key = PartialHitSortingKey;
     fn get_sort_key(&self, partial_hit: &PartialHit) -> PartialHitSortingKey {
         PartialHitSortingKey {
-            sort_value: partial_hit.sort_value.and_then(|v| v.sort_value),
-            sort_value2: partial_hit.sort_value2.and_then(|v| v.sort_value),
+            sort_value: match partial_hit.sort_value {
+                Some(value) => value.sort_value,
+                None => None,
+            },
+            sort_value2: match partial_hit.sort_value2 {
+                Some(value) => value.sort_value,
+                None => None,
+            },
             address: GlobalDocAddress::from_partial_hit(partial_hit),
             sort_order: self.order1,
             sort_order2: self.order2,
@@ -1623,8 +1629,14 @@ mod tests {
                                 format!(
                                     "{} {:?} {:?}",
                                     hit.doc_id,
-                                    hit.sort_value.and_then(|el| el.sort_value).clone(),
-                                    hit.sort_value2.and_then(|el| el.sort_value).clone()
+                                    match hit.sort_value {
+                                        Some(value) => value.sort_value,
+                                        None => None,
+                                    },
+                                    match hit.sort_value2 {
+                                        Some(value) => value.sort_value,
+                                        None => None,
+                                    }
                                 )
                             })
                             .collect::<Vec<_>>();

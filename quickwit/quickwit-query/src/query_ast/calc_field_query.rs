@@ -94,23 +94,29 @@ impl CalcFieldQuery {
         // of the fast-field values. The scorer checks per segment that the matching values are
         // all indexed.
         let postings_target = match field_entry.field_type() {
-            FieldType::Str(text_options) if json_path.is_empty() => is_raw_fast_and_indexed(
-                text_options.get_fast_field_tokenizer_name(),
-                text_options.get_indexing_options(),
-            )
-            .then(|| PostingsTarget::new(field, Vec::new())),
+            FieldType::Str(text_options) if json_path.is_empty() => {
+                if is_raw_fast_and_indexed(
+                    text_options.get_fast_field_tokenizer_name(),
+                    text_options.get_indexing_options(),
+                ) {
+                    Some(PostingsTarget::new(field, Vec::new()))
+                } else {
+                    None
+                }
+            }
             // A JSON subfield has its own string column, opened by the scorer under the same
             // name as the JIT predicate. Its string terms are those of the JSON field starting
             // with the subfield's path and string type prefix.
             FieldType::JsonObject(json_options) if !json_path.is_empty() => {
-                is_raw_fast_and_indexed(
+                if is_raw_fast_and_indexed(
                     json_options.get_fast_field_tokenizer_name(),
                     json_options.get_text_indexing_options(),
-                )
-                .then(|| {
+                ) {
                     let term_prefix = json_str_term_prefix(field, json_path, json_options);
-                    PostingsTarget::new(field, term_prefix)
-                })
+                    Some(PostingsTarget::new(field, term_prefix))
+                } else {
+                    None
+                }
             }
             _ => return None,
         };
@@ -149,9 +155,8 @@ impl BuildTantivyAst for CalcFieldQuery {
         context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
         // Compilation is shared with warmup discovery and other splits by the component caches.
-        if let Some(plan) = self
-            .regex_extract_eq_spec(context.schema)
-            .and_then(RegexExtractEqSpec::compile_execution_plan)
+        if let Some(spec) = self.regex_extract_eq_spec(context.schema)
+            && let Some(plan) = spec.compile_execution_plan()
         {
             return Ok(plan.build_query());
         }
@@ -227,7 +232,11 @@ fn isolate_capture(pattern: &str, capture_index: u64) -> Option<String> {
     let span = *ast.span();
     let has_capture = anonymize_captures_except(&mut ast, capture_index);
     if capture_index != 0 {
-        return has_capture.then(|| ast.to_string());
+        return if has_capture {
+            Some(ast.to_string())
+        } else {
+            None
+        };
     }
     // Anchors are zero-width, so the whole match is what the body between them matches.
     let (start_anchor, body, end_anchor) = split_anchors(ast);
@@ -663,16 +672,18 @@ mod tests {
             let original_regex = Regex::new(pattern).unwrap();
             let isolated_regex = Regex::new(&isolated_pattern).unwrap();
             for value in values {
-                let original_capture = original_regex
-                    .captures(value)
-                    .and_then(|captures| captures.get(capture_index as usize))
-                    .map(|capture| capture.as_str());
-                let isolated_capture = isolated_regex
-                    .captures(value)
-                    .and_then(|captures| captures.get(1))
-                    .map(|capture| capture.as_str());
+                let original_capture_opt = match original_regex.captures(value) {
+                    Some(captures) => captures.get(capture_index as usize),
+                    None => None,
+                }
+                .map(|capture| capture.as_str());
+                let isolated_capture_opt = match isolated_regex.captures(value) {
+                    Some(captures) => captures.get(1),
+                    None => None,
+                }
+                .map(|capture| capture.as_str());
                 assert_eq!(
-                    isolated_capture, original_capture,
+                    isolated_capture_opt, original_capture_opt,
                     "pattern={pattern}, isolated={isolated_pattern}, index={capture_index}, \
                      value={value}"
                 );

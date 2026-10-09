@@ -892,9 +892,10 @@ async fn download_all(byte_stream: ByteStream) -> StorageResult<Bytes> {
 /// stream, malformed body, checksum mismatch — which we classify as `Internal` and report with the
 /// original error preserved as source.
 fn byte_stream_to_storage_error(error: aws_sdk_s3::primitives::ByteStreamError) -> StorageError {
-    let is_io_error = std::error::Error::source(&error)
-        .and_then(|source| source.downcast_ref::<io::Error>())
-        .is_some();
+    let is_io_error = match std::error::Error::source(&error) {
+        Some(source) => source.downcast_ref::<io::Error>().is_some(),
+        None => false,
+    };
     let kind = if is_io_error {
         StorageErrorKind::Io
     } else {

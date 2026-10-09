@@ -46,7 +46,8 @@ struct MetadataExtractor<'a>(&'a MetadataMap);
 
 impl Extractor for MetadataExtractor<'_> {
     fn get(&self, key: &str) -> Option<&str> {
-        self.0.get(key).and_then(|value| value.to_str().ok())
+        let value = self.0.get(key)?;
+        value.to_str().ok()
     }
 
     fn keys(&self) -> Vec<&str> {

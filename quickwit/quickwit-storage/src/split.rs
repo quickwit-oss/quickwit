@@ -79,15 +79,17 @@ impl Stream for StreamAdaptor {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let (lower_bound_u64, upper_bound_u64) = self.0.size_hint();
+        let (lower_bound_u64, upper_bound_u64_opt) = self.0.size_hint();
         // if conversion fails, it means lower_bound is too large to fit in an usize on this
         // platform. When that's the case, we return usize::MAX as best effort. Any value is valid,
         // but MAX is the most informative.
         let lower_bound = lower_bound_u64.try_into().unwrap_or(usize::MAX);
         // for the upperbound, if conversion fails, we just say the upper bound is unknown
-        let upper_bound =
-            upper_bound_u64.and_then(|upper_bound_u64| upper_bound_u64.try_into().ok());
-        (lower_bound, upper_bound)
+        let upper_bound_opt = match upper_bound_u64_opt {
+            Some(upper_bound_u64) => upper_bound_u64.try_into().ok(),
+            None => None,
+        };
+        (lower_bound, upper_bound_opt)
     }
 }
 
@@ -178,16 +180,17 @@ impl SplitPayloadBuilder {
     /// Adds the file to the bundle file.
     pub fn add_file(&mut self, path: &Path) -> io::Result<()> {
         let file = std::fs::metadata(path)?;
-        let file_name = path
-            .file_name()
-            .and_then(std::ffi::OsStr::to_str)
-            .map(ToOwned::to_owned)
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Invalid file name in path {path:?}"),
-                )
-            })?;
+        let file_name = match path.file_name() {
+            Some(file_name) => file_name.to_str(),
+            None => None,
+        }
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid file name in path {path:?}"),
+            )
+        })?;
 
         let file_payload = FilePayload {
             path: path.to_owned(),

@@ -322,8 +322,14 @@ async fn find_trace_ids_impl(
 
     let min_start_secs = query.start_time_min.as_ref().map(|ts| ts.seconds);
     let max_start_secs = query.start_time_max.as_ref().map(|ts| ts.seconds);
-    let min_duration_millis = query.duration_min.as_ref().and_then(to_duration_millis);
-    let max_duration_millis = query.duration_max.as_ref().and_then(to_duration_millis);
+    let min_duration_millis_opt = match query.duration_min.as_ref() {
+        Some(duration) => to_duration_millis(duration),
+        None => None,
+    };
+    let max_duration_millis_opt = match query.duration_max.as_ref() {
+        Some(duration) => to_duration_millis(duration),
+        None => None,
+    };
     let tags = convert_v2_attributes_to_v1_tags(query.attributes);
 
     crate::find_trace_ids_common(
@@ -333,8 +339,8 @@ async fn find_trace_ids_impl(
         tags,
         min_start_secs,
         max_start_secs,
-        min_duration_millis,
-        max_duration_millis,
+        min_duration_millis_opt,
+        max_duration_millis_opt,
         query.search_depth,
         index_id_patterns,
     )

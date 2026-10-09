@@ -265,9 +265,11 @@ fn locate_split_footer_range_in_tail(
     let hotcache_len =
         u32::from_le_bytes(tail_bytes[tail_bytes.len() - HOTCACHE_LEN_NUM_BYTES..].try_into()?)
             as u64;
-    let bundle_metadata_len_end = split_len
+    let hotcache_len_end = split_len
         .checked_sub(HOTCACHE_LEN_NUM_BYTES as u64)
-        .and_then(|offset| offset.checked_sub(hotcache_len))
+        .context("split footer exceeds split length")?;
+    let bundle_metadata_len_end = hotcache_len_end
+        .checked_sub(hotcache_len)
         .context("split footer exceeds split length")?;
     let bundle_metadata_len_start = bundle_metadata_len_end
         .checked_sub(BUNDLE_METADATA_LEN_NUM_BYTES as u64)
@@ -580,7 +582,7 @@ impl fmt::Debug for BundleStorage {
         write!(
             f,
             "BundleStorage({:?}, files={:?})",
-            &self.bundle_filepath, self.file_ranges
+            self.bundle_filepath, self.file_ranges
         )
     }
 }
