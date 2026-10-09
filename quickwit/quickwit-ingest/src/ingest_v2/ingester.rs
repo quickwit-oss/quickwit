@@ -1950,6 +1950,85 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_ingester_persist_validates_docs_with_the_doc_mapping_of_the_shard() {
+        // Two open shards of the same source with different doc mappings (as during a doc mapping
+        // update): documents are validated before the lock against one shard's doc mapping, and
+        // must be validated again if they are persisted to the other shard.
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+
+        let strict_doc_mapping_uid = DocMappingUid::random();
+        let lenient_doc_mapping_uid = DocMappingUid::random();
+        let doc_mapping_json = |doc_mapping_uid: DocMappingUid, mode: &str| {
+            format!(
+                r#"{{
+                    "doc_mapping_uid": "{doc_mapping_uid}",
+                    "mode": "{mode}",
+                    "field_mappings": [{{"name": "doc", "type": "text"}}]
+                }}"#
+            )
+        };
+        let init_shard_subrequest =
+            |shard_id: u64, doc_mapping_uid: DocMappingUid, mode: &str| InitShardSubrequest {
+                subrequest_id: shard_id as u32,
+                shard: Some(Shard {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: source_id.clone(),
+                    shard_id: Some(ShardId::from(shard_id)),
+                    shard_state: ShardState::Open as i32,
+                    ingester_id: ingester_ctx.node_id.to_string(),
+                    doc_mapping_uid: Some(doc_mapping_uid),
+                    ..Default::default()
+                }),
+                doc_mapping_json: doc_mapping_json(doc_mapping_uid, mode),
+                validate_docs: true,
+            };
+        let init_shards_request = InitShardsRequest {
+            subrequests: vec![
+                init_shard_subrequest(0, strict_doc_mapping_uid, "strict"),
+                init_shard_subrequest(1, lenient_doc_mapping_uid, "lenient"),
+            ],
+        };
+        let response = ingester.init_shards(init_shards_request).await.unwrap();
+        assert_eq!(response.successes.len(), 2);
+
+        let mut num_persists_per_shard = [0; 2];
+        for _ in 0..16 {
+            let persist_request = PersistRequest {
+                ingester_id: ingester_ctx.node_id.to_string(),
+                commit_type: CommitTypeV2::Auto as i32,
+                subrequests: vec![PersistSubrequest {
+                    subrequest_id: 0,
+                    index_uid: Some(index_uid.clone()),
+                    source_id: source_id.clone(),
+                    doc_batch: Some(DocBatchV2::for_test([
+                        r#"{"foo": "bar"}"#,          // valid in lenient mode only
+                        r#"{"doc": "test-doc-000"}"#, // valid
+                    ])),
+                }],
+            };
+            let persist_response = ingester.persist(persist_request).await.unwrap();
+            assert_eq!(persist_response.successes.len(), 1);
+            let persist_success = &persist_response.successes[0];
+            if persist_success.shard_id() == ShardId::from(0) {
+                num_persists_per_shard[0] += 1;
+                assert_eq!(persist_success.num_persisted_docs, 1);
+                assert_eq!(persist_success.parse_failures.len(), 1);
+            } else {
+                assert_eq!(persist_success.shard_id(), ShardId::from(1));
+                num_persists_per_shard[1] += 1;
+                assert_eq!(persist_success.num_persisted_docs, 2);
+                assert!(persist_success.parse_failures.is_empty());
+            }
+        }
+        // The shard with the most available capacity is picked: both shards are used.
+        assert!(num_persists_per_shard[0] > 0, "{num_persists_per_shard:?}");
+        assert!(num_persists_per_shard[1] > 0, "{num_persists_per_shard:?}");
+    }
+
+    #[tokio::test]
     async fn test_ingester_persist_doesnt_validates_docs_when_requested() {
         let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
