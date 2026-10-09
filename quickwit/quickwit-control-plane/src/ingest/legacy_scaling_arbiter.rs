@@ -62,7 +62,7 @@ impl LegacyScalingArbiter {
     /// Computes the maximum number of shards we can have without going below
     /// the long term scale up threshold
     fn long_term_scale_up_threshold_max_shards(&self, shard_stats: ShardStats) -> usize {
-        (shard_stats.avg_long_term_ingestion_rate * shard_stats.num_open_shards as f32
+        (shard_stats.avg_long_term_ingestion_rate() * shard_stats.num_open_shards as f32
             / self.scale_up_shards_long_term_threshold_mib_per_sec)
             .floor() as usize
     }
@@ -83,7 +83,7 @@ impl LegacyScalingArbiter {
     ) -> Option<ScalingMode> {
         // If ingest is idle, there is nothing to do. Idle shards are automatically closed by
         // ingesters (see `quickwit_ingest::ingest_v2::idle::CloseIdleShardsTask`).
-        if shard_stats.num_open_shards == 0 || shard_stats.avg_long_term_ingestion_rate == 0.0 {
+        if shard_stats.num_open_shards == 0 || shard_stats.avg_long_term_ingestion_rate() == 0.0 {
             return None;
         }
         if shard_stats.num_open_shards < min_shards.get() {
@@ -93,7 +93,7 @@ impl LegacyScalingArbiter {
         }
         // Scale up based on the short term metric value while making sure that
         // the long term value doesn't get near the scale down threshold.
-        if shard_stats.avg_short_term_ingestion_rate
+        if shard_stats.avg_short_term_ingestion_rate()
             >= self.scale_up_shards_short_term_threshold_mib_per_sec
         {
             let new_calculated_num_shards = usize::min(
@@ -111,7 +111,8 @@ impl LegacyScalingArbiter {
         }
         // On the other hand, scale down only based on the long term metric value to avoid
         // being sensitive to very short drops in ingestion
-        if shard_stats.avg_long_term_ingestion_rate <= self.scale_down_shards_threshold_mib_per_sec
+        if shard_stats.avg_long_term_ingestion_rate()
+            <= self.scale_down_shards_threshold_mib_per_sec
             && shard_stats.num_open_shards > min_shards.get()
         {
             return Some(ScalingMode::Down);
@@ -123,6 +124,8 @@ impl LegacyScalingArbiter {
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroUsize;
+
+    use bytesize::ByteSize;
 
     use super::{LegacyScalingArbiter, ScalingMode};
     use crate::model::ShardStats;
@@ -137,9 +140,8 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 0,
-                    num_closed_shards: 0,
-                    avg_short_term_ingestion_rate: 0.0,
-                    avg_long_term_ingestion_rate: 0.0,
+                    total_short_term_ingestion_rate: ByteSize::mib(0),
+                    total_long_term_ingestion_rate: ByteSize::mib(0),
                 },
                 NonZeroUsize::MIN
             ),
@@ -149,9 +151,8 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 1,
-                    num_closed_shards: 0,
-                    avg_short_term_ingestion_rate: 5.0,
-                    avg_long_term_ingestion_rate: 6.0,
+                    total_short_term_ingestion_rate: ByteSize::mib(5),
+                    total_long_term_ingestion_rate: ByteSize::mib(6),
                 },
                 NonZeroUsize::MIN
             ),
@@ -161,9 +162,8 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 1,
-                    num_closed_shards: 0,
-                    avg_short_term_ingestion_rate: 8.1,
-                    avg_long_term_ingestion_rate: 8.1,
+                    total_short_term_ingestion_rate: ByteSize::mib(9),
+                    total_long_term_ingestion_rate: ByteSize::mib(9),
                 },
                 NonZeroUsize::MIN
             ),
@@ -173,9 +173,8 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 2,
-                    num_closed_shards: 0,
-                    avg_short_term_ingestion_rate: 8.1,
-                    avg_long_term_ingestion_rate: 8.1,
+                    total_short_term_ingestion_rate: ByteSize::mib(18),
+                    total_long_term_ingestion_rate: ByteSize::mib(18),
                 },
                 NonZeroUsize::MIN
             ),
@@ -185,9 +184,8 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 2,
-                    num_closed_shards: 0,
-                    avg_short_term_ingestion_rate: 3.0,
-                    avg_long_term_ingestion_rate: 1.5,
+                    total_short_term_ingestion_rate: ByteSize::mib(6),
+                    total_long_term_ingestion_rate: ByteSize::mib(3),
                 },
                 NonZeroUsize::MIN
             ),
@@ -197,9 +195,8 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 1,
-                    num_closed_shards: 0,
-                    avg_short_term_ingestion_rate: 3.0,
-                    avg_long_term_ingestion_rate: 1.5,
+                    total_short_term_ingestion_rate: ByteSize::mib(3),
+                    total_long_term_ingestion_rate: ByteSize::mib(1),
                 },
                 NonZeroUsize::MIN
             ),
@@ -209,9 +206,8 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 1,
-                    num_closed_shards: 0,
-                    avg_short_term_ingestion_rate: 8.0,
-                    avg_long_term_ingestion_rate: 3.0,
+                    total_short_term_ingestion_rate: ByteSize::mib(8),
+                    total_long_term_ingestion_rate: ByteSize::mib(3),
                 },
                 NonZeroUsize::MIN
             ),
@@ -228,9 +224,8 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 0,
-                    num_closed_shards: 0,
-                    avg_short_term_ingestion_rate: 0.0,
-                    avg_long_term_ingestion_rate: 0.0,
+                    total_short_term_ingestion_rate: ByteSize::mib(0),
+                    total_long_term_ingestion_rate: ByteSize::mib(0),
                 },
                 NonZeroUsize::MIN
             ),
@@ -240,9 +235,8 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 2,
-                    num_closed_shards: 0,
-                    avg_short_term_ingestion_rate: 5.0,
-                    avg_long_term_ingestion_rate: 6.0,
+                    total_short_term_ingestion_rate: ByteSize::mib(10),
+                    total_long_term_ingestion_rate: ByteSize::mib(12),
                 },
                 NonZeroUsize::MIN
             ),
@@ -252,9 +246,8 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 1,
-                    num_closed_shards: 0,
-                    avg_short_term_ingestion_rate: 8.1,
-                    avg_long_term_ingestion_rate: 8.1,
+                    total_short_term_ingestion_rate: ByteSize::mib(9),
+                    total_long_term_ingestion_rate: ByteSize::mib(9),
                 },
                 NonZeroUsize::MIN
             ),
@@ -264,9 +257,8 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 2,
-                    num_closed_shards: 0,
-                    avg_short_term_ingestion_rate: 8.1,
-                    avg_long_term_ingestion_rate: 8.1,
+                    total_short_term_ingestion_rate: ByteSize::mib(18),
+                    total_long_term_ingestion_rate: ByteSize::mib(18),
                 },
                 NonZeroUsize::MIN
             ),
@@ -276,9 +268,8 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 2,
-                    num_closed_shards: 0,
-                    avg_short_term_ingestion_rate: 3.0,
-                    avg_long_term_ingestion_rate: 1.5,
+                    total_short_term_ingestion_rate: ByteSize::mib(6),
+                    total_long_term_ingestion_rate: ByteSize::mib(3),
                 },
                 NonZeroUsize::MIN
             ),
@@ -288,9 +279,8 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 1,
-                    num_closed_shards: 0,
-                    avg_short_term_ingestion_rate: 3.0,
-                    avg_long_term_ingestion_rate: 1.5,
+                    total_short_term_ingestion_rate: ByteSize::mib(3),
+                    total_long_term_ingestion_rate: ByteSize::mib(1),
                 },
                 NonZeroUsize::MIN
             ),
@@ -300,9 +290,8 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 1,
-                    num_closed_shards: 0,
-                    avg_short_term_ingestion_rate: 8.0,
-                    avg_long_term_ingestion_rate: 3.1,
+                    total_short_term_ingestion_rate: ByteSize::mib(8),
+                    total_long_term_ingestion_rate: ByteSize::mib(4),
                 },
                 NonZeroUsize::MIN
             ),
@@ -313,9 +302,8 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 2,
-                    num_closed_shards: 0,
-                    avg_short_term_ingestion_rate: 8.1,
-                    avg_long_term_ingestion_rate: 5.,
+                    total_short_term_ingestion_rate: ByteSize::mib(18),
+                    total_long_term_ingestion_rate: ByteSize::mib(10),
                 },
                 NonZeroUsize::MIN
             ),
@@ -331,9 +319,8 @@ mod tests {
 
         let shard_stats = ShardStats {
             num_open_shards: 0,
-            num_closed_shards: 0,
-            avg_short_term_ingestion_rate: 0.,
-            avg_long_term_ingestion_rate: 0.,
+            total_short_term_ingestion_rate: ByteSize::mib(0),
+            total_long_term_ingestion_rate: ByteSize::mib(0),
         };
         assert_eq!(
             scaling_arbiter.long_term_scale_up_threshold_max_shards(shard_stats),
@@ -346,9 +333,8 @@ mod tests {
 
         let shard_stats = ShardStats {
             num_open_shards: 1,
-            num_closed_shards: 0,
-            avg_short_term_ingestion_rate: 5.0,
-            avg_long_term_ingestion_rate: 6.1,
+            total_short_term_ingestion_rate: ByteSize::mib(5),
+            total_long_term_ingestion_rate: ByteSize::mib(7),
         };
         assert_eq!(
             scaling_arbiter.long_term_scale_up_threshold_max_shards(shard_stats),
@@ -361,9 +347,8 @@ mod tests {
 
         let shard_stats = ShardStats {
             num_open_shards: 2,
-            num_closed_shards: 0,
-            avg_short_term_ingestion_rate: 5.0,
-            avg_long_term_ingestion_rate: 1.1,
+            total_short_term_ingestion_rate: ByteSize::mib(10),
+            total_long_term_ingestion_rate: ByteSize::mib(2),
         };
         assert_eq!(
             scaling_arbiter.long_term_scale_up_threshold_max_shards(shard_stats),
@@ -376,9 +361,8 @@ mod tests {
 
         let shard_stats = ShardStats {
             num_open_shards: 2,
-            num_closed_shards: 0,
-            avg_short_term_ingestion_rate: 5.0,
-            avg_long_term_ingestion_rate: 6.1,
+            total_short_term_ingestion_rate: ByteSize::mib(10),
+            total_long_term_ingestion_rate: ByteSize::mib(14),
         };
         assert_eq!(
             scaling_arbiter.long_term_scale_up_threshold_max_shards(shard_stats),
@@ -391,9 +375,8 @@ mod tests {
 
         let shard_stats = ShardStats {
             num_open_shards: 5,
-            num_closed_shards: 0,
-            avg_short_term_ingestion_rate: 5.0,
-            avg_long_term_ingestion_rate: 1.1,
+            total_short_term_ingestion_rate: ByteSize::mib(25),
+            total_long_term_ingestion_rate: ByteSize::mib(5),
         };
         assert_eq!(
             scaling_arbiter.long_term_scale_up_threshold_max_shards(shard_stats),
@@ -412,9 +395,8 @@ mod tests {
 
         let shard_stats = ShardStats {
             num_open_shards: 0,
-            num_closed_shards: 0,
-            avg_short_term_ingestion_rate: 0.0,
-            avg_long_term_ingestion_rate: 0.0,
+            total_short_term_ingestion_rate: ByteSize::mib(0),
+            total_long_term_ingestion_rate: ByteSize::mib(0),
         };
         let min_shards = NonZeroUsize::MIN;
         let scaling_mode = scaling_arbiter.should_scale(shard_stats, min_shards);
@@ -422,9 +404,8 @@ mod tests {
 
         let shard_stats = ShardStats {
             num_open_shards: 1,
-            num_closed_shards: 0,
-            avg_short_term_ingestion_rate: 0.0,
-            avg_long_term_ingestion_rate: 0.0,
+            total_short_term_ingestion_rate: ByteSize::mib(0),
+            total_long_term_ingestion_rate: ByteSize::mib(0),
         };
         let min_shards = NonZeroUsize::new(2).unwrap();
         let scaling_mode = scaling_arbiter.should_scale(shard_stats, min_shards);
@@ -438,9 +419,8 @@ mod tests {
 
         let shard_stats = ShardStats {
             num_open_shards: 1,
-            num_closed_shards: 0,
-            avg_short_term_ingestion_rate: 5.0,
-            avg_long_term_ingestion_rate: 1.0,
+            total_short_term_ingestion_rate: ByteSize::mib(5),
+            total_long_term_ingestion_rate: ByteSize::mib(1),
         };
         let min_shards = NonZeroUsize::new(5).unwrap();
         let scaling_mode = scaling_arbiter

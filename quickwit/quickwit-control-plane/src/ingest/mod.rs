@@ -15,9 +15,11 @@
 pub(crate) mod ingest_controller;
 mod legacy_scaling_arbiter;
 mod legacy_scaling_controller;
+mod scaling_controller;
 mod wait_handle;
 
 pub use ingest_controller::IngestController;
 pub(crate) use legacy_scaling_arbiter::ScalingMode;
 pub(crate) use legacy_scaling_controller::LegacyScalingController;
+pub(crate) use scaling_controller::ScalingController;
 pub use wait_handle::WaitHandle;

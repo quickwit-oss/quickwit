@@ -100,36 +100,27 @@ impl ShardTableEntry {
         self.shard_entries.is_empty()
     }
 
-    fn shards_stats(&self) -> ShardStats {
+    fn shard_stats(&self, live_ingesters: &FnvHashSet<NodeId>) -> ShardStats {
         let mut num_open_shards = 0;
-        let mut num_closed_shards = 0;
-        let mut short_term_ingestion_rate_sum = ByteSize::default();
-        let mut long_term_ingestion_rate_sum = ByteSize::default();
+        let mut total_short_term_ingestion_rate = ByteSize::default();
+        let mut total_long_term_ingestion_rate = ByteSize::default();
 
         for shard_entry in self.shard_entries.values() {
+            if !live_ingesters.contains(shard_entry.ingester_id.as_str()) {
+                continue;
+            }
             if shard_entry.is_open() {
                 num_open_shards += 1;
-                short_term_ingestion_rate_sum += shard_entry.short_term_ingestion_rate;
-                long_term_ingestion_rate_sum += shard_entry.long_term_ingestion_rate;
-            } else if shard_entry.is_closed() {
-                num_closed_shards += 1;
+            } else if !shard_entry.is_closed() {
+                continue;
             }
+            total_short_term_ingestion_rate += shard_entry.short_term_ingestion_rate;
+            total_long_term_ingestion_rate += shard_entry.long_term_ingestion_rate;
         }
-        let avg_short_term_ingestion_rate = if num_open_shards > 0 {
-            short_term_ingestion_rate_sum.as_mib() as f32 / num_open_shards as f32
-        } else {
-            0.0
-        };
-        let avg_long_term_ingestion_rate = if num_open_shards > 0 {
-            long_term_ingestion_rate_sum.as_mib() as f32 / num_open_shards as f32
-        } else {
-            0.0
-        };
         ShardStats {
             num_open_shards,
-            num_closed_shards,
-            avg_short_term_ingestion_rate,
-            avg_long_term_ingestion_rate,
+            total_short_term_ingestion_rate,
+            total_long_term_ingestion_rate,
         }
     }
 }
@@ -454,36 +445,32 @@ impl ShardTable {
         // If `index_label(index_id)` returns `index_id`, then per-index metrics are enabled and we
         // can update the metrics for this specific index.
         if index_label == index_id {
-            let shard_stats = table_entry.shards_stats();
+            let shard_counts = count_shards(table_entry.shard_entries.values());
             let labels = label_values!(INDEX_ID_LABEL_NAMES => index_label.to_string());
-            gauge!(parent: OPEN_SHARDS, labels: [labels]).set(shard_stats.num_open_shards as f64);
+            gauge!(parent: OPEN_SHARDS, labels: [labels]).set(shard_counts.num_open_shards as f64);
             gauge!(parent: CLOSED_SHARDS, labels: [labels])
-                .set(shard_stats.num_closed_shards as f64);
+                .set(shard_counts.num_closed_shards as f64);
             return;
         }
         // Per-index metrics are disabled, so we update the metrics for all sources.
-        let mut num_open_shards = 0;
-        let mut num_closed_shards = 0;
-
-        for shard_entry in self.all_shards() {
-            if shard_entry.is_open() {
-                num_open_shards += 1;
-            } else if shard_entry.is_closed() {
-                num_closed_shards += 1;
-            }
-        }
+        let shard_counts = count_shards(self.all_shards());
         let labels = label_values!(INDEX_ID_LABEL_NAMES => index_label.to_string());
-        gauge!(parent: OPEN_SHARDS, labels: [labels]).set(num_open_shards as f64);
-        gauge!(parent: CLOSED_SHARDS, labels: [labels]).set(num_closed_shards as f64);
+        gauge!(parent: OPEN_SHARDS, labels: [labels]).set(shard_counts.num_open_shards as f64);
+        gauge!(parent: CLOSED_SHARDS, labels: [labels]).set(shard_counts.num_closed_shards as f64);
     }
 
-    pub fn update_shards(
-        &mut self,
+    pub fn shard_stats(
+        &self,
         source_uid: &SourceUid,
-        shard_infos: &ShardInfos,
-    ) -> ShardStats {
+        live_ingesters: &FnvHashSet<NodeId>,
+    ) -> Option<ShardStats> {
+        let table_entry = self.table_entries.get(source_uid)?;
+        Some(table_entry.shard_stats(live_ingesters))
+    }
+
+    pub fn update_shards(&mut self, source_uid: &SourceUid, shard_infos: &ShardInfos) {
         let Some(table_entry) = self.table_entries.get_mut(source_uid) else {
-            return ShardStats::default();
+            return;
         };
         for shard_info in shard_infos {
             let ShardInfo {
@@ -503,7 +490,6 @@ impl ShardTable {
                 }
             }
         }
-        table_entry.shards_stats()
     }
 
     /// Sets the state of the shards identified by their index UID, source ID, and shard IDs to
@@ -591,14 +577,49 @@ impl ShardTable {
     }
 }
 
+struct ShardCounts {
+    num_open_shards: usize,
+    num_closed_shards: usize,
+}
+
+fn count_shards<'a>(shard_entries: impl Iterator<Item = &'a ShardEntry>) -> ShardCounts {
+    let mut shard_counts = ShardCounts {
+        num_open_shards: 0,
+        num_closed_shards: 0,
+    };
+    for shard_entry in shard_entries {
+        if shard_entry.is_open() {
+            shard_counts.num_open_shards += 1;
+        } else if shard_entry.is_closed() {
+            shard_counts.num_closed_shards += 1;
+        }
+    }
+    shard_counts
+}
+
 #[derive(Clone, Copy, Default)]
 pub(crate) struct ShardStats {
     pub num_open_shards: usize,
-    pub num_closed_shards: usize,
+    pub total_short_term_ingestion_rate: ByteSize,
+    pub total_long_term_ingestion_rate: ByteSize,
+}
+
+impl ShardStats {
     /// Average short-term ingestion rate (MiB/s) over all open shards.
-    pub avg_short_term_ingestion_rate: f32,
+    pub fn avg_short_term_ingestion_rate(&self) -> f32 {
+        if self.num_open_shards == 0 {
+            return 0.0;
+        }
+        self.total_short_term_ingestion_rate.as_mib() as f32 / self.num_open_shards as f32
+    }
+
     /// Average long-term ingestion rate (MiB/s) over all open shards.
-    pub avg_long_term_ingestion_rate: f32,
+    pub fn avg_long_term_ingestion_rate(&self) -> f32 {
+        if self.num_open_shards == 0 {
+            return 0.0;
+        }
+        self.total_long_term_ingestion_rate.as_mib() as f32 / self.num_open_shards as f32
+    }
 }
 
 #[cfg(test)]
@@ -917,11 +938,7 @@ mod tests {
                 long_term_ingestion_rate: ByteSize::mib(5),
             },
         ]);
-        let shard_stats = shard_table.update_shards(&source_uid, &shard_infos);
-        assert_eq!(shard_stats.num_open_shards, 2);
-        assert_eq!(shard_stats.avg_short_term_ingestion_rate, 1.5);
-
-        assert_eq!(shard_stats.avg_short_term_ingestion_rate, 1.5);
+        shard_table.update_shards(&source_uid, &shard_infos);
 
         let shard_entries: Vec<ShardEntry> = shard_table
             .get_shards(&source_uid)
@@ -950,6 +967,71 @@ mod tests {
         assert_eq!(shard_entries[3].shard.shard_id(), ShardId::from(4));
         assert_eq!(shard_entries[3].shard.shard_state(), ShardState::Closed);
         assert_eq!(shard_entries[3].short_term_ingestion_rate, ByteSize::mib(4));
+    }
+
+    #[test]
+    fn test_shard_table_shard_stats() {
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let source_id = "test-source".to_string();
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: source_id.clone(),
+        };
+        let live_ingesters = FnvHashSet::from_iter([NodeId::from_str("live-ingester")]);
+
+        let mut shard_table = ShardTable::default();
+        assert!(
+            shard_table
+                .shard_stats(&source_uid, &live_ingesters)
+                .is_none()
+        );
+
+        let shards = [
+            (1, ShardState::Open, "live-ingester"),
+            (2, ShardState::Closed, "live-ingester"),
+            (3, ShardState::Unavailable, "live-ingester"),
+            (4, ShardState::Open, "departed-ingester"),
+        ]
+        .map(|(shard_id, shard_state, ingester_id)| Shard {
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            shard_id: Some(ShardId::from(shard_id)),
+            shard_state: shard_state as i32,
+            ingester_id: ingester_id.to_string(),
+            ..Default::default()
+        });
+        shard_table.insert_shards(&index_uid, &source_id, Vec::from(shards));
+
+        let shard_infos: ShardInfos = [
+            (1, ShardState::Open, 1, 2),
+            (2, ShardState::Closed, 3, 4),
+            (3, ShardState::Unavailable, 5, 6),
+            (4, ShardState::Open, 7, 8),
+        ]
+        .into_iter()
+        .map(
+            |(shard_id, shard_state, short_term_mib, long_term_mib)| ShardInfo {
+                shard_id: ShardId::from(shard_id),
+                shard_state,
+                short_term_ingestion_rate: ByteSize::mib(short_term_mib),
+                long_term_ingestion_rate: ByteSize::mib(long_term_mib),
+            },
+        )
+        .collect();
+        shard_table.update_shards(&source_uid, &shard_infos);
+
+        // Rates sum open and closed shards on live ingesters; the count only covers open shards.
+        let shard_stats = shard_table
+            .shard_stats(&source_uid, &live_ingesters)
+            .unwrap();
+        assert_eq!(shard_stats.num_open_shards, 1);
+        assert_eq!(
+            shard_stats.total_short_term_ingestion_rate,
+            ByteSize::mib(4)
+        );
+        assert_eq!(shard_stats.total_long_term_ingestion_rate, ByteSize::mib(6));
+        assert_eq!(shard_stats.avg_short_term_ingestion_rate(), 4.0);
+        assert_eq!(shard_stats.avg_long_term_ingestion_rate(), 6.0);
     }
 
     #[test]
