@@ -30,7 +30,7 @@ mod routing_expression;
 pub mod tag_pruning;
 
 #[cfg(feature = "arrow")]
-pub use doc_mapper::{ArrowDocBuilder, JsonRow, RowLeaf, RowValue};
+pub use doc_mapper::{ArrowDocBuilder, JsonRow, RowArena, RowLeaf, RowValue};
 pub use doc_mapper::{
     Automaton, BinaryFormat, DocMapper, DocMapperBuilder, FastFieldWarmupInfo, FieldMappingEntry,
     FieldMappingType, JsonObject, NamedField, QuickwitBytesOptions, QuickwitJsonOptions, TermRange,

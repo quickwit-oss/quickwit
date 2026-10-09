@@ -29,7 +29,7 @@ use std::fmt::Debug;
 use std::ops::Bound;
 
 #[cfg(feature = "arrow")]
-pub use arrow_doc::{ArrowDocBuilder, JsonRow, RowLeaf, RowValue};
+pub use arrow_doc::{ArrowDocBuilder, JsonRow, RowArena, RowLeaf, RowValue};
 pub use doc_mapper_builder::DocMapperBuilder;
 pub use doc_mapper_impl::DocMapper;
 pub use field_mapping_entry::{

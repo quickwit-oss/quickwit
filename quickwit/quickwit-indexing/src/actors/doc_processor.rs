@@ -661,8 +661,10 @@ impl DocProcessor {
         if let Some(builder) = self.arrow_doc_builder(&schema) {
             // Decoded Arrow size per row: a good first guess for the document buffer.
             let doc_capacity = batch.get_array_memory_size() / batch.num_rows().max(1) + 64;
+            // Row entries, reused across rows.
+            let mut arena = Vec::with_capacity(64);
             for row in 0..batch.num_rows() {
-                match self.process_arrow_row(&builder, batch, row, doc_capacity) {
+                match self.process_arrow_row(&builder, batch, row, doc_capacity, &mut arena) {
                     Some(processed_doc) => {
                         self.counters.record_valid(processed_doc.num_bytes as u64);
                         processed_docs.push(processed_doc);
@@ -683,21 +685,25 @@ impl DocProcessor {
         Ok(())
     }
 
-    fn process_arrow_row(
+    fn process_arrow_row<'a>(
         &self,
-        builder: &quickwit_doc_mapper::ArrowDocBuilder,
-        batch: &arrow_array::RecordBatch,
+        builder: &'a quickwit_doc_mapper::ArrowDocBuilder,
+        batch: &'a arrow_array::RecordBatch,
         row: usize,
         doc_capacity: usize,
+        arena: &mut quickwit_doc_mapper::RowArena<'a>,
     ) -> Option<ProcessedDoc> {
-        let fingerprint_opt = match &self.fingerprinter_opt {
-            Some(fingerprinter) => {
-                let json_row = builder.json_row(batch, row)?;
-                Some(fingerprinter.fingerprint_row(json_row.root()))
-            }
-            None => None,
+        // One pass: the document, and the row object the fingerprint reads.
+        let with_row_object = self.fingerprinter_opt.is_some();
+        let (doc, row_object_range) =
+            builder.build_row(batch, row, doc_capacity, with_row_object, arena)?;
+        let fingerprint_opt = match (&self.fingerprinter_opt, row_object_range) {
+            (Some(fingerprinter), Some(range)) => Some(
+                fingerprinter
+                    .fingerprint_row(quickwit_doc_mapper::RowValue::new_object(range, arena)),
+            ),
+            _ => None,
         };
-        let doc = builder.build_doc(batch, row, doc_capacity)?;
         // The compact document holds every value once: its size tracks the JSON size (~0.9x on
         // logs) and costs nothing to compute.
         let num_bytes = doc.node_data.len();

@@ -446,7 +446,7 @@ fn row_hash_raw(value: quickwit_doc_mapper::RowValue<'_>, hasher: &mut Fingerpri
             }
         }
         // Excluded by the caller (`value_root_fields`), and never produced for documents.
-        RowLeaf::TimestampStr | RowLeaf::Date(_) => {
+        RowLeaf::Timestamp(_) => {
             hasher.write_u8(RAW_STRING);
             hasher.write_usize(0);
         }

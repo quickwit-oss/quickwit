@@ -113,9 +113,18 @@ pub struct ArrowDocBuilder {
     // Unmapped columns going to the dynamic field, sorted by name.
     dynamic_columns: Vec<ColumnPlan>,
     dynamic_field: Option<Field>,
+    // The dynamic field is stored, not indexed, not fast: its object is written straight in the
+    // doc store encoding (`TantivyDocument::add_stored_only_value`).
+    dynamic_is_stored_only: bool,
+    // Every column (leaf and dynamic) in name order, as (is_dynamic, index in its Vec): the
+    // order of the row object's entries.
+    root_order: Vec<(bool, usize)>,
     // Lenient mode: unmapped columns dropped from documents, but present in the JSON object.
     has_ignored_columns: bool,
 }
+
+/// A row's entries, borrowed from the record batch. See [`ArrowDocBuilder::build_row`].
+pub type RowArena<'a> = Vec<(&'a str, RowLeaf<'a>)>;
 
 fn scalar_kind(data_type: &DataType) -> Option<ScalarKind> {
     match data_type {
@@ -262,10 +271,34 @@ impl ArrowDocBuilder {
         }
         leaf_columns.sort_by(|left, right| left.name.cmp(&right.name));
         dynamic_columns.sort_by(|left, right| left.name.cmp(&right.name));
+        let mut root_order: Vec<(bool, usize)> = (0..leaf_columns.len())
+            .map(|idx| (false, idx))
+            .chain((0..dynamic_columns.len()).map(|idx| (true, idx)))
+            .collect();
+        root_order.sort_by(|left, right| {
+            let name = |(is_dynamic, idx): &(bool, usize)| {
+                if *is_dynamic {
+                    dynamic_columns[*idx].name.clone()
+                } else {
+                    leaf_columns[*idx].name.clone()
+                }
+            };
+            name(left).cmp(&name(right))
+        });
+        let schema = doc_mapper.schema();
+        let dynamic_is_stored_only = match view.dynamic_field {
+            Some(field) => {
+                let field_entry = schema.get_field_entry(field);
+                field_entry.is_stored() && !field_entry.is_indexed() && !field_entry.is_fast()
+            }
+            None => false,
+        };
         Some(ArrowDocBuilder {
             leaf_columns,
             dynamic_columns,
             dynamic_field: view.dynamic_field,
+            dynamic_is_stored_only,
+            root_order,
             has_ignored_columns,
         })
     }
@@ -276,14 +309,22 @@ impl ArrowDocBuilder {
         !self.has_ignored_columns
     }
 
-    /// Builds the document for `row`, or returns `None` if this row must go through the JSON
-    /// path. `capacity_hint` sizes the document buffer.
-    pub fn build_doc(
-        &self,
-        batch: &RecordBatch,
+    /// Builds the document for `row` in one pass over its columns, or returns `None` if this row
+    /// must go through the JSON path. `capacity_hint` sizes the document buffer.
+    ///
+    /// `arena` receives the row's entries (it is cleared first; reuse it across rows). With
+    /// `with_row_object`, the returned range is the row object, as the JSON path would see it,
+    /// for docs clustering fingerprints: see [`RowValue::new_object`]. Map entries are sorted
+    /// once and shared by the document and the row object.
+    pub fn build_row<'a>(
+        &'a self,
+        batch: &'a RecordBatch,
         row: usize,
         capacity_hint: usize,
-    ) -> Option<TantivyDocument> {
+        with_row_object: bool,
+        arena: &mut RowArena<'a>,
+    ) -> Option<(TantivyDocument, Option<(u32, u32)>)> {
+        arena.clear();
         let mut doc = TantivyDocument::with_capacity(capacity_hint);
         for plan in &self.leaf_columns {
             let column = batch.column(plan.column_idx);
@@ -297,81 +338,104 @@ impl ArrowDocBuilder {
             };
             add_leaf(&mut doc, *field, *kind, scalar, column, row)?;
         }
-        if let Some(dynamic_field) = self.dynamic_field {
-            // Root entries first (they are the object's entries), then map entries after them.
-            let mut arena: Vec<(&str, RowLeaf)> = Vec::with_capacity(32);
-            for plan in &self.dynamic_columns {
-                if !batch.column(plan.column_idx).is_null(row) {
-                    // Placeholder, filled below once map entries are in the arena.
-                    arena.push((plan.name.as_str(), RowLeaf::Bool(false)));
-                }
+        // Dynamic object entries first, then map entries after them.
+        for plan in &self.dynamic_columns {
+            if !batch.column(plan.column_idx).is_null(row) {
+                // Placeholder, filled below once map entries are in the arena.
+                arena.push((plan.name.as_str(), RowLeaf::Bool(false)));
             }
-            let num_root_entries = arena.len();
-            let mut root_idx = 0;
-            for plan in &self.dynamic_columns {
+        }
+        let num_dynamic_entries = arena.len();
+        let mut dynamic_idx = 0;
+        for plan in &self.dynamic_columns {
+            let column = batch.column(plan.column_idx);
+            if column.is_null(row) {
+                continue;
+            }
+            let leaf = match plan.kind {
+                ColumnKind::Scalar(scalar) => dynamic_leaf(scalar, column, row)?,
+                ColumnKind::Map(scalar) => {
+                    let (start, end) = push_map_entries(scalar, column.as_map(), row, arena)?;
+                    RowLeaf::Object(start, end)
+                }
+            };
+            arena[dynamic_idx].1 = leaf;
+            dynamic_idx += 1;
+        }
+        if num_dynamic_entries > 0
+            && let Some(dynamic_field) = self.dynamic_field
+        {
+            let dynamic_object = RowValue {
+                leaf: RowLeaf::Object(0, num_dynamic_entries as u32),
+                arena,
+            };
+            if self.dynamic_is_stored_only {
+                doc.add_stored_only_value(dynamic_field, dynamic_object)
+                    .ok()?;
+            } else {
+                doc.add_field_value(dynamic_field, dynamic_object);
+            }
+        }
+        if !with_row_object {
+            return Some((doc, None));
+        }
+        // The row object: every non-null column in name order. Dynamic entries are copied from
+        // the dynamic object (map children are shared); both are in dynamic column order, so the
+        // next dynamic entry is always the next one of the object.
+        let root_start = arena.len();
+        let mut next_dynamic_entry = 0;
+        for &(is_dynamic, idx) in &self.root_order {
+            if is_dynamic {
+                let plan = &self.dynamic_columns[idx];
+                if batch.column(plan.column_idx).is_null(row) {
+                    continue;
+                }
+                let entry = arena[next_dynamic_entry];
+                next_dynamic_entry += 1;
+                arena.push(entry);
+            } else {
+                let plan = &self.leaf_columns[idx];
                 let column = batch.column(plan.column_idx);
                 if column.is_null(row) {
                     continue;
                 }
-                let leaf = match plan.kind {
-                    ColumnKind::Scalar(scalar) => dynamic_leaf(scalar, column, row, true)?,
-                    ColumnKind::Map(scalar) => {
-                        let (start, end) =
-                            push_map_entries(scalar, column.as_map(), row, &mut arena, true)?;
-                        RowLeaf::Object(start, end)
-                    }
+                let ColumnKind::Scalar(scalar) = plan.kind else {
+                    unreachable!("leaf columns are scalar leaves");
                 };
-                arena[root_idx].1 = leaf;
-                root_idx += 1;
-            }
-            if num_root_entries > 0 {
-                let root = RowValue {
-                    leaf: RowLeaf::Object(0, num_root_entries as u32),
-                    arena: &arena,
-                };
-                doc.add_field_value(dynamic_field, root);
+                arena.push((plan.name.as_str(), dynamic_leaf(scalar, column, row)?));
             }
         }
-        Some(doc)
+        Some((doc, Some((root_start as u32, arena.len() as u32))))
+    }
+
+    /// Builds the document for `row`. See [`Self::build_row`].
+    pub fn build_doc(
+        &self,
+        batch: &RecordBatch,
+        row: usize,
+        capacity_hint: usize,
+    ) -> Option<TantivyDocument> {
+        let mut arena = Vec::new();
+        self.build_row(batch, row, capacity_hint, false, &mut arena)
+            .map(|(doc, _)| doc)
     }
 
     /// The JSON object the JSON path would see for `row`, borrowed from the batch, for docs
     /// clustering fingerprints. `None` when the row must go through the JSON path. Root entries
     /// are sorted by name, like a `serde_json::Map`.
     ///
-    /// Timestamps are [`RowLeaf::TimestampStr`]: callers must not use it with a fingerprint
-    /// policy that reads the value of a timestamp column (see [`Self::timestamp_column_names`]).
+    /// Timestamps are [`RowLeaf::Timestamp`]: callers must not use it with a fingerprint policy
+    /// that reads the value of a timestamp column (see [`Self::timestamp_column_names`]).
     pub fn json_row<'a>(&'a self, batch: &'a RecordBatch, row: usize) -> Option<JsonRow<'a>> {
-        let mut arena: Vec<(&'a str, RowLeaf<'a>)> = Vec::with_capacity(48);
-        let mut columns: Vec<&'a ColumnPlan> = self
-            .leaf_columns
-            .iter()
-            .chain(&self.dynamic_columns)
-            .filter(|plan| !batch.column(plan.column_idx).is_null(row))
-            .collect();
-        columns.sort_by(|left, right| left.name.cmp(&right.name));
-        for plan in &columns {
-            arena.push((plan.name.as_str(), RowLeaf::Bool(false)));
-        }
-        for (root_idx, plan) in columns.iter().enumerate() {
-            let column = batch.column(plan.column_idx);
-            let leaf = match plan.kind {
-                ColumnKind::Scalar(scalar) => dynamic_leaf(scalar, column, row, false)?,
-                ColumnKind::Map(scalar) => {
-                    let (start, end) =
-                        push_map_entries(scalar, column.as_map(), row, &mut arena, false)?;
-                    RowLeaf::Object(start, end)
-                }
-            };
-            arena[root_idx].1 = leaf;
-        }
+        let mut arena = Vec::with_capacity(64);
+        let (_, root_range) = self.build_row(batch, row, 0, true, &mut arena)?;
         Some(JsonRow {
             arena,
-            num_root_entries: columns.len() as u32,
+            root_range: root_range.expect("requested"),
         })
     }
 
-    /// Names of timestamp columns, whose values [`Self::row_json`] does not reproduce.
+    /// Names of timestamp columns, whose text the row object does not reproduce.
     pub fn timestamp_column_names(&self) -> impl Iterator<Item = &str> {
         self.leaf_columns
             .iter()
@@ -385,43 +449,11 @@ impl ArrowDocBuilder {
             })
             .map(|plan| plan.name.as_str())
     }
-
-    /// Approximate size of the JSON encoding of `row` (used for metrics and memory accounting).
-    pub fn estimate_num_bytes(&self, batch: &RecordBatch, row: usize) -> usize {
-        let mut num_bytes = 2;
-        for plan in self.leaf_columns.iter().chain(&self.dynamic_columns) {
-            let column = batch.column(plan.column_idx);
-            if column.is_null(row) {
-                continue;
-            }
-            num_bytes += plan.name.len() + 4;
-            num_bytes += match plan.kind {
-                ColumnKind::Scalar(ScalarKind::Str) => {
-                    str_value(column, row).map(str::len).unwrap_or(0)
-                }
-                ColumnKind::Scalar(ScalarKind::Timestamp(_)) => 30,
-                ColumnKind::Scalar(_) => 8,
-                ColumnKind::Map(_) => {
-                    let map = column.as_map();
-                    let offsets = map.value_offsets();
-                    let (start, end) = (offsets[row] as usize, offsets[row + 1] as usize);
-                    let keys = map.keys();
-                    let values = map.values();
-                    let mut map_bytes = 2;
-                    for idx in start..end {
-                        map_bytes += str_value(keys, idx).map(str::len).unwrap_or(0) + 6;
-                        map_bytes += str_value(values, idx).map(str::len).unwrap_or(8);
-                    }
-                    map_bytes
-                }
-            };
-        }
-        num_bytes
-    }
 }
 
-/// A dynamic-field value borrowed from the record batch. Objects point into a per-row arena of
-/// entries, so writing the dynamic object allocates nothing per key or value.
+/// A value borrowed from the record batch, as `serde_json` decodes its `arrow_json` encoding.
+/// Objects point into a per-row arena of entries. Strings are raw: written to a document, the
+/// ones tantivy would parse as RFC 3339 dates become dates (see [`RowValue`]).
 #[derive(Clone, Copy, Debug)]
 pub enum RowLeaf<'a> {
     /// A string.
@@ -434,10 +466,9 @@ pub enum RowLeaf<'a> {
     F64(f64),
     /// A boolean.
     Bool(bool),
-    /// Dynamic-field documents only: an RFC 3339 string, as tantivy converts it.
-    Date(DateTime),
-    /// JSON rows only: a timestamp, whose `arrow_json` text is not reproduced.
-    TimestampStr,
+    /// A timestamp, in nanoseconds. `arrow_json` writes it as an RFC 3339 string: documents get
+    /// the date it parses to, the text itself is not reproduced.
+    Timestamp(i64),
     /// Entries `start..end` of the arena.
     Object(u32, u32),
 }
@@ -453,6 +484,14 @@ pub struct RowValue<'a> {
 }
 
 impl<'a> RowValue<'a> {
+    /// The object `range` of `arena` (see [`ArrowDocBuilder::build_row`]).
+    pub fn new_object(range: (u32, u32), arena: &'a [(&'a str, RowLeaf<'a>)]) -> Self {
+        RowValue {
+            leaf: RowLeaf::Object(range.0, range.1),
+            arena,
+        }
+    }
+
     /// Entries of an object node, empty for other nodes.
     pub fn entries(&self) -> impl Iterator<Item = (&'a str, RowValue<'a>)> + 'a {
         let range = match self.leaf {
@@ -476,17 +515,14 @@ impl<'a> RowValue<'a> {
 
 /// The entries of one row, see [`ArrowDocBuilder::json_row`].
 pub struct JsonRow<'a> {
-    arena: Vec<(&'a str, RowLeaf<'a>)>,
-    num_root_entries: u32,
+    arena: RowArena<'a>,
+    root_range: (u32, u32),
 }
 
 impl<'a> JsonRow<'a> {
     /// The row object.
     pub fn root(&'a self) -> RowValue<'a> {
-        RowValue {
-            leaf: RowLeaf::Object(0, self.num_root_entries),
-            arena: &self.arena,
-        }
+        RowValue::new_object(self.root_range, &self.arena)
     }
 }
 
@@ -498,6 +534,10 @@ pub struct RowObjectIter<'a> {
 
 impl<'a> Iterator for RowObjectIter<'a> {
     type Item = (&'a str, RowValue<'a>);
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.entries.size_hint()
+    }
 
     fn next(&mut self) -> Option<Self::Item> {
         let (key, leaf) = self.entries.next()?;
@@ -517,13 +557,18 @@ impl<'a> tantivy::schema::Value<'a> for RowValue<'a> {
 
     fn as_value(&self) -> ReferenceValue<'a, Self> {
         match self.leaf {
-            RowLeaf::Str(text) => ReferenceValueLeaf::Str(text).into(),
+            // tantivy's conversion of a JSON string.
+            RowLeaf::Str(text) => match json_string_as_date(text) {
+                Some(date_time) => ReferenceValueLeaf::Date(date_time).into(),
+                None => ReferenceValueLeaf::Str(text).into(),
+            },
             RowLeaf::I64(value) => ReferenceValueLeaf::I64(value).into(),
             RowLeaf::U64(value) => ReferenceValueLeaf::U64(value).into(),
             RowLeaf::F64(value) => ReferenceValueLeaf::F64(value).into(),
             RowLeaf::Bool(value) => ReferenceValueLeaf::Bool(value).into(),
-            RowLeaf::Date(value) => ReferenceValueLeaf::Date(value).into(),
-            RowLeaf::TimestampStr => unreachable!("documents never hold timestamp text"),
+            RowLeaf::Timestamp(nanos) => {
+                ReferenceValueLeaf::Date(DateTime::from_timestamp_nanos(nanos)).into()
+            }
             RowLeaf::Object(start, end) => ReferenceValue::Object(RowObjectIter {
                 entries: self.arena[start as usize..end as usize].iter(),
                 arena: self.arena,
@@ -534,27 +579,20 @@ impl<'a> tantivy::schema::Value<'a> for RowValue<'a> {
 
 /// tantivy's conversion of a JSON string (`&serde_json::Value`): strings starting with a digit
 /// that parse as RFC 3339 become dates.
-fn json_string_leaf(text: &str) -> RowLeaf<'_> {
-    if matches!(text.as_bytes().first(), Some(byte) if byte.is_ascii_digit())
-        && let Ok(date_time) =
-            time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339)
-    {
-        return RowLeaf::Date(DateTime::from_utc(
-            date_time.to_offset(time::UtcOffset::UTC),
-        ));
+fn json_string_as_date(text: &str) -> Option<DateTime> {
+    if !matches!(text.as_bytes().first(), Some(byte) if byte.is_ascii_digit()) {
+        return None;
     }
-    RowLeaf::Str(text)
+    let date_time =
+        time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339).ok()?;
+    Some(DateTime::from_utc(
+        date_time.to_offset(time::UtcOffset::UTC),
+    ))
 }
 
 /// A scalar as the dynamic field receives it from the JSON path (`&serde_json::Value`).
-fn dynamic_leaf<'a>(
-    scalar: ScalarKind,
-    column: &'a ArrayRef,
-    row: usize,
-    for_doc: bool,
-) -> Option<RowLeaf<'a>> {
+fn dynamic_leaf<'a>(scalar: ScalarKind, column: &'a ArrayRef, row: usize) -> Option<RowLeaf<'a>> {
     let leaf = match scalar {
-        ScalarKind::Str if for_doc => json_string_leaf(str_value(column, row)?),
         ScalarKind::Str => RowLeaf::Str(str_value(column, row)?),
         // serde_json numbers: integers are tried as i64 first.
         ScalarKind::I64 => RowLeaf::I64(i64_value(column, row)),
@@ -567,11 +605,7 @@ fn dynamic_leaf<'a>(
         }
         ScalarKind::F64 => RowLeaf::F64(f64_value(column, row)?),
         ScalarKind::Bool => RowLeaf::Bool(column.as_boolean().value(row)),
-        // arrow_json writes an RFC 3339 string, which tantivy parses back to the same instant.
-        ScalarKind::Timestamp(unit) if for_doc => RowLeaf::Date(DateTime::from_timestamp_nanos(
-            timestamp_nanos(column, unit, row)?,
-        )),
-        ScalarKind::Timestamp(_) => RowLeaf::TimestampStr,
+        ScalarKind::Timestamp(unit) => RowLeaf::Timestamp(timestamp_nanos(column, unit, row)?),
     };
     Some(leaf)
 }
@@ -582,8 +616,7 @@ fn push_map_entries<'a>(
     scalar: ScalarKind,
     map: &'a MapArray,
     row: usize,
-    arena: &mut Vec<(&'a str, RowLeaf<'a>)>,
-    for_doc: bool,
+    arena: &mut RowArena<'a>,
 ) -> Option<(u32, u32)> {
     let offsets = map.value_offsets();
     let (start, end) = (offsets[row] as usize, offsets[row + 1] as usize);
@@ -596,7 +629,7 @@ fn push_map_entries<'a>(
         let leaf = if values.is_null(idx) {
             None
         } else {
-            Some(dynamic_leaf(scalar, values, idx, for_doc)?)
+            Some(dynamic_leaf(scalar, values, idx)?)
         };
         // Mark nulls with an empty object range; filtered below.
         arena.push((key, leaf.unwrap_or(RowLeaf::Object(u32::MAX, u32::MAX))));
@@ -759,6 +792,7 @@ mod tests {
         TimestampMillisecondArray, TimestampNanosecondArray, UInt8Array, UInt64Array,
     };
     use arrow_schema::{DataType, Field as ArrowField, Schema as ArrowSchema, TimeUnit};
+    use tantivy::TantivyDocument;
     use tantivy::schema::document::Document as _;
 
     use super::ArrowDocBuilder;
@@ -958,14 +992,13 @@ mod tests {
     }
 
     /// The JSON path: `arrow_json` with nulls omitted, then `doc_from_json_bytes`.
-    fn json_docs(doc_mapper: &DocMapper, batch: &RecordBatch) -> Vec<Option<serde_json::Value>> {
+    fn json_docs(doc_mapper: &DocMapper, batch: &RecordBatch) -> Vec<Option<TantivyDocument>> {
         let mut writer = arrow_json::WriterBuilder::new()
             .with_explicit_nulls(false)
             .build::<_, arrow_json::writer::LineDelimited>(Vec::new());
         writer.write(batch).unwrap();
         writer.finish().unwrap();
         let ndjson = writer.into_inner();
-        let schema = doc_mapper.schema();
         ndjson
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
@@ -973,85 +1006,106 @@ mod tests {
                 doc_mapper
                     .doc_from_json_bytes(line)
                     .ok()
-                    .map(|(_, doc)| serde_json::from_str(&doc.to_json(&schema)).unwrap())
+                    .map(|(_, doc)| doc)
             })
             .collect()
     }
 
-    fn arrow_docs(
-        builder: &ArrowDocBuilder,
-        doc_mapper: &DocMapper,
-        batch: &RecordBatch,
-    ) -> Vec<Option<serde_json::Value>> {
+    /// The doc store encoding of the document: what search returns.
+    fn stored_bytes(doc: &TantivyDocument, doc_mapper: &DocMapper) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        doc.serialize_stored_fields(&doc_mapper.schema(), &mut bytes)
+            .unwrap()
+            .unwrap();
+        bytes
+    }
+
+    /// The values the inverted index and the fast fields see.
+    fn indexed_values(doc: &TantivyDocument, doc_mapper: &DocMapper) -> Vec<(String, String)> {
         let schema = doc_mapper.schema();
-        (0..batch.num_rows())
-            .map(|row| {
-                builder
-                    .build_doc(batch, row, 256)
-                    .map(|doc| serde_json::from_str(&doc.to_json(&schema)).unwrap())
+        doc.iter_fields_and_values()
+            .filter(|(field, _)| {
+                let entry = schema.get_field_entry(*field);
+                entry.is_indexed() || entry.is_fast()
+            })
+            .map(|(field, value)| {
+                let value: tantivy::schema::OwnedValue = value.into();
+                (
+                    schema.get_field_name(field).to_string(),
+                    format!("{value:?}"),
+                )
             })
             .collect()
+    }
+
+    /// Arrow documents equal JSON documents (same stored bytes, same indexed values), for every
+    /// row the builder converts. Returns the rows it converts.
+    fn check_arrow_docs_match_json_docs(doc_mapper: &DocMapper, batch: &RecordBatch) -> Vec<usize> {
+        let builder = ArrowDocBuilder::try_new(doc_mapper, &batch.schema()).unwrap();
+        let expected = json_docs(doc_mapper, batch);
+        let mut native_rows = Vec::new();
+        let mut arena = Vec::new();
+        for (row, expected_doc) in expected.iter().enumerate() {
+            // The builder may hand a row to the JSON path, never produce a different doc.
+            let Some((actual_doc, _)) = builder.build_row(batch, row, 256, false, &mut arena)
+            else {
+                continue;
+            };
+            let expected_doc = expected_doc
+                .as_ref()
+                .expect("the JSON path accepts the row");
+            assert_eq!(
+                stored_bytes(&actual_doc, doc_mapper),
+                stored_bytes(expected_doc, doc_mapper),
+                "stored bytes, row {row}"
+            );
+            assert_eq!(
+                indexed_values(&actual_doc, doc_mapper),
+                indexed_values(expected_doc, doc_mapper),
+                "indexed values, row {row}"
+            );
+            native_rows.push(row);
+        }
+        native_rows
     }
 
     #[test]
     fn test_arrow_docs_match_json_docs() {
         let doc_mapper = otel_doc_mapper();
         let batch = otel_batch();
-        let builder = ArrowDocBuilder::try_new(&doc_mapper, &batch.schema()).unwrap();
-        let expected = json_docs(&doc_mapper, &batch);
-        let actual = arrow_docs(&builder, &doc_mapper, &batch);
-        assert_eq!(expected.len(), actual.len());
-        for (row, (expected_doc, actual_doc)) in expected.iter().zip(&actual).enumerate() {
-            match actual_doc {
-                // The builder may hand a row to the JSON path, never produce a different doc.
-                None => {}
-                Some(actual_doc) => {
-                    assert_eq!(Some(actual_doc), expected_doc.as_ref(), "row {row}");
-                }
-            }
-        }
         // Row 3 has a null after a non-null duplicate key and is handed to the JSON path.
-        let native_rows: Vec<usize> = (0..actual.len())
-            .filter(|&row| actual[row].is_some())
-            .collect();
-        assert_eq!(native_rows, vec![0, 1, 2, 4]);
+        assert_eq!(
+            check_arrow_docs_match_json_docs(&doc_mapper, &batch),
+            vec![0, 1, 2, 4]
+        );
+        // The stored-only dynamic object is not visible to the indexers.
+        let builder = ArrowDocBuilder::try_new(&doc_mapper, &batch.schema()).unwrap();
+        let doc = builder.build_doc(&batch, 0, 256).unwrap();
+        let schema = doc_mapper.schema();
+        assert!(
+            doc.iter_fields_and_values()
+                .all(|(field, _)| schema.get_field_name(field) != "_dynamic")
+        );
     }
 
     #[test]
-    fn test_arrow_doc_field_value_order_matches_json_path() {
-        // Same values in the same order means the same stored bytes in the doc store.
-        let doc_mapper = otel_doc_mapper();
+    fn test_arrow_docs_match_json_docs_with_indexed_dynamic_field() {
+        // Default dynamic mapping: indexed and fast, so the object goes through the document.
+        let doc_mapper = doc_mapper(serde_json::json!({
+            "mode": "dynamic",
+            "field_mappings": [
+                {"name": "Timestamp", "type": "datetime", "input_formats": ["unix_timestamp", "rfc3339"],
+                 "fast_precision": "milliseconds", "fast": true, "indexed": true},
+                {"name": "Body", "type": "text", "tokenizer": "default", "record": "position"},
+                {"name": "ServiceName", "type": "text", "tokenizer": "raw", "fast": true}
+            ],
+            "timestamp_field": "Timestamp"
+        }));
         let batch = otel_batch();
-        let builder = ArrowDocBuilder::try_new(&doc_mapper, &batch.schema()).unwrap();
-        let mut writer = arrow_json::WriterBuilder::new()
-            .with_explicit_nulls(false)
-            .build::<_, arrow_json::writer::LineDelimited>(Vec::new());
-        writer.write(&batch).unwrap();
-        writer.finish().unwrap();
-        let ndjson = writer.into_inner();
-        let schema = doc_mapper.schema();
-        for (row, line) in ndjson
-            .split(|byte| *byte == b'\n')
-            .filter(|line| !line.is_empty())
-            .enumerate()
-        {
-            let (_, json_doc) = doc_mapper.doc_from_json_bytes(line).unwrap();
-            let Some(arrow_doc) = builder.build_doc(&batch, row, 256) else {
-                continue;
-            };
-            let fields = |doc: &tantivy::TantivyDocument| -> Vec<(String, String)> {
-                doc.iter_fields_and_values()
-                    .map(|(field, value)| {
-                        let value: tantivy::schema::OwnedValue = value.into();
-                        (
-                            schema.get_field_name(field).to_string(),
-                            format!("{value:?}"),
-                        )
-                    })
-                    .collect()
-            };
-            assert_eq!(fields(&arrow_doc), fields(&json_doc), "row {row}");
-        }
+        assert_eq!(
+            check_arrow_docs_match_json_docs(&doc_mapper, &batch),
+            vec![0, 1, 2, 4]
+        );
     }
 
     /// Converts a borrowed row to `serde_json`, mapping timestamp text to "".
@@ -1063,8 +1117,7 @@ mod tests {
             RowLeaf::U64(number) => number.into(),
             RowLeaf::F64(number) => serde_json::Number::from_f64(number).unwrap().into(),
             RowLeaf::Bool(value) => value.into(),
-            RowLeaf::TimestampStr => "".into(),
-            RowLeaf::Date(_) => unreachable!(),
+            RowLeaf::Timestamp(_) => "".into(),
             RowLeaf::Object(..) => serde_json::Value::Object(
                 value
                     .entries()
