@@ -142,26 +142,27 @@ impl ShardTableEntry {
 
 #[derive(Default)]
 pub struct ShardLocations<'a> {
-    shard_locations: HashMap<&'a ShardId, smallvec::SmallVec<[&'a NodeId; 2]>>,
+    shard_locations: HashMap<&'a ShardId, &'a NodeId>,
 }
 
 impl<'a> ShardLocations<'a> {
     pub(crate) fn add_location(&mut self, shard_id: &'a ShardId, ingester_id: &'a NodeId) {
-        let locations = self.shard_locations.entry(shard_id).or_default();
-        if locations.contains(&ingester_id) {
+        let Some(&registered_ingester_id) = self.shard_locations.get(shard_id) else {
+            self.shard_locations.insert(shard_id, ingester_id);
+            return;
+        };
+        if registered_ingester_id == ingester_id {
             warn!("shard {shard_id:?} was registered twice the same ingester {ingester_id:?}");
         } else {
-            locations.push(ingester_id);
+            error!(
+                "shard {shard_id:?} is already registered on ingester {registered_ingester_id:?}, \
+                 ignoring ingester {ingester_id:?}"
+            );
         }
     }
 
-    /// Returns the list of indexer holding the given shard.
-    /// No guarantee is made on the order of the returned list.
-    pub fn get_shard_locations(&self, shard_id: &ShardId) -> &[&'a NodeId] {
-        let Some(node_ids) = self.shard_locations.get(shard_id) else {
-            return &[];
-        };
-        node_ids.as_slice()
+    pub fn get_shard_location(&self, shard_id: &ShardId) -> Option<&'a NodeId> {
+        self.shard_locations.get(shard_id).copied()
     }
 }
 
@@ -199,7 +200,6 @@ fn remove_shard_from_ingesters_internal(
 }
 
 impl ShardTable {
-    /// Returns a ShardLocations object that maps each shard to the list of ingesters hosting it.
     /// All shards are considered regardless of their state (including unavailable).
     pub fn shard_locations(&self) -> ShardLocations<'_> {
         let mut shard_locations = ShardLocations::default();
@@ -1237,20 +1237,13 @@ mod tests {
         shard_locations.add_location(&shard1, &node1);
         shard_locations.add_location(&shard1, &node2);
         // add location called several times should counted once.
-        shard_locations.add_location(&shard2, &node2);
-        assert_eq!(
-            shard_locations.get_shard_locations(&shard1),
-            &[&node1, &node2]
-        );
-        assert_eq!(
-            shard_locations.get_shard_locations(&shard2),
-            &[&node1, &node2]
-        );
-        // If the shard is not listed, we do not panic but just return an empty list.
+        shard_locations.add_location(&shard2, &node1);
+        assert_eq!(shard_locations.get_shard_location(&shard1), Some(&node1));
+        assert_eq!(shard_locations.get_shard_location(&shard2), Some(&node1));
         assert!(
             shard_locations
-                .get_shard_locations(&unlisted_shard)
-                .is_empty()
+                .get_shard_location(&unlisted_shard)
+                .is_none()
         );
     }
 
@@ -1308,28 +1301,21 @@ mod tests {
         );
 
         let shard_locations = shard_table.shard_locations();
-        let get_sorted_locations_for_shard = |shard_id: u64| {
-            let mut locations = shard_locations
-                .get_shard_locations(&ShardId::from(shard_id))
-                .to_vec();
-            locations.sort();
-            locations
-        };
         assert_eq!(
-            &get_sorted_locations_for_shard(0u64),
-            &[&NodeId::from_str("indexer1")]
+            shard_locations.get_shard_location(&ShardId::from(0u64)),
+            Some(&NodeId::from_str("indexer1"))
         );
         assert_eq!(
-            &get_sorted_locations_for_shard(1u64),
-            &[&NodeId::from_str("indexer1")]
+            shard_locations.get_shard_location(&ShardId::from(1u64)),
+            Some(&NodeId::from_str("indexer1"))
         );
         assert_eq!(
-            &get_sorted_locations_for_shard(2u64),
-            &[&NodeId::from_str("indexer2")]
+            shard_locations.get_shard_location(&ShardId::from(2u64)),
+            Some(&NodeId::from_str("indexer2"))
         );
         assert_eq!(
-            &get_sorted_locations_for_shard(3u64),
-            &[&NodeId::from_str("indexer2")]
+            shard_locations.get_shard_location(&ShardId::from(3u64)),
+            Some(&NodeId::from_str("indexer2"))
         );
     }
 }

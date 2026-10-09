@@ -512,10 +512,10 @@ fn build_host_per_shard<'a>(
     let mut host_per_shard = FnvHashMap::default();
     for source in sources {
         for shard_id in shard_ids_of_source(source) {
-            let Some(host) = shard_locations.get_shard_locations(shard_id).first() else {
+            let Some(host) = shard_locations.get_shard_location(shard_id) else {
                 continue;
             };
-            host_per_shard.insert(shard_id, (*host).clone());
+            host_per_shard.insert(shard_id, host.clone());
         }
     }
     host_per_shard

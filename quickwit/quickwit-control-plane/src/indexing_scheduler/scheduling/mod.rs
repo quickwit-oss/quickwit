@@ -531,9 +531,7 @@ fn remove_empty_sharded_pipelines(
 }
 
 fn is_shard_local(indexer: &NodeId, shard_id: &ShardId, shard_locations: &ShardLocations) -> bool {
-    shard_locations
-        .get_shard_locations(shard_id)
-        .contains(&indexer)
+    shard_locations.get_shard_location(shard_id) == Some(indexer)
 }
 
 fn is_shard_hosted_on_draining_indexer(
@@ -541,15 +539,13 @@ fn is_shard_hosted_on_draining_indexer(
     shard_locations: &ShardLocations,
     indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
 ) -> bool {
-    shard_locations
-        .get_shard_locations(shard_id)
-        .iter()
-        .any(|node_id| {
-            let Some(indexer_info) = indexer_infos.get(*node_id) else {
-                return false;
-            };
-            indexer_info.eligibility == Eligibility::SelfHostedOnly
-        })
+    let Some(node_id) = shard_locations.get_shard_location(shard_id) else {
+        return false;
+    };
+    let Some(indexer_info) = indexer_infos.get(node_id) else {
+        return false;
+    };
+    indexer_info.eligibility == Eligibility::SelfHostedOnly
 }
 
 fn may_keep_shard_in_previous_pipeline(
@@ -580,7 +576,7 @@ fn shard_availability_zone(
     shard_locations: &ShardLocations,
     indexer_infos: &FnvHashMap<NodeId, IndexerInfo>,
 ) -> Option<AvailabilityZone> {
-    let hosting_node_id = shard_locations.get_shard_locations(shard_id).first()?;
+    let hosting_node_id = shard_locations.get_shard_location(shard_id)?;
     indexer_availability_zone(hosting_node_id, indexer_infos)
 }
 
@@ -636,16 +632,10 @@ fn assign_shards(
     // In a first pass we first assign as many shards on their hosting nodes as possible.
     let mut remaining_missing_shards: Vec<ShardId> = Vec::new();
     for shard_id in missing_shards {
-        // As a heuristic, we pick the first node hosting the shard that is available.
-        let indexer_hosting_shard: Option<(NonZeroU32, &NodeId)> = shard_locations
-            .get_shard_locations(&shard_id)
-            .iter()
-            .flat_map(|node_id| {
-                let num_shards = remaining_num_shards_per_node.get(*node_id)?;
-                Some((*num_shards, *node_id))
-            })
-            .min_by_key(|(num_shards, _node_id)| *num_shards);
-        if let Some((_num_shards, indexer)) = indexer_hosting_shard {
+        let indexer_hosting_shard: Option<&NodeId> = shard_locations
+            .get_shard_location(&shard_id)
+            .filter(|node_id| remaining_num_shards_per_node.contains_key(*node_id));
+        if let Some(indexer) = indexer_hosting_shard {
             decrement_num_shards(indexer, &mut remaining_num_shards_per_node);
             shard_to_indexer.insert(shard_id, indexer.clone());
         } else {
@@ -953,17 +943,18 @@ fn convert_to_simplified_problem<'a>(
             let registered_source_ord = id_to_ord_map.add_source(source);
             if let SourceToScheduleType::Sharded { shard_ids, .. } = &source.source_type {
                 for shard_id in shard_ids {
-                    for &indexer in shard_locations.get_shard_locations(shard_id) {
-                        let Some(indexer_ord) = id_to_ord_map.indexer_ord(indexer) else {
-                            // This happens if the ingester is unavailable.
-                            rate_limited_debug!(
-                                limit_per_min = 10,
-                                "failed to find indexer ord for indexer {indexer}"
-                            );
-                            continue;
-                        };
-                        problem.inc_affinity(source_ord, indexer_ord);
-                    }
+                    let Some(indexer) = shard_locations.get_shard_location(shard_id) else {
+                        continue;
+                    };
+                    let Some(indexer_ord) = id_to_ord_map.indexer_ord(indexer) else {
+                        // This happens if the ingester is unavailable.
+                        rate_limited_debug!(
+                            limit_per_min = 10,
+                            "failed to find indexer ord for indexer {indexer}"
+                        );
+                        continue;
+                    };
+                    problem.inc_affinity(source_ord, indexer_ord);
                 }
             }
             assert_eq!(source_ord, registered_source_ord);
@@ -2150,9 +2141,7 @@ mod tests {
         shard_locations.add_location(&shard1, &node1);
         // shard2 on 2
         shard_locations.add_location(&shard2, &node2);
-        // shard3 on both 1 and 2
         shard_locations.add_location(&shard3, &node1);
-        shard_locations.add_location(&shard3, &node2);
         shard_locations.add_location(&shard0, &node_missing);
 
         let shard_to_indexer = assign_shards(
