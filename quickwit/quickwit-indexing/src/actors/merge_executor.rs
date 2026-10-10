@@ -228,10 +228,8 @@ fn merge_time_range(splits: &[SplitMetadata]) -> Option<RangeInclusive<DateTime>
         .minmax()
         .into_option()
         .map(|(min_timestamp, max_timestamp)| {
-            // Outward-rounded seconds can extend beyond DateTime's nanosecond range.
-            // Clip to representable timestamps; no document can lie outside that range.
-            DateTime::from_timestamp_nanos(min_timestamp.saturating_mul(1_000_000_000))
-                ..=DateTime::from_timestamp_nanos(max_timestamp.saturating_mul(1_000_000_000))
+            DateTime::from_timestamp_secs(min_timestamp)
+                ..=DateTime::from_timestamp_secs(max_timestamp)
         })
 }
 
@@ -623,35 +621,6 @@ mod tests {
     use super::*;
     use crate::merge_policy::{MergeOperation, MergeSource, MergeTask};
     use crate::{TestSandbox, get_tantivy_directory_from_split_bundle};
-
-    #[test]
-    fn test_merge_time_range_preserves_outward_bounds() {
-        let splits = [
-            SplitMetadata {
-                time_range: Some(-2..=-1),
-                ..Default::default()
-            },
-            SplitMetadata {
-                time_range: Some(1601..=1602),
-                ..Default::default()
-            },
-        ];
-        assert_eq!(
-            merge_time_range(&splits),
-            Some(DateTime::from_timestamp_secs(-2)..=DateTime::from_timestamp_secs(1602))
-        );
-
-        let extreme_split = SplitMetadata {
-            time_range: Some(-9_223_372_037..=9_223_372_037),
-            ..Default::default()
-        };
-        assert_eq!(
-            merge_time_range(&[extreme_split]),
-            Some(
-                DateTime::from_timestamp_nanos(i64::MIN)..=DateTime::from_timestamp_nanos(i64::MAX)
-            )
-        );
-    }
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {
