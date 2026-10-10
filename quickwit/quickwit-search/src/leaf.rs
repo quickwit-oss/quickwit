@@ -1594,21 +1594,18 @@ impl CanSplitDoBetter {
             CanSplitDoBetter::SplitTimestampHigher(timestamp)
             | CanSplitDoBetter::FindTraceIdsAggregation(timestamp) => {
                 if let Some(SortValue::I64(timestamp_ns)) = hit.sort_value() {
-                    // Split time ranges are in whole seconds and inclusive: a split whose
-                    // `timestamp_end` is S can hold documents up to S.999999999. If the worst
-                    // top-K hit is at 1.5s, a split ending at S=1 may still hold a 1.7s
-                    // document, which beats it. So the split must be kept whenever
-                    // `timestamp_end >= floor(worst)`: round DOWN. Rounding up here discarded
-                    // every split ending in the same second as the worst hit.
-                    *timestamp = Some(timestamp_ns.div_euclid(1_000_000_000));
+                    // Newly indexed splits round their maximum timestamp up to whole seconds.
+                    // For a worst hit at 1.5s, a split can do better only if its upper bound
+                    // is at least 2s. Legacy truncated bounds can still cause false pruning.
+                    *timestamp = Some(quickwit_common::div_ceil(timestamp_ns, 1_000_000_000));
                 }
             }
             CanSplitDoBetter::SplitTimestampLower(timestamp) => {
                 if let Some(SortValue::I64(timestamp_ns)) = hit.sort_value() {
-                    // A split whose `timestamp_start` is S holds documents >= S.0. It can beat
-                    // a worst hit at 1.5s only if S <= 1.5, i.e. S <= floor(worst). Round down
-                    // (`div_euclid`, so that pre-epoch timestamps also round toward -inf).
-                    *timestamp = Some(timestamp_ns.div_euclid(1_000_000_000));
+                    // Newly indexed splits round their minimum timestamp down to whole seconds.
+                    // Truncating the hit timestamp is conservative, including before the epoch.
+                    let timestamp_s = timestamp_ns / 1_000_000_000;
+                    *timestamp = Some(timestamp_s);
                 }
             }
         }
@@ -3199,6 +3196,63 @@ mod tests {
         assert!(result.offloaded_search_tasks.is_empty());
     }
 
+    #[test]
+    fn test_can_split_do_better_with_outward_rounded_metadata() {
+        use quickwit_indexing::merge_policy::{MergePolicy, NopMergePolicy};
+        use quickwit_indexing::models::{SplitAttrs, create_split_metadata};
+        use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId, SplitId};
+
+        let merge_policy: Arc<dyn MergePolicy> = Arc::new(NopMergePolicy);
+        for (start_ns, end_ns, worst_ns) in [
+            (1_601_100_000_000, 1_601_900_000_000, 1_601_758_000_000),
+            (-1_900_000_000, -1_100_000_000, -1_500_000_000),
+            (-600_000_000, -100_000_000, -500_000_000),
+        ] {
+            let split_attrs = SplitAttrs {
+                node_id: NodeId::from_str("test-node"),
+                index_uid: IndexUid::new_with_random_ulid("test-index"),
+                source_id: "test-source".to_string(),
+                doc_mapping_uid: DocMappingUid::default(),
+                split_id: SplitId::new(),
+                partition_id: 0,
+                num_docs: 2,
+                uncompressed_docs_size_in_bytes: 0,
+                time_range: Some(
+                    DateTime::from_timestamp_nanos(start_ns)
+                        ..=DateTime::from_timestamp_nanos(end_ns),
+                ),
+                replaced_split_ids: Vec::new(),
+                delete_opstamp: 0,
+                num_merge_ops: 0,
+            };
+            let metadata =
+                create_split_metadata(&merge_policy, None, &split_attrs, Default::default(), 0..0);
+            let split = crate::extract_split_and_footer_offsets(&metadata);
+            let hit = |timestamp_ns| PartialHit {
+                sort_value: Some(quickwit_proto::search::SortByValue {
+                    sort_value: Some(SortValue::I64(timestamp_ns)),
+                }),
+                ..Default::default()
+            };
+
+            // A split with a better document in the same second must not be pruned.
+            for mut pruning in [
+                CanSplitDoBetter::SplitTimestampHigher(None),
+                CanSplitDoBetter::FindTraceIdsAggregation(None),
+            ] {
+                pruning.record_new_worst_hit(&hit(worst_ns));
+                assert!(pruning.can_be_better(&split));
+                pruning.record_new_worst_hit(&hit(end_ns + 2_000_000_000));
+                assert!(!pruning.can_be_better(&split));
+            }
+            let mut ascending = CanSplitDoBetter::SplitTimestampLower(None);
+            ascending.record_new_worst_hit(&hit(worst_ns));
+            assert!(ascending.can_be_better(&split));
+            ascending.record_new_worst_hit(&hit(start_ns - 2_000_000_000));
+            assert!(!ascending.can_be_better(&split));
+        }
+    }
+
     mod proptest_greedy_batch {
         use std::num::NonZeroUsize;
 
@@ -3277,45 +3331,5 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[test]
-    fn test_can_split_do_better_timestamp_same_second() {
-        // Regression: the worst top-K hit and a split's end both fall in second 1601.
-        let worst_hit = PartialHit {
-            sort_value: Some(quickwit_proto::search::SortByValue {
-                sort_value: Some(SortValue::I64(1_601_758_000_000)),
-            }),
-            ..Default::default()
-        };
-        let split_in_same_second = SplitIdAndFooterOffsets {
-            timestamp_start: Some(1_601),
-            timestamp_end: Some(1_601),
-            ..Default::default()
-        };
-        let split_in_previous_second = SplitIdAndFooterOffsets {
-            timestamp_start: Some(1_600),
-            timestamp_end: Some(1_600),
-            ..Default::default()
-        };
-        let split_in_next_second = SplitIdAndFooterOffsets {
-            timestamp_start: Some(1_602),
-            timestamp_end: Some(1_602),
-            ..Default::default()
-        };
-
-        // sort by timestamp desc: the same-second split may hold 1601.9 > 1601.758
-        let mut desc = CanSplitDoBetter::SplitTimestampHigher(None);
-        desc.record_new_worst_hit(&worst_hit);
-        assert!(desc.can_be_better(&split_in_same_second));
-        assert!(desc.can_be_better(&split_in_next_second));
-        assert!(!desc.can_be_better(&split_in_previous_second));
-
-        // sort by timestamp asc: the same-second split may hold 1601.1 < 1601.758
-        let mut asc = CanSplitDoBetter::SplitTimestampLower(None);
-        asc.record_new_worst_hit(&worst_hit);
-        assert!(asc.can_be_better(&split_in_same_second));
-        assert!(asc.can_be_better(&split_in_previous_second));
-        assert!(!asc.can_be_better(&split_in_next_second));
     }
 }

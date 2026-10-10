@@ -95,10 +95,17 @@ pub fn create_split_metadata(
 ) -> SplitMetadata {
     let create_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-    let time_range = split_attrs
-        .time_range
-        .as_ref()
-        .map(|range| range.start().into_timestamp_secs()..=range.end().into_timestamp_secs());
+    // Round outward so the whole-second bounds contain every document timestamp.
+    // In particular, truncating the upper bound could make timestamp-descending searches
+    // skip this split even when it contains a better hit within the same second.
+    let time_range = split_attrs.time_range.as_ref().map(|range| {
+        let start = range
+            .start()
+            .into_timestamp_nanos()
+            .div_euclid(1_000_000_000);
+        let end = quickwit_common::div_ceil(range.end().into_timestamp_nanos(), 1_000_000_000);
+        start..=end
+    });
 
     let mut maturity =
         merge_policy.split_maturity(split_attrs.num_docs as usize, split_attrs.num_merge_ops);
@@ -154,11 +161,61 @@ fn max_maturity_before_end_of_retention(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+    use std::sync::Arc;
     use std::time::Duration;
 
     use quickwit_metastore::SplitMaturity;
+    use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId, SplitId};
+    use tantivy::DateTime;
 
-    use super::max_maturity_before_end_of_retention;
+    use super::{SplitAttrs, create_split_metadata, max_maturity_before_end_of_retention};
+    use crate::merge_policy::{MergePolicy, NopMergePolicy};
+
+    #[test]
+    fn test_create_split_metadata_time_range_rounds_outward() {
+        let merge_policy: Arc<dyn MergePolicy> = Arc::new(NopMergePolicy);
+        let mut split_attrs = SplitAttrs {
+            node_id: NodeId::from_str("test-node"),
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
+            source_id: "test-source".to_string(),
+            doc_mapping_uid: DocMappingUid::default(),
+            split_id: SplitId::new(),
+            partition_id: 0,
+            num_docs: 2,
+            uncompressed_docs_size_in_bytes: 0,
+            time_range: None,
+            replaced_split_ids: Vec::new(),
+            delete_opstamp: 0,
+            num_merge_ops: 0,
+        };
+        let metadata =
+            create_split_metadata(&merge_policy, None, &split_attrs, BTreeSet::new(), 0..0);
+        assert_eq!(metadata.time_range, None);
+
+        for (start_ns, end_ns, expected_range) in [
+            (1_601_100_000_000, 1_601_900_000_000, 1601..=1602),
+            (-1_900_000_000, -1_100_000_000, -2..=-1),
+            (-600_000_000, -100_000_000, -1..=0),
+            (-1, 1, -1..=1),
+            (-2_000_000_000, 3_000_000_000, -2..=3),
+            (0, 0, 0..=0),
+            (1_000_000_000, 1_000_000_000, 1..=1),
+            (-1_000_000_000, -1_000_000_000, -1..=-1),
+            (i64::MIN, i64::MAX, -9_223_372_037..=9_223_372_037),
+        ] {
+            split_attrs.time_range = Some(
+                DateTime::from_timestamp_nanos(start_ns)..=DateTime::from_timestamp_nanos(end_ns),
+            );
+            let metadata =
+                create_split_metadata(&merge_policy, None, &split_attrs, BTreeSet::new(), 0..0);
+            assert_eq!(
+                metadata.time_range,
+                Some(expected_range),
+                "timestamps {start_ns}..={end_ns}"
+            );
+        }
+    }
 
     #[test]
     fn test_max_maturity_before_end_of_retention() {
