@@ -1621,6 +1621,43 @@ pub async fn test_metastore_stage_splits<MetastoreToTest: MetastoreServiceExt + 
         .await
         .expect("Pre-existing staged splits should be updated.");
 
+    // Recovery staging inserts missing rows but must not overwrite an existing writer's staged row.
+    let mut conflicting_split_metadata = split_metadata_1.clone();
+    conflicting_split_metadata.node_id = "recovery".to_string();
+    let split_metadata_3 = SplitMetadata {
+        split_id: format!("{index_id}--split-3").into(),
+        index_uid: index_uid.clone(),
+        node_id: "recovery".to_string(),
+        ..Default::default()
+    };
+    let mut stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
+        index_uid.clone(),
+        [conflicting_split_metadata, split_metadata_3.clone()],
+    )
+    .unwrap();
+    stage_splits_request.create_only = true;
+    metastore.stage_splits(stage_splits_request).await.unwrap();
+
+    let query = ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
+    let splits = metastore
+        .list_splits(ListSplitsRequest::try_from_list_splits_query(&query).unwrap())
+        .await
+        .unwrap()
+        .collect_splits()
+        .await
+        .unwrap();
+    assert_eq!(splits.len(), 3);
+    let existing_split = splits
+        .iter()
+        .find(|split| split.split_id().as_str() == split_id_1)
+        .unwrap();
+    assert_eq!(existing_split.split_metadata.node_id, "node-1");
+    assert!(
+        splits
+            .iter()
+            .any(|split| split.split_id() == split_metadata_3.split_id())
+    );
+
     let publish_splits_request = PublishSplitsRequest {
         index_uid: Some(index_uid.clone()),
         staged_split_ids: vec![split_id_1.clone(), split_id_2.clone()],
