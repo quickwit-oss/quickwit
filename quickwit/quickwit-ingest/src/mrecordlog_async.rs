@@ -305,7 +305,8 @@ impl MultiRecordLogAsync {
     }
 
     #[instrument(name = "mrecordlog.truncate_async", skip_all, fields(queue, position))]
-    pub async fn truncate(&mut self, queue: &str, position: u64) -> Result<usize, TruncateError> {
+    /// Callable concurrently with appends and truncations: locks only the instance of `queue`.
+    pub async fn truncate(&self, queue: &str, position: u64) -> Result<usize, TruncateError> {
         let span = info_span!("mrecordlog.truncate", queue, position);
         let queue_owned = queue.to_string();
         self.run_operation(queue, span, move |mrecordlog| {

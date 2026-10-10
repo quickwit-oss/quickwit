@@ -67,12 +67,18 @@ impl BroadcastIngesterCapacityScoreTask {
             return Ok(None);
         }
 
+        // The WAL is locked in shared mode: an exclusive lock, even a short one, waits for the
+        // in-flight persist requests and fetch streams, and blocks all new ones in the meantime.
+        let usage = state
+            .read_wal("broadcast_capacity_score")
+            .await
+            .context("failed to acquire WAL lock")?
+            .resource_usage();
         let mut guard = state
-            .lock_fully("broadcast_capacity_score")
+            .lock_partially("broadcast_capacity_score")
             .await
             .context("failed to acquire ingester state lock")?;
 
-        let usage = guard.mrecordlog.resource_usage();
         let disk_used = ByteSize::b(usage.disk_used_bytes as u64);
         let memory_used = ByteSize::b(usage.memory_used_bytes as u64);
         let capacity_score = guard

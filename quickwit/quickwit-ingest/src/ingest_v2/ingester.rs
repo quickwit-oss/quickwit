@@ -950,28 +950,26 @@ impl Ingester {
                 self.self_node_id, truncate_shards_request.ingester_id,
             )));
         }
-        let mut state_guard = self.state.lock_fully("truncate_shards_rpc").await?;
-
-        for subrequest in truncate_shards_request.subrequests {
-            let queue_id = subrequest.queue_id();
-            let truncate_up_to_position_inclusive = subrequest.truncate_up_to_position_inclusive();
-
-            // We deliberately do NOT delete the shard when the indexer truncates up to EOF over
-            // this gRPC path. Shard deletion is driven solely by the `ShardPositionsUpdate` gossip
-            // event (see the `EventSubscriber<ShardPositionsUpdate>` impl below), which is the same
-            // signal the control plane uses to delete the shard from the metastore and its model.
-            //
-            // Handling shard deletion through that single, shared signal keeps the ingester and
-            // control plane views consistent: the ingester never removes a shard the
-            // control plane does not also remove.
-            state_guard
-                .truncate_shard(&queue_id, truncate_up_to_position_inclusive, "indexer RPC")
-                .await;
-        }
-        let wal_usage = state_guard.mrecordlog.resource_usage();
-        report_wal_usage(wal_usage, self.disk_capacity, self.memory_capacity);
-
-        state_guard.check_decommissioning_status().await;
+        // We deliberately do NOT delete the shard when the indexer truncates up to EOF over
+        // this gRPC path. Shard deletion is driven solely by the `ShardPositionsUpdate` gossip
+        // event (see the `EventSubscriber<ShardPositionsUpdate>` impl below), which is the same
+        // signal the control plane uses to delete the shard from the metastore and its model.
+        //
+        // Handling shard deletion through that single, shared signal keeps the ingester and
+        // control plane views consistent: the ingester never removes a shard the
+        // control plane does not also remove.
+        let truncations: Vec<(QueueId, Position)> = truncate_shards_request
+            .subrequests
+            .into_iter()
+            .map(|subrequest| {
+                let queue_id = subrequest.queue_id();
+                let position = subrequest.truncate_up_to_position_inclusive();
+                (queue_id, position)
+            })
+            .collect();
+        self.state
+            .truncate_shards(truncations, "indexer RPC")
+            .await?;
         let truncate_response = TruncateShardsResponse {};
         Ok(truncate_response)
     }
@@ -1250,25 +1248,35 @@ async fn filter_local_shard_updates(
 async fn apply_local_shard_updates(state: &IngesterState, local_updates: Vec<(QueueId, Position)>) {
     let now = Instant::now();
 
-    let Ok(mut state_guard) = state.lock_fully("apply_local_shard_updates").await else {
-        debug!("ingester was dropped: exiting");
-        return;
+    let (deletions, truncations): (Vec<_>, Vec<_>) = local_updates
+        .into_iter()
+        .filter(|(_, shard_position)| !shard_position.is_beginning())
+        .partition(|(_, shard_position)| shard_position.is_eof());
+
+    // Truncations only need the WAL in shared mode: they don't stop persist requests.
+    let num_truncated_shards = if truncations.is_empty() {
+        0
+    } else {
+        match state.truncate_shards(truncations, "indexer gossip").await {
+            Ok(num_truncated_shards) => num_truncated_shards,
+            Err(error) => {
+                debug!(%error, "failed to truncate shards");
+                return;
+            }
+        }
     };
     let mut num_deleted_shards = 0;
-    let mut num_truncated_shards = 0;
-
-    for (queue_id, shard_position) in local_updates {
-        if shard_position.is_eof() {
+    if !deletions.is_empty() {
+        let Ok(mut state_guard) = state.lock_fully("apply_local_shard_updates").await else {
+            debug!("ingester was dropped: exiting");
+            return;
+        };
+        for (queue_id, _) in deletions {
             state_guard.delete_shard(&queue_id, "indexer gossip").await;
             num_deleted_shards += 1;
-        } else if !shard_position.is_beginning() {
-            state_guard
-                .truncate_shard(&queue_id, shard_position, "indexer gossip")
-                .await;
-            num_truncated_shards += 1;
         }
+        state_guard.check_decommissioning_status().await;
     }
-    state_guard.check_decommissioning_status().await;
 
     Span::current().record("num_deleted_shards", num_deleted_shards);
     Span::current().record("num_truncated_shards", num_truncated_shards);
@@ -2997,6 +3005,57 @@ mod tests {
         state_guard
             .mrecordlog
             .assert_records_eq(&queue_id_02, .., &[]);
+    }
+
+    #[tokio::test]
+    async fn test_ingester_truncate_shards_does_not_need_the_exclusive_wal_lock() {
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let shard = IngesterShard::builder(
+            index_uid.clone(),
+            SourceId::from("test-source"),
+            ShardId::from(1),
+        )
+        .build();
+        {
+            let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
+            state_guard.shards.insert(queue_id.clone(), shard);
+            state_guard.mrecordlog.create_queue(&queue_id).await.unwrap();
+            let records = [MRecord::new_doc("test-doc-foo").encode()].into_iter();
+            state_guard
+                .mrecordlog
+                .append_records(&queue_id, None, records)
+                .await
+                .unwrap();
+        }
+        // An in-flight persist holds the WAL in shared mode.
+        let wal_guard = ingester.state.read_wal("test").await.unwrap();
+        let num_truncated_shards = tokio::time::timeout(
+            Duration::from_secs(5),
+            ingester
+                .state
+                .truncate_shards(vec![(queue_id.clone(), Position::offset(0u64))], "test"),
+        )
+        .await
+        .expect("truncation should not wait for the exclusive WAL lock")
+        .unwrap();
+        assert_eq!(num_truncated_shards, 1);
+        drop(wal_guard);
+
+        let state_guard = ingester.state.lock_fully("test").await.unwrap();
+        state_guard
+            .shards
+            .get(&queue_id)
+            .unwrap()
+            .assert_truncation_position(Position::offset(0u64));
+        assert!(
+            state_guard
+                .mrecordlog
+                .with_range(&queue_id, .., |records| records.count())
+                .unwrap()
+                == 0
+        );
     }
 
     #[tokio::test]

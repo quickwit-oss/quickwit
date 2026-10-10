@@ -35,7 +35,7 @@ use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, SourceId
 use tokio::sync::{
     Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockReadGuard, RwLockWriteGuard, watch,
 };
-use tracing::{error, info, instrument};
+use tracing::{debug, error, info, instrument};
 
 use super::models::IngesterShard;
 use super::rate_meter::RateMeter;
@@ -727,6 +727,85 @@ impl FullyLockedIngesterState<'_> {
                 .await;
             }
         }
+    }
+}
+
+impl IngesterState {
+    /// Truncates shards without the exclusive WAL lock, so that persist requests and fetch
+    /// streams keep running: picks the shards under the state lock, truncates their queues with
+    /// the WAL locked in shared mode (each truncation locks only the instance of its queue), then
+    /// records the truncation positions under the state lock. Returns the number of truncated
+    /// shards.
+    ///
+    /// Deleting a queue requires the exclusive WAL lock, so no queue can disappear while the WAL
+    /// is locked in shared mode. Truncation positions only move forward, so concurrent
+    /// truncations of the same shard are harmless.
+    pub async fn truncate_shards(
+        &self,
+        truncations: Vec<(QueueId, Position)>,
+        initiator: &'static str,
+    ) -> IngestV2Result<usize> {
+        let wal_guard = self.read_wal("truncate_shards").await?;
+        // Positions without an offset (`Eof` of an empty shard) are recorded without touching the
+        // WAL.
+        let to_truncate: Vec<(QueueId, Position, Option<u64>)> = {
+            let state_guard = self.lock_inner("truncate_shards_pick").await;
+            truncations
+                .into_iter()
+                .filter_map(|(queue_id, position)| {
+                    let shard = state_guard.shards.get(&queue_id)?;
+                    if shard.truncation_position_inclusive >= position {
+                        return None;
+                    }
+                    let offset_opt = position.as_u64();
+                    Some((queue_id, position, offset_opt))
+                })
+                .collect()
+        };
+        let mut outcomes = Vec::with_capacity(to_truncate.len());
+        for (queue_id, position, offset_opt) in to_truncate {
+            let outcome = match offset_opt {
+                Some(offset) => wal_guard.truncate(&queue_id, offset).await.map(|_| ()),
+                None => Ok(()),
+            };
+            outcomes.push((queue_id, position, outcome));
+        }
+        let mut state_guard = self.lock_inner("truncate_shards_publish").await;
+        let mut num_truncated_shards = 0;
+        for (queue_id, position, outcome) in outcomes {
+            match outcome {
+                Ok(_) => {}
+                Err(TruncateError::MissingQueue(_)) => {
+                    error!("failed to truncate shard `{queue_id}`: WAL queue not found");
+                    if state_guard.shards.remove(&queue_id).is_some() {
+                        info!("deleted dangling shard `{queue_id}`");
+                    }
+                    continue;
+                }
+                Err(TruncateError::IoError(io_error)) => {
+                    error!("failed to truncate shard `{queue_id}`: {io_error}");
+                    continue;
+                }
+            }
+            let Some(shard) = state_guard.shards.get_mut(&queue_id) else {
+                continue;
+            };
+            debug!("truncated shard `{queue_id}` at {position} initiated via `{initiator}`");
+            if shard.truncation_position_inclusive < position {
+                shard.truncation_position_inclusive = position;
+            }
+            num_truncated_shards += 1;
+        }
+        state_guard.check_decommissioning_status().await;
+        let (disk_capacity, memory_capacity) =
+            (state_guard.disk_capacity, state_guard.memory_capacity);
+        drop(state_guard);
+        crate::ingest_v2::metrics::report_wal_usage(
+            wal_guard.resource_usage(),
+            disk_capacity,
+            memory_capacity,
+        );
+        Ok(num_truncated_shards)
     }
 }
 
