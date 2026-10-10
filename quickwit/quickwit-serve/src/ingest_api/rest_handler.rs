@@ -272,7 +272,7 @@ pub(crate) fn lines(body: &Bytes) -> impl Iterator<Item = &[u8]> {
         .filter(|line| !is_empty_or_blank_line(line))
 }
 
-fn build_doc_batch_v2_from_ndjson_body(doc_buffer: Bytes) -> Option<DocBatchV2> {
+fn build_doc_batch_v2_from_ndjson_body(ndjson_body: Bytes) -> Option<DocBatchV2> {
     let mut doc_uids = Vec::new();
     let mut doc_lengths = Vec::new();
     let mut doc_uid_generator = DocUidGenerator::default();
@@ -280,8 +280,8 @@ fn build_doc_batch_v2_from_ndjson_body(doc_buffer: Bytes) -> Option<DocBatchV2> 
     let mut line_start = 0usize;
 
     // memchr searches for newlines with SIMD: ~10x faster than a byte-by-byte scan.
-    for position in memchr::memchr_iter(b'\n', &doc_buffer) {
-        let line = &doc_buffer[line_start..position];
+    for position in memchr::memchr_iter(b'\n', &ndjson_body) {
+        let line = &ndjson_body[line_start..position];
         if !is_empty_or_blank_line(line) {
             doc_uids.push(doc_uid_generator.next_doc_uid());
             doc_lengths.push((position + 1 - segment_start) as u32);
@@ -290,18 +290,18 @@ fn build_doc_batch_v2_from_ndjson_body(doc_buffer: Bytes) -> Option<DocBatchV2> 
         line_start = position + 1;
     }
 
-    let line = &doc_buffer[line_start..];
+    let line = &ndjson_body[line_start..];
     if !is_empty_or_blank_line(line) {
         doc_uids.push(doc_uid_generator.next_doc_uid());
-        doc_lengths.push((doc_buffer.len() - segment_start) as u32);
-        segment_start = doc_buffer.len();
+        doc_lengths.push((ndjson_body.len() - segment_start) as u32);
+        segment_start = ndjson_body.len();
     }
 
     if doc_uids.is_empty() {
         return None;
     }
-    if segment_start < doc_buffer.len() {
-        let trailing_whitespace_len = doc_buffer.len() - segment_start;
+    if segment_start < ndjson_body.len() {
+        let trailing_whitespace_len = ndjson_body.len() - segment_start;
         let last_doc_len = doc_lengths
             .last_mut()
             .expect("doc lengths should not be empty");
@@ -310,7 +310,7 @@ fn build_doc_batch_v2_from_ndjson_body(doc_buffer: Bytes) -> Option<DocBatchV2> 
 
     Some(DocBatchV2 {
         doc_uids,
-        doc_buffer,
+        doc_buffer: ndjson_body,
         doc_lengths,
     })
 }
