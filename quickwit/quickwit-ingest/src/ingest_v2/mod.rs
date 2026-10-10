@@ -153,6 +153,15 @@ pub struct DocBatchV2Builder {
 }
 
 impl DocBatchV2Builder {
+    /// Creates a builder whose document buffer can hold `num_bytes` bytes without reallocating.
+    pub fn with_capacity(num_bytes: usize) -> Self {
+        Self {
+            doc_uids: Vec::new(),
+            doc_buffer: BytesMut::with_capacity(num_bytes),
+            doc_lengths: Vec::new(),
+        }
+    }
+
     /// Adds a document to the batch.
     pub fn add_doc(&mut self, doc_uid: DocUid, doc: &[u8]) {
         self.doc_uids.push(doc_uid);

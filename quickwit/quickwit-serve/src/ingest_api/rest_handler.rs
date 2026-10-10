@@ -193,7 +193,8 @@ async fn ingest_v2(
     ingest_options: IngestOptions,
     ingest_router: IngestRouterServiceClient,
 ) -> Result<RestIngestResponse, IngestServiceError> {
-    let mut doc_batch_builder = DocBatchV2Builder::default();
+    // The body size is an upper bound of the size of the documents.
+    let mut doc_batch_builder = DocBatchV2Builder::with_capacity(body.content.len());
     let mut doc_uid_generator = DocUidGenerator::default();
 
     for doc in lines(&body.content) {
@@ -275,7 +276,15 @@ async fn tail_endpoint(
 }
 
 pub(crate) fn lines(body: &Bytes) -> impl Iterator<Item = &[u8]> {
-    body.split(|byte| byte == &b'\n')
+    let body: &[u8] = body;
+    let mut line_start = 0;
+    let line_ends = memchr::memchr_iter(b'\n', body).chain(std::iter::once(body.len()));
+    line_ends
+        .map(move |line_end| {
+            let line = &body[line_start..line_end];
+            line_start = line_end + 1;
+            line
+        })
         .filter(|line| !is_empty_or_blank_line(line))
 }
 
@@ -317,6 +326,11 @@ pub(crate) mod tests {
         for &(input, expected_count) in &test_cases {
             assert_eq!(lines(&Bytes::from(input)).count(), expected_count);
         }
+        let body = Bytes::from_static(b"a\n\nbc\n  \nd");
+        assert_eq!(lines(&body).collect::<Vec<_>>(), [&b"a"[..], b"bc", b"d"]);
+        let body = Bytes::from_static(b"a\n");
+        assert_eq!(lines(&body).collect::<Vec<_>>(), [&b"a"[..]]);
+        assert_eq!(lines(&Bytes::new()).count(), 0);
     }
 
     pub(crate) async fn setup_ingest_v1_service(
