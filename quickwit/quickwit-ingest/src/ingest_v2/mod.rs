@@ -153,7 +153,6 @@ pub struct DocBatchV2Builder {
 }
 
 impl DocBatchV2Builder {
-    /// Creates a builder with enough room for `doc_buffer_capacity` bytes of document payloads.
     pub fn with_capacity(doc_buffer_capacity: usize) -> Self {
         Self {
             doc_uids: Vec::new(),

@@ -12,16 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Helpers to split NDJSON request bodies into documents.
-//!
-//! Newlines are found with `memchr` (SIMD), which is ~10x faster than a byte-by-byte scan on
-//! typical log payloads. Empty and blank (whitespace-only) lines are skipped.
-
 use bytes::Bytes;
 use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::types::DocUidGenerator;
 
-/// Returns an iterator over the non-blank lines of an NDJSON body, without their trailing `\n`.
+/// Iterates over the non-blank lines of an NDJSON body.
 pub fn split_ndjson_lines(ndjson_body: &[u8]) -> impl Iterator<Item = &[u8]> {
     let mut line_start = 0;
     memchr::memchr_iter(b'\n', ndjson_body)
@@ -34,15 +29,8 @@ pub fn split_ndjson_lines(ndjson_body: &[u8]) -> impl Iterator<Item = &[u8]> {
         .filter(|line| !is_empty_or_blank_line(line))
 }
 
-/// Builds a [`DocBatchV2`] from an NDJSON body without copying the documents: the body becomes
-/// the batch's doc buffer, and each non-blank line becomes a document with a fresh doc UID.
-///
-/// Since the docs must cover the whole buffer, the newlines and the blank lines are kept with the
-/// neighboring docs: a doc spans from the end of the previous doc to the end of its own line,
-/// including the `\n`, and the last doc also covers any trailing blank lines. JSON parsers ignore
-/// this leading and trailing whitespace.
-///
-/// Returns `None` if the body has no non-blank line.
+/// Builds a [`DocBatchV2`] whose doc buffer is the NDJSON body itself, without copying. The docs
+/// must cover the whole buffer, so newlines and blank lines stay attached to neighboring docs.
 pub fn doc_batch_v2_from_ndjson(ndjson_body: Bytes) -> Option<DocBatchV2> {
     let mut doc_uids = Vec::new();
     let mut doc_lengths = Vec::new();
