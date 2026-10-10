@@ -19,6 +19,7 @@ fail = { workspace = true, optional = true }
 futures = { workspace = true }
 http = { workspace = true }
 itertools = { workspace = true }
+memchr = { workspace = true }
 mockall = { workspace = true, optional = true }
 mrecordlog = { workspace = true }
 prost = { workspace = true }

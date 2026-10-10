@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use quickwit_common::rate_limited_error;
 use quickwit_config::{INGEST_V2_SOURCE_ID, validate_identifier};
-use quickwit_ingest::IngestRequestV2Builder;
+use quickwit_ingest::{IngestRequestV2Builder, split_ndjson_lines};
 use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestResponseV2, IngestRouterService, IngestRouterServiceClient,
@@ -29,7 +29,6 @@ use warp::hyper::StatusCode;
 use super::model::ElasticException;
 use crate::Body;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
-use crate::ingest_api::lines;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub(crate) struct ElasticBulkResponse {
@@ -88,7 +87,7 @@ pub(crate) async fn elastic_bulk_ingest_v2(
 ) -> Result<ElasticBulkResponse, ElasticsearchError> {
     let now = Instant::now();
     let mut ingest_request_builder = IngestRequestV2Builder::default();
-    let mut lines = lines(&body.content).enumerate();
+    let mut lines = split_ndjson_lines(&body.content).enumerate();
     let mut per_subrequest_doc_handles: HashMap<u32, Vec<DocHandle>> = HashMap::new();
     let mut action_count = 0;
     let mut invalid_index_id_items = Vec::new();

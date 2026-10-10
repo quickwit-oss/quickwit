@@ -28,7 +28,6 @@ http-serde = { workspace = true }
 humantime = { workspace = true }
 hyper-util = { workspace = true }
 itertools = { workspace = true }
-memchr = { workspace = true }
 mime_guess = { workspace = true }
 opentelemetry = { workspace = true }
 percent-encoding = { workspace = true }

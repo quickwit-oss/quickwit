@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use bytes::{Buf, Bytes};
+use bytes::Buf;
 use quickwit_config::{INGEST_V2_SOURCE_ID, IngestApiConfig, validate_identifier};
 use quickwit_ingest::{
     CommitType, DocBatchBuilder, FetchResponse, IngestRequest, IngestService, IngestServiceClient,
-    IngestServiceError, TailRequest,
+    IngestServiceError, TailRequest, doc_batch_v2_from_ndjson, split_ndjson_lines,
 };
+use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::ingest::router::{
     IngestRequestV2, IngestRouterService, IngestRouterServiceClient, IngestSubrequest,
 };
-use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2};
-use quickwit_proto::types::{DocUidGenerator, IndexId};
+use quickwit_proto::types::IndexId;
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
@@ -176,7 +176,7 @@ async fn ingest_v1(
     // The size of the body should be an upper bound of the size of the batch. The removal of the
     // end of line character for each doc compensates the addition of the `DocCommand` header.
     let mut doc_batch_builder = DocBatchBuilder::with_capacity(index_id, body.content.remaining());
-    for line in lines(&body.content) {
+    for line in split_ndjson_lines(&body.content) {
         doc_batch_builder.ingest_doc(line);
     }
     let ingest_req = IngestRequest {
@@ -193,7 +193,7 @@ async fn ingest_v2(
     ingest_options: IngestOptions,
     ingest_router: IngestRouterServiceClient,
 ) -> Result<RestIngestResponse, IngestServiceError> {
-    let doc_batch_opt = build_doc_batch_v2_from_ndjson_body(body.content);
+    let doc_batch_opt = doc_batch_v2_from_ndjson(body.content);
 
     let Some(doc_batch) = doc_batch_opt else {
         let response = RestIngestResponse::default();
@@ -267,65 +267,10 @@ async fn tail_endpoint(
     Ok(fetch_response)
 }
 
-pub(crate) fn lines(body: &Bytes) -> impl Iterator<Item = &[u8]> {
-    body.split(|byte| byte == &b'\n')
-        .filter(|line| !is_empty_or_blank_line(line))
-}
-
-fn build_doc_batch_v2_from_ndjson_body(ndjson_body: Bytes) -> Option<DocBatchV2> {
-    let mut doc_uids = Vec::new();
-    let mut doc_lengths = Vec::new();
-    let mut doc_uid_generator = DocUidGenerator::default();
-    let mut segment_start = 0usize;
-    let mut line_start = 0usize;
-
-    // memchr searches for newlines with SIMD: ~10x faster than a byte-by-byte scan.
-    for position in memchr::memchr_iter(b'\n', &ndjson_body) {
-        let line = &ndjson_body[line_start..position];
-        if !is_empty_or_blank_line(line) {
-            doc_uids.push(doc_uid_generator.next_doc_uid());
-            doc_lengths.push((position + 1 - segment_start) as u32);
-            segment_start = position + 1;
-        }
-        line_start = position + 1;
-    }
-
-    let line = &ndjson_body[line_start..];
-    if !is_empty_or_blank_line(line) {
-        doc_uids.push(doc_uid_generator.next_doc_uid());
-        doc_lengths.push((ndjson_body.len() - segment_start) as u32);
-        segment_start = ndjson_body.len();
-    }
-
-    if doc_uids.is_empty() {
-        return None;
-    }
-    if segment_start < ndjson_body.len() {
-        let trailing_whitespace_len = ndjson_body.len() - segment_start;
-        let last_doc_len = doc_lengths
-            .last_mut()
-            .expect("doc lengths should not be empty");
-        *last_doc_len += trailing_whitespace_len as u32;
-    }
-
-    Some(DocBatchV2 {
-        doc_uids,
-        doc_buffer: ndjson_body,
-        doc_lengths,
-    })
-}
-
-#[inline]
-fn is_empty_or_blank_line(line: &[u8]) -> bool {
-    line.is_empty() || line.iter().all(|ch| ch.is_ascii_whitespace())
-}
-
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::str;
     use std::time::Duration;
 
-    use bytes::Bytes;
     use quickwit_actors::{Mailbox, Universe};
     use quickwit_config::IngestApiConfig;
     use quickwit_ingest::{
@@ -334,43 +279,7 @@ pub(crate) mod tests {
     };
     use quickwit_proto::ingest::router::IngestRouterServiceClient;
 
-    use super::{RestIngestResponse, build_doc_batch_v2_from_ndjson_body, ingest_api_handlers};
-    use crate::ingest_api::lines;
-
-    #[test]
-    fn test_process_lines() {
-        let test_cases = [
-            // an empty line is inserted before the metadata action and the doc
-            (&b"\n{ \"create\" : { \"_index\" : \"my-index-1\", \"_id\" : \"1\"} }\n{\"id\": 1, \"message\": \"push\"}"[..], 2),
-            // a blank line is inserted before the metadata action and the doc
-            (&b"       \n{ \"create\" : { \"_index\" : \"my-index-1\", \"_id\" : \"1\"} }\n{\"id\": 1, \"message\": \"push\"}"[..], 2),
-            // an empty line is inserted after the metadata action and before the doc
-            (&b"{ \"create\" : { \"_index\" : \"my-index-1\", \"_id\" : \"1\"} }\n\n{\"id\": 1, \"message\": \"push\"}"[..], 2),
-            // a blank line is inserted after the metadata action and before the doc
-            (&b"{ \"create\" : { \"_index\" : \"my-index-1\", \"_id\" : \"1\"} }\n     \n{\"id\": 1, \"message\": \"push\"}"[..], 2),
-        ];
-
-        for &(input, expected_count) in &test_cases {
-            assert_eq!(lines(&Bytes::from(input)).count(), expected_count);
-        }
-    }
-
-    #[test]
-    fn test_build_doc_batch_v2_from_ndjson_body_zero_copy() {
-        let body = Bytes::from_static(b"\n  {\"id\":1}\n\n{\"id\":2}\n   \n");
-        let doc_batch = build_doc_batch_v2_from_ndjson_body(body.clone()).unwrap();
-        assert_eq!(doc_batch.num_docs(), 2);
-        assert_eq!(doc_batch.doc_buffer, body);
-
-        let docs: Vec<Bytes> = doc_batch.docs().map(|(_doc_uid, doc)| doc).collect();
-        assert_eq!(str::from_utf8(&docs[0]).unwrap(), "\n  {\"id\":1}\n");
-        assert_eq!(str::from_utf8(&docs[1]).unwrap(), "\n{\"id\":2}\n   \n");
-    }
-
-    #[test]
-    fn test_build_doc_batch_v2_from_blank_body() {
-        assert!(build_doc_batch_v2_from_ndjson_body(Bytes::from_static(b"\n \n\t")).is_none());
-    }
+    use super::{RestIngestResponse, ingest_api_handlers};
 
     pub(crate) async fn setup_ingest_v1_service(
         queues: &[&str],
