@@ -95,8 +95,10 @@ pub struct SplitMetadata {
     /// JSON payloads.
     pub uncompressed_docs_size_in_bytes: u64,
 
-    /// If a timestamp field is available, the min / max timestamp in
-    /// the split, expressed in seconds.
+    /// If a timestamp field is available, inclusive timestamp bounds in Unix seconds.
+    /// Newly indexed splits round the minimum down and the maximum up to contain all
+    /// document timestamps. Older splits truncated both endpoints toward zero; their
+    /// bounds, including those inherited by merges, are not repaired retroactively.
     pub time_range: Option<RangeInclusive<i64>>,
 
     /// Timestamp for tracking when the split was created.
