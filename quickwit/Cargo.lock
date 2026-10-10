@@ -8008,6 +8008,7 @@ dependencies = [
  "humantime",
  "hyper-util",
  "itertools 0.15.0",
+ "memchr",
  "mime_guess",
  "mockall",
  "opentelemetry",

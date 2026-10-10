@@ -126,6 +126,7 @@ libz-sys = "1.1"
 lru = "0.18"
 matches = "0.1"
 md5 = "0.8"
+memchr = "2"
 metrics = "0.24"
 metrics-opentelemetry = "=0.24032.8"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }

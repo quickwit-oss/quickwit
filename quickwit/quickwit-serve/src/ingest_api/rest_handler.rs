@@ -279,10 +279,8 @@ fn build_doc_batch_v2_from_ndjson_body(doc_buffer: Bytes) -> Option<DocBatchV2> 
     let mut segment_start = 0usize;
     let mut line_start = 0usize;
 
-    for (position, byte) in doc_buffer.iter().enumerate() {
-        if *byte != b'\n' {
-            continue;
-        }
+    // memchr searches for newlines with SIMD: ~10x faster than a byte-by-byte scan.
+    for position in memchr::memchr_iter(b'\n', &doc_buffer) {
         let line = &doc_buffer[line_start..position];
         if !is_empty_or_blank_line(line) {
             doc_uids.push(doc_uid_generator.next_doc_uid());
