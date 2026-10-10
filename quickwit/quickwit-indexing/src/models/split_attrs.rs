@@ -99,6 +99,8 @@ pub fn create_split_metadata(
     // In particular, truncating the upper bound could make timestamp-descending searches
     // skip this split even when it contains a better hit within the same second.
     let time_range = split_attrs.time_range.as_ref().map(|range| {
+        // `into_timestamp_secs()` truncates toward zero: -0.6s becomes 0, not -1.
+        // Use nanoseconds to preserve the fractional part, then floor with `div_euclid`.
         let start = range
             .start()
             .into_timestamp_nanos()
