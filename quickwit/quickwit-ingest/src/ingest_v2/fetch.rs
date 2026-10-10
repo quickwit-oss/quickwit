@@ -123,44 +123,31 @@ impl FetchStreamTask {
                 // The shard was dropped.
                 break;
             }
-            has_drained_queue = true;
-
-            let mut mrecord_buffer = BytesMut::with_capacity(self.batch_num_bytes);
-            let mut mrecord_lengths = Vec::new();
-
-            let (mrecordlog_guard, acquired_at) =
-                track_acquire_lock("fetch_stream", "partial", self.mrecordlog.read()).await;
-
-            let queue_exists = {
-                let instance_guard = mrecordlog_guard
-                    .as_ref()
-                    .expect("mrecordlog should be initialized")
-                    .lock_queue_instance(&self.queue_id);
-                match instance_guard.range(&self.queue_id, self.from_position_inclusive..) {
-                    Ok(mrecords) => {
-                        for Record { payload, .. } in mrecords {
-                            // Accept at least one message
-                            if !mrecord_buffer.is_empty()
-                                && (mrecord_buffer.len() + payload.len()
-                                    > mrecord_buffer.capacity())
-                            {
-                                has_drained_queue = false;
-                                break;
-                            }
-                            mrecord_buffer.put(payload.borrow());
-                            mrecord_lengths.push(payload.len() as u32);
-                        }
-                        true
-                    }
-                    Err(_) => false,
-                }
-            };
-            if !queue_exists {
+            let (mrecordlog_guard, acquired_at) = track_acquire_lock(
+                "fetch_stream",
+                "partial",
+                self.mrecordlog.clone().read_owned(),
+            )
+            .await;
+            // Locking the WAL instance may wait for in-flight appends: don't block an async worker
+            // while doing so.
+            let queue_id = self.queue_id.clone();
+            let from_position_inclusive = self.from_position_inclusive;
+            let batch_num_bytes = self.batch_num_bytes;
+            let read_result = tokio::task::spawn_blocking(move || {
+                read_queue_batch(
+                    &mrecordlog_guard,
+                    &queue_id,
+                    from_position_inclusive,
+                    batch_num_bytes,
+                )
+            })
+            .await;
+            let Ok(Some((mrecord_buffer, mrecord_lengths, has_drained))) = read_result else {
                 // The queue was dropped.
                 break;
-            }
-            // Drop the lock while we send the message.
-            drop(mrecordlog_guard);
+            };
+            has_drained_queue = has_drained;
 
             warn_on_long_lock_hold("fetch_stream", "partial", acquired_at);
 
@@ -252,6 +239,37 @@ impl FetchStreamTask {
                 .await;
         }
     }
+}
+
+/// Copies the records of `queue_id` starting at `from_position_inclusive` into a buffer of at most
+/// `batch_num_bytes` (at least one record). Returns `None` if the queue does not exist, and whether
+/// the queue was drained.
+fn read_queue_batch(
+    mrecordlog_guard: &Option<MultiRecordLogAsync>,
+    queue_id: &str,
+    from_position_inclusive: u64,
+    batch_num_bytes: usize,
+) -> Option<(BytesMut, Vec<u32>, bool)> {
+    let mut mrecord_buffer = BytesMut::with_capacity(batch_num_bytes);
+    let mut mrecord_lengths = Vec::new();
+    let mut has_drained_queue = true;
+    let instance_guard = mrecordlog_guard
+        .as_ref()
+        .expect("mrecordlog should be initialized")
+        .lock_queue_instance(queue_id);
+    let mrecords = instance_guard.range(queue_id, from_position_inclusive..).ok()?;
+    for Record { payload, .. } in mrecords {
+        // Accept at least one message
+        if !mrecord_buffer.is_empty()
+            && (mrecord_buffer.len() + payload.len() > mrecord_buffer.capacity())
+        {
+            has_drained_queue = false;
+            break;
+        }
+        mrecord_buffer.put(payload.borrow());
+        mrecord_lengths.push(payload.len() as u32);
+    }
+    Some((mrecord_buffer, mrecord_lengths, has_drained_queue))
 }
 
 #[derive(Debug)]
