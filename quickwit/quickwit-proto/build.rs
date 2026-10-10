@@ -207,6 +207,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .run()
         .unwrap();
 
+    // Live tail service.
+    let mut prost_config = prost_build::Config::default();
+    prost_config
+        .bytes(["LiveTailHits.docs_ndjson"])
+        .extern_path(
+            ".quickwit.common.DocMappingUid",
+            "crate::types::DocMappingUid",
+        )
+        .extern_path(".quickwit.common.DocUid", "crate::types::DocUid")
+        .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid")
+        .file_descriptor_set_path("src/codegen/quickwit/live_tail_descriptor.bin");
+
+    Codegen::builder()
+        .with_prost_config(prost_config)
+        .with_protos(&["protos/quickwit/live_tail.proto"])
+        .with_includes(&["protos"])
+        .with_output_dir("src/codegen/quickwit")
+        .with_result_type_path("crate::live_tail::LiveTailResult")
+        .with_error_type_path("crate::live_tail::LiveTailError")
+        .generate_rpc_name_impls()
+        .run()
+        .unwrap();
+
     // Search service.
     //
     // Unlike the other services above, search goes through `tonic_prost_build` directly

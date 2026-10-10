@@ -1,0 +1,35 @@
+[package]
+name = "quickwit-live-tail"
+description = "Live tail of documents flowing through Quickwit indexing pipelines"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+bytes = { workspace = true }
+serde_json = { workspace = true }
+tantivy = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+quickwit-common = { workspace = true }
+quickwit-doc-mapper = { workspace = true }
+quickwit-metrics = { workspace = true }
+quickwit-proto = { workspace = true }
+quickwit-query = { workspace = true }
+
+[dev-dependencies]
+futures = { workspace = true }
+serde_yaml = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "macros"] }
+
+quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
+quickwit-proto = { workspace = true, features = ["testsuite"] }
