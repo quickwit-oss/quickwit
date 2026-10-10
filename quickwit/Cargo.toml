@@ -22,6 +22,7 @@ members = [
   "quickwit-janitor",
   "quickwit-lambda-client",
   "quickwit-lambda-server",
+  "quickwit-live-tail",
   "quickwit-macros",
   "quickwit-metastore",
   "quickwit-metrics-inventory",
@@ -363,6 +364,7 @@ quickwit-jaeger = { path = "quickwit-jaeger" }
 quickwit-janitor = { path = "quickwit-janitor" }
 quickwit-lambda-client = { path = "quickwit-lambda-client" }
 quickwit-lambda-server = { path = "quickwit-lambda-server" }
+quickwit-live-tail = { path = "quickwit-live-tail" }
 quickwit-macros = { path = "quickwit-macros" }
 quickwit-metastore = { path = "quickwit-metastore" }
 quickwit-metrics = { path = "quickwit-metrics" }

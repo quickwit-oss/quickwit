@@ -113,6 +113,44 @@ GET api/v1/stackoverflow*/search
 }
 ```
 
+### Live tail
+
+Streams the documents matching a query as they are indexed, as [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events): `api/v1/<index id>/tail`. Documents are streamed as soon as the indexing pipelines process them (sub-second latency), well before they become searchable at the end of the `commit_timeout_secs` period. Live tail works with all source types (ingest API, OTLP, Kafka, Kinesis, Pulsar, SQS, etc.) and documents are streamed after the VRL transform, if any.
+
+The index id supports the [multi-target syntax](#search-multiple-indices).
+
+```
+GET api/v1/<index id>/tail?query=severity_text:ERROR
+```
+
+```bash
+curl -N "http://localhost:7280/api/v1/otel-logs-v0_9/tail?query=severity_text:ERROR"
+```
+
+#### Parameters
+
+| Variable           | Type      | Description     | Default value   |
+|--------------------|-----------|-----------------|-----------------|
+| `query`            | `String`  | Query text, with the same syntax and semantics as the search API. See the [query language doc](query-language.md) | `*` |
+| `max_docs_per_sec` | `Integer` | Maximum number of documents sent per second by each indexer, between 1 and 10,000. Extra documents are reported in `dropped` events. | `200` |
+
+Invalid requests (unknown index, invalid query, etc.) are rejected with an HTTP error status before the stream is opened.
+
+#### Events
+
+| Event     | Data |
+|-----------|------|
+| `hits`    | `{"index_id": "...", "docs": [...]}`: documents matching the query. Within an index pipeline, documents are sent in processing order. There is no global ordering across indexers. |
+| `dropped` | `{"reason": "rate_limited" \| "lagged", "num_dropped": 12}`: documents that matched but were not sent. `rate_limited`: more documents matched than `max_docs_per_sec`. `lagged`: the client or the network did not keep up; `num_dropped` then counts batches of documents. |
+| `error`   | `{"message": "..."}`: non-fatal error, for instance an indexer could not be reached. The stream keeps running and reconnects automatically. |
+
+:::note
+- Live tail never slows indexing down: when a session cannot keep up, documents are dropped and reported in `dropped` events.
+- Only the documents processed after the stream is opened are streamed. A document may be streamed twice if an indexing pipeline restarts and replays it.
+- The number of concurrent live tail sessions per indexer is limited by the `QW_LIVE_TAIL_MAX_SESSIONS` environment variable (default: 16).
+- Long-lived connections may be closed by the server (see `max_connection_age`) or by proxies: clients should reconnect, which `EventSource` does automatically.
+:::
+
 ## Ingest API
 
 ### Ingest data into an index

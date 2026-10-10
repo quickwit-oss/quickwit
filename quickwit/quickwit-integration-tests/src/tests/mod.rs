@@ -16,6 +16,7 @@ mod basic_tests;
 mod compactor_tests;
 mod ingest_v1_tests;
 mod ingest_v2_tests;
+mod live_tail_tests;
 mod no_cp_tests;
 mod otlp_tests;
 mod serve_failure_tests;

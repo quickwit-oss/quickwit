@@ -60,6 +60,7 @@ quickwit-config = { workspace = true }
 quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-ingest = { workspace = true }
+quickwit-live-tail = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
