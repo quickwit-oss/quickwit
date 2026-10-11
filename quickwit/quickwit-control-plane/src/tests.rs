@@ -87,6 +87,7 @@ pub fn test_indexer_change_stream(
                             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
                             ingester_status: node.ingester_status,
                             availability_zone: None,
+                            pipeline_metrics: Default::default(),
                         },
                     );
                     Some(change)

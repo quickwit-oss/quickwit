@@ -19,10 +19,12 @@ pub mod ingest;
 pub(crate) mod metrics;
 pub(crate) mod model;
 
+use std::collections::BTreeMap;
+
 use quickwit_common::tower::Pool;
-use quickwit_proto::indexing::{CpuCapacity, IndexingServiceClient, IndexingTask};
+use quickwit_proto::indexing::{CpuCapacity, IndexingServiceClient, IndexingTask, PipelineMetrics};
 use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::types::{AvailabilityZone, NodeId};
+use quickwit_proto::types::{AvailabilityZone, NodeId, SourceUid};
 
 /// Indexer-node specific information stored in the pool of available indexer nodes
 #[derive(Debug, Clone)]
@@ -34,6 +36,8 @@ pub struct IndexerPoolEntry {
     pub indexing_capacity: CpuCapacity,
     pub ingester_status: IngesterStatus,
     pub availability_zone: Option<AvailabilityZone>,
+    /// Load reported by the cooperative indexing pipelines running on the node, keyed by source.
+    pub pipeline_metrics: BTreeMap<SourceUid, PipelineMetrics>,
 }
 
 pub type IndexerPool = Pool<NodeId, IndexerPoolEntry>;

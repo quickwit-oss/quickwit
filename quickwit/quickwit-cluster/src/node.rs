@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -19,9 +20,10 @@ use chitchat::{ChitchatId, NodeState};
 use quickwit_config::service::QuickwitService;
 #[cfg(any(test, feature = "testsuite"))]
 use quickwit_proto::indexing::IndexingTask;
+use quickwit_proto::indexing::PipelineMetrics;
 #[cfg(any(test, feature = "testsuite"))]
 use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::types::AvailabilityZone;
+use quickwit_proto::types::{AvailabilityZone, SourceUid};
 use tonic::transport::Channel;
 
 use crate::member::{ClusterMember, build_cluster_member};
@@ -113,6 +115,11 @@ impl ClusterNode {
 
     pub fn enable_standalone_compactors(&self) -> bool {
         self.inner.member.enable_standalone_compactors
+    }
+
+    /// Load reported by the cooperative indexing pipelines running on this node, keyed by source.
+    pub fn pipeline_metrics(&self) -> &BTreeMap<SourceUid, PipelineMetrics> {
+        &self.inner.member.pipeline_metrics
     }
 }
 

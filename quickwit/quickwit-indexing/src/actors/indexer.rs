@@ -47,6 +47,7 @@ use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, DocId, IndexBuilder, IndexSettings};
 use tokio::runtime::Handle;
 use tokio::sync::Semaphore;
+use tokio::time::Instant;
 use tracing::{Span, debug, info_span, warn};
 use ulid::Ulid;
 
@@ -376,6 +377,9 @@ pub struct Indexer {
     index_serializer_mailbox: Mailbox<IndexSerializer>,
     indexing_workbench_opt: Option<IndexingWorkbench>,
     counters: IndexerCounters,
+    /// End of the last cooperative indexing period, i.e. the last time the pipeline released its
+    /// indexing permit. Only set in cooperative mode.
+    last_cooperative_work_end_opt: Option<Instant>,
 }
 
 #[async_trait]
@@ -383,7 +387,13 @@ impl Actor for Indexer {
     type ObservableState = IndexerCounters;
 
     fn observable_state(&self) -> Self::ObservableState {
-        self.counters.clone()
+        let mut counters = self.counters.clone();
+        if self.is_idle_for_a_full_period() {
+            // The last reported metrics describe a period that is long gone. Report the pipeline
+            // as idle so that the control plane does not keep weighing it with stale load.
+            counters.pipeline_metrics_opt = Some(PipelineMetrics::IDLE);
+        }
+        counters
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
@@ -435,8 +445,7 @@ impl Actor for Indexer {
         // This also drops the indexing permit.
         let (sleep_duration, pipeline_metrics) =
             cooperative_indexing_period.end_of_work(uncompressed_num_bytes);
-
-        self.counters.pipeline_metrics_opt = Some(pipeline_metrics);
+        self.record_pipeline_metrics(pipeline_metrics);
 
         self.send_to_serializer(CommitTrigger::Drained, ctx).await?;
 
@@ -578,7 +587,28 @@ impl Indexer {
             index_serializer_mailbox,
             indexing_workbench_opt: None,
             counters: IndexerCounters::default(),
+            last_cooperative_work_end_opt: None,
         }
+    }
+
+    fn record_pipeline_metrics(&mut self, pipeline_metrics: PipelineMetrics) {
+        self.counters.pipeline_metrics_opt = Some(pipeline_metrics);
+        self.last_cooperative_work_end_opt = Some(Instant::now());
+    }
+
+    /// Returns true if a cooperative pipeline has not held an indexing permit for more than a
+    /// commit period, with no workbench in flight.
+    ///
+    /// Hidden contract: a pipeline waiting for a permit has no workbench yet, but it is blocked
+    /// inside the actor loop while it waits, so the last observation stays the one taken before.
+    /// This function therefore only reports idle periods, not permit contention.
+    fn is_idle_for_a_full_period(&self) -> bool {
+        let Some(last_cooperative_work_end) = self.last_cooperative_work_end_opt else {
+            return false;
+        };
+        self.indexing_workbench_opt.is_none()
+            && last_cooperative_work_end.elapsed()
+                > self.indexer_state.indexing_settings.commit_timeout()
     }
 
     fn memory_usage(&self) -> ByteSize {
@@ -637,11 +667,27 @@ impl Indexer {
             batch_parent_span,
             memory_usage,
             split_builders_guard,
+            cooperative_indexing_period,
             ..
         }) = self.indexing_workbench_opt.take()
         else {
             return Ok(());
         };
+
+        if let Some(cooperative_indexing_period) = cooperative_indexing_period {
+            // The workbench is committed before the mailbox drained (commit timeout, heap size,
+            // number of docs...). The pipeline held its permit for the whole period: it is
+            // reported as such, and unlike the drained path, it does not sleep. It queues
+            // for a permit again on its next batch.
+            let uncompressed_num_bytes: u64 = indexed_splits
+                .values()
+                .map(|split| split.split_attrs.uncompressed_docs_size_in_bytes)
+                .sum();
+            // This also drops the indexing permit.
+            let (_sleep_duration, pipeline_metrics) =
+                cooperative_indexing_period.end_of_work(uncompressed_num_bytes);
+            self.record_pipeline_metrics(pipeline_metrics);
+        }
 
         let mut splits: Vec<IndexedSplitBuilder> = indexed_splits.into_values().collect();
 
@@ -988,6 +1034,87 @@ mod tests {
                 break;
             }
         }
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_cooperative_indexer_reports_pipeline_metrics_on_non_drained_commit()
+    -> anyhow::Result<()> {
+        let universe = Universe::new();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
+            source_id: "test-source".to_string(),
+            node_id: NodeId::from_str("test-node"),
+            pipeline_uid: PipelineUid::default(),
+        };
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let schema = doc_mapper.schema();
+        let body_field = schema.get_field("body").unwrap();
+        let indexing_directory = TempDirectory::for_test();
+        let mut indexing_settings = IndexingSettings::for_test();
+        indexing_settings.commit_timeout_secs = 1;
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_last_delete_opstamp()
+            .returning(|_| Ok(LastDeleteOpstampResponse::new(10)));
+        let permits = Arc::new(Semaphore::new(1));
+        let mut indexer = create_indexer_for_test(
+            pipeline_id,
+            doc_mapper,
+            MetastoreServiceClient::from_mock(mock_metastore),
+            indexing_directory,
+            indexing_settings,
+            Some(permits.clone()),
+            index_serializer_mailbox,
+            None,
+        );
+        let (indexer_mailbox, _indexer_inbox) = universe.create_test_mailbox();
+        let (observable_state_tx, _observable_state_rx) =
+            tokio::sync::watch::channel(IndexerCounters::default());
+        let ctx = ActorContext::for_test(&universe, indexer_mailbox, observable_state_tx);
+
+        assert!(indexer.observable_state().pipeline_metrics_opt.is_none());
+
+        // The workbench takes the permit, and a commit that is not the drained path (here the
+        // commit timeout) releases it and reports the load.
+        let batch = ProcessedDocBatch::new(
+            vec![ProcessedDoc {
+                doc: doc!(body_field=>"this is a test document"),
+                fingerprint_opt: None,
+                timestamp_opt: None,
+                partition: 1,
+                num_bytes: 30,
+            }],
+            SourceCheckpointDelta::from_range(0..1),
+            false,
+        );
+        Handler::<ProcessedDocBatch>::handle(&mut indexer, batch, &ctx).await?;
+        assert_eq!(permits.available_permits(), 0);
+        indexer
+            .send_to_serializer(CommitTrigger::Timeout, &ctx)
+            .await?;
+        assert_eq!(permits.available_permits(), 1);
+        let output_messages: Vec<IndexedSplitBatchBuilder> =
+            index_serializer_inbox.drain_for_test_typed();
+        assert_eq!(output_messages.len(), 1);
+        assert_eq!(output_messages[0].commit_trigger, CommitTrigger::Timeout);
+        let pipeline_metrics = indexer
+            .observable_state()
+            .pipeline_metrics_opt
+            .expect("metrics should be reported on a timeout commit");
+        assert_eq!(
+            indexer.counters.pipeline_metrics_opt,
+            Some(pipeline_metrics)
+        );
+
+        // Once the pipeline has been idle for a full period, it is reported as idle.
+        universe.sleep(Duration::from_millis(1_500)).await;
+        assert_eq!(
+            indexer.observable_state().pipeline_metrics_opt,
+            Some(PipelineMetrics::IDLE)
+        );
         universe.assert_quit().await;
         Ok(())
     }

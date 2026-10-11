@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod change_tracker;
+pub mod pipeline_load;
 mod scheduling;
 
 use std::cmp::Ordering;
@@ -32,7 +33,7 @@ use quickwit_proto::indexing::{
     PIPELINE_THROUGHPUT,
 };
 use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{NodeId, SourceUid};
 use scheduling::{
     Eligibility, IndexerInfo, SourceToSchedule, SourceToScheduleType,
     compute_max_num_shards_per_pipeline, is_shard_in_same_zone,
@@ -43,6 +44,7 @@ use ulid::Ulid;
 
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::change_tracker::{NotifyChangeOnDrop, RebuildNotifier};
+use crate::indexing_scheduler::pipeline_load::PipelineLoadTracker;
 use crate::indexing_scheduler::scheduling::{
     build_physical_indexing_plan, is_plan_eligible_for_optimization,
 };
@@ -126,6 +128,7 @@ pub struct IndexingScheduler {
     self_node_id: NodeId,
     indexer_pool: IndexerPool,
     state: IndexingSchedulerState,
+    pipeline_load_tracker: PipelineLoadTracker,
     pub(crate) next_rebuild_tracker: RebuildNotifier,
 }
 
@@ -235,6 +238,7 @@ fn get_default_load_per_shard() -> NonZeroU32 {
 fn get_sources_to_schedule(
     model: &ControlPlaneModel,
     disable_ingest_v1: bool,
+    pipeline_load_tracker: &PipelineLoadTracker,
 ) -> Vec<SourceToSchedule> {
     if disable_ingest_v1 {
         debug!("skipping scheduling of ingest API sources because ingest v1 is disabled");
@@ -301,13 +305,14 @@ fn get_sources_to_schedule(
             | SourceParams::PubSub(_)
             | SourceParams::Pulsar(_)
             | SourceParams::File(FileSourceParams::Notifications(_)) => {
+                // A full pipeline unless `QW_ENABLE_VARIABLE_PIPELINE_LOAD` is set and
+                // cooperative pipelines reported their load. See `pipeline_load`.
+                let load_per_pipeline = pipeline_load_tracker.load_per_pipeline(&source_uid);
                 sources.push(SourceToSchedule {
                     source_uid,
                     source_type: SourceToScheduleType::NonSharded {
                         num_pipelines: source_config.num_pipelines.get() as u32,
-                        // FIXME
-                        load_per_pipeline: NonZeroU32::new(PIPELINE_FULL_CAPACITY.cpu_millis())
-                            .unwrap(),
+                        load_per_pipeline,
                     },
                     params_fingerprint,
                 });
@@ -380,8 +385,15 @@ impl IndexingScheduler {
             self_node_id,
             indexer_pool,
             state: IndexingSchedulerState::default(),
+            pipeline_load_tracker: PipelineLoadTracker::default(),
             next_rebuild_tracker: RebuildNotifier::default(),
         }
+    }
+
+    #[cfg(test)]
+    fn with_pipeline_load_tracker(mut self, pipeline_load_tracker: PipelineLoadTracker) -> Self {
+        self.pipeline_load_tracker = pipeline_load_tracker;
+        self
     }
 
     pub fn observable_state(&self) -> IndexingSchedulerState {
@@ -409,7 +421,13 @@ impl IndexingScheduler {
 
         let notify_on_drop = self.next_rebuild_tracker.start_rebuild();
 
-        let sources = get_sources_to_schedule(model, disable_ingest_v1());
+        self.pipeline_load_tracker.refresh(&indexers);
+        let sources =
+            get_sources_to_schedule(model, disable_ingest_v1(), &self.pipeline_load_tracker);
+        let scheduled_source_uids: FnvHashSet<&SourceUid> =
+            sources.iter().map(|source| &source.source_uid).collect();
+        self.pipeline_load_tracker
+            .retain_sources(|source_uid| scheduled_source_uids.contains(source_uid));
 
         let is_locality_aware = is_locality_aware(&self.indexer_pool);
 
@@ -515,6 +533,12 @@ impl IndexingScheduler {
             // Some nodes may have not received their tasks, apply it again.
             info!(plans_diff=?indexing_plans_diff, "running tasks and last applied tasks differ: reapply last plan");
             self.apply_physical_indexing_plan(last_applied_plan.clone(), None);
+        } else if self.pipeline_load_tracker.refresh(&indexers) {
+            // The measured load of non-sharded sources moved enough to change their weight in the
+            // plan. The rebuild starts from the current plan, so pipelines only move if an
+            // indexer is now over capacity.
+            info!("measured load of non-sharded pipelines changed: schedule an indexing plan");
+            self.rebuild_plan_with_indexers(model, indexers, running_indexer_statuses);
         }
     }
 
@@ -973,6 +997,7 @@ fn get_indexing_tasks_diff<'a>(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::num::NonZeroUsize;
     use std::str::FromStr;
 
@@ -1419,11 +1444,13 @@ mod tests {
         model.insert_shards(&index_uid, &"ingest_v2".to_string(), vec![shard]);
 
         let disable_ingest_v1 = false;
-        let sources: Vec<SourceToSchedule> = get_sources_to_schedule(&model, disable_ingest_v1);
+        let sources: Vec<SourceToSchedule> =
+            get_sources_to_schedule(&model, disable_ingest_v1, &PipelineLoadTracker::disabled());
         assert_eq!(sources.len(), 3);
 
         let disable_ingest_v1 = true;
-        let sources: Vec<SourceToSchedule> = get_sources_to_schedule(&model, disable_ingest_v1);
+        let sources: Vec<SourceToSchedule> =
+            get_sources_to_schedule(&model, disable_ingest_v1, &PipelineLoadTracker::disabled());
         assert_eq!(sources.len(), 2);
 
         let contains_any_ingest_v1_source = sources
@@ -1544,7 +1571,7 @@ mod tests {
                 model.add_source(index_uid, source_config.clone()).unwrap();
             }
 
-            let sources: Vec<SourceToSchedule> = get_sources_to_schedule(&model, false);
+            let sources: Vec<SourceToSchedule> = get_sources_to_schedule(&model, false, &PipelineLoadTracker::disabled());
             let mut indexer_infos = FnvHashMap::default();
             for i in 0..num_indexers {
                 let indexer_id = format!("indexer-{i}");
@@ -1557,7 +1584,8 @@ mod tests {
 
     use quickwit_config::SourceInputFormat;
     use quickwit_proto::indexing::{
-        ApplyIndexingPlanResponse, CpuCapacity, IndexingServiceClient, MockIndexingService, mcpu,
+        ApplyIndexingPlanResponse, CpuCapacity, IndexingServiceClient, MockIndexingService,
+        PipelineMetrics, mcpu,
     };
     use quickwit_proto::ingest::{Shard, ShardState};
 
@@ -1572,6 +1600,7 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: status,
             availability_zone: None,
+            pipeline_metrics: BTreeMap::new(),
         }
     }
 
@@ -1899,6 +1928,7 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: status,
             availability_zone: None,
+            pipeline_metrics: BTreeMap::new(),
         }
     }
 
@@ -1917,6 +1947,7 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: status,
             availability_zone: None,
+            pipeline_metrics: BTreeMap::new(),
         }
     }
 
@@ -1945,6 +1976,7 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: status,
             availability_zone: None,
+            pipeline_metrics: BTreeMap::new(),
         }
     }
 
@@ -1989,6 +2021,263 @@ mod tests {
             )
             .await
         );
+    }
+
+    fn indexer_with_pipeline_metrics(
+        node_id: &str,
+        indexing_tasks: Vec<IndexingTask>,
+        pipeline_metrics: BTreeMap<SourceUid, PipelineMetrics>,
+    ) -> IndexerPoolEntry {
+        let mut mock_indexer = MockIndexingService::new();
+        mock_indexer
+            .expect_apply_indexing_plan()
+            .returning(|_| Ok(ApplyIndexingPlanResponse {}));
+        IndexerPoolEntry {
+            node_id: NodeId::from_str(node_id),
+            generation_id: 0,
+            client: IndexingServiceClient::from_mock(mock_indexer),
+            indexing_tasks,
+            indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+            ingester_status: IngesterStatus::Ready,
+            availability_zone: None,
+            pipeline_metrics,
+        }
+    }
+
+    fn pipeline_metrics_with_cpu_load(cpu_millis: u32) -> PipelineMetrics {
+        PipelineMetrics {
+            cpu_load: CpuCapacity::from_cpu_millis(cpu_millis),
+            throughput_mb_per_sec: 0,
+        }
+    }
+
+    #[test]
+    fn test_get_sources_to_schedule_uses_measured_pipeline_load() {
+        let mut model = ControlPlaneModel::default();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let index_uid = index_metadata.index_uid.clone();
+        model.add_index(index_metadata);
+        model
+            .add_source(
+                &index_uid,
+                SourceConfig {
+                    source_id: "kafka-source".to_string(),
+                    num_pipelines: NonZeroUsize::new(2).unwrap(),
+                    enabled: true,
+                    source_params: kafka_source_params_for_test(),
+                    transform_config: None,
+                    input_format: Default::default(),
+                },
+            )
+            .unwrap();
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: "kafka-source".to_string(),
+        };
+        let indexers = vec![indexer_with_pipeline_metrics(
+            "indexer-1",
+            Vec::new(),
+            BTreeMap::from([(source_uid.clone(), pipeline_metrics_with_cpu_load(1_000))]),
+        )];
+        let load_per_pipeline = |tracker: &PipelineLoadTracker| {
+            let sources = get_sources_to_schedule(&model, false, tracker);
+            assert_eq!(sources.len(), 1);
+            match &sources[0].source_type {
+                SourceToScheduleType::NonSharded {
+                    num_pipelines,
+                    load_per_pipeline,
+                } => {
+                    assert_eq!(*num_pipelines, 2);
+                    load_per_pipeline.get()
+                }
+                _ => panic!("expected a non-sharded source"),
+            }
+        };
+
+        let mut disabled_tracker = PipelineLoadTracker::disabled();
+        disabled_tracker.refresh(&indexers);
+        assert_eq!(load_per_pipeline(&disabled_tracker), 4_000);
+
+        let mut enabled_tracker = PipelineLoadTracker::new(true);
+        assert_eq!(load_per_pipeline(&enabled_tracker), 4_000);
+        enabled_tracker.refresh(&indexers);
+        // 1_000 mCPU rounded up to the next quantum.
+        assert_eq!(load_per_pipeline(&enabled_tracker), 1_200);
+    }
+
+    #[test]
+    fn test_build_new_plan_spreads_non_sharded_sources_by_measured_load() {
+        let indexer1 = NodeId::from_str("indexer1");
+        let indexer2 = NodeId::from_str("indexer2");
+        let non_sharded_source = |source_id: &str, load_per_pipeline: u32| SourceToSchedule {
+            source_uid: SourceUid {
+                index_uid: IndexUid::for_test("test-index", 0),
+                source_id: source_id.to_string(),
+            },
+            source_type: SourceToScheduleType::NonSharded {
+                num_pipelines: 1,
+                load_per_pipeline: NonZeroU32::new(load_per_pipeline).unwrap(),
+            },
+            params_fingerprint: 0,
+        };
+        let mut indexer_infos = FnvHashMap::default();
+        indexer_infos.insert(indexer1.clone(), IndexerInfo::for_test(mcpu(4_000)));
+        indexer_infos.insert(indexer2.clone(), IndexerInfo::for_test(mcpu(4_000)));
+        let mut scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            IndexerPool::default(),
+        );
+        let num_tasks_per_indexer = |plan: &PhysicalIndexingPlan| {
+            let mut num_tasks: Vec<usize> = plan
+                .indexing_tasks_per_indexer()
+                .values()
+                .map(Vec::len)
+                .collect();
+            num_tasks.sort();
+            num_tasks
+        };
+
+        // With the legacy constant load, the four pipelines are balanced by count.
+        let sources_by_count = vec![
+            non_sharded_source("busy", 4_000),
+            non_sharded_source("idle-1", 4_000),
+            non_sharded_source("idle-2", 4_000),
+            non_sharded_source("idle-3", 4_000),
+        ];
+        let plan = scheduler.build_new_plan(
+            &sources_by_count,
+            &indexer_infos,
+            false,
+            &ShardLocations::default(),
+            false,
+        );
+        assert_eq!(num_tasks_per_indexer(&plan), vec![2, 2]);
+
+        // With measured loads, the busy pipeline gets an indexer for itself.
+        let sources_by_load = vec![
+            non_sharded_source("busy", 4_000),
+            non_sharded_source("idle-1", 400),
+            non_sharded_source("idle-2", 400),
+            non_sharded_source("idle-3", 400),
+        ];
+        let plan = scheduler.build_new_plan(
+            &sources_by_load,
+            &indexer_infos,
+            false,
+            &ShardLocations::default(),
+            false,
+        );
+        assert_eq!(num_tasks_per_indexer(&plan), vec![1, 3]);
+        let busy_indexer_tasks = plan
+            .indexing_tasks_per_indexer()
+            .values()
+            .find(|tasks| tasks.len() == 1)
+            .unwrap();
+        assert_eq!(busy_indexer_tasks[0].source_id, "busy");
+    }
+
+    #[tokio::test]
+    async fn test_control_running_plan_reschedules_when_measured_load_changes() {
+        let mut model = ControlPlaneModel::default();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let index_uid = index_metadata.index_uid.clone();
+        model.add_index(index_metadata);
+        for source_id in ["busy", "idle-1", "idle-2", "idle-3"] {
+            model
+                .add_source(
+                    &index_uid,
+                    SourceConfig {
+                        source_id: source_id.to_string(),
+                        num_pipelines: NonZeroUsize::new(1).unwrap(),
+                        enabled: true,
+                        source_params: kafka_source_params_for_test(),
+                        transform_config: None,
+                        input_format: Default::default(),
+                    },
+                )
+                .unwrap();
+        }
+        let indexer_pool = IndexerPool::default();
+        for indexer_id in ["indexer-1", "indexer-2"] {
+            indexer_pool.insert(
+                NodeId::from_str(indexer_id),
+                indexer_with_pipeline_metrics(indexer_id, Vec::new(), BTreeMap::new()),
+            );
+        }
+        let mut scheduler = IndexingScheduler::new(
+            "test-cluster".to_string(),
+            NodeId::from_str("control-plane"),
+            indexer_pool.clone(),
+        )
+        .with_pipeline_load_tracker(PipelineLoadTracker::new(true));
+
+        // Without any measurement, the four pipelines are balanced by count.
+        scheduler.rebuild_plan(&model);
+        assert_eq!(scheduler.state.num_schedule_indexing_plan, 1);
+        let num_tasks_per_indexer = |scheduler: &IndexingScheduler| {
+            let plan = scheduler.state.last_applied_physical_plan.as_ref().unwrap();
+            let mut num_tasks: Vec<usize> = plan
+                .indexing_tasks_per_indexer()
+                .values()
+                .map(Vec::len)
+                .collect();
+            num_tasks.sort();
+            num_tasks
+        };
+        assert_eq!(num_tasks_per_indexer(&scheduler), vec![2, 2]);
+
+        // The indexers run their tasks and report the load of each source they host.
+        let report_running_tasks_and_loads = |scheduler: &IndexingScheduler, busy_load: u32| {
+            let plan = scheduler.state.last_applied_physical_plan.as_ref().unwrap();
+            for (indexer_id, indexing_tasks) in plan.indexing_tasks_per_indexer() {
+                let pipeline_metrics: BTreeMap<SourceUid, PipelineMetrics> = indexing_tasks
+                    .iter()
+                    .map(|task| {
+                        let source_uid = SourceUid {
+                            index_uid: index_uid.clone(),
+                            source_id: task.source_id.clone(),
+                        };
+                        let cpu_millis = if task.source_id == "busy" {
+                            busy_load
+                        } else {
+                            0
+                        };
+                        (source_uid, pipeline_metrics_with_cpu_load(cpu_millis))
+                    })
+                    .collect();
+                indexer_pool.insert(
+                    indexer_id.clone(),
+                    indexer_with_pipeline_metrics(
+                        indexer_id.as_str(),
+                        indexing_tasks.clone(),
+                        pipeline_metrics,
+                    ),
+                );
+            }
+        };
+
+        // The busy source saturates its pipeline: its indexer is over capacity and sheds the
+        // idle pipeline it also hosts.
+        report_running_tasks_and_loads(&scheduler, 4_000);
+        tokio::time::sleep(MIN_DURATION_BETWEEN_SCHEDULING * 2).await;
+        scheduler.control_running_plan(&model);
+        assert_eq!(scheduler.state.num_schedule_indexing_plan, 2);
+        assert_eq!(num_tasks_per_indexer(&scheduler), vec![1, 3]);
+        let plan = scheduler.state.last_applied_physical_plan.as_ref().unwrap();
+        let busy_indexer_tasks = plan
+            .indexing_tasks_per_indexer()
+            .values()
+            .find(|tasks| tasks.len() == 1)
+            .unwrap();
+        assert_eq!(busy_indexer_tasks[0].source_id, "busy");
+
+        // A fluctuation within a quantum does not reschedule.
+        report_running_tasks_and_loads(&scheduler, 3_700);
+        tokio::time::sleep(MIN_DURATION_BETWEEN_SCHEDULING * 2).await;
+        scheduler.control_running_plan(&model);
+        assert_eq!(scheduler.state.num_schedule_indexing_plan, 2);
+        assert_eq!(num_tasks_per_indexer(&scheduler), vec![1, 3]);
     }
 
     fn kafka_source_params_for_test() -> SourceParams {

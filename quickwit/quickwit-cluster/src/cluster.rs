@@ -775,6 +775,7 @@ impl<'a> TestClusterBuilder<'a> {
                 indexing_cpu_capacity: PIPELINE_FULL_CAPACITY,
                 ingester_status: IngesterStatus::default(),
                 availability_zone: None,
+                pipeline_metrics: Default::default(),
                 enable_standalone_compactors: false,
             },
             peer_seed_addrs: Vec::new(),

@@ -82,6 +82,7 @@ use quickwit_compaction::{
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig, disable_ingest_v1};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
+use quickwit_control_plane::indexing_scheduler::pipeline_load::is_variable_pipeline_load_enabled;
 use quickwit_control_plane::{IndexerPool, IndexerPoolEntry};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
 use quickwit_indexing::actors::{IndexingService, MergeSchedulerService};
@@ -1473,10 +1474,15 @@ fn setup_indexer_pool(
 }
 
 /// Only update the indexer pool when a change meaningful to indexing occurs.
+///
+/// Pipeline metrics change at every commit of every cooperative pipeline, so they are only
+/// considered when the scheduler actually consumes them.
 fn indexer_node_changed(previous: &ClusterNode, updated: &ClusterNode) -> bool {
     previous.ingester_status != updated.ingester_status
         || previous.indexing_cpu_capacity != updated.indexing_cpu_capacity
         || previous.indexing_tasks != updated.indexing_tasks
+        || (is_variable_pipeline_load_enabled()
+            && previous.pipeline_metrics != updated.pipeline_metrics)
 }
 
 fn build_indexer_insert_change(
@@ -1497,6 +1503,7 @@ fn build_indexer_insert_change(
             indexing_capacity: node.indexing_cpu_capacity,
             ingester_status: node.ingester_status,
             availability_zone: node.availability_zone(),
+            pipeline_metrics: node.pipeline_metrics().clone(),
         },
     )
 }

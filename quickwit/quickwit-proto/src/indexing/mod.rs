@@ -183,9 +183,46 @@ pub struct PipelineMetrics {
     pub throughput_mb_per_sec: u16,
 }
 
+impl PipelineMetrics {
+    /// Metrics reported by a cooperative pipeline that did not index anything
+    /// during its last period.
+    pub const IDLE: PipelineMetrics = PipelineMetrics {
+        cpu_load: CpuCapacity::from_cpu_millis(0u32),
+        throughput_mb_per_sec: 0,
+    };
+}
+
 impl Display for PipelineMetrics {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{},{}MB/s", self.cpu_load, self.throughput_mb_per_sec)
+    }
+}
+
+/// Parses the format produced by `Display`: `<cpu_millis>m,<throughput>MB/s`.
+impl FromStr for PipelineMetrics {
+    type Err = String;
+
+    fn from_str(pipeline_metrics_str: &str) -> Result<Self, Self::Err> {
+        let Some((cpu_load_str, throughput_str)) = pipeline_metrics_str.split_once(',') else {
+            return Err(format!(
+                "invalid pipeline metrics: `{pipeline_metrics_str}`. expected \
+                 `<cpu>m,<throughput>MB/s`."
+            ));
+        };
+        let cpu_load = CpuCapacity::from_str(cpu_load_str)?;
+        let Some(throughput_without_unit_str) = throughput_str.strip_suffix("MB/s") else {
+            return Err(format!(
+                "invalid pipeline metrics: `{pipeline_metrics_str}`. throughput expects a \
+                 trailing `MB/s`."
+            ));
+        };
+        let throughput_mb_per_sec: u16 = throughput_without_unit_str
+            .parse::<u16>()
+            .map_err(|_err| format!("invalid pipeline metrics: `{pipeline_metrics_str}`."))?;
+        Ok(PipelineMetrics {
+            cpu_load,
+            throughput_mb_per_sec,
+        })
     }
 }
 
@@ -381,5 +418,23 @@ mod tests {
         );
         assert_eq!(CpuCapacity::from_cpu_millis(2500).to_string(), "2500m");
         assert_eq!(serde_json::to_string(&mcpu(2500)).unwrap(), "\"2500m\"");
+    }
+
+    #[test]
+    fn test_pipeline_metrics_from_str() {
+        let metrics = PipelineMetrics {
+            cpu_load: CpuCapacity::from_cpu_millis(179),
+            throughput_mb_per_sec: 76,
+        };
+        assert_eq!(metrics.to_string(), "179m,76MB/s");
+        assert_eq!(PipelineMetrics::from_str("179m,76MB/s").unwrap(), metrics);
+        assert_eq!(
+            PipelineMetrics::from_str("0m,0MB/s").unwrap(),
+            PipelineMetrics::IDLE
+        );
+        assert!(PipelineMetrics::from_str("179m").is_err());
+        assert!(PipelineMetrics::from_str("179,76MB/s").is_err());
+        assert!(PipelineMetrics::from_str("179m,76").is_err());
+        assert!(PipelineMetrics::from_str("179m,-1MB/s").is_err());
     }
 }

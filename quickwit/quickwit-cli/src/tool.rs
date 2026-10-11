@@ -962,6 +962,7 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         indexing_cpu_capacity: CpuCapacity::zero(),
         ingester_status: IngesterStatus::default(),
         availability_zone: None,
+        pipeline_metrics: Default::default(),
         enable_standalone_compactors: false,
     };
     let channel_factory = ChannelFactory::for_grpc(&config.grpc_config)?;

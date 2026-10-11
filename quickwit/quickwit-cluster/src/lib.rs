@@ -137,6 +137,7 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         indexing_cpu_capacity,
         ingester_status: IngesterStatus::default(),
         availability_zone: node_config.availability_zone.clone(),
+        pipeline_metrics: Default::default(),
         enable_standalone_compactors: node_config.enable_standalone_compactors,
     };
     let failure_detector_config = FailureDetectorConfig {

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::mem::size_of;
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -20,9 +20,9 @@ use std::str::FromStr;
 use anyhow::Context;
 use chitchat::{ChitchatId, NodeState, Version};
 use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
-use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
+use quickwit_proto::indexing::{CpuCapacity, IndexingTask, PipelineMetrics};
 use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::types::{AvailabilityZone, NodeId};
+use quickwit_proto::types::{AvailabilityZone, IndexUid, NodeId, SourceUid};
 use tracing::{error, warn};
 
 use crate::cluster::parse_indexing_tasks;
@@ -133,6 +133,10 @@ pub struct ClusterMember {
     pub is_ready: bool,
     /// Availability zone the node is running in, if enabled.
     pub availability_zone: Option<AvailabilityZone>,
+    /// Load and throughput measured by the cooperative indexing pipelines running on the node,
+    /// keyed by source. Only cooperative pipelines report these metrics, so the map is empty on
+    /// nodes where cooperative indexing is disabled.
+    pub pipeline_metrics: BTreeMap<SourceUid, PipelineMetrics>,
     /// Whether the node was started with standalone compactors enabled.
     pub enable_standalone_compactors: bool,
 }
@@ -181,6 +185,40 @@ fn parse_indexing_cpu_capacity(node_state: &NodeState) -> CpuCapacity {
     }
 }
 
+/// Parses the pipeline metrics gossiped by cooperative indexing pipelines.
+///
+/// Key:   `pipeline_metrics:<index_uid>:<source_id>`
+/// Value: `<cpu_millis>m,<throughput>MB/s`
+///
+/// Neither index IDs nor source IDs may contain `:`, so the source ID is the last `:`-separated
+/// segment and the rest is the index UID. Unparsable entries are skipped with a warning.
+fn parse_pipeline_metrics(node_state: &NodeState) -> BTreeMap<SourceUid, PipelineMetrics> {
+    let mut pipeline_metrics: BTreeMap<SourceUid, PipelineMetrics> = BTreeMap::new();
+    for (key, versioned_value) in node_state.iter_prefix(PIPELINE_METRICS_PREFIX) {
+        let value = versioned_value.value.as_str();
+        let Some(source_uid) = parse_pipeline_metrics_key(key) else {
+            warn!(key=%key, value=%value, "failed to parse pipeline metrics key from chitchat kv");
+            continue;
+        };
+        let Ok(metrics) = PipelineMetrics::from_str(value) else {
+            warn!(key=%key, value=%value, "failed to parse pipeline metrics value from chitchat kv");
+            continue;
+        };
+        pipeline_metrics.insert(source_uid, metrics);
+    }
+    pipeline_metrics
+}
+
+fn parse_pipeline_metrics_key(key: &str) -> Option<SourceUid> {
+    let pipeline_id_str = key.strip_prefix(PIPELINE_METRICS_PREFIX)?;
+    let (index_uid_str, source_id) = pipeline_id_str.rsplit_once(':')?;
+    let index_uid = IndexUid::from_str(index_uid_str).ok()?;
+    Some(SourceUid {
+        index_uid,
+        source_id: source_id.to_string(),
+    })
+}
+
 // Builds a cluster member from a [`NodeState`].
 pub(crate) fn build_cluster_member(
     chitchat_id: ChitchatId,
@@ -204,6 +242,7 @@ pub(crate) fn build_cluster_member(
     let indexing_cpu_capacity = parse_indexing_cpu_capacity(node_state);
     let ingester_status = node_state.ingester_status();
     let availability_zone = node_state.availability_zone();
+    let pipeline_metrics = parse_pipeline_metrics(node_state);
     let enable_standalone_compactors = node_state.enable_standalone_compactors();
 
     let member = ClusterMember {
@@ -217,6 +256,7 @@ pub(crate) fn build_cluster_member(
         indexing_cpu_capacity,
         ingester_status,
         availability_zone,
+        pipeline_metrics,
         enable_standalone_compactors,
     };
     Ok(member)
@@ -253,9 +293,42 @@ fn parse_enabled_services_str(
 #[cfg(test)]
 mod tests {
     use chitchat::NodeState;
+    use quickwit_proto::indexing::{CpuCapacity, PipelineMetrics};
     use quickwit_proto::ingest::ingester::IngesterStatus;
+    use quickwit_proto::types::IndexUid;
 
-    use super::{NodeStateExt, STANDALONE_COMPACTORS_KEY};
+    use super::{
+        NodeStateExt, PIPELINE_METRICS_PREFIX, STANDALONE_COMPACTORS_KEY, parse_pipeline_metrics,
+    };
+
+    #[test]
+    fn test_parse_pipeline_metrics() {
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
+        let mut node_state = NodeState::for_test();
+        node_state.set(
+            format!("{PIPELINE_METRICS_PREFIX}{index_uid}:test-source"),
+            "179m,76MB/s",
+        );
+        node_state.set(
+            format!("{PIPELINE_METRICS_PREFIX}{index_uid}:other-source"),
+            "not-a-metric",
+        );
+        node_state.set(format!("{PIPELINE_METRICS_PREFIX}garbage"), "179m,76MB/s");
+        node_state.set("unrelated_key", "179m,76MB/s");
+
+        let pipeline_metrics = parse_pipeline_metrics(&node_state);
+        assert_eq!(pipeline_metrics.len(), 1);
+        let (source_uid, metrics) = pipeline_metrics.first_key_value().unwrap();
+        assert_eq!(source_uid.index_uid, index_uid);
+        assert_eq!(source_uid.source_id, "test-source");
+        assert_eq!(
+            *metrics,
+            PipelineMetrics {
+                cpu_load: CpuCapacity::from_cpu_millis(179),
+                throughput_mb_per_sec: 76,
+            }
+        );
+    }
 
     #[test]
     fn test_ingester_status_defaults_to_ready_when_key_absent() {

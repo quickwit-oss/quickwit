@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Azure Blob Storage: support custom endpoints via `endpoint` and `endpoint_suffix` configuration options for sovereign clouds (#6624)
+- Control plane: place the pipelines of non-sharded sources (Kafka, NATS, ...) by the load measured by cooperative indexing pipelines when `QW_ENABLE_VARIABLE_PIPELINE_LOAD=true`, instead of counting every pipeline as a full one
 
 ### Fixed
 - (Jaeger) Query resource attributes when Jaeger request carries tags
