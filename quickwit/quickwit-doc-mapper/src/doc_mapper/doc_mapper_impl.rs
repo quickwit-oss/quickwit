@@ -34,8 +34,8 @@ use super::field_mapping_entry::RAW_TOKENIZER_NAME;
 use super::field_presence::populate_field_presence;
 use super::tantivy_val_to_json::tantivy_value_to_json;
 use crate::doc_mapper::mapping_tree::{
-    JsonValueIterator, MappingNode, MappingNodeRoot, build_field_path_from_str, build_mapping_tree,
-    map_primitive_json_to_concatenate_value,
+    MappingNode, MappingNodeRoot, add_concatenate_values, build_field_path_from_str,
+    build_mapping_tree,
 };
 use crate::doc_mapper::{FieldMappingType, JsonObject, Partition};
 use crate::query_builder::build_query;
@@ -504,16 +504,15 @@ impl DocMapper {
         let mut field_path = Vec::new();
         let mut document = Document::default();
 
+        // Tantivy copies borrowed values into its owned compact document synchronously.
+        // Keep the original JSON available for mapping, without cloning it for _source.
+        let json_value = JsonValue::Object(json_obj);
         if let Some(source_field) = self.source_field {
-            document.add_object(
-                source_field,
-                json_obj
-                    .clone()
-                    .into_iter()
-                    .map(|(key, val)| (key, TantivyValue::from(val)))
-                    .collect(),
-            );
+            document.add_field_value(source_field, &json_value);
         }
+        let JsonValue::Object(json_obj) = json_value else {
+            unreachable!()
+        };
 
         let mode = self.mode.mode_type();
         self.field_mappings.doc_from_json(
@@ -527,24 +526,15 @@ impl DocMapper {
         if let Some(dynamic_field) = self.dynamic_field
             && !dynamic_json_obj.is_empty()
         {
+            let dynamic_value = JsonValue::Object(dynamic_json_obj);
             if !self.concatenate_dynamic_fields.is_empty() {
-                let json_obj_values =
-                    JsonValueIterator::new(serde_json::Value::Object(dynamic_json_obj.clone()))
-                        .flat_map(map_primitive_json_to_concatenate_value);
-
-                for value in json_obj_values {
-                    for concatenate_dynamic_field in self.concatenate_dynamic_fields.iter() {
-                        document.add_field_value(*concatenate_dynamic_field, &value);
-                    }
-                }
+                add_concatenate_values(
+                    &dynamic_value,
+                    &self.concatenate_dynamic_fields,
+                    &mut document,
+                );
             }
-            document.add_object(
-                dynamic_field,
-                dynamic_json_obj
-                    .into_iter()
-                    .map(|(key, val)| (key, TantivyValue::from(val)))
-                    .collect(),
-            );
+            document.add_field_value(dynamic_field, &dynamic_value);
         }
 
         if let Some(document_size_field) = self.document_size_field {

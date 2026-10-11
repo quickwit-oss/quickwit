@@ -51,111 +51,29 @@ pub enum LeafType {
     TieBreaker,
 }
 
-enum MapOrArrayIter {
-    Array(std::vec::IntoIter<JsonValue>),
-    Map(serde_json::map::IntoIter),
-    Value(JsonValue),
-}
-
-impl Iterator for MapOrArrayIter {
-    type Item = JsonValue;
-
-    fn next(&mut self) -> Option<JsonValue> {
-        match self {
-            MapOrArrayIter::Array(iter) => iter.next(),
-            MapOrArrayIter::Map(iter) => iter.next().map(|(_, val)| val),
-            MapOrArrayIter::Value(val) => {
-                if val.is_null() {
-                    None
-                } else {
-                    Some(std::mem::take(val))
-                }
-            }
-        }
-    }
-}
-
-/// Iterate over all primitive values inside the provided JsonValue, ignoring Nulls, and opening
-/// arrays and objects.
-pub(crate) struct JsonValueIterator {
-    currently_itered: Vec<MapOrArrayIter>,
-}
-
-impl JsonValueIterator {
-    pub fn new(source: JsonValue) -> JsonValueIterator {
-        let base_value = match source {
-            JsonValue::Array(array) => MapOrArrayIter::Array(array.into_iter()),
-            JsonValue::Object(map) => MapOrArrayIter::Map(map.into_iter()),
-            other => MapOrArrayIter::Value(other),
-        };
-        JsonValueIterator {
-            currently_itered: vec![base_value],
-        }
-    }
-}
-
-impl Iterator for JsonValueIterator {
-    type Item = JsonValue;
-
-    fn next(&mut self) -> Option<JsonValue> {
-        loop {
-            let currently_itered = self.currently_itered.last_mut()?;
-            match currently_itered.next() {
-                Some(JsonValue::Array(array)) => self
-                    .currently_itered
-                    .push(MapOrArrayIter::Array(array.into_iter())),
-                Some(JsonValue::Object(map)) => self
-                    .currently_itered
-                    .push(MapOrArrayIter::Map(map.into_iter())),
-                Some(JsonValue::Null) => continue,
-                Some(other) => return Some(other),
-                None => {
-                    self.currently_itered.pop();
-                    continue;
-                }
-            }
-        }
-    }
-}
-
-enum OneOrIter<T, I: Iterator<Item = T>> {
-    One(Option<T>),
-    Iter(I),
-}
-
-impl<T, I: Iterator<Item = T>> OneOrIter<T, I> {
-    pub fn one(item: T) -> Self {
-        OneOrIter::One(Some(item))
-    }
-}
-
-impl<T, I: Iterator<Item = T>> Iterator for OneOrIter<T, I> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<T> {
-        match self {
-            OneOrIter::Iter(iter) => iter.next(),
-            OneOrIter::One(item) => std::mem::take(item),
-        }
-    }
-}
-
-/// Similar to the native `From<JsonValue> for TantivyValue` implementation, with a
-/// subtle difference: no automatic parsing to DateTime is performed when the string
-/// is a valid RFC3339 date. This enables some level of range querying through prefix
-/// queries despite concatenate fields not supporting fast fields.
-pub(crate) fn map_primitive_json_to_concatenate_value(value: JsonValue) -> Option<TantivyValue> {
+/// Visits primitive JSON values in object-key / array order, excluding nulls.
+/// Concatenate deliberately does not auto-convert RFC3339 strings to dates.
+pub(crate) fn add_concatenate_values(value: &JsonValue, fields: &[Field], document: &mut Document) {
     match value {
-        JsonValue::Array(_) | JsonValue::Object(_) | JsonValue::Null => None,
-        JsonValue::String(text) => Some(TantivyValue::Str(text)),
-        JsonValue::Bool(val) => Some((val).into()),
-        JsonValue::Number(number) => {
-            if let Some(val) = i64::from_json_number(&number) {
-                Some((val).into())
-            } else if let Some(val) = u64::from_json_number(&number) {
-                Some((val).into())
-            } else {
-                f64::from_json_number(&number).map(|val| (val).into())
+        JsonValue::Null => (),
+        JsonValue::Array(values) => {
+            for value in values {
+                add_concatenate_values(value, fields, document);
+            }
+        }
+        JsonValue::Object(object) => {
+            for value in object.values() {
+                add_concatenate_values(value, fields, document);
+            }
+        }
+        JsonValue::String(text) => {
+            for field in fields {
+                document.add_text(*field, text);
+            }
+        }
+        _ => {
+            for field in fields {
+                document.add_field_value(*field, value);
             }
         }
     }
@@ -220,105 +138,79 @@ impl LeafType {
         }
     }
 
-    fn value_from_json(&self, json_val: JsonValue) -> Result<TantivyValue, String> {
-        match self {
-            LeafType::Text(_) => {
-                if let JsonValue::String(text) = json_val {
-                    Ok(TantivyValue::Str(text))
-                } else {
-                    Err(format!("expected string, got `{json_val}`"))
-                }
-            }
-            LeafType::I64(numeric_options) => i64::from_json(json_val, numeric_options.coerce),
-            LeafType::U64(numeric_options) => u64::from_json(json_val, numeric_options.coerce),
-            LeafType::F64(numeric_options) => f64::from_json(json_val, numeric_options.coerce),
-            LeafType::Bool(_) => {
-                if let JsonValue::Bool(val) = json_val {
-                    Ok(TantivyValue::Bool(val))
-                } else {
-                    Err(format!("expected boolean, got `{json_val}`"))
-                }
-            }
-            LeafType::IpAddr(_) => {
-                if let JsonValue::String(ip_address) = json_val {
-                    let ipv6_value = IpAddr::from_str(ip_address.as_str())
-                        .map_err(|err| format!("failed to parse IP address `{ip_address}`: {err}"))?
-                        .into_ipv6_addr();
-                    Ok(TantivyValue::IpAddr(ipv6_value))
-                } else {
-                    Err(format!("expected string, got `{json_val}`"))
-                }
-            }
-            LeafType::DateTime(date_time_options) => date_time_options.parse_json(&json_val),
-            LeafType::Bytes(binary_options) => binary_options.input_format.parse_json(&json_val),
-            LeafType::Json(_) => {
-                if let JsonValue::Object(json_obj) = json_val {
-                    Ok(TantivyValue::Object(
-                        json_obj
-                            .into_iter()
-                            .map(|(key, val)| (key, val.into()))
-                            .collect(),
-                    ))
-                } else {
-                    Err(format!("expected object, got `{json_val}`"))
-                }
-            }
-            LeafType::TieBreaker => {
-                Err("tie_breaker values are generated during segment serialization".to_string())
-            }
-        }
-    }
-
-    fn concatenate_values_from_json(
+    fn add_to_document(
         &self,
-        json_val: JsonValue,
-    ) -> Result<impl Iterator<Item = TantivyValue>, String> {
+        json_val: &JsonValue,
+        field: Field,
+        concatenate: &[Field],
+        document: &mut Document,
+    ) -> Result<(), String> {
         match self {
             LeafType::Text(_) => {
-                if let JsonValue::String(text) = json_val {
-                    Ok(OneOrIter::one(TantivyValue::Str(text)))
-                } else {
-                    Err(format!("expected string, got `{json_val}`"))
+                let Some(text) = json_val.as_str() else {
+                    return Err(format!("expected string, got `{json_val}`"));
+                };
+                for field in concatenate {
+                    document.add_text(*field, text);
                 }
+                document.add_text(field, text);
             }
-            LeafType::I64(numeric_options) => {
-                let val = i64::from_json_to_self(&json_val, numeric_options.coerce)?;
-                Ok(OneOrIter::one((val).into()))
-            }
-            LeafType::U64(numeric_options) => {
-                let val = u64::from_json_to_self(&json_val, numeric_options.coerce)?;
-                Ok(OneOrIter::one((val).into()))
-            }
-            LeafType::F64(numeric_options) => {
-                let val = f64::from_json_to_self(&json_val, numeric_options.coerce)?;
-                Ok(OneOrIter::one((val).into()))
-            }
-            LeafType::Bool(_) => {
-                if let JsonValue::Bool(val) = json_val {
-                    Ok(OneOrIter::one((val).into()))
-                } else {
-                    Err(format!("expected boolean, got `{json_val}`"))
-                }
-            }
-            LeafType::IpAddr(_) => Err("unsupported concat type: IpAddr".to_string()),
-            LeafType::DateTime(_date_time_options) => {
-                Err("unsupported concat type: DateTime".to_string())
-            }
-            LeafType::Bytes(_binary_options) => Err("unsupported concat type: Bytes".to_string()),
             LeafType::Json(_) => {
-                if let JsonValue::Object(json_obj) = json_val {
-                    Ok(OneOrIter::Iter(
-                        json_obj
-                            .into_iter()
-                            .flat_map(|(_key, val)| JsonValueIterator::new(val))
-                            .flat_map(map_primitive_json_to_concatenate_value),
-                    ))
-                } else {
-                    Err(format!("expected object, got `{json_val}`"))
+                if !json_val.is_object() {
+                    return Err(format!("expected object, got `{json_val}`"));
                 }
+                if !concatenate.is_empty() {
+                    add_concatenate_values(json_val, concatenate, document);
+                }
+                // Tantivy's borrowed serde_json adapter matches OwnedValue conversion, including
+                // numeric signedness and automatic RFC3339 dates, without building an owned tree.
+                document.add_field_value(field, json_val);
             }
-            LeafType::TieBreaker => Err("unsupported concat type: TieBreaker".to_string()),
+            _ => {
+                let value: TantivyValue = match self {
+                    LeafType::I64(options) => {
+                        i64::from_json_to_self(json_val, options.coerce)?.into()
+                    }
+                    LeafType::U64(options) => {
+                        u64::from_json_to_self(json_val, options.coerce)?.into()
+                    }
+                    LeafType::F64(options) => {
+                        f64::from_json_to_self(json_val, options.coerce)?.into()
+                    }
+                    LeafType::Bool(_) => {
+                        let Some(value) = json_val.as_bool() else {
+                            return Err(format!("expected boolean, got `{json_val}`"));
+                        };
+                        TantivyValue::Bool(value)
+                    }
+                    LeafType::IpAddr(_) => {
+                        let Some(ip_address) = json_val.as_str() else {
+                            return Err(format!("expected string, got `{json_val}`"));
+                        };
+                        TantivyValue::IpAddr(
+                            IpAddr::from_str(ip_address)
+                                .map_err(|err| {
+                                    format!("failed to parse IP address `{ip_address}`: {err}")
+                                })?
+                                .into_ipv6_addr(),
+                        )
+                    }
+                    LeafType::DateTime(options) => options.parse_json(json_val)?,
+                    LeafType::Bytes(options) => options.input_format.parse_json(json_val)?,
+                    LeafType::TieBreaker => {
+                        return Err("tie_breaker values are generated during segment \
+                                    serialization"
+                            .to_string());
+                    }
+                    LeafType::Text(_) | LeafType::Json(_) => unreachable!(),
+                };
+                for field in concatenate {
+                    document.add_field_value(*field, &value);
+                }
+                document.add_field_value(field, &value);
+            }
         }
+        Ok(())
     }
 
     fn supported_for_concat(&self) -> bool {
@@ -402,52 +294,25 @@ impl MappingLeaf {
             // We just ignore `null`.
             return Ok(());
         }
-        if let JsonValue::Array(els) = json_val {
+        if let JsonValue::Array(values) = json_val {
             if self.cardinality == Cardinality::SingleValued {
                 return Err(DocParsingError::MultiValuesNotSupported(path.join(".")));
             }
-            for el_json_val in els {
-                if el_json_val.is_null() {
-                    // We just ignore `null`.
+            // Release each input value after Tantivy copies it, rather than retaining the
+            // entire array's strings alongside the growing compact document.
+            for value in values {
+                if value.is_null() {
                     continue;
                 }
-                if !self.concatenate.is_empty() {
-                    let concat_values = self
-                        .typ
-                        .concatenate_values_from_json(el_json_val.clone())
-                        .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
-                    for concat_value in concat_values {
-                        for field in &self.concatenate {
-                            document.add_field_value(*field, &concat_value);
-                        }
-                    }
-                }
-                let value = self
-                    .typ
-                    .value_from_json(el_json_val)
+                self.typ
+                    .add_to_document(&value, self.field, &self.concatenate, document)
                     .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
-                document.add_field_value(self.field, &value);
             }
             return Ok(());
         }
-
-        if !self.concatenate.is_empty() {
-            let concat_values = self
-                .typ
-                .concatenate_values_from_json(json_val.clone())
-                .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
-            for concat_value in concat_values {
-                for field in &self.concatenate {
-                    document.add_field_value(*field, &concat_value);
-                }
-            }
-        }
-        let value = self
-            .typ
-            .value_from_json(json_val)
-            .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
-        document.add_field_value(self.field, &value);
-        Ok(())
+        self.typ
+            .add_to_document(&json_val, self.field, &self.concatenate, document)
+            .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))
     }
 
     fn populate_json<'a>(
@@ -746,10 +611,6 @@ pub(crate) trait NumVal: Sized + FromStr + ToString + Into<TantivyValue> {
                 Err(message)
             }
         }
-    }
-
-    fn from_json(json_val: JsonValue, coerce: bool) -> Result<TantivyValue, String> {
-        Self::from_json_to_self(&json_val, coerce).map(Self::into)
     }
 }
 
@@ -1389,16 +1250,22 @@ mod tests {
     use time::OffsetDateTime;
     use time::macros::datetime;
 
-    use super::{
-        JsonValueIterator, LeafType, MapOrArrayIter, MappingLeaf, add_key_to_vec_map,
-        extract_val_from_tantivy_val,
-    };
+    use super::{LeafType, MappingLeaf, add_key_to_vec_map, extract_val_from_tantivy_val};
     use crate::Cardinality;
     use crate::doc_mapper::date_time_type::QuickwitDateTimeOptions;
     use crate::doc_mapper::field_mapping_entry::{
         BinaryFormat, QuickwitBoolOptions, QuickwitBytesOptions, QuickwitIpAddrOptions,
         QuickwitNumericOptions, QuickwitTextOptions,
     };
+
+    impl LeafType {
+        fn value_from_json(&self, value: serde_json::Value) -> Result<TantivyValue, String> {
+            let mut document = Document::default();
+            let field = Field::from_field_id(0);
+            self.add_to_document(&value, field, &[], &mut document)?;
+            Ok(TantivyValue::from(document.get_first(field).unwrap()))
+        }
+    }
 
     #[test]
     fn test_field_name_from_field_path() {
@@ -1937,53 +1804,33 @@ mod tests {
     }
 
     #[test]
-    fn test_map_or_array_iter() {
-        // single element
-        let single_value = MapOrArrayIter::Value(json!({"a": "b", "c": 4}));
-        let res: Vec<_> = single_value.collect();
-        assert_eq!(res, vec![json!({"a": "b", "c": 4})]);
-
-        // array of elements
-        let multiple_values =
-            MapOrArrayIter::Array(vec![json!({"a": "b", "c": 4}), json!(5)].into_iter());
-        let res: Vec<_> = multiple_values.collect();
-        assert_eq!(res, vec![json!({"a": "b", "c": 4}), json!(5)]);
-
-        // map of elements
-        let multiple_values = MapOrArrayIter::Map(
-            json!({"a": {"a": "b", "c": 4}, "b":5})
-                .as_object()
-                .unwrap()
-                .clone()
-                .into_iter(),
-        );
-        let res: Vec<_> = multiple_values.collect();
-        assert_eq!(res, vec![json!({"a": "b", "c": 4}), json!(5)]);
-    }
-
-    #[test]
-    fn test_json_value_iterator() {
-        assert_eq!(
-            JsonValueIterator::new(json!(5)).collect::<Vec<_>>(),
-            vec![json!(5)]
-        );
-        assert_eq!(
-            JsonValueIterator::new(json!([5, "a"])).collect::<Vec<_>>(),
-            vec![json!(5), json!("a")]
-        );
-        assert_eq!(
-            JsonValueIterator::new(json!({"a":1, "b": 2})).collect::<Vec<_>>(),
-            vec![json!(1), json!(2)]
-        );
-        assert_eq!(
-            JsonValueIterator::new(json!([{"a":1, "b": 2}, "a"])).collect::<Vec<_>>(),
-            vec![json!(1), json!(2), json!("a")]
-        );
-        assert_eq!(
-            JsonValueIterator::new(json!([{"a":1, "b": 2}, {"a": {"b": [3, 4]}}]))
-                .collect::<Vec<_>>(),
-            vec![json!(1), json!(2), json!(3), json!(4)]
-        );
+    fn test_add_concatenate_values() {
+        for (input, expected) in [
+            (json!(5), vec![json!(5)]),
+            (json!([5, "a"]), vec![json!(5), json!("a")]),
+            (json!({"a":1, "b":2}), vec![json!(1), json!(2)]),
+            (
+                json!([{"a":1,"b":2},"a"]),
+                vec![json!(1), json!(2), json!("a")],
+            ),
+            (
+                json!([{"a":1,"b":2},{"a":{"b":[3,4]}}]),
+                vec![json!(1), json!(2), json!(3), json!(4)],
+            ),
+            (
+                json!([null, {}, [], "2024-01-02T03:04:05Z"]),
+                vec![json!("2024-01-02T03:04:05Z")],
+            ),
+        ] {
+            let mut document = Document::default();
+            let field = Field::from_field_id(0);
+            super::add_concatenate_values(&input, &[field], &mut document);
+            let actual: Vec<serde_json::Value> = document
+                .get_all(field)
+                .map(|value| serde_json::to_value(TantivyValue::from(value)).unwrap())
+                .collect();
+            assert_eq!(actual, expected);
+        }
     }
 
     #[test]

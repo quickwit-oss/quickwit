@@ -118,6 +118,69 @@ fn run_bench() {
     }
 }
 
+fn document_mapping_bench() {
+    // Repeat with DOC_MAPPING_BENCH=1 before and after changing the mapper.
+    // Peak memory is measured by the existing binggan allocator instrument.
+    let source_config = r#"{"mode":"dynamic","store_source":true}"#;
+    let mapped_config = r#"{"mode":"strict","field_mappings":[
+        {"name":"message","type":"text"},
+        {"name":"service","type":"text"},
+        {"name":"status","type":"u64"}
+    ]}"#;
+    let array_config = r#"{"mode":"strict","field_mappings":[
+        {"name":"messages","type":"array<text>"}
+    ]}"#;
+    let text_array = serde_json::json!({"messages": vec!["x".repeat(1_024); 256]}).to_string();
+    let flat = serde_json::json!({"message":"a fairly typical unescaped log message", "service":"api", "status":200}).to_string();
+    let escaped =
+        r#"{"message":"line\nquote\"unicode\u00e9","key\u0022":{"z":1,"a":2}}"#.to_string();
+    let many_keys = serde_json::Value::Object(
+        (0..100)
+            .map(|index| {
+                (
+                    format!("key_{index:03}"),
+                    serde_json::json!({"nested":["message", index, {"a":true,"b":null}]}),
+                )
+            })
+            .collect(),
+    )
+    .to_string();
+    let mut runner = BenchRunner::new();
+    runner.config().set_num_iter_for_bench(1_000);
+    runner.config().set_num_iter_for_group(20);
+    runner.add_plugin(PeakMemAllocPlugin::new(GLOBAL));
+    for (name, raw, config) in [
+        ("mapped_no_source", flat.clone(), mapped_config),
+        ("mapped_text_array", text_array, array_config),
+        ("source_flat", flat, source_config),
+        ("source_escaped", escaped, source_config),
+        ("source_nested_100_keys", many_keys, source_config),
+    ] {
+        let mapper: DocMapper = serde_json::from_str(config).unwrap();
+        let owned: quickwit_doc_mapper::JsonObject = serde_json::from_str(&raw).unwrap();
+        let mut group = runner.new_group();
+        group.set_name(name);
+        group.set_input_size(raw.len());
+        group.register("parse_and_map", |_| {
+            black_box(mapper.doc_from_json_str(black_box(&raw)).unwrap());
+        });
+        // The input is already parsed (as with VRL/OTLP). Cloning replenishes the consumed input
+        // on each iteration and is deliberately included in both old/new measurements.
+        group.register("clone_owned_and_map", |_| {
+            black_box(
+                mapper
+                    .doc_from_json_obj(black_box(owned.clone()), raw.len() as u64)
+                    .unwrap(),
+            );
+        });
+        group.run();
+    }
+}
+
 fn main() {
+    if std::env::var_os("DOC_MAPPING_BENCH").is_some() {
+        document_mapping_bench();
+        return;
+    }
     run_bench();
 }
