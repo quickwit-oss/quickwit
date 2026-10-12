@@ -51,19 +51,26 @@ over the network. Each session accumulates documents for up to 250ms, indexes th
 single-segment in-RAM Tantivy index built with the schema and tokenizers of the doc mapper of the
 pipeline that processed them, and runs the query built by `DocMapper::query`. Using the pipeline's
 doc mapper keeps live tail consistent with indexing when the index is updated during a session. This guarantees that the query has exactly the same semantics as
-a search (tokenizers, JSON fields, ranges, phrase queries, etc.). The work runs on the
-`run_cpu_intensive` thread pool. `MatchAll` queries skip the indexing.
+a search (tokenizers, JSON fields, ranges, phrase queries, etc.). `MatchAll` queries skip the
+indexing. Only the matching documents allowed by the rate limiter are serialized.
 
 The coordinator resolves the user query with the index default search fields and validates it
 against the index doc mapping before sending it: the indexers do not know the index search
 settings.
 
-The number of concurrent sessions per indexer is limited by `QW_LIVE_TAIL_MAX_SESSIONS` (default:
-16). Each session is also rate limited to `max_docs_per_sec` documents.
+The number of concurrent sessions per indexer is limited by `live_tail.max_sessions` (default: 4).
+Each session is rate limited to the `max_docs_per_sec` requested by the client, capped by
+`live_tail.max_docs_per_sec` (default: 10,000). Both settings can be overridden with the
+`QW_LIVE_TAIL_MAX_SESSIONS` and `QW_LIVE_TAIL_MAX_DOCS_PER_SEC` environment variables.
 
 The rate limit applies after filtering: the CPU cost of a session is proportional to the indexing
 throughput of the index, not to the number of matching documents. Each session indexes the
-documents of the tailed index once more on the `run_cpu_intensive` thread pool, shared with search.
+documents of the tailed index once more. This work runs on a dedicated thread pool of 2 threads,
+not on the `run_cpu_intensive` pool shared with ingest (document validation, decompression), so
+that live tail cannot starve ingestion. When the pool does not keep up, sessions lag and report
+the documents they miss as `lagged`. Cloning the documents in the `DocProcessor`, done once per
+batch for all sessions and only while at least one session is open, is the only cost on the
+indexing path.
 
 ### Coordinator (`quickwit-serve`, `live_tail_api`)
 

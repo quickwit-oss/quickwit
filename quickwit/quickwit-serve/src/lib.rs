@@ -646,7 +646,15 @@ pub async fn serve_quickwit(
     let live_tail_hub = LiveTailHub::default();
     let live_tail_service_opt = node_config
         .is_service_enabled(QuickwitService::Indexer)
-        .then(|| LiveTailServiceClient::new(LiveTailServiceImpl::new(live_tail_hub.clone())));
+        .then(|| {
+            let live_tail_config = &node_config.live_tail_config;
+            let live_tail_service = LiveTailServiceImpl::new(
+                live_tail_hub.clone(),
+                live_tail_config.max_sessions().get(),
+                live_tail_config.max_docs_per_sec().get(),
+            );
+            LiveTailServiceClient::new(live_tail_service)
+        });
 
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
         // if standalone compactors is enabled, indexing pipelines don't perform any merges.

@@ -32,8 +32,16 @@ use crate::metrics::{
 /// Memory budget of the in-RAM index built for each batch. Same as the indexer's split writer.
 const INDEX_WRITER_MEMORY_BUDGET_BYTES: usize = 15_000_000;
 
-/// Returns the documents of `tail_batches` matching `query_ast`, serialized as JSON, in processing
-/// order.
+/// Documents matching a query.
+#[derive(Debug)]
+pub(crate) struct FilteredDocs {
+    pub num_matching_docs: usize,
+    /// The first `max_num_docs` matching documents, serialized as JSON, in processing order.
+    pub docs_json: Vec<Vec<u8>>,
+}
+
+/// Counts the documents of `tail_batches` matching `query_ast` and serializes the first
+/// `max_num_docs` of them, so that no work is spent on documents dropped by the rate limiter.
 ///
 /// The query is evaluated with the same semantics as a search: the documents are indexed into a
 /// single-segment in-RAM Tantivy index built with the doc mapper of their pipeline, and the query
@@ -41,14 +49,16 @@ const INDEX_WRITER_MEMORY_BUDGET_BYTES: usize = 15_000_000;
 ///
 /// Precondition: `query_ast` must be resolved, i.e. it must not contain `UserInput` nodes.
 ///
-/// This is CPU-intensive: call it from `run_cpu_intensive`.
+/// This is CPU-intensive: call it from a thread pool.
 pub(crate) fn filter_batches(
     query_ast: &QueryAst,
     tail_batches: &[Arc<TailBatch>],
-) -> anyhow::Result<Vec<Vec<u8>>> {
+    max_num_docs: usize,
+) -> anyhow::Result<FilteredDocs> {
     let start = Instant::now();
     let mut num_docs = 0;
-    let mut matching_docs_json: Vec<Vec<u8>> = Vec::new();
+    let mut num_matching_docs = 0;
+    let mut docs_json: Vec<Vec<u8>> = Vec::new();
 
     // Batches processed with different doc mappings, e.g. right after an index update, are
     // filtered separately.
@@ -62,14 +72,23 @@ pub(crate) fn filter_batches(
             .collect();
         num_docs += docs.len();
 
-        for doc_position in matching_doc_positions(doc_mapper, query_ast, &docs)? {
-            matching_docs_json.push(serde_json::to_vec(&docs[doc_position].json_obj)?);
+        let doc_positions = matching_doc_positions(doc_mapper, query_ast, &docs)?;
+        num_matching_docs += doc_positions.len();
+
+        for doc_position in doc_positions {
+            if docs_json.len() == max_num_docs {
+                break;
+            }
+            docs_json.push(serde_json::to_vec(&docs[doc_position].json_obj)?);
         }
     }
     LIVE_TAIL_FILTER_DURATION_SECS.observe(start.elapsed().as_secs_f64());
-    LIVE_TAIL_FILTERED_DOCS_MATCHED.inc_by(matching_docs_json.len() as u64);
-    LIVE_TAIL_FILTERED_DOCS_UNMATCHED.inc_by((num_docs - matching_docs_json.len()) as u64);
-    Ok(matching_docs_json)
+    LIVE_TAIL_FILTERED_DOCS_MATCHED.inc_by(num_matching_docs as u64);
+    LIVE_TAIL_FILTERED_DOCS_UNMATCHED.inc_by((num_docs - num_matching_docs) as u64);
+    Ok(FilteredDocs {
+        num_matching_docs,
+        docs_json,
+    })
 }
 
 /// Returns the positions of the documents matching the query, in increasing order.
@@ -193,8 +212,9 @@ mod tests {
         let query_ast = query_ast_from_user_text(user_query, None)
             .parse_user_query(&["body".to_string()])
             .unwrap();
-        filter_batches(&query_ast, &tail_batches())
+        filter_batches(&query_ast, &tail_batches(), usize::MAX)
             .unwrap()
+            .docs_json
             .into_iter()
             .map(|doc_json| {
                 let doc: serde_json::Value = serde_json::from_slice(&doc_json).unwrap();
@@ -205,9 +225,29 @@ mod tests {
 
     #[test]
     fn test_filter_batches_match_all() {
-        let matching_docs = filter_batches(&QueryAst::MatchAll, &tail_batches()).unwrap();
-        assert_eq!(matching_docs.len(), 3);
-        assert!(filter_batches(&QueryAst::MatchAll, &[]).unwrap().is_empty());
+        let filtered_docs = filter_batches(&QueryAst::MatchAll, &tail_batches(), 10).unwrap();
+        assert_eq!(filtered_docs.num_matching_docs, 3);
+        assert_eq!(filtered_docs.docs_json.len(), 3);
+
+        let filtered_docs = filter_batches(&QueryAst::MatchAll, &[], 10).unwrap();
+        assert_eq!(filtered_docs.num_matching_docs, 0);
+        assert!(filtered_docs.docs_json.is_empty());
+    }
+
+    #[test]
+    fn test_filter_batches_serializes_at_most_max_num_docs() {
+        let query_ast = query_ast_from_user_text("severity_text:ERROR", None)
+            .parse_user_query(&[])
+            .unwrap();
+        let filtered_docs = filter_batches(&query_ast, &tail_batches(), 1).unwrap();
+        assert_eq!(filtered_docs.num_matching_docs, 2);
+        assert_eq!(filtered_docs.docs_json.len(), 1);
+        let doc: serde_json::Value = serde_json::from_slice(&filtered_docs.docs_json[0]).unwrap();
+        assert_eq!(doc["body"], "Connection REFUSED by upstream");
+
+        let filtered_docs = filter_batches(&query_ast, &tail_batches(), 0).unwrap();
+        assert_eq!(filtered_docs.num_matching_docs, 2);
+        assert!(filtered_docs.docs_json.is_empty());
     }
 
     #[test]
@@ -293,7 +333,7 @@ mod tests {
             .parse_user_query(&[])
             .unwrap();
         // Only the document tokenized with the `default` tokenizer, which lowercases, matches.
-        let matching_docs = filter_batches(&query_ast, &tail_batches).unwrap();
-        assert_eq!(matching_docs.len(), 1);
+        let filtered_docs = filter_batches(&query_ast, &tail_batches, 10).unwrap();
+        assert_eq!(filtered_docs.num_matching_docs, 1);
     }
 }

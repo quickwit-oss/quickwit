@@ -33,16 +33,21 @@ impl DocRateLimiter {
         }
     }
 
-    /// Consumes up to `num_docs` documents and returns the number of documents allowed.
-    pub fn acquire(&mut self, num_docs: usize, now: Instant) -> usize {
+    /// Refills the bucket and returns the number of documents that can be sent.
+    pub fn num_available_docs(&mut self, now: Instant) -> usize {
         let elapsed_secs = now.duration_since(self.last_refill_at).as_secs_f64();
         self.num_available_docs = (self.num_available_docs + elapsed_secs * self.max_docs_per_sec)
             .min(self.max_docs_per_sec);
         self.last_refill_at = now;
+        self.num_available_docs.floor() as usize
+    }
 
-        let num_allowed_docs = num_docs.min(self.num_available_docs.floor() as usize);
-        self.num_available_docs -= num_allowed_docs as f64;
-        num_allowed_docs
+    /// Consumes `num_docs` documents.
+    ///
+    /// Precondition: `num_docs` is at most the last value returned by `num_available_docs`.
+    pub fn consume(&mut self, num_docs: usize) {
+        self.num_available_docs -= num_docs as f64;
+        debug_assert!(self.num_available_docs >= 0.0);
     }
 }
 
@@ -57,15 +62,17 @@ mod tests {
         let now = Instant::now();
         let mut rate_limiter = DocRateLimiter::new(100, now);
 
-        assert_eq!(rate_limiter.acquire(60, now), 60);
-        assert_eq!(rate_limiter.acquire(60, now), 40);
-        assert_eq!(rate_limiter.acquire(1, now), 0);
+        assert_eq!(rate_limiter.num_available_docs(now), 100);
+        rate_limiter.consume(60);
+        assert_eq!(rate_limiter.num_available_docs(now), 40);
+        rate_limiter.consume(40);
+        assert_eq!(rate_limiter.num_available_docs(now), 0);
 
         let now = now + Duration::from_millis(250);
-        assert_eq!(rate_limiter.acquire(60, now), 25);
+        assert_eq!(rate_limiter.num_available_docs(now), 25);
 
         // The bucket never holds more than one second worth of documents.
         let now = now + Duration::from_secs(10);
-        assert_eq!(rate_limiter.acquire(1_000, now), 100);
+        assert_eq!(rate_limiter.num_available_docs(now), 100);
     }
 }
