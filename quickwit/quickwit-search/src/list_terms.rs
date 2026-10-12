@@ -34,6 +34,7 @@ use tantivy::schema::{Field, FieldType};
 use tantivy::{ReloadPolicy, Term};
 use tracing::{debug, error, info, instrument};
 
+use crate::cost::compute_split_query_cost;
 use crate::leaf::open_index_with_caches;
 use crate::metrics::{LEAF_LIST_TERMS_SPLITS_TOTAL, LEAF_SEARCH_SPLIT_DURATION_SECS};
 use crate::search_job_placer::group_jobs_by_index_id;
@@ -118,7 +119,11 @@ pub async fn root_list_terms(
         .collect_splits_metadata()
         .await?;
 
-    let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
+    // query_complexity_factor is 1.0 here (no effect) because list_terms doesn't execute the query.
+    let jobs: Vec<SearchJob> = split_metadatas
+        .iter()
+        .map(|split_metadata| SearchJob::new(split_metadata, 1.0))
+        .collect();
     let assigned_leaf_search_jobs = cluster_client
         .search_job_placer
         .assign_jobs(jobs, &HashSet::default())
@@ -335,7 +340,9 @@ pub async fn leaf_list_terms(
                     .searcher_config
                     .warmup_single_split_initial_allocation,
             );
-            let job_cost = crate::root::compute_split_cost(split.num_docs);
+            // query_complexity_factor is 1.0 here (no effect) because list_terms doesn't execute
+            // the query.
+            let job_cost = compute_split_query_cost(split.num_docs, 1.0);
             crate::search_permit_provider::SplitSearchTaskMetadata {
                 memory_allocation,
                 job_cost,

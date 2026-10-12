@@ -47,7 +47,7 @@ use quickwit_cluster::GenerationId;
 use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::{IngesterServiceClient, IngesterStatus};
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
-use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2, DocFormat};
+use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2};
 use quickwit_proto::types::{
     AvailabilityZone, DocUid, DocUidGenerator, IndexId, IndexUid, NodeId, SourceId, SubrequestId,
 };
@@ -169,7 +169,6 @@ impl DocBatchV2Builder {
             doc_uids: self.doc_uids,
             doc_buffer: self.doc_buffer.freeze(),
             doc_lengths: self.doc_lengths,
-            doc_format: DocFormat::Json as i32,
         };
         Some(doc_batch)
     }
@@ -208,7 +207,6 @@ impl JsonDocBatchV2Builder {
             doc_uids: self.doc_uids,
             doc_buffer: self.doc_buffer.into_inner().freeze(),
             doc_lengths: self.doc_lengths,
-            doc_format: DocFormat::Json as i32,
         }
     }
 
@@ -469,7 +467,6 @@ mod tests {
             doc_buffer: Vec::new().into(),
             doc_lengths: Vec::new(),
             doc_uids: Vec::new(),
-            doc_format: DocFormat::Json as i32,
         };
         assert_eq!(estimate_size(&doc_batch), ByteSize(0));
 
@@ -477,7 +474,6 @@ mod tests {
             doc_buffer: vec![0u8; 100].into(),
             doc_lengths: vec![10, 20, 30],
             doc_uids: Vec::new(),
-            doc_format: DocFormat::Json as i32,
         };
         assert_eq!(estimate_size(&doc_batch), ByteSize(118));
     }

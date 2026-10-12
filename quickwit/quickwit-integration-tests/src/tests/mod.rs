@@ -16,8 +16,6 @@ mod basic_tests;
 mod compactor_tests;
 mod ingest_v1_tests;
 mod ingest_v2_tests;
-#[cfg(feature = "datafusion")]
-mod metrics_distributed_tests;
 mod no_cp_tests;
 mod otlp_tests;
 mod serve_failure_tests;

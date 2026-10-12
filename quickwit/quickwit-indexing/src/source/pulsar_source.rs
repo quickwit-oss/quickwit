@@ -26,7 +26,7 @@ use pulsar::message::proto::MessageIdData;
 use pulsar::{
     Authentication, Consumer, DeserializeMessage, Payload, Pulsar, SubType, TokioExecutor,
 };
-use quickwit_actors::ActorExitStatus;
+use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::{PulsarSourceAuth, PulsarSourceParams};
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
@@ -35,9 +35,10 @@ use serde_json::{Value as JsonValue, json};
 use tokio::time;
 use tracing::{debug, info, warn};
 
+use crate::actors::DocProcessor;
 use crate::source::{
     BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
-    SourceRuntime, SourceSink, TypedSourceFactory,
+    SourceRuntime, TypedSourceFactory,
 };
 
 type PulsarConsumer = Consumer<PulsarMessage, TokioExecutor>;
@@ -212,7 +213,7 @@ impl PulsarSource {
 impl Source for PulsarSource {
     async fn emit_batches(
         &mut self,
-        source_sink: &SourceSink,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
@@ -251,7 +252,7 @@ impl Source for PulsarSource {
                 "sending doc batch to indexer"
             );
             let message = batch_builder.build();
-            source_sink.send_raw_doc_batch(message, ctx).await?;
+            ctx.send_message(doc_processor_mailbox, message).await?;
         }
         Ok(Duration::default())
     }

@@ -24,6 +24,14 @@ fix:
 	@$(MAKE) migrations-lint
 	@$(MAKE) unused-deps
 
+.PHONY: fix-test
+fix-test:
+	@python3 scripts/fix_if_needed.py
+	@$(MAKE) fmt
+	@$(MAKE) migrations-lint
+	@$(MAKE) unused-deps
+	cargo nextest run
+
 migrations-lint:
 	@echo "Linting Postgres migrations with diesel-guard"
 	@(command -v diesel-guard >/dev/null || (echo "diesel-guard is not installed. Please install using 'cargo install diesel-guard'." && exit 1))

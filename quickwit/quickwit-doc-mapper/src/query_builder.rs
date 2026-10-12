@@ -380,6 +380,18 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
         );
         Ok(())
     }
+
+    fn visit_calc_field(&mut self, calc_field_query: &'a CalcFieldQuery) -> Result<(), Self::Err> {
+        let Some(regex_query) = calc_field_query.try_prefilter_regex_query(self.schema) else {
+            return Ok(());
+        };
+        let resolved = regex_query.to_resolved(self.schema, Some(self.tokenizer_manager))?;
+        self.add_automaton(
+            resolved.field,
+            Automaton::Regex(resolved.json_path, resolved.regex),
+        );
+        Ok(())
+    }
 }
 
 type TermRangeWarmupInfo = HashMap<Field, HashMap<TermRange, PositionNeeded>>;
@@ -400,7 +412,7 @@ fn extract_prefix_term_ranges_and_automaton(
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
     use std::ops::Bound;
 
     use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
@@ -413,11 +425,14 @@ mod test {
     };
     use tantivy::Term;
     use tantivy::jitexpr::ast::deserialize;
-    use tantivy::schema::{DateOptions, DateTimePrecision, FAST, INDEXED, STORED, Schema, TEXT};
+    use tantivy::schema::{
+        DateOptions, DateTimePrecision, FAST, Field, INDEXED, STORED, STRING, Schema, TEXT,
+    };
 
     use super::{ExtractPrefixTermRanges, build_query};
     use crate::{
-        DYNAMIC_FIELD_NAME, FastFieldWarmupInfo, SOURCE_FIELD_NAME, TermRange, WarmupInfo,
+        Automaton, DYNAMIC_FIELD_NAME, FastFieldWarmupInfo, SOURCE_FIELD_NAME, TermRange,
+        WarmupInfo,
     };
 
     fn calc_field(expression: &str) -> QueryAst {
@@ -485,6 +500,92 @@ mod test {
                 "should_field",
                 "filter_field"
             ])
+        );
+    }
+
+    #[test]
+    fn test_calc_field_regex_extract_eq_warmup() {
+        let mut schema_builder = Schema::builder();
+        let service = schema_builder.add_text_field("service", STRING | FAST);
+        schema_builder.add_text_field("tokenized", TEXT | FAST);
+        schema_builder.add_text_field("fast_only", FAST);
+        let schema = schema_builder.build();
+        let context = BuildTantivyAstContext::for_test(&schema);
+
+        // The predicate always reads the fast field. It may also read postings of terms accepted
+        // by the prefilter when the field uses the raw tokenizer for both indexing and fast fields.
+        for (expression, fast_field, expected_prefilter) in [
+            (
+                r#"(EQ (REGEXP_EXTRACT service "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+                "service",
+                Some("svc-api-prod"),
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "svc-([a-z]+)-prod" 1u64) "api")"#,
+                "service",
+                Some("(?s:.*)svc-api-prod(?s:.*)"),
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT tokenized "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+                "tokenized",
+                None,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT fast_only "^svc-([a-z]+)-prod$" 1u64) "api")"#,
+                "fast_only",
+                None,
+            ),
+            (
+                r#"(EQ (REGEXP_EXTRACT service "(?m)^svc-([a-z]+)" 1u64) "api")"#,
+                "service",
+                None,
+            ),
+        ] {
+            let (_, warmup) = build_query(calc_field(expression), &context, None).unwrap();
+            assert_eq!(
+                warmup.fast_fields,
+                expected_fast_fields(&[fast_field]),
+                "{expression}"
+            );
+            let expected_automatons: HashMap<Field, HashSet<Automaton>> = expected_prefilter
+                .map(|regex| {
+                    let automaton = Automaton::Regex(None, regex.to_string());
+                    (service, HashSet::from([automaton]))
+                })
+                .into_iter()
+                .collect();
+            assert_eq!(
+                warmup.automatons_grouped_by_field, expected_automatons,
+                "{expression}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_calc_field_regex_extract_eq_warmup_on_dynamic_field() {
+        let mut schema_builder = Schema::builder();
+        let dynamic = schema_builder.add_json_field(DYNAMIC_FIELD_NAME, STRING | FAST);
+        let schema = schema_builder.build();
+        let context = BuildTantivyAstContext::for_test(&schema);
+
+        // The predicate reads the subfield's fast column, and the postings of the terms accepted
+        // by the prefilter under the subfield's path in the dynamic field.
+        let expression = r#"(EQ (REGEXP_EXTRACT custom.programName "^/([a-z]+)/(v[0-9]+)/([a-z]+)$" 3u64) "sports")"#;
+        let (_, warmup) = build_query(calc_field(expression), &context, None).unwrap();
+        assert_eq!(
+            warmup.fast_fields,
+            expected_fast_fields(&["custom.programName"])
+        );
+        let mut term_for_path = Term::from_field_json_path(dynamic, "custom.programName", false);
+        term_for_path.append_type_and_str("");
+        let path_prefix = term_for_path.value().as_serialized()[1..].to_vec();
+        let automaton = Automaton::Regex(
+            Some(path_prefix),
+            "/(?:[a-z]+)/(?:v[0-9]+)/sports".to_string(),
+        );
+        assert_eq!(
+            warmup.automatons_grouped_by_field,
+            HashMap::from([(dynamic, HashSet::from([automaton]))])
         );
     }
 
