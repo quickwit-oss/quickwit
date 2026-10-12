@@ -29,6 +29,7 @@ use tantivy::schema::{
 
 use super::date_time_type::QuickwitDateTimeOptions;
 use super::field_mapping_entry::QuickwitBoolOptions;
+use super::mapping_json::{MappingJson, Scalar};
 use super::tantivy_val_to_json::formatted_tantivy_value_to_json;
 use crate::doc_mapper::field_mapping_entry::{
     QuickwitBytesOptions, QuickwitIpAddrOptions, QuickwitNumericOptions, QuickwitObjectOptions,
@@ -53,30 +54,38 @@ pub enum LeafType {
 
 /// Visits primitive JSON values in object-key / array order, excluding nulls.
 /// Concatenate deliberately does not auto-convert RFC3339 strings to dates.
-pub(crate) fn add_concatenate_values(value: &JsonValue, fields: &[Field], document: &mut Document) {
-    match value {
-        JsonValue::Null => (),
-        JsonValue::Array(values) => {
-            for value in values {
-                add_concatenate_values(value, fields, document);
-            }
+pub(crate) fn add_concatenate_values<V: MappingJson>(
+    value: &V,
+    fields: &[Field],
+    document: &mut Document,
+) {
+    if let Some(values) = value.array() {
+        for value in values {
+            add_concatenate_values(value, fields, document);
         }
-        JsonValue::Object(object) => {
-            for value in object.values() {
-                add_concatenate_values(value, fields, document);
-            }
+    } else if let Some(object) = value.object() {
+        for (_, value) in V::entries(object) {
+            add_concatenate_values(value, fields, document);
         }
-        JsonValue::String(text) => {
-            for field in fields {
-                document.add_text(*field, text);
+    } else {
+        match value.scalar() {
+            Some(Scalar::Null) => (),
+            Some(Scalar::Str(text)) => {
+                for field in fields {
+                    document.add_text(*field, text);
+                }
             }
-        }
-        _ => {
-            for field in fields {
-                document.add_field_value(*field, value);
+            _ => {
+                for field in fields {
+                    value.add_json(*field, document);
+                }
             }
         }
     }
+}
+
+fn path_string<K: std::ops::Deref<Target = str>>(path: &[K]) -> String {
+    path.iter().map(std::ops::Deref::deref).join(".")
 }
 
 impl LeafType {
@@ -138,9 +147,9 @@ impl LeafType {
         }
     }
 
-    fn add_to_document(
+    fn add_to_document<V: MappingJson>(
         &self,
-        json_val: &JsonValue,
+        json_val: &V,
         field: Field,
         concatenate: &[Field],
         document: &mut Document,
@@ -148,7 +157,7 @@ impl LeafType {
         match self {
             LeafType::Text(_) => {
                 let Some(text) = json_val.as_str() else {
-                    return Err(format!("expected string, got `{json_val}`"));
+                    return Err(format!("expected string, got `{}`", json_val.diagnostic()));
                 };
                 for field in concatenate {
                     document.add_text(*field, text);
@@ -156,15 +165,15 @@ impl LeafType {
                 document.add_text(field, text);
             }
             LeafType::Json(_) => {
-                if !json_val.is_object() {
-                    return Err(format!("expected object, got `{json_val}`"));
+                if json_val.object().is_none() {
+                    return Err(format!("expected object, got `{}`", json_val.diagnostic()));
                 }
                 if !concatenate.is_empty() {
                     add_concatenate_values(json_val, concatenate, document);
                 }
                 // Tantivy's borrowed serde_json adapter matches OwnedValue conversion, including
                 // numeric signedness and automatic RFC3339 dates, without building an owned tree.
-                document.add_field_value(field, json_val);
+                json_val.add_json(field, document);
             }
             _ => {
                 let value: TantivyValue = match self {
@@ -179,13 +188,19 @@ impl LeafType {
                     }
                     LeafType::Bool(_) => {
                         let Some(value) = json_val.as_bool() else {
-                            return Err(format!("expected boolean, got `{json_val}`"));
+                            return Err(format!(
+                                "expected boolean, got `{}`",
+                                json_val.diagnostic()
+                            ));
                         };
                         TantivyValue::Bool(value)
                     }
                     LeafType::IpAddr(_) => {
                         let Some(ip_address) = json_val.as_str() else {
-                            return Err(format!("expected string, got `{json_val}`"));
+                            return Err(format!(
+                                "expected string, got `{}`",
+                                json_val.diagnostic()
+                            ));
                         };
                         TantivyValue::IpAddr(
                             IpAddr::from_str(ip_address)
@@ -196,7 +211,16 @@ impl LeafType {
                         )
                     }
                     LeafType::DateTime(options) => options.parse_json(json_val)?,
-                    LeafType::Bytes(options) => options.input_format.parse_json(json_val)?,
+                    LeafType::Bytes(options) => {
+                        let Some(text) = json_val.as_str() else {
+                            return Err(format!(
+                                "expected {} string, got `{}`",
+                                options.input_format.as_str(),
+                                json_val.diagnostic()
+                            ));
+                        };
+                        TantivyValue::Bytes(options.input_format.parse_str(text)?)
+                    }
                     LeafType::TieBreaker => {
                         return Err("tie_breaker values are generated during segment \
                                     serialization"
@@ -276,43 +300,48 @@ impl MappingLeaf {
         Ok(())
     }
 
-    pub fn doc_from_json(
+    pub fn doc_from_json<V: MappingJson>(
         &self,
-        json_val: JsonValue,
+        json_val: V,
         document: &mut Document,
-        path: &mut [String],
+        path: &mut [V::Key],
         strict_mode: bool,
     ) -> Result<(), DocParsingError> {
         if matches!(self.typ, LeafType::TieBreaker) {
             return check_supplied_tie_breaker_value(
                 json_val.is_null(),
                 strict_mode,
-                path.join("."),
+                path_string(path),
             );
         }
         if json_val.is_null() {
             // We just ignore `null`.
             return Ok(());
         }
-        if let JsonValue::Array(values) = json_val {
-            if self.cardinality == Cardinality::SingleValued {
-                return Err(DocParsingError::MultiValuesNotSupported(path.join(".")));
-            }
-            // Release each input value after Tantivy copies it, rather than retaining the
-            // entire array's strings alongside the growing compact document.
-            for value in values {
-                if value.is_null() {
-                    continue;
+        let json_val = match json_val.into_array() {
+            Ok(values) => {
+                if self.cardinality == Cardinality::SingleValued {
+                    return Err(DocParsingError::MultiValuesNotSupported(path_string(path)));
                 }
-                self.typ
-                    .add_to_document(&value, self.field, &self.concatenate, document)
-                    .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
+                // Release each input value after Tantivy copies it, rather than retaining the
+                // entire array's strings alongside the growing compact document.
+                for value in values {
+                    if value.is_null() {
+                        continue;
+                    }
+                    self.typ
+                        .add_to_document(&value, self.field, &self.concatenate, document)
+                        .map_err(|err_msg| {
+                            DocParsingError::ValueError(path_string(path), err_msg)
+                        })?;
+                }
+                return Ok(());
             }
-            return Ok(());
-        }
+            Err(value) => value,
+        };
         self.typ
             .add_to_document(&json_val, self.field, &self.concatenate, document)
-            .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))
+            .map_err(|err_msg| DocParsingError::ValueError(path_string(path), err_msg))
     }
 
     fn populate_json<'a>(
@@ -577,16 +606,16 @@ pub(crate) trait NumVal: Sized + FromStr + ToString + Into<TantivyValue> {
         }
     }
 
-    fn from_json_to_self(json_val: &JsonValue, coerce: bool) -> Result<Self, String> {
-        match json_val {
-            JsonValue::Number(num_val) => Self::from_json_number(num_val).ok_or_else(|| {
+    fn from_json_to_self<V: MappingJson>(json_val: &V, coerce: bool) -> Result<Self, String> {
+        match json_val.scalar() {
+            Some(Scalar::Number(num_val)) => Self::from_json_number(&num_val).ok_or_else(|| {
                 format!(
                     "expected {}, got inconvertible JSON number `{}`",
                     type_name::<Self>(),
                     num_val
                 )
             }),
-            JsonValue::String(str_val) => {
+            Some(Scalar::Str(str_val)) => {
                 if coerce {
                     str_val.parse::<Self>().map_err(|_| {
                         format!(
@@ -604,9 +633,12 @@ pub(crate) trait NumVal: Sized + FromStr + ToString + Into<TantivyValue> {
             }
             _ => {
                 let message = if coerce {
-                    format!("expected JSON number or string, got `{json_val}`")
+                    format!(
+                        "expected JSON number or string, got `{}`",
+                        json_val.diagnostic()
+                    )
                 } else {
-                    format!("expected JSON number, got `{json_val}`")
+                    format!("expected JSON number, got `{}`", json_val.diagnostic())
                 };
                 Err(message)
             }
@@ -635,23 +667,6 @@ impl NumVal for f64 {
 pub(crate) struct MappingNode {
     pub branches: fnv::FnvHashMap<String, MappingTree>,
     branches_order: Vec<String>,
-}
-
-fn get_or_insert_path<'a>(
-    path: &[String],
-    mut dynamic_json_obj: &'a mut serde_json::Map<String, JsonValue>,
-) -> &'a mut serde_json::Map<String, JsonValue> {
-    for field_name in path {
-        let child_json_val = dynamic_json_obj
-            .entry(field_name.clone())
-            .or_insert_with(|| JsonValue::Object(Default::default()));
-        dynamic_json_obj = if let JsonValue::Object(child_map) = child_json_val {
-            child_map
-        } else {
-            panic!("Expected Json object.");
-        };
-    }
-    dynamic_json_obj
 }
 
 impl MappingNode {
@@ -746,38 +761,46 @@ impl MappingNode {
         Ok(())
     }
 
-    pub fn doc_from_json(
+    /// Each node collects only its own unmatched entries. Untouched subtrees move wholesale;
+    /// partial child shells are attached once, without rescanning the global dynamic root.
+    pub fn doc_from_json<V: MappingJson>(
         &self,
-        json_obj: serde_json::Map<String, JsonValue>,
+        json_obj: V::ObjectMap,
         mode: ModeType,
         document: &mut Document,
-        path: &mut Vec<String>,
-        dynamic_json_obj: &mut serde_json::Map<String, JsonValue>,
-    ) -> Result<(), DocParsingError> {
-        for (field_name, val) in json_obj {
-            if let Some(child_tree) = self.branches.get(&field_name) {
+        path: &mut Vec<V::Key>,
+    ) -> Result<Option<V::ObjectMap>, DocParsingError> {
+        let mut dynamic = None;
+        for (field_name, val) in V::into_entries(json_obj) {
+            if let Some(child_tree) = self.branches.get(&*field_name) {
                 path.push(field_name);
-                child_tree.doc_from_json(val, mode, document, path, dynamic_json_obj)?;
-                path.pop();
+                let child_dynamic = child_tree.doc_from_json(val, mode, document, path)?;
+                let field_name = path.pop().expect("mapped child path must be present");
+                if let Some(child) = child_dynamic {
+                    V::append_unique(
+                        dynamic.get_or_insert_with(Default::default),
+                        field_name,
+                        V::from_object(child),
+                    );
+                }
             } else {
                 match mode {
-                    ModeType::Lenient => {
-                        // In lenient mode we simply ignore these unmapped fields.
-                    }
+                    ModeType::Lenient => (),
                     ModeType::Dynamic => {
-                        let dynamic_json_obj_after_path =
-                            get_or_insert_path(path, dynamic_json_obj);
-                        dynamic_json_obj_after_path.insert(field_name, val);
+                        V::append_unique(
+                            dynamic.get_or_insert_with(Default::default),
+                            field_name,
+                            val,
+                        );
                     }
                     ModeType::Strict => {
                         path.push(field_name);
-                        let field_path = path.join(".");
-                        return Err(DocParsingError::NoSuchFieldInSchema(field_path));
+                        return Err(DocParsingError::NoSuchFieldInSchema(path_string(path)));
                     }
                 }
             }
         }
-        Ok(())
+        Ok(dynamic)
     }
 
     pub fn populate_json<'a>(
@@ -858,28 +881,25 @@ impl MappingTree {
         }
     }
 
-    fn doc_from_json(
+    fn doc_from_json<V: MappingJson>(
         &self,
-        json_value: JsonValue,
+        json_value: V,
         mode: ModeType,
         document: &mut Document,
-        path: &mut Vec<String>,
-        dynamic_json_obj: &mut serde_json::Map<String, JsonValue>,
-    ) -> Result<(), DocParsingError> {
+        path: &mut Vec<V::Key>,
+    ) -> Result<Option<V::ObjectMap>, DocParsingError> {
         match self {
             MappingTree::Leaf(mapping_leaf) => {
-                mapping_leaf.doc_from_json(json_value, document, path, mode == ModeType::Strict)
+                mapping_leaf.doc_from_json(json_value, document, path, mode == ModeType::Strict)?;
+                Ok(None)
             }
-            MappingTree::Node(mapping_node) => {
-                if let JsonValue::Object(json_obj) = json_value {
-                    mapping_node.doc_from_json(json_obj, mode, document, path, dynamic_json_obj)
-                } else {
-                    Err(DocParsingError::ValueError(
-                        path.join("."),
-                        format!("expected an JSON object, got {json_value}"),
-                    ))
-                }
-            }
+            MappingTree::Node(mapping_node) => match json_value.into_object() {
+                Ok(json_obj) => mapping_node.doc_from_json::<V>(json_obj, mode, document, path),
+                Err(value) => Err(DocParsingError::ValueError(
+                    path_string(path),
+                    format!("expected an JSON object, got {}", value.diagnostic()),
+                )),
+            },
         }
     }
 
@@ -1262,7 +1282,27 @@ mod tests {
         fn value_from_json(&self, value: serde_json::Value) -> Result<TantivyValue, String> {
             let mut document = Document::default();
             let field = Field::from_field_id(0);
-            self.add_to_document(&value, field, &[], &mut document)?;
+            let owned_result = self.add_to_document(&value, field, &[], &mut document);
+            // Exercise every existing leaf fixture against the second native representation,
+            // including failures, while keeping the original exact typed assertions below.
+            let raw = value.to_string();
+            let mut borrowed: serde_json_borrow::Value = serde_json::from_str(&raw).unwrap();
+            crate::borrowed_json::normalize(&mut borrowed);
+            let mut borrowed_document = Document::default();
+            let borrowed_result =
+                self.add_to_document(&borrowed, field, &[], &mut borrowed_document);
+            assert_eq!(owned_result, borrowed_result);
+            assert_eq!(
+                document
+                    .get_all(field)
+                    .map(TantivyValue::from)
+                    .collect::<Vec<_>>(),
+                borrowed_document
+                    .get_all(field)
+                    .map(TantivyValue::from)
+                    .collect::<Vec<_>>()
+            );
+            owned_result?;
             Ok(TantivyValue::from(document.get_first(field).unwrap()))
         }
     }
@@ -1288,61 +1328,46 @@ mod tests {
     }
 
     #[test]
-    fn test_get_or_insert_path() {
-        let mut map = Default::default();
-        super::get_or_insert_path(&["a".to_string(), "b".to_string()], &mut map)
-            .insert("c".to_string(), JsonValue::from(3u64));
-        assert_eq!(
-            &serde_json::to_value(&map).unwrap(),
-            &serde_json::json!({
-                "a": {
-                    "b": {
-                        "c": 3u64
-                    }
-                }
-            })
-        );
-        super::get_or_insert_path(&["a".to_string(), "b".to_string()], &mut map)
-            .insert("d".to_string(), JsonValue::from(2u64));
-        assert_eq!(
-            &serde_json::to_value(&map).unwrap(),
-            &serde_json::json!({
-                "a": {
-                    "b": {
-                        "c": 3u64,
-                        "d": 2u64
-                    }
-                }
-            })
-        );
-        super::get_or_insert_path(&["e".to_string()], &mut map)
-            .insert("f".to_string(), JsonValue::from(5u64));
-        assert_eq!(
-            &serde_json::to_value(&map).unwrap(),
-            &serde_json::json!({
-                "a": {
-                    "b": {
-                        "c": 3u64,
-                        "d": 2u64
-                    }
-                },
-                "e": { "f": 5u64 }
-            })
-        );
-        super::get_or_insert_path(&[], &mut map).insert("g".to_string(), JsonValue::from(6u64));
-        assert_eq!(
-            &serde_json::to_value(&map).unwrap(),
-            &serde_json::json!({
-                "a": {
-                    "b": {
-                        "c": 3u64,
-                        "d": 2u64
-                    }
-                },
-                "e": { "f": 5u64 },
-                "g": 6u64
-            })
-        );
+    fn test_local_dynamic_subtree_assembly() {
+        let entries: Vec<crate::FieldMappingEntry> = serde_json::from_str(
+            r#"[
+                {"name":"a","type":"object","field_mappings":[
+                    {"name":"b","type":"object","field_mappings":[{"name":"known","type":"text"}]}
+                ]},
+                {"name":"e","type":"object","field_mappings":[{"name":"known","type":"text"}]}
+            ]"#,
+        )
+        .unwrap();
+        let mut schema = tantivy::schema::Schema::builder();
+        let mapping = super::build_mapping_tree(&entries, &mut schema).unwrap();
+        // Retain the former path-helper fixtures, now exercising actual node-local assembly.
+        for expected in [
+            json!({"a":{"b":{"c":3u64}}}),
+            json!({"a":{"b":{"c":3u64,"d":2u64}}}),
+            json!({"a":{"b":{"c":3u64,"d":2u64}},"e":{"f":5u64}}),
+            json!({"a":{"b":{"c":3u64,"d":2u64}},"e":{"f":5u64},"g":6u64}),
+        ] {
+            let JsonValue::Object(input) = expected.clone() else {
+                panic!("object");
+            };
+            let mut path = Vec::new();
+            let dynamic = mapping
+                .field_mappings
+                .doc_from_json::<JsonValue>(
+                    input,
+                    crate::ModeType::Dynamic,
+                    &mut Document::default(),
+                    &mut path,
+                )
+                .unwrap()
+                .unwrap();
+            assert!(path.is_empty());
+            assert_eq!(serde_json::to_value(&dynamic).unwrap(), expected);
+            assert_eq!(
+                serde_json::to_string(&dynamic).unwrap(),
+                expected.to_string()
+            );
+        }
     }
 
     #[test]
@@ -1536,7 +1561,7 @@ mod tests {
                 let mut document = Document::default();
                 let mut path = vec!["tie_breaker".to_string()];
                 let parsing_result = leaf_entry.doc_from_json(
-                    serde_json::from_str(json_str).unwrap(),
+                    serde_json::from_str::<JsonValue>(json_str).unwrap(),
                     &mut document,
                     &mut path,
                     strict_mode,

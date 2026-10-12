@@ -32,7 +32,9 @@ use tantivy::schema::{Field, FieldType, INDEXED, OwnedValue as TantivyValue, STO
 use super::DocMapperBuilder;
 use super::field_mapping_entry::RAW_TOKENIZER_NAME;
 use super::field_presence::populate_field_presence;
+use super::mapping_json::MappingJson;
 use super::tantivy_val_to_json::tantivy_value_to_json;
+use crate::borrowed_json::{NormalizedObject, parse_json_object, parse_json_object_str};
 use crate::doc_mapper::mapping_tree::{
     MappingNode, MappingNodeRoot, add_concatenate_values, build_field_path_from_str,
     build_mapping_tree,
@@ -470,13 +472,13 @@ impl DocMapper {
         &self,
         json_doc: &[u8],
     ) -> Result<(Partition, Document), DocParsingError> {
-        let json_obj: JsonObject = serde_json::from_slice(json_doc).map_err(|_| {
+        let json_value = parse_json_object(json_doc).map_err(|_| {
             let json_doc_sample: String = std::str::from_utf8(json_doc)
                 .map(|doc_str| doc_str.chars().take(20).chain("...".chars()).collect())
                 .unwrap_or_else(|_| "document contains some invalid UTF-8 characters".to_string());
             DocParsingError::NotJsonObject(json_doc_sample)
         })?;
-        self.doc_from_json_obj(json_obj, json_doc.len() as u64)
+        self.doc_from_borrowed_json(json_value, json_doc.len() as u64)
     }
 
     /// Parses a JSON string into a tantivy [`Document`].
@@ -484,11 +486,11 @@ impl DocMapper {
         &self,
         json_doc: &str,
     ) -> Result<(Partition, Document), DocParsingError> {
-        let json_obj: JsonObject = serde_json::from_str(json_doc).map_err(|_| {
+        let json_value = parse_json_object_str(json_doc).map_err(|_| {
             let json_doc_sample: String = json_doc.chars().take(20).chain("...".chars()).collect();
             DocParsingError::NotJsonObject(json_doc_sample)
         })?;
-        self.doc_from_json_obj(json_obj, json_doc.len() as u64)
+        self.doc_from_borrowed_json(json_value, json_doc.len() as u64)
     }
 
     /// Transforms a JSON object into a tantivy [`Document`] according to the rules
@@ -498,35 +500,48 @@ impl DocMapper {
         json_obj: JsonObject,
         document_len: u64,
     ) -> Result<(Partition, Document), DocParsingError> {
-        let partition: Partition = self.partition_key.eval_hash(&json_obj);
+        let partition = self.partition_key.eval_hash(&json_obj);
+        self.doc_from_native_json(JsonValue::Object(json_obj), partition, document_len)
+    }
 
-        let mut dynamic_json_obj = serde_json::Map::default();
+    fn doc_from_borrowed_json(
+        &self,
+        normalized: NormalizedObject<'_>,
+        document_len: u64,
+    ) -> Result<(Partition, Document), DocParsingError> {
+        let json_value = normalized.into_value();
+        let partition = self.partition_key.eval_hash(
+            json_value
+                .as_object()
+                .expect("normalized root is an object"),
+        );
+        self.doc_from_native_json(json_value, partition, document_len)
+    }
+
+    /// Both representations enter here with an object root; routing is evaluated before
+    /// consumption.
+    fn doc_from_native_json<V: MappingJson>(
+        &self,
+        json_value: V,
+        partition: Partition,
+        document_len: u64,
+    ) -> Result<(Partition, Document), DocParsingError> {
         let mut field_path = Vec::new();
         let mut document = Document::default();
-
-        // Tantivy copies borrowed values into its owned compact document synchronously.
-        // Keep the original JSON available for mapping, without cloning it for _source.
-        let json_value = JsonValue::Object(json_obj);
         if let Some(source_field) = self.source_field {
-            document.add_field_value(source_field, &json_value);
+            json_value.add_json(source_field, &mut document);
         }
-        let JsonValue::Object(json_obj) = json_value else {
-            unreachable!()
+        let Ok(json_obj) = json_value.into_object() else {
+            unreachable!("root must be a JSON object")
         };
-
-        let mode = self.mode.mode_type();
-        self.field_mappings.doc_from_json(
+        let dynamic = self.field_mappings.doc_from_json::<V>(
             json_obj,
-            mode,
+            self.mode.mode_type(),
             &mut document,
             &mut field_path,
-            &mut dynamic_json_obj,
         )?;
-
-        if let Some(dynamic_field) = self.dynamic_field
-            && !dynamic_json_obj.is_empty()
-        {
-            let dynamic_value = JsonValue::Object(dynamic_json_obj);
+        if let (Some(dynamic_field), Some(dynamic_json_obj)) = (self.dynamic_field, dynamic) {
+            let dynamic_value = V::from_object(dynamic_json_obj);
             if !self.concatenate_dynamic_fields.is_empty() {
                 add_concatenate_values(
                     &dynamic_value,
@@ -534,7 +549,7 @@ impl DocMapper {
                     &mut document,
                 );
             }
-            document.add_field_value(dynamic_field, &dynamic_value);
+            dynamic_value.add_json(dynamic_field, &mut document);
         }
 
         if let Some(document_size_field) = self.document_size_field {

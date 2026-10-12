@@ -102,6 +102,82 @@ impl RoutingExprContext for serde_json::Map<String, JsonValue> {
     }
 }
 
+fn hash_borrowed_json_val<H: Hasher>(json_val: &serde_json_borrow::Value, hasher: &mut H) {
+    match json_val {
+        serde_json_borrow::Value::Null => {
+            hasher.write_u8(0u8);
+        }
+        serde_json_borrow::Value::Bool(bool_val) => {
+            hasher.write_u8(1u8);
+            bool_val.hash(hasher);
+        }
+        serde_json_borrow::Value::Number(num) => {
+            hasher.write_u8(2u8);
+            serde_json::Number::from(*num).hash(hasher);
+        }
+        serde_json_borrow::Value::Str(s) => {
+            hasher.write_u8(3u8);
+            hasher.write_u64(s.len() as u64);
+            hasher.write(s.as_bytes());
+        }
+        serde_json_borrow::Value::Array(arr) => {
+            hasher.write_u8(4u8);
+            hasher.write_u64(arr.len() as u64);
+            for el in arr {
+                hash_borrowed_json_val(el, hasher);
+            }
+        }
+        serde_json_borrow::Value::Object(obj) => {
+            hasher.write_u8(5u8);
+            hasher.write_u64(obj.len() as u64);
+            for (key, val) in obj.iter() {
+                hasher.write_u64(key.len() as u64);
+                hasher.write(key.as_bytes());
+                hash_borrowed_json_val(val, hasher);
+            }
+        }
+    }
+}
+
+fn find_borrowed_value<'a>(
+    mut root: &'a serde_json_borrow::Value,
+    keys: &[String],
+) -> Option<&'a serde_json_borrow::Value<'a>> {
+    for key in keys {
+        match root {
+            serde_json_borrow::Value::Object(obj) => {
+                root = obj.get(key)?;
+            }
+            _ => return None,
+        }
+    }
+    Some(root)
+}
+
+fn find_borrowed_value_in_map<'a>(
+    obj: &'a serde_json_borrow::Map<'_>,
+    keys: &[String],
+) -> Option<&'a serde_json_borrow::Value<'a>> {
+    // we can't have an empty path and this is used only for the root map, so there is no risk of
+    // out of bound
+    if let Some(value) = obj.get(&keys[0]) {
+        find_borrowed_value(value, &keys[1..])
+    } else {
+        None
+    }
+}
+
+impl RoutingExprContext for serde_json_borrow::Map<'_> {
+    fn hash_attribute<H: Hasher>(&self, attr_name: &[String], hasher: &mut H) {
+        if let Some(json_val) = find_borrowed_value_in_map(self, attr_name) {
+            hasher.write_u8(1u8);
+            hash_borrowed_json_val(json_val, hasher);
+        } else {
+            hasher.write_u8(0u8);
+        }
+    }
+}
+
 /// which defines a routing expression
 #[derive(Clone, Default)]
 pub struct RoutingExpr {

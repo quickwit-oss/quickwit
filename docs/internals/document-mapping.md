@@ -36,7 +36,39 @@ Compatibility constraints:
 - Null handling, cardinality, errors, field-presence computation, routing, and
   fingerprinting are unchanged. Parsing failures do not trigger fallback.
 
-## Measurement and deferred borrowed parsing
+## Native consuming input
+
+The mapper has one private sealed mapping implementation for native owned
+`serde_json::Value` and normalized `serde_json_borrow::Value`. Owned input keeps
+its native maps and array buffers; there is no whole-tree owned-to-borrowed
+conversion. Object and array iterators are statically dispatched. Numeric scalar
+access borrows owned numbers and converts only borrowed numbers to
+`serde_json::Number`, preserving the separate mapped versus JSON/date rules.
+
+Raw mapper string/byte entry points parse one borrowed tree and normalize it in
+place. A private-constructor root wrapper records that normalization happened.
+A `LazyLock` observes the actual serde Map backend once (including Cargo feature
+unification); recursive normalization preserves last-value-wins duplicates and
+native map order. Legacy unnormalized ingest validation keeps its original
+Display-based diagnostic behavior. Normalized mapper errors serialize directly
+to diagnostic text, without constructing or reparsing another tree.
+
+Unknown dynamic subtrees move intact. Only partially mapped object boundaries
+need replacement output shells, assembled locally once per node, without global
+parent scans or per-append duplicate searches on borrowed objects. Input keys
+move onto the diagnostic path and then into dynamic output; strings are never
+cloned for this traversal. Arrays move out as their native Vec and each element
+is dropped after synchronous Tantivy insertion, including on an error. Routing
+and source capture precede consumption; only owned Tantivy documents escape.
+No DocProcessor, fingerprinter, or actor integration is included here.
+
+**Dependency gate:** published `serde_json_borrow` 0.9 does not expose the needed
+`ObjectAsVec::as_vec_mut`. This candidate requires a supported upstream API
+before production landing; an experimental local override is validation only,
+not a dependency delivery solution. No broader constructors or changed
+`Value::get` API are required.
+
+## Measurement
 
 Run the focused benchmark with existing binggan tooling:
 
@@ -53,10 +85,10 @@ fields without `_source`, a large mapped text array, flat/escaped source JSON,
 and 100 nested JSON keys.
 These are mapper microbenchmarks, not end-to-end indexing measurements.
 
-A borrowed-parser prototype was deliberately deferred. `serde_json_borrow` 0.9
-retains duplicate keys and input order, unlike serde_json's last-key-wins
-objects and feature-dependent ordering described above. Restoring compatibility with a second borrowed structural tree saved
-additional peak memory, but reduced median throughput versus direct insertion
-by approximately 10% for escaped input and 18% for the nested 100-key case in
-local measurements. The final implementation retains owned JSON parsing rather
-than adding normalization machinery or changing production semantics.
+The bounded `consuming_input_bench` example compares native mapping with the
+direct-insertion baseline. It prepares owned inputs outside the timed mapping
+region and reports that throughput separately from raw parse-and-map. It also
+reports process-local instrumented peak allocation above scope entry (not
+allocation counts, RSS, or pipeline memory). Saved paired runs and load records
+are required before claiming an owned-path no-regression result. In particular,
+this change makes no real DocProcessor throughput or memory claim.

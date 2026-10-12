@@ -16,8 +16,9 @@ use indexmap::IndexSet;
 use quickwit_common::true_fn;
 use quickwit_datetime::{DateTimeInputFormat, DateTimeOutputFormat, TantivyDateTime};
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::Value as JsonValue;
 use tantivy::schema::{DateTimePrecision, OwnedValue as TantivyValue};
+
+use super::mapping_json::{MappingJson, Scalar};
 
 /// A struct holding DateTime field options.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -97,9 +98,12 @@ impl QuickwitDateTimeOptions {
         }
     }
 
-    pub(crate) fn parse_json(&self, json_value: &JsonValue) -> Result<TantivyValue, String> {
-        let date_time = match json_value {
-            JsonValue::Number(timestamp) => {
+    pub(crate) fn parse_json<V: MappingJson>(
+        &self,
+        json_value: &V,
+    ) -> Result<TantivyValue, String> {
+        let date_time = match json_value.scalar() {
+            Some(Scalar::Number(timestamp)) => {
                 // `.as_f64()` actually converts floats to integers, so we must check for integers
                 // first.
                 if let Some(timestamp_i64) = timestamp.as_i64() {
@@ -112,13 +116,13 @@ impl QuickwitDateTimeOptions {
                     ));
                 }
             }
-            JsonValue::String(date_time_str) => {
+            Some(Scalar::Str(date_time_str)) => {
                 quickwit_datetime::parse_date_time_str(date_time_str, &self.input_formats.0)?
             }
             _ => {
                 return Err(format!(
-                    "failed to parse datetime: expected a float, integer, or string, got \
-                     `{json_value}`"
+                    "failed to parse datetime: expected a float, integer, or string, got `{}`",
+                    json_value.diagnostic()
                 ));
             }
         };

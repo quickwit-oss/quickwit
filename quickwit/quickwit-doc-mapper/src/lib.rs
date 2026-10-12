@@ -20,6 +20,7 @@
 //! to convert a json like documents to a document indexable by tantivy
 //! engine, aka tantivy::Document.
 
+pub mod borrowed_json;
 mod doc_mapper;
 mod doc_mapping;
 mod error;
