@@ -29,8 +29,6 @@ use crate::rest_api_response::into_rest_api_response;
 use crate::search_api::extract_index_id_patterns;
 use crate::{BodyFormat, with_arg};
 
-const MAX_DOCS_PER_SEC_LIMIT: u32 = 10_000;
-
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(live_tail_handler), components(schemas(LiveTailQueryParams)))]
 pub struct LiveTailApi;
@@ -44,8 +42,8 @@ pub struct LiveTailQueryParams {
     /// Query in the Quickwit query language. Matches all documents by default.
     #[serde(default = "LiveTailQueryParams::default_query")]
     pub query: String,
-    /// Maximum number of documents sent per second by each indexer. Extra documents are reported
-    /// in `dropped` events.
+    /// Maximum number of documents sent per second by each indexer, capped by the indexer
+    /// `live_tail.max_docs_per_sec` setting. Extra documents are reported in `dropped` events.
     #[serde(default = "LiveTailQueryParams::default_max_docs_per_sec")]
     pub max_docs_per_sec: u32,
 }
@@ -60,10 +58,10 @@ impl LiveTailQueryParams {
     }
 
     fn validate(&self) -> Result<(), SearchError> {
-        if !(1..=MAX_DOCS_PER_SEC_LIMIT).contains(&self.max_docs_per_sec) {
-            return Err(SearchError::InvalidArgument(format!(
-                "`max_docs_per_sec` must be between 1 and {MAX_DOCS_PER_SEC_LIMIT}"
-            )));
+        if self.max_docs_per_sec == 0 {
+            return Err(SearchError::InvalidArgument(
+                "`max_docs_per_sec` must be positive".to_string(),
+            ));
         }
         Ok(())
     }

@@ -26,28 +26,21 @@ use tokio::sync::Semaphore;
 use crate::LiveTailHub;
 use crate::session::LiveTailSession;
 
-const DEFAULT_MAX_SESSIONS: usize = 16;
-
 /// Implementation of the live tail service hosted by indexer nodes.
 #[derive(Debug, Clone)]
 pub struct LiveTailServiceImpl {
     hub: LiveTailHub,
     session_permits: Arc<Semaphore>,
+    /// Rates requested by clients above this limit are capped.
+    max_docs_per_sec: u32,
 }
 
 impl LiveTailServiceImpl {
-    /// Creates the service. The maximum number of concurrent sessions on this node can be set via
-    /// the `QW_LIVE_TAIL_MAX_SESSIONS` environment variable.
-    pub fn new(hub: LiveTailHub) -> Self {
-        let max_sessions =
-            quickwit_common::get_from_env("QW_LIVE_TAIL_MAX_SESSIONS", DEFAULT_MAX_SESSIONS, false);
-        Self::with_max_sessions(hub, max_sessions)
-    }
-
-    pub fn with_max_sessions(hub: LiveTailHub, max_sessions: usize) -> Self {
+    pub fn new(hub: LiveTailHub, max_sessions: usize, max_docs_per_sec: u32) -> Self {
         Self {
             hub,
             session_permits: Arc::new(Semaphore::new(max_sessions)),
+            max_docs_per_sec,
         }
     }
 }
@@ -87,7 +80,7 @@ impl LiveTailService for LiveTailServiceImpl {
             query_ast,
             batch_rx,
             message_tx,
-            request.max_docs_per_sec,
+            request.max_docs_per_sec.min(self.max_docs_per_sec),
             session_permit,
         );
         quickwit_common::spawn_named_task(session.run(), "live_tail_session");
@@ -154,7 +147,7 @@ mod tests {
     async fn test_live_tail_service_streams_matching_docs() {
         let hub = LiveTailHub::default();
         let tap = hub.tap(IndexUid::for_test("test-index", 0));
-        let live_tail_service = LiveTailServiceImpl::with_max_sessions(hub, 1);
+        let live_tail_service = LiveTailServiceImpl::new(hub, 1, 100);
 
         let mut stream = live_tail_service
             .open_live_tail(open_live_tail_request("severity_text:ERROR", 100))
@@ -206,13 +199,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_live_tail_service_rate_limits() {
+    async fn test_live_tail_service_caps_requested_rate() {
         let hub = LiveTailHub::default();
         let tap = hub.tap(IndexUid::for_test("test-index", 0));
-        let live_tail_service = LiveTailServiceImpl::with_max_sessions(hub, 1);
+        let live_tail_service = LiveTailServiceImpl::new(hub, 1, 2);
 
         let mut stream = live_tail_service
-            .open_live_tail(open_live_tail_request("*", 2))
+            .open_live_tail(open_live_tail_request("*", 100))
             .await
             .unwrap();
         publish(
@@ -237,7 +230,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_live_tail_service_rejects_invalid_requests() {
-        let live_tail_service = LiveTailServiceImpl::with_max_sessions(LiveTailHub::default(), 1);
+        let live_tail_service = LiveTailServiceImpl::new(LiveTailHub::default(), 1, 100);
 
         let error = live_tail_service
             .open_live_tail(open_live_tail_request("*", 0))

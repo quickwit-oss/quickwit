@@ -37,8 +37,8 @@ use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::templating::render_config;
 use crate::{
-    CompactorConfig, ConfigFormat, IndexerConfig, IngestApiConfig, JaegerConfig, MetastoreConfigs,
-    NodeConfig, SearcherConfig, TlsConfig, validate_identifier, validate_node_id,
+    CompactorConfig, ConfigFormat, IndexerConfig, IngestApiConfig, JaegerConfig, LiveTailConfig,
+    MetastoreConfigs, NodeConfig, SearcherConfig, TlsConfig, validate_identifier, validate_node_id,
 };
 
 pub const DEFAULT_CLUSTER_ID: &str = "quickwit-default-cluster";
@@ -246,6 +246,9 @@ struct NodeConfigBuilder {
     #[serde(rename = "compactor")]
     #[serde(default)]
     compactor_config: CompactorConfig,
+    #[serde(rename = "live_tail")]
+    #[serde(default)]
+    live_tail_config: LiveTailConfig,
     #[serde(rename = "docs_clustering")]
     #[serde(default)]
     docs_clustering_config: Option<DocsClusteringConfigBuilder>,
@@ -405,6 +408,7 @@ impl NodeConfigBuilder {
             ingest_api_config: self.ingest_api_config,
             jaeger_config: self.jaeger_config,
             compactor_config: self.compactor_config,
+            live_tail_config: self.live_tail_config,
             enable_standalone_compactors,
             docs_clustering_config,
         };
@@ -555,6 +559,7 @@ impl Default for NodeConfigBuilder {
             ingest_api_config: IngestApiConfig::default(),
             jaeger_config: JaegerConfig::default(),
             compactor_config: CompactorConfig::default(),
+            live_tail_config: LiveTailConfig::default(),
             docs_clustering_config: None,
         }
     }
@@ -707,6 +712,7 @@ pub fn node_config_for_tests_from_ports(
         ingest_api_config: IngestApiConfig::default(),
         jaeger_config: JaegerConfig::default(),
         compactor_config: CompactorConfig::default(),
+        live_tail_config: LiveTailConfig::default(),
         enable_standalone_compactors: false,
         docs_clustering_config: None,
     }
@@ -944,6 +950,8 @@ mod tests {
                 max_fetch_spans: NonZeroU64::new(1_000).unwrap(),
             }
         );
+        assert_eq!(config.live_tail_config.max_sessions().get(), 8);
+        assert_eq!(config.live_tail_config.max_docs_per_sec().get(), 500);
         Ok(())
     }
 

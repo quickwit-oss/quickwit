@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use bytes::Bytes;
-use quickwit_common::thread_pool::run_cpu_intensive;
+use quickwit_common::thread_pool::with_priority::ThreadPoolWithPriority;
 use quickwit_proto::live_tail::{
     LiveTailDropReason, LiveTailDropped, LiveTailError, LiveTailHits, LiveTailMessage,
     LiveTailResult, live_tail_message,
@@ -26,7 +26,7 @@ use tokio::sync::{OwnedSemaphorePermit, broadcast, mpsc};
 use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{debug, warn};
 
-use crate::filter::filter_batches;
+use crate::filter::{FilteredDocs, filter_batches};
 use crate::hub::TailBatch;
 use crate::rate_limiter::DocRateLimiter;
 
@@ -38,6 +38,18 @@ const MAX_PENDING_DOCS: usize = 10_000;
 
 /// Target size of the NDJSON payload of a `LiveTailHits` message.
 const TARGET_HITS_PAYLOAD_NUM_BYTES: usize = 1024 * 1024;
+
+const NUM_FILTER_THREADS: usize = 2;
+
+/// Filtering runs on a small dedicated thread pool rather than with `run_cpu_intensive`, so that
+/// live tail sessions can never starve the CPU-intensive tasks of the ingest and search paths.
+/// When the pool does not keep up, the sessions wait for their filtering, their subscription to
+/// the hub lags, and the documents they miss are reported as `lagged`.
+fn filter_thread_pool() -> &'static ThreadPoolWithPriority {
+    static FILTER_THREAD_POOL: LazyLock<ThreadPoolWithPriority> =
+        LazyLock::new(|| ThreadPoolWithPriority::new("live_tail", Some(NUM_FILTER_THREADS)));
+    &FILTER_THREAD_POOL
+}
 
 pub(crate) struct LiveTailSession {
     session_id: String,
@@ -132,19 +144,25 @@ impl LiveTailSession {
 
     async fn filter_and_send(&mut self, tail_batches: Vec<Arc<TailBatch>>) -> LiveTailResult<()> {
         let query_ast = self.query_ast.clone();
-        let matching_docs_json =
-            run_cpu_intensive(move || filter_batches(&query_ast, &tail_batches))
-                .await
-                .map_err(|_| LiveTailError::Internal("live tail filter panicked".to_string()))?
-                .map_err(|error| {
-                    LiveTailError::Internal(format!("failed to filter documents: {error:#}"))
-                })?;
-        let num_matching_docs = matching_docs_json.len();
-        let num_allowed_docs = self.rate_limiter.acquire(num_matching_docs, Instant::now());
+        let num_available_docs = self.rate_limiter.num_available_docs(Instant::now());
+        let FilteredDocs {
+            num_matching_docs,
+            docs_json,
+        } = filter_thread_pool()
+            .run_cpu_intensive(move || {
+                filter_batches(&query_ast, &tail_batches, num_available_docs)
+            })
+            .await
+            .map_err(|_| LiveTailError::Internal("live tail filter panicked".to_string()))?
+            .map_err(|error| {
+                LiveTailError::Internal(format!("failed to filter documents: {error:#}"))
+            })?;
+        let num_allowed_docs = docs_json.len();
+        self.rate_limiter.consume(num_allowed_docs);
         debug!(session_id=%self.session_id, num_matching_docs, num_allowed_docs, "filtered live tail documents");
 
         let mut docs_ndjson: Vec<u8> = Vec::new();
-        for doc_json in matching_docs_json.into_iter().take(num_allowed_docs) {
+        for doc_json in docs_json {
             docs_ndjson.extend_from_slice(&doc_json);
             docs_ndjson.push(b'\n');
 
