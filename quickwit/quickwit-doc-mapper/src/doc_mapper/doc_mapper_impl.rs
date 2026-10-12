@@ -703,7 +703,6 @@ mod tests {
     use std::collections::{HashMap, HashSet};
     use std::iter::zip;
 
-    use itertools::Itertools;
     use quickwit_common::PathHasher;
     use quickwit_query::query_ast::query_ast_from_user_text;
     use serde_json::{self, Value as JsonValue, json};
@@ -785,19 +784,11 @@ mod tests {
             let owned_value: OwnedValue = value.into();
             let field_name = schema.get_field_name(field);
             if field_name == SOURCE_FIELD_NAME {
-                // some part of aws-sdk enables `preserve_order` on serde_json.
-                // to get "normal" equality, we are forced to recreate the json object
-                // with sorted keys.
-                let sorted_json_values = json_doc
-                    .as_object()
-                    .unwrap()
-                    .clone()
-                    .into_iter()
-                    .sorted_by(|k1, k2| k1.0.cmp(&k2.0))
-                    .collect::<serde_json::Map<_, _>>();
+                // Root order follows the input map, just like nested JSON objects. In an
+                // ordered build the former extra BTreeMap root sort is deliberately removed.
                 assert_eq!(
                     tantivy::schema::OwnedValue::from(value.as_value()),
-                    tantivy::schema::OwnedValue::from(sorted_json_values)
+                    tantivy::schema::OwnedValue::from(json_doc.clone())
                 );
             } else if field_name == DYNAMIC_FIELD_NAME {
                 assert_eq!(
@@ -1947,6 +1938,9 @@ mod tests {
 
     #[test]
     fn test_concatenate_multiple_field() {
+        let raw = r#"{"some_text": "this is a text", "other_text": "this is a text too"}"#;
+        let expected: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(raw).unwrap();
         test_doc_from_json_test_aux(
             r#"{
                 "field_mappings": [
@@ -1967,8 +1961,8 @@ mod tests {
                 "mode": "strict"
             }"#,
             "concat",
-            r#"{"some_text": "this is a text", "other_text": "this is a text too"}"#,
-            vec!["this is a text".into(), "this is a text too".into()],
+            raw,
+            expected.into_values().map(OwnedValue::from).collect(),
         );
     }
 

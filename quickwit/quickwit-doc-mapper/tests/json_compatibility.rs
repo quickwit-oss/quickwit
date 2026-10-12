@@ -47,25 +47,40 @@ fn json_mapping_compatibility_fixture() {
         [OwnedValue::Str("2024-01-02T03:04:05Z".into())]
     );
     assert_eq!(named["count"], [OwnedValue::U64(1)]);
-    assert_eq!(
-        named["all"],
-        [
-            OwnedValue::U64(1),
-            OwnedValue::I64(1),
-            OwnedValue::U64(u64::MAX),
-            OwnedValue::F64(1.0),
-            OwnedValue::Str("2024-01-02T03:04:05Z".into()),
-            OwnedValue::Str("2024-01-02T03:04:05Z".into()),
-            OwnedValue::I64(1),
-            OwnedValue::I64(2)
-        ]
+    // Reference traversal comes from real serde_json parsing, independent of normalization.
+    let reference: serde_json::Map<String, serde_json::Value> = serde_json::from_str(raw).unwrap();
+    let mut expected_concat = Vec::new();
+    for key in reference.keys() {
+        match key.as_str() {
+            "text" => expected_concat.push(OwnedValue::Str("2024-01-02T03:04:05Z".into())),
+            "count" => expected_concat.push(OwnedValue::U64(1)),
+            "json" => expected_concat.extend([
+                OwnedValue::I64(1),
+                OwnedValue::U64(u64::MAX),
+                OwnedValue::F64(1.0),
+                OwnedValue::Str("2024-01-02T03:04:05Z".into()),
+            ]),
+            _ => (),
+        }
+    }
+    // Dynamic concatenation follows mapped fields; retain nested map iteration order.
+    expected_concat.extend(
+        reference["nested"]["unknown"]
+            .as_object()
+            .unwrap()
+            .values()
+            .cloned()
+            .map(OwnedValue::from),
     );
+    assert_eq!(named["all"], expected_concat);
     let expected_source: OwnedValue = serde_json::from_str::<serde_json::Value>(raw)
         .unwrap()
         .into();
     assert_eq!(named["_source"], [expected_source]);
     let expected_dynamic: OwnedValue =
-        serde_json::json!({"nested":{"unknown":{"a":1,"z":2}}}).into();
+        serde_json::from_str::<serde_json::Value>(r#"{"nested":{"unknown":{"z":2,"a":1}}}"#)
+            .unwrap()
+            .into();
     assert_eq!(named["_dynamic"], [expected_dynamic]);
     assert!(!named["_field_presence"].is_empty());
 }
@@ -126,7 +141,8 @@ fn direct_json_insertion_matches_owned_value_conversion() {
     let mut expected: serde_json::Value = serde_json::from_str(raw).unwrap();
     let (_, doc) = mapper.doc_from_json_bytes(raw.as_bytes()).unwrap();
     let named = doc.to_named_doc(&mapper.schema()).0;
-    // The old path recursively called OwnedValue::from on all three JSON field types.
+    // Desired policy: all object levels follow serde_json map order, including the root.
+    // Do not reproduce the former extra _source/_dynamic root BTreeMap sort.
     assert_eq!(named["_source"], [OwnedValue::from(expected.clone())]);
     let json = expected.as_object_mut().unwrap().remove("json").unwrap();
     assert_eq!(named["json"], [OwnedValue::from(json)]);
@@ -191,7 +207,16 @@ fn direct_insertion_preserves_fixed_errors() {
         ),
         (
             r#"{"z":1,"a":2}"#,
-            DocParsingError::NoSuchFieldInSchema("a".into()),
+            DocParsingError::NoSuchFieldInSchema(
+                serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(
+                    r#"{"z":1,"a":2}"#,
+                )
+                .unwrap()
+                .keys()
+                .next()
+                .unwrap()
+                .clone(),
+            ),
         ),
     ] {
         assert_eq!(mapper.doc_from_json_str(raw).unwrap_err(), expected);

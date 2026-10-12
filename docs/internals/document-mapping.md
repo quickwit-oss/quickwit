@@ -25,6 +25,14 @@ Compatibility constraints:
 - Mapped text and concatenate strings must **not** auto-convert to dates.
   Concatenate visits primitive values in object-key/array order, skips nulls,
   and preserves the configured numeric type for explicitly mapped fields.
+- Object traversal follows the active `serde_json::Map` backend: sorted keys by
+  default, insertion order when Cargo enables `serde_json/preserve_order` anywhere
+  in the dependency graph. Duplicate keys retain the last value (and the first
+  key position in insertion-order builds). `_source` and `_dynamic` roots follow
+  the same order as nested objects; no extra root-only BTreeMap sort is applied.
+  First-error selection and concatenate traversal follow this native order.
+  Routing hashes match within a build, not necessarily across differently
+  configured builds.
 - Null handling, cardinality, errors, field-presence computation, routing, and
   fingerprinting are unchanged. Parsing failures do not trigger fallback.
 
@@ -46,8 +54,8 @@ and 100 nested JSON keys.
 These are mapper microbenchmarks, not end-to-end indexing measurements.
 
 A borrowed-parser prototype was deliberately deferred. `serde_json_borrow` 0.9
-retains duplicate keys and input order, unlike the current sorted, last-key-wins
-objects. Restoring compatibility with a second borrowed structural tree saved
+retains duplicate keys and input order, unlike serde_json's last-key-wins
+objects and feature-dependent ordering described above. Restoring compatibility with a second borrowed structural tree saved
 additional peak memory, but reduced median throughput versus direct insertion
 by approximately 10% for escaped input and 18% for the nested 100-key case in
 local measurements. The final implementation retains owned JSON parsing rather
