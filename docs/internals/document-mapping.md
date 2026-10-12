@@ -60,7 +60,11 @@ move onto the diagnostic path and then into dynamic output; strings are never
 cloned for this traversal. Arrays move out as their native Vec and each element
 is dropped after synchronous Tantivy insertion, including on an error. Routing
 and source capture precede consumption; only owned Tantivy documents escape.
-No DocProcessor, fingerprinter, or actor integration is included here.
+Raw JSON without a VRL transform now uses this path in `DocProcessor`, with
+fingerprinting before consumption and an owned actor payload. Parsing remains a
+separate boundary so processor parse errors retain their original category/text.
+See [borrowed ingestion](borrowed-ingestion.md) for the native read interface,
+unchanged owned paths, and open validation/performance/shipping gates.
 
 **Dependency gate:** published `serde_json_borrow` 0.9 does not expose the needed
 `ObjectAsVec::as_vec_mut`. This candidate requires a supported upstream API

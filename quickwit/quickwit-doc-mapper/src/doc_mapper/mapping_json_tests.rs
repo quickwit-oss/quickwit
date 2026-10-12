@@ -19,7 +19,7 @@ use serde_json_borrow::Value as Borrowed;
 use tantivy::TantivyDocument;
 use tantivy::schema::OwnedValue;
 
-use super::{MappingJson, Scalar};
+use super::{JsonRead, MappingJson, Scalar};
 use crate::doc_mapper::mapping_tree::build_mapping_tree;
 
 #[test]

@@ -23,6 +23,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceInputFormat, TransformConfig};
+use quickwit_doc_mapper::borrowed_json::parse_json_object;
 use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
 use quickwit_metrics::{Counter, counter, labels};
 use quickwit_opentelemetry::otlp::{
@@ -40,7 +41,7 @@ use tokio::runtime::Handle;
 #[cfg(feature = "vrl")]
 use super::vrl_processing::*;
 use crate::actors::Indexer;
-use crate::docs_clustering::Fingerprinter;
+use crate::docs_clustering::{Fingerprint, Fingerprinter};
 use crate::metrics::{PROCESSED_BYTES, PROCESSED_DOCS_TOTAL};
 use crate::models::{NewPublishLock, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch};
 
@@ -466,6 +467,18 @@ impl DocProcessor {
 
     fn process_raw_doc(&mut self, raw_doc: Bytes, processed_docs: &mut Vec<ProcessedDoc>) {
         let num_bytes = raw_doc.len();
+        #[cfg(feature = "vrl")]
+        let has_transform = self.transform_opt.is_some();
+        #[cfg(not(feature = "vrl"))]
+        let has_transform = false;
+
+        if matches!(self.input_format, SourceInputFormat::Json) && !has_transform {
+            // Bytes owns the backing storage until parsing, fingerprinting and synchronous
+            // mapping finish. Only the owned ProcessedDoc crosses the actor boundary.
+            let result = self.process_json_bytes(&raw_doc);
+            self.record_processed_doc(result, num_bytes, processed_docs);
+            return;
+        }
 
         #[cfg(feature = "vrl")]
         let transform_opt = self.transform_opt.as_mut();
@@ -476,22 +489,45 @@ impl DocProcessor {
             let processed_doc_result =
                 json_doc_result.and_then(|json_doc| self.process_json_doc(json_doc));
 
-            match processed_doc_result {
-                Ok(processed_doc) => {
-                    self.counters.record_valid(processed_doc.num_bytes as u64);
-                    processed_docs.push(processed_doc);
-                }
-                Err(error) => {
-                    rate_limited_warn!(
-                        limit_per_min = 10,
-                        index_id = self.counters.index_id,
-                        source_id = self.counters.source_id,
-                        "{error}",
-                    );
-                    self.counters.record_error(error, num_bytes as u64);
-                }
+            self.record_processed_doc(processed_doc_result, num_bytes, processed_docs);
+        }
+    }
+
+    fn record_processed_doc(
+        &self,
+        result: Result<ProcessedDoc, DocProcessorError>,
+        raw_num_bytes: usize,
+        processed_docs: &mut Vec<ProcessedDoc>,
+    ) {
+        match result {
+            Ok(processed_doc) => {
+                self.counters.record_valid(processed_doc.num_bytes as u64);
+                processed_docs.push(processed_doc);
+            }
+            Err(error) => {
+                rate_limited_warn!(
+                    limit_per_min = 10,
+                    index_id = self.counters.index_id,
+                    source_id = self.counters.source_id,
+                    "{error}",
+                );
+                self.counters.record_error(error, raw_num_bytes as u64);
             }
         }
+    }
+
+    fn process_json_bytes(&self, raw_doc: &[u8]) -> Result<ProcessedDoc, DocProcessorError> {
+        // Keep serde errors separate from mapper errors; doc_from_json_bytes deliberately has
+        // a different public mapper diagnostic contract and cannot be used here.
+        let normalized = parse_json_object(raw_doc)?;
+        let fingerprint_opt = self
+            .fingerprinter_opt
+            .as_ref()
+            .map(|fingerprinter| fingerprinter.fingerprint_json(normalized.value()));
+        let (partition, doc) = self
+            .doc_mapper
+            .doc_from_normalized_object(normalized, raw_doc.len() as u64)?;
+        self.finish_doc(doc, fingerprint_opt, partition, raw_doc.len())
     }
 
     fn process_json_doc(&self, json_doc: JsonDoc) -> Result<ProcessedDoc, DocProcessorError> {
@@ -507,6 +543,16 @@ impl DocProcessor {
         let (partition, doc) = self
             .doc_mapper
             .doc_from_json_obj(json_obj, num_bytes as u64)?;
+        self.finish_doc(doc, fingerprint_opt, partition, num_bytes)
+    }
+
+    fn finish_doc(
+        &self,
+        doc: TantivyDocument,
+        fingerprint_opt: Option<Fingerprint>,
+        partition: u64,
+        num_bytes: usize,
+    ) -> Result<ProcessedDoc, DocProcessorError> {
         let timestamp_opt = self.extract_timestamp(&doc)?;
         Ok(ProcessedDoc {
             doc,
@@ -1406,3 +1452,7 @@ mod tests_vrl {
         universe.assert_quit().await;
     }
 }
+
+#[cfg(test)]
+#[path = "doc_processor_borrowed_tests.rs"]
+mod borrowed_tests;

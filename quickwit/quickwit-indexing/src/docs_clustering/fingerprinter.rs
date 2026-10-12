@@ -65,6 +65,7 @@ use fnv::FnvHasher;
 use quickwit_config::{
     ClusteringMethod, ClusteringPolicy, DocsClusteringConfig, FingerprintPolicy, JsonPath,
 };
+use quickwit_doc_mapper::json_read::{JsonRead, Scalar};
 use serde_json::Value as JsonValue;
 use smallvec::SmallVec;
 
@@ -128,6 +129,12 @@ impl Fingerprinter {
     }
 
     pub fn fingerprint(&self, json_value: &JsonValue) -> Fingerprint {
+        self.fingerprint_json(json_value)
+    }
+
+    // Both native representations share the exact rules below. Borrowed callers supply the
+    // value of a NormalizedObject, preserving this build's serde order/duplicate semantics.
+    pub(crate) fn fingerprint_json<V: JsonRead>(&self, json_value: &V) -> Fingerprint {
         let mut fingerprint = SmallVec::new();
         for policy in self.policies.iter() {
             let mut hasher = FnvHasher::default();
@@ -152,9 +159,9 @@ impl Fingerprinter {
         Fingerprint(fingerprint)
     }
 
-    fn hash_structure(&self, value: &JsonValue, exclude: &[JsonPath], hasher: &mut FnvHasher) {
-        fn walk<'a>(
-            json_value: &'a JsonValue,
+    fn hash_structure<V: JsonRead>(&self, value: &V, exclude: &[JsonPath], hasher: &mut FnvHasher) {
+        fn walk<'a, V: JsonRead>(
+            json_value: &'a V,
             exclude: &[JsonPath],
             current: &mut Vec<&'a str>,
             paths: &mut Vec<Vec<&'a str>>,
@@ -170,17 +177,17 @@ impl Fingerprinter {
                 })
             }
 
-            match json_value {
-                JsonValue::Object(obj) => {
-                    for (key, child_value) in obj.iter() {
-                        current.push(key.as_str());
-                        if !is_excluded(exclude, current) {
-                            walk(child_value, exclude, current, paths);
-                        }
-                        current.pop();
+            if let Some(object) = json_value.object() {
+                for (key, child_value) in V::entries(object) {
+                    current.push(key);
+                    if !is_excluded(exclude, current) {
+                        walk(child_value, exclude, current, paths);
                     }
+                    current.pop();
                 }
-                _ => paths.push(current.clone()),
+            } else {
+                // Arrays are leaves, not recursive structure paths.
+                paths.push(current.clone());
             }
         }
 
@@ -198,8 +205,8 @@ impl Fingerprinter {
         }
     }
 
-    fn hash_raw_value(&self, json_value: &JsonValue, path: &JsonPath, hasher: &mut FnvHasher) {
-        fn hash_raw_value_inner(json_value: &JsonValue, hasher: &mut FnvHasher) {
+    fn hash_raw_value<V: JsonRead>(&self, json_value: &V, path: &JsonPath, hasher: &mut FnvHasher) {
+        fn hash_raw_value_inner<V: JsonRead>(json_value: &V, hasher: &mut FnvHasher) {
             const RAW_NULL: u8 = 0;
             const RAW_BOOL: u8 = 1;
             const RAW_NUMBER: u8 = 2;
@@ -207,37 +214,43 @@ impl Fingerprinter {
             const RAW_ARRAY: u8 = 4;
             const RAW_OBJECT: u8 = 5;
 
-            match json_value {
-                JsonValue::Null => hasher.write_u8(RAW_NULL),
-                JsonValue::Bool(value) => {
-                    hasher.write_u8(RAW_BOOL);
-                    hasher.write_u8(*value as u8);
-                }
-                JsonValue::Number(value) => {
-                    hasher.write_u8(RAW_NUMBER);
-                    let number = value.to_string();
-                    hasher.write(number.as_bytes());
-                }
-                JsonValue::String(value) => {
-                    hasher.write_u8(RAW_STRING);
-                    hasher.write_usize(value.len());
-                    hasher.write(value.as_bytes());
-                }
-                JsonValue::Array(values) => {
-                    hasher.write_u8(RAW_ARRAY);
-                    hasher.write_usize(values.len());
-                    for value in values {
-                        hash_raw_value_inner(value, hasher);
+            if let Some(scalar) = json_value.scalar() {
+                match scalar {
+                    Scalar::Null => hasher.write_u8(RAW_NULL),
+                    Scalar::Bool(value) => {
+                        hasher.write_u8(RAW_BOOL);
+                        hasher.write_u8(value as u8);
+                    }
+                    Scalar::Number(value) => {
+                        hasher.write_u8(RAW_NUMBER);
+                        // Canonical serde Number text, including 1.0 and negative zero.
+                        // Borrowed Display and Tantivy's date-aware value view differ here.
+                        let number = value.to_string();
+                        hasher.write(number.as_bytes());
+                    }
+                    Scalar::Str(value) => {
+                        hasher.write_u8(RAW_STRING);
+                        hasher.write_usize(value.len());
+                        hasher.write(value.as_bytes());
                     }
                 }
-                JsonValue::Object(map) => {
-                    hasher.write_u8(RAW_OBJECT);
-                    hasher.write_usize(map.len());
-                    for (key, value) in map.iter() {
-                        hasher.write_usize(key.len());
-                        hasher.write(key.as_bytes());
-                        hash_raw_value_inner(value, hasher);
-                    }
+            } else if let Some(values) = json_value.array() {
+                hasher.write_u8(RAW_ARRAY);
+                hasher.write_usize(values.len());
+                for value in values {
+                    hash_raw_value_inner(value, hasher);
+                }
+            } else {
+                let object = json_value
+                    .object()
+                    .expect("non-scalar, non-array JSON is an object");
+                let entries = V::entries(object);
+                hasher.write_u8(RAW_OBJECT);
+                hasher.write_usize(entries.len());
+                for (key, value) in entries {
+                    hasher.write_usize(key.len());
+                    hasher.write(key.as_bytes());
+                    hash_raw_value_inner(value, hasher);
                 }
             }
         }
@@ -252,9 +265,9 @@ impl Fingerprinter {
         hasher.write_u8(FIELD_BOUNDARY);
     }
 
-    fn hash_string_tokenized(
+    fn hash_string_tokenized<V: JsonRead>(
         &self,
-        json_value: &JsonValue,
+        json_value: &V,
         path: &JsonPath,
         max_tokens: Option<usize>,
         hasher: &mut FnvHasher,
@@ -276,17 +289,15 @@ impl Fingerprinter {
     }
 }
 
-fn get_leaf_json_value<'a>(json_value: &'a JsonValue, path: &[String]) -> Option<&'a JsonValue> {
+fn get_leaf_json_value<'a, V: JsonRead>(json_value: &'a V, path: &[String]) -> Option<&'a V> {
     if path.is_empty() {
         return Some(json_value);
     }
-    let JsonValue::Object(obj) = json_value else {
-        return None;
-    };
-    get_leaf_json_value(obj.get(path.first()?)?, &path[1..])
+    let object = json_value.object()?;
+    get_leaf_json_value(V::get(object, path.first()?)?, &path[1..])
 }
 
-fn get_leaf_string<'a>(json_value: &'a JsonValue, path: &[String]) -> Option<&'a str> {
+fn get_leaf_string<'a, V: JsonRead>(json_value: &'a V, path: &[String]) -> Option<&'a str> {
     get_leaf_json_value(json_value, path)?.as_str()
 }
 
@@ -552,3 +563,7 @@ mod tests {
         assert_ne!(doc1_fingerprint[1], doc2_fingerprint[1]);
     }
 }
+
+#[cfg(test)]
+#[path = "fingerprinter_borrowed_tests.rs"]
+mod borrowed_tests;

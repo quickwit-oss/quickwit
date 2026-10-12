@@ -24,6 +24,7 @@ pub mod borrowed_json;
 mod doc_mapper;
 mod doc_mapping;
 mod error;
+pub mod json_read;
 mod query_builder;
 mod routing_expression;
 

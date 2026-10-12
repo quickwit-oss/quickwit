@@ -706,3 +706,7 @@ mod tests {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "ingest_api_source_borrowed_tests.rs"]
+mod borrowed_tests;

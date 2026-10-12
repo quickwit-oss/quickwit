@@ -478,7 +478,7 @@ impl DocMapper {
                 .unwrap_or_else(|_| "document contains some invalid UTF-8 characters".to_string());
             DocParsingError::NotJsonObject(json_doc_sample)
         })?;
-        self.doc_from_borrowed_json(json_value, json_doc.len() as u64)
+        self.doc_from_normalized_object(json_value, json_doc.len() as u64)
     }
 
     /// Parses a JSON string into a tantivy [`Document`].
@@ -490,7 +490,7 @@ impl DocMapper {
             let json_doc_sample: String = json_doc.chars().take(20).chain("...".chars()).collect();
             DocParsingError::NotJsonObject(json_doc_sample)
         })?;
-        self.doc_from_borrowed_json(json_value, json_doc.len() as u64)
+        self.doc_from_normalized_object(json_value, json_doc.len() as u64)
     }
 
     /// Transforms a JSON object into a tantivy [`Document`] according to the rules
@@ -504,7 +504,10 @@ impl DocMapper {
         self.doc_from_native_json(JsonValue::Object(json_obj), partition, document_len)
     }
 
-    fn doc_from_borrowed_json(
+    /// Consume an already normalized borrowed object without parsing or building another tree.
+    /// Parsing separately lets ingestion preserve JSON parser error categories and fingerprint
+    /// the same raw JSON tree before mapping. The returned document owns all of its storage.
+    pub fn doc_from_normalized_object(
         &self,
         normalized: NormalizedObject<'_>,
         document_len: u64,
