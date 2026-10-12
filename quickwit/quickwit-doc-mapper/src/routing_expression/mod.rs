@@ -22,12 +22,6 @@ pub(crate) use expression_dsl::parse_field_name;
 use serde_json::Value as JsonValue;
 use siphasher::sip::SipHasher;
 
-#[cfg(feature = "metrics")]
-mod metrics;
-
-#[cfg(feature = "metrics")]
-pub use metrics::ArrowRowContext;
-
 pub trait RoutingExprContext {
     fn hash_attribute<H: Hasher>(&self, attr_name: &[String], hasher: &mut H);
 }

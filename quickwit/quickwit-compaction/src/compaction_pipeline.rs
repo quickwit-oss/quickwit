@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Context;
-use quickwit_actors::{ActorHandle, HEARTBEAT, Health, QueueCapacity, SpawnContext, Supervisable};
+use quickwit_actors::{ActorHandle, HEARTBEAT, Health, SpawnContext, Supervisable};
 use quickwit_common::KillSwitch;
 use quickwit_common::io::{IoControls, Limiter};
 use quickwit_common::pubsub::EventBroker;
@@ -286,8 +286,7 @@ impl CompactionPipeline {
 
         // Publisher (no merge planner feedback, no source)
         let merge_publisher = Publisher::new(
-            quickwit_indexing::MERGE_PUBLISHER_NAME,
-            QueueCapacity::Unbounded,
+            quickwit_indexing::PublisherType::MergePublisher,
             self.metastore.clone(),
             None,
             None,

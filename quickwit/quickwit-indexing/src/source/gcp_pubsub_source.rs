@@ -22,7 +22,7 @@ use google_cloud_auth::credentials::CredentialsFile;
 use google_cloud_gax::retry::RetrySetting;
 use google_cloud_pubsub::client::{Client, ClientConfig};
 use google_cloud_pubsub::subscription::Subscription;
-use quickwit_actors::ActorExitStatus;
+use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::PubSubSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
@@ -33,9 +33,8 @@ use tokio::time;
 use tracing::{debug, info, warn};
 
 use super::{BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT};
-use crate::source::{
-    BatchBuilder, Source, SourceContext, SourceRuntime, SourceSink, TypedSourceFactory,
-};
+use crate::actors::DocProcessor;
+use crate::source::{BatchBuilder, Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
 const DEFAULT_MAX_MESSAGES_PER_PULL: i32 = 1_000;
 
@@ -157,7 +156,7 @@ impl GcpPubSubSource {
 impl Source for GcpPubSubSource {
     async fn emit_batches(
         &mut self,
-        source_sink: &SourceSink,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
@@ -192,7 +191,7 @@ impl Source for GcpPubSubSource {
         // TODO: need to wait for all the id to be ack for at_least_once
         if self.should_exit() {
             info!(subscription=%self.subscription_name, "reached end of subscription");
-            source_sink.send_exit_with_success(ctx).await?;
+            ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
         if !batch_builder.checkpoint_delta.is_empty() {
@@ -202,7 +201,7 @@ impl Source for GcpPubSubSource {
                 num_millis=%now.elapsed().as_millis(),
                 "Sending doc batch to indexer.");
             let message = batch_builder.build();
-            source_sink.send_raw_doc_batch(message, ctx).await?;
+            ctx.send_message(doc_processor_mailbox, message).await?;
         }
         Ok(Duration::default())
     }
