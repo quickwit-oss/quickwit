@@ -44,6 +44,8 @@ mod metrics;
 mod search_permit_provider;
 
 #[cfg(test)]
+mod mature_cache_tests;
+#[cfg(test)]
 mod tests;
 
 pub use collector::QuickwitAggregations;
@@ -218,6 +220,7 @@ fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAn
             .as_ref()
             .map(|time_range| *time_range.end()),
         num_docs: split_metadata.num_docs as u64,
+        is_mature: split_metadata.is_mature(tantivy::time::OffsetDateTime::now_utc()),
     }
 }
 

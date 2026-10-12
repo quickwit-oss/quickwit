@@ -2066,6 +2066,21 @@ async fn test_search_in_text_field_with_custom_tokenizer() -> anyhow::Result<()>
     Ok(())
 }
 
+#[test]
+fn test_split_offsets_include_maturity() {
+    let mut metadata = quickwit_metastore::SplitMetadata::for_test("split".into());
+    metadata.maturity = quickwit_metastore::SplitMaturity::Mature;
+    assert!(extract_split_and_footer_offsets(&metadata).is_mature);
+
+    metadata.maturity = quickwit_metastore::SplitMaturity::Immature {
+        maturation_period: std::time::Duration::from_secs(60),
+    };
+    metadata.create_timestamp = 0;
+    assert!(extract_split_and_footer_offsets(&metadata).is_mature);
+    metadata.create_timestamp = i64::MAX / 2;
+    assert!(!extract_split_and_footer_offsets(&metadata).is_mature);
+}
+
 #[tokio::test]
 async fn test_cached_hits_prune_uncached_splits_before_warmup() {
     let doc_mapping_yaml = r#"
