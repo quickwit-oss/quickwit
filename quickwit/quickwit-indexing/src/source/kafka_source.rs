@@ -14,6 +14,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, anyhow, bail};
@@ -705,14 +706,47 @@ fn parse_client_log_level(client_log_level: Option<String>) -> anyhow::Result<RD
     Ok(log_level)
 }
 
+const QW_KAFKA_KINIT_CMD_ENV_KEY: &str = "QW_KAFKA_KINIT_CMD";
+
+const FORBIDDEN_CLIENT_PARAMS: &[&str] = &[
+    "plugin.library.paths",
+    "sasl.kerberos.kinit.cmd",
+    "sasl.kerberos.min.time.before.relogin",
+    "ssl.engine.location",
+    "ssl.providers",
+];
+
 fn parse_client_params(client_params: JsonValue) -> anyhow::Result<ClientConfig> {
+    static KINIT_CMD: LazyLock<Option<String>> =
+        LazyLock::new(|| quickwit_common::get_from_env_opt(QW_KAFKA_KINIT_CMD_ENV_KEY, true));
+    parse_client_params_inner(client_params, KINIT_CMD.as_deref())
+}
+
+fn parse_client_params_inner(
+    client_params: JsonValue,
+    kinit_cmd_opt: Option<&str>,
+) -> anyhow::Result<ClientConfig> {
     let params = if let JsonValue::Object(params) = client_params {
         params
     } else {
         bail!("failed to parse Kafka client parameters. `client_params` must be a JSON object");
     };
     let mut client_config = ClientConfig::new();
+    if let Some(kinit_cmd) = kinit_cmd_opt {
+        if kinit_cmd.contains("%{") {
+            bail!(
+                "failed to parse Kafka client parameters. `{QW_KAFKA_KINIT_CMD_ENV_KEY}` must not \
+                 contain `%{{...}}` placeholders"
+            );
+        }
+        client_config.set("sasl.kerberos.kinit.cmd", kinit_cmd);
+    } else {
+        client_config.set("sasl.kerberos.min.time.before.relogin", "0");
+    }
     for (key, value_json) in params {
+        if FORBIDDEN_CLIENT_PARAMS.contains(&key.as_str()) {
+            bail!("failed to parse Kafka client parameters. `client_params.{key}` is not allowed");
+        }
         let value = match value_json {
             JsonValue::Bool(value_bool) => value_bool.to_string(),
             JsonValue::Number(value_number) => value_number.to_string(),
@@ -752,6 +786,46 @@ fn message_payload_to_doc(message: &BorrowedMessage) -> Option<Bytes> {
         ),
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_client_params_rejects_forbidden_params() {
+        for key in [
+            "plugin.library.paths",
+            "sasl.kerberos.kinit.cmd",
+            "sasl.kerberos.min.time.before.relogin",
+            "ssl.engine.location",
+            "ssl.providers",
+        ] {
+            parse_client_params_inner(json!({ key: "value" }), Some("kinit")).unwrap_err();
+        }
+    }
+
+    #[test]
+    fn test_parse_client_params_kinit_cmd() {
+        let client_config = parse_client_params_inner(json!({}), None).unwrap();
+        assert_eq!(
+            client_config.get("sasl.kerberos.min.time.before.relogin"),
+            Some("0")
+        );
+        assert_eq!(client_config.get("sasl.kerberos.kinit.cmd"), None);
+
+        let client_config = parse_client_params_inner(json!({}), Some("kinit -k")).unwrap();
+        assert_eq!(
+            client_config.get("sasl.kerberos.kinit.cmd"),
+            Some("kinit -k")
+        );
+        assert_eq!(
+            client_config.get("sasl.kerberos.min.time.before.relogin"),
+            None
+        );
+
+        parse_client_params_inner(json!({}), Some("kinit %{sasl.kerberos.principal}")).unwrap_err();
+    }
 }
 
 #[cfg(all(test, feature = "kafka-broker-tests"))]
