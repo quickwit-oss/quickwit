@@ -285,6 +285,19 @@ message SearchRequest {
   // Scheduling priority for leaf search execution. Negative values are allowed,
   // and lower values have higher priority. Callers that omit it get priority 0.
   int32 priority = 21;
+
+  // Calculated fields: fields computed from fast fields with a jitexpr expression.
+  // Aggregations can use them as field names.
+  repeated CalculatedField calculated_fields = 22;
+}
+
+message CalculatedField {
+  // Name of the calculated field, as used in the aggregation request.
+  // A calculated field shadows a fast field with the same name.
+  string name = 1;
+  // Jitexpr expression, serialized as a string. For example: `(MULTIPLY price stock)`.
+  // Variables refer to fast fields.
+  string expression = 2;
 }
 
 enum CountHits {

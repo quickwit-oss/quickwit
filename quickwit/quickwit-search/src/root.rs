@@ -50,6 +50,7 @@ use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
 use tracing::{Span, debug, error, info, info_span, instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
+use crate::calculated_fields::CalculatedFields;
 use crate::cluster_client::ClusterClient;
 use crate::collector::{QuickwitAggregations, make_merge_collector};
 use crate::cost::{compute_query_complexity_factor, compute_split_query_cost};
@@ -366,6 +367,8 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
         // We remove all aggregation request.
         // The aggregation will not be computed for each scroll request.
         aggregation_request: None,
+        // Calculated fields are only used by aggregations.
+        calculated_fields: Vec::new(),
         // We remove the snippet fields. This feature is not supported for scroll requests.
         snippet_fields: Vec::new(),
         // We remove the scroll ttl parameter. It is irrelevant to process later request
@@ -519,6 +522,9 @@ fn validate_request(
 
     validate_requested_snippet_fields(schema, &search_request.snippet_fields)?;
 
+    // Rejects invalid calculated fields before the request reaches the leaves.
+    let calculated_fields = CalculatedFields::from_search_request(search_request)?;
+
     if let Some(agg) = search_request.aggregation_request.as_ref() {
         let aggs: QuickwitAggregations = serde_json::from_str(agg).map_err(|_err| {
             let err = serde_json::from_str::<tantivy::aggregation::agg_req::Aggregations>(agg)
@@ -527,7 +533,8 @@ fn validate_request(
         })?;
 
         // ensure that the required fast fields are indeed configured as fast fields.
-        let fast_field_names = aggs.fast_field_names();
+        // Calculated fields are replaced by the fast fields their expressions read.
+        let fast_field_names = calculated_fields.resolve_fast_field_names(aggs.fast_field_names());
         let dynamic_field = schema.get_field(DYNAMIC_FIELD_NAME).ok();
         for fast_field_name in &fast_field_names {
             check_is_fast_field(schema, fast_field_name, dynamic_field)?;
