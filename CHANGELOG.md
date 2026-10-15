@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 --->
 
+# [0.9.2]
+
+### Security
+
+- Restrict Kafka client params that execute commands or load libraries (GHSA-g85h-2988-4cv8).
+- Reject oversized columnar dictionaries during merges (Tantivy GHSA-7pph-m7rw-cqhv).
+
 # [0.9.1]
 
 ### Security
