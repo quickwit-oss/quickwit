@@ -47,7 +47,7 @@ impl Universe {
         }
     }
 
-    /// Creates a universe were time is accelerated.
+    /// Creates a universe where time is accelerated.
     ///
     /// Time is accelerated in a way to exhibit a behavior as close as possible
     /// to what would have happened with normal time but faster.
@@ -110,6 +110,11 @@ impl Universe {
     /// universe.
     pub async fn sleep(&self, duration: Duration) {
         self.spawn_ctx.scheduler_client.sleep(duration).await;
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub async fn shift_time(&self, duration: Duration) {
+        self.spawn_ctx.scheduler_client.shift_time(duration).await;
     }
 
     pub fn spawn_builder<A: Actor>(&self) -> SpawnBuilder<A> {
