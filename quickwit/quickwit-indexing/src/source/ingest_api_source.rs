@@ -29,7 +29,8 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tracing::{error, info};
 
-use super::{BatchBuilder, Source, SourceContext, SourceSink, TypedSourceFactory};
+use super::{BatchBuilder, Source, SourceContext, TypedSourceFactory};
+use crate::actors::DocProcessor;
 use crate::source::SourceRuntime;
 
 /// Wait time for SourceActor before pooling for new documents.
@@ -138,7 +139,7 @@ impl IngestApiSource {
 impl Source for IngestApiSource {
     async fn initialize(
         &mut self,
-        _: &SourceSink,
+        _: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         if let Some(position) = self.counters.previous_offset {
@@ -150,7 +151,7 @@ impl Source for IngestApiSource {
 
     async fn emit_batches(
         &mut self,
-        batch_sink: &SourceSink,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let fetch_req = FetchRequest {
@@ -201,8 +202,7 @@ impl Source for IngestApiSource {
             .map_err(anyhow::Error::from)?;
 
         self.update_counters(current_offset, batch_builder.docs.len() as u64);
-        batch_sink
-            .send_raw_doc_batch(batch_builder.build(), ctx)
+        ctx.send_message(doc_processor_mailbox, batch_builder.build())
             .await?;
         Ok(Duration::default())
     }

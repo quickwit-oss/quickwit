@@ -15,16 +15,17 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, HEARTBEAT, Handler, Health, Mailbox,
     QueueCapacity, Supervisable,
 };
-use quickwit_common::KillSwitch;
+use quickwit_common::metrics::index_label;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
+use quickwit_common::{KillSwitch, io};
 use quickwit_config::{IndexingSettings, RetentionPolicy, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::IngesterPool;
@@ -38,9 +39,6 @@ use tracing::{debug, error, info, instrument, warn};
 
 use super::{DocProcessor, IndexSerializer, Indexer, MergePlanner, Packager};
 use crate::SplitsUpdateMailbox;
-use crate::actors::pipeline_shared::{
-    SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn, SuperviseLoop, wait_duration_before_retry,
-};
 use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
 use crate::actors::{Publisher, Uploader};
@@ -52,6 +50,38 @@ use crate::source::{
     AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
 };
 use crate::split_store::IndexingSplitStore;
+
+pub(crate) const SUPERVISE_INTERVAL: Duration = Duration::from_secs(1);
+
+const MAX_RETRY_DELAY: Duration = Duration::from_mins(10);
+
+#[derive(Debug)]
+pub(crate) struct SuperviseLoop;
+
+/// Calculates the wait time based on retry count.
+// retry_count, wait_time
+// 0   1s
+// 1   2s
+// 2   4s
+// 3   8s
+// ...
+// >=8   5mn
+pub(crate) fn wait_duration_before_retry(retry_count: usize) -> Duration {
+    // Protect against a `retry_count` that will lead to an overflow.
+    let max_power = (retry_count as u32).min(31);
+    Duration::from_secs(2u64.pow(max_power)).min(MAX_RETRY_DELAY)
+}
+
+/// Spawning an indexing pipeline puts a lot of pressure on the file system, metastore, etc. so
+/// we rely on this semaphore to limit the number of indexing pipelines that can be spawned
+/// concurrently.
+/// See also <https://github.com/quickwit-oss/quickwit/issues/1638>.
+pub(crate) static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Spawn {
+    pub(crate) retry_count: usize,
+}
 
 /// Handles for standard Tantivy-based indexing pipeline.
 struct IndexingPipelineHandles {
@@ -129,7 +159,8 @@ impl Actor for IndexingPipeline {
 
 impl IndexingPipeline {
     pub fn new(params: IndexingPipelineParams) -> Self {
-        let indexing_pipelines_gauge = gauge!(parent: INDEXING_PIPELINES, "index" => params.pipeline_id.index_uid.index_id.clone());
+        let index_label = index_label(&params.pipeline_id.index_uid.index_id).to_string();
+        let indexing_pipelines_gauge = gauge!(parent: INDEXING_PIPELINES, "index" => index_label);
         let indexing_pipelines_gauge_guard = GaugeGuard::new(&indexing_pipelines_gauge, 1.0);
         let params_fingerprint = params.params_fingerprint;
         IndexingPipeline {
@@ -308,8 +339,7 @@ impl IndexingPipeline {
 
         // Publisher
         let publisher = Publisher::new(
-            super::PUBLISHER_NAME,
-            QueueCapacity::Bounded(1),
+            super::PublisherType::MainPublisher,
             self.params.metastore.clone(),
             self.params.merge_planner_mailbox_opt.clone(),
             Some(source_mailbox.clone()),
@@ -321,7 +351,10 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "publisher")]))
             .spawn(publisher);
 
-        let sequencer = Sequencer::new(publisher_mailbox);
+        let sequencer = Sequencer::new(
+            publisher_mailbox,
+            QueueCapacity::Bounded(self.params.max_concurrent_split_uploads_index),
+        );
         let (sequencer_mailbox, sequencer_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "sequencer")]))
@@ -354,7 +387,10 @@ impl IndexingPipeline {
             .spawn(packager);
 
         // Index Serializer
-        let index_serializer = IndexSerializer::new(packager_mailbox);
+        let index_serializer = IndexSerializer::new(
+            packager_mailbox,
+            self.params.indexing_io_throughput_limiter_opt.clone(),
+        );
         let (index_serializer_mailbox, index_serializer_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
@@ -370,6 +406,7 @@ impl IndexingPipeline {
             self.params.cooperative_indexing_permits.clone(),
             index_serializer_mailbox,
             self.params.fingerprinter_opt.clone(),
+            self.params.indexing_io_throughput_limiter_opt.clone(),
         );
         let (indexer_mailbox, indexer_handle) = ctx
             .spawn_actor()
@@ -553,6 +590,7 @@ pub struct IndexingPipelineParams {
     pub split_store: IndexingSplitStore,
     pub max_concurrent_split_uploads_index: usize,
     pub cooperative_indexing_permits: Option<Arc<Semaphore>>,
+    pub indexing_io_throughput_limiter_opt: Option<io::Limiter>,
 
     // Merge-related parameters
     pub merge_policy: Arc<dyn MergePolicy>,
@@ -697,6 +735,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             event_broker: EventBroker::default(),
             params_fingerprint: 42u64,
@@ -804,6 +843,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             params_fingerprint: 42u64,
             event_broker: EventBroker::default(),
@@ -934,6 +974,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             event_broker: Default::default(),
             params_fingerprint: 42u64,
@@ -1035,6 +1076,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox.clone()),
             event_broker: Default::default(),
             params_fingerprint: 42u64,
@@ -1119,6 +1161,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: None,
             event_broker: Default::default(),
             params_fingerprint: 42u64,
@@ -1273,6 +1316,7 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
+            indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             params_fingerprint: 42u64,
             event_broker: Default::default(),

@@ -56,9 +56,8 @@ impl BundleStorage {
         let split_len = storage.file_num_bytes(&bundle_filepath).await?;
         let split_footer_range =
             locate_split_footer_range(storage.as_ref(), &bundle_filepath, split_len).await?;
-        let split_footer_start = usize::try_from(split_footer_range.start)?;
-        let split_footer_end = usize::try_from(split_footer_range.end)?;
-        let split_footer_range_usize = split_footer_start..split_footer_end;
+        let split_footer_range_usize =
+            split_footer_range.start as usize..split_footer_range.end as usize;
         let split_footer_bytes = storage
             .get_slice(&bundle_filepath, split_footer_range_usize)
             .await?;
@@ -93,6 +92,65 @@ impl BundleStorage {
     pub fn iter_files(&self) -> impl Iterator<Item = &PathBuf> {
         self.file_ranges.files.keys()
     }
+
+    /// Fetches a bundled file from a split.
+    ///
+    /// Use this only when retrieving a single file from the split. To retrieve multiple files,
+    /// prefer [`Self::open_from_storage`].
+    ///
+    /// The split length is provided by the caller (e.g. from object listing metadata) to avoid a
+    /// separate metadata request.
+    ///
+    /// Returns a `(file_bytes, footer_range)` tuple: `file_bytes` holds the contents of
+    /// `bundle_filepath`, and `footer_range` is the split footer's byte range in `split_path`.
+    pub async fn fetch_file_from_split(
+        storage: Arc<dyn Storage>,
+        bundle_filepath: PathBuf,
+        split_path: &Path,
+        split_len: u64,
+    ) -> anyhow::Result<(OwnedBytes, Range<u64>)> {
+        let (split_bytes, footer_range) = fetch_split_tail(
+            storage.as_ref(),
+            split_path,
+            split_len,
+            DEFAULT_SPLIT_TAIL_WINDOW_NUM_BYTES,
+        )
+        .await?;
+
+        // Parse the bundle file ranges from the split bytes.
+        let tail_start = split_len - split_bytes.len() as u64;
+        let (file_ranges, _hotcache) =
+            BundleFileRanges::open_from_split_bytes(split_bytes.clone())?;
+        let file_range = file_ranges.get(&bundle_filepath).ok_or_else(|| {
+            anyhow::anyhow!(
+                "missing file `{}` in split bundle",
+                bundle_filepath.display()
+            )
+        })?;
+        ensure!(
+            file_range.start <= file_range.end,
+            "bundled file range starts after it ends"
+        );
+        ensure!(
+            file_range.end <= footer_range.start,
+            "bundled file range overlaps split footer"
+        );
+
+        // If the initial tail also contains the file, reuse it and complete in one GET (at least).
+        // Otherwise, fetch the file with an additional GET.
+        let file_bytes = if file_range.start >= tail_start {
+            let relative_start = (file_range.start - tail_start) as usize;
+            let relative_end = (file_range.end - tail_start) as usize;
+            split_bytes.slice(relative_start..relative_end)
+        } else {
+            let relative_start = file_range.start as usize;
+            let relative_end = file_range.end as usize;
+            storage
+                .get_slice(split_path, relative_start..relative_end)
+                .await?
+        };
+        Ok((file_bytes, footer_range))
+    }
 }
 
 const HOTCACHE_LEN_NUM_BYTES: usize = std::mem::size_of::<u32>();
@@ -104,6 +162,7 @@ const SPLIT_FOOTER_TRAILER_VERSION_NUM_BYTES: usize = std::mem::size_of::<u32>()
 pub(crate) const SPLIT_FOOTER_TRAILER_NUM_BYTES: usize = SPLIT_FOOTER_START_NUM_BYTES
     + SPLIT_FOOTER_TRAILER_VERSION_NUM_BYTES
     + SPLIT_FOOTER_TRAILER_MAGIC.len();
+const DEFAULT_SPLIT_TAIL_WINDOW_NUM_BYTES: u64 = 1024 * 1024;
 
 pub(crate) fn serialize_split_footer_trailer(
     footer_start_inclusive: u64,
@@ -145,44 +204,164 @@ pub async fn locate_split_footer_range(
         split_len >= SPLIT_FOOTER_TRAILER_NUM_BYTES as u64,
         "split is too short to contain a footer"
     );
-    let trailer_start = split_len - SPLIT_FOOTER_TRAILER_NUM_BYTES as u64;
-    let trailer = storage
-        .get_slice(
-            split_path,
-            usize::try_from(trailer_start)?..usize::try_from(split_len)?,
-        )
-        .await?;
-    if let Some(footer_start_inclusive) = deserialize_split_footer_trailer(&trailer)? {
-        ensure!(
-            footer_start_inclusive <= trailer_start,
-            "split footer starts after its trailer"
-        );
-        return Ok(footer_start_inclusive..split_len);
+    let end = split_len as usize;
+    let start = end - SPLIT_FOOTER_TRAILER_NUM_BYTES;
+    let tail_bytes = storage.get_slice(split_path, start..end).await?;
+    match locate_split_footer_range_in_tail(split_len, &tail_bytes)? {
+        FooterLocation::Located(footer_range) => Ok(footer_range),
+        FooterLocation::ReadBundleMetadataLen(bundle_metadata_len_range) => {
+            let start = bundle_metadata_len_range.start as usize;
+            let end = bundle_metadata_len_range.end as usize;
+            let bundle_metadata_len_bytes = storage.get_slice(split_path, start..end).await?;
+            locate_split_footer_range_from_metadata_len(
+                split_len,
+                bundle_metadata_len_range.start,
+                bundle_metadata_len_bytes.as_slice(),
+            )
+        }
     }
+}
 
+enum FooterLocation {
+    Located(Range<u64>),
+    /// The exact range containing the bundle-metadata length.
+    ReadBundleMetadataLen(Range<u64>),
+}
+
+fn locate_split_footer_range_from_metadata_len(
+    split_len: u64,
+    bundle_metadata_len_start: u64,
+    bundle_metadata_len_bytes: &[u8],
+) -> anyhow::Result<Range<u64>> {
+    let bundle_metadata_len = u32::from_le_bytes(bundle_metadata_len_bytes.try_into()?) as u64;
+    let footer_start = bundle_metadata_len_start
+        .checked_sub(bundle_metadata_len)
+        .context("split footer exceeds split length")?;
+    Ok(footer_start..split_len)
+}
+
+fn locate_split_footer_range_in_tail(
+    split_len: u64,
+    tail_bytes: &[u8],
+) -> anyhow::Result<FooterLocation> {
     // Legacy split layout:
     // [body][bundle metadata][metadata len][hotcache][hotcache len]
-    let hotcache_len = u32::from_le_bytes(trailer[12..].try_into().unwrap()) as u64;
-    let bundle_metadata_len_offset = split_len
+    ensure!(
+        tail_bytes.len() as u64 <= split_len,
+        "split tail is longer than the split itself"
+    );
+    let trailer_start = tail_bytes
+        .len()
+        .checked_sub(SPLIT_FOOTER_TRAILER_NUM_BYTES)
+        .context("split tail is too short to contain a footer trailer")?;
+    if let Some(footer_start) = deserialize_split_footer_trailer(&tail_bytes[trailer_start..])? {
+        ensure!(
+            footer_start <= split_len - SPLIT_FOOTER_TRAILER_NUM_BYTES as u64,
+            "split footer starts after its trailer"
+        );
+        return Ok(FooterLocation::Located(footer_start..split_len));
+    }
+
+    let hotcache_len =
+        u32::from_le_bytes(tail_bytes[tail_bytes.len() - HOTCACHE_LEN_NUM_BYTES..].try_into()?)
+            as u64;
+    let bundle_metadata_len_end = split_len
         .checked_sub(HOTCACHE_LEN_NUM_BYTES as u64)
         .and_then(|offset| offset.checked_sub(hotcache_len))
-        .and_then(|offset| offset.checked_sub(BUNDLE_METADATA_LEN_NUM_BYTES as u64))
-        .ok_or_else(|| anyhow::anyhow!("invalid legacy split footer lengths"))?;
-    let bundle_metadata_len_bytes = storage
-        .get_slice(
-            split_path,
-            usize::try_from(bundle_metadata_len_offset)?
-                ..usize::try_from(
-                    bundle_metadata_len_offset + BUNDLE_METADATA_LEN_NUM_BYTES as u64,
-                )?,
-        )
+        .context("split footer exceeds split length")?;
+    let bundle_metadata_len_start = bundle_metadata_len_end
+        .checked_sub(BUNDLE_METADATA_LEN_NUM_BYTES as u64)
+        .context("split footer exceeds split length")?;
+    let bundle_metadata_len_range = bundle_metadata_len_start..bundle_metadata_len_end;
+    let tail_start = split_len - tail_bytes.len() as u64;
+    if tail_start > bundle_metadata_len_start {
+        return Ok(FooterLocation::ReadBundleMetadataLen(
+            bundle_metadata_len_range,
+        ));
+    }
+
+    let relative_start = (bundle_metadata_len_start - tail_start) as usize;
+    let relative_end = (bundle_metadata_len_end - tail_start) as usize;
+    let footer_range = locate_split_footer_range_from_metadata_len(
+        split_len,
+        bundle_metadata_len_start,
+        &tail_bytes[relative_start..relative_end],
+    )?;
+    Ok(FooterLocation::Located(footer_range))
+}
+
+/// Reads the tail of a split until it holds the complete bundle footer.
+///
+/// `initial_tail_window_num_bytes` is a jump-start hint: a larger window downloads more up front
+/// but can save range GETs by covering the footer, and possibly the wanted file, in one read.
+/// When the window falls short, the tail is re-read: once for a new split, whose trailer gives
+/// the footer start, and up to twice for a legacy split, whose footer length is derived from the
+/// trailing hotcache and bundle-metadata lengths.
+///
+/// Returns the tail, which may start before the footer, and the footer range within the split.
+async fn fetch_split_tail(
+    storage: &dyn Storage,
+    split_path: &Path,
+    split_len: u64,
+    initial_tail_window_num_bytes: u64,
+) -> anyhow::Result<(OwnedBytes, Range<u64>)> {
+    ensure!(
+        split_len >= SPLIT_FOOTER_TRAILER_NUM_BYTES as u64,
+        "split is too short to contain a footer"
+    );
+
+    // Start with the requested window, but always cover the fixed trailer and never read before
+    // the beginning of the split.
+    let initial_tail_num_bytes =
+        initial_tail_window_num_bytes.clamp(SPLIT_FOOTER_TRAILER_NUM_BYTES as u64, split_len);
+    let mut tail_bytes =
+        read_split_tail(storage, split_path, split_len, initial_tail_num_bytes).await?;
+
+    // Locate the footer range.
+    let footer_range = match locate_split_footer_range_in_tail(split_len, &tail_bytes)? {
+        FooterLocation::Located(footer_range) => {
+            // The range is known, but the initial tail may not contain the complete footer.
+            footer_range
+        }
+        FooterLocation::ReadBundleMetadataLen(bundle_metadata_len_range) => {
+            // Extend the tail through the legacy bundle-metadata length field, then use that
+            // length to locate the beginning of the footer.
+            let required_tail_num_bytes = split_len - bundle_metadata_len_range.start;
+            let metadata_len_tail_bytes =
+                read_split_tail(storage, split_path, split_len, required_tail_num_bytes).await?;
+            match locate_split_footer_range_in_tail(split_len, &metadata_len_tail_bytes)? {
+                FooterLocation::Located(footer_range) => footer_range,
+                FooterLocation::ReadBundleMetadataLen(_) => {
+                    bail!("failed to locate split footer after reading bundle metadata length");
+                }
+            }
+        }
+    };
+
+    // If the initial tail does not contain the entire footer, fetch the exact footer range now
+    // that its boundaries are known.
+    let footer_num_bytes = footer_range.end - footer_range.start;
+    if (tail_bytes.len() as u64) < footer_num_bytes {
+        tail_bytes = read_split_tail(storage, split_path, split_len, footer_num_bytes).await?;
+    }
+    Ok((tail_bytes, footer_range))
+}
+
+async fn read_split_tail(
+    storage: &dyn Storage,
+    split_path: &Path,
+    split_len: u64,
+    tail_num_bytes: u64,
+) -> anyhow::Result<OwnedBytes> {
+    ensure!(
+        tail_num_bytes <= split_len,
+        "split tail exceeds split length"
+    );
+    let start = (split_len - tail_num_bytes) as usize;
+    let tail_bytes = storage
+        .get_slice(split_path, start..split_len as usize)
         .await?;
-    let bundle_metadata_len =
-        u32::from_le_bytes(bundle_metadata_len_bytes.as_ref().try_into().unwrap()) as u64;
-    let footer_start_inclusive = bundle_metadata_len_offset
-        .checked_sub(bundle_metadata_len)
-        .ok_or_else(|| anyhow::anyhow!("invalid legacy split metadata length"))?;
-    Ok(footer_start_inclusive..split_len)
+    Ok(tail_bytes)
 }
 
 /// Removes the fixed split footer trailer when it is present.
@@ -418,7 +597,9 @@ mod tests {
     use std::io::Write;
 
     use super::*;
-    use crate::{PutPayload, RamStorageBuilder, SplitPayloadBuilder};
+    use crate::{CountingStorage, PutPayload, RamStorageBuilder, SplitPayloadBuilder};
+
+    const DEFAULT_SPLIT_TAIL_WINDOW_NUM_BYTES: u64 = 1024 * 1024;
 
     #[tokio::test]
     async fn bundle_storage_locates_footer_from_object_storage() {
@@ -452,11 +633,12 @@ mod tests {
         let expected_footer_range = split_payload.footer_range.clone();
         let split_bytes = split_payload.read_all().await.unwrap();
         let split_path = PathBuf::from("legacy-split");
-        let storage = Arc::new(
+        let inner_storage: Arc<dyn Storage> = Arc::new(
             RamStorageBuilder::default()
                 .put(&split_path.to_string_lossy(), &split_bytes)
                 .build(),
         );
+        let (storage, counters) = CountingStorage::instrument_storage(inner_storage);
 
         let (_bundle_storage, hotcache, footer_range) =
             BundleStorage::open_from_storage(storage, split_path)
@@ -465,6 +647,32 @@ mod tests {
 
         assert_eq!(hotcache.as_ref(), b"hotcache");
         assert_eq!(footer_range, expected_footer_range);
+        assert_eq!(counters.snapshot().1, 2);
+    }
+
+    #[tokio::test]
+    async fn bundle_storage_locates_legacy_footer_with_large_hotcache() {
+        let hotcache_bytes = vec![0u8; 1024];
+        let split_payload =
+            SplitPayloadBuilder::get_split_payload(&[], b"fields", None, &hotcache_bytes).unwrap();
+        let expected_footer_range = split_payload.footer_range.clone();
+        let split_bytes = split_payload.read_all().await.unwrap();
+        let split_path = PathBuf::from("legacy-split");
+        let inner_storage: Arc<dyn Storage> = Arc::new(
+            RamStorageBuilder::default()
+                .put(&split_path.to_string_lossy(), &split_bytes)
+                .build(),
+        );
+        let (storage, counters) = CountingStorage::instrument_storage(inner_storage);
+
+        let (_bundle_storage, hotcache, footer_range) =
+            BundleStorage::open_from_storage(storage, split_path)
+                .await
+                .unwrap();
+
+        assert_eq!(hotcache.as_ref(), hotcache_bytes.as_slice());
+        assert_eq!(footer_range, expected_footer_range);
+        assert_eq!(counters.snapshot().1, 3);
     }
 
     #[tokio::test]
@@ -508,6 +716,7 @@ mod tests {
 
         Ok(())
     }
+
     #[tokio::test]
     async fn bundle_storage_test() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?;
@@ -579,5 +788,70 @@ mod tests {
         assert_eq!(bundle_storage.exists(Path::new("blub")).await?, false);
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_fetch_file_from_split_uses_one_tail_read() {
+        let mut split_builder = SplitPayloadBuilder::default();
+        split_builder.add_payload(
+            "large-file".to_string(),
+            Box::new(vec![0u8; DEFAULT_SPLIT_TAIL_WINDOW_NUM_BYTES as usize + 1]),
+        );
+        split_builder.add_payload("target".to_string(), Box::new(b"target-bytes".to_vec()));
+        let split_payload = split_builder
+            .finalize_with_footer_trailer(b"hotcache", true)
+            .unwrap();
+        let expected_footer_range = split_payload.footer_range.clone();
+        let split_bytes = split_payload.read_all().await.unwrap();
+        let inner_storage: Arc<dyn Storage> = Arc::new(
+            RamStorageBuilder::default()
+                .put("split", &split_bytes)
+                .build(),
+        );
+        let (storage, counters) = CountingStorage::instrument_storage(inner_storage);
+
+        let (target_bytes, footer_range) = BundleStorage::fetch_file_from_split(
+            storage,
+            PathBuf::from("target"),
+            Path::new("split"),
+            split_bytes.len() as u64,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(target_bytes.as_slice(), b"target-bytes");
+        assert_eq!(footer_range, expected_footer_range);
+        assert_eq!(counters.snapshot().1, 1);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_file_from_split_widens_then_fetches_file_range() {
+        let mut split_builder = SplitPayloadBuilder::default();
+        split_builder.add_payload("target".to_string(), Box::new(b"target-bytes".to_vec()));
+        let hotcache = vec![0u8; DEFAULT_SPLIT_TAIL_WINDOW_NUM_BYTES as usize + 1];
+        let split_payload = split_builder
+            .finalize_with_footer_trailer(&hotcache, false)
+            .unwrap();
+        let expected_footer_range = split_payload.footer_range.clone();
+        let split_bytes = split_payload.read_all().await.unwrap();
+        let inner_storage: Arc<dyn Storage> = Arc::new(
+            RamStorageBuilder::default()
+                .put("split", &split_bytes)
+                .build(),
+        );
+        let (storage, counters) = CountingStorage::instrument_storage(inner_storage);
+
+        let (target_bytes, footer_range) = BundleStorage::fetch_file_from_split(
+            storage,
+            PathBuf::from("target"),
+            Path::new("split"),
+            split_bytes.len() as u64,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(target_bytes.as_slice(), b"target-bytes");
+        assert_eq!(footer_range, expected_footer_range);
+        assert_eq!(counters.snapshot().1, 4);
     }
 }

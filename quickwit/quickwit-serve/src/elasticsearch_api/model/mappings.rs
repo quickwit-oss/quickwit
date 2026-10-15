@@ -108,6 +108,7 @@ fn field_mapping_from_entry(entry: &FieldMappingEntry) -> Option<FieldMapping> {
         FieldMappingType::Text(..) => Some(FieldMapping::Leaf { typ: "keyword" }),
         FieldMappingType::I64(..) => Some(FieldMapping::Leaf { typ: "long" }),
         FieldMappingType::U64(..) => Some(FieldMapping::Leaf { typ: "long" }),
+        FieldMappingType::TieBreaker => Some(FieldMapping::Leaf { typ: "long" }),
         FieldMappingType::F64(..) => Some(FieldMapping::Leaf { typ: "double" }),
         FieldMappingType::Bool(..) => Some(FieldMapping::Leaf { typ: "boolean" }),
         FieldMappingType::DateTime(..) => Some(FieldMapping::Leaf { typ: "date" }),
@@ -190,6 +191,15 @@ mod tests {
     #[test]
     fn test_field_mapping_from_entry_i64() {
         let entry_json = json!({ "name": "count", "type": "i64" });
+        let entry: FieldMappingEntry = serde_json::from_value(entry_json).unwrap();
+        let mapping = field_mapping_from_entry(&entry).unwrap();
+        let serialized = serde_json::to_value(&mapping).unwrap();
+        assert_eq!(serialized, json!({ "type": "long" }));
+    }
+
+    #[test]
+    fn test_field_mapping_from_entry_tie_breaker() {
+        let entry_json = json!({ "name": "tie_breaker", "type": "tie_breaker" });
         let entry: FieldMappingEntry = serde_json::from_value(entry_json).unwrap();
         let mapping = field_mapping_from_entry(&entry).unwrap();
         let serialized = serde_json::to_value(&mapping).unwrap();

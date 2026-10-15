@@ -86,6 +86,9 @@ pub struct ListFieldsRequest {
     /// When provided, only fields from documents matching this query are returned.
     #[prost(string, optional, tag = "5")]
     pub query_ast: ::core::option::Option<::prost::alloc::string::String>,
+    /// Maximum number of fields to return. Overrides QW_FIELD_LIST_SIZE_LIMIT.
+    #[prost(uint32, optional, tag = "6")]
+    pub limit: ::core::option::Option<u32>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -104,6 +107,9 @@ pub struct LeafListFieldsRequest {
     /// Wildcard expressions are supported.
     #[prost(string, repeated, tag = "4")]
     pub field_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Maximum number of fields to return. Overrides QW_FIELD_LIST_SIZE_LIMIT.
+    #[prost(uint32, optional, tag = "5")]
+    pub limit: ::core::option::Option<u32>,
 }
 /// / Message returned by leaf and root list fields requests.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]

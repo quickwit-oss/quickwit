@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
 
@@ -87,7 +87,7 @@ impl TryFrom<TermsQueryForSerialization> for TermsQuery {
 
 impl ConvertibleToQueryAst for TermsQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
-        let mut terms_per_field = HashMap::new();
+        let mut terms_per_field = BTreeMap::new();
         let values_set: BTreeSet<String> = self.values.into_iter().collect();
         terms_per_field.insert(self.field, values_set);
 

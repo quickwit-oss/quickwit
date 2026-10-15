@@ -16,7 +16,7 @@ use std::fmt;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use quickwit_actors::ActorExitStatus;
+use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::VecSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpointDelta};
 use quickwit_proto::metastore::SourceType;
@@ -25,7 +25,8 @@ use serde_json::Value as JsonValue;
 use tracing::info;
 
 use super::BatchBuilder;
-use crate::source::{Source, SourceContext, SourceRuntime, SourceSink, TypedSourceFactory};
+use crate::actors::DocProcessor;
+use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
 pub struct VecSource {
     source_id: SourceId,
@@ -83,7 +84,7 @@ fn position_from_offset(offset: usize) -> Position {
 impl Source for VecSource {
     async fn emit_batches(
         &mut self,
-        batch_sink: &SourceSink,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_builder = BatchBuilder::new(SourceType::Vec);
@@ -97,7 +98,7 @@ impl Source for VecSource {
         }
         if batch_builder.docs.is_empty() {
             info!("reached end of source");
-            batch_sink.send_exit_with_success(ctx).await?;
+            ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
         let from_item_idx = self.next_item_idx;
@@ -110,8 +111,7 @@ impl Source for VecSource {
             position_from_offset(to_item_idx),
         )
         .unwrap();
-        batch_sink
-            .send_raw_doc_batch(batch_builder.build(), ctx)
+        ctx.send_message(doc_processor_mailbox, batch_builder.build())
             .await?;
 
         Ok(Duration::default())

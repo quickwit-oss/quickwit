@@ -8,7 +8,7 @@ flowchart LR
         indexer[Indexer] --1--> serializer
         serializer[IndexSerializer] --1--> packager
         packager[Packager] --0--> uploader
-        uploader[Uploader] --2--> sequencer
+        uploader[Uploader] --upload concurrency--> sequencer
         sequencer[Sequencer] --1--> publisher
     end
     subgraph Merge pipeline

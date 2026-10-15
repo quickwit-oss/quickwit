@@ -27,9 +27,6 @@ service IngesterService {
   // otherwise the stream will go indefinitely or until the shard is closed.
   rpc OpenFetchStream(OpenFetchStreamRequest) returns (stream FetchMessage);
 
-  // Streams status updates, called "observations", from an ingester.
-  rpc OpenObservationStream(OpenObservationStreamRequest) returns (stream ObservationMessage);
-
   // Creates and initializes a set of newly opened shards. This RPC is called by the control plane on ingesters.
   rpc InitShards(InitShardsRequest) returns (InitShardsResponse);
 
@@ -216,9 +213,6 @@ message DecommissionRequest {
 message DecommissionResponse {
 }
 
-message OpenObservationStreamRequest {
-}
-
 enum IngesterStatus {
   INGESTER_STATUS_UNSPECIFIED = 0;
   // The ingester is live but not ready yet to accept requests.
@@ -236,15 +230,4 @@ enum IngesterStatus {
   INGESTER_STATUS_DECOMMISSIONED = 4;
   // The ingester failed to initialize and is not ready to accept requests.
   INGESTER_STATUS_FAILED = 5;
-}
-
-message ObservationMessage {
-  string node_id = 1;
-  IngesterStatus Status = 2;
-  // Amount of WAL memory currently used, in bytes.
-  uint64 wal_memory_used_bytes = 3;
-  // Amount of WAL disk space currently used, in bytes.
-  uint64 wal_disk_used_bytes = 4;
-  // Number of records currently held in the WAL, across all queues.
-  uint64 wal_num_records = 5;
 }

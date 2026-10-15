@@ -70,13 +70,8 @@ impl InnerIngesterState {
         *self.status_tx.borrow()
     }
 
-    /// Sets the status and notifies observation streams, even if the status has not changed.
-    fn set_status_and_notify(&self, status: IngesterStatus) {
-        self.status_tx.send(status).expect("channel should be open");
-    }
-
     pub async fn set_status(&mut self, status: IngesterStatus) {
-        self.set_status_and_notify(status);
+        self.status_tx.send_replace(status);
         self.cluster
             .set_self_key_value(INGESTER_STATUS_KEY, status.as_json_str_name())
             .await;
@@ -97,8 +92,6 @@ impl InnerIngesterState {
 
         if is_decommissioned {
             self.set_status(IngesterStatus::Decommissioned).await;
-        } else {
-            self.set_status_and_notify(IngesterStatus::Decommissioning);
         }
     }
 

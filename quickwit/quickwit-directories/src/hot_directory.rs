@@ -459,11 +459,7 @@ impl Directory for HotDirectory {
 
 fn list_index_files(index: &Index) -> tantivy::Result<HashSet<PathBuf>> {
     let index_meta = index.load_metas()?;
-    let mut files: HashSet<PathBuf> = index_meta
-        .segments
-        .into_iter()
-        .flat_map(|segment_meta| segment_meta.list_files())
-        .collect();
+    let mut files = index_meta.list_segment_files();
     files.insert(Path::new("meta.json").to_path_buf());
     files.insert(Path::new(".managed.json").to_path_buf());
     Ok(files)
