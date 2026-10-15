@@ -760,6 +760,7 @@ mod tests {
     use tantivy::{DateTime, DocAddress, TantivyDocument, doc};
 
     use super::{IndexerCounters, record_timestamp, *};
+    use crate::actors::pipeline_schedule::NUDGE_TOLERANCE;
     use crate::docs_clustering::Fingerprint;
 
     #[allow(clippy::too_many_arguments)]
@@ -1875,5 +1876,94 @@ mod tests {
 
         universe.assert_quit().await;
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_indexer_spread_mode_nudges_commit_timeout() {
+        let universe = Universe::new();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
+            source_id: "test-source".to_string(),
+            node_id: NodeId::from_str("test-node"),
+            pipeline_uid: PipelineUid::default(),
+        };
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let schema = doc_mapper.schema();
+        let body_field = schema.get_field("body").unwrap();
+        let timestamp_field = schema.get_field("timestamp").unwrap();
+        let commit_timeout = Duration::from_secs(30);
+        let mut indexing_settings = IndexingSettings::for_test();
+        indexing_settings.commit_timeout_secs = commit_timeout.as_secs() as usize;
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_last_delete_opstamp()
+            .returning(|_| Ok(LastDeleteOpstampResponse::new(10)));
+        unsafe { std::env::set_var(ENABLE_SPREAD_INDEXING_PIPELINES_ENV_KEY, "true") };
+        let mut indexer = create_indexer_for_test(
+            pipeline_id,
+            doc_mapper,
+            MetastoreServiceClient::from_mock(mock_metastore),
+            TempDirectory::for_test(),
+            indexing_settings,
+            None,
+            index_serializer_mailbox,
+            None,
+        );
+        assert!(matches!(
+            indexer.indexer_state.indexing_mode,
+            IndexingMode::Spread(_)
+        ));
+
+        // Make the pipeline more than `NUDGE_TOLERANCE` behind its target phase.
+        let current_phase = PipelineSchedule::new_with_phase(Duration::default(), commit_timeout)
+            .current_phase(Instant::now());
+        indexer.indexer_state.indexing_mode = IndexingMode::Spread(
+            PipelineSchedule::new_with_phase(current_phase + NUDGE_TOLERANCE * 2, commit_timeout),
+        );
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
+        indexer_mailbox
+            .send_message(ProcessedDocBatch::new(
+                vec![ProcessedDoc {
+                    doc: doc!(
+                        body_field=>"this is a test document",
+                        timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
+                    ),
+                    fingerprint_opt: None,
+                    timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
+                    partition: 1,
+                    num_bytes: 30,
+                }],
+                SourceCheckpointDelta::from_range(0..1),
+                false,
+            ))
+            .await
+            .unwrap();
+        let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
+        assert_eq!(indexer_counters.num_docs_in_workbench, 1);
+
+        // The pipeline is more than `NUDGE_TOLERANCE` behind its target phase, so the commit
+        // timeout fires after `commit_timeout`
+        universe.shift_time(commit_timeout).await;
+        let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
+        // Check that no split is emitted yet
+        assert_eq!(indexer_counters.num_splits_emitted, 0);
+        assert_eq!(indexer_counters.num_docs_in_workbench, 1);
+
+        // Move to after `commit_timeout + NUDGE_TOLERANCE`
+        universe.shift_time(NUDGE_TOLERANCE * 2).await;
+        let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
+        // Now the split has been emitted
+        assert_eq!(indexer_counters.num_splits_emitted, 1);
+        assert_eq!(indexer_counters.num_docs_in_workbench, 0);
+
+        let indexed_split_batches: Vec<IndexedSplitBatchBuilder> =
+            index_serializer_inbox.drain_for_test_typed();
+        assert_eq!(indexed_split_batches.len(), 1);
+        assert_eq!(
+            indexed_split_batches[0].commit_trigger,
+            CommitTrigger::Timeout
+        );
+        universe.assert_quit().await;
     }
 }
