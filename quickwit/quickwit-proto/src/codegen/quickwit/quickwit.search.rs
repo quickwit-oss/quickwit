@@ -222,6 +222,22 @@ pub struct SearchRequest {
     #[prost(int32, tag = "21")]
     #[serde(default)]
     pub priority: i32,
+    /// Calculated fields: fields computed from fast fields with a jitexpr expression.
+    /// Aggregations can use them as field names.
+    #[prost(message, repeated, tag = "22")]
+    pub calculated_fields: ::prost::alloc::vec::Vec<CalculatedField>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CalculatedField {
+    /// Name of the calculated field, as used in the aggregation request.
+    /// A calculated field shadows a fast field with the same name.
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    /// Jitexpr expression, serialized as a string. For example: `(MULTIPLY price stock)`.
+    /// Variables refer to fast fields.
+    #[prost(string, tag = "2")]
+    pub expression: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

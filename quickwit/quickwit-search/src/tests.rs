@@ -22,8 +22,8 @@ use quickwit_doc_mapper::DocMapper;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_indexing::TestSandbox;
 use quickwit_proto::search::{
-    CountHits, LeafListTermsResponse, ListTermsRequest, SearchRequest, SortByValue, SortField,
-    SortOrder, SortValue, TraceId,
+    CalculatedField, CountHits, LeafListTermsResponse, ListTermsRequest, SearchRequest,
+    SortByValue, SortField, SortOrder, SortValue, TraceId,
 };
 use quickwit_query::query_ast::{
     BoolQuery, HitSet, PredicateCache, QueryAst, RangeQuery, qast_helper, qast_json_helper,
@@ -1576,6 +1576,136 @@ async fn test_single_node_aggregation() -> anyhow::Result<()> {
     assert!(single_node_result.elapsed_time_micros < 1_000_000);
     test_sandbox.assert_quit().await;
     Ok(())
+}
+
+#[tokio::test]
+async fn test_single_node_aggregation_on_calculated_fields() {
+    let index_id = "single-node-agg-calculated-fields";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: color
+                type: text
+                tokenizer: raw
+                fast: true
+              - name: price
+                type: f64
+                fast: true
+              - name: quantity
+                type: u64
+                fast: true
+        "#;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["color"])
+        .await
+        .unwrap();
+    let docs = vec![
+        json!({"color": "blue", "price": 10.0, "quantity": 2}),
+        json!({"color": "Blue", "price": 15.0, "quantity": 1}),
+        json!({"color": "green", "price": 10.0, "quantity": 3}),
+        // No quantity: the calculated `#total` has no value for this document.
+        json!({"color": "green", "price": 100.0}),
+    ];
+    test_sandbox.add_documents(docs).await.unwrap();
+    let agg_req = r##"
+ {
+   "colors": {
+     "terms": { "field": "#upper_color", "order": { "_count": "desc" } },
+     "aggs": {
+       "total": { "sum": { "field": "#total" } }
+     }
+   }
+ }"##;
+    let search_request = SearchRequest {
+        index_id_patterns: vec![index_id.to_string()],
+        query_ast: qast_json_helper("*", &[]),
+        max_hits: 0,
+        aggregation_request: Some(agg_req.to_string()),
+        calculated_fields: vec![
+            CalculatedField {
+                name: "#upper_color".to_string(),
+                expression: "(UPPER color)".to_string(),
+            },
+            CalculatedField {
+                name: "#total".to_string(),
+                expression: "(MULTIPLY price quantity)".to_string(),
+            },
+        ],
+        ..Default::default()
+    };
+    let single_node_result = single_node_search(
+        search_request,
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await
+    .unwrap();
+    let agg_res_struct =
+        AggregationResults::from_postcard(&single_node_result.aggregation_postcard.unwrap())
+            .unwrap();
+    let agg_res_json: JsonValue = serde_json::to_value(&agg_res_struct).unwrap();
+    let mut buckets: Vec<(String, u64, f64)> = agg_res_json["colors"]["buckets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|bucket| {
+            (
+                bucket["key"].as_str().unwrap().to_string(),
+                bucket["doc_count"].as_u64().unwrap(),
+                bucket["total"]["value"].as_f64().unwrap(),
+            )
+        })
+        .collect();
+    buckets.sort_by(|left, right| left.0.cmp(&right.0));
+    assert_eq!(
+        buckets,
+        vec![
+            ("BLUE".to_string(), 2, 35.0),
+            ("GREEN".to_string(), 2, 30.0),
+        ]
+    );
+    test_sandbox.assert_quit().await;
+}
+
+#[tokio::test]
+async fn test_single_node_aggregation_calculated_field_requires_fast_inputs() {
+    let index_id = "single-node-agg-calculated-fields-not-fast";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: color
+                type: text
+        "#;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["color"])
+        .await
+        .unwrap();
+    test_sandbox
+        .add_documents(vec![json!({"color": "blue"})])
+        .await
+        .unwrap();
+    let search_request = SearchRequest {
+        index_id_patterns: vec![index_id.to_string()],
+        query_ast: qast_json_helper("*", &[]),
+        aggregation_request: Some(
+            r##"{ "colors": { "terms": { "field": "#upper_color" } } }"##.to_string(),
+        ),
+        calculated_fields: vec![CalculatedField {
+            name: "#upper_color".to_string(),
+            expression: "(UPPER color)".to_string(),
+        }],
+        ..Default::default()
+    };
+    let single_node_error = single_node_search(
+        search_request,
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        single_node_error
+            .to_string()
+            .contains("Field \"color\" is not configured as a fast field"),
+        "{single_node_error}"
+    );
+    test_sandbox.assert_quit().await;
 }
 
 #[tokio::test]
