@@ -23,7 +23,7 @@ use quickwit_proto::types::{IndexUid, Position, QueueId, ShardId, SourceId, Sour
 use tokio::sync::watch;
 use tracing::error;
 
-use crate::ingest_v2::rate_meter::{RateMeter, SharedRateMeter};
+use crate::ingest_v2::rate_meter::SharedRateMeter;
 
 /// Status of a shard: state + position of the last record written.
 pub(super) type ShardStatus = (ShardState, Position);
@@ -42,7 +42,6 @@ pub(super) struct IngesterShard {
     /// indexed.
     pub queue_size: ByteSize,
     pub rate_limiter: RateLimiter,
-    pub rate_meter: RateMeter,
     /// The shared rate meter contains throughput and status readings for all shards, centralized
     /// to be able to report to the control plane.
     shared_rate_meter: Arc<SharedRateMeter>,
@@ -65,8 +64,9 @@ pub(super) struct IngesterShard {
 }
 
 /// Builder for `IngesterShard`. By default, the shard is open, is empty (i.e. the replication and
-/// truncation positions are at the beginning), has a zero queue size, uses the default rate limiter
-/// and rate meter, has no doc mapper, does not validate documents, and is not advertisable.
+/// truncation positions are at the beginning), has a zero queue size and uses the default rate
+/// limiter. A shared rate meter should be wired up to accurately capture readings.
+/// It also has no doc mapper, does not validate documents, and is not advertisable.
 pub(super) struct IngesterShardBuilder {
     index_uid: IndexUid,
     source_id: SourceId,
@@ -76,7 +76,6 @@ pub(super) struct IngesterShardBuilder {
     truncation_position_inclusive: Position,
     queue_size: ByteSize,
     rate_limiter: RateLimiter,
-    rate_meter: RateMeter,
     shared_rate_meter: Arc<SharedRateMeter>,
     doc_mapper_opt: Option<Arc<DocMapper>>,
     validate_docs: bool,
@@ -100,12 +99,6 @@ impl IngesterShardBuilder {
     /// Sets the rate limiter. Defaults to `RateLimiter::default()`.
     pub fn with_rate_limiter(mut self, rate_limiter: RateLimiter) -> Self {
         self.rate_limiter = rate_limiter;
-        self
-    }
-
-    /// Sets the rate meter. Defaults to `RateMeter::default()`.
-    pub fn with_rate_meter(mut self, rate_meter: RateMeter) -> Self {
-        self.rate_meter = rate_meter;
         self
     }
 
@@ -176,7 +169,6 @@ impl IngesterShardBuilder {
             truncation_position_inclusive: self.truncation_position_inclusive,
             queue_size: self.queue_size,
             rate_limiter: self.rate_limiter,
-            rate_meter: self.rate_meter,
             shared_rate_meter: self.shared_rate_meter,
             is_advertisable: self.is_advertisable,
             doc_mapper_opt: self.doc_mapper_opt,
@@ -204,7 +196,6 @@ impl IngesterShard {
             truncation_position_inclusive: Position::Beginning,
             queue_size: ByteSize::default(),
             rate_limiter: RateLimiter::default(),
-            rate_meter: RateMeter::default(),
             shared_rate_meter: Arc::new(SharedRateMeter::default()),
             doc_mapper_opt: None,
             validate_docs: false,
