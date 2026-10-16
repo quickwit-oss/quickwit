@@ -312,6 +312,10 @@ pub struct LeafSearchRequest {
     /// split files.
     #[prost(string, repeated, tag = "9")]
     pub index_uris: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// True when the root retries a failed leaf request or its failed splits.
+    #[prost(bool, tag = "10")]
+    #[serde(default)]
+    pub is_retry: bool,
 }
 /// Per-split resource statistics.
 ///
@@ -510,6 +514,10 @@ pub struct SplitIdAndFooterOffsets {
     /// The number of docs in the split
     #[prost(uint64, tag = "6")]
     pub num_docs: u64,
+    /// Selected searcher's zero-based affinity rank in the full pool at dispatch time.
+    /// Absent when the sender does not provide placement metadata (e.g. older roots).
+    #[prost(uint32, optional, tag = "7")]
+    pub affinity_rank: ::core::option::Option<u32>,
 }
 /// Hits returned by a FetchDocRequest.
 ///

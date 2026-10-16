@@ -31,7 +31,7 @@ use quickwit_common::thread_pool::with_priority::Priority;
 use quickwit_common::uri::Uri;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{Automaton, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo};
-use quickwit_metrics::{GaugeGuard, HistogramTimer};
+use quickwit_metrics::{Counter, GaugeGuard, HistogramTimer, counter};
 use quickwit_proto::search::lambda_single_split_result::Outcome;
 use quickwit_proto::search::{
     CountHits, LeafResourceStats, LeafSearchRequest, LeafSearchResponse, PartialHit, SearchRequest,
@@ -689,8 +689,11 @@ async fn leaf_search_single_split(
     split: SplitIdAndFooterOffsets,
     search_permit: &mut SearchPermit,
 ) -> crate::Result<Option<LeafSearchResponse>> {
-    let mut leaf_search_state_guard =
-        SplitSearchStateGuard::new(ctx.split_outcome_counters.clone());
+    let mut leaf_search_state_guard = SplitSearchStateGuard::new(
+        ctx.split_outcome_counters.clone(),
+        split.affinity_rank,
+        ctx.is_retry,
+    );
 
     // We already checked if the result was already in the partial result cache,
     // but it's not a bad idea to check again.
@@ -1676,6 +1679,7 @@ pub async fn multi_index_leaf_search(
                     storage,
                     leaf_search_request_ref.split_offsets,
                     doc_mapper,
+                    leaf_search_request.is_retry,
                 )
                 .await
             }
@@ -1784,6 +1788,7 @@ async fn run_offloaded_search_tasks(
     index_uri: Uri,
     splits_with_requests: Vec<(SplitIdAndFooterOffsets, SearchRequest)>,
     incremental_merge_collector: &Mutex<IncrementalCollector>,
+    is_retry: bool,
 ) -> Result<(), SearchError> {
     if splits_with_requests.is_empty() {
         return Ok(());
@@ -1808,7 +1813,9 @@ async fn run_offloaded_search_tasks(
         HashMap::with_capacity(splits_with_requests.len());
     let splits: Vec<SplitIdAndFooterOffsets> = splits_with_requests
         .into_iter()
-        .map(|(split, search_req)| {
+        .map(|(mut split, search_req)| {
+            // Lambda is not a member of the ranked searcher pool.
+            split.affinity_rank = None;
             split_lookup.insert(split.split_id.clone(), (split.clone(), search_req));
             split
         })
@@ -1836,6 +1843,7 @@ async fn run_offloaded_search_tasks(
             // Note this is not the split-specific rewritten request, we ship the main request,
             // and the leaf will apply the split specific rewrite on its own.
             search_request: Some(search_request.clone()),
+            is_retry,
             doc_mappers: vec![doc_mapper_str.clone()],
             index_uris: vec![index_uri.as_str().to_string()], //< careful here. Calling to_string() directly would return a redacted uri.
             leaf_requests: vec![quickwit_proto::search::LeafRequestRef {
@@ -2026,6 +2034,7 @@ pub async fn single_doc_mapping_leaf_search(
     index_storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
     doc_mapper: Arc<DocMapper>,
+    is_retry: bool,
 ) -> Result<LeafSearchResponse, SearchError> {
     let num_docs: u64 = splits.iter().map(|split| split.num_docs).sum();
     let num_splits = splits.len();
@@ -2058,6 +2067,7 @@ pub async fn single_doc_mapping_leaf_search(
             split_with_req,
             split_outcome_counters.clone(),
             &mut incremental_merge_collector,
+            is_retry,
         )?;
     // Cached hits can already rule out uncached splits before they start warming up.
     if let Some(last_hit) = incremental_merge_collector.peek_worst_hit() {
@@ -2088,6 +2098,7 @@ pub async fn single_doc_mapping_leaf_search(
         index_storage.uri().clone(),
         offloaded_search_tasks,
         &incremental_merge_collector_arc,
+        is_retry,
     );
 
     // Spawn local split search tasks.
@@ -2097,6 +2108,7 @@ pub async fn single_doc_mapping_leaf_search(
         incremental_merge_collector: incremental_merge_collector_arc.clone(),
         doc_mapper: doc_mapper.clone(),
         split_filter: split_filter_arc.clone(),
+        is_retry,
     });
     let run_local_search_tasks_fut = run_local_search_tasks(
         local_search_tasks,
@@ -2183,8 +2195,11 @@ async fn run_local_search_tasks(
         let Some(simplified_search_request) =
             simplify_search_request(search_request, &split, &split_filter_arc)
         else {
-            let mut leaf_search_state_guard =
-                SplitSearchStateGuard::new(leaf_search_context.split_outcome_counters.clone());
+            let mut leaf_search_state_guard = SplitSearchStateGuard::new(
+                leaf_search_context.split_outcome_counters.clone(),
+                split.affinity_rank,
+                leaf_search_context.is_retry,
+            );
             leaf_search_state_guard.set_state(SplitSearchState::PrunedBeforeWarmup);
             continue;
         };
@@ -2242,6 +2257,7 @@ fn process_partial_result_cache(
     split_with_req: Vec<(SplitIdAndFooterOffsets, SearchRequest)>,
     split_outcome_counters: Arc<SplitSearchOutcomeCounters>,
     incremental_merge_collector: &mut IncrementalCollector,
+    is_retry: bool,
 ) -> Result<Vec<(SplitIdAndFooterOffsets, SearchRequest)>, SearchError> {
     let mut uncached_splits: Vec<(SplitIdAndFooterOffsets, SearchRequest)> =
         Vec::with_capacity(split_with_req.len());
@@ -2253,7 +2269,11 @@ fn process_partial_result_cache(
             // The cached response already carries cache-hit `resource_stats`
             // (set at write time by `LeafSearchCache::put`), so no per-read
             // rewrite is needed here.
-            let mut split_search_guard = SplitSearchStateGuard::new(split_outcome_counters.clone());
+            let mut split_search_guard = SplitSearchStateGuard::new(
+                split_outcome_counters.clone(),
+                split.affinity_rank,
+                is_retry,
+            );
             split_search_guard.set_state(SplitSearchState::CacheHit);
             incremental_merge_collector.add_result(cached_response)?;
         } else {
@@ -2287,25 +2307,25 @@ enum SplitSearchState {
 }
 
 impl SplitSearchState {
-    fn increment(self, counters: &SplitSearchOutcomeCounters) {
+    fn counter(self, counters: &SplitSearchOutcomeCounters) -> &Counter {
         match self {
-            SplitSearchState::Start => counters.cancel_before_warmup.inc(),
-            SplitSearchState::CacheHit => counters.cache_hit.inc(),
-            SplitSearchState::PrunedBeforeWarmup => counters.pruned_before_warmup.inc(),
-            SplitSearchState::WarmUp => counters.cancel_warmup.inc(),
-            SplitSearchState::PrunedDuringWarmup => counters.pruned_during_warmup.inc(),
-            SplitSearchState::PrunedAfterWarmup => counters.pruned_after_warmup.inc(),
-            SplitSearchState::CpuQueue => counters.cancel_cpu_queue.inc(),
-            SplitSearchState::Cpu => counters.cancel_cpu.inc(),
+            SplitSearchState::Start => &counters.cancel_before_warmup,
+            SplitSearchState::CacheHit => &counters.cache_hit,
+            SplitSearchState::PrunedBeforeWarmup => &counters.pruned_before_warmup,
+            SplitSearchState::WarmUp => &counters.cancel_warmup,
+            SplitSearchState::PrunedDuringWarmup => &counters.pruned_during_warmup,
+            SplitSearchState::PrunedAfterWarmup => &counters.pruned_after_warmup,
+            SplitSearchState::CpuQueue => &counters.cancel_cpu_queue,
+            SplitSearchState::Cpu => &counters.cancel_cpu,
             SplitSearchState::Error(SplitSearchErrorKind::CreateReader) => {
-                counters.error_create_reader.inc()
+                &counters.error_create_reader
             }
-            SplitSearchState::Error(SplitSearchErrorKind::Warmup) => counters.error_warmup.inc(),
+            SplitSearchState::Error(SplitSearchErrorKind::Warmup) => &counters.error_warmup,
             SplitSearchState::Error(SplitSearchErrorKind::TantivySearch) => {
-                counters.error_tantivy_search.inc()
+                &counters.error_tantivy_search
             }
-            SplitSearchState::Error(SplitSearchErrorKind::Panic) => counters.error_panic.inc(),
-            SplitSearchState::Success => counters.success.inc(),
+            SplitSearchState::Error(SplitSearchErrorKind::Panic) => &counters.error_panic,
+            SplitSearchState::Success => &counters.success,
         }
     }
 }
@@ -2317,20 +2337,40 @@ impl Drop for SplitSearchStateGuard {
         } else {
             self.state
         };
-        state.increment(&SPLIT_SEARCH_OUTCOME_TOTAL);
-        state.increment(&self.local_split_search_outcome_counters);
+        counter!(
+            parent: state.counter(&SPLIT_SEARCH_OUTCOME_TOTAL),
+            "affinity" => self.affinity,
+            "retry" => if self.is_retry { "true" } else { "false" },
+        )
+        .inc();
+        state
+            .counter(&self.local_split_search_outcome_counters)
+            .inc();
     }
 }
 
 struct SplitSearchStateGuard {
     state: SplitSearchState,
+    affinity: &'static str,
+    is_retry: bool,
     local_split_search_outcome_counters: Arc<SplitSearchOutcomeCounters>,
 }
 
 impl SplitSearchStateGuard {
-    pub fn new(local_split_search_outcome_counters: Arc<SplitSearchOutcomeCounters>) -> Self {
+    pub fn new(
+        local_split_search_outcome_counters: Arc<SplitSearchOutcomeCounters>,
+        affinity_rank: Option<u32>,
+        is_retry: bool,
+    ) -> Self {
         SplitSearchStateGuard {
             state: SplitSearchState::Start,
+            affinity: match affinity_rank {
+                Some(0) => "0",
+                Some(1) => "1",
+                Some(_) => ">=2",
+                None => "none",
+            },
+            is_retry,
             local_split_search_outcome_counters,
         }
     }
@@ -2346,6 +2386,7 @@ struct LeafSearchContext {
     incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
     doc_mapper: Arc<DocMapper>,
     split_filter: Arc<RwLock<CanSplitDoBetter>>,
+    is_retry: bool,
 }
 
 async fn leaf_search_single_split_wrapper(
@@ -2430,7 +2471,7 @@ mod tests {
             SplitSearchErrorKind::TantivySearch,
             SplitSearchErrorKind::Panic,
         ] {
-            let mut leaf_guard = SplitSearchStateGuard::new(counters.clone());
+            let mut leaf_guard = SplitSearchStateGuard::new(counters.clone(), None, false);
             leaf_guard.set_state(SplitSearchState::Error(error_kind));
             drop(leaf_guard);
         }
@@ -2445,7 +2486,7 @@ mod tests {
     #[test]
     fn test_split_search_state_guard_preserves_cancellation_state() {
         let counters = Arc::new(SplitSearchOutcomeCounters::default());
-        let mut leaf_guard = SplitSearchStateGuard::new(counters.clone());
+        let mut leaf_guard = SplitSearchStateGuard::new(counters.clone(), None, false);
         leaf_guard.set_state(SplitSearchState::WarmUp);
 
         drop(leaf_guard);
