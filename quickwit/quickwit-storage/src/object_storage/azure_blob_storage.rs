@@ -20,8 +20,11 @@ use std::sync::{Arc, LazyLock};
 use std::{fmt, io};
 
 use async_trait::async_trait;
+use azure_core::auth::{AccessToken, Secret, TokenCredential};
 use azure_core::error::ErrorKind;
-use azure_core::{Pageable, StatusCode};
+use azure_core::{
+    HttpClient, Method, Pageable, Request, StatusCode, Url, from_json, new_http_client,
+};
 use azure_storage::prelude::*;
 use azure_storage::{CloudLocation, Error as AzureError};
 use azure_storage_blobs::blob::operations::GetBlobResponse;
@@ -37,8 +40,11 @@ use quickwit_common::{chunk_range, ignore_error_kind, into_u64_range};
 use quickwit_config::{AzureStorageConfig, StorageBackend};
 use quickwit_metrics::HistogramTimer;
 use regex::Regex;
+use serde::Deserialize;
+use serde::de::{self, Deserializer};
 use tantivy::directory::OwnedBytes;
 use thiserror::Error;
+use time::{Duration, OffsetDateTime};
 use tokio::io::{AsyncRead, AsyncWriteExt, BufReader};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tokio_util::io::StreamReader;
@@ -184,6 +190,8 @@ impl AzureBlobStorage {
             azure_storage_config.resolve_access_key()
         {
             StorageCredentials::access_key(storage_account_name.clone(), access_key)
+        } else if let Some(credential) = user_assigned_managed_identity_credential() {
+            StorageCredentials::token_credential(credential)
         } else if let Ok(credential) = azure_identity::create_credential() {
             StorageCredentials::token_credential(credential)
         } else {
@@ -561,6 +569,111 @@ async fn extract_range_data_and_hash(
     let data = Bytes::from(buf);
     let hash = md5::compute(&data[..]);
     Ok((data, hash))
+}
+
+fn user_assigned_managed_identity_credential() -> Option<Arc<dyn TokenCredential>> {
+    let client_id = std::env::var("AZURE_CLIENT_ID").ok()?;
+    if client_id.is_empty() {
+        return None;
+    }
+    if std::env::var("AZURE_CLIENT_SECRET").is_ok() {
+        return None;
+    }
+    let endpoint = std::env::var("IDENTITY_ENDPOINT").ok()?;
+    let endpoint = Url::parse(&endpoint).ok()?;
+    let credential = AppServiceUserAssignedManagedIdentityCredential::new(endpoint, client_id);
+    Some(Arc::new(credential))
+}
+
+#[derive(Debug)]
+struct AppServiceUserAssignedManagedIdentityCredential {
+    http_client: Arc<dyn HttpClient>,
+    endpoint: Url,
+    client_id: String,
+    cached_token: tokio::sync::RwLock<Option<AccessToken>>,
+}
+
+impl AppServiceUserAssignedManagedIdentityCredential {
+    fn new(endpoint: Url, client_id: String) -> Self {
+        Self {
+            http_client: new_http_client(),
+            endpoint,
+            client_id,
+            cached_token: tokio::sync::RwLock::new(None),
+        }
+    }
+
+    async fn fetch_token(&self, scopes: &[&str]) -> azure_core::Result<AccessToken> {
+        let [scope] = scopes else {
+            return Err(azure_core::error::Error::message(
+                ErrorKind::Credential,
+                "exactly one scope is required for managed identity authentication",
+            ));
+        };
+        let resource = scope.strip_suffix("/.default").unwrap_or(scope);
+        let mut url = self.endpoint.clone();
+        url.query_pairs_mut().extend_pairs([
+            ("api-version", "2019-08-01"),
+            ("resource", resource),
+            ("client_id", self.client_id.as_str()),
+        ]);
+        let mut request = Request::new(url, Method::Get);
+        request.insert_header("metadata", "true");
+        if let Ok(secret) = std::env::var("IDENTITY_HEADER") {
+            request.insert_header("x-identity-header", secret);
+        }
+        let response = self.http_client.execute_request(&request).await?;
+        let (status, headers, body) = response.deconstruct();
+        let body = body.collect().await?;
+        if !status.is_success() {
+            return Err(ErrorKind::http_response_from_parts(status, &headers, &body).into_error());
+        }
+        let token_response: MsiTokenResponse = from_json(&body)?;
+        Ok(AccessToken::new(
+            token_response.access_token,
+            token_response.expires_on,
+        ))
+    }
+}
+
+#[async_trait]
+impl TokenCredential for AppServiceUserAssignedManagedIdentityCredential {
+    async fn get_token(&self, scopes: &[&str]) -> azure_core::Result<AccessToken> {
+        let refresh_threshold = Duration::minutes(2);
+        if let Some(token) = self.cached_token.read().await.as_ref() {
+            if token.expires_on - refresh_threshold > OffsetDateTime::now_utc() {
+                return Ok(token.clone());
+            }
+        }
+        let mut cached_token = self.cached_token.write().await;
+        if let Some(token) = cached_token.as_ref() {
+            if token.expires_on - refresh_threshold > OffsetDateTime::now_utc() {
+                return Ok(token.clone());
+            }
+        }
+        let token = self.fetch_token(scopes).await?;
+        *cached_token = Some(token.clone());
+        Ok(token)
+    }
+
+    async fn clear_cache(&self) -> azure_core::Result<()> {
+        *self.cached_token.write().await = None;
+        Ok(())
+    }
+}
+
+#[derive(Deserialize)]
+struct MsiTokenResponse {
+    access_token: Secret,
+    #[serde(deserialize_with = "deserialize_expires_on")]
+    expires_on: OffsetDateTime,
+}
+
+fn deserialize_expires_on<'de, D>(deserializer: D) -> Result<OffsetDateTime, D::Error>
+where D: Deserializer<'de> {
+    let value = String::deserialize(deserializer)?;
+    let unix_timestamp = value.parse::<i64>().map_err(de::Error::custom)?;
+    OffsetDateTime::from_unix_timestamp(unix_timestamp).map_err(de::Error::custom)
 }
 
 fn build_container_client(

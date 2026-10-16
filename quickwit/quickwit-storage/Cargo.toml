@@ -50,6 +50,7 @@ azure_core = { workspace = true, optional = true }
 azure_identity = { workspace = true, optional = true }
 azure_storage = { workspace = true, optional = true }
 azure_storage_blobs = { workspace = true, optional = true }
+time = { workspace = true, optional = true }
 
 quickwit-aws = { workspace = true }
 quickwit-common = { workspace = true }
@@ -90,6 +91,7 @@ azure = [
   "azure_identity/enable_reqwest_rustls",
   "azure_storage",
   "azure_storage_blobs",
+  "dep:time",
   "azure_core/hmac_rust",
   "azure_core/enable_reqwest_rustls",
   "azure_storage/enable_reqwest_rustls",
