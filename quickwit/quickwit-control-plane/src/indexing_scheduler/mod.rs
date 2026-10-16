@@ -369,10 +369,9 @@ fn build_indexer_statuses(indexers: &[IndexerPoolEntry]) -> FnvHashMap<NodeId, I
 fn build_indexer_tasks(
     indexers: &[IndexerPoolEntry],
     reported_tasks: &FnvHashMap<NodeId, ReportedIndexingTasks>,
+    all_indexers_enable_shard_scaling_v2: bool,
 ) -> FnvHashMap<NodeId, Vec<IndexingTask>> {
-    if !indexers
-        .iter()
-        .all(|indexer| indexer.enable_shard_scaling_v2) {
+    if !all_indexers_enable_shard_scaling_v2 {
         return indexers
             .iter()
             .map(|indexer| (indexer.node_id.clone(), indexer.indexing_tasks.clone()))
@@ -445,10 +444,19 @@ impl IndexingScheduler {
     //
     // Prefer not calling this method directly, and instead call
     // `ControlPlane::rebuild_indexing_plan_debounced`.
-    pub(crate) fn rebuild_plan(&mut self, model: &ControlPlaneModel) {
+    pub(crate) fn rebuild_plan(
+        &mut self,
+        model: &ControlPlaneModel,
+        all_indexers_enable_shard_scaling_v2: bool,
+    ) {
         let indexers = self.select_available_indexers_for_scheduling();
         let indexer_statuses = build_indexer_statuses(&indexers);
-        self.rebuild_plan_with_indexers(model, indexers, indexer_statuses);
+        self.rebuild_plan_with_indexers(
+            model,
+            indexers,
+            indexer_statuses,
+            all_indexers_enable_shard_scaling_v2,
+        );
     }
 
     fn rebuild_plan_with_indexers(
@@ -456,6 +464,7 @@ impl IndexingScheduler {
         model: &ControlPlaneModel,
         indexers: Vec<IndexerPoolEntry>,
         indexer_statuses: FnvHashMap<NodeId, IngesterStatus>,
+        all_indexers_enable_shard_scaling_v2: bool,
     ) {
         SCHEDULE_TOTAL.inc();
 
@@ -476,7 +485,11 @@ impl IndexingScheduler {
         };
 
         let shard_locations = model.shard_locations();
-        let running_indexer_tasks = build_indexer_tasks(&indexers, &self.reported_tasks);
+        let running_indexer_tasks = build_indexer_tasks(
+            &indexers,
+            &self.reported_tasks,
+            all_indexers_enable_shard_scaling_v2,
+        );
         let can_optimize_plan = is_plan_eligible_for_optimization(
             &running_indexer_tasks,
             &indexer_statuses,
@@ -534,7 +547,11 @@ impl IndexingScheduler {
     /// chitchat cluster state. If true, do nothing.
     /// - If node IDs differ, schedule a new indexing plan.
     /// - If indexing tasks differ, apply again the last plan.
-    pub(crate) fn control_running_plan(&mut self, model: &ControlPlaneModel) {
+    pub(crate) fn control_running_plan(
+        &mut self,
+        model: &ControlPlaneModel,
+        all_indexers_enable_shard_scaling_v2: bool,
+    ) {
         self.reported_tasks
             .retain(|node_id, report| match self.indexer_pool.get(node_id) {
                 Some(indexer) => report.generation_id >= indexer.generation_id,
@@ -547,7 +564,7 @@ impl IndexingScheduler {
                 // If there is no plan, the node is probably starting and the scheduler did not find
                 // indexers yet. In this case, we want to schedule as soon as possible to find new
                 // indexers.
-                self.rebuild_plan(model);
+                self.rebuild_plan(model, all_indexers_enable_shard_scaling_v2);
                 return;
             };
         if let Some(last_applied_plan_timestamp) = self.state.last_applied_plan_timestamp
@@ -557,7 +574,11 @@ impl IndexingScheduler {
             return;
         }
         let indexers: Vec<IndexerPoolEntry> = self.select_available_indexers_for_scheduling();
-        let running_indexer_tasks = build_indexer_tasks(&indexers, &self.reported_tasks);
+        let running_indexer_tasks = build_indexer_tasks(
+            &indexers,
+            &self.reported_tasks,
+            all_indexers_enable_shard_scaling_v2,
+        );
         let running_indexer_statuses = build_indexer_statuses(&indexers);
 
         let indexing_plans_diff = get_indexing_plans_diff(
@@ -568,7 +589,12 @@ impl IndexingScheduler {
         );
         if !indexing_plans_diff.has_same_nodes() {
             info!(plans_diff=?indexing_plans_diff, "running plan and last applied plan indexers differ: schedule an indexing plan");
-            self.rebuild_plan_with_indexers(model, indexers, running_indexer_statuses);
+            self.rebuild_plan_with_indexers(
+                model,
+                indexers,
+                running_indexer_statuses,
+                all_indexers_enable_shard_scaling_v2,
+            );
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
             info!(plans_diff=?indexing_plans_diff, "running tasks and last applied tasks differ: reapply last plan");
@@ -1630,7 +1656,6 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: status,
             availability_zone: None,
-            enable_shard_scaling_v2: false,
         }
     }
 
@@ -1648,33 +1673,32 @@ mod tests {
             ..Default::default()
         };
         indexer.indexing_tasks = vec![gossip_task.clone()];
-        indexer.enable_shard_scaling_v2 = true;
         pool.insert(indexer.node_id.clone(), indexer.clone());
-        let mut legacy_indexer = mock_indexer_node_info("legacy-indexer", IngesterStatus::Ready);
-        pool.insert(legacy_indexer.node_id.clone(), legacy_indexer.clone());
         let mut scheduler =
             IndexingScheduler::new("cluster".to_string(), NodeId::from_str("cp"), pool.clone());
-        let tasks = |scheduler: &IndexingScheduler| {
-            build_indexer_tasks(&pool.values(), &scheduler.reported_tasks)[&indexer.node_id].clone()
+        let tasks = |scheduler: &IndexingScheduler, all_indexers_enable_shard_scaling_v2: bool| {
+            build_indexer_tasks(
+                &pool.values(),
+                &scheduler.reported_tasks,
+                all_indexers_enable_shard_scaling_v2,
+            )[&indexer.node_id]
+                .clone()
         };
         // Gossip is used until all indexers enable shard scaling v2.
         scheduler.record_reported_tasks("indexer", 10, vec![rpc_task.clone()]);
-        assert_eq!(tasks(&scheduler), vec![gossip_task]);
-
-        legacy_indexer.enable_shard_scaling_v2 = true;
-        pool.insert(legacy_indexer.node_id.clone(), legacy_indexer);
-        assert_eq!(tasks(&scheduler), vec![rpc_task.clone()]);
+        assert_eq!(tasks(&scheduler, false), vec![gossip_task]);
+        assert_eq!(tasks(&scheduler, true), vec![rpc_task.clone()]);
 
         // A report from a newer generation is not used until the pool catches up.
         scheduler.record_reported_tasks("indexer", 11, vec![rpc_task.clone()]);
-        assert!(tasks(&scheduler).is_empty());
+        assert!(tasks(&scheduler, true).is_empty());
         indexer.generation_id = 11;
         pool.insert(indexer.node_id.clone(), indexer.clone());
-        assert_eq!(tasks(&scheduler), vec![rpc_task.clone()]);
+        assert_eq!(tasks(&scheduler, true), vec![rpc_task.clone()]);
 
         // Reports older than the indexer's generation are ignored.
         scheduler.record_reported_tasks("indexer", 10, Vec::new());
-        assert_eq!(tasks(&scheduler), vec![rpc_task]);
+        assert_eq!(tasks(&scheduler, true), vec![rpc_task]);
     }
 
     #[test]
@@ -1695,7 +1719,7 @@ mod tests {
             Some(PhysicalIndexingPlan::with_indexer_ids(&pool.keys()));
         scheduler.state.last_applied_plan_timestamp = Some(Instant::now());
 
-        scheduler.control_running_plan(&ControlPlaneModel::default());
+        scheduler.control_running_plan(&ControlPlaneModel::default(), true);
 
         let mut reported_node_ids: Vec<&str> = scheduler
             .reported_tasks
@@ -1710,7 +1734,6 @@ mod tests {
     async fn test_control_running_plan_uses_reported_tasks() {
         let pool = IndexerPool::default();
         let mut indexer = mock_indexer_node_info("indexer", IngesterStatus::Ready);
-        indexer.enable_shard_scaling_v2 = true;
         let task = IndexingTask {
             index_uid: Some(IndexUid::for_test("index", 0)),
             source_id: "source".to_string(),
@@ -1738,14 +1761,14 @@ mod tests {
 
         // Gossip reports no tasks, but the reported tasks match the plan.
         scheduler.record_reported_tasks("indexer", 0, vec![task.clone()]);
-        scheduler.control_running_plan(&ControlPlaneModel::default());
+        scheduler.control_running_plan(&ControlPlaneModel::default(), true);
         assert_eq!(scheduler.state.num_applied_physical_indexing_plan, 0);
 
         // Gossip matches the plan, but the reported tasks do not.
         indexer.indexing_tasks = vec![task.clone()];
         pool.insert(indexer.node_id.clone(), indexer);
         scheduler.record_reported_tasks("indexer", 0, Vec::new());
-        scheduler.control_running_plan(&ControlPlaneModel::default());
+        scheduler.control_running_plan(&ControlPlaneModel::default(), true);
         assert_eq!(scheduler.state.num_applied_physical_indexing_plan, 1);
         let applied = tokio::time::timeout(Duration::from_secs(1), applied_rx.recv())
             .await
@@ -1757,8 +1780,7 @@ mod tests {
     #[test]
     fn test_optimization_eligibility_uses_reported_tasks() {
         let pool = IndexerPool::default();
-        let mut indexer = mock_indexer_node_info("indexer", IngesterStatus::Ready);
-        indexer.enable_shard_scaling_v2 = true;
+        let indexer = mock_indexer_node_info("indexer", IngesterStatus::Ready);
         pool.insert(indexer.node_id.clone(), indexer.clone());
         let mut scheduler =
             IndexingScheduler::new("cluster".to_string(), NodeId::from_str("cp"), pool.clone());
@@ -1777,14 +1799,14 @@ mod tests {
         scheduler.state.last_applied_plan_timestamp =
             Some(Instant::now() - MIN_DURATION_BETWEEN_SCHEDULING * 2);
         assert!(!is_plan_eligible_for_optimization(
-            &build_indexer_tasks(&pool.values(), &scheduler.reported_tasks),
+            &build_indexer_tasks(&pool.values(), &scheduler.reported_tasks, true),
             &statuses,
             true,
             &mut scheduler.state
         ));
         scheduler.record_reported_tasks("indexer", 0, vec![task]);
         assert!(is_plan_eligible_for_optimization(
-            &build_indexer_tasks(&pool.values(), &scheduler.reported_tasks),
+            &build_indexer_tasks(&pool.values(), &scheduler.reported_tasks, true),
             &statuses,
             true,
             &mut scheduler.state
@@ -2115,7 +2137,6 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: status,
             availability_zone: None,
-            enable_shard_scaling_v2: false,
         }
     }
 
@@ -2134,7 +2155,6 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: status,
             availability_zone: None,
-            enable_shard_scaling_v2: false,
         }
     }
 
@@ -2163,7 +2183,6 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: status,
             availability_zone: None,
-            enable_shard_scaling_v2: false,
         }
     }
 

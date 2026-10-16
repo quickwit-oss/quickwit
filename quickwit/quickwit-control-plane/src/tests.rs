@@ -87,7 +87,6 @@ pub fn test_indexer_change_stream(
                             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
                             ingester_status: node.ingester_status,
                             availability_zone: None,
-                            enable_shard_scaling_v2: false,
                         },
                     );
                     Some(change)
@@ -144,6 +143,7 @@ async fn start_control_plane(
     let self_node_id = cluster.self_node_id().to_owned();
     let (control_plane_mailbox, _control_plane_handle, _is_ready_rx) = ControlPlane::spawn(
         universe,
+        cluster,
         cluster_config,
         self_node_id,
         indexer_pool,

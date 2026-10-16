@@ -46,9 +46,9 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::types::{AvailabilityZone, IndexUid, NodeId, Position, ShardId, SourceUid};
 use rand::prelude::IndexedRandom;
-use rand::rng;
 use rand::rngs::ThreadRng;
 use rand::seq::SliceRandom;
+use rand::{Rng, RngExt, rng};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{Level, debug, enabled, error, info, instrument, warn};
 use ulid::Ulid;
@@ -56,7 +56,7 @@ use ulid::Ulid;
 use crate::control_plane::ControlPlane;
 use crate::ingest::wait_handle::WaitHandle;
 use crate::metrics::REBALANCE_SHARDS;
-use crate::model::{ControlPlaneModel, ScalingMode};
+use crate::model::{ControlPlaneModel, ScalingMode, ShardEntry};
 
 const CLOSE_SHARDS_REQUEST_TIMEOUT: Duration = if cfg!(test) {
     Duration::from_millis(50)
@@ -924,6 +924,51 @@ impl IngestController {
         }
     }
 
+    pub(crate) async fn open_shards_for_source(
+        &self,
+        source_uid: &SourceUid,
+        num_shards_to_open: usize,
+        model: &mut ControlPlaneModel,
+        progress: &Progress,
+    ) -> MetastoreResult<usize> {
+        let num_shards_to_open_by_source: SourceShardCount =
+            HashMap::from_iter([(source_uid.clone(), num_shards_to_open)]);
+        let opened_shards_by_zone = self
+            .try_open_shards(
+                ShardPlacement::Balanced(num_shards_to_open_by_source),
+                model,
+                &Default::default(),
+                progress,
+            )
+            .await?;
+        let num_opened_shards: usize = opened_shards_by_zone.values().map(total_shards).sum();
+        Ok(num_opened_shards)
+    }
+
+    pub(crate) fn live_ingesters(&self) -> FnvHashSet<NodeId> {
+        self.ingester_pool.keys().into_iter().collect()
+    }
+
+    pub(crate) fn is_rebalancing(&self) -> bool {
+        self.rebalance_semaphore.available_permits() == 0
+    }
+
+    pub(crate) async fn close_source_shards(
+        &self,
+        source_uid: &SourceUid,
+        shards: Vec<Shard>,
+        model: &mut ControlPlaneModel,
+        progress: &Progress,
+    ) -> Vec<ShardId> {
+        let closed_shard_pkeys = progress.protect_future(self.close_shards(shards)).await;
+        let closed_shard_ids: Vec<ShardId> = closed_shard_pkeys
+            .iter()
+            .map(|shard_pkey| shard_pkey.shard_id().clone())
+            .collect();
+        model.close_shards(source_uid, &closed_shard_ids);
+        closed_shard_ids
+    }
+
     /// Rebalances shards from ingesters with too many shards to ingesters with too few shards.
     /// Moving a shard consists of opening a new one on the target ingester and closing the shard
     /// on the source ingester. We attempt to open new shards in the zone in which the original was
@@ -1186,6 +1231,44 @@ fn summarize_shard_ids(shard_ids: &[ShardIds]) -> Vec<&str> {
         .collect()
 }
 
+pub(crate) fn open_shards_by_ingester_id<'a>(
+    source_uid: &SourceUid,
+    live_ingesters: &FnvHashSet<NodeId>,
+    model: &'a ControlPlaneModel,
+) -> HashMap<NodeId, Vec<&'a ShardEntry>> {
+    let mut open_shards_by_ingester_id: HashMap<NodeId, Vec<&ShardEntry>> = HashMap::new();
+    let Some(shard_entries) = model.get_shards_for_source(source_uid) else {
+        return open_shards_by_ingester_id;
+    };
+    for shard_entry in shard_entries.values() {
+        if shard_entry.is_open() && live_ingesters.contains(shard_entry.ingester_id.as_str()) {
+            open_shards_by_ingester_id
+                .entry(NodeId::from_str(&shard_entry.ingester_id))
+                .or_default()
+                .push(shard_entry);
+        }
+    }
+    open_shards_by_ingester_id
+}
+
+/// Picks a shard to close on the ingester with the most open shards and removes it from the map.
+pub(crate) fn find_scale_down_candidate<'a>(
+    open_shards_by_ingester_id: &mut HashMap<NodeId, Vec<&'a ShardEntry>>,
+) -> Option<&'a ShardEntry> {
+    let mut rng = rng();
+    let (_ingester_id, shard_entries) = open_shards_by_ingester_id
+        .iter_mut()
+        // We use a random number to break ties... The HashMap is randomly seeded so this is
+        // should not make much difference, but we might want to be as explicit as possible.
+        // TODO: Pick shard by queue size
+        .max_by_key(|(_ingester_id, shard_entries)| (shard_entries.len(), rng.next_u32()))?;
+    if shard_entries.is_empty() {
+        return None;
+    }
+    let shard_index = rng.random_range(0..shard_entries.len());
+    Some(shard_entries.swap_remove(shard_index))
+}
+
 /// When rebalancing shards, shards to move are closed some time after new shards are opened.
 /// Because we don't want to stall the control plane event loop while waiting for the close shards
 /// requests to complete, we use a callback to handle the results of those close shards requests.
@@ -1201,12 +1284,13 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use bytesize::ByteSize;
     use itertools::Itertools;
     use quickwit_actors::Universe;
     use quickwit_common::setup_logging_for_tests;
     use quickwit_common::tower::DelayLayer;
     use quickwit_config::{DocMapping, INGEST_V2_SOURCE_ID, SourceConfig};
-    use quickwit_ingest::IngesterPoolEntry;
+    use quickwit_ingest::{IngesterPoolEntry, ShardInfo};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
     use quickwit_proto::ingest::ingester::{
@@ -3159,5 +3243,129 @@ mod tests {
         test_compute_shards_to_rebalance_aux(&[1, 1], &[], &[3]);
         test_compute_shards_to_rebalance_aux(&[0, 0, 0], &[], &[5]);
         test_compute_shards_to_rebalance_aux(&[2], &[], &[1, 2]);
+    }
+
+    #[test]
+    fn test_find_scale_down_candidate() {
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id: SourceId = "test-source".to_string();
+
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: source_id.clone(),
+        };
+        let mut model = ControlPlaneModel::default();
+        let live_ingesters = FnvHashSet::from_iter([
+            NodeId::from_str("test-ingester-0"),
+            NodeId::from_str("test-ingester-1"),
+        ]);
+
+        assert!(
+            find_scale_down_candidate(&mut open_shards_by_ingester_id(
+                &source_uid,
+                &live_ingesters,
+                &model
+            ))
+            .is_none()
+        );
+
+        let shards = vec![
+            Shard {
+                index_uid: index_uid.clone().into(),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(1)),
+                shard_state: ShardState::Open as i32,
+                ingester_id: "test-ingester-0".to_string(),
+                ..Default::default()
+            },
+            Shard {
+                index_uid: index_uid.clone().into(),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(2)),
+                shard_state: ShardState::Open as i32,
+                ingester_id: "test-ingester-0".to_string(),
+                ..Default::default()
+            },
+            Shard {
+                index_uid: index_uid.clone().into(),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(3)),
+                shard_state: ShardState::Closed as i32, //< this one is closed
+                ingester_id: "test-ingester-0".to_string(),
+                ..Default::default()
+            },
+            Shard {
+                index_uid: index_uid.clone().into(),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(4)),
+                shard_state: ShardState::Open as i32,
+                ingester_id: "test-ingester-1".to_string(),
+                ..Default::default()
+            },
+            Shard {
+                index_uid: index_uid.clone().into(),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(5)),
+                shard_state: ShardState::Open as i32,
+                ingester_id: "test-ingester-1".to_string(),
+                ..Default::default()
+            },
+            Shard {
+                index_uid: index_uid.clone().into(),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(6)),
+                shard_state: ShardState::Open as i32,
+                ingester_id: "test-ingester-1".to_string(),
+                ..Default::default()
+            },
+        ];
+        // That's 3 open shards on indexer-1, 2 open shard and one closed shard on indexer-0..
+        model.insert_shards(&index_uid, &source_id, shards);
+
+        let shard_infos = BTreeSet::from_iter([
+            ShardInfo {
+                shard_id: ShardId::from(1),
+                shard_state: ShardState::Open,
+                short_term_ingestion_rate: ByteSize::mib(1),
+                long_term_ingestion_rate: ByteSize::mib(1),
+            },
+            ShardInfo {
+                shard_id: ShardId::from(2),
+                shard_state: ShardState::Open,
+                short_term_ingestion_rate: ByteSize::mib(2),
+                long_term_ingestion_rate: ByteSize::mib(2),
+            },
+            ShardInfo {
+                shard_id: ShardId::from(3),
+                shard_state: ShardState::Open,
+                short_term_ingestion_rate: ByteSize::mib(3),
+                long_term_ingestion_rate: ByteSize::mib(3),
+            },
+            ShardInfo {
+                shard_id: ShardId::from(4),
+                shard_state: ShardState::Open,
+                short_term_ingestion_rate: ByteSize::mib(4),
+                long_term_ingestion_rate: ByteSize::mib(4),
+            },
+            ShardInfo {
+                shard_id: ShardId::from(5),
+                shard_state: ShardState::Open,
+                short_term_ingestion_rate: ByteSize::mib(5),
+                long_term_ingestion_rate: ByteSize::mib(5),
+            },
+            ShardInfo {
+                shard_id: ShardId::from(6),
+                shard_state: ShardState::Open,
+                short_term_ingestion_rate: ByteSize::mib(6),
+                long_term_ingestion_rate: ByteSize::mib(6),
+            },
+        ]);
+        model.update_shards(&source_uid, &shard_infos);
+
+        let mut open_shards_by_ingester_id =
+            open_shards_by_ingester_id(&source_uid, &live_ingesters, &model);
+        let shard_entry = find_scale_down_candidate(&mut open_shards_by_ingester_id).unwrap();
+        // We pick ingester 1 has it has more open shard
+        assert_eq!(shard_entry.ingester_id, "test-ingester-1");
     }
 }
