@@ -24,6 +24,7 @@ mod ingest_v2;
 mod memory_capacity;
 mod metrics;
 mod mrecordlog_async;
+mod ndjson;
 mod notifications;
 mod position;
 mod queue;
@@ -39,6 +40,7 @@ pub use ingest_api_service::{GetMemoryCapacity, GetPartitionId, IngestApiService
 pub use ingest_service::*;
 pub use ingest_v2::*;
 pub use memory_capacity::MemoryCapacity;
+pub use ndjson::{doc_batch_v2_from_ndjson, split_ndjson_lines};
 pub use position::Position;
 pub use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
