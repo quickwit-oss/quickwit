@@ -734,7 +734,7 @@ fn parse_client_params_inner(
         bail!("failed to parse Kafka client parameters. `client_params` must be a JSON object");
     };
     let mut client_config = ClientConfig::new();
-    if let Some(kinit_cmd) = kinit_cmd_opt {
+    if let Some(kinit_cmd) = kinit_cmd_opt.filter(|kinit_cmd| !kinit_cmd.trim().is_empty()) {
         if kinit_cmd.contains("%{") {
             bail!(
                 "failed to parse Kafka client parameters. `{QW_KAFKA_KINIT_CMD_ENV_KEY}` must not \
@@ -815,6 +815,16 @@ mod tests {
             Some("0")
         );
         assert_eq!(client_config.get("sasl.kerberos.kinit.cmd"), None);
+
+        for empty_kinit_cmd in ["", "  "] {
+            let client_config =
+                parse_client_params_inner(json!({}), Some(empty_kinit_cmd)).unwrap();
+            assert_eq!(
+                client_config.get("sasl.kerberos.min.time.before.relogin"),
+                Some("0")
+            );
+            assert_eq!(client_config.get("sasl.kerberos.kinit.cmd"), None);
+        }
 
         let client_config = parse_client_params_inner(json!({}), Some("kinit -k")).unwrap();
         assert_eq!(
