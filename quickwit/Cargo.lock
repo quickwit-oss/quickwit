@@ -7396,7 +7396,6 @@ dependencies = [
  "rand 0.10.3",
  "serde",
  "serde_json",
- "smallvec",
  "tokio",
  "tracing",
  "ulid",
