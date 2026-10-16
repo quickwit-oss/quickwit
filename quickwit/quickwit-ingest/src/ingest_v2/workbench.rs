@@ -157,7 +157,13 @@ impl IngestWorkbench {
             );
             return;
         };
+        // A persist that appended no record reports the shard position it already had, which
+        // was published before this request and therefore already emitted. `ShardPositionsService`
+        // only forwards strictly increasing positions, so that event is never replayed and a
+        // `WaitFor`/`Force` request tracking it would wait for a notification that cannot arrive.
+        // Nothing was appended, so there is nothing to wait for.
         if let Some(publish_tracker) = &mut self.publish_tracker
+            && persist_success.num_persisted_docs > 0
             && let Some(position) = &persist_success.replication_position_inclusive
         {
             publish_tracker.track_persisted_shard_position(
@@ -394,7 +400,8 @@ mod tests {
 
     use quickwit_proto::indexing::ShardPositionsUpdate;
     use quickwit_proto::ingest::ingester::PersistFailureReason;
-    use quickwit_proto::types::{IndexUid, Position, ShardId, SourceUid};
+    use quickwit_proto::ingest::{ParseFailure, ParseFailureReason};
+    use quickwit_proto::types::{DocUid, IndexUid, Position, ShardId, SourceUid};
 
     use super::*;
 
@@ -555,6 +562,7 @@ mod tests {
             subrequest_id: 0,
             shard_id: Some(shard_id_1.clone()),
             replication_position_inclusive: Some(Position::offset(42usize)),
+            num_persisted_docs: 1,
             ..Default::default()
         };
         workbench.record_persist_success(persist_success);
@@ -569,6 +577,7 @@ mod tests {
             subrequest_id: 1,
             shard_id: Some(shard_id_2.clone()),
             replication_position_inclusive: Some(Position::offset(66usize)),
+            num_persisted_docs: 1,
             ..Default::default()
         };
 
@@ -618,6 +627,7 @@ mod tests {
             subrequest_id: 0,
             shard_id: Some(shard_id_1.clone()),
             replication_position_inclusive: Some(Position::offset(42usize)),
+            num_persisted_docs: 1,
             ..Default::default()
         };
         workbench.record_persist_success(persist_success);
@@ -626,6 +636,7 @@ mod tests {
             subrequest_id: 1,
             shard_id: Some(shard_id_2.clone()),
             replication_position_inclusive: Some(Position::offset(66usize)),
+            num_persisted_docs: 1,
             ..Default::default()
         };
         workbench.record_persist_success(persist_success);
@@ -647,6 +658,52 @@ mod tests {
         tokio::time::timeout(Duration::from_millis(200), workbench.into_ingest_result())
             .await
             .unwrap_err();
+    }
+
+    #[tokio::test]
+    async fn test_workbench_publish_tracking_does_not_wait_when_nothing_was_persisted() {
+        // Regression test for #6842. When every document of a batch fails validation the ingester
+        // still returns a `PersistSuccess`, with `num_persisted_docs = 0` and the position the
+        // shard already had. That position was published before this request, and
+        // `ShardPositionsService` only forwards strictly increasing positions, so the event is
+        // never replayed. Tracking it would make a `WaitFor`/`Force` request wait forever.
+        let event_broker = EventBroker::default();
+        let ingest_subrequests = vec![IngestSubrequest {
+            subrequest_id: 0,
+            ..Default::default()
+        }];
+        let mut workbench =
+            IngestWorkbench::new_with_publish_tracking(ingest_subrequests, 1, event_broker);
+
+        let persist_success = PersistSuccess {
+            subrequest_id: 0,
+            shard_id: Some(ShardId::from("test-shard-1")),
+            // The position the shard already had, echoed back unchanged.
+            replication_position_inclusive: Some(Position::offset(42usize)),
+            num_persisted_docs: 0,
+            parse_failures: vec![ParseFailure {
+                doc_uid: Some(DocUid::for_test(0)),
+                reason: ParseFailureReason::InvalidJson as i32,
+                message: "failed to parse JSON document".to_string(),
+            }],
+            ..Default::default()
+        };
+        workbench.record_persist_success(persist_success);
+
+        assert!(workbench.is_complete());
+
+        // No publish event is ever emitted for that position. The request must still complete,
+        // carrying its parse failures, rather than waiting for a notification that cannot arrive.
+        let ingest_response =
+            tokio::time::timeout(Duration::from_millis(200), workbench.into_ingest_result())
+                .await
+                .expect("request must not wait on an already published position");
+
+        assert_eq!(ingest_response.successes.len(), 1);
+        assert_eq!(ingest_response.failures.len(), 0);
+        let success = &ingest_response.successes[0];
+        assert_eq!(success.num_ingested_docs, 0);
+        assert_eq!(success.parse_failures.len(), 1);
     }
 
     #[test]
