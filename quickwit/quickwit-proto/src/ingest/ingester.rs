@@ -57,9 +57,9 @@ impl FetchPayload {
         }
     }
 
-    pub fn estimate_size(&self) -> ByteSize {
+    pub fn buffer_size(&self) -> ByteSize {
         if let Some(mrecord_batch) = &self.mrecord_batch {
-            mrecord_batch.estimate_size()
+            mrecord_batch.buffer_size()
         } else {
             ByteSize(0)
         }
