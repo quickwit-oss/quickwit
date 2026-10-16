@@ -36,9 +36,10 @@ use quickwit_proto::metastore::{
     MetastoreServiceClient, SourceType, ToggleSourceRequest,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
-pub(super) use shard_table::{ScalingMode, ShardEntry, ShardLocations, ShardStats, ShardTable};
+pub(super) use shard_table::{ShardEntry, ShardLocations, ShardStats, ShardTable};
 use tracing::{debug, error, info, instrument, warn};
 
+pub(super) use crate::ingest::ScalingMode;
 use crate::metrics::INDEXES_TOTAL;
 
 /// The control plane maintains a model in sync with the metastore.
