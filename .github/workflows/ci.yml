@@ -111,7 +111,7 @@ jobs:
         working-directory: ./quickwit
       - name: cargo nextest
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: cargo nextest run --features=postgres --retries 1
+        run: cargo nextest run --features=postgres --profile ci
         working-directory: ./quickwit
       - name: Install python packages
         if: always() && steps.modified.outputs.rust_src == 'true'
