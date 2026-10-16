@@ -13,13 +13,16 @@
 // limitations under the License.
 
 use std::convert::TryFrom;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use percent_encoding::percent_decode_str;
 use quickwit_config::validate_index_id_pattern;
 use quickwit_proto::search::{CountHits, SortField, SortOrder};
 use quickwit_query::query_ast::query_ast_from_user_text;
-use quickwit_search::{SearchError, SearchPlanResponseRest, SearchResponseRest, SearchService};
+use quickwit_search::{
+    SearchAfterCursor, SearchError, SearchPlanResponseRest, SearchResponseRest, SearchService,
+};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use tracing::info;
@@ -191,6 +194,11 @@ pub struct SearchRequestQueryString {
     /// The results with rank [start_offset..start_offset + max_hits) are returned
     #[serde(default)] // Default to 0. (We are 0-indexed)
     pub start_offset: u64,
+    /// Opaque cursor from the `cursors` of a previous response. The search returns the hits that
+    /// come after that hit in the `sort_by` order, i.e. the next page. Use it with the same query
+    /// and `sort_by`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_after: Option<String>,
     /// The output format.
     #[serde(default)]
     pub format: BodyFormat,
@@ -244,6 +252,14 @@ pub fn search_request_from_api_request(
     index_id_patterns: Vec<String>,
     search_request: SearchRequestQueryString,
 ) -> Result<quickwit_proto::search::SearchRequest, SearchError> {
+    let search_after = match &search_request.search_after {
+        Some(cursor_str) => {
+            let cursor = SearchAfterCursor::from_str(cursor_str)
+                .map_err(|msg| SearchError::InvalidArgument(msg.to_string()))?;
+            Some(cursor.0)
+        }
+        None => None,
+    };
     // The query ast below may still contain user input query. The actual
     // parsing of the user query will happen in the root service, and might require
     // the user of the docmapper default fields (which we do not have at this point).
@@ -262,7 +278,7 @@ pub fn search_request_from_api_request(
             .map(|agg| serde_json::to_string(&agg).expect("could not serialize JsonValue")),
         sort_fields: search_request.sort_by.sort_fields,
         scroll_ttl_secs: None,
-        search_after: None,
+        search_after,
         count_hits: search_request.count_all.into(),
         ignore_missing_indexes: false,
         skip_aggregation_finalization: false,
@@ -460,6 +476,17 @@ mod tests {
     use super::*;
     use crate::recover_fn;
 
+    /// The hit encoded by the cursor `EgFhGAEgAlICEAU`.
+    fn cursor_partial_hit() -> quickwit_proto::search::PartialHit {
+        quickwit_proto::search::PartialHit {
+            sort_value: Some(quickwit_proto::search::SortValue::I64(5).into()),
+            sort_value2: None,
+            split_id: "a".to_string(),
+            segment_ord: 1,
+            doc_id: 2,
+        }
+    }
+
     fn search_handler(
         mock_search_service: MockSearchService,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -499,6 +526,7 @@ mod tests {
         let search_response = SearchResponseRest {
             num_hits: 55,
             hits: Vec::new(),
+            cursors: Vec::new(),
             snippets: None,
             elapsed_time_micros: 0u64,
             errors: Vec::new(),
@@ -508,6 +536,7 @@ mod tests {
         let expected_search_response_json: JsonValue = json!({
             "num_hits": 55,
             "hits": [],
+            "cursors": [],
             "elapsed_time_micros": 0,
         });
         assert_json_include!(
@@ -939,6 +968,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_rest_search_api_search_after_parameter() {
+        let expected_search_after = cursor_partial_hit();
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service
+            .expect_root_search()
+            .with(predicate::function(
+                move |search_request: &quickwit_proto::search::SearchRequest| {
+                    search_request.search_after.as_ref() == Some(&expected_search_after)
+                },
+            ))
+            .times(2)
+            .returning(|_| Ok(Default::default()));
+        let rest_search_api_handler = search_handler(mock_search_service);
+        let get_response = warp::test::request()
+            .path("/quickwit-demo-index/search?query=*&sort_by=-ts&search_after=EgFhGAEgAlICEAU")
+            .reply(&rest_search_api_handler)
+            .await;
+        assert_eq!(get_response.status(), 200);
+        let post_response = warp::test::request()
+            .method("POST")
+            .path("/quickwit-demo-index/search")
+            .json(&json!({"query": "*", "sort_by": "-ts", "search_after": "EgFhGAEgAlICEAU"}))
+            .reply(&rest_search_api_handler)
+            .await;
+        assert_eq!(post_response.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_api_invalid_search_after_cursor() {
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service.expect_root_search().never();
+        let rest_search_api_handler = search_handler(mock_search_service);
+        let response = warp::test::request()
+            .path("/quickwit-demo-index/search?query=*&search_after=_w")
+            .reply(&rest_search_api_handler)
+            .await;
+        assert_eq!(response.status(), 400);
+        let response_json: JsonValue = serde_json::from_slice(response.body()).unwrap();
+        assert_eq!(
+            response_json["message"],
+            "Invalid argument: search_after cursor is malformed"
+        );
+    }
+
+    #[tokio::test]
     async fn test_rest_search_api_with_index_does_not_exist() -> anyhow::Result<()> {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_root_search().returning(|_| {
@@ -1000,7 +1074,7 @@ mod tests {
             Ok(quickwit_proto::search::SearchResponse {
                 hits: vec![quickwit_proto::search::Hit {
                     json: r#"{"title": "foo", "body": "foo bar baz"}"#.to_string(),
-                    partial_hit: None,
+                    partial_hit: Some(cursor_partial_hit()),
                     snippet: Some(r#"{"title": [], "body": ["foo <em>bar</em> baz"]}"#.to_string()),
                     index_id: "quickwit-demo-index".to_string(),
                 }],
@@ -1024,6 +1098,7 @@ mod tests {
         let expected_response_json = serde_json::json!({
             "num_hits": 1,
             "hits": [{"title": "foo", "body": "foo bar baz"}],
+            "cursors": ["EgFhGAEgAlICEAU"],
             "snippets": [{"title": [], "body": ["foo <em>bar</em> baz"]}],
             "elapsed_time_micros": 16,
             "errors": [],

@@ -64,6 +64,7 @@ POST api/v1/<index id>/search
 | `start_timestamp` | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`, taking advantage of potential time pruning opportunities. The value must be in seconds. | |
 | `end_timestamp`   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`, taking advantage of potential time pruning opportunities. The value must be in seconds.    | |
 | `start_offset`    | `Integer`  | Number of documents to skip | `0` |
+| `search_after`    | `String`   | Cursor from the `cursors` of a previous response. The search returns the hits that come after that hit in the `sort_by` order, i.e. the next page. See [paging with cursors](#paging-with-cursors). | |
 | `max_hits`        | `Integer`  | Maximum number of hits to return (by default 20) | `20` |
 | `search_field`    | `[String]` | Fields to search on if no field name is specified in the query. Comma-separated list, e.g. "field1,field2"  | index_config.search_settings.default_search_fields |
 | `snippet_fields`  | `[String]` | Fields to extract snippet on. Comma-separated list, e.g. "field1,field2"  | |
@@ -82,8 +83,17 @@ The response is a JSON object, and the content type is `application/json; charse
 | Field                   | Description                    | Type       |
 | --------------------    | ------------------------------ | :--------: |
 | `hits`                | Results of the query           | `[hit]`    |
+| `cursors`             | Opaque `search_after` cursor of each hit, in the same order as `hits` | `[string]` |
 | `num_hits`            | Total number of matches        | `number`   |
 | `elapsed_time_micros` | Processing time of the query   | `number`   |
+
+#### Paging with cursors
+
+To page past the 10,000 `start_offset` limit, pass the last entry of `cursors` as `search_after` in the next request, with the same `query` and `sort_by`. To page backward, pass a hit's cursor and invert every `sort_by` order: `ts` and `-ts` swap, and `-_doc` inverts the default order.
+
+- Quickwit breaks ties on equal sort values by hit address and changes addresses when it merges splits. A merge between two requests can skip or repeat the tied hits, or any hit without `sort_by`. For a snapshot, use the Elasticsearch-compatible [scroll API](es_compatible_api.md#_searchscroll--scroll-api).
+- Quickwit sorts hits without a value for a sort field last in both directions and rejects their cursors.
+- Quickwit rejects paging on a datetime field whose `fast_precision` is finer than milliseconds, because cursors carry milliseconds.
 
 ### Search multiple indices
 Search APIs that accept `index id` requests path parameter also support multi-target syntax.

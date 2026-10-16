@@ -9,11 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Azure Blob Storage: support custom endpoints via `endpoint` and `endpoint_suffix` configuration options for sovereign clouds (#6624)
+- Search API: cursor paging with the `search_after` parameter and the per-hit `cursors` of the response
 
 ### Fixed
 - (Jaeger) Query resource attributes when Jaeger request carries tags
+- Return a 400 for `search_after` sort values that do not match the sort fields (was a 500)
 
 ### Changed
+- (Elasticsearch API) `search_after` on a datetime sort field with a sub-millisecond `fast_precision` requires the `epoch_nanos_int` format
 
 ### Deprecated
 

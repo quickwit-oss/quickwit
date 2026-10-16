@@ -1,0 +1,125 @@
+# `-ts` sorts ascending. The cursor of doc 2 falls in the middle of the 2, 3, 4 tie.
+endpoint: cursor/search
+params:
+  query: "*"
+  sort_by: "-ts"
+  max_hits: 2
+expected:
+  num_hits: 5
+  hits: [{"id": 1}, {"id": 2}]
+  cursors:
+    $expect: "len(val) == 2"
+---
+endpoint: cursor/search
+params:
+  query: "*"
+  sort_by: "-ts"
+  max_hits: 2
+  search_after:
+    $previous: "val['cursors'][-1]"
+expected:
+  hits: [{"id": 3}, {"id": 4}]
+---
+endpoint: cursor/search
+params:
+  query: "*"
+  sort_by: "-ts"
+  max_hits: 2
+  search_after:
+    $previous: "val['cursors'][-1]"
+expected:
+  hits: [{"id": 5}]
+---
+endpoint: cursor/search
+params:
+  query: "*"
+  sort_by: "-ts"
+  max_hits: 2
+  search_after:
+    $previous: "val['cursors'][-1]"
+expected:
+  hits: []
+  cursors: []
+---
+# Inverting the sort order pages backward from the same cursor.
+endpoint: cursor/search
+params:
+  query: "*"
+  sort_by: "-ts"
+  max_hits: 4
+expected:
+  hits: [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}]
+---
+endpoint: cursor/search
+params:
+  query: "*"
+  sort_by: "ts"
+  max_hits: 10
+  search_after:
+    $previous: "val['cursors'][-1]"
+expected:
+  hits: [{"id": 3}, {"id": 2}, {"id": 1}]
+---
+# A cursor with a sort value cannot be used without `sort_by`.
+endpoint: cursor/search
+params:
+  query: "*"
+  search_after:
+    $previous: "val['cursors'][-1]"
+status_code: 400
+---
+# Without `sort_by`, hits are sorted by descending address, i.e. in reverse ingestion order.
+endpoint: cursor/search
+params:
+  query: "*"
+  max_hits: 2
+expected:
+  hits: [{"id": 4}, {"id": 1}]
+---
+endpoint: cursor/search
+params:
+  query: "*"
+  max_hits: 2
+  search_after:
+    $previous: "val['cursors'][-1]"
+expected:
+  hits: [{"id": 3}, {"id": 2}]
+---
+# `-_doc` inverts the default order.
+endpoint: cursor/search
+params:
+  query: "*"
+  sort_by: "-_doc"
+  max_hits: 10
+  search_after:
+    $previous: "val['cursors'][-1]"
+expected:
+  hits: [{"id": 3}, {"id": 1}, {"id": 4}]
+---
+# Sub-millisecond precision fields cannot be paged with millisecond sort values.
+endpoint: cursor/search
+params:
+  query: "*"
+  sort_by: "-ts_micros"
+  max_hits: 1
+---
+endpoint: cursor/search
+params:
+  query: "*"
+  sort_by: "-ts_micros"
+  search_after:
+    $previous: "val['cursors'][-1]"
+status_code: 400
+---
+endpoint: cursor/search
+params:
+  query: "*"
+  search_after: "not a cursor!"
+status_code: 400
+---
+# Decodes into a cursor without a split ID.
+endpoint: cursor/search
+params:
+  query: "*"
+  search_after: "GAA"
+status_code: 400
