@@ -457,6 +457,83 @@ impl Directory for HotDirectory {
     crate::read_only_directory!();
 }
 
+/// A field term dictionary is fully added to the hotcache only if its size (summed over all
+/// segments) does not exceed this limit.
+const MAX_HOTCACHE_TERM_DICT_NUM_BYTES_PER_FIELD: usize = 50_000;
+
+/// Total budget for the term dictionaries fully added to the hotcache.
+const MAX_HOTCACHE_TERM_DICT_NUM_BYTES_TOTAL: usize = 100_000;
+
+/// Reads the full term dictionary of the smallest indexed fields, so that they end up
+/// in the hotcache. This makes searches on low-cardinality fields (e.g. `severity_text`,
+/// `service`) cheaper as they do not need to fetch term dictionary blocks from storage.
+///
+/// Fields are picked by increasing size, as long as they fit in the per-field limit and the
+/// total budget.
+///
+/// Precondition: the index directory must record read operations (see
+/// `DebugProxyDirectory`). This function only reads the bytes, it does not add them anywhere.
+fn read_small_term_dictionaries(
+    schema: &tantivy::schema::Schema,
+    searcher: &tantivy::Searcher,
+) -> tantivy::Result<()> {
+    // (num_bytes summed over all segments, term dictionary data slices)
+    let mut candidates: Vec<(usize, Vec<FileSlice>)> = Vec::new();
+    for (field, field_entry) in schema.fields() {
+        if !field_entry.is_indexed() {
+            continue;
+        }
+        let mut term_dict_num_bytes = 0;
+        let mut term_dict_slices = Vec::with_capacity(searcher.segment_readers().len());
+        for segment_reader in searcher.segment_readers() {
+            let inverted_index = segment_reader.inverted_index(field)?;
+            // Covers all of the sstable blocks, but not the sstable index.
+            let term_dict_slice = inverted_index.terms().file_slice_for_range(.., None);
+            term_dict_num_bytes += term_dict_slice.len();
+            term_dict_slices.push(term_dict_slice);
+        }
+        if term_dict_num_bytes == 0
+            || term_dict_num_bytes > MAX_HOTCACHE_TERM_DICT_NUM_BYTES_PER_FIELD
+        {
+            continue;
+        }
+        candidates.push((term_dict_num_bytes, term_dict_slices));
+    }
+    candidates.sort_by_key(|(term_dict_num_bytes, _)| *term_dict_num_bytes);
+    let mut remaining_budget = MAX_HOTCACHE_TERM_DICT_NUM_BYTES_TOTAL;
+    for (term_dict_num_bytes, term_dict_slices) in candidates {
+        // Candidates are sorted by size, so no other candidate can fit.
+        if term_dict_num_bytes > remaining_budget {
+            break;
+        }
+        remaining_budget -= term_dict_num_bytes;
+        for term_dict_slice in term_dict_slices {
+            term_dict_slice.read_bytes()?;
+        }
+    }
+    Ok(())
+}
+
+/// Sorts the ranges and merges the overlapping ones.
+///
+/// The `StaticSliceCacheBuilder` rejects overlapping slices, and reading a full term
+/// dictionary may overlap with reads done when opening the index.
+fn merge_overlapping_ranges(ranges: &HashSet<Range<usize>>) -> Vec<Range<usize>> {
+    let mut sorted_ranges: Vec<Range<usize>> = ranges.iter().cloned().collect();
+    sorted_ranges.sort_unstable_by_key(|range| range.start);
+    let mut merged_ranges: Vec<Range<usize>> = Vec::with_capacity(sorted_ranges.len());
+    for range in sorted_ranges {
+        if let Some(last_range) = merged_ranges.last_mut()
+            && range.start < last_range.end
+        {
+            last_range.end = last_range.end.max(range.end);
+            continue;
+        }
+        merged_ranges.push(range);
+    }
+    merged_ranges
+}
+
 fn list_index_files(index: &Index) -> tantivy::Result<HashSet<PathBuf>> {
     let index_meta = index.load_metas()?;
     let mut files = index_meta.list_segment_files();
@@ -493,6 +570,7 @@ pub fn write_hotcache<D: Directory>(
             let _inv_idx = reader.inverted_index(field)?;
         }
     }
+    read_small_term_dictionaries(&schema, &searcher)?;
     let mut cache_builder = StaticDirectoryCacheBuilder::default();
     let read_operations = debug_proxy_directory.drain_read_operations();
     let mut per_file_slices: HashMap<PathBuf, HashSet<Range<usize>>> = HashMap::default();
@@ -511,7 +589,7 @@ pub fn write_hotcache<D: Directory>(
         let file_slice = file_slice_res?;
         let file_cache_builder = cache_builder.add_file(&file_path, file_slice.len() as u64);
         if let Some(intervals) = per_file_slices.get(&file_path) {
-            for byte_range in intervals {
+            for byte_range in &merge_overlapping_ranges(intervals) {
                 let len = byte_range.len();
                 // We do not want to store slices that are too large in the hotcache,
                 // but on the other hand, the term dictionray index and the docstore
@@ -662,6 +740,98 @@ mod tests {
         let bytes = postcard::to_allocvec(&slice_entry)?;
         assert_eq!(&bytes[..], &[1, 5, 4]);
         Ok(())
+    }
+
+    #[test]
+    fn test_merge_overlapping_ranges() {
+        let ranges: HashSet<Range<usize>> = [10..20, 0..5, 15..30, 5..8, 18..19, 40..50]
+            .into_iter()
+            .collect();
+        // Adjacent ranges (0..5, 5..8) are not merged.
+        assert_eq!(
+            merge_overlapping_ranges(&ranges),
+            vec![0..5, 5..8, 10..30, 40..50]
+        );
+        assert!(merge_overlapping_ranges(&HashSet::new()).is_empty());
+    }
+
+    /// Returns the number of bytes read from `.term` files.
+    fn term_file_num_bytes_read<D: Directory>(directory: &DebugProxyDirectory<D>) -> usize {
+        directory
+            .drain_read_operations()
+            .filter(|read_operation| read_operation.path.to_string_lossy().ends_with(".term"))
+            .map(|read_operation| read_operation.num_bytes)
+            .sum()
+    }
+
+    #[test]
+    fn test_hotcache_includes_small_term_dictionaries() {
+        use tantivy::directory::RamDirectory;
+        use tantivy::schema::{STRING, Schema};
+        use tantivy::{IndexWriter, Term, doc};
+
+        let mut schema_builder = Schema::builder();
+        let severity_field = schema_builder.add_text_field("severity", STRING);
+        let large_field = schema_builder.add_text_field("large", STRING);
+        let schema = schema_builder.build();
+        let ram_directory = RamDirectory::create();
+        let index = Index::create(ram_directory.clone(), schema, Default::default()).unwrap();
+        let mut index_writer: IndexWriter = index.writer_with_num_threads(1, 20_000_000).unwrap();
+        let severities = ["debug", "info", "warn", "error"];
+        // Large enough for the `large` term dictionary to exceed the per-field limit.
+        let num_docs: u64 = 20_000;
+        // Pseudo-random values, so that the term dictionary does not compress well.
+        let large_value =
+            |doc_id: u64| format!("{:016x}", doc_id.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        for doc_id in 0..num_docs {
+            index_writer
+                .add_document(doc!(
+                    severity_field => severities[doc_id as usize % severities.len()],
+                    large_field => large_value(doc_id),
+                ))
+                .unwrap();
+        }
+        index_writer.commit().unwrap();
+
+        let mut hotcache_bytes = Vec::new();
+        write_hotcache(ram_directory.clone(), &mut hotcache_bytes).unwrap();
+
+        let debug_proxy_directory = DebugProxyDirectory::wrap(ram_directory);
+        let hot_directory = HotDirectory::open(
+            debug_proxy_directory.clone(),
+            OwnedBytes::new(hotcache_bytes),
+        )
+        .unwrap();
+        let hot_index = Index::open(hot_directory).unwrap();
+        let reader = hot_index.reader().unwrap();
+        let searcher = reader.searcher();
+        let segment_reader = searcher.segment_reader(0);
+        // Discard the reads done when opening the index.
+        term_file_num_bytes_read(&debug_proxy_directory);
+
+        let severity_inverted_index = segment_reader.inverted_index(severity_field).unwrap();
+        for severity in severities {
+            let term = Term::from_field_text(severity_field, severity);
+            assert!(
+                severity_inverted_index
+                    .get_term_info(&term)
+                    .unwrap()
+                    .is_some()
+            );
+        }
+        assert_eq!(term_file_num_bytes_read(&debug_proxy_directory), 0);
+
+        let large_inverted_index = segment_reader.inverted_index(large_field).unwrap();
+        assert!(
+            large_inverted_index
+                .terms()
+                .file_slice_for_range(.., None)
+                .len()
+                > MAX_HOTCACHE_TERM_DICT_NUM_BYTES_PER_FIELD
+        );
+        let term = Term::from_field_text(large_field, &large_value(1234));
+        assert!(large_inverted_index.get_term_info(&term).unwrap().is_some());
+        assert!(term_file_num_bytes_read(&debug_proxy_directory) > 0);
     }
 
     #[test]
