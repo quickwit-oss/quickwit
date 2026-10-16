@@ -1560,7 +1560,7 @@ mod tests {
             from_position_exclusive: Some(Position::offset(11u64)),
             to_position_inclusive: Some(Position::offset(14u64)),
         };
-        let batch_size = fetch_payload.estimate_size();
+        let batch_size = fetch_payload.buffer_size();
         let fetch_message = FetchMessage::new_payload(fetch_payload);
         let in_flight_value =
             InFlightValue::new(fetch_message, batch_size, &IN_FLIGHT_FETCH_STREAM);
@@ -1574,7 +1574,7 @@ mod tests {
             from_position_exclusive: Some(Position::offset(22u64)),
             to_position_inclusive: Some(Position::offset(23u64)),
         };
-        let batch_size = fetch_payload.estimate_size();
+        let batch_size = fetch_payload.buffer_size();
         let fetch_message = FetchMessage::new_payload(fetch_payload);
         let in_flight_value =
             InFlightValue::new(fetch_message, batch_size, &IN_FLIGHT_FETCH_STREAM);
@@ -1653,7 +1653,7 @@ mod tests {
             from_position_exclusive: Some(Position::offset(14u64)),
             to_position_inclusive: Some(Position::offset(15u64)),
         };
-        let batch_size = fetch_payload.estimate_size();
+        let batch_size = fetch_payload.buffer_size();
         let fetch_message = FetchMessage::new_payload(fetch_payload);
         let in_flight_value =
             InFlightValue::new(fetch_message, batch_size, &IN_FLIGHT_FETCH_STREAM);
@@ -1795,7 +1795,7 @@ mod tests {
             from_position_exclusive: Some(Position::offset(11u64)),
             to_position_inclusive: Some(Position::offset(13u64)),
         };
-        let batch_size = fetch_payload.estimate_size();
+        let batch_size = fetch_payload.buffer_size();
         let fetch_message = FetchMessage::new_payload(fetch_payload);
         let in_flight_value =
             InFlightValue::new(fetch_message, batch_size, &IN_FLIGHT_FETCH_STREAM);

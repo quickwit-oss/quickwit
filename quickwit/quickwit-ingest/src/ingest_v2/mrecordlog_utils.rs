@@ -23,6 +23,7 @@ use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::types::{Position, QueueId};
 use tracing::instrument;
 
+use super::mrecord::MRECORD_HEADER_LEN;
 use crate::MRecord;
 use crate::mrecordlog_async::MultiRecordLogAsync;
 
@@ -45,7 +46,7 @@ pub(super) enum AppendDocBatchError {
     fields(
         queue_id,
         num_docs = doc_batch.num_docs(),
-        num_bytes = doc_batch.num_bytes(),
+        num_bytes = doc_batch.doc_buffer.len(),
         force_commit,
     )
 )]
@@ -54,7 +55,7 @@ pub(super) async fn append_non_empty_doc_batch(
     queue_id: &QueueId,
     doc_batch: DocBatchV2,
     force_commit: bool,
-) -> Result<Position, AppendDocBatchError> {
+) -> Result<(Position, ByteSize), AppendDocBatchError> {
     let append_result = if force_commit {
         let encoded_mrecords = doc_batch
             .into_docs()
@@ -86,8 +87,15 @@ pub(super) async fn append_non_empty_doc_batch(
             .await
     };
     match append_result {
-        Ok(Some(offset)) => Ok(Position::offset(offset)),
-        Ok(None) => panic!("`doc_batch` should not be empty"),
+        Ok(outcome) => {
+            let offset = outcome
+                .last_position
+                .expect("`doc_batch` should not be empty");
+            Ok((
+                Position::offset(offset),
+                ByteSize::b(outcome.queue_size_bytes as u64),
+            ))
+        }
         Err(AppendError::IoError(io_error)) => Err(AppendDocBatchError::Io(io_error)),
         Err(AppendError::MissingQueue(queue_id)) => {
             Err(AppendDocBatchError::QueueNotFound(queue_id))
@@ -96,6 +104,15 @@ pub(super) async fn append_non_empty_doc_batch(
             panic!("`append_records` should be called with `position_opt: None`")
         }
     }
+}
+
+pub(super) fn doc_batch_size(doc_batch: &DocBatchV2, force_commit: bool) -> ByteSize {
+    if doc_batch.is_empty() {
+        return ByteSize::b(0);
+    }
+    let num_records = doc_batch.num_docs() + usize::from(force_commit);
+    let num_bytes = doc_batch.doc_buffer.len() + num_records * MRECORD_HEADER_LEN;
+    ByteSize::b(num_bytes as u64)
 }
 
 /// Error returned when the mrecordlog does not have enough capacity to store some records.
@@ -197,17 +214,68 @@ mod tests {
 
         mrecordlog.create_queue(&queue_id).await.unwrap();
 
-        let position =
+        let (position, queue_size) =
             append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch.clone(), false)
                 .await
                 .unwrap();
         assert_eq!(position, Position::offset(0u64));
+        assert_eq!(queue_size, ByteSize::b(14));
 
-        let position =
+        let (position, queue_size) =
             append_non_empty_doc_batch(&mut mrecordlog, &queue_id, doc_batch.clone(), true)
                 .await
                 .unwrap();
         assert_eq!(position, Position::offset(2u64));
+        assert_eq!(queue_size, ByteSize::b(30));
+    }
+
+    #[test]
+    fn test_empty_doc_batch_size() {
+        let doc_batch = DocBatchV2::default();
+        assert_eq!(doc_batch_size(&doc_batch, false), ByteSize::b(0));
+        assert_eq!(doc_batch_size(&doc_batch, true), ByteSize::b(0));
+    }
+
+    #[cfg(not(feature = "failpoints"))]
+    #[tokio::test]
+    async fn test_doc_batch_size_after_repeated_append_and_truncate() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let mut mrecordlog = MultiRecordLogAsync::open(tempdir.path()).await.unwrap();
+
+        let queue_id = "test-queue".to_string();
+        mrecordlog.create_queue(&queue_id).await.unwrap();
+
+        let doc_batch = DocBatchV2::for_test(["test-doc-foo", "test-doc-bar"]);
+        let mut retained_bytes = 0;
+        let mut next_position = 0u64;
+        for iteration in 0..32 {
+            let force_commit = iteration % 2 == 0;
+            let batch_bytes = if force_commit { 30 } else { 28 };
+            assert_eq!(
+                doc_batch_size(&doc_batch, force_commit),
+                ByteSize::b(batch_bytes)
+            );
+
+            let (_, queue_size) = append_non_empty_doc_batch(
+                &mut mrecordlog,
+                &queue_id,
+                doc_batch.clone(),
+                force_commit,
+            )
+            .await
+            .unwrap();
+            assert_eq!(queue_size.as_u64(), retained_bytes + batch_bytes);
+
+            let outcome = mrecordlog.truncate(&queue_id, next_position).await.unwrap();
+            assert_eq!(outcome.evicted_bytes as u64, retained_bytes + 14);
+            retained_bytes = if force_commit { 16 } else { 14 };
+            assert_eq!(outcome.queue_size_bytes as u64, retained_bytes);
+            assert_eq!(
+                mrecordlog.summary().queues[&queue_id].num_bytes as u64,
+                retained_bytes
+            );
+            next_position += 2 + u64::from(force_commit);
+        }
     }
 
     // This test should be run manually and independently of other tests with the `failpoints`

@@ -392,6 +392,7 @@ impl IngesterState {
                 .checked_sub(1)
                 .map(Position::offset)
                 .unwrap_or(Position::Beginning);
+            let queue_size = ByteSize::b(queue_summary.num_bytes as u64);
             let rate_limiter = RateLimiter::from_settings(rate_limiter_settings);
             let rate_meter = RateMeter::default();
 
@@ -400,6 +401,7 @@ impl IngesterState {
                     .with_state(ShardState::Closed)
                     .with_replication_position_inclusive(replication_position_inclusive)
                     .with_truncation_position_inclusive(truncation_position_inclusive)
+                    .with_queue_size(queue_size)
                     .with_rate_limiter(rate_limiter)
                     .with_rate_meter(rate_meter)
                     .with_last_write(now)
@@ -714,7 +716,9 @@ impl FullyLockedIngesterState<'_> {
                 .truncate(queue_id, truncate_up_to_offset_inclusive)
                 .await
             {
-                Ok(_) => {}
+                Ok(outcome) => {
+                    shard.queue_size = ByteSize::b(outcome.queue_size_bytes as u64);
+                }
                 Err(TruncateError::MissingQueue(_)) => {
                     error!("failed to truncate shard `{queue_id}`: WAL queue not found");
                     self.shards.remove(queue_id);
@@ -1053,6 +1057,7 @@ mod tests {
             shard_01.truncation_position_inclusive,
             Position::offset(0u64)
         );
+        assert_eq!(shard_01.queue_size, ByteSize::b(24));
 
         // Fully truncated queue: recovers at its last position rather than the beginning.
         let shard_02 = state_guard.shards.get(&queue_id_02).unwrap();
@@ -1065,12 +1070,14 @@ mod tests {
             shard_02.truncation_position_inclusive,
             Position::offset(1u64)
         );
+        assert_eq!(shard_02.queue_size, ByteSize::b(0));
 
         // Never-written queue: recovers at the beginning.
         let shard_03 = state_guard.shards.get(&queue_id_03).unwrap();
         assert_eq!(shard_03.shard_state, ShardState::Closed);
         assert_eq!(shard_03.replication_position_inclusive, Position::Beginning);
         assert_eq!(shard_03.truncation_position_inclusive, Position::Beginning);
+        assert_eq!(shard_03.queue_size, ByteSize::b(0));
     }
 
     fn insert_shard_with_used_capacity(
@@ -1361,6 +1368,7 @@ mod tests {
             IngesterShard::builder(index_uid.clone(), source_id.clone(), ShardId::from(2))
                 .with_state(ShardState::Closed)
                 .with_replication_position_inclusive(Position::offset(1u64))
+                .with_queue_size(ByteSize::b(24))
                 .build();
         state_guard.shards.insert(queue_id_02.clone(), shard_02);
 
@@ -1387,6 +1395,7 @@ mod tests {
             .await;
         let shard_02 = state_guard.shards.get(&queue_id_02).unwrap();
         assert_eq!(shard_02.truncation_position_inclusive, Position::eof(1u64));
+        assert_eq!(shard_02.queue_size, ByteSize::b(0));
         state_guard
             .mrecordlog
             .assert_records_eq(&queue_id_02, .., &[]);

@@ -702,7 +702,7 @@ impl OtlpGrpcTracesService {
         if num_spans == num_parse_errors {
             return Err(tonic::Status::internal(error_message));
         }
-        let num_bytes = doc_batch.num_bytes() as u64;
+        let num_bytes = doc_batch.doc_buffer.len() as u64;
         self.store_spans(index_id.clone(), doc_batch).await?;
 
         let labels =
@@ -744,7 +744,7 @@ impl OtlpGrpcTracesService {
         let doc_batch = doc_batch_builder.build();
         let current_span = RuntimeSpan::current();
         current_span.record("num_spans", num_spans);
-        current_span.record("num_bytes", doc_batch.num_bytes());
+        current_span.record("num_bytes", doc_batch.doc_buffer.len());
         current_span.record("num_parse_errors", num_parse_errors);
 
         let parsed_spans = ParsedSpans {
@@ -756,7 +756,7 @@ impl OtlpGrpcTracesService {
         Ok(parsed_spans)
     }
 
-    #[instrument(skip_all, fields(num_bytes = doc_batch.num_bytes()))]
+    #[instrument(skip_all, fields(num_bytes = doc_batch.doc_buffer.len()))]
     async fn store_spans(
         &mut self,
         index_id: String,

@@ -15,6 +15,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use bytesize::ByteSize;
 use quickwit_common::rate_limiter::RateLimiter;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::ingest::ShardState;
@@ -37,6 +38,7 @@ pub(super) struct IngesterShard {
     pub replication_position_inclusive: Position,
     /// Position up to which the shard has been truncated.
     pub truncation_position_inclusive: Position,
+    pub queue_size: ByteSize,
     pub rate_limiter: RateLimiter,
     pub rate_meter: RateMeter,
     /// Whether the shard should be advertised to other nodes (routers) via gossip.
@@ -67,6 +69,7 @@ pub(super) struct IngesterShardBuilder {
     shard_state: ShardState,
     replication_position_inclusive: Position,
     truncation_position_inclusive: Position,
+    queue_size: ByteSize,
     rate_limiter: RateLimiter,
     rate_meter: RateMeter,
     doc_mapper_opt: Option<Arc<DocMapper>>,
@@ -112,6 +115,11 @@ impl IngesterShardBuilder {
         self
     }
 
+    pub fn with_queue_size(mut self, queue_size: ByteSize) -> Self {
+        self.queue_size = queue_size;
+        self
+    }
+
     /// Sets whether to validate documents. Defaults to `false`.
     pub fn with_validate_docs(mut self, validate_docs: bool) -> Self {
         self.validate_docs = validate_docs;
@@ -144,6 +152,7 @@ impl IngesterShardBuilder {
             shard_state: self.shard_state,
             replication_position_inclusive: self.replication_position_inclusive,
             truncation_position_inclusive: self.truncation_position_inclusive,
+            queue_size: self.queue_size,
             rate_limiter: self.rate_limiter,
             rate_meter: self.rate_meter,
             is_advertisable: self.is_advertisable,
@@ -170,6 +179,7 @@ impl IngesterShard {
             shard_state: ShardState::Open,
             replication_position_inclusive: Position::Beginning,
             truncation_position_inclusive: Position::Beginning,
+            queue_size: ByteSize::default(),
             rate_limiter: RateLimiter::default(),
             rate_meter: RateMeter::default(),
             doc_mapper_opt: None,
