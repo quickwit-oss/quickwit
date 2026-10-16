@@ -126,7 +126,13 @@ pub struct IndexingScheduler {
     self_node_id: NodeId,
     indexer_pool: IndexerPool,
     state: IndexingSchedulerState,
+    reported_tasks: FnvHashMap<NodeId, ReportedIndexingTasks>,
     pub(crate) next_rebuild_tracker: RebuildNotifier,
+}
+
+struct ReportedIndexingTasks {
+    generation_id: u64,
+    indexing_tasks: Vec<IndexingTask>,
 }
 
 impl fmt::Debug for IndexingScheduler {
@@ -358,10 +364,34 @@ fn build_indexer_statuses(indexers: &[IndexerPoolEntry]) -> FnvHashMap<NodeId, I
         .collect()
 }
 
-fn build_indexer_tasks(indexers: &[IndexerPoolEntry]) -> FnvHashMap<NodeId, Vec<IndexingTask>> {
+/// Once all indexers are on enable_shard_scaling_v2, the gRPC path becomes the source of truth for
+/// indexing tasks. Until then, we fall back to the legacy gossip path.
+fn build_indexer_tasks(
+    indexers: &[IndexerPoolEntry],
+    reported_tasks: &FnvHashMap<NodeId, ReportedIndexingTasks>,
+) -> FnvHashMap<NodeId, Vec<IndexingTask>> {
+    if !indexers
+        .iter()
+        .all(|indexer| indexer.enable_shard_scaling_v2) {
+        return indexers
+            .iter()
+            .map(|indexer| (indexer.node_id.clone(), indexer.indexing_tasks.clone()))
+            .collect();
+    }
     indexers
         .iter()
-        .map(|indexer| (indexer.node_id.clone(), indexer.indexing_tasks.clone()))
+        .map(|indexer| {
+            let indexing_tasks: &[IndexingTask] = match reported_tasks.get(&indexer.node_id) {
+                Some(reported) if reported.generation_id == indexer.generation_id => {
+                    &reported.indexing_tasks
+                }
+                // In the case that the reported indexer isn't the one seen in the live ingester
+                // pool, don't take the reported tasks. The next iteration of the control plane
+                // loop will clean up the stale tasks.
+                _ => &[],
+            };
+            (indexer.node_id.clone(), indexing_tasks.to_vec())
+        })
         .collect()
 }
 
@@ -380,12 +410,34 @@ impl IndexingScheduler {
             self_node_id,
             indexer_pool,
             state: IndexingSchedulerState::default(),
+            reported_tasks: FnvHashMap::default(),
             next_rebuild_tracker: RebuildNotifier::default(),
         }
     }
 
     pub fn observable_state(&self) -> IndexingSchedulerState {
         self.state.clone()
+    }
+
+    pub(crate) fn record_reported_tasks(
+        &mut self,
+        node_id: &str,
+        generation_id: u64,
+        indexing_tasks: Vec<IndexingTask>,
+    ) {
+        let node_id = NodeId::from_str(node_id);
+        if let Some(indexer) = self.indexer_pool.get(&node_id)
+            && generation_id < indexer.generation_id
+        {
+            return;
+        }
+        self.reported_tasks.insert(
+            node_id,
+            ReportedIndexingTasks {
+                generation_id,
+                indexing_tasks,
+            },
+        );
     }
 
     // Should be called whenever a change in the list of index/shard
@@ -424,8 +476,9 @@ impl IndexingScheduler {
         };
 
         let shard_locations = model.shard_locations();
+        let running_indexer_tasks = build_indexer_tasks(&indexers, &self.reported_tasks);
         let can_optimize_plan = is_plan_eligible_for_optimization(
-            &indexers,
+            &running_indexer_tasks,
             &indexer_statuses,
             is_locality_aware,
             &mut self.state,
@@ -482,6 +535,11 @@ impl IndexingScheduler {
     /// - If node IDs differ, schedule a new indexing plan.
     /// - If indexing tasks differ, apply again the last plan.
     pub(crate) fn control_running_plan(&mut self, model: &ControlPlaneModel) {
+        self.reported_tasks
+            .retain(|node_id, report| match self.indexer_pool.get(node_id) {
+                Some(indexer) => report.generation_id >= indexer.generation_id,
+                None => false,
+            });
         let last_applied_plan =
             if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
                 last_applied_plan
@@ -499,7 +557,7 @@ impl IndexingScheduler {
             return;
         }
         let indexers: Vec<IndexerPoolEntry> = self.select_available_indexers_for_scheduling();
-        let running_indexer_tasks = build_indexer_tasks(&indexers);
+        let running_indexer_tasks = build_indexer_tasks(&indexers, &self.reported_tasks);
         let running_indexer_statuses = build_indexer_statuses(&indexers);
 
         let indexing_plans_diff = get_indexing_plans_diff(
@@ -1572,7 +1630,165 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: status,
             availability_zone: None,
+            enable_shard_scaling_v2: false,
         }
+    }
+
+    #[test]
+    fn test_build_indexer_tasks_uses_reported_tasks_with_matching_generation() {
+        let pool = IndexerPool::default();
+        let mut indexer = mock_indexer_node_info("indexer", IngesterStatus::Ready);
+        indexer.generation_id = 10;
+        let gossip_task = IndexingTask {
+            pipeline_uid: Some(PipelineUid::for_test(1)),
+            ..Default::default()
+        };
+        let rpc_task = IndexingTask {
+            pipeline_uid: Some(PipelineUid::for_test(2)),
+            ..Default::default()
+        };
+        indexer.indexing_tasks = vec![gossip_task.clone()];
+        indexer.enable_shard_scaling_v2 = true;
+        pool.insert(indexer.node_id.clone(), indexer.clone());
+        let mut legacy_indexer = mock_indexer_node_info("legacy-indexer", IngesterStatus::Ready);
+        pool.insert(legacy_indexer.node_id.clone(), legacy_indexer.clone());
+        let mut scheduler =
+            IndexingScheduler::new("cluster".to_string(), NodeId::from_str("cp"), pool.clone());
+        let tasks = |scheduler: &IndexingScheduler| {
+            build_indexer_tasks(&pool.values(), &scheduler.reported_tasks)[&indexer.node_id].clone()
+        };
+        // Gossip is used until all indexers enable shard scaling v2.
+        scheduler.record_reported_tasks("indexer", 10, vec![rpc_task.clone()]);
+        assert_eq!(tasks(&scheduler), vec![gossip_task]);
+
+        legacy_indexer.enable_shard_scaling_v2 = true;
+        pool.insert(legacy_indexer.node_id.clone(), legacy_indexer);
+        assert_eq!(tasks(&scheduler), vec![rpc_task.clone()]);
+
+        // A report from a newer generation is not used until the pool catches up.
+        scheduler.record_reported_tasks("indexer", 11, vec![rpc_task.clone()]);
+        assert!(tasks(&scheduler).is_empty());
+        indexer.generation_id = 11;
+        pool.insert(indexer.node_id.clone(), indexer.clone());
+        assert_eq!(tasks(&scheduler), vec![rpc_task.clone()]);
+
+        // Reports older than the indexer's generation are ignored.
+        scheduler.record_reported_tasks("indexer", 10, Vec::new());
+        assert_eq!(tasks(&scheduler), vec![rpc_task]);
+    }
+
+    #[test]
+    fn test_control_running_plan_prunes_reported_tasks() {
+        let pool = IndexerPool::default();
+        let mut scheduler =
+            IndexingScheduler::new("cluster".to_string(), NodeId::from_str("cp"), pool.clone());
+        for (node_id, reported_generation_id, generation_id) in
+            [("stale", 1, 2), ("current", 2, 2), ("future", 3, 2)]
+        {
+            scheduler.record_reported_tasks(node_id, reported_generation_id, Vec::new());
+            let mut indexer = mock_indexer_node_info(node_id, IngesterStatus::Ready);
+            indexer.generation_id = generation_id;
+            pool.insert(indexer.node_id.clone(), indexer);
+        }
+        scheduler.record_reported_tasks("departed", 1, Vec::new());
+        scheduler.state.last_applied_physical_plan =
+            Some(PhysicalIndexingPlan::with_indexer_ids(&pool.keys()));
+        scheduler.state.last_applied_plan_timestamp = Some(Instant::now());
+
+        scheduler.control_running_plan(&ControlPlaneModel::default());
+
+        let mut reported_node_ids: Vec<&str> = scheduler
+            .reported_tasks
+            .keys()
+            .map(|node_id| node_id.as_str())
+            .collect();
+        reported_node_ids.sort_unstable();
+        assert_eq!(reported_node_ids, ["current", "future"]);
+    }
+
+    #[tokio::test]
+    async fn test_control_running_plan_uses_reported_tasks() {
+        let pool = IndexerPool::default();
+        let mut indexer = mock_indexer_node_info("indexer", IngesterStatus::Ready);
+        indexer.enable_shard_scaling_v2 = true;
+        let task = IndexingTask {
+            index_uid: Some(IndexUid::for_test("index", 0)),
+            source_id: "source".to_string(),
+            pipeline_uid: Some(PipelineUid::for_test(1)),
+            ..Default::default()
+        };
+        let (applied_tx, mut applied_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut mock_indexer = MockIndexingService::new();
+        mock_indexer
+            .expect_apply_indexing_plan()
+            .once()
+            .returning(move |request| {
+                applied_tx.send(request).unwrap();
+                Ok(ApplyIndexingPlanResponse {})
+            });
+        indexer.client = IndexingServiceClient::from_mock(mock_indexer);
+        pool.insert(indexer.node_id.clone(), indexer.clone());
+        let mut scheduler =
+            IndexingScheduler::new("cluster".to_string(), NodeId::from_str("cp"), pool.clone());
+        let mut plan =
+            PhysicalIndexingPlan::with_indexer_ids(std::slice::from_ref(&indexer.node_id));
+        plan.add_indexing_task(&indexer.node_id, task.clone());
+        scheduler.state.last_applied_physical_plan = Some(plan);
+        scheduler.state.last_applied_indexer_statuses = build_indexer_statuses(&pool.values());
+
+        // Gossip reports no tasks, but the reported tasks match the plan.
+        scheduler.record_reported_tasks("indexer", 0, vec![task.clone()]);
+        scheduler.control_running_plan(&ControlPlaneModel::default());
+        assert_eq!(scheduler.state.num_applied_physical_indexing_plan, 0);
+
+        // Gossip matches the plan, but the reported tasks do not.
+        indexer.indexing_tasks = vec![task.clone()];
+        pool.insert(indexer.node_id.clone(), indexer);
+        scheduler.record_reported_tasks("indexer", 0, Vec::new());
+        scheduler.control_running_plan(&ControlPlaneModel::default());
+        assert_eq!(scheduler.state.num_applied_physical_indexing_plan, 1);
+        let applied = tokio::time::timeout(Duration::from_secs(1), applied_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(applied.indexing_tasks, vec![task]);
+    }
+
+    #[test]
+    fn test_optimization_eligibility_uses_reported_tasks() {
+        let pool = IndexerPool::default();
+        let mut indexer = mock_indexer_node_info("indexer", IngesterStatus::Ready);
+        indexer.enable_shard_scaling_v2 = true;
+        pool.insert(indexer.node_id.clone(), indexer.clone());
+        let mut scheduler =
+            IndexingScheduler::new("cluster".to_string(), NodeId::from_str("cp"), pool.clone());
+        let task = IndexingTask {
+            index_uid: Some(IndexUid::for_test("index", 0)),
+            source_id: "source".to_string(),
+            pipeline_uid: Some(PipelineUid::for_test(1)),
+            ..Default::default()
+        };
+        let mut plan =
+            PhysicalIndexingPlan::with_indexer_ids(std::slice::from_ref(&indexer.node_id));
+        plan.add_indexing_task(&indexer.node_id, task.clone());
+        let statuses = build_indexer_statuses(&pool.values());
+        scheduler.state.last_applied_physical_plan = Some(plan);
+        scheduler.state.last_applied_indexer_statuses = statuses.clone();
+        scheduler.state.last_applied_plan_timestamp =
+            Some(Instant::now() - MIN_DURATION_BETWEEN_SCHEDULING * 2);
+        assert!(!is_plan_eligible_for_optimization(
+            &build_indexer_tasks(&pool.values(), &scheduler.reported_tasks),
+            &statuses,
+            true,
+            &mut scheduler.state
+        ));
+        scheduler.record_reported_tasks("indexer", 0, vec![task]);
+        assert!(is_plan_eligible_for_optimization(
+            &build_indexer_tasks(&pool.values(), &scheduler.reported_tasks),
+            &statuses,
+            true,
+            &mut scheduler.state
+        ));
     }
 
     #[test]
@@ -1899,6 +2115,7 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: status,
             availability_zone: None,
+            enable_shard_scaling_v2: false,
         }
     }
 
@@ -1917,6 +2134,7 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: status,
             availability_zone: None,
+            enable_shard_scaling_v2: false,
         }
     }
 
@@ -1945,6 +2163,7 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: status,
             availability_zone: None,
+            enable_shard_scaling_v2: false,
         }
     }
 

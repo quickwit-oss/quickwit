@@ -1514,6 +1514,7 @@ fn build_indexer_insert_change(
             indexing_capacity: node.indexing_cpu_capacity,
             ingester_status: node.ingester_status,
             availability_zone: node.availability_zone(),
+            enable_shard_scaling_v2: node.enable_shard_scaling_v2(),
         },
     )
 }

@@ -954,12 +954,20 @@ impl DeferableReplyHandler<ReportIndexerStateRequest> for ControlPlane {
 
     async fn handle_message(
         &mut self,
-        _request: ReportIndexerStateRequest,
+        request: ReportIndexerStateRequest,
         reply: impl FnOnce(Self::Reply) + Send + Sync + 'static,
         _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        // TODO: implement me
         reply(Ok(ReportIndexerStateResponse {}));
+        // TODO: implement shard update handling
+
+        if let Some(indexing_tasks_update) = request.indexing_tasks_update {
+            self.indexing_scheduler.record_reported_tasks(
+                &request.node_id,
+                request.generation_id,
+                indexing_tasks_update.indexing_tasks,
+            );
+        }
         Ok(())
     }
 }
@@ -1298,6 +1306,7 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(1_000),
             ingester_status: IngesterStatus::Ready,
             availability_zone: None,
+            enable_shard_scaling_v2: false,
         };
         indexer_pool.insert(self_node_id.clone(), indexer_info);
 
@@ -1875,6 +1884,7 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: IngesterStatus::Ready,
             availability_zone: None,
+            enable_shard_scaling_v2: false,
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
@@ -2024,6 +2034,7 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: IngesterStatus::Ready,
             availability_zone: None,
+            enable_shard_scaling_v2: false,
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
@@ -2102,6 +2113,7 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
             ingester_status: IngesterStatus::Ready,
             availability_zone: None,
+            enable_shard_scaling_v2: false,
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
@@ -2794,6 +2806,7 @@ mod tests {
             indexing_capacity: CpuCapacity::from_cpu_millis(1_000),
             ingester_status: IngesterStatus::Ready,
             availability_zone: None,
+            enable_shard_scaling_v2: false,
         };
         indexer_pool.insert(ingester_id.clone(), indexer_info);
 
