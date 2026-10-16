@@ -361,6 +361,57 @@ impl Default for CompactorConfig {
     }
 }
 
+/// Limits of the live tail sessions hosted by an indexer.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LiveTailConfig {
+    /// Maximum number of concurrent live tail sessions on this indexer. Can be overridden with
+    /// the `QW_LIVE_TAIL_MAX_SESSIONS` environment variable.
+    #[serde(default = "LiveTailConfig::default_max_sessions")]
+    max_sessions: NonZeroUsize,
+    /// Maximum number of documents per second sent by this indexer to a live tail session.
+    /// Higher rates requested by clients are capped. Can be overridden with the
+    /// `QW_LIVE_TAIL_MAX_DOCS_PER_SEC` environment variable.
+    #[serde(default = "LiveTailConfig::default_max_docs_per_sec")]
+    max_docs_per_sec: NonZeroU32,
+}
+
+impl LiveTailConfig {
+    fn default_max_sessions() -> NonZeroUsize {
+        NonZeroUsize::new(4).unwrap()
+    }
+
+    fn default_max_docs_per_sec() -> NonZeroU32 {
+        NonZeroU32::new(10_000).unwrap()
+    }
+
+    /// Returns the maximum number of sessions, as defined in the environment variable or in the
+    /// configuration, in that order (the environment variable overrides the configuration).
+    pub fn max_sessions(&self) -> NonZeroUsize {
+        quickwit_common::get_from_env("QW_LIVE_TAIL_MAX_SESSIONS", self.max_sessions, false)
+    }
+
+    /// Returns the maximum number of documents per second, as defined in the environment
+    /// variable or in the configuration, in that order (the environment variable overrides the
+    /// configuration).
+    pub fn max_docs_per_sec(&self) -> NonZeroU32 {
+        quickwit_common::get_from_env(
+            "QW_LIVE_TAIL_MAX_DOCS_PER_SEC",
+            self.max_docs_per_sec,
+            false,
+        )
+    }
+}
+
+impl Default for LiveTailConfig {
+    fn default() -> Self {
+        Self {
+            max_sessions: Self::default_max_sessions(),
+            max_docs_per_sec: Self::default_max_docs_per_sec(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SplitCacheLimits {
@@ -930,6 +981,7 @@ pub struct NodeConfig {
     pub ingest_api_config: IngestApiConfig,
     pub jaeger_config: JaegerConfig,
     pub compactor_config: CompactorConfig,
+    pub live_tail_config: LiveTailConfig,
     #[serde(skip_serializing)]
     pub enable_standalone_compactors: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1182,6 +1234,25 @@ mod tests {
         )
         .unwrap();
         assert_eq!(yaml_config.decommission_timeout(), Duration::from_mins(2));
+    }
+
+    #[test]
+    fn test_live_tail_config() {
+        let default_config = LiveTailConfig::default();
+        assert_eq!(default_config.max_sessions().get(), 4);
+        assert_eq!(default_config.max_docs_per_sec().get(), 10_000);
+
+        let yaml_config: LiveTailConfig = serde_yaml::from_str(
+            r#"
+                max_sessions: 8
+                max_docs_per_sec: 500
+            "#,
+        )
+        .unwrap();
+        assert_eq!(yaml_config.max_sessions().get(), 8);
+        assert_eq!(yaml_config.max_docs_per_sec().get(), 500);
+
+        serde_yaml::from_str::<LiveTailConfig>("max_docs_per_sec: 0").unwrap_err();
     }
 
     #[track_caller]

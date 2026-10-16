@@ -37,6 +37,7 @@ use quickwit_ingest::{
     DropQueueRequest, GetPartitionId, IngestApiService, IngesterPool, ListQueuesRequest,
     QUEUES_DIR_NAME,
 };
+use quickwit_live_tail::LiveTailHub;
 use quickwit_metastore::{
     IndexMetadata, IndexMetadataResponseExt, IndexesMetadataResponseExt,
     ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt,
@@ -123,6 +124,7 @@ pub struct IndexingService {
     indexing_io_throughput_limiter_opt: Option<io::Limiter>,
     merge_io_throughput_limiter_opt: Option<io::Limiter>,
     event_broker: EventBroker,
+    live_tail_hub: LiveTailHub,
 }
 
 impl Debug for IndexingService {
@@ -185,7 +187,15 @@ impl IndexingService {
             merge_io_throughput_limiter_opt,
             cooperative_indexing_permits,
             event_broker,
+            live_tail_hub: LiveTailHub::default(),
         })
+    }
+
+    /// Makes the indexing pipelines spawned by this service publish their processed documents to
+    /// the live tail sessions.
+    pub fn with_live_tail_hub(mut self, live_tail_hub: LiveTailHub) -> Self {
+        self.live_tail_hub = live_tail_hub;
+        self
     }
 
     async fn detach_indexing_pipeline(
@@ -405,6 +415,7 @@ impl IndexingService {
             source_storage_resolver: self.storage_resolver.clone(),
             params_fingerprint,
             event_broker: self.event_broker.clone(),
+            live_tail_hub: self.live_tail_hub.clone(),
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (mailbox, handle) = ctx.spawn_actor().spawn(pipeline);
