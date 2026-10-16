@@ -963,6 +963,7 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         ingester_status: IngesterStatus::default(),
         availability_zone: None,
         enable_standalone_compactors: false,
+        enable_shard_scaling_v2: false,
     };
     let channel_factory = ChannelFactory::for_grpc(&config.grpc_config)?;
     let cluster = Cluster::join(
