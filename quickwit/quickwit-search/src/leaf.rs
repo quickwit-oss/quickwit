@@ -1136,14 +1136,15 @@ fn min_bound<T: Ord + Copy>(left: Bound<T>, right: Bound<T>) -> Bound<T> {
     }
 }
 
+/// Returns whether the timestamp range covers the entire split.
 fn normalize_timestamp_range(
     search_request: &mut SearchRequest,
     split: &SplitIdAndFooterOffsets,
     timestamp_field: &str,
-) {
+) -> bool {
     let Ok(query_ast) = serde_json::from_str(search_request.query_ast.as_str()) else {
         // an error will get raised a bit after anyway
-        return;
+        return false;
     };
 
     let start_timestamp = search_request
@@ -1251,6 +1252,7 @@ fn normalize_timestamp_range(
     search_request.query_ast = serde_json::to_string(&new_ast).unwrap();
     search_request.start_timestamp = None;
     search_request.end_timestamp = None;
+    final_start_timestamp == Bound::Unbounded && final_end_timestamp == Bound::Unbounded
 }
 
 /// Remove all `must` and `filter timestamp ranges, and summarize them
@@ -1401,7 +1403,11 @@ fn is_simple_all_query(search_request: &SearchRequest) -> bool {
 enum CanSplitDoBetter {
     Uninformative,
     SplitIdHigher(Option<String>),
-    SplitTimestampHigher(Option<i64>),
+    SplitTimestampHigher {
+        timestamp: Option<i64>,
+        // Keep hits from one mature split even when newer splits fill the top-k.
+        protected_split_id: Option<String>,
+    },
     SplitTimestampLower(Option<i64>),
     FindTraceIdsAggregation(Option<i64>),
 }
@@ -1426,7 +1432,10 @@ impl CanSplitDoBetter {
         {
             if sort_by.field_name == timestamp_field {
                 if sort_by.sort_order() == SortOrder::Desc {
-                    CanSplitDoBetter::SplitTimestampHigher(None)
+                    CanSplitDoBetter::SplitTimestampHigher {
+                        timestamp: None,
+                        protected_split_id: None,
+                    }
                 } else {
                     CanSplitDoBetter::SplitTimestampLower(None)
                 }
@@ -1452,7 +1461,7 @@ impl CanSplitDoBetter {
             CanSplitDoBetter::SplitIdHigher(_) => {
                 splits.sort_unstable_by(|a, b| b.split_id.cmp(&a.split_id))
             }
-            CanSplitDoBetter::SplitTimestampHigher(_)
+            CanSplitDoBetter::SplitTimestampHigher { .. }
             | CanSplitDoBetter::FindTraceIdsAggregation(_) => {
                 splits.sort_unstable_by_key(|split| std::cmp::Reverse(split.timestamp_end()))
             }
@@ -1542,7 +1551,7 @@ impl CanSplitDoBetter {
                     }
                 }
             }
-            CanSplitDoBetter::SplitTimestampHigher(_) => {
+            CanSplitDoBetter::SplitTimestampHigher { .. } => {
                 // We order by timestamp desc. split_with_req is sorted by timestamp_end desc.
                 //
                 // We have the number of splits we need to search to get enough docs, now we need to
@@ -1573,8 +1582,14 @@ impl CanSplitDoBetter {
     fn can_be_better(&self, split: &SplitIdAndFooterOffsets) -> bool {
         match self {
             CanSplitDoBetter::SplitIdHigher(Some(split_id)) => split.split_id >= *split_id,
-            CanSplitDoBetter::SplitTimestampHigher(Some(timestamp))
-            | CanSplitDoBetter::FindTraceIdsAggregation(Some(timestamp)) => {
+            CanSplitDoBetter::SplitTimestampHigher {
+                timestamp: Some(timestamp),
+                protected_split_id,
+            } => {
+                protected_split_id.as_ref() == Some(&split.split_id)
+                    || split.timestamp_end() >= *timestamp
+            }
+            CanSplitDoBetter::FindTraceIdsAggregation(Some(timestamp)) => {
                 split.timestamp_end() >= *timestamp
             }
             CanSplitDoBetter::SplitTimestampLower(Some(timestamp)) => {
@@ -1591,7 +1606,7 @@ impl CanSplitDoBetter {
         match self {
             CanSplitDoBetter::Uninformative => (),
             CanSplitDoBetter::SplitIdHigher(split_id) => *split_id = Some(hit.split_id.clone()),
-            CanSplitDoBetter::SplitTimestampHigher(timestamp)
+            CanSplitDoBetter::SplitTimestampHigher { timestamp, .. }
             | CanSplitDoBetter::FindTraceIdsAggregation(timestamp) => {
                 if let Some(SortValue::I64(timestamp_ns)) = hit.sort_value() {
                     // if we get a timestamp of, says 1.5s, we need to check up to 2s to make
@@ -2032,11 +2047,29 @@ pub async fn single_doc_mapping_leaf_search(
     debug!(num_docs, num_splits, split_offsets = ?PrettySample::new(&splits, 5));
 
     // We simplify the request as much as possible.
-    let split_filter: CanSplitDoBetter =
+    let mut split_filter: CanSplitDoBetter =
         CanSplitDoBetter::from_request(&request, doc_mapper.timestamp_field_name());
     let mut split_with_req: Vec<(SplitIdAndFooterOffsets, SearchRequest)> =
         split_filter.optimize(&request, splits)?;
+    let cache_config = &searcher_context.searcher_config.partial_request_cache;
+    let keep_mature_hits = request.max_hits > 0 && cache_config.capacity().as_u64() > 0;
     for (split, single_split_search_request) in &mut split_with_req {
+        if keep_mature_hits
+            && split.is_mature
+            && let CanSplitDoBetter::SplitTimestampHigher {
+                protected_split_id, ..
+            } = &mut split_filter
+            && protected_split_id.is_none()
+        {
+            let mut full_request = (*request).clone();
+            let timestamp_field = doc_mapper.timestamp_field_name().expect("timestamp sort");
+            if normalize_timestamp_range(&mut full_request, split, timestamp_field) {
+                // Splits are newest first. Preserve one mature hit list whose cache key
+                // survives a moving time window, including upfront match-all pruning.
+                *protected_split_id = Some(split.split_id.clone());
+                *single_split_search_request = full_request;
+            }
+        }
         rewrite_request(
             single_split_search_request,
             split,
@@ -2463,7 +2496,8 @@ mod tests {
         split: &SplitIdAndFooterOffsets,
         expected_range: Option<RangeQuery>,
     ) {
-        normalize_timestamp_range(&mut request, split, "timestamp");
+        let covers_split = normalize_timestamp_range(&mut request, split, "timestamp");
+        assert_eq!(covers_split, expected_range.is_none());
         let actual_ast: QueryAst = serde_json::from_str(&request.query_ast).unwrap();
         let expected_ast = expected_range
             .map(|range_query| {

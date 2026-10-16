@@ -282,6 +282,23 @@ impl ListFieldsEntry {
 mod tests {
     use super::*;
 
+    #[test]
+    fn test_split_maturity_defaults_for_older_requests() {
+        let split = SplitIdAndFooterOffsets::default();
+        let encoded = split.encode_to_vec();
+        assert!(encoded.is_empty());
+        assert!(
+            !SplitIdAndFooterOffsets::decode(encoded.as_slice())
+                .unwrap()
+                .is_mature
+        );
+
+        let mut json = serde_json::to_value(split).unwrap();
+        json.as_object_mut().unwrap().remove("is_mature");
+        let decoded: SplitIdAndFooterOffsets = serde_json::from_value(json).unwrap();
+        assert!(!decoded.is_mature);
+    }
+
     fn entry(field_name: &str) -> ListFieldsEntry {
         ListFieldsEntry {
             field_name: field_name.to_string(),

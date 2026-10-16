@@ -510,6 +510,11 @@ pub struct SplitIdAndFooterOffsets {
     /// The number of docs in the split
     #[prost(uint64, tag = "6")]
     pub num_docs: u64,
+    /// Whether the split is mature and no longer eligible for merging.
+    /// Absent on requests from older roots, which disables mature-split cache warming.
+    #[prost(bool, tag = "7")]
+    #[serde(default)]
+    pub is_mature: bool,
 }
 /// Hits returned by a FetchDocRequest.
 ///
