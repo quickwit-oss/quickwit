@@ -899,7 +899,7 @@ mod tests {
 
         let meter = state.shared_rate_meter_rx.borrow().clone().unwrap();
         let readings = meter.harvest();
-        let num_readings: usize = readings.per_source_readings.values().map(Vec::len).sum();
+        let num_readings: usize = readings.readings_by_source.values().map(Vec::len).sum();
         assert_eq!(num_readings, 3);
     }
 
