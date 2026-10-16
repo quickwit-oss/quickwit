@@ -25,7 +25,8 @@ use tokio::io::AsyncRead;
 
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, ListObjectsStream, PutPayload, Storage, StorageErrorKind, StorageResult,
+    BulkDeleteError, ListObjectsStream, ObjectVersion, PutPayload, Storage, StorageErrorKind,
+    StorageResult,
 };
 
 /// Storage proxy that implements a retry operation if the underlying storage
@@ -61,6 +62,34 @@ impl Storage for TimeoutAndRetryStorage {
 
     async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()> {
         self.underlying.put(path, payload).await
+    }
+
+    // Conditional writes are delegated without retrying: a lost compare-and-swap is a result, not
+    // a transient failure, and the caller is the one that knows how to reload and replay.
+    async fn put_if_absent(
+        &self,
+        path: &Path,
+        payload: Box<dyn PutPayload>,
+    ) -> StorageResult<Option<ObjectVersion>> {
+        self.underlying.put_if_absent(path, payload).await
+    }
+
+    async fn put_if_version_matches(
+        &self,
+        path: &Path,
+        payload: Box<dyn PutPayload>,
+        expected_version: &ObjectVersion,
+    ) -> StorageResult<Option<ObjectVersion>> {
+        self.underlying
+            .put_if_version_matches(path, payload, expected_version)
+            .await
+    }
+
+    async fn get_all_with_version(
+        &self,
+        path: &Path,
+    ) -> StorageResult<(OwnedBytes, Option<ObjectVersion>)> {
+        self.underlying.get_all_with_version(path).await
     }
 
     fn copy_to<'life0, 'life1, 'life2, 'async_trait>(

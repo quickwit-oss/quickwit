@@ -18,6 +18,7 @@ use std::io::Cursor;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use quickwit_common::uri::{Protocol, Uri};
@@ -28,9 +29,17 @@ use tokio::sync::RwLock;
 use crate::prefix_storage::add_prefix_to_storage;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResolverError,
-    StorageResult,
+    BulkDeleteError, ObjectVersion, OwnedBytes, Storage, StorageErrorKind, StorageFactory,
+    StorageResolverError, StorageResult,
 };
+
+/// A single object held by the [`RamStorage`], with the version conditional writes compare
+/// against.
+#[derive(Clone, Debug)]
+struct RamObject {
+    data: OwnedBytes,
+    version: u64,
+}
 
 /// In Ram implementation of quickwit's storage.
 ///
@@ -38,7 +47,10 @@ use crate::{
 #[derive(Clone)]
 pub struct RamStorage {
     uri: Uri,
-    files: Arc<RwLock<HashMap<PathBuf, OwnedBytes>>>,
+    files: Arc<RwLock<HashMap<PathBuf, RamObject>>>,
+    /// Source of the object versions. Shared by every clone of a storage, so that two clones
+    /// never hand out the same version for two different writes.
+    next_version: Arc<AtomicU64>,
 }
 
 impl fmt::Debug for RamStorage {
@@ -55,6 +67,7 @@ impl Default for RamStorage {
         Self {
             uri: Uri::for_test("ram:///"),
             files: Arc::new(RwLock::new(HashMap::new())),
+            next_version: Arc::new(AtomicU64::new(1)),
         }
     }
 }
@@ -65,11 +78,28 @@ impl RamStorage {
         RamStorageBuilder::default()
     }
 
+    /// Allocates the next object version.
+    fn allocate_version(&self) -> u64 {
+        self.next_version.fetch_add(1, Ordering::Relaxed)
+    }
+
     async fn put_data(&self, path: &Path, payload: OwnedBytes) {
-        self.files.write().await.insert(path.to_path_buf(), payload);
+        let object = RamObject {
+            data: payload,
+            version: self.allocate_version(),
+        };
+        self.files.write().await.insert(path.to_path_buf(), object);
     }
 
     async fn get_data(&self, path: &Path) -> Option<OwnedBytes> {
+        self.files
+            .read()
+            .await
+            .get(path)
+            .map(|object| object.data.clone())
+    }
+
+    async fn get_object(&self, path: &Path) -> Option<RamObject> {
         self.files.read().await.get(path).cloned()
     }
 
@@ -93,6 +123,81 @@ impl Storage for RamStorage {
         let payload_bytes = payload.read_all().await?;
         self.put_data(path, payload_bytes).await;
         Ok(())
+    }
+
+    async fn put_if_absent(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayload>,
+    ) -> StorageResult<Option<ObjectVersion>> {
+        let payload_bytes = payload.read_all().await?;
+        let version = self.allocate_version();
+        let mut files = self.files.write().await;
+        if files.contains_key(path) {
+            return Err(
+                StorageErrorKind::PreconditionFailed.with_error(anyhow::anyhow!(
+                    "object `{}` already exists",
+                    path.display(),
+                )),
+            );
+        }
+        files.insert(
+            path.to_path_buf(),
+            RamObject {
+                data: payload_bytes,
+                version,
+            },
+        );
+        Ok(Some(ObjectVersion::new(version.to_string())))
+    }
+
+    async fn put_if_version_matches(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayload>,
+        expected_version: &ObjectVersion,
+    ) -> StorageResult<Option<ObjectVersion>> {
+        let payload_bytes = payload.read_all().await?;
+        let version = self.allocate_version();
+        let mut files = self.files.write().await;
+        let current_version = files
+            .get(path)
+            .map(|object| object.version.to_string())
+            .ok_or_else(|| {
+                StorageErrorKind::PreconditionFailed.with_error(anyhow::anyhow!(
+                    "object `{}` no longer exists",
+                    path.display(),
+                ))
+            })?;
+        if current_version != expected_version.as_str() {
+            return Err(
+                StorageErrorKind::PreconditionFailed.with_error(anyhow::anyhow!(
+                    "object `{}` has version `{}`, expected `{expected_version}`",
+                    path.display(),
+                    current_version,
+                )),
+            );
+        }
+        files.insert(
+            path.to_path_buf(),
+            RamObject {
+                data: payload_bytes,
+                version,
+            },
+        );
+        Ok(Some(ObjectVersion::new(version.to_string())))
+    }
+
+    async fn get_all_with_version(
+        &self,
+        path: &Path,
+    ) -> StorageResult<(OwnedBytes, Option<ObjectVersion>)> {
+        let object = self.get_object(path).await.ok_or_else(|| {
+            StorageErrorKind::NotFound
+                .with_error(anyhow::anyhow!("failed to find dest_path {:?}", path))
+        })?;
+        let version = ObjectVersion::new(object.version.to_string());
+        Ok((object.data, Some(version)))
     }
 
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
@@ -148,8 +253,8 @@ impl Storage for RamStorage {
     }
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
-        if let Some(file_bytes) = self.files.read().await.get(path) {
-            Ok(file_bytes.len() as u64)
+        if let Some(object) = self.files.read().await.get(path) {
+            Ok(object.data.len() as u64)
         } else {
             let err = anyhow::anyhow!("missing file `{}`", path.display());
             Err(StorageErrorKind::NotFound.with_error(err))
@@ -173,9 +278,20 @@ impl RamStorageBuilder {
 
     /// Finalizes the [`RamStorage`] creation.
     pub fn build(self) -> RamStorage {
+        let mut next_version = 1u64;
+        let files = self
+            .files
+            .into_iter()
+            .map(|(path, data)| {
+                let version = next_version;
+                next_version += 1;
+                (path, RamObject { data, version })
+            })
+            .collect();
         RamStorage {
             uri: Uri::for_test("ram:///"),
-            files: Arc::new(RwLock::new(self.files)),
+            files: Arc::new(RwLock::new(files)),
+            next_version: Arc::new(AtomicU64::new(next_version)),
         }
     }
 }
@@ -259,6 +375,79 @@ mod tests {
             &storage.get_all(Path::new("path2")).await?,
             &b"path2_payload"[..]
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_ram_storage_put_if_absent_creates_once() -> anyhow::Result<()> {
+        let storage = RamStorage::default();
+        let path = Path::new("lock.json");
+
+        let first_version = storage
+            .put_if_absent(path, Box::new(b"first".to_vec()))
+            .await?
+            .expect("ram storage versions every object");
+
+        let error = storage
+            .put_if_absent(path, Box::new(b"second".to_vec()))
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.kind(), StorageErrorKind::PreconditionFailed);
+        assert_eq!(&storage.get_all(path).await?, &b"first"[..]);
+        assert_eq!(
+            storage.get_all_with_version(path).await?.1,
+            Some(first_version)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_ram_storage_put_if_version_matches_is_compare_and_swap() -> anyhow::Result<()> {
+        let storage = RamStorage::default();
+        let path = Path::new("metastore.json");
+        storage.put(path, Box::new(b"v1".to_vec())).await?;
+        let (_, version) = storage.get_all_with_version(path).await?;
+        let version = version.expect("ram storage versions every object");
+
+        // A version that is not the current one must not overwrite the object.
+        let stale_version = ObjectVersion::new("not-the-current-version");
+        let error = storage
+            .put_if_version_matches(path, Box::new(b"v2".to_vec()), &stale_version)
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), StorageErrorKind::PreconditionFailed);
+        assert_eq!(&storage.get_all(path).await?, &b"v1"[..]);
+
+        // The current version wins and bumps the version for the next writer.
+        let new_version = storage
+            .put_if_version_matches(path, Box::new(b"v2".to_vec()), &version)
+            .await?
+            .expect("ram storage versions every object");
+        assert_ne!(new_version, version);
+        assert_eq!(&storage.get_all(path).await?, &b"v2"[..]);
+        assert_eq!(
+            storage.get_all_with_version(path).await?.1,
+            Some(new_version)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_ram_storage_put_if_version_matches_rejects_missing_object() -> anyhow::Result<()>
+    {
+        let storage = RamStorage::default();
+        let error = storage
+            .put_if_version_matches(
+                Path::new("metastore.json"),
+                Box::new(b"v1".to_vec()),
+                &ObjectVersion::new("1"),
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.kind(), StorageErrorKind::PreconditionFailed);
+        assert!(!storage.exists(Path::new("metastore.json")).await?);
         Ok(())
     }
 }
