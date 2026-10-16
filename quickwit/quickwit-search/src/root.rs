@@ -43,6 +43,7 @@ use quickwit_query::query_ast::{
 };
 use serde::{Deserialize, Serialize};
 use tantivy::TantivyError;
+use tantivy::aggregation::AggregationLimitsGuard;
 use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
@@ -1101,7 +1102,8 @@ async fn root_search_aux(
         &search_request,
         first_phase_result.intermediate_aggregation_result,
         searcher_context,
-    )?;
+    )
+    .await?;
     // In case there is no index, we don't want the response to contain any aggregation structure
     if indexes_metas_for_leaf_search.is_empty() {
         aggregation_result_postcard_opt = None;
@@ -1129,7 +1131,7 @@ async fn root_search_aux(
 fn finalize_aggregation(
     intermediate_aggregation_result_bytes_opt: Option<Vec<u8>>,
     aggregations: QuickwitAggregations,
-    searcher_context: &SearcherContext,
+    aggregation_limits: AggregationLimitsGuard,
 ) -> crate::Result<Option<Vec<u8>>> {
     let merge_aggregation_result = match aggregations {
         QuickwitAggregations::FindTraceIdsAggregation(_) => {
@@ -1149,7 +1151,7 @@ fn finalize_aggregation(
                     Default::default()
                 };
             let final_aggregation_results: AggregationResults = intermediate_aggregation_results
-                .into_final_result(aggregations, searcher_context.get_aggregation_limits())?;
+                .into_final_result(aggregations, aggregation_limits)?;
             let final_aggregation_proxy: quickwit_query::aggregations::AggregationResults =
                 final_aggregation_results.into();
             postcard::to_stdvec(&final_aggregation_proxy)?
@@ -1172,7 +1174,7 @@ fn root_intermediate_pruning(search_request: &SearchRequest) -> IntermediatePrun
     }
 }
 
-fn finalize_aggregation_if_any(
+async fn finalize_aggregation_if_any(
     search_request: &SearchRequest,
     intermediate_aggregation_result_bytes_opt: Option<Vec<u8>>,
     searcher_context: &SearcherContext,
@@ -1184,12 +1186,21 @@ fn finalize_aggregation_if_any(
         return Ok(intermediate_aggregation_result_bytes_opt);
     }
     let aggregations: QuickwitAggregations = serde_json::from_str(aggregations_json)?;
-    let aggregation_result_postcard = finalize_aggregation(
-        intermediate_aggregation_result_bytes_opt,
-        aggregations,
-        searcher_context,
-    )?;
-    Ok(aggregation_result_postcard)
+    let aggregation_limits = searcher_context.get_aggregation_limits();
+    // The root merge does not prune when finalization follows, so the finalizer deserializes
+    // and sorts the candidates of every leaf. That is cpu-bound, keep it off the runtime.
+    let span = info_span!("finalize_aggregation");
+    crate::search_thread_pool()
+        .run_cpu_intensive_with_priority(Priority::High, move || {
+            let _span_guard = span.enter();
+            finalize_aggregation(
+                intermediate_aggregation_result_bytes_opt,
+                aggregations,
+                aggregation_limits,
+            )
+        })
+        .await
+        .context("failed to finalize aggregation")?
 }
 
 /// Checks that all of the index researched as found.
@@ -5789,6 +5800,7 @@ mod tests {
         let searcher_context = SearcherContext::for_test();
         let result =
             finalize_aggregation_if_any(&search_request, Some(vec![1, 2, 3]), &searcher_context)
+                .await
                 .unwrap();
         assert!(result.is_none());
     }
@@ -5808,6 +5820,7 @@ mod tests {
             Some(intermediate_bytes.clone()),
             &searcher_context,
         )
+        .await
         .unwrap();
         assert_eq!(result, Some(intermediate_bytes));
     }
@@ -5821,7 +5834,9 @@ mod tests {
             ..Default::default()
         };
         let searcher_context = SearcherContext::for_test();
-        let result = finalize_aggregation_if_any(&search_request, None, &searcher_context).unwrap();
+        let result = finalize_aggregation_if_any(&search_request, None, &searcher_context)
+            .await
+            .unwrap();
         assert!(result.is_none());
     }
 
@@ -5841,6 +5856,7 @@ mod tests {
             Some(intermediate_bytes.clone()),
             &searcher_context,
         )
+        .await
         .unwrap();
         // Result should be Some (finalized), but different from intermediate bytes
         assert!(result.is_some());
@@ -5863,6 +5879,7 @@ mod tests {
             Some(intermediate_bytes.clone()),
             &searcher_context,
         )
+        .await
         .unwrap();
         assert!(result.is_some());
         assert_ne!(result.unwrap(), intermediate_bytes);
