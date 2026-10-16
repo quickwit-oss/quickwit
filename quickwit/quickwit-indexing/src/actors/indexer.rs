@@ -16,6 +16,7 @@ use std::collections::hash_map::Entry;
 use std::num::NonZeroU32;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -47,11 +48,13 @@ use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, DocId, IndexBuilder, IndexSettings};
 use tokio::runtime::Handle;
 use tokio::sync::Semaphore;
+use tokio::time::Instant;
 use tracing::{Span, debug, info_span, warn};
 use ulid::Ulid;
 
 use super::IndexSerializer;
 use super::cooperative_indexing::{CooperativeIndexingCycle, CooperativeIndexingPeriod};
+use super::pipeline_schedule::PipelineSchedule;
 use crate::docs_clustering::{DocIdClusterer, Fingerprinter};
 use crate::metrics::SPLIT_BUILDERS;
 use crate::models::{
@@ -62,9 +65,48 @@ use crate::models::{
 // Random partition ID used to gather partitions exceeding the maximum number of partitions.
 pub(crate) const OTHER_PARTITION_ID: u64 = 3264326757911759461u64;
 
+const ENABLE_SPREAD_INDEXING_PIPELINES_ENV_KEY: &str = "QW_ENABLE_SPREAD_INDEXING_PIPELINES";
+
 #[derive(Debug)]
 struct CommitTimeout {
     workbench_id: Ulid,
+}
+
+enum IndexingMode {
+    Normal(Duration),
+    Cooperative(CooperativeIndexingCycle),
+    Spread(PipelineSchedule),
+}
+
+impl IndexingMode {
+    fn new(
+        pipeline_id: &IndexingPipelineId,
+        commit_timeout: Duration,
+        cooperative_indexing_permits_opt: Option<Arc<Semaphore>>,
+        enable_spread_indexing_pipelines: bool,
+    ) -> Self {
+        if let Some(permits) = cooperative_indexing_permits_opt {
+            return Self::Cooperative(CooperativeIndexingCycle::new(
+                pipeline_id,
+                commit_timeout,
+                permits,
+            ));
+        }
+
+        if enable_spread_indexing_pipelines {
+            return Self::Spread(PipelineSchedule::new(pipeline_id, commit_timeout));
+        }
+
+        Self::Normal(commit_timeout)
+    }
+
+    fn commit_timeout(&self, now: Instant) -> Duration {
+        match self {
+            Self::Normal(commit_timeout) => *commit_timeout,
+            Self::Cooperative(cycle) => cycle.commit_timeout(),
+            Self::Spread(schedule) => schedule.nudged_commit_timeout(now),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
@@ -100,7 +142,7 @@ struct IndexerState {
     tokenizer_manager: TokenizerManager,
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
-    cooperative_indexing_opt: Option<CooperativeIndexingCycle>,
+    indexing_mode: IndexingMode,
     indexing_io_throughput_limiter_opt: Option<Limiter>,
 }
 
@@ -202,7 +244,7 @@ impl IndexerState {
         );
         let indexing_span = info_span!(parent: batch_parent_span.id(), "indexer");
         let cooperative_indexing_period =
-            if let Some(cooperative_indexing) = &self.cooperative_indexing_opt {
+            if let IndexingMode::Cooperative(cooperative_indexing) = &self.indexing_mode {
                 Some(
                     ctx.protect_future(cooperative_indexing.cooperative_indexing_period())
                         .await,
@@ -261,10 +303,8 @@ impl IndexerState {
             let commit_timeout_message = CommitTimeout {
                 workbench_id: indexing_workbench.workbench_id,
             };
-            ctx.schedule_self_msg(
-                self.indexing_settings.commit_timeout(),
-                commit_timeout_message,
-            );
+            let commit_timeout = self.indexing_mode.commit_timeout(Instant::now());
+            ctx.schedule_self_msg(commit_timeout, commit_timeout_message);
             *indexing_workbench_opt = Some(indexing_workbench);
         }
         let current_indexing_workbench = indexing_workbench_opt.as_mut().context(
@@ -404,11 +444,15 @@ impl Actor for Indexer {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        if let Some(cooperative_indexing_cycle) = &self.indexer_state.cooperative_indexing_opt {
-            let initial_sleep_duration = cooperative_indexing_cycle.initial_sleep_duration();
-            ctx.pause();
-            ctx.schedule_self_msg(initial_sleep_duration, Command::Resume);
-        }
+        let initial_sleep_duration = match &self.indexer_state.indexing_mode {
+            // when spreading indexing pipelines is enabled, start indexing immediately and nudge
+            // pipelines on further commit timeout. This way, we are using all available CPU
+            // right away instead of idling on the first indexing cycle
+            IndexingMode::Normal(_) | IndexingMode::Spread(_) => return Ok(()),
+            IndexingMode::Cooperative(cycle) => cycle.initial_sleep_duration(),
+        };
+        ctx.pause();
+        ctx.schedule_self_msg(initial_sleep_duration, Command::Resume);
         Ok(())
     }
 
@@ -551,14 +595,15 @@ impl Indexer {
             // A configured fingerprinter supplies the mapping when the split is finalized.
             manual_doc_id_mapping: fingerprinter_opt.is_some(),
         };
-        let cooperative_indexing_opt: Option<CooperativeIndexingCycle> =
-            cooperative_indexing_permits_opt.map(|cooperative_indexing_permits| {
-                CooperativeIndexingCycle::new(
-                    &pipeline_id,
-                    indexing_settings.commit_timeout(),
-                    cooperative_indexing_permits,
-                )
-            });
+        let indexing_mode = IndexingMode::new(
+            &pipeline_id,
+            indexing_settings.commit_timeout(),
+            cooperative_indexing_permits_opt,
+            quickwit_common::get_bool_from_env_cached!(
+                ENABLE_SPREAD_INDEXING_PIPELINES_ENV_KEY,
+                false,
+            ),
+        );
         Self {
             indexer_state: IndexerState {
                 pipeline_id,
@@ -572,7 +617,7 @@ impl Indexer {
                 tokenizer_manager: tokenizer_manager.tantivy_manager().clone(),
                 index_settings,
                 max_num_partitions: doc_mapper.max_num_partitions(),
-                cooperative_indexing_opt,
+                indexing_mode,
                 indexing_io_throughput_limiter_opt,
             },
             index_serializer_mailbox,
@@ -715,6 +760,7 @@ mod tests {
     use tantivy::{DateTime, DocAddress, TantivyDocument, doc};
 
     use super::{IndexerCounters, record_timestamp, *};
+    use crate::actors::pipeline_schedule::NUDGE_TOLERANCE;
     use crate::docs_clustering::Fingerprint;
 
     #[allow(clippy::too_many_arguments)]
@@ -1830,5 +1876,94 @@ mod tests {
 
         universe.assert_quit().await;
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_indexer_spread_mode_nudges_commit_timeout() {
+        let universe = Universe::new();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
+            source_id: "test-source".to_string(),
+            node_id: NodeId::from_str("test-node"),
+            pipeline_uid: PipelineUid::default(),
+        };
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let schema = doc_mapper.schema();
+        let body_field = schema.get_field("body").unwrap();
+        let timestamp_field = schema.get_field("timestamp").unwrap();
+        let commit_timeout = Duration::from_secs(30);
+        let mut indexing_settings = IndexingSettings::for_test();
+        indexing_settings.commit_timeout_secs = commit_timeout.as_secs() as usize;
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_last_delete_opstamp()
+            .returning(|_| Ok(LastDeleteOpstampResponse::new(10)));
+        unsafe { std::env::set_var(ENABLE_SPREAD_INDEXING_PIPELINES_ENV_KEY, "true") };
+        let mut indexer = create_indexer_for_test(
+            pipeline_id,
+            doc_mapper,
+            MetastoreServiceClient::from_mock(mock_metastore),
+            TempDirectory::for_test(),
+            indexing_settings,
+            None,
+            index_serializer_mailbox,
+            None,
+        );
+        assert!(matches!(
+            indexer.indexer_state.indexing_mode,
+            IndexingMode::Spread(_)
+        ));
+
+        // Make the pipeline more than `NUDGE_TOLERANCE` behind its target phase.
+        let current_phase = PipelineSchedule::new_with_phase(Duration::default(), commit_timeout)
+            .current_phase(Instant::now());
+        indexer.indexer_state.indexing_mode = IndexingMode::Spread(
+            PipelineSchedule::new_with_phase(current_phase + NUDGE_TOLERANCE * 2, commit_timeout),
+        );
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
+        indexer_mailbox
+            .send_message(ProcessedDocBatch::new(
+                vec![ProcessedDoc {
+                    doc: doc!(
+                        body_field=>"this is a test document",
+                        timestamp_field=>DateTime::from_timestamp_secs(1_662_529_435)
+                    ),
+                    fingerprint_opt: None,
+                    timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
+                    partition: 1,
+                    num_bytes: 30,
+                }],
+                SourceCheckpointDelta::from_range(0..1),
+                false,
+            ))
+            .await
+            .unwrap();
+        let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
+        assert_eq!(indexer_counters.num_docs_in_workbench, 1);
+
+        // The pipeline is more than `NUDGE_TOLERANCE` behind its target phase, so the commit
+        // timeout fires after `commit_timeout`
+        universe.shift_time(commit_timeout).await;
+        let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
+        // Check that no split is emitted yet
+        assert_eq!(indexer_counters.num_splits_emitted, 0);
+        assert_eq!(indexer_counters.num_docs_in_workbench, 1);
+
+        // Move to after `commit_timeout + NUDGE_TOLERANCE`
+        universe.shift_time(NUDGE_TOLERANCE * 2).await;
+        let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
+        // Now the split has been emitted
+        assert_eq!(indexer_counters.num_splits_emitted, 1);
+        assert_eq!(indexer_counters.num_docs_in_workbench, 0);
+
+        let indexed_split_batches: Vec<IndexedSplitBatchBuilder> =
+            index_serializer_inbox.drain_for_test_typed();
+        assert_eq!(indexed_split_batches.len(), 1);
+        assert_eq!(
+            indexed_split_batches[0].commit_trigger,
+            CommitTrigger::Timeout
+        );
+        universe.assert_quit().await;
     }
 }
