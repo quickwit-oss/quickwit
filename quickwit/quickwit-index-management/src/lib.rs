@@ -16,4 +16,7 @@ mod garbage_collection;
 mod index;
 
 pub use garbage_collection::{GcMetrics, SplitRemovalInfo, run_garbage_collect};
-pub use index::{IndexService, IndexServiceError, clear_cache_directory, validate_storage_uri};
+pub use index::{
+    IndexService, IndexServiceError, SplitRecoveryInfo, UnreadableSplit, clear_cache_directory,
+    validate_storage_uri,
+};
