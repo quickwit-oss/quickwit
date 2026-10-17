@@ -22,11 +22,13 @@ use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
 use anyhow::{Context, bail};
+use bytesize::ByteSize;
 use clap::{ArgMatches, Command, arg};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use quickwit_actors::{ActorExitStatus, ActorHandle, Mailbox, Universe};
 use quickwit_cluster::{ChitchatTransport, Cluster, ClusterMember, FailureDetectorConfig};
+use quickwit_common::pretty::PrettySample;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
@@ -35,7 +37,7 @@ use quickwit_config::{
     CLI_SOURCE_ID, IndexerConfig, NodeConfig, SourceConfig, SourceInputFormat, SourceParams,
     TransformConfig, VecSourceParams,
 };
-use quickwit_index_management::{IndexService, clear_cache_directory};
+use quickwit_index_management::{IndexService, SplitRecoveryInfo, clear_cache_directory};
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergeSchedulerService};
 use quickwit_indexing::docs_clustering::Fingerprinter;
 use quickwit_indexing::models::{
@@ -43,7 +45,7 @@ use quickwit_indexing::models::{
 };
 use quickwit_indexing::{IndexingPipeline, IndexingSplitCache};
 use quickwit_ingest::IngesterPool;
-use quickwit_metastore::IndexMetadataResponseExt;
+use quickwit_metastore::{IndexMetadataResponseExt, SplitMetadata};
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
@@ -53,14 +55,17 @@ use quickwit_search::{SearchResponseRest, single_node_search};
 use quickwit_serve::{
     BodyFormat, SearchRequestQueryString, SortBy, search_request_from_api_request,
 };
-use quickwit_storage::{BundleStorage, Storage};
+use quickwit_storage::{BundleStorage, Storage, StorageResolver};
 use quickwit_transport::ChannelFactory;
+use tabled::Tabled;
 use thousands::Separable;
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 use tracing::debug;
 
-use crate::checklist::{GREEN_COLOR, RED_COLOR};
+use crate::checklist::{GREEN_COLOR, RED_COLOR, WHITE_COLOR};
 use crate::{
-    THROUGHPUT_WINDOW_SIZE, config_cli_arg, get_resolvers, info, load_node_config,
+    THROUGHPUT_WINDOW_SIZE, config_cli_arg, get_resolvers, info, load_node_config, make_table,
     run_index_checklist, start_actor_runtimes,
 };
 
@@ -165,7 +170,23 @@ pub fn build_tool_command() -> Command {
                         .required(true),
                 ])
             )
+            .subcommand(Command::new("recover").display_order(11)
+                .about("Recovers an index from the metadata embedded in its splits. Only splits written with a footer trailer (QW_ENABLE_SPLIT_FOOTER_TRAILER=true) are recovered. Requires an S3-compatible index storage.").args(&[
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1)
+                        .required(true),
+                    arg!(--"dry-run" "Executes the command in dry run mode and only displays the splits that are going to be added to the index")
+                        .required(false),
+                ])
+            )
         .arg_required_else_help(true)
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct RecoverIndexArgs {
+    pub config_uri: Uri,
+    pub index_id: IndexId,
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -223,6 +244,7 @@ pub enum ToolCliCommand {
     LocalIngest(LocalIngestDocsArgs),
     LocalSearch(LocalSearchArgs),
     ExtractSplit(ExtractSplitArgs),
+    RecoverIndex(RecoverIndexArgs),
     Merge(MergeArgs),
 }
 
@@ -237,6 +259,7 @@ impl ToolCliCommand {
             "local-search" => Self::parse_local_search_args(submatches),
             "merge" => Self::parse_merge_args(submatches),
             "extract-split" => Self::parse_extract_split_args(submatches),
+            "recover" => Self::parse_recover_index_args(submatches),
             _ => bail!("unknown tool subcommand `{subcommand}`"),
         }
     }
@@ -364,6 +387,23 @@ impl ToolCliCommand {
         }))
     }
 
+    fn parse_recover_index_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
+        let config_uri = matches
+            .get_one("config")
+            .map(|uri_str: &String| Uri::from_str(uri_str))
+            .expect("`config` should be a required arg.")?;
+        let index_id = matches
+            .remove_one::<String>("index")
+            .expect("`index` should be a required arg.");
+        let dry_run = matches.get_flag("dry-run");
+
+        Ok(Self::RecoverIndex(RecoverIndexArgs {
+            config_uri,
+            index_id,
+            dry_run,
+        }))
+    }
+
     fn parse_extract_split_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
             .remove_one::<String>("index")
@@ -395,6 +435,7 @@ impl ToolCliCommand {
             Self::LocalSearch(args) => local_search_cli(args).await,
             Self::Merge(args) => merge_cli(args).await,
             Self::ExtractSplit(args) => extract_split_cli(args).await,
+            Self::RecoverIndex(args) => recover_index_cli(args).await,
         }
     }
 }
@@ -683,6 +724,203 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
         .garbage_collect_index(&args.index_id, args.grace_period, args.dry_run)
         .await?;
     print_tantivy_gc_result(args.dry_run, removal_info)
+}
+
+pub async fn recover_index_cli(args: RecoverIndexArgs) -> anyhow::Result<()> {
+    let config = load_node_config(&args.config_uri, None).await?;
+    let (storage_resolver, metastore_resolver) =
+        get_resolvers(&config.storage_configs, &config.metastore_configs);
+    let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
+    let mut index_service = IndexService::new(metastore.clone(), storage_resolver);
+
+    let index_metadata_request = IndexMetadataRequest::for_index_id(args.index_id.to_string());
+    let index_metadata = metastore
+        .index_metadata(index_metadata_request)
+        .await?
+        .deserialize_index_metadata()?;
+
+    let storage = StorageResolver::configured(&config.storage_configs)
+        .resolve(&index_metadata.index_config().index_uri)
+        .await?;
+    let index_uri = index_metadata.index_config().index_uri.clone();
+    println!(
+        "Recovering index {} from {}\n",
+        args.index_id.bold(),
+        index_uri.to_string().bold()
+    );
+    let recovery_info = index_service
+        .recover_index_from_storage(&args.index_id, storage, args.dry_run)
+        .await?;
+
+    print_split_recovery_info(&args.index_id, &recovery_info);
+    Ok(())
+}
+
+#[derive(Tabled)]
+struct RecoveredSplitRow {
+    #[tabled(rename = "Split ID")]
+    split_id: String,
+    #[tabled(rename = "Docs")]
+    num_docs: String,
+    #[tabled(rename = "Split size")]
+    split_size: String,
+    #[tabled(rename = "Time range")]
+    time_range: String,
+    #[tabled(rename = "Created at")]
+    created_at: String,
+    #[tabled(rename = "Merge ops")]
+    num_merge_ops: usize,
+    #[tabled(rename = "Doc mapping UID")]
+    doc_mapping_uid: String,
+}
+
+impl From<&SplitMetadata> for RecoveredSplitRow {
+    fn from(split_metadata: &SplitMetadata) -> Self {
+        // The footer ends at the very end of the split file, so its end offset is the file size.
+        let split_size = ByteSize::b(split_metadata.footer_offsets.end);
+        RecoveredSplitRow {
+            split_id: split_metadata.split_id().to_string(),
+            num_docs: split_metadata.num_docs.separate_with_commas(),
+            split_size: split_size.to_string(),
+            time_range: format_time_range(split_metadata),
+            created_at: format_timestamp(split_metadata.create_timestamp),
+            num_merge_ops: split_metadata.num_merge_ops,
+            doc_mapping_uid: split_metadata.doc_mapping_uid.to_string(),
+        }
+    }
+}
+
+fn format_timestamp(unix_timestamp: i64) -> String {
+    let Ok(date_time) = OffsetDateTime::from_unix_timestamp(unix_timestamp) else {
+        return unix_timestamp.to_string();
+    };
+    date_time
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| unix_timestamp.to_string())
+}
+
+fn format_time_range(split_metadata: &SplitMetadata) -> String {
+    let Some(time_range) = &split_metadata.time_range else {
+        return "*".to_string();
+    };
+    format!(
+        "{} → {}",
+        format_timestamp(*time_range.start()),
+        format_timestamp(*time_range.end())
+    )
+}
+
+#[derive(Tabled)]
+struct SplitRecoverySummaryRow {
+    #[tabled(rename = "Splits found in storage")]
+    num_split_files: String,
+    #[tabled(rename = "Publishable")]
+    num_published: String,
+    #[tabled(rename = "Documents")]
+    num_docs_published: String,
+    #[tabled(rename = "Skipped (merged into another split)")]
+    num_merged: String,
+    #[tabled(rename = "Skipped (already in metastore)")]
+    num_already_known: String,
+    #[tabled(rename = "Unreadable")]
+    num_unreadable: String,
+}
+
+fn print_split_recovery_info(index_id: &str, recovery_info: &SplitRecoveryInfo) {
+    let num_published = recovery_info.published_splits.len();
+    let num_unreadable = recovery_info.unreadable_splits.len();
+
+    let summary_row = SplitRecoverySummaryRow {
+        num_split_files: recovery_info.num_split_files().separate_with_commas(),
+        num_published: num_published.separate_with_commas(),
+        num_docs_published: recovery_info.num_docs_published().separate_with_commas(),
+        num_merged: recovery_info.merged_split_ids.len().separate_with_commas(),
+        num_already_known: recovery_info
+            .already_known_split_ids
+            .len()
+            .separate_with_commas(),
+        num_unreadable: num_unreadable.separate_with_commas(),
+    };
+    let summary_header = if recovery_info.dry_run {
+        "Recovery summary (dry run)"
+    } else {
+        "Recovery summary"
+    };
+    println!("{}", make_table(summary_header, [summary_row], true));
+
+    if !recovery_info.published_splits.is_empty() {
+        let splits_header = if recovery_info.dry_run {
+            "Splits that would be published"
+        } else {
+            "Published splits"
+        };
+        let rows = recovery_info
+            .published_splits
+            .iter()
+            .map(RecoveredSplitRow::from);
+        println!("\n{}", make_table(splits_header, rows, false));
+    }
+    print_skipped_split_ids(
+        "merged into another recovered split",
+        &recovery_info.merged_split_ids,
+    );
+    print_skipped_split_ids(
+        "already known to the metastore",
+        &recovery_info.already_known_split_ids,
+    );
+
+    if num_unreadable > 0 {
+        println!(
+            "\n{} {} split file(s) could not be read:",
+            "✖".color(RED_COLOR),
+            num_unreadable
+        );
+        for unreadable_split in &recovery_info.unreadable_splits {
+            println!(
+                "  {} {}: {:#}",
+                "✖".color(RED_COLOR),
+                unreadable_split.split_file.display(),
+                unreadable_split.error
+            );
+        }
+    }
+
+    println!();
+    if recovery_info.dry_run {
+        println!(
+            "{} Dry run: nothing was published. Re-run without `--dry-run` to publish {} split(s) \
+             into `{index_id}`.",
+            "!".color(WHITE_COLOR),
+            num_published
+        );
+        return;
+    }
+    if num_published == 0 {
+        println!(
+            "{} No split to publish into `{index_id}`.",
+            "✔".color(GREEN_COLOR)
+        );
+        return;
+    }
+    println!(
+        "{} Published {} split(s) holding {} document(s) into `{index_id}`.",
+        "✔".color(GREEN_COLOR),
+        num_published.separate_with_commas(),
+        recovery_info.num_docs_published().separate_with_commas()
+    );
+}
+
+/// Prints the IDs of the splits left out of the publication, sampled to keep the output readable.
+fn print_skipped_split_ids(reason: &str, split_ids: &[SplitId]) {
+    if split_ids.is_empty() {
+        return;
+    }
+    println!(
+        "\n{} {} split(s) skipped, {reason}: {:?}",
+        "-".color(WHITE_COLOR),
+        split_ids.len(),
+        PrettySample::new(split_ids, 10)
+    );
 }
 
 fn print_tantivy_gc_result(
