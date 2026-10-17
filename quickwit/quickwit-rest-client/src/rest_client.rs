@@ -343,18 +343,23 @@ impl QuickwitClient {
         let mut cumulated_resp = RestIngestResponse::default();
         while let Some(batch) = batch_reader.next_batch().await? {
             loop {
-                let timeout = if !batch_reader.has_next() && last_block_commit != CommitType::Auto {
+                // Only the last batch carries the requested commit mode; the other batches
+                // use the default (auto) commit.
+                let is_last_batch = !batch_reader.has_next();
+                let timeout = if is_last_batch && last_block_commit != CommitType::Auto {
                     self.commit_timeout
                 } else {
                     self.ingest_timeout
                 };
-                match last_block_commit {
-                    CommitType::Auto => {}
-                    CommitType::WaitFor => {
-                        query_params.insert("commit", "wait_for");
-                    }
-                    CommitType::Force => {
-                        query_params.insert("commit", "force");
+                if is_last_batch {
+                    match last_block_commit {
+                        CommitType::Auto => {}
+                        CommitType::WaitFor => {
+                            query_params.insert("commit", "wait_for");
+                        }
+                        CommitType::Force => {
+                            query_params.insert("commit", "force");
+                        }
                     }
                 }
                 let response = self
@@ -959,6 +964,44 @@ mod test {
             .await
             .unwrap();
         assert_eq!(actual_response, mock_response);
+    }
+
+    #[tokio::test]
+    async fn test_ingest_endpoint_force_commit_only_on_last_batch() {
+        let mock_server = MockServer::start().await;
+        let server_url = Url::parse(&mock_server.uri()).unwrap();
+        let qw_client = QuickwitClientBuilder::new(server_url).build();
+        let mock_response = RestIngestResponse {
+            num_docs_for_processing: 1,
+            num_ingested_docs: Some(1),
+            num_rejected_docs: Some(0),
+            parse_failures: Some(Vec::new()),
+        };
+        Mock::given(method("POST"))
+            .and(path("/api/v1/my-index/ingest"))
+            .respond_with(ResponseTemplate::new(StatusCode::OK).set_body_json(&mock_response))
+            .mount(&mock_server)
+            .await;
+        // Each document is 10 bytes long, so a 12-byte limit yields one batch per document.
+        let ingest_source =
+            IngestSource::Str("{\"id\": 1}\n{\"id\": 2}\n{\"id\": 3}\n".to_string());
+        qw_client
+            .ingest("my-index", ingest_source, Some(12), None, CommitType::Force)
+            .await
+            .unwrap();
+        let requests = mock_server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 3);
+        let commit_params: Vec<Option<String>> = requests
+            .iter()
+            .map(|request| {
+                request
+                    .url
+                    .query_pairs()
+                    .find(|(key, _)| key == "commit")
+                    .map(|(_, value)| value.to_string())
+            })
+            .collect();
+        assert_eq!(commit_params, vec![None, None, Some("force".to_string())]);
     }
 
     #[tokio::test]
