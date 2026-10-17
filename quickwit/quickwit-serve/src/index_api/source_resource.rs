@@ -30,6 +30,7 @@ use serde::Deserialize;
 use tracing::info;
 use warp::{Filter, Rejection};
 
+use super::indexes_path_segment;
 use super::rest_handler::{json_body, log_failure};
 use crate::format::{extract_config_format, extract_format_from_qs};
 use crate::rest_api_response::into_rest_api_response;
@@ -38,7 +39,8 @@ use crate::with_arg;
 pub fn create_source_handler(
     index_service: IndexService,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "sources")
+    indexes_path_segment()
+        .and(warp::path!(String / "sources"))
         .and(warp::post())
         .and(extract_config_format())
         .and(warp::body::content_length_limit(1024 * 1024))
@@ -117,7 +119,8 @@ fn update_source_qp() -> impl Filter<Extract = (UpdateQueryParams,), Error = Rej
 pub fn update_source_handler(
     index_service: IndexService,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "sources" / String)
+    indexes_path_segment()
+        .and(warp::path!(String / "sources" / String))
         .and(warp::put())
         .and(extract_config_format())
         .and(update_source_qp())
@@ -201,7 +204,8 @@ pub async fn update_source(
 pub fn get_source_handler(
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "sources" / String)
+    indexes_path_segment()
+        .and(warp::path!(String / "sources" / String))
         .and(warp::get())
         .and(with_arg(metastore))
         .then(get_source)
@@ -235,7 +239,10 @@ pub async fn get_source(
 pub fn reset_source_checkpoint_handler(
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "sources" / String / "reset-checkpoint")
+    indexes_path_segment()
+        .and(warp::path!(
+            String / "sources" / String / "reset-checkpoint"
+        ))
         .and(warp::put())
         .and(with_arg(metastore))
         .then(reset_source_checkpoint)
@@ -282,7 +289,8 @@ pub async fn reset_source_checkpoint(
 pub fn toggle_source_handler(
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "sources" / String / "toggle")
+    indexes_path_segment()
+        .and(warp::path!(String / "sources" / String / "toggle"))
         .and(warp::put())
         .and(json_body())
         .and(with_arg(metastore))
@@ -343,7 +351,8 @@ pub async fn toggle_source(
 pub fn delete_source_handler(
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "sources" / String)
+    indexes_path_segment()
+        .and(warp::path!(String / "sources" / String))
         .and(warp::delete())
         .and(with_arg(metastore))
         .then(delete_source)
@@ -394,7 +403,8 @@ pub async fn delete_source(
 pub fn get_source_shards_handler(
     metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("indexes" / String / "sources" / String / "shards")
+    indexes_path_segment()
+        .and(warp::path!(String / "sources" / String / "shards"))
         .and(warp::get())
         .and(with_arg(metastore))
         .then(get_source_shards)
