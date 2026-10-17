@@ -320,7 +320,9 @@ impl DocSet for HitSet {
                 self.block_pos += position;
                 SeekDangerResult::Found
             }
-            Err(_) => SeekDangerResult::SeekLowerBound(target + 1),
+            Err(position) => {
+                SeekDangerResult::SeekLowerBound(self.current_block[self.block_pos + position])
+            }
         }
     }
 
@@ -680,7 +682,7 @@ mod tests {
             builder.insert(doc);
         }
         let mut hits = builder.build();
-        assert_eq!(hits.seek_danger(2), SeekDangerResult::SeekLowerBound(3));
+        assert_eq!(hits.seek_danger(2), SeekDangerResult::SeekLowerBound(4));
         // A miss does not move to the next document. Only seek_danger calls are allowed
         // until Found restores the valid state.
         assert_eq!(hits.block_pos, 0);
