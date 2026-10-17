@@ -733,23 +733,9 @@ pub async fn recover_index_cli(args: RecoverIndexArgs) -> anyhow::Result<()> {
     let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
     let mut index_service = IndexService::new(metastore.clone(), storage_resolver);
 
-    let index_metadata_request = IndexMetadataRequest::for_index_id(args.index_id.to_string());
-    let index_metadata = metastore
-        .index_metadata(index_metadata_request)
-        .await?
-        .deserialize_index_metadata()?;
-
-    let storage = StorageResolver::configured(&config.storage_configs)
-        .resolve(&index_metadata.index_config().index_uri)
-        .await?;
-    let index_uri = index_metadata.index_config().index_uri.clone();
-    println!(
-        "Recovering index {} from {}\n",
-        args.index_id.bold(),
-        index_uri.to_string().bold()
-    );
+    println!("Recovering index {}\n", args.index_id.bold());
     let recovery_info = index_service
-        .recover_index_from_storage(&args.index_id, storage, args.dry_run)
+        .recover_index_from_storage(&args.index_id, args.dry_run)
         .await?;
 
     print_split_recovery_info(&args.index_id, &recovery_info);

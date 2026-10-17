@@ -575,18 +575,22 @@ impl IndexService {
     pub async fn recover_index_from_storage(
         &mut self,
         index_id: &str,
-        storage: Arc<dyn Storage>,
         dry_run: bool,
     ) -> Result<SplitRecoveryInfo, IndexServiceError> {
         let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
-        let index_uid = self
+        let index_metadata = self
             .metastore
             .index_metadata(index_metadata_request)
             .await?
-            .deserialize_index_metadata()?
-            .index_uid;
+            .deserialize_index_metadata()?;
+
+        let storage = self
+            .storage_resolver
+            .resolve(&index_metadata.index_config().index_uri)
+            .await?;
 
         let read_outcome = read_splits_recovery_metadata(&storage).await?;
+        let index_uid = index_metadata.index_uid;
 
         if !read_outcome.unreadable_splits.is_empty() {
             warn!(
@@ -635,11 +639,6 @@ impl IndexService {
     }
 
     /// Lists the split ids the metastore already holds in a final state.
-    ///
-    /// Staged splits are left out on purpose: they are leftovers of a run that failed between
-    /// staging and publishing, and the next run must stage them again (which the metastore allows)
-    /// and publish them. Counting them as known would skip them forever and let the janitor delete
-    /// their files once the staged grace period elapses.
     async fn list_metastore_split_ids(
         &mut self,
         index_uid: IndexUid,
@@ -658,10 +657,6 @@ impl IndexService {
     }
 
     /// Stages then publishes a batch of recovered splits.
-    ///
-    /// `replaced_split_ids` is left empty on purpose: the splits these ones superseded were never
-    /// published in the rebuilt metastore, so there is nothing to mark for deletion. They are kept
-    /// out of the publication plan instead.
     async fn publish_recovered_splits(
         &mut self,
         index_uid: &IndexUid,
@@ -690,7 +685,6 @@ impl IndexService {
     }
 }
 
-/// Splits to publish, and the counts of those left out.
 struct SplitRecoveryPlan {
     splits_to_publish: Vec<SplitMetadata>,
     merged_split_ids: Vec<SplitId>,
@@ -699,7 +693,7 @@ struct SplitRecoveryPlan {
 
 /// Decides which recovered splits should be published into `index_uid`.
 ///
-/// Ignores split ids already stored in the metastore (see `known_split_ids`) and splits that got
+/// Ignores split ids already stored in the metastore and splits that got
 /// merged together and that still remain (probably with a pending deletion before the disaster).
 fn plan_split_recovery(
     index_uid: &IndexUid,
@@ -744,12 +738,9 @@ struct RecoveredSplit {
     parent_split_ids: Vec<SplitId>,
 }
 
-/// A split file whose recovery metadata could not be read.
 #[derive(Debug)]
 pub struct UnreadableSplit {
-    /// Path of the split file, relative to the index URI.
     pub split_file: PathBuf,
-    /// Why the recovery metadata could not be read.
     pub error: anyhow::Error,
 }
 
@@ -773,8 +764,6 @@ pub struct SplitRecoveryInfo {
 }
 
 impl SplitRecoveryInfo {
-    /// Number of split files found in the storage, whether their recovery metadata could be read
-    /// or not.
     pub fn num_split_files(&self) -> usize {
         self.published_splits.len()
             + self.merged_split_ids.len()
@@ -782,7 +771,6 @@ impl SplitRecoveryInfo {
             + self.unreadable_splits.len()
     }
 
-    /// Number of documents held by the published splits.
     pub fn num_docs_published(&self) -> u64 {
         self.published_splits
             .iter()
