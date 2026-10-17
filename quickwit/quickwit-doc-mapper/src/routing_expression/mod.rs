@@ -22,6 +22,8 @@ pub(crate) use expression_dsl::parse_field_name;
 use serde_json::Value as JsonValue;
 use siphasher::sip::SipHasher;
 
+mod borrowed;
+
 pub trait RoutingExprContext {
     fn hash_attribute<H: Hasher>(&self, attr_name: &[String], hasher: &mut H);
 }
@@ -29,6 +31,8 @@ pub trait RoutingExprContext {
 /// This is a bit overkill but this function has the merit of
 /// ensuring that the data that is sent to the hasher is unique
 /// to the value, so we do not lose injectivity there.
+///
+/// `borrowed::hash_borrowed_json_val` must feed the hasher exactly the same data.
 fn hash_json_val<H: Hasher>(json_val: &JsonValue, hasher: &mut H) {
     match json_val {
         JsonValue::Null => {
