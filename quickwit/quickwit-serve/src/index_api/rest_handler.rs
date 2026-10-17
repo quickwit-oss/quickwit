@@ -1100,8 +1100,8 @@ mod tests {
             assert_eq!(resp.status(), 400);
             let body = std::str::from_utf8(resp.body()).unwrap();
             assert!(body.contains(
-                "Quickwit currently supports multiple pipelines only for GCP PubSub or Kafka \
-                 sources"
+                "Quickwit currently supports multiple pipelines only for GCP PubSub, Kafka, or \
+                 NATS sources"
             ));
         }
         {
