@@ -50,6 +50,20 @@ POST api/v1/<index id>/search
 }
 ```
 
+#### Sort search results
+
+Sort results by one or two fast fields with the `sort_by` parameter. Prefix a field with `-` for ascending order; omit the prefix (or use `+`) for descending order.
+
+```json
+POST api/v1/<index id>/search
+{
+  "query": "searchterm",
+  "sort_by": "-timestamp,+priority"
+}
+```
+
+The example sorts by `timestamp` in ascending order and then by `priority` in descending order. You can also sort by BM25 score with `_score` when field norms are enabled.
+
 #### Path variable
 
 | Variable      | Description   |
