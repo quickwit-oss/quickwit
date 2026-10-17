@@ -43,3 +43,7 @@ quickwit-common = { workspace = true, features = ["testsuite"] }
 [[bench]]
 name = "tokenizers_bench"
 harness = false
+
+[[bench]]
+name = "hit_set"
+harness = false
