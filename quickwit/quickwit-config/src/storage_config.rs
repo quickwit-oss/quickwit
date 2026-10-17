@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::BTreeMap;
 use std::ops::Deref;
-use std::sync::OnceLock;
 use std::{env, fmt};
 
 use anyhow::ensure;
@@ -120,6 +120,19 @@ impl StorageConfigs {
                 left != right,
                 "{left:?} storage config is defined multiple times",
             );
+        }
+        if let Some(s3_storage_config) = self.find_s3() {
+            for (bucket, bucket_config) in &s3_storage_config.buckets {
+                ensure!(
+                    !bucket.is_empty() && !bucket.contains('/'),
+                    "S3 bucket config key `{bucket}` must be a bare bucket name, without `s3://` \
+                     or `/`",
+                );
+                ensure!(
+                    bucket_config.buckets.is_empty(),
+                    "S3 bucket config `{bucket}` cannot define nested `buckets`",
+                );
+            }
         }
         Ok(())
     }
@@ -399,6 +412,19 @@ pub struct S3StorageConfig {
     pub disable_stalled_stream_protection_upload: bool,
     #[serde(default)]
     pub disable_stalled_stream_protection_download: bool,
+    /// Per-bucket S3-compatible backend overrides, keyed by bucket name. When an
+    /// `s3://<bucket>/...` URI is resolved, an exact match here supplies that
+    /// bucket's own endpoint, credentials, region, and flags; any bucket not
+    /// listed falls back to the fields on this (primary) backend. Bucket configs
+    /// cannot themselves define `buckets`.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub buckets: BTreeMap<String, S3StorageConfig>,
+    /// Set on the configs returned by [`S3StorageConfig::bucket_configs`]. Bucket
+    /// configs are self-contained, so the process-wide `QW_S3_ENDPOINT` and
+    /// `QW_S3_FORCE_PATH_STYLE_ACCESS` overrides apply to the primary backend only.
+    #[serde(skip)]
+    pub is_bucket_config: bool,
 }
 
 impl S3StorageConfig {
@@ -428,29 +454,51 @@ impl S3StorageConfig {
         if self.disable_checksums {
             self.checksum_algorithm = ChecksumAlgorithm::Disabled;
         }
+        for bucket_config in self.buckets.values_mut() {
+            bucket_config.apply_flavor();
+        }
     }
 
     pub fn redact(&mut self) {
         if let Some(secret_access_key) = self.secret_access_key.as_mut() {
             *secret_access_key = "***redacted***".to_string();
         }
+        for bucket_config in self.buckets.values_mut() {
+            bucket_config.redact();
+        }
+    }
+
+    pub fn bucket_configs(&self) -> impl Iterator<Item = (&str, S3StorageConfig)> + '_ {
+        self.buckets.iter().map(|(bucket, bucket_config)| {
+            let bucket_config = S3StorageConfig {
+                is_bucket_config: true,
+                ..bucket_config.clone()
+            };
+            (bucket.as_str(), bucket_config)
+        })
     }
 
     pub fn endpoint(&self) -> Option<String> {
-        env::var("QW_S3_ENDPOINT")
-            .ok()
-            .or_else(|| self.endpoint.clone())
+        // `QW_S3_ENDPOINT` overrides the primary backend only; bucket configs
+        // are self-contained and use their own configured endpoint.
+        if !self.is_bucket_config
+            && let Ok(endpoint) = env::var("QW_S3_ENDPOINT")
+        {
+            return Some(endpoint);
+        }
+        self.endpoint.clone()
     }
 
     pub fn force_path_style_access(&self) -> Option<bool> {
-        static FORCE_PATH_STYLE: OnceLock<Option<bool>> = OnceLock::new();
-        *FORCE_PATH_STYLE.get_or_init(|| {
-            let force_path_style_access = get_bool_from_env(
-                "QW_S3_FORCE_PATH_STYLE_ACCESS",
-                self.force_path_style_access,
-            );
-            Some(force_path_style_access)
-        })
+        // `QW_S3_FORCE_PATH_STYLE_ACCESS` overrides the primary backend only.
+        // No process-wide cache: each backend must honor its own setting.
+        if self.is_bucket_config {
+            return Some(self.force_path_style_access);
+        }
+        Some(get_bool_from_env(
+            "QW_S3_FORCE_PATH_STYLE_ACCESS",
+            self.force_path_style_access,
+        ))
     }
 }
 
@@ -479,6 +527,7 @@ impl fmt::Debug for S3StorageConfig {
                 "disable_stalled_stream_protection_download",
                 &self.disable_stalled_stream_protection_download,
             )
+            .field("buckets", &self.buckets)
             .finish()
     }
 }
@@ -829,5 +878,186 @@ mod tests {
 
             assert_eq!(s3_storage_config.flavor, Some(StorageBackendFlavor::MinIO));
         }
+    }
+
+    #[test]
+    fn test_storage_s3_buckets_serde() {
+        let s3_storage_config_yaml = r#"
+            endpoint: https://primary.example.com
+            region: us-east-1
+            buckets:
+              logs-bucket-eu:
+                endpoint: https://alt.example.com
+                region: eu-west-3
+                force_path_style_access: true
+                access_key_id: alt-key
+                secret_access_key: alt-secret
+              seaweed-logs:
+                endpoint: http://seaweedfs-s3:8333
+                region: us-east-1
+                force_path_style_access: true
+        "#;
+        let s3_storage_config: S3StorageConfig =
+            serde_yaml::from_str(s3_storage_config_yaml).unwrap();
+        assert_eq!(s3_storage_config.buckets.len(), 2);
+
+        let eu = s3_storage_config.buckets.get("logs-bucket-eu").unwrap();
+        assert_eq!(eu.region.as_deref(), Some("eu-west-3"));
+        assert_eq!(eu.access_key_id.as_deref(), Some("alt-key"));
+        assert!(eu.force_path_style_access);
+        assert!(!eu.is_bucket_config);
+
+        let bucket_configs: Vec<(&str, S3StorageConfig)> =
+            s3_storage_config.bucket_configs().collect();
+        assert_eq!(bucket_configs.len(), 2);
+        let (bucket, bucket_config) = &bucket_configs[0];
+        assert_eq!(*bucket, "logs-bucket-eu");
+        assert_eq!(bucket_config.region.as_deref(), Some("eu-west-3"));
+        assert!(bucket_config.is_bucket_config);
+    }
+
+    #[test]
+    fn test_storage_s3_buckets_reject_nested_buckets() {
+        let s3_storage_config_yaml = r#"
+            buckets:
+              logs-bucket:
+                buckets:
+                  nested-bucket:
+                    endpoint: https://nested.example.com
+        "#;
+        let s3_storage_config: S3StorageConfig =
+            serde_yaml::from_str(s3_storage_config_yaml).unwrap();
+        let storage_configs = StorageConfigs::new(vec![s3_storage_config.into()]);
+        let error = storage_configs.validate().unwrap_err();
+        let error_message = error.to_string();
+        assert!(error_message.contains("logs-bucket"));
+        assert!(
+            error_message.contains("nested"),
+            "unexpected error: {error_message}"
+        );
+    }
+
+    #[test]
+    fn test_storage_s3_buckets_reject_unmatchable_bucket_keys() {
+        for bucket_key in ["", "s3://logs-bucket", "logs-bucket/prefix"] {
+            let s3_storage_config = S3StorageConfig {
+                buckets: BTreeMap::from([(bucket_key.to_string(), S3StorageConfig::default())]),
+                ..Default::default()
+            };
+            let storage_configs = StorageConfigs::new(vec![s3_storage_config.into()]);
+            let error = storage_configs.validate().unwrap_err();
+            assert!(
+                error.to_string().contains("bare bucket name"),
+                "unexpected error for key `{bucket_key}`: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_storage_s3_buckets_redact() {
+        let mut s3_storage_config = S3StorageConfig {
+            buckets: BTreeMap::from([(
+                "logs-bucket".to_string(),
+                S3StorageConfig {
+                    access_key_id: Some("public-key".to_string()),
+                    secret_access_key: Some("super-secret".to_string()),
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        assert!(!format!("{s3_storage_config:?}").contains("super-secret"));
+
+        s3_storage_config.redact();
+        let bucket_config = &s3_storage_config.buckets["logs-bucket"];
+        assert_eq!(bucket_config.access_key_id.as_deref(), Some("public-key"));
+        assert_eq!(
+            bucket_config.secret_access_key.as_deref(),
+            Some("***redacted***")
+        );
+    }
+
+    #[test]
+    fn test_storage_s3_buckets_apply_flavor() {
+        // `flavor` shortcuts expand for bucket configs just like the primary backend.
+        let s3_storage_config_yaml = r#"
+            buckets:
+              minio-bucket:
+                flavor: minio
+                endpoint: http://minio.example.com:9000
+              legacy-bucket:
+                disable_checksums: true
+        "#;
+        let s3_storage_config: S3StorageConfig =
+            serde_yaml::from_str(s3_storage_config_yaml).unwrap();
+        let mut storage_configs = StorageConfigs::new(vec![s3_storage_config.into()]);
+        storage_configs.apply_flavors();
+        let s3_storage_config = storage_configs.find_s3().unwrap();
+
+        let minio_bucket_config = &s3_storage_config.buckets["minio-bucket"];
+        assert_eq!(minio_bucket_config.region.as_deref(), Some("minio"));
+        assert!(minio_bucket_config.force_path_style_access);
+
+        let legacy_bucket_config = &s3_storage_config.buckets["legacy-bucket"];
+        assert_eq!(
+            legacy_bucket_config.checksum_algorithm,
+            ChecksumAlgorithm::Disabled
+        );
+    }
+
+    #[test]
+    fn test_storage_s3_bucket_config_uses_own_endpoint() {
+        // A bucket config is self-contained: `endpoint()` and
+        // `force_path_style_access()` skip the process-wide env overrides, which
+        // apply to the primary backend only.
+        let s3_storage_config = S3StorageConfig {
+            endpoint: Some("https://primary.example.com".to_string()),
+            buckets: BTreeMap::from([(
+                "logs-bucket".to_string(),
+                S3StorageConfig {
+                    endpoint: Some("https://bucket.example.com".to_string()),
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        let (_, bucket_config) = s3_storage_config.bucket_configs().next().unwrap();
+
+        // SAFETY: this test may not be entirely sound if not run with nextest or --test-threads=1
+        // as this is only a test, and it would be extremely inconvenient to run it in a different
+        // way, we are keeping it that way
+        let previous_endpoint = env::var("QW_S3_ENDPOINT").ok();
+        let previous_force_path_style = env::var("QW_S3_FORCE_PATH_STYLE_ACCESS").ok();
+        unsafe {
+            env::set_var("QW_S3_ENDPOINT", "https://env.example.com");
+            env::set_var("QW_S3_FORCE_PATH_STYLE_ACCESS", "true");
+        }
+        let primary_endpoint = s3_storage_config.endpoint();
+        let primary_force_path_style = s3_storage_config.force_path_style_access();
+        let bucket_endpoint = bucket_config.endpoint();
+        let bucket_force_path_style = bucket_config.force_path_style_access();
+        unsafe {
+            match previous_endpoint {
+                Some(endpoint) => env::set_var("QW_S3_ENDPOINT", endpoint),
+                None => env::remove_var("QW_S3_ENDPOINT"),
+            }
+            match previous_force_path_style {
+                Some(force_path_style) => {
+                    env::set_var("QW_S3_FORCE_PATH_STYLE_ACCESS", force_path_style)
+                }
+                None => env::remove_var("QW_S3_FORCE_PATH_STYLE_ACCESS"),
+            }
+        }
+
+        assert_eq!(
+            primary_endpoint,
+            Some("https://env.example.com".to_string())
+        );
+        assert_eq!(primary_force_path_style, Some(true));
+        assert_eq!(
+            bucket_endpoint,
+            Some("https://bucket.example.com".to_string())
+        );
+        assert_eq!(bucket_force_path_style, Some(false));
     }
 }
