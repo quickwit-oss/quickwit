@@ -220,7 +220,7 @@ async fn leaf_list_terms_single_split(
     split: SplitIdAndFooterOffsets,
 ) -> crate::Result<LeafListTermsResponse> {
     let cache = ByteRangeCache::with_infinite_capacity();
-    let (index, _) =
+    let (index, _, _) =
         open_index_with_caches(searcher_context, storage, &split, None, Some(cache)).await?;
     let split_schema = index.schema();
     let reader = index

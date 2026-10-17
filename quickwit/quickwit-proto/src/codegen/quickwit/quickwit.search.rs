@@ -313,11 +313,36 @@ pub struct LeafSearchRequest {
     #[prost(string, repeated, tag = "9")]
     pub index_uris: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+/// Warmup reads of one segment component of one field.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct FieldDownloadStats {
+    /// Field name, or JSON path for fast fields.
+    #[prost(string, tag = "1")]
+    pub field_name: ::prost::alloc::string::String,
+    /// Tantivy segment component, as file extension: `term` (term dictionary),
+    /// `idx` (postings), `pos` (positions), `fast` (fast fields), `fieldnorm`.
+    #[prost(string, tag = "2")]
+    pub component: ::prost::alloc::string::String,
+    /// Bytes read that missed the warmup short-lived cache, served by the
+    /// long-term caches or object storage.
+    #[prost(uint64, tag = "3")]
+    pub requested_num_bytes: u64,
+    /// Number of read requests counted in `requested_num_bytes`.
+    #[prost(uint64, tag = "4")]
+    pub requested_num_requests: u64,
+    /// Bytes downloaded from object storage. Part of `download_num_bytes`.
+    #[prost(uint64, tag = "5")]
+    pub download_num_bytes: u64,
+    /// Number of read requests counted in `download_num_bytes`.
+    #[prost(uint64, tag = "6")]
+    pub download_num_requests: u64,
+}
 /// Per-split resource statistics.
 ///
 /// All fields are extensive (sum across splits is meaningful) except where noted.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitResourceStats {
     /// Number of documents in the split.
     #[prost(uint64, tag = "1")]
@@ -351,6 +376,12 @@ pub struct SplitResourceStats {
     /// search.
     #[prost(uint64, tag = "9")]
     pub cpu_search_microsecs: u64,
+    /// Warmup reads per field and segment component, merged by
+    /// `(field_name, component)` when summed. Reads of the split footer and
+    /// hotcache are not attributed to a field: they are only part of
+    /// `download_num_bytes`.
+    #[prost(message, repeated, tag = "10")]
+    pub field_download_stats: ::prost::alloc::vec::Vec<FieldDownloadStats>,
 }
 /// Resource statistics for a single leaf-search call (over one or more splits).
 /// If the configuration allows it, leaf nodes can offload part of their computation to
@@ -367,7 +398,7 @@ pub struct SplitResourceStats {
 /// are also exceptions — they are merged with `min` rather than `sum` (see
 /// their per-field doc below).
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafResourceStats {
     /// Number of splits whose results came from the partial result cache.
     #[prost(uint64, tag = "1")]
@@ -433,7 +464,7 @@ pub struct LeafResourceStats {
 }
 /// Resource statistics for a root search.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RootResourceStats {
     /// The leaf with the largest `wall_time_microsecs`.
     #[prost(message, optional, tag = "1")]

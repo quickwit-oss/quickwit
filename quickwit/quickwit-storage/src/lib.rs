@@ -69,7 +69,9 @@ pub use self::cache::{
     ByteRangeCache, FileByteRangeCache, MemorySizedCache, QuickwitCache, StorageCache,
     wrap_storage_with_cache,
 };
-pub use self::counting_storage::{CountingStorage, DownloadCounters};
+pub use self::counting_storage::{
+    CountingStorage, DownloadCounters, FieldComponent, count_reads_for_field,
+};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 #[cfg(feature = "azure")]
 pub use self::object_storage::{AzureBlobStorage, AzureBlobStorageFactory};
