@@ -20,7 +20,7 @@ use futures::future::try_join_all;
 use quickwit_common::rate_limited_warn;
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
-use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
+use quickwit_doc_mapper::tag_pruning::{MaybeAst, extract_tags_from_query};
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{
@@ -106,7 +106,11 @@ pub async fn root_list_fields(
                 &mut end_timestamp,
             );
         }
-        extract_tags_from_query(query_ast)
+        match extract_tags_from_query(query_ast) {
+            MaybeAst::Ast(ast) => Some(ast),
+            MaybeAst::MaybeMatch => None,
+            MaybeAst::NoMatch => return Ok(ListFieldsResponse::default()), // nothing matches
+        }
     } else {
         None
     };
