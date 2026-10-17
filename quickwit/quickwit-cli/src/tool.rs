@@ -171,7 +171,7 @@ pub fn build_tool_command() -> Command {
                 ])
             )
             .subcommand(Command::new("recover").display_order(11)
-                .about("Recovers an index from the metadata embedded in its splits. Only splits written with a footer trailer (QW_ENABLE_SPLIT_FOOTER_TRAILER=true) are recovered. Requires an S3-compatible index storage.").args(&[
+                .about("Recovers an index from the metadata embedded in its splits. Splits written by a version of Quickwit that does not embed this metadata are skipped. Requires an existing index and an S3-compatible index storage.").args(&[
                     arg!(--index <INDEX> "ID of the target index")
                         .display_order(1)
                         .required(true),
