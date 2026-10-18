@@ -28,7 +28,8 @@ use std::time::{Duration, Instant};
 use bytes::{BufMut, Bytes};
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use mrecordlog::MultiRecordLog;
-use quickwit_ingest::MRecord;
+use quickwit_ingest::{DocBatchV2Builder, MRecord};
+use quickwit_proto::types::DocUidGenerator;
 
 /// Representative document sizes (bytes): a small log line up to a large structured event.
 const DOC_SIZES: [usize; 4] = [128, 1_024, 8_192, 65_536];
@@ -180,5 +181,44 @@ fn bench_append_batch(criterion: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_encode, bench_decode, bench_append_batch);
+fn bench_doc_batch_builder(criterion: &mut Criterion) {
+    let mut group = criterion.benchmark_group("doc_batch_v2_builder");
+    let docs: Vec<Bytes> = (0..10_000)
+        .map(|index| make_doc(BATCH_DOC_SIZES[index % BATCH_DOC_SIZES.len()]))
+        .collect();
+    let total_bytes: usize = docs.iter().map(Bytes::len).sum();
+    group.throughput(Throughput::Bytes(total_bytes as u64));
+
+    group.bench_function("default", |bencher| {
+        bencher.iter(|| {
+            let mut builder = DocBatchV2Builder::default();
+            let mut doc_uid_generator = DocUidGenerator::default();
+            for doc in &docs {
+                builder.add_doc(doc_uid_generator.next_doc_uid(), doc);
+            }
+            black_box(builder.build())
+        });
+    });
+
+    group.bench_function("preallocated", |bencher| {
+        bencher.iter(|| {
+            let mut builder = DocBatchV2Builder::with_capacity(total_bytes);
+            let mut doc_uid_generator = DocUidGenerator::default();
+            for doc in &docs {
+                builder.add_doc(doc_uid_generator.next_doc_uid(), doc);
+            }
+            black_box(builder.build())
+        });
+    });
+
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_encode,
+    bench_decode,
+    bench_append_batch,
+    bench_doc_batch_builder
+);
 criterion_main!(benches);
