@@ -8,6 +8,9 @@ In order to facilitate migrations and integrations with existing tools,
 Quickwit offers an Elasticsearch/Opensearch compatible API.
 This API is incomplete. This page lists the available features and endpoints.
 
+AI clients can use a read-only subset of these operations through the
+[MCP API](mcp-api.md).
+
 ## Supported endpoints
 
 All the API endpoints start with the `api/v1/_elastic/` prefix.

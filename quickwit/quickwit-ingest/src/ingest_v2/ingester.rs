@@ -3065,6 +3065,7 @@ mod tests {
         let state_guard = ingester.state.lock_partially("test").await.unwrap();
         let shard = state_guard.shards.get(&queue_id).unwrap();
         shard.assert_is_closed();
+        drop(state_guard);
 
         let fetch_response = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
