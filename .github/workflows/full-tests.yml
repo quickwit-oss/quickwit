@@ -24,7 +24,7 @@ jobs:
     permissions:
       statuses: write
     steps:
-      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           STATUS_SHA: ${{ github.event.workflow_run.head_sha }}
         with:
@@ -35,7 +35,16 @@ jobs:
               sha: process.env.STATUS_SHA,
               state: 'pending',
               context: 'full-test-suite',
-              description: 'Running full test suite on merge group...',
+              description: 'Running full tests on merge group...',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: process.env.STATUS_SHA,
+              state: 'pending',
+              context: 'code-coverage',
+              description: 'Running code coverage on merge group...',
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             });
 
@@ -46,13 +55,12 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
-    cache-mode: read
     steps:
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /usr/share/swift /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
           df -h /
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
@@ -63,31 +71,41 @@ jobs:
           sudo apt-get -y install libsasl2-dev libcurl4-openssl-dev
 
       - name: Install protoc
-        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0
         with:
           tool: protoc
 
       - name: Setup stable Rust Toolchain
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: stable
 
       - name: Setup cache (read-only)
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: "./quickwit -> target"
           shared-key: "quickwit-cargo"
+          save-if: "false"
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0
         with:
           tool: cargo-nextest
 
       - name: Run full test suite
         run: make test-all
 
-  report-status:
-    name: Report final status
+  coverage:
+    name: Code coverage
+    needs: prepare
+    permissions:
+      contents: read
+    uses: ./.github/workflows/coverage.yml
+    with:
+      sha: ${{ github.event.workflow_run.head_sha }}
+
+  report-full-tests:
+    name: Report full test status
     needs: [prepare, full-tests]
     if: ${{ always() && needs.prepare.result == 'success' }}
     runs-on: ubuntu-24.04
@@ -95,29 +113,58 @@ jobs:
     permissions:
       statuses: write
     steps:
-      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           STATUS_SHA: ${{ github.event.workflow_run.head_sha }}
-          RESULT: ${{ needs.full-tests.result }}
+          TEST_RESULT: ${{ needs.full-tests.result }}
         with:
           script: |
-            const state = process.env.RESULT === 'success' ? 'success' : 'failure';
+            const passed = process.env.TEST_RESULT === 'success';
+            const state = passed ? 'success' : 'failure';
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: process.env.STATUS_SHA,
               state,
               context: 'full-test-suite',
-              description: state === 'success' ? 'Full test suite passed' : 'Full test suite failed',
+              description: passed ? 'Full test suite passed' : 'Full test suite failed',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+  report-coverage:
+    name: Report code coverage status
+    needs: [prepare, coverage]
+    if: ${{ always() && needs.prepare.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      statuses: write
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          STATUS_SHA: ${{ github.event.workflow_run.head_sha }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+        with:
+          script: |
+            const passed = process.env.COVERAGE_RESULT === 'success';
+            const state = passed ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: process.env.STATUS_SHA,
+              state,
+              context: 'code-coverage',
+              description: passed ? 'Code coverage passed' : 'Code coverage failed',
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             });
 
   on-failure:
     name: Send failure notification
-    needs: [prepare, full-tests]
+    needs: [prepare, full-tests, coverage]
     if: >-
       ${{ always() && github.repository_owner == 'quickwit-oss' &&
-      needs.prepare.result == 'success' && needs.full-tests.result == 'failure' }}
+      needs.prepare.result == 'success' &&
+      (needs.full-tests.result == 'failure' || needs.coverage.result == 'failure') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
@@ -135,6 +182,6 @@ jobs:
           description: |
             ### ❌ Merge queue
 
-            The full test suite (`make test-all`) failed.
+            The full test suite (`make test-all`) or code coverage failed.
 
             **[View logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})**

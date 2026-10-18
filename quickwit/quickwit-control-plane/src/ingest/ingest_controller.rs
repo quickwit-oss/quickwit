@@ -500,12 +500,17 @@ impl IngestController {
             &local_shards_update.source_uid,
             &local_shards_update.shard_infos,
         );
-        let min_shards = model
+        // The index may have been deleted since the ingester sent this update.
+        let Some(min_shards) = model
             .index_metadata(&local_shards_update.source_uid.index_uid)
-            .expect("index should exist")
-            .index_config
-            .ingest_settings
-            .min_shards;
+            .map(|index_metadata| index_metadata.index_config.ingest_settings.min_shards)
+        else {
+            warn!(
+                index_uid=%local_shards_update.source_uid.index_uid,
+                "ignoring local shards update for a deleted index"
+            );
+            return Ok(());
+        };
 
         let Some(scaling_mode) = self.scaling_arbiter.should_scale(shard_stats, min_shards) else {
             return Ok(());
@@ -2729,6 +2734,33 @@ mod tests {
         // The second request works!
         controller
             .handle_local_shards_update(local_shards_update, &mut model, &progress)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_ingest_controller_handle_local_shards_update_for_deleted_index() {
+        let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
+        let ingester_pool = IngesterPool::default();
+
+        let mut controller = IngestController::new(
+            metastore,
+            ingester_pool,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
+        );
+
+        let mut model = ControlPlaneModel::default();
+        let local_shards_update = LocalShardsUpdate {
+            ingester_id: NodeId::from_str("test-ingester"),
+            source_uid: SourceUid {
+                index_uid: IndexUid::for_test("test-index", 0),
+                source_id: "test-source".to_string(),
+            },
+            shard_infos: BTreeSet::new(),
+        };
+        controller
+            .handle_local_shards_update(local_shards_update, &mut model, &Progress::default())
             .await
             .unwrap();
     }

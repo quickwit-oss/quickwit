@@ -120,7 +120,11 @@ pub async fn root_list_fields(
     .await?;
 
     // Build requests for each index id
-    let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
+    // query_complexity_factor is 1.0 here (no effect) because list_fields doesn't execute the query
+    let jobs: Vec<SearchJob> = split_metadatas
+        .iter()
+        .map(|split_metadata| SearchJob::new(split_metadata, 1.0))
+        .collect();
     let assigned_leaf_search_jobs = cluster_client
         .search_job_placer
         .assign_jobs(jobs, &HashSet::default())

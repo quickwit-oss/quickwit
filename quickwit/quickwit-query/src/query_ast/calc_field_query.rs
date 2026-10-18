@@ -17,9 +17,10 @@ use regex_syntax::ast::{self, AssertionKind, Ast};
 use serde::{Deserialize, Serialize};
 use tantivy::jitexpr::ast::{Function, Literal, UntypedExpr};
 use tantivy::query::doc_predicate_query::{DocPredicateQuery, JitExprPredicate};
-use tantivy::schema::{FieldType, Schema as TantivySchema};
+use tantivy::schema::{FieldType, Schema as TantivySchema, TextFieldIndexing};
 
-use super::regex_extract_eq::RegexExtractEqSpec;
+use super::regex_extract_eq::{PostingsTarget, RegexExtractEqSpec};
+use super::regex_query::json_str_term_prefix;
 use super::{BuildTantivyAst, BuildTantivyAstContext, QueryAst, RegexQuery, TantivyQueryAst};
 use crate::tokenizers::RAW_TOKENIZER_NAME;
 use crate::{InvalidQuery, find_field_or_hit_dynamic};
@@ -34,16 +35,18 @@ use crate::{InvalidQuery, find_field_or_hit_dynamic};
 ///
 /// Eligible predicates of the form
 /// `(EQ (REGEXP_EXTRACT field "prefix(capture)suffix" 1u64) "literal")` (or the swapped
-/// literal/extract form, with any capture index or none for the whole match) on a non-JSON string
-/// fast field are evaluated once per distinct value instead of once per document: the dictionary
-/// is walked with an FST *prefilter* regex, each accepted value is checked exactly, and documents
-/// are selected by their first value. They match the same documents as the JIT path.
+/// literal/extract form, with any capture index or none for the whole match) on a string fast
+/// field or a fast JSON subfield are evaluated once per distinct value instead of once per
+/// document: the dictionary is walked with an FST *prefilter* regex, each accepted value is checked
+/// exactly, and documents are selected by their first value. When every matching value is indexed,
+/// the scorer prefers the postings of those terms over scanning every document. They match the
+/// same documents as the JIT path.
 ///
 /// In particular, `REGEXP_EXTRACT` sees only the first value of a multivalued field. A matching
 /// later value does not make the predicate match.
 ///
-/// On raw-indexed fields, segments whose term and fast-field dictionaries contain the same values
-/// visit only the postings of matching terms. Other segments fall back to checking every
+/// On raw-indexed fields, including JSON subfields, segments where every matching value is indexed
+/// visit only the postings of the matching terms. Other segments fall back to checking every
 /// document's first value. Callers must warm the raw field's term dictionary and postings with the
 /// regex of [`CalcFieldQuery::try_prefilter_regex_query`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -62,8 +65,9 @@ impl CalcFieldQuery {
     /// Builds an FST [`RegexQuery`] accepting a *superset* of the values matching
     /// `(EQ (REGEXP_EXTRACT field pattern capture_index) "literal")` (or the swapped form).
     ///
-    /// Available only for fields indexed with the raw tokenizer and a raw fast field. Compilation
-    /// is shared with query construction and other splits by a bounded process-wide cache.
+    /// Available only for fields, or JSON subfields, indexed with the raw tokenizer and a raw fast
+    /// field. Compilation is shared with query construction and other splits by a bounded
+    /// process-wide cache.
     ///
     /// Returns `None` whenever the expression shape or field is not eligible.
     pub fn try_prefilter_regex_query(&self, schema: &TantivySchema) -> Option<RegexQuery> {
@@ -80,40 +84,63 @@ impl CalcFieldQuery {
             match_eq_regexp_extract(&self.expression)?;
         // Resolve the field once: the same metadata determines both fast-field eligibility and
         // whether the postings-based scorer can be used.
-        let (_field, field_entry, json_path) = find_field_or_hit_dynamic(field_name, schema)?;
-        // JSON subfields and non-fast fields cannot use the value dictionary scorer.
-        if !json_path.is_empty() || !field_entry.is_fast() {
+        let (field, field_entry, json_path) = find_field_or_hit_dynamic(field_name, schema)?;
+        // Non-fast fields cannot use the value dictionary scorer.
+        if !field_entry.is_fast() {
             return None;
         }
-        let FieldType::Str(text_options) = field_entry.field_type() else {
-            return None;
+        // The fast-field scorer remains valid without indexing. Postings are safe only when raw
+        // indexing preserves the values of a raw fast field, so that every term is verbatim one
+        // of the fast-field values. The scorer checks per segment that the matching values are
+        // all indexed.
+        let postings_target = match field_entry.field_type() {
+            FieldType::Str(text_options) if json_path.is_empty() => is_raw_fast_and_indexed(
+                text_options.get_fast_field_tokenizer_name(),
+                text_options.get_indexing_options(),
+            )
+            .then(|| PostingsTarget::new(field, Vec::new())),
+            // A JSON subfield has its own string column, opened by the scorer under the same
+            // name as the JIT predicate. Its string terms are those of the JSON field starting
+            // with the subfield's path and string type prefix.
+            FieldType::JsonObject(json_options) if !json_path.is_empty() => {
+                is_raw_fast_and_indexed(
+                    json_options.get_fast_field_tokenizer_name(),
+                    json_options.get_text_indexing_options(),
+                )
+                .then(|| {
+                    let term_prefix = json_str_term_prefix(field, json_path, json_options);
+                    PostingsTarget::new(field, term_prefix)
+                })
+            }
+            _ => return None,
         };
-        // The fast-field scorer remains valid without indexing; only the postings optimization
-        // requires raw indexing and a raw fast-field tokenizer.
-        let fast_field_is_raw = matches!(
-            text_options.get_fast_field_tokenizer_name(),
-            None | Some(RAW_TOKENIZER_NAME)
-        );
         // Normalize the requested capture to group 1 so the exact matcher can keep the same
         // capture semantics regardless of the original capture index.
         let isolated_pattern = isolate_capture(pattern, capture_index)?;
         // Replace the isolated capture with the literal to build an FST superset prefilter.
         let prefilter_regex = substitute_single_capture(&isolated_pattern, literal)?;
-        // Postings are safe only when raw indexing preserves the same values as the raw fast
-        // field. The scorer performs the per-segment dictionary-count check later.
-        let terms_are_fast_field_values = fast_field_is_raw
-            && matches!(
-                text_options.get_indexing_options(),
-                Some(text_indexing) if text_indexing.tokenizer() == RAW_TOKENIZER_NAME
-            );
         Some(RegexExtractEqSpec::new(
             field_name,
             prefilter_regex,
             isolated_pattern,
             literal,
-            terms_are_fast_field_values,
+            postings_target,
         ))
     }
+}
+
+/// Returns whether a field with these options indexes its string values with the raw tokenizer
+/// and stores them unnormalized in its fast field.
+fn is_raw_fast_and_indexed(
+    fast_field_tokenizer_name: Option<&str>,
+    indexing_options: Option<&TextFieldIndexing>,
+) -> bool {
+    let fast_field_is_raw = matches!(fast_field_tokenizer_name, None | Some(RAW_TOKENIZER_NAME));
+    let indexing_is_raw = matches!(
+        indexing_options,
+        Some(text_indexing) if text_indexing.tokenizer() == RAW_TOKENIZER_NAME
+    );
+    fast_field_is_raw && indexing_is_raw
 }
 
 impl BuildTantivyAst for CalcFieldQuery {

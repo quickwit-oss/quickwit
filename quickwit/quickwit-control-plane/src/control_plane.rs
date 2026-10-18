@@ -2265,6 +2265,78 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_control_plane_survives_local_shards_update_for_deleted_index() {
+        quickwit_common::setup_logging_for_tests();
+        // Real time on purpose: accelerated time would let the supervisor respawn the actor and
+        // hide the panic.
+        let universe = Universe::default();
+        let node_id = NodeId::from_str("test-control-plane");
+        let indexer_pool = IndexerPool::default();
+        let ingester_pool = IngesterPool::default();
+
+        let mut index = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
+        let mut source = SourceConfig::ingest_v2();
+        source.enabled = true;
+        index.add_source(source).unwrap();
+        let index_uid = index.index_uid.clone();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        let index_clone = index.clone();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .returning(move |_| {
+                Ok(ListIndexesMetadataResponse::for_test(vec![
+                    index_clone.clone(),
+                ]))
+            });
+        mock_metastore.expect_list_shards().returning(|_| {
+            Ok(ListShardsResponse {
+                subresponses: Vec::new(),
+            })
+        });
+        let index_uid_clone = index_uid.clone();
+        mock_metastore.expect_delete_index().times(1).returning(
+            move |delete_index_request: DeleteIndexRequest| {
+                assert_eq!(delete_index_request.index_uid(), &index_uid_clone);
+                Ok(EmptyResponse {})
+            },
+        );
+
+        let cluster_config = ClusterConfig::for_test();
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
+            &universe,
+            cluster_config,
+            node_id,
+            indexer_pool,
+            ingester_pool,
+            MetastoreServiceClient::from_mock(mock_metastore),
+        );
+        control_plane_mailbox
+            .ask(DeleteIndexRequest {
+                index_uid: Some(index_uid.clone()),
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
+        let local_shards_update = LocalShardsUpdate {
+            ingester_id: NodeId::from_str("test-ingester"),
+            source_uid: SourceUid {
+                index_uid,
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
+            },
+            shard_infos: BTreeSet::new(),
+        };
+        control_plane_mailbox
+            .ask(local_shards_update)
+            .await
+            .unwrap()
+            .unwrap();
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
     async fn test_delete_source() {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::default();
