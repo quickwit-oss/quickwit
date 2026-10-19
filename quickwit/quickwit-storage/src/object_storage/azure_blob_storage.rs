@@ -605,12 +605,8 @@ impl Storage for AzureBlobStorage {
     }
 }
 
-/// Block ids are 6 random characters of the upload's ULID followed by the part, so they sort by
-/// part. They keep the 11-character length of the 0.21 SDK's `block:00000` ids: Put Block rejects
-/// an id whose length differs from the blob's leftover uncommitted blocks.
-///
-/// Concurrent uploads of the same blob are not supported: a commit discards the other upload's
-/// uncommitted blocks, so its own commit then fails.
+/// Keeps the 11-character length of the 0.21 SDK's `block:00000` ids: Put Block rejects an id
+/// whose length differs from the blob's leftover uncommitted blocks.
 fn format_block_id(upload_id: Ulid, part_num: usize) -> String {
     let upload_id = upload_id.to_string();
     format!("{}{part_num:05}", &upload_id[upload_id.len() - 6..])
