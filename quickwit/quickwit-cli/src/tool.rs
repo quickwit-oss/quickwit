@@ -37,7 +37,9 @@ use quickwit_config::{
     CLI_SOURCE_ID, IndexerConfig, NodeConfig, SourceConfig, SourceInputFormat, SourceParams,
     TransformConfig, VecSourceParams,
 };
-use quickwit_index_management::{IndexService, SplitRecoveryInfo, clear_cache_directory};
+use quickwit_index_management::{
+    IndexService, SplitRecoveryInfo, SplitToPublish, clear_cache_directory,
+};
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergeSchedulerService};
 use quickwit_indexing::docs_clustering::Fingerprinter;
 use quickwit_indexing::models::{
@@ -55,7 +57,7 @@ use quickwit_search::{SearchResponseRest, single_node_search};
 use quickwit_serve::{
     BodyFormat, SearchRequestQueryString, SortBy, search_request_from_api_request,
 };
-use quickwit_storage::{BundleStorage, Storage, StorageResolver};
+use quickwit_storage::{BundleStorage, Storage};
 use quickwit_transport::ChannelFactory;
 use tabled::Tabled;
 use thousands::Separable;
@@ -758,10 +760,13 @@ struct RecoveredSplitRow {
     num_merge_ops: usize,
     #[tabled(rename = "Doc mapping UID")]
     doc_mapping_uid: String,
+    #[tabled(rename = "Replaces")]
+    num_replaced_splits: usize,
 }
 
-impl From<&SplitMetadata> for RecoveredSplitRow {
-    fn from(split_metadata: &SplitMetadata) -> Self {
+impl From<&SplitToPublish> for RecoveredSplitRow {
+    fn from(split_to_publish: &SplitToPublish) -> Self {
+        let split_metadata = &split_to_publish.split_metadata;
         // The footer ends at the very end of the split file, so its end offset is the file size.
         let split_size = ByteSize::b(split_metadata.footer_offsets.end);
         RecoveredSplitRow {
@@ -772,6 +777,7 @@ impl From<&SplitMetadata> for RecoveredSplitRow {
             created_at: format_timestamp(split_metadata.create_timestamp),
             num_merge_ops: split_metadata.num_merge_ops,
             doc_mapping_uid: split_metadata.doc_mapping_uid.to_string(),
+            num_replaced_splits: split_to_publish.replaced_split_ids.len(),
         }
     }
 }
@@ -808,6 +814,8 @@ struct SplitRecoverySummaryRow {
     num_merged: String,
     #[tabled(rename = "Skipped (already in metastore)")]
     num_already_known: String,
+    #[tabled(rename = "Replaced (marked for deletion)")]
+    num_replaced: String,
     #[tabled(rename = "Unreadable")]
     num_unreadable: String,
 }
@@ -825,6 +833,7 @@ fn print_split_recovery_info(index_id: &str, recovery_info: &SplitRecoveryInfo) 
             .already_known_split_ids
             .len()
             .separate_with_commas(),
+        num_replaced: recovery_info.num_replaced_splits().separate_with_commas(),
         num_unreadable: num_unreadable.separate_with_commas(),
     };
     let summary_header = if recovery_info.dry_run {
@@ -854,6 +863,7 @@ fn print_split_recovery_info(index_id: &str, recovery_info: &SplitRecoveryInfo) 
         "already known to the metastore",
         &recovery_info.already_known_split_ids,
     );
+    print_replaced_split_ids(recovery_info);
 
     if num_unreadable > 0 {
         println!(
@@ -893,6 +903,26 @@ fn print_split_recovery_info(index_id: &str, recovery_info: &SplitRecoveryInfo) 
         "✔".color(GREEN_COLOR),
         num_published.separate_with_commas(),
         recovery_info.num_docs_published().separate_with_commas()
+    );
+}
+
+/// Prints the IDs of the published splits superseded by a recovered merge, sampled to keep the
+/// output readable.
+fn print_replaced_split_ids(recovery_info: &SplitRecoveryInfo) {
+    let replaced_split_ids: Vec<&SplitId> = recovery_info.replaced_split_ids().collect();
+    if replaced_split_ids.is_empty() {
+        return;
+    }
+    let outcome = if recovery_info.dry_run {
+        "would be marked for deletion"
+    } else {
+        "marked for deletion"
+    };
+    println!(
+        "\n{} {} split(s) {outcome}, replaced by a recovered merged split: {:?}",
+        "-".color(WHITE_COLOR),
+        replaced_split_ids.len(),
+        PrettySample::new(&replaced_split_ids, 10)
     );
 }
 

@@ -49,6 +49,7 @@ Recovering index otel-logs-v0_9 from s3://my-bucket/indexes/otel-logs-v0_9
 | Documents                           | 1,099 |
 | Skipped (merged into another split) | 0     |
 | Skipped (already in metastore)      | 6     |
+| Replaced (marked for deletion)      | 2     |
 | Unreadable                          | 1     |
 +-------------------------------------+-------+
 ```
@@ -76,13 +77,16 @@ curl "http://localhost:7280/api/v1/otel-logs-v0_9/search?query=*&max_hits=0\
 2. Fetches the recovery metadata of each split, ten splits at a time. The object size comes from
    the listing, and the footer and the metadata file usually land in a single `GET` per split.
 3. Rebuilds the split metadata, replacing the index UID recorded in the split with the UID of the
-   target index.
+   target index. Splits belonging to another index are skipped.
 4. Skips the splits that were superseded by a merge. A merged split and its parents coexist in the
    storage until garbage collection removes the parents.
 5. Leaves out the splits the metastore already knows about, which makes a second run a no-op.
    Splits left staged by an interrupted run are not considered known: they are staged and
    published again.
-6. Stages and publishes the remaining splits, 1000 per request.
+6. Stages and publishes the remaining splits, 1000 per request. A recovered merged split replaces
+   the splits it was merged out of, transitively: if the metastore still holds any of them as
+   published, for instance because it was restored from a backup predating the merge, they are
+   marked for deletion in the same operation, so that their documents are not returned twice.
 
 Splits whose metadata cannot be read are reported individually and do not interrupt the run: a
 single truncated upload would otherwise make every other split unrecoverable.
@@ -92,7 +96,9 @@ single truncated upload would otherwise make every other split unrecoverable.
 - **Source checkpoints.** The index checkpoint is left empty. A source restarted against a
   recovered index resumes from the position its own configuration dictates, which may re-ingest or
   skip data depending on the source.
-- **Delete tasks.** The delete opstamp recorded in each split is restored, but the delete task
-  queue itself is not. Pending deletes have to be submitted again.
+- **Delete tasks.** Neither the delete task queue nor the delete opstamps are restored: the
+  recovered splits are published with an opstamp of `0`, since there is no way to tell which
+  delete tasks were applied to them. Pending deletes have to be submitted again, and already
+  applied ones are not replayed.
 - **Splits without embedded recovery metadata.** They are listed as unreadable and left in the
   storage, untouched.
