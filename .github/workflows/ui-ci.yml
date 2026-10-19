@@ -3,16 +3,9 @@ name: UI CI
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - "quickwit/quickwit-ui/**"
-      - ".github/workflows/ui-ci.yml"
   push:
     branches:
-      - main
       - trigger-ci-workflow
-    paths:
-      - "quickwit/quickwit-ui/**"
-      - ".github/workflows/ui-ci.yml"
 
 permissions:
   contents: read
@@ -101,5 +94,6 @@ jobs:
         run: |
           mkdir -p qwdata
           cargo run --features=postgres -- run --service searcher --service metastore --config ../config/quickwit.yaml &
+          curl --retry 60 --retry-delay 1 --retry-connrefused --fail --silent --show-error http://127.0.0.1:7280/health/readyz
           yarn --cwd quickwit-ui e2e-test
         working-directory: ./quickwit
