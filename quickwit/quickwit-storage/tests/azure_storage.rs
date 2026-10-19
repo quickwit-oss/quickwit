@@ -20,11 +20,11 @@
 #[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn azure_storage_test_suite() -> anyhow::Result<()> {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use anyhow::Context;
     use quickwit_common::rand::append_random_suffix;
-    use quickwit_storage::{AzureBlobStorage, MultiPartPolicy};
+    use quickwit_storage::{AzureBlobStorage, MultiPartPolicy, Storage, StorageErrorKind};
     let _ = tracing_subscriber::fmt::try_init();
 
     // Setup container.
@@ -52,6 +52,12 @@ async fn azure_storage_test_suite() -> anyhow::Result<()> {
     quickwit_storage::storage_test_multi_part_upload(&mut object_storage)
         .await
         .context("test multipart upload failed")?;
+
+    let error = object_storage
+        .get_slice(Path::new("missing"), 0..0)
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), StorageErrorKind::NotFound);
 
     // Teardown container.
     AzureBlobStorage::delete_emulated_container(&container_name).await?;

@@ -265,6 +265,8 @@ impl AzureBlobStorage {
         range_opt: Option<Range<usize>>,
     ) -> StorageResult<Bytes> {
         if is_empty_range(range_opt.as_ref())? {
+            // Still a request, so that a missing blob is `NotFound`.
+            self.file_num_bytes(path).await?;
             return Ok(Bytes::new());
         }
         let name = self.blob_name(path);
@@ -307,6 +309,7 @@ impl AzureBlobStorage {
         range_opt: Option<Range<usize>>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
         if is_empty_range(range_opt.as_ref())? {
+            self.file_num_bytes(path).await?;
             return Ok(Box::new(tokio::io::empty()));
         }
         let name = self.blob_name(path);
