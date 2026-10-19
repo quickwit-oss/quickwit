@@ -721,9 +721,22 @@ pub fn parse_azure_uri(uri: &Uri) -> Option<(String, PathBuf)> {
 }
 
 #[derive(Error, Debug)]
-#[error("Azure error wrapper(inner={inner})")]
+#[error("Azure error wrapper(inner={})", with_causes(.inner))]
 struct AzureErrorWrapper {
     inner: AzureError,
+}
+
+/// The SDK wraps root causes, such as a DNS or Entra ID error, in generic errors like
+/// "non-transport error occurred which will not be retried", so the causes are appended.
+fn with_causes(error: &AzureError) -> String {
+    let mut rendered = error.to_string();
+    let mut cause = std::error::Error::source(error);
+    while let Some(current) = cause {
+        rendered.push_str(": ");
+        rendered.push_str(&current.to_string());
+        cause = current.source();
+    }
+    rendered
 }
 
 impl Retryable for AzureErrorWrapper {
@@ -776,11 +789,28 @@ mod tests {
 
     use quickwit_common::uri::Uri;
 
-    use super::{AzureBlobStorage, AzureCredential, crc64_nvme, parse_azure_uri};
+    use super::{
+        AzureBlobStorage, AzureCredential, AzureError, AzureErrorWrapper, ErrorKind, crc64_nvme,
+        parse_azure_uri,
+    };
 
     #[test]
     fn test_crc64_nvme_matches_the_service_vector() {
         assert_eq!(crc64_nvme(b"hello"), vec![87, 66, 82, 6, 112, 133, 119, 51]);
+    }
+
+    #[test]
+    fn test_azure_error_display_includes_the_cause() {
+        let error = AzureError::with_error(
+            ErrorKind::Credential,
+            std::io::Error::other("dns error"),
+            "non-transport error occurred which will not be retried",
+        );
+        let rendered = AzureErrorWrapper::from(error).to_string();
+        assert!(
+            rendered.contains("will not be retried: dns error"),
+            "{rendered}"
+        );
     }
 
     #[test]
