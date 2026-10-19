@@ -19,6 +19,8 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use tokio::sync::oneshot;
 
+use crate::duration_metrics::{IndexingOperation, measure_future_duration};
+
 /// The sequencer serves as a proxy to another actor,
 /// delivering message in a specific order.
 ///
@@ -49,6 +51,8 @@ impl<A: Actor> Sequencer<A> {
 
 #[async_trait]
 impl<A: Actor> Actor for Sequencer<A> {
+    const RECORD_DURATION_METRICS: bool = A::RECORD_DURATION_METRICS;
+
     type ObservableState = ();
 
     fn queue_capacity(&self) -> QueueCapacity {
@@ -80,10 +84,18 @@ where
         message: oneshot::Receiver<SequencerCommand<M>>,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let command = ctx
-            .protect_future(message)
+        let receive_command = ctx.protect_future(message);
+        let command = if Self::RECORD_DURATION_METRICS {
+            measure_future_duration(
+                ctx.actor_name(),
+                IndexingOperation::UploadResultWait,
+                receive_command,
+            )
             .await
-            .context("failed to receive command from uploader")?;
+        } else {
+            receive_command.await
+        }
+        .context("failed to receive command from uploader")?;
         if let SequencerCommand::Proceed(msg) = command {
             ctx.send_message(&self.mailbox, msg)
                 .await
@@ -98,6 +110,13 @@ mod tests {
     use quickwit_actors::Universe;
 
     use super::*;
+
+    #[test]
+    #[allow(clippy::assertions_on_constants)]
+    fn test_duration_metrics_follow_target_opt_in() {
+        assert!(Sequencer::<crate::actors::Publisher>::RECORD_DURATION_METRICS);
+        assert!(!Sequencer::<SequencerTestActor>::RECORD_DURATION_METRICS);
+    }
 
     #[derive(Default)]
     struct SequencerTestActor {

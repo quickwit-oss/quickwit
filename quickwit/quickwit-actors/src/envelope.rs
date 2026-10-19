@@ -14,11 +14,14 @@
 
 use std::any::Any;
 use std::fmt;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use tokio::sync::oneshot;
+use tokio::time::Instant;
 
 use crate::actor::DeferableReplyHandler;
+use crate::duration_metrics::{ActorMessageTimestamps, ActorOperation, add_duration_sample};
 use crate::scheduler::NoAdvanceTimeGuard;
 use crate::{Actor, ActorContext, ActorExitStatus};
 
@@ -32,6 +35,8 @@ use crate::{Actor, ActorContext, ActorExitStatus};
 pub struct Envelope<A> {
     handler_envelope: Box<dyn EnvelopeT<A>>,
     _no_advance_time_guard: Option<NoAdvanceTimeGuard>,
+    // The mailbox creates timestamps only when the actor opts into duration metrics.
+    timestamps: Option<ActorMessageTimestamps>,
 }
 
 impl<A: Actor> Envelope<A> {
@@ -50,6 +55,12 @@ impl<A: Actor> Envelope<A> {
         }
     }
 
+    pub(crate) fn measure_send_to_receive(&mut self) {
+        if let Some(timestamps) = &mut self.timestamps {
+            timestamps.measure_send_to_receive();
+        }
+    }
+
     /// Executes the captured handle function.
     ///
     /// When exiting, also returns the message type name.
@@ -58,7 +69,21 @@ impl<A: Actor> Envelope<A> {
         actor: &mut A,
         ctx: &ActorContext<A>,
     ) -> Result<(), (ActorExitStatus, &'static str)> {
-        let handling_res = self.handler_envelope.handle_message(actor, ctx).await;
+        let handling_res = if let Some(timestamps) = &self.timestamps {
+            // The actor loop has already yielded. Share the boundary between dispatch and
+            // handler time, including the envelope adapter overhead.
+            let handler_started_at = Instant::now();
+            timestamps.measure_receive_to_handler(handler_started_at);
+            let result = self.handler_envelope.handle_message(actor, ctx).await;
+            add_duration_sample(
+                ctx.actor_name(),
+                ActorOperation::Work,
+                handler_started_at.elapsed(),
+            );
+            result
+        } else {
+            self.handler_envelope.handle_message(actor, ctx).await
+        };
         if let Err(exit_status) = handling_res {
             return Err((exit_status, self.handler_envelope.message_type_name()));
         }
@@ -145,6 +170,7 @@ where
 pub(crate) fn wrap_in_envelope<A, M>(
     msg: M,
     no_advance_time_guard: Option<NoAdvanceTimeGuard>,
+    actor_name: Option<Arc<str>>,
 ) -> (Envelope<A>, oneshot::Receiver<A::Reply>)
 where
     A: DeferableReplyHandler<M>,
@@ -155,6 +181,9 @@ where
     let envelope = Envelope {
         handler_envelope: Box::new(handler_envelope),
         _no_advance_time_guard: no_advance_time_guard,
+        // All mailbox send paths wrap immediately before their first channel send attempt.
+        // If the channel is full, the asynchronous retry keeps the original send timestamp.
+        timestamps: actor_name.map(ActorMessageTimestamps::new),
     };
     (envelope, response_rx)
 }
