@@ -605,13 +605,15 @@ impl Storage for AzureBlobStorage {
     }
 }
 
-/// Block ids carry the upload's ULID, have the fixed length Azure requires within a blob, and
-/// sort by part.
+/// Block ids are 6 random characters of the upload's ULID followed by the part, so they sort by
+/// part. They keep the 11-character length of the 0.21 SDK's `block:00000` ids: Put Block rejects
+/// an id whose length differs from the blob's leftover uncommitted blocks.
 ///
 /// Concurrent uploads of the same blob are not supported: a commit discards the other upload's
 /// uncommitted blocks, so its own commit then fails.
 fn format_block_id(upload_id: Ulid, part_num: usize) -> String {
-    format!("{upload_id}:{part_num:05}")
+    let upload_id = upload_id.to_string();
+    format!("{}{part_num:05}", &upload_id[upload_id.len() - 6..])
 }
 
 /// Within `i64::MAX` so that the `Range` header stays a signed 64-bit offset.
@@ -829,6 +831,40 @@ mod tests {
             .await?;
         storage
             .commit_block_list(&block_blob_client, vec![block_id])
+            .await?;
+        let content = storage.get_all(Path::new("blob")).await?;
+        assert_eq!(content.as_slice(), b"hello");
+
+        AzureBlobStorage::delete_emulated_container(&container_name).await?;
+        Ok(())
+    }
+
+    #[cfg(feature = "integration-testsuite")]
+    #[tokio::test]
+    #[cfg_attr(not(feature = "ci-test"), ignore)]
+    async fn test_put_over_blocks_left_by_a_0_21_upload() -> anyhow::Result<()> {
+        use bytes::Bytes;
+        use quickwit_common::rand::append_random_suffix;
+
+        use super::stage_block;
+        use crate::Storage;
+
+        let container_name = append_random_suffix("quickwit-legacy-blocks").to_lowercase();
+        AzureBlobStorage::create_emulated_container(&container_name).await?;
+        let storage = AzureBlobStorage::new_emulated(&container_name);
+        let block_blob_client = storage
+            .container_client
+            .blob_client("blob")
+            .block_blob_client();
+        stage_block(
+            &block_blob_client,
+            "block:00000",
+            Bytes::from_static(b"stale"),
+        )
+        .await?;
+
+        storage
+            .put(Path::new("blob"), Box::new(b"hello".to_vec()))
             .await?;
         let content = storage.get_all(Path::new("blob")).await?;
         assert_eq!(content.as_slice(), b"hello");
