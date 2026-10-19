@@ -45,7 +45,7 @@ use warp::hyper::{Method, StatusCode, http};
 use warp::{Filter, Rejection, Reply, redirect};
 
 use crate::cluster_api::cluster_handler;
-use crate::decompression::{CorruptedData, UnsupportedEncoding};
+use crate::decompression::{CorruptedData, DecompressedPayloadTooLarge, UnsupportedEncoding};
 use crate::delete_task_api::delete_task_api_handlers;
 use crate::developer_api::developer_api_routes;
 use crate::elasticsearch_api::elastic_api_handlers;
@@ -554,6 +554,10 @@ fn api_v1_routes(
         .or(otlp_ingest_api_handlers(
             quickwit_services.otlp_logs_service_opt.clone(),
             quickwit_services.otlp_traces_service_opt.clone(),
+            quickwit_services
+                .node_config
+                .ingest_api_config
+                .max_decompressed_body_size,
         ))
         .boxed()
         .or(index_management_handlers(
@@ -657,6 +661,11 @@ fn get_status_with_error(rejection: Rejection) -> Result<RestApiError, Rejection
     } else if let Some(error) = rejection.find::<CorruptedData>() {
         Ok(RestApiError {
             status_code: StatusCode::BAD_REQUEST,
+            message: error.to_string(),
+        })
+    } else if let Some(error) = rejection.find::<DecompressedPayloadTooLarge>() {
+        Ok(RestApiError {
+            status_code: StatusCode::PAYLOAD_TOO_LARGE,
             message: error.to_string(),
         })
     } else if let Some(error) = rejection.find::<warp::reject::InvalidQuery>() {
