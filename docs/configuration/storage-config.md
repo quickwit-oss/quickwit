@@ -122,6 +122,27 @@ storage:
 | `QW_AZURE_ENDPOINT` | Custom blob service endpoint URL. |
 | `QW_AZURE_ENDPOINT_SUFFIX` | Blob service endpoint suffix for sovereign clouds. |
 
+#### Authentication
+
+When no access key is configured, Quickwit authenticates with an Entra ID token. The provider is
+picked from the standard Azure environment variables, in order: workload identity when
+`AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, and `AZURE_FEDERATED_TOKEN_FILE` are set, a service principal
+when `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, and `AZURE_CLIENT_SECRET` are set, and managed identity
+otherwise, with `AZURE_CLIENT_ID` naming a user-assigned identity. The Azure CLI is only used when
+pinned with `AZURE_CREDENTIAL_KIND`. Token credentials require an `https` endpoint.
+
+Set `AZURE_CREDENTIAL_KIND` to pin the provider instead. Matching ignores case and spaces, and an
+unknown value is an error.
+
+| Value | Credential |
+| --- | --- |
+| `environment` | Workload identity or service principal, detected as above. |
+| `workloadidentity` | Federated token file, injected into a pod by the workload identity webhook. |
+| `clientsecret` | Service principal with a client secret. |
+| `managedidentity` | Managed identity. `AZURE_CLIENT_ID` selects a user-assigned identity. |
+| `virtualmachine`, `appservice` | System-assigned managed identity, ignoring `AZURE_CLIENT_ID`. |
+| `azurecli` | The identity `az login` cached, for a developer machine or a CI runner. |
+
 Example of a storage configuration for Azure in YAML format:
 
 ```yaml
