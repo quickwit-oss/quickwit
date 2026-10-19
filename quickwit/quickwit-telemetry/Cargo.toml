@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-telemetry"
-description = "Open Telemetry services"
+description = "Anonymous usage telemetry"
 
 version.workspace = true
 edition.workspace = true

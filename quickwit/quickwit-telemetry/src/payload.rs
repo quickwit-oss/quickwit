@@ -60,7 +60,7 @@ impl From<TelemetryEvent> for EventWithTimestamp {
     }
 }
 
-/// Represents a Telemetry Event send to Quickwit's telemetry server for usage information.
+/// Represents a telemetry event sent to the telemetry relay for usage information.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
@@ -115,10 +115,24 @@ impl Default for QuickwitTelemetryInfo {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum QuickwitFeature {
+    /// The default index root URI is on Azure Blob Storage.
+    AzureStorage,
     FileBackedMetastore,
+    /// The default index root URI is on the local file system.
+    FileStorage,
+    /// The default index root URI is on Google Cloud Storage.
+    GoogleCloudStorage,
     Jaeger,
+    /// The searcher offloads leaf searches to AWS Lambda.
+    LambdaLeafSearch,
     Otlp,
     PostgresqMetastore,
+    /// The default index root URI is on S3 or an S3-compatible object store.
+    S3Storage,
+    /// The searcher caches splits on local disk.
+    SplitCache,
+    /// The REST or gRPC server uses TLS.
+    Tls,
 }
 
 fn hashed_host_username() -> String {
@@ -147,7 +161,30 @@ impl Default for ClientInfo {
 mod tests {
     use serde_json;
 
-    use super::{EventWithTimestamp, TelemetryEvent};
+    use super::{EventWithTimestamp, QuickwitFeature, TelemetryEvent};
+
+    #[test]
+    fn test_serialize_features_as_expected() {
+        // These names are part of the telemetry payload documented in `docs/telemetry.md`.
+        let features = [
+            QuickwitFeature::AzureStorage,
+            QuickwitFeature::FileBackedMetastore,
+            QuickwitFeature::FileStorage,
+            QuickwitFeature::GoogleCloudStorage,
+            QuickwitFeature::Jaeger,
+            QuickwitFeature::LambdaLeafSearch,
+            QuickwitFeature::Otlp,
+            QuickwitFeature::PostgresqMetastore,
+            QuickwitFeature::S3Storage,
+            QuickwitFeature::SplitCache,
+            QuickwitFeature::Tls,
+        ];
+        let json = serde_json::to_string(&features).unwrap();
+        assert_eq!(
+            json,
+            r#"["azure_storage","file_backed_metastore","file_storage","google_cloud_storage","jaeger","lambda_leaf_search","otlp","postgresq_metastore","s3_storage","split_cache","tls"]"#
+        );
+    }
 
     #[test]
     fn test_serialize_payload_as_expected() {

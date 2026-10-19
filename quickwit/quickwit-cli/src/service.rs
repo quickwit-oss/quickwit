@@ -178,6 +178,28 @@ fn quickwit_telemetry_info(config: &NodeConfig) -> QuickwitTelemetryInfo {
         };
         features.insert(feature);
     }
+    let storage_feature_opt = match config.default_index_root_uri.protocol() {
+        Protocol::Azure => Some(QuickwitFeature::AzureStorage),
+        Protocol::File => Some(QuickwitFeature::FileStorage),
+        Protocol::Google => Some(QuickwitFeature::GoogleCloudStorage),
+        Protocol::S3 => Some(QuickwitFeature::S3Storage),
+        Protocol::Actor | Protocol::Grpc | Protocol::PostgreSQL | Protocol::Ram => None,
+    };
+    if let Some(storage_feature) = storage_feature_opt {
+        features.insert(storage_feature);
+    }
+    // The Lambda and split cache settings are only relevant if the searcher is enabled.
+    if config.is_service_enabled(QuickwitService::Searcher) {
+        if config.searcher_config.lambda.is_some() {
+            features.insert(QuickwitFeature::LambdaLeafSearch);
+        }
+        if config.searcher_config.split_cache.is_some() {
+            features.insert(QuickwitFeature::SplitCache);
+        }
+    }
+    if config.rest_config.tls_config.is_some() || config.grpc_config.tls_config.is_some() {
+        features.insert(QuickwitFeature::Tls);
+    }
     let services = config
         .enabled_services
         .iter()
@@ -189,6 +211,7 @@ fn quickwit_telemetry_info(config: &NodeConfig) -> QuickwitTelemetryInfo {
 #[cfg(test)]
 mod tests {
 
+    use quickwit_config::LambdaConfig;
     use tempfile::tempdir;
 
     use super::*;
@@ -216,6 +239,57 @@ mod tests {
         assert_eq!(node_config.enabled_services, enabled_services);
         assert!(node_config.searcher_config.use_metastore_read_replica);
         Ok(())
+    }
+
+    #[test]
+    fn test_quickwit_telemetry_info_features() {
+        let mut node_config = NodeConfig::for_test();
+        node_config.enabled_services = HashSet::from([QuickwitService::Metastore]);
+        node_config.metastore_uri = Uri::from_str("file:///qwdata/indexes").unwrap();
+        node_config.default_index_root_uri = Uri::from_str("file:///qwdata/indexes").unwrap();
+        node_config.indexer_config.enable_otlp_endpoint = false;
+        node_config.jaeger_config.enable_endpoint = false;
+        node_config.searcher_config.lambda = Some(LambdaConfig::for_test());
+        node_config.searcher_config.split_cache =
+            Some(serde_json::from_value(serde_json::json!({"max_num_bytes": "1GB"})).unwrap());
+
+        // The searcher settings are ignored because the searcher is not enabled.
+        let telemetry_info = quickwit_telemetry_info(&node_config);
+        assert_eq!(
+            telemetry_info.features,
+            HashSet::from([
+                QuickwitFeature::FileBackedMetastore,
+                QuickwitFeature::FileStorage
+            ])
+        );
+
+        node_config.enabled_services =
+            HashSet::from([QuickwitService::Metastore, QuickwitService::Searcher]);
+        node_config.metastore_uri = Uri::from_str("postgresql://localhost/metastore").unwrap();
+        node_config.default_index_root_uri = Uri::from_str("s3://bucket/indexes").unwrap();
+        node_config.indexer_config.enable_otlp_endpoint = true;
+        node_config.jaeger_config.enable_endpoint = true;
+        node_config.grpc_config.tls_config = Some(
+            serde_json::from_value(serde_json::json!({
+                "cert_path": "/certs/cert.pem",
+                "key_path": "/certs/key.pem",
+            }))
+            .unwrap(),
+        );
+
+        let telemetry_info = quickwit_telemetry_info(&node_config);
+        assert_eq!(
+            telemetry_info.features,
+            HashSet::from([
+                QuickwitFeature::Jaeger,
+                QuickwitFeature::LambdaLeafSearch,
+                QuickwitFeature::Otlp,
+                QuickwitFeature::PostgresqMetastore,
+                QuickwitFeature::S3Storage,
+                QuickwitFeature::SplitCache,
+                QuickwitFeature::Tls,
+            ])
+        );
     }
 
     #[test]

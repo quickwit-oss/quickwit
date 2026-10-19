@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::ffi::OsStr;
 use std::mem;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -304,7 +305,24 @@ pub fn is_telemetry_disabled() -> bool {
 /// Check to see if telemetry is enabled.
 #[cfg(not(test))]
 pub fn is_telemetry_disabled() -> bool {
-    quickwit_common::get_bool_from_env(crate::DISABLE_TELEMETRY_ENV_KEY, false)
+    let env_value_opt = std::env::var_os(crate::DISABLE_TELEMETRY_ENV_KEY);
+    is_telemetry_disabled_by_env_value(env_value_opt.as_deref())
+}
+
+/// Telemetry is disabled when `QW_DISABLE_TELEMETRY` is set to any non-empty value other than
+/// `false`, `no` or `0`. Unrecognized values disable telemetry so that a mistyped opt-out never
+/// leaves telemetry on.
+fn is_telemetry_disabled_by_env_value(env_value_opt: Option<&OsStr>) -> bool {
+    let Some(env_value) = env_value_opt else {
+        return false;
+    };
+    let Some(env_value_str) = env_value.to_str() else {
+        return true;
+    };
+    if env_value_str.trim().is_empty() {
+        return false;
+    }
+    quickwit_common::parse_bool_lenient(env_value_str) != Some(false)
 }
 
 fn start_monitor_if_server_running_task(telemetry_sender: Arc<Inner>) {
@@ -321,7 +339,7 @@ fn start_monitor_if_server_running_task(telemetry_sender: Arc<Inner>) {
 
 fn create_http_client() -> Option<HttpClient> {
     if is_telemetry_disabled() {
-        info!("telemetry to quickwit is disabled");
+        info!("telemetry is disabled");
         return None;
     }
     let client = HttpClient::try_new()?;
@@ -335,6 +353,23 @@ mod tests {
     use std::env;
 
     use super::*;
+
+    #[test]
+    fn test_is_telemetry_disabled_by_env_value() {
+        assert!(!is_telemetry_disabled_by_env_value(None));
+        assert!(!is_telemetry_disabled_by_env_value(Some(OsStr::new(""))));
+        assert!(!is_telemetry_disabled_by_env_value(Some(OsStr::new(" "))));
+        for enabled_value in ["false", "FALSE", "no", "0"] {
+            assert!(!is_telemetry_disabled_by_env_value(Some(OsStr::new(
+                enabled_value
+            ))));
+        }
+        for disabled_value in ["1", "true", "yes", "on", "disabled", "anything"] {
+            assert!(is_telemetry_disabled_by_env_value(Some(OsStr::new(
+                disabled_value
+            ))));
+        }
+    }
 
     #[ignore]
     #[tokio::test]

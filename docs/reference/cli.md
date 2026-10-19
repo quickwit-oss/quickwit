@@ -857,7 +857,7 @@ Specifies the path to the [quickwit config](../configuration/node-config.md). Co
 
 ### QW_DISABLE_TELEMETRY
 
-Disables [telemetry](../telemetry.md) when set to any non-empty value.
+Disables [telemetry](../telemetry.md) when set to any non-empty value other than `false`, `no` or `0`.
 
 *Example*
 

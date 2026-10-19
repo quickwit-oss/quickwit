@@ -16,7 +16,8 @@
 #![deny(clippy::disallowed_methods)]
 
 pub mod payload;
-/// This crate contains  the code responsible for sending usage data to Quickwit inc's server.
+/// This crate contains the code responsible for sending anonymous usage data to the telemetry
+/// relay. See `docs/telemetry.md` for the data that is sent.
 mod sender;
 pub(crate) mod sink;
 
@@ -44,7 +45,7 @@ pub fn start_telemetry_loop(quickwit_info: QuickwitTelemetryInfo) -> Option<Tele
     Some(telemetry_sender.start_loop())
 }
 
-/// Sends a telemetry event to Quickwit's server via HTTP.
+/// Sends a telemetry event to the telemetry relay via HTTP.
 ///
 /// Telemetry guarantees to send at most 1 request per minute.
 /// Each requests can ship at most 10 messages.
