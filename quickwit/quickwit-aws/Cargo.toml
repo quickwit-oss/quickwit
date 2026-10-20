@@ -27,6 +27,7 @@ hyper-rustls = { workspace = true }
 hyper-util = { workspace = true, features = ["client-proxy", "http1"] }
 mini-moka = { workspace = true }
 rustls = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }

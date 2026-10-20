@@ -87,7 +87,7 @@ impl HttpClient for Http1Client {
 }
 
 struct Http1Connector {
-    client: Client<HttpsConnector<ProxyAwareConnector>, SdkBody>,
+    client: Client<ConnectTimeout<HttpsConnector<ProxyAwareConnector>>, SdkBody>,
     proxy_matcher: Arc<Matcher>,
     read_timeout: Option<Duration>,
 }
@@ -106,7 +106,6 @@ impl Http1Connector {
         let mut tcp_connector = TcpConnector::new_with_resolver(DnsService::default());
         tcp_connector.enforce_http(false);
         tcp_connector.set_nodelay(true);
-        tcp_connector.set_connect_timeout(connect_timeout);
         let proxy_matcher = Arc::new(Matcher::from_env());
         let proxy_aware_connector = ProxyAwareConnector {
             tcp_connector,
@@ -118,7 +117,11 @@ impl Http1Connector {
             .https_or_http()
             .enable_http1()
             .wrap_connector(proxy_aware_connector);
-        let client = Client::builder(TokioExecutor::new()).build(https_connector);
+        let connector = ConnectTimeout {
+            inner: https_connector,
+            timeout_opt: connect_timeout,
+        };
+        let client = Client::builder(TokioExecutor::new()).build(connector);
         Http1Connector {
             client,
             proxy_matcher,
@@ -173,24 +176,73 @@ impl HttpConnector for Http1Connector {
 }
 
 fn to_connector_error(error: hyper_util::client::legacy::Error) -> ConnectorError {
-    if error.is_connect() {
+    if find_source::<ConnectTimeoutError>(&error).is_some() {
+        return ConnectorError::timeout(error.into());
+    }
+    if error.is_connect() || find_source::<std::io::Error>(&error).is_some() {
         return ConnectorError::io(error.into());
     }
-    let mut source_opt = error.source();
-    while let Some(source) = source_opt {
-        if let Some(hyper_error) = source.downcast_ref::<hyper::Error>()
-            && (hyper_error.is_closed()
-                || hyper_error.is_incomplete_message()
-                || hyper_error.is_canceled())
-        {
-            return ConnectorError::io(error.into());
-        }
-        if source.is::<std::io::Error>() {
-            return ConnectorError::io(error.into());
-        }
-        source_opt = source.source();
+    if let Some(hyper_error) = find_source::<hyper::Error>(&error)
+        && (hyper_error.is_closed()
+            || hyper_error.is_incomplete_message()
+            || hyper_error.is_canceled())
+    {
+        return ConnectorError::io(error.into());
     }
     ConnectorError::other(error.into(), None)
+}
+
+/// Returns the first error of type `T` in the source chain of `error`, `error` included.
+fn find_source<'a, T: StdError + 'static>(error: &'a (dyn StdError + 'static)) -> Option<&'a T> {
+    let mut current_opt: Option<&(dyn StdError + 'static)> = Some(error);
+    while let Some(current) = current_opt {
+        if let Some(found) = current.downcast_ref::<T>() {
+            return Some(found);
+        }
+        current_opt = current.source();
+    }
+    None
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("connection establishment timed out after {0:?}")]
+struct ConnectTimeoutError(Duration);
+
+/// Applies the SDK connect timeout to the whole connection establishment: TCP connect,
+/// proxy `CONNECT` tunnel and TLS handshake, like the default client of the AWS SDK.
+#[derive(Clone)]
+struct ConnectTimeout<C> {
+    inner: C,
+    timeout_opt: Option<Duration>,
+}
+
+impl<C> Service<Uri> for ConnectTimeout<C>
+where
+    C: Service<Uri> + Send + 'static,
+    C::Response: Send + 'static,
+    C::Future: Send + 'static,
+    C::Error: Into<BoxError>,
+{
+    type Response = C::Response;
+    type Error = BoxError;
+    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx).map_err(Into::into)
+    }
+
+    fn call(&mut self, dst: Uri) -> Self::Future {
+        let connect_future = self.inner.call(dst);
+        let Some(timeout) = self.timeout_opt else {
+            return Box::pin(async move { connect_future.await.map_err(Into::into) });
+        };
+        Box::pin(async move {
+            match tokio::time::timeout(timeout, connect_future).await {
+                Ok(connect_result) => connect_result.map_err(Into::into),
+                Err(_elapsed) => Err(Box::new(ConnectTimeoutError(timeout)) as BoxError),
+            }
+        })
+    }
 }
 
 /// Adapts [`CachingDnsResolver`] to the resolver interface of hyper's connector.
@@ -376,6 +428,32 @@ mod tests {
         assert_eq!(response.status().as_u16(), 200);
         let body = response.into_body().collect().await.unwrap().to_bytes();
         assert_eq!(&body[..], b"HTTP/1.1 /bucket/key");
+    }
+
+    #[tokio::test]
+    async fn test_http1_connector_connect_timeout_covers_tls_handshake() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let mut silent_streams = Vec::new();
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                silent_streams.push(stream);
+            }
+        });
+        let connector = Http1Connector::new(Some(Duration::from_millis(200)), None);
+        let request = http::Request::builder()
+            .uri(format!("https://{addr}/"))
+            .body(SdkBody::empty())
+            .unwrap();
+        let error = tokio::time::timeout(
+            Duration::from_secs(5),
+            connector.call(HttpRequest::try_from(request).unwrap()),
+        )
+        .await
+        .expect("the connect timeout should fire before the test timeout")
+        .unwrap_err();
+        assert!(error.is_timeout(), "{error:?}");
     }
 
     #[tokio::test]
