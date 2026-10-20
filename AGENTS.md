@@ -47,7 +47,7 @@ Quickwit is organized as a ~38-crate Rust workspace.
 **Actor System** — `quickwit-actors` is a custom lightweight actor framework. The indexing pipeline is fully actor-based:
 
 ```
-Source → DocProcessor → Indexer → IndexSerializer → Packager → Uploader → Sequencer → Publisher
+Source → DocProcessor → Indexer → Uploader → Sequencer → Publisher
 ```
 
 A parallel merge pipeline runs alongside.

@@ -114,7 +114,7 @@ pub struct SplitMetadata {
     /// When cardinality is strictly higher than [`MAX_VALUES_PER_TAG_FIELD`],
     /// no field value is added to the set.
     ///
-    /// [`MAX_VALUES_PER_TAG_FIELD`]: https://github.com/quickwit-oss/quickwit/blob/main/quickwit-indexing/src/actors/packager.rs#L36
+    /// [`MAX_VALUES_PER_TAG_FIELD`]: https://github.com/quickwit-oss/quickwit/blob/main/quickwit/quickwit-indexing/src/actors/split_packaging.rs
     pub tags: BTreeSet<String>,
 
     /// Contains the range of bytes of the footer that needs to be downloaded

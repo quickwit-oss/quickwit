@@ -19,7 +19,7 @@ use quickwit_common::io::IoControls;
 use quickwit_common::metrics::index_label;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_metrics::{GaugeGuard, label_values};
+use quickwit_metrics::label_values;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::types::{DocMappingUid, IndexUid, SplitId};
 use tantivy::IndexBuilder;
@@ -28,7 +28,6 @@ use tracing::{Span, error, instrument};
 
 use crate::controlled_directory::ControlledDirectory;
 use crate::docs_clustering::DocIdClusterer;
-use crate::merge_policy::MergeTask;
 use crate::metrics::INDEX_SOURCE;
 use crate::models::{PublishLock, SplitAttrs};
 
@@ -89,9 +88,7 @@ impl IndexedSplitBuilder {
         io_controls: IoControls,
         doc_id_clusterer_opt: Option<DocIdClusterer>,
     ) -> anyhow::Result<Self> {
-        // We avoid intermediary merge, and instead merge all segments in the packager.
-        // The benefit is that we don't have to wait for potentially existing merges,
-        // and avoid possible race conditions.
+        // Build one segment directly, avoiding background merges and their synchronization.
         let split_id = SplitId::new();
         let split_scratch_directory_prefix = format!("split-{split_id}-");
         let split_scratch_directory =
@@ -205,19 +202,6 @@ impl IndexedSplitBuilder {
     }
 }
 
-#[derive(Debug)]
-pub struct IndexedSplitBatch {
-    pub splits: Vec<IndexedSplit>,
-    pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
-    pub publish_lock: PublishLock,
-    /// A [`MergeTask`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
-    /// in the `MergePipeline` or `DeleteTaskPipeline`.
-    /// See planners docs to understand the usage.
-    /// If `None`, the split batch was built in the `IndexingPipeline`.
-    pub merge_task_opt: Option<MergeTask>,
-    pub batch_parent_span: Span,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CommitTrigger {
     Drained,
@@ -226,17 +210,6 @@ pub enum CommitTrigger {
     NoMoreDocs,
     NumDocsLimit,
     Timeout,
-}
-
-#[derive(Debug)]
-pub struct IndexedSplitBatchBuilder {
-    pub splits: Vec<IndexedSplitBuilder>,
-    pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
-    pub publish_lock: PublishLock,
-    pub commit_trigger: CommitTrigger,
-    pub batch_parent_span: Span,
-    pub memory_usage: GaugeGuard,
-    pub _split_builders_guard: GaugeGuard,
 }
 
 /// Sends notifications to the Publisher that the last batch of splits was empty.
