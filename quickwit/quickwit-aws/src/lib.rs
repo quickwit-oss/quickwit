@@ -26,16 +26,28 @@ use crate::dns::CachingDnsResolver;
 
 pub mod dns;
 pub mod error;
+mod http1;
 pub mod retry;
 
 pub const DEFAULT_AWS_REGION: Region = Region::from_static("us-east-1");
 
 /// Builds the HTTP client used by all AWS SDK clients.
 ///
+/// By default, the client only speaks HTTP/1.1, see [`http1`]. Setting
+/// `QW_S3_ENABLE_HTTP2=true` switches to the default client of the AWS SDK, which also
+/// negotiates HTTP/2.
+fn build_http_client() -> SharedHttpClient {
+    if quickwit_common::get_bool_from_env("QW_S3_ENABLE_HTTP2", false) {
+        build_http2_client()
+    } else {
+        http1::build_http1_client()
+    }
+}
+
 /// This mirrors `aws-smithy-runtime`'s `default_https_client()` (Rustls +
 /// aws-lc-rs crypto, proxy settings read from the environment,
 /// but wraps the default `getaddrinfo`-based DNS resolver with a cache, see [`CachingDnsResolver`].
-fn build_http_client() -> SharedHttpClient {
+fn build_http2_client() -> SharedHttpClient {
     HttpClientBuilder::new().build_with_connector_fn(move |settings, runtime_components| {
         let mut conn_builder =
             Connector::builder().tls_provider(tls::Provider::Rustls(CryptoMode::AwsLc));
