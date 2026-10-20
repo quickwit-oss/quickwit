@@ -51,7 +51,7 @@ use hyper_util::client::legacy::connect::dns::Name;
 use hyper_util::client::legacy::connect::proxy::Tunnel;
 use hyper_util::client::legacy::connect::{Connected, Connection, HttpConnector as TcpConnector};
 use hyper_util::client::proxy::matcher::Matcher;
-use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use tokio::net::TcpStream;
 use tower::Service;
 
@@ -121,7 +121,10 @@ impl Http1Connector {
             inner: https_connector,
             timeout_opt: connect_timeout,
         };
-        let client = Client::builder(TokioExecutor::new()).build(connector);
+        let mut client_builder = Client::builder(TokioExecutor::new());
+        // Without a pool timer, hyper-util does not evict idle connections on its own.
+        client_builder.pool_timer(TokioTimer::new());
+        let client = client_builder.build(connector);
         Http1Connector {
             client,
             proxy_matcher,
