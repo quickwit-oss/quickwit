@@ -26,7 +26,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::RetentionPolicy;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_indexing::actors::{
-    MergeExecutor, MergeSplitDownloader, Packager, Publisher, Uploader, UploaderType,
+    MergeExecutor, MergeSplitDownloader, Publisher, Uploader, UploaderType,
 };
 use quickwit_indexing::merge_policy::{MergeOperation, MergeSource};
 use quickwit_indexing::models::SharedPublishToken;
@@ -71,7 +71,6 @@ pub struct PipelineStatusUpdate {
 struct CompactionPipelineHandles {
     merge_split_downloader: ActorHandle<MergeSplitDownloader>,
     merge_executor: ActorHandle<MergeExecutor>,
-    merge_packager: ActorHandle<Packager>,
     merge_uploader: ActorHandle<Uploader>,
     merge_publisher: ActorHandle<Publisher>,
     next_check_for_progress: Instant,
@@ -80,7 +79,7 @@ struct CompactionPipelineHandles {
 impl CompactionPipelineHandles {
     /// Returns true once per HEARTBEAT interval. Between heartbeats we only
     /// check whether actors are alive, not whether they are making progress.
-    /// This gives CPU-intensive actors (like the packager) up to 30s to
+    /// This gives CPU-intensive actors (like the merge executor) up to 30s to
     /// complete before being declared unhealthy.
     fn should_check_for_progress(&mut self) -> bool {
         let now = Instant::now();
@@ -166,7 +165,6 @@ impl CompactionPipeline {
         vec![
             &handles.merge_split_downloader,
             &handles.merge_executor,
-            &handles.merge_packager,
             &handles.merge_uploader,
             &handles.merge_publisher,
         ]
@@ -197,7 +195,7 @@ impl CompactionPipeline {
 
         // We check whether actors are alive on every tick (1s), but only
         // check whether they are making progress once per HEARTBEAT (30s).
-        // This gives CPU-intensive actors like the packager time to finish
+        // This gives CPU-intensive actors like the merge executor time to finish
         // without being falsely declared unhealthy.
         let check_for_progress = handles.should_check_for_progress();
 
@@ -275,7 +273,7 @@ impl CompactionPipeline {
         }
     }
 
-    /// Spawns the 5-actor merge execution chain and sends the `MergeOperation`
+    /// Spawns the 4-actor merge execution chain and sends the `MergeOperation`
     /// to the downloader to kick off execution.
     pub(crate) fn spawn_pipeline(&mut self, spawn_ctx: &SpawnContext) -> anyhow::Result<()> {
         info!(
@@ -313,14 +311,6 @@ impl CompactionPipeline {
             .set_kill_switch(self.kill_switch.child())
             .spawn(merge_uploader);
 
-        // Packager
-        let tag_fields = self.doc_mapper.tag_named_fields()?;
-        let merge_packager = Packager::new("MergePackager", tag_fields, merge_uploader_mailbox);
-        let (merge_packager_mailbox, merge_packager_handle) = spawn_ctx
-            .spawn_builder()
-            .set_kill_switch(self.kill_switch.child())
-            .spawn(merge_packager);
-
         // MergeExecutor
         let split_downloader_io_controls = IoControls::default()
             .set_throughput_limiter_opt(self.io_throughput_limiter.clone())
@@ -333,7 +323,8 @@ impl CompactionPipeline {
             self.metastore.clone(),
             self.doc_mapper.clone(),
             merge_executor_io_controls,
-            merge_packager_mailbox,
+            self.doc_mapper.tag_named_fields()?,
+            merge_uploader_mailbox,
             Some(self.merge_execution_semaphore.clone()),
         );
         let (merge_executor_mailbox, merge_executor_handle) = spawn_ctx
@@ -363,7 +354,6 @@ impl CompactionPipeline {
         self.handles = Some(CompactionPipelineHandles {
             merge_split_downloader: merge_split_downloader_handle,
             merge_executor: merge_executor_handle,
-            merge_packager: merge_packager_handle,
             merge_uploader: merge_uploader_handle,
             merge_publisher: merge_publisher_handle,
             next_check_for_progress: Instant::now() + *HEARTBEAT,

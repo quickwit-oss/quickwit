@@ -27,8 +27,8 @@ use quickwit_common::temp_dir::{self};
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
 use quickwit_indexing::actors::{
-    MergeExecutor, MergeSchedulerService, MergeSplitDownloader, Packager, Publisher,
-    PublisherCounters, Uploader, UploaderCounters, UploaderType,
+    MergeExecutor, MergeSchedulerService, MergeSplitDownloader, Publisher, PublisherCounters,
+    Uploader, UploaderCounters, UploaderType,
 };
 use quickwit_indexing::merge_policy::merge_policy_from_settings;
 use quickwit_indexing::models::SharedPublishToken;
@@ -58,7 +58,6 @@ struct DeletePipelineHandle {
     pub delete_task_planner: ActorHandle<Supervisor<DeleteTaskPlanner>>,
     pub downloader: ActorHandle<Supervisor<MergeSplitDownloader>>,
     pub delete_task_executor: ActorHandle<Supervisor<MergeExecutor>>,
-    pub packager: ActorHandle<Supervisor<Packager>>,
     pub uploader: ActorHandle<Supervisor<Uploader>>,
     pub publisher: ActorHandle<Supervisor<Publisher>>,
 }
@@ -69,7 +68,6 @@ pub struct DeleteTaskPipelineState {
     pub delete_task_planner: SupervisorState<DeleteTaskPlannerState>,
     pub downloader: SupervisorState<()>,
     pub delete_task_executor: SupervisorState<()>,
-    pub packager: SupervisorState<()>,
     pub uploader: SupervisorState<UploaderCounters>,
     pub publisher: SupervisorState<PublisherCounters>,
 }
@@ -115,7 +113,6 @@ impl Actor for DeleteTaskPipeline {
                 handles.delete_task_planner.quit(),
                 handles.downloader.quit(),
                 handles.delete_task_executor.quit(),
-                handles.packager.quit(),
                 handles.uploader.quit(),
                 handles.publisher.quit(),
             );
@@ -188,9 +185,6 @@ impl DeleteTaskPipeline {
 
         let doc_mapper =
             build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)?;
-        let tag_fields = doc_mapper.tag_named_fields()?;
-        let packager = Packager::new("MergePackager", tag_fields, uploader_mailbox);
-        let (packager_mailbox, packager_supervisor_handler) = ctx.spawn_actor().supervise(packager);
         let pipeline_id = MergePipelineId {
             node_id: NodeId::from_str("unknown"),
             index_uid: self.index_uid.clone(),
@@ -207,7 +201,8 @@ impl DeleteTaskPipeline {
             self.metastore.clone(),
             doc_mapper.clone(),
             delete_executor_io_controls,
-            packager_mailbox,
+            doc_mapper.tag_named_fields()?,
+            uploader_mailbox,
             None,
         );
         let (delete_executor_mailbox, task_executor_supervisor_handler) =
@@ -240,7 +235,6 @@ impl DeleteTaskPipeline {
             delete_task_planner: task_planner_supervisor_handler,
             downloader: downloader_supervisor_handler,
             delete_task_executor: task_executor_supervisor_handler,
-            packager: packager_supervisor_handler,
             uploader: uploader_supervisor_handler,
             publisher: publisher_supervisor_handler,
         });
@@ -263,14 +257,12 @@ impl Handler<Observe> for DeleteTaskPipeline {
             handles.delete_task_planner.refresh_observe();
             handles.downloader.refresh_observe();
             handles.delete_task_executor.refresh_observe();
-            handles.packager.refresh_observe();
             handles.uploader.refresh_observe();
             handles.publisher.refresh_observe();
             self.state = DeleteTaskPipelineState {
                 delete_task_planner: handles.delete_task_planner.last_observation().clone(),
                 downloader: handles.downloader.last_observation().clone(),
                 delete_task_executor: handles.delete_task_executor.last_observation().clone(),
-                packager: handles.packager.last_observation().clone(),
                 uploader: handles.uploader.last_observation().clone(),
                 publisher: handles.publisher.last_observation().clone(),
             }
@@ -436,7 +428,6 @@ mod tests {
         assert_eq!(pipeline_state.delete_task_planner.metrics.num_errors, 1);
         assert_eq!(pipeline_state.downloader.metrics.num_errors, 0);
         assert_eq!(pipeline_state.delete_task_executor.metrics.num_errors, 0);
-        assert_eq!(pipeline_state.packager.metrics.num_errors, 0);
         assert_eq!(pipeline_state.uploader.metrics.num_errors, 0);
         assert_eq!(pipeline_state.publisher.metrics.num_errors, 0);
         let _ = pipeline_mailbox.ask(GracefulShutdown).await;

@@ -299,14 +299,15 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     };
 
     let universe = test_index_builder.universe();
-    let (merge_packager_mailbox, _merge_packager_inbox) = universe.create_test_mailbox();
+    let (merge_uploader_mailbox, _merge_uploader_inbox) = universe.create_test_mailbox();
     let io_controls = IoControls::default();
     let merge_executor = MergeExecutor::new(
         pipeline_id,
         metastore,
-        doc_mapper,
+        doc_mapper.clone(),
         io_controls,
-        merge_packager_mailbox,
+        doc_mapper.tag_named_fields()?,
+        merge_uploader_mailbox,
         None,
     );
 
