@@ -119,6 +119,7 @@ pub struct IndexingService {
     split_cache: Arc<IndexingSplitCache>,
     merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
+    indexing_memory_limit: Option<ByteSize>,
     fingerprinter_opt: Option<Fingerprinter>,
     indexing_io_throughput_limiter_opt: Option<io::Limiter>,
     merge_io_throughput_limiter_opt: Option<io::Limiter>,
@@ -153,6 +154,10 @@ impl IndexingService {
         split_cache: Arc<IndexingSplitCache>,
         fingerprinter_opt: Option<Fingerprinter>,
     ) -> anyhow::Result<IndexingService> {
+        anyhow::ensure!(
+            indexer_config.indexing_memory_limit != Some(ByteSize(0)),
+            "indexing_memory_limit must be greater than zero"
+        );
         let indexing_io_throughput_limiter_opt = (*INDEXING_IO_THROUGHPUT_LIMITER).clone();
         let merge_io_throughput_limiter_opt =
             indexer_config.max_merge_write_throughput.map(io::limiter);
@@ -184,6 +189,7 @@ impl IndexingService {
             indexing_io_throughput_limiter_opt,
             merge_io_throughput_limiter_opt,
             cooperative_indexing_permits,
+            indexing_memory_limit: indexer_config.indexing_memory_limit,
             event_broker,
         })
     }
@@ -394,6 +400,7 @@ impl IndexingService {
             split_store,
             max_concurrent_split_uploads_index,
             cooperative_indexing_permits: self.cooperative_indexing_permits.clone(),
+            indexing_memory_limit: self.indexing_memory_limit,
             indexing_io_throughput_limiter_opt: self.indexing_io_throughput_limiter_opt.clone(),
             merge_policy,
             retention_policy,
