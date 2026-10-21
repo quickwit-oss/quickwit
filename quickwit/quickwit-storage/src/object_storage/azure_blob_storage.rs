@@ -825,6 +825,19 @@ mod tests {
     }
 
     #[test]
+    fn test_build_azure_token_credentials_accepts_azure_government_endpoint_suffix_with_root_dot(
+    ) {
+        let azure_storage_config = AzureStorageConfig {
+            endpoint_suffix: Some("core.usgovcloudapi.net.".to_string()),
+            ..Default::default()
+        };
+        let credential = Arc::new(MockTokenCredential) as Arc<dyn TokenCredential>;
+
+        build_azure_token_credentials(&azure_storage_config, credential)
+            .expect("Azure Government endpoint suffix with root dot should succeed");
+    }
+
+    #[test]
     fn test_build_azure_token_credentials_accepts_azure_china_endpoint() {
         let azure_storage_config = AzureStorageConfig {
             endpoint_suffix: Some("core.chinacloudapi.cn".to_string()),

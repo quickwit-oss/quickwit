@@ -345,7 +345,8 @@ impl AzureStorageConfig {
         if let Some(endpoint) = self.endpoint() {
             return Some(endpoint);
         }
-        let endpoint_suffix = self.endpoint_suffix()?;
+        let endpoint_suffix_config = self.endpoint_suffix()?;
+        let endpoint_suffix = normalize_endpoint_suffix(&endpoint_suffix_config);
         let uri = if endpoint_suffix.starts_with("blob.") {
             format!("https://{account_name}.{endpoint_suffix}")
         } else {
@@ -447,6 +448,14 @@ fn normalize_dns_host(host: &str) -> &str {
         .unwrap_or(host_without_port)
 }
 
+/// Trims whitespace and strips a single trailing root dot from endpoint suffixes.
+fn normalize_endpoint_suffix(endpoint_suffix: &str) -> &str {
+    let trimmed_suffix = endpoint_suffix.trim();
+    trimmed_suffix
+        .strip_suffix('.')
+        .unwrap_or(trimmed_suffix)
+}
+
 fn national_cloud_from_exact_blob_suffix(blob_suffix: &str) -> Option<AzureNationalCloud> {
     let blob_suffix_lower = blob_suffix.trim().to_ascii_lowercase();
     if AZURE_CHINA_BLOB_SUFFIXES.contains(&blob_suffix_lower.as_str()) {
@@ -476,7 +485,9 @@ fn classify_azure_endpoint_host(host: &str) -> AzureNationalCloud {
 }
 
 fn classify_azure_endpoint_suffix(endpoint_suffix: &str) -> AzureNationalCloud {
-    national_cloud_from_exact_blob_suffix(endpoint_suffix).unwrap_or(AzureNationalCloud::Custom)
+    let normalized_suffix = normalize_endpoint_suffix(endpoint_suffix);
+    national_cloud_from_exact_blob_suffix(normalized_suffix)
+        .unwrap_or(AzureNationalCloud::Custom)
 }
 
 impl fmt::Debug for AzureStorageConfig {
@@ -837,6 +848,15 @@ mod tests {
         );
 
         let config = AzureStorageConfig {
+            endpoint_suffix: Some("core.usgovcloudapi.net.".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.resolve_blob_service_uri("my-account").as_deref(),
+            Some("https://my-account.blob.core.usgovcloudapi.net")
+        );
+
+        let config = AzureStorageConfig {
             endpoint_suffix: Some("blob.core.chinacloudapi.cn".to_string()),
             ..Default::default()
         };
@@ -990,6 +1010,15 @@ mod tests {
         assert_eq!(
             trailing_root_dot_config.resolve_national_cloud(),
             AzureNationalCloud::Public
+        );
+
+        let trailing_root_dot_suffix_config = AzureStorageConfig {
+            endpoint_suffix: Some("core.usgovcloudapi.net.".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            trailing_root_dot_suffix_config.resolve_national_cloud(),
+            AzureNationalCloud::UsGovernment
         );
     }
 
