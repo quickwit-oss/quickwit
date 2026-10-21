@@ -567,7 +567,7 @@ async fn warm_up_automatons(
                                     quickwit_query::query_ast::TermSetAutomaton::new(&terms)
                                 })
                                 .await
-                                .map_err(|_| std::io::Error::other("task panicked"))??;
+                                .context("term-set automaton construction panicked")?;
                             inv_idx_clone
                                 .warm_postings_automaton(automaton, cpu_intensive_executor)
                                 .await
@@ -781,9 +781,20 @@ async fn leaf_search_single_split(
                 split.split_id.clone(),
             ))
         };
-    let (query, mut warmup_info) =
-        ctx.doc_mapper
-            .query(index.schema(), query_ast.clone(), false, predicate_cache)?;
+    // Term-set FST compilation belongs on the search pool, not the Tokio worker.
+    let doc_mapper = ctx.doc_mapper.clone();
+    let schema = index.schema();
+    let query_ast_clone = query_ast.clone();
+    let (query, mut warmup_info) = crate::search_thread_pool()
+        .run_cpu_intensive_with_priority(
+            Priority::Normal {
+                priority: search_request.priority,
+                job_cost: search_permit.job_cost(),
+            },
+            move || doc_mapper.query(schema, query_ast_clone, false, predicate_cache),
+        )
+        .await
+        .map_err(|_| SearchError::Internal("query construction panicked".to_string()))??;
 
     let collector_warmup_info = collector.warmup_info();
     warmup_info.merge(collector_warmup_info);

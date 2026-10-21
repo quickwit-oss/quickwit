@@ -298,7 +298,14 @@ async fn create_fields_snippet_generator(
     let schema = searcher.schema();
     let query_ast_resolved = serde_json::from_str(&snippet_request.query_ast_resolved)
         .context("failed to deserialize QueryAst")?;
-    let (query, _) = doc_mapper.query(schema.clone(), query_ast_resolved, false, None)?;
+    let query_schema = schema.clone();
+    let (query, _) = crate::search_thread_pool()
+        .run_cpu_intensive_with_priority(
+            quickwit_common::thread_pool::with_priority::Priority::High,
+            move || doc_mapper.query(query_schema, query_ast_resolved, false, None),
+        )
+        .await
+        .context("query construction panicked")??;
     let mut snippet_generators = HashMap::new();
     for field_name in &snippet_request.snippet_fields {
         let field = schema.get_field(field_name)?;
@@ -318,7 +325,6 @@ async fn create_snippet_generator(
     field: Field,
 ) -> anyhow::Result<SnippetGenerator> {
     let mut terms: Vec<&Term> = Vec::new();
-    // TODO ok with termset?
     query.query_terms(&mut |term, _need_position| {
         if term.field() == field {
             terms.push(term);

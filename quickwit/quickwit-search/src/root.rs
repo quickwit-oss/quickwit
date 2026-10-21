@@ -1277,7 +1277,14 @@ async fn plan_splits_for_root_search(
         return Ok((Vec::new(), HashMap::default()));
     }
 
-    let request_metadata = validate_request_and_build_metadata(&indexes_metadata, search_request)?;
+    let request = search_request.clone();
+    let (indexes_metadata, request_metadata) = crate::search_thread_pool()
+        .run_cpu_intensive_with_priority(Priority::High, move || {
+            validate_request_and_build_metadata(&indexes_metadata, &request)
+                .map(|metadata| (indexes_metadata, metadata))
+        })
+        .await
+        .context("query validation panicked")??;
     let split_metadatas = refine_and_list_matches(
         metastore,
         search_request,
@@ -1412,7 +1419,14 @@ pub async fn search_plan(
     )
     .map_err(|err| SearchError::Internal(format!("failed to build doc mapper. cause: {err}")))?;
 
-    let request_metadata = validate_request_and_build_metadata(&indexes_metadata, &search_request)?;
+    let request = search_request.clone();
+    let (indexes_metadata, request_metadata) = crate::search_thread_pool()
+        .run_cpu_intensive_with_priority(Priority::High, move || {
+            validate_request_and_build_metadata(&indexes_metadata, &request)
+                .map(|metadata| (indexes_metadata, metadata))
+        })
+        .await
+        .context("query validation panicked")??;
     let split_metadatas = refine_and_list_matches(
         metastore,
         &mut search_request,
@@ -1423,12 +1437,14 @@ pub async fn search_plan(
     )
     .await?;
 
-    let (query, mut warmup_info) = doc_mapper.query(
-        doc_mapper.schema(),
-        request_metadata.query_ast_resolved.clone(),
-        true,
-        None,
-    )?;
+    let mapper = doc_mapper.clone();
+    let query_ast = request_metadata.query_ast_resolved.clone();
+    let (query, mut warmup_info) = crate::search_thread_pool()
+        .run_cpu_intensive_with_priority(Priority::High, move || {
+            mapper.query(mapper.schema(), query_ast, true, None)
+        })
+        .await
+        .context("query construction panicked")??;
     let merge_collector = make_merge_collector(&search_request, Default::default())?;
     warmup_info.merge(merge_collector.warmup_info());
     warmup_info.simplify();

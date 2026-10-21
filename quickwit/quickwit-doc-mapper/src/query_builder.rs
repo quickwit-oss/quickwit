@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::ops::Bound;
 use std::sync::Arc;
@@ -22,7 +22,6 @@ use quickwit_query::query_ast::{
     QueryAst, QueryAstTransformer, QueryAstVisitor, RangeQuery, RegexQuery, TermSetQuery,
     WildcardQuery,
 };
-use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{InvalidQuery, find_field_or_hit_dynamic};
 use tantivy::Term;
 use tantivy::query::Query;
@@ -166,36 +165,13 @@ pub(crate) fn build_query(
 
     let (query, required_terms) = query_ast.build_tantivy_query_and_required_terms(context)?;
 
-    let (term_ranges_grouped_by_field, mut automatons_grouped_by_field) =
-        extract_prefix_term_ranges_and_automaton(
-            &query_ast,
-            context.schema,
-            context.tokenizer_manager,
-        )?;
-    ExtractTermSetAutomatons {
-        context,
-        automatons: &mut automatons_grouped_by_field,
-    }
-    .visit(&query_ast)?;
+    let (term_ranges_grouped_by_field, automatons_grouped_by_field) =
+        extract_prefix_term_ranges_and_automaton(&query_ast, context)?;
 
     let mut terms_grouped_by_field: HashMap<Field, HashMap<_, bool>> = Default::default();
     query.query_terms(&mut |term, need_position| {
         let field = term.field();
         if !context.schema.get_field_entry(field).is_indexed() {
-            return;
-        }
-        // Automaton warmup covers postings, but not positions or early absence checks.
-        if !need_position
-            && !required_terms.contains(term)
-            && automatons_grouped_by_field
-                .get(&field)
-                .is_some_and(|automatons| {
-                    automatons.iter().any(|automaton| match automaton {
-                        Automaton::TermSet(terms) => terms.contains(term.serialized_value_bytes()),
-                        Automaton::Regex(..) => false,
-                    })
-                })
-        {
             return;
         }
         *terms_grouped_by_field
@@ -215,41 +191,6 @@ pub(crate) fn build_query(
     };
 
     Ok((query, warmup_info))
-}
-
-/// Collect exact encoded terms using the same normalization as query execution.
-struct ExtractTermSetAutomatons<'a> {
-    context: &'a BuildTantivyAstContext<'a>,
-    automatons: &'a mut AutomatonWarmupInfo,
-}
-
-impl<'a> QueryAstVisitor<'a> for ExtractTermSetAutomatons<'_> {
-    type Err = InvalidQuery;
-
-    fn visit_term_set(&mut self, term_set_query: &'a TermSetQuery) -> Result<(), Self::Err> {
-        let query = QueryAst::TermSet(term_set_query.clone()).build_tantivy_query(self.context)?;
-        let mut terms_by_field: HashMap<Field, BTreeSet<Vec<u8>>> = HashMap::new();
-        query.query_terms(&mut |term, _| {
-            if self
-                .context
-                .schema
-                .get_field_entry(term.field())
-                .is_indexed()
-            {
-                terms_by_field
-                    .entry(term.field())
-                    .or_default()
-                    .insert(term.serialized_value_bytes().to_vec());
-            }
-        });
-        for (field, terms) in terms_by_field {
-            self.automatons
-                .entry(field)
-                .or_default()
-                .insert(Automaton::TermSet(terms));
-        }
-        Ok(())
-    }
 }
 
 /// Converts a `prefix` term into the equivalent term range.
@@ -284,17 +225,15 @@ fn prefix_term_to_range(prefix: Term) -> (Bound<Term>, Bound<Term>) {
 type PositionNeeded = bool;
 
 struct ExtractPrefixTermRanges<'a> {
-    schema: &'a Schema,
-    tokenizer_manager: &'a TokenizerManager,
+    context: &'a BuildTantivyAstContext<'a>,
     term_ranges_to_warm_up: HashMap<Field, HashMap<TermRange, PositionNeeded>>,
     automatons_to_warm_up: HashMap<Field, HashSet<Automaton>>,
 }
 
 impl<'a> ExtractPrefixTermRanges<'a> {
-    fn with_schema(schema: &'a Schema, tokenizer_manager: &'a TokenizerManager) -> Self {
+    fn new(context: &'a BuildTantivyAstContext<'a>) -> Self {
         ExtractPrefixTermRanges {
-            schema,
-            tokenizer_manager,
+            context,
             term_ranges_to_warm_up: HashMap::new(),
             automatons_to_warm_up: HashMap::new(),
         }
@@ -332,9 +271,16 @@ impl<'a> ExtractPrefixTermRanges<'a> {
 impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     type Err = InvalidQuery;
 
+    fn visit_term_set(&mut self, term_set_query: &'a TermSetQuery) -> Result<(), Self::Err> {
+        for (field, terms) in term_set_query.normalize_terms(self.context)? {
+            self.add_automaton(field, Automaton::TermSet(terms));
+        }
+        Ok(())
+    }
+
     fn visit_full_text(&mut self, full_text_query: &'a FullTextQuery) -> Result<(), Self::Err> {
         if let Some(prefix_term) =
-            full_text_query.get_prefix_term(self.schema, self.tokenizer_manager)
+            full_text_query.get_prefix_term(self.context.schema, self.context.tokenizer_manager)
         {
             // the max_expansion expansion of a bool prefix query is used for the fuzzy part of the
             // query, not for the expension to a range request.
@@ -348,14 +294,14 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
         &mut self,
         phrase_prefix: &'a PhrasePrefixQuery,
     ) -> Result<(), Self::Err> {
-        let phrase_prefix_terms = match phrase_prefix.get_terms(self.schema, self.tokenizer_manager)
-        {
-            Ok(terms) => terms,
-            Err(InvalidQuery::SchemaError(_)) | Err(InvalidQuery::FieldDoesNotExist { .. }) => {
-                return Ok(());
-            } /* the query will be nullified when casting to a tantivy ast */
-            Err(e) => return Err(e),
-        };
+        let phrase_prefix_terms =
+            match phrase_prefix.get_terms(self.context.schema, self.context.tokenizer_manager) {
+                Ok(terms) => terms,
+                Err(InvalidQuery::SchemaError(_)) | Err(InvalidQuery::FieldDoesNotExist { .. }) => {
+                    return Ok(());
+                } /* the query will be nullified when casting to a tantivy ast */
+                Err(e) => return Err(e),
+            };
         if let Some((_, term)) = phrase_prefix_terms.term_positions.last() {
             self.add_prefix_term(
                 term.clone(),
@@ -368,7 +314,7 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
 
     fn visit_wildcard(&mut self, wildcard_query: &'a WildcardQuery) -> Result<(), Self::Err> {
         let (field, path, regex) =
-            match wildcard_query.to_regex(self.schema, self.tokenizer_manager) {
+            match wildcard_query.to_regex(self.context.schema, self.context.tokenizer_manager) {
                 Ok(res) => res,
                 /* the query will be nullified when casting to a tantivy ast */
                 Err(InvalidQuery::FieldDoesNotExist { .. }) => return Ok(()),
@@ -380,7 +326,9 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     }
 
     fn visit_regex(&mut self, regex_query: &'a RegexQuery) -> Result<(), Self::Err> {
-        let resolved = match regex_query.to_resolved(self.schema, Some(self.tokenizer_manager)) {
+        let resolved = match regex_query
+            .to_resolved(self.context.schema, Some(self.context.tokenizer_manager))
+        {
             Ok(res) => res,
             /* the query will be nullified when casting to a tantivy ast */
             Err(InvalidQuery::FieldDoesNotExist { .. }) => return Ok(()),
@@ -394,10 +342,12 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     }
 
     fn visit_calc_field(&mut self, calc_field_query: &'a CalcFieldQuery) -> Result<(), Self::Err> {
-        let Some(regex_query) = calc_field_query.try_prefilter_regex_query(self.schema) else {
+        let Some(regex_query) = calc_field_query.try_prefilter_regex_query(self.context.schema)
+        else {
             return Ok(());
         };
-        let resolved = regex_query.to_resolved(self.schema, Some(self.tokenizer_manager))?;
+        let resolved =
+            regex_query.to_resolved(self.context.schema, Some(self.context.tokenizer_manager))?;
         self.add_automaton(
             resolved.field,
             Automaton::Regex(resolved.json_path, resolved.regex),
@@ -411,10 +361,9 @@ type AutomatonWarmupInfo = HashMap<Field, HashSet<Automaton>>;
 
 fn extract_prefix_term_ranges_and_automaton(
     query_ast: &QueryAst,
-    schema: &Schema,
-    tokenizer_manager: &TokenizerManager,
+    context: &BuildTantivyAstContext,
 ) -> anyhow::Result<(TermRangeWarmupInfo, AutomatonWarmupInfo)> {
-    let mut visitor = ExtractPrefixTermRanges::with_schema(schema, tokenizer_manager);
+    let mut visitor = ExtractPrefixTermRanges::new(context);
     visitor.visit(query_ast)?;
     Ok((
         visitor.term_ranges_to_warm_up,
@@ -966,7 +915,7 @@ mod test {
         check_build_query_static_mode(
             "title: IN [hello]",
             Vec::new(),
-            TestExpectation::Ok("TermSetQuery"),
+            TestExpectation::Ok("AutomatonQuery"),
         );
         check_build_query_static_mode(
             "IN [hello]",
@@ -1243,11 +1192,15 @@ mod test {
             params: params.clone(),
             lenient: false,
         };
-        let mut extractor1 = ExtractPrefixTermRanges::with_schema(&schema, &tokenizer_manager);
+        let context = BuildTantivyAstContext {
+            tokenizer_manager: &tokenizer_manager,
+            ..BuildTantivyAstContext::for_test(&schema)
+        };
+        let mut extractor1 = ExtractPrefixTermRanges::new(&context);
         extractor1.visit_phrase_prefix(&short).unwrap();
         extractor1.visit_phrase_prefix(&long).unwrap();
 
-        let mut extractor2 = ExtractPrefixTermRanges::with_schema(&schema, &tokenizer_manager);
+        let mut extractor2 = ExtractPrefixTermRanges::new(&context);
         extractor2.visit_phrase_prefix(&long).unwrap();
         extractor2.visit_phrase_prefix(&short).unwrap();
 

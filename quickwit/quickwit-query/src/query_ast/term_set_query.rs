@@ -12,27 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use tantivy::Term;
+use tantivy::query::{BooleanQuery, ConstScoreQuery};
+use tantivy::schema::Field;
 
 use crate::InvalidQuery;
 use crate::query_ast::{
-    BoolQuery, BuildTantivyAst, BuildTantivyAstContext, QueryAst, TantivyQueryAst, TermQuery,
+    AutomatonQuery, BoolQuery, BuildTantivyAst, BuildTantivyAstContext, QueryAst, TantivyQueryAst,
+    TermQuery,
 };
 
 /// Matches exact serialized term values for one physical field.
-/// Uses the same FST transitions as Tantivy's `TermSetQuery`, so warmup selects
-/// every dictionary block execution may read, including for absent terms.
+/// Used by query execution and warmup, including dictionary reads for absent terms.
+// TODO: Expose a SetDfaWrapper in Tantivy and reuse it instead of duplicating it here.
 #[derive(Clone)]
 pub struct TermSetAutomaton(Arc<tantivy_fst::Map<Vec<u8>>>);
 
 impl TermSetAutomaton {
-    pub fn new(terms: &BTreeSet<Vec<u8>>) -> Result<Self, tantivy_fst::Error> {
-        tantivy_fst::Map::from_iter(terms.iter().map(|term| (term, 0)))
-            .map(|map| Self(Arc::new(map)))
+    pub fn new(terms: &BTreeSet<Vec<u8>>) -> Self {
+        let map = tantivy_fst::Map::from_iter(terms.iter().map(|term| (term, 0)))
+            .expect("sorted unique terms must produce a valid in-memory FST");
+        Self(Arc::new(map))
     }
 }
 
@@ -105,20 +108,35 @@ impl TermSetQuery {
         bool_query.build_tantivy_ast_impl(context)
     }
 
-    fn build_term_set_query(
+    fn build_automaton_query(
         &self,
         context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let terms_it = self.make_term_iterator(context)?;
-        let term_set_query = tantivy::query::TermSetQuery::new(terms_it);
-        Ok(term_set_query.into())
+        let mut queries: Vec<Box<dyn crate::TantivyQuery>> = Vec::new();
+        for (field, terms) in self.normalize_terms(context)? {
+            queries.push(Box::new(AutomatonQuery {
+                field,
+                automaton: Arc::new(TermSetAutomaton::new(&terms)),
+            }));
+        }
+        match queries.len() {
+            0 => Ok(TantivyQueryAst::match_none()),
+            1 => Ok(TantivyQueryAst::Leaf(queries.pop().unwrap())),
+            // Matching multiple physical fields must not increase the score.
+            _ => Ok(ConstScoreQuery::new(Box::new(BooleanQuery::union(queries)), 1.0).into()),
+        }
     }
 
-    fn make_term_iterator(
+    /// Resolve and deduplicate serialized terms per physical field for execution and warmup.
+    /// Fast-only queries use term clauses instead and need no automaton warmup.
+    pub fn normalize_terms(
         &self,
         context: &BuildTantivyAstContext,
-    ) -> Result<HashSet<Term>, InvalidQuery> {
-        let mut terms: HashSet<Term> = HashSet::default();
+    ) -> Result<BTreeMap<Field, BTreeSet<Vec<u8>>>, InvalidQuery> {
+        if self.has_fast_only_field(context) {
+            return Ok(BTreeMap::new());
+        }
+        let mut terms: BTreeMap<Field, BTreeSet<Vec<u8>>> = BTreeMap::new();
 
         for (full_path, values) in &self.terms_per_field {
             for value in values {
@@ -136,7 +154,10 @@ impl TermSetQuery {
                 let ast = term_query.build_tantivy_ast_call(context)?;
                 let tantivy_query: Box<dyn crate::TantivyQuery> = ast.simplify().into();
                 tantivy_query.query_terms(&mut |term, _| {
-                    terms.insert(term.clone());
+                    terms
+                        .entry(term.field())
+                        .or_default()
+                        .insert(term.serialized_value_bytes().to_vec());
                 });
             }
         }
@@ -152,7 +173,7 @@ impl BuildTantivyAst for TermSetQuery {
         if self.has_fast_only_field(context) {
             self.build_bool_query(context)
         } else {
-            self.build_term_set_query(context)
+            self.build_automaton_query(context)
         }
     }
 }
@@ -198,7 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn test_term_set_query_with_indexed_field_uses_term_set() {
+    fn test_term_set_query_with_indexed_field_uses_automaton() {
         let mut schema_builder = Schema::builder();
         schema_builder.add_u64_field("indexed_field", FAST | INDEXED);
         let schema = schema_builder.build();
@@ -213,16 +234,7 @@ mod tests {
             .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
 
-        // Should return a leaf query (TermSetQuery wrapped in TantivyQueryAst)
-        let leaf = tantivy_query_ast
-            .as_leaf()
-            .expect("Expected a leaf query (TermSetQuery), but got a complex query");
-
-        // Verify it's a TermSetQuery by checking the debug representation
-        let debug_str = format!("{leaf:?}");
-        assert!(
-            debug_str.contains("TermSetQuery"),
-            "Expected TermSetQuery, got: {debug_str}"
-        );
+        let leaf = tantivy_query_ast.as_leaf().expect("Expected a leaf query");
+        assert!(leaf.is::<super::AutomatonQuery<super::TermSetAutomaton>>());
     }
 }
