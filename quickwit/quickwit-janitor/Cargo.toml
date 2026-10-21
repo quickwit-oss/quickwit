@@ -33,7 +33,6 @@ quickwit-index-management = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-metrics = { workspace = true }
-quickwit-parquet-engine = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-query = { workspace = true }
 quickwit-search = { workspace = true }

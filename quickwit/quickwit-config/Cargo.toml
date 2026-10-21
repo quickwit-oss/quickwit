@@ -47,6 +47,5 @@ quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }
 
 [features]
-metrics = []
 testsuite = ["quickwit-proto/testsuite"]
 vrl = ["dep:vrl"]

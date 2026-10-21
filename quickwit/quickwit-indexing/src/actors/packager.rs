@@ -374,6 +374,7 @@ mod tests {
     use std::ops::RangeInclusive;
 
     use quickwit_actors::{ObservationType, Universe};
+    use quickwit_common::io::IoControls;
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_proto::search::{ListFieldsEntry, ListFieldsMetadata};
     use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId};
@@ -383,6 +384,7 @@ mod tests {
     use tracing::Span;
 
     use super::*;
+    use crate::controlled_directory::ControlledDirectory;
     use crate::models::{PublishLock, SplitAttrs};
 
     #[test]
@@ -471,8 +473,10 @@ mod tests {
                     .clone(),
             );
         let index_directory = MmapDirectory::open(split_scratch_directory.path())?;
+        let controlled_directory =
+            ControlledDirectory::new(Box::new(index_directory), IoControls::default());
         let mut index_writer =
-            index_builder.single_segment_index_writer(index_directory, 100_000_000)?;
+            index_builder.single_segment_index_writer(controlled_directory.clone(), 100_000_000)?;
         let mut timerange_opt: Option<RangeInclusive<DateTime>> = None;
         let mut num_docs = 0;
         for &timestamp in segment_timestamps {
@@ -525,7 +529,7 @@ mod tests {
             },
             index,
             split_scratch_directory,
-            controlled_directory_opt: None,
+            controlled_directory,
         };
         Ok(indexed_split)
     }

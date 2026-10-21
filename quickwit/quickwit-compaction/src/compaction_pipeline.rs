@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Context;
-use quickwit_actors::{ActorHandle, HEARTBEAT, Health, QueueCapacity, SpawnContext, Supervisable};
+use quickwit_actors::{ActorHandle, HEARTBEAT, Health, SpawnContext, Supervisable};
 use quickwit_common::KillSwitch;
 use quickwit_common::io::{IoControls, Limiter};
 use quickwit_common::pubsub::EventBroker;
@@ -94,7 +94,7 @@ impl CompactionPipelineHandles {
 
 /// A single-use compaction pipeline. Processes one merge task and terminates.
 ///
-/// Owned by the `CompactorSupervisor`, which periodically calls
+/// Owned by the `CompactorService`, which periodically calls
 /// `check_actor_health()` to collect status updates. The pipeline manages
 /// its own retry logic internally.
 pub struct CompactionPipeline {
@@ -176,7 +176,7 @@ impl CompactionPipeline {
     ///
     /// If the pipeline is already completed or failed (terminal status), returns the status
     /// without re-checking actors. The pipeline sits in this "completed" state (finished or failed)
-    /// until the supervisor cleans up the spot in favor of a new pipeline. This is done to
+    /// until the compactor service cleans up the spot in favor of a new pipeline. This is done to
     /// ensure that the planner acks the success/failure.
     pub fn pipeline_status_update(&mut self) -> PipelineStatusUpdate {
         self.update_status();
@@ -233,7 +233,7 @@ impl CompactionPipeline {
     }
 
     /// Fires once when the pipeline transitions from InProgress to a terminal state.
-    /// Pairs with the `COMPACTIONS_IN_PROGRESS.inc()` in `CompactorSupervisor::spawn_task`.
+    /// Pairs with the `COMPACTIONS_IN_PROGRESS.inc()` in `CompactorService::spawn_task`.
     fn record_terminal_metrics(&self, succeeded: bool) {
         let merge_level = self.merge_operation.merge_level().to_string();
         let index_label =
@@ -286,8 +286,7 @@ impl CompactionPipeline {
 
         // Publisher (no merge planner feedback, no source)
         let merge_publisher = Publisher::new(
-            quickwit_indexing::MERGE_PUBLISHER_NAME,
-            QueueCapacity::Unbounded,
+            quickwit_indexing::PublisherType::MergePublisher,
             self.metastore.clone(),
             None,
             None,

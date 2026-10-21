@@ -380,7 +380,7 @@ impl MergeExecutor {
             split_attrs,
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,
-            controlled_directory_opt: Some(controlled_directory),
+            controlled_directory,
         })
     }
 
@@ -499,7 +499,7 @@ impl MergeExecutor {
             },
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,
-            controlled_directory_opt: Some(controlled_directory),
+            controlled_directory,
         };
         Ok(Some(indexed_split))
     }

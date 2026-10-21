@@ -48,6 +48,8 @@ pub enum FieldMappingType {
     Object(QuickwitObjectOptions),
     /// Concatenate field mapping type configuration.
     Concatenate(QuickwitConcatenateOptions),
+    /// Engine-generated `u64` fast field used to break sort ties.
+    TieBreaker,
 }
 
 impl FieldMappingType {
@@ -67,6 +69,7 @@ impl FieldMappingType {
                 return QuickwitFieldType::Object;
             }
             FieldMappingType::Concatenate(_) => return QuickwitFieldType::Concatenate,
+            FieldMappingType::TieBreaker => return QuickwitFieldType::TieBreaker,
         };
         match cardinality {
             Cardinality::SingleValued => QuickwitFieldType::Simple(primitive_type),
@@ -81,6 +84,7 @@ pub enum QuickwitFieldType {
     Object,
     Concatenate,
     Array(Type),
+    TieBreaker,
 }
 
 impl QuickwitFieldType {
@@ -90,6 +94,7 @@ impl QuickwitFieldType {
             QuickwitFieldType::Object => "object".to_string(),
             QuickwitFieldType::Array(typ) => format!("array<{}>", primitive_type_to_str(typ)),
             QuickwitFieldType::Concatenate => "concatenate".to_string(),
+            QuickwitFieldType::TieBreaker => "tie_breaker".to_string(),
         }
     }
 
@@ -99,6 +104,9 @@ impl QuickwitFieldType {
         }
         if type_str == "concatenate" {
             return Some(QuickwitFieldType::Concatenate);
+        }
+        if type_str == "tie_breaker" {
+            return Some(QuickwitFieldType::TieBreaker);
         }
         if type_str.starts_with("array<") && type_str.ends_with('>') {
             let parsed_type_str = parse_primitive_type(&type_str[6..type_str.len() - 1])?;
@@ -165,5 +173,7 @@ mod tests {
         test_parse_type_aux("object2", None);
         test_parse_type_aux("bool", Some(QuickwitFieldType::Simple(Type::Bool)));
         test_parse_type_aux("ip", Some(QuickwitFieldType::Simple(Type::IpAddr)));
+        test_parse_type_aux("tie_breaker", Some(QuickwitFieldType::TieBreaker));
+        assert_eq!(QuickwitFieldType::TieBreaker.to_type_id(), "tie_breaker");
     }
 }

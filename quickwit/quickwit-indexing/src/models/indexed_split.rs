@@ -23,7 +23,7 @@ use quickwit_metrics::{GaugeGuard, label_values};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::types::{DocMappingUid, IndexUid, SplitId};
 use tantivy::IndexBuilder;
-use tantivy::directory::MmapDirectory;
+use tantivy::directory::{MmapDirectory, RamDirectory};
 use tracing::{Span, error, instrument};
 
 use crate::controlled_directory::ControlledDirectory;
@@ -36,15 +36,16 @@ pub struct IndexedSplitBuilder {
     pub split_attrs: SplitAttrs,
     pub index_writer: tantivy::SingleSegmentIndexWriter,
     pub split_scratch_directory: TempDirectory,
-    pub controlled_directory_opt: Option<ControlledDirectory>,
+    pub controlled_directory: ControlledDirectory,
     pub doc_id_clusterer_opt: Option<DocIdClusterer>,
+    ram_directory_opt: Option<RamDirectory>,
 }
 
 pub struct IndexedSplit {
     pub split_attrs: SplitAttrs,
     pub index: tantivy::Index,
     pub split_scratch_directory: TempDirectory,
-    pub controlled_directory_opt: Option<ControlledDirectory>,
+    pub controlled_directory: ControlledDirectory,
 }
 
 impl IndexedSplit {
@@ -95,13 +96,20 @@ impl IndexedSplitBuilder {
         let split_scratch_directory_prefix = format!("split-{split_id}-");
         let split_scratch_directory =
             scratch_directory.named_temp_child(&split_scratch_directory_prefix)?;
+        let use_ram_directory =
+            quickwit_common::get_bool_from_env_cached!("QW_ENABLE_IN_MEMORY_INDEXING", false);
+        let ram_directory_opt = use_ram_directory.then(RamDirectory::default);
         let mmap_directory = MmapDirectory::open(split_scratch_directory.path())?;
-        let box_mmap_directory = Box::new(mmap_directory);
-
-        let controlled_directory = ControlledDirectory::new(box_mmap_directory, io_controls);
+        let controlled_directory = ControlledDirectory::new(Box::new(mmap_directory), io_controls);
+        let indexing_directory: Box<dyn tantivy::Directory> =
+            if let Some(ram_directory) = &ram_directory_opt {
+                Box::new(ram_directory.clone())
+            } else {
+                Box::new(controlled_directory.clone())
+            };
 
         let index_writer =
-            index_builder.single_segment_index_writer(controlled_directory.clone(), 15_000_000)?;
+            index_builder.single_segment_index_writer(indexing_directory, 15_000_000)?;
         Ok(Self {
             split_attrs: SplitAttrs {
                 node_id: pipeline_id.node_id,
@@ -120,7 +128,8 @@ impl IndexedSplitBuilder {
             index_writer,
             doc_id_clusterer_opt,
             split_scratch_directory,
-            controlled_directory_opt: Some(controlled_directory),
+            controlled_directory,
+            ram_directory_opt,
         })
     }
 
@@ -160,16 +169,35 @@ impl IndexedSplitBuilder {
         } else {
             self.index_writer.finalize()?
         };
+        let index = if let Some(ram_directory) = self.ram_directory_opt {
+            ram_directory.persist(&self.controlled_directory)?;
+            // Persist copies files but leaves RAM intact. Return a disk-backed index so packaging
+            // does not retain the RAM files. The builder's RAM handle drops at this block's end;
+            // the original RAM-backed `index` (shadowed by this binding) drops when
+            // finalize returns.
+            tantivy::Index::open(self.controlled_directory.clone())?
+        } else {
+            index
+        };
         Ok(IndexedSplit {
             split_attrs,
             index,
             split_scratch_directory: self.split_scratch_directory,
-            controlled_directory_opt: self.controlled_directory_opt,
+            controlled_directory: self.controlled_directory,
         })
     }
 
     pub fn path(&self) -> &Path {
         self.split_scratch_directory.path()
+    }
+
+    pub fn mem_usage(&self) -> usize {
+        self.index_writer.mem_usage()
+            + self
+                .ram_directory_opt
+                .as_ref()
+                .map(RamDirectory::total_mem_usage)
+                .unwrap_or(0)
     }
 
     pub fn split_id(&self) -> &SplitId {
@@ -218,4 +246,65 @@ pub struct EmptySplit {
     pub checkpoint_delta: IndexCheckpointDelta,
     pub publish_lock: PublishLock,
     pub batch_parent_span: Span,
+}
+
+#[cfg(test)]
+mod tests {
+    use quickwit_proto::types::NodeId;
+    use tantivy::schema::{STORED, Schema};
+    use tantivy::{Directory, DocAddress, TantivyDocument, doc};
+
+    use super::*;
+
+    #[test]
+    fn test_finalize_ram_split_uses_disk() -> anyhow::Result<()> {
+        let mut schema = Schema::builder();
+        let id = schema.add_u64_field("id", STORED);
+        let ram_directory = RamDirectory::default();
+        let mut index_writer = IndexBuilder::new()
+            .schema(schema.build())
+            .single_segment_index_writer(ram_directory.clone(), 15_000_000)?;
+        index_writer.add_document(doc!(id => 42u64))?;
+        let split_scratch_directory = TempDirectory::for_test();
+        let controlled_directory = ControlledDirectory::new(
+            Box::new(MmapDirectory::open(split_scratch_directory.path())?),
+            IoControls::default(),
+        );
+        // Select RAM directly: the production environment flag is cached process-wide.
+        let builder = IndexedSplitBuilder {
+            split_attrs: SplitAttrs {
+                node_id: NodeId::from_str("test-node"),
+                index_uid: IndexUid::new_with_random_ulid("test-index"),
+                source_id: "test-source".to_string(),
+                doc_mapping_uid: DocMappingUid::default(),
+                split_id: SplitId::new(),
+                partition_id: 0,
+                num_docs: 1,
+                uncompressed_docs_size_in_bytes: 0,
+                time_range: None,
+                replaced_split_ids: Vec::new(),
+                delete_opstamp: 0,
+                num_merge_ops: 0,
+            },
+            index_writer,
+            split_scratch_directory,
+            controlled_directory,
+            doc_id_clusterer_opt: None,
+            ram_directory_opt: Some(ram_directory.clone()),
+        };
+        let split = builder.finalize()?;
+        // A file added only after persistence must not be visible through the returned index.
+        let marker = Path::new("ram-only");
+        ram_directory.atomic_write(marker, b"not persisted")?;
+        assert!(!split.index.directory().exists(marker)?);
+        drop(ram_directory);
+
+        let reader = split.index.reader()?;
+        let searcher = reader.searcher();
+        assert_eq!(searcher.num_docs(), 1);
+        let id = split.index.schema().get_field("id")?;
+        let document: TantivyDocument = searcher.doc(DocAddress::new(0, 0))?;
+        assert_eq!(document, doc!(id => 42u64));
+        Ok(())
+    }
 }

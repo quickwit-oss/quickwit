@@ -18,6 +18,7 @@ use std::time::Instant;
 use bytesize::ByteSize;
 use quickwit_ingest::{
     CommitType, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
+    split_ndjson_lines,
 };
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::types::IndexId;
@@ -29,7 +30,6 @@ use crate::elasticsearch_api::filter::{elastic_bulk_filter, elastic_index_bulk_f
 use crate::elasticsearch_api::make_elastic_api_response;
 use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
 use crate::format::extract_format_from_qs;
-use crate::ingest_api::lines;
 use crate::rest::recover_fn;
 use crate::{Body, with_arg};
 
@@ -111,7 +111,7 @@ async fn elastic_ingest_bulk(
     }
     let now = Instant::now();
     let mut doc_batch_builders = HashMap::new();
-    let mut lines = lines(&body.content).enumerate();
+    let mut lines = split_ndjson_lines(&body.content).enumerate();
 
     while let Some((line_number, line)) = lines.next() {
         let action = serde_json::from_slice::<BulkAction>(line).map_err(|error| {

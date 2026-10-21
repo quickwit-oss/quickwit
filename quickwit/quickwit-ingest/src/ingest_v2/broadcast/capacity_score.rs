@@ -16,7 +16,7 @@ use std::collections::BTreeSet;
 
 use anyhow::{Context, Result};
 use bytesize::ByteSize;
-use quickwit_cluster::{Cluster, ListenerHandle};
+use quickwit_cluster::{Cluster, GenerationId, ListenerHandle};
 use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_common::shared_consts::INGESTER_CAPACITY_SCORE_PREFIX;
 use quickwit_proto::ingest::ingester::IngesterStatus;
@@ -160,6 +160,7 @@ impl BroadcastIngesterCapacityScoreTask {
 #[derive(Debug, Clone)]
 pub struct IngesterCapacityScoreUpdate {
     pub node_id: NodeId,
+    pub generation_id: GenerationId,
     pub source_uid: SourceUid,
     pub capacity_score: usize,
     pub open_shard_count: usize,
@@ -183,8 +184,10 @@ pub async fn setup_ingester_capacity_update_listener(
                 return;
             };
             let node_id: NodeId = NodeId::from_str(&event.node.node_id);
+            let generation_id: GenerationId = GenerationId::from(event.node.generation_id);
             event_broker.publish(IngesterCapacityScoreUpdate {
                 node_id,
+                generation_id,
                 source_uid,
                 capacity_score: ingester_capacity.capacity_score,
                 open_shard_count: ingester_capacity.open_shard_count,
@@ -267,6 +270,7 @@ mod tests {
             assert_eq!(event.source_uid.source_id, "test-source");
             assert_eq!(event.capacity_score, 6);
             assert_eq!(event.open_shard_count, 1);
+            assert_eq!(event.generation_id, GenerationId::from(1u64));
         });
 
         let _listener =

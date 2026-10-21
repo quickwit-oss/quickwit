@@ -17,8 +17,8 @@ use crate::query_ast::cache_node::CacheState;
 use crate::query_ast::field_presence::FieldPresenceQuery;
 use crate::query_ast::user_input_query::UserInputQuery;
 use crate::query_ast::{
-    BoolQuery, CacheNode, FullTextQuery, PhrasePrefixQuery, QueryAst, RangeQuery, RegexQuery,
-    TermQuery, TermSetQuery, WildcardQuery,
+    BoolQuery, CacheNode, CalcFieldQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, RangeQuery,
+    RegexQuery, TermQuery, TermSetQuery, WildcardQuery,
 };
 
 /// Simple trait to implement a Visitor over the QueryAst.
@@ -43,6 +43,7 @@ pub trait QueryAstVisitor<'a> {
             QueryAst::Wildcard(wildcard) => self.visit_wildcard(wildcard),
             QueryAst::Regex(regex) => self.visit_regex(regex),
             QueryAst::Cache(cache_node) => self.visit_cache_node(cache_node),
+            QueryAst::CalcField(calc_field_query) => self.visit_calc_field(calc_field_query),
         }
     }
 
@@ -114,6 +115,10 @@ pub trait QueryAstVisitor<'a> {
         Ok(())
     }
 
+    fn visit_calc_field(&mut self, _calc_field_query: &'a CalcFieldQuery) -> Result<(), Self::Err> {
+        Ok(())
+    }
+
     fn visit_cache_node(&mut self, cache_node: &'a CacheNode) -> Result<(), Self::Err> {
         // this goes a bit again how the rest of the default Visitor behave. The rational is that in
         // practice, on a cache hit, we don't want to do anything with that node.
@@ -150,6 +155,7 @@ pub trait QueryAstTransformer {
             QueryAst::Wildcard(wildcard) => self.transform_wildcard(wildcard),
             QueryAst::Regex(regex) => self.transform_regex(regex),
             QueryAst::Cache(cache_node) => self.transform_cache_node(cache_node),
+            QueryAst::CalcField(calc_field_query) => self.transform_calc_field(calc_field_query),
         }
     }
 
@@ -251,6 +257,13 @@ pub trait QueryAstTransformer {
 
     fn transform_regex(&mut self, regex_query: RegexQuery) -> Result<Option<QueryAst>, Self::Err> {
         Ok(Some(QueryAst::Regex(regex_query)))
+    }
+
+    fn transform_calc_field(
+        &mut self,
+        calc_field_query: CalcFieldQuery,
+    ) -> Result<Option<QueryAst>, Self::Err> {
+        Ok(Some(QueryAst::CalcField(calc_field_query)))
     }
 
     fn transform_cache_node(

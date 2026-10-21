@@ -1,4 +1,6 @@
-FROM node:24@sha256:b2b2184ba9b78c022e1d6a7924ec6fba577adf28f15c9d9c457730cc4ad3807a AS ui-builder
+FROM node:26@sha256:e3ffe0cbaeebdcddbfe1ee7bca9b564a92863a8386d5b99a3d72677b3667b61d AS ui-builder
+
+RUN npm install --global yarn@1.22.22
 
 COPY quickwit/quickwit-ui /quickwit/quickwit-ui
 
@@ -51,7 +53,7 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
     && find target/$CARGO_PROFILE -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;
 
 
-FROM debian:bookworm-slim@sha256:e899040a73d36e2b36fa33216943539d9957cba8172b858097c2cabcdb20a3e2 AS quickwit
+FROM debian:bookworm-slim@sha256:56ff6d36d4eb3db13a741b342ec466f121480b5edded42e4b7ee850ce7a418ee AS quickwit
 
 LABEL org.opencontainers.image.title="Quickwit"
 LABEL maintainer="Quickwit, Inc. <hello@quickwit.io>"
