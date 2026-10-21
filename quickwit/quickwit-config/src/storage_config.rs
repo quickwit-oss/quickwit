@@ -439,6 +439,14 @@ fn strip_host_port(host: &str) -> &str {
     }
 }
 
+/// Strips a single trailing root dot from absolute DNS names before suffix matching.
+fn normalize_dns_host(host: &str) -> &str {
+    let host_without_port = strip_host_port(host);
+    host_without_port
+        .strip_suffix('.')
+        .unwrap_or(host_without_port)
+}
+
 fn national_cloud_from_exact_blob_suffix(blob_suffix: &str) -> Option<AzureNationalCloud> {
     let blob_suffix_lower = blob_suffix.trim().to_ascii_lowercase();
     if AZURE_CHINA_BLOB_SUFFIXES.contains(&blob_suffix_lower.as_str()) {
@@ -454,8 +462,8 @@ fn national_cloud_from_exact_blob_suffix(blob_suffix: &str) -> Option<AzureNatio
 }
 
 fn classify_azure_endpoint_host(host: &str) -> AzureNationalCloud {
-    let host_without_port = strip_host_port(host);
-    let host_lower = host_without_port.to_ascii_lowercase();
+    let normalized_host = normalize_dns_host(host);
+    let host_lower = normalized_host.to_ascii_lowercase();
     if let Some(national_cloud) = national_cloud_from_exact_blob_suffix(&host_lower) {
         return national_cloud;
     }
@@ -974,6 +982,15 @@ mod tests {
             ..Default::default()
         };
         assert!(!uppercase_https_endpoint_config.endpoint_uses_non_https_transport());
+
+        let trailing_root_dot_config = AzureStorageConfig {
+            endpoint: Some("https://my-account.blob.core.windows.net.".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            trailing_root_dot_config.resolve_national_cloud(),
+            AzureNationalCloud::Public
+        );
     }
 
     #[test]

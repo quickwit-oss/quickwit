@@ -250,6 +250,7 @@ tokio-util = { version = "0.7", default-features = false, features = [
   "io-util",
 ] }
 toml = "1.1"
+url = "2"
 tonic = { version = "0.14", features = [
   "_tls-any",
   "gzip",
