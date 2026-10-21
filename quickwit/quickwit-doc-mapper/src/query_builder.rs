@@ -26,7 +26,7 @@ use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{InvalidQuery, find_field_or_hit_dynamic};
 use tantivy::Term;
 use tantivy::query::Query;
-use tantivy::schema::{Field, Schema};
+use tantivy::schema::{Field, FieldType, Schema};
 use tracing::error;
 
 use crate::doc_mapper::FastFieldWarmupInfo;
@@ -166,7 +166,7 @@ pub(crate) fn build_query(
 
     let (query, required_terms) = query_ast.build_tantivy_query_and_required_terms(context)?;
 
-    let term_set_query_fields = extract_term_set_query_fields(&query_ast, context.schema)?;
+    let mut warmup_info = extract_term_set_warmup(&query_ast, context.schema)?;
     let (term_ranges_grouped_by_field, automatons_grouped_by_field) =
         extract_prefix_term_ranges_and_automaton(
             &query_ast,
@@ -187,57 +187,73 @@ pub(crate) fn build_query(
             .or_default() |= need_position;
     });
 
-    let warmup_info = WarmupInfo {
-        term_dict_fields: term_set_query_fields,
+    warmup_info.merge(WarmupInfo {
         terms_grouped_by_field,
         term_ranges_grouped_by_field,
         fast_fields: fast_fields_visitor.fields,
         automatons_grouped_by_field,
         required_terms,
         ..WarmupInfo::default()
-    };
+    });
 
     Ok((query, warmup_info))
 }
 
-struct ExtractTermSetFields<'a> {
-    term_dict_fields_to_warm_up: HashSet<Field>,
+/// Collect full-field warmups and JSON-path ranges for term sets.
+struct ExtractTermSetWarmup<'a> {
+    warmup_info: WarmupInfo,
     schema: &'a Schema,
 }
 
-impl<'a> ExtractTermSetFields<'a> {
-    fn new(schema: &'a Schema) -> Self {
-        ExtractTermSetFields {
-            term_dict_fields_to_warm_up: HashSet::new(),
-            schema,
-        }
-    }
-}
-
-impl<'a> QueryAstVisitor<'a> for ExtractTermSetFields<'_> {
+impl<'a> QueryAstVisitor<'a> for ExtractTermSetWarmup<'_> {
     type Err = anyhow::Error;
 
     fn visit_term_set(&mut self, term_set_query: &'a TermSetQuery) -> anyhow::Result<()> {
-        for field in term_set_query.terms_per_field.keys() {
-            if let Some((field, _field_entry, _path)) =
-                find_field_or_hit_dynamic(field, self.schema)
+        for field_name in term_set_query.terms_per_field.keys() {
+            let Some((field, field_entry, path)) =
+                find_field_or_hit_dynamic(field_name, self.schema)
+            else {
+                anyhow::bail!("field does not exist: {}", field_name);
+            };
+            if let FieldType::JsonObject(options) = field_entry.field_type()
+                && field_entry.is_indexed()
+                && !path.is_empty()
             {
-                self.term_dict_fields_to_warm_up.insert(field);
+                // Include the path terminator but no value-type tag: a JSON term query can
+                // emit both string and typed terms. Use Tantivy's path encoding (including
+                // expand_dots and escaped dots), just as query construction does.
+                let prefix =
+                    Term::from_field_json_path(field, &path, options.is_expand_dots_enabled());
+                let (start, end) = prefix_term_to_range(prefix);
+                // No limit: set-automaton execution may read any block containing this path,
+                // even for absent terms. Range warmup includes the boundary blocks too.
+                self.warmup_info
+                    .term_ranges_grouped_by_field
+                    .entry(field)
+                    .or_default()
+                    .insert(
+                        TermRange {
+                            start,
+                            end,
+                            limit: None,
+                        },
+                        false,
+                    );
             } else {
-                anyhow::bail!("field does not exist: {}", field);
+                self.warmup_info.term_dict_fields.insert(field);
             }
         }
         Ok(())
     }
 }
 
-fn extract_term_set_query_fields(
-    query_ast: &QueryAst,
-    schema: &Schema,
-) -> anyhow::Result<HashSet<Field>> {
-    let mut visitor = ExtractTermSetFields::new(schema);
+fn extract_term_set_warmup(query_ast: &QueryAst, schema: &Schema) -> anyhow::Result<WarmupInfo> {
+    let mut visitor = ExtractTermSetWarmup {
+        warmup_info: WarmupInfo::default(),
+        schema,
+    };
     visitor.visit(query_ast)?;
-    Ok(visitor.term_dict_fields_to_warm_up)
+    Ok(visitor.warmup_info)
 }
 
 /// Converts a `prefix` term into the equivalent term range.
