@@ -50,7 +50,7 @@ pub use regex_extract_eq::get_or_compile_cached_fst_regex;
 pub use regex_query::{AutomatonQuery, JsonPathPrefix, RegexQuery, ResolvedRegex};
 use tantivy_query_ast::TantivyQueryAst;
 pub use term_query::TermQuery;
-pub use term_set_query::TermSetQuery;
+pub use term_set_query::{TermSetAutomaton, TermSetQuery};
 pub use user_input_query::UserInputQuery;
 pub use visitor::{QueryAstTransformer, QueryAstVisitor};
 pub use wildcard_query::WildcardQuery;

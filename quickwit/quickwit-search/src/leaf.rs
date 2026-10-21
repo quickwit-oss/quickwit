@@ -560,6 +560,19 @@ async fn warm_up_automatons(
                 let inv_idx_clone = inv_idx.clone();
                 warm_up_futures.push(async move {
                     match automaton {
+                        Automaton::TermSet(terms) => {
+                            let terms = terms.clone();
+                            let automaton = crate::search_thread_pool()
+                                .run_cpu_intensive_with_priority(priority, move || {
+                                    quickwit_query::query_ast::TermSetAutomaton::new(&terms)
+                                })
+                                .await
+                                .map_err(|_| std::io::Error::other("task panicked"))??;
+                            inv_idx_clone
+                                .warm_postings_automaton(automaton, cpu_intensive_executor)
+                                .await
+                                .context("failed to load term-set automaton")
+                        }
                         Automaton::Regex(path, regex_str) => {
                             let regex = get_or_compile_cached_fst_regex(regex_str)
                                 .context("failed to parse regex during warmup")?;

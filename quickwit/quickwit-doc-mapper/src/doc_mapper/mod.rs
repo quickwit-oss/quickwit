@@ -79,7 +79,8 @@ pub enum Automaton {
     /// A regex in it's str representation as tantivy_fst::Regex isn't PartialEq, and the path if
     /// inside a json field
     Regex(Option<Vec<u8>>, String),
-    // we could add termset query here, instead of downloading the whole dictionary
+    /// Sorted, unique serialized term values, including JSON path and type when present.
+    TermSet(std::collections::BTreeSet<Vec<u8>>),
 }
 
 /// Description of how a fast field should be warmed up

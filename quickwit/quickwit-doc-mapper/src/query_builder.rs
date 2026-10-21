@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::convert::Infallible;
 use std::ops::Bound;
 use std::sync::Arc;
@@ -166,18 +166,36 @@ pub(crate) fn build_query(
 
     let (query, required_terms) = query_ast.build_tantivy_query_and_required_terms(context)?;
 
-    let term_set_query_fields = extract_term_set_query_fields(&query_ast, context.schema)?;
-    let (term_ranges_grouped_by_field, automatons_grouped_by_field) =
+    let (term_ranges_grouped_by_field, mut automatons_grouped_by_field) =
         extract_prefix_term_ranges_and_automaton(
             &query_ast,
             context.schema,
             context.tokenizer_manager,
         )?;
+    ExtractTermSetAutomatons {
+        context,
+        automatons: &mut automatons_grouped_by_field,
+    }
+    .visit(&query_ast)?;
 
     let mut terms_grouped_by_field: HashMap<Field, HashMap<_, bool>> = Default::default();
     query.query_terms(&mut |term, need_position| {
         let field = term.field();
         if !context.schema.get_field_entry(field).is_indexed() {
+            return;
+        }
+        // Automaton warmup covers postings, but not positions or early absence checks.
+        if !need_position
+            && !required_terms.contains(term)
+            && automatons_grouped_by_field
+                .get(&field)
+                .is_some_and(|automatons| {
+                    automatons.iter().any(|automaton| match automaton {
+                        Automaton::TermSet(terms) => terms.contains(term.serialized_value_bytes()),
+                        Automaton::Regex(..) => false,
+                    })
+                })
+        {
             return;
         }
         *terms_grouped_by_field
@@ -188,7 +206,6 @@ pub(crate) fn build_query(
     });
 
     let warmup_info = WarmupInfo {
-        term_dict_fields: term_set_query_fields,
         terms_grouped_by_field,
         term_ranges_grouped_by_field,
         fast_fields: fast_fields_visitor.fields,
@@ -200,44 +217,39 @@ pub(crate) fn build_query(
     Ok((query, warmup_info))
 }
 
-struct ExtractTermSetFields<'a> {
-    term_dict_fields_to_warm_up: HashSet<Field>,
-    schema: &'a Schema,
+/// Collect exact encoded terms using the same normalization as query execution.
+struct ExtractTermSetAutomatons<'a> {
+    context: &'a BuildTantivyAstContext<'a>,
+    automatons: &'a mut AutomatonWarmupInfo,
 }
 
-impl<'a> ExtractTermSetFields<'a> {
-    fn new(schema: &'a Schema) -> Self {
-        ExtractTermSetFields {
-            term_dict_fields_to_warm_up: HashSet::new(),
-            schema,
-        }
-    }
-}
+impl<'a> QueryAstVisitor<'a> for ExtractTermSetAutomatons<'_> {
+    type Err = InvalidQuery;
 
-impl<'a> QueryAstVisitor<'a> for ExtractTermSetFields<'_> {
-    type Err = anyhow::Error;
-
-    fn visit_term_set(&mut self, term_set_query: &'a TermSetQuery) -> anyhow::Result<()> {
-        for field in term_set_query.terms_per_field.keys() {
-            if let Some((field, _field_entry, _path)) =
-                find_field_or_hit_dynamic(field, self.schema)
+    fn visit_term_set(&mut self, term_set_query: &'a TermSetQuery) -> Result<(), Self::Err> {
+        let query = QueryAst::TermSet(term_set_query.clone()).build_tantivy_query(self.context)?;
+        let mut terms_by_field: HashMap<Field, BTreeSet<Vec<u8>>> = HashMap::new();
+        query.query_terms(&mut |term, _| {
+            if self
+                .context
+                .schema
+                .get_field_entry(term.field())
+                .is_indexed()
             {
-                self.term_dict_fields_to_warm_up.insert(field);
-            } else {
-                anyhow::bail!("field does not exist: {}", field);
+                terms_by_field
+                    .entry(term.field())
+                    .or_default()
+                    .insert(term.serialized_value_bytes().to_vec());
             }
+        });
+        for (field, terms) in terms_by_field {
+            self.automatons
+                .entry(field)
+                .or_default()
+                .insert(Automaton::TermSet(terms));
         }
         Ok(())
     }
-}
-
-fn extract_term_set_query_fields(
-    query_ast: &QueryAst,
-    schema: &Schema,
-) -> anyhow::Result<HashSet<Field>> {
-    let mut visitor = ExtractTermSetFields::new(schema);
-    visitor.visit(query_ast)?;
-    Ok(visitor.term_dict_fields_to_warm_up)
 }
 
 /// Converts a `prefix` term into the equivalent term range.
@@ -1177,15 +1189,34 @@ mod test {
         let context = BuildTantivyAstContext::for_test(&schema);
 
         let (_, warmup_info) = build_query(query_with_set, &context, None).unwrap();
-        assert_eq!(warmup_info.term_dict_fields.len(), 1);
-        assert!(
-            warmup_info
-                .term_dict_fields
-                .contains(&tantivy::schema::Field::from_field_id(2))
+        assert!(warmup_info.term_dict_fields.is_empty());
+        assert!(warmup_info.terms_grouped_by_field.is_empty());
+        assert_eq!(
+            warmup_info.automatons_grouped_by_field,
+            HashMap::from([(
+                tantivy::schema::Field::from_field_id(2),
+                HashSet::from([crate::Automaton::TermSet(
+                    [b"hello".to_vec()].into_iter().collect(),
+                )]),
+            )])
         );
 
         let (_, warmup_info) = build_query(query_without_set, &context, None).unwrap();
         assert!(warmup_info.term_dict_fields.is_empty());
+
+        let field = schema.get_field("desc").unwrap();
+        let hello = Term::from_field_text(field, "hello");
+        for (text, positions) in [
+            ("desc: IN [hello] AND desc:hello", false),
+            ("desc: IN [hello] AND desc:\"hello world\"", true),
+        ] {
+            let ast = query_ast_from_user_text(text, None)
+                .parse_user_query(&[])
+                .unwrap();
+            let (_, warmup) = build_query(ast, &context, None).unwrap();
+            assert_eq!(warmup.terms_grouped_by_field[&field][&hello], positions);
+            assert_eq!(warmup.required_terms.contains(&hello), !positions);
+        }
     }
 
     #[test]

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tantivy::Term;
@@ -21,6 +22,40 @@ use crate::InvalidQuery;
 use crate::query_ast::{
     BoolQuery, BuildTantivyAst, BuildTantivyAstContext, QueryAst, TantivyQueryAst, TermQuery,
 };
+
+/// Matches exact serialized term values for one physical field.
+/// Uses the same FST transitions as Tantivy's `TermSetQuery`, so warmup selects
+/// every dictionary block execution may read, including for absent terms.
+#[derive(Clone)]
+pub struct TermSetAutomaton(Arc<tantivy_fst::Map<Vec<u8>>>);
+
+impl TermSetAutomaton {
+    pub fn new(terms: &BTreeSet<Vec<u8>>) -> Result<Self, tantivy_fst::Error> {
+        tantivy_fst::Map::from_iter(terms.iter().map(|term| (term, 0)))
+            .map(|map| Self(Arc::new(map)))
+    }
+}
+
+impl tantivy_fst::Automaton for TermSetAutomaton {
+    type State = Option<tantivy_fst::raw::CompiledAddr>;
+
+    fn start(&self) -> Self::State {
+        Some(self.0.as_fst().root().addr())
+    }
+
+    fn is_match(&self, state: &Self::State) -> bool {
+        state.is_some_and(|addr| self.0.as_fst().node(addr).is_final())
+    }
+
+    fn accept(&self, state: &Self::State, byte: u8) -> Self::State {
+        let node = self.0.as_fst().node((*state)?);
+        Some(node.transition_addr(node.find_input(byte)?))
+    }
+
+    fn can_match(&self, state: &Self::State) -> bool {
+        state.is_some()
+    }
+}
 
 /// TermSetQuery matches the same document set as if it was a union of
 /// the equivalent set of TermQueries.
