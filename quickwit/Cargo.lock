@@ -620,7 +620,7 @@ dependencies = [
  "hmac 0.13.0",
  "http 1.5.0",
  "http-body 1.1.0",
- "lru",
+ "lru 0.18.5",
  "percent-encoding",
  "regex-lite",
  "sha2 0.11.1",
@@ -1686,7 +1686,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "itertools 0.15.0",
- "lru",
+ "lru 0.18.5",
  "rand 0.10.3",
  "serde",
  "tokio",
@@ -4728,7 +4728,7 @@ dependencies = [
  "cranelift-jit",
  "cranelift-module",
  "cranelift-native",
- "lru",
+ "lru 0.18.5",
  "regex",
  "thiserror 2.0.21",
 ]
@@ -5088,6 +5088,15 @@ name = "lru"
 version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef9ac18847474e638e3702b76c65d4eb93428471a74778ef0f1be711717f89b5"
+dependencies = [
+ "hashbrown 0.17.1",
+]
+
+[[package]]
+name = "lru"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a9f71e3591c7ec44d3e563e87bf14ddc2bada8519dca046e5b0e560cd004e2d"
 dependencies = [
  "hashbrown 0.17.1",
 ]
@@ -7650,7 +7659,7 @@ dependencies = [
  "fnv",
  "futures",
  "itertools 0.15.0",
- "lru",
+ "lru 0.19.0",
  "mockall",
  "proptest",
  "quickwit-actors",
@@ -8166,7 +8175,7 @@ dependencies = [
  "bitpacking",
  "criterion",
  "hex",
- "lru",
+ "lru 0.19.0",
  "proptest",
  "quickwit-common",
  "quickwit-datetime",
@@ -8357,7 +8366,7 @@ dependencies = [
  "http 1.5.0",
  "http-body-util",
  "hyper 1.12.0",
- "lru",
+ "lru 0.19.0",
  "md5",
  "mini-moka",
  "mockall",
@@ -10672,7 +10681,7 @@ dependencies = [
  "jitexpr",
  "levenshtein_automata",
  "log",
- "lru",
+ "lru 0.18.5",
  "lz4_flex 0.14.0",
  "measure_time",
  "memmap2",
