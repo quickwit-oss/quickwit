@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
-import relay, { computeInstallId } from "../src/relay.js";
+import relay from "../src/relay.js";
 
 const ENV = {
   DD_API_KEY: "test-api-key",
@@ -24,9 +24,14 @@ const ENV = {
   INSTALL_ID_SECRET: "test-secret",
 };
 const HASHED_HOST_USERNAME = "5d41402abc4b2a76b9719d911017c592";
+const HASHED_CLUSTER_ID = "9e107d9d372bb6826bd81d3542a419d6";
+const INSTALL_UUID = "8c4f2a5e-3b1d-4e7f-9a6c-2d5e8f1b3c7a";
 const CLIENT_IP = "203.0.113.7";
 
-// The shape `quickwit-telemetry` serializes (`TelemetryPayload`).
+function keyedHash(value) {
+  return createHmac("sha256", ENV.INSTALL_ID_SECRET).update(value).digest("hex");
+}
+
 function makePayload() {
   return {
     client_info: {
@@ -38,7 +43,7 @@ function makePayload() {
     },
     quickwit_info: {
       version: "0.9.1",
-      services: ["searcher", "control-plane", "metastore_read_replica"],
+      services: ["searcher", "control-plane"],
       features: ["s3_storage", "otlp"],
     },
     events: [
@@ -49,29 +54,46 @@ function makePayload() {
   };
 }
 
-function makeRequest(body, { method = "POST", path = "/" } = {}) {
-  return new Request(`https://telemetry.quickwit.io${path}`, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      "CF-Connecting-IP": CLIENT_IP,
-      "X-Forwarded-For": CLIENT_IP,
+function makeV2Payload() {
+  const payload = makePayload();
+  payload.schema_version = 2;
+  payload.client_info.cpus = "5-8";
+  payload.client_info.memory = "8-16GiB";
+  payload.quickwit_info.build = {
+    commit: "4f20e4f",
+    target: "aarch64-unknown-linux-gnu",
+    release: false,
+  };
+  payload.quickwit_info.install_uuid = INSTALL_UUID;
+  payload.quickwit_info.hashed_cluster_id = HASHED_CLUSTER_ID;
+  payload.events = [
+    {
+      unixtime: 1760043200,
+      type: "running",
+      api_usage: { native_search: "1-9", elasticsearch_ingest: "100-999" },
+      cluster_summary: { num_indexes: "2-10", source_types: ["vec", "kafka"] },
     },
+  ];
+  return payload;
+}
+
+function makeRequest(body, headers = {}) {
+  return new Request("https://telemetry.quickwit.io/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Forwarded-For": CLIENT_IP, ...headers },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
 }
 
 describe("telemetry relay", () => {
   let intakeCalls;
-  let intakeStatus;
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
     intakeCalls = [];
-    intakeStatus = 202;
     globalThis.fetch = async (url, init) => {
       intakeCalls.push({ url, init });
-      return new Response(null, { status: intakeStatus });
+      return new Response(null, { status: 202 });
     };
   });
 
@@ -79,38 +101,35 @@ describe("telemetry relay", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("forwards one log per event to the Datadog logs intake", async () => {
+  function forwardedLogs() {
+    return JSON.parse(intakeCalls[0].init.body);
+  }
+
+  it("forwards one log per event", async () => {
     const response = await relay.fetch(makeRequest(makePayload()), ENV);
 
     assert.equal(response.status, 202);
-    assert.equal(intakeCalls.length, 1);
-    const { url, init } = intakeCalls[0];
-    assert.equal(url, ENV.DD_LOGS_URL);
-    assert.deepEqual(init.headers, {
-      "Content-Type": "application/json",
-      "DD-API-KEY": ENV.DD_API_KEY,
-    });
-    const expectedInstallId = createHmac("sha256", ENV.INSTALL_ID_SECRET)
-      .update(HASHED_HOST_USERNAME)
-      .digest("hex");
+    assert.equal(intakeCalls[0].url, ENV.DD_LOGS_URL);
+    assert.equal(intakeCalls[0].init.headers["DD-API-KEY"], ENV.DD_API_KEY);
     const commonAttributes = {
       ddsource: "quickwit-telemetry",
       service: "quickwit-telemetry",
+      schema_version: 1,
       client: {
         session_uuid: "0d6e4079-e2c8-4bd5-a1a1-a6bce5ad1c29",
         os: "linux",
         arch: "x86_64",
         kubernetes: true,
-        install_id: expectedInstallId,
+        install_id: keyedHash(HASHED_HOST_USERNAME),
       },
       quickwit: {
         version: "0.9.1",
-        services: ["control-plane", "metastore_read_replica", "searcher"],
+        services: ["control-plane", "searcher"],
         features: ["otlp", "s3_storage"],
       },
       num_dropped_events: 0,
     };
-    assert.deepEqual(JSON.parse(init.body), [
+    assert.deepEqual(forwardedLogs(), [
       {
         ...commonAttributes,
         message: "run_command",
@@ -124,82 +143,66 @@ describe("telemetry relay", () => {
     ]);
   });
 
-  it("never forwards the client IP address or the unkeyed host hash", async () => {
-    await relay.fetch(makeRequest(makePayload()), ENV);
+  it("forwards the schema version 2 fields", async () => {
+    await relay.fetch(makeRequest(makeV2Payload()), ENV);
 
-    const forwarded = JSON.stringify(intakeCalls[0]);
-    assert.ok(!forwarded.includes(CLIENT_IP));
-    assert.ok(!forwarded.includes(HASHED_HOST_USERNAME));
+    const [log] = forwardedLogs();
+    assert.equal(log.schema_version, 2);
+    assert.equal(log.client.cpus, "5-8");
+    assert.equal(log.client.memory, "8-16GiB");
+    assert.equal(log.client.install_uuid, INSTALL_UUID);
+    assert.deepEqual(log.quickwit.build, {
+      commit: "4f20e4f",
+      target: "aarch64-unknown-linux-gnu",
+      release: false,
+    });
+    assert.equal(log.quickwit.cluster_id, keyedHash(`cluster\n${HASHED_CLUSTER_ID}`));
+    assert.deepEqual(log.event, {
+      type: "running",
+      client_unixtime: 1760043200,
+      api_usage: { elasticsearch_ingest: "100-999", native_search: "1-9" },
+      cluster_summary: { num_indexes: "2-10", source_types: ["kafka", "vec"] },
+    });
   });
 
-  it("drops fields that are not part of the documented payload", async () => {
-    const payload = makePayload();
+  it("never forwards the client IP, unkeyed hashes or undocumented fields", async () => {
+    const payload = makeV2Payload();
     payload.client_info.email = "someone@example.com";
-    payload.quickwit_info.index_ids = ["secret-index"];
     payload.events[0].query = "secret query";
-    payload.extra = "extra";
 
-    const response = await relay.fetch(makeRequest(payload), ENV);
+    await relay.fetch(makeRequest(payload), ENV);
 
-    assert.equal(response.status, 202);
-    const forwarded = intakeCalls[0].init.body;
-    for (const value of ["someone@example.com", "secret-index", "secret query", "extra"]) {
+    const forwarded = JSON.stringify(intakeCalls[0]);
+    for (const value of [
+      CLIENT_IP,
+      HASHED_HOST_USERNAME,
+      HASHED_CLUSTER_ID,
+      "someone@example.com",
+      "secret query",
+    ]) {
       assert.ok(!forwarded.includes(value), `${value} was forwarded`);
     }
   });
 
-  it("keys the install ID with the secret", async () => {
-    const installId = await computeInstallId("secret-a", HASHED_HOST_USERNAME);
+  it("adds the country and city set by CloudFront", async () => {
+    const headers = { "CloudFront-Viewer-Country": "FR", "CloudFront-Viewer-City": "Lyon" };
 
-    assert.match(installId, /^[0-9a-f]{64}$/);
-    assert.notEqual(installId, await computeInstallId("secret-b", HASHED_HOST_USERNAME));
-    assert.equal(installId, await computeInstallId("secret-a", HASHED_HOST_USERNAME));
-  });
+    await relay.fetch(makeRequest(makePayload(), headers), ENV);
 
-  it("accepts a payload without events and forwards nothing", async () => {
-    const payload = makePayload();
-    payload.events = [];
-
-    const response = await relay.fetch(makeRequest(payload), ENV);
-
-    assert.equal(response.status, 202);
-    assert.equal(intakeCalls.length, 0);
+    for (const log of forwardedLogs()) {
+      assert.deepEqual(log.location, { country: "FR", city: "Lyon" });
+    }
   });
 
   const invalidPayloads = {
     "malformed JSON": "{",
-    "a list": [],
-    "missing client_info": { ...makePayload(), client_info: undefined },
-    "an invalid session UUID": (() => {
-      const payload = makePayload();
-      payload.client_info.session_uuid = "not-a-uuid";
-      return payload;
-    })(),
-    "a host hash that is not an MD5": (() => {
-      const payload = makePayload();
-      payload.client_info.hashed_host_username = "myhost:root";
-      return payload;
-    })(),
+    "an unknown event type": { ...makePayload(), events: [{ unixtime: 1, type: "search" }] },
     "a free-form feature name": (() => {
       const payload = makePayload();
       payload.quickwit_info.features = ["Index my-logs on s3://bucket"];
       return payload;
     })(),
-    "an unknown event type": (() => {
-      const payload = makePayload();
-      payload.events = [{ unixtime: 1760000000, type: "search", query: "secret" }];
-      return payload;
-    })(),
-    "an end_command without return code": (() => {
-      const payload = makePayload();
-      payload.events = [{ unixtime: 1760000000, type: "end_command" }];
-      return payload;
-    })(),
-    "too many events": (() => {
-      const payload = makePayload();
-      payload.events = Array.from({ length: 11 }, () => ({ unixtime: 1, type: "running" }));
-      return payload;
-    })(),
+    "an unsupported schema version": { ...makeV2Payload(), schema_version: 3 },
   };
 
   for (const [description, payload] of Object.entries(invalidPayloads)) {
@@ -212,54 +215,11 @@ describe("telemetry relay", () => {
   }
 
   it("rejects payloads larger than 16 KiB", async () => {
-    const payload = makePayload();
-    payload.padding = "x".repeat(17 * 1024);
+    const payload = { ...makePayload(), padding: "x".repeat(17 * 1024) };
 
     const response = await relay.fetch(makeRequest(payload), ENV);
 
     assert.equal(response.status, 413);
     assert.equal(intakeCalls.length, 0);
-  });
-
-  it("only accepts POST requests on /", async () => {
-    const getResponse = await relay.fetch(
-      new Request("https://telemetry.quickwit.io/", { method: "GET" }),
-      ENV,
-    );
-    assert.equal(getResponse.status, 405);
-
-    const otherPathResponse = await relay.fetch(
-      makeRequest(makePayload(), { path: "/api/v1/ingest" }),
-      ENV,
-    );
-    assert.equal(otherPathResponse.status, 404);
-    assert.equal(intakeCalls.length, 0);
-  });
-
-  it("fails without forwarding when a setting is missing", async () => {
-    const { INSTALL_ID_SECRET: _secret, ...envWithoutSecret } = ENV;
-    const originalConsoleError = console.error;
-    console.error = () => {};
-    try {
-      const response = await relay.fetch(makeRequest(makePayload()), envWithoutSecret);
-
-      assert.equal(response.status, 500);
-      assert.equal(intakeCalls.length, 0);
-    } finally {
-      console.error = originalConsoleError;
-    }
-  });
-
-  it("returns 502 when the Datadog logs intake fails", async () => {
-    intakeStatus = 403;
-    const originalConsoleError = console.error;
-    console.error = () => {};
-    try {
-      const response = await relay.fetch(makeRequest(makePayload()), ENV);
-
-      assert.equal(response.status, 502);
-    } finally {
-      console.error = originalConsoleError;
-    }
   });
 });

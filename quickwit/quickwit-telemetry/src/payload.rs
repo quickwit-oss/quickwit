@@ -12,16 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::env;
 use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::machine::{available_memory_num_bytes, cpu_count_bucket, memory_bucket};
+use crate::usage::{ApiKind, ClusterSummary};
+
+/// Version of the payload format. Payloads without one are version 1.
+pub(crate) const TELEMETRY_SCHEMA_VERSION: u32 = 2;
+
 /// Represents the payload of the request sent with telemetry requests.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TelemetryPayload {
+    pub schema_version: u32,
     /// Client information. See details in `[ClientInformation]`.
     pub client_info: ClientInfo,
     /// Quickwit information. See details in `[QuickwitInfo]`.
@@ -69,11 +76,22 @@ pub enum TelemetryEvent {
     /// EndCommand (with the return code).
     EndCommand {
         return_code: i32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        api_usage: Option<BTreeMap<ApiKind, String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cluster_summary: Option<ClusterSummary>,
     },
     /// Event sent every 12h to signal the server is running.
-    Running,
+    Running {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        api_usage: Option<BTreeMap<ApiKind, String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cluster_summary: Option<ClusterSummary>,
+    },
     /// UI index.html was requested.
     UiIndexPageLoad,
+    /// The install ID was just created.
+    Install,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -83,6 +101,26 @@ pub struct ClientInfo {
     arch: String,
     hashed_host_username: String,
     kubernetes: bool,
+    cpus: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    memory: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BuildTelemetryInfo {
+    pub commit: String,
+    pub target: String,
+    pub release: bool,
+}
+
+impl Default for BuildTelemetryInfo {
+    fn default() -> Self {
+        Self {
+            commit: "unknown".to_string(),
+            target: "unknown".to_string(),
+            release: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -90,14 +128,19 @@ pub struct QuickwitTelemetryInfo {
     pub version: String,
     pub services: HashSet<String>,
     pub features: HashSet<QuickwitFeature>,
+    pub build: BuildTelemetryInfo,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_uuid: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hashed_cluster_id: Option<String>,
 }
 
 impl QuickwitTelemetryInfo {
     pub fn new(services: HashSet<String>, features: HashSet<QuickwitFeature>) -> Self {
         Self {
             features,
-            version: env!("CARGO_PKG_VERSION").to_string(),
             services,
+            ..Default::default()
         }
     }
 }
@@ -108,6 +151,9 @@ impl Default for QuickwitTelemetryInfo {
             features: HashSet::new(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             services: HashSet::new(),
+            build: BuildTelemetryInfo::default(),
+            install_uuid: None,
+            hashed_cluster_id: None,
         }
     }
 }
@@ -115,24 +161,31 @@ impl Default for QuickwitTelemetryInfo {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum QuickwitFeature {
-    /// The default index root URI is on Azure Blob Storage.
     AzureStorage,
+    DocsClustering,
     FileBackedMetastore,
-    /// The default index root URI is on the local file system.
     FileStorage,
-    /// The default index root URI is on Google Cloud Storage.
     GoogleCloudStorage,
+    IngestV1,
+    IngestV2,
     Jaeger,
-    /// The searcher offloads leaf searches to AWS Lambda.
     LambdaLeafSearch,
     Otlp,
     PostgresqMetastore,
-    /// The default index root URI is on S3 or an S3-compatible object store.
+    S3CustomEndpoint,
+    S3FlavorDigitalOcean,
+    S3FlavorGarage,
+    S3FlavorGcs,
+    S3FlavorMinio,
     S3Storage,
-    /// The searcher caches splits on local disk.
     SplitCache,
-    /// The REST or gRPC server uses TLS.
     Tls,
+}
+
+/// Callers must strip the credentials from the metastore URI first.
+pub fn hash_cluster_identity(cluster_id: &str, redacted_metastore_uri: &str) -> String {
+    let digest = md5::compute(format!("{cluster_id}\n{redacted_metastore_uri}"));
+    format!("{digest:x}")
 }
 
 fn hashed_host_username() -> String {
@@ -153,6 +206,9 @@ impl Default for ClientInfo {
             arch: env::consts::ARCH.to_string(),
             hashed_host_username: hashed_host_username(),
             kubernetes: std::env::var_os("KUBERNETES_SERVICE_HOST").is_some(),
+            cpus: cpu_count_bucket(quickwit_common::num_cpus()).to_string(),
+            memory: available_memory_num_bytes()
+                .map(|num_bytes| memory_bucket(num_bytes).to_string()),
         }
     }
 }
@@ -161,20 +217,28 @@ impl Default for ClientInfo {
 mod tests {
     use serde_json;
 
-    use super::{EventWithTimestamp, QuickwitFeature, TelemetryEvent};
+    use super::*;
 
     #[test]
     fn test_serialize_features_as_expected() {
         // These names are part of the telemetry payload documented in `docs/telemetry.md`.
         let features = [
             QuickwitFeature::AzureStorage,
+            QuickwitFeature::DocsClustering,
             QuickwitFeature::FileBackedMetastore,
             QuickwitFeature::FileStorage,
             QuickwitFeature::GoogleCloudStorage,
+            QuickwitFeature::IngestV1,
+            QuickwitFeature::IngestV2,
             QuickwitFeature::Jaeger,
             QuickwitFeature::LambdaLeafSearch,
             QuickwitFeature::Otlp,
             QuickwitFeature::PostgresqMetastore,
+            QuickwitFeature::S3CustomEndpoint,
+            QuickwitFeature::S3FlavorDigitalOcean,
+            QuickwitFeature::S3FlavorGarage,
+            QuickwitFeature::S3FlavorGcs,
+            QuickwitFeature::S3FlavorMinio,
             QuickwitFeature::S3Storage,
             QuickwitFeature::SplitCache,
             QuickwitFeature::Tls,
@@ -182,7 +246,7 @@ mod tests {
         let json = serde_json::to_string(&features).unwrap();
         assert_eq!(
             json,
-            r#"["azure_storage","file_backed_metastore","file_storage","google_cloud_storage","jaeger","lambda_leaf_search","otlp","postgresq_metastore","s3_storage","split_cache","tls"]"#
+            r#"["azure_storage","docs_clustering","file_backed_metastore","file_storage","google_cloud_storage","ingest_v1","ingest_v2","jaeger","lambda_leaf_search","otlp","postgresq_metastore","s3_custom_endpoint","s3_flavor_digital_ocean","s3_flavor_garage","s3_flavor_gcs","s3_flavor_minio","s3_storage","split_cache","tls"]"#
         );
     }
 
@@ -190,12 +254,35 @@ mod tests {
     fn test_serialize_payload_as_expected() {
         let event = EventWithTimestamp {
             unixtime: 0,
-            event: TelemetryEvent::EndCommand { return_code: 0 },
+            event: TelemetryEvent::EndCommand {
+                return_code: 0,
+                api_usage: None,
+                cluster_summary: None,
+            },
         };
         let json = serde_json::to_string(&event).unwrap();
         assert_eq!(
             json,
             r#"{"unixtime":0,"type":"end_command","return_code":0}"#
+        );
+    }
+
+    #[test]
+    fn test_serialize_activity_as_expected() {
+        let event = EventWithTimestamp {
+            unixtime: 0,
+            event: TelemetryEvent::Running {
+                api_usage: Some(BTreeMap::from([(ApiKind::NativeSearch, "1-9".to_string())])),
+                cluster_summary: Some(ClusterSummary {
+                    num_indexes: "2-10".to_string(),
+                    source_types: ["kafka".to_string()].into(),
+                }),
+            },
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert_eq!(
+            json,
+            r#"{"unixtime":0,"type":"running","api_usage":{"native_search":"1-9"},"cluster_summary":{"num_indexes":"2-10","source_types":["kafka"]}}"#
         );
     }
 }

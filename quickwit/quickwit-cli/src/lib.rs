@@ -56,6 +56,7 @@ pub mod service;
 pub mod source;
 pub mod split;
 pub mod stats;
+mod telemetry;
 pub mod tool;
 
 /// Throughput calculation window size.

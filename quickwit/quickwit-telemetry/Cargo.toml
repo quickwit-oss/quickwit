@@ -29,6 +29,7 @@ quickwit-common = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+tempfile = { workspace = true }
 
 [package.metadata.cargo-machete]
 # see above

@@ -44,6 +44,7 @@ use warp::hyper::http::HeaderValue;
 use warp::hyper::{Method, StatusCode, http};
 use warp::{Filter, Rejection, Reply, redirect};
 
+use crate::api_usage::classify_rest_request;
 use crate::cluster_api::cluster_handler;
 use crate::decompression::{CorruptedData, UnsupportedEncoding};
 use crate::delete_task_api::delete_task_api_handlers;
@@ -167,6 +168,9 @@ pub(crate) async fn start_rest_server(
             labels: [labels],
         )
         .inc();
+        if let Some(api_kind) = classify_rest_request(info.path()) {
+            quickwit_telemetry::record_api_request(api_kind);
+        }
     });
     // Docs routes
     let api_doc = warp::path("openapi.json")
