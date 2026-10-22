@@ -294,9 +294,8 @@ username = "0.2"
 utoipa = { version = "4.2", features = ["time", "ulid"] }
 unicode-segmentation = "1.13"
 uuid = { version = "1.28", features = ["v4", "serde"] }
-vrl = { version = "0.33", default-features = false, features = [
+vrl = { version = "0.37", default-features = false, features = [
   "compiler",
-  "diagnostic",
   "stdlib",
   "value",
 ] }
