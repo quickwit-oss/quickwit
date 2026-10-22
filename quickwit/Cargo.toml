@@ -165,7 +165,7 @@ postcard = { version = "1.1", features = [
 ], default-features = false }
 pprof = { version = "0.15", features = ["flamegraph"] }
 predicates = "3"
-prettyplease = "0.2"
+prettyplease = "0.3"
 proc-macro2 = "1.0"
 prometheus = { version = "0.14", default-features = false, features = ["process"] }
 procfs = { version = "0.18", default-features = false }
@@ -230,7 +230,7 @@ sqlx = { version = "0.8", features = [
   "runtime-tokio-rustls",
   "time",
 ] }
-syn = { version = "2.0", features = ["extra-traits", "full", "parsing"] }
+syn = { version = "3.0", features = ["extra-traits", "full", "parsing"] }
 sync_wrapper = "1"
 sysinfo = { version = "0.39", default-features = false, features = ["disk"] }
 tabled = { version = "0.22", features = ["ansi"] }

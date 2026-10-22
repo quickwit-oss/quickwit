@@ -7498,12 +7498,12 @@ dependencies = [
  "anyhow",
  "futures",
  "heck 0.5.0",
- "prettyplease 0.2.37",
+ "prettyplease 0.3.0",
  "proc-macro2",
  "prost-build 0.14.4",
  "quote",
  "serde",
- "syn 2.0.119",
+ "syn 3.0.9",
  "tonic-prost-build",
 ]
 
@@ -8024,7 +8024,7 @@ version = "0.9.2"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.9",
 ]
 
 [[package]]
