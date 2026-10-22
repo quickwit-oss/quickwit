@@ -852,6 +852,7 @@ mod test {
         let expected_search_response = SearchResponseRestClient {
             num_hits: 0,
             hits: Vec::new(),
+            cursors: Vec::new(),
             snippets: None,
             aggregations: None,
             elapsed_time_micros: 100,
@@ -862,6 +863,44 @@ mod test {
             .respond_with(ResponseTemplate::new(StatusCode::OK).set_body_json(
                 json!({"num_hits": 0, "hits": [], "elapsed_time_micros": 100, "errors": []}),
             ))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+        assert_eq!(
+            qw_client
+                .search("my-index", search_query_params)
+                .await
+                .unwrap(),
+            expected_search_response
+        );
+    }
+
+    #[tokio::test]
+    async fn test_search_endpoint_with_cursors() {
+        let mock_server = MockServer::start().await;
+        let server_url = Url::parse(&mock_server.uri()).unwrap();
+        let qw_client = QuickwitClientBuilder::new(server_url).build();
+        let search_query_params = SearchRequestQueryString {
+            ..Default::default()
+        };
+        let expected_search_response = SearchResponseRestClient {
+            num_hits: 1,
+            hits: vec![json!({"body": "foo"})],
+            cursors: vec!["EgFhGAEgAlICEAU".to_string()],
+            snippets: None,
+            aggregations: None,
+            elapsed_time_micros: 100,
+            errors: Vec::new(),
+        };
+        Mock::given(method("POST"))
+            .and(path("/api/v1/my-index/search"))
+            .respond_with(ResponseTemplate::new(StatusCode::OK).set_body_json(json!({
+                "num_hits": 1,
+                "hits": [{"body": "foo"}],
+                "cursors": ["EgFhGAEgAlICEAU"],
+                "elapsed_time_micros": 100,
+                "errors": []
+            })))
             .up_to_n_times(1)
             .mount(&mock_server)
             .await;
