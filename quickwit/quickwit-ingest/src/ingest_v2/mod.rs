@@ -26,6 +26,7 @@ mod publish_tracker;
 mod rate_meter;
 mod router;
 mod routing_table;
+mod shard_readings;
 mod state;
 mod wal_capacity_tracker;
 mod workbench;
@@ -59,6 +60,7 @@ pub use self::fetch::{FetchStreamError, MultiFetchStream};
 pub use self::ingester::Ingester;
 pub use self::mrecord::{MRecord, decoded_mrecords};
 pub use self::router::IngestRouter;
+pub use self::shard_readings::{ShardThroughputReading, ShardThroughputReadings};
 
 /// An ingester as represented in the pool, bundling the gRPC client with node metadata.
 #[derive(Debug, Clone)]

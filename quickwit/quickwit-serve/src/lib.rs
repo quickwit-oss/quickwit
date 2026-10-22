@@ -122,7 +122,7 @@ use quickwit_storage::{SearchSplitCache, StorageResolver};
 pub use quickwit_telemetry_exporters::{EnvFilterReloadFn, do_nothing_env_filter_reload_fn};
 pub use quickwit_transport::reload_tls_cert;
 use tcp_listener::TcpListenerResolver;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use tonic::codec::CompressionEncoding;
 use tonic_health::ServingStatus;
@@ -1164,6 +1164,7 @@ async fn setup_ingest_v2(
         fs::create_dir_all(&wal_dir_path)?;
 
         let idle_shard_timeout = get_idle_shard_timeout();
+        let (local_shards_tx, _local_shards_rx) = watch::channel(None);
         let ingester = Ingester::try_new(
             cluster.clone(),
             control_plane,
@@ -1172,6 +1173,7 @@ async fn setup_ingest_v2(
             node_config.ingest_api_config.max_queue_memory_usage,
             rate_limiter_settings,
             idle_shard_timeout,
+            local_shards_tx,
         )
         .await?;
         ingester.subscribe(event_broker);
