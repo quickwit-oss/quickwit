@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (Jaeger) Query resource attributes when Jaeger request carries tags
 
 ### Changed
+- Ingest V2 flushes every WAL write to the OS before acknowledging it, instead of keeping the tail of the last write buffered in the process, so acknowledged documents survive an indexer process crash
 
 ### Deprecated
 
