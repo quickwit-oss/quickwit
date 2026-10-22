@@ -149,6 +149,10 @@ fast:
 | `chinese_compatible` |  Chop between each CJK character in addition to what `default` does. Should be used with `record: position` to be able to properly search |
 | `lowercase`   | Applies a lowercase transformation on the text. It does not tokenize the text. |
 
+`datadog` (also named `unicode_segmenter`) splits text at Unicode word boundaries, lowercases tokens, and applies the 255-byte token-length limit. It preserves internal punctuation in words such as `can't`, `example.com`, and `32.3`.
+
+`datadog_v2` additionally emits the dot-separated parts of each token, preserving the original token. For example, `Foo.Bar.Baz` produces `foo.bar.baz`, `foo`, `bar`, and `baz`. Tokens containing only numbers and dots, such as `192.168.1.1` and `32.3`, stay whole. Parts occupy consecutive positions, and the original token spans those positions. Lowercasing and the token-length limit apply independently to the original and its parts. Select it with `tokenizer: datadog_v2` in a text field mapping.
+
 ##### Description of available normalizers
 
 | Normalizer     | Description   |
