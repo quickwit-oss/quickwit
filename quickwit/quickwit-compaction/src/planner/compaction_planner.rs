@@ -19,9 +19,10 @@ use anyhow::Result;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
-use quickwit_cluster::Cluster;
+use quickwit_cluster::{Cluster, ClusterNode};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::rate_limited_tracing::rate_limited_info;
+use quickwit_config::service::QuickwitService;
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, Split, SplitState,
 };
@@ -163,11 +164,11 @@ impl CompactionPlanner {
 
     async fn all_indexers_migrated(&self) -> bool {
         self.cluster
-            .live_nodes()
+            .all_service_nodes_satisfy(
+                QuickwitService::Indexer,
+                ClusterNode::enable_standalone_compactors,
+            )
             .await
-            .iter()
-            .filter(|node| node.is_indexer())
-            .all(|node| node.enable_standalone_compactors())
     }
 
     async fn ingest_splits(&mut self, splits: Vec<Split>) {
@@ -768,7 +769,7 @@ mod tests {
             janitor_cluster.clone(),
         );
 
-        assert!(planner.all_indexers_migrated().await);
+        assert!(!planner.all_indexers_migrated().await);
 
         let old_indexer_1 = create_cluster_for_test(seeds.clone(), &["indexer"], &transport, true)
             .await

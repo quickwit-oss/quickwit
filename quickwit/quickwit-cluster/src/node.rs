@@ -114,6 +114,10 @@ impl ClusterNode {
     pub fn enable_standalone_compactors(&self) -> bool {
         self.inner.member.enable_standalone_compactors
     }
+
+    pub fn enable_shard_scaling_v2(&self) -> bool {
+        self.inner.member.enable_shard_scaling_v2
+    }
 }
 
 impl std::ops::Deref for ClusterNode {

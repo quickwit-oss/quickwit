@@ -932,6 +932,8 @@ pub struct NodeConfig {
     pub compactor_config: CompactorConfig,
     #[serde(skip_serializing)]
     pub enable_standalone_compactors: bool,
+    #[serde(skip_serializing)]
+    pub enable_shard_scaling_v2: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub docs_clustering_config: Option<DocsClusteringConfig>,
 }
