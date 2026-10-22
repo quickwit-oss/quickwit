@@ -33,18 +33,16 @@ use crate::RateMibPerSec;
 use crate::ingest_v2::shard_readings::{ShardReadingsBySource, ShardThroughputReading};
 use crate::ingest_v2::state::WeakIngesterState;
 
-const ONE_MIB: ByteSize = ByteSize::mib(1);
-
 /// Broadcasted information about a shard.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ShardInfo {
     pub shard_id: ShardId,
     pub shard_state: ShardState,
-    /// Shard ingestion rate in MiB/s.
+    /// Shard ingestion rate in bytes/s, serialized as rounded-up MiB/s for gossip.
     /// Short term ingestion rate. It is measured over a short period of time.
-    pub short_term_ingestion_rate: RateMibPerSec,
+    pub short_term_ingestion_rate: ByteSize,
     /// Long term ingestion rate. It is measured over a larger period of time.
-    pub long_term_ingestion_rate: RateMibPerSec,
+    pub long_term_ingestion_rate: ByteSize,
 }
 
 impl Serialize for ShardInfo {
@@ -53,8 +51,8 @@ impl Serialize for ShardInfo {
             "{}:{}:{}:{}",
             self.shard_id,
             self.shard_state.as_json_str_name(),
-            self.short_term_ingestion_rate.0,
-            self.long_term_ingestion_rate.0,
+            RateMibPerSec::from(self.short_term_ingestion_rate).0,
+            RateMibPerSec::from(self.long_term_ingestion_rate).0,
         ))
     }
 }
@@ -81,6 +79,7 @@ impl<'de> Deserialize<'de> for ShardInfo {
             .ok_or_else(|| serde::de::Error::custom("invalid shard info"))?
             .parse::<u16>()
             .map(RateMibPerSec)
+            .map(ByteSize::from)
             .map_err(|_| serde::de::Error::custom("invalid shard ingestion rate"))?;
 
         let long_term_ingestion_rate = parts
@@ -88,6 +87,7 @@ impl<'de> Deserialize<'de> for ShardInfo {
             .ok_or_else(|| serde::de::Error::custom("invalid shard info"))?
             .parse::<u16>()
             .map(RateMibPerSec)
+            .map(ByteSize::from)
             .map_err(|_| serde::de::Error::custom("invalid shard ingestion rate"))?;
 
         Ok(Self {
@@ -101,23 +101,11 @@ impl<'de> Deserialize<'de> for ShardInfo {
 
 impl From<&ShardThroughputReading> for ShardInfo {
     fn from(reading: &ShardThroughputReading) -> Self {
-        let short_term_ingestion_rate_mib_per_sec_u64: u64 = reading
-            .short_term_ingestion_rate
-            .as_u64()
-            .div_ceil(ONE_MIB.as_u64());
-        let long_term_ingestion_rate_mib_per_sec_u64: u64 = reading
-            .long_term_ingestion_rate
-            .as_u64()
-            .div_ceil(ONE_MIB.as_u64());
         Self {
             shard_id: reading.shard_id.clone(),
             shard_state: reading.shard_state,
-            short_term_ingestion_rate: RateMibPerSec(
-                short_term_ingestion_rate_mib_per_sec_u64 as u16,
-            ),
-            long_term_ingestion_rate: RateMibPerSec(
-                long_term_ingestion_rate_mib_per_sec_u64 as u16,
-            ),
+            short_term_ingestion_rate: reading.short_term_ingestion_rate,
+            long_term_ingestion_rate: reading.long_term_ingestion_rate,
         }
     }
 }
@@ -322,7 +310,6 @@ mod tests {
     use quickwit_proto::types::{IndexUid, ShardId, SourceId, SourceUid};
 
     use super::*;
-    use crate::RateMibPerSec;
     use crate::ingest_v2::state::IngesterState;
 
     #[test]
@@ -330,8 +317,8 @@ mod tests {
         let shard_info = ShardInfo {
             shard_id: ShardId::from(1),
             shard_state: ShardState::Open,
-            short_term_ingestion_rate: RateMibPerSec(42),
-            long_term_ingestion_rate: RateMibPerSec(40),
+            short_term_ingestion_rate: ByteSize::mib(42),
+            long_term_ingestion_rate: ByteSize::mib(40),
         };
         let serialized = serde_json::to_string(&shard_info).unwrap();
         assert_eq!(serialized, r#""00000000000000000001:open:42:40""#);
@@ -358,8 +345,8 @@ mod tests {
                 vec![ShardInfo {
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Open,
-                    short_term_ingestion_rate: RateMibPerSec(42),
-                    long_term_ingestion_rate: RateMibPerSec(42),
+                    short_term_ingestion_rate: ByteSize::mib(42),
+                    long_term_ingestion_rate: ByteSize::mib(42),
                 }]
                 .into_iter()
                 .collect(),
@@ -399,8 +386,8 @@ mod tests {
                 vec![ShardInfo {
                     shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
-                    short_term_ingestion_rate: RateMibPerSec(42),
-                    long_term_ingestion_rate: RateMibPerSec(42),
+                    short_term_ingestion_rate: ByteSize::mib(42),
+                    long_term_ingestion_rate: ByteSize::mib(42),
                 }]
                 .into_iter()
                 .collect(),
@@ -539,7 +526,7 @@ mod tests {
                 let shard_info = event.shard_infos.iter().next().unwrap();
                 assert_eq!(shard_info.shard_id, ShardId::from(1));
                 assert_eq!(shard_info.shard_state, ShardState::Open);
-                assert_eq!(shard_info.short_term_ingestion_rate, 42u16);
+                assert_eq!(shard_info.short_term_ingestion_rate, ByteSize::mib(42));
             })
             .forever();
 
@@ -555,8 +542,8 @@ mod tests {
         let value = serde_json::to_string(&vec![ShardInfo {
             shard_id: ShardId::from(1),
             shard_state: ShardState::Open,
-            short_term_ingestion_rate: RateMibPerSec(42),
-            long_term_ingestion_rate: RateMibPerSec(42),
+            short_term_ingestion_rate: ByteSize::mib(42),
+            long_term_ingestion_rate: ByteSize::mib(42),
         }])
         .unwrap();
 
