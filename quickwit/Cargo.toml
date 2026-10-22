@@ -180,7 +180,7 @@ pulsar = { version = "6.9", default-features = false, features = [
   "compression",
   "tokio-rustls-runtime",
 ] }
-quanta = "0.12"
+quanta = "0.13"
 quick_cache = "0.7"
 quote = "1.0"
 rand = "0.10"
