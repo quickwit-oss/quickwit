@@ -27,16 +27,16 @@ impl OtlpProtocol {
         match self {
             OtlpProtocol::Grpc => SpanExporter::builder()
                 .with_tonic()
-                .with_retry_policy(super::RETRY_POLICY)
+                .with_retry_policy(super::retry_policy())
                 .build(),
             OtlpProtocol::HttpProtobuf => SpanExporter::builder()
                 .with_http()
-                .with_retry_policy(super::RETRY_POLICY)
+                .with_retry_policy(super::retry_policy())
                 .with_protocol(OtlpWireProtocol::HttpBinary)
                 .build(),
             OtlpProtocol::HttpJson => SpanExporter::builder()
                 .with_http()
-                .with_retry_policy(super::RETRY_POLICY)
+                .with_retry_policy(super::retry_policy())
                 .with_protocol(OtlpWireProtocol::HttpJson)
                 .build(),
         }

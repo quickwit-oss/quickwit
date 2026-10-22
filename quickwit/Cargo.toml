@@ -128,7 +128,7 @@ matches = "0.1"
 md5 = "0.8"
 memchr = "2"
 metrics = "0.24"
-metrics-opentelemetry = "=0.24032.8"
+metrics-opentelemetry = "=0.24033.1"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
 metrics-util = "0.20"
 mime_guess = "2.0"
@@ -141,12 +141,12 @@ numfmt = "1.2"
 oneshot = { version = "0.2", features = ["async", "std"] }
 openssl = { version = "0.10", default-features = false }
 openssl-probe = "0.2"
-opentelemetry = "0.32"
-opentelemetry-appender-tracing = "0.32"
-opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
+opentelemetry = "0.33"
+opentelemetry-appender-tracing = "0.33"
+opentelemetry_sdk = { version = "0.33", features = ["rt-tokio"] }
 # `default-features = false` drops the default `reqwest-blocking-client`:
 # see https://github.com/quickwit-oss/quickwit/pull/6558 for more details.
-opentelemetry-otlp = { version = "0.32", default-features = false, features = [
+opentelemetry-otlp = { version = "0.33", default-features = false, features = [
     "grpc-tonic",
     "http-json",
     "http-proto",
@@ -276,7 +276,7 @@ tower-http = { version = "0.7", features = [
   "trace",
 ] }
 tracing = "0.1"
-tracing-opentelemetry = "0.33"
+tracing-opentelemetry = "0.34"
 tracing-subscriber = { version = "0.3", features = [
   "env-filter",
   "json",
