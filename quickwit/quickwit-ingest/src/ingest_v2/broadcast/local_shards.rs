@@ -12,27 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::time::Duration;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use bytesize::ByteSize;
 use quickwit_cluster::{Cluster, ListenerHandle};
 use quickwit_common::pubsub::{Event, EventBroker};
-use quickwit_common::ring_buffer::RingBuffer;
 use quickwit_common::shared_consts::INGESTER_SHARDS_PREFIX;
 use quickwit_common::sorted_iter::{KeyDiff, SortedByKeyIterator};
-use quickwit_common::tower::{ConstantRate, Rate};
 use quickwit_proto::ingest::ShardState;
 use quickwit_proto::types::{NodeId, ShardId, SourceUid};
 use serde::{Deserialize, Serialize, Serializer};
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::{debug, instrument, warn};
 
 use super::{BROADCAST_INTERVAL_PERIOD, make_key, parse_key};
 use crate::RateMibPerSec;
-use crate::ingest_v2::metrics::{
-    CLOSED_SHARDS, OPEN_SHARDS, SHARD_LT_THROUGHPUT_MIB, SHARD_ST_THROUGHPUT_MIB,
-};
+use crate::ingest_v2::shard_readings::{ShardThroughputReading, ShardThroughputReadings};
 use crate::ingest_v2::state::WeakIngesterState;
 
 const ONE_MIB: ByteSize = ByteSize::mib(1);
@@ -101,6 +98,29 @@ impl<'de> Deserialize<'de> for ShardInfo {
     }
 }
 
+impl From<&ShardThroughputReading> for ShardInfo {
+    fn from(reading: &ShardThroughputReading) -> Self {
+        let short_term_ingestion_rate_mib_per_sec_u64: u64 = reading
+            .short_term_ingestion_rate
+            .as_u64()
+            .div_ceil(ONE_MIB.as_u64());
+        let long_term_ingestion_rate_mib_per_sec_u64: u64 = reading
+            .long_term_ingestion_rate
+            .as_u64()
+            .div_ceil(ONE_MIB.as_u64());
+        Self {
+            shard_id: reading.shard_id.clone(),
+            shard_state: reading.shard_state,
+            short_term_ingestion_rate: RateMibPerSec(
+                short_term_ingestion_rate_mib_per_sec_u64 as u16,
+            ),
+            long_term_ingestion_rate: RateMibPerSec(
+                long_term_ingestion_rate_mib_per_sec_u64 as u16,
+            ),
+        }
+    }
+}
+
 /// A set of shards belonging to the same source.
 pub type ShardInfos = BTreeSet<ShardInfo>;
 
@@ -119,6 +139,19 @@ enum ShardInfosChange<'a> {
     Removed {
         source_uid: &'a SourceUid,
     },
+}
+
+impl From<&ShardThroughputReadings> for LocalShardsSnapshot {
+    fn from(readings: &ShardThroughputReadings) -> Self {
+        let mut per_source_shard_infos = BTreeMap::new();
+        for (source_uid, shard_readings) in &readings.per_source_readings {
+            let shard_infos: ShardInfos = shard_readings.iter().map(ShardInfo::from).collect();
+            per_source_shard_infos.insert(source_uid.clone(), shard_infos);
+        }
+        Self {
+            per_source_shard_infos,
+        }
+    }
 }
 
 impl LocalShardsSnapshot {
@@ -153,162 +186,25 @@ impl LocalShardsSnapshot {
 pub struct BroadcastLocalShardsTask {
     cluster: Cluster,
     weak_state: WeakIngesterState,
-    shard_throughput_time_series_map: ShardThroughputTimeSeriesMap,
+    local_shards_rx: watch::Receiver<Option<Arc<ShardThroughputReadings>>>,
     /// Snapshot broadcast on the previous tick. Carried across iterations so
     /// we can diff against the new snapshot and only broadcast changes.
     previous_snapshot: LocalShardsSnapshot,
 }
 
-const SHARD_THROUGHPUT_LONG_TERM_WINDOW_LEN: usize = 12;
-
-#[derive(Default)]
-struct ShardThroughputTimeSeriesMap {
-    shard_time_series: HashMap<(SourceUid, ShardId), ShardThroughputTimeSeries>,
-}
-
-impl ShardThroughputTimeSeriesMap {
-    // Records a list of shard throughputs.
-    //
-    // A new time series is created for each new shard_ids.
-    // If a shard_id had a time series, and it is not present in the
-    // `shard_throughput`, the time series will be removed.
-    #[allow(clippy::mutable_key_type)]
-    pub fn record_shard_throughputs(
-        &mut self,
-        shard_throughputs: HashMap<(SourceUid, ShardId), (ShardState, ConstantRate)>,
-    ) {
-        self.shard_time_series
-            .retain(|key, _| shard_throughputs.contains_key(key));
-        for ((source_uid, shard_id), (shard_state, throughput)) in shard_throughputs {
-            let throughput_measurement = throughput.rescale(Duration::from_secs(1)).work_bytes();
-            let shard_time_series = self
-                .shard_time_series
-                .entry((source_uid.clone(), shard_id.clone()))
-                .or_default();
-            shard_time_series.shard_state = shard_state;
-            shard_time_series.record(throughput_measurement);
-        }
-    }
-
-    pub fn get_per_source_shard_infos(&self) -> BTreeMap<SourceUid, ShardInfos> {
-        let mut per_source_shard_infos: BTreeMap<SourceUid, ShardInfos> = BTreeMap::new();
-        for ((source_uid, shard_id), shard_time_series) in self.shard_time_series.iter() {
-            let shard_state = shard_time_series.shard_state;
-            let short_term_ingestion_rate_mib_per_sec_u64: u64 =
-                shard_time_series.last().as_u64().div_ceil(ONE_MIB.as_u64());
-            let long_term_ingestion_rate_mib_per_sec_u64: u64 = shard_time_series
-                .average()
-                .as_u64()
-                .div_ceil(ONE_MIB.as_u64());
-            SHARD_ST_THROUGHPUT_MIB.observe(short_term_ingestion_rate_mib_per_sec_u64 as f64);
-            SHARD_LT_THROUGHPUT_MIB.observe(long_term_ingestion_rate_mib_per_sec_u64 as f64);
-
-            let short_term_ingestion_rate =
-                RateMibPerSec(short_term_ingestion_rate_mib_per_sec_u64 as u16);
-            let long_term_ingestion_rate =
-                RateMibPerSec(long_term_ingestion_rate_mib_per_sec_u64 as u16);
-            let shard_info = ShardInfo {
-                shard_id: shard_id.clone(),
-                shard_state,
-                short_term_ingestion_rate,
-                long_term_ingestion_rate,
-            };
-
-            per_source_shard_infos
-                .entry(source_uid.clone())
-                .or_default()
-                .insert(shard_info);
-        }
-        per_source_shard_infos
-    }
-}
-
-#[derive(Default)]
-struct ShardThroughputTimeSeries {
-    shard_state: ShardState,
-    throughput: RingBuffer<ByteSize, SHARD_THROUGHPUT_LONG_TERM_WINDOW_LEN>,
-}
-
-impl ShardThroughputTimeSeries {
-    fn last(&self) -> ByteSize {
-        self.throughput.last().unwrap_or_default()
-    }
-
-    fn average(&self) -> ByteSize {
-        if self.throughput.is_empty() {
-            return ByteSize::default();
-        }
-        let sum = self.throughput.iter().map(ByteSize::as_u64).sum::<u64>();
-        ByteSize::b(sum / self.throughput.len() as u64)
-    }
-
-    fn record(&mut self, new_throughput_measurement: ByteSize) {
-        self.throughput.push_back(new_throughput_measurement);
-    }
-}
-
 impl BroadcastLocalShardsTask {
-    pub fn spawn(cluster: Cluster, weak_state: WeakIngesterState) -> JoinHandle<()> {
+    pub fn spawn(
+        cluster: Cluster,
+        weak_state: WeakIngesterState,
+        local_shards_rx: watch::Receiver<Option<Arc<ShardThroughputReadings>>>,
+    ) -> JoinHandle<()> {
         let broadcaster = Self {
             cluster,
             weak_state,
-            shard_throughput_time_series_map: Default::default(),
+            local_shards_rx,
             previous_snapshot: LocalShardsSnapshot::default(),
         };
         tokio::spawn(broadcaster.run())
-    }
-
-    async fn snapshot_local_shards(&mut self) -> Option<LocalShardsSnapshot> {
-        let state = self.weak_state.upgrade()?;
-
-        let Ok(mut state_guard) = state.lock_partially("snapshot_local_shards").await else {
-            return Some(LocalShardsSnapshot::default());
-        };
-        #[allow(clippy::mutable_key_type)]
-        let ingestion_rates: HashMap<(SourceUid, ShardId), (ShardState, ConstantRate)> =
-            state_guard
-                .shards
-                .values_mut()
-                .filter(|shard| shard.is_advertisable)
-                .map(|shard| {
-                    let source_uid = SourceUid {
-                        index_uid: shard.index_uid.clone(),
-                        source_id: shard.source_id.clone(),
-                    };
-                    let shard_id = shard.shard_id.clone();
-                    let shard_state = shard.shard_state;
-                    let rate_meter = &mut shard.rate_meter;
-
-                    ((source_uid, shard_id), (shard_state, rate_meter.harvest()))
-                })
-                .collect();
-
-        self.shard_throughput_time_series_map
-            .record_shard_throughputs(ingestion_rates);
-
-        let per_source_shard_infos = self
-            .shard_throughput_time_series_map
-            .get_per_source_shard_infos();
-
-        let mut num_open_shards = 0;
-        let mut num_closed_shards = 0;
-
-        for shard_infos in per_source_shard_infos.values() {
-            for shard_info in shard_infos {
-                match shard_info.shard_state {
-                    ShardState::Open => num_open_shards += 1,
-                    ShardState::Closed => num_closed_shards += 1,
-                    ShardState::Unavailable | ShardState::Unspecified => {}
-                }
-            }
-        }
-        OPEN_SHARDS.set(num_open_shards as f64);
-        CLOSED_SHARDS.set(num_closed_shards as f64);
-
-        let snapshot = LocalShardsSnapshot {
-            per_source_shard_infos,
-        };
-        Some(snapshot)
     }
 
     async fn broadcast_local_shards(
@@ -353,9 +249,13 @@ impl BroadcastLocalShardsTask {
     /// should stop.
     #[instrument(name = "broadcast_local_shards.tick", skip_all)]
     async fn run_once(&mut self) -> bool {
-        let Some(new_snapshot) = self.snapshot_local_shards().await else {
+        if self.weak_state.upgrade().is_none() {
             return false;
+        }
+        let Some(readings) = self.local_shards_rx.borrow().clone() else {
+            return true;
         };
+        let new_snapshot = LocalShardsSnapshot::from(readings.as_ref());
         self.broadcast_local_shards(&self.previous_snapshot, &new_snapshot)
             .await;
         self.previous_snapshot = new_snapshot;
@@ -401,8 +301,8 @@ pub async fn setup_local_shards_update_listener(
 #[cfg(test)]
 mod tests {
 
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
 
     use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_common::shared_consts::INGESTER_SHARDS_PREFIX;
@@ -411,7 +311,6 @@ mod tests {
 
     use super::*;
     use crate::RateMibPerSec;
-    use crate::ingest_v2::models::IngesterShard;
     use crate::ingest_v2::state::IngesterState;
 
     #[test]
@@ -541,59 +440,46 @@ mod tests {
             .await
             .unwrap();
         let (_temp_dir, state) = IngesterState::for_test(cluster.clone()).await;
+        let (local_shards_tx, local_shards_rx) = watch::channel(None);
         let mut task = BroadcastLocalShardsTask {
             cluster,
             weak_state: state.weak(),
-            shard_throughput_time_series_map: Default::default(),
+            local_shards_rx,
             previous_snapshot: LocalShardsSnapshot::default(),
         };
 
-        let mut state_guard = state.lock_partially("test").await.unwrap();
-
-        let index_uid = IndexUid::for_test("test-index", 0);
-        let shard_00 = IngesterShard::builder(
-            index_uid.clone(),
-            SourceId::from("test-source"),
-            ShardId::from(0),
-        )
-        .build();
-        state_guard.shards.insert(shard_00.queue_id(), shard_00);
-
-        let shard_01 = IngesterShard::builder(
-            index_uid.clone(),
-            SourceId::from("test-source"),
-            ShardId::from(1),
-        )
-        .advertisable()
-        .build();
-        let queue_id_01 = shard_01.queue_id();
-        state_guard.shards.insert(queue_id_01.clone(), shard_01);
-
-        drop(state_guard);
-
-        // First tick: shard_01 (advertisable) is the only one contributing to the snapshot —
-        // broadcast publishes it.
-        assert!(task.run_once().await);
-        assert_eq!(task.previous_snapshot.per_source_shard_infos.len(), 1);
-
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        let key = format!("{INGESTER_SHARDS_PREFIX}{}:{}", index_uid, "test-source");
-        task.cluster.get_self_key_value(&key).await.unwrap();
-
-        // Remove the only advertisable shard, run again: snapshot empty,
-        // broadcast clears the chitchat key.
-        let mut state_guard = state.lock_partially("test").await.unwrap();
-        state_guard.shards.remove(&queue_id_01);
-        drop(state_guard);
-
+        // No readings published yet: nothing to broadcast.
         assert!(task.run_once().await);
         assert!(task.previous_snapshot.per_source_shard_infos.is_empty());
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: SourceId::from("test-source"),
+        };
+        let reading = ShardThroughputReading {
+            shard_id: ShardId::from(1),
+            shard_state: ShardState::Open,
+            short_term_ingestion_rate: ByteSize::b(1),
+            long_term_ingestion_rate: ByteSize::mib(2),
+        };
+        let readings = ShardThroughputReadings {
+            per_source_readings: BTreeMap::from([(source_uid, vec![reading])]),
+        };
+        local_shards_tx.send_replace(Some(Arc::new(readings)));
+        assert!(task.run_once().await);
 
-        let value_opt = task.cluster.get_self_key_value(&key).await;
-        assert!(value_opt.is_none());
+        let key = format!("{INGESTER_SHARDS_PREFIX}{}:{}", index_uid, "test-source");
+        let value = task.cluster.get_self_key_value(&key).await.unwrap();
+        // Rates are rounded up to the next MiB/s.
+        assert_eq!(value, r#"["00000000000000000001:open:1:2"]"#);
+
+        local_shards_tx.send_replace(Some(Arc::new(ShardThroughputReadings::default())));
+        assert!(task.run_once().await);
+        assert!(task.cluster.get_self_key_value(&key).await.is_none());
+
+        drop(state);
+        assert!(!task.run_once().await);
     }
 
     #[tokio::test]
@@ -645,30 +531,5 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         assert_eq!(local_shards_update_counter.load(Ordering::Acquire), 1);
-    }
-
-    #[test]
-    fn test_shard_throughput_time_series() {
-        let mut time_series = ShardThroughputTimeSeries::default();
-        assert_eq!(time_series.last(), ByteSize::mb(0));
-        assert_eq!(time_series.average(), ByteSize::mb(0));
-
-        time_series.record(ByteSize::mb(2));
-        assert_eq!(time_series.last(), ByteSize::mb(2));
-        assert_eq!(time_series.average(), ByteSize::mb(2));
-
-        time_series.record(ByteSize::mb(1));
-        assert_eq!(time_series.last(), ByteSize::mb(1));
-        assert_eq!(time_series.average(), ByteSize::kb(1500));
-
-        time_series.record(ByteSize::mb(3));
-        assert_eq!(time_series.last(), ByteSize::mb(3));
-        assert_eq!(time_series.average(), ByteSize::mb(2));
-
-        for _ in 0..SHARD_THROUGHPUT_LONG_TERM_WINDOW_LEN {
-            time_series.record(ByteSize::mb(4));
-            assert_eq!(time_series.last(), ByteSize::mb(4));
-        }
-        assert_eq!(time_series.last(), ByteSize::mb(4));
     }
 }
