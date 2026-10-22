@@ -66,7 +66,8 @@ reqwest = { workspace = true, optional = true }
 http = { workspace = true }
 mockall = { workspace = true }
 proptest = { workspace = true }
-reqwest = { workspace = true }
+# `default-features = false` to make sure we get HTTPS from OpenDAL's requested features
+reqwest = { version = "0.13", default-features = false }
 # Used by the HTTPS TLS regression test to inject a custom reqwest client via
 # OpenDAL's HttpTransporter API (split out of opendal in 0.58).
 opendal-http-transport-reqwest = "0.59"
