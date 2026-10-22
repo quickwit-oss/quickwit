@@ -90,6 +90,7 @@ generate_getters! {
     impl fn index_uid() -> &IndexUid {} for
     // Control Plane API
     GetOrCreateOpenShardsSuccess,
+    ShardInfosBySource,
 
     // Indexing API
     IndexingTask,
@@ -203,6 +204,7 @@ generate_getters! {
     PersistSuccess,
     Shard,
     ShardIdPosition,
+    ShardInfo,
     ShardPKey,
     TruncateShardsSubrequest
 }

@@ -21,6 +21,7 @@ use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_common::shared_consts::INGESTER_SHARDS_PREFIX;
 use quickwit_common::sorted_iter::{KeyDiff, SortedByKeyIterator};
 use quickwit_config::service::QuickwitService;
+use quickwit_proto::control_plane;
 use quickwit_proto::ingest::ShardState;
 use quickwit_proto::types::{NodeId, ShardId, SourceUid};
 use serde::{Deserialize, Serialize, Serializer};
@@ -106,6 +107,21 @@ impl From<&ShardThroughputReading> for ShardInfo {
             shard_state: reading.shard_state,
             short_term_ingestion_rate: reading.short_term_ingestion_rate,
             long_term_ingestion_rate: reading.long_term_ingestion_rate,
+        }
+    }
+}
+
+impl From<&control_plane::ShardInfo> for ShardInfo {
+    fn from(shard_info: &control_plane::ShardInfo) -> Self {
+        Self {
+            shard_id: shard_info.shard_id().clone(),
+            shard_state: shard_info.shard_state(),
+            short_term_ingestion_rate: ByteSize::b(
+                shard_info.short_term_ingestion_rate_bytes_per_sec,
+            ),
+            long_term_ingestion_rate: ByteSize::b(
+                shard_info.long_term_ingestion_rate_bytes_per_sec,
+            ),
         }
     }
 }
