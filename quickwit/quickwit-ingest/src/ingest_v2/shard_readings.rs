@@ -17,6 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytesize::ByteSize;
+use quickwit_proto::control_plane;
 use quickwit_proto::ingest::ShardState;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::types::{ShardId, SourceUid};
@@ -45,8 +46,38 @@ pub struct ShardThroughputReading {
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
-pub struct ShardThroughputReadings {
-    pub per_source_readings: BTreeMap<SourceUid, Vec<ShardThroughputReading>>,
+pub struct ShardReadingsBySource {
+    pub readings_by_source: BTreeMap<SourceUid, Vec<ShardThroughputReading>>,
+}
+
+impl From<&ShardThroughputReading> for control_plane::ShardInfo {
+    fn from(reading: &ShardThroughputReading) -> Self {
+        Self {
+            shard_id: Some(reading.shard_id.clone()),
+            shard_state: reading.shard_state as i32,
+            short_term_ingestion_rate_bytes_per_sec: reading.short_term_ingestion_rate.as_u64(),
+            long_term_ingestion_rate_bytes_per_sec: reading.long_term_ingestion_rate.as_u64(),
+        }
+    }
+}
+
+impl From<&ShardReadingsBySource> for control_plane::ShardsUpdate {
+    fn from(readings: &ShardReadingsBySource) -> Self {
+        let shard_infos_by_source = readings
+            .readings_by_source
+            .iter()
+            .map(
+                |(source_uid, shard_readings)| control_plane::ShardInfosBySource {
+                    index_uid: Some(source_uid.index_uid.clone()),
+                    source_id: source_uid.source_id.clone(),
+                    shard_infos: shard_readings.iter().map(Into::into).collect(),
+                },
+            )
+            .collect();
+        Self {
+            shard_infos_by_source,
+        }
+    }
 }
 
 /// The ShardReadingsPublisher is responsible for harvesting shard state and throughput readings
@@ -55,13 +86,13 @@ pub struct ShardThroughputReadings {
 /// IndexerReportingTask, which communicates shard readings directly with the control plane.
 pub(super) struct ShardReadingsPublisher {
     weak_state: WeakIngesterState,
-    local_shards_tx: watch::Sender<Option<Arc<ShardThroughputReadings>>>,
+    local_shards_tx: watch::Sender<Option<Arc<ShardReadingsBySource>>>,
 }
 
 impl ShardReadingsPublisher {
     pub fn spawn(
         weak_state: WeakIngesterState,
-        local_shards_tx: watch::Sender<Option<Arc<ShardThroughputReadings>>>,
+        local_shards_tx: watch::Sender<Option<Arc<ShardReadingsBySource>>>,
     ) -> JoinHandle<()> {
         let publisher = Self {
             weak_state,
@@ -99,11 +130,11 @@ impl ShardReadingsPublisher {
     }
 }
 
-fn report_local_shards_metrics(snapshot: &ShardThroughputReadings) {
+fn report_local_shards_metrics(snapshot: &ShardReadingsBySource) {
     let mut num_open_shards = 0;
     let mut num_closed_shards = 0;
 
-    for shard_readings in snapshot.per_source_readings.values() {
+    for shard_readings in snapshot.readings_by_source.values() {
         for shard_reading in shard_readings {
             match shard_reading.shard_state {
                 ShardState::Open => num_open_shards += 1,

@@ -378,7 +378,7 @@ mod tests {
         let mut shard = IngesterShard::builder(index_uid, source_id, ShardId::from(1))
             .with_shared_rate_meter(meter.clone())
             .build();
-        assert!(meter.harvest().per_source_readings.is_empty());
+        assert!(meter.harvest().readings_by_source.is_empty());
 
         shard.make_advertisable();
         shard.record_append(
@@ -389,19 +389,19 @@ mod tests {
         );
         tokio::time::advance(Duration::from_secs(1)).await;
         let readings = meter.harvest();
-        let reading = &readings.per_source_readings[&source_uid][0];
+        let reading = &readings.readings_by_source[&source_uid][0];
         assert_eq!(reading.shard_state, ShardState::Open);
         assert_eq!(reading.short_term_ingestion_rate, ByteSize::b(100));
 
         shard.close();
         let readings = meter.harvest();
         assert_eq!(
-            readings.per_source_readings[&source_uid][0].shard_state,
+            readings.readings_by_source[&source_uid][0].shard_state,
             ShardState::Closed
         );
 
         drop(shard);
-        assert!(meter.harvest().per_source_readings.is_empty());
+        assert!(meter.harvest().readings_by_source.is_empty());
     }
 
     #[test]
