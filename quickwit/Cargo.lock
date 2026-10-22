@@ -417,16 +417,6 @@ dependencies = [
 
 [[package]]
 name = "asyncband"
-version = "0.6.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94a214ba60d6231afd0e805e3c27c45a1626d9debaa5a5061c45a1ea1b2f1ed0"
-dependencies = [
- "hashbrown 0.17.1",
- "slab",
-]
-
-[[package]]
-name = "asyncband"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5161fb43cb8f231f06983cb2b8f9ee9cee14be0b1356d8383398cc0f312800d1"
@@ -5866,9 +5856,9 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "opendal"
-version = "0.58.2"
+version = "0.59.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33dbff14cc9bb085224256d6a81289d2f3202e85b06f408d42534b42162a4231"
+checksum = "46081824c74bac9f68f0bc4408077f77b0e315c006514719c97af1c2227ac2d2"
 dependencies = [
  "opendal-core",
  "opendal-http-transport-reqwest",
@@ -5880,12 +5870,12 @@ dependencies = [
 
 [[package]]
 name = "opendal-core"
-version = "0.58.2"
+version = "0.59.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48dbcef97d3eb7591db2c18d5cae95c836bcce07359b98d98dd6f4e861eb77b7"
+checksum = "33d5a635dfea36a7a0c3bbb2ca34c97af17f98dd69b0cdf31a1d436a346e0a12"
 dependencies = [
  "anyhow",
- "asyncband 0.6.7",
+ "asyncband",
  "base64 0.23.1",
  "bytes",
  "futures",
@@ -5894,7 +5884,7 @@ dependencies = [
  "log",
  "md-5 0.11.0",
  "percent-encoding",
- "quick-xml 0.41.0",
+ "quick-xml 0.42.0",
  "reqsign-core",
  "serde",
  "serde_json",
@@ -5906,9 +5896,9 @@ dependencies = [
 
 [[package]]
 name = "opendal-http-transport-reqwest"
-version = "0.58.2"
+version = "0.59.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85663452ea32bbc17e8f79ab29788c846d116ec7de31451be9c787e462dcb36c"
+checksum = "fc025e163c43993e30cf1829a30b791934e5b0f7cd4d7e03acc902a9efb7e8f5"
 dependencies = [
  "bytes",
  "futures",
@@ -5920,11 +5910,11 @@ dependencies = [
 
 [[package]]
 name = "opendal-layer-concurrent-limit"
-version = "0.58.2"
+version = "0.59.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03f9e144b5228d741c3763ade8711d9b72e5fb6d998e779f2d7a09da0b5a3eba"
+checksum = "06b44bdf694cccb7d90515b3eac6623975a2813abf4f5c438b4949a329d6a45b"
 dependencies = [
- "asyncband 0.6.7",
+ "asyncband",
  "futures",
  "http 1.5.0",
  "opendal-core",
@@ -5932,9 +5922,9 @@ dependencies = [
 
 [[package]]
 name = "opendal-layer-retry"
-version = "0.58.2"
+version = "0.59.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e94db301964a25366090484d61e6da16d5979cc8faf02c3e12210dc74fafed38"
+checksum = "2a02c59479b047878f4a0f269f23c847f24d67d1ff19f2b20fdd5a3bceefd451"
 dependencies = [
  "backon",
  "log",
@@ -5943,9 +5933,9 @@ dependencies = [
 
 [[package]]
 name = "opendal-layer-timeout"
-version = "0.58.2"
+version = "0.59.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08956ddda07465449bfd48825f4f0f25e0351278ac974eaa659895d9d74f2c80"
+checksum = "afffa0cf8a6690b3b44cc510816ba675638eb236699a7d449e44ac3344bafd36"
 dependencies = [
  "opendal-core",
  "tokio",
@@ -5953,9 +5943,9 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-gcs"
-version = "0.58.2"
+version = "0.59.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da1f2a8c975fd22fea01f0409bcb8774f1ac02ad79863a3490098203121555d3"
+checksum = "f9e5197fce0cd5929db9129a7e71e503841aa20bea4f1dcc54ab097a5f3652e9"
 dependencies = [
  "async-trait",
  "bytes",
@@ -5963,13 +5953,14 @@ dependencies = [
  "log",
  "opendal-core",
  "percent-encoding",
- "quick-xml 0.41.0",
+ "quick-xml 0.42.0",
  "reqsign-core",
  "reqsign-file-read-tokio",
  "reqsign-google",
  "serde",
  "serde_json",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -7384,16 +7375,6 @@ name = "quick-xml"
 version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1004a344b30a54e2ee58d66a71b32d2db2feb0a31f9a2d302bf0536f15de2a33"
-dependencies = [
- "memchr",
- "serde",
-]
-
-[[package]]
-name = "quick-xml"
-version = "0.41.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
 dependencies = [
  "memchr",
  "serde",
@@ -8985,7 +8966,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85fed85c436b6b920e4b36310f699a77771a91e38ae483df48447bd7d162671c"
 dependencies = [
  "anyhow",
- "asyncband 0.7.3",
+ "asyncband",
  "base64 0.23.1",
  "bytes",
  "hex",

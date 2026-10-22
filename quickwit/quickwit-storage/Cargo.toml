@@ -69,7 +69,7 @@ proptest = { workspace = true }
 reqwest = { workspace = true }
 # Used by the HTTPS TLS regression test to inject a custom reqwest client via
 # OpenDAL's HttpTransporter API (split out of opendal in 0.58).
-opendal-http-transport-reqwest = "0.58"
+opendal-http-transport-reqwest = "0.59"
 rustls = { workspace = true }
 tokio = { workspace = true }
 tokio-rustls = { workspace = true }

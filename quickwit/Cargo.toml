@@ -334,7 +334,7 @@ azure_storage_blobs = { version = "0.21", default-features = false, features = [
   "enable_reqwest_rustls",
 ] }
 
-opendal = { version = "0.58", default-features = false, features = [
+opendal = { version = "0.59", default-features = false, features = [
   "http-transport-reqwest",
   "layers-retry",
   "layers-concurrent-limit",
