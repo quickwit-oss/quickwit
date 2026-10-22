@@ -717,7 +717,14 @@ pub struct IngestApiConfig {
     /// Deprecated: ingest replication is no longer supported.
     #[serde(default, rename = "replication_factor", skip_serializing)]
     _replication_factor: Option<serde::de::IgnoredAny>,
-    pub content_length_limit: ByteSize,
+    /// Maximum size of a request body as received on the wire, i.e. *before* decompression.
+    /// Accepts the former name `content_length_limit` for backward compatibility.
+    #[serde(alias = "content_length_limit")]
+    pub max_body_size: ByteSize,
+    /// Maximum size of a request body *after* decompression. This bounds the memory (and CPU) a
+    /// single compressed request can consume while being inflated, preventing decompression-bomb
+    /// OOMs where a small compressed body expands to many gigabytes.
+    pub max_decompressed_body_size: ByteSize,
     /// (hidden) Targeted throughput for each shard
     pub shard_throughput_limit: ByteSize,
     /// (hidden) Maximum accumulated throughput capacity for underutilized
@@ -742,7 +749,8 @@ impl Default for IngestApiConfig {
             max_queue_memory_usage: ByteSize::gib(2),
             max_queue_disk_usage: ByteSize::gib(4),
             _replication_factor: None,
-            content_length_limit: ByteSize::mib(10),
+            max_body_size: ByteSize::mib(10),
+            max_decompressed_body_size: ByteSize::mib(256),
             shard_throughput_limit: DEFAULT_SHARD_THROUGHPUT_LIMIT,
             shard_burst_limit: DEFAULT_SHARD_BURST_LIMIT,
             shard_scale_up_factor: DEFAULT_SHARD_SCALE_UP_FACTOR,
@@ -809,12 +817,21 @@ impl IngestApiConfig {
             "shard_throughput_limit ({}) must be within 1mb and 20mb",
             self.shard_throughput_limit.display().si()
         );
+        // A decompressed body is always at least as large as its compressed form, so a decompressed
+        // cap below the wire body-size limit would reject bodies that the body-size filter already
+        // accepted.
+        ensure!(
+            self.max_decompressed_body_size >= self.max_body_size,
+            "max_decompressed_body_size ({}) must be at least max_body_size ({})",
+            self.max_decompressed_body_size.display().si(),
+            self.max_body_size.display().si()
+        );
         // The newline delimited format is persisted as something a bit larger
         // (lines prefixed with their length)
-        let estimated_persist_size = ByteSize::b(3 * self.content_length_limit.as_u64() / 2);
+        let estimated_persist_size = ByteSize::b(3 * self.max_body_size.as_u64() / 2);
         ensure!(
             self.shard_burst_limit >= estimated_persist_size,
-            "shard_burst_limit ({}) must be at least 1.5*content_length_limit ({})",
+            "shard_burst_limit ({}) must be at least 1.5*max_body_size ({})",
             self.shard_burst_limit,
             estimated_persist_size,
         );
@@ -1148,6 +1165,54 @@ mod tests {
                 "shard_throughput_limit (21.0 MB) must be within 1mb and 20mb"
             );
         }
+    }
+
+    #[test]
+    fn test_ingest_api_max_body_size_default_and_alias() {
+        // Default.
+        let default_config = IngestApiConfig::default();
+        assert_eq!(default_config.max_body_size, ByteSize::mib(10));
+
+        // The former name `content_length_limit` is still accepted as an alias.
+        let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
+            r#"
+                content_length_limit: 20M
+            "#,
+        )
+        .unwrap();
+        assert_eq!(ingest_api_config.max_body_size, ByteSize::mb(20));
+        assert!(ingest_api_config.validate().is_ok());
+
+        // The new name works too.
+        let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
+            r#"
+                max_body_size: 20M
+            "#,
+        )
+        .unwrap();
+        assert_eq!(ingest_api_config.max_body_size, ByteSize::mb(20));
+    }
+
+    #[test]
+    fn test_ingest_api_max_decompressed_body_size() {
+        let default_config = IngestApiConfig::default();
+        assert_eq!(
+            default_config.max_decompressed_body_size,
+            ByteSize::mib(256)
+        );
+
+        // A decompressed limit below the wire body-size limit is rejected.
+        let ingest_api_config: IngestApiConfig = serde_yaml::from_str(
+            r#"
+                max_body_size: 10M
+                max_decompressed_body_size: 1M
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            ingest_api_config.validate().unwrap_err().to_string(),
+            "max_decompressed_body_size (1.0 MB) must be at least max_body_size (10.0 MB)"
+        );
     }
 
     #[test]

@@ -48,3 +48,10 @@ pub(crate) static CIRCUIT_BREAK_TOTAL: LazyCounter = lazy_counter!(
         description: "Circuit breaker counter",
         subsystem: "grpc",
 );
+
+pub(crate) static DECOMPRESSION_TOO_LARGE_TOTAL: LazyCounter = lazy_counter!(
+        name: "decompression_too_large_total",
+        description: "Number of ingest requests rejected because their decompressed body exceeded \
+                      the maximum allowed size, labeled by `endpoint`.",
+        subsystem: "rest",
+);

@@ -95,9 +95,9 @@ fn ingest_filter(
     warp::path!(String / "ingest")
         .and(warp::post())
         .and(warp::body::content_length_limit(
-            config.content_length_limit.as_u64(),
+            config.max_body_size.as_u64(),
         ))
-        .and(get_body_bytes())
+        .and(get_body_bytes(config.max_decompressed_body_size, "ingest"))
         .and(warp::query::<IngestOptions>())
 }
 
@@ -406,8 +406,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn test_ingest_api_return_413_if_above_content_limit() {
-        let config: IngestApiConfig =
-            serde_json::from_str(r#"{ "content_length_limit": "1" }"#).unwrap();
+        let config: IngestApiConfig = serde_json::from_str(r#"{ "max_body_size": "1" }"#).unwrap();
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_v1_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mocked();

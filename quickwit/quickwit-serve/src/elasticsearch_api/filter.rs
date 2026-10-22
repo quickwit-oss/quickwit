@@ -66,14 +66,16 @@ pub(crate) fn elasticsearch_filter()
     )
 )]
 pub(crate) fn elastic_bulk_filter(
-    content_length_limit: ByteSize,
+    max_body_size: ByteSize,
+    max_decompressed_body_size: ByteSize,
 ) -> impl Filter<Extract = (Body, ElasticBulkOptions), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_bulk")
         .and(warp::post().or(warp::put()).unify())
-        .and(warp::body::content_length_limit(
-            content_length_limit.as_u64(),
+        .and(warp::body::content_length_limit(max_body_size.as_u64()))
+        .and(get_body_bytes(
+            max_decompressed_body_size,
+            "elasticsearch_bulk",
         ))
-        .and(get_body_bytes())
         .and(warp::query())
 }
 
@@ -90,14 +92,16 @@ pub(crate) fn elastic_bulk_filter(
     )
 )]
 pub(crate) fn elastic_index_bulk_filter(
-    content_length_limit: ByteSize,
+    max_body_size: ByteSize,
+    max_decompressed_body_size: ByteSize,
 ) -> impl Filter<Extract = (String, Body, ElasticBulkOptions), Error = Rejection> + Clone {
     warp::path!("_elastic" / String / "_bulk")
         .and(warp::post().or(warp::put()).unify())
-        .and(warp::body::content_length_limit(
-            content_length_limit.as_u64(),
+        .and(warp::body::content_length_limit(max_body_size.as_u64()))
+        .and(get_body_bytes(
+            max_decompressed_body_size,
+            "elasticsearch_bulk",
         ))
-        .and(get_body_bytes())
         .and(warp::query::<ElasticBulkOptions>())
 }
 

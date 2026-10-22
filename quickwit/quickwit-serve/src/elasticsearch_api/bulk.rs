@@ -37,11 +37,12 @@ use crate::{Body, with_arg};
 pub fn es_compat_bulk_handler(
     ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
-    content_length_limit: ByteSize,
+    max_body_size: ByteSize,
+    max_decompressed_body_size: ByteSize,
     enable_ingest_v1: bool,
     enable_ingest_v2: bool,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_bulk_filter(content_length_limit)
+    elastic_bulk_filter(max_body_size, max_decompressed_body_size)
         .and(with_arg(ingest_service))
         .and(with_arg(ingest_router))
         .then(move |body, bulk_options, ingest_service, ingest_router| {
@@ -64,11 +65,12 @@ pub fn es_compat_bulk_handler(
 pub fn es_compat_index_bulk_handler(
     ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
-    content_length_limit: ByteSize,
+    max_body_size: ByteSize,
+    max_decompressed_body_size: ByteSize,
     enable_ingest_v1: bool,
     enable_ingest_v2: bool,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_index_bulk_filter(content_length_limit)
+    elastic_index_bulk_filter(max_body_size, max_decompressed_body_size)
         .and(with_arg(ingest_service))
         .and(with_arg(ingest_router))
         .then(

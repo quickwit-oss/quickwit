@@ -14,12 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (Jaeger) Query resource attributes when Jaeger request carries tags
 
 ### Changed
+- **Breaking**: ingest requests whose body decompresses to more than `ingest_api.max_decompressed_body_size` (default 256 MiB) are now rejected with HTTP 413 `Payload Too Large`. Previously only the *compressed* request size was bounded, so a small highly-compressible payload could inflate to many gigabytes. Affects the Elasticsearch `_bulk`, OpenTelemetry (OTLP), and native ingest endpoints. Split large batches into smaller requests, or raise the limit.
+- OTLP REST endpoints now enforce a request-size limit (previously unbounded), set to `ingest_api.max_decompressed_body_size` (default 256 MiB).
+- Renamed `ingest_api.content_length_limit` to `ingest_api.max_body_size`; the former name is still accepted as a config alias.
 
 ### Deprecated
 
 ### Removed
 
 ### Security
+- Bound the size of decompressed ingest request bodies (`ingest_api.max_decompressed_body_size`, default 256 MiB) to prevent decompression-bomb out-of-memory crashes. The limit is enforced as the body is inflated, so an oversized payload is never fully decompressed.
 
 --->
 
