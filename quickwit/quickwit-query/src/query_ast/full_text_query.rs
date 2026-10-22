@@ -65,6 +65,7 @@ impl FullTextParams {
         text: &str,
         json_options: &JsonObjectOptions,
         tokenizer_manager: &TokenizerManager,
+        is_prefix: bool,
     ) -> anyhow::Result<Vec<(usize, Term)>> {
         let text_indexing_options = json_options
             .get_text_indexing_options()
@@ -72,14 +73,12 @@ impl FullTextParams {
         let mut text_analyzer: TextAnalyzer =
             self.text_analyzer(text_indexing_options, tokenizer_manager)?;
         let mut token_stream = text_analyzer.token_stream(text);
-        let mut tokens = Vec::new();
-        token_stream.process(&mut |token| {
+        Ok(collect_terms(&mut token_stream, is_prefix, |text| {
             let mut term =
                 Term::from_field_json_path(field, json_path, json_options.is_expand_dots_enabled());
-            term.append_type_and_str(&token.text);
-            tokens.push((token.position, term));
-        });
-        Ok(tokens)
+            term.append_type_and_str(text);
+            term
+        }))
     }
 
     pub(crate) fn tokenize_text_into_terms(
@@ -88,16 +87,14 @@ impl FullTextParams {
         text: &str,
         text_field_indexing: &TextFieldIndexing,
         tokenizer_manager: &TokenizerManager,
+        is_prefix: bool,
     ) -> anyhow::Result<Vec<(usize, Term)>> {
         let mut text_analyzer: TextAnalyzer =
             self.text_analyzer(text_field_indexing, tokenizer_manager)?;
         let mut token_stream = text_analyzer.token_stream(text);
-        let mut tokens = Vec::new();
-        token_stream.process(&mut |token| {
-            let term: Term = Term::from_field_text(field, &token.text);
-            tokens.push((token.position, term));
-        });
-        Ok(tokens)
+        Ok(collect_terms(&mut token_stream, is_prefix, |text| {
+            Term::from_field_text(field, text)
+        }))
     }
 
     pub(crate) fn make_query(
@@ -108,7 +105,7 @@ impl FullTextParams {
         if terms.is_empty() {
             return Ok(self.zero_terms_query.into());
         }
-        if terms.len() == 1 {
+        if terms.len() == 1 && !matches!(self.mode, FullTextMode::BoolPrefix { .. }) {
             let term = terms.pop().unwrap().1;
             return Ok(TantivyTermQuery::new(term, IndexRecordOption::WithFreqs).into());
         }
@@ -163,6 +160,29 @@ impl FullTextParams {
     }
 }
 
+/// Keep the final original token as the prefix, without requiring its parts as
+/// exact terms. Tokenizers such as datadog_v2 emit the original first, with a
+/// position_length spanning its subsequent parts. Earlier words keep all terms.
+fn collect_terms(
+    token_stream: &mut dyn TokenStream,
+    is_prefix: bool,
+    make_term: impl Fn(&str) -> Term,
+) -> Vec<(usize, Term)> {
+    let mut terms = Vec::new();
+    let mut prefix_span: Option<(usize, usize)> = None;
+    token_stream.process(&mut |token| {
+        if is_prefix && !matches!(prefix_span, Some((_, end)) if token.position < end) {
+            prefix_span = (token.position_length > 1)
+                .then_some((terms.len(), token.position + token.position_length));
+        }
+        terms.push((token.position, make_term(&token.text)));
+    });
+    if let Some((index, _)) = prefix_span {
+        terms.truncate(index + 1);
+    }
+    terms
+}
+
 fn is_zero(val: &u32) -> bool {
     *val == 0u32
 }
@@ -209,8 +229,7 @@ impl From<BooleanOperand> for FullTextMode {
 /// The tokens might be transformed into a phrase queries,
 /// into a disjunction, or into a conjunction.
 ///
-/// If after tokenization, a single term is emitted, it will naturally be
-/// produce a tantivy TermQuery.
+/// A single token produces a term query, or a prefix query in BoolPrefix mode.
 ///
 /// If no terms is emitted, it will produce a query that match all or no documents,
 /// depending on `full_text_params.zero_terms_query`.
@@ -275,6 +294,7 @@ impl FullTextQuery {
                         &self.text,
                         text_field_indexing,
                         tokenizer_manager,
+                        true,
                     )
                     .ok()?;
                 let (_pos, term) = terms.pop()?;
@@ -289,6 +309,7 @@ impl FullTextQuery {
                         &self.text,
                         json_options,
                         tokenizer_manager,
+                        true,
                     )
                     .ok()?;
                 let (_pos, term) = terms.pop()?;

@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use tantivy::tokenizer::{Token, TokenStream, Tokenizer};
-use unicode_segmentation::UnicodeSegmentation;
+use tantivy::tokenizer::Tokenizer;
+
+use super::unicode_segmenter_tokenizer::UnicodeSegmenterTokenStream;
 
 /// Unicode word tokenization with additional dot-separated parts.
 ///
@@ -23,82 +24,18 @@ use unicode_segmentation::UnicodeSegmentation;
 #[derive(Clone, Default)]
 pub struct DatadogV2Tokenizer;
 
-pub struct DatadogV2TokenStream<'a> {
-    words: unicode_segmentation::UnicodeWordIndices<'a>,
-    parts: Option<std::str::Split<'a, char>>,
-    part_offset: usize,
-    position: usize,
-    token: Token,
-}
-
 impl Tokenizer for DatadogV2Tokenizer {
-    type TokenStream<'a> = DatadogV2TokenStream<'a>;
+    type TokenStream<'a> = UnicodeSegmenterTokenStream<'a>;
 
     fn token_stream<'a>(&'a mut self, text: &'a str) -> Self::TokenStream<'a> {
-        DatadogV2TokenStream {
-            words: text.unicode_word_indices(),
-            parts: None,
-            part_offset: 0,
-            position: 0,
-            token: Token::default(),
-        }
-    }
-}
-
-impl DatadogV2TokenStream<'_> {
-    fn set_token(&mut self, text: &str, offset: usize, position_length: usize) {
-        self.token.text.clear();
-        self.token.text.push_str(text);
-        self.token.offset_from = offset;
-        self.token.offset_to = offset + text.len();
-        self.token.position = self.position;
-        self.token.position_length = position_length;
-    }
-}
-
-impl TokenStream for DatadogV2TokenStream<'_> {
-    fn advance(&mut self) -> bool {
-        if let Some(part) = self.parts.as_mut().and_then(Iterator::next) {
-            self.set_token(part, self.part_offset, 1);
-            self.part_offset += part.len() + 1;
-            self.position += 1;
-            return true;
-        }
-        self.parts = None;
-
-        let Some((offset, word)) = self.words.next() else {
-            return false;
-        };
-        let split = word.contains('.')
-            && !word
-                .chars()
-                .all(|character| character == '.' || character.is_numeric());
-        if split {
-            // Unicode word boundaries exclude leading, trailing, and consecutive
-            // dots, so every part is nonempty. The first part shares the original's
-            // position, and subsequent parts occupy consecutive positions.
-            let parts = word.split('.');
-            self.set_token(word, offset, parts.clone().count());
-            self.parts = Some(parts);
-            self.part_offset = offset;
-        } else {
-            self.set_token(word, offset, 1);
-            self.position += 1;
-        }
-        true
-    }
-
-    fn token(&self) -> &Token {
-        &self.token
-    }
-
-    fn token_mut(&mut self) -> &mut Token {
-        &mut self.token
+        UnicodeSegmenterTokenStream::new(text, true)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use tantivy::tokenizer::{Token, TokenStream};
+
     use super::*;
     use crate::tokenizers::create_default_quickwit_tokenizer_manager;
 
