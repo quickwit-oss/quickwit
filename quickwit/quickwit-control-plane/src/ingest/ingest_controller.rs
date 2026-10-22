@@ -900,7 +900,7 @@ impl IngestController {
         for (subrequest_id, (source_uid, ingester_id)) in
             source_uids_with_multiplicity.zip(ingester_ids).enumerate()
         {
-            let shard_id = ShardId::from(Ulid::new());
+            let shard_id = ShardId::from(Ulid::generate());
 
             let index_metadata = model
                 .index_metadata(&source_uid.index_uid)

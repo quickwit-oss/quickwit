@@ -192,7 +192,7 @@ impl ScrollKeyAndStartOffset {
         max_hits_per_page: u32,
         search_after: PartialHit,
     ) -> ScrollKeyAndStartOffset {
-        let scroll_ulid: Ulid = Ulid::new();
+        let scroll_ulid: Ulid = Ulid::generate();
         // technically we could only initialize search_after on first call to next_page, and use
         // default() before, but that feels like partial initialization.
         ScrollKeyAndStartOffset {
