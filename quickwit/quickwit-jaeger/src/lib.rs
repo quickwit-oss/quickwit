@@ -77,6 +77,7 @@ pub(crate) type TracesDataStream =
 #[derive(Clone)]
 pub struct JaegerService {
     search_service: Arc<dyn SearchService>,
+    lookback_period_traces_secs: i64,
     lookback_period_secs: i64,
     max_trace_duration_secs: i64,
     max_fetch_spans: u64,
@@ -87,6 +88,7 @@ impl JaegerService {
         Self {
             search_service,
             lookback_period_secs: config.lookback_period().as_secs() as i64,
+            lookback_period_traces_secs: config.lookback_period_traces().as_secs() as i64,
             max_trace_duration_secs: config.max_trace_duration().as_secs() as i64,
             max_fetch_spans: config.max_fetch_spans.get(),
         }
@@ -195,7 +197,7 @@ impl JaegerService {
         let trace_id = TraceId::try_from(request.trace_id)
             .map_err(|error| Status::invalid_argument(error.to_string()))?;
         let end = OffsetDateTime::now_utc().unix_timestamp();
-        let start = end - self.lookback_period_secs;
+        let start = end - self.lookback_period_traces_secs;
         let search_window = start..=end;
         let response = self
             .stream_spans(
