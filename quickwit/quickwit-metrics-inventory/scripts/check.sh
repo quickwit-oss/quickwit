@@ -72,9 +72,6 @@ report() {
 }
 
 report
-if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-    report >> "$GITHUB_STEP_SUMMARY"
-fi
 
 if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
     if [[ -z "$BREAKING" ]]; then
