@@ -164,10 +164,6 @@ impl DocBatchV2 {
         self.doc_lengths.is_empty()
     }
 
-    pub fn num_bytes(&self) -> usize {
-        self.doc_buffer.len() + self.doc_lengths.len() * 4
-    }
-
     pub fn num_docs(&self) -> usize {
         self.doc_lengths.len()
     }
@@ -207,7 +203,7 @@ impl MRecordBatch {
         self.mrecord_lengths.is_empty()
     }
 
-    pub fn estimate_size(&self) -> ByteSize {
+    pub fn buffer_size(&self) -> ByteSize {
         ByteSize((self.mrecord_buffer.len() + self.mrecord_lengths.len() * 4) as u64)
     }
 
