@@ -112,9 +112,10 @@ any errors, you may need to update the listing of exceptions in `license-tool.to
 
 The list of metrics declared with `quickwit-metrics` is committed in
 `quickwit/quickwit-metrics-inventory/metrics.yaml`. When you add, remove, or change a metric,
-regenerate it with `make metrics-inventory` and commit the result. CI warns (without failing)
-when the file is out of date or when a metric is removed. See
-[the crate README](quickwit/quickwit-metrics-inventory/README.md) for details.
+regenerate it with `make metrics-inventory` and commit the result. CI fails when the file is out
+of date. If you removed a metric, identify all of its users, assess the impact, and communicate the
+removal before merging. See [the crate README](quickwit/quickwit-metrics-inventory/README.md) for
+details.
 
 # Documentation
 

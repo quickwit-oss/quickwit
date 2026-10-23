@@ -3,21 +3,11 @@ name: Metrics inventory
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - "quickwit/**/*.rs"
-      - "quickwit/**/Cargo.toml"
-      - "quickwit/quickwit-metrics-inventory/**"
-      - ".github/workflows/metrics-inventory.yml"
   merge_group:
     types: [checks_requested]
   push:
     branches:
       - main
-    paths:
-      - "quickwit/**/*.rs"
-      - "quickwit/**/Cargo.toml"
-      - "quickwit/quickwit-metrics-inventory/**"
-      - ".github/workflows/metrics-inventory.yml"
 
 permissions:
   contents: read
@@ -30,111 +20,100 @@ env:
 
 concurrency:
   group: metrics-inventory-${{ github.event.pull_request.number || github.ref }}
-  # Only cancel superseded PR runs. On `main`, each push is compared with the
-  # previous commit, so a cancelled run would skip that commit's removals.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   metrics-inventory:
-    name: Metrics inventory (advisory)
+    name: Metrics inventory
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    # This check is advisory. Inventory steps use step-level `continue-on-error`
-    # so the job stays green and reports problems as warnings; this job-level
-    # setting additionally keeps setup failures from failing the workflow.
-    continue-on-error: true
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
-      # For pull requests, this checks out the PR merged into its base branch,
-      # so metrics added to the base after the PR branched are not reported as
-      # removed.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The base revision's committed inventory is used to detect metric
-      # removals, even when the contributor updated the committed inventory.
-      - name: Checkout base inventory
-        id: base
-        if: github.event_name != 'workflow_dispatch'
-        continue-on-error: true
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Filter at the step level rather than with trigger `paths:`, so that the
+      # job always reports a status and can be used as a required check.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: modified
         with:
-          persist-credentials: false
-          ref: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
-          path: base
-          sparse-checkout: ${{ env.INVENTORY }}
-          sparse-checkout-cone-mode: false
+          filters: |
+            metrics:
+              - quickwit/**/*.rs
+              - quickwit/**/Cargo.toml
+              - quickwit/Cargo.lock
+              - quickwit/quickwit-metrics-inventory/**
+              - .github/workflows/metrics-inventory.yml
       - name: Install build dependencies
+        if: steps.modified.outputs.metrics == 'true'
         run: |
           sudo apt-get update
           sudo apt-get -y install protobuf-compiler libcurl4-openssl-dev
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        if: steps.modified.outputs.metrics == 'true'
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.modified.outputs.metrics == 'true'
         with:
           workspaces: quickwit -> target
           shared-key: metrics-inventory
       - name: Generate inventory
-        id: generate
-        continue-on-error: true
+        if: steps.modified.outputs.metrics == 'true'
         run: bash quickwit/quickwit-metrics-inventory/scripts/run.sh > "$RUNNER_TEMP/metrics-inventory.yaml"
-      - name: Diff against committed inventory
-        id: diff
-        if: steps.generate.outcome == 'success'
-        continue-on-error: true
+      - name: Check committed inventory is up to date
+        if: steps.modified.outputs.metrics == 'true'
         run: |
-          echo '## Metrics inventory' >> "$GITHUB_STEP_SUMMARY"
           status=0
           diff -u "$INVENTORY" "$RUNNER_TEMP/metrics-inventory.yaml" > "$RUNNER_TEMP/metrics-inventory.diff" || status=$?
+          if (( status == 0 )); then
+            echo 'The committed metrics inventory is up to date.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           if (( status > 1 )); then
             exit "$status"
           fi
-          if (( status == 0 )); then
-            echo 'The committed inventory is up to date.' >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
 
-          echo "::warning title=Metrics inventory out of date::Run 'make metrics-inventory' and commit $INVENTORY. This check is advisory."
-          echo "The committed inventory is out of date. Run \`make metrics-inventory\` and commit \`$INVENTORY\`. This check is advisory." >> "$GITHUB_STEP_SUMMARY"
-          echo '```diff' >> "$GITHUB_STEP_SUMMARY"
-          tee -a "$GITHUB_STEP_SUMMARY" < "$RUNNER_TEMP/metrics-inventory.diff"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-      - name: Check for removed metrics
-        id: removed
-        if: steps.generate.outcome == 'success'
-        continue-on-error: true
-        run: |
-          echo '### Removed metrics' >> "$GITHUB_STEP_SUMMARY"
-          if [[ ! -f "base/$INVENTORY" ]]; then
-            echo '::warning title=Metric removal check skipped::No base inventory is available. Metric removals were not checked.'
-            echo 'No base inventory is available. Metric removals were not checked.' >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          # Compare metric names only: labels and descriptions may change
-          # without a metric being removed. Metric keys are the second level of
-          # the YAML mapping (`module: { metric{labels}: { kind, description } }`).
+          # Metric names only (labels stripped): the second level of the YAML
+          # mapping `module: { metric{labels}: { kind, description } }`.
           metric_names() {
             sed -nE "s/^  [\"']?([^\"'{: ]+).*/\1/p" "$1" | sort -u
           }
-          removed=$(comm -23 <(metric_names "base/$INVENTORY") <(metric_names "$RUNNER_TEMP/metrics-inventory.yaml"))
-          if [[ -z "$removed" ]]; then
-            echo 'No metrics were removed.' >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
+          removed=$(comm -23 <(metric_names "$INVENTORY") <(metric_names "$RUNNER_TEMP/metrics-inventory.yaml"))
 
-          echo 'Please confirm these removals are intentional. This check is advisory.' >> "$GITHUB_STEP_SUMMARY"
-          while read -r name; do
-            echo "::warning title=Metric removed::$name was removed. Please confirm this is intentional."
-            echo "- \`$name\`" >> "$GITHUB_STEP_SUMMARY"
-          done <<< "$removed"
-      - name: Report incomplete check
-        if: >-
-          failure() ||
-          steps.generate.outcome == 'failure' ||
-          steps.diff.outcome == 'failure' ||
-          steps.removed.outcome == 'failure'
-        run: |
-          echo '::warning title=Metrics inventory unavailable::The metrics inventory check failed. Metric removals could not be checked; inspect the job logs. This check is advisory.'
-          echo '### Metrics inventory check incomplete' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Metric removals could not be checked. Inspect the job logs. This check is advisory.' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo '## Metrics inventory is out of date'
+            echo
+            echo "The generated metrics inventory differs from the committed \`$INVENTORY\`."
+            echo 'Run `make metrics-inventory` to regenerate it, then commit the result.'
+            echo
+            echo '- If the difference comes from added metrics, changed descriptions, kinds,'
+            echo '  or labels, regenerating the inventory is enough.'
+            echo '- If you **removed** a metric, regenerate the inventory, but be very cautious:'
+            echo '  identify every user of that metric (dashboards, monitors, alerts, SLOs,'
+            echo '  documentation, downstream consumers), assess the impact, and communicate'
+            echo '  the removal before merging.'
+            if [[ -n "$removed" ]]; then
+              echo
+              echo '### Removed metrics'
+              echo
+              sed 's/.*/- `&`/' <<< "$removed"
+            fi
+            echo
+            echo '### Diff'
+            echo
+            echo '```diff'
+            cat "$RUNNER_TEMP/metrics-inventory.diff"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          cat "$RUNNER_TEMP/metrics-inventory.diff"
+          echo "::error title=Metrics inventory out of date::Run 'make metrics-inventory' to regenerate $INVENTORY and commit it. For added metrics or changed descriptions, regenerating is enough. If you removed a metric, regenerate but be very cautious: identify all users of the metric, assess the impact, and communicate the removal. See the job summary for details."
+          if [[ -n "$removed" ]]; then
+            while read -r name; do
+              echo "::error title=Metric removed::$name was removed. Identify all users of this metric, assess the impact, and communicate the removal before merging."
+            done <<< "$removed"
+          fi
+          exit 1

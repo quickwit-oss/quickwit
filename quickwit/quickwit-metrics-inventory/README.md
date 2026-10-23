@@ -29,15 +29,17 @@ that feature-gated metrics are included, then restores the modified files.
 ## CI check
 
 The **Metrics inventory** workflow (`.github/workflows/metrics-inventory.yml`)
-regenerates the inventory and:
+regenerates the inventory and **fails** if it differs from the committed
+`metrics.yaml`, showing the `diff -u` and listing any removed metrics.
 
-- shows a `diff -u` against the committed `metrics.yaml` when it is out of date;
-- warns about every metric present in the base revision's `metrics.yaml` but
-  missing from the generated inventory, so reviewers can confirm the removal is
-  intentional. Removals are detected whether or not `metrics.yaml` was updated.
+To fix it, run `make metrics-inventory` and commit the result:
 
-The check is advisory: it never fails the build, and generation failures are
-reported as an incomplete check. Do not make it a required status check.
+- For added metrics, or changed descriptions, kinds, or labels, regenerating
+  the inventory is enough.
+- If you **removed** a metric, regenerate the inventory, but be very cautious:
+  identify every user of that metric (dashboards, monitors, alerts, SLOs,
+  documentation, downstream consumers), assess the impact, and communicate the
+  removal before merging.
 
 Only metrics declared through `quickwit-metrics` are covered; this is not a
 scrape of the `/metrics` endpoint.
