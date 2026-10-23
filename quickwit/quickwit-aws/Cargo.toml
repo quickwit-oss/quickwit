@@ -18,14 +18,24 @@ aws-sdk-s3 = { workspace = true }
 aws-sdk-sqs = { workspace = true, optional = true }
 aws-smithy-async = { workspace = true }
 aws-smithy-http-client = { workspace = true }
-aws-smithy-runtime-api = { workspace = true }
+aws-smithy-runtime-api = { workspace = true, features = ["http-1x"] }
 aws-smithy-types = { workspace = true }
 futures = { workspace = true }
+http = { workspace = true }
+hyper = { workspace = true }
+hyper-rustls = { workspace = true }
+hyper-util = { workspace = true, features = ["client-proxy", "http1"] }
 mini-moka = { workspace = true }
+rustls = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
+tower = { workspace = true }
 tracing = { workspace = true }
 
 quickwit-common = { workspace = true }
+
+[dev-dependencies]
+http-body-util = { workspace = true }
 
 [features]
 kinesis = ["aws-sdk-kinesis"]
