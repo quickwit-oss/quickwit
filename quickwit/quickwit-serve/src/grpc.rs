@@ -135,6 +135,14 @@ pub(crate) async fn start_grpc_server(
         None
     };
 
+    let live_tail_grpc_service = if let Some(live_tail_service) = &services.live_tail_service_opt {
+        enabled_grpc_services.insert("live-tail");
+        file_descriptor_sets.push(quickwit_proto::live_tail::LIVE_TAIL_FILE_DESCRIPTOR_SET);
+        Some(live_tail_service.as_grpc_service(grpc_config.max_message_size))
+    } else {
+        None
+    };
+
     // Mount gRPC compaction service if this node is a janitor with the compaction service enabled.
     let compaction_grpc_service = if services
         .node_config
@@ -248,6 +256,7 @@ pub(crate) async fn start_grpc_server(
         .add_service(health_service)
         .add_service(reflection_service)
         .add_optional_service(compaction_grpc_service)
+        .add_optional_service(live_tail_grpc_service)
         .add_optional_service(control_plane_grpc_service)
         .add_optional_service(indexing_grpc_service)
         .add_optional_service(ingest_api_grpc_service)

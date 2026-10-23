@@ -29,6 +29,7 @@ use quickwit_common::{KillSwitch, io};
 use quickwit_config::{IndexingSettings, RetentionPolicy, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::IngesterPool;
+use quickwit_live_tail::LiveTailHub;
 use quickwit_metrics::{GaugeGuard, counter, gauge, label_values};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
@@ -423,6 +424,11 @@ impl IndexingPipeline {
             self.params.source_config.input_format,
             self.params.fingerprinter_opt.clone(),
         )?;
+        let live_tail_tap = self
+            .params
+            .live_tail_hub
+            .tap(self.params.pipeline_id.index_uid.clone());
+        let doc_processor = doc_processor.with_live_tail_tap(live_tail_tap);
         let (doc_processor_mailbox, doc_processor_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "doc_processor")]))
@@ -606,6 +612,8 @@ pub struct IndexingPipelineParams {
     pub params_fingerprint: u64,
 
     pub event_broker: EventBroker,
+    /// Receives the processed documents of the pipeline for the live tail sessions.
+    pub live_tail_hub: LiveTailHub,
 }
 
 #[cfg(test)]
@@ -738,6 +746,7 @@ mod tests {
             indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             event_broker: EventBroker::default(),
+            live_tail_hub: LiveTailHub::default(),
             params_fingerprint: 42u64,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
@@ -847,6 +856,7 @@ mod tests {
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             params_fingerprint: 42u64,
             event_broker: EventBroker::default(),
+            live_tail_hub: LiveTailHub::default(),
         };
         let (_pipeline_mailbox, pipeline_handle) = universe
             .spawn_builder()
@@ -977,6 +987,7 @@ mod tests {
             indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             event_broker: Default::default(),
+            live_tail_hub: LiveTailHub::default(),
             params_fingerprint: 42u64,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
@@ -1079,6 +1090,7 @@ mod tests {
             indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox.clone()),
             event_broker: Default::default(),
+            live_tail_hub: LiveTailHub::default(),
             params_fingerprint: 42u64,
         };
         let indexing_pipeline = IndexingPipeline::new(indexing_pipeline_params);
@@ -1164,6 +1176,7 @@ mod tests {
             indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: None,
             event_broker: Default::default(),
+            live_tail_hub: LiveTailHub::default(),
             params_fingerprint: 42u64,
         };
         let indexing_pipeline = IndexingPipeline::new(indexing_pipeline_params);
@@ -1320,6 +1333,7 @@ mod tests {
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             params_fingerprint: 42u64,
             event_broker: Default::default(),
+            live_tail_hub: LiveTailHub::default(),
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
