@@ -114,7 +114,7 @@ jobs:
           sudo apt install libsasl2-2
           sudo apt install libcurl4-openssl-dev
 
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v.7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v.7.1.0
         with:
           python-version: '3.11'
 
@@ -156,7 +156,7 @@ jobs:
         working-directory: ./quickwit
 
       - name: Install cargo-llvm-cov, cargo-nextest, and protoc
-        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: cargo-llvm-cov,nextest,protoc
 
@@ -197,7 +197,7 @@ jobs:
         working-directory: ./quickwit
 
       - name: Upload coverage report artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-report-${{ inputs.sha }}
           path: quickwit/lcov.info
