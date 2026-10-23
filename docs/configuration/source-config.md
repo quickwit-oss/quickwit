@@ -97,7 +97,7 @@ An ingest API source reads data from the [Ingest API](/docs/reference/rest-api.m
 
 A Kafka source reads data from a Kafka stream. Each message in the stream must hold a JSON object.
 
-A tutorial is available [here](/docs/ingest-data/kafka.md).
+A step-by-step tutorial is available in [Ingest data from Kafka](/docs/ingest-data/kafka.md).
 
 #### Kafka source parameters
 
