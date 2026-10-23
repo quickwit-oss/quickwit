@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 --->
 
+# [0.9.3]
+
+### Security
+
+- Reject TLS certificate chains through the compromised emSign intermediates (rustls-webpki RUSTSEC-2026-0382, webpki-roots RUSTSEC-2026-0381, webpki-root-certs RUSTSEC-2026-0383).
+
 # [0.9.2]
 
 ### Security
