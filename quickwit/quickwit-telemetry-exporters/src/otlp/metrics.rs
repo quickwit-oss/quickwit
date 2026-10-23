@@ -29,16 +29,16 @@ impl OtlpProtocol {
         match self {
             OtlpProtocol::Grpc => MetricExporter::builder()
                 .with_tonic()
-                .with_retry_policy(super::RETRY_POLICY)
+                .with_retry_policy(super::retry_policy())
                 .build(),
             OtlpProtocol::HttpProtobuf => MetricExporter::builder()
                 .with_http()
-                .with_retry_policy(super::RETRY_POLICY)
+                .with_retry_policy(super::retry_policy())
                 .with_protocol(OtlpWireProtocol::HttpBinary)
                 .build(),
             OtlpProtocol::HttpJson => MetricExporter::builder()
                 .with_http()
-                .with_retry_policy(super::RETRY_POLICY)
+                .with_retry_policy(super::retry_policy())
                 .with_protocol(OtlpWireProtocol::HttpJson)
                 .build(),
         }

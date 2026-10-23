@@ -92,7 +92,11 @@ impl Deref for PublishToken {
 impl PublishToken {
     pub fn resolve(node_id: &str, indexing_plan_id: &str) -> Self {
         if indexing_plan_id.is_empty() {
-            let ulid = if cfg!(test) { Ulid::nil() } else { Ulid::new() };
+            let ulid = if cfg!(test) {
+                Ulid::nil()
+            } else {
+                Ulid::generate()
+            };
             PublishToken(format!("{node_id}/{ulid}"))
         } else {
             PublishToken(format!("{indexing_plan_id}-{node_id}"))

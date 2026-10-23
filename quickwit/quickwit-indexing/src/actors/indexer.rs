@@ -193,7 +193,7 @@ impl IndexerState {
         &self,
         ctx: &ActorContext<Indexer>,
     ) -> anyhow::Result<IndexingWorkbench> {
-        let workbench_id = Ulid::new();
+        let workbench_id = Ulid::generate();
         let batch_parent_span = info_span!(target: "quickwit-indexing", "index-doc-batches",
             index_id=%self.pipeline_id.index_uid.index_id,
             source_id=%self.pipeline_id.source_id,

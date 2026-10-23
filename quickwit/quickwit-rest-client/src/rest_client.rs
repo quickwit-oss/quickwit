@@ -70,9 +70,7 @@ impl Transport {
             reqwest_client_builder = reqwest_client_builder.connect_timeout(duration);
         }
         if let Some(ca_cert) = ca_cert {
-            reqwest_client_builder = reqwest_client_builder
-                .tls_built_in_root_certs(false)
-                .add_root_certificate(ca_cert);
+            reqwest_client_builder = reqwest_client_builder.tls_certs_only([ca_cert]);
         }
         if let Some(identity) = client_identity {
             reqwest_client_builder = reqwest_client_builder.identity(identity);

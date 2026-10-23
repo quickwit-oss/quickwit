@@ -271,8 +271,8 @@ mod tests {
 
         let (endpoint, server_task) = start_local_https_gcs_server().await?;
         let ca_cert_der = decode_test_der(TEST_CA_CERT_DER_BASE64)?;
-        let ca_cert = reqwest_013::Certificate::from_der(&ca_cert_der)?;
-        let reqwest_client = reqwest_013::Client::builder()
+        let ca_cert = reqwest::Certificate::from_der(&ca_cert_der)?;
+        let reqwest_client = reqwest::Client::builder()
             .no_proxy()
             .tls_certs_only([ca_cert])
             .build()?;

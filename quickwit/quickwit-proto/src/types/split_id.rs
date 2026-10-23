@@ -53,7 +53,7 @@ impl SplitId {
         static RANDOM_PREFIX_ENABLED: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
             quickwit_common::get_bool_from_env("QW_RANDOM_SPLIT_PREFIX", false)
         });
-        Self::from_ulid(ulid::Ulid::new(), *RANDOM_PREFIX_ENABLED)
+        Self::from_ulid(ulid::Ulid::generate(), *RANDOM_PREFIX_ENABLED)
     }
 
     /// Constructs a `SplitId` from a `Ulid`, optionally prepending a random prefix.

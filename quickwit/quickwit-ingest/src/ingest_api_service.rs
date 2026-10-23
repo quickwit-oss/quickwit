@@ -84,7 +84,7 @@ async fn get_or_initialize_partition_id(dir_path: &Path) -> crate::Result<String
         return Ok(partition_id.to_string());
     }
     // We add a prefix here to make sure we don't mistake it for a split id when reading logs.
-    let partition_id = format!("ingest_partition_{}", Ulid::new());
+    let partition_id = format!("ingest_partition_{}", Ulid::generate());
     tokio::fs::write(partition_id_path, partition_id.as_bytes()).await?;
     Ok(partition_id)
 }
