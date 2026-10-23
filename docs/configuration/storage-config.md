@@ -108,7 +108,7 @@ storage:
 
 #### Per-bucket S3 configuration
 
-In addition to the primary `s3:` block, you can declare per-bucket overrides under `storage.s3.buckets`. The map key is the bare bucket name (no `s3://` prefix or path; such keys are rejected at startup); when an `s3://<bucket>/...` URI is resolved, an exact match supplies that bucket's own endpoint, credentials, region, and flags. Any bucket not listed falls back to the fields on the primary `s3:` block. URIs stay canonical `s3://` — routing is by bucket name, so nothing extra is persisted in the index metadata.
+In addition to the primary `s3:` block, you can declare per-bucket overrides under `storage.s3.buckets`. The map key is the bucket name, e.g. `my-bucket`, not `s3://my-bucket` or `my-bucket/prefix`; such keys are rejected at startup. When an `s3://<bucket>/...` URI is resolved, an exact match supplies that bucket's own endpoint, credentials, region, and flags. Any bucket not listed falls back to the fields on the primary `s3:` block. URIs stay canonical `s3://` — routing is by bucket name, so nothing extra is persisted in the index metadata.
 
 Each bucket entry accepts the same fields as the primary `s3:` block, *except* `buckets` itself (no nesting). Bucket entries do not inherit fields from the primary block. If `access_key_id` / `secret_access_key` are omitted on a bucket entry, the global AWS SDK credential chain is used (env vars, instance metadata, etc.).
 

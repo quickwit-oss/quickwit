@@ -28,12 +28,12 @@ use crate::{
 
 /// S3 compatible object storage resolver.
 pub struct S3CompatibleObjectStorageFactory {
-    default_backend: S3Backend,
+    default_backend: LazyS3Client,
     // Backends for the buckets listed under `storage.s3.buckets`, keyed by bucket name.
-    bucket_backends: HashMap<String, S3Backend>,
+    bucket_backends: HashMap<String, LazyS3Client>,
 }
 
-struct S3Backend {
+struct LazyS3Client {
     storage_config: S3StorageConfig,
     // we cache the S3Client so we don't rebuild one every time we build a new Storage (for
     // every search query).
@@ -43,7 +43,7 @@ struct S3Backend {
     s3_client: OnceCell<S3Client>,
 }
 
-impl S3Backend {
+impl LazyS3Client {
     fn new(storage_config: S3StorageConfig) -> Self {
         Self {
             storage_config,
@@ -57,18 +57,18 @@ impl S3CompatibleObjectStorageFactory {
     pub fn new(mut storage_config: S3StorageConfig) -> Self {
         let bucket_backends = storage_config
             .bucket_configs()
-            .map(|(bucket, bucket_config)| (bucket.to_string(), S3Backend::new(bucket_config)))
+            .map(|(bucket, bucket_config)| (bucket.to_string(), LazyS3Client::new(bucket_config)))
             .collect();
         storage_config.buckets.clear();
         Self {
-            default_backend: S3Backend::new(storage_config),
+            default_backend: LazyS3Client::new(storage_config),
             bucket_backends,
         }
     }
 
     /// Returns the backend serving `uri`: the `storage.s3.buckets.<bucket>` entry whose key
     /// exactly matches the URI's bucket, or the primary backend otherwise.
-    fn backend_for_uri(&self, uri: &Uri) -> &S3Backend {
+    fn backend_for_uri(&self, uri: &Uri) -> &LazyS3Client {
         if self.bucket_backends.is_empty() {
             return &self.default_backend;
         }

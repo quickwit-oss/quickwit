@@ -18,7 +18,7 @@ use std::{env, fmt};
 
 use anyhow::ensure;
 use itertools::Itertools;
-use quickwit_common::{get_bool_from_env, get_from_env_opt};
+use quickwit_common::{get_bool_from_env_opt, get_from_env_opt};
 use serde::{Deserialize, Serialize};
 use serde_with::{EnumMap, serde_as};
 
@@ -123,10 +123,11 @@ impl StorageConfigs {
         }
         if let Some(s3_storage_config) = self.find_s3() {
             for (bucket, bucket_config) in &s3_storage_config.buckets {
+                ensure!(!bucket.is_empty(), "S3 bucket config key must not be empty");
                 ensure!(
-                    !bucket.is_empty() && !bucket.contains('/'),
-                    "S3 bucket config key `{bucket}` must be a bare bucket name, without `s3://` \
-                     or `/`",
+                    !bucket.contains('/'),
+                    "invalid S3 bucket config key `{bucket}`: expected a bucket name (e.g. \
+                     `my-bucket`), not a URI or path",
                 );
                 ensure!(
                     bucket_config.buckets.is_empty(),
@@ -479,26 +480,37 @@ impl S3StorageConfig {
     }
 
     pub fn endpoint(&self) -> Option<String> {
-        // `QW_S3_ENDPOINT` overrides the primary backend only; bucket configs
-        // are self-contained and use their own configured endpoint.
-        if !self.is_bucket_config
-            && let Ok(endpoint) = env::var("QW_S3_ENDPOINT")
-        {
-            return Some(endpoint);
-        }
-        self.endpoint.clone()
+        self.endpoint_with_env_override(|| get_from_env_opt("QW_S3_ENDPOINT", false))
     }
 
     pub fn force_path_style_access(&self) -> Option<bool> {
-        // `QW_S3_FORCE_PATH_STYLE_ACCESS` overrides the primary backend only.
-        // No process-wide cache: each backend must honor its own setting.
+        self.force_path_style_access_with_env_override(|| {
+            get_bool_from_env_opt("QW_S3_FORCE_PATH_STYLE_ACCESS")
+        })
+    }
+
+    // `QW_S3_ENDPOINT` overrides the primary backend only; bucket configs
+    // are self-contained and use their own configured endpoint.
+    fn endpoint_with_env_override(
+        &self,
+        env_endpoint: impl FnOnce() -> Option<String>,
+    ) -> Option<String> {
+        if self.is_bucket_config {
+            return self.endpoint.clone();
+        }
+        env_endpoint().or_else(|| self.endpoint.clone())
+    }
+
+    // `QW_S3_FORCE_PATH_STYLE_ACCESS` overrides the primary backend only.
+    // No process-wide cache: each backend must honor its own setting.
+    fn force_path_style_access_with_env_override(
+        &self,
+        env_force_path_style_access: impl FnOnce() -> Option<bool>,
+    ) -> Option<bool> {
         if self.is_bucket_config {
             return Some(self.force_path_style_access);
         }
-        Some(get_bool_from_env(
-            "QW_S3_FORCE_PATH_STYLE_ACCESS",
-            self.force_path_style_access,
-        ))
+        Some(env_force_path_style_access().unwrap_or(self.force_path_style_access))
     }
 }
 
@@ -939,7 +951,11 @@ mod tests {
 
     #[test]
     fn test_storage_s3_buckets_reject_unmatchable_bucket_keys() {
-        for bucket_key in ["", "s3://logs-bucket", "logs-bucket/prefix"] {
+        for (bucket_key, expected_error) in [
+            ("", "must not be empty"),
+            ("s3://logs-bucket", "not a URI or path"),
+            ("logs-bucket/prefix", "not a URI or path"),
+        ] {
             let s3_storage_config = S3StorageConfig {
                 buckets: BTreeMap::from([(bucket_key.to_string(), S3StorageConfig::default())]),
                 ..Default::default()
@@ -947,7 +963,7 @@ mod tests {
             let storage_configs = StorageConfigs::new(vec![s3_storage_config.into()]);
             let error = storage_configs.validate().unwrap_err();
             assert!(
-                error.to_string().contains("bare bucket name"),
+                error.to_string().contains(expected_error),
                 "unexpected error for key `{bucket_key}`: {error}"
             );
         }
@@ -1022,42 +1038,29 @@ mod tests {
             ..Default::default()
         };
         let (_, bucket_config) = s3_storage_config.bucket_configs().next().unwrap();
-
-        // SAFETY: this test may not be entirely sound if not run with nextest or --test-threads=1
-        // as this is only a test, and it would be extremely inconvenient to run it in a different
-        // way, we are keeping it that way
-        let previous_endpoint = env::var("QW_S3_ENDPOINT").ok();
-        let previous_force_path_style = env::var("QW_S3_FORCE_PATH_STYLE_ACCESS").ok();
-        unsafe {
-            env::set_var("QW_S3_ENDPOINT", "https://env.example.com");
-            env::set_var("QW_S3_FORCE_PATH_STYLE_ACCESS", "true");
-        }
-        let primary_endpoint = s3_storage_config.endpoint();
-        let primary_force_path_style = s3_storage_config.force_path_style_access();
-        let bucket_endpoint = bucket_config.endpoint();
-        let bucket_force_path_style = bucket_config.force_path_style_access();
-        unsafe {
-            match previous_endpoint {
-                Some(endpoint) => env::set_var("QW_S3_ENDPOINT", endpoint),
-                None => env::remove_var("QW_S3_ENDPOINT"),
-            }
-            match previous_force_path_style {
-                Some(force_path_style) => {
-                    env::set_var("QW_S3_FORCE_PATH_STYLE_ACCESS", force_path_style)
-                }
-                None => env::remove_var("QW_S3_FORCE_PATH_STYLE_ACCESS"),
-            }
-        }
+        let env_endpoint = || Some("https://env.example.com".to_string());
+        let env_force_path_style_access = || Some(true);
 
         assert_eq!(
-            primary_endpoint,
+            s3_storage_config.endpoint_with_env_override(env_endpoint),
             Some("https://env.example.com".to_string())
         );
-        assert_eq!(primary_force_path_style, Some(true));
         assert_eq!(
-            bucket_endpoint,
+            s3_storage_config
+                .force_path_style_access_with_env_override(env_force_path_style_access),
+            Some(true)
+        );
+        assert_eq!(
+            bucket_config.endpoint_with_env_override(env_endpoint),
             Some("https://bucket.example.com".to_string())
         );
-        assert_eq!(bucket_force_path_style, Some(false));
+        assert_eq!(
+            bucket_config.force_path_style_access_with_env_override(env_force_path_style_access),
+            Some(false)
+        );
+        assert_eq!(
+            s3_storage_config.endpoint_with_env_override(|| None),
+            Some("https://primary.example.com".to_string())
+        );
     }
 }
