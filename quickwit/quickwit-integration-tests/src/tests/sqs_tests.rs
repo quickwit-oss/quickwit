@@ -23,10 +23,32 @@ use quickwit_common::uri::Uri;
 use quickwit_config::ConfigFormat;
 use quickwit_config::service::QuickwitService;
 use quickwit_indexing::source::sqs_queue::test_helpers as sqs_test_helpers;
-use quickwit_metastore::SplitState;
 use tempfile::NamedTempFile;
 
-use crate::test_utils::ClusterSandboxBuilder;
+use crate::test_utils::{ClusterSandbox, ClusterSandboxBuilder};
+
+async fn wait_for_num_hits_at_least(sandbox: &ClusterSandbox, index_id: &str, num_hits: u64) {
+    wait_until_predicate(
+        || async {
+            sandbox
+                .rest_client(QuickwitService::Searcher)
+                .search(
+                    index_id,
+                    quickwit_serve::SearchRequestQueryString {
+                        query: "".to_string(),
+                        max_hits: 0,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .is_ok_and(|search_response| search_response.num_hits >= num_hits)
+        },
+        Duration::from_secs(30),
+        Duration::from_millis(200),
+    )
+    .await
+    .unwrap_or_else(|_| panic!("index `{index_id}` should have at least {num_hits} documents"));
+}
 
 fn create_mock_data_file(num_lines: usize) -> (NamedTempFile, Uri) {
     let mut temp_file = tempfile::NamedTempFile::new().unwrap();
@@ -103,11 +125,7 @@ async fn test_sqs_with_duplicates() {
     sqs_test_helpers::send_message(&sqs_client, &queue_url, tmp_mock_data_files[5].1.as_str())
         .await;
 
-    sandbox
-        .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
-        .await
-        .unwrap();
-
+    wait_for_num_hits_at_least(&sandbox, index_id, 10 * 1000).await;
     sandbox.assert_hit_count(index_id, "", 10 * 1000).await;
 
     // The two duplicates could not be acknowledged when the were received
@@ -203,11 +221,7 @@ async fn test_sqs_garbage_collect() {
         sqs_test_helpers::send_message(&sqs_client, &queue_url, uri.as_str()).await;
     }
 
-    sandbox
-        .wait_for_splits(index_id, Some(vec![SplitState::Published]), 1)
-        .await
-        .unwrap();
-
+    wait_for_num_hits_at_least(&sandbox, index_id, 10 * 1000).await;
     sandbox.assert_hit_count(index_id, "", 10 * 1000).await;
 
     wait_until_predicate(
