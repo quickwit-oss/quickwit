@@ -39,7 +39,7 @@ use super::models::IngesterShard;
 use super::rate_meter::RateMeter;
 use super::wal_capacity_tracker::WalCapacityTracker;
 use crate::OpenShardCounts;
-use crate::mrecordlog_async::MultiRecordLogAsync;
+use crate::mrecordlog_async::{DEFAULT_WAL_PERSIST_POLICY, MultiRecordLogAsync};
 
 /// Stores the state of the ingester and attempts to prevent deadlocks by exposing an API that
 /// guarantees that the internal data structures are always locked in the same order.
@@ -242,15 +242,8 @@ impl IngesterState {
         let now = Instant::now();
 
         info!("opening WAL located at `{}`", wal_dir_path.display());
-        let open_result = MultiRecordLogAsync::open_with_prefs(
-            wal_dir_path,
-            mrecordlog::PersistPolicy::OnDelay {
-                interval: Duration::from_secs(5),
-                // TODO maybe we want to fsync too?
-                action: mrecordlog::PersistAction::Flush,
-            },
-        )
-        .await;
+        let open_result =
+            MultiRecordLogAsync::open_with_prefs(wal_dir_path, DEFAULT_WAL_PERSIST_POLICY).await;
 
         let mrecordlog = match open_result {
             Ok(mrecordlog) => {
@@ -737,6 +730,35 @@ mod tests {
 
         let error = state.lock_fully("test").await.unwrap_err().to_string();
         assert!(error.contains("failed to initialize ingester"));
+    }
+
+    #[tokio::test]
+    async fn test_ingester_state_wal_survives_process_crash() {
+        let cluster = test_cluster().await;
+        let (wal_dir, state) = IngesterState::for_test(cluster).await;
+        let mut state_guard = state.lock_fully("test").await.unwrap();
+        state_guard.mrecordlog.create_queue("queue").await.unwrap();
+        // Far smaller than the 32 KiB write buffer of the WAL.
+        state_guard
+            .mrecordlog
+            .append_records("queue", None, std::iter::once(&b"acked-record"[..]))
+            .await
+            .unwrap();
+
+        // Copy the WAL while its writer is alive, so that dropping it cannot flush first: this is
+        // what a process crash leaves on disk.
+        let crash_dir = tempfile::tempdir().unwrap();
+        for entry in std::fs::read_dir(wal_dir.path()).unwrap() {
+            let entry = entry.unwrap();
+            std::fs::copy(entry.path(), crash_dir.path().join(entry.file_name())).unwrap();
+        }
+        let recovered = mrecordlog::MultiRecordLog::open(crash_dir.path()).unwrap();
+        let records: Vec<Vec<u8>> = recovered
+            .range("queue", ..)
+            .unwrap()
+            .map(|record| record.payload.to_vec())
+            .collect();
+        assert_eq!(records, vec![b"acked-record".to_vec()]);
     }
 
     #[tokio::test]

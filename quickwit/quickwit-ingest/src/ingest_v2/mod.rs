@@ -153,6 +153,14 @@ pub struct DocBatchV2Builder {
 }
 
 impl DocBatchV2Builder {
+    pub fn with_capacity(doc_buffer_capacity: usize) -> Self {
+        Self {
+            doc_uids: Vec::new(),
+            doc_buffer: BytesMut::with_capacity(doc_buffer_capacity),
+            doc_lengths: Vec::new(),
+        }
+    }
+
     /// Adds a document to the batch.
     pub fn add_doc(&mut self, doc_uid: DocUid, doc: &[u8]) {
         self.doc_uids.push(doc_uid);

@@ -220,7 +220,7 @@ mod tests {
     fn test_term_query_with_tie_breaker() {
         let term_query = TermQuery {
             field: "tie_breaker".to_string(),
-            value: "42".to_string(),
+            value: "-42".to_string(),
         };
         let mut schema_builder = Schema::builder();
         schema_builder.add_tie_breaker_field("tie_breaker");
@@ -231,7 +231,7 @@ mod tests {
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         assert_eq!(
             &format!("{leaf:?}"),
-            "TermQuery(Term(field=0, type=U64, 42))"
+            "TermQuery(Term(field=0, type=I64, -42))"
         );
     }
 }
