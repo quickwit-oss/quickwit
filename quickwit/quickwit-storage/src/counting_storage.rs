@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
+use std::future::Future;
 use std::ops::Range;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
@@ -24,6 +26,58 @@ use tokio::io::AsyncRead;
 
 use crate::storage::SendableAsync;
 use crate::{BulkDeleteError, ListObjectsStream, PutPayload, Storage, StorageResult};
+
+/// Field and tantivy segment component a read is counted for.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FieldComponent {
+    /// Name of the field, or JSON path of the fast field.
+    pub field_name: String,
+    /// Extension of the file read by the outermost [`CountingStorage`]: `term`
+    /// (term dictionary), `idx` (postings), `pos` (positions), `fast` (fast
+    /// fields), `fieldnorm`, ...
+    pub component: String,
+}
+
+tokio::task_local! {
+    /// Field set by [`count_reads_for_field`], and the component resolved by the
+    /// outermost [`CountingStorage`], if any.
+    static READ_CONTEXT: (String, Option<String>);
+}
+
+/// Runs `fut` so that the reads it issues through a [`CountingStorage`] are also
+/// counted per [`FieldComponent`] of `field_name`.
+///
+/// The field is set for the duration of each `poll` of `fut`, so concurrently
+/// joined futures count their reads for their own field. Reads issued from a
+/// task spawned by `fut` are not counted per field.
+pub fn count_reads_for_field<F: Future>(
+    field_name: String,
+    fut: F,
+) -> impl Future<Output = F::Output> {
+    READ_CONTEXT.scope((field_name, None), fut)
+}
+
+/// Returns the field component a read of `path` is counted for, if it happens
+/// within [`count_reads_for_field`].
+///
+/// The component is taken from the extension of the file read by the outermost
+/// `CountingStorage`. Inner storages may read a different file (a
+/// `BundleStorage` maps segment files to ranges of the `.split` file), so the
+/// outermost component is propagated to them by [`CountingStorage::count_read`].
+fn current_field_component(path: &Path) -> Option<FieldComponent> {
+    READ_CONTEXT
+        .try_with(|(field_name, component)| {
+            let component = component.clone().unwrap_or_else(|| {
+                let extension = path.extension().unwrap_or_default();
+                extension.to_string_lossy().into_owned()
+            });
+            FieldComponent {
+                field_name: field_name.clone(),
+                component,
+            }
+        })
+        .ok()
+}
 
 /// Per-request download counters tracked by [`CountingStorage`].
 ///
@@ -35,6 +89,8 @@ use crate::{BulkDeleteError, ListObjectsStream, PutPayload, Storage, StorageResu
 pub struct DownloadCounters {
     bytes: AtomicU64,
     requests: AtomicU64,
+    /// `(bytes, requests)` of the reads issued within [`count_reads_for_field`].
+    per_field_component: Mutex<HashMap<FieldComponent, (u64, u64)>>,
 }
 
 impl DownloadCounters {
@@ -46,9 +102,22 @@ impl DownloadCounters {
         )
     }
 
-    fn record_read(&self, num_bytes: u64) {
+    /// Snapshots the counters of the reads issued within [`count_reads_for_field`]
+    /// as `field component -> (bytes, requests)`.
+    pub fn per_field_component_snapshot(&self) -> HashMap<FieldComponent, (u64, u64)> {
+        self.per_field_component.lock().unwrap().clone()
+    }
+
+    fn record_read(&self, num_bytes: u64, field_component_opt: Option<FieldComponent>) {
         self.bytes.fetch_add(num_bytes, Ordering::Relaxed);
         self.requests.fetch_add(1, Ordering::Relaxed);
+        let Some(field_component) = field_component_opt else {
+            return;
+        };
+        let mut per_field_component = self.per_field_component.lock().unwrap();
+        let (bytes, requests) = per_field_component.entry(field_component).or_default();
+        *bytes += num_bytes;
+        *requests += 1;
     }
 }
 
@@ -81,6 +150,29 @@ impl CountingStorage {
         };
         (Arc::new(instrumented_storage), counters)
     }
+
+    /// Awaits `read` of `path` and counts it, propagating the field component to
+    /// the reads of the inner storage.
+    async fn count_read<T>(
+        &self,
+        path: &Path,
+        read: impl Future<Output = StorageResult<T>>,
+        num_bytes: impl FnOnce(&T) -> u64,
+    ) -> StorageResult<T> {
+        let Some(field_component) = current_field_component(path) else {
+            let output = read.await?;
+            self.counters.record_read(num_bytes(&output), None);
+            return Ok(output);
+        };
+        let read_context = (
+            field_component.field_name.clone(),
+            Some(field_component.component.clone()),
+        );
+        let output = READ_CONTEXT.scope(read_context, read).await?;
+        self.counters
+            .record_read(num_bytes(&output), Some(field_component));
+        Ok(output)
+    }
 }
 
 #[async_trait]
@@ -103,15 +195,14 @@ impl Storage for CountingStorage {
     }
 
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<u64> {
-        let num_bytes = self.inner.copy_to_file(path, output_path).await?;
-        self.counters.record_read(num_bytes);
-        Ok(num_bytes)
+        let read = self.inner.copy_to_file(path, output_path);
+        self.count_read(path, read, |num_bytes| *num_bytes).await
     }
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
-        let bytes = self.inner.get_slice(path, range).await?;
-        self.counters.record_read(bytes.len() as u64);
-        Ok(bytes)
+        let read = self.inner.get_slice(path, range);
+        self.count_read(path, read, |bytes| bytes.len() as u64)
+            .await
     }
 
     async fn get_slice_stream(
@@ -123,15 +214,14 @@ impl Storage for CountingStorage {
         // The stream may yield fewer bytes if the caller drops it early, but
         // that is rare and the over-count is bounded by the requested range.
         let range_len = range.len() as u64;
-        let stream = self.inner.get_slice_stream(path, range).await?;
-        self.counters.record_read(range_len);
-        Ok(stream)
+        let read = self.inner.get_slice_stream(path, range);
+        self.count_read(path, read, |_| range_len).await
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
-        let bytes = self.inner.get_all(path).await?;
-        self.counters.record_read(bytes.len() as u64);
-        Ok(bytes)
+        let read = self.inner.get_all(path);
+        self.count_read(path, read, |bytes| bytes.len() as u64)
+            .await
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
@@ -163,6 +253,54 @@ impl Storage for CountingStorage {
 mod tests {
     use super::*;
     use crate::RamStorageBuilder;
+
+    fn field_component(field_name: &str, component: &str) -> FieldComponent {
+        FieldComponent {
+            field_name: field_name.to_string(),
+            component: component.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_counting_storage_counts_reads_per_field_component() {
+        let inner = RamStorageBuilder::default()
+            .put("seg.fast", b"hello world")
+            .put("seg.term", b"hello world")
+            .build();
+        let (inner_storage, inner_counters) = CountingStorage::instrument_storage(Arc::new(inner));
+        let (storage, counters) = CountingStorage::instrument_storage(inner_storage);
+        let status_read = count_reads_for_field("status".to_string(), async {
+            tokio::task::yield_now().await;
+            storage
+                .get_slice(Path::new("seg.fast"), 0..5)
+                .await
+                .unwrap();
+        });
+        let body_read = count_reads_for_field("body".to_string(), async {
+            tokio::task::yield_now().await;
+            storage
+                .get_slice(Path::new("seg.term"), 5..11)
+                .await
+                .unwrap();
+        });
+        tokio::join!(status_read, body_read);
+        storage
+            .get_slice(Path::new("seg.fast"), 0..1)
+            .await
+            .unwrap();
+
+        let expected_per_field_component = HashMap::from([
+            (field_component("status", "fast"), (5, 1)),
+            (field_component("body", "term"), (6, 1)),
+        ]);
+        for counters in [counters, inner_counters] {
+            assert_eq!(counters.snapshot(), (12, 3));
+            assert_eq!(
+                counters.per_field_component_snapshot(),
+                expected_per_field_component
+            );
+        }
+    }
 
     #[tokio::test]
     async fn test_counting_storage_counts_get_slice() {

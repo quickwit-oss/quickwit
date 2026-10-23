@@ -2638,7 +2638,7 @@ async fn test_time_bounded_query_populates_and_reuses_complete_predicate_cache()
     let first_input_memory_bytes = first_response
         .resource_stats
         .as_ref()
-        .and_then(|stats| stats.split_resources_sum)
+        .and_then(|stats| stats.split_resources_sum.as_ref())
         .expect("the split should report resource stats")
         .input_memory_bytes;
 
@@ -2669,7 +2669,7 @@ async fn test_time_bounded_query_populates_and_reuses_complete_predicate_cache()
     let full_split_input_memory_bytes = full_split_response
         .resource_stats
         .as_ref()
-        .and_then(|stats| stats.split_resources_sum)
+        .and_then(|stats| stats.split_resources_sum.as_ref())
         .expect("the split should report resource stats")
         .input_memory_bytes;
     assert!(
@@ -2733,6 +2733,60 @@ async fn test_time_bounded_query_populates_and_reuses_complete_predicate_cache()
     assert_eq!(different_partial_response.num_hits, 1);
 
     test_sandbox.assert_quit().await;
+}
+
+#[tokio::test]
+async fn test_leaf_search_reports_field_download_stats() {
+    let (test_sandbox, searcher_context, storage, splits, doc_mapper, _start_timestamp) =
+        negative_cache_ts_test_setup().await;
+    let search_request = SearchRequest {
+        index_id_patterns: vec!["negative-cache-ts-index".to_string()],
+        query_ast: qast_json_helper("info", &["body"]),
+        max_hits: 10,
+        sort_fields: vec![SortField {
+            field_name: "ts".to_string(),
+            sort_order: SortOrder::Desc as i32,
+            sort_datetime_format: None,
+        }],
+        ..Default::default()
+    };
+    let response = single_doc_mapping_leaf_search(
+        searcher_context,
+        std::sync::Arc::new(search_request),
+        storage,
+        splits,
+        doc_mapper,
+    )
+    .await
+    .unwrap();
+    test_sandbox.assert_quit().await;
+    assert_eq!(response.num_hits, 10);
+    let split_stats = response
+        .resource_stats
+        .and_then(|stats| stats.split_resources_sum)
+        .expect("the split should report resource stats");
+    let mut field_components: Vec<(&str, &str)> = split_stats
+        .field_download_stats
+        .iter()
+        .map(|stats| (stats.field_name.as_str(), stats.component.as_str()))
+        .collect();
+    field_components.sort();
+    assert_eq!(
+        field_components,
+        [("body", "idx"), ("body", "term"), ("ts", "fast")]
+    );
+    for stats in &split_stats.field_download_stats {
+        assert!(stats.requested_num_bytes > 0);
+        assert!(stats.requested_num_requests > 0);
+    }
+    let field_download_num_bytes: u64 = split_stats
+        .field_download_stats
+        .iter()
+        .map(|stats| stats.download_num_bytes)
+        .sum();
+    // The footer and hotcache are downloaded without a field.
+    assert!(field_download_num_bytes > 0);
+    assert!(field_download_num_bytes < split_stats.download_num_bytes);
 }
 
 #[tokio::test]
