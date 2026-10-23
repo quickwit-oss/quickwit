@@ -99,6 +99,7 @@ pub async fn handle_leaf_search(
         &doc_mappers[..],
         &storages[..],
         ctx,
+        leaf_search_request.is_retry,
     )
     .await?;
     let wrapper = LambdaSearchResponses { split_results };
@@ -115,6 +116,7 @@ async fn lambda_leaf_search(
     doc_mappers: &[Arc<DocMapper>],
     storages: &[Arc<dyn Storage>],
     ctx: &LambdaSearcherContext,
+    is_retry: bool,
 ) -> LambdaResult<Vec<LambdaSingleSplitResult>> {
     // Flatten leaf_requests into per-split tasks using pre-resolved Arc references.
     let mut split_search_joinset: tokio::task::JoinSet<(String, Result<_, String>)> =
@@ -146,6 +148,7 @@ async fn lambda_leaf_search(
                     storage,
                     vec![split],
                     doc_mapper,
+                    is_retry,
                 )
                 .await
                 .map_err(|err| format!("{err}"));

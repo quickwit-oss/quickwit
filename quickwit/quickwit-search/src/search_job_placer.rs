@@ -25,12 +25,10 @@ use futures::future::join_all;
 use quickwit_common::get_bool_from_env_cached;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::rendezvous_hasher::{node_affinity, sort_by_rendez_vous_hash};
-use quickwit_metrics::counter;
-use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
+use quickwit_proto::search::{LeafSearchRequest, ReportSplit, ReportSplitsRequest};
 use quickwit_proto::types::NodeId;
 use tracing::{info, warn};
 
-use crate::metrics::JOB_ASSIGNED_TOTAL;
 use crate::{SearchJob, SearchServiceClient, SearcherNode, SearcherPool};
 
 /// Job.
@@ -163,6 +161,35 @@ impl SearchJobPlacer {
             .into_iter()
             .map(|searcher_node| searcher_node.node_id)
             .collect()
+    }
+
+    /// Annotate every split using one full-pool snapshot, including nodes excluded on retries.
+    pub(crate) fn set_affinity_ranks(
+        &self,
+        request: &mut LeafSearchRequest,
+        grpc_addr: SocketAddr,
+    ) {
+        let nodes = self.searcher_pool.pairs();
+        let chosen_node = nodes.iter().find(|(addr, _)| *addr == grpc_addr);
+        // Membership can change after placement. A departed node has no rank in this snapshot.
+        if chosen_node.is_none() {
+            warn!(%grpc_addr, "cannot compute affinity: selected searcher has left the pool");
+        }
+        for split in request
+            .leaf_requests
+            .iter_mut()
+            .flat_map(|leaf| &mut leaf.split_offsets)
+        {
+            split.affinity_rank = chosen_node.map(|(_, chosen_node)| {
+                let chosen_affinity = node_affinity(&chosen_node.node_id, &split.split_id);
+                nodes
+                    .iter()
+                    .filter(|(_, node)| {
+                        node_affinity(&node.node_id, &split.split_id) > chosen_affinity
+                    })
+                    .count() as u32
+            });
+        }
     }
 
     /// Assign the given job to the clients
@@ -324,22 +351,15 @@ impl SearchJobPlacer {
         for job in jobs {
             sort_by_rendez_vous_hash(&mut candidate_nodes, job.split_id());
 
-            let (chosen_node_idx, chosen_node) = if let Some((idx, node)) = candidate_nodes
+            let chosen_node = if let Some(node) = candidate_nodes
                 .iter_mut()
-                .enumerate()
-                .find(|(_pos, node)| node.load.map(|load| load < target_load).unwrap_or(false))
+                .find(|node| node.load.map(|load| load < target_load).unwrap_or(false))
             {
-                (idx, node)
+                node
             } else {
                 warn!("found no lightly loaded searcher for split, this should never happen");
-                (0, &mut candidate_nodes[0])
+                &mut candidate_nodes[0]
             };
-            let metric_node_idx = match chosen_node_idx {
-                0 => "0",
-                1 => "1",
-                _ => "> 1",
-            };
-            counter!(parent: JOB_ASSIGNED_TOTAL, "affinity" => metric_node_idx).inc();
             if let Some(load) = &mut chosen_node.load {
                 *load += job.cost();
             }

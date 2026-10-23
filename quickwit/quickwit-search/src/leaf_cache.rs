@@ -324,6 +324,7 @@ mod tests {
 
         let split_1 = SplitIdAndFooterOffsets {
             split_id: "split_1".to_string(),
+            affinity_rank: None,
             split_footer_start: 0,
             split_footer_end: 100,
             timestamp_start: None,
@@ -333,6 +334,7 @@ mod tests {
 
         let split_2 = SplitIdAndFooterOffsets {
             split_id: "split_2".to_string(),
+            affinity_rank: None,
             split_footer_start: 0,
             split_footer_end: 100,
             timestamp_start: None,
@@ -403,6 +405,7 @@ mod tests {
 
         let split_1 = SplitIdAndFooterOffsets {
             split_id: "split_1".to_string(),
+            affinity_rank: None,
             split_footer_start: 0,
             split_footer_end: 100,
             timestamp_start: Some(100),
@@ -411,6 +414,7 @@ mod tests {
         };
         let split_2 = SplitIdAndFooterOffsets {
             split_id: "split_2".to_string(),
+            affinity_rank: None,
             split_footer_start: 0,
             split_footer_end: 100,
             timestamp_start: Some(150),
@@ -419,6 +423,7 @@ mod tests {
         };
         let split_3 = SplitIdAndFooterOffsets {
             split_id: "split_3".to_string(),
+            affinity_rank: None,
             split_footer_start: 0,
             split_footer_end: 100,
             timestamp_start: Some(150),
