@@ -42,7 +42,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.9.1"
+version = "0.9.2"
 edition = "2024"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
@@ -131,6 +131,7 @@ libz-sys = "1.1"
 lru = "0.18"
 matches = "0.1"
 md5 = "0.8"
+memchr = "2"
 metrics = "0.24"
 metrics-opentelemetry = "=0.24032.8"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
@@ -383,7 +384,7 @@ quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-transport = { path = "quickwit-transport" }
 
 # This is the tip of tantivy main.
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "2e87c2eb0c8577c96c82a777f345bbf236a985fe", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e1acb3e0112f2b4819946aa4ea5742bf429853d8", default-features = false, features = [
   "jitexpr",
   "lz4-compression",
   "mmap",
@@ -392,7 +393,7 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "2e87c2eb0c8
   "columnar-zstd-compression",
 ] }
 # Must stay on the same rev as `tantivy`.
-tantivy-common = { git = "https://github.com/quickwit-oss/tantivy/", rev = "2e87c2eb0c8577c96c82a777f345bbf236a985fe" }
+tantivy-common = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e1acb3e0112f2b4819946aa4ea5742bf429853d8" }
 tantivy-fst = "0.5"
 
 # This is actually not used directly the goal is to fix the version
