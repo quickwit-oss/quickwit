@@ -31,9 +31,10 @@ elif (( status > 1 )); then
     exit "$status"
 fi
 
-# One `<kind> <metric name>{<labels>}` line per metric.
+# One `<name> <kind> <labels as JSON>` line per metric. The module and the
+# description are left out: changing them does not affect users.
 metrics() {
-    yq '.[] | to_entries | .[] | .value.kind + " " + .key' "$1" | sort -u
+    yq 'to_entries | .[] | .key + " " + .value.kind + " " + ((.value.labels // {}) | to_json(0))' "$1" | sort -u
 }
 
 # A committed metric that is no longer generated with the same name, labels,
@@ -59,8 +60,8 @@ report() {
         echo "SLOs, documentation, downstream consumers), assess the impact, and"
         echo "communicate the change before merging."
         echo
-        while read -r kind key; do
-            echo "- \`$key\` ($kind)"
+        while read -r name kind labels; do
+            echo "- \`$name\` ($kind, labels: $labels)"
         done <<< "$BREAKING"
     fi
     echo
@@ -78,8 +79,8 @@ if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
         echo "::error title=Metrics inventory out of date::Run 'make metrics-inventory' and commit $COMMITTED. Only added metrics or description changes were detected: regenerating is enough."
     else
         echo "::error title=Metrics inventory out of date::Run 'make metrics-inventory' and commit $COMMITTED. Some metrics were removed, renamed, or had their labels or type changed: identify their users, assess the impact, and communicate the change. See the job summary."
-        while read -r kind key; do
-            echo "::error title=Metric removed or changed::$key ($kind) was removed, renamed, or had its labels or type changed."
+        while read -r name kind labels; do
+            echo "::error title=Metric removed or changed::$name ($kind, labels: $labels) was removed, renamed, or had its labels or type changed."
         done <<< "$BREAKING"
     fi
 fi

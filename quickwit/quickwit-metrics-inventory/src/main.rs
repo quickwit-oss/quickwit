@@ -29,13 +29,18 @@
 //! all inventory submissions even without explicit symbol references.
 
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
+use std::process::ExitCode;
 
-use quickwit_metrics::MetricKind;
+use quickwit_metrics::{MetricInfo, MetricKind};
 use serde::Serialize;
 
 #[derive(Serialize)]
 struct MetricEntry {
+    module: &'static str,
     kind: &'static str,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    labels: BTreeMap<&'static str, &'static str>,
     description: &'static str,
 }
 
@@ -48,42 +53,54 @@ fn kind_name(kind: MetricKind) -> &'static str {
     }
 }
 
-fn format_key(info: &quickwit_metrics::MetricInfo) -> String {
-    if info.static_labels.is_empty() {
-        info.key_name.to_string()
-    } else {
-        let pairs: Vec<String> = info
-            .static_labels
-            .iter()
-            .map(|(k, v)| format!("{k}={v}"))
-            .collect();
-        format!("{}{{{}}}", info.key_name, pairs.join(", "))
+fn metric_entry(info: &MetricInfo) -> MetricEntry {
+    MetricEntry {
+        module: info.metadata.module_path().unwrap_or("<unknown>"),
+        kind: kind_name(info.kind),
+        labels: info.static_labels.iter().copied().collect(),
+        description: info.description,
     }
 }
 
-/// Prints the inventory as YAML, sorted by module then metric:
+/// Prints the inventory as YAML, keyed by metric name in alphabetical order:
 ///
 /// ```yaml
-/// module::path:
-///   metric_name{label=value}:
-///     kind: counter
-///     description: ...
+/// quickwit_metric_name:
+///   module: quickwit_crate::module
+///   kind: counter
+///   labels:          # only if the metric has static labels
+///     label: value
+///   description: ...
 /// ```
-fn main() {
-    let mut by_module: BTreeMap<&str, BTreeMap<String, MetricEntry>> = BTreeMap::new();
+///
+/// Fails if two declarations share the same metric name: the inventory is
+/// keyed by name, so one of them would otherwise be silently dropped.
+fn main() -> ExitCode {
+    let mut metrics: BTreeMap<&'static str, MetricEntry> = BTreeMap::new();
+    let mut duplicates = false;
 
     for info in quickwit_metrics::metrics_info() {
-        let module = info.metadata.module_path().unwrap_or("<unknown>");
-        let entry = MetricEntry {
-            kind: kind_name(info.kind),
-            description: info.description,
-        };
-        by_module
-            .entry(module)
-            .or_default()
-            .insert(format_key(info), entry);
+        let entry = metric_entry(info);
+        match metrics.entry(info.key_name) {
+            Entry::Vacant(vacant) => {
+                vacant.insert(entry);
+            }
+            Entry::Occupied(occupied) => {
+                eprintln!(
+                    "error: metric `{}` is declared more than once (in `{}` and `{}`)",
+                    info.key_name,
+                    occupied.get().module,
+                    entry.module
+                );
+                duplicates = true;
+            }
+        }
+    }
+    if duplicates {
+        return ExitCode::FAILURE;
     }
 
-    let yaml = serde_yaml::to_string(&by_module).expect("inventory should serialize to YAML");
+    let yaml = serde_yaml::to_string(&metrics).expect("inventory should serialize to YAML");
     print!("{yaml}");
+    ExitCode::SUCCESS
 }

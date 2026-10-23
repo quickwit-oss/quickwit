@@ -1,15 +1,19 @@
 # quickwit-metrics-inventory
 
 Lists every metric declared with `quickwit-metrics` across the workspace crates.
-The inventory is committed in [`metrics.yaml`](metrics.yaml), sorted by module
-then metric:
+The inventory is committed in [`metrics.yaml`](metrics.yaml), keyed by metric
+name in alphabetical order. `module` records where the metric is declared, and
+`labels` lists its static labels (omitted when it has none):
 
 ```yaml
-quickwit_cluster::metrics:
-  quickwit_cluster_live_nodes:
-    kind: gauge
-    description: The number of live nodes observed locally.
+quickwit_cluster_live_nodes:
+  module: quickwit_cluster::metrics
+  kind: gauge
+  description: The number of live nodes observed locally.
 ```
+
+Metric names must be unique: generation fails if the same name is declared
+more than once.
 
 ## Updating the inventory
 
