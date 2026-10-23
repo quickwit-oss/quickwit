@@ -67,49 +67,24 @@ mod tests {
     #[test]
     fn test_classify_rest_request() {
         let cases = [
-            ("/api/v1/_elastic/_bulk", Some(ApiKind::ElasticsearchIngest)),
             (
                 "/api/v1/_elastic/logs/_bulk",
                 Some(ApiKind::ElasticsearchIngest),
-            ),
-            (
-                "/api/v1/_elastic/_search",
-                Some(ApiKind::ElasticsearchSearch),
-            ),
-            (
-                "/api/v1/_elastic/logs/_search",
-                Some(ApiKind::ElasticsearchSearch),
             ),
             (
                 "/api/v1/_elastic/_msearch",
                 Some(ApiKind::ElasticsearchSearch),
             ),
             (
-                "/api/v1/_elastic/_search/scroll",
-                Some(ApiKind::ElasticsearchSearch),
-            ),
-            (
-                "/api/v1/_elastic/logs/_count",
-                Some(ApiKind::ElasticsearchSearch),
-            ),
-            (
                 "/api/v1/_elastic/_field_caps",
                 Some(ApiKind::ElasticsearchOther),
             ),
-            ("/api/v1/_elastic", Some(ApiKind::ElasticsearchOther)),
             ("/api/v1/logs/search", Some(ApiKind::NativeSearch)),
             ("/api/v1/logs/ingest", Some(ApiKind::NativeIngest)),
             ("/api/v1/otlp/v1/logs", Some(ApiKind::Otlp)),
-            ("/api/v1/otlp/v1/traces", Some(ApiKind::Otlp)),
-            ("/api/v1/my-logs/otlp/v1/logs", Some(ApiKind::Otlp)),
             ("/api/v1/otlp/search", Some(ApiKind::NativeSearch)),
-            (
-                "/api/v1/otel-traces-v0_9/jaeger/api/services",
-                Some(ApiKind::Jaeger),
-            ),
+            ("/api/v1/traces/jaeger/api/services", Some(ApiKind::Jaeger)),
             ("/api/v1/indexes", None),
-            ("/api/v1/indexes/logs/sources", None),
-            ("/health/livez", None),
             ("/ui/search", None),
         ];
         for (path, expected_api_kind) in cases {

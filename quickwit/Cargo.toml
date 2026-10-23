@@ -233,7 +233,7 @@ sqlx = { version = "0.8", features = [
 ] }
 syn = { version = "2.0", features = ["extra-traits", "full", "parsing"] }
 sync_wrapper = "1"
-sysinfo = { version = "0.39", default-features = false, features = ["disk"] }
+sysinfo = { version = "0.39", default-features = false, features = ["disk", "system"] }
 tabled = { version = "0.21", features = ["ansi"] }
 tempfile = "3"
 thiserror = "2"

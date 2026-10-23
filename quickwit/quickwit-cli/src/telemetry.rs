@@ -31,8 +31,6 @@ pub(crate) fn quickwit_telemetry_info(config: &NodeConfig) -> QuickwitTelemetryI
         .map(|service| service.to_string())
         .collect();
     let build_info = BuildInfo::get();
-    let mut redacted_metastore_uri = config.metastore_uri.clone();
-    redacted_metastore_uri.redact();
     QuickwitTelemetryInfo {
         build: BuildTelemetryInfo {
             commit: build_info.commit_short_hash.to_string(),
@@ -41,7 +39,7 @@ pub(crate) fn quickwit_telemetry_info(config: &NodeConfig) -> QuickwitTelemetryI
         },
         hashed_cluster_id: Some(hash_cluster_identity(
             &config.cluster_id,
-            redacted_metastore_uri.as_str(),
+            &config.metastore_uri,
         )),
         ..QuickwitTelemetryInfo::new(services, telemetry_features(config))
     }
@@ -70,11 +68,10 @@ pub(crate) fn set_install_uuid(
 
 fn telemetry_features(config: &NodeConfig) -> HashSet<QuickwitFeature> {
     let mut features = HashSet::new();
-    if config.indexer_config.enable_otlp_endpoint {
+    if config.is_service_enabled(QuickwitService::Indexer)
+        && config.indexer_config.enable_otlp_endpoint
+    {
         features.insert(QuickwitFeature::Otlp);
-    }
-    if config.jaeger_config.enable_endpoint {
-        features.insert(QuickwitFeature::Jaeger);
     }
     // The metastore URI is only relevant if the metastore is enabled.
     if config.is_service_enabled(QuickwitService::Metastore) {
@@ -111,6 +108,9 @@ fn telemetry_features(config: &NodeConfig) -> HashSet<QuickwitFeature> {
         }
     }
     if config.is_service_enabled(QuickwitService::Searcher) {
+        if config.jaeger_config.enable_endpoint {
+            features.insert(QuickwitFeature::Jaeger);
+        }
         if config.searcher_config.lambda.is_some() {
             features.insert(QuickwitFeature::LambdaLeafSearch);
         }
@@ -135,8 +135,6 @@ fn telemetry_features(config: &NodeConfig) -> HashSet<QuickwitFeature> {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use quickwit_common::uri::Uri;
     use quickwit_config::{
         DocsClusteringConfig, LambdaConfig, S3StorageConfig, StorageConfig, StorageConfigs,
@@ -144,51 +142,32 @@ mod tests {
 
     use super::*;
 
-    /// The ingest features depend on environment variables, which CI may set.
-    fn ingest_features() -> Vec<QuickwitFeature> {
-        let mut features = Vec::new();
-        if !disable_ingest_v1() {
-            features.push(QuickwitFeature::IngestV1);
-        }
-        if enable_ingest_v2() {
-            features.push(QuickwitFeature::IngestV2);
-        }
-        features
-    }
-
     #[test]
     fn test_telemetry_features() {
         let mut node_config = NodeConfig::for_test();
         node_config.enabled_services = HashSet::from([QuickwitService::Metastore]);
-        node_config.metastore_uri = Uri::from_str("file:///qwdata/indexes").unwrap();
-        node_config.default_index_root_uri = Uri::from_str("file:///qwdata/indexes").unwrap();
-        // No S3 config, so that `QW_S3_ENDPOINT`, which CI may set, has no effect.
-        node_config.storage_configs = StorageConfigs::new(Vec::new());
-        node_config.indexer_config.enable_otlp_endpoint = false;
-        node_config.jaeger_config.enable_endpoint = false;
-        node_config.searcher_config.lambda = Some(LambdaConfig::for_test());
-        node_config.searcher_config.split_cache =
-            Some(serde_json::from_value(serde_json::json!({"max_num_bytes": "1GB"})).unwrap());
+        node_config.indexer_config.enable_otlp_endpoint = true;
+        node_config.jaeger_config.enable_endpoint = true;
+        let features = telemetry_features(&node_config);
+        assert!(!features.contains(&QuickwitFeature::Otlp));
+        assert!(!features.contains(&QuickwitFeature::Jaeger));
 
-        let mut expected_features = HashSet::from([
-            QuickwitFeature::FileBackedMetastore,
-            QuickwitFeature::FileStorage,
+        node_config.enabled_services = HashSet::from([
+            QuickwitService::Indexer,
+            QuickwitService::Metastore,
+            QuickwitService::Searcher,
         ]);
-        expected_features.extend(ingest_features());
-        assert_eq!(telemetry_features(&node_config), expected_features);
-
-        node_config.enabled_services =
-            HashSet::from([QuickwitService::Metastore, QuickwitService::Searcher]);
-        node_config.metastore_uri = Uri::from_str("postgresql://localhost/metastore").unwrap();
-        node_config.default_index_root_uri = Uri::from_str("s3://bucket/indexes").unwrap();
+        node_config.metastore_uri = Uri::for_test("postgresql://localhost/metastore");
+        node_config.default_index_root_uri = Uri::for_test("s3://bucket/indexes");
         node_config.storage_configs =
             StorageConfigs::new(vec![StorageConfig::S3(S3StorageConfig {
                 flavor: Some(StorageBackendFlavor::MinIO),
                 endpoint: Some("http://minio:9000".to_string()),
                 ..Default::default()
             })]);
-        node_config.indexer_config.enable_otlp_endpoint = true;
-        node_config.jaeger_config.enable_endpoint = true;
+        node_config.searcher_config.lambda = Some(LambdaConfig::for_test());
+        node_config.searcher_config.split_cache =
+            Some(serde_json::from_value(serde_json::json!({"max_num_bytes": "1GB"})).unwrap());
         node_config.grpc_config.tls_config = Some(
             serde_json::from_value(serde_json::json!({
                 "cert_path": "/certs/cert.pem",
@@ -199,8 +178,8 @@ mod tests {
         node_config.docs_clustering_config = Some(DocsClusteringConfig {
             policies: Vec::new(),
         });
-
-        let mut expected_features = HashSet::from([
+        let features = telemetry_features(&node_config);
+        for feature in [
             QuickwitFeature::DocsClustering,
             QuickwitFeature::Jaeger,
             QuickwitFeature::LambdaLeafSearch,
@@ -211,26 +190,8 @@ mod tests {
             QuickwitFeature::S3Storage,
             QuickwitFeature::SplitCache,
             QuickwitFeature::Tls,
-        ]);
-        expected_features.extend(ingest_features());
-        assert_eq!(telemetry_features(&node_config), expected_features);
-    }
-
-    #[test]
-    fn test_quickwit_telemetry_info_hashes_cluster_identity() {
-        let mut node_config = NodeConfig::for_test();
-        node_config.metastore_uri =
-            Uri::from_str("postgresql://quickwit:secret@db:5432/metastore").unwrap();
-        let telemetry_info = quickwit_telemetry_info(&node_config);
-        let hashed_cluster_id = telemetry_info.hashed_cluster_id.unwrap();
-
-        node_config.metastore_uri =
-            Uri::from_str("postgresql://quickwit:rotated@db:5432/metastore").unwrap();
-        let telemetry_info = quickwit_telemetry_info(&node_config);
-        assert_eq!(telemetry_info.hashed_cluster_id.unwrap(), hashed_cluster_id);
-
-        node_config.cluster_id = "other-cluster".to_string();
-        let telemetry_info = quickwit_telemetry_info(&node_config);
-        assert_ne!(telemetry_info.hashed_cluster_id.unwrap(), hashed_cluster_id);
+        ] {
+            assert!(features.contains(&feature), "{feature:?}");
+        }
     }
 }

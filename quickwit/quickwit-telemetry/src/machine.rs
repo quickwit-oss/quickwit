@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use sysinfo::{MemoryRefreshKind, RefreshKind, System};
+
 const GIB: u64 = 1 << 30;
 
 pub(crate) fn cpu_count_bucket(num_cpus: usize) -> &'static str {
@@ -40,47 +42,14 @@ pub(crate) fn memory_bucket(num_bytes: u64) -> &'static str {
     }
 }
 
-#[cfg(target_os = "linux")]
-pub(crate) fn available_memory_num_bytes() -> Option<u64> {
-    let meminfo = std::fs::read_to_string("/proc/meminfo").ok()?;
-    let physical_memory_num_bytes = parse_mem_total_num_bytes(&meminfo)?;
-    let Some(cgroup_limit_num_bytes) = cgroup_memory_limit_num_bytes() else {
-        return Some(physical_memory_num_bytes);
-    };
-    Some(physical_memory_num_bytes.min(cgroup_limit_num_bytes))
-}
-
-#[cfg(not(target_os = "linux"))]
-pub(crate) fn available_memory_num_bytes() -> Option<u64> {
-    None
-}
-
-#[cfg(any(target_os = "linux", test))]
-fn parse_mem_total_num_bytes(meminfo: &str) -> Option<u64> {
-    let mem_total_kib: u64 = meminfo
-        .lines()
-        .find_map(|line| line.strip_prefix("MemTotal:"))?
-        .trim()
-        .strip_suffix("kB")?
-        .trim()
-        .parse()
-        .ok()?;
-    Some(mem_total_kib * 1024)
-}
-
-/// Without a limit, cgroup v2 holds `max`, which doesn't parse, and cgroup v1 a huge number, which
-/// the caller caps with the physical memory.
-#[cfg(target_os = "linux")]
-fn cgroup_memory_limit_num_bytes() -> Option<u64> {
-    for path in [
-        "/sys/fs/cgroup/memory.max",
-        "/sys/fs/cgroup/memory/memory.limit_in_bytes",
-    ] {
-        if let Ok(limit) = std::fs::read_to_string(path) {
-            return limit.trim().parse().ok();
-        }
+pub(crate) fn available_memory_num_bytes() -> u64 {
+    let system = System::new_with_specifics(
+        RefreshKind::nothing().with_memory(MemoryRefreshKind::nothing().with_ram()),
+    );
+    match system.cgroup_limits() {
+        Some(cgroup_limits) => cgroup_limits.total_memory,
+        None => system.total_memory(),
     }
-    None
 }
 
 #[cfg(test)]
@@ -94,12 +63,5 @@ mod tests {
         assert_eq!(memory_bucket(GIB), "<2GiB");
         assert_eq!(memory_bucket(31 * GIB), "16-32GiB");
         assert_eq!(memory_bucket(512 * GIB), "128GiB+");
-    }
-
-    #[test]
-    fn test_parse_mem_total_num_bytes() {
-        let meminfo = "MemTotal:       16303516 kB\nMemFree:         1102768 kB\n";
-        assert_eq!(parse_mem_total_num_bytes(meminfo), Some(16_303_516 * 1024));
-        assert_eq!(parse_mem_total_num_bytes("MemFree: 1 kB\n"), None);
     }
 }

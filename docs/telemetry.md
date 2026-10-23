@@ -50,7 +50,7 @@ Each request also includes:
   - the metastore type, file-backed or PostgreSQL, if the node runs the metastore;
   - where the default index root URI points: S3, Azure Blob Storage, Google Cloud Storage or the local file system;
   - whether the S3 storage config targets an S3-compatible store, through a custom endpoint or a flavor such as MinIO, Garage, DigitalOcean Spaces or Google Cloud Storage;
-  - whether the OTLP endpoints and the Jaeger endpoint are enabled;
+  - whether the OTLP endpoints are enabled on an indexer, and the Jaeger endpoint on a searcher;
   - whether ingest API v1 and v2 are enabled;
   - whether the searcher uses AWS Lambda for leaf searches or a local split cache;
   - whether document clustering is configured;
@@ -61,7 +61,7 @@ Each request also includes:
 - A session ID, generated at random each time the node starts.
 - An install ID, generated at random the first time the node uses its data directory and stored there in the `telemetry_install_id` file. It is only created while telemetry is on.
 - An MD5 hash of the host name and the user name, used to count distinct installations from older releases, which have no install ID. The relay replaces it with a keyed hash before storage. See below.
-- An MD5 hash of the cluster ID and the metastore URI, without credentials, used to count clusters and the nodes in each. The relay replaces it with a keyed hash before storage.
+- An MD5 hash of the cluster ID and the metastore URI, without the user name, password or query parameters, used to count clusters and the nodes in each. The relay replaces it with a keyed hash before storage.
 - The number of events dropped because too many were queued.
 
 `running` and `end_command` events also include:
@@ -73,7 +73,7 @@ Quickwit never sends index or field names, documents, queries, configuration val
 
 ## Where the data goes
 
-Quickwit sends the data over HTTPS to `telemetry.quickwit.io`, which Datadog operates on AWS. Its source code is in [`distribution/telemetry-relay`](https://github.com/quickwit-oss/quickwit/tree/main/distribution/telemetry-relay).
+Quickwit sends the data over HTTPS to `telemetry.quickwit.io`, which Datadog operates on AWS.
 
 - The request goes through Amazon CloudFront, which looks up the country and city of your IP address and passes them on. The IP address itself goes no further.
 - A small relay checks the request against the format above, rejects anything else, and keeps only the fields listed on this page.

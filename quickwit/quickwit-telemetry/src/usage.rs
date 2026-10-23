@@ -98,29 +98,41 @@ pub fn set_cluster_summary(num_indexes: usize, source_types: BTreeSet<String>) {
 }
 
 impl TelemetryEvent {
-    /// Takes the API request counts since the previous report.
     pub fn running() -> Self {
         TelemetryEvent::Running {
-            api_usage: API_REQUEST_COUNTS.take(),
-            cluster_summary: cluster_summary(),
+            api_usage: None,
+            cluster_summary: None,
         }
     }
 
-    /// Takes the API request counts since the previous report.
     pub fn end_command(return_code: i32) -> Self {
         TelemetryEvent::EndCommand {
             return_code,
-            api_usage: API_REQUEST_COUNTS.take(),
-            cluster_summary: cluster_summary(),
+            api_usage: None,
+            cluster_summary: None,
         }
     }
-}
 
-fn cluster_summary() -> Option<ClusterSummary> {
-    CLUSTER_SUMMARY
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone()
+    /// Adds the API request counts since the previous report and the cluster summary. Only called
+    /// once the event is queued, so that a dropped event never loses the counts.
+    pub(crate) fn add_usage(&mut self) {
+        if let TelemetryEvent::Running {
+            api_usage,
+            cluster_summary,
+        }
+        | TelemetryEvent::EndCommand {
+            api_usage,
+            cluster_summary,
+            ..
+        } = self
+        {
+            *api_usage = API_REQUEST_COUNTS.take();
+            *cluster_summary = CLUSTER_SUMMARY
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
+        }
+    }
 }
 
 fn request_count_bucket(num_requests: u64) -> &'static str {

@@ -16,6 +16,7 @@ hostname = { workspace = true }
 md5 = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
+sysinfo = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 username = { workspace = true }

@@ -106,11 +106,12 @@ impl EventsState {
     /// Adds an event.
     /// If the queue is already saturated, (ie. it has reached the len `MAX_NUM_EVENTS_IN_QUEUE`)
     // Returns true iff it was the first event in the queue.
-    fn push_event(&mut self, event: TelemetryEvent) -> bool {
+    fn push_event(&mut self, mut event: TelemetryEvent) -> bool {
         if self.events.len() >= MAX_NUM_EVENTS_IN_QUEUE {
             self.num_dropped_events += 1;
             return false;
         }
+        event.add_usage();
         let events_was_empty = self.events.is_empty();
         self.events.push(EventWithTimestamp::from(event));
         events_was_empty

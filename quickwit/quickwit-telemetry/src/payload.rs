@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::env;
 use std::time::UNIX_EPOCH;
 
+use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -102,8 +103,7 @@ pub struct ClientInfo {
     hashed_host_username: String,
     kubernetes: bool,
     cpus: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    memory: Option<String>,
+    memory: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -182,9 +182,21 @@ pub enum QuickwitFeature {
     Tls,
 }
 
-/// Callers must strip the credentials from the metastore URI first.
-pub fn hash_cluster_identity(cluster_id: &str, redacted_metastore_uri: &str) -> String {
-    let digest = md5::compute(format!("{cluster_id}\n{redacted_metastore_uri}"));
+/// Leaves out the user, the password and the query parameters of the metastore URI, which may
+/// differ between the nodes of a cluster.
+pub fn hash_cluster_identity(cluster_id: &str, metastore_uri: &Uri) -> String {
+    let mut location = metastore_uri.as_str();
+    if let Some((_, after_scheme)) = location.split_once("://") {
+        location = after_scheme;
+    }
+    if let Some((before_query, _)) = location.split_once('?') {
+        location = before_query;
+    }
+    let authority_len = location.find('/').unwrap_or(location.len());
+    if let Some(at_index) = location[..authority_len].rfind('@') {
+        location = &location[at_index + 1..];
+    }
+    let digest = md5::compute(format!("{cluster_id}\n{location}"));
     format!("{digest:x}")
 }
 
@@ -207,17 +219,37 @@ impl Default for ClientInfo {
             hashed_host_username: hashed_host_username(),
             kubernetes: std::env::var_os("KUBERNETES_SERVICE_HOST").is_some(),
             cpus: cpu_count_bucket(quickwit_common::num_cpus()).to_string(),
-            memory: available_memory_num_bytes()
-                .map(|num_bytes| memory_bucket(num_bytes).to_string()),
+            memory: memory_bucket(available_memory_num_bytes()).to_string(),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use serde_json;
 
     use super::*;
+
+    #[test]
+    fn test_hash_cluster_identity_leaves_out_credentials() {
+        let hashed_cluster_id = |cluster_id, metastore_uri| {
+            hash_cluster_identity(cluster_id, &Uri::from_str(metastore_uri).unwrap())
+        };
+        let expected = hashed_cluster_id("my-cluster", "postgresql://db:5432/metastore");
+        assert_eq!(
+            hashed_cluster_id(
+                "my-cluster",
+                "postgresql://node-1:secret@db:5432/metastore?sslmode=require"
+            ),
+            expected
+        );
+        assert_ne!(
+            hashed_cluster_id("other-cluster", "postgresql://db:5432/metastore"),
+            expected
+        );
+    }
 
     #[test]
     fn test_serialize_features_as_expected() {

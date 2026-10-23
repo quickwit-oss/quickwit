@@ -1,8 +1,0 @@
-{
-  "name": "quickwit-telemetry-relay",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "node --test"
-  }
-}
