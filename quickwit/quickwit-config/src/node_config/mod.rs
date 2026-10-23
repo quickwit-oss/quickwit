@@ -215,9 +215,25 @@ pub struct IndexerConfig {
     pub enable_cooperative_indexing: bool,
     #[serde(default = "IndexerConfig::default_cpu_capacity")]
     pub cpu_capacity: CpuCapacity,
+    #[serde(default = "IndexerConfig::default_shutdown_drain_timeout")]
+    pub shutdown_drain_timeout: HumanDuration,
 }
 
 impl IndexerConfig {
+    /// Returns the shutdown drain timeout, as defined in the environment variable or in
+    /// the configuration, in that order (the environment variable overrides the configuration).
+    pub fn shutdown_drain_timeout(&self) -> Duration {
+        quickwit_common::get_duration_from_env(
+            "QW_INDEXER_SHUTDOWN_DRAIN_TIMEOUT",
+            Duration::from(self.shutdown_drain_timeout.clone()),
+        )
+    }
+
+    fn default_shutdown_drain_timeout() -> HumanDuration {
+        HumanDuration::try_from("300s".to_string())
+            .expect("`300s` should be a valid human duration")
+    }
+
     fn default_enable_cooperative_indexing() -> bool {
         false
     }
@@ -265,6 +281,7 @@ impl IndexerConfig {
             cpu_capacity: PIPELINE_FULL_CAPACITY * 4u32,
             max_merge_write_throughput: None,
             merge_concurrency: NonZeroUsize::new(3).unwrap(),
+            shutdown_drain_timeout: Self::default_shutdown_drain_timeout(),
         };
         Ok(indexer_config)
     }
@@ -281,6 +298,7 @@ impl Default for IndexerConfig {
             cpu_capacity: Self::default_cpu_capacity(),
             merge_concurrency: Self::default_merge_concurrency(),
             max_merge_write_throughput: None,
+            shutdown_drain_timeout: Self::default_shutdown_drain_timeout(),
         }
     }
 }
