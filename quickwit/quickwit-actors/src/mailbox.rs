@@ -106,6 +106,7 @@ struct Inner<A: Actor> {
     pub(crate) tx: Sender<Envelope<A>>,
     scheduler_client_opt: Option<SchedulerClient>,
     instance_id: String,
+    actor_name: Arc<str>,
 }
 
 impl<A: Actor> fmt::Debug for Mailbox<A> {
@@ -117,6 +118,10 @@ impl<A: Actor> fmt::Debug for Mailbox<A> {
 }
 
 impl<A: Actor> Mailbox<A> {
+    pub(crate) fn actor_name(&self) -> &str {
+        &self.inner.actor_name
+    }
+
     pub fn actor_instance_id(&self) -> &str {
         &self.inner.instance_id
     }
@@ -180,7 +185,11 @@ impl<A: Actor> Mailbox<A> {
             .scheduler_client_opt
             .as_ref()
             .map(|scheduler_client| scheduler_client.no_advance_time_guard());
-        wrap_in_envelope(message, guard)
+        wrap_in_envelope(
+            message,
+            guard,
+            A::RECORD_DURATION_METRICS.then(|| self.inner.actor_name.clone()),
+        )
     }
 
     /// Sends a message to the actor owning the associated inbox.
@@ -396,12 +405,16 @@ pub(crate) fn create_mailbox<A: Actor>(
     queue_capacity: QueueCapacity,
     scheduler_client_opt: Option<SchedulerClient>,
 ) -> (Mailbox<A>, Inbox<A>) {
-    let (tx, rx) = crate::channel_with_priority::channel(queue_capacity);
+    let (tx, mut rx) = crate::channel_with_priority::channel(queue_capacity);
+    if A::RECORD_DURATION_METRICS {
+        rx.set_send_to_receive_measurement(Envelope::<A>::measure_send_to_receive);
+    }
     let ref_count = Arc::new(AtomicUsize::new(1));
     let mailbox = Mailbox {
         inner: Arc::new(Inner {
             tx,
             instance_id: quickwit_common::new_coolid(&actor_name),
+            actor_name: actor_name.into(),
             scheduler_client_opt,
         }),
         ref_count,
