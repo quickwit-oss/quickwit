@@ -143,7 +143,7 @@ openssl = { version = "0.10", default-features = false }
 openssl-probe = "0.2"
 opentelemetry = "0.32"
 opentelemetry-appender-tracing = "0.32"
-opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
+opentelemetry_sdk = { version = "0.33", features = ["rt-tokio"] }
 # `default-features = false` drops the default `reqwest-blocking-client`:
 # see https://github.com/quickwit-oss/quickwit/pull/6558 for more details.
 opentelemetry-otlp = { version = "0.32", default-features = false, features = [
