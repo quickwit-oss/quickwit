@@ -149,6 +149,22 @@ storage:
     endpoint_suffix: core.chinacloudapi.cn
 ```
 
+#### Managed identity on sovereign clouds
+
+When using managed identity or other token-based authentication (without an `access_key`) against Azure Government or Azure China, Quickwit uses the standard Azure Storage resource ID (`https://storage.azure.com/`) for OAuth tokens, together with the sovereign blob endpoint configured via `endpoint` or `endpoint_suffix`.
+
+Depending on the national cloud, you must set the Entra authority host so tokens are acquired from the correct login endpoint:
+
+```bash
+# Azure US Government
+export AZURE_AUTHORITY_HOST=https://login.microsoftonline.us/
+
+# Azure China
+export AZURE_AUTHORITY_HOST=https://login.chinacloudapi.cn/
+```
+
+Custom endpoints that are not public Azure, Azure Government, or Azure China (for example Azure Stack) require an `access_key` when using token-based authentication.
+
 ## Storage configuration examples for various object storage providers
 
 ### Garage
