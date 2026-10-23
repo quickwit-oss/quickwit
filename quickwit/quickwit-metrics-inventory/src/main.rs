@@ -20,7 +20,7 @@
 //! in reverse dependencies:
 //!
 //! ```sh
-//! ./scripts/run_inventory.sh
+//! ./scripts/run.sh
 //! ```
 //!
 //! The script temporarily adds `extern crate` lines and `Cargo.toml`
@@ -29,6 +29,24 @@
 //! all inventory submissions even without explicit symbol references.
 
 use std::collections::BTreeMap;
+
+use quickwit_metrics::MetricKind;
+use serde::Serialize;
+
+#[derive(Serialize)]
+struct MetricEntry {
+    kind: &'static str,
+    description: &'static str,
+}
+
+/// Stable names for the inventory, independent of the `Debug` representation.
+fn kind_name(kind: MetricKind) -> &'static str {
+    match kind {
+        MetricKind::Counter => "counter",
+        MetricKind::Gauge => "gauge",
+        MetricKind::Histogram => "histogram",
+    }
+}
 
 fn format_key(info: &quickwit_metrics::MetricInfo) -> String {
     if info.static_labels.is_empty() {
@@ -43,29 +61,29 @@ fn format_key(info: &quickwit_metrics::MetricInfo) -> String {
     }
 }
 
+/// Prints the inventory as YAML, sorted by module then metric:
+///
+/// ```yaml
+/// module::path:
+///   metric_name{label=value}:
+///     kind: counter
+///     description: ...
+/// ```
 fn main() {
-    let mut by_module: BTreeMap<&str, BTreeMap<String, &quickwit_metrics::MetricInfo>> =
-        BTreeMap::new();
+    let mut by_module: BTreeMap<&str, BTreeMap<String, MetricEntry>> = BTreeMap::new();
 
     for info in quickwit_metrics::metrics_info() {
         let module = info.metadata.module_path().unwrap_or("<unknown>");
+        let entry = MetricEntry {
+            kind: kind_name(info.kind),
+            description: info.description,
+        };
         by_module
             .entry(module)
             .or_default()
-            .insert(format_key(info), info);
+            .insert(format_key(info), entry);
     }
 
-    for (module, metrics) in &by_module {
-        let max_key_len = metrics.keys().map(|k| k.len()).max().unwrap_or(0);
-        println!("{module}");
-        for (key, info) in metrics {
-            println!(
-                "  {key:<width$}    kind: {}",
-                format!("{:?}", info.kind).to_lowercase(),
-                width = max_key_len
-            );
-            println!("    {}", info.description);
-        }
-        println!();
-    }
+    let yaml = serde_yaml::to_string(&by_module).expect("inventory should serialize to YAML");
+    print!("{yaml}");
 }

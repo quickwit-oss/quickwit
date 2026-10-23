@@ -1,0 +1,524 @@
+quickwit_actors::mailbox:
+  quickwit_actor_inboxes_count:
+    kind: gauge
+    description: overall count of actors
+quickwit_cli::metrics:
+  quickwit_build_info:
+    kind: gauge
+    description: Quickwit's build info
+  quickwit_cli_thread_unpark_duration_microseconds:
+    kind: histogram
+    description: Duration for which a thread of the main tokio runtime is unparked.
+quickwit_cluster::metrics:
+  quickwit_cluster_cluster_state_size_bytes:
+    kind: gauge
+    description: The size of the cluster state in bytes.
+  quickwit_cluster_dead_nodes:
+    kind: gauge
+    description: The number of dead nodes observed locally.
+  quickwit_cluster_gossip_recv_bytes_total:
+    kind: counter
+    description: Total amount of gossip data received in bytes.
+  quickwit_cluster_gossip_recv_messages_total:
+    kind: counter
+    description: Total number of gossip messages received.
+  quickwit_cluster_gossip_sent_bytes_total:
+    kind: counter
+    description: Total amount of gossip data sent in bytes.
+  quickwit_cluster_gossip_sent_messages_total:
+    kind: counter
+    description: Total number of gossip messages sent.
+  quickwit_cluster_grpc_gossip_rounds_total:
+    kind: counter
+    description: Total number of gRPC gossip rounds performed with peer nodes.
+  quickwit_cluster_live_nodes:
+    kind: gauge
+    description: The number of live nodes observed locally.
+  quickwit_cluster_node_state_keys:
+    kind: gauge
+    description: The number of keys in the node state.
+  quickwit_cluster_node_state_size_bytes:
+    kind: gauge
+    description: The size of the node state in bytes.
+  quickwit_cluster_ready_nodes:
+    kind: gauge
+    description: The number of ready nodes observed locally.
+  quickwit_cluster_zombie_nodes:
+    kind: gauge
+    description: The number of zombie nodes observed locally.
+quickwit_common::io:
+  quickwit_write_bytes:
+    kind: counter
+    description: Number of bytes written by a given component in [indexer, merger, deleter, split_downloader_{merge,delete}]
+quickwit_common::metrics:
+  quickwit_io_read_bytes_total:
+    kind: counter
+    description: Cumulative bytes read from storage by the process, as reported by `/proc/self/io` `read_bytes`. Reflects block-layer I/O after page cache absorbs reads served from memory.
+  quickwit_io_read_syscalls_total:
+    kind: counter
+    description: Cumulative number of read syscalls issued by the process, as reported by `/proc/self/io` `syscr`.
+  quickwit_io_write_bytes_total:
+    kind: counter
+    description: Cumulative bytes written to storage by the process, as reported by `/proc/self/io` `write_bytes`. Reflects block-layer I/O after page cache coalescing.
+  quickwit_io_write_syscalls_total:
+    kind: counter
+    description: Cumulative number of write syscalls issued by the process, as reported by `/proc/self/io` `syscw`.
+  quickwit_memory_active_bytes:
+    kind: gauge
+    description: Total number of bytes in active pages allocated by the application, as reported by jemalloc `stats.active`.
+  quickwit_memory_allocated_bytes:
+    kind: gauge
+    description: Total number of bytes allocated by the application, as reported by jemalloc `stats.allocated`.
+  quickwit_memory_in_flight_data_bytes:
+    kind: gauge
+    description: Amount of data in-flight in various buffers in bytes.
+  quickwit_memory_resident_bytes:
+    kind: gauge
+    description: ' Total number of bytes in physically resident data pages mapped by the allocator, as reported by jemalloc `stats.resident`.'
+quickwit_common::runtimes:
+  quickwit_runtime_tokio_scheduled_tasks:
+    kind: gauge
+    description: The total number of tasks currently scheduled in workers' local queues.
+  quickwit_runtime_tokio_worker_busy_duration_milliseconds_total:
+    kind: counter
+    description: ' The total amount of time worker threads were busy.'
+  quickwit_runtime_tokio_worker_busy_ratio:
+    kind: gauge
+    description: The ratio of time worker threads were busy since the last time runtime metrics were collected.
+  quickwit_runtime_tokio_worker_threads:
+    kind: gauge
+    description: The number of worker threads used by the runtime.
+quickwit_common::thread_pool:
+  quickwit_thread_pool_ongoing_tasks:
+    kind: gauge
+    description: number of tasks being currently processed by threads in the thread pool
+  quickwit_thread_pool_pending_tasks:
+    kind: gauge
+    description: number of tasks waiting in the queue before being processed by the thread pool
+quickwit_common::tower::metrics:
+  quickwit_grpc_request_duration_seconds:
+    kind: histogram
+    description: Duration of request in seconds.
+  quickwit_grpc_requests_in_flight:
+    kind: gauge
+    description: Number of gRPC requests in-flight.
+  quickwit_grpc_requests_total:
+    kind: counter
+    description: Total number of gRPC requests processed.
+quickwit_compaction::metrics:
+  quickwit_compactor_available_slots:
+    kind: gauge
+    description: number of compaction slots currently available on this compactor
+  quickwit_compactor_compaction_duration_seconds:
+    kind: histogram
+    description: duration of compaction merge operations in seconds
+  quickwit_compactor_compactions_failed:
+    kind: counter
+    description: total number of compaction merge operations that have failed
+  quickwit_compactor_compactions_in_progress:
+    kind: gauge
+    description: number of compaction merge operations currently running on this compactor
+  quickwit_compactor_compactions_succeeded:
+    kind: counter
+    description: total number of compaction merge operations that have completed successfully
+  quickwit_compactor_decommission_result_total:
+    kind: counter
+    description: Number of compactor decommission attempts by result
+quickwit_compaction::planner::metrics:
+  quickwit_compaction_planner_metastore_errors:
+    kind: counter
+    description: cumulative number of metastore errors encountered by the compaction planner
+  quickwit_compaction_planner_new_splits_scanned:
+    kind: counter
+    description: cumulative number of immature splits scanned from the metastore
+  quickwit_compaction_planner_pending_merge_operations:
+    kind: gauge
+    description: number of pending merge operations awaiting assignment
+  quickwit_compaction_planner_splits_needing_compaction:
+    kind: gauge
+    description: number of splits currently tracked as needing compaction
+  quickwit_compaction_planner_timed_out_operations:
+    kind: counter
+    description: cumulative number of merge operations that timed out waiting for a worker heartbeat
+quickwit_control_plane::metrics:
+  quickwit_control_plane_apply_plan_total:
+    kind: counter
+    description: Number of control plane `apply plan` operations.
+  quickwit_control_plane_indexed_shards:
+    kind: gauge
+    description: Number of (remote/zonal/local) shards in the indexing plan
+  quickwit_control_plane_indexes_total:
+    kind: gauge
+    description: Number of indexes tracked by the control plane.
+  quickwit_control_plane_indexing_plan_density:
+    kind: gauge
+    description: Ratio of occupied shard slots in the indexing plan.
+  quickwit_control_plane_locality_repairs_total:
+    kind: counter
+    description: Number of successful physical-plan locality repairs.
+  quickwit_control_plane_metastore_error_aborted:
+    kind: counter
+    description: Number of aborted metastore transaction (= do not trigger a control plane restart)
+  quickwit_control_plane_metastore_error_maybe_executed:
+    kind: counter
+    description: Number of metastore transaction with an uncertain outcome (= do trigger a control plane restart)
+  quickwit_control_plane_rebalance_shards:
+    kind: gauge
+    description: Number of shards rebalanced by the control plane.
+  quickwit_control_plane_restart_total:
+    kind: counter
+    description: Number of control plane restarts.
+  quickwit_control_plane_schedule_total:
+    kind: counter
+    description: Number of control plane `schedule` operations.
+  quickwit_control_plane_shards:
+    kind: gauge
+    description: Number of open and closed shards tracked by the ingest controller
+quickwit_indexing::metrics:
+  quickwit_indexing_backpressure_micros:
+    kind: counter
+    description: Amount of time spent in backpressure (in micros). This time only includes the amount of time spent waiting for a place in the queue of another actor.
+  quickwit_indexing_concurrent_upload_available_permits_num:
+    kind: gauge
+    description: Number of available concurrent upload permits by component in [merger, indexer]
+  quickwit_indexing_docs_cluster_group_size:
+    kind: histogram
+    description: Document cluster group size when finalizing an indexed split.
+  quickwit_indexing_indexing_pipelines:
+    kind: gauge
+    description: Number of running indexing pipelines
+  quickwit_indexing_kafka_rebalance_total:
+    kind: counter
+    description: Number of kafka rebalances
+  quickwit_indexing_ongoing_merge_operations:
+    kind: gauge
+    description: Number of ongoing merge operations
+  quickwit_indexing_pending_merge_bytes:
+    kind: gauge
+    description: Number of pending merge bytes
+  quickwit_indexing_pending_merge_operations:
+    kind: gauge
+    description: Number of pending merge operations
+  quickwit_indexing_processed_bytes:
+    kind: counter
+    description: Number of bytes of processed documents by index, source and processed status in [valid, schema_error, parse_error, transform_error]
+  quickwit_indexing_processed_docs_total:
+    kind: counter
+    description: Number of processed docs by index, source and processed status in [valid, schema_error, parse_error, transform_error]
+  quickwit_indexing_published_split_bytes_total:
+    kind: counter
+    description: Compressed bytes in successfully published splits.
+  quickwit_indexing_published_split_docs_total:
+    kind: counter
+    description: Documents in successfully published splits.
+  quickwit_indexing_published_split_size_bytes:
+    kind: histogram
+    description: Compressed size in bytes of successfully published splits.
+  quickwit_indexing_published_split_uncompressed_bytes_total:
+    kind: counter
+    description: Uncompressed document bytes in successfully published splits.
+  quickwit_indexing_published_splits_total:
+    kind: counter
+    description: Number of successfully published splits.
+  quickwit_indexing_split_builders:
+    kind: gauge
+    description: Number of existing index writer instances.
+quickwit_ingest::ingest_v2::metrics:
+  quickwit_ingest_decommission_result_total:
+    kind: counter
+    description: Number of ingester decommission attempts by result
+  quickwit_ingest_ingest_attempts:
+    kind: counter
+    description: Number of routing attempts by AZ locality
+  quickwit_ingest_ingest_result_total:
+    kind: counter
+    description: Number of ingest requests by result
+  quickwit_ingest_reset_shards_operations_total:
+    kind: counter
+    description: Total number of reset shards operations performed.
+  quickwit_ingest_shard_lt_throughput_mib:
+    kind: histogram
+    description: Shard long term throughput as reported through chitchat
+  quickwit_ingest_shard_st_throughput_mib:
+    kind: histogram
+    description: Shard short term throughput as reported through chitchat
+  quickwit_ingest_shards:
+    kind: gauge
+    description: Number of shards hosted by the ingester.
+  quickwit_ingest_skipped_mrecords_total:
+    kind: counter
+    description: Number of mrecords skipped during decoding, by reason (e.g. an unknown header version or record type written by a newer binary).
+  quickwit_ingest_wal_acquire_lock_request_duration_secs:
+    kind: histogram
+    description: Duration of acquire lock requests in seconds.
+  quickwit_ingest_wal_acquire_lock_requests_in_flight:
+    kind: gauge
+    description: Number of acquire lock requests in-flight.
+  quickwit_ingest_wal_bytes_written_total:
+    kind: counter
+    description: Total number of bytes written to the WAL by write operations (create_queue, append_records, truncate_queue, delete_queue), including frame headers and end-of-block padding.
+  quickwit_ingest_wal_disk_limit_bytes:
+    kind: gauge
+    description: WAL disk space limit in bytes.
+  quickwit_ingest_wal_disk_usage_ratio:
+    kind: gauge
+    description: Ratio of WAL disk space used to the disk limit.
+  quickwit_ingest_wal_disk_used_bytes:
+    kind: gauge
+    description: WAL disk space used in bytes.
+  quickwit_ingest_wal_lock_hold_duration_secs:
+    kind: histogram
+    description: Duration for which the WAL lock was held in seconds.
+  quickwit_ingest_wal_memory_limit_bytes:
+    kind: gauge
+    description: WAL memory limit in bytes.
+  quickwit_ingest_wal_memory_usage_ratio:
+    kind: gauge
+    description: Ratio of WAL memory used to the memory limit.
+  quickwit_ingest_wal_memory_used_bytes:
+    kind: gauge
+    description: WAL memory used in bytes.
+quickwit_ingest::metrics:
+  quickwit_ingest_docs_bytes_total:
+    kind: counter
+    description: Total size of the docs ingested, measured after validation and before persistence
+  quickwit_ingest_docs_total:
+    kind: counter
+    description: Total number of docs ingested, measured after validation and before persistence
+  quickwit_ingest_queue_count:
+    kind: gauge
+    description: Number of queues currently active
+quickwit_jaeger::metrics:
+  quickwit_jaeger_fetched_spans_total:
+    kind: counter
+    description: Number of spans retrieved from storage
+  quickwit_jaeger_fetched_traces_total:
+    kind: counter
+    description: Number of traces retrieved from storage
+  quickwit_jaeger_request_duration_seconds:
+    kind: histogram
+    description: Duration of requests
+  quickwit_jaeger_request_errors_total:
+    kind: counter
+    description: Number of failed requests
+  quickwit_jaeger_requests_total:
+    kind: counter
+    description: Number of requests
+  quickwit_jaeger_transferred_bytes_total:
+    kind: counter
+    description: Number of bytes transferred
+quickwit_janitor::metrics:
+  quickwit_janitor_gc_deleted_bytes_total:
+    kind: counter
+    description: Total number of bytes deleted by the garbage collector.
+  quickwit_janitor_gc_deleted_splits_total:
+    kind: counter
+    description: Total number of splits deleted by the garbage collector.
+  quickwit_janitor_gc_runs_total:
+    kind: counter
+    description: Total number of garbage collector execition.
+  quickwit_janitor_gc_seconds_total:
+    kind: counter
+    description: Total time spent running the garbage collector
+  quickwit_janitor_ongoing_num_delete_operations_total:
+    kind: gauge
+    description: Num of ongoing delete operations (per index).
+quickwit_lambda_client::metrics:
+  quickwit_lambda_leaf_search_duration_seconds:
+    kind: histogram
+    description: Duration of Lambda leaf search invocations in seconds.
+  quickwit_lambda_leaf_search_request_payload_size_bytes:
+    kind: histogram
+    description: Size of the request payload sent to Lambda in bytes.
+  quickwit_lambda_leaf_search_requests_total:
+    kind: counter
+    description: Total number of Lambda leaf search invocations.
+  quickwit_lambda_leaf_search_response_payload_size_bytes:
+    kind: histogram
+    description: Size of the response payload received from Lambda in bytes.
+quickwit_metastore::metastore::postgres::metrics:
+  quickwit_metastore_acquire_connections:
+    kind: gauge
+    description: Number of connections being acquired.
+  quickwit_metastore_active_connections:
+    kind: gauge
+    description: Number of active (used + idle) connections.
+  quickwit_metastore_deferred_migrations_apply_total:
+    kind: counter
+    description: Number of deferred PostgreSQL migration attempts, by result.
+  quickwit_metastore_idle_connections:
+    kind: gauge
+    description: Number of idle connections.
+  quickwit_metastore_max_connections:
+    kind: gauge
+    description: Maximum number of connections configured for the pool.
+quickwit_opentelemetry::otlp::metrics:
+  quickwit_otlp_ingested_bytes_total:
+    kind: counter
+    description: Number of bytes ingested
+  quickwit_otlp_ingested_log_records_total:
+    kind: counter
+    description: Number of log records ingested
+  quickwit_otlp_ingested_spans_total:
+    kind: counter
+    description: Number of spans ingested
+  quickwit_otlp_request_duration_seconds:
+    kind: histogram
+    description: Duration of requests
+  quickwit_otlp_request_errors_total:
+    kind: counter
+    description: Number of failed requests
+  quickwit_otlp_requests_total:
+    kind: counter
+    description: Number of requests
+quickwit_search::metrics:
+  quickwit_search_job_assigned_total:
+    kind: counter
+    description: Number of job assigned to searchers, per affinity rank.
+  quickwit_search_leaf_list_terms_splits_total:
+    kind: counter
+    description: Number of list terms splits total
+  quickwit_search_leaf_search_request_duration_seconds:
+    kind: histogram
+    description: Duration of leaf search gRPC requests in seconds.
+  quickwit_search_leaf_search_requests_total:
+    kind: counter
+    description: Total number of leaf search gRPC requests processed.
+  quickwit_search_leaf_search_single_split_tasks:
+    kind: gauge
+    description: Number of single split search tasks pending or ongoing
+  quickwit_search_leaf_search_single_split_warmup_num_bytes:
+    kind: histogram
+    description: Size of the short lived cache for a single split once the warmup is done.
+  quickwit_search_leaf_search_split_duration_secs:
+    kind: histogram
+    description: Number of seconds required to run a leaf search over a single split. The timer starts after the semaphore is obtained.
+  quickwit_search_leaf_search_targeted_splits:
+    kind: histogram
+    description: Number of splits targeted per leaf search GRPC request.
+  quickwit_search_leaf_search_warmup_ongoing_num_bytes:
+    kind: gauge
+    description: Total bytes currently held in warmup caches across all in-flight split searches.
+  quickwit_search_root_search_request_duration_seconds:
+    kind: histogram
+    description: Duration of root search gRPC requests in seconds.
+  quickwit_search_root_search_requests_total:
+    kind: counter
+    description: Total number of root search gRPC requests processed.
+  quickwit_search_root_search_targeted_splits:
+    kind: histogram
+    description: Number of splits targeted per root search GRPC request.
+  quickwit_search_searcher_local_kv_store_size_bytes:
+    kind: gauge
+    description: Size of the searcher kv store in bytes. This store is used to cache scroll contexts.
+  quickwit_search_searcher_node_load:
+    kind: gauge
+    description: Current load on this searcher node, expressed as the sum of job costs for all queued and active split search tasks.
+  quickwit_search_split_search_outcome:
+    kind: counter
+    description: Count the state in which each leaf search split ended. Errors are classified by the error label
+quickwit_serve::metrics:
+  quickwit_grpc_circuit_break_total:
+    kind: counter
+    description: Circuit breaker counter
+  quickwit_http_requests_total:
+    kind: counter
+    description: Total number of HTTP requests processed.
+  quickwit_ongoing_requests:
+    kind: gauge
+    description: Number of ongoing requests.
+  quickwit_pending_requests:
+    kind: gauge
+    description: Number of pending requests.
+  quickwit_request_duration_secs:
+    kind: histogram
+    description: Response time in seconds
+quickwit_storage::metrics:
+  quickwit_cache_cache_evict_bytes:
+    kind: counter
+    description: Number of cache entry evicted in bytes by component
+  quickwit_cache_cache_evict_total:
+    kind: counter
+    description: Number of cache entry evicted by component
+  quickwit_cache_cache_hits_bytes:
+    kind: counter
+    description: Number of cache hits in bytes by component
+  quickwit_cache_cache_hits_total:
+    kind: counter
+    description: Number of cache hits by component
+  quickwit_cache_cache_misses_total:
+    kind: counter
+    description: Number of cache misses by component
+  quickwit_cache_in_cache_count:
+    kind: gauge
+    description: Count of in cache by component
+  quickwit_cache_in_cache_num_bytes:
+    kind: gauge
+    description: Number of bytes in cache by component
+  quickwit_cache_virtual_cache_evict_bytes:
+    kind: counter
+    description: Number of cache entry evicted in bytes by component
+  quickwit_cache_virtual_cache_evict_total:
+    kind: counter
+    description: Number of cache entry evicted by component
+  quickwit_cache_virtual_cache_hits_bytes:
+    kind: counter
+    description: Number of cache hits in bytes by component
+  quickwit_cache_virtual_cache_hits_total:
+    kind: counter
+    description: Number of cache hits by component
+  quickwit_cache_virtual_cache_misses_total:
+    kind: counter
+    description: Number of cache misses by component
+  quickwit_cache_virtual_in_cache_count:
+    kind: gauge
+    description: Count of in cache by component
+  quickwit_cache_virtual_in_cache_num_bytes:
+    kind: gauge
+    description: Number of bytes in cache by component
+  quickwit_object_storage_puts_parts:
+    kind: counter
+    description: Number of object parts uploaded.
+  quickwit_storage_get_slice_timeout_outcome:
+    kind: counter
+    description: Outcome of get_slice operations. success_after_1_timeout means the operation succeeded after a retry caused by a timeout.
+  quickwit_storage_object_storage_download_num_bytes:
+    kind: counter
+    description: Amount of data downloaded from an object storage.
+  quickwit_storage_object_storage_get_attempt_errors_total:
+    kind: counter
+    description: Number of failed GetObject attempts, counted per attempt (retried attempts included), labeled by error class (throttled, transient, timeout, other). Use class="throttled" to measure S3 rate limiting.
+  quickwit_storage_object_storage_get_errors_total:
+    kind: counter
+    description: Number of GetObject errors.
+  quickwit_storage_object_storage_get_slice_in_flight_count:
+    kind: gauge
+    description: Number of GetObject for which the memory was allocated but the download is still in progress.
+  quickwit_storage_object_storage_get_slice_in_flight_num_bytes:
+    kind: gauge
+    description: Memory allocated for GetObject requests that are still in progress.
+  quickwit_storage_object_storage_gets_total:
+    kind: counter
+    description: Number of objects fetched. Might be lower than get_slice_timeout_outcome if queries are debounced.
+  quickwit_storage_object_storage_put_attempt_errors_total:
+    kind: counter
+    description: Number of failed S3 PutObject and UploadPart attempts, counted per attempt (retried attempts included), labeled by error class. Use class="throttling" to measure S3 rate limiting.
+  quickwit_storage_object_storage_put_errors_total:
+    kind: counter
+    description: Number of S3 object uploads that failed after retries were exhausted.
+  quickwit_storage_object_storage_puts_total:
+    kind: counter
+    description: Number of objects uploaded. May differ from object_storage_requests_parts due to multipart upload.
+  quickwit_storage_object_storage_request_duration_seconds:
+    kind: histogram
+    description: Duration of object storage requests in seconds.
+  quickwit_storage_object_storage_requests_total:
+    kind: counter
+    description: Total number of object storage requests performed.
+  quickwit_storage_object_storage_upload_num_bytes:
+    kind: counter
+    description: Amount of data uploaded to an object storage.
+quickwit_transport::tls:
+  quickwit_tls_cert_reloads_total:
+    kind: counter
+    description: 'Total number of TLS certificate hot-reload attempts, labeled by `result` (`success`: a new cert was applied without a restart; `failure`: the attempt failed and the current cert was kept).'
