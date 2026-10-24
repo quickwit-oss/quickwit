@@ -7816,6 +7816,8 @@ name = "quickwit-metrics-inventory"
 version = "0.9.3"
 dependencies = [
  "quickwit-metrics",
+ "serde",
+ "serde_yaml",
 ]
 
 [[package]]
