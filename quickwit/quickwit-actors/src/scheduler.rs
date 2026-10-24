@@ -60,6 +60,11 @@ enum SchedulerMessage {
         callback: Callback,
         timeout: Duration,
     },
+    #[cfg(any(test, feature = "testsuite"))]
+    ShiftTime {
+        duration: Duration,
+        done_tx: oneshot::Sender<()>,
+    },
 }
 
 #[derive(Clone)]
@@ -158,6 +163,16 @@ impl SchedulerClient {
         }
     }
 
+    #[cfg(any(test, feature = "testsuite"))]
+    pub async fn shift_time(&self, duration: Duration) {
+        let (done_tx, done_rx) = oneshot::channel();
+        let _ = self
+            .inner
+            .tx
+            .send(SchedulerMessage::ShiftTime { duration, done_tx });
+        let _ = done_rx.await;
+    }
+
     // Triggers an event, telling the Scheduler to process time,
     // checks whether some scheduled events have timed out, or whether we should
     // jump forward in time.
@@ -206,6 +221,11 @@ pub fn start_scheduler() -> SchedulerClient {
                     SchedulerMessage::ProcessTime => scheduler.process_time(),
                     SchedulerMessage::Schedule { callback, timeout } => {
                         scheduler.process_schedule(callback, timeout);
+                    }
+                    #[cfg(any(test, feature = "testsuite"))]
+                    SchedulerMessage::ShiftTime { duration, done_tx } => {
+                        scheduler.process_shift_time(duration);
+                        let _ = done_tx.send(());
                     }
                 }
             }
@@ -258,6 +278,12 @@ impl Scheduler {
         let new_evt_deadline = self.simulated_now() + timeout;
         let timeout_event = self.timeout_event(new_evt_deadline, callback);
         self.future_events.push(Reverse(timeout_event));
+        self.process_time();
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    fn process_shift_time(&mut self, duration: Duration) {
+        self.simulated_time_shift += duration;
         self.process_time();
     }
 
@@ -432,6 +458,27 @@ mod tests {
         let elapsed = start.elapsed();
         // The whole point is to accelerate time.
         assert!(elapsed.as_millis() < 50);
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_shift_time() {
+        let count: Arc<AtomicUsize> = Default::default();
+        let simple_actor = ClockActor {
+            count: count.clone(),
+        };
+        let universe = Universe::new();
+        let (_mailbox, handle) = universe.spawn_builder().spawn(simple_actor);
+        handle.process_pending_and_observe().await;
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+
+        universe.shift_time(Duration::from_millis(500)).await;
+        handle.process_pending_and_observe().await;
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+
+        universe.shift_time(Duration::from_millis(600)).await;
+        handle.process_pending_and_observe().await;
+        assert_eq!(count.load(Ordering::SeqCst), 2);
         universe.assert_quit().await;
     }
 }
