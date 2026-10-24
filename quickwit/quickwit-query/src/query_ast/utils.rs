@@ -23,7 +23,7 @@ use tantivy::schema::{
 use crate::InvalidQuery;
 use crate::MatchAllOrNone::MatchNone as TantivyEmptyQuery;
 use crate::json_literal::InterpretUserInput;
-use crate::query_ast::full_text_query::FullTextParams;
+use crate::query_ast::full_text_query::{FullTextMode, FullTextParams};
 use crate::query_ast::tantivy_query_ast::{TantivyBoolQuery, TantivyQueryAst};
 use crate::tokenizers::{RAW_TOKENIZER_NAME, TokenizerManager};
 
@@ -168,6 +168,7 @@ fn compute_query_with_field(
                 value,
                 text_field_indexing,
                 tokenizer_manager,
+                matches!(full_text_params.mode, FullTextMode::BoolPrefix { .. }),
             )?;
             full_text_params.make_query(terms, text_field_indexing.index_option())
         }
@@ -219,6 +220,7 @@ fn compute_tantivy_ast_query_for_json(
         text,
         json_options,
         tokenizer_manager,
+        matches!(full_text_params.mode, FullTextMode::BoolPrefix { .. }),
     )?;
     let index_record_option = json_options
         .get_text_indexing_options()
