@@ -240,6 +240,7 @@ This section contains the configuration options for an indexer. The split store 
 
 | Property | Description | Default value |
 | --- | --- | --- |
+| `indexing_memory_limit` | Memory budget shared across all indexing pipelines on the node, accounting for writer memory and in-flight batches. Must be greater than zero when set. | Disabled |
 | `split_store_max_num_bytes` | Maximum size in bytes allowed in the split store. | `100G` |
 | `split_store_max_num_splits` | Maximum number of files allowed in the split store. | `1000` |
 | `max_concurrent_split_uploads` | Maximum number of concurrent split uploads allowed on the node. | `12` |
@@ -247,6 +248,8 @@ This section contains the configuration options for an indexer. The split store 
 | `enable_otlp_endpoint` | If true, enables the OpenTelemetry exporter endpoint to ingest logs and traces via the OpenTelemetry Protocol (OTLP). | `false` |
 | `cpu_capacity` | Advisory parameter used by the control plane. The value can expressed be in threads (e.g. `2`) or in term of millicpus (`2000m`). The control plane will attempt to schedule indexing pipelines on the different nodes proportionally to the cpu capacity advertised by the indexer. It is NOT used as a limit. All pipelines will be scheduled regardless of whether the cluster has sufficient capacity or not. The control plane does not attempt to spread the work equally when the load is well below the `cpu_capacity`. Users who need a balanced load on all of their indexer nodes can set the `cpu_capacity` to an arbitrarily low value as long as they keep it proportional to the number of threads available. | `num threads available` |
 | `enable_cooperative_indexing` | Enable sharing resources more efficiently when the number of indexes actively written to is significantly higher than the number of cores but might decrease the overall indexing throughput. | `false` |
+
+The `indexer.indexing_memory_limit` budget is shared across all indexing pipelines on a node. It accounts for reported Tantivy writer memory (including RAM directories) through serialization, plus raw and processed document batches queued or being handled. Both batch types are accounted for using their raw input byte sizes, not their exact heap usage; raw and processed batches can overlap during processing. When usage reaches the limit, sources stop reading and emitting new batches and retry every 100 ms. Downstream work drains normally, with existing commit timeouts and per-pipeline commit triggers unchanged. Already-admitted work can overshoot the limit. Source/network buffers, ingest queues, and parsing or indexing expansion are not fully accounted for, so this is not a strict cap on memory usage or total process RSS. It is disabled by default; set it to a positive byte size such as `2GiB` to enable it.
 
 Set the `QW_INDEXING_MAX_WRITE_THROUGHPUT` environment variable to limit the aggregate indexing IO throughput on a node. It accepts human-readable byte sizes per second, such as `500mb`, and is unlimited by default.
 

@@ -92,7 +92,8 @@ pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 pub use queue_sources::sqs_queue;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_common::metrics::{
-    IN_FLIGHT_FILE_SOURCE, IN_FLIGHT_INGEST_SOURCE, IN_FLIGHT_KAFKA_SOURCE,
+    IN_FLIGHT_DOC_PROCESSOR_MAILBOX, IN_FLIGHT_FILE_SOURCE, IN_FLIGHT_INDEX_WRITER,
+    IN_FLIGHT_INDEXER_MAILBOX, IN_FLIGHT_INGEST_SOURCE, IN_FLIGHT_KAFKA_SOURCE,
     IN_FLIGHT_KINESIS_SOURCE, IN_FLIGHT_OTHER_SOURCE, IN_FLIGHT_PUBSUB_SOURCE,
     IN_FLIGHT_PULSAR_SOURCE,
 };
@@ -320,6 +321,7 @@ pub trait Source: Send + 'static {
 pub struct SourceActor {
     source: Box<dyn Source>,
     doc_processor_mailbox: Mailbox<DocProcessor>,
+    indexing_memory_limit: Option<ByteSize>,
 }
 
 impl SourceActor {
@@ -327,7 +329,13 @@ impl SourceActor {
         SourceActor {
             source,
             doc_processor_mailbox,
+            indexing_memory_limit: None,
         }
+    }
+
+    pub(crate) fn with_indexing_memory_limit(mut self, limit: Option<ByteSize>) -> Self {
+        self.indexing_memory_limit = limit;
+        self
     }
 }
 
@@ -387,6 +395,18 @@ impl Handler<Loop> for SourceActor {
     type Reply = ();
 
     async fn handle(&mut self, _message: Loop, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
+        if let Some(limit) = self.indexing_memory_limit {
+            // These gauges have local atomic values, independent of the metrics exporter.
+            // Batch guards account for raw input bytes while queued and being handled;
+            // the writer guard remains alive through serialization. Let that work drain.
+            let usage = IN_FLIGHT_INDEX_WRITER.get()
+                + IN_FLIGHT_DOC_PROCESSOR_MAILBOX.get()
+                + IN_FLIGHT_INDEXER_MAILBOX.get();
+            if usage >= limit.as_u64() as f64 {
+                ctx.schedule_self_msg(Duration::from_millis(100), Loop);
+                return Ok(());
+            }
+        }
         let wait_for = self
             .source
             .emit_batches(&self.doc_processor_mailbox, ctx)
