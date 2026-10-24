@@ -1,0 +1,37 @@
+[package]
+name = "quickwit-telemetry"
+description = "Anonymous usage telemetry"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+hostname = { workspace = true }
+md5 = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+sysinfo = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+username = { workspace = true }
+uuid = { workspace = true }
+
+# This is actually not used directly the goal is to fix the version
+# used by reqwest. 0.8.30 has an unclear license.
+encoding_rs = { workspace = true }
+
+quickwit-common = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+
+[package.metadata.cargo-machete]
+# see above
+ignored = ["encoding_rs"]

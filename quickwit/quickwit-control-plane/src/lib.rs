@@ -18,6 +18,7 @@ pub mod indexing_scheduler;
 pub mod ingest;
 pub(crate) mod metrics;
 pub(crate) mod model;
+mod telemetry;
 
 use quickwit_common::tower::Pool;
 use quickwit_proto::indexing::{CpuCapacity, IndexingServiceClient, IndexingTask};

@@ -25,10 +25,12 @@ use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_serve::tcp_listener::DefaultTcpListenerResolver;
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn, reload_tls_cert, serve_quickwit};
+use quickwit_telemetry::payload::TelemetryEvent;
 use tokio::signal;
 use tracing::{debug, info};
 
 use crate::checklist::{BLUE_COLOR, RED_COLOR};
+use crate::telemetry::{quickwit_telemetry_info, set_install_uuid};
 use crate::{config_cli_arg, get_resolvers, load_node_config, start_actor_runtimes};
 
 pub fn build_run_command() -> Command {
@@ -124,6 +126,13 @@ impl RunCliCommand {
         let (storage_resolver, metastore_resolver) =
             get_resolvers(&node_config.storage_configs, &node_config.metastore_configs);
         crate::busy_detector::set_enabled(true);
+        let mut telemetry_info = quickwit_telemetry_info(&node_config);
+        let is_new_install = set_install_uuid(&mut telemetry_info, &node_config.data_dir_path);
+        let telemetry_handle_opt = quickwit_telemetry::start_telemetry_loop(telemetry_info);
+        if is_new_install {
+            quickwit_telemetry::send_telemetry_event(TelemetryEvent::Install).await;
+        }
+        quickwit_telemetry::send_telemetry_event(TelemetryEvent::RunCommand).await;
         // TODO move in serve quickwit?
         let runtimes_config = RuntimesConfig::default();
         start_actor_runtimes(runtimes_config, &node_config.enabled_services)?;
@@ -132,7 +141,7 @@ impl RunCliCommand {
         });
         // Reload TLS certificates on SIGHUP for the lifetime of the process.
         tokio::spawn(listen_sighup());
-        serve_quickwit(
+        let serve_result = serve_quickwit(
             node_config,
             runtimes_config,
             metastore_resolver,
@@ -141,7 +150,16 @@ impl RunCliCommand {
             shutdown_signal,
             env_filter_reload_fn,
         )
-        .await?;
+        .await;
+        let return_code = match serve_result {
+            Ok(_) => 0,
+            Err(_) => 1,
+        };
+        quickwit_telemetry::send_telemetry_event(TelemetryEvent::end_command(return_code)).await;
+        if let Some(telemetry_handle) = telemetry_handle_opt {
+            telemetry_handle.terminate_telemetry().await;
+        }
+        serve_result?;
         info!("quickwit successfully terminated");
         Ok(())
     }
