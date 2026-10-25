@@ -44,6 +44,7 @@ tempfile = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true, default-features = false, features = ["rt"] }
 tracing = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
@@ -119,6 +120,7 @@ rand = { workspace = true }
 reqwest = { workspace = true }
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
 tempfile = { workspace = true }
+tower = { workspace = true }
 unicode-segmentation = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }

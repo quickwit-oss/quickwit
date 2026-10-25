@@ -7531,6 +7531,8 @@ dependencies = [
  "thiserror 2.0.18",
  "time",
  "tokio",
+ "tokio-util",
+ "tower 0.5.3",
  "tracing",
  "ulid",
  "unicode-segmentation",
@@ -10772,6 +10774,7 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]
