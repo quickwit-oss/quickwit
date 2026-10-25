@@ -403,6 +403,7 @@ pub(crate) fn split_phase_sum_microsecs(stats: &SplitResourceStats) -> u64 {
 }
 
 /// Field-wise sum of two `SplitResourceStats` (every field is extensive).
+/// `field_download_stats` are summed by `(field_name, component)`.
 pub(crate) fn add_split_stats(acc: &mut SplitResourceStats, other: &SplitResourceStats) {
     acc.split_num_docs += other.split_num_docs;
     acc.input_memory_bytes += other.input_memory_bytes;
@@ -413,6 +414,21 @@ pub(crate) fn add_split_stats(acc: &mut SplitResourceStats, other: &SplitResourc
     acc.warmup_microsecs += other.warmup_microsecs;
     acc.wait_for_cpu_pool_microsecs += other.wait_for_cpu_pool_microsecs;
     acc.cpu_search_microsecs += other.cpu_search_microsecs;
+    for other_field_stats in &other.field_download_stats {
+        // Linear scan: a query warms up a handful of field components.
+        let acc_field_stats_opt = acc.field_download_stats.iter_mut().find(|acc_field_stats| {
+            acc_field_stats.field_name == other_field_stats.field_name
+                && acc_field_stats.component == other_field_stats.component
+        });
+        let Some(acc_field_stats) = acc_field_stats_opt else {
+            acc.field_download_stats.push(other_field_stats.clone());
+            continue;
+        };
+        acc_field_stats.requested_num_bytes += other_field_stats.requested_num_bytes;
+        acc_field_stats.requested_num_requests += other_field_stats.requested_num_requests;
+        acc_field_stats.download_num_bytes += other_field_stats.download_num_bytes;
+        acc_field_stats.download_num_requests += other_field_stats.download_num_requests;
+    }
 }
 
 /// Min of two `Option<u64>`, treating `None` as "no contribution":
@@ -462,10 +478,13 @@ pub(crate) fn add_leaf_stats(acc: &mut LeafResourceStats, other: &LeafResourceSt
             .get_or_insert_with(SplitResourceStats::default);
         add_split_stats(acc_split, other_split);
     }
-    acc.split_resources_worst = [acc.split_resources_worst, other.split_resources_worst]
-        .into_iter()
-        .flatten()
-        .max_by_key(split_phase_sum_microsecs);
+    acc.split_resources_worst = [
+        acc.split_resources_worst.take(),
+        other.split_resources_worst.clone(),
+    ]
+    .into_iter()
+    .flatten()
+    .max_by_key(split_phase_sum_microsecs);
 }
 
 /// Merge an iterator of `Option<LeafResourceStats>` into a single `Option<LeafResourceStats>`.
@@ -488,6 +507,8 @@ pub(crate) fn merge_leaf_stats_it<'a>(
 
 #[cfg(test)]
 mod stats_merge_tests {
+    use quickwit_proto::search::FieldDownloadStats;
+
     use super::*;
 
     fn split_stats(num_docs: u64, warmup: u64, search: u64) -> SplitResourceStats {
@@ -503,7 +524,7 @@ mod stats_merge_tests {
         LeafResourceStats {
             localexec_num_splits: 1,
             localexec_num_docs: split.split_num_docs,
-            split_resources_sum: Some(split),
+            split_resources_sum: Some(split.clone()),
             split_resources_worst: Some(split),
             ..Default::default()
         }
@@ -515,6 +536,18 @@ mod stats_merge_tests {
     /// destructure forces the test to be updated whenever a field is added.
     #[test]
     fn test_add_split_stats_sums_every_field() {
+        let term_stats = FieldDownloadStats {
+            field_name: "body".to_string(),
+            component: "term".to_string(),
+            requested_num_bytes: 1,
+            requested_num_requests: 10,
+            download_num_bytes: 100,
+            download_num_requests: 1_000,
+        };
+        let postings_stats = FieldDownloadStats {
+            component: "idx".to_string(),
+            ..term_stats.clone()
+        };
         let mut acc = SplitResourceStats {
             split_num_docs: 1,
             input_memory_bytes: 10,
@@ -525,6 +558,7 @@ mod stats_merge_tests {
             warmup_microsecs: 1_000_000,
             wait_for_cpu_pool_microsecs: 10_000_000,
             cpu_search_microsecs: 100_000_000,
+            field_download_stats: vec![term_stats.clone()],
         };
         let other = SplitResourceStats {
             split_num_docs: 2,
@@ -536,6 +570,7 @@ mod stats_merge_tests {
             warmup_microsecs: 2_000_000,
             wait_for_cpu_pool_microsecs: 20_000_000,
             cpu_search_microsecs: 200_000_000,
+            field_download_stats: vec![term_stats.clone(), postings_stats.clone()],
         };
         // Destructure on the proto type itself so a newly-added field forces
         // an update to this test (otherwise the assertion below would silently
@@ -550,7 +585,8 @@ mod stats_merge_tests {
             warmup_microsecs: _,
             wait_for_cpu_pool_microsecs: _,
             cpu_search_microsecs: _,
-        } = other;
+            field_download_stats: _,
+        } = &other;
 
         add_split_stats(&mut acc, &other);
 
@@ -563,6 +599,17 @@ mod stats_merge_tests {
         assert_eq!(acc.warmup_microsecs, 3_000_000);
         assert_eq!(acc.wait_for_cpu_pool_microsecs, 30_000_000);
         assert_eq!(acc.cpu_search_microsecs, 300_000_000);
+        let summed_term_stats = FieldDownloadStats {
+            requested_num_bytes: 2,
+            requested_num_requests: 20,
+            download_num_bytes: 200,
+            download_num_requests: 2_000,
+            ..term_stats
+        };
+        assert_eq!(
+            acc.field_download_stats,
+            vec![summed_term_stats, postings_stats]
+        );
     }
 
     #[test]
@@ -573,7 +620,7 @@ mod stats_merge_tests {
             cpu_search_microsecs: 1_000,
             ..Default::default()
         };
-        let snapshot = acc;
+        let snapshot = acc.clone();
         add_split_stats(&mut acc, &SplitResourceStats::default());
         assert_eq!(acc, snapshot);
     }
@@ -607,7 +654,7 @@ mod stats_merge_tests {
             lambda_bottleneck: 0,
             localexec_num_splits: 1_000_000,
             localexec_num_docs: 10_000_000,
-            split_resources_worst: Some(split_a),
+            split_resources_worst: Some(split_a.clone()),
             split_resources_sum: Some(split_a),
             min_wait_for_search_permit_microsecs: Some(100),
             min_wait_for_cpu_pool_microsecs: Some(2_000),
@@ -624,7 +671,7 @@ mod stats_merge_tests {
             lambda_bottleneck: 1,
             localexec_num_splits: 2_000_000,
             localexec_num_docs: 20_000_000,
-            split_resources_worst: Some(split_b),
+            split_resources_worst: Some(split_b.clone()),
             split_resources_sum: Some(split_b),
             min_wait_for_search_permit_microsecs: Some(50),
             min_wait_for_cpu_pool_microsecs: Some(1_000),
@@ -709,7 +756,7 @@ mod stats_merge_tests {
             lambda_bottleneck: 1,
             localexec_num_splits: 1,
             localexec_num_docs: 3,
-            split_resources_sum: Some(split),
+            split_resources_sum: Some(split.clone()),
             split_resources_worst: Some(split),
             // Set the min fields explicitly so this test verifies that
             // `min_opt(Some(x), None) = Some(x)` keeps them unchanged.
@@ -718,7 +765,7 @@ mod stats_merge_tests {
             wall_time_microsecs: 42,
             ..Default::default()
         };
-        let snapshot = acc;
+        let snapshot = acc.clone();
         add_leaf_stats(&mut acc, &LeafResourceStats::default());
         assert_eq!(acc, snapshot);
     }
