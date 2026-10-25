@@ -20,7 +20,7 @@ use quickwit_common::uri::Uri;
 use quickwit_config::{S3StorageConfig, StorageBackend};
 use tokio::sync::OnceCell;
 
-use super::s3_compatible_storage::create_s3_client;
+use super::s3_compatible_storage::{create_s3_client, download_io_controls};
 use crate::{
     DebouncedStorage, S3CompatibleObjectStorage, Storage, StorageFactory, StorageResolverError,
 };
@@ -34,14 +34,19 @@ pub struct S3CompatibleObjectStorageFactory {
     // end up being used, or if something like azure, gcs, or even local files, will be used
     // instead.
     s3_client: OnceCell<S3Client>,
+    // Shared by every storage resolved by this factory, making the configured throughput limit
+    // aggregate across buckets and search requests in this process.
+    download_io_controls_opt: Option<quickwit_common::io::IoControls>,
 }
 
 impl S3CompatibleObjectStorageFactory {
     /// Creates a new S3-compatible storage factory.
     pub fn new(storage_config: S3StorageConfig) -> Self {
+        let download_io_controls_opt = download_io_controls(&storage_config);
         Self {
             storage_config,
             s3_client: OnceCell::new(),
+            download_io_controls_opt,
         }
     }
 }
@@ -58,9 +63,13 @@ impl StorageFactory for S3CompatibleObjectStorageFactory {
             .get_or_init(|| create_s3_client(&self.storage_config))
             .await
             .clone();
-        let storage =
-            S3CompatibleObjectStorage::from_uri_and_client(&self.storage_config, uri, s3_client)
-                .await?;
+        let storage = S3CompatibleObjectStorage::from_uri_client_and_download_controls(
+            &self.storage_config,
+            uri,
+            s3_client,
+            self.download_io_controls_opt.clone(),
+        )
+        .await?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }
 }
