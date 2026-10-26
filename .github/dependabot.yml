@@ -3,6 +3,9 @@ updates:
   # Rust dependencies
   - package-ecosystem: cargo
     directory: "/quickwit"
+    labels:
+      - "dependencies"
+      - "type:chore"
     schedule:
       interval: "monthly"
     groups:
@@ -33,6 +36,10 @@ updates:
   # Docker dependencies
   - package-ecosystem: docker
     directory: "/"
+    labels:
+      - "dependencies"
+      - "type:chore"
+      - "area:packaging"
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 10
@@ -42,6 +49,10 @@ updates:
   # GitHub Actions
   - package-ecosystem: github-actions
     directory: "/"
+    labels:
+      - "dependencies"
+      - "type:chore"
+      - "area:ci"
     schedule:
       interval: "monthly"
     groups:
@@ -59,6 +70,10 @@ updates:
   # NPM dependencies
   - package-ecosystem: npm
     directory: "/quickwit/quickwit-ui"
+    labels:
+      - "dependencies"
+      - "type:chore"
+      - "area:ui"
     schedule:
       interval: "monthly"
     groups:

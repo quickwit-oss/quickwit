@@ -913,7 +913,11 @@ async fn leaf_search_single_split(
             search_request.clone(),
             leaf_search_response.clone(),
         );
-        leaf_search_state_guard.set_state(SplitSearchState::PrunedDuringWarmup);
+        leaf_search_state_guard.set_state(if cached_known_empty {
+            SplitSearchState::PrunedBeforeWarmup
+        } else {
+            SplitSearchState::PrunedDuringWarmup
+        });
         return Ok(Some(leaf_search_response));
     }
 
