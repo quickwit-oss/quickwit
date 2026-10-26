@@ -20,6 +20,7 @@ use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use quickwit_query::query_ast::QueryAst;
 use tantivy::collector::DocSetCollector;
 use tantivy::directory::RamDirectory;
+use tantivy::schema::{Field, Value};
 use tantivy::jitexpr::compile::ExprCompilationCache;
 use tantivy::{Index, IndexBuilder, ReloadPolicy, TantivyDocument};
 
@@ -44,12 +45,14 @@ pub(crate) struct FilteredDocs {
 /// `max_num_docs` of them, so that no work is spent on documents dropped by the rate limiter.
 ///
 /// The query is evaluated with the same semantics as a search: the documents are indexed into a
-/// single-segment in-RAM Tantivy index built with the doc mapper of their pipeline, and the query
+/// single-segment in-RAM Tantivy index built with the doc mapper of their shard, and the query
 /// is built with `DocMapper::query`, exactly like a leaf search does on a split.
 ///
 /// Precondition: `query_ast` must be resolved, i.e. it must not contain `UserInput` nodes.
 ///
-/// This is CPU-intensive: call it from a thread pool.
+/// The documents of the batches that no other session filtered yet are parsed here.
+///
+/// This is CPU-intensive: call it from the live tail thread pool.
 pub(crate) fn filter_batches(
     query_ast: &QueryAst,
     tail_batches: &[Arc<TailBatch>],
@@ -60,7 +63,7 @@ pub(crate) fn filter_batches(
     let mut num_matching_docs = 0;
     let mut docs_json: Vec<Vec<u8>> = Vec::new();
 
-    // Batches processed with different doc mappings, e.g. right after an index update, are
+    // Batches persisted with different doc mappings, e.g. right after an index update, are
     // filtered separately.
     for same_mapping_batches in tail_batches.chunk_by(|left, right| {
         left.doc_mapper.doc_mapping_uid() == right.doc_mapper.doc_mapping_uid()
@@ -68,7 +71,7 @@ pub(crate) fn filter_batches(
         let doc_mapper = &same_mapping_batches[0].doc_mapper;
         let docs: Vec<&TailDoc> = same_mapping_batches
             .iter()
-            .flat_map(|tail_batch| tail_batch.docs.iter())
+            .flat_map(|tail_batch| tail_batch.docs().iter())
             .collect();
         num_docs += docs.len();
 
@@ -93,14 +96,41 @@ pub(crate) fn filter_batches(
 
 /// Returns the positions of the documents matching the query, in increasing order.
 ///
-/// Precondition: `docs` were successfully mapped by `doc_mapper` in the indexing pipeline.
+/// Documents rejected by the doc mapper are skipped: the indexing pipeline does not index them
+/// either. The ingester only lets them through when document validation is disabled for the index.
 fn matching_doc_positions(
     doc_mapper: &DocMapper,
     query_ast: &QueryAst,
     docs: &[&TailDoc],
 ) -> anyhow::Result<Vec<usize>> {
+    let timestamp_field_opt: Option<Field> = doc_mapper
+        .timestamp_field_name()
+        .map(|timestamp_field_name| doc_mapper.schema().get_field(timestamp_field_name))
+        .transpose()?;
+    let mut tantivy_docs: Vec<TantivyDocument> = Vec::with_capacity(docs.len());
+    // Position in `docs` of each document of `tantivy_docs`.
+    let mut doc_positions: Vec<usize> = Vec::with_capacity(docs.len());
+
+    for (doc_position, tail_doc) in docs.iter().enumerate() {
+        let Ok((_partition, tantivy_doc)) =
+            doc_mapper.doc_from_json_obj(tail_doc.json_obj.clone(), tail_doc.num_bytes)
+        else {
+            continue;
+        };
+        // Like the `DocProcessor`, skip the documents without timestamp.
+        if let Some(timestamp_field) = timestamp_field_opt
+            && tantivy_doc
+                .get_first(timestamp_field)
+                .and_then(|value| value.as_datetime())
+                .is_none()
+        {
+            continue;
+        }
+        tantivy_docs.push(tantivy_doc);
+        doc_positions.push(doc_position);
+    }
     if matches!(query_ast, QueryAst::MatchAll) {
-        return Ok((0..docs.len()).collect());
+        return Ok(doc_positions);
     }
     let mut index_writer = IndexBuilder::new()
         .schema(doc_mapper.schema())
@@ -115,11 +145,9 @@ fn matching_doc_positions(
             INDEX_WRITER_MEMORY_BUDGET_BYTES,
         )?;
     // With a single segment and no doc ID mapping, doc IDs are assigned in insertion order: the
-    // doc ID of a document is its position in `docs`.
-    for tail_doc in docs {
-        let (_partition, doc) =
-            doc_mapper.doc_from_json_obj(tail_doc.json_obj.clone(), tail_doc.num_bytes)?;
-        index_writer.add_document(doc)?;
+    // doc ID of a document is its index in `tantivy_docs`.
+    for tantivy_doc in tantivy_docs {
+        index_writer.add_document(tantivy_doc)?;
     }
     let mut index = index_writer.finalize()?;
     set_expr_compilation_cache(&mut index);
@@ -130,13 +158,13 @@ fn matching_doc_positions(
         .try_into()?
         .searcher();
     let (query, _warmup_info) = doc_mapper.query(index.schema(), query_ast.clone(), false, None)?;
-    let mut doc_positions: Vec<usize> = searcher
+    let mut matching_doc_positions: Vec<usize> = searcher
         .search(&query, &DocSetCollector)?
         .into_iter()
-        .map(|doc_address| doc_address.doc_id as usize)
+        .map(|doc_address| doc_positions[doc_address.doc_id as usize])
         .collect();
-    doc_positions.sort_unstable();
-    Ok(doc_positions)
+    matching_doc_positions.sort_unstable();
+    Ok(matching_doc_positions)
 }
 
 /// Shares compiled expressions across the short-lived per-batch indexes, like the leaf search
@@ -154,6 +182,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::hub::doc_batch_for_test;
 
     const DOC_MAPPING_YAML: &str = r#"
         field_mappings:
@@ -175,24 +204,19 @@ mod tests {
         mode: dynamic
     "#;
 
+    fn tail_batch_with_doc_mapper(
+        doc_mapper: DocMapper,
+        docs: &[serde_json::Value],
+    ) -> Arc<TailBatch> {
+        Arc::new(TailBatch::new(
+            Arc::new(doc_mapper),
+            doc_batch_for_test(docs),
+        ))
+    }
+
     fn tail_batch(docs: Vec<serde_json::Value>) -> Arc<TailBatch> {
         let doc_mapper: DocMapper = serde_yaml::from_str(DOC_MAPPING_YAML).unwrap();
-        let docs = docs
-            .into_iter()
-            .map(|doc| {
-                let serde_json::Value::Object(json_obj) = doc else {
-                    unreachable!()
-                };
-                TailDoc {
-                    json_obj,
-                    num_bytes: 100,
-                }
-            })
-            .collect();
-        Arc::new(TailBatch {
-            doc_mapper: Arc::new(doc_mapper),
-            docs,
-        })
+        tail_batch_with_doc_mapper(doc_mapper, &docs)
     }
 
     fn tail_batches() -> Vec<Arc<TailBatch>> {
@@ -313,16 +337,7 @@ mod tests {
                 "#
             ))
             .unwrap();
-            let serde_json::Value::Object(json_obj) = json!({"severity_text": "ERROR"}) else {
-                unreachable!()
-            };
-            Arc::new(TailBatch {
-                doc_mapper: Arc::new(doc_mapper),
-                docs: vec![TailDoc {
-                    json_obj,
-                    num_bytes: 100,
-                }],
-            })
+            tail_batch_with_doc_mapper(doc_mapper, &[json!({"severity_text": "ERROR"})])
         };
         // The index was updated: the tokenizer changed from `raw` to `default`.
         let tail_batches = [
@@ -335,5 +350,25 @@ mod tests {
         // Only the document tokenized with the `default` tokenizer, which lowercases, matches.
         let filtered_docs = filter_batches(&query_ast, &tail_batches, 10).unwrap();
         assert_eq!(filtered_docs.num_matching_docs, 1);
+    }
+
+    #[test]
+    fn test_filter_batches_skips_docs_rejected_by_the_doc_mapper() {
+        // Document validation is disabled for the index: the ingester persisted a document
+        // without timestamp, which the indexing pipeline does not index.
+        let tail_batches = [tail_batch(vec![
+            json!({"severity_text": "ERROR", "body": "no timestamp"}),
+            json!({"timestamp": 1_700_000_000, "severity_text": "ERROR", "body": "Disk full"}),
+        ])];
+        let filtered_docs = filter_batches(&QueryAst::MatchAll, &tail_batches, 10).unwrap();
+        assert_eq!(filtered_docs.num_matching_docs, 1);
+
+        let query_ast = query_ast_from_user_text("severity_text:ERROR", None)
+            .parse_user_query(&[])
+            .unwrap();
+        let filtered_docs = filter_batches(&query_ast, &tail_batches, 10).unwrap();
+        assert_eq!(filtered_docs.num_matching_docs, 1);
+        let doc: serde_json::Value = serde_json::from_slice(&filtered_docs.docs_json[0]).unwrap();
+        assert_eq!(doc["body"], "Disk full");
     }
 }

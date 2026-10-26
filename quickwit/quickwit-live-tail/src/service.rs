@@ -26,7 +26,7 @@ use tokio::sync::Semaphore;
 use crate::LiveTailHub;
 use crate::session::LiveTailSession;
 
-/// Implementation of the live tail service hosted by indexer nodes.
+/// Implementation of the live tail service hosted by ingester nodes.
 #[derive(Debug, Clone)]
 pub struct LiveTailServiceImpl {
     hub: LiveTailHub,
@@ -72,7 +72,7 @@ impl LiveTailService for LiveTailServiceImpl {
             .try_acquire_owned()
             .map_err(|_| LiveTailError::TooManyRequests)?;
 
-        // Subscribe before returning so that no document processed after this call is missed.
+        // Subscribe before returning so that no document persisted after this call is missed.
         let batch_rx = self.hub.subscribe(&index_uid);
         let (message_tx, message_stream) = ServiceStream::new_bounded(3);
         let session = LiveTailSession::new(
@@ -98,7 +98,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::{LiveTailTap, TailDoc};
+    use crate::hub::doc_batch_for_test;
 
     const DOC_MAPPING_JSON: &str = r#"{
         "field_mappings": [
@@ -108,9 +108,13 @@ mod tests {
         "mode": "dynamic"
     }"#;
 
-    fn publish(tap: &LiveTailTap, docs: Vec<TailDoc>) {
+    fn publish(hub: &LiveTailHub, docs: Vec<serde_json::Value>) {
         let doc_mapper: DocMapper = serde_json::from_str(DOC_MAPPING_JSON).unwrap();
-        tap.publish(Arc::new(doc_mapper), docs);
+        hub.publish(
+            &IndexUid::for_test("test-index", 0),
+            Arc::new(doc_mapper),
+            doc_batch_for_test(&docs),
+        );
     }
 
     fn open_live_tail_request(user_query: &str, max_docs_per_sec: u32) -> OpenLiveTailRequest {
@@ -125,16 +129,8 @@ mod tests {
         }
     }
 
-    fn tail_doc(severity_text: &str, body: &str) -> TailDoc {
-        let serde_json::Value::Object(json_obj) =
-            json!({"severity_text": severity_text, "body": body})
-        else {
-            unreachable!()
-        };
-        TailDoc {
-            json_obj,
-            num_bytes: 64,
-        }
+    fn tail_doc(severity_text: &str, body: &str) -> serde_json::Value {
+        json!({"severity_text": severity_text, "body": body})
     }
 
     async fn next_message(
@@ -146,17 +142,16 @@ mod tests {
     #[tokio::test]
     async fn test_live_tail_service_streams_matching_docs() {
         let hub = LiveTailHub::default();
-        let tap = hub.tap(IndexUid::for_test("test-index", 0));
-        let live_tail_service = LiveTailServiceImpl::new(hub, 1, 100);
+        let live_tail_service = LiveTailServiceImpl::new(hub.clone(), 1, 100);
 
         let mut stream = live_tail_service
             .open_live_tail(open_live_tail_request("severity_text:ERROR", 100))
             .await
             .unwrap();
-        assert!(tap.is_active());
+        assert!(hub.is_active(&IndexUid::for_test("test-index", 0)));
 
         publish(
-            &tap,
+            &hub,
             vec![
                 tail_doc("INFO", "all good"),
                 tail_doc("ERROR", "connection refused"),
@@ -195,21 +190,20 @@ mod tests {
         })
         .await
         .unwrap();
-        assert!(!tap.is_active());
+        assert!(!hub.is_active(&IndexUid::for_test("test-index", 0)));
     }
 
     #[tokio::test]
     async fn test_live_tail_service_caps_requested_rate() {
         let hub = LiveTailHub::default();
-        let tap = hub.tap(IndexUid::for_test("test-index", 0));
-        let live_tail_service = LiveTailServiceImpl::new(hub, 1, 2);
+        let live_tail_service = LiveTailServiceImpl::new(hub.clone(), 1, 2);
 
         let mut stream = live_tail_service
             .open_live_tail(open_live_tail_request("*", 100))
             .await
             .unwrap();
         publish(
-            &tap,
+            &hub,
             vec![
                 tail_doc("INFO", "one"),
                 tail_doc("INFO", "two"),

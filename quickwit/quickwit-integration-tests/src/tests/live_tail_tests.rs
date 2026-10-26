@@ -60,7 +60,8 @@ impl SseReader {
 #[tokio::test]
 async fn test_live_tail_streams_matching_docs_before_commit() {
     quickwit_common::setup_logging_for_tests();
-    // The REST node coordinates the live tail and reaches the indexer node over gRPC.
+    // The REST node coordinates the live tail and reaches the ingester of the indexer node over
+    // gRPC.
     let sandbox = ClusterSandboxBuilder::default()
         .add_node([QuickwitService::Indexer])
         .add_node([
@@ -96,8 +97,7 @@ async fn test_live_tail_streams_matching_docs_before_commit() {
         .await
         .unwrap();
 
-    // Ingest a first document so that a shard is opened and an indexing pipeline is spawned. It
-    // must not match the query.
+    // Ingest a first document so that a shard is opened. It must not match the query.
     ingest(
         &indexer_client,
         index_id,
@@ -106,7 +106,6 @@ async fn test_live_tail_streams_matching_docs_before_commit() {
     )
     .await
     .unwrap();
-    sandbox.wait_for_indexing_pipelines(1).await.unwrap();
 
     let searcher_config = sandbox
         .node_configs
@@ -129,8 +128,8 @@ async fn test_live_tail_streams_matching_docs_before_commit() {
         response,
         buffer: String::new(),
     };
-    // The coordinator discovers the indexer within one refresh interval, once the indexer's
-    // indexing tasks are gossiped: ingest until the first matching document is received.
+    // The coordinator discovers the ingester within one refresh interval, once its open shards
+    // are gossiped: ingest until the first matching document is received.
     let ndjson = [
         json!({"level": "INFO", "body": "all good"}),
         json!({"level": "ERROR", "body": "connection refused"}),

@@ -641,8 +641,8 @@ pub async fn serve_quickwit(
 
     let indexing_split_cache = indexing_split_cache_for_config(&node_config).await?;
 
-    // Receives the documents processed by the local indexing pipelines and fans them out to the
-    // live tail sessions.
+    // Receives the documents persisted by the local ingester and fans them out to the live tail
+    // sessions.
     let live_tail_hub = LiveTailHub::default();
     let live_tail_service_opt = node_config
         .is_service_enabled(QuickwitService::Indexer)
@@ -677,7 +677,6 @@ pub async fn serve_quickwit(
             event_broker.clone(),
             merge_scheduler_mailbox_opt,
             split_cache,
-            live_tail_hub,
         )
         .await
         .context("failed to start indexing service")?;
@@ -701,6 +700,7 @@ pub async fn serve_quickwit(
         &event_broker,
         control_plane_client.clone(),
         ingester_pool,
+        live_tail_hub,
     )
     .await
     .context("failed to start ingest v2 service")?;
@@ -1147,6 +1147,7 @@ async fn setup_ingest_v2(
     event_broker: &EventBroker,
     control_plane: ControlPlaneServiceClient,
     ingester_pool: IngesterPool,
+    live_tail_hub: LiveTailHub,
 ) -> anyhow::Result<(IngestRouter, IngestRouterServiceClient, Option<Ingester>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().to_owned();
@@ -1195,7 +1196,8 @@ async fn setup_ingest_v2(
             rate_limiter_settings,
             idle_shard_timeout,
         )
-        .await?;
+        .await?
+        .with_live_tail_hub(live_tail_hub);
         ingester.subscribe(event_broker);
         // We will now receive all new shard positions update events, from chitchat.
         // Unfortunately at this point, chitchat is already running.

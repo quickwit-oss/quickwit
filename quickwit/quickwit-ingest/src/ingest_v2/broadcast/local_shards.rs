@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::time::Duration;
 
 use bytesize::ByteSize;
@@ -23,7 +23,7 @@ use quickwit_common::shared_consts::INGESTER_SHARDS_PREFIX;
 use quickwit_common::sorted_iter::{KeyDiff, SortedByKeyIterator};
 use quickwit_common::tower::{ConstantRate, Rate};
 use quickwit_proto::ingest::ShardState;
-use quickwit_proto::types::{NodeId, ShardId, SourceUid};
+use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 use serde::{Deserialize, Serialize, Serializer};
 use tokio::task::JoinHandle;
 use tracing::{debug, instrument, warn};
@@ -398,6 +398,34 @@ pub async fn setup_local_shards_update_listener(
         .await
 }
 
+/// Returns the ingesters hosting at least one open shard of `index_uid`, according to the shards
+/// they broadcast. The broadcast lags behind the actual state of the shards by up to
+/// `BROADCAST_INTERVAL_PERIOD`.
+pub async fn find_ingesters_with_open_shards(
+    cluster: &Cluster,
+    index_uid: &IndexUid,
+) -> HashSet<NodeId> {
+    let key_prefix = format!("{INGESTER_SHARDS_PREFIX}{index_uid}:");
+    let mut ingester_ids = HashSet::new();
+
+    for (ingester_id, key, value) in cluster
+        .live_nodes_key_values_with_prefix(&key_prefix)
+        .await
+    {
+        let Ok(shard_infos) = serde_json::from_str::<ShardInfos>(&value) else {
+            warn!("failed to parse shard infos of key `{key}`: `{value}`");
+            continue;
+        };
+        if shard_infos
+            .iter()
+            .any(|shard_info| shard_info.shard_state.is_open())
+        {
+            ingester_ids.insert(ingester_id);
+        }
+    }
+    ingester_ids
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -645,6 +673,50 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         assert_eq!(local_shards_update_counter.load(Ordering::Acquire), 1);
+    }
+
+    #[tokio::test]
+    async fn test_find_ingesters_with_open_shards() {
+        let transport = ChitchatTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let other_index_uid = IndexUid::for_test("test-index", 1);
+
+        let set_shards = |index_uid: &IndexUid, source_id: &str, shard_state: ShardState| {
+            let source_uid = SourceUid {
+                index_uid: index_uid.clone(),
+                source_id: SourceId::from(source_id),
+            };
+            let key = make_key(INGESTER_SHARDS_PREFIX, &source_uid);
+            let value = serde_json::to_string(&vec![ShardInfo {
+                shard_id: ShardId::from(1),
+                shard_state,
+                short_term_ingestion_rate: RateMibPerSec(0),
+                long_term_ingestion_rate: RateMibPerSec(0),
+            }])
+            .unwrap();
+            let cluster = cluster.clone();
+            async move { cluster.set_self_key_value(key, value).await }
+        };
+        assert!(
+            find_ingesters_with_open_shards(&cluster, &index_uid)
+                .await
+                .is_empty()
+        );
+        set_shards(&index_uid, "source-1", ShardState::Closed).await;
+        set_shards(&other_index_uid, "source-1", ShardState::Open).await;
+        assert!(
+            find_ingesters_with_open_shards(&cluster, &index_uid)
+                .await
+                .is_empty()
+        );
+        set_shards(&index_uid, "source-2", ShardState::Open).await;
+        assert_eq!(
+            find_ingesters_with_open_shards(&cluster, &index_uid).await,
+            HashSet::from([cluster.self_node_id()])
+        );
     }
 
     #[test]

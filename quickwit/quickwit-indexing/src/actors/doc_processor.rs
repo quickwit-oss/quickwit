@@ -24,7 +24,6 @@ use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceInputFormat, TransformConfig};
 use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
-use quickwit_live_tail::{LiveTailTap, TailDoc};
 use quickwit_metrics::{Counter, counter, labels};
 use quickwit_opentelemetry::otlp::{
     JsonLogIterator, JsonSpanIterator, OtlpLogsError, OtlpTracesError, parse_otlp_logs_json,
@@ -414,7 +413,6 @@ pub struct DocProcessor {
     #[cfg(feature = "vrl")]
     transform_opt: Option<VrlProgram>,
     input_format: SourceInputFormat,
-    live_tail_tap_opt: Option<LiveTailTap>,
 }
 
 impl DocProcessor {
@@ -443,14 +441,7 @@ impl DocProcessor {
                 .map(VrlProgram::try_from_transform_config)
                 .transpose()?,
             input_format,
-            live_tail_tap_opt: None,
         })
-    }
-
-    /// Publishes the processed documents, after the VRL transform, to the live tail sessions.
-    pub fn with_live_tail_tap(mut self, live_tail_tap: LiveTailTap) -> Self {
-        self.live_tail_tap_opt = Some(live_tail_tap);
-        self
     }
 
     // Extract a timestamp from a tantivy document.
@@ -473,14 +464,7 @@ impl DocProcessor {
         Ok(Some(timestamp))
     }
 
-    /// Processes a raw document. When `tail_docs_opt` is `Some`, the successfully processed
-    /// documents are also collected for live tail.
-    fn process_raw_doc(
-        &mut self,
-        raw_doc: Bytes,
-        processed_docs: &mut Vec<ProcessedDoc>,
-        tail_docs_opt: &mut Option<Vec<TailDoc>>,
-    ) {
+    fn process_raw_doc(&mut self, raw_doc: Bytes, processed_docs: &mut Vec<ProcessedDoc>) {
         let num_bytes = raw_doc.len();
 
         #[cfg(feature = "vrl")]
@@ -490,7 +474,7 @@ impl DocProcessor {
 
         for json_doc_result in parse_raw_doc(self.input_format, raw_doc, num_bytes, transform_opt) {
             let processed_doc_result =
-                json_doc_result.and_then(|json_doc| self.process_json_doc(json_doc, tail_docs_opt));
+                json_doc_result.and_then(|json_doc| self.process_json_doc(json_doc));
 
             match processed_doc_result {
                 Ok(processed_doc) => {
@@ -510,11 +494,7 @@ impl DocProcessor {
         }
     }
 
-    fn process_json_doc(
-        &self,
-        json_doc: JsonDoc,
-        tail_docs_opt: &mut Option<Vec<TailDoc>>,
-    ) -> Result<ProcessedDoc, DocProcessorError> {
+    fn process_json_doc(&self, json_doc: JsonDoc) -> Result<ProcessedDoc, DocProcessorError> {
         let num_bytes = json_doc.num_bytes;
         let json_value = JsonValue::Object(json_doc.json_obj);
         let fingerprint_opt = self
@@ -524,18 +504,10 @@ impl DocProcessor {
         let JsonValue::Object(json_obj) = json_value else {
             unreachable!("document JSON value is always an object")
         };
-        let tail_json_obj_opt = tail_docs_opt.is_some().then(|| json_obj.clone());
         let (partition, doc) = self
             .doc_mapper
             .doc_from_json_obj(json_obj, num_bytes as u64)?;
         let timestamp_opt = self.extract_timestamp(&doc)?;
-
-        if let (Some(tail_docs), Some(json_obj)) = (tail_docs_opt.as_mut(), tail_json_obj_opt) {
-            tail_docs.push(TailDoc {
-                json_obj,
-                num_bytes: num_bytes as u64,
-            });
-        }
         Ok(ProcessedDoc {
             doc,
             fingerprint_opt,
@@ -612,20 +584,11 @@ impl Handler<RawDocBatch> for DocProcessor {
             return Ok(());
         }
         let mut processed_docs: Vec<ProcessedDoc> = Vec::with_capacity(raw_doc_batch.docs.len());
-        // Documents are only collected for live tail when a session is watching this index.
-        let mut tail_docs_opt: Option<Vec<TailDoc>> = self
-            .live_tail_tap_opt
-            .as_ref()
-            .filter(|live_tail_tap| live_tail_tap.is_active())
-            .map(|_| Vec::new());
 
         for raw_doc in raw_doc_batch.docs {
             let _protected_zone_guard = ctx.protect_zone();
-            self.process_raw_doc(raw_doc, &mut processed_docs, &mut tail_docs_opt);
+            self.process_raw_doc(raw_doc, &mut processed_docs);
             ctx.record_progress();
-        }
-        if let (Some(live_tail_tap), Some(tail_docs)) = (&self.live_tail_tap_opt, tail_docs_opt) {
-            live_tail_tap.publish(self.doc_mapper.clone(), tail_docs);
         }
         let processed_doc_batch = ProcessedDocBatch::new(
             processed_docs,
@@ -663,7 +626,6 @@ mod tests {
     use quickwit_common::uri::Uri;
     use quickwit_config::{DocsClusteringConfig, SearchSettings, build_doc_mapper};
     use quickwit_doc_mapper::{DocMapper, default_doc_mapper_for_test};
-    use quickwit_live_tail::LiveTailHub;
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
     use quickwit_proto::opentelemetry::proto::collector::logs::v1::ExportLogsServiceRequest;
@@ -672,7 +634,6 @@ mod tests {
     use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpAnyValueValue;
     use quickwit_proto::opentelemetry::proto::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
     use quickwit_proto::opentelemetry::proto::trace::v1::{ResourceSpans, ScopeSpans, Span};
-    use quickwit_proto::types::IndexUid;
     use serde_json::Value as JsonValue;
     use tantivy::Document;
     use tantivy::schema::NamedFieldDocument;
@@ -1260,55 +1221,6 @@ mod tests {
         assert!(matches!(exit_status, ActorExitStatus::Success));
         universe.assert_quit().await;
     }
-
-    #[tokio::test]
-    async fn test_doc_processor_publishes_to_live_tail_only_when_active() {
-        let universe = Universe::with_accelerated_time();
-        let doc_mapper = Arc::new(default_doc_mapper_for_test());
-        let (indexer_mailbox, _indexer_inbox) = universe.create_test_mailbox();
-        let index_uid = IndexUid::for_test("my-index", 0);
-        let live_tail_hub = LiveTailHub::default();
-        let doc_processor = DocProcessor::try_new(
-            index_uid.index_id.clone(),
-            "my-source".to_string(),
-            doc_mapper,
-            indexer_mailbox,
-            None,
-            SourceInputFormat::Json,
-            None,
-        )
-        .unwrap()
-        .with_live_tail_tap(live_tail_hub.tap(index_uid.clone()));
-        let (doc_processor_mailbox, doc_processor_handle) =
-            universe.spawn_builder().spawn(doc_processor);
-        let raw_docs: [&[u8]; 3] = [
-            br#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#, // ok
-            br#"{"body": "missing timestamp"}"#, // rejected by the doc mapper
-            b"{", // invalid json
-        ];
-        // No session is watching: nothing is published.
-        doc_processor_mailbox
-            .send_message(RawDocBatch::for_test(&raw_docs, 0..3))
-            .await
-            .unwrap();
-        doc_processor_handle.process_pending_and_observe().await;
-
-        let mut batch_rx = live_tail_hub.subscribe(&index_uid);
-        assert!(batch_rx.try_recv().is_err());
-
-        doc_processor_mailbox
-            .send_message(RawDocBatch::for_test(&raw_docs, 3..6))
-            .await
-            .unwrap();
-        doc_processor_handle.process_pending_and_observe().await;
-
-        let tail_batch = batch_rx.try_recv().unwrap();
-        assert_eq!(tail_batch.docs.len(), 1);
-        assert_eq!(tail_batch.docs[0].json_obj["body"], "happy");
-        assert_eq!(tail_batch.docs[0].num_bytes, raw_docs[0].len() as u64);
-        assert!(batch_rx.try_recv().is_err());
-        universe.assert_quit().await;
-    }
 }
 
 #[cfg(feature = "vrl")]
@@ -1316,9 +1228,7 @@ mod tests {
 mod tests_vrl {
     use quickwit_actors::Universe;
     use quickwit_doc_mapper::default_doc_mapper_for_test;
-    use quickwit_live_tail::LiveTailHub;
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
-    use quickwit_proto::types::IndexUid;
     use tantivy::Document;
     use tantivy::schema::NamedFieldDocument;
 
@@ -1493,43 +1403,6 @@ mod tests_vrl {
                 "timestamp": 1628837062
             })
         );
-        universe.assert_quit().await;
-    }
-
-    #[tokio::test]
-    async fn test_doc_processor_publishes_transformed_docs_to_live_tail() {
-        let universe = Universe::with_accelerated_time();
-        let (indexer_mailbox, _indexer_inbox) = universe.create_test_mailbox();
-        let index_uid = IndexUid::for_test("my-index", 0);
-        let live_tail_hub = LiveTailHub::default();
-        let transform_config = TransformConfig::for_test(".body = upcase(string!(.body))");
-        let doc_processor = DocProcessor::try_new(
-            index_uid.index_id.clone(),
-            "my-source".to_string(),
-            Arc::new(default_doc_mapper_for_test()),
-            indexer_mailbox,
-            Some(transform_config),
-            SourceInputFormat::Json,
-            None,
-        )
-        .unwrap()
-        .with_live_tail_tap(live_tail_hub.tap(index_uid.clone()));
-        let (doc_processor_mailbox, doc_processor_handle) =
-            universe.spawn_builder().spawn(doc_processor);
-        let mut batch_rx = live_tail_hub.subscribe(&index_uid);
-
-        doc_processor_mailbox
-            .send_message(RawDocBatch::for_test(
-                &[br#"{"body": "happy using VRL", "timestamp": 1628837062}"#],
-                0..1,
-            ))
-            .await
-            .unwrap();
-        doc_processor_handle.process_pending_and_observe().await;
-
-        let tail_batch = batch_rx.try_recv().unwrap();
-        assert_eq!(tail_batch.docs.len(), 1);
-        assert_eq!(tail_batch.docs[0].json_obj["body"], "HAPPY USING VRL");
         universe.assert_quit().await;
     }
 }

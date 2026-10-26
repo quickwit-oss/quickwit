@@ -42,8 +42,9 @@ pub struct LiveTailQueryParams {
     /// Query in the Quickwit query language. Matches all documents by default.
     #[serde(default = "LiveTailQueryParams::default_query")]
     pub query: String,
-    /// Maximum number of documents sent per second by each indexer, capped by the indexer
-    /// `live_tail.max_docs_per_sec` setting. Extra documents are reported in `dropped` events.
+    /// Maximum number of documents sent per second by each ingester, capped by the
+    /// `live_tail.max_docs_per_sec` setting of its node. Extra documents are reported in
+    /// `dropped` events.
     #[serde(default = "LiveTailQueryParams::default_max_docs_per_sec")]
     pub max_docs_per_sec: u32,
 }
@@ -89,7 +90,7 @@ fn live_tail_filter()
 )]
 /// Live Tail
 ///
-/// Streams the documents matching a query as they are indexed, as Server-Sent Events.
+/// Streams the documents matching a query as they are ingested, as Server-Sent Events.
 pub(crate) fn live_tail_handler(
     context: LiveTailContext,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {

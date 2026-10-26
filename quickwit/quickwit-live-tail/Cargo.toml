@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-live-tail"
-description = "Live tail of documents flowing through Quickwit indexing pipelines"
+description = "Live tail of documents persisted by Quickwit ingesters"
 
 version.workspace = true
 edition.workspace = true

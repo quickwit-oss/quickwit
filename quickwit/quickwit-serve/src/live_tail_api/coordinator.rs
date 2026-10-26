@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use futures::StreamExt;
-use quickwit_cluster::ClusterNode;
-use quickwit_config::build_doc_mapper;
+use quickwit_cluster::{Cluster, ClusterNode};
+use quickwit_config::{INGEST_V2_SOURCE_ID, build_doc_mapper};
+use quickwit_ingest::find_ingesters_with_open_shards;
 use quickwit_proto::live_tail::{
     LiveTailError, LiveTailHits, LiveTailResult, LiveTailService, LiveTailServiceClient,
     OpenLiveTailRequest, live_tail_message,
@@ -34,8 +35,8 @@ use tracing::debug;
 
 use super::{LiveTailContext, LiveTailEvent};
 
-/// Interval at which the set of indexers running pipelines for the tailed indexes is refreshed.
-/// It also bounds the time it takes to reconnect to an indexer after a stream failure.
+/// Interval at which the set of ingesters hosting open shards of the tailed indexes is refreshed.
+/// It also bounds the time it takes to reconnect to an ingester after a stream failure.
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Everything needed to tail one index. Plans are built, and the query validated, before the
@@ -57,6 +58,21 @@ pub(crate) async fn plan_live_tail(
 
     for index_metadata in indexes_metadata {
         let index_config = &index_metadata.index_config;
+
+        // Live tail streams the documents persisted by the ingesters, before the VRL transform
+        // is applied by the indexing pipeline: filtering them with the doc mapping would not
+        // match what is indexed.
+        let has_transform = matches!(
+            index_metadata.sources.get(INGEST_V2_SOURCE_ID),
+            Some(source_config) if source_config.transform_config.is_some()
+        );
+        if has_transform {
+            return Err(SearchError::InvalidArgument(format!(
+                "live tail does not support index `{}`: its source `{INGEST_V2_SOURCE_ID}` has a \
+                 VRL transform",
+                index_config.index_id
+            )));
+        }
         let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
             .map_err(|error| {
                 SearchError::Internal(format!("failed to build doc mapper: {error}"))
@@ -78,14 +94,14 @@ pub(crate) async fn plan_live_tail(
     Ok(plans)
 }
 
-/// An indexer node tailed for a given index.
+/// An ingester node tailed for a given index.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct TailTarget {
     node_id: NodeId,
     index_uid: IndexUid,
 }
 
-/// Tails the indexes of `plans` on all the indexers running pipelines for them, and sends the
+/// Tails the indexes of `plans` on all the ingesters hosting open shards for them, and sends the
 /// resulting events to `event_tx` until the receiver is dropped.
 ///
 /// Each target is served by one forwarder task, which sends its events directly to `event_tx`.
@@ -109,7 +125,8 @@ pub(crate) async fn run_live_tail(
             _ = refresh_interval.tick() => {}
         }
         let ready_nodes = context.cluster.ready_nodes().await;
-        let targets = tail_targets(&plans, &ready_nodes);
+        let ingesters_per_index = find_ingesters_per_index(&context.cluster, &plans).await;
+        let targets = tail_targets(&plans, &ready_nodes, &ingesters_per_index);
 
         forwarders.retain(|target, forwarder| {
             let keep = targets.contains_key(target) && !forwarder.is_finished();
@@ -147,27 +164,42 @@ pub(crate) async fn run_live_tail(
     debug!(%session_id, "live tail ended");
 }
 
-/// Returns the indexers running pipelines for the tailed indexes, according to the indexing tasks
-/// they advertise in the cluster state.
+async fn find_ingesters_per_index(
+    cluster: &Cluster,
+    plans: &[IndexTailPlan],
+) -> HashMap<IndexUid, HashSet<NodeId>> {
+    let mut ingesters_per_index = HashMap::with_capacity(plans.len());
+
+    for plan in plans {
+        let ingester_ids = find_ingesters_with_open_shards(cluster, &plan.index_uid).await;
+        ingesters_per_index.insert(plan.index_uid.clone(), ingester_ids);
+    }
+    ingesters_per_index
+}
+
+/// Returns the ready ingesters hosting open shards of the tailed indexes.
+///
+/// Ingesters only persist documents in open shards: the other ingesters have nothing to stream.
 fn tail_targets<'a>(
     plans: &'a [IndexTailPlan],
     ready_nodes: &'a [ClusterNode],
+    ingesters_per_index: &HashMap<IndexUid, HashSet<NodeId>>,
 ) -> HashMap<TailTarget, (&'a ClusterNode, &'a IndexTailPlan)> {
     let mut targets = HashMap::new();
 
     for node in ready_nodes {
-        if !node.is_indexer() {
+        if !node.is_ingester() {
             continue;
         }
+        let node_id = &node.member().node_id;
+
         for plan in plans {
-            let runs_pipeline_for_index = node
-                .member()
-                .indexing_tasks
-                .iter()
-                .any(|indexing_task| indexing_task.index_uid.as_ref() == Some(&plan.index_uid));
-            if runs_pipeline_for_index {
+            let Some(ingester_ids) = ingesters_per_index.get(&plan.index_uid) else {
+                continue;
+            };
+            if ingester_ids.contains(node_id) {
                 let target = TailTarget {
-                    node_id: node.member().node_id.clone(),
+                    node_id: node_id.clone(),
                     index_uid: plan.index_uid.clone(),
                 };
                 targets.insert(target, (node, plan));
@@ -204,7 +236,7 @@ async fn forward_target(
         return;
     };
     let message = format!(
-        "lost live tail stream of index `{index_id}` on indexer `{node_id}` ({error}): retrying \
+        "lost live tail stream of index `{index_id}` on ingester `{node_id}` ({error}): retrying \
          in up to {}s",
         REFRESH_INTERVAL.as_secs()
     );
@@ -234,7 +266,7 @@ async fn forward_stream(
         }
     }
     Err(LiveTailError::Unavailable(
-        "stream closed by the indexer".to_string(),
+        "stream closed by the ingester".to_string(),
     ))
 }
 
@@ -245,9 +277,9 @@ fn hits_event(index_id: &str, hits: LiveTailHits) -> LiveTailResult<LiveTailEven
         if line.is_empty() {
             continue;
         }
-        // Indexers serialize valid JSON objects: this is a violated invariant, not a client error.
+        // Ingesters serialize valid JSON objects: this is a violated invariant, not a client error.
         let doc = serde_json::from_slice(line).map_err(|error| {
-            LiveTailError::Internal(format!("invalid JSON document from indexer: {error}"))
+            LiveTailError::Internal(format!("invalid JSON document from ingester: {error}"))
         })?;
         docs.push(doc);
     }
@@ -263,34 +295,72 @@ mod tests {
     use bytesize::ByteSize;
     use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_common::ServiceStream;
-    use quickwit_proto::indexing::IndexingTask;
+    use quickwit_common::shared_consts::INGESTER_SHARDS_PREFIX;
+    use quickwit_config::{SourceConfig, TransformConfig};
+    use quickwit_ingest::{RateMibPerSec, ShardInfo};
+    use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
+    use quickwit_proto::ingest::ShardState;
     use quickwit_proto::ingest::ingester::IngesterStatus;
     use quickwit_proto::live_tail::{LiveTailMessage, MockLiveTailService};
-    use quickwit_proto::types::PipelineUid;
+    use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
+    use quickwit_proto::types::ShardId;
     use serde_json::json;
 
     use super::*;
 
-    async fn indexer(node_id: &str, port: u16, index_uid_opt: Option<&IndexUid>) -> ClusterNode {
-        let indexing_tasks: Vec<IndexingTask> = index_uid_opt
-            .into_iter()
-            .map(|index_uid| IndexingTask {
-                index_uid: Some(index_uid.clone()),
-                source_id: "test-source".to_string(),
-                pipeline_uid: Some(PipelineUid::for_test(0)),
-                ..Default::default()
-            })
-            .collect();
-        let is_self_node = node_id == "indexer-1";
+    async fn ingester(node_id: &str, port: u16, enabled_services: &[&str]) -> ClusterNode {
         ClusterNode::for_test(
             node_id,
             port,
-            is_self_node,
-            &["indexer"],
-            &indexing_tasks,
+            false,
+            enabled_services,
+            &[],
             IngesterStatus::Ready,
         )
         .await
+    }
+
+    fn metastore_for_test(index_metadata: IndexMetadata) -> MetastoreServiceClient {
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .return_once(|_| {
+                Ok(ListIndexesMetadataResponse::for_test(vec![index_metadata]))
+            });
+        MetastoreServiceClient::from_mock(mock_metastore)
+    }
+
+    #[tokio::test]
+    async fn test_plan_live_tail() {
+        let index_metadata =
+            IndexMetadata::for_test("test-index", "file:///qwdata/indexes/test-index");
+        let metastore = metastore_for_test(index_metadata);
+        let plans = plan_live_tail(&metastore, &["test-index".to_string()], "body:hello")
+            .await
+            .unwrap();
+        assert_eq!(plans.len(), 1);
+        assert_eq!(plans[0].index_uid, IndexUid::for_test("test-index", 0));
+    }
+
+    #[tokio::test]
+    async fn test_plan_live_tail_rejects_indexes_with_transform() {
+        let mut index_metadata =
+            IndexMetadata::for_test("test-index", "file:///qwdata/indexes/test-index");
+        let mut source_config = SourceConfig::ingest_v2();
+        source_config.transform_config = Some(TransformConfig::new(
+            ".body = upcase(string!(.body))".to_string(),
+            None,
+        ));
+        index_metadata.add_source(source_config).unwrap();
+        let metastore = metastore_for_test(index_metadata);
+
+        let error = plan_live_tail(&metastore, &["test-index".to_string()], "*")
+            .await
+            .unwrap_err();
+        let SearchError::InvalidArgument(message) = error else {
+            panic!("expected invalid argument error, got {error:?}");
+        };
+        assert!(message.contains("VRL transform"));
     }
 
     #[tokio::test]
@@ -301,14 +371,23 @@ mod tests {
             query_ast_json: r#"{"type": "match_all"}"#.to_string(),
         }];
         let ready_nodes = vec![
-            indexer("indexer-1", 1337, Some(&index_uid)).await,
-            // Does not run any pipeline for the index.
-            indexer("indexer-2", 1339, None).await,
+            ingester("ingester-1", 1337, &["indexer"]).await,
+            // Does not host open shards for the index.
+            ingester("ingester-2", 1339, &["indexer"]).await,
+            // Not an ingester.
+            ingester("searcher-1", 1341, &["searcher"]).await,
         ];
-        let targets = tail_targets(&plans, &ready_nodes);
+        let ingesters_per_index = HashMap::from([(
+            index_uid.clone(),
+            HashSet::from([
+                NodeId::from_str("ingester-1"),
+                NodeId::from_str("searcher-1"),
+            ]),
+        )]);
+        let targets = tail_targets(&plans, &ready_nodes, &ingesters_per_index);
         assert_eq!(targets.len(), 1);
         assert!(targets.contains_key(&TailTarget {
-            node_id: NodeId::from_str("indexer-1"),
+            node_id: NodeId::from_str("ingester-1"),
             index_uid,
         }));
     }
@@ -332,13 +411,18 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
+        // The ingester of this node hosts an open shard of the index.
+        let shard_infos = vec![ShardInfo {
+            shard_id: ShardId::from(1),
+            shard_state: ShardState::Open,
+            short_term_ingestion_rate: RateMibPerSec(0),
+            long_term_ingestion_rate: RateMibPerSec(0),
+        }];
         cluster
-            .update_self_node_indexing_tasks(&[IndexingTask {
-                index_uid: Some(index_uid.clone()),
-                source_id: "test-source".to_string(),
-                pipeline_uid: Some(PipelineUid::for_test(0)),
-                ..Default::default()
-            }])
+            .set_self_key_value(
+                format!("{INGESTER_SHARDS_PREFIX}{index_uid}:{INGEST_V2_SOURCE_ID}"),
+                serde_json::to_string(&shard_infos).unwrap(),
+            )
             .await;
         let context = LiveTailContext {
             cluster,
@@ -368,12 +452,12 @@ mod tests {
                 docs: vec![json!({"body": "hello"})],
             }
         );
-        // The indexer closes the stream: an error is reported and the stream is reopened.
+        // The ingester closes the stream: an error is reported and the stream is reopened.
         drop(message_tx);
         let LiveTailEvent::Error { message } = event_rx.recv().await.unwrap() else {
             panic!("expected error event");
         };
-        assert!(message.contains("stream closed by the indexer"));
+        assert!(message.contains("stream closed by the ingester"));
         tokio::time::sleep(REFRESH_INTERVAL * 2).await;
 
         // The client leaves: the tail ends.

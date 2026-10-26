@@ -14,11 +14,10 @@
 
 #![deny(clippy::disallowed_methods)]
 
-//! Live tail of the documents flowing through the indexing pipelines.
+//! Live tail of the documents persisted by the ingesters.
 //!
-//! - The [`LiveTailHub`] receives, through a [`LiveTailTap`] held by each `DocProcessor`, the
-//!   documents that are about to be indexed on this node and fans them out to the live tail
-//!   sessions.
+//! - The [`LiveTailHub`] receives the documents persisted by the ingester of this node, right
+//!   after they are written to its write-ahead log, and fans them out to the live tail sessions.
 //! - The [`LiveTailServiceImpl`] opens the live tail sessions, which evaluate a query on the
 //!   documents with the exact same semantics as a search and stream the matching ones.
 
@@ -29,5 +28,5 @@ mod rate_limiter;
 mod service;
 mod session;
 
-pub use hub::{LiveTailHub, LiveTailTap, TailBatch, TailDoc};
+pub use hub::{LiveTailHub, TailBatch, TailDoc};
 pub use service::LiveTailServiceImpl;

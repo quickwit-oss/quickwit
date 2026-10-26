@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! Live tail REST API: streams, as Server-Sent Events, the documents of one or several indexes
-//! matching a query, as they are processed by the indexing pipelines.
+//! matching a query, as they are persisted by the ingesters.
 
 mod coordinator;
 mod rest_handler;
@@ -32,7 +32,7 @@ pub(crate) use self::rest_handler::{LiveTailApi, live_tail_handler};
 pub(crate) struct LiveTailContext {
     pub cluster: Cluster,
     pub metastore: MetastoreServiceClient,
-    /// Live tail service of this node, if it is an indexer.
+    /// Live tail service of this node, if it runs an ingester.
     pub local_live_tail_service_opt: Option<LiveTailServiceClient>,
     pub grpc_max_message_size: ByteSize,
 }
@@ -41,7 +41,7 @@ pub(crate) struct LiveTailContext {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 pub(crate) enum LiveTailEvent {
-    /// Documents matching the query, in the order they were processed by an indexer.
+    /// Documents matching the query, in the order they were persisted by an ingester.
     Hits {
         index_id: String,
         docs: Vec<JsonValue>,
@@ -52,7 +52,7 @@ pub(crate) enum LiveTailEvent {
         reason: LiveTailDropReason,
         num_dropped: u64,
     },
-    /// Non-fatal error, e.g. an indexer could not be reached.
+    /// Non-fatal error, e.g. an ingester could not be reached.
     Error { message: String },
 }
 

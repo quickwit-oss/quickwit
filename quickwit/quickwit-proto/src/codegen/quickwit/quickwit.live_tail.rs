@@ -37,8 +37,8 @@ pub mod live_tail_message {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct LiveTailHits {
-    /// Matching documents, as newline-delimited JSON objects, after the VRL transform, in the order
-    /// they were processed by the pipelines.
+    /// Matching documents, as newline-delimited JSON objects, in the order they were persisted by
+    /// the ingester.
     #[prost(bytes = "bytes", tag = "1")]
     pub docs_ndjson: ::prost::bytes::Bytes,
 }
@@ -58,7 +58,7 @@ pub struct LiveTailDropped {
 #[repr(i32)]
 pub enum LiveTailDropReason {
     Unspecified = 0,
-    /// The session did not keep up with the indexing throughput.
+    /// The session did not keep up with the ingestion throughput.
     Lagged = 1,
     /// More documents matched than `max_docs_per_sec`.
     RateLimited = 2,
@@ -629,8 +629,8 @@ pub mod live_tail_service_grpc_client {
     )]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
-    /// Hosted by indexer nodes. Streams the documents processed by the local indexing pipelines of an
-    /// index that match a query.
+    /// Hosted by indexer nodes. Streams the documents persisted by the local ingester for an index
+    /// that match a query.
     #[derive(Debug, Clone)]
     pub struct LiveTailServiceGrpcClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -770,8 +770,8 @@ pub mod live_tail_service_grpc_server {
             tonic::Status,
         >;
     }
-    /// Hosted by indexer nodes. Streams the documents processed by the local indexing pipelines of an
-    /// index that match a query.
+    /// Hosted by indexer nodes. Streams the documents persisted by the local ingester for an index
+    /// that match a query.
     #[derive(Debug)]
     pub struct LiveTailServiceGrpcServer<T> {
         inner: Arc<T>,

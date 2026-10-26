@@ -7823,7 +7823,6 @@ dependencies = [
  "quickwit-doc-mapper",
  "quickwit-indexing",
  "quickwit-ingest",
- "quickwit-live-tail",
  "quickwit-metastore",
  "quickwit-metrics",
  "quickwit-opentelemetry",
@@ -7874,6 +7873,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-config",
  "quickwit-doc-mapper",
+ "quickwit-live-tail",
  "quickwit-metrics",
  "quickwit-proto",
  "rand 0.10.3",
@@ -8051,7 +8051,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-live-tail"
-version = "0.9.1"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "async-trait",

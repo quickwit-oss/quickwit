@@ -21,7 +21,6 @@ use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_config::NodeConfig;
 use quickwit_ingest::{IngestApiService, IngesterPool};
-use quickwit_live_tail::LiveTailHub;
 use quickwit_proto::indexing::PipelineMetrics;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_storage::StorageResolver;
@@ -77,7 +76,6 @@ pub async fn start_indexing_service(
     event_broker: EventBroker,
     merge_scheduler_mailbox_opt: Option<Mailbox<MergeSchedulerService>>,
     indexing_split_cache: Arc<IndexingSplitCache>,
-    live_tail_hub: LiveTailHub,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("starting indexer service");
     let ingest_api_service_mailbox = universe.get_one::<IngestApiService>();
@@ -100,8 +98,7 @@ pub async fn start_indexing_service(
         indexing_split_cache,
         fingerprinter_opt,
     )
-    .await?
-    .with_live_tail_hub(live_tail_hub);
+    .await?;
     let (indexing_service, _) = universe.spawn_builder().spawn(indexing_service);
     Ok(indexing_service)
 }

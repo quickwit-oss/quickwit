@@ -18,8 +18,8 @@ package quickwit.live_tail;
 
 import "quickwit/common.proto";
 
-// Hosted by indexer nodes. Streams the documents processed by the local indexing pipelines of an
-// index that match a query.
+// Hosted by indexer nodes. Streams the documents persisted by the local ingester for an index
+// that match a query.
 service LiveTailService {
   // Opens a live tail session. The stream never ends on its own: it ends when the client drops it
   // or when the node shuts down. Dead nodes are detected through cluster membership.
@@ -46,14 +46,14 @@ message LiveTailMessage {
 }
 
 message LiveTailHits {
-  // Matching documents, as newline-delimited JSON objects, after the VRL transform, in the order
-  // they were processed by the pipelines.
+  // Matching documents, as newline-delimited JSON objects, in the order they were persisted by
+  // the ingester.
   bytes docs_ndjson = 1;
 }
 
 enum LiveTailDropReason {
   LIVE_TAIL_DROP_REASON_UNSPECIFIED = 0;
-  // The session did not keep up with the indexing throughput.
+  // The session did not keep up with the ingestion throughput.
   LIVE_TAIL_DROP_REASON_LAGGED = 1;
   // More documents matched than `max_docs_per_sec`.
   LIVE_TAIL_DROP_REASON_RATE_LIMITED = 2;

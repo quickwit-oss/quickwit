@@ -98,7 +98,7 @@ impl LiveTailSession {
                 recv_result = self.batch_rx.recv() => {
                     match recv_result {
                         Ok(tail_batch) => {
-                            self.num_pending_docs += tail_batch.docs.len();
+                            self.num_pending_docs += tail_batch.num_docs();
                             self.pending_batches.push(tail_batch);
                         }
                         Err(broadcast::error::RecvError::Lagged(num_lagged_batches)) => {

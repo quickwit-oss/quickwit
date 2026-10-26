@@ -17,7 +17,7 @@ use quickwit_metrics::{LazyCounter, LazyHistogram, lazy_counter, lazy_histogram}
 
 pub(crate) static LIVE_TAIL_DOCS_PUBLISHED: LazyCounter = lazy_counter!(
     name: "docs_published_total",
-    description: "Number of documents published by indexing pipelines to live tail sessions.",
+    description: "Number of documents published by ingesters to live tail sessions.",
     subsystem: "live_tail",
 );
 
