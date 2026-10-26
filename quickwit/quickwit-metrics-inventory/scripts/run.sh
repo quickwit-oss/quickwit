@@ -36,10 +36,12 @@ trap 'exit 143' TERM
 # --format '{lib}' outputs the Rust crate name (underscores, no version/path).
 # --prefix none removes tree decorators. tail skips the root (quickwit-metrics itself).
 # Binary-only crates (such as this one) print an empty line, which the loop skips.
+# sort -u removes crates listed more than once, e.g. when quickwit-metrics is both
+# a regular and a dev-dependency.
 REVERSE_DEPS=$(cargo tree --manifest-path "$WORKSPACE_DIR/Cargo.toml" \
     --workspace --all-features --depth 1 --invert quickwit-metrics \
     --prefix none --format '{lib}' \
-    | tail -n +2)
+    | tail -n +2 | sort -u)
 
 PACKAGE_ARGS=(--package quickwit-metrics-inventory)
 for rust_name in $REVERSE_DEPS; do
@@ -51,12 +53,14 @@ done
 
 # Selecting every discovered package with --all-features unifies their
 # features into the inventory binary, so feature-gated metrics (e.g. the
-# PostgreSQL metastore metrics) are included.
+# PostgreSQL metastore metrics) are included. --bin skips the binaries of the
+# other selected packages, which the inventory does not need.
 # Read the binary path from Cargo instead of assuming the target directory
 # layout (which `build.target-dir` or `--target` would change). Diagnostics are
 # rendered to stderr, so stdout only carries JSON messages.
 BUILD_MESSAGES=$(cargo build --manifest-path "$WORKSPACE_DIR/Cargo.toml" --all-features \
-    --message-format=json-render-diagnostics "${PACKAGE_ARGS[@]}")
+    --message-format=json-render-diagnostics "${PACKAGE_ARGS[@]}" \
+    --bin quickwit-metrics-inventory)
 INVENTORY_BIN=$(echo "$BUILD_MESSAGES" \
     | sed -nE 's/.*"executable":"([^"]*\/quickwit-metrics-inventory(\.exe)?)".*/\1/p' \
     | tail -n 1)

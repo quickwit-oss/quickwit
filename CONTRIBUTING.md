@@ -114,8 +114,9 @@ The list of metrics declared with `quickwit-metrics` is committed in
 `quickwit/quickwit-metrics-inventory/metrics.yaml`. When you add, remove, or change a metric,
 regenerate it with `make metrics-inventory` and commit the result. CI fails when the file is out
 of date. For added metrics or changed descriptions, regenerating is enough. If you removed or renamed
-a metric, or changed its labels or type, identify all of its users, assess the impact, and
-communicate the change before merging. See [the crate README](quickwit/quickwit-metrics-inventory/README.md) for
+a metric, or changed its static labels or type, identify all of its users, assess the impact, and
+communicate the change before merging. Only static labels are tracked: CI does not detect changes
+to labels added at runtime, so a passing check does not mean that all label changes are safe. See [the crate README](quickwit/quickwit-metrics-inventory/README.md) for
 details.
 
 # Documentation

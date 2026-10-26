@@ -4,8 +4,9 @@
 # what to do when they differ. Exits 0 if they are identical, 1 otherwise.
 #
 # Added metrics and description changes only require regenerating the
-# inventory. Removed or renamed metrics, label changes, and type changes may
-# break users of the metric and require attention.
+# inventory. Removed or renamed metrics, static label changes, and type changes
+# may break users of the metric and require attention. Labels added at runtime
+# are not part of the inventory and are not checked.
 #
 # Requires `yq` (https://github.com/mikefarah/yq), preinstalled on GitHub
 # Actions Ubuntu runners.
@@ -37,10 +38,15 @@ metrics() {
     yq 'to_entries | .[] | .key + " " + .value.kind + " " + ((.value.labels // {}) | to_json(0))' "$1" | sort -u
 }
 
-# A committed metric that is no longer generated with the same name, labels,
-# and kind was removed, renamed, relabeled, or changed type. Added metrics and
-# description changes never show up here.
-BREAKING=$(comm -23 <(metrics "$COMMITTED") <(metrics "$GENERATED"))
+# Extract both inventories before comparing them, so that a `yq` failure fails
+# the check instead of being swallowed by the process substitutions.
+COMMITTED_METRICS=$(metrics "$COMMITTED")
+GENERATED_METRICS=$(metrics "$GENERATED")
+
+# A committed metric that is no longer generated with the same name, static
+# labels, and kind was removed, renamed, relabeled, or changed type. Added
+# metrics and description changes never show up here.
+BREAKING=$(comm -23 <(printf '%s\n' "$COMMITTED_METRICS") <(printf '%s\n' "$GENERATED_METRICS"))
 
 report() {
     echo "## Metrics inventory is out of date"
@@ -54,16 +60,19 @@ report() {
     else
         echo "### Changes that require attention"
         echo
-        echo "The following metrics were removed, renamed, or had their labels or type"
-        echo "changed. This can break their users. Regenerate the inventory, but be very"
+        echo "The following metrics were removed, renamed, or had their static labels or"
+        echo "type changed. This can break their users. Regenerate the inventory, but be very"
         echo "cautious: identify every user of these metrics (dashboards, monitors, alerts,"
         echo "SLOs, documentation, downstream consumers), assess the impact, and"
         echo "communicate the change before merging."
         echo
         while read -r name kind labels; do
-            echo "- \`$name\` ($kind, labels: $labels)"
+            echo "- \`$name\` ($kind, static labels: $labels)"
         done <<< "$BREAKING"
     fi
+    echo
+    echo "Only static labels are checked: labels added at runtime are not part of the"
+    echo "inventory, so changes to them are not detected."
     echo
     echo "### Diff"
     echo
@@ -76,11 +85,11 @@ report
 
 if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
     if [[ -z "$BREAKING" ]]; then
-        echo "::error title=Metrics inventory out of date::Run 'make metrics-inventory' and commit $COMMITTED. Only added metrics or description changes were detected: regenerating is enough."
+        echo "::error title=Metrics inventory out of date::Run 'make metrics-inventory' and commit $COMMITTED. Only added metrics or description changes were detected: regenerating is enough. Labels added at runtime are not checked."
     else
-        echo "::error title=Metrics inventory out of date::Run 'make metrics-inventory' and commit $COMMITTED. Some metrics were removed, renamed, or had their labels or type changed: identify their users, assess the impact, and communicate the change. See the job summary."
+        echo "::error title=Metrics inventory out of date::Run 'make metrics-inventory' and commit $COMMITTED. Some metrics were removed, renamed, or had their static labels or type changed: identify their users, assess the impact, and communicate the change. See the job log for details."
         while read -r name kind labels; do
-            echo "::error title=Metric removed or changed::$name ($kind, labels: $labels) was removed, renamed, or had its labels or type changed."
+            echo "::error title=Metric removed or changed::$name ($kind, static labels: $labels) was removed, renamed, or had its static labels or type changed."
         done <<< "$BREAKING"
     fi
 fi

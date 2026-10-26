@@ -65,7 +65,9 @@ jobs:
           shared-key: metrics-inventory
       - name: Generate inventory
         if: github.event_name == 'workflow_dispatch' || steps.modified.outputs.metrics == 'true'
-        run: bash quickwit/quickwit-metrics-inventory/scripts/run.sh > "$RUNNER_TEMP/metrics-inventory.yaml"
+        run: bash quickwit-metrics-inventory/scripts/run.sh > "$RUNNER_TEMP/metrics-inventory.yaml"
+        # Run from the workspace so that rustup uses quickwit/rust-toolchain.toml.
+        working-directory: ./quickwit
       - name: Check committed inventory is up to date
         if: github.event_name == 'workflow_dispatch' || steps.modified.outputs.metrics == 'true'
         run: bash quickwit/quickwit-metrics-inventory/scripts/check.sh "$INVENTORY" "$RUNNER_TEMP/metrics-inventory.yaml"

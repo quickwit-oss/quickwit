@@ -41,14 +41,15 @@ To fix it, run `make metrics-inventory` and commit the result:
 
 - **Added metrics or changed descriptions**: regenerating the inventory is
   enough.
-- **Removed or renamed metrics, changed labels, or changed types (kind)**:
+- **Removed or renamed metrics, changed static labels, or changed types (kind)**:
   these can break users of the metric. Regenerate the inventory, but be very
   cautious: identify every user of the affected metrics (dashboards, monitors,
   alerts, SLOs, documentation, downstream consumers), assess the impact, and
   communicate the change before merging.
 
 Labels are compared using the static labels recorded in the inventory; labels
-added at runtime are not part of the inventory.
+added at runtime are not part of the inventory, so a passing check does not
+mean that all label changes are safe.
 
 Only metrics declared through `quickwit-metrics` are covered; this is not a
 scrape of the `/metrics` endpoint.
