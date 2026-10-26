@@ -53,6 +53,9 @@ fix:
 migrations-lint:
 	@$(MAKE) -C $(QUICKWIT_SRC) migrations-lint
 
+metrics-inventory:
+	@$(MAKE) -C $(QUICKWIT_SRC) metrics-inventory
+
 typos:
 	typos
 
