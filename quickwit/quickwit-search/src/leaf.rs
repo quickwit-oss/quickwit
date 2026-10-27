@@ -59,7 +59,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::*;
 
 use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
-use crate::cost::{compute_query_complexity_factor, compute_split_query_cost};
+use crate::cost::{compute_query_cost, compute_split_query_cost};
 use crate::leaf_cache::LeafSearchCache;
 use crate::metrics::{
     LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES, LEAF_SEARCH_SPLIT_DURATION_SECS,
@@ -1955,11 +1955,12 @@ struct ScheduleSearchTaskResult {
 /// - remotely on lambdas, if lambda are configured, and the number of tasks scheduled exceed the
 ///   offload threshold.
 ///
-/// `query_complexity_factor` is computed once from the original request, before per-split rewrites.
+/// Query factors are computed once from the original request, before per-split rewrites.
 async fn schedule_search_tasks(
     mut splits: Vec<(SplitIdAndFooterOffsets, SearchRequest)>,
     searcher_context: &SearcherContext,
     query_complexity_factor: f32,
+    warmup_memory_factor: u64,
 ) -> ScheduleSearchTaskResult {
     let priority = splits
         .first()
@@ -1974,6 +1975,9 @@ async fn schedule_search_tasks(
                     .searcher_config
                     .warmup_single_split_initial_allocation,
             );
+            // A reservation above the total budget could never acquire a permit.
+            let memory_allocation = ByteSize(memory_allocation.as_u64() * warmup_memory_factor)
+                .min(searcher_context.searcher_config.warmup_memory_budget);
             let job_cost = compute_split_query_cost(split.num_docs, query_complexity_factor);
             crate::search_permit_provider::SplitSearchTaskMetadata {
                 memory_allocation,
@@ -2073,14 +2077,20 @@ pub async fn single_doc_mapping_leaf_search(
     let incremental_merge_collector_arc: Arc<Mutex<IncrementalCollector>> =
         Arc::new(Mutex::new(incremental_merge_collector));
 
-    // Use the original request to compute `query_complexity_factor` once.
-    let query_complexity_factor = compute_query_complexity_factor(&request)?;
+    // Use the original request to compute query factors once.
+    let query_cost = compute_query_cost(&request)?;
 
     // Determine which uncached splits to process locally vs offload.
     let ScheduleSearchTaskResult {
         local_search_tasks,
         offloaded_search_tasks,
-    } = schedule_search_tasks(uncached_splits, &searcher_context, query_complexity_factor).await;
+    } = schedule_search_tasks(
+        uncached_splits,
+        &searcher_context,
+        query_cost.complexity_factor,
+        query_cost.warmup_memory_factor,
+    )
+    .await;
 
     let has_offloaded_tasks = !offloaded_search_tasks.is_empty();
 
@@ -3126,11 +3136,62 @@ mod tests {
     async fn test_schedule_search_tasks_no_lambda_all_local() {
         let searcher_context = SearcherContext::for_test();
         let splits = make_splits_with_requests(5);
-        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0).await;
+        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
         assert_eq!(result.local_search_tasks.len(), 5);
         assert!(result.offloaded_search_tasks.is_empty());
         for (idx, task) in result.local_search_tasks.iter().enumerate() {
             assert_eq!(task.split.split_id, format!("split_{idx}"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_schedule_search_tasks_warmup_memory_factor() {
+        let mut config = SearcherConfig::default();
+        config.warmup_memory_budget = ByteSize::mb(500);
+        let searcher_context = SearcherContext::new(config, None, None::<DummyInvoker>);
+        for (value, factor) in [("error*", 1), ("*error", 10)] {
+            for num_docs in [100, 1_000_000, 10_000_000] {
+                let split = SplitIdAndFooterOffsets {
+                    num_docs,
+                    split_footer_start: 1_000_000_000,
+                    ..Default::default()
+                };
+                let request = SearchRequest {
+                    query_ast: serde_json::json!({
+                        "type": "wildcard", "field": "message", "value": value,
+                        "lenient": false, "case_insensitive": false
+                    })
+                    .to_string(),
+                    ..Default::default()
+                };
+                let cost = compute_query_cost(&request).unwrap();
+                let expected = compute_initial_memory_allocation(
+                    &split,
+                    searcher_context
+                        .searcher_config
+                        .warmup_single_split_initial_allocation,
+                )
+                .as_u64()
+                    * factor;
+                let result = super::schedule_search_tasks(
+                    vec![(split, request)],
+                    &searcher_context,
+                    cost.complexity_factor,
+                    cost.warmup_memory_factor,
+                )
+                .await;
+                let task = result.local_search_tasks.into_iter().next().unwrap();
+                let permit = task.search_permit_future.await;
+                assert_eq!(
+                    permit.memory_allocation().as_u64(),
+                    expected.min(
+                        searcher_context
+                            .searcher_config
+                            .warmup_memory_budget
+                            .as_u64()
+                    )
+                );
+            }
         }
     }
 
@@ -3154,7 +3215,7 @@ mod tests {
         });
         let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(7);
-        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0).await;
+        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
         assert_eq!(result.local_search_tasks.len(), 3);
         assert_eq!(result.offloaded_search_tasks.len(), 4);
         for (idx, task) in result.local_search_tasks.iter().enumerate() {
@@ -3174,7 +3235,7 @@ mod tests {
         });
         let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(5);
-        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0).await;
+        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
         assert!(result.local_search_tasks.is_empty());
         assert_eq!(result.offloaded_search_tasks.len(), 5);
     }
@@ -3188,7 +3249,7 @@ mod tests {
         });
         let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(5);
-        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0).await;
+        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
         assert_eq!(result.local_search_tasks.len(), 5);
         assert!(result.offloaded_search_tasks.is_empty());
     }
@@ -3196,7 +3257,7 @@ mod tests {
     #[tokio::test]
     async fn test_schedule_search_tasks_empty() {
         let searcher_context = SearcherContext::for_test();
-        let result = super::schedule_search_tasks(Vec::new(), &searcher_context, 1.0).await;
+        let result = super::schedule_search_tasks(Vec::new(), &searcher_context, 1.0, 1).await;
         assert!(result.local_search_tasks.is_empty());
         assert!(result.offloaded_search_tasks.is_empty());
     }
