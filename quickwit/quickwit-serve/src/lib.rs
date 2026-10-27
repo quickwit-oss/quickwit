@@ -716,7 +716,7 @@ pub async fn serve_quickwit(
                 ("OTEL logs", otel_logs_index_config),
                 ("OTEL traces", otel_traces_index_config),
             ] {
-                match index_manager.create_index(index_config, false).await {
+                match index_manager.create_index(index_config, false, true).await {
                     Ok(_)
                     | Err(IndexServiceError::Metastore(MetastoreError::AlreadyExists(
                         EntityKind::Index { .. },

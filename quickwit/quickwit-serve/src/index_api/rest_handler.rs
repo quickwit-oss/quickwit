@@ -696,6 +696,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_create_index_without_default_sources() {
+        let metastore = metastore_for_test();
+        let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
+        let mut node_config = NodeConfig::for_test();
+        node_config.default_index_root_uri = Uri::for_test("file:///default-index-root-uri");
+        let index_management_handler =
+            super::index_management_handlers(index_service, Arc::new(node_config));
+        let resp = warp::test::request()
+            .path("/indexes?add_default_sources=false")
+            .method("POST")
+            .json(&true)
+            .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let resp_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
+        assert_eq!(resp_json["sources"], JsonValue::Array(Vec::new()));
+
+        let index_metadata = metastore
+            .index_metadata(IndexMetadataRequest::for_index_id("hdfs-logs".to_string()))
+            .await
+            .unwrap()
+            .deserialize_index_metadata()
+            .unwrap();
+        assert!(index_metadata.sources.is_empty());
+    }
+
+    #[tokio::test]
     async fn test_create_index_with_overwrite() {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
