@@ -12,15 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::fmt;
+use std::ops::Range;
 use std::path::Path;
-use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
+use async_trait::async_trait;
 use bytes::Bytes;
 use feuer::Download;
+use quickwit_common::uri::Uri;
+use tokio::io::AsyncRead;
+use tokio::sync::watch;
 
-use super::test_helpers::{Fixture, SPLIT_BYTES, SPLIT_PATH, wait_until};
 use super::{FeuerSplitRangeCache, config_for_test};
-use crate::StorageErrorKind;
+use crate::storage::SendableAsync;
+use crate::{
+    BulkDeleteError, OwnedBytes, PutPayload, RamStorageBuilder, Storage, StorageErrorKind,
+    StorageResult, wrap_storage_with_split_range_cache,
+};
 
 #[tokio::test]
 async fn test_split_range_cache_uses_configured_capacities() {
@@ -48,79 +59,23 @@ async fn test_split_range_cache_uses_configured_capacities() {
 async fn test_empty_and_exact_ranges_without_covering_reuse() {
     let fixture = Fixture::new().await;
     let path = Path::new(SPLIT_PATH);
-    assert!(
-        fixture
+    for (range, reads) in [
+        (4..4, 0),
+        (1..4, 1),
+        (1..4, 1),
+        (2..3, 2),
+        (0..5, 3),
+        (0..2, 4),
+        (1..4, 4),
+    ] {
+        let bytes = fixture
             .storage
-            .get_slice(path, 4..4)
+            .get_slice(path, range.clone())
             .await
-            .unwrap()
-            .is_empty()
-    );
-    assert_eq!(fixture.lower_reads(), 0);
-    for _ in 0..2 {
-        assert_eq!(
-            fixture
-                .storage
-                .get_slice(path, 1..4)
-                .await
-                .unwrap()
-                .as_slice(),
-            b"bcd"
-        );
+            .unwrap();
+        assert_eq!(bytes.as_slice(), &SPLIT_BYTES[range.clone()]);
+        assert_eq!(fixture.lower_reads(), reads, "range {range:?}");
     }
-    assert_eq!(fixture.lower_reads(), 1);
-    assert_eq!(
-        fixture
-            .storage
-            .get_slice(path, 2..3)
-            .await
-            .unwrap()
-            .as_slice(),
-        b"c"
-    );
-    assert_eq!(
-        fixture.lower_reads(),
-        2,
-        "a covering slice does not serve a different exact range"
-    );
-    assert_eq!(
-        fixture
-            .storage
-            .get_slice(path, 0..5)
-            .await
-            .unwrap()
-            .as_slice(),
-        SPLIT_BYTES
-    );
-    assert_eq!(
-        fixture.lower_reads(),
-        3,
-        "a larger range still needs a download"
-    );
-    assert_eq!(
-        fixture
-            .storage
-            .get_slice(path, 0..2)
-            .await
-            .unwrap()
-            .as_slice(),
-        b"ab"
-    );
-    assert_eq!(fixture.lower_reads(), 4);
-    assert_eq!(
-        fixture
-            .storage
-            .get_slice(path, 1..4)
-            .await
-            .unwrap()
-            .as_slice(),
-        b"bcd"
-    );
-    assert_eq!(
-        fixture.lower_reads(),
-        4,
-        "exact slices remain independent hits"
-    );
 }
 
 #[tokio::test]
@@ -360,6 +315,161 @@ async fn test_invalid_download_is_an_error_and_is_not_cached() {
         .await
         .unwrap();
     assert_eq!(bytes.as_ref(), b"abcd");
+}
+
+const SPLIT_PATH: &str = "a.split";
+const SPLIT_BYTES: &[u8] = b"abcde";
+
+struct LowerProbe {
+    inner: Arc<dyn Storage>,
+    get_slice_calls: AtomicUsize,
+    get_slice_completed: AtomicUsize,
+    download_address: AtomicUsize,
+    gate: watch::Receiver<bool>,
+}
+
+impl fmt::Debug for LowerProbe {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LowerProbe")
+            .field("uri", self.inner.uri())
+            .finish()
+    }
+}
+
+#[async_trait]
+impl Storage for LowerProbe {
+    async fn check_connectivity(&self) -> anyhow::Result<()> {
+        self.inner.check_connectivity().await
+    }
+
+    async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()> {
+        self.inner.put(path, payload).await
+    }
+
+    async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
+        self.inner.copy_to(path, output).await
+    }
+
+    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
+        self.get_slice_calls.fetch_add(1, Ordering::Relaxed);
+        let mut gate = self.gate.clone();
+        let _ = gate.wait_for(|open| *open).await;
+        let result = self.inner.get_slice(path, range).await;
+        self.get_slice_completed.fetch_add(1, Ordering::Relaxed);
+        result
+    }
+
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> StorageResult<()> {
+        self.get_slice_calls.fetch_add(1, Ordering::Relaxed);
+        self.download_address
+            .store(buffer.as_ptr() as usize, Ordering::Relaxed);
+        let mut gate = self.gate.clone();
+        let _ = gate.wait_for(|open| *open).await;
+        let result = self.inner.get_slice_into(path, range, buffer).await;
+        self.get_slice_completed.fetch_add(1, Ordering::Relaxed);
+        result
+    }
+
+    async fn get_slice_stream(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
+        self.inner.get_slice_stream(path, range).await
+    }
+
+    async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
+        self.inner.get_all(path).await
+    }
+
+    async fn delete(&self, path: &Path) -> StorageResult<()> {
+        self.inner.delete(path).await
+    }
+
+    async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
+        self.inner.bulk_delete(paths).await
+    }
+
+    async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
+        self.inner.file_num_bytes(path).await
+    }
+
+    fn uri(&self) -> &Uri {
+        self.inner.uri()
+    }
+}
+
+struct Fixture {
+    storage: Arc<dyn Storage>,
+    lower: Arc<LowerProbe>,
+    gate_tx: watch::Sender<bool>,
+    _temp_dir: tempfile::TempDir,
+}
+
+impl Fixture {
+    async fn new() -> Self {
+        Self::with_payload(SPLIT_BYTES, true).await
+    }
+
+    async fn new_with_blocked_lower_read() -> Self {
+        Self::with_payload(SPLIT_BYTES, false).await
+    }
+
+    async fn with_payload(payload: &[u8], gate_open: bool) -> Self {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache = Arc::new(
+            FeuerSplitRangeCache::open(&config_for_test(temp_dir.path()))
+                .await
+                .unwrap(),
+        );
+        let ram: Arc<dyn Storage> = Arc::new(
+            RamStorageBuilder::default()
+                .put(SPLIT_PATH, payload)
+                .build(),
+        );
+        let (gate_tx, gate_rx) = watch::channel(gate_open);
+        let lower = Arc::new(LowerProbe {
+            inner: ram,
+            get_slice_calls: AtomicUsize::new(0),
+            get_slice_completed: AtomicUsize::new(0),
+            download_address: AtomicUsize::new(0),
+            gate: gate_rx,
+        });
+        let storage = wrap_storage_with_split_range_cache(cache, lower.clone());
+        Self {
+            storage,
+            lower,
+            gate_tx,
+            _temp_dir: temp_dir,
+        }
+    }
+
+    fn release_lower_read(&self) {
+        self.gate_tx.send(true).unwrap();
+    }
+
+    fn lower_reads(&self) -> usize {
+        self.lower.get_slice_calls.load(Ordering::Relaxed)
+    }
+
+    async fn wait_until_lower_read_started(&self) {
+        wait_until(|| self.lower_reads() > 0, "lower read start").await;
+    }
+}
+
+async fn wait_until(predicate: impl Fn() -> bool, what: &str) {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !predicate() {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("timed out waiting for {what}"));
 }
 
 #[tokio::test]

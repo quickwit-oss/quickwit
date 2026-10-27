@@ -256,5 +256,139 @@ fn labeled(
 }
 
 #[cfg(test)]
-#[path = "metrics_tests.rs"]
-mod tests;
+mod tests {
+    use std::collections::HashMap;
+
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+
+    use super::*;
+
+    #[test]
+    fn test_histogram_buckets_are_registered_with_exporter() {
+        let configured: HashMap<_, _> = quickwit_metrics::histogram_buckets().collect();
+        for name in [
+            "feuer_lookup_duration_seconds",
+            "feuer_disk_read_size_bytes",
+            "feuer_disk_lookup_duration_seconds",
+            "feuer_disk_io_duration_seconds",
+            "feuer_disk_write_queue_duration_seconds",
+            "feuer_disk_read_queue_wait_duration_seconds",
+        ] {
+            assert_eq!(configured[name], feuer_histogram_buckets(name));
+        }
+    }
+
+    #[test]
+    fn test_registry_preserves_values_and_labels_across_caches() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let caches = [("split_range", 1), ("partial_request", 2), ("predicate", 3)];
+        ::metrics::with_local_recorder(&recorder, || {
+            for (cache_name, value) in caches {
+                let registry = QuickwitMetricsRegistry { cache_name };
+                registry
+                    .register_counter_vec(
+                        "feuer_lookup_total".into(),
+                        "Lookups".into(),
+                        &["outcome"],
+                    )
+                    .counter(&["memory_hit".into()])
+                    .increase(value);
+                let gauge = registry
+                    .register_gauge_vec("feuer_memory_used_bytes".into(), "Memory".into(), &[])
+                    .gauge(&[]);
+                gauge.absolute(value);
+                gauge.increase(3);
+                gauge.decrease(2);
+                registry
+                    .register_histogram_vec_with_buckets(
+                        "feuer_lookup_duration_seconds".into(),
+                        "Lookup duration".into(),
+                        &["outcome"],
+                        feuer_histogram_buckets("feuer_lookup_duration_seconds"),
+                    )
+                    .histogram(&["disk_hit".into()])
+                    .record(value as f64);
+            }
+        });
+        let values: HashMap<_, _> = snapshotter
+            .snapshot()
+            .into_vec()
+            .into_iter()
+            .map(|(key, _, _, value)| (key.key().clone(), value))
+            .collect();
+        assert_eq!(values.len(), caches.len() * 3);
+        for (cache_name, value) in caches {
+            for (name, outcome, expected) in [
+                (
+                    "feuer_lookup_total",
+                    Some("memory_hit"),
+                    DebugValue::Counter(value),
+                ),
+                (
+                    "feuer_memory_used_bytes",
+                    None,
+                    DebugValue::Gauge(((value + 1) as f64).into()),
+                ),
+                (
+                    "feuer_lookup_duration_seconds",
+                    Some("disk_hit"),
+                    DebugValue::Histogram(vec![(value as f64).into()]),
+                ),
+            ] {
+                let mut labels = Vec::new();
+                if let Some(outcome) = outcome {
+                    labels.push(::metrics::Label::new("outcome", outcome));
+                }
+                labels.push(::metrics::Label::new("cache", cache_name));
+                assert_eq!(values[&::metrics::Key::from_parts(name, labels)], expected);
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn test_native_metric_registration_matches_exporter() {
+        let configured: HashMap<_, _> = quickwit_metrics::histogram_buckets()
+            .filter(|(name, _)| name.starts_with("feuer_"))
+            .map(|(name, buckets)| (name.to_owned(), buckets))
+            .collect();
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let _guard = ::metrics::set_default_local_recorder(&recorder);
+        let temp_dir = tempfile::tempdir().unwrap();
+        let _cache = super::super::FeuerSplitRangeCache::open(&super::super::config_for_test(
+            temp_dir.path(),
+        ))
+        .await
+        .unwrap();
+        let mut registered = HashMap::new();
+        let mut pool_statuses = std::collections::HashSet::new();
+        for (key, _, _, value) in snapshotter.snapshot().into_vec() {
+            let key = key.key();
+            let name = key.name();
+            if !name.starts_with("feuer_") {
+                continue;
+            }
+            assert!(
+                key.labels()
+                    .any(|label| label.key() == "cache" && label.value() == "split_range")
+            );
+            if matches!(value, DebugValue::Histogram(_)) {
+                registered.insert(name.to_owned(), feuer_histogram_buckets(name));
+            }
+            if name == "feuer_io_buffer_pool_bytes" {
+                assert!(matches!(value, DebugValue::Gauge(_)));
+                assert!(
+                    key.labels()
+                        .any(|label| label.key() == "bucket" && !label.value().is_empty())
+                );
+                let status = key.labels().find(|label| label.key() == "status").unwrap();
+                pool_statuses.insert(status.value().to_owned());
+            }
+        }
+        assert!(!registered.is_empty());
+        assert_eq!(registered, configured);
+        assert_eq!(pool_statuses, ["idle".to_owned(), "used".to_owned()].into());
+    }
+}

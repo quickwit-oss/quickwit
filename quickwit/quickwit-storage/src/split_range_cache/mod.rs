@@ -14,14 +14,10 @@
 
 mod access_trace;
 mod coalescer;
-#[cfg(test)]
-mod coalescer_tests;
 #[cfg(all(test, target_os = "linux"))]
 mod disk_tests;
 pub(crate) mod metrics;
 mod storage;
-#[cfg(all(test, target_os = "linux"))]
-mod test_helpers;
 #[cfg(all(test, target_os = "linux"))]
 mod tests;
 

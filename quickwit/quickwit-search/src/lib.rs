@@ -43,8 +43,6 @@ pub(crate) mod top_k_collector;
 mod metrics;
 mod search_permit_provider;
 
-#[cfg(test)]
-mod split_bundle_tests;
 #[cfg(all(test, target_os = "linux"))]
 mod split_range_cache_layer_tests;
 #[cfg(test)]

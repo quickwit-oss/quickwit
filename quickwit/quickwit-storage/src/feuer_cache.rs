@@ -91,10 +91,6 @@ pub struct FeuerCache {
     cache: feuer::TieredMemoryDiskCache,
 }
 
-#[cfg(all(test, target_os = "linux"))]
-#[path = "feuer_cache_tests.rs"]
-mod tests;
-
 impl FeuerCache {
     /// Open an independent cache with the supplied shared queues and explicit capacities.
     /// `file_name` must be distinct for caches in the same directory.
@@ -133,5 +129,239 @@ impl FeuerCache {
             })
             .await
             .expect("whole-object insertion must cover the complete object");
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use std::time::Duration;
+
+    use bytesize::ByteSize;
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+
+    use super::*;
+    use crate::FeuerSplitRangeCache;
+
+    #[tokio::test]
+    async fn test_memory_only_instance_does_not_initialize_io_queues() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = config(directory.path().join("unused"), 8);
+        config.disk_capacity = ByteSize::b(0);
+        let queues = FeuerIoQueues::default();
+        let cache = FeuerCache::open(
+            &config,
+            &queues,
+            "partial_response_cache",
+            "partial_request",
+        )
+        .await
+        .unwrap();
+        cache
+            .put("key".into(), OwnedBytes::new(&b"value"[..]))
+            .await;
+        assert_eq!(cache.get("key".into()).await.unwrap().as_slice(), b"value");
+        assert!(queues.queues.get().is_none());
+        assert!(!config.directory().unwrap().exists());
+    }
+
+    #[tokio::test]
+    async fn test_instances_share_queues_but_keep_contents_and_capacities_separate() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let _guard = ::metrics::set_default_local_recorder(&recorder);
+        let directory = tempfile::tempdir().unwrap();
+        let queues = FeuerIoQueues::default();
+        let split_config = config(directory.path().to_path_buf(), 8);
+        let partial_config = config(directory.path().to_path_buf(), 16);
+        let predicate_config = config(directory.path().to_path_buf(), 32);
+        let split = FeuerSplitRangeCache::open_with_io_queues(&split_config, &queues)
+            .await
+            .unwrap();
+        let partial = FeuerCache::open(
+            &partial_config,
+            &queues,
+            "partial_response_cache",
+            "partial_request",
+        )
+        .await
+        .unwrap();
+        let predicate =
+            FeuerCache::open(&predicate_config, &queues, "predicate_cache", "predicate")
+                .await
+                .unwrap();
+        let capacities: std::collections::HashMap<_, _> = snapshotter
+            .snapshot()
+            .into_vec()
+            .into_iter()
+            .filter(|(key, _, _, _)| key.key().name() == "feuer_memory_capacity_bytes")
+            .map(|(key, _, _, value)| {
+                let cache_name = key
+                    .key()
+                    .labels()
+                    .find(|label| label.key() == "cache")
+                    .unwrap()
+                    .value()
+                    .to_owned();
+                (cache_name, value)
+            })
+            .collect();
+        assert_eq!(capacities.len(), 3);
+        for (cache_name, config) in [
+            ("split_range", &split_config),
+            ("partial_request", &partial_config),
+            ("predicate", &predicate_config),
+        ] {
+            assert_eq!(
+                capacities[cache_name],
+                DebugValue::Gauge((config.memory_capacity.as_u64() as f64).into())
+            );
+        }
+        for (cache, config, file_name) in [
+            (&partial, &partial_config, "partial_response_cache"),
+            (&predicate, &predicate_config, "predicate_cache"),
+        ] {
+            assert_eq!(
+                cache.cache.config().disk_capacity(),
+                config.disk_capacity.as_u64()
+            );
+            assert_eq!(
+                cache.cache.config().memory_capacity(),
+                config.memory_capacity.as_u64()
+            );
+            assert_eq!(cache.cache.config().file_name(), file_name);
+            assert!(cache.get("missing".into()).await.is_none());
+        }
+        for (config, file_name, cache_name) in [
+            (&split_config, "split_cache", "split_range"),
+            (&partial_config, "partial_response_cache", "partial_request"),
+            (&predicate_config, "predicate_cache", "predicate"),
+        ] {
+            assert!(directory.path().join(file_name).is_file());
+            assert!(
+                directory
+                    .path()
+                    .join(format!(".feuer.{file_name}.lock"))
+                    .is_file()
+            );
+            let error = match FeuerCache::open(config, &queues, file_name, cache_name).await {
+                Ok(_) => panic!("opening the same cache file twice must fail"),
+                Err(error) => error,
+            };
+            assert!(matches!(
+                error.downcast_ref::<feuer::DiskCacheError>(),
+                Some(feuer::DiskCacheError::DataFile(source)) if source.kind().as_str() == "already_open"
+            ));
+        }
+
+        // Large objects bypass Feuer's timed small-entry buffer, so disk publication is observable.
+        let split_bytes = vec![3; 1 << 20];
+        let download_bytes = split_bytes.clone();
+        let bytes = split
+            .get_or_fetch(
+                "same-key".into(),
+                0..split_bytes.len(),
+                move |_| async move { Ok(feuer::Download::new(Bytes::from(download_bytes))) },
+            )
+            .await
+            .unwrap();
+        assert_eq!(bytes.as_ref(), split_bytes);
+        let partial_bytes = vec![1; 1 << 20];
+        let predicate_bytes = vec![2; 1 << 20];
+        for (cache, bytes) in [(&partial, &partial_bytes), (&predicate, &predicate_bytes)] {
+            cache
+                .put("same-key".into(), OwnedBytes::new(bytes.clone()))
+                .await;
+            assert_eq!(
+                cache.get("same-key".into()).await.unwrap().as_slice(),
+                bytes
+            );
+        }
+
+        tokio::time::timeout(Duration::from_secs(10), async {
+            let mut num_published = 0;
+            loop {
+                // Snapshots drain counters. Accumulate publications from the independent writers.
+                for (key, _, _, value) in snapshotter.snapshot().into_vec() {
+                    if key.key().name() == "feuer_disk_write_entries_total"
+                        && key
+                            .key()
+                            .labels()
+                            .any(|label| label.key() == "outcome" && label.value() == "published")
+                        && let DebugValue::Counter(count) = value
+                    {
+                        num_published += count;
+                    }
+                }
+                if num_published == 3 {
+                    break;
+                }
+                assert!(num_published < 3, "unexpected extra disk publications");
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("disk writes did not finish");
+
+        drop(partial);
+        drop(predicate);
+        let partial = reopen(
+            &partial_config,
+            &queues,
+            "partial_response_cache",
+            "partial_request",
+        )
+        .await;
+        let predicate = reopen(&predicate_config, &queues, "predicate_cache", "predicate").await;
+        // Reopening result-cache files must not disturb the still-open split cache.
+        let bytes = split
+            .get_or_fetch("same-key".into(), 0..split_bytes.len(), |_| async {
+                Err(crate::StorageErrorKind::Internal
+                    .with_error(anyhow::anyhow!("cache hit must not fetch")))
+            })
+            .await
+            .unwrap();
+        assert_eq!(bytes.as_ref(), split_bytes);
+        // Memory is now empty: these lookups prove complete-object recovery from separate files.
+        for (cache, bytes) in [(&partial, &partial_bytes), (&predicate, &predicate_bytes)] {
+            assert_eq!(
+                cache.get("same-key".into()).await.unwrap().as_slice(),
+                bytes
+            );
+        }
+    }
+
+    fn config(path: std::path::PathBuf, disk_mib: u64) -> DiskCacheConfig {
+        DiskCacheConfig {
+            path: Some(path),
+            disk_capacity: ByteSize::mib(disk_mib),
+            memory_capacity: ByteSize::mib(disk_mib / 8),
+        }
+    }
+
+    async fn reopen(
+        config: &DiskCacheConfig,
+        queues: &FeuerIoQueues,
+        file_name: &'static str,
+        cache_name: &'static str,
+    ) -> FeuerCache {
+        // Feuer releases directory locks after its background tasks drain. Retry only this
+        // expected shutdown race; all other failures must fail the test immediately.
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                match FeuerCache::open(config, queues, file_name, cache_name).await {
+                    Ok(cache) => return cache,
+                    Err(error) => match error.downcast_ref::<feuer::DiskCacheError>() {
+                        Some(feuer::DiskCacheError::DataFile(source))
+                            if source.kind().as_str() == "already_open" =>
+                        {
+                            tokio::time::sleep(Duration::from_millis(1)).await;
+                        }
+                        _ => panic!("failed to reopen cache: {error:?}"),
+                    },
+                }
+            }
+        })
+        .await
+        .expect("cache directory lock was not released")
     }
 }

@@ -29,10 +29,6 @@ use tantivy::index::SegmentId;
 mod result_cache;
 use result_cache::ResultCache;
 
-#[cfg(all(test, target_os = "linux"))]
-#[path = "leaf_cache_disk_tests.rs"]
-mod disk_tests;
-
 /// A keyed 128-bit digest stored in place of a potentially large cache key.
 ///
 /// The original key is discarded. The 128-bit output makes accidental collisions negligible.
@@ -452,7 +448,15 @@ mod tests {
         };
         cache.put(split_1.clone(), query_1.clone(), result);
         assert_eq!(
-            cache.get(split_1.clone(), query_1.clone()).unwrap(),
+            cache
+                .get(
+                    split_1.clone(),
+                    SearchRequest {
+                        priority: 10,
+                        ..query_1.clone()
+                    }
+                )
+                .unwrap(),
             expected
         );
         assert!(cache.get(split_2, query_1).is_none());
@@ -569,25 +573,6 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_key_hash_is_stable() {
-        let key_hasher = CacheKeyHasher::with_keys(1, 2);
-        let split = SplitIdAndFooterOffsets {
-            split_id: "split_1".to_string(),
-            ..Default::default()
-        };
-        let request = SearchRequest {
-            index_id_patterns: vec!["test-idx".to_string()],
-            query_ast: "test".to_string(),
-            max_hits: 10,
-            ..Default::default()
-        };
-        let key = CacheKey::from_split_meta_and_request(split.clone(), request.clone());
-        let same_key = CacheKey::from_split_meta_and_request(split, request);
-
-        assert_eq!(key_hasher.hash(&key), key_hasher.hash(&same_key));
-    }
-
-    #[test]
     fn test_cache_key_hash_covers_request_fields() {
         let key_hasher = CacheKeyHasher::with_keys(1, 2);
         let split = SplitIdAndFooterOffsets {
@@ -607,6 +592,7 @@ mod tests {
             ))
         };
         let reference_hash = hash_of(&split, &request);
+        assert_eq!(reference_hash, hash_of(&split, &request));
 
         // A change anywhere in the request, however nested, must change the hash.
         for altered_request in [
@@ -667,29 +653,88 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_leaf_search_cache_ignores_priority() {
-        let cache = LeafSearchCache::new(&ByteSize::mb(64).into());
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn test_result_caches_use_shared_disk_directory() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config: quickwit_config::SearcherConfig =
+            serde_json::from_value(serde_json::json!({
+                "disk_cache": {"disk_capacity": "8MiB", "memory_capacity": "1MiB"},
+                "partial_request_cache": {"disk_capacity": "16MiB", "memory_capacity": "1MiB"},
+                "predicate_cache": {"disk_capacity": "32MiB", "memory_capacity": "2MiB"},
+            }))
+            .unwrap();
+        config.disk_cache_directory = Some(directory.path().to_path_buf());
+        let mut context = crate::SearcherContext::new_without_invoker(config, None, None);
+        context
+            .initialize_disk_caches(&quickwit_storage::StorageResolver::unconfigured())
+            .await
+            .unwrap();
+        assert!(context.disk_cache_opt.is_some());
+        assert!(context.predicate_cache.is_enabled());
+        for file_name in ["split_cache", "predicate_cache", "partial_response_cache"] {
+            assert!(directory.path().join(file_name).is_file());
+        }
+
         let split = SplitIdAndFooterOffsets {
-            split_id: "split".to_string(),
+            split_id: "split".into(),
+            num_docs: 42,
             ..Default::default()
         };
-        let high_priority_request = SearchRequest {
-            priority: -10,
-            ..Default::default()
-        };
-        let low_priority_request = SearchRequest {
-            priority: 10,
-            ..Default::default()
-        };
-
-        cache.put(
-            split.clone(),
-            high_priority_request,
-            LeafSearchResponse::default(),
+        let request = SearchRequest::default();
+        assert!(
+            context
+                .leaf_search_cache
+                .get_async(split.clone(), request.clone())
+                .await
+                .is_none()
         );
+        context
+            .leaf_search_cache
+            .put_async(
+                split.clone(),
+                request.clone(),
+                LeafSearchResponse {
+                    num_hits: 7,
+                    ..Default::default()
+                },
+            )
+            .await;
+        let cached = context
+            .leaf_search_cache
+            .get_async(split, request)
+            .await
+            .unwrap();
+        assert_eq!(cached.num_hits, 7);
+        let stats = cached.resource_stats.unwrap();
+        assert_eq!(stats.partial_result_cache_num_splits, 1);
+        assert_eq!(stats.partial_result_cache_num_docs, 42);
 
-        // the two requests differ only in priority, so it should be a cache-hit
-        assert!(cache.get(split, low_priority_request).is_some());
+        let predicate = context.predicate_cache;
+        let segment = SegmentId::from_uuid_string("1686a000d4f7a91939d0e71df1646d7a").unwrap();
+        predicate
+            .put_async("split".into(), "term".into(), segment, HitSet::empty())
+            .await;
+        // Tantivy calls the synchronous trait on CPU threads with a current-thread runtime.
+        quickwit_common::thread_pool::run_cpu_intensive(move || {
+            let (cached_segment, hits) = predicate.get("split".into(), "term".into()).unwrap();
+            assert_eq!(cached_segment, segment);
+            assert!(hits.is_empty());
+            predicate.put(
+                "split".into(),
+                "other-term".into(),
+                segment,
+                HitSet::empty(),
+            );
+            assert!(
+                predicate
+                    .get("split".into(), "other-term".into())
+                    .unwrap()
+                    .1
+                    .is_empty()
+            );
+        })
+        .await
+        .unwrap();
     }
 }

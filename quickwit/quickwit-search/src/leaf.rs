@@ -2437,6 +2437,10 @@ mod tests {
     use quickwit_config::{LambdaConfig, SearcherConfig};
     use quickwit_directories::write_hotcache;
     use quickwit_proto::search::LambdaSingleSplitResult;
+    use quickwit_storage::{
+        CountingStorage, PutPayload, RamStorageBuilder, SplitPayloadBuilder, StorageError,
+        StorageErrorKind,
+    };
     use rand::RngExt;
     use tantivy::TantivyDocument;
     use tantivy::directory::RamDirectory;
@@ -2446,6 +2450,66 @@ mod tests {
 
     use super::*;
     use crate::LambdaLeafSearchInvoker;
+
+    #[tokio::test]
+    async fn test_open_split_bundle_reads_footer_each_time_without_range_cache() {
+        let mut builder = SplitPayloadBuilder::default();
+        builder.add_payload("segment.fast".to_string(), Box::new(b"FASTDATA".to_vec()));
+        let payload = builder.finalize(b"HOT").unwrap();
+        let footer_range = payload.footer_range.clone();
+        let split_bytes = payload.read_all().await.unwrap();
+        let storage = RamStorageBuilder::default()
+            .put("uncached.split", split_bytes.as_slice())
+            .build();
+        let (storage, counters) = CountingStorage::instrument_storage(Arc::new(storage));
+        let context = SearcherContext::for_test();
+        let offsets = SplitIdAndFooterOffsets {
+            split_id: "uncached".to_string(),
+            split_footer_start: footer_range.start,
+            split_footer_end: footer_range.end,
+            ..Default::default()
+        };
+
+        for num_reads in 1..=2 {
+            let (hotcache, _bundle) = open_split_bundle(&context, storage.clone(), &offsets)
+                .await
+                .unwrap();
+            assert_eq!(hotcache.as_slice(), b"HOT");
+            assert_eq!(
+                counters.snapshot(),
+                (
+                    (footer_range.end - footer_range.start) * num_reads,
+                    num_reads
+                ),
+                "without a range cache each opening reads exactly the footer bytes"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_open_split_bundle_preserves_footer_fetch_error() {
+        let storage: Arc<dyn Storage> = Arc::new(RamStorageBuilder::default().build());
+        let offsets = SplitIdAndFooterOffsets {
+            split_id: "missing".to_string(),
+            split_footer_start: 10,
+            split_footer_end: 20,
+            ..Default::default()
+        };
+        let error = open_split_bundle(&SearcherContext::for_test(), storage.clone(), &offsets)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "failed to fetch hotcache and footer from {} for split `missing`",
+                storage.uri()
+            )
+        );
+        assert_eq!(
+            error.downcast_ref::<StorageError>().unwrap().kind(),
+            StorageErrorKind::NotFound
+        );
+    }
 
     #[test]
     fn test_split_search_state_guard_records_errors_by_kind() {
