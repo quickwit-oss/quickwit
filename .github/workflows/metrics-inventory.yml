@@ -1,0 +1,73 @@
+name: Metrics inventory
+
+on:
+  workflow_dispatch:
+  pull_request:
+  merge_group:
+    types: [checks_requested]
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+  RUSTFLAGS: --cfg tokio_unstable
+  INVENTORY: quickwit/quickwit-metrics-inventory/metrics.yaml
+
+concurrency:
+  group: metrics-inventory-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  metrics-inventory:
+    name: Metrics inventory
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Filter at the step level rather than with trigger `paths:`, so that the
+      # job always reports a status and can be used as a required check.
+      # Manual runs always check the inventory: on the default branch, the
+      # filter only looks at the last commit.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: github.event_name != 'workflow_dispatch'
+        id: modified
+        with:
+          filters: |
+            metrics:
+              - quickwit/**/*.rs
+              - quickwit/**/Cargo.toml
+              - quickwit/Cargo.lock
+              - quickwit/quickwit-metrics-inventory/**
+              - .github/workflows/metrics-inventory.yml
+      - name: Install build dependencies
+        if: github.event_name == 'workflow_dispatch' || steps.modified.outputs.metrics == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install protobuf-compiler libcurl4-openssl-dev
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        if: github.event_name == 'workflow_dispatch' || steps.modified.outputs.metrics == 'true'
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: github.event_name == 'workflow_dispatch' || steps.modified.outputs.metrics == 'true'
+        with:
+          workspaces: quickwit -> target
+          shared-key: metrics-inventory
+      - name: Generate inventory
+        if: github.event_name == 'workflow_dispatch' || steps.modified.outputs.metrics == 'true'
+        run: bash quickwit-metrics-inventory/scripts/run.sh > "$RUNNER_TEMP/metrics-inventory.yaml"
+        # Run from the workspace so that rustup uses quickwit/rust-toolchain.toml.
+        working-directory: ./quickwit
+      - name: Check committed inventory is up to date
+        if: github.event_name == 'workflow_dispatch' || steps.modified.outputs.metrics == 'true'
+        run: bash quickwit/quickwit-metrics-inventory/scripts/check.sh "$INVENTORY" "$RUNNER_TEMP/metrics-inventory.yaml"
