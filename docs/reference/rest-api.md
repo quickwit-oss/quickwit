@@ -149,7 +149,7 @@ Invalid requests (unknown index, invalid query, etc.) are rejected with an HTTP 
 | Event     | Data |
 |-----------|------|
 | `hits`    | `{"index_id": "...", "docs": [...]}`: documents matching the query. Within a shard, documents are sent in the order they were persisted. There is no global ordering across shards. |
-| `dropped` | `{"reason": "rate_limited" \| "lagged" \| "too_large", "num_dropped": 12}`: documents that matched but were not sent. `rate_limited`: more documents matched than `max_docs_per_sec`. `lagged`: the client or the network did not keep up; `num_dropped` then counts batches of documents. `too_large`: the document does not fit in a gRPC message (see the `grpc.max_message_size` node setting). |
+| `dropped` | `{"reason": "rate_limited" \| "lagged" \| "too_large", "num_dropped": 12}`: documents that matched but were not sent. `rate_limited`: more documents matched than `max_docs_per_sec`. `lagged`: the client, the network, or the server did not keep up; `num_dropped` then counts batches of documents. `too_large`: the document does not fit in a gRPC message (see the `grpc.max_message_size` node setting); it does not count toward `max_docs_per_sec`. |
 | `error`   | `{"message": "..."}`: non-fatal error, for instance an ingester could not be reached. The stream keeps running and reconnects automatically. |
 
 :::note

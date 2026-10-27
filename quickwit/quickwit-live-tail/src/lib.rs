@@ -28,5 +28,5 @@ mod rate_limiter;
 mod service;
 mod session;
 
-pub use hub::{LiveTailHub, TailBatch, TailDoc};
+pub use hub::{LiveTailHub, TailBatch, TailDoc, TailSubscription};
 pub use service::LiveTailServiceImpl;

@@ -15,33 +15,25 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use futures::StreamExt;
 use quickwit_cluster::{Cluster, ClusterNode};
 use quickwit_config::{INGEST_V2_SOURCE_ID, build_doc_mapper};
 use quickwit_ingest::find_ingesters_with_open_shards;
-use quickwit_proto::live_tail::{
-    LiveTailDropReason, LiveTailDropped, LiveTailError, LiveTailHits, LiveTailMessage,
-    LiveTailResult, LiveTailService, LiveTailServiceClient, LiveTailServiceStream,
-    OpenLiveTailRequest, live_tail_message,
-};
+use quickwit_proto::live_tail::{LiveTailServiceClient, OpenLiveTailRequest};
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::{IndexUid, NodeId};
 use quickwit_query::query_ast::query_ast_from_user_text;
 use quickwit_search::{SearchError, resolve_index_patterns};
-use serde_json::Value as JsonValue;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, MissedTickBehavior};
 use tracing::debug;
 
+use super::forwarder::{forward_target, open_stream};
 use super::{LiveTailContext, LiveTailEvent};
 
 /// Interval at which the set of ingesters hosting open shards of the tailed indexes is refreshed.
 /// It also bounds the time it takes to reconnect to an ingester after a stream failure.
-const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
-
-/// Maximum time to wait for an ingester to open a stream.
-const OPEN_STREAM_TIMEOUT: Duration = Duration::from_secs(5);
+pub(super) const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Everything needed to tail one index. Plans are built, and the query validated, before the
 /// event stream is opened so that invalid requests get a proper HTTP error status.
@@ -170,6 +162,7 @@ impl LiveTailRunner {
                 index_uid: Some(plan.index_uid.clone()),
                 query_ast_json: plan.query_ast_json.clone(),
                 max_docs_per_sec: self.max_docs_per_sec,
+                max_message_num_bytes: self.context.grpc_max_message_size.as_u64(),
             };
             let client = live_tail_client(&self.context, node);
             open_stream_futures.push(async move {
@@ -277,99 +270,6 @@ fn live_tail_client(context: &LiveTailContext, node: &ClusterNode) -> LiveTailSe
     )
 }
 
-async fn open_stream(
-    client: LiveTailServiceClient,
-    request: OpenLiveTailRequest,
-) -> LiveTailResult<LiveTailServiceStream<LiveTailMessage>> {
-    tokio::time::timeout(OPEN_STREAM_TIMEOUT, client.open_live_tail(request))
-        .await
-        .map_err(|_| LiveTailError::Timeout("failed to open stream in time".to_string()))?
-}
-
-/// Forwards the live tail stream of one target to the client until the stream ends or the client
-/// leaves. A stream that failed to open or ended while the client is still there is reported as
-/// an `error` event.
-async fn forward_target(
-    stream_result: LiveTailResult<LiveTailServiceStream<LiveTailMessage>>,
-    index_id: String,
-    node_id: NodeId,
-    event_tx: mpsc::Sender<LiveTailEvent>,
-) {
-    let forward_result = match stream_result {
-        Ok(stream) => forward_stream(stream, &index_id, &event_tx).await,
-        Err(error) => Err(error),
-    };
-    let Err(error) = forward_result else {
-        return;
-    };
-    let message = format!(
-        "lost live tail stream of index `{index_id}` on ingester `{node_id}` ({error}): retrying \
-         in up to {}s",
-        REFRESH_INTERVAL.as_secs()
-    );
-    let _ = event_tx.send(LiveTailEvent::Error { message }).await;
-}
-
-/// Returns `Ok` when the client left.
-async fn forward_stream(
-    mut stream: LiveTailServiceStream<LiveTailMessage>,
-    index_id: &str,
-    event_tx: &mpsc::Sender<LiveTailEvent>,
-) -> LiveTailResult<()> {
-    while let Some(message_result) = stream.next().await {
-        let event = match message_result?.message {
-            Some(live_tail_message::Message::Hits(hits)) => hits_event(index_id, hits)?,
-            Some(live_tail_message::Message::Dropped(dropped)) => dropped_event(dropped)?,
-            // Ingesters always set the message: this is a violated invariant.
-            None => {
-                return Err(LiveTailError::Internal(
-                    "empty live tail message from ingester".to_string(),
-                ));
-            }
-        };
-        if event_tx.send(event).await.is_err() {
-            return Ok(());
-        }
-    }
-    Err(LiveTailError::Unavailable(
-        "stream closed by the ingester".to_string(),
-    ))
-}
-
-fn dropped_event(dropped: LiveTailDropped) -> LiveTailResult<LiveTailEvent> {
-    let reason = dropped.reason();
-    // `reason()` maps the unknown values to `Unspecified`, which ingesters never send.
-    if reason == LiveTailDropReason::Unspecified {
-        return Err(LiveTailError::Internal(format!(
-            "invalid live tail drop reason from ingester: `{}`",
-            dropped.reason
-        )));
-    }
-    Ok(LiveTailEvent::Dropped {
-        reason,
-        num_dropped: dropped.num_dropped,
-    })
-}
-
-fn hits_event(index_id: &str, hits: LiveTailHits) -> LiveTailResult<LiveTailEvent> {
-    let mut docs: Vec<JsonValue> = Vec::new();
-
-    for line in hits.docs_ndjson.split(|byte| *byte == b'\n') {
-        if line.is_empty() {
-            continue;
-        }
-        // Ingesters serialize valid JSON objects: this is a violated invariant, not a client error.
-        let doc = serde_json::from_slice(line).map_err(|error| {
-            LiveTailError::Internal(format!("invalid JSON document from ingester: {error}"))
-        })?;
-        docs.push(doc);
-    }
-    Ok(LiveTailEvent::Hits {
-        index_id: index_id.to_string(),
-        docs,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
@@ -382,7 +282,9 @@ mod tests {
     use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
     use quickwit_proto::ingest::ShardState;
     use quickwit_proto::ingest::ingester::IngesterStatus;
-    use quickwit_proto::live_tail::{LiveTailMessage, MockLiveTailService};
+    use quickwit_proto::live_tail::{
+        LiveTailHits, LiveTailMessage, MockLiveTailService, live_tail_message,
+    };
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
     use quickwit_proto::types::ShardId;
     use serde_json::json;
@@ -469,28 +371,6 @@ mod tests {
             node_id: NodeId::from_str("ingester-1"),
             index_uid,
         }));
-    }
-
-    #[test]
-    fn test_dropped_event_rejects_unspecified_reason() {
-        let dropped = LiveTailDropped {
-            reason: LiveTailDropReason::RateLimited as i32,
-            num_dropped: 3,
-        };
-        assert_eq!(
-            dropped_event(dropped).unwrap(),
-            LiveTailEvent::Dropped {
-                reason: LiveTailDropReason::RateLimited,
-                num_dropped: 3,
-            }
-        );
-        for reason in [LiveTailDropReason::Unspecified as i32, 42] {
-            let dropped = LiveTailDropped {
-                reason,
-                num_dropped: 3,
-            };
-            dropped_event(dropped).unwrap_err();
-        }
     }
 
     #[tokio::test(start_paused = true)]

@@ -27,7 +27,7 @@ use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{debug, warn};
 
 use crate::filter::{FilteredDocs, filter_batches};
-use crate::hub::TailBatch;
+use crate::hub::{TailBatch, TailSubscription};
 use crate::rate_limiter::DocRateLimiter;
 
 /// Interval at which the received documents are filtered and sent.
@@ -65,11 +65,12 @@ fn filter_thread_pool() -> &'static ThreadPoolWithPriority {
 pub(crate) struct LiveTailSession {
     session_id: String,
     query_ast: Arc<QueryAst>,
-    batch_rx: broadcast::Receiver<Arc<TailBatch>>,
+    subscription: TailSubscription,
     message_tx: mpsc::Sender<LiveTailResult<LiveTailMessage>>,
     /// Shared with the other sessions opened on this node by the same client session.
     rate_limiter: Arc<Mutex<DocRateLimiter>>,
-    /// Documents larger than this are dropped: they do not fit in a gRPC message.
+    /// Maximum size of the NDJSON payload of a `LiveTailHits` message, so that it fits in a gRPC
+    /// message. Documents larger than this are dropped.
     max_hits_payload_num_bytes: usize,
     pending_batches: Vec<Arc<TailBatch>>,
     num_pending_docs: usize,
@@ -82,7 +83,7 @@ impl LiveTailSession {
     pub fn new(
         session_id: String,
         query_ast: QueryAst,
-        batch_rx: broadcast::Receiver<Arc<TailBatch>>,
+        subscription: TailSubscription,
         message_tx: mpsc::Sender<LiveTailResult<LiveTailMessage>>,
         rate_limiter: Arc<Mutex<DocRateLimiter>>,
         max_hits_payload_num_bytes: usize,
@@ -91,7 +92,7 @@ impl LiveTailSession {
         Self {
             session_id,
             query_ast: Arc::new(query_ast),
-            batch_rx,
+            subscription,
             message_tx,
             rate_limiter,
             max_hits_payload_num_bytes,
@@ -111,7 +112,7 @@ impl LiveTailSession {
         loop {
             tokio::select! {
                 _ = self.message_tx.closed() => break,
-                recv_result = self.batch_rx.recv() => {
+                recv_result = self.subscription.recv() => {
                     match recv_result {
                         Ok(tail_batch) => {
                             self.num_pending_docs += tail_batch.num_docs();
@@ -143,6 +144,9 @@ impl LiveTailSession {
     }
 
     async fn flush(&mut self) -> LiveTailResult<()> {
+        // The batches that the hub did not publish because of its memory limit are missed too.
+        self.num_lagged_batches += self.subscription.take_num_dropped_batches();
+
         if self.num_lagged_batches > 0 {
             let dropped = LiveTailDropped {
                 reason: LiveTailDropReason::Lagged as i32,
@@ -166,12 +170,20 @@ impl LiveTailSession {
             .lock()
             .expect("lock should not be poisoned")
             .num_available_docs(Instant::now());
+        // A document is sent as one NDJSON line: its JSON and a newline.
+        let max_doc_num_bytes = self.max_hits_payload_num_bytes.saturating_sub(1);
         let FilteredDocs {
             num_matching_docs,
+            num_too_large_docs,
             docs_json,
         } = filter_thread_pool()
             .run_cpu_intensive(move || {
-                filter_batches(&query_ast, &tail_batches, num_available_docs)
+                filter_batches(
+                    &query_ast,
+                    &tail_batches,
+                    num_available_docs,
+                    max_doc_num_bytes,
+                )
             })
             .await
             .map_err(|_| LiveTailError::Internal("live tail filter panicked".to_string()))?
@@ -186,15 +198,11 @@ impl LiveTailSession {
         debug!(session_id=%self.session_id, num_matching_docs, num_allowed_docs, "filtered live tail documents");
 
         let mut docs_ndjson: Vec<u8> = Vec::new();
-        let mut num_too_large_docs: u64 = 0;
 
         for doc_json in docs_json {
+            // `filter_batches` guarantees that each document fits in a payload on its own.
             let doc_ndjson_num_bytes = doc_json.len() + 1;
 
-            if doc_ndjson_num_bytes > self.max_hits_payload_num_bytes {
-                num_too_large_docs += 1;
-                continue;
-            }
             if docs_ndjson.len() + doc_ndjson_num_bytes > self.max_hits_payload_num_bytes {
                 self.send_hits(std::mem::take(&mut docs_ndjson)).await;
             }
@@ -204,9 +212,10 @@ impl LiveTailSession {
         if !docs_ndjson.is_empty() {
             self.send_hits(docs_ndjson).await;
         }
-        self.send_dropped(LiveTailDropReason::TooLarge, num_too_large_docs)
+        self.send_dropped(LiveTailDropReason::TooLarge, num_too_large_docs as u64)
             .await;
-        let num_rate_limited_docs = (num_matching_docs - num_allowed_docs) as u64;
+        let num_rate_limited_docs =
+            (num_matching_docs - num_too_large_docs - num_allowed_docs) as u64;
         self.send_dropped(LiveTailDropReason::RateLimited, num_rate_limited_docs)
             .await;
         Ok(())

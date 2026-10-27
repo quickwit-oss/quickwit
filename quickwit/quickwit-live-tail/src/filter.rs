@@ -37,12 +37,18 @@ const INDEX_WRITER_MEMORY_BUDGET_BYTES: usize = 15_000_000;
 #[derive(Debug)]
 pub(crate) struct FilteredDocs {
     pub num_matching_docs: usize,
-    /// The first `max_num_docs` matching documents, serialized as JSON, in processing order.
+    /// Number of matching documents larger than `max_doc_num_bytes` once serialized.
+    pub num_too_large_docs: usize,
+    /// The first `max_num_docs` matching documents that are not too large, serialized as JSON, in
+    /// processing order.
     pub docs_json: Vec<Vec<u8>>,
 }
 
 /// Counts the documents of `tail_batches` matching `query_ast` and serializes the first
 /// `max_num_docs` of them, so that no work is spent on documents dropped by the rate limiter.
+///
+/// Matching documents larger than `max_doc_num_bytes` once serialized cannot be sent: they are
+/// counted in `num_too_large_docs` and do not count toward `max_num_docs`.
 ///
 /// The query is evaluated with the same semantics as a search: the documents are indexed into a
 /// single-segment in-RAM Tantivy index built with the doc mapper of their shard, and the query
@@ -57,10 +63,12 @@ pub(crate) fn filter_batches(
     query_ast: &QueryAst,
     tail_batches: &[Arc<TailBatch>],
     max_num_docs: usize,
+    max_doc_num_bytes: usize,
 ) -> anyhow::Result<FilteredDocs> {
     let start = Instant::now();
     let mut num_docs = 0;
     let mut num_matching_docs = 0;
+    let mut num_too_large_docs = 0;
     let mut docs_json: Vec<Vec<u8>> = Vec::new();
 
     // Batches persisted with different doc mappings, e.g. right after an index update, are
@@ -82,7 +90,13 @@ pub(crate) fn filter_batches(
             if docs_json.len() == max_num_docs {
                 break;
             }
-            docs_json.push(serde_json::to_vec(&docs[doc_position].json_obj)?);
+            let doc_json = serde_json::to_vec(&docs[doc_position].json_obj)?;
+
+            if doc_json.len() > max_doc_num_bytes {
+                num_too_large_docs += 1;
+                continue;
+            }
+            docs_json.push(doc_json);
         }
     }
     LIVE_TAIL_FILTER_DURATION_SECS.observe(start.elapsed().as_secs_f64());
@@ -90,6 +104,7 @@ pub(crate) fn filter_batches(
     LIVE_TAIL_FILTERED_DOCS_UNMATCHED.inc_by((num_docs - num_matching_docs) as u64);
     Ok(FilteredDocs {
         num_matching_docs,
+        num_too_large_docs,
         docs_json,
     })
 }
@@ -236,7 +251,7 @@ mod tests {
         let query_ast = query_ast_from_user_text(user_query, None)
             .parse_user_query(&["body".to_string()])
             .unwrap();
-        filter_batches(&query_ast, &tail_batches(), usize::MAX)
+        filter_batches(&query_ast, &tail_batches(), usize::MAX, usize::MAX)
             .unwrap()
             .docs_json
             .into_iter()
@@ -249,11 +264,12 @@ mod tests {
 
     #[test]
     fn test_filter_batches_match_all() {
-        let filtered_docs = filter_batches(&QueryAst::MatchAll, &tail_batches(), 10).unwrap();
+        let filtered_docs =
+            filter_batches(&QueryAst::MatchAll, &tail_batches(), 10, usize::MAX).unwrap();
         assert_eq!(filtered_docs.num_matching_docs, 3);
         assert_eq!(filtered_docs.docs_json.len(), 3);
 
-        let filtered_docs = filter_batches(&QueryAst::MatchAll, &[], 10).unwrap();
+        let filtered_docs = filter_batches(&QueryAst::MatchAll, &[], 10, usize::MAX).unwrap();
         assert_eq!(filtered_docs.num_matching_docs, 0);
         assert!(filtered_docs.docs_json.is_empty());
     }
@@ -263,15 +279,30 @@ mod tests {
         let query_ast = query_ast_from_user_text("severity_text:ERROR", None)
             .parse_user_query(&[])
             .unwrap();
-        let filtered_docs = filter_batches(&query_ast, &tail_batches(), 1).unwrap();
+        let filtered_docs = filter_batches(&query_ast, &tail_batches(), 1, usize::MAX).unwrap();
         assert_eq!(filtered_docs.num_matching_docs, 2);
         assert_eq!(filtered_docs.docs_json.len(), 1);
         let doc: serde_json::Value = serde_json::from_slice(&filtered_docs.docs_json[0]).unwrap();
         assert_eq!(doc["body"], "Connection REFUSED by upstream");
 
-        let filtered_docs = filter_batches(&query_ast, &tail_batches(), 0).unwrap();
+        let filtered_docs = filter_batches(&query_ast, &tail_batches(), 0, usize::MAX).unwrap();
         assert_eq!(filtered_docs.num_matching_docs, 2);
         assert!(filtered_docs.docs_json.is_empty());
+    }
+
+    #[test]
+    fn test_filter_batches_skips_too_large_docs() {
+        let tail_batches = [tail_batch(vec![
+            json!({"timestamp": 1_700_000_000, "body": "x".repeat(1_000)}),
+            json!({"timestamp": 1_700_000_000, "body": "small"}),
+        ])];
+        // The too large document does not count toward `max_num_docs`.
+        let filtered_docs = filter_batches(&QueryAst::MatchAll, &tail_batches, 1, 500).unwrap();
+        assert_eq!(filtered_docs.num_matching_docs, 2);
+        assert_eq!(filtered_docs.num_too_large_docs, 1);
+        assert_eq!(filtered_docs.docs_json.len(), 1);
+        let doc: serde_json::Value = serde_json::from_slice(&filtered_docs.docs_json[0]).unwrap();
+        assert_eq!(doc["body"], "small");
     }
 
     #[test]
@@ -348,7 +379,7 @@ mod tests {
             .parse_user_query(&[])
             .unwrap();
         // Only the document tokenized with the `default` tokenizer, which lowercases, matches.
-        let filtered_docs = filter_batches(&query_ast, &tail_batches, 10).unwrap();
+        let filtered_docs = filter_batches(&query_ast, &tail_batches, 10, usize::MAX).unwrap();
         assert_eq!(filtered_docs.num_matching_docs, 1);
     }
 
@@ -360,13 +391,14 @@ mod tests {
             json!({"severity_text": "ERROR", "body": "no timestamp"}),
             json!({"timestamp": 1_700_000_000, "severity_text": "ERROR", "body": "Disk full"}),
         ])];
-        let filtered_docs = filter_batches(&QueryAst::MatchAll, &tail_batches, 10).unwrap();
+        let filtered_docs =
+            filter_batches(&QueryAst::MatchAll, &tail_batches, 10, usize::MAX).unwrap();
         assert_eq!(filtered_docs.num_matching_docs, 1);
 
         let query_ast = query_ast_from_user_text("severity_text:ERROR", None)
             .parse_user_query(&[])
             .unwrap();
-        let filtered_docs = filter_batches(&query_ast, &tail_batches, 10).unwrap();
+        let filtered_docs = filter_batches(&query_ast, &tail_batches, 10, usize::MAX).unwrap();
         assert_eq!(filtered_docs.num_matching_docs, 1);
         let doc: serde_json::Value = serde_json::from_slice(&filtered_docs.docs_json[0]).unwrap();
         assert_eq!(doc["body"], "Disk full");

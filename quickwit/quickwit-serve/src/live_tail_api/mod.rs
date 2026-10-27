@@ -16,6 +16,7 @@
 //! matching a query, as they are persisted by the ingesters.
 
 mod coordinator;
+mod forwarder;
 mod rest_handler;
 
 use bytesize::ByteSize;

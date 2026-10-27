@@ -36,7 +36,8 @@ pub struct LiveTailServiceImpl {
     session_permits: Arc<Semaphore>,
     /// Rates requested by clients above this limit are capped.
     max_docs_per_sec: u32,
-    max_hits_payload_num_bytes: usize,
+    /// `grpc.max_message_size` of this node.
+    grpc_max_message_num_bytes: usize,
     /// Rate limiters of the client sessions, by session ID. A client session tailing several
     /// indexes opens one session per index on this node: they share the same rate limiter, so
     /// that `max_docs_per_sec` applies to the node, not to each index.
@@ -54,7 +55,7 @@ impl LiveTailServiceImpl {
             hub,
             session_permits: Arc::new(Semaphore::new(max_sessions)),
             max_docs_per_sec,
-            max_hits_payload_num_bytes: max_hits_payload_num_bytes(grpc_max_message_num_bytes),
+            grpc_max_message_num_bytes,
             rate_limiters: Arc::default(),
         }
     }
@@ -99,6 +100,16 @@ impl LiveTailService for LiveTailServiceImpl {
                 "`max_docs_per_sec` must be positive".to_string(),
             ));
         }
+        if request.max_message_num_bytes == 0 {
+            return Err(LiveTailError::InvalidArgument(
+                "`max_message_num_bytes` must be positive".to_string(),
+            ));
+        }
+        // The messages must be accepted by both this node and the caller, whose
+        // `grpc.max_message_size` can differ.
+        let max_message_num_bytes = self
+            .grpc_max_message_num_bytes
+            .min(request.max_message_num_bytes as usize);
         // The query was validated against the index doc mapping by the coordinator.
         let query_ast: QueryAst =
             serde_json::from_str(&request.query_ast_json).map_err(|error| {
@@ -111,16 +122,16 @@ impl LiveTailService for LiveTailServiceImpl {
             .map_err(|_| LiveTailError::TooManyRequests)?;
 
         // Subscribe before returning so that no document persisted after this call is missed.
-        let batch_rx = self.hub.subscribe(&index_uid);
+        let subscription = self.hub.subscribe(&index_uid);
         let (message_tx, message_stream) = ServiceStream::new_bounded(3);
         let rate_limiter = self.rate_limiter(&request.session_id, request.max_docs_per_sec);
         let session = LiveTailSession::new(
             request.session_id,
             query_ast,
-            batch_rx,
+            subscription,
             message_tx,
             rate_limiter,
-            self.max_hits_payload_num_bytes,
+            max_hits_payload_num_bytes(max_message_num_bytes),
             session_permit,
         );
         quickwit_common::spawn_named_task(session.run(), "live_tail_session");
@@ -168,6 +179,7 @@ mod tests {
             index_uid: Some(IndexUid::for_test("test-index", 0)),
             query_ast_json: serde_json::to_string(&query_ast).unwrap(),
             max_docs_per_sec,
+            max_message_num_bytes: GRPC_MAX_MESSAGE_NUM_BYTES as u64,
         }
     }
 
@@ -300,12 +312,13 @@ mod tests {
     #[tokio::test]
     async fn test_live_tail_service_drops_docs_larger_than_grpc_messages() {
         let hub = LiveTailHub::default();
-        // Hits payloads are limited to 2,048 - 1,024 bytes.
-        let live_tail_service = LiveTailServiceImpl::new(hub.clone(), 1, 100, 2_048);
-        let mut stream = live_tail_service
-            .open_live_tail(open_live_tail_request("*", 100))
-            .await
-            .unwrap();
+        let live_tail_service =
+            LiveTailServiceImpl::new(hub.clone(), 1, 100, GRPC_MAX_MESSAGE_NUM_BYTES);
+        // The caller accepts smaller messages than this node: hits payloads are limited to
+        // 2,048 - 1,024 bytes.
+        let mut request = open_live_tail_request("*", 100);
+        request.max_message_num_bytes = 2_048;
+        let mut stream = live_tail_service.open_live_tail(request).await.unwrap();
 
         publish(
             &hub,
@@ -350,6 +363,11 @@ mod tests {
 
         let mut request = open_live_tail_request("*", 10);
         request.query_ast_json = "not json".to_string();
+        let error = live_tail_service.open_live_tail(request).await.unwrap_err();
+        assert!(matches!(error, LiveTailError::InvalidArgument(_)));
+
+        let mut request = open_live_tail_request("*", 10);
+        request.max_message_num_bytes = 0;
         let error = live_tail_service.open_live_tail(request).await.unwrap_err();
         assert!(matches!(error, LiveTailError::InvalidArgument(_)));
 

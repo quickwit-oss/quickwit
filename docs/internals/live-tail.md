@@ -41,6 +41,10 @@ Contracts:
   `tokio::sync::broadcast` channels, and the documents are parsed lazily by the sessions, once for
   all the sessions of the node. A session that falls behind loses batches and reports them in
   `dropped` events with the `lagged` reason.
+- The memory used by live tail is bounded: the hub does not publish the batches of an index while
+  the batches of the index still held by the channel or by its sessions exceed 64 MiB of raw
+  documents. This happens when a session stops consuming, for instance because its client does
+  not read: all the sessions of the index then miss the batches and report them as `lagged`.
 - Only the documents accepted by the write-ahead log are published, each one exactly once: there
   is no replay, unlike in the indexing pipelines that restart from their checkpoint.
 - Batches are published while the ingester state lock is held: the documents of a shard are
@@ -72,7 +76,7 @@ The number of concurrent sessions per ingester is limited by `live_tail.max_sess
 Each client session is rate limited to the `max_docs_per_sec` it requested, capped by
 `live_tail.max_docs_per_sec` (default: 10,000). When a client tails several indexes, the sessions
 it opens on an ingester share the same rate limiter, identified by the session ID of the
-coordinator. Both settings can be overridden with the
+coordinator. `live_tail.max_sessions` and `live_tail.max_docs_per_sec` can be overridden with the
 `QW_LIVE_TAIL_MAX_SESSIONS` and `QW_LIVE_TAIL_MAX_DOCS_PER_SEC` environment variables.
 
 The rate limit applies after filtering: the CPU cost of a session is proportional to the ingestion
@@ -80,12 +84,13 @@ throughput of the index, not to the number of matching documents. Each session i
 documents of the tailed index once more. This work runs on a dedicated thread pool of 2 threads,
 not on the `run_cpu_intensive` pool shared with ingest (document validation, decompression), so
 that live tail cannot starve ingestion. When the pool does not keep up, sessions lag and report
-the documents they miss as `lagged`.
-
-Matching documents are sent in `LiveTailHits` messages of at most 1 MiB, and never larger than
-`grpc.max_message_size`. A document that does not fit in a message is dropped and reported as
-`too_large`. Cloning the batch of documents in the ingester, which does
+the documents they miss as `lagged`. Handing the batch of documents over to the hub, which does
 not copy them, is the only cost on the ingest path.
+
+Matching documents are sent in `LiveTailHits` messages of at most 1 MiB, and never larger than the
+`grpc.max_message_size` of the ingester and of the coordinator, which sends its own in the
+`OpenLiveTail` request. A document that does not fit in a message on its own is dropped and
+reported as `too_large`: it does not count toward the rate limit.
 
 ### Coordinator (`quickwit-serve`, `live_tail_api`)
 
@@ -102,8 +107,9 @@ Any node serving the REST API can coordinate a live tail. The coordinator:
 - ends the session when the client disconnects, which drops the gRPC streams and, in turn, the
   ingester sessions.
 
-Malformed messages from an ingester (no message, unknown drop reason) are protocol violations:
-the stream is reported as failed and reopened at the next refresh.
+Malformed messages from an ingester (no message, unknown drop reason, document that is not a JSON
+object) are protocol violations: the stream is reported as failed and reopened at the next
+refresh.
 
 There is no global ordering: documents are sent in the order of the write-ahead log within a
 shard.

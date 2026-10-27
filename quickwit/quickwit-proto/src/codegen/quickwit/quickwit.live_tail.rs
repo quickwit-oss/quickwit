@@ -15,6 +15,10 @@ pub struct OpenLiveTailRequest {
     /// documents are dropped and reported in `LiveTailDropped` messages.
     #[prost(uint32, tag = "4")]
     pub max_docs_per_sec: u32,
+    /// Maximum size of the gRPC messages that the caller accepts. The node sends messages no larger
+    /// than this and its own `grpc.max_message_size`. Must be positive.
+    #[prost(uint64, tag = "5")]
+    pub max_message_num_bytes: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
