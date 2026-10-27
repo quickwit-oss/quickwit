@@ -29,9 +29,8 @@ pub struct IndexingStatistics {
     pub num_docs: u64,
     /// Number of document parse error, or missing timestamps
     pub num_invalid_docs: u64,
-    /// Number of documents intentionally dropped via the VRL `abort` expression while
-    /// `drop_on_abort` was enabled. These are intentional filters, not errors, and are
-    /// not counted in `num_docs` or `num_invalid_docs`.
+    /// Number of documents intentionally dropped via the VRL `abort` expression. Not
+    /// counted in `num_docs` or `num_invalid_docs`.
     pub num_dropped_docs: u64,
     /// Number of created split
     pub num_local_splits: u64,
@@ -43,7 +42,7 @@ pub struct IndexingStatistics {
     pub num_published_splits: u64,
     /// Number of empty batches
     pub num_empty_splits: u64,
-    /// Size in byte of document processed
+    /// Size in bytes of documents processed, including those dropped via VRL `abort`.
     pub total_bytes_processed: u64,
     /// Size in bytes of resulting split
     pub total_size_splits: u64,

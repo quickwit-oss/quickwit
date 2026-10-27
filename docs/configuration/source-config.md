@@ -243,6 +243,7 @@ For all source types but the `ingest-api`, ingested documents can be transformed
 | --- | --- | --- |
 | `script` | Source code of the VRL program executed to transform documents. | required |
 | `timezone` | Timezone used in the VRL program for date and time manipulations. It must be a valid name in the [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) | `UTC` |
+| `on_abort` | What happens to a document when the script calls [`abort`](https://vector.dev/docs/reference/vrl/expressions/#abort). `silently_drop` discards it without logging and counts it as `transform_abort`; `treat_as_error` logs a warning and counts it as `transform_error`. | `silently_drop` |
 
 ```yaml
 # Your source config here
@@ -253,6 +254,17 @@ transform:
     .timestamp = now()
     del(.username)
   timezone: local
+```
+
+`abort` can be used to filter documents. Aborted documents are dropped silently and reported under `num_dropped_docs`. Set `on_abort: treat_as_error` to log and count them as transform errors instead:
+
+```yaml
+transform:
+  script: |
+    if .level == "debug" {
+      abort
+    }
+  on_abort: treat_as_error
 ```
 
 ## Input format

@@ -92,18 +92,15 @@ pub enum DocProcessorError {
     #[cfg(feature = "vrl")]
     #[error("VRL transform error: {0}")]
     Transform(VrlTerminate),
-    /// A VRL `abort` expression terminated the script while `drop_on_abort` was enabled
-    /// on the transform. This is an intentional drop, not an error — the document is
-    /// silently filtered out and routed to a separate counter.
+    /// The VRL program called `abort` and the transform's `on_abort` is `silently_drop`.
+    /// Intentional filtering, not a failure: no log, separate counter.
     #[cfg(feature = "vrl")]
-    #[error("VRL transform aborted (drop_on_abort): {0}")]
+    #[error("VRL transform aborted: {0}")]
     TransformAbort(VrlTerminate),
 }
 
 impl DocProcessorError {
-    /// Whether this failure should produce a warn log. Returns `false` for intentional
-    /// drops (`TransformAbort`, triggered when VRL `abort` fires while `drop_on_abort`
-    /// is enabled) so they remain silent end-to-end.
+    /// Intentional drops (`TransformAbort`) are the only variant that stays silent.
     fn should_warn(&self) -> bool {
         match self {
             #[cfg(feature = "vrl")]
@@ -339,8 +336,7 @@ pub struct DocProcessorCounters {
     /// - number of docs that were not valid json.
     /// - number of docs that failed to parse as OTLP logs/traces.
     /// - number of docs that the VRL transform errored on.
-    /// - number of docs that were intentionally dropped via VRL `abort` (with `drop_on_abort`
-    ///   enabled).
+    /// - number of docs that were intentionally dropped via VRL `abort`.
     pub valid: DocProcessorCounter,
     pub doc_mapper_errors: DocProcessorCounter,
     pub transform_errors: DocProcessorCounter,
@@ -351,7 +347,8 @@ pub struct DocProcessorCounters {
     /// Number of bytes that went through the indexer
     /// during its entire lifetime.
     ///
-    /// Includes both valid and invalid documents.
+    /// Includes valid, invalid and VRL-aborted documents, so it does not line up with
+    /// `num_processed_docs()` when a transform drops documents.
     pub num_bytes_total: AtomicU64,
 }
 
@@ -383,14 +380,11 @@ impl DocProcessorCounters {
         }
     }
 
-    /// Returns the overall number of docs that contributed to indexing throughput
-    /// (valid or invalid).
+    /// Returns the overall number of docs that went through the indexer (valid or invalid).
     ///
-    /// Docs intentionally dropped via VRL `abort` (with `drop_on_abort` enabled) are NOT
-    /// included here — they are tracked separately via [`Self::num_dropped_docs`]. This
-    /// preserves the downstream invariant that
-    /// `num_processed_docs() - num_invalid_docs() == number_of_docs_actually_indexed`,
-    /// which the CLI/API uses for throughput reporting.
+    /// Docs dropped via VRL `abort` are excluded and tracked by [`Self::num_dropped_docs`],
+    /// so `num_processed_docs() - num_invalid_docs()` stays equal to the number of indexed
+    /// docs.
     pub fn num_processed_docs(&self) -> u64 {
         self.valid.get_num_docs()
             + self.doc_mapper_errors.get_num_docs()
@@ -400,10 +394,8 @@ impl DocProcessorCounters {
     }
 
     /// Returns the overall number of docs that were sent to the indexer but were invalid
-    /// (for instance, missing a required field or malformed payload).
-    ///
-    /// Documents dropped by an intentional VRL `abort` are NOT counted here — they are
-    /// surfaced via [`Self::num_dropped_docs`] instead.
+    /// (for instance, missing a required field or malformed payload). VRL aborts are not
+    /// counted here.
     pub fn num_invalid_docs(&self) -> u64 {
         self.doc_mapper_errors.get_num_docs()
             + self.json_parse_errors.get_num_docs()
@@ -411,8 +403,7 @@ impl DocProcessorCounters {
             + self.transform_errors.get_num_docs()
     }
 
-    /// Returns the number of docs intentionally dropped by a VRL `abort` expression
-    /// while `drop_on_abort` was enabled.
+    /// Returns the number of docs intentionally dropped by a VRL `abort` expression.
     pub fn num_dropped_docs(&self) -> u64 {
         self.transform_aborts.get_num_docs()
     }
@@ -1209,6 +1200,7 @@ mod tests {
 #[cfg(test)]
 mod tests_vrl {
     use quickwit_actors::Universe;
+    use quickwit_config::AbortStrategy;
     use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use tantivy::Document;
@@ -1386,13 +1378,12 @@ mod tests_vrl {
         universe.assert_quit().await;
     }
 
-    /// Build a `DocProcessor` configured with the given VRL `script` and `drop_on_abort`
-    /// setting. Returns the running mailbox/handle plus the indexer inbox so tests can
-    /// inspect both the counters and the downstream batches.
+    /// Builds a `DocProcessor` with the given VRL `script` and `on_abort` strategy and
+    /// returns its mailbox/handle plus the indexer inbox.
     async fn build_vrl_doc_processor(
         universe: &Universe,
         script: &str,
-        drop_on_abort: bool,
+        on_abort: AbortStrategy,
     ) -> (
         quickwit_actors::Mailbox<DocProcessor>,
         quickwit_actors::ActorHandle<DocProcessor>,
@@ -1400,7 +1391,7 @@ mod tests_vrl {
     ) {
         let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox::<Indexer>();
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
-        let transform_config = TransformConfig::for_test(script).with_drop_on_abort(drop_on_abort);
+        let transform_config = TransformConfig::for_test(script).with_on_abort(on_abort);
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
@@ -1414,18 +1405,45 @@ mod tests_vrl {
         (mailbox, handle, indexer_inbox)
     }
 
-    /// A doc unconditionally `abort`ed with `drop_on_abort=true` must:
+    /// Runs a bare `abort` program to obtain a real `VrlTerminate::Abort`.
+    fn abort_terminate() -> VrlTerminate {
+        let abort_program = TransformConfig::for_test("abort")
+            .compile_vrl_script()
+            .unwrap()
+            .0;
+        let mut runtime =
+            vrl::compiler::runtime::Runtime::new(vrl::compiler::state::RuntimeState::default());
+        let mut value = VrlValue::Object(Default::default());
+        let mut metadata = VrlValue::Object(Default::default());
+        let mut secrets = VrlSecrets::default();
+        let mut target = vrl::compiler::TargetValueRef {
+            value: &mut value,
+            metadata: &mut metadata,
+            secrets: &mut secrets,
+        };
+        let terminate = runtime
+            .resolve(
+                &mut target,
+                &abort_program,
+                &vrl::compiler::TimeZone::default(),
+            )
+            .unwrap_err();
+        assert!(matches!(terminate, VrlTerminate::Abort(_)));
+        terminate
+    }
+
+    /// A doc unconditionally `abort`ed with `on_abort: silently_drop` must:
     /// - increment `transform_aborts`, NOT `transform_errors`
     /// - NOT show up in `num_invalid_docs()` (intentional drop, not invalid)
     /// - NOT show up in `num_processed_docs()` either, so the downstream invariant `indexed =
-    ///   num_processed_docs - num_invalid_docs` doesn't inflate (Codex #6472)
+    ///   num_processed_docs - num_invalid_docs` doesn't inflate
     /// - still increment `num_bytes_total` (bytes did flow through the processor)
     /// - not be forwarded to the indexer
     #[tokio::test]
-    async fn test_doc_processor_vrl_abort_with_drop_on_abort_true() -> anyhow::Result<()> {
+    async fn test_doc_processor_vrl_abort_with_silently_drop() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
         let (mailbox, handle, indexer_inbox) =
-            build_vrl_doc_processor(&universe, "abort", true).await;
+            build_vrl_doc_processor(&universe, "abort", AbortStrategy::SilentlyDrop).await;
         let payload =
             br#"{"body": "drop me", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#;
         let num_bytes_doc = payload.len() as u64;
@@ -1465,13 +1483,13 @@ mod tests_vrl {
         Ok(())
     }
 
-    /// Same script but with `drop_on_abort=false`: the abort is now treated as a transform
+    /// Same script but with `on_abort: treat_as_error`: the abort is now treated as a transform
     /// error — counted in `transform_errors`, included in `num_invalid_docs()`.
     #[tokio::test]
-    async fn test_doc_processor_vrl_abort_with_drop_on_abort_false() -> anyhow::Result<()> {
+    async fn test_doc_processor_vrl_abort_with_treat_as_error() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
         let (mailbox, handle, _indexer_inbox) =
-            build_vrl_doc_processor(&universe, "abort", false).await;
+            build_vrl_doc_processor(&universe, "abort", AbortStrategy::TreatAsError).await;
         let payload =
             br#"{"body": "fail me", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#;
         mailbox
@@ -1489,16 +1507,16 @@ mod tests_vrl {
     }
 
     /// A VRL runtime error (not an explicit `abort`) must always count as a transform
-    /// error, regardless of `drop_on_abort`.
+    /// error, regardless of `on_abort`.
     #[tokio::test]
     async fn test_doc_processor_vrl_runtime_error_always_counts_as_transform_error()
     -> anyhow::Result<()> {
         // `string!(.body)` raises a runtime error when `.body` is not a string.
         let script = ".body = upcase(string!(.body))";
-        for drop_on_abort in [true, false] {
+        for on_abort in [AbortStrategy::SilentlyDrop, AbortStrategy::TreatAsError] {
             let universe = Universe::with_accelerated_time();
             let (mailbox, handle, _indexer_inbox) =
-                build_vrl_doc_processor(&universe, script, drop_on_abort).await;
+                build_vrl_doc_processor(&universe, script, on_abort).await;
             let payload = br#"{"body": 42, "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#;
             mailbox
                 .send_message(RawDocBatch::for_test(&[payload], 0..1))
@@ -1507,19 +1525,19 @@ mod tests_vrl {
             assert_eq!(
                 counters.transform_errors.get_num_docs(),
                 1,
-                "runtime error must count as transform error (drop_on_abort={drop_on_abort})"
+                "runtime error must count as transform error (on_abort={on_abort:?})"
             );
             assert_eq!(
                 counters.transform_aborts.get_num_docs(),
                 0,
-                "runtime error must NOT count as transform abort (drop_on_abort={drop_on_abort})"
+                "runtime error must NOT count as transform abort (on_abort={on_abort:?})"
             );
             universe.assert_quit().await;
         }
         Ok(())
     }
 
-    /// Mixed batch with `drop_on_abort=true`: a conditional `abort` filters some docs,
+    /// Mixed batch with `on_abort: silently_drop`: a conditional `abort` filters some docs,
     /// the rest pass through. Counters split cleanly.
     #[tokio::test]
     async fn test_doc_processor_vrl_conditional_abort_filters_subset() -> anyhow::Result<()> {
@@ -1530,7 +1548,7 @@ mod tests_vrl {
         "#;
         let universe = Universe::with_accelerated_time();
         let (mailbox, handle, indexer_inbox) =
-            build_vrl_doc_processor(&universe, script, true).await;
+            build_vrl_doc_processor(&universe, script, AbortStrategy::SilentlyDrop).await;
         mailbox
             .send_message(RawDocBatch::for_test(
                 &[
@@ -1575,36 +1593,9 @@ mod tests_vrl {
             20,
         );
 
-        // Build a Terminate via a minimal VRL script that aborts.
-        let abort_program = TransformConfig::for_test("abort")
-            .compile_vrl_script()
-            .unwrap()
-            .0;
-        let mut runtime =
-            vrl::compiler::runtime::Runtime::new(vrl::compiler::state::RuntimeState::default());
-        let mut value = VrlValue::Object(Default::default());
-        let mut metadata = VrlValue::Object(Default::default());
-        let mut secrets = VrlSecrets::default();
-        let mut target = vrl::compiler::TargetValueRef {
-            value: &mut value,
-            metadata: &mut metadata,
-            secrets: &mut secrets,
-        };
-        let abort_terminate = runtime
-            .resolve(
-                &mut target,
-                &abort_program,
-                &vrl::compiler::TimeZone::default(),
-            )
-            .unwrap_err();
-        assert!(matches!(abort_terminate, VrlTerminate::Abort(_)));
-
         // Same Terminate routed through both variants exercises both counter paths.
-        counters.record_error(
-            DocProcessorError::TransformAbort(abort_terminate.clone()),
-            30,
-        );
-        counters.record_error(DocProcessorError::Transform(abort_terminate), 40);
+        counters.record_error(DocProcessorError::TransformAbort(abort_terminate()), 30);
+        counters.record_error(DocProcessorError::Transform(abort_terminate()), 40);
 
         assert_eq!(counters.json_parse_errors.get_num_docs(), 1);
         assert_eq!(counters.doc_mapper_errors.get_num_docs(), 1);
@@ -1624,34 +1615,11 @@ mod tests_vrl {
         );
     }
 
-    /// Codex review finding (PR #6472): make sure aborts are silent end-to-end —
-    /// `should_warn()` must return false for `TransformAbort` (and true for every other
-    /// variant) so the `rate_limited_warn!` in `process_raw_doc` skips it.
+    /// `should_warn()` must return false for `TransformAbort` only, so the
+    /// `rate_limited_warn!` in `process_raw_doc` skips intentional drops.
     #[test]
     fn test_doc_processor_error_should_warn_excludes_transform_abort() {
-        // Aborts are silent.
-        let abort_program = TransformConfig::for_test("abort")
-            .compile_vrl_script()
-            .unwrap()
-            .0;
-        let mut runtime =
-            vrl::compiler::runtime::Runtime::new(vrl::compiler::state::RuntimeState::default());
-        let mut value = VrlValue::Object(Default::default());
-        let mut metadata = VrlValue::Object(Default::default());
-        let mut secrets = VrlSecrets::default();
-        let mut target = vrl::compiler::TargetValueRef {
-            value: &mut value,
-            metadata: &mut metadata,
-            secrets: &mut secrets,
-        };
-        let abort_terminate = runtime
-            .resolve(
-                &mut target,
-                &abort_program,
-                &vrl::compiler::TimeZone::default(),
-            )
-            .unwrap_err();
-        let abort_err = DocProcessorError::TransformAbort(abort_terminate.clone());
+        let abort_err = DocProcessorError::TransformAbort(abort_terminate());
         assert!(
             !abort_err.should_warn(),
             "TransformAbort must not produce a warn log"
@@ -1663,7 +1631,7 @@ mod tests_vrl {
             DocProcessorError::DocMapperParsing(DocParsingError::RequiredField(
                 "missing".to_string(),
             )),
-            DocProcessorError::Transform(abort_terminate),
+            DocProcessorError::Transform(abort_terminate()),
         ];
         for err in warning_variants {
             assert!(err.should_warn(), "non-abort variant must warn: {err}");
@@ -1676,7 +1644,7 @@ mod tests_vrl {
     ///
     /// Batch composition:
     /// - 1 valid doc (kept)
-    /// - 1 doc that triggers `abort` via `drop_on_abort=true` (transform_abort)
+    /// - 1 doc that triggers `abort` (transform_abort)
     /// - 1 doc with malformed JSON (json_parse_error)
     /// - 1 doc missing the required `timestamp` field (doc_mapper_error)
     #[tokio::test]
@@ -1686,7 +1654,7 @@ mod tests_vrl {
         "#;
         let universe = Universe::with_accelerated_time();
         let (mailbox, handle, indexer_inbox) =
-            build_vrl_doc_processor(&universe, script, true).await;
+            build_vrl_doc_processor(&universe, script, AbortStrategy::SilentlyDrop).await;
         mailbox
             .send_message(RawDocBatch::for_test(
                 &[
@@ -1713,7 +1681,7 @@ mod tests_vrl {
         assert_eq!(
             counters.transform_errors.get_num_docs(),
             0,
-            "no transform_errors when drop_on_abort=true"
+            "no transform_errors with silently_drop"
         );
         assert_eq!(
             counters.json_parse_errors.get_num_docs(),
@@ -1755,10 +1723,8 @@ mod tests_vrl {
             .sum();
         assert_eq!(total_downstream_docs, 1);
 
-        // Pipe through IndexingStatistics to verify the aggregation surface matches what
-        // the CLI/API observes. Aborts must land in num_dropped_docs, NOT num_docs —
-        // otherwise downstream "indexed = num_docs - num_invalid_docs" math counts
-        // filtered docs as indexed (Codex review on PR #6472).
+        // Aborts must land in num_dropped_docs, not num_docs, or the CLI's
+        // `indexed = num_docs - num_invalid_docs` counts filtered docs as indexed.
         let stats = crate::models::IndexingStatistics::default().add_actor_counters(
             &counters,
             &crate::actors::IndexerCounters::default(),

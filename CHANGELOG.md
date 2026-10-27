@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 --->
 
+# [Unreleased]
+
+### Added
+- Add `on_abort` to the VRL transform config and a `transform_abort` doc processor status (#6472)
+
+### Changed
+- Documents aborted by a VRL transform are now dropped silently by default instead of being logged and counted as `transform_error`. Set `on_abort: treat_as_error` to restore the previous behavior (#6472)
+
 # [0.9.0]
 
 ### Added

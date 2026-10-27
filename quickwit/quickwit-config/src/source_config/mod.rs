@@ -172,7 +172,7 @@ impl crate::TestableForRegression for SourceConfig {
             transform_config: Some(TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: default_timezone(),
-                drop_on_abort: default_drop_on_abort(),
+                on_abort: AbortStrategy::default(),
             }),
             input_format: SourceInputFormat::Json,
         }
@@ -635,38 +635,51 @@ pub struct TransformConfig {
     #[serde(default = "default_timezone")]
     timezone: String,
 
-    /// When `true` (the default, matching Vector semantics), documents that are explicitly
-    /// terminated via the VRL `abort` expression are dropped silently and routed to the
-    /// `transform_abort` counter. When `false`, an aborted document is treated identically
-    /// to an unexpected VRL runtime error: a warning is logged and the document is counted
-    /// as a transform error.
-    #[serde(default = "default_drop_on_abort")]
-    drop_on_abort: bool,
+    /// What happens to a document when the script hits an `abort` expression. Defaults to
+    /// `silently_drop` (Vector semantics); `treat_as_error` logs and counts it as a
+    /// transform error instead.
+    #[schema(default = "silently_drop")]
+    #[serde(default, skip_serializing_if = "AbortStrategy::is_default")]
+    on_abort: AbortStrategy,
 }
 
 fn default_timezone() -> String {
     "UTC".to_string()
 }
 
-fn default_drop_on_abort() -> bool {
-    true
+/// How the doc processor handles a document whose VRL program called `abort`.
+#[derive(
+    Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Hash, utoipa::ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum AbortStrategy {
+    /// Drop the document without logging and count it under `transform_abort`.
+    #[default]
+    SilentlyDrop,
+    /// Log a warning and count the document under `transform_error`.
+    TreatAsError,
+}
+
+impl AbortStrategy {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 impl TransformConfig {
     /// Creates a new [`TransformConfig`] instance from the provided VRL script and optional
-    /// timezone. `drop_on_abort` defaults to `true`.
+    /// timezone.
     pub fn new(vrl_script: String, timezone_opt: Option<String>) -> Self {
         Self {
             vrl_script,
             timezone: timezone_opt.unwrap_or_else(default_timezone),
-            drop_on_abort: default_drop_on_abort(),
+            on_abort: AbortStrategy::default(),
         }
     }
 
-    /// Returns whether documents aborted via the VRL `abort` expression should be silently
-    /// dropped (no warn log, separate counter) instead of being treated as transform errors.
-    pub fn drop_on_abort(&self) -> bool {
-        self.drop_on_abort
+    /// Returns what to do with documents aborted by the VRL program.
+    pub fn on_abort(&self) -> AbortStrategy {
+        self.on_abort
     }
 
     #[cfg(feature = "vrl")]
@@ -729,13 +742,13 @@ impl TransformConfig {
         Self {
             vrl_script: vrl_script.to_string(),
             timezone: default_timezone(),
-            drop_on_abort: default_drop_on_abort(),
+            on_abort: AbortStrategy::default(),
         }
     }
 
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn with_drop_on_abort(mut self, drop_on_abort: bool) -> Self {
-        self.drop_on_abort = drop_on_abort;
+    pub fn with_on_abort(mut self, on_abort: AbortStrategy) -> Self {
+        self.on_abort = on_abort;
         self
     }
 }
@@ -781,7 +794,7 @@ mod tests {
             transform_config: Some(TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: "local".to_string(),
-                drop_on_abort: default_drop_on_abort(),
+                on_abort: AbortStrategy::default(),
             }),
             input_format: SourceInputFormat::Json,
         };
@@ -877,7 +890,7 @@ mod tests {
             transform_config: Some(TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: "local".to_string(),
-                drop_on_abort: default_drop_on_abort(),
+                on_abort: AbortStrategy::default(),
             }),
             input_format: SourceInputFormat::Json,
         };
@@ -1384,7 +1397,7 @@ mod tests {
             transform_config: Some(TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: default_timezone(),
-                drop_on_abort: default_drop_on_abort(),
+                on_abort: AbortStrategy::default(),
             }),
             input_format: SourceInputFormat::Json,
         };
@@ -1398,7 +1411,7 @@ mod tests {
             let transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: "local".to_string(),
-                drop_on_abort: default_drop_on_abort(),
+                on_abort: AbortStrategy::default(),
             };
             let transform_config_yaml = serde_yaml::to_string(&transform_config).unwrap();
             assert_eq!(
@@ -1410,7 +1423,7 @@ mod tests {
             let transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: default_timezone(),
-                drop_on_abort: default_drop_on_abort(),
+                on_abort: AbortStrategy::default(),
             };
             let transform_config_yaml = serde_yaml::to_string(&transform_config).unwrap();
             assert_eq!(
@@ -1419,11 +1432,11 @@ mod tests {
             );
         }
         {
-            // Round-trip with drop_on_abort explicitly set to false.
+            // Round-trip with a non-default `on_abort`.
             let transform_config = TransformConfig {
                 vrl_script: "abort".to_string(),
                 timezone: default_timezone(),
-                drop_on_abort: false,
+                on_abort: AbortStrategy::TreatAsError,
             };
             let transform_config_yaml = serde_yaml::to_string(&transform_config).unwrap();
             assert_eq!(
@@ -1445,11 +1458,10 @@ mod tests {
             let expected_transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: default_timezone(),
-                drop_on_abort: default_drop_on_abort(),
+                on_abort: AbortStrategy::default(),
             };
             assert_eq!(transform_config, expected_transform_config);
-            // The default for drop_on_abort is true (Vector semantics).
-            assert!(transform_config.drop_on_abort());
+            assert_eq!(transform_config.on_abort(), AbortStrategy::SilentlyDrop);
         }
         {
             let transform_config_yaml = r#"
@@ -1462,33 +1474,36 @@ mod tests {
             let expected_transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: "Turkey".to_string(),
-                drop_on_abort: default_drop_on_abort(),
+                on_abort: AbortStrategy::default(),
             };
             assert_eq!(transform_config, expected_transform_config);
         }
         {
-            // Explicit drop_on_abort: false.
             let transform_config_yaml = r#"
                 script: abort
-                drop_on_abort: false
+                on_abort: treat_as_error
             "#;
             let transform_config =
                 serde_yaml::from_str::<TransformConfig>(transform_config_yaml).unwrap();
-            assert!(!transform_config.drop_on_abort());
+            assert_eq!(transform_config.on_abort(), AbortStrategy::TreatAsError);
             assert_eq!(transform_config.timezone, default_timezone());
         }
         {
-            // Explicit drop_on_abort: true (matches default).
             let transform_config_yaml = r#"
                 script: abort
-                drop_on_abort: true
+                on_abort: silently_drop
             "#;
             let transform_config =
                 serde_yaml::from_str::<TransformConfig>(transform_config_yaml).unwrap();
-            assert!(transform_config.drop_on_abort());
+            assert_eq!(transform_config.on_abort(), AbortStrategy::SilentlyDrop);
         }
         {
-            // Unknown fields are rejected by deny_unknown_fields.
+            // Unknown variants and unknown fields are rejected.
+            let transform_config_yaml = r#"
+                script: abort
+                on_abort: drop
+            "#;
+            assert!(serde_yaml::from_str::<TransformConfig>(transform_config_yaml).is_err());
             let transform_config_yaml = r#"
                 script: .message = .message
                 unknown_field: 42
@@ -1496,45 +1511,27 @@ mod tests {
             assert!(serde_yaml::from_str::<TransformConfig>(transform_config_yaml).is_err());
         }
         {
-            // Wrong type for `drop_on_abort` (string instead of bool) must fail to parse —
-            // we don't want a typo silently degrading to the default.
-            let transform_config_yaml = r#"
-                script: abort
-                drop_on_abort: "true"
-            "#;
-            let err = serde_yaml::from_str::<TransformConfig>(transform_config_yaml).unwrap_err();
-            let err_str = err.to_string();
-            assert!(
-                err_str.contains("drop_on_abort") || err_str.contains("bool"),
-                "expected a type-mismatch error mentioning drop_on_abort or bool, got: {err_str}"
-            );
-        }
-        {
-            // JSON deserialization works the same as YAML (parity check).
-            let transform_config_json = r#"{
-                "script": "abort",
-                "drop_on_abort": false
-            }"#;
+            let transform_config_json = r#"{"script": "abort", "on_abort": "treat_as_error"}"#;
             let transform_config: TransformConfig =
                 serde_json::from_str(transform_config_json).unwrap();
-            assert!(!transform_config.drop_on_abort());
-        }
-        {
-            // JSON: missing field also applies the default.
-            let transform_config_json = r#"{
-                "script": ".message = .message"
-            }"#;
-            let transform_config: TransformConfig =
-                serde_json::from_str(transform_config_json).unwrap();
-            assert!(transform_config.drop_on_abort());
+            assert_eq!(transform_config.on_abort(), AbortStrategy::TreatAsError);
         }
     }
 
     #[test]
-    fn test_transform_config_new_defaults_drop_on_abort_to_true() {
+    fn test_transform_config_on_abort_default_is_not_serialized() {
+        // Older nodes reject unknown fields in `TransformConfig`, so the default must never
+        // be written to the metastore.
         let transform_config = TransformConfig::new(".body = .body".to_string(), None);
-        assert!(transform_config.drop_on_abort());
-        assert_eq!(transform_config.timezone, default_timezone());
+        assert_eq!(transform_config.on_abort(), AbortStrategy::SilentlyDrop);
+        let yaml = serde_yaml::to_string(&transform_config).unwrap();
+        assert!(!yaml.contains("on_abort"), "{yaml}");
+        let json = serde_json::to_string(&transform_config).unwrap();
+        assert!(!json.contains("on_abort"), "{json}");
+
+        let transform_config = transform_config.with_on_abort(AbortStrategy::TreatAsError);
+        let yaml = serde_yaml::to_string(&transform_config).unwrap();
+        assert!(yaml.contains("on_abort: treat_as_error"), "{yaml}");
     }
 
     #[cfg(feature = "vrl")]
@@ -1544,7 +1541,7 @@ mod tests {
             let transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: "Turkey".to_string(),
-                drop_on_abort: default_drop_on_abort(),
+                on_abort: AbortStrategy::default(),
             };
             transform_config.compile_vrl_script().unwrap();
         }
@@ -1558,7 +1555,7 @@ mod tests {
                 "#
                 .to_string(),
                 timezone: default_timezone(),
-                drop_on_abort: default_drop_on_abort(),
+                on_abort: AbortStrategy::default(),
             };
             transform_config.compile_vrl_script().unwrap();
         }
@@ -1566,7 +1563,7 @@ mod tests {
             let transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
                 timezone: "foo".to_string(),
-                drop_on_abort: default_drop_on_abort(),
+                on_abort: AbortStrategy::default(),
             };
             let error = transform_config.compile_vrl_script().unwrap_err();
             assert!(error.to_string().starts_with("failed to parse timezone"));
@@ -1575,7 +1572,7 @@ mod tests {
             let transform_config = TransformConfig {
                 vrl_script: "foo".to_string(),
                 timezone: "Turkey".to_string(),
-                drop_on_abort: default_drop_on_abort(),
+                on_abort: AbortStrategy::default(),
             };
             let error = transform_config.compile_vrl_script().unwrap_err();
             assert!(error.to_string().starts_with("failed to compile"));
@@ -1628,7 +1625,7 @@ mod tests {
                 transform_config: Some(TransformConfig {
                     vrl_script: ".message = downcase(string!(.message))".to_string(),
                     timezone: "local".to_string(),
-                    drop_on_abort: default_drop_on_abort(),
+                    on_abort: AbortStrategy::default(),
                 }),
                 input_format: SourceInputFormat::Json,
             };

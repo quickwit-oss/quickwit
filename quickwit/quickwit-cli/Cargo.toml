@@ -96,6 +96,7 @@ openssl-support = ["openssl-probe"]
 # metrics here refers to adding support for metrics ingestion within Quickwit.
 # (this is not about quickwit's metrics themselves)
 metrics = [ "quickwit-indexing/metrics", "datafusion" ]
+vrl = ["quickwit-indexing/vrl"]
 # Requires to enable tokio unstable via RUSTFLAGS="--cfg tokio_unstable"
 tokio-console = [
   "dep:console-subscriber",
