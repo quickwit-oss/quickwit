@@ -62,6 +62,8 @@ pub enum LiveTailDropReason {
     Lagged = 1,
     /// More documents matched than `max_docs_per_sec`.
     RateLimited = 2,
+    /// The document is larger than the maximum size of a gRPC message.
+    TooLarge = 3,
 }
 impl LiveTailDropReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -73,6 +75,7 @@ impl LiveTailDropReason {
             Self::Unspecified => "LIVE_TAIL_DROP_REASON_UNSPECIFIED",
             Self::Lagged => "LIVE_TAIL_DROP_REASON_LAGGED",
             Self::RateLimited => "LIVE_TAIL_DROP_REASON_RATE_LIMITED",
+            Self::TooLarge => "LIVE_TAIL_DROP_REASON_TOO_LARGE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -81,6 +84,7 @@ impl LiveTailDropReason {
             "LIVE_TAIL_DROP_REASON_UNSPECIFIED" => Some(Self::Unspecified),
             "LIVE_TAIL_DROP_REASON_LAGGED" => Some(Self::Lagged),
             "LIVE_TAIL_DROP_REASON_RATE_LIMITED" => Some(Self::RateLimited),
+            "LIVE_TAIL_DROP_REASON_TOO_LARGE" => Some(Self::TooLarge),
             _ => None,
         }
     }

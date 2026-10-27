@@ -408,10 +408,7 @@ pub async fn find_ingesters_with_open_shards(
     let key_prefix = format!("{INGESTER_SHARDS_PREFIX}{index_uid}:");
     let mut ingester_ids = HashSet::new();
 
-    for (ingester_id, key, value) in cluster
-        .live_nodes_key_values_with_prefix(&key_prefix)
-        .await
-    {
+    for (ingester_id, key, value) in cluster.live_nodes_key_values_with_prefix(&key_prefix).await {
         let Ok(shard_infos) = serde_json::from_str::<ShardInfos>(&value) else {
             warn!("failed to parse shard infos of key `{key}`: `{value}`");
             continue;

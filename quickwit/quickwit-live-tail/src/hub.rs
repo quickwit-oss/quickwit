@@ -124,9 +124,6 @@ impl LiveTailHub {
     }
 
     /// Returns whether at least one live tail session is subscribed to `index_uid`.
-    ///
-    /// The ingester calls this before publishing, so that live tail costs nothing when nobody is
-    /// watching.
     pub fn is_active(&self, index_uid: &IndexUid) -> bool {
         let channels = self.channels.lock().expect("lock should not be poisoned");
         let Some(sender) = channels.get(index_uid) else {
@@ -137,19 +134,27 @@ impl LiveTailHub {
 
     /// Publishes a batch of documents persisted for `index_uid`. Never blocks.
     ///
+    /// When nobody is subscribed to the index, this is a lookup in a hash map: the batch is
+    /// dropped, and the channel of the index, if any, is removed.
+    ///
     /// Precondition: `doc_mapper` is the doc mapper of the shard that persisted the documents.
     pub fn publish(&self, index_uid: &IndexUid, doc_mapper: Arc<DocMapper>, doc_batch: DocBatchV2) {
-        if doc_batch.is_empty() {
-            return;
-        }
-        let channels = self.channels.lock().expect("lock should not be poisoned");
+        let mut channels = self.channels.lock().expect("lock should not be poisoned");
         let Some(sender) = channels.get(index_uid) else {
             return;
         };
+        if sender.receiver_count() == 0 {
+            // All the sessions of the index ended.
+            channels.remove(index_uid);
+            return;
+        }
+        if doc_batch.is_empty() {
+            return;
+        }
         let num_docs = doc_batch.num_docs() as u64;
         debug!(%index_uid, num_docs, "publishing live tail batch");
         let tail_batch = TailBatch::new(doc_mapper, doc_batch);
-        // An error means that nobody is subscribed to the index.
+        // An error means that the last session ended since the receiver count was checked.
         if sender.send(Arc::new(tail_batch)).is_ok() {
             LIVE_TAIL_DOCS_PUBLISHED.inc_by(num_docs);
         }
@@ -159,6 +164,10 @@ impl LiveTailHub {
     /// including in the shards opened after the subscription.
     pub fn subscribe(&self, index_uid: &IndexUid) -> broadcast::Receiver<Arc<TailBatch>> {
         let mut channels = self.channels.lock().expect("lock should not be poisoned");
+        // Removes the channels of the indexes that nobody watches anymore, including the indexes
+        // that are no longer ingested into, so that the number of channels is bounded by the
+        // number of sessions.
+        channels.retain(|_, sender| sender.receiver_count() > 0);
         channels
             .entry(index_uid.clone())
             .or_insert_with(|| broadcast::channel(self.channel_capacity).0)
@@ -228,6 +237,21 @@ mod tests {
 
         drop(receiver);
         assert!(!hub.is_active(&index_uid));
+    }
+
+    #[tokio::test]
+    async fn test_live_tail_hub_removes_unwatched_channels() {
+        let hub = LiveTailHub::default();
+        let index_uid_a = IndexUid::for_test("test-index-a", 0);
+        let index_uid_b = IndexUid::for_test("test-index-b", 0);
+
+        drop(hub.subscribe(&index_uid_a));
+        drop(hub.subscribe(&index_uid_b));
+        assert_eq!(hub.channels.lock().unwrap().len(), 1);
+
+        // Publishing to an index that nobody watches removes its channel.
+        publish(&hub, &index_uid_b, &[json!({"body": "lost"})]);
+        assert!(hub.channels.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

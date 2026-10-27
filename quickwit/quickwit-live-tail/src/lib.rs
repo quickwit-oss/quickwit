@@ -16,8 +16,8 @@
 
 //! Live tail of the documents persisted by the ingesters.
 //!
-//! - The [`LiveTailHub`] receives the documents persisted by the ingester of this node, right
-//!   after they are written to its write-ahead log, and fans them out to the live tail sessions.
+//! - The [`LiveTailHub`] receives the documents persisted by the ingester of this node, right after
+//!   they are written to its write-ahead log, and fans them out to the live tail sessions.
 //! - The [`LiveTailServiceImpl`] opens the live tail sessions, which evaluate a query on the
 //!   documents with the exact same semantics as a search and stream the matching ones.
 

@@ -20,7 +20,8 @@ use quickwit_cluster::{Cluster, ClusterNode};
 use quickwit_config::{INGEST_V2_SOURCE_ID, build_doc_mapper};
 use quickwit_ingest::find_ingesters_with_open_shards;
 use quickwit_proto::live_tail::{
-    LiveTailError, LiveTailHits, LiveTailResult, LiveTailService, LiveTailServiceClient,
+    LiveTailDropReason, LiveTailDropped, LiveTailError, LiveTailHits, LiveTailMessage,
+    LiveTailResult, LiveTailService, LiveTailServiceClient, LiveTailServiceStream,
     OpenLiveTailRequest, live_tail_message,
 };
 use quickwit_proto::metastore::MetastoreServiceClient;
@@ -30,7 +31,7 @@ use quickwit_search::{SearchError, resolve_index_patterns};
 use serde_json::Value as JsonValue;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tokio::time::MissedTickBehavior;
+use tokio::time::{Instant, MissedTickBehavior};
 use tracing::debug;
 
 use super::{LiveTailContext, LiveTailEvent};
@@ -38,6 +39,9 @@ use super::{LiveTailContext, LiveTailEvent};
 /// Interval at which the set of ingesters hosting open shards of the tailed indexes is refreshed.
 /// It also bounds the time it takes to reconnect to an ingester after a stream failure.
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Maximum time to wait for an ingester to open a stream.
+const OPEN_STREAM_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Everything needed to tail one index. Plans are built, and the query validated, before the
 /// event stream is opened so that invalid requests get a proper HTTP error status.
@@ -105,63 +109,113 @@ struct TailTarget {
 /// resulting events to `event_tx` until the receiver is dropped.
 ///
 /// Each target is served by one forwarder task, which sends its events directly to `event_tx`.
-/// The forwarders are only spawned and aborted by this function, which owns their handles: a
+/// The forwarders are only spawned and aborted by the runner, which owns their handles: a
 /// forwarder whose stream ended is respawned at the next refresh.
-pub(crate) async fn run_live_tail(
+pub(crate) struct LiveTailRunner {
     context: LiveTailContext,
     plans: Vec<IndexTailPlan>,
     max_docs_per_sec: u32,
+    session_id: String,
     event_tx: mpsc::Sender<LiveTailEvent>,
-) {
-    let session_id = quickwit_common::new_coolid("live-tail");
-    debug!(%session_id, "live tail started");
-    let mut forwarders: HashMap<TailTarget, JoinHandle<()>> = HashMap::new();
-    let mut refresh_interval = tokio::time::interval(REFRESH_INTERVAL);
-    refresh_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    forwarders: HashMap<TailTarget, JoinHandle<()>>,
+}
 
-    loop {
-        tokio::select! {
-            _ = event_tx.closed() => break,
-            _ = refresh_interval.tick() => {}
+impl LiveTailRunner {
+    pub fn new(
+        context: LiveTailContext,
+        plans: Vec<IndexTailPlan>,
+        max_docs_per_sec: u32,
+        event_tx: mpsc::Sender<LiveTailEvent>,
+    ) -> Self {
+        let session_id = quickwit_common::new_coolid("live-tail");
+        debug!(%session_id, "live tail started");
+        Self {
+            context,
+            plans,
+            max_docs_per_sec,
+            session_id,
+            event_tx,
+            forwarders: HashMap::new(),
         }
-        let ready_nodes = context.cluster.ready_nodes().await;
-        let ingesters_per_index = find_ingesters_per_index(&context.cluster, &plans).await;
-        let targets = tail_targets(&plans, &ready_nodes, &ingesters_per_index);
+    }
 
-        forwarders.retain(|target, forwarder| {
+    /// Opens the streams toward the new targets, closes the streams toward the targets that are
+    /// gone, and reopens the streams that ended.
+    ///
+    /// Returns once the new streams are open or failed to open. An ingester subscribes to its
+    /// documents before acknowledging the opening of a stream: the documents it persists after
+    /// this call returns are streamed.
+    pub async fn refresh(&mut self) {
+        let ready_nodes = self.context.cluster.ready_nodes().await;
+        let ingesters_per_index =
+            find_ingesters_per_index(&self.context.cluster, &self.plans).await;
+        let targets = tail_targets(&self.plans, &ready_nodes, &ingesters_per_index);
+
+        self.forwarders.retain(|target, forwarder| {
             let keep = targets.contains_key(target) && !forwarder.is_finished();
             if !keep {
                 forwarder.abort();
             }
             keep
         });
+        let mut open_stream_futures = Vec::new();
+
         for (target, (node, plan)) in targets {
-            if forwarders.contains_key(&target) {
+            if self.forwarders.contains_key(&target) {
                 continue;
             }
-            debug!(%session_id, node_id=%target.node_id, index_id=%plan.index_uid.index_id, "opening live tail stream");
+            debug!(session_id=%self.session_id, node_id=%target.node_id, index_id=%plan.index_uid.index_id, "opening live tail stream");
             let request = OpenLiveTailRequest {
-                session_id: session_id.clone(),
+                session_id: self.session_id.clone(),
                 index_uid: Some(plan.index_uid.clone()),
                 query_ast_json: plan.query_ast_json.clone(),
-                max_docs_per_sec,
+                max_docs_per_sec: self.max_docs_per_sec,
             };
+            let client = live_tail_client(&self.context, node);
+            open_stream_futures.push(async move {
+                let stream_result = open_stream(client, request).await;
+                (target, stream_result)
+            });
+        }
+        // The streams are opened concurrently, so that an unreachable ingester does not delay
+        // the others.
+        for (target, stream_result) in futures::future::join_all(open_stream_futures).await {
             let forwarder = quickwit_common::spawn_named_task(
                 forward_target(
-                    live_tail_client(&context, node),
-                    request,
+                    stream_result,
+                    target.index_uid.index_id.clone(),
                     target.node_id.clone(),
-                    event_tx.clone(),
+                    self.event_tx.clone(),
                 ),
                 "live_tail_forwarder",
             );
-            forwarders.insert(target, forwarder);
+            self.forwarders.insert(target, forwarder);
         }
     }
-    for forwarder in forwarders.values() {
-        forwarder.abort();
+
+    /// Refreshes the streams every `REFRESH_INTERVAL` until the client leaves.
+    pub async fn run(mut self) {
+        let mut refresh_interval =
+            tokio::time::interval_at(Instant::now() + REFRESH_INTERVAL, REFRESH_INTERVAL);
+        refresh_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+        loop {
+            tokio::select! {
+                _ = self.event_tx.closed() => break,
+                _ = refresh_interval.tick() => {}
+            }
+            self.refresh().await;
+        }
+        debug!(session_id=%self.session_id, "live tail ended");
     }
-    debug!(%session_id, "live tail ended");
+}
+
+impl Drop for LiveTailRunner {
+    fn drop(&mut self) {
+        for forwarder in self.forwarders.values() {
+            forwarder.abort();
+        }
+    }
 }
 
 async fn find_ingesters_per_index(
@@ -223,16 +277,29 @@ fn live_tail_client(context: &LiveTailContext, node: &ClusterNode) -> LiveTailSe
     )
 }
 
-/// Forwards the live tail stream of one target to the client until the stream ends or the client
-/// leaves. A stream that ends while the client is still there is reported as an `error` event.
-async fn forward_target(
+async fn open_stream(
     client: LiveTailServiceClient,
     request: OpenLiveTailRequest,
+) -> LiveTailResult<LiveTailServiceStream<LiveTailMessage>> {
+    tokio::time::timeout(OPEN_STREAM_TIMEOUT, client.open_live_tail(request))
+        .await
+        .map_err(|_| LiveTailError::Timeout("failed to open stream in time".to_string()))?
+}
+
+/// Forwards the live tail stream of one target to the client until the stream ends or the client
+/// leaves. A stream that failed to open or ended while the client is still there is reported as
+/// an `error` event.
+async fn forward_target(
+    stream_result: LiveTailResult<LiveTailServiceStream<LiveTailMessage>>,
+    index_id: String,
     node_id: NodeId,
     event_tx: mpsc::Sender<LiveTailEvent>,
 ) {
-    let index_id = request.index_uid().index_id.clone();
-    let Err(error) = forward_stream(client, request, &index_id, &event_tx).await else {
+    let forward_result = match stream_result {
+        Ok(stream) => forward_stream(stream, &index_id, &event_tx).await,
+        Err(error) => Err(error),
+    };
+    let Err(error) = forward_result else {
         return;
     };
     let message = format!(
@@ -245,21 +312,20 @@ async fn forward_target(
 
 /// Returns `Ok` when the client left.
 async fn forward_stream(
-    client: LiveTailServiceClient,
-    request: OpenLiveTailRequest,
+    mut stream: LiveTailServiceStream<LiveTailMessage>,
     index_id: &str,
     event_tx: &mpsc::Sender<LiveTailEvent>,
 ) -> LiveTailResult<()> {
-    let mut stream = client.open_live_tail(request).await?;
-
     while let Some(message_result) = stream.next().await {
         let event = match message_result?.message {
             Some(live_tail_message::Message::Hits(hits)) => hits_event(index_id, hits)?,
-            Some(live_tail_message::Message::Dropped(dropped)) => LiveTailEvent::Dropped {
-                reason: dropped.reason(),
-                num_dropped: dropped.num_dropped,
-            },
-            None => continue,
+            Some(live_tail_message::Message::Dropped(dropped)) => dropped_event(dropped)?,
+            // Ingesters always set the message: this is a violated invariant.
+            None => {
+                return Err(LiveTailError::Internal(
+                    "empty live tail message from ingester".to_string(),
+                ));
+            }
         };
         if event_tx.send(event).await.is_err() {
             return Ok(());
@@ -268,6 +334,21 @@ async fn forward_stream(
     Err(LiveTailError::Unavailable(
         "stream closed by the ingester".to_string(),
     ))
+}
+
+fn dropped_event(dropped: LiveTailDropped) -> LiveTailResult<LiveTailEvent> {
+    let reason = dropped.reason();
+    // `reason()` maps the unknown values to `Unspecified`, which ingesters never send.
+    if reason == LiveTailDropReason::Unspecified {
+        return Err(LiveTailError::Internal(format!(
+            "invalid live tail drop reason from ingester: `{}`",
+            dropped.reason
+        )));
+    }
+    Ok(LiveTailEvent::Dropped {
+        reason,
+        num_dropped: dropped.num_dropped,
+    })
 }
 
 fn hits_event(index_id: &str, hits: LiveTailHits) -> LiveTailResult<LiveTailEvent> {
@@ -324,9 +405,7 @@ mod tests {
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
             .expect_list_indexes_metadata()
-            .return_once(|_| {
-                Ok(ListIndexesMetadataResponse::for_test(vec![index_metadata]))
-            });
+            .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(vec![index_metadata])));
         MetastoreServiceClient::from_mock(mock_metastore)
     }
 
@@ -392,6 +471,28 @@ mod tests {
         }));
     }
 
+    #[test]
+    fn test_dropped_event_rejects_unspecified_reason() {
+        let dropped = LiveTailDropped {
+            reason: LiveTailDropReason::RateLimited as i32,
+            num_dropped: 3,
+        };
+        assert_eq!(
+            dropped_event(dropped).unwrap(),
+            LiveTailEvent::Dropped {
+                reason: LiveTailDropReason::RateLimited,
+                num_dropped: 3,
+            }
+        );
+        for reason in [LiveTailDropReason::Unspecified as i32, 42] {
+            let dropped = LiveTailDropped {
+                reason,
+                num_dropped: 3,
+            };
+            dropped_event(dropped).unwrap_err();
+        }
+    }
+
     #[tokio::test(start_paused = true)]
     async fn test_run_live_tail_forwards_hits_and_reconnects() {
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -424,6 +525,14 @@ mod tests {
                 serde_json::to_string(&shard_infos).unwrap(),
             )
             .await;
+        // The cluster state is updated asynchronously.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while cluster.ready_nodes().await.is_empty() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
         let context = LiveTailContext {
             cluster,
             metastore: MetastoreServiceClient::mocked(),
@@ -437,7 +546,11 @@ mod tests {
             query_ast_json: r#"{"type": "match_all"}"#.to_string(),
         }];
         let (event_tx, mut event_rx) = mpsc::channel(16);
-        let live_tail_handle = tokio::spawn(run_live_tail(context, plans, 100, event_tx));
+        let mut live_tail_runner = LiveTailRunner::new(context, plans, 100, event_tx);
+        // The stream is open once the first refresh returns.
+        live_tail_runner.refresh().await;
+        assert_eq!(live_tail_runner.forwarders.len(), 1);
+        let live_tail_handle = tokio::spawn(live_tail_runner.run());
 
         let live_tail_message = LiveTailMessage {
             message: Some(live_tail_message::Message::Hits(LiveTailHits {

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -39,6 +39,17 @@ const MAX_PENDING_DOCS: usize = 10_000;
 /// Target size of the NDJSON payload of a `LiveTailHits` message.
 const TARGET_HITS_PAYLOAD_NUM_BYTES: usize = 1024 * 1024;
 
+/// Upper bound of the size of a `LiveTailMessage` minus the size of its NDJSON payload.
+const HITS_MESSAGE_OVERHEAD_NUM_BYTES: usize = 1024;
+
+/// Returns the maximum size of the NDJSON payload of a `LiveTailHits` message, so that the
+/// encoded message fits in a gRPC message of at most `grpc_max_message_num_bytes`.
+pub(crate) fn max_hits_payload_num_bytes(grpc_max_message_num_bytes: usize) -> usize {
+    grpc_max_message_num_bytes
+        .saturating_sub(HITS_MESSAGE_OVERHEAD_NUM_BYTES)
+        .min(TARGET_HITS_PAYLOAD_NUM_BYTES)
+}
+
 const NUM_FILTER_THREADS: usize = 2;
 
 /// Filtering runs on a small dedicated thread pool rather than with `run_cpu_intensive`, so that
@@ -56,7 +67,10 @@ pub(crate) struct LiveTailSession {
     query_ast: Arc<QueryAst>,
     batch_rx: broadcast::Receiver<Arc<TailBatch>>,
     message_tx: mpsc::Sender<LiveTailResult<LiveTailMessage>>,
-    rate_limiter: DocRateLimiter,
+    /// Shared with the other sessions opened on this node by the same client session.
+    rate_limiter: Arc<Mutex<DocRateLimiter>>,
+    /// Documents larger than this are dropped: they do not fit in a gRPC message.
+    max_hits_payload_num_bytes: usize,
     pending_batches: Vec<Arc<TailBatch>>,
     num_pending_docs: usize,
     num_lagged_batches: u64,
@@ -70,7 +84,8 @@ impl LiveTailSession {
         query_ast: QueryAst,
         batch_rx: broadcast::Receiver<Arc<TailBatch>>,
         message_tx: mpsc::Sender<LiveTailResult<LiveTailMessage>>,
-        max_docs_per_sec: u32,
+        rate_limiter: Arc<Mutex<DocRateLimiter>>,
+        max_hits_payload_num_bytes: usize,
         session_permit: OwnedSemaphorePermit,
     ) -> Self {
         Self {
@@ -78,7 +93,8 @@ impl LiveTailSession {
             query_ast: Arc::new(query_ast),
             batch_rx,
             message_tx,
-            rate_limiter: DocRateLimiter::new(max_docs_per_sec, Instant::now()),
+            rate_limiter,
+            max_hits_payload_num_bytes,
             pending_batches: Vec::new(),
             num_pending_docs: 0,
             num_lagged_batches: 0,
@@ -104,7 +120,8 @@ impl LiveTailSession {
                         Err(broadcast::error::RecvError::Lagged(num_lagged_batches)) => {
                             self.num_lagged_batches += num_lagged_batches;
                         }
-                        // The hub never drops its senders, so this only happens on shutdown.
+                        // The hub only drops the senders of the channels without receivers, so this
+                        // only happens on shutdown.
                         Err(broadcast::error::RecvError::Closed) => break,
                     }
                     if self.num_pending_docs < MAX_PENDING_DOCS {
@@ -144,7 +161,11 @@ impl LiveTailSession {
 
     async fn filter_and_send(&mut self, tail_batches: Vec<Arc<TailBatch>>) -> LiveTailResult<()> {
         let query_ast = self.query_ast.clone();
-        let num_available_docs = self.rate_limiter.num_available_docs(Instant::now());
+        let num_available_docs = self
+            .rate_limiter
+            .lock()
+            .expect("lock should not be poisoned")
+            .num_available_docs(Instant::now());
         let FilteredDocs {
             num_matching_docs,
             docs_json,
@@ -158,31 +179,49 @@ impl LiveTailSession {
                 LiveTailError::Internal(format!("failed to filter documents: {error:#}"))
             })?;
         let num_allowed_docs = docs_json.len();
-        self.rate_limiter.consume(num_allowed_docs);
+        self.rate_limiter
+            .lock()
+            .expect("lock should not be poisoned")
+            .consume(num_allowed_docs);
         debug!(session_id=%self.session_id, num_matching_docs, num_allowed_docs, "filtered live tail documents");
 
         let mut docs_ndjson: Vec<u8> = Vec::new();
-        for doc_json in docs_json {
-            docs_ndjson.extend_from_slice(&doc_json);
-            docs_ndjson.push(b'\n');
+        let mut num_too_large_docs: u64 = 0;
 
-            if docs_ndjson.len() >= TARGET_HITS_PAYLOAD_NUM_BYTES {
+        for doc_json in docs_json {
+            let doc_ndjson_num_bytes = doc_json.len() + 1;
+
+            if doc_ndjson_num_bytes > self.max_hits_payload_num_bytes {
+                num_too_large_docs += 1;
+                continue;
+            }
+            if docs_ndjson.len() + doc_ndjson_num_bytes > self.max_hits_payload_num_bytes {
                 self.send_hits(std::mem::take(&mut docs_ndjson)).await;
             }
+            docs_ndjson.extend_from_slice(&doc_json);
+            docs_ndjson.push(b'\n');
         }
         if !docs_ndjson.is_empty() {
             self.send_hits(docs_ndjson).await;
         }
-        let num_rate_limited_docs = num_matching_docs - num_allowed_docs;
-        if num_rate_limited_docs > 0 {
-            let dropped = LiveTailDropped {
-                reason: LiveTailDropReason::RateLimited as i32,
-                num_dropped: num_rate_limited_docs as u64,
-            };
-            self.send(live_tail_message::Message::Dropped(dropped))
-                .await;
-        }
+        self.send_dropped(LiveTailDropReason::TooLarge, num_too_large_docs)
+            .await;
+        let num_rate_limited_docs = (num_matching_docs - num_allowed_docs) as u64;
+        self.send_dropped(LiveTailDropReason::RateLimited, num_rate_limited_docs)
+            .await;
         Ok(())
+    }
+
+    async fn send_dropped(&mut self, reason: LiveTailDropReason, num_dropped: u64) {
+        if num_dropped == 0 {
+            return;
+        }
+        let dropped = LiveTailDropped {
+            reason: reason as i32,
+            num_dropped,
+        };
+        self.send(live_tail_message::Message::Dropped(dropped))
+            .await;
     }
 
     async fn send_hits(&mut self, docs_ndjson: Vec<u8>) {

@@ -57,6 +57,8 @@ enum LiveTailDropReason {
   LIVE_TAIL_DROP_REASON_LAGGED = 1;
   // More documents matched than `max_docs_per_sec`.
   LIVE_TAIL_DROP_REASON_RATE_LIMITED = 2;
+  // The document is larger than the maximum size of a gRPC message.
+  LIVE_TAIL_DROP_REASON_TOO_LARGE = 3;
 }
 
 message LiveTailDropped {

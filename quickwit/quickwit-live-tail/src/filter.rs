@@ -20,8 +20,8 @@ use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use quickwit_query::query_ast::QueryAst;
 use tantivy::collector::DocSetCollector;
 use tantivy::directory::RamDirectory;
-use tantivy::schema::{Field, Value};
 use tantivy::jitexpr::compile::ExprCompilationCache;
+use tantivy::schema::{Field, Value};
 use tantivy::{Index, IndexBuilder, ReloadPolicy, TantivyDocument};
 
 use crate::hub::{TailBatch, TailDoc};

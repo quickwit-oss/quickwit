@@ -23,7 +23,7 @@ use tracing::info;
 use warp::reply::Response;
 use warp::{Filter, Rejection, Reply};
 
-use super::coordinator::{plan_live_tail, run_live_tail};
+use super::coordinator::{LiveTailRunner, plan_live_tail};
 use super::{LiveTailContext, LiveTailEvent};
 use crate::rest_api_response::into_rest_api_response;
 use crate::search_api::extract_index_id_patterns;
@@ -42,9 +42,9 @@ pub struct LiveTailQueryParams {
     /// Query in the Quickwit query language. Matches all documents by default.
     #[serde(default = "LiveTailQueryParams::default_query")]
     pub query: String,
-    /// Maximum number of documents sent per second by each ingester, capped by the
-    /// `live_tail.max_docs_per_sec` setting of its node. Extra documents are reported in
-    /// `dropped` events.
+    /// Maximum number of documents sent per second by each ingester, across all the tailed
+    /// indexes, capped by the `live_tail.max_docs_per_sec` setting of its node. Extra documents
+    /// are reported in `dropped` events.
     #[serde(default = "LiveTailQueryParams::default_max_docs_per_sec")]
     pub max_docs_per_sec: u32,
 }
@@ -118,6 +118,9 @@ async fn live_tail(
 /// Validates the request and opens the stream of events. Errors occurring after this point are
 /// sent as `error` events since the HTTP status is already sent. When the client disconnects, the
 /// stream is dropped, which ends the tail.
+///
+/// The streams toward the ingesters already hosting open shards of the indexes are open when
+/// this returns: the documents they persist after the client receives the response are streamed.
 async fn open_event_stream(
     index_id_patterns: Vec<String>,
     params: LiveTailQueryParams,
@@ -126,10 +129,10 @@ async fn open_event_stream(
     params.validate()?;
     let plans = plan_live_tail(&context.metastore, &index_id_patterns, &params.query).await?;
     let (event_tx, event_rx) = mpsc::channel(16);
-    quickwit_common::spawn_named_task(
-        run_live_tail(context, plans, params.max_docs_per_sec, event_tx),
-        "live_tail",
-    );
+    let mut live_tail_runner =
+        LiveTailRunner::new(context, plans, params.max_docs_per_sec, event_tx);
+    live_tail_runner.refresh().await;
+    quickwit_common::spawn_named_task(live_tail_runner.run(), "live_tail");
     Ok(ReceiverStream::new(event_rx))
 }
 

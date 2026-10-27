@@ -652,6 +652,7 @@ pub async fn serve_quickwit(
                 live_tail_hub.clone(),
                 live_tail_config.max_sessions().get(),
                 live_tail_config.max_docs_per_sec().get(),
+                node_config.grpc_config.max_message_size.as_u64() as usize,
             );
             LiveTailServiceClient::new(live_tail_service)
         });

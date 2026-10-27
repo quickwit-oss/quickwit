@@ -33,8 +33,10 @@ publishes the batch of valid documents of each persist subrequest, along with th
 the shard, to the `LiveTailHub` of the node, once the batch is written to the write-ahead log.
 
 Contracts:
-- The tap costs nothing when nobody watches the index: `LiveTailHub::is_active` is checked once
-  per persist subrequest.
+- The tap costs nothing when nobody watches the index: publishing is then a lookup in a hash map.
+  The hub removes the channels of the indexes that nobody watches anymore.
+- Whether to publish is decided after the batch is written to the write-ahead log, so that a
+  session opened while the batch was being validated or written receives it.
 - Publishing never blocks ingestion and does not copy the documents: the hub uses
   `tokio::sync::broadcast` channels, and the documents are parsed lazily by the sessions, once for
   all the sessions of the node. A session that falls behind loses batches and reports them in
@@ -67,8 +69,10 @@ against the index doc mapping before sending it: the ingesters do not know the i
 settings.
 
 The number of concurrent sessions per ingester is limited by `live_tail.max_sessions` (default: 4).
-Each session is rate limited to the `max_docs_per_sec` requested by the client, capped by
-`live_tail.max_docs_per_sec` (default: 10,000). Both settings can be overridden with the
+Each client session is rate limited to the `max_docs_per_sec` it requested, capped by
+`live_tail.max_docs_per_sec` (default: 10,000). When a client tails several indexes, the sessions
+it opens on an ingester share the same rate limiter, identified by the session ID of the
+coordinator. Both settings can be overridden with the
 `QW_LIVE_TAIL_MAX_SESSIONS` and `QW_LIVE_TAIL_MAX_DOCS_PER_SEC` environment variables.
 
 The rate limit applies after filtering: the CPU cost of a session is proportional to the ingestion
@@ -76,7 +80,11 @@ throughput of the index, not to the number of matching documents. Each session i
 documents of the tailed index once more. This work runs on a dedicated thread pool of 2 threads,
 not on the `run_cpu_intensive` pool shared with ingest (document validation, decompression), so
 that live tail cannot starve ingestion. When the pool does not keep up, sessions lag and report
-the documents they miss as `lagged`. Cloning the batch of documents in the ingester, which does
+the documents they miss as `lagged`.
+
+Matching documents are sent in `LiveTailHits` messages of at most 1 MiB, and never larger than
+`grpc.max_message_size`. A document that does not fit in a message is dropped and reported as
+`too_large`. Cloning the batch of documents in the ingester, which does
 not copy them, is the only cost on the ingest path.
 
 ### Coordinator (`quickwit-serve`, `live_tail_api`)
@@ -84,6 +92,9 @@ not copy them, is the only cost on the ingest path.
 Any node serving the REST API can coordinate a live tail. The coordinator:
 - validates the request and builds one plan per index before opening the stream, so that invalid
   requests get an HTTP error status;
+- opens the streams toward the ingesters already hosting open shards of the indexes before
+  responding: an ingester subscribes to the hub before acknowledging a stream, so the documents
+  persisted after the response is received are streamed;
 - every 5s, lists the ready ingesters that broadcast at least one open shard of the index, opens
   streams toward new ones, closes the streams toward ingesters that no longer host open shards of
   the index, and reopens failed streams. Only this loop spawns and aborts the forwarder tasks,
@@ -91,16 +102,20 @@ Any node serving the REST API can coordinate a live tail. The coordinator:
 - ends the session when the client disconnects, which drops the gRPC streams and, in turn, the
   ingester sessions.
 
+Malformed messages from an ingester (no message, unknown drop reason) are protocol violations:
+the stream is reported as failed and reopened at the next refresh.
+
 There is no global ordering: documents are sent in the order of the write-ahead log within a
 shard.
 
 ## Limits and future work
 
 - `max_docs_per_sec` is enforced by each ingester: with N ingesters, up to N × `max_docs_per_sec`
-  documents per second are sent to the client.
+  documents per second are sent to the client. Sessions sharing a rate limiter can briefly exceed
+  it: the rate limiter then goes into debt, so the average rate is respected.
 - Shards are discovered through the cluster state, which is broadcast every few seconds: the
-  documents persisted in a shard during the first seconds after it is opened on a new ingester
-  can be missed.
+  documents persisted in a shard during the first seconds after it is opened on an ingester that
+  hosted no open shard of the index can be missed.
 - Reconnections lose the documents persisted while disconnected (no `Last-Event-ID` support).
 - Indexes with a VRL transform and the sources read by the indexing pipelines are not supported.
 - Each session builds its own in-RAM index: sessions on the same index could share one index per

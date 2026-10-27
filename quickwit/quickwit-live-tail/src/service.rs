@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, Weak};
 
 use async_trait::async_trait;
 use quickwit_common::ServiceStream;
@@ -22,9 +23,11 @@ use quickwit_proto::live_tail::{
 };
 use quickwit_query::query_ast::QueryAst;
 use tokio::sync::Semaphore;
+use tokio::time::Instant;
 
 use crate::LiveTailHub;
-use crate::session::LiveTailSession;
+use crate::rate_limiter::DocRateLimiter;
+use crate::session::{LiveTailSession, max_hits_payload_num_bytes};
 
 /// Implementation of the live tail service hosted by ingester nodes.
 #[derive(Debug, Clone)]
@@ -33,15 +36,50 @@ pub struct LiveTailServiceImpl {
     session_permits: Arc<Semaphore>,
     /// Rates requested by clients above this limit are capped.
     max_docs_per_sec: u32,
+    max_hits_payload_num_bytes: usize,
+    /// Rate limiters of the client sessions, by session ID. A client session tailing several
+    /// indexes opens one session per index on this node: they share the same rate limiter, so
+    /// that `max_docs_per_sec` applies to the node, not to each index.
+    rate_limiters: Arc<Mutex<HashMap<String, Weak<Mutex<DocRateLimiter>>>>>,
 }
 
 impl LiveTailServiceImpl {
-    pub fn new(hub: LiveTailHub, max_sessions: usize, max_docs_per_sec: u32) -> Self {
+    pub fn new(
+        hub: LiveTailHub,
+        max_sessions: usize,
+        max_docs_per_sec: u32,
+        grpc_max_message_num_bytes: usize,
+    ) -> Self {
         Self {
             hub,
             session_permits: Arc::new(Semaphore::new(max_sessions)),
             max_docs_per_sec,
+            max_hits_payload_num_bytes: max_hits_payload_num_bytes(grpc_max_message_num_bytes),
+            rate_limiters: Arc::default(),
         }
+    }
+
+    /// Returns the rate limiter of the client session `session_id`, creating it if this is the
+    /// first session opened on this node for this client session.
+    ///
+    /// The sessions of a client session request the same `max_docs_per_sec`: the first one
+    /// determines the rate.
+    fn rate_limiter(&self, session_id: &str, max_docs_per_sec: u32) -> Arc<Mutex<DocRateLimiter>> {
+        let mut rate_limiters = self
+            .rate_limiters
+            .lock()
+            .expect("lock should not be poisoned");
+        rate_limiters.retain(|_, rate_limiter| rate_limiter.strong_count() > 0);
+
+        if let Some(rate_limiter) = rate_limiters.get(session_id).and_then(Weak::upgrade) {
+            return rate_limiter;
+        }
+        let rate_limiter = Arc::new(Mutex::new(DocRateLimiter::new(
+            max_docs_per_sec.min(self.max_docs_per_sec),
+            Instant::now(),
+        )));
+        rate_limiters.insert(session_id.to_string(), Arc::downgrade(&rate_limiter));
+        rate_limiter
     }
 }
 
@@ -75,12 +113,14 @@ impl LiveTailService for LiveTailServiceImpl {
         // Subscribe before returning so that no document persisted after this call is missed.
         let batch_rx = self.hub.subscribe(&index_uid);
         let (message_tx, message_stream) = ServiceStream::new_bounded(3);
+        let rate_limiter = self.rate_limiter(&request.session_id, request.max_docs_per_sec);
         let session = LiveTailSession::new(
             request.session_id,
             query_ast,
             batch_rx,
             message_tx,
-            request.max_docs_per_sec.min(self.max_docs_per_sec),
+            rate_limiter,
+            self.max_hits_payload_num_bytes,
             session_permit,
         );
         quickwit_common::spawn_named_task(session.run(), "live_tail_session");
@@ -100,6 +140,8 @@ mod tests {
     use super::*;
     use crate::hub::doc_batch_for_test;
 
+    const GRPC_MAX_MESSAGE_NUM_BYTES: usize = 20 * 1024 * 1024;
+
     const DOC_MAPPING_JSON: &str = r#"{
         "field_mappings": [
             {"name": "severity_text", "type": "text", "tokenizer": "raw"},
@@ -109,12 +151,12 @@ mod tests {
     }"#;
 
     fn publish(hub: &LiveTailHub, docs: Vec<serde_json::Value>) {
+        publish_to(hub, &IndexUid::for_test("test-index", 0), docs);
+    }
+
+    fn publish_to(hub: &LiveTailHub, index_uid: &IndexUid, docs: Vec<serde_json::Value>) {
         let doc_mapper: DocMapper = serde_json::from_str(DOC_MAPPING_JSON).unwrap();
-        hub.publish(
-            &IndexUid::for_test("test-index", 0),
-            Arc::new(doc_mapper),
-            doc_batch_for_test(&docs),
-        );
+        hub.publish(index_uid, Arc::new(doc_mapper), doc_batch_for_test(&docs));
     }
 
     fn open_live_tail_request(user_query: &str, max_docs_per_sec: u32) -> OpenLiveTailRequest {
@@ -142,7 +184,8 @@ mod tests {
     #[tokio::test]
     async fn test_live_tail_service_streams_matching_docs() {
         let hub = LiveTailHub::default();
-        let live_tail_service = LiveTailServiceImpl::new(hub.clone(), 1, 100);
+        let live_tail_service =
+            LiveTailServiceImpl::new(hub.clone(), 1, 100, GRPC_MAX_MESSAGE_NUM_BYTES);
 
         let mut stream = live_tail_service
             .open_live_tail(open_live_tail_request("severity_text:ERROR", 100))
@@ -196,7 +239,8 @@ mod tests {
     #[tokio::test]
     async fn test_live_tail_service_caps_requested_rate() {
         let hub = LiveTailHub::default();
-        let live_tail_service = LiveTailServiceImpl::new(hub.clone(), 1, 2);
+        let live_tail_service =
+            LiveTailServiceImpl::new(hub.clone(), 1, 2, GRPC_MAX_MESSAGE_NUM_BYTES);
 
         let mut stream = live_tail_service
             .open_live_tail(open_live_tail_request("*", 100))
@@ -223,8 +267,80 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_live_tail_service_shares_rate_limit_across_indexes() {
+        let hub = LiveTailHub::default();
+        let live_tail_service =
+            LiveTailServiceImpl::new(hub.clone(), 2, 1, GRPC_MAX_MESSAGE_NUM_BYTES);
+        let index_uid_a = IndexUid::for_test("test-index-a", 0);
+        let index_uid_b = IndexUid::for_test("test-index-b", 0);
+
+        // The same client session tails two indexes on this node.
+        let mut request = open_live_tail_request("*", 100);
+        request.index_uid = Some(index_uid_a.clone());
+        let mut stream_a = live_tail_service
+            .open_live_tail(request.clone())
+            .await
+            .unwrap();
+        request.index_uid = Some(index_uid_b.clone());
+        let mut stream_b = live_tail_service.open_live_tail(request).await.unwrap();
+
+        publish_to(&hub, &index_uid_a, vec![tail_doc("INFO", "a")]);
+        let live_tail_message::Message::Hits(_) = next_message(&mut stream_a).await else {
+            panic!("expected hits");
+        };
+        // The budget of 1 document per second was spent by the session of the other index.
+        publish_to(&hub, &index_uid_b, vec![tail_doc("INFO", "b")]);
+        let live_tail_message::Message::Dropped(dropped) = next_message(&mut stream_b).await else {
+            panic!("expected dropped");
+        };
+        assert_eq!(dropped.reason(), LiveTailDropReason::RateLimited);
+        assert_eq!(dropped.num_dropped, 1);
+    }
+
+    #[tokio::test]
+    async fn test_live_tail_service_drops_docs_larger_than_grpc_messages() {
+        let hub = LiveTailHub::default();
+        // Hits payloads are limited to 2,048 - 1,024 bytes.
+        let live_tail_service = LiveTailServiceImpl::new(hub.clone(), 1, 100, 2_048);
+        let mut stream = live_tail_service
+            .open_live_tail(open_live_tail_request("*", 100))
+            .await
+            .unwrap();
+
+        publish(
+            &hub,
+            vec![
+                tail_doc("INFO", &"x".repeat(2_000)),
+                tail_doc("INFO", &"y".repeat(600)),
+                tail_doc("INFO", &"z".repeat(600)),
+            ],
+        );
+        // The two small documents do not fit together in a single message.
+        for expected_body_char in ['y', 'z'] {
+            let live_tail_message::Message::Hits(hits) = next_message(&mut stream).await else {
+                panic!("expected hits");
+            };
+            assert!(hits.docs_ndjson.len() <= 1_024);
+            let doc: serde_json::Value =
+                serde_json::from_slice(hits.docs_ndjson.trim_ascii_end()).unwrap();
+            assert!(
+                doc["body"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with(expected_body_char)
+            );
+        }
+        let live_tail_message::Message::Dropped(dropped) = next_message(&mut stream).await else {
+            panic!("expected dropped");
+        };
+        assert_eq!(dropped.reason(), LiveTailDropReason::TooLarge);
+        assert_eq!(dropped.num_dropped, 1);
+    }
+
+    #[tokio::test]
     async fn test_live_tail_service_rejects_invalid_requests() {
-        let live_tail_service = LiveTailServiceImpl::new(LiveTailHub::default(), 1, 100);
+        let live_tail_service =
+            LiveTailServiceImpl::new(LiveTailHub::default(), 1, 100, GRPC_MAX_MESSAGE_NUM_BYTES);
 
         let error = live_tail_service
             .open_live_tail(open_live_tail_request("*", 0))

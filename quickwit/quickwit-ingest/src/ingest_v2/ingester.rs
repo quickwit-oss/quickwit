@@ -473,12 +473,6 @@ impl Ingester {
                 // metastore.
                 shard.is_advertisable = true;
                 let doc_mapper = shard.doc_mapper_opt.clone().expect("shard should be open");
-                // Checked once per subrequest, so that live tail costs nothing when nobody
-                // watches the index.
-                let live_tail_doc_mapper_opt = self
-                    .live_tail_hub
-                    .is_active(subrequest.index_uid())
-                    .then(|| doc_mapper.clone());
                 let validate_docs = shard.validate_docs;
                 let from_position_exclusive = shard.replication_position_inclusive.clone();
 
@@ -533,7 +527,7 @@ impl Ingester {
                 let original_batch_num_bytes = doc_batch.num_bytes() as u64;
 
                 let (valid_doc_batch, parse_failures) = if validate_docs {
-                    validate_doc_batch(doc_batch, doc_mapper).await?
+                    validate_doc_batch(doc_batch, doc_mapper.clone()).await?
                 } else {
                     (doc_batch, Vec::new())
                 };
@@ -596,7 +590,7 @@ impl Ingester {
                     shard_id: Some(shard_id),
                     doc_batch: valid_doc_batch,
                     parse_failures,
-                    live_tail_doc_mapper_opt,
+                    doc_mapper,
                 };
                 pending_persist_subrequests.insert(
                     pending_persist_subrequest.subrequest_id,
@@ -611,16 +605,11 @@ impl Ingester {
                 let queue_id = subrequest.queue_id;
 
                 let batch_num_docs = subrequest.doc_batch.num_docs() as u64;
-                // Cloning a doc batch does not copy the documents.
-                let live_tail_doc_batch_opt = subrequest
-                    .live_tail_doc_mapper_opt
-                    .as_ref()
-                    .map(|_| subrequest.doc_batch.clone());
 
                 let append_result = append_non_empty_doc_batch(
                     &mut state_guard.mrecordlog,
                     &queue_id,
-                    subrequest.doc_batch,
+                    &subrequest.doc_batch,
                     force_commit,
                 )
                 .await;
@@ -662,17 +651,16 @@ impl Ingester {
                     .expect("shard should exist")
                     .set_replication_position_inclusive(current_position_inclusive.clone(), now);
 
-                // Published while holding the state lock, so that live tail sessions receive the
-                // documents of a shard in the order of the write-ahead log.
-                if let (Some(doc_mapper), Some(doc_batch)) =
-                    (subrequest.live_tail_doc_mapper_opt, live_tail_doc_batch_opt)
-                {
-                    let index_uid = subrequest
-                        .index_uid
-                        .as_ref()
-                        .expect("index UID should be present");
-                    self.live_tail_hub.publish(index_uid, doc_mapper, doc_batch);
-                }
+                // Published once the documents are in the write-ahead log, so that no session
+                // opened before the append misses them, and while holding the state lock, so that
+                // live tail sessions receive the documents of a shard in the order of the
+                // write-ahead log. Publishing is a no-op when nobody watches the index.
+                let index_uid = subrequest
+                    .index_uid
+                    .as_ref()
+                    .expect("index UID should be present");
+                self.live_tail_hub
+                    .publish(index_uid, subrequest.doc_mapper, subrequest.doc_batch);
 
                 let persist_success = PersistSuccess {
                     subrequest_id: subrequest.subrequest_id,
@@ -1192,8 +1180,8 @@ struct PendingPersistSubrequest {
     shard_id: Option<ShardId>,
     doc_batch: DocBatchV2,
     parse_failures: Vec<ParseFailure>,
-    /// Doc mapper of the shard, when a live tail session watches the index.
-    live_tail_doc_mapper_opt: Option<Arc<DocMapper>>,
+    /// Doc mapper of the shard, published along with the documents to live tail sessions.
+    doc_mapper: Arc<DocMapper>,
 }
 
 #[cfg(test)]
