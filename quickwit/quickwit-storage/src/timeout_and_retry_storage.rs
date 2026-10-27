@@ -119,6 +119,40 @@ impl Storage for TimeoutAndRetryStorage {
         );
     }
 
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> StorageResult<()> {
+        let num_bytes = range.len();
+        for (attempt_id, timeout_duration) in self
+            .storage_timeout_policy
+            .compute_timeout(num_bytes)
+            .enumerate()
+        {
+            // Time out the whole body read, not just opening the stream. Each retry
+            // overwrites the same buffer, and cancellation drops the previous stream.
+            let download = self.underlying.get_slice_into(path, range.clone(), buffer);
+            match tokio::time::timeout(timeout_duration, download).await {
+                Ok(result) => {
+                    match attempt_id {
+                        0 => crate::metrics::GET_SLICE_TIMEOUT_SUCCESS_AFTER_0_TIMEOUT.inc(),
+                        1 => crate::metrics::GET_SLICE_TIMEOUT_SUCCESS_AFTER_1_TIMEOUT.inc(),
+                        _ => crate::metrics::GET_SLICE_TIMEOUT_SUCCESS_AFTER_2_PLUS_TIMEOUT.inc(),
+                    }
+                    return result;
+                }
+                Err(_elapsed) => {
+                    rate_limited_info!(limit_per_min=60, num_bytes=num_bytes, path=%path.display(), timeout_secs=timeout_duration.as_secs_f32(), "get timeout elapsed");
+                }
+            }
+        }
+        rate_limited_warn!(limit_per_min=60, num_bytes=num_bytes, path=%path.display(), "all get_slice attempts timeouted");
+        crate::metrics::GET_SLICE_TIMEOUT_ALL_TIMEOUTS.inc();
+        Err(StorageErrorKind::Timeout.with_error(anyhow::anyhow!("internal timeout on get_slice")))
+    }
+
     async fn get_slice_stream(
         &self,
         path: &Path,
@@ -162,6 +196,8 @@ mod tests {
     use std::sync::Mutex;
     use std::time::Duration;
 
+    use bytes::Bytes;
+    use futures::StreamExt;
     use tokio::time::Instant;
 
     use super::*;
@@ -226,9 +262,22 @@ mod tests {
         async fn get_slice_stream(
             &self,
             _path: &Path,
-            _range: Range<usize>,
+            range: Range<usize>,
         ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-            todo!()
+            let delay = self.delays.lock().unwrap().pop().ok_or_else(|| {
+                StorageErrorKind::Internal.with_error(anyhow::anyhow!("internal error"))
+            })?;
+            // Opening and the first byte succeed immediately; the remaining body stalls.
+            let first_byte = if delay > Duration::from_secs(2) { 1 } else { 7 };
+            let body = futures::stream::once(async move {
+                Ok::<_, std::io::Error>(Bytes::from(vec![first_byte]))
+            })
+            .chain(futures::stream::once(async move {
+                tokio::time::sleep(delay).await;
+                Ok::<_, std::io::Error>(Bytes::from(vec![7; range.len() - 1]))
+            }))
+            .boxed();
+            Ok(Box::new(tokio_util::io::StreamReader::new(body)))
         }
         async fn get_all(&self, _path: &Path) -> StorageResult<OwnedBytes> {
             todo!();
@@ -244,6 +293,42 @@ mod tests {
         }
         async fn file_num_bytes(&self, _path: &Path) -> StorageResult<u64> {
             todo!();
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_get_slice_into_times_out_body_and_reuses_buffer_on_retry() {
+        let timeout_policy = StorageTimeoutPolicy {
+            min_throughtput_bytes_per_secs: 100_000,
+            timeout_millis: 2_000,
+            max_num_retries: 1,
+        };
+        for (second_delay, succeeds) in [(1, true), (5, false)] {
+            let lower = Arc::new(StorageWithDelay::new(vec![
+                Duration::from_secs(5),
+                Duration::from_secs(second_delay),
+            ]));
+            let storage = TimeoutAndRetryStorage::new(lower.clone(), timeout_policy.clone());
+            let mut buffer = [99; 90];
+            let address = buffer.as_ptr();
+            let start = Instant::now();
+            let result = storage
+                .get_slice_into(Path::new("foo/bar"), 10..100, &mut buffer)
+                .await;
+            assert!(
+                lower.delays.lock().unwrap().is_empty(),
+                "both attempts must run"
+            );
+            assert_eq!(buffer.as_ptr(), address);
+            if succeeds {
+                result.unwrap();
+                assert_eq!(buffer, [7; 90]);
+                // Tokio timers round deadlines to millisecond ticks.
+                assert!(start.elapsed().as_millis().abs_diff(3_000) < 10);
+            } else {
+                assert_eq!(result.unwrap_err().kind(), StorageErrorKind::Timeout);
+                assert!(start.elapsed().as_millis().abs_diff(4_000) < 10);
+            }
         }
     }
 

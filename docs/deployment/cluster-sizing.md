@@ -58,10 +58,11 @@ Searcher nodes:
 - Provision more RAM if you expect many concurrent aggregation requests. By
   default, each request can use up to 500MB of RAM on each node.
 - Avoid instances with less than 4GB of RAM
-<!-- 1GB fast_field_cache_capacity + 0.5GB split_footer_cache_capacity + 0.5GB/req aggregation_memory_limit -->
-- Searcher nodes don't use disk unless the [split
-  cache](../configuration/node-config.md#Searcher-split-cache-configuration) is
-  explicitly enabled
+<!-- 1GB fast_field_cache_capacity + 0.5GB/req aggregation_memory_limit; configured disk_cache memory budgets are additional. -->
+- Searchers use disk when the [whole-split cache](../configuration/node-config.md#searcher-split-cache-configuration)
+  or a [Feuer disk tier](../configuration/node-config.md#searcher-disk-cache-configuration)
+  is explicitly enabled. Account for the independent memory and disk budgets of
+  the split-range, predicate, and partial-response caches.
 
 One strength of Quickwit is that its Searchers are stateless, which makes it
 easy to scale them up and down based on the workload. Scale the number of

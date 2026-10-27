@@ -40,6 +40,8 @@ pub use self::storage::{ListObjectsStream, ObjectMetadata, Storage};
 
 mod bundle_storage;
 mod error;
+mod feuer_cache;
+mod feuer_memory_cache;
 
 mod local_file_storage;
 mod object_storage;
@@ -50,13 +52,19 @@ mod prefix_storage;
 mod ram_storage;
 mod split;
 mod split_cache;
+mod split_range_cache;
 mod stable_deref_bytes;
 mod storage_factory;
 mod storage_resolver;
 mod versioned_component;
 
+pub use feuer_cache::{FeuerCache, FeuerIoQueues};
+pub use feuer_memory_cache::FeuerMemoryCache;
 use quickwit_common::uri::Uri;
 pub use split_cache::SearchSplitCache;
+pub use split_range_cache::{
+    FeuerSplitRangeCache, FeuerSplitRangeStorage, wrap_storage_with_split_range_cache,
+};
 pub use tantivy::directory::OwnedBytes;
 pub use versioned_component::VersionedComponent;
 

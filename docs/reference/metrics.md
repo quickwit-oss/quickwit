@@ -7,7 +7,7 @@ Quickwit exposes key metrics in the [Prometheus](https://prometheus.io/) format 
 
 ## Cache Metrics
 
-Quickwit exposes metrics for several cache components, including `fastfields`, `fd`, `partial_request`, `predicate`, `searcher_split`, and `splitfooter`. These metrics share the same structure.
+Quickwit exposes metrics for several cache components, including `fastfields`, `fd`, `partial_request`, `predicate`, and `searcher_split`. These metrics share the same structure. Feuer-backed memory caches retain Quickwit's hit/miss counters and expose occupancy and eviction through the native metrics below.
 
 | Namespace | Metric Name | Description | Type |
 | --------- | ----------- | ----------- | ---- |
@@ -18,6 +18,26 @@ Quickwit exposes metrics for several cache components, including `fastfields`, `
 | `quickwit_cache_{cache_name}` | `cache_misses_total` | Number of {cache_name} cache hits | `counter` |
 | `quickwit_cache_{cache_name}` | `cache_evict_total` | Number of {cache_name} cache entry evicted | `counter` |
 | `quickwit_cache_{cache_name}` | `cache_evict_bytes` | Number of {cache_name} cache entry evicted in bytes | `counter` |
+
+### Feuer cache metrics
+
+Feuer metrics are exported on `/metrics` with their original names and native labels, plus a `cache` label identifying the instance: `split_range` (`disk_cache`), `partial_request` (`partial_request_cache`), `predicate` (`predicate_cache`), `fast_field`, or `list_fields`. Sum over `cache` to aggregate instances. Memory-only caches expose the native memory metrics. Tiered caches additionally expose lookup, disk, and buffer-pool metrics. The labels listed below are additional to `cache`:
+
+- Lookups: `feuer_lookup_total{outcome}`, `feuer_lookup_bytes_total{source}`, and `feuer_lookup_duration_seconds{outcome}`. Counters distinguish memory hits, disk hits, callbacks, callback errors, and invalid downloads. Durations record successful lookups only, including callback work. Lookup-only disk-backed result-cache misses appear as callback errors because the API is lookup-or-fetch.
+- Memory: `feuer_memory_operations_total{operation}`, `feuer_memory_used_bytes`, `feuer_memory_capacity_bytes`, `feuer_memory_entries`, and `feuer_memory_compacted_payload_bytes_total`.
+- Disk: lookup counters and hit-only `feuer_disk_lookup_duration_seconds` (only `cache`), `feuer_disk_chunks{state}`, `feuer_disk_payload_bytes`, `feuer_disk_entries`, eviction and batch-byte counters, and `feuer_disk_io_*` metrics. I/O durations record successful operations only.
+- Disk read sizes: `feuer_disk_read_size_bytes` records requested bytes per successful data-file read, excluding alignment padding, with only `cache` and exponential buckets doubling from 1 KiB through 1 GiB. These reads include metadata and whole cached entries.
+- Disk writes: `feuer_disk_write_queue_total{outcome}`, `feuer_disk_write_pending_bytes`, `feuer_disk_write_queued_entries`, and `feuer_disk_write_queue_duration_seconds`. Queue duration measures admission to dequeue (including stale entries), with only `cache` and 25 exponential buckets starting at 1 µs and doubling. `feuer_disk_write_entries_total{outcome}` records terminal write/publication outcomes. `feuer_disk_written_entries_total` counts entries in successfully written batches before publication checks.
+
+Feuer's read-buffer pool shares the configured memory capacity with cached allocations. Idle buffers are capped at 7% of that capacity by default. `FEUER_IDLE_BUFFER_POOL_PERCENT` overrides this percentage (0–100). The buffer gauge has `bucket` labels (`32 KiB`, `256 KiB`, `512 KiB`, `1 MiB`, `2 MiB`, `4 MiB`, `8 MiB`, `16 MiB`, `32 MiB`, `64 MiB`, and `>64 MiB`) and `status` labels (`idle` or `used`). Allocations above 64 MiB share an exact-size reuse bucket.
+
+| Metric | Type | Meaning |
+|---|---|---|
+| `feuer_memory_used_bytes` | Gauge | Cached allocation charges plus idle buffer capacity. Excludes active reads and caller-only results. |
+| `feuer_memory_capacity_bytes` | Gauge | Configured memory capacity for the cache instance, shared with its buffer pool. |
+| `feuer_io_buffer_pool_bytes` | Gauge | Allocation capacity per `bucket` and `status`. Used bytes are charged to `feuer_memory_used_bytes` only when held by cache entries. Do not add these gauges. |
+
+See [Feuer's metric inventory](https://github.com/PSeitz/feuer/blob/965bfcb000bf4f9ce19f0bd715c8f8b0337e1095/metrics.md) for all names and label values. Concurrent callback downloads are coalesced, so `feuer_lookup_total{outcome="callback"}` is not a remote GET count. Object-storage GET counters measure actual remote requests.
 
 ## CLI Metrics
 

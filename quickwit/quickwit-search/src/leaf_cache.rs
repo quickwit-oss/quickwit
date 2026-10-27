@@ -20,9 +20,18 @@ use quickwit_config::CacheConfig;
 use quickwit_proto::search::{
     CountHits, LeafResourceStats, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
 };
-use quickwit_storage::{MemorySizedCache, OwnedBytes};
+use quickwit_storage::{FeuerCache, OwnedBytes};
+use serde::Serialize;
 use siphasher::sip128::{Hasher128, SipHasher13};
 use tantivy::index::SegmentId;
+
+#[path = "result_cache.rs"]
+mod result_cache;
+use result_cache::ResultCache;
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "leaf_cache_disk_tests.rs"]
+mod disk_tests;
 
 /// A keyed 128-bit digest stored in place of a potentially large cache key.
 ///
@@ -59,8 +68,7 @@ impl CacheKeyHasher {
 
 /// A cache to memoize `leaf_search_single_split` results.
 pub struct LeafSearchCache {
-    content: MemorySizedCache<CacheKeyHash>,
-    key_hasher: CacheKeyHasher,
+    content: ResultCache,
 }
 
 // TODO we could be smarter about search_after. If we have a cached request with a search_after
@@ -81,25 +89,50 @@ pub struct LeafSearchCache {
 impl LeafSearchCache {
     pub fn new(config: &CacheConfig) -> LeafSearchCache {
         LeafSearchCache {
-            content: MemorySizedCache::from_config(
+            content: ResultCache::memory(
                 config,
+                "partial_request",
                 &quickwit_storage::metrics::PARTIAL_REQUEST_CACHE,
             ),
-            key_hasher: CacheKeyHasher::random(),
         }
     }
+    pub fn with_disk_cache(cache: FeuerCache) -> Self {
+        Self {
+            content: ResultCache::disk(cache),
+        }
+    }
+
+    #[cfg(test)]
     pub fn get(
+        &self,
+        split_info: SplitIdAndFooterOffsets,
+        request: SearchRequest,
+    ) -> Option<LeafSearchResponse> {
+        self.content.block_on(self.get_async(split_info, request))
+    }
+
+    #[cfg(test)]
+    pub fn put(
+        &self,
+        split_info: SplitIdAndFooterOffsets,
+        request: SearchRequest,
+        result: LeafSearchResponse,
+    ) {
+        self.content
+            .block_on(self.put_async(split_info, request, result));
+    }
+
+    pub async fn get_async(
         &self,
         split_info: SplitIdAndFooterOffsets,
         search_request: SearchRequest,
     ) -> Option<LeafSearchResponse> {
         let key = CacheKey::from_split_meta_and_request(split_info, search_request);
-        let encoded_result = self.content.get(&self.key_hasher.hash(&key))?;
-        // this should never fail
-        LeafSearchResponse::decode(&*encoded_result).ok()
+        let encoded_result = self.content.get(&key).await?;
+        Some(LeafSearchResponse::decode(&*encoded_result).expect("invalid cached leaf response"))
     }
 
-    pub fn put(
+    pub async fn put_async(
         &self,
         split_info: SplitIdAndFooterOffsets,
         search_request: SearchRequest,
@@ -115,12 +148,13 @@ impl LeafSearchCache {
         let key = CacheKey::from_split_meta_and_request(split_info, search_request);
         let encoded_result = result.encode_to_vec();
         self.content
-            .put(self.key_hasher.hash(&key), OwnedBytes::new(encoded_result));
+            .put(&key, OwnedBytes::new(encoded_result))
+            .await;
     }
 }
 
 /// A key inside a [`LeafSearchCache`].
-#[derive(Debug, Hash, Clone, PartialEq, Eq)]
+#[derive(Debug, Hash, Clone, PartialEq, Eq, Serialize)]
 struct CacheKey {
     /// The split this entry refers to
     split_id: String,
@@ -157,7 +191,7 @@ impl CacheKey {
 }
 
 /// A (half-open) range bounded inclusively below and exclusively above [start..end).
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize)]
 struct HalfOpenRange {
     start: i64,
     end: Option<i64>,
@@ -235,30 +269,34 @@ impl RangeBounds<i64> for HalfOpenRange {
 }
 
 pub struct PredicateCacheImpl {
-    content: MemorySizedCache<CacheKeyHash>,
-    key_hasher: CacheKeyHasher,
+    content: ResultCache,
     enabled: bool,
 }
 
 impl PredicateCacheImpl {
     pub fn new(config: &CacheConfig) -> Self {
         PredicateCacheImpl {
-            content: MemorySizedCache::from_config(
+            content: ResultCache::memory(
                 config,
+                "predicate",
                 &quickwit_storage::metrics::PREDICATE_CACHE,
             ),
-            key_hasher: CacheKeyHasher::random(),
             enabled: config.capacity().as_u64() > 0,
+        }
+    }
+
+    pub fn with_disk_cache(cache: FeuerCache) -> Self {
+        Self {
+            content: ResultCache::disk(cache),
+            enabled: true,
         }
     }
 
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }
-}
 
-impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
-    fn get(
+    pub async fn get_async(
         &self,
         split_id: String,
         query_ast_json: String,
@@ -266,18 +304,22 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
         if !self.enabled {
             return None;
         }
-        let key = self
-            .key_hasher
-            .hash(&(split_id.as_str(), query_ast_json.as_str()));
-        let encoded_result = self.content.get(&key)?;
+        let key = (split_id.as_str(), query_ast_json.as_str());
+        let encoded_result = self.content.get(&key).await?;
+        assert!(
+            encoded_result.len() >= 32,
+            "invalid cached predicate header"
+        );
         let (segment_id_bytes, hits_buffer) = encoded_result.split(32);
-        let segment_id =
-            SegmentId::from_uuid_string(str::from_utf8(&segment_id_bytes).ok()?).ok()?;
+        let segment_id = SegmentId::from_uuid_string(
+            str::from_utf8(&segment_id_bytes).expect("invalid cached segment encoding"),
+        )
+        .expect("invalid cached segment ID");
         let hits = quickwit_query::query_ast::HitSet::from_buffer(hits_buffer);
         Some((segment_id, hits))
     }
 
-    fn put(
+    pub async fn put_async(
         &self,
         split_id: String,
         query_ast_json: String,
@@ -291,11 +333,9 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
         let mut buffer = Vec::with_capacity(32 + hits_buffer.len());
         buffer.extend_from_slice(segment.uuid_string().as_bytes());
         buffer.extend_from_slice(&hits_buffer);
-        let key = self
-            .key_hasher
-            .hash(&(split_id.as_str(), query_ast_json.as_str()));
+        let key = (split_id.as_str(), query_ast_json.as_str());
         let entry_num_bytes = buffer.len();
-        if !self.content.put(key, OwnedBytes::new(buffer)) {
+        if !self.content.put(&key, OwnedBytes::new(buffer)).await {
             quickwit_common::rate_limited_warn!(
                 limit_per_min = 10,
                 split_id,
@@ -303,6 +343,28 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
                 "predicate cache rejected an entry"
             );
         }
+    }
+}
+
+impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
+    fn get(
+        &self,
+        split_id: String,
+        query_ast_json: String,
+    ) -> Option<(SegmentId, quickwit_query::query_ast::HitSet)> {
+        self.content
+            .block_on(self.get_async(split_id, query_ast_json))
+    }
+
+    fn put(
+        &self,
+        split_id: String,
+        query_ast_json: String,
+        segment: SegmentId,
+        hits: quickwit_query::query_ast::HitSet,
+    ) {
+        self.content
+            .block_on(self.put_async(split_id, query_ast_json, segment, hits));
     }
 }
 

@@ -264,6 +264,11 @@ fail,https://github.com/tikv/fail-rs,Apache-2.0,The TiKV Project Developers
 fancy-regex,https://github.com/fancy-regex/fancy-regex,MIT,"Raph Levien <raph@google.com>, Robin Stocker <robin@nibor.org>, Keith Hall <keith.hall@available.systems>"
 fastdivide,https://github.com/fulmicoton/fastdivide,zlib-acknowledgement OR MIT,Paul Masurel <paul.masurel@gmail.com>
 fastrand,https://github.com/smol-rs/fastrand,Apache-2.0 OR MIT,Stjepan Glavina <stjepang@gmail.com>
+feuer,https://github.com/PSeitz/feuer,MIT,Feuer Project Authors
+feuer-historian,https://github.com/PSeitz/feuer,MIT,Feuer Project Authors
+feuer-memory,https://github.com/PSeitz/feuer,MIT,Feuer Project Authors
+feuer-storage,https://github.com/PSeitz/feuer,MIT,Feuer Project Authors
+feuer-types,https://github.com/PSeitz/feuer,MIT,Feuer Project Authors
 ff,https://github.com/zkcrypto/ff,MIT OR Apache-2.0,"Sean Bowe <ewillbefull@gmail.com>, Jack Grigg <thestr4d@gmail.com>"
 fiat-crypto,https://github.com/mit-plv/fiat-crypto,MIT OR Apache-2.0 OR BSD-1-Clause,Fiat Crypto library authors <jgross@mit.edu>
 find-msvc-tools,https://github.com/rust-lang/cc-rs,MIT OR Apache-2.0,The find-msvc-tools Authors
@@ -363,6 +368,7 @@ inherent,https://github.com/dtolnay/inherent,MIT OR Apache-2.0,David Tolnay <dto
 inout,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
 instant,https://github.com/sebcrozet/instant,BSD-3-Clause,sebcrozet <developer@crozet.re>
 inventory,https://github.com/dtolnay/inventory,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
+io-uring,https://github.com/tokio-rs/io-uring,MIT OR Apache-2.0,quininer <quininer@live.com>
 ipcrypt-rs,https://github.com/jedisct1/rust-ipcrypt2,ISC,Frank Denis <github@pureftpd.org>
 ipnet,https://github.com/krisprice/ipnet,MIT OR Apache-2.0,Kris Price <kris@krisprice.nz>
 ipnetwork,https://github.com/achanda/ipnetwork,MIT OR Apache-2.0,"Abhishek Chanda <abhishek.becs@gmail.com>, Linus Färnstrand <faern@faern.net>"
@@ -431,6 +437,7 @@ minimal-lexical,https://github.com/Alexhuszagh/minimal-lexical,MIT OR Apache-2.0
 miniserde,https://github.com/dtolnay/miniserde,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 miniz_oxide,https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide,MIT OR Zlib OR Apache-2.0,"Frommi <daniil.liferenko@gmail.com>, oyvindln <oyvindln@users.noreply.github.com>, Rich Geldreich richgel99@gmail.com"
 mio,https://github.com/tokio-rs/mio,MIT,"Carl Lerche <me@carllerche.com>, Thomas de Zeeuw <thomasdezeeuw@gmail.com>, Tokio Contributors <team@tokio.rs>"
+mixtrics,https://github.com/foyer-rs/mixtrics,Apache-2.0,MrCroxx <mrcroxx@outlook.com>
 mockall,https://github.com/asomers/mockall,MIT OR Apache-2.0,Alan Somers <asomers@gmail.com>
 mockall_derive,https://github.com/asomers/mockall,MIT OR Apache-2.0,Alan Somers <asomers@gmail.com>
 mrecordlog,https://github.com/quickwit-oss/mrecordlog,MIT,The mrecordlog Authors

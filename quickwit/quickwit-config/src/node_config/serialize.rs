@@ -904,14 +904,15 @@ mod tests {
             SearcherConfig {
                 aggregation_memory_limit: ByteSize::gb(1),
                 aggregation_bucket_limit: 500_000,
-                fast_field_cache: CacheConfig::default_with_capacity(ByteSize::gb(10)),
-                split_footer_cache: CacheConfig::default_with_capacity(ByteSize::gb(1)),
+                fast_field_cache: Some(CacheConfig::default_with_capacity(ByteSize::gb(10))),
                 partial_request_cache: CacheConfig::default_with_capacity(ByteSize::mb(64)),
                 predicate_cache: CacheConfig::default_with_capacity(ByteSize::mb(256)),
                 max_num_concurrent_split_searches: 150,
                 max_splits_per_search: None,
                 _max_num_concurrent_split_streams: Some(serde::de::IgnoredAny),
                 split_cache: None,
+                disk_cache: None,
+                disk_cache_directory: None,
                 request_timeout_secs: NonZeroU64::new(30).unwrap(),
                 leaf_request_timeout_secs: NonZeroU64::new(30).unwrap(),
                 storage_timeout_policy: Some(crate::StorageTimeoutPolicy {

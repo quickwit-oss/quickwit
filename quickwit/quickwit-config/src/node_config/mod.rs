@@ -12,16 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[cfg(test)]
+mod cache_tests;
 mod serialize;
 
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::net::SocketAddr;
 use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{bail, ensure};
+use anyhow::{Context, bail, ensure};
 use bytesize::ByteSize;
 use http::HeaderMap;
 use quickwit_common::net::HostAddr;
@@ -387,21 +389,72 @@ impl SplitCacheLimits {
     }
 }
 
+/// Disabled-by-default Feuer cache for ranges of immutable split objects.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DiskCacheConfig {
+    /// Override the shared searcher disk cache directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<PathBuf>,
+    /// Set to zero to disable the disk tier and cache only in memory.
+    #[serde(with = "crate::serde_utils::bytesize_serde")]
+    pub disk_capacity: ByteSize,
+    /// Soft memory-tier eviction target, not a hard process-memory limit.
+    #[serde(with = "crate::serde_utils::bytesize_serde")]
+    pub memory_capacity: ByteSize,
+}
+
+impl DiskCacheConfig {
+    /// Return the directory after resolving the shared searcher setting.
+    pub fn directory(&self) -> anyhow::Result<&Path> {
+        let path = self
+            .path
+            .as_deref()
+            .context("path or disk_cache_directory must be set for Feuer")?;
+        ensure!(!path.as_os_str().is_empty(), "path must not be empty");
+        Ok(path)
+    }
+
+    fn resolve_directory(&self, directory: Option<&Path>) -> anyhow::Result<Self> {
+        let mut config = self.clone();
+        if config.path.is_none() {
+            config.path = directory.map(Path::to_path_buf);
+        }
+        config.validate()?;
+        Ok(config)
+    }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        self.directory()?;
+        ensure!(
+            self.memory_capacity.as_u64() > 0,
+            "disk_cache.memory_capacity must be positive"
+        );
+        Ok(())
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test() -> Self {
+        Self {
+            path: Some(PathBuf::from("/tmp/quickwit-disk-cache")),
+            disk_capacity: ByteSize::gib(300),
+            memory_capacity: ByteSize::gib(1),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct SearcherConfig {
     pub aggregation_memory_limit: ByteSize,
     pub aggregation_bucket_limit: u32,
 
+    /// Long-lived `.fast` RAM cache. Omitted settings are resolved by
+    /// [`Self::resolved_fast_field_cache`].
     #[serde(alias = "fast_field_cache_capacity")]
-    #[serde(
-        deserialize_with = "CacheConfig::deserialize_with_default::<_, {ByteSize::gb(1).as_u64()}>"
-    )]
-    pub fast_field_cache: CacheConfig,
-    #[serde(alias = "split_footer_cache_capacity")]
-    #[serde(deserialize_with = "CacheConfig::deserialize_with_default::<_, \
-                                {ByteSize::mb(500).as_u64()}>")]
-    pub split_footer_cache: CacheConfig,
+    #[serde(default, deserialize_with = "deserialize_optional_fast_field_cache")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fast_field_cache: Option<CacheConfig>,
     #[serde(alias = "partial_request_cache_capacity")]
     #[serde(deserialize_with = "CacheConfig::deserialize_with_default::<_, \
                                 {ByteSize::mb(64).as_u64()}>")]
@@ -421,6 +474,13 @@ pub struct SearcherConfig {
     // TODO document and fix if necessary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub split_cache: Option<SplitCacheLimits>,
+    /// Process-wide Feuer cache for split footer and body ranges.
+    /// Omitted or `null` disables the cache.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disk_cache: Option<DiskCacheConfig>,
+    /// Shared directory for independent Feuer files; per-cache paths override it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disk_cache_directory: Option<PathBuf>,
     #[serde(default = "SearcherConfig::default_request_timeout_secs")]
     request_timeout_secs: NonZeroU64,
     #[serde(default = "SearcherConfig::default_request_timeout_secs")]
@@ -518,10 +578,24 @@ impl LambdaDeployConfig {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CacheConfig {
-    #[serde(default)]
+    #[serde(
+        default,
+        rename = "memory_capacity",
+        alias = "capacity",
+        serialize_with = "crate::serde_utils::bytesize_serde::serialize_optional"
+    )]
     capacity: Option<ByteSize>,
     #[serde(default)]
     policy: Option<CachePolicy>,
+    /// Optional disk tier for result caches. Other caches only support RAM.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    path: Option<PathBuf>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::serde_utils::bytesize_serde::serialize_optional"
+    )]
+    disk_capacity: Option<ByteSize>,
 
     // Cache configs inside the virtual cache aren't allowed to contain virtual cache
     #[serde(default)]
@@ -533,6 +607,8 @@ impl CacheConfig {
         CacheConfig {
             capacity: None,
             policy: None,
+            path: None,
+            disk_capacity: None,
             virtual_caches: Vec::new(),
         }
     }
@@ -541,8 +617,55 @@ impl CacheConfig {
         CacheConfig {
             capacity: Some(capacity),
             policy: None,
+            path: None,
+            disk_capacity: None,
             virtual_caches: Vec::new(),
         }
+    }
+
+    /// Validate result-cache settings and resolve optional disk configuration.
+    /// Without disk settings, returns `None`; memory-only Feuer construction is separate.
+    pub fn disk_cache(&self, directory: Option<&Path>) -> anyhow::Result<Option<DiskCacheConfig>> {
+        self.validate_feuer()?;
+        let Some(disk_capacity) = self.disk_capacity else {
+            ensure!(
+                self.path.is_none(),
+                "disk_capacity must be set when path is set"
+            );
+            return Ok(None);
+        };
+        ensure!(
+            self.capacity().as_u64() > 0,
+            "memory_capacity must be positive for Feuer"
+        );
+        let config = DiskCacheConfig {
+            path: self.path.clone(),
+            disk_capacity,
+            memory_capacity: self.capacity(),
+        };
+        Ok(Some(config.resolve_directory(directory)?))
+    }
+
+    /// Validate a Feuer memory-only cache, including zero-capacity configurations.
+    pub fn validate_feuer_memory(&self) -> anyhow::Result<()> {
+        ensure!(
+            self.path.is_none() && self.disk_capacity.is_none(),
+            "path and disk_capacity are only supported by partial_request_cache and \
+             predicate_cache"
+        );
+        self.validate_feuer()
+    }
+
+    fn validate_feuer(&self) -> anyhow::Result<()> {
+        ensure!(
+            self.policy.is_none(),
+            "policy is not supported by Feuer; Feuer owns eviction"
+        );
+        ensure!(
+            self.virtual_caches.is_empty(),
+            "virtual_caches are not supported by Feuer"
+        );
+        Ok(())
     }
 
     pub fn capacity(&self) -> ByteSize {
@@ -579,6 +702,13 @@ impl CacheConfig {
         }
         Ok(cache_config)
     }
+}
+
+fn deserialize_optional_fast_field_cache<'de, D>(
+    deserializer: D,
+) -> Result<Option<CacheConfig>, D::Error>
+where D: Deserializer<'de> {
+    CacheConfig::deserialize_with_default::<D, { ByteSize::gb(1).as_u64() }>(deserializer).map(Some)
 }
 
 impl From<ByteSize> for CacheConfig {
@@ -642,8 +772,7 @@ impl StorageTimeoutPolicy {
 impl Default for SearcherConfig {
     fn default() -> Self {
         SearcherConfig {
-            fast_field_cache: CacheConfig::default_with_capacity(ByteSize::gb(1)),
-            split_footer_cache: CacheConfig::default_with_capacity(ByteSize::mb(500)),
+            fast_field_cache: None,
             partial_request_cache: CacheConfig::default_with_capacity(ByteSize::mb(64)),
             predicate_cache: CacheConfig::default_with_capacity(ByteSize::mb(256)),
             max_num_concurrent_split_searches: 100,
@@ -652,6 +781,8 @@ impl Default for SearcherConfig {
             aggregation_memory_limit: ByteSize::mb(500),
             aggregation_bucket_limit: 65000,
             split_cache: None,
+            disk_cache: None,
+            disk_cache_directory: None,
             request_timeout_secs: Self::default_request_timeout_secs(),
             leaf_request_timeout_secs: Self::default_request_timeout_secs(),
             storage_timeout_policy: None,
@@ -675,7 +806,46 @@ impl SearcherConfig {
     fn default_request_timeout_secs() -> NonZeroU64 {
         NonZeroU64::new(30).unwrap()
     }
+    /// Resolve the fast-field memory capacity. An explicit setting takes precedence.
+    /// Otherwise, the split range cache disables it, and without that cache it is 1 GB.
+    pub fn resolved_fast_field_cache(&self) -> CacheConfig {
+        match &self.fast_field_cache {
+            Some(config) => config.clone(),
+            None if self.disk_cache.is_some() => CacheConfig::no_cache(),
+            None => CacheConfig::default_with_capacity(ByteSize::gb(1)),
+        }
+    }
+
+    /// Resolve the split range cache directory before opening Feuer.
+    pub fn resolved_disk_cache(&self) -> anyhow::Result<Option<DiskCacheConfig>> {
+        let Some(config) = &self.disk_cache else {
+            return Ok(None);
+        };
+        Ok(Some(
+            config.resolve_directory(self.disk_cache_directory.as_deref())?,
+        ))
+    }
+
     fn validate(&self) -> anyhow::Result<()> {
+        if let Some(directory) = &self.disk_cache_directory {
+            ensure!(
+                !directory.as_os_str().is_empty(),
+                "disk_cache_directory must not be empty"
+            );
+        }
+        if let Some(config) = &self.fast_field_cache {
+            config
+                .validate_feuer_memory()
+                .context("invalid fast_field_cache")?;
+        }
+        self.resolved_disk_cache().context("invalid disk_cache")?;
+        let directory = self.disk_cache_directory.as_deref();
+        self.partial_request_cache
+            .disk_cache(directory)
+            .context("invalid partial_request_cache")?;
+        self.predicate_cache
+            .disk_cache(directory)
+            .context("invalid predicate_cache")?;
         if let Some(split_cache_limits) = self.split_cache {
             if self.max_num_concurrent_split_searches
                 > split_cache_limits.max_file_descriptors.get() as usize

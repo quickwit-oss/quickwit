@@ -61,7 +61,7 @@ use tracing::{Instrument, info, instrument, warn};
 use crate::metrics::{ERROR_CLASS, object_storage_get_slice_in_flight_guards};
 use crate::object_storage::MultiPartPolicy;
 use crate::stable_deref_bytes::into_owned_bytes;
-use crate::storage::SendableAsync;
+use crate::storage::{SendableAsync, default_get_slice_into};
 use crate::{
     BulkDeleteError, DeleteFailure, ListObjectsStream, ObjectMetadata, OwnedBytes, Storage,
     StorageError, StorageErrorKind, StorageResolverError, StorageResult,
@@ -1099,6 +1099,24 @@ impl Storage for S3CompatibleObjectStorage {
             })
     }
 
+    #[instrument(name = "storage.s3.get_slice_into", level = "debug", skip(self, range, buffer), fields(range.start = range.start, range.end = range.end))]
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> StorageResult<()> {
+        assert_eq!(buffer.len(), range.len());
+        if buffer.is_empty() {
+            return Ok(());
+        }
+        let _in_flight_guards = object_storage_get_slice_in_flight_guards(buffer.len());
+        default_get_slice_into(self, path, range, buffer).await?;
+        // The streaming path bypasses download_all, which accounts for collected bodies.
+        crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(buffer.len() as u64);
+        Ok(())
+    }
+
     #[instrument(name = "storage.s3.get_slice_stream", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice_stream(
         &self,
@@ -1748,6 +1766,66 @@ mod tests {
             disable_multi_object_delete: false,
             disable_multipart_upload: true,
             checksum_algorithm,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_slice_into_download_metrics() {
+        use crate::metrics::{
+            OBJECT_STORAGE_DOWNLOAD_NUM_BYTES, OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT,
+            OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES,
+        };
+
+        // Only complete, exact-length downloads count. Empty reads must not issue a request.
+        for (status, payload, succeeds) in [
+            (206, "world", true),
+            (206, "abcd", false),
+            (206, "abcdef", false),
+            (404, "", false),
+        ] {
+            let client = StaticReplayClient::new(vec![ReplayEvent::new(
+                http::Request::builder().body(SdkBody::empty()).unwrap(),
+                http::Response::builder()
+                    .status(status)
+                    .header("content-length", payload.len())
+                    .body(SdkBody::from(payload))
+                    .unwrap(),
+            )]);
+            let storage = make_s3_storage_with_replay(
+                client.clone(),
+                quickwit_config::ChecksumAlgorithm::Md5,
+            );
+            let bytes_before = OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.get();
+            let count_before = OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT.get();
+            let in_flight_bytes_before = OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES.get();
+
+            storage
+                .get_slice_into(Path::new("object"), 2..2, &mut [])
+                .await
+                .unwrap();
+            assert_eq!(client.actual_requests().count(), 0);
+            assert_eq!(OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.get(), bytes_before);
+
+            let mut buffer = [0; 5];
+            let result = storage
+                .get_slice_into(Path::new("object"), 2..7, &mut buffer)
+                .await;
+            assert_eq!(result.is_ok(), succeeds, "{result:?}");
+            if succeeds {
+                assert_eq!(&buffer, b"world");
+            }
+            assert_eq!(
+                OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.get() - bytes_before,
+                if succeeds { 5 } else { 0 },
+            );
+            assert_eq!(OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT.get(), count_before);
+            assert_eq!(
+                OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES.get(),
+                in_flight_bytes_before,
+            );
+            let requests = client.actual_requests().collect::<Vec<_>>();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0].headers().get("range"), Some("bytes=2-6"));
         }
     }
 

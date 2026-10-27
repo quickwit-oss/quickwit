@@ -12,21 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::hash::Hash;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_config::CacheConfig;
+use siphasher::sip128::{Hasher128, SipHasher13};
 
-use crate::OwnedBytes;
-use crate::cache::{MemorySizedCache, StorageCache};
-use crate::metrics::{CacheMetrics, FAST_FIELD_CACHE};
+use crate::cache::StorageCache;
+use crate::metrics::FAST_FIELD_CACHE;
+use crate::{FeuerMemoryCache, OwnedBytes};
 
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
 
-/// Quickwit storage cache with a size limit.
-/// It is used currently by to cache only fast fields data.
+/// Routes fast-field data to Feuer's memory tier.
 pub struct QuickwitCache {
     router: Vec<(&'static str, Arc<dyn StorageCache>)>,
 }
@@ -40,14 +41,23 @@ impl From<Vec<(&'static str, Arc<dyn StorageCache>)>> for QuickwitCache {
 impl QuickwitCache {
     /// Creates a [`QuickwitCache`] with a cache on fast fields.
     pub fn new(cache_config: &CacheConfig) -> Self {
+        cache_config
+            .validate_feuer_memory()
+            .expect("invalid Feuer fast-field cache configuration");
+        if cache_config.capacity().as_u64() == 0 {
+            return QuickwitCache::empty();
+        }
         let mut quickwit_cache = QuickwitCache::empty();
-        let fast_field_cache_counters: &'static CacheMetrics = &FAST_FIELD_CACHE;
         quickwit_cache.add_route(
             ".fast",
-            Arc::new(SimpleCache::from_config(
-                cache_config,
-                fast_field_cache_counters,
-            )),
+            Arc::new(FastFieldCache {
+                cache: FeuerMemoryCache::new(
+                    cache_config.capacity().as_u64(),
+                    "fast_field",
+                    &FAST_FIELD_CACHE,
+                )
+                .expect("invalid Feuer memory cache configuration"),
+            }),
         );
         quickwit_cache
     }
@@ -105,43 +115,35 @@ impl StorageCache for QuickwitCache {
     }
 }
 
-/// The Quickwit cache logic is very simple for the moment.
-///
-/// It stores hotcache files using an LRU cache.
-///
-/// HACK! We use `0..usize::MAX` to signify the "entire file".
-/// TODO fixme
-struct SimpleCache {
-    slice_cache: MemorySizedCache,
+/// Caches immutable fast-field slices by their exact path and byte bounds.
+/// `FULL_SLICE` identifies an entire file separately from any finite range.
+struct FastFieldCache {
+    cache: FeuerMemoryCache,
 }
 
-impl SimpleCache {
-    fn from_config(cache_config: &CacheConfig, cache_counters: &'static CacheMetrics) -> Self {
-        SimpleCache {
-            slice_cache: MemorySizedCache::from_config(cache_config, cache_counters),
-        }
-    }
+fn slice_key(path: &Path, byte_range: Range<usize>) -> u128 {
+    // Hash Path directly to preserve non-UTF-8 identities. Only this 128-bit digest is stored.
+    let mut hasher = SipHasher13::new();
+    (path, byte_range).hash(&mut hasher);
+    hasher.finish128().as_u128()
 }
 
 #[async_trait]
-impl StorageCache for SimpleCache {
+impl StorageCache for FastFieldCache {
     async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
-        if let Some(bytes) = self.slice_cache.get_slice(path, byte_range) {
-            return Some(bytes);
-        }
-        None
+        self.cache.get(slice_key(path, byte_range))
     }
 
     async fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
-        self.slice_cache.put_slice(path, byte_range, bytes);
+        self.cache.put(slice_key(&path, byte_range), bytes);
     }
 
     async fn get_all(&self, path: &Path) -> Option<OwnedBytes> {
-        self.slice_cache.get_slice(path, FULL_SLICE)
+        self.get(path, FULL_SLICE).await
     }
 
     async fn put_all(&self, path: PathBuf, bytes: OwnedBytes) {
-        self.slice_cache.put_slice(path, FULL_SLICE.clone(), bytes);
+        self.put(path, FULL_SLICE, bytes).await;
     }
 }
 
@@ -150,9 +152,96 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
 
+    use quickwit_config::CacheConfig;
+
     use super::QuickwitCache;
     use crate::cache::StorageCache;
     use crate::{MockStorageCache, OwnedBytes};
+
+    #[test]
+    fn test_new_with_zero_capacity_is_empty() {
+        let quickwit_cache = QuickwitCache::new(&CacheConfig::no_cache());
+        assert!(quickwit_cache.router.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "virtual_caches are not supported by Feuer")]
+    fn test_new_rejects_virtual_caches_even_with_zero_capacity() {
+        let mut cache_config = CacheConfig::no_cache();
+        cache_config
+            .virtual_caches
+            .push(CacheConfig::default_with_capacity(bytesize::ByteSize::mb(
+                1,
+            )));
+
+        QuickwitCache::new(&cache_config);
+    }
+
+    #[test]
+    fn test_new_with_nonzero_capacity_adds_fast_field_route() {
+        let quickwit_cache = QuickwitCache::new(&CacheConfig::default_with_capacity(
+            bytesize::ByteSize::mb(1),
+        ));
+        assert_eq!(quickwit_cache.router.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_fast_field_cache_uses_feuer_for_exact_slices() {
+        // A one-byte budget verifies Feuer's soft-capacity admission of larger entries.
+        let cache = QuickwitCache::new(&bytesize::ByteSize::b(1).into());
+        let path = Path::new("split/segment.fast");
+        cache
+            .put(path.to_path_buf(), 10..16, OwnedBytes::new(&b"result"[..]))
+            .await;
+        assert_eq!(cache.get(path, 10..16).await.unwrap().as_slice(), b"result");
+        assert!(cache.get(path, 11..16).await.is_none());
+        assert!(cache.get(path, 10..15).await.is_none());
+        assert!(
+            cache
+                .get(Path::new("other-split/segment.fast"), 10..16)
+                .await
+                .is_none()
+        );
+        assert!(cache.get_all(path).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_fast_field_cache_keeps_whole_files_separate_and_immutable() {
+        let cache = QuickwitCache::new(&bytesize::ByteSize::mb(1).into());
+        let path = Path::new("segment.fast");
+        cache
+            .put_all(path.to_path_buf(), OwnedBytes::new(&b"whole"[..]))
+            .await;
+        cache
+            .put(path.to_path_buf(), 0..5, OwnedBytes::new(&b"slice"[..]))
+            .await;
+        cache
+            .put_all(path.to_path_buf(), OwnedBytes::new(&b"replacement"[..]))
+            .await;
+        assert_eq!(cache.get_all(path).await.unwrap().as_slice(), b"whole");
+        assert_eq!(cache.get(path, 0..5).await.unwrap().as_slice(), b"slice");
+
+        let other_path = Path::new("segment.term");
+        cache
+            .put_all(other_path.to_path_buf(), OwnedBytes::new(&b"terms"[..]))
+            .await;
+        assert!(cache.get_all(other_path).await.is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_fast_field_keys_preserve_non_utf8_paths() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let first = Path::new(OsStr::from_bytes(b"segment\xff.fast"));
+        let second = Path::new(OsStr::from_bytes(b"segment\xfe.fast"));
+        assert_eq!(first.to_string_lossy(), second.to_string_lossy());
+        assert_ne!(
+            super::slice_key(first, 0..5),
+            super::slice_key(second, 0..5)
+        );
+    }
 
     #[tokio::test]
     async fn test_quickwit_cache_get_all() {
