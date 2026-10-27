@@ -23,7 +23,7 @@ use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::metrics::register_build_info_metric;
 #[cfg(target_os = "linux")]
 use quickwit_cli::proc_io::start_proc_io_metrics_loop;
-use quickwit_cli::{busy_detector, install_default_crypto_ring_provider};
+use quickwit_cli::{busy_detector, install_default_crypto_provider};
 use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use tracing::error;
@@ -117,7 +117,7 @@ fn init_telemetry(
 async fn main_impl() -> anyhow::Result<()> {
     let (command, ansi_colors) = parse_cli_command();
 
-    install_default_crypto_ring_provider();
+    install_default_crypto_provider();
 
     let build_info = BuildInfo::get();
     let (telemetry_handle, env_filter_reload_fn) = init_telemetry(
@@ -147,9 +147,7 @@ async fn main_impl() -> anyhow::Result<()> {
     } else {
         0
     };
-
-    telemetry_handle.shutdown()?;
-
+    telemetry_handle.shutdown().await?;
     std::process::exit(return_code)
 }
 
@@ -728,7 +726,7 @@ mod tests {
                 grace_period,
                 dry_run: false,
                 ..
-            })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(60 * 60)
+            })) if &index_id == "wikipedia" && grace_period == Duration::from_hours(1)
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -752,7 +750,7 @@ mod tests {
                 grace_period,
                 config_uri,
                 dry_run: true,
-            })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(5 * 60) && config_uri == expected_config_uri
+            })) if &index_id == "wikipedia" && grace_period == Duration::from_mins(5) && config_uri == expected_config_uri
         ));
         Ok(())
     }

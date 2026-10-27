@@ -17,7 +17,7 @@ runs:
       shell: bash
     - uses: actions/setup-node@v3
       with:
-        node-version: 24
+        node-version: 26
         cache: "yarn"
         cache-dependency-path: quickwit/quickwit-ui/yarn.lock
     - run: yarn global add node-gyp
@@ -35,6 +35,11 @@ runs:
         echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
         echo "QW_COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
         echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
+      shell: bash
+    - name: Configure ARM64 Linux Rust flags
+      if: inputs.target == 'aarch64-unknown-linux-gnu'
+      run: |
+        echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS=-C target-cpu=neoverse-n1 -C link-arg=-lresolv --cfg tokio_unstable" >> "$GITHUB_ENV"
       shell: bash
     - name: Build Quickwit
       run: cross build --release --features release-feature-vendored-set --target ${{ inputs.target }} --bin quickwit

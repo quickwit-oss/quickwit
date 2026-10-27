@@ -53,6 +53,9 @@ fix:
 migrations-lint:
 	@$(MAKE) -C $(QUICKWIT_SRC) migrations-lint
 
+metrics-inventory:
+	@$(MAKE) -C $(QUICKWIT_SRC) metrics-inventory
+
 typos:
 	typos
 
@@ -71,7 +74,8 @@ IMAGE_TAGS = x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-l
 
 .PHONY: cross-images
 cross-images:
-	@for tag in ${IMAGE_TAGS}; do \
+	@set -e; \
+	for tag in ${IMAGE_TAGS}; do \
 		docker build --tag quickwit/cross:$$tag --file ./build/cross-images/$$tag.dockerfile ./build/cross-images; \
 		docker push quickwit/cross:$$tag; \
 	done

@@ -23,7 +23,7 @@ use std::time::Duration;
 use quickwit_common::{KillSwitch, Progress, ProtectedZoneGuard};
 use quickwit_metrics::Counter;
 use tokio::sync::{oneshot, watch};
-use tracing::{debug, error};
+use tracing::debug;
 
 #[cfg(any(test, feature = "testsuite"))]
 use crate::Universe;
@@ -209,12 +209,17 @@ impl<A: Actor> ActorContext<A> {
         obs_state
     }
 
-    pub(crate) fn exit(&self, exit_status: &ActorExitStatus) {
-        self.actor_state.exit(exit_status.is_success());
+    pub(crate) fn exit(&self, exit_status: &ActorExitStatus, fault_opt: Option<anyhow::Error>) {
+        // The fault has to be recorded before the failed state becomes observable: a supervisor
+        // that sees the failure first would terminate the pipeline and kill this very switch,
+        // and the fault would then be dropped as a mere consequence of that kill.
         if should_activate_kill_switch(exit_status) {
-            error!(actor=%self.actor_instance_id(), exit_status=?exit_status, "exit activating-kill-switch");
-            self.kill_switch().kill();
+            match fault_opt {
+                Some(fault) => self.kill_switch().kill_with_fault(fault),
+                None => self.kill_switch().kill(),
+            }
         }
+        self.actor_state.exit(exit_status.is_success());
     }
 
     /// Posts a message in an actor's mailbox.

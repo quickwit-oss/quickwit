@@ -7,12 +7,12 @@ pub struct GetOrCreateOpenShardsRequest {
     pub subrequests: ::prost::alloc::vec::Vec<GetOrCreateOpenShardsSubrequest>,
     #[prost(message, repeated, tag = "2")]
     pub closed_shards: ::prost::alloc::vec::Vec<super::ingest::ShardIds>,
-    /// The control plane should return shards that are not present on the supplied leaders.
+    /// The control plane should return shards that are not present on the supplied ingesters.
     ///
-    /// The control plane does not change the status of those leaders just from this signal.
+    /// The control plane does not change the status of those ingesters just from this signal.
     /// It will check the status of its own ingester pool.
     #[prost(string, repeated, tag = "3")]
-    pub unavailable_leaders: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    pub unavailable_ingesters: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -165,7 +165,7 @@ pub trait ControlPlaneService: std::fmt::Debug + Send + Sync + 'static {
         request: super::metastore::DeleteSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
     ///Returns the list of open shards for one or several sources. If the control plane is not able to find any
-    ///for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
+    ///for a source, it will pick an ingester and open a new shard.
     async fn get_or_create_open_shards(
         &self,
         request: GetOrCreateOpenShardsRequest,
@@ -2530,7 +2530,7 @@ pub mod control_plane_service_grpc_client {
             self.inner.unary(req, path, codec).await
         }
         /// Returns the list of open shards for one or several sources. If the control plane is not able to find any
-        /// for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
+        /// for a source, it will pick an ingester and open a new shard.
         pub async fn get_or_create_open_shards(
             &mut self,
             request: impl tonic::IntoRequest<super::GetOrCreateOpenShardsRequest>,
@@ -2692,7 +2692,7 @@ pub mod control_plane_service_grpc_server {
             tonic::Status,
         >;
         /// Returns the list of open shards for one or several sources. If the control plane is not able to find any
-        /// for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
+        /// for a source, it will pick an ingester and open a new shard.
         async fn get_or_create_open_shards(
             &self,
             request: tonic::Request<super::GetOrCreateOpenShardsRequest>,

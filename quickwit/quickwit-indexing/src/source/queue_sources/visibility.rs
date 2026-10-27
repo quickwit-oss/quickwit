@@ -47,9 +47,9 @@ impl VisibilitySettings {
     pub(super) fn from_commit_timeout(commit_timeout_secs: usize) -> Self {
         let commit_timeout = Duration::from_secs(commit_timeout_secs as u64);
         Self {
-            deadline_for_receive: Duration::from_secs(120) + commit_timeout,
+            deadline_for_receive: Duration::from_mins(2) + commit_timeout,
             deadline_for_last_extension: 2 * commit_timeout,
-            deadline_for_default_extension: Duration::from_secs(60),
+            deadline_for_default_extension: Duration::from_mins(1),
             request_timeout: Duration::from_secs(3),
             request_margin: Duration::from_secs(1),
         }

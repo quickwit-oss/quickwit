@@ -15,14 +15,6 @@ keep it open, just write `See #<Issue Number>`.
 Feel free to send your contribution in an unfinished state to get early feedback.
 In that case, simply mark the PR with the tag [WIP] (standing for work in progress).
 
-## PR verification checks
-When you submit a pull request to the project, the CI system runs several verification checks. After your PR is merged, a more exhaustive list of tests will be run.
-
-You will be notified by email from the CI system if any issues are discovered, but if you want to run these checks locally before submitting PR or in order to verify changes you can use the following commands in the root directory:
-1. To verify that all tests are passing, run `make test-all`.
-2. To fix code style and format as well as catch common mistakes run `make fix`. Alternatively, run `make -k test-all docker-compose-down` to tear down the Docker services after running all the tests.
-3. To build docs run `make build-rustdoc`.
-
 # Development
 
 ## Setup & run tests
@@ -30,7 +22,7 @@ You will be notified by email from the CI system if any issues are discovered, b
 ### Local Development
 
 1. Install Rust, CMake, Docker (https://docs.docker.com/engine/install/) and Docker Compose (https://docs.docker.com/compose/install/)
-2. Install node@24 and `npm install -g yarn`
+2. Install node@26 and `npm install -g yarn`
 3. Install awslocal https://github.com/localstack/awscli-local
 4. Install protoc https://grpc.io/docs/protoc-installation/ (you may need to install the latest binaries rather than your distro's flavor)
 5. Install nextest https://nexte.st/docs/installation/pre-built-binaries/
@@ -106,7 +98,7 @@ As the react UI is embedded in the rust binary, we need to build the react app b
 
 ## Testing release (alpha, beta, rc)
 
-The following Quickwit installation command `curl -L https://install.quickwit.io | sh` always installs the latest stable version of quickwit. To make it easier in installing and testing new (alpha, beta, rc) releases, you can manually pull and execute the script as `./install.sh --allow-any-latest-version`. This will force the script to install any latest available release package.
+The following Quickwit installation command `curl -L https://raw.githubusercontent.com/quickwit-oss/quickwit/main/install.sh | sh` always installs the latest stable version of quickwit. To make it easier in installing and testing new (alpha, beta, rc) releases, you can manually pull and execute the script as `./install.sh --allow-any-latest-version`. This will force the script to install any latest available release package.
 
 ## Tracking licenses
 
@@ -115,6 +107,17 @@ We keep track of the licenses used by the open source crates used by this projec
 time CI is run. To update the listing, install the tool with `cargo install --git
 https://github.com/DataDog/rust-license-tool` and then run `dd-rust-license-tool write`. If there are
 any errors, you may need to update the listing of exceptions in `license-tool.toml`.
+
+## Tracking metrics
+
+The list of metrics declared with `quickwit-metrics` is committed in
+`quickwit/quickwit-metrics-inventory/metrics.yaml`. When you add, remove, or change a metric,
+regenerate it with `make metrics-inventory` and commit the result. CI fails when the file is out
+of date. For added metrics or changed descriptions, regenerating is enough. If you removed or renamed
+a metric, or changed its static labels or type, identify all of its users, assess the impact, and
+communicate the change before merging. Only static labels are tracked: CI does not detect changes
+to labels added at runtime, so a passing check does not mean that all label changes are safe. See [the crate README](quickwit/quickwit-metrics-inventory/README.md) for
+details.
 
 # Documentation
 

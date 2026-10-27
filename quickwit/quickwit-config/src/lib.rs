@@ -20,7 +20,6 @@ use std::sync::LazyLock;
 
 use anyhow::{Context, bail, ensure};
 use json_comments::StripComments;
-use quickwit_common::get_bool_from_env;
 use quickwit_common::net::is_valid_hostname;
 use quickwit_common::uri::Uri;
 use quickwit_proto::types::NodeIdRef;
@@ -28,6 +27,7 @@ use regex::Regex;
 
 mod cluster_config;
 mod config_value;
+mod docs_clustering;
 mod index_config;
 mod index_template;
 pub mod merge_policy_config;
@@ -41,13 +41,16 @@ mod storage_config;
 mod templating;
 
 pub use cluster_config::ClusterConfig;
+pub use docs_clustering::{
+    ClusteringMethod, ClusteringPolicy, DocsClusteringConfig, FingerprintPolicy, JsonPath,
+};
 // We export that one for backward compatibility.
 // See #2048
 use index_config::serialize::{IndexConfigV0_8, VersionedIndexConfig};
 pub use index_config::{
-    IndexConfig, IndexingResources, IndexingSettings, IngestSettings, ParquetIndexingConfig,
-    RetentionPolicy, SearchSettings, build_doc_mapper, load_index_config_from_user_config,
-    load_index_config_update, prepare_doc_mapping_update,
+    IndexConfig, IndexingResources, IndexingSettings, IngestSettings, RetentionPolicy,
+    SearchSettings, build_doc_mapper, load_index_config_from_user_config, load_index_config_update,
+    prepare_doc_mapping_update,
 };
 pub use quickwit_doc_mapper::DocMapping;
 use serde::Serialize;
@@ -68,17 +71,18 @@ use tracing::warn;
 use crate::index_template::IndexTemplateV0_8;
 pub use crate::index_template::{IndexTemplate, IndexTemplateId, VersionedIndexTemplate};
 use crate::merge_policy_config::{
-    ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, ParquetMergePolicyConfig,
-    StableLogMergePolicyConfig,
+    ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, StableLogMergePolicyConfig,
 };
 pub use crate::metastore_config::{
     MetastoreBackend, MetastoreConfig, MetastoreConfigs, PostgresMetastoreConfig,
 };
 pub use crate::node_config::{
-    CacheConfig, CachePolicy, DEFAULT_QW_CONFIG_PATH, GrpcConfig, IndexerConfig, IngestApiConfig,
-    JaegerConfig, KeepAliveConfig, LambdaConfig, LambdaDeployConfig, NodeConfig, RestConfig,
-    SearcherConfig, SplitCacheLimits, StorageTimeoutPolicy, TlsConfig,
+    CacheConfig, CachePolicy, CompactorConfig, DEFAULT_QW_CONFIG_PATH, GrpcConfig, HealthConfig,
+    IndexerConfig, IngestApiConfig, JaegerConfig, KeepAliveConfig, LambdaConfig,
+    LambdaDeployConfig, MAX_GOSSIP_PROTOCOL_VERSION, NodeConfig, RestConfig, SearcherConfig,
+    SplitCacheLimits, StorageTimeoutPolicy, TlsConfig,
 };
+pub use crate::serde_utils::HumanDuration;
 use crate::source_config::serialize::{SourceConfigV0_7, SourceConfigV0_8, VersionedSourceConfig};
 pub use crate::storage_config::{
     AzureStorageConfig, ChecksumAlgorithm, FileStorageConfig, GoogleCloudStorageConfig,
@@ -88,16 +92,12 @@ pub use crate::storage_config::{
 
 /// Returns true if the ingest API v2 is enabled.
 pub fn enable_ingest_v2() -> bool {
-    static ENABLE_INGEST_V2: LazyLock<bool> =
-        LazyLock::new(|| get_bool_from_env("QW_ENABLE_INGEST_V2", true));
-    *ENABLE_INGEST_V2
+    quickwit_common::get_bool_from_env_cached!("QW_ENABLE_INGEST_V2", true)
 }
 
 /// Returns true if the ingest API v1 is disabled.
 pub fn disable_ingest_v1() -> bool {
-    static DISABLE_INGEST_V1: LazyLock<bool> =
-        LazyLock::new(|| get_bool_from_env("QW_DISABLE_INGEST_V1", false));
-    *DISABLE_INGEST_V1
+    quickwit_common::get_bool_from_env_cached!("QW_DISABLE_INGEST_V1", false)
 }
 
 #[derive(utoipa::OpenApi)]
@@ -116,8 +116,6 @@ pub fn disable_ingest_v1() -> bool {
     KafkaSourceParams,
     KinesisSourceParams,
     MergePolicyConfig,
-    ParquetIndexingConfig,
-    ParquetMergePolicyConfig,
     PubSubSourceParams,
     PulsarSourceAuth,
     PulsarSourceParams,

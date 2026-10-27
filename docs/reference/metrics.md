@@ -7,7 +7,7 @@ Quickwit exposes key metrics in the [Prometheus](https://prometheus.io/) format 
 
 ## Cache Metrics
 
-Currently Quickwit exposes metrics for three caches: `fastfields`, `shortlived`, `splitfooter`. These metrics share the same structure.
+Quickwit exposes metrics for several cache components, including `fastfields`, `fd`, `partial_request`, `predicate`, `searcher_split`, and `splitfooter`. These metrics share the same structure.
 
 | Namespace | Metric Name | Description | Type |
 | --------- | ----------- | ----------- | ---- |
@@ -60,6 +60,15 @@ All metastore methods are monitored by the 3 metrics:
 
 Examples of operation names: `create_index`, `index_metadata`, `delete_index`, `stage_splits`, `publish_splits`, `list_splits`, `add_source`, ...
 
+PostgreSQL-backed metastores also expose connection pool gauges:
+
+| Namespace | Metric Name | Description | Type |
+| --------- | ----------- | ----------- | ---- |
+| `quickwit_metastore` | `active_connections` | Number of active PostgreSQL pool connections, including used and idle connections | `gauge` |
+| `quickwit_metastore` | `idle_connections` | Number of idle PostgreSQL pool connections | `gauge` |
+| `quickwit_metastore` | `acquire_connections` | Number of requests currently waiting to acquire a PostgreSQL pool connection | `gauge` |
+| `quickwit_metastore` | `max_connections` | Maximum number of PostgreSQL pool connections configured per metastore node | `gauge` |
+
 ## Rest API Metrics
 
 | Namespace | Metric Name | Description | Type |
@@ -70,7 +79,7 @@ Examples of operation names: `create_index`, `index_metadata`, `delete_index`, `
 
 | Namespace | Metric Name | Description | Type |
 | --------- | ----------- | ----------- | ---- |
-| `quickwit_search` | `leaf_searches_splits_total` | Number of leaf searches (count of splits) started | `counter` |
+| `quickwit_search` | `split_search_outcome` | Number of local leaf split search outcomes by `category` (`success`, operational `error`, cache/pruning, or cancellation phase). Operational errors are classified by `error` (`create_reader`, `warmup`, `tantivy_search`, or `panic`). Retries are counted separately | `counter` |
 | `quickwit_search` | `leaf_search_split_duration_secs` | Number of seconds required to run a leaf search over a single split. The timer starts after the semaphore is obtained | `histogram` |
 | `quickwit_search` | `active_search_threads_count` | Number of threads in use in the CPU thread pool | `gauge` |
 

@@ -24,10 +24,19 @@ fix:
 	@$(MAKE) migrations-lint
 	@$(MAKE) unused-deps
 
+.PHONY: fix-test
+fix-test:
+	@python3 scripts/fix_if_needed.py
+	@$(MAKE) fmt
+	@$(MAKE) migrations-lint
+	@$(MAKE) unused-deps
+	cargo nextest run
+
 migrations-lint:
 	@echo "Linting Postgres migrations with diesel-guard"
 	@(command -v diesel-guard >/dev/null || (echo "diesel-guard is not installed. Please install using 'cargo install diesel-guard'." && exit 1))
 	@diesel-guard check quickwit-metastore/migrations/postgresql/
+	@diesel-guard check quickwit-metastore/migrations/postgresql_deferred/
 
 unused-deps:
 	@echo "Checking for unused dependencies"
@@ -46,8 +55,8 @@ test-all:
 	QW_S3_FORCE_PATH_STYLE_ACCESS=1 \
 	QW_TEST_DATABASE_URL=postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev \
 	RUST_MIN_STACK=67108864 \
-	cargo nextest run --all-features --retries 5
-	cargo nextest run --test failpoints --features fail/failpoints
+	cargo nextest run --all-features --profile ci
+	cargo nextest run --profile ci --test failpoints --features fail/failpoints
 
 test-failpoints:
 	cargo nextest run --test failpoints --features fail/failpoints
@@ -66,6 +75,16 @@ build: build-ui
 			cross build --release --features release-feature-vendored-set --target ${TARGET}; \
 		;; \
 	esac
+
+# Regenerates the committed metrics inventory. Writes to a temporary file first
+# so that a failed or interrupted build does not truncate the committed
+# inventory; the temporary file is always removed.
+.PHONY: metrics-inventory
+metrics-inventory:
+	@tmp=$$(mktemp) && trap 'rm -f "$$tmp"' EXIT && \
+		bash quickwit-metrics-inventory/scripts/run.sh > "$$tmp" && \
+		cp "$$tmp" quickwit-metrics-inventory/metrics.yaml && \
+		echo "Updated quickwit-metrics-inventory/metrics.yaml"
 
 workspace-deps-tree:
 	cargo tree --all-features --workspace -f "{p}" --prefix depth | cut -f 1 -d ' ' | python3 scripts/dep-tree.py

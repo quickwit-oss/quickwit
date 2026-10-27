@@ -38,3 +38,6 @@ states/
 
 # CI-downloaded Lambda artifacts (used by Docker builds; not committed)
 quickwit/lambda-artifact/
+
+# OpenSSL CA serial file generated during TLS test setup
+**/ca.srl

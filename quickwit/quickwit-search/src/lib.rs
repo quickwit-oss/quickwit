@@ -20,6 +20,7 @@
 mod client;
 mod cluster_client;
 mod collector;
+mod cost;
 mod error;
 mod fetch_docs;
 mod find_trace_ids_collector;
@@ -46,32 +47,34 @@ mod search_permit_provider;
 mod tests;
 
 pub use collector::QuickwitAggregations;
-use quickwit_common::thread_pool::ThreadPool;
+use quickwit_common::thread_pool::with_priority::ThreadPoolWithPriority;
 use quickwit_common::tower::Pool;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::metastore::{
-    ListIndexesMetadataRequest, ListSplitsRequest, MetastoreService, MetastoreServiceClient,
+    ListIndexesMetadataRequest, ListSplitsRequest, MetastoreServiceClient,
 };
 use tantivy::schema::NamedFieldDocument;
 
 /// Refer to this as `crate::Result<T>`.
 pub type Result<T> = std::result::Result<T, SearchError>;
 
+use std::hash::{Hash, Hasher};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::{Arc, LazyLock};
 
-pub use find_trace_ids_collector::{FindTraceIdsCollector, Span};
+pub use find_trace_ids_collector::{FindTraceIdsCollector, MAX_NUM_TRACES, Span};
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_metastore::{
     IndexMetadata, ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt,
     MetastoreServiceStreamSplitsExt, SplitMetadata, SplitState,
 };
+use quickwit_proto::metastore::MetastoreService;
 use quickwit_proto::search::{
     LeafResourceStats, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
     SplitResourceStats,
 };
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexUid, NodeId};
 use quickwit_storage::StorageResolver;
 pub use service::SearcherContext;
 use tantivy::DocAddress;
@@ -80,6 +83,7 @@ pub use crate::client::{
     SearchServiceClient, create_search_client_from_channel, create_search_client_from_grpc_addr,
 };
 pub use crate::cluster_client::ClusterClient;
+pub use crate::cost::compute_query_complexity_factor;
 pub use crate::error::{SearchError, parse_grpc_error};
 use crate::fetch_docs::fetch_docs;
 pub use crate::invoker::LambdaLeafSearchInvoker;
@@ -93,12 +97,50 @@ pub use crate::search_response_rest::{
 };
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 
-/// A pool of searcher clients identified by their gRPC socket address.
-pub type SearcherPool = Pool<SocketAddr, SearchServiceClient>;
+/// A searcher pool entry: stable cluster identity plus the client used to dial it.
+///
+/// The pool stays keyed by gRPC address so RPC routing is unchanged. Rendezvous
+/// hashing uses [`Self::node_id`] (`node_id` / `QW_NODE_ID`) so a restart that
+/// keeps the same node ID keeps the same split affinity even if the listen
+/// address changes.
+#[derive(Clone, Debug)]
+pub struct SearcherNode {
+    /// Cluster node ID used for split affinity. Must stay unique and stable
+    /// across restarts.
+    pub node_id: NodeId,
+    /// Client used to send search RPCs to this node.
+    pub client: SearchServiceClient,
+}
 
-fn search_thread_pool() -> &'static ThreadPool {
-    static SEARCH_THREAD_POOL: LazyLock<ThreadPool> =
-        LazyLock::new(|| ThreadPool::new("search", None));
+impl Hash for SearcherNode {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.node_id.hash(state);
+    }
+}
+
+#[cfg(any(test, feature = "testsuite"))]
+impl SearcherNode {
+    /// Wraps a client with a deterministic test node ID derived from its gRPC
+    /// port (`node-{port}`).
+    pub fn for_test(client: SearchServiceClient) -> Self {
+        let grpc_addr = client.grpc_addr();
+        Self {
+            node_id: NodeId::from_str(&format!("node-{}", grpc_addr.port())),
+            client,
+        }
+    }
+}
+
+/// A pool of searchers identified by their gRPC socket address.
+///
+/// Affinity hashing uses the value's [`SearcherNode::node_id`], not the address
+/// key, so placement survives listen-address changes when `QW_NODE_ID` is
+/// stable.
+pub type SearcherPool = Pool<SocketAddr, SearcherNode>;
+
+fn search_thread_pool() -> &'static ThreadPoolWithPriority {
+    static SEARCH_THREAD_POOL: LazyLock<ThreadPoolWithPriority> =
+        LazyLock::new(|| ThreadPoolWithPriority::new("search", Some(quickwit_common::num_cpus())));
     &SEARCH_THREAD_POOL
 }
 
@@ -164,7 +206,7 @@ impl std::str::FromStr for GlobalDocAddress {
 
 fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAndFooterOffsets {
     SplitIdAndFooterOffsets {
-        split_id: split_metadata.split_id.clone(),
+        split_id: split_metadata.split_id.to_string(),
         split_footer_start: split_metadata.footer_offsets.start,
         split_footer_end: split_metadata.footer_offsets.end,
         timestamp_start: split_metadata
@@ -182,18 +224,19 @@ fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAn
 /// Get all splits of given index ids
 pub async fn list_all_splits(
     index_uids: Vec<IndexUid>,
-    metastore: &mut MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<Vec<SplitMetadata>> {
     list_relevant_splits(index_uids, None, None, None, metastore).await
 }
 
 /// Extract the list of relevant splits for a given request.
+#[tracing::instrument(skip_all, fields(num_indexes = index_uids.len()))]
 pub async fn list_relevant_splits(
     index_uids: Vec<IndexUid>,
     start_timestamp: Option<i64>,
     end_timestamp: Option<i64>,
     tags_filter_opt: Option<TagFilterAst>,
-    metastore: &mut MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<Vec<SplitMetadata>> {
     let Some(mut query) = ListSplitsQuery::try_from_index_uids(index_uids) else {
         return Ok(Vec::new());
@@ -222,7 +265,7 @@ pub async fn list_relevant_splits(
 /// Patterns follow the elastic search patterns.
 pub async fn resolve_index_patterns(
     index_id_patterns: &[String],
-    metastore: &mut MetastoreServiceClient,
+    metastore: &MetastoreServiceClient,
 ) -> crate::Result<Vec<IndexMetadata>> {
     let list_indexes_metadata_request = if index_id_patterns.is_empty() {
         ListIndexesMetadataRequest::all()
@@ -296,11 +339,17 @@ pub async fn single_node_search(
     ));
     let search_service_client =
         SearchServiceClient::from_service(search_service.clone(), socket_addr);
-    searcher_pool.insert(socket_addr, search_service_client);
+    searcher_pool.insert(
+        socket_addr,
+        SearcherNode {
+            node_id: NodeId::from_str("single-node"),
+            client: search_service_client,
+        },
+    );
     root_search(
         &searcher_context,
         search_request,
-        metastore,
+        &metastore,
         &cluster_client,
     )
     .await
@@ -340,7 +389,7 @@ pub fn searcher_pool_for_test(
                     .expect("The gRPC address should be valid socket address.");
                 let client =
                     SearchServiceClient::from_service(Arc::new(mock_search_service), grpc_addr);
-                (grpc_addr, client)
+                (grpc_addr, SearcherNode::for_test(client))
             }),
     )
 }
@@ -398,6 +447,7 @@ pub(crate) fn add_leaf_stats(acc: &mut LeafResourceStats, other: &LeafResourceSt
     acc.localexec_num_splits += other.localexec_num_splits;
     acc.localexec_num_docs += other.localexec_num_docs;
     acc.wall_time_microsecs += other.wall_time_microsecs;
+    acc.search_pool_cpu_threads += other.search_pool_cpu_threads;
     acc.min_wait_for_search_permit_microsecs = min_opt(
         acc.min_wait_for_search_permit_microsecs,
         other.min_wait_for_search_permit_microsecs,
@@ -562,6 +612,7 @@ mod stats_merge_tests {
             min_wait_for_search_permit_microsecs: Some(100),
             min_wait_for_cpu_pool_microsecs: Some(2_000),
             wall_time_microsecs: 100_000_000,
+            search_pool_cpu_threads: 8,
         };
         let other = LeafResourceStats {
             partial_result_cache_num_splits: 2,
@@ -578,6 +629,7 @@ mod stats_merge_tests {
             min_wait_for_search_permit_microsecs: Some(50),
             min_wait_for_cpu_pool_microsecs: Some(1_000),
             wall_time_microsecs: 200_000_000,
+            search_pool_cpu_threads: 16,
         };
 
         add_leaf_stats(&mut acc, &other);
@@ -595,6 +647,7 @@ mod stats_merge_tests {
         assert_eq!(acc.localexec_num_docs, 30_000_000);
         // `wall_time_microsecs` is summed post-refactor, not maxed.
         assert_eq!(acc.wall_time_microsecs, 300_000_000);
+        assert_eq!(acc.search_pool_cpu_threads, 24);
 
         // `min_wait_for_*_microsecs` is MIN, not sum — the exception to the
         // extensive-sum rule.

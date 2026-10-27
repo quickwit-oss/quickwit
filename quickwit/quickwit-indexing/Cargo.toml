@@ -38,6 +38,7 @@ regex = { workspace = true }
 rdkafka = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+smallvec = { workspace = true }
 tantivy = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
@@ -49,7 +50,6 @@ utoipa = { workspace = true }
 vrl = { workspace = true, optional = true }
 warp = { workspace = true, optional = true }
 
-arrow = { workspace = true, optional = true }
 
 quickwit-actors = { workspace = true }
 quickwit-aws = { workspace = true }
@@ -59,11 +59,9 @@ quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
-quickwit-dst = { workspace = true }
 quickwit-ingest = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-opentelemetry = { workspace = true }
-quickwit-parquet-engine = { workspace = true, optional = true }
 quickwit-proto = { workspace = true }
 quickwit-storage = { workspace = true }
 
@@ -107,7 +105,6 @@ testsuite = [
   "quickwit-proto/testsuite",
   "quickwit-storage/testsuite"
 ]
-metrics = ["dep:arrow", "dep:quickwit-parquet-engine", "quickwit-doc-mapper/metrics", "quickwit-config/metrics"]
 vrl = ["dep:vrl", "quickwit-config/vrl"]
 postgres = ["quickwit-metastore/postgres"]
 ci-test = []
@@ -116,17 +113,16 @@ ci-test = []
 bytes = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 mockall = { workspace = true }
-parquet = { workspace = true }
 proptest = { workspace = true }
 prost = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
 tempfile = { workspace = true }
+unicode-segmentation = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }
-quickwit-parquet-engine = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }

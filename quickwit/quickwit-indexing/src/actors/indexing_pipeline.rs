@@ -15,42 +15,73 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, HEARTBEAT, Handler, Health, Mailbox,
     QueueCapacity, Supervisable,
 };
-use quickwit_common::KillSwitch;
+use quickwit_common::metrics::index_label;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
+use quickwit_common::{KillSwitch, io};
 use quickwit_config::{IndexingSettings, RetentionPolicy, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::IngesterPool;
 use quickwit_metrics::{GaugeGuard, counter, gauge, label_values};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
-use quickwit_proto::types::ShardId;
+use quickwit_proto::types::{IndexingPlanId, ShardId};
 use quickwit_storage::{Storage, StorageResolver};
 use tokio::sync::Semaphore;
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 use super::{DocProcessor, IndexSerializer, Indexer, MergePlanner, Packager};
 use crate::SplitsUpdateMailbox;
-use crate::actors::pipeline_shared::{
-    SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn, SuperviseLoop, wait_duration_before_retry,
-};
 use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
 use crate::actors::{Publisher, Uploader};
+use crate::docs_clustering::Fingerprinter;
 use crate::merge_policy::MergePolicy;
 use crate::metrics::{ACTOR_NAME, BACKPRESSURE_MICROS, INDEXING_PIPELINES};
-use crate::models::IndexingStatistics;
+use crate::models::{IndexingStatistics, SharedPublishToken};
 use crate::source::{
     AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
 };
 use crate::split_store::IndexingSplitStore;
+
+pub(crate) const SUPERVISE_INTERVAL: Duration = Duration::from_secs(1);
+
+const MAX_RETRY_DELAY: Duration = Duration::from_mins(10);
+
+#[derive(Debug)]
+pub(crate) struct SuperviseLoop;
+
+/// Calculates the wait time based on retry count.
+// retry_count, wait_time
+// 0   1s
+// 1   2s
+// 2   4s
+// 3   8s
+// ...
+// >=8   5mn
+pub(crate) fn wait_duration_before_retry(retry_count: usize) -> Duration {
+    // Protect against a `retry_count` that will lead to an overflow.
+    let max_power = (retry_count as u32).min(31);
+    Duration::from_secs(2u64.pow(max_power)).min(MAX_RETRY_DELAY)
+}
+
+/// Spawning an indexing pipeline puts a lot of pressure on the file system, metastore, etc. so
+/// we rely on this semaphore to limit the number of indexing pipelines that can be spawned
+/// concurrently.
+/// See also <https://github.com/quickwit-oss/quickwit/issues/1638>.
+pub(crate) static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Spawn {
+    pub(crate) retry_count: usize,
+}
 
 /// Handles for standard Tantivy-based indexing pipeline.
 struct IndexingPipelineHandles {
@@ -89,6 +120,10 @@ pub struct IndexingPipeline {
     // requiring a respawn of the pipeline.
     // We keep the list of shards here however, to reassign them after a respawn.
     shard_ids: BTreeSet<ShardId>,
+    // Id of the last indexing plan assigned to this pipeline. Kept here, like `shard_ids`, so it
+    // can be re-sent to the source on respawn; the source adopts it as its publish token.
+    indexing_plan_id: IndexingPlanId,
+    publish_token: SharedPublishToken,
     _indexing_pipelines_gauge_guard: GaugeGuard,
 }
 
@@ -124,7 +159,8 @@ impl Actor for IndexingPipeline {
 
 impl IndexingPipeline {
     pub fn new(params: IndexingPipelineParams) -> Self {
-        let indexing_pipelines_gauge = gauge!(parent: INDEXING_PIPELINES, "index" => params.pipeline_id.index_uid.index_id.clone());
+        let index_label = index_label(&params.pipeline_id.index_uid.index_id).to_string();
+        let indexing_pipelines_gauge = gauge!(parent: INDEXING_PIPELINES, "index" => index_label);
         let indexing_pipelines_gauge_guard = GaugeGuard::new(&indexing_pipelines_gauge, 1.0);
         let params_fingerprint = params.params_fingerprint;
         IndexingPipeline {
@@ -137,6 +173,8 @@ impl IndexingPipeline {
                 ..Default::default()
             },
             shard_ids: Default::default(),
+            indexing_plan_id: IndexingPlanId::new(),
+            publish_token: SharedPublishToken::default(),
             _indexing_pipelines_gauge_guard: indexing_pipelines_gauge_guard,
         }
     }
@@ -181,13 +219,13 @@ impl IndexingPipeline {
         }
 
         if !failure_or_unhealthy_actors.is_empty() {
-            error!(
+            debug!(
                 pipeline_id=?self.params.pipeline_id,
                 generation=self.generation(),
                 healthy_actors=?healthy_actors,
                 failed_or_unhealthy_actors=?failure_or_unhealthy_actors,
                 success_actors=?success_actors,
-                "Indexing pipeline failure."
+                "indexing pipeline failure"
             );
             return Health::FailureOrUnhealthy;
         }
@@ -301,11 +339,11 @@ impl IndexingPipeline {
 
         // Publisher
         let publisher = Publisher::new(
-            super::PUBLISHER_NAME,
-            QueueCapacity::Bounded(1),
+            super::PublisherType::MainPublisher,
             self.params.metastore.clone(),
-            Some(self.params.merge_planner_mailbox.clone()),
+            self.params.merge_planner_mailbox_opt.clone(),
             Some(source_mailbox.clone()),
+            self.publish_token.clone(),
         );
         let (publisher_mailbox, publisher_handle) = ctx
             .spawn_actor()
@@ -313,7 +351,10 @@ impl IndexingPipeline {
             .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "publisher")]))
             .spawn(publisher);
 
-        let sequencer = Sequencer::new(publisher_mailbox);
+        let sequencer = Sequencer::new(
+            publisher_mailbox,
+            QueueCapacity::Bounded(self.params.max_concurrent_split_uploads_index),
+        );
         let (sequencer_mailbox, sequencer_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "sequencer")]))
@@ -346,7 +387,10 @@ impl IndexingPipeline {
             .spawn(packager);
 
         // Index Serializer
-        let index_serializer = IndexSerializer::new(packager_mailbox);
+        let index_serializer = IndexSerializer::new(
+            packager_mailbox,
+            self.params.indexing_io_throughput_limiter_opt.clone(),
+        );
         let (index_serializer_mailbox, index_serializer_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
@@ -361,6 +405,8 @@ impl IndexingPipeline {
             self.params.indexing_settings.clone(),
             self.params.cooperative_indexing_permits.clone(),
             index_serializer_mailbox,
+            self.params.fingerprinter_opt.clone(),
+            self.params.indexing_io_throughput_limiter_opt.clone(),
         );
         let (indexer_mailbox, indexer_handle) = ctx
             .spawn_actor()
@@ -375,6 +421,7 @@ impl IndexingPipeline {
             indexer_mailbox,
             self.params.source_config.transform_config.clone(),
             self.params.source_config.input_format,
+            self.params.fingerprinter_opt.clone(),
         )?;
         let (doc_processor_mailbox, doc_processor_handle) = ctx
             .spawn_actor()
@@ -390,6 +437,7 @@ impl IndexingPipeline {
             storage_resolver: self.params.source_storage_resolver.clone(),
             event_broker: self.params.event_broker.clone(),
             indexing_setting: self.params.indexing_settings.clone(),
+            publish_token: self.publish_token.clone(),
         };
         let source = ctx
             .protect_future(quickwit_supported_sources().load_source(source_runtime))
@@ -402,6 +450,7 @@ impl IndexingPipeline {
             .spawn(actor_source);
         let assign_shards_message = AssignShards(Assignment {
             shard_ids: self.shard_ids.clone(),
+            indexing_plan_id: self.indexing_plan_id.clone(),
         });
         source_mailbox.send_message(assign_shards_message).await?;
 
@@ -496,6 +545,8 @@ impl Handler<AssignShards> for IndexingPipeline {
     ) -> Result<(), ActorExitStatus> {
         self.shard_ids
             .clone_from(&assign_shards_message.0.shard_ids);
+        self.indexing_plan_id
+            .clone_from(&assign_shards_message.0.indexing_plan_id);
         // If the pipeline is running, we forward the message to its source.
         // If it is not, it will be respawned soon, and the shards will be assigned afterward.
         if let Some(handles) = &self.handles_opt {
@@ -503,10 +554,22 @@ impl Handler<AssignShards> for IndexingPipeline {
                 shard_ids=?assign_shards_message.0.shard_ids,
                 "assigning shards to indexing pipeline"
             );
-            handles
+            // The source may have died since the last supervision tick, in which case its
+            // mailbox is already closed. `self.shard_ids` was
+            // updated above, the supervise loop will notice the dead source within
+            // `SUPERVISE_INTERVAL` and respawn the pipeline, and the new generation will be
+            // assigned those shards.
+            if let Err(error) = handles
                 .source_mailbox
                 .send_message(assign_shards_message)
-                .await?;
+                .await
+            {
+                warn!(
+                    %error,
+                    "source mailbox closed while assigning shards, shards will be reassigned on \
+                     respawn"
+                );
+            }
         }
         // We perform observe to make sure the set of shard ids is up to date.
         self.perform_observe(ctx);
@@ -523,14 +586,16 @@ pub struct IndexingPipelineParams {
     pub doc_mapper: Arc<DocMapper>,
     pub indexing_directory: TempDirectory,
     pub indexing_settings: IndexingSettings,
+    pub fingerprinter_opt: Option<Fingerprinter>,
     pub split_store: IndexingSplitStore,
     pub max_concurrent_split_uploads_index: usize,
     pub cooperative_indexing_permits: Option<Arc<Semaphore>>,
+    pub indexing_io_throughput_limiter_opt: Option<io::Limiter>,
 
     // Merge-related parameters
     pub merge_policy: Arc<dyn MergePolicy>,
     pub retention_policy: Option<RetentionPolicy>,
-    pub merge_planner_mailbox: Mailbox<MergePlanner>,
+    pub merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
     pub max_concurrent_split_uploads_merge: usize,
 
     // Source-related parameters
@@ -550,8 +615,9 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use quickwit_actors::{Command, Universe};
+    use quickwit_actors::{ActorState, Command, Universe};
     use quickwit_common::ServiceStream;
+    use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams};
     use quickwit_doc_mapper::{DocMapper, default_doc_mapper_for_test};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
@@ -658,6 +724,7 @@ mod tests {
             source_storage_resolver: StorageResolver::for_test(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
+            fingerprinter_opt: None,
             ingester_pool: IngesterPool::default(),
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
             storage,
@@ -668,7 +735,8 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
-            merge_planner_mailbox,
+            indexing_io_throughput_limiter_opt: None,
+            merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             event_broker: EventBroker::default(),
             params_fingerprint: 42u64,
         };
@@ -709,6 +777,119 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_pipeline_retry_1_gz() -> anyhow::Result<()> {
         test_indexing_pipeline_num_fails_before_success(1, "data/test_corpus.json.gz").await
+    }
+
+    fn spawn_pipeline_failing_to_publish(
+        universe: &Universe,
+        publish_error: MetastoreError,
+    ) -> ActorHandle<IndexingPipeline> {
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 1);
+        let pipeline_id = IndexingPipelineId {
+            node_id: NodeId::from_str("test-node"),
+            index_uid: index_uid.clone(),
+            source_id: "test-source".to_string(),
+            pipeline_uid: PipelineUid::for_test(0u128),
+        };
+        let source_config = SourceConfig {
+            source_id: "test-source".to_string(),
+            num_pipelines: NonZeroUsize::MIN,
+            enabled: true,
+            source_params: SourceParams::file_from_str("data/test_corpus.json").unwrap(),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
+        let source_config_clone = source_config.clone();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_index_metadata().returning(move |_| {
+            let mut index_metadata =
+                IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
+            index_metadata
+                .add_source(source_config_clone.clone())
+                .unwrap();
+            Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
+        });
+        mock_metastore
+            .expect_last_delete_opstamp()
+            .returning(move |_| Ok(LastDeleteOpstampResponse::new(10)));
+        mock_metastore
+            .expect_mark_splits_for_deletion()
+            .returning(|_| Ok(EmptyResponse {}));
+        mock_metastore
+            .expect_stage_splits()
+            .returning(|_| Ok(EmptyResponse {}));
+        mock_metastore
+            .expect_publish_splits()
+            .returning(move |_| Err(publish_error.clone()));
+
+        let storage = Arc::new(RamStorage::default());
+        let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
+        let (merge_planner_mailbox, _) = universe.create_test_mailbox();
+        let pipeline_params = IndexingPipelineParams {
+            pipeline_id,
+            doc_mapper: Arc::new(default_doc_mapper_for_test()),
+            source_config,
+            source_storage_resolver: StorageResolver::for_test(),
+            indexing_directory: TempDirectory::for_test(),
+            indexing_settings: IndexingSettings::for_test(),
+            fingerprinter_opt: None,
+            ingester_pool: IngesterPool::default(),
+            metastore: MetastoreServiceClient::from_mock(mock_metastore),
+            queues_dir_path: PathBuf::from("./queues"),
+            storage,
+            split_store,
+            merge_policy: default_merge_policy(),
+            retention_policy: None,
+            max_concurrent_split_uploads_index: 4,
+            max_concurrent_split_uploads_merge: 5,
+            cooperative_indexing_permits: None,
+            indexing_io_throughput_limiter_opt: None,
+            merge_planner_mailbox_opt: Some(merge_planner_mailbox),
+            params_fingerprint: 42u64,
+            event_broker: EventBroker::default(),
+        };
+        let (_pipeline_mailbox, pipeline_handle) = universe
+            .spawn_builder()
+            .spawn(IndexingPipeline::new(pipeline_params));
+        pipeline_handle
+    }
+
+    #[tokio::test]
+    async fn test_indexing_pipeline_stops_for_good_on_revoked_publish_token() {
+        let universe = Universe::with_accelerated_time();
+        let pipeline_handle = spawn_pipeline_failing_to_publish(
+            &universe,
+            MetastoreError::InvalidPublishToken {
+                queue_id: "test-index:1/test-source/0".to_string(),
+            },
+        );
+        let (pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
+
+        assert!(pipeline_exit_status.is_success());
+        assert_eq!(pipeline_statistics.generation, 1);
+        assert_eq!(pipeline_statistics.num_spawn_attempts, 1);
+        assert_eq!(pipeline_statistics.num_published_splits, 0);
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_indexing_pipeline_respawns_on_other_publish_errors() {
+        let universe = Universe::with_accelerated_time();
+        let pipeline_handle = spawn_pipeline_failing_to_publish(
+            &universe,
+            MetastoreError::InvalidArgument {
+                message: "failed to apply checkpoint delta".to_string(),
+            },
+        );
+        wait_until_predicate(
+            || async { pipeline_handle.last_observation().generation >= 2 },
+            Duration::from_secs(30),
+            Duration::from_millis(25),
+        )
+        .await
+        .expect("pipeline should respawn after a publish error other than a revoked token");
+
+        universe.assert_quit().await;
     }
 
     async fn indexing_pipeline_simple(test_file: &str) -> anyhow::Result<()> {
@@ -773,8 +954,8 @@ mod tests {
 
         let universe = Universe::new();
         let storage = Arc::new(RamStorage::default());
-        let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let (merge_planner_mailbox, _) = universe.create_test_mailbox();
+        let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
@@ -782,6 +963,7 @@ mod tests {
             source_storage_resolver: StorageResolver::for_test(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
+            fingerprinter_opt: None,
             ingester_pool: IngesterPool::default(),
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
             queues_dir_path: PathBuf::from("./queues"),
@@ -792,7 +974,8 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
-            merge_planner_mailbox,
+            indexing_io_throughput_limiter_opt: None,
+            merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             event_broker: Default::default(),
             params_fingerprint: 42u64,
         };
@@ -816,7 +999,6 @@ mod tests {
     async fn test_indexing_pipeline_simple_gz() -> anyhow::Result<()> {
         indexing_pipeline_simple("data/test_corpus.json.gz").await
     }
-
     #[tokio::test]
     async fn test_merge_pipeline_does_not_stop_on_indexing_pipeline_failure() {
         let node_id = NodeId::from_str("test-node");
@@ -883,6 +1065,7 @@ mod tests {
             source_storage_resolver: StorageResolver::for_test(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
+            fingerprinter_opt: None,
             ingester_pool: IngesterPool::default(),
             metastore,
             queues_dir_path: PathBuf::from("./queues"),
@@ -893,7 +1076,8 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
-            merge_planner_mailbox: merge_planner_mailbox.clone(),
+            indexing_io_throughput_limiter_opt: None,
+            merge_planner_mailbox_opt: Some(merge_planner_mailbox.clone()),
             event_broker: Default::default(),
             params_fingerprint: 42u64,
         };
@@ -921,6 +1105,116 @@ mod tests {
             }
         }
         panic!("Pipeline was apparently not restarted.");
+    }
+
+    /// Assigning shards to a pipeline whose source has just died must not kill the pipeline
+    /// actor itself. The source mailbox is closed as soon as the source actor exits, but the
+    /// pipeline only clears its handles on its next supervision tick, so there is a window
+    /// during which `AssignShards` is forwarded to a closed mailbox.
+    #[tokio::test]
+    async fn test_assign_shards_to_dead_source_does_not_fail_pipeline() {
+        let node_id = NodeId::from_str("test-node");
+        let pipeline_id = IndexingPipelineId {
+            node_id,
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
+            source_id: "test-source".to_string(),
+            pipeline_uid: PipelineUid::for_test(0u128),
+        };
+        let source_config = SourceConfig {
+            source_id: "test-source".to_string(),
+            num_pipelines: NonZeroUsize::MIN,
+            enabled: true,
+            source_params: SourceParams::void(),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
+        let source_config_clone = source_config.clone();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_index_metadata().returning(move |_| {
+            let mut index_metadata =
+                IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
+            index_metadata
+                .add_source(source_config_clone.clone())
+                .unwrap();
+            Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
+        });
+        let metastore = MetastoreServiceClient::from_mock(mock_metastore);
+
+        let universe = Universe::new();
+        let storage = Arc::new(RamStorage::default());
+        let indexing_pipeline_params = IndexingPipelineParams {
+            pipeline_id,
+            doc_mapper: Arc::new(default_doc_mapper_for_test()),
+            source_config,
+            source_storage_resolver: StorageResolver::for_test(),
+            indexing_directory: TempDirectory::for_test(),
+            indexing_settings: IndexingSettings::for_test(),
+            fingerprinter_opt: None,
+            ingester_pool: IngesterPool::default(),
+            metastore,
+            queues_dir_path: PathBuf::from("./queues"),
+            storage: storage.clone(),
+            split_store: IndexingSplitStore::create_without_local_store_for_test(storage),
+            merge_policy: default_merge_policy(),
+            retention_policy: None,
+            max_concurrent_split_uploads_index: 4,
+            max_concurrent_split_uploads_merge: 5,
+            cooperative_indexing_permits: None,
+            indexing_io_throughput_limiter_opt: None,
+            merge_planner_mailbox_opt: None,
+            event_broker: Default::default(),
+            params_fingerprint: 42u64,
+        };
+        let indexing_pipeline = IndexingPipeline::new(indexing_pipeline_params);
+        let (pipeline_mailbox, pipeline_handle) = universe.spawn_builder().spawn(indexing_pipeline);
+        let observation = pipeline_handle.process_pending_and_observe().await;
+        assert_eq!(observation.generation, 1);
+
+        // Pause the pipeline so that its supervise loop, which is delivered on the low priority
+        // channel, cannot run and clear `handles_opt` while we set the scenario up. High
+        // priority messages are still processed while paused, which is how we get the
+        // `AssignShards` in without racing the supervision tick.
+        pipeline_handle.pause();
+
+        // Kill the source and wait for its inbox to be dropped: the mailbox the pipeline holds
+        // is then closed, while the pipeline still believes the source is alive.
+        let source_mailbox = universe
+            .get::<SourceActor>()
+            .into_iter()
+            .next()
+            .expect("source actor should be running");
+        let _ = source_mailbox.ask(Command::Quit).await;
+        wait_until_predicate(
+            || async { source_mailbox.is_disconnected() },
+            Duration::from_secs(3),
+            Duration::from_millis(30),
+        )
+        .await
+        .expect("source mailbox was not dropped within 3s");
+        // Forwarding this assignment to the dead source used to exit the pipeline with
+        // `ActorExitStatus::DownstreamClosed`, in which case the reply is never sent.
+        let reply_rx = pipeline_mailbox
+            .send_message_with_high_priority(AssignShards(Assignment {
+                shard_ids: BTreeSet::from_iter([ShardId::from(1u64)]),
+                indexing_plan_id: "indexing_plan_id".to_string(),
+            }))
+            .expect("pipeline mailbox should be open");
+        reply_rx
+            .await
+            .expect("pipeline should have handled the assignment and survived");
+
+        assert_ne!(pipeline_handle.state(), ActorState::Failure);
+
+        // The shard ids are recorded regardless, so the next generation picks them up.
+        pipeline_handle.resume();
+        let observation = pipeline_handle.process_pending_and_observe().await;
+        assert_eq!(
+            observation.shard_ids,
+            BTreeSet::from_iter([ShardId::from(1u64)])
+        );
+
+        universe.quit().await;
     }
 
     async fn indexing_pipeline_all_failures_handling(test_file: &str) -> anyhow::Result<()> {
@@ -1011,6 +1305,7 @@ mod tests {
             source_storage_resolver: StorageResolver::for_test(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
+            fingerprinter_opt: None,
             ingester_pool: IngesterPool::default(),
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
             queues_dir_path: PathBuf::from("./queues"),
@@ -1021,7 +1316,8 @@ mod tests {
             max_concurrent_split_uploads_index: 4,
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
-            merge_planner_mailbox,
+            indexing_io_throughput_limiter_opt: None,
+            merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             params_fingerprint: 42u64,
             event_broker: Default::default(),
         };

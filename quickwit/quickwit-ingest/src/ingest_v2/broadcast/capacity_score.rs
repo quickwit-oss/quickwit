@@ -16,7 +16,7 @@ use std::collections::BTreeSet;
 
 use anyhow::{Context, Result};
 use bytesize::ByteSize;
-use quickwit_cluster::{Cluster, ListenerHandle};
+use quickwit_cluster::{Cluster, GenerationId, ListenerHandle};
 use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_common::shared_consts::INGESTER_CAPACITY_SCORE_PREFIX;
 use quickwit_proto::ingest::ingester::IngesterStatus;
@@ -160,6 +160,7 @@ impl BroadcastIngesterCapacityScoreTask {
 #[derive(Debug, Clone)]
 pub struct IngesterCapacityScoreUpdate {
     pub node_id: NodeId,
+    pub generation_id: GenerationId,
     pub source_uid: SourceUid,
     pub capacity_score: usize,
     pub open_shard_count: usize,
@@ -183,8 +184,10 @@ pub async fn setup_ingester_capacity_update_listener(
                 return;
             };
             let node_id: NodeId = NodeId::from_str(&event.node.node_id);
+            let generation_id: GenerationId = GenerationId::from(event.node.generation_id);
             event_broker.publish(IngesterCapacityScoreUpdate {
                 node_id,
+                generation_id,
                 source_uid,
                 capacity_score: ingester_capacity.capacity_score,
                 open_shard_count: ingester_capacity.open_shard_count,
@@ -198,7 +201,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_proto::types::{IndexUid, ShardId, SourceId};
 
     use super::*;
@@ -207,7 +210,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_snapshot_state_dropped() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -225,7 +228,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_broadcast_ingester_capacity() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
@@ -236,7 +239,7 @@ mod tests {
             IngesterState::for_test_with_disk_capacity(cluster.clone(), ByteSize::b(1000)).await;
         let index_uid = IndexUid::for_test("test-index", 0);
         let mut state_guard = state.lock_partially("test").await.unwrap();
-        let shard = IngesterShard::new_solo(
+        let shard = IngesterShard::builder(
             index_uid.clone(),
             SourceId::from("test-source"),
             ShardId::from(0),
@@ -267,6 +270,7 @@ mod tests {
             assert_eq!(event.source_uid.source_id, "test-source");
             assert_eq!(event.capacity_score, 6);
             assert_eq!(event.open_shard_count, 1);
+            assert_eq!(event.generation_id, GenerationId::from(1u64));
         });
 
         let _listener =
@@ -292,7 +296,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_removed_source_broadcasts_zero_with_ttl() {
-        let transport = ChannelTransport::default();
+        let transport = ChitchatTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();

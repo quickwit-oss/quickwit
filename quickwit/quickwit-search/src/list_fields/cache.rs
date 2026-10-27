@@ -13,11 +13,10 @@
 // limitations under the License.
 
 use quickwit_config::CacheConfig;
-use quickwit_proto::types::SplitId;
 use quickwit_storage::{MemorySizedCache, OwnedBytes};
 
 pub struct ListFieldsCache {
-    cache: MemorySizedCache<SplitId>,
+    cache: MemorySizedCache<String>,
 }
 
 impl ListFieldsCache {
@@ -30,11 +29,11 @@ impl ListFieldsCache {
         }
     }
 
-    pub fn get(&self, split_id: &SplitId) -> Option<OwnedBytes> {
+    pub fn get(&self, split_id: &String) -> Option<OwnedBytes> {
         self.cache.get(split_id)
     }
 
-    pub fn put(&self, split_id: SplitId, serialized_split_fields: OwnedBytes) {
+    pub fn put(&self, split_id: String, serialized_split_fields: OwnedBytes) {
         self.cache.put(split_id, serialized_split_fields);
     }
 }

@@ -17,27 +17,19 @@ Here’s the complete Docker Compose configuration:
 ```yaml
 services:
   quickwit:
-    image: quickwit/quickwit
-    environment:
-      QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER: "true"
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:7281"
+    image: quickwit/quickwit:0.9.0
     ports:
       - 7280:7280
     command: ["run"]
 
   grafana:
-    image: grafana/grafana-oss
+    image: grafana/grafana-oss:13.0.2
     container_name: grafana
     ports:
       - "${MAP_HOST_GRAFANA:-127.0.0.1}:3000:3000"
-    environment:
-      GF_INSTALL_PLUGINS: https://github.com/quickwit-oss/quickwit-datasource/releases/download/v0.4.6/quickwit-quickwit-datasource-0.4.6.zip;quickwit-quickwit-datasource
-      GF_AUTH_DISABLE_LOGIN_FORM: "true"
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.13.1
     container_name: prometheus
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml  # Ensure prometheus.yml exists in the same directory
@@ -80,10 +72,10 @@ This will launch Quickwit, Prometheus, and Grafana services.
 
 ## Step 4: Configure Grafana to Use Prometheus
 
-1. Open Grafana in your browser at `http://localhost:3000`.
-2. Navigate to **Configuration** > **Data Sources**.
-3. Click **Add Data Source**, select **Prometheus**, and set the URL to `http://prometheus:9090`.
-4. Click **Save & Test** to verify the connection.
+1. Open Grafana in your browser at `http://localhost:3000` and sign in with the default credentials (`admin` / `admin`). Grafana will ask you to choose a new password.
+2. Navigate to **Connections** > **Data sources**.
+3. Click **Add new data source**, select **Prometheus**, and set the URL to `http://prometheus:9090`.
+4. Click **Save & test** to verify the connection.
 
 ## Step 5: Create or Use Pre-Configured Dashboards
 
@@ -92,4 +84,3 @@ Now that Grafana is set up with Prometheus as a data source, you can create cust
 1. Go to the **Dashboards** section in Grafana.
 2. Import or create a new dashboard to visualize metrics.
 3. Alternatively, use one of Quickwit’s [pre-configured dashboards](../../operating/monitoring).
-

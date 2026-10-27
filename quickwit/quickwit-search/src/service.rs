@@ -29,7 +29,7 @@ use quickwit_proto::search::{
     SearchPlanResponse, SearchRequest, SearchResponse, SnippetRequest,
 };
 use quickwit_storage::{
-    MemorySizedCache, QuickwitCache, SplitCache, StorageCache, StorageResolver,
+    MemorySizedCache, QuickwitCache, SearchSplitCache, StorageCache, StorageResolver,
 };
 use tantivy::aggregation::AggregationLimitsGuard;
 
@@ -170,7 +170,7 @@ impl SearchService for SearchServiceImpl {
         let search_result = root_search(
             &self.searcher_context,
             search_request,
-            self.metastore.clone(),
+            &self.metastore,
             &self.cluster_client,
         )
         .await?;
@@ -231,12 +231,8 @@ impl SearchService for SearchServiceImpl {
         &self,
         list_terms_request: ListTermsRequest,
     ) -> crate::Result<ListTermsResponse> {
-        let search_result = root_list_terms(
-            &list_terms_request,
-            self.metastore.clone(),
-            &self.cluster_client,
-        )
-        .await?;
+        let search_result =
+            root_list_terms(&list_terms_request, &self.metastore, &self.cluster_client).await?;
 
         Ok(search_result)
     }
@@ -290,12 +286,7 @@ impl SearchService for SearchServiceImpl {
         &self,
         list_fields_req: ListFieldsRequest,
     ) -> crate::Result<ListFieldsResponse> {
-        root_list_fields(
-            list_fields_req,
-            &self.cluster_client,
-            self.metastore.clone(),
-        )
-        .await
+        root_list_fields(list_fields_req, &self.cluster_client, &self.metastore).await
     }
 
     async fn leaf_list_fields(
@@ -310,6 +301,7 @@ impl SearchService for SearchServiceImpl {
             index_id,
             &list_fields_req.field_patterns,
             split_ids,
+            list_fields_req.limit,
             self.searcher_context.clone(),
             storage,
         )
@@ -320,7 +312,7 @@ impl SearchService for SearchServiceImpl {
         &self,
         search_request: SearchRequest,
     ) -> crate::Result<SearchPlanResponse> {
-        let search_plan = search_plan(search_request, self.metastore.clone()).await?;
+        let search_plan = search_plan(search_request, &self.metastore).await?;
         Ok(search_plan)
     }
 
@@ -425,7 +417,7 @@ pub struct SearcherContext {
     /// Per-split and per-predicate cache.
     pub predicate_cache: Arc<PredicateCacheImpl>,
     /// Search split cache. `None` if no split cache is configured.
-    pub split_cache_opt: Option<Arc<SplitCache>>,
+    pub split_cache_opt: Option<Arc<SearchSplitCache>>,
     /// List fields cache. Caches the raw fields-metadata blob for a given split.
     pub list_fields_cache: ListFieldsCache,
     /// The aggregation limits are passed to limit the memory usage.
@@ -454,7 +446,7 @@ impl SearcherContext {
     /// Creates a new searcher context without a lambda invoker.
     pub fn new_without_invoker(
         searcher_config: SearcherConfig,
-        split_cache_opt: Option<Arc<SplitCache>>,
+        split_cache_opt: Option<Arc<SearchSplitCache>>,
     ) -> Self {
         Self::new(
             searcher_config,
@@ -466,7 +458,7 @@ impl SearcherContext {
     /// Creates a new searcher context, given a searcher config, and an optional `SplitCache`.
     pub fn new(
         searcher_config: SearcherConfig,
-        split_cache_opt: Option<Arc<SplitCache>>,
+        split_cache_opt: Option<Arc<SearchSplitCache>>,
         lambda_invoker: Option<impl LambdaLeafSearchInvoker + 'static>,
     ) -> Self {
         let global_split_footer_cache = MemorySizedCache::from_config(

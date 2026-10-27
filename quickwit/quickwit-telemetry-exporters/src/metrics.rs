@@ -22,6 +22,8 @@ pub(crate) fn init_metrics_provider(
     service_version: &str,
     otlp_config: &OtlpExporterConfig,
 ) -> anyhow::Result<Option<SdkMeterProvider>> {
+    quickwit_metrics::init_metrics_labels_env_var()?;
+
     let prometheus_recorder = crate::prometheus::metrics::build_recorder()?;
 
     let (recorder, meter_provider) = if otlp_config.is_enabled() {

@@ -272,7 +272,7 @@ pub mod test_helpers {
     }
 
     pub async fn create_queue(sqs_client: &Client, queue_name_prefix: &str) -> String {
-        let queue_name = format!("{}-{}", queue_name_prefix, Ulid::new());
+        let queue_name = format!("{}-{}", queue_name_prefix, Ulid::generate());
         sqs_client
             .create_queue()
             .queue_name(queue_name)
@@ -410,7 +410,7 @@ mod localstack_tests {
         let queue = Arc::new(SqsQueue::try_new(queue_url).await.unwrap());
         let messages = tokio::time::timeout(
             Duration::from_millis(500),
-            queue.clone().receive(5, Duration::from_secs(60)),
+            queue.clone().receive(5, Duration::from_mins(1)),
         )
         .await
         .unwrap()
@@ -443,7 +443,7 @@ mod localstack_tests {
         let mut messages = Vec::new();
         for _ in 0..5 {
             let new_messages = queue_receiver
-                .receive(20, Duration::from_secs(60))
+                .receive(20, Duration::from_mins(1))
                 .await
                 .unwrap();
             messages.extend(new_messages.into_iter());
@@ -485,7 +485,7 @@ mod localstack_tests {
         let queue = Arc::new(SqsQueue::try_new(bad_queue_url).await.unwrap());
         tokio::time::timeout(
             Duration::from_millis(500),
-            queue.clone().receive(5, Duration::from_secs(60)),
+            queue.clone().receive(5, Duration::from_mins(1)),
         )
         .await
         .unwrap()

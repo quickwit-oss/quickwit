@@ -13,12 +13,13 @@
 // limitations under the License.
 
 mod basic_tests;
+mod compactor_tests;
+mod in_memory_indexing_tests;
 mod ingest_v1_tests;
 mod ingest_v2_tests;
-#[cfg(feature = "datafusion")]
-mod metrics_distributed_tests;
 mod no_cp_tests;
 mod otlp_tests;
+mod serve_failure_tests;
 #[cfg(feature = "sqs-localstack-tests")]
 mod sqs_tests;
 mod tls_tests;

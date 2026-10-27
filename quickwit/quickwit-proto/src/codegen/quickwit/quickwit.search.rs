@@ -86,6 +86,9 @@ pub struct ListFieldsRequest {
     /// When provided, only fields from documents matching this query are returned.
     #[prost(string, optional, tag = "5")]
     pub query_ast: ::core::option::Option<::prost::alloc::string::String>,
+    /// Maximum number of fields to return. Overrides QW_FIELD_LIST_SIZE_LIMIT.
+    #[prost(uint32, optional, tag = "6")]
+    pub limit: ::core::option::Option<u32>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -104,6 +107,9 @@ pub struct LeafListFieldsRequest {
     /// Wildcard expressions are supported.
     #[prost(string, repeated, tag = "4")]
     pub field_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Maximum number of fields to return. Overrides QW_FIELD_LIST_SIZE_LIMIT.
+    #[prost(uint32, optional, tag = "5")]
+    pub limit: ::core::option::Option<u32>,
 }
 /// / Message returned by leaf and root list fields requests.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -148,6 +154,9 @@ pub struct ListFieldsEntry {
     pub non_aggregatable_index_ids: ::prost::alloc::vec::Vec<
         ::prost::alloc::string::String,
     >,
+    /// Number of splits whose fields metadata contains this field.
+    #[prost(uint64, tag = "8")]
+    pub num_splits: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Hash, Eq)]
@@ -208,6 +217,11 @@ pub struct SearchRequest {
     /// the raw IntermediateAggregationResults bytes instead.
     #[prost(bool, tag = "19")]
     pub skip_aggregation_finalization: bool,
+    /// Scheduling priority for leaf search execution. Negative values are allowed,
+    /// and lower values have higher priority. Callers that omit it get priority 0.
+    #[prost(int32, tag = "21")]
+    #[serde(default)]
+    pub priority: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -413,6 +427,9 @@ pub struct LeafResourceStats {
     /// bottleneck. Voluntarily a uint64 (not a bool) for summability.
     #[prost(uint64, tag = "14")]
     pub lambda_bottleneck: u64,
+    /// / Number of CPU threads available in the search pool.
+    #[prost(uint64, tag = "15")]
+    pub search_pool_cpu_threads: u64,
 }
 /// Resource statistics for a root search.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -442,6 +459,19 @@ pub struct RootResourceStats {
     /// without computing it from `leaf_resources_worst` / `leaf_resources_sum`.
     #[prost(uint64, repeated, tag = "6")]
     pub leaf_wall_times_microsecs: ::prost::alloc::vec::Vec<u64>,
+    /// The first phase identifies the partial hits, runs aggregate.
+    /// When running a top-k request, a second phase is required to fetch the documents.
+    ///
+    /// This includes getting the results from leaf searchers and merging them.
+    #[prost(uint64, tag = "7")]
+    pub root_first_phase_wall_time_microsecs: u64,
+    /// Overall wall time for the root search. This includes both
+    /// the first phase (running aggregation, and identifying the doc address of the top-k hits we should return)
+    /// and the second phase (fetch documents).
+    ///
+    /// If there are no top-k hits, the second phase is skipped.
+    #[prost(uint64, tag = "8")]
+    pub root_wall_time_microsecs: u64,
 }
 /// LeafRequestRef references data in LeafSearchRequest to deduplicate data.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]

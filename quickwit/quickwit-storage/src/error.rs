@@ -15,6 +15,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use std::{fmt, io};
 
 use serde::{Deserialize, Serialize};
@@ -71,6 +72,7 @@ impl StorageErrorKind {
         StorageError {
             kind: self,
             source: Arc::new(source.into()),
+            retry_after: None,
         }
     }
 }
@@ -94,6 +96,8 @@ pub struct StorageError {
     pub kind: StorageErrorKind,
     #[source]
     source: Arc<anyhow::Error>,
+    /// Server-suggested delay before the next retry, if provided (e.g. from `x-amz-retry-after`).
+    pub(crate) retry_after: Option<Duration>,
 }
 
 /// Generic Result type for storage operations.
@@ -106,12 +110,21 @@ impl StorageError {
         StorageError {
             kind: self.kind,
             source: Arc::new(anyhow::anyhow!("{ctx}").context(self.source)),
+            retry_after: self.retry_after,
         }
     }
 
     /// Returns the corresponding `StorageErrorKind` for this error.
     pub fn kind(&self) -> StorageErrorKind {
         self.kind
+    }
+
+    /// Attaches a server-suggested retry delay to this error.
+    pub fn with_retry_after(self, retry_after: Option<Duration>) -> Self {
+        StorageError {
+            retry_after,
+            ..self
+        }
     }
 }
 

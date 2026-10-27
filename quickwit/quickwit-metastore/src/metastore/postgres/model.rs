@@ -19,7 +19,7 @@ use std::str::FromStr;
 
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask, MetastoreError, MetastoreResult};
-use quickwit_proto::types::{DocMappingUid, IndexId, IndexUid, ShardId, SourceId, SplitId};
+use quickwit_proto::types::{DocMappingUid, IndexId, IndexUid, ShardId, SourceId};
 use sea_query::{Iden, Write};
 use tracing::error;
 
@@ -101,8 +101,9 @@ impl Iden for ToTimestampFunc {
 /// A model structure for handling split metadata in a database.
 #[derive(sqlx::FromRow)]
 pub(super) struct PgSplit {
-    /// Split ID.
-    pub split_id: SplitId,
+    /// It is only used for logging here (the authoritative split id lives in
+    /// `split_metadata_json`).
+    pub split_id: String,
     /// The state of the split. With `update_timestamp`, this is the only mutable attribute of the
     /// split.
     pub split_state: String,
@@ -227,8 +228,7 @@ pub(super) enum Shards {
     SourceId,
     ShardId,
     ShardState,
-    LeaderId,
-    FollowerId,
+    IngesterId,
     PublishPositionInclusive,
     PublishToken,
 }
@@ -261,8 +261,8 @@ pub(super) struct PgShard {
     pub source_id: SourceId,
     #[sqlx(try_from = "String")]
     pub shard_id: ShardId,
-    pub leader_id: String,
-    pub follower_id: Option<String>,
+    #[sqlx(rename = "leader_id")]
+    pub ingester_id: String,
     pub shard_state: PgShardState,
     #[sqlx(try_from = "String")]
     pub doc_mapping_uid: DocMappingUid,
@@ -278,8 +278,7 @@ impl From<PgShard> for Shard {
             source_id: pg_shard.source_id,
             shard_id: Some(pg_shard.shard_id),
             shard_state: ShardState::from(pg_shard.shard_state) as i32,
-            leader_id: pg_shard.leader_id,
-            follower_id: pg_shard.follower_id,
+            ingester_id: pg_shard.ingester_id,
             doc_mapping_uid: Some(pg_shard.doc_mapping_uid),
             publish_position_inclusive: Some(pg_shard.publish_position_inclusive.into()),
             publish_token: pg_shard.publish_token,

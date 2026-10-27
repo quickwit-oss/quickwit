@@ -16,7 +16,6 @@ mod broadcast;
 mod debouncing;
 mod doc_mapper;
 mod fetch;
-mod helpers;
 mod idle;
 mod ingester;
 pub(crate) mod metrics;
@@ -25,7 +24,6 @@ mod mrecord;
 mod mrecordlog_utils;
 mod publish_tracker;
 mod rate_meter;
-mod replication;
 mod router;
 mod routing_table;
 mod state;
@@ -45,21 +43,19 @@ pub use broadcast::{
 use bytes::buf::Writer;
 use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
+use quickwit_cluster::GenerationId;
 use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::{IngesterServiceClient, IngesterStatus};
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
-use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2, DocFormat};
+use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2};
 use quickwit_proto::types::{
-    DocUid, DocUidGenerator, IndexId, IndexUid, NodeId, SourceId, SubrequestId,
+    AvailabilityZone, DocUid, DocUidGenerator, IndexId, IndexUid, NodeId, SourceId, SubrequestId,
 };
 use serde::Serialize;
 use tracing::{error, info};
 use workbench::pending_subrequests;
 
 pub use self::fetch::{FetchStreamError, MultiFetchStream};
-pub use self::helpers::{
-    try_get_ingester_status, wait_for_ingester_decommission, wait_for_ingester_status,
-};
 pub use self::ingester::Ingester;
 use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{MRecord, decoded_mrecords};
@@ -70,7 +66,8 @@ pub use self::router::IngestRouter;
 pub struct IngesterPoolEntry {
     pub client: IngesterServiceClient,
     pub status: IngesterStatus,
-    pub availability_zone: Option<String>,
+    pub availability_zone: Option<AvailabilityZone>,
+    pub generation_id: GenerationId,
 }
 
 impl IngesterPoolEntry {
@@ -80,6 +77,7 @@ impl IngesterPoolEntry {
             client,
             status: IngesterStatus::Ready,
             availability_zone: None,
+            generation_id: GenerationId::from(1u64),
         }
     }
 
@@ -89,6 +87,7 @@ impl IngesterPoolEntry {
             client: IngesterServiceClient::mocked(),
             status: IngesterStatus::Ready,
             availability_zone: None,
+            generation_id: GenerationId::from(1u64),
         }
     }
 }
@@ -98,15 +97,11 @@ pub type IngesterPool = Pool<NodeId, IngesterPoolEntry>;
 /// Identifies an ingester client, typically a source, for logging and debugging purposes.
 pub type ClientId = String;
 
-pub type LeaderId = NodeId;
-
-pub type FollowerId = NodeId;
-
 pub type OpenShardCounts = Vec<(IndexUid, SourceId, usize)>;
 
 const IDLE_SHARD_TIMEOUT_ENV_KEY: &str = "QW_IDLE_SHARD_TIMEOUT_SECS";
 
-const DEFAULT_IDLE_SHARD_TIMEOUT: Duration = Duration::from_secs(15 * 60); // 15 minutes
+const DEFAULT_IDLE_SHARD_TIMEOUT: Duration = Duration::from_mins(15);
 
 pub fn get_idle_shard_timeout() -> Duration {
     env::var(IDLE_SHARD_TIMEOUT_ENV_KEY)
@@ -158,6 +153,14 @@ pub struct DocBatchV2Builder {
 }
 
 impl DocBatchV2Builder {
+    pub fn with_capacity(doc_buffer_capacity: usize) -> Self {
+        Self {
+            doc_uids: Vec::new(),
+            doc_buffer: BytesMut::with_capacity(doc_buffer_capacity),
+            doc_lengths: Vec::new(),
+        }
+    }
+
     /// Adds a document to the batch.
     pub fn add_doc(&mut self, doc_uid: DocUid, doc: &[u8]) {
         self.doc_uids.push(doc_uid);
@@ -174,7 +177,6 @@ impl DocBatchV2Builder {
             doc_uids: self.doc_uids,
             doc_buffer: self.doc_buffer.freeze(),
             doc_lengths: self.doc_lengths,
-            doc_format: DocFormat::Json as i32,
         };
         Some(doc_batch)
     }
@@ -213,7 +215,6 @@ impl JsonDocBatchV2Builder {
             doc_uids: self.doc_uids,
             doc_buffer: self.doc_buffer.into_inner().freeze(),
             doc_lengths: self.doc_lengths,
-            doc_format: DocFormat::Json as i32,
         }
     }
 
@@ -474,7 +475,6 @@ mod tests {
             doc_buffer: Vec::new().into(),
             doc_lengths: Vec::new(),
             doc_uids: Vec::new(),
-            doc_format: DocFormat::Json as i32,
         };
         assert_eq!(estimate_size(&doc_batch), ByteSize(0));
 
@@ -482,7 +482,6 @@ mod tests {
             doc_buffer: vec![0u8; 100].into(),
             doc_lengths: vec![10, 20, 30],
             doc_uids: Vec::new(),
-            doc_format: DocFormat::Json as i32,
         };
         assert_eq!(estimate_size(&doc_batch), ByteSize(118));
     }

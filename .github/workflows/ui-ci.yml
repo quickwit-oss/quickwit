@@ -8,11 +8,7 @@ on:
       - ".github/workflows/ui-ci.yml"
   push:
     branches:
-      - main
       - trigger-ci-workflow
-    paths:
-      - "quickwit/quickwit-ui/**"
-      - ".github/workflows/ui-ci.yml"
 
 permissions:
   contents: read
@@ -20,12 +16,12 @@ permissions:
 jobs:
   checks:
     name: Lint, type check & unit tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: 26
           cache: "yarn"
           cache-dependency-path: quickwit/quickwit-ui/yarn.lock
       - name: Install JS dependencies
@@ -43,7 +39,7 @@ jobs:
 
   e2e:
     name: Playwright e2e
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: write
@@ -68,18 +64,18 @@ jobs:
       RUSTDOCFLAGS: -Dwarnings -Arustdoc::private_intra_doc_links
       QW_TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@postgres:5432/quickwit-metastore-dev
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: 26
           cache: "yarn"
           cache-dependency-path: quickwit/quickwit-ui/yarn.lock
       - name: Setup stable Rust Toolchain
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
       - name: Setup Rust cache
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: "./quickwit -> target"
           shared-key: "quickwit-cargo"
@@ -101,5 +97,6 @@ jobs:
         run: |
           mkdir -p qwdata
           cargo run --features=postgres -- run --service searcher --service metastore --config ../config/quickwit.yaml &
+          curl --retry 60 --retry-delay 1 --retry-connrefused --fail --silent --show-error http://127.0.0.1:7280/health/readyz
           yarn --cwd quickwit-ui e2e-test
         working-directory: ./quickwit

@@ -19,6 +19,8 @@ The ports used are computed relative to the `rest.listen_port` port, as follows.
 
 It is not possible for the moment to configure these ports independently.
 
+Optionally, an additional plaintext health check server can be enabled on its own port by setting `health.listen_port` (see the [health check configuration](node-config.md#health-check-configuration)). It is disabled by default. The port `${rest.listen_port} + 2` (7282 by default) is a natural choice, but any free port that does not collide with the three above works.
+
 
 In order to form a cluster, you will also need to define a `peer_seeds` parameter.
 The following addresses are valid peer seed addresses:

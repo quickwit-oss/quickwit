@@ -12,7 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use quickwit_metrics::{LazyGauge, lazy_gauge};
+use quickwit_metrics::{LazyCounter, LazyGauge, lazy_counter, lazy_gauge};
+
+#[derive(Clone, Copy, Debug)]
+pub(super) enum MetastoreKind {
+    Primary,
+    ReadReplica,
+}
+
+impl MetastoreKind {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            MetastoreKind::Primary => "primary",
+            MetastoreKind::ReadReplica => "read_replica",
+        }
+    }
+}
+
+pub(super) static DEFERRED_MIGRATIONS_APPLY: LazyCounter = lazy_counter!(
+        name: "deferred_migrations_apply_total",
+        description: "Number of deferred PostgreSQL migration attempts, by result.",
+        subsystem: "metastore",
+);
 
 pub(super) static ACQUIRE_CONNECTIONS: LazyGauge = lazy_gauge!(
         name: "acquire_connections",
@@ -29,5 +50,11 @@ pub(super) static ACTIVE_CONNECTIONS: LazyGauge = lazy_gauge!(
 pub(super) static IDLE_CONNECTIONS: LazyGauge = lazy_gauge!(
         name: "idle_connections",
         description: "Number of idle connections.",
+        subsystem: "metastore",
+);
+
+pub(super) static MAX_CONNECTIONS: LazyGauge = lazy_gauge!(
+        name: "max_connections",
+        description: "Maximum number of connections configured for the pool.",
         subsystem: "metastore",
 );

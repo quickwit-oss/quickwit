@@ -16,13 +16,29 @@ use quickwit_metrics::{LabelNames, LazyCounter, LazyGauge, label_names, lazy_cou
 
 #[derive(Debug, Clone, Copy)]
 pub struct ShardLocalityMetrics {
+    // shards on other indexers if az-awareness is off; cross-az if its on
     pub num_remote_shards: usize,
+    // not used if az-awareness is off; same-az if its on
+    pub num_zonal_shards: usize,
+    // shards hosted on this indexer
     pub num_local_shards: usize,
 }
 
 impl ShardLocalityMetrics {
+    /// Share of shards indexed without crossing an availability zone, as a percentage.
+    #[cfg(test)]
+    pub fn locality_percent(self) -> u32 {
+        let num_shards = self.num_local_shards + self.num_zonal_shards + self.num_remote_shards;
+        if num_shards == 0 {
+            return 100;
+        }
+        let num_local_or_zonal_shards = self.num_local_shards + self.num_zonal_shards;
+        (num_local_or_zonal_shards * 100 / num_shards) as u32
+    }
+
     pub fn publish(self) {
         LOCAL_SHARDS.set(self.num_local_shards as f64);
+        ZONAL_SHARDS.set(self.num_zonal_shards as f64);
         REMOTE_SHARDS.set(self.num_remote_shards as f64);
     }
 }
@@ -47,15 +63,24 @@ pub(crate) const INDEX_ID_LABEL_NAMES: LabelNames<1> = label_names!("index_id");
 
 static INDEXED_SHARDS: LazyGauge = lazy_gauge!(
         name: "indexed_shards",
-        description: "Number of (remote/local) shards in the indexing plan",
+        description: "Number of (remote/zonal/local) shards in the indexing plan",
         subsystem: "control_plane",
 );
 
 pub(crate) static LOCAL_SHARDS: LazyGauge =
     lazy_gauge!(parent: INDEXED_SHARDS, "locality" => "local");
 
+pub(crate) static ZONAL_SHARDS: LazyGauge =
+    lazy_gauge!(parent: INDEXED_SHARDS, "locality" => "zonal");
+
 pub(crate) static REMOTE_SHARDS: LazyGauge =
     lazy_gauge!(parent: INDEXED_SHARDS, "locality" => "remote");
+
+pub(crate) static INDEXING_PLAN_DENSITY: LazyGauge = lazy_gauge!(
+        name: "indexing_plan_density",
+        description: "Ratio of occupied shard slots in the indexing plan.",
+        subsystem: "control_plane",
+);
 
 pub(crate) static APPLY_PLAN_TOTAL: LazyCounter = lazy_counter!(
         name: "apply_plan_total",
@@ -78,6 +103,12 @@ pub(crate) static RESTART_TOTAL: LazyCounter = lazy_counter!(
 pub(crate) static SCHEDULE_TOTAL: LazyCounter = lazy_counter!(
         name: "schedule_total",
         description: "Number of control plane `schedule` operations.",
+        subsystem: "control_plane",
+);
+
+pub(crate) static LOCALITY_REPAIRS_TOTAL: LazyCounter = lazy_counter!(
+        name: "locality_repairs_total",
+        description: "Number of successful physical-plan locality repairs.",
         subsystem: "control_plane",
 );
 

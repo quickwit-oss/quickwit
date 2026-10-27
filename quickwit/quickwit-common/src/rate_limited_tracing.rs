@@ -23,7 +23,8 @@ use coarsetime::{Duration, Instant};
 pub enum ShouldLog {
     /// Emit the log normally, within the rate limit.
     Yes,
-    /// Emit the log; `N` similar messages were suppressed since the last emission.
+    /// Emit the log, annotated with a `num_suppressed = N` field recording how many similar
+    /// messages were suppressed since the last emission of this call site.
     YesAfterSuppression(u32),
     /// Suppressed — do not emit.
     No,
@@ -89,7 +90,7 @@ pub fn should_log<F: Fn() -> Instant>(
     let current_time = Duration::from_ticks(now().as_ticks());
     let last_reset = Duration::from_ticks(last_reset_atomic.load(Ordering::Acquire));
 
-    let should_reset = current_time.abs_diff(last_reset) >= Duration::from_secs(60);
+    let should_reset = current_time.abs_diff(last_reset) >= Duration::from_mins(1);
 
     if !should_reset {
         // we are over-limit and not far enough in time to reset: don't log
@@ -165,8 +166,9 @@ macro_rules! rate_limited_tracing {
                 ::tracing::$log_fn!($($args)*);
             }
             $crate::rate_limited_tracing::ShouldLog::YesAfterSuppression(skipped) => {
-                ::tracing::$log_fn!("suppressed {skipped} similar log messages in the last minute");
-                ::tracing::$log_fn!($($args)*);
+                // Attach the count of messages suppressed since this call site last emitted as a
+                // field on the emitted line, rather than as a separate preceding log line.
+                ::tracing::$log_fn!(num_suppressed = skipped, $($args)*);
             }
         }
     }};

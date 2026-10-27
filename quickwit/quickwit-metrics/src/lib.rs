@@ -268,6 +268,10 @@
 pub const SYSTEM: &str = "quickwit";
 pub const SEPARATOR: &str = "_";
 
+/// The name of the environment variable that contains the injected labels for all the metrics.
+pub const QW_METRICS_LABELS_ENV_VAR: &str = "QW_METRICS_LABELS";
+pub(crate) static LABELS_ENV_VAR: OnceLock<Box<[Label]>> = OnceLock::new();
+
 // ─── Metric modules ───
 mod counter;
 mod gauge;
@@ -275,6 +279,8 @@ mod histogram;
 #[doc(hidden)]
 mod inner;
 mod labels;
+
+use std::sync::OnceLock;
 
 // ─── Internal helpers (re-exported for macro expansion) ───
 //
@@ -288,7 +294,7 @@ pub use gauge::__gauge_get_or_register;
 #[doc(hidden)]
 pub use histogram::__histogram_get_or_register;
 #[doc(hidden)]
-pub use inner::{__concatcp, __key_hash, __sep};
+pub use inner::{__concatcp, __key_hash, __labels_env_var, __sep};
 
 // Re-exports of `metrics` and `inventory` used inside macro expansions.
 #[doc(hidden)]
@@ -305,6 +311,7 @@ pub use counter::{Counter, LazyCounter};
 pub use gauge::{Gauge, GaugeGuard, LazyGauge};
 pub use histogram::{Histogram, HistogramConfig, HistogramTimer, LazyHistogram};
 pub use labels::{LabelNames, Labels};
+use metrics::Label;
 // ─── metrics-rs re-exports ───
 pub use metrics::{CounterFn, GaugeFn, HistogramFn};
 pub use metrics_util::MetricKind;
@@ -381,4 +388,126 @@ pub fn histogram_buckets() -> impl Iterator<Item = (&'static str, Vec<f64>)> {
         );
         (c.info.key_name, buckets)
     })
+}
+
+/// Initializes the global metrics labels from the environment variable.
+pub fn init_metrics_labels_env_var() -> anyhow::Result<()> {
+    // If the labels environment variable is already initialized, return early.
+    if LABELS_ENV_VAR.get().is_some() {
+        return Ok(());
+    }
+
+    // quickwit-common defines common helpers for getting environment variables.
+    // However, we need to use the `std::env::var` function directly here because
+    // quickwit-common depends on quickwit-metrics and it would cause a circular dependency.
+    let labels = match std::env::var(QW_METRICS_LABELS_ENV_VAR) {
+        Ok(labels) => labels,
+        Err(std::env::VarError::NotPresent) => String::new(),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            anyhow::bail!("{QW_METRICS_LABELS_ENV_VAR} must contain valid Unicode")
+        }
+    };
+    let parsed_labels = parse_metrics_labels(&labels)?;
+    LABELS_ENV_VAR.get_or_init(|| parsed_labels.into_boxed_slice());
+
+    Ok(())
+}
+
+// The format of the environment variable is:
+// QW_METRICS_LABELS="environment=test,region=us-east-1,foo=bar"
+fn parse_metrics_labels(labels: &str) -> anyhow::Result<Vec<Label>> {
+    let mut parsed_labels: Vec<Label> = Vec::new();
+    if labels.trim().is_empty() {
+        return Ok(parsed_labels);
+    }
+
+    const LABELS_SEPARATOR: char = ',';
+    const KEY_VALUE_SEPARATOR: char = '=';
+
+    for label in labels.split(LABELS_SEPARATOR) {
+        let (name, value) = label.split_once(KEY_VALUE_SEPARATOR).ok_or_else(|| {
+            anyhow::anyhow!(
+                "{} contains invalid label format: {}",
+                QW_METRICS_LABELS_ENV_VAR,
+                label
+            )
+        })?;
+        let name = name.trim();
+        if name.is_empty() {
+            anyhow::bail!(
+                "{} contains an empty label name: {}",
+                QW_METRICS_LABELS_ENV_VAR,
+                label
+            );
+        }
+        let value = value.trim();
+        if value.is_empty() {
+            anyhow::bail!(
+                "{} contains an empty label value: {}",
+                QW_METRICS_LABELS_ENV_VAR,
+                label
+            );
+        }
+        let label = Label::new(name.to_string(), value.to_string());
+        parsed_labels.push(label);
+    }
+
+    Ok(parsed_labels)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_metrics_labels() {
+        let labels = parse_metrics_labels("environment=production, region=us-east-1 ")
+            .expect("labels should be valid");
+
+        assert_eq!(labels.len(), 2);
+        assert_eq!(labels[0].key(), "environment");
+        assert_eq!(labels[0].value(), "production");
+        assert_eq!(labels[1].key(), "region");
+        assert_eq!(labels[1].value(), "us-east-1");
+    }
+
+    #[test]
+    fn test_parse_metrics_labels_accepts_empty_input() {
+        let labels = parse_metrics_labels("  ").expect("empty input should be valid");
+
+        assert!(labels.is_empty());
+    }
+
+    #[test]
+    fn test_parse_metrics_labels_rejects_missing_separator() {
+        let error = parse_metrics_labels("environment=production,region")
+            .expect_err("label without a separator should be rejected");
+
+        assert_eq!(
+            error.to_string(),
+            "QW_METRICS_LABELS contains invalid label format: region"
+        );
+    }
+
+    #[test]
+    fn test_parse_metrics_labels_rejects_empty_name() {
+        let error =
+            parse_metrics_labels(" =production").expect_err("empty label name should be rejected");
+
+        assert_eq!(
+            error.to_string(),
+            "QW_METRICS_LABELS contains an empty label name:  =production"
+        );
+    }
+
+    #[test]
+    fn test_parse_metrics_labels_rejects_empty_value() {
+        let error = parse_metrics_labels("environment= ")
+            .expect_err("empty label value should be rejected");
+
+        assert_eq!(
+            error.to_string(),
+            "QW_METRICS_LABELS contains an empty label value: environment= "
+        );
+    }
 }

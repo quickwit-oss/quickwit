@@ -60,7 +60,7 @@ pub struct SplitAttrs {
 
     pub time_range: Option<RangeInclusive<DateTime>>,
 
-    pub replaced_split_ids: Vec<String>,
+    pub replaced_split_ids: Vec<SplitId>,
 
     /// Delete opstamp.
     pub delete_opstamp: u64,
@@ -165,6 +165,7 @@ mod tests {
         let retention_policy = quickwit_config::RetentionPolicy {
             evaluation_schedule: "daily".to_string(),
             retention_period: "300 sec".to_string(),
+            evaluation_schedule_jitter: None,
         };
         let create_timestamp = 1000;
 

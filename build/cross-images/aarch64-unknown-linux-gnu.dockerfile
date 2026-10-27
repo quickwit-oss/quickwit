@@ -12,13 +12,38 @@ ARG PBC_URL="https://github.com/protocolbuffers/protobuf/releases/download/v21.5
 # `rdkafka/gssapi-vendored` feature when there is a release including:
 # https://github.com/MaterializeInc/rust-sasl/pull/48
 
+# librdkafka 2.12.1 includes curl/curl.h even when OIDC support is disabled.
 RUN dpkg --add-architecture arm64 && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
         binutils-aarch64-linux-gnu \
+        g++-10-aarch64-linux-gnu \
+        gcc-10-aarch64-linux-gnu \
+        libcurl4-openssl-dev:arm64 \
         libsasl2-dev:arm64 \
         unzip && \
     rm -rf /var/lib/apt/lists/*
+
+# cmake-rs passes vendored dependency prefixes in the CMAKE_PREFIX_PATH
+# environment variable. Materialize that colon-separated value before the
+# cross-rs toolchain constructs its target-only search roots.
+#
+# The toolchain also selects the unversioned GCC binaries explicitly, which
+# overrides the target-specific CC/CXX variables below. Rewrite only the
+# compiler entries: unlike GCC, the target binutils are not version-suffixed.
+RUN sed -i \
+    -e '/set(CMAKE_FIND_ROOT_PATH /i\    string(REPLACE ":" ";" CMAKE_PREFIX_PATH "$ENV{CMAKE_PREFIX_PATH}")' \
+    -e '/set(CMAKE_C_COMPILER /c\set(CMAKE_C_COMPILER "${prefix}gcc-10")' \
+    -e '/set(CMAKE_ASM_COMPILER /c\set(CMAKE_ASM_COMPILER "${prefix}gcc-10")' \
+    -e '/set(CMAKE_CXX_COMPILER /c\set(CMAKE_CXX_COMPILER "${prefix}g++-10")' \
+    /opt/toolchain.cmake
+
+# GCC 9.4 is affected by https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95189.
+# aws-lc cannot execute its compiler probe while cross-compiling, so select the
+# verified GCC 10.5 toolchain explicitly for both compilation and linking.
+ENV CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc-10 \
+    CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++-10 \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc-10
 
 RUN curl -fLO $PBC_URL && \
     unzip protoc-21.5-linux-x86_64.zip -d ./protobuf && \

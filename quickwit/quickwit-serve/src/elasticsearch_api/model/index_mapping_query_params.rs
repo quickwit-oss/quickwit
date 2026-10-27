@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// Query parameters for `_mapping(s)`. Unknown params are silently ignored.
 ///
@@ -29,8 +29,16 @@ pub struct IndexMappingQueryParams {
     #[serde(default)]
     pub end_timestamp: Option<i64>,
     /// Accepts both `field_patterns` (Quickwit) and `fields` (ES-compatible).
-    #[serde(default, alias = "fields")]
+    #[serde(default, alias = "fields", deserialize_with = "empty_string_as_none")]
     pub field_patterns: Option<String>,
+}
+
+// `?field_patterns=` (an explicit but empty value) must be treated the same as the
+// parameter being absent altogether.
+fn empty_string_as_none<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where D: Deserializer<'de> {
+    let value = Option::<String>::deserialize(deserializer)?;
+    Ok(value.filter(|value| !value.is_empty()))
 }
 
 impl IndexMappingQueryParams {
@@ -120,7 +128,7 @@ mod tests {
 
     #[test]
     fn empty_field_patterns_value() {
-        // `serde_qs` collapses an empty value to `None`.
+        // an explicit but empty value is treated the same as an absent parameter.
         let qs = "field_patterns=";
         let params: IndexMappingQueryParams = serde_qs::from_str(qs).unwrap();
         assert!(params.field_patterns.is_none());

@@ -22,9 +22,19 @@ use std::hash::{Hash, Hasher};
 
 #[doc(hidden)]
 pub use const_format::concatcp as __concatcp;
+use metrics::Label;
 use rustc_hash::FxHasher;
 
-// ─── Helper functions ───
+use crate::LABELS_ENV_VAR;
+
+/// Returns the labels from the environment variable.
+#[doc(hidden)]
+pub fn __labels_env_var() -> &'static [Label] {
+    match LABELS_ENV_VAR.get() {
+        Some(labels) => labels.as_ref(),
+        None => &[],
+    }
+}
 
 /// Counts the number of token-tree arguments at compile time.
 #[doc(hidden)]
@@ -94,7 +104,17 @@ macro_rules! __key_info_metadata {
         static LABELS: [$crate::__metrics::Label; $crate::__count!($($label)*)] = [
             $($crate::__metrics::Label::from_static_parts($label, $value)),*
         ];
-        static KEY: $crate::__metrics::Key = $crate::__metrics::Key::from_static_parts(KEY_NAME, &LABELS);
+        static KEY: std::sync::LazyLock<$crate::__metrics::Key> = std::sync::LazyLock::new(|| {
+            let labels_env_var = $crate::__labels_env_var();
+            if labels_env_var.is_empty() {
+                $crate::__metrics::Key::from_static_parts(KEY_NAME, &LABELS)
+            } else {
+                let mut labels = Vec::with_capacity(LABELS.len() + labels_env_var.len());
+                labels.extend(LABELS.iter().cloned());
+                labels.extend(labels_env_var.iter().cloned());
+                $crate::__metrics::Key::from_parts(KEY_NAME, labels)
+            }
+        });
     };
 }
 

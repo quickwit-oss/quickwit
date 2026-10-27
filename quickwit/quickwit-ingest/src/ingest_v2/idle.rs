@@ -22,7 +22,7 @@ use super::state::WeakIngesterState;
 const RUN_INTERVAL_PERIOD: Duration = if cfg!(test) {
     Duration::from_millis(50)
 } else {
-    Duration::from_secs(60)
+    Duration::from_mins(1)
 };
 
 /// Periodically closes idle shards.
@@ -83,7 +83,7 @@ impl CloseIdleShardsTask {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_cluster::{ChitchatTransport, create_cluster_for_test};
     use quickwit_config::service::QuickwitService;
     use quickwit_proto::types::{IndexUid, ShardId};
 
@@ -96,7 +96,7 @@ mod tests {
         let cluster = create_cluster_for_test(
             Vec::new(),
             &[QuickwitService::Indexer.as_str()],
-            &ChannelTransport::default(),
+            &ChitchatTransport::default(),
             true,
         )
         .await
@@ -112,7 +112,7 @@ mod tests {
         let now = Instant::now();
 
         let index_uid = IndexUid::for_test("test-index", 0);
-        let shard_01 = IngesterShard::new_solo(
+        let shard_01 = IngesterShard::builder(
             index_uid.clone(),
             "test-source".to_string(),
             ShardId::from(1),
@@ -122,7 +122,7 @@ mod tests {
         let queue_id_01 = shard_01.queue_id();
         state_guard.shards.insert(queue_id_01.clone(), shard_01);
 
-        let shard_02 = IngesterShard::new_solo(
+        let shard_02 = IngesterShard::builder(
             index_uid.clone(),
             "test-source".to_string(),
             ShardId::from(2),

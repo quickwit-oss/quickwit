@@ -9,5 +9,9 @@ authors = { workspace = true }
 license = { workspace = true }
 description = "Enumerates all quickwit-metrics declarations across workspace crates"
 
+# `[dependencies]` must remain the last section: `scripts/run.sh` appends
+# the crates to inventory at the end of this file.
 [dependencies]
 quickwit-metrics = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }

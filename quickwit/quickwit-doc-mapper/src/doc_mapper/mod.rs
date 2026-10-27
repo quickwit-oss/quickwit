@@ -108,6 +108,13 @@ pub struct WarmupInfo {
     pub term_ranges_grouped_by_field: HashMap<Field, HashMap<TermRange, bool>>,
     /// Automatons to warmup
     pub automatons_grouped_by_field: HashMap<Field, HashSet<Automaton>>,
+    /// Terms that must all be present for the query to match any document.
+    ///
+    /// If any of these terms has an empty posting list in a split, the query
+    /// provably matches nothing there, so the leaf search can abort warmup
+    /// early. This is a conservative subset (see
+    /// `quickwit_query::query_ast::required_terms`).
+    pub required_terms: HashSet<Term>,
 }
 
 impl WarmupInfo {
@@ -147,6 +154,10 @@ impl WarmupInfo {
             let sub_map = self.automatons_grouped_by_field.entry(field).or_default();
             sub_map.extend(automatons);
         }
+
+        // Required terms come from the query; a collector's `WarmupInfo` carries
+        // none, so this union simply preserves the query's set.
+        self.required_terms.extend(other.required_terms);
     }
 
     /// Simplify a WarmupInfo, removing some redundant tasks
@@ -677,6 +688,7 @@ mod tests {
             )]
             .into_iter()
             .collect(),
+            ..Default::default()
         };
 
         // merging with default has no impact
@@ -700,6 +712,7 @@ mod tests {
             ]
             .into_iter()
             .collect(),
+            ..Default::default()
         };
         wi_base.merge(wi_2.clone());
 
@@ -789,6 +802,7 @@ mod tests {
             ]
             .into_iter()
             .collect(),
+            ..Default::default()
         };
         let expected = WarmupInfo {
             term_dict_fields: hashset_field(&[1]),
@@ -805,6 +819,7 @@ mod tests {
             ]
             .into_iter()
             .collect(),
+            ..Default::default()
         };
 
         warmup_info.simplify();

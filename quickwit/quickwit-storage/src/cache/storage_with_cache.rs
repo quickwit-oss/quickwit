@@ -23,7 +23,7 @@ use tokio::io::AsyncRead;
 
 use crate::cache::StorageCache;
 use crate::storage::SendableAsync;
-use crate::{BulkDeleteError, OwnedBytes, Storage, StorageResult};
+use crate::{BulkDeleteError, ListObjectsStream, OwnedBytes, Storage, StorageResult};
 
 /// Use with care, StorageWithCache is read-only.
 pub struct StorageWithCache {
@@ -94,6 +94,10 @@ impl Storage for StorageWithCache {
 
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
         unimplemented!("Failed to delete files `{paths:?}`. `StorageWithCache` is read-only.")
+    }
+
+    fn list(&self, prefix: &Path) -> ListObjectsStream {
+        self.storage.list(prefix)
     }
 
     async fn exists(&self, path: &Path) -> StorageResult<bool> {

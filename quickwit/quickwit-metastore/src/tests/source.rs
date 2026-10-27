@@ -459,7 +459,7 @@ pub async fn test_metastore_reset_checkpoint<
             .unwrap();
 
         let split_metadata = SplitMetadata {
-            split_id: split_id.clone(),
+            split_id: split_id.clone().into(),
             index_uid: index_uid.clone(),
             ..Default::default()
         };

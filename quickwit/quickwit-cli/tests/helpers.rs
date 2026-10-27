@@ -157,14 +157,21 @@ impl TestEnv {
     pub async fn start_server(&self) -> anyhow::Result<()> {
         let run_command = RunCliCommand {
             config_uri: self.resource_files.config.clone(),
-            services: Some(QuickwitService::supported_services()),
+            services: Some(QuickwitService::default_services()),
         };
-        tokio::spawn(async move {
+        let server_handle = tokio::spawn(async move {
             if let Err(error) = run_command
                 .execute(quickwit_serve::do_nothing_env_filter_reload_fn())
                 .await
             {
                 error!(err=?error, "failed to start a quickwit server");
+            }
+        });
+        // Watchdog: if Ctrl-C is pressed, exit immediately.
+        tokio::spawn(async move {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => std::process::exit(0),
+                _ = server_handle => {}
             }
         });
         wait_for_server_ready(([127, 0, 0, 1], self.rest_listen_port).into()).await?;

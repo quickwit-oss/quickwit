@@ -35,6 +35,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .run()
         .unwrap();
 
+    // Compaction service.
+    let mut prost_config = prost_build::Config::default();
+    prost_config.file_descriptor_set_path("src/codegen/quickwit/compaction_descriptor.bin");
+    prost_config.extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid");
+
+    Codegen::builder()
+        .with_prost_config(prost_config)
+        .with_protos(&["protos/quickwit/compaction.proto"])
+        .with_includes(&["protos"])
+        .with_output_dir("src/codegen/quickwit")
+        .with_result_type_path("crate::compaction::CompactionResult")
+        .with_error_type_path("crate::compaction::CompactionError")
+        .generate_rpc_name_impls()
+        .run()
+        .unwrap();
+
     // Control plane.
     let mut prost_config = prost_build::Config::default();
     prost_config.file_descriptor_set_path("src/codegen/quickwit/control_plane_descriptor.bin");
@@ -136,6 +152,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     prost_config
         .bytes([
             "DocBatchV2.doc_buffer",
+            "DocMRecord.doc",
             "MRecordBatch.mrecord_buffer",
             "Position.position",
         ])
@@ -148,8 +165,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .extern_path(".quickwit.ingest.Position", "crate::types::Position")
         .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId")
         .field_attribute(
-            "Shard.follower_id",
-            "#[serde(default, skip_serializing_if = \"Option::is_none\")]",
+            "Shard.ingester_id",
+            "#[serde(rename = \"leader_id\", alias = \"ingester_id\")]",
         )
         .field_attribute(
             "Shard.publish_position_inclusive",
@@ -181,11 +198,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_error_type_path("crate::ingest::IngestV2Error")
         .generate_rpc_name_impls()
         // Surface a couple of top-level scalar fields on the generated tracing
-        // spans so traces are immediately filterable by leader / commit type.
-        // `leader_id` is `String` (Display ok); `commit_type` is the prost
+        // spans so traces are immediately filterable by ingester / commit type.
+        // `ingester_id` is `String` (Display ok); `commit_type` is the prost
         // enum `CommitTypeV2` which only derives `Debug`.
         .with_traced_request_field_debug("IngestRequestV2", "commit_type")
-        .with_traced_request_field("PersistRequest", "leader_id")
+        .with_traced_request_field("PersistRequest", "ingester_id")
         .with_traced_request_field_debug("PersistRequest", "commit_type")
         .run()
         .unwrap();
@@ -205,6 +222,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     prost_config
         .file_descriptor_set_path("src/codegen/quickwit/search_descriptor.bin")
         .protoc_arg("--experimental_allow_proto3_optional")
+        .field_attribute("SearchRequest.priority", "#[serde(default)]")
         // Box the large `LeafSearchResponse` variant so the oneof stays small
         // (the `Error` variant only carries a `String`).
         .boxed("LambdaSingleSplitResult.outcome.response");
@@ -241,19 +259,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::path::PathBuf::from("protos/third-party/jaeger"),
                 std::path::PathBuf::from("protos/third-party"),
             ],
-        )?;
-
-    // Event Store sort schema proto.
-    let sortschema_prost_config = prost_build::Config::default();
-    tonic_prost_build::configure()
-        .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
-        .out_dir("src/codegen/sortschema")
-        .compile_with_config(
-            sortschema_prost_config,
-            &[std::path::PathBuf::from(
-                "protos/event_store_sortschema/event_store_sortschema.proto",
-            )],
-            &[std::path::PathBuf::from("protos/event_store_sortschema")],
         )?;
 
     // OTEL proto

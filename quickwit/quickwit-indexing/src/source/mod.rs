@@ -67,7 +67,6 @@ mod pulsar_source;
 #[cfg(feature = "queue-sources")]
 mod queue_sources;
 mod source_factory;
-mod source_sink;
 mod stdin_source;
 mod vec_source;
 mod void_source;
@@ -91,7 +90,7 @@ pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 #[cfg(feature = "sqs")]
 pub use queue_sources::sqs_queue;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_common::metrics::{
     IN_FLIGHT_FILE_SOURCE, IN_FLIGHT_INGEST_SOURCE, IN_FLIGHT_KAFKA_SOURCE,
     IN_FLIGHT_KINESIS_SOURCE, IN_FLIGHT_OTHER_SOURCE, IN_FLIGHT_PUBSUB_SOURCE,
@@ -115,7 +114,6 @@ use quickwit_proto::types::{IndexUid, NodeIdRef, PipelineUid, ShardId};
 use quickwit_storage::StorageResolver;
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
-pub use source_sink::SourceSink;
 use tokio::runtime::Handle;
 use tracing::error;
 pub use vec_source::{VecSource, VecSourceFactory};
@@ -123,7 +121,8 @@ pub use void_source::{VoidSource, VoidSourceFactory};
 
 use self::doc_file_reader::dir_and_filename;
 use self::stdin_source::StdinSourceFactory;
-use crate::models::RawDocBatch;
+use crate::actors::DocProcessor;
+use crate::models::{RawDocBatch, SharedPublishToken};
 use crate::source::ingest::IngestSourceFactory;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
 
@@ -166,6 +165,7 @@ pub struct SourceRuntime {
     pub storage_resolver: StorageResolver,
     pub event_broker: EventBroker,
     pub indexing_setting: IndexingSettings,
+    pub publish_token: SharedPublishToken,
 }
 
 impl SourceRuntime {
@@ -243,7 +243,7 @@ pub trait Source: Send + 'static {
     /// This method will be called before any calls to `emit_batches`.
     async fn initialize(
         &mut self,
-        _source_sink: &SourceSink,
+        _doc_processor_mailbox: &Mailbox<DocProcessor>,
         _ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         Ok(())
@@ -251,14 +251,14 @@ pub trait Source: Send + 'static {
 
     /// Main part of the source implementation, `emit_batches` can emit 0..n batches.
     ///
-    /// The `batch_sink` is a mailbox that has a bounded capacity.
-    /// In that case, `batch_sink` will block.
+    /// The `doc_processor_mailbox` is a mailbox that has a bounded capacity.
+    /// In that case, `doc_processor_mailbox` will block.
     ///
     /// It returns an optional duration specifying how long the batch requester
     /// should wait before polling again.
     async fn emit_batches(
         &mut self,
-        source_sink: &SourceSink,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus>;
 
@@ -266,8 +266,8 @@ pub trait Source: Send + 'static {
     /// plane.
     async fn assign_shards(
         &mut self,
-        _shard_ids: BTreeSet<ShardId>,
-        _source_sink: &SourceSink,
+        _assignment: Assignment,
+        _doc_processor_mailbox: &Mailbox<DocProcessor>,
         _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         Ok(())
@@ -319,14 +319,14 @@ pub trait Source: Send + 'static {
 /// It mostly takes care of running a loop calling `emit_batches(...)`.
 pub struct SourceActor {
     source: Box<dyn Source>,
-    source_sink: SourceSink,
+    doc_processor_mailbox: Mailbox<DocProcessor>,
 }
 
 impl SourceActor {
-    pub fn new(source: Box<dyn Source>, source_sink: impl Into<SourceSink>) -> Self {
+    pub fn new(source: Box<dyn Source>, doc_processor_mailbox: Mailbox<DocProcessor>) -> Self {
         SourceActor {
             source,
-            source_sink: source_sink.into(),
+            doc_processor_mailbox,
         }
     }
 }
@@ -337,6 +337,8 @@ struct Loop;
 #[derive(Debug)]
 pub struct Assignment {
     pub shard_ids: BTreeSet<ShardId>,
+    /// ULID of the originating indexing plan, used as the publish token when (re)acquiring shards.
+    pub indexing_plan_id: String,
 }
 
 #[derive(Debug)]
@@ -363,7 +365,9 @@ impl Actor for SourceActor {
     }
 
     async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        self.source.initialize(&self.source_sink, ctx).await?;
+        self.source
+            .initialize(&self.doc_processor_mailbox, ctx)
+            .await?;
         self.handle(Loop, ctx).await?;
         Ok(())
     }
@@ -383,7 +387,10 @@ impl Handler<Loop> for SourceActor {
     type Reply = ();
 
     async fn handle(&mut self, _message: Loop, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        let wait_for = self.source.emit_batches(&self.source_sink, ctx).await?;
+        let wait_for = self
+            .source
+            .emit_batches(&self.doc_processor_mailbox, ctx)
+            .await?;
         if wait_for.is_zero() {
             ctx.send_self_message(Loop).await?;
             return Ok(());
@@ -402,9 +409,9 @@ impl Handler<AssignShards> for SourceActor {
         assign_shards_message: AssignShards,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
-        let AssignShards(Assignment { shard_ids }) = assign_shards_message;
+        let AssignShards(assignment) = assign_shards_message;
         self.source
-            .assign_shards(shard_ids, &self.source_sink, ctx)
+            .assign_shards(assignment, &self.doc_processor_mailbox, ctx)
             .await?;
         Ok(())
     }
@@ -631,6 +638,7 @@ mod tests {
                 storage_resolver: StorageResolver::for_test(),
                 event_broker: EventBroker::default(),
                 indexing_setting: IndexingSettings::default(),
+                publish_token: SharedPublishToken::default(),
             }
         }
 
@@ -762,10 +770,9 @@ mod test_setup_helper {
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, PartitionId};
     use quickwit_metastore::{CreateIndexRequestExt, SplitMetadata, StageSplitsRequestExt};
     use quickwit_proto::metastore::{CreateIndexRequest, PublishSplitsRequest, StageSplitsRequest};
-    use quickwit_proto::types::Position;
+    use quickwit_proto::types::{Position, SplitId};
 
     use super::*;
-    use crate::new_split_id;
 
     pub async fn setup_index(
         metastore: MetastoreServiceClient,
@@ -790,7 +797,7 @@ mod test_setup_helper {
         if partition_deltas.is_empty() {
             return index_uid;
         }
-        let split_id = new_split_id();
+        let split_id = SplitId::new();
         let split_metadata = SplitMetadata::for_test(split_id.clone());
         let stage_splits_request =
             StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata)
@@ -811,7 +818,7 @@ mod test_setup_helper {
         let publish_splits_request = PublishSplitsRequest {
             index_uid: Some(index_uid.clone()),
             index_checkpoint_delta_json_opt: Some(checkpoint_delta_json),
-            staged_split_ids: vec![split_id.clone()],
+            staged_split_ids: vec![split_id.to_string()],
             replaced_split_ids: Vec::new(),
             publish_token_opt: None,
         };

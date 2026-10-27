@@ -21,6 +21,7 @@ use quickwit_config::service::QuickwitService;
 use quickwit_proto::indexing::IndexingTask;
 #[cfg(any(test, feature = "testsuite"))]
 use quickwit_proto::ingest::ingester::IngesterStatus;
+use quickwit_proto::types::AvailabilityZone;
 use tonic::transport::Channel;
 
 use crate::member::{ClusterMember, build_cluster_member};
@@ -59,15 +60,17 @@ impl ClusterNode {
         ingester_status: IngesterStatus,
     ) -> Self {
         use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
-        use quickwit_common::tower::{ClientGrpcConfig, make_channel};
 
+        use crate::change::for_test::channel_factory_for_test;
         use crate::cluster::set_indexing_tasks_in_node_state;
         use crate::member::{ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY};
 
         let gossip_advertise_addr = ([127, 0, 0, 1], port).into();
         let grpc_advertise_addr = ([127, 0, 0, 1], port + 1).into();
         let chitchat_id = ChitchatId::new(node_id, 0, gossip_advertise_addr);
-        let channel = make_channel(grpc_advertise_addr, ClientGrpcConfig::default()).await;
+        let channel = channel_factory_for_test()
+            .make_channel(grpc_advertise_addr)
+            .await;
         let mut node_state = NodeState::for_test();
         node_state.set(ENABLED_SERVICES_KEY, enabled_services.join(","));
         node_state.set(GRPC_ADVERTISE_ADDR_KEY, grpc_advertise_addr.to_string());
@@ -104,8 +107,12 @@ impl ClusterNode {
         self.inner.is_self_node
     }
 
-    pub fn availability_zone(&self) -> Option<&str> {
-        self.inner.member.availability_zone.as_deref()
+    pub fn availability_zone(&self) -> Option<AvailabilityZone> {
+        self.inner.member.availability_zone.clone()
+    }
+
+    pub fn enable_standalone_compactors(&self) -> bool {
+        self.inner.member.enable_standalone_compactors
     }
 }
 

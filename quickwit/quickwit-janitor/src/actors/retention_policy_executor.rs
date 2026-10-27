@@ -18,7 +18,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
-use quickwit_common::is_parquet_pipeline_index;
 use quickwit_config::IndexConfig;
 use quickwit_metastore::ListIndexesMetadataResponseExt;
 use quickwit_proto::metastore::{
@@ -28,11 +27,9 @@ use quickwit_proto::types::IndexUid;
 use serde::Serialize;
 use tracing::{debug, error, info};
 
-use crate::retention_policy_execution::{
-    run_execute_parquet_retention_policy, run_execute_retention_policy,
-};
+use crate::retention_policy_execution::run_execute_retention_policy;
 
-const RUN_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hours
+const RUN_INTERVAL: Duration = Duration::from_hours(1);
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct RetentionPolicyExecutorCounters {
@@ -210,33 +207,17 @@ impl Handler<Execute> for RetentionPolicyExecutor {
             .as_ref()
             .expect("Expected index to have retention policy configure.");
 
-        if is_parquet_pipeline_index(&message.index_uid.index_id) {
-            let execution_result = run_execute_parquet_retention_policy(
-                &message.index_uid,
-                self.metastore.clone(),
-                retention_policy,
-                ctx,
-            )
-            .await;
-            match execution_result {
-                Ok(count) => self.counters.num_expired_splits += count,
-                Err(error) => {
-                    error!(index_id=%message.index_uid.index_id, error=?error, "Failed to execute the parquet retention policy on the index.")
-                }
-            }
-        } else {
-            let execution_result = run_execute_retention_policy(
-                message.index_uid.clone(),
-                self.metastore.clone(),
-                retention_policy,
-                ctx,
-            )
-            .await;
-            match execution_result {
-                Ok(splits) => self.counters.num_expired_splits += splits.len(),
-                Err(error) => {
-                    error!(index_id=%message.index_uid.index_id, error=?error, "Failed to execute the retention policy on the index.")
-                }
+        let execution_result = run_execute_retention_policy(
+            message.index_uid.clone(),
+            self.metastore.clone(),
+            retention_policy,
+            ctx,
+        )
+        .await;
+        match execution_result {
+            Ok(splits) => self.counters.num_expired_splits += splits.len(),
+            Err(error) => {
+                error!(index_id=%message.index_uid.index_id, error=?error, "Failed to execute the retention policy on the index.")
             }
         }
 
@@ -274,7 +255,7 @@ mod tests {
     use mockall::Sequence;
     use quickwit_actors::Universe;
     use quickwit_common::ServiceStream;
-    use quickwit_config::RetentionPolicy;
+    use quickwit_config::{HumanDuration, RetentionPolicy};
     use quickwit_metastore::{
         IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitMetadata,
         SplitState,
@@ -327,6 +308,9 @@ mod tests {
             index.retention_policy_opt = Some(RetentionPolicy {
                 retention_period: retention_period.to_string(),
                 evaluation_schedule: EVALUATION_SCHEDULE.to_string(),
+                evaluation_schedule_jitter: Some(
+                    HumanDuration::try_from("0s".to_string()).unwrap(),
+                ),
             })
         }
         index
@@ -343,7 +327,7 @@ mod tests {
     fn make_split(split_id: &str, time_range: Option<RangeInclusive<i64>>) -> Split {
         Split {
             split_metadata: SplitMetadata {
-                split_id: split_id.to_string(),
+                split_id: split_id.into(),
                 footer_offsets: 5..20,
                 time_range,
                 ..Default::default()
@@ -360,6 +344,7 @@ mod tests {
         let scheduler = RetentionPolicy {
             retention_period: "".to_string(),
             evaluation_schedule: EVALUATION_SCHEDULE.to_string(),
+            evaluation_schedule_jitter: Some(HumanDuration::try_from("0s".to_string()).unwrap()),
         };
 
         scheduler.duration_until_next_evaluation().unwrap() + Duration::from_secs(1)
@@ -514,67 +499,6 @@ mod tests {
         let counters = handle.process_pending_and_observe().await.state;
         assert_eq!(counters.num_execution_passes, 2);
         assert_eq!(counters.num_expired_splits, 2);
-        universe.assert_quit().await;
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_parquet_retention_policy_execution_calls_dependencies() -> anyhow::Result<()> {
-        use quickwit_metastore::{ListParquetSplitsResponseExt, ParquetSplitRecord, SplitState};
-        use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
-        use quickwit_proto::metastore::ListMetricsSplitsResponse;
-
-        let mut mock_metastore = MockMetastoreService::new();
-
-        // One metrics index with a 1-hour retention policy
-        mock_metastore
-            .expect_list_indexes_metadata()
-            .times(..)
-            .returning(|_| {
-                let indexes = make_indexes(&[("otel-metrics-v0_9", Some("1 hour"))]);
-                Ok(ListIndexesMetadataResponse::for_test(indexes))
-            });
-
-        // Two published splits older than the retention cutoff
-        let expired_split = ParquetSplitRecord {
-            state: SplitState::Published,
-            update_timestamp: 0,
-            metadata: ParquetSplitMetadata::metrics_builder()
-                .split_id(ParquetSplitId::new("metrics_expired"))
-                .index_uid("otel-metrics-v0_9:00000000000000000000000000")
-                .time_range(TimeRange::new(0, 100))
-                .num_rows(10)
-                .size_bytes(512)
-                .build(),
-        };
-        let resp = ListMetricsSplitsResponse::try_from_splits(&[expired_split]).unwrap();
-        mock_metastore
-            .expect_list_metrics_splits()
-            .times(1..)
-            .returning(move |_| Ok(resp.clone()));
-
-        mock_metastore
-            .expect_mark_metrics_splits_for_deletion()
-            .times(1..)
-            .returning(|req| {
-                assert_eq!(req.split_ids, ["metrics_expired"]);
-                Ok(EmptyResponse {})
-            });
-
-        let retention_policy_executor =
-            RetentionPolicyExecutor::new(MetastoreServiceClient::from_mock(mock_metastore));
-        let universe = Universe::with_accelerated_time();
-        let (_mailbox, handle) = universe.spawn_builder().spawn(retention_policy_executor);
-
-        let counters = handle.process_pending_and_observe().await.state;
-        assert_eq!(counters.num_execution_passes, 0);
-        assert_eq!(counters.num_expired_splits, 0);
-
-        universe.sleep(shift_time_by()).await;
-        let counters = handle.process_pending_and_observe().await.state;
-        assert_eq!(counters.num_execution_passes, 1);
-        assert_eq!(counters.num_expired_splits, 1);
         universe.assert_quit().await;
 
         Ok(())

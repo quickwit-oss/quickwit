@@ -28,6 +28,7 @@ mod index_uid;
 mod pipeline_uid;
 mod position;
 mod shard_id;
+mod split_id;
 
 pub use doc_mapping_uid::DocMappingUid;
 pub use doc_uid::{DocUid, DocUidGenerator};
@@ -35,6 +36,7 @@ pub use index_uid::IndexUid;
 pub use pipeline_uid::PipelineUid;
 pub use position::Position;
 pub use shard_id::ShardId;
+pub use split_id::SplitId;
 
 /// The size of an ULID in bytes. Use `ULID_LEN` for the length of Base32 encoded ULID strings.
 pub(crate) const ULID_SIZE: usize = 16;
@@ -43,12 +45,11 @@ pub type IndexId = String;
 
 pub type SourceId = String;
 
-pub type SplitId = String;
-
 pub type SubrequestId = u32;
 
-/// See the file `ingest.proto` for more details.
-pub type PublishToken = String;
+pub type IndexingPlanId = String;
+
+pub type AvailabilityZone = Arc<str>;
 
 /// Uniquely identifies a shard and its underlying mrecordlog queue.
 pub type QueueId = String; // <index_uid>/<source_id>/<shard_id>
@@ -76,6 +77,37 @@ fn split_queue_id_inner(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)>
         source_id.to_string(),
         ShardId::from(shard_id),
     ))
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PublishToken(String);
+
+impl Deref for PublishToken {
+    type Target = String;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl PublishToken {
+    pub fn resolve(node_id: &str, indexing_plan_id: &str) -> Self {
+        if indexing_plan_id.is_empty() {
+            let ulid = if cfg!(test) {
+                Ulid::nil()
+            } else {
+                Ulid::generate()
+            };
+            PublishToken(format!("{node_id}/{ulid}"))
+        } else {
+            PublishToken(format!("{indexing_plan_id}-{node_id}"))
+        }
+    }
+}
+
+impl From<String> for PublishToken {
+    fn from(token: String) -> Self {
+        PublishToken(token)
+    }
 }
 
 /// It can however appear only once in a given index.

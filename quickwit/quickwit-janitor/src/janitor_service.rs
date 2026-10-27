@@ -16,6 +16,7 @@ use async_trait::async_trait;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Healthz,
 };
+use quickwit_compaction::planner::CompactionPlanner;
 use serde_json::{Value as JsonValue, json};
 
 use crate::actors::{DeleteTaskService, GarbageCollector, RetentionPolicyExecutor};
@@ -24,6 +25,7 @@ pub struct JanitorService {
     delete_task_service_handle: Option<ActorHandle<DeleteTaskService>>,
     garbage_collector_handle: ActorHandle<GarbageCollector>,
     retention_policy_executor_handle: ActorHandle<RetentionPolicyExecutor>,
+    compaction_planner_handle: Option<ActorHandle<CompactionPlanner>>,
 }
 
 impl JanitorService {
@@ -31,11 +33,13 @@ impl JanitorService {
         delete_task_service_handle: Option<ActorHandle<DeleteTaskService>>,
         garbage_collector_handle: ActorHandle<GarbageCollector>,
         retention_policy_executor_handle: ActorHandle<RetentionPolicyExecutor>,
+        compaction_planner_handle: Option<ActorHandle<CompactionPlanner>>,
     ) -> Self {
         Self {
             delete_task_service_handle,
             garbage_collector_handle,
             retention_policy_executor_handle,
+            compaction_planner_handle,
         }
     }
 
@@ -46,9 +50,16 @@ impl JanitorService {
             } else {
                 true
             };
+        let compaction_planner_is_not_failure: bool =
+            if let Some(compaction_planner_handle) = &self.compaction_planner_handle {
+                compaction_planner_handle.state() != ActorState::Failure
+            } else {
+                true
+            };
         delete_task_is_not_failure
             && self.garbage_collector_handle.state() != ActorState::Failure
             && self.retention_policy_executor_handle.state() != ActorState::Failure
+            && compaction_planner_is_not_failure
     }
 }
 

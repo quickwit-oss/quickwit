@@ -16,8 +16,12 @@ use std::fmt;
 use std::io::{self};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use async_trait::async_trait;
+use bytesize::ByteSize;
+use futures::StreamExt;
+use futures::stream::{self, BoxStream};
 use quickwit_common::uri::Uri;
 use tempfile::TempPath;
 use tokio::fs::File;
@@ -25,6 +29,20 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::error;
 
 use crate::{BulkDeleteError, OwnedBytes, PutPayload, StorageErrorKind, StorageResult};
+
+/// Metadata for an object listed from storage.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ObjectMetadata {
+    /// Object path relative to this storage root.
+    pub path: PathBuf,
+    /// Object size.
+    pub size: ByteSize,
+    /// Last modification time.
+    pub last_modified: SystemTime,
+}
+
+/// Stream of object metadata batches returned by [`Storage::list`].
+pub type ListObjectsStream = BoxStream<'static, StorageResult<Vec<ObjectMetadata>>>;
 
 /// This trait is only used to make it build trait object with `AsyncWrite + Send + Unpin`.
 pub trait SendableAsync: AsyncWrite + Send + Unpin {}
@@ -41,7 +59,11 @@ impl<W: AsyncWrite + Send + Unpin> SendableAsync for W {}
 /// object storage treat them. This means when directory separators a present
 /// in the storage operation path, the storage implementation should create and remove transparently
 /// these intermediate directories.
-#[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
+#[cfg_attr(
+    any(test, feature = "testsuite"),
+    allow(clippy::result_large_err), // BulkDeleteError is large but only in mock/test code
+    mockall::automock
+)]
 #[async_trait]
 pub trait Storage: fmt::Debug + Send + Sync + 'static {
     /// Check storage connection if applicable
@@ -122,6 +144,18 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
     /// not support deleting objects in bulk. The request can fail partially, i.e. some objects are
     /// successfully deleted while others are not.
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError>;
+
+    /// Lists object metadata for objects whose paths start with `prefix`.
+    ///
+    /// Returned paths are relative to this storage root, like every other [`Storage`] operation.
+    fn list(&self, _prefix: &Path) -> ListObjectsStream {
+        let err = anyhow::anyhow!(
+            "listing objects is not supported for storage `{}`",
+            self.uri(),
+        );
+        let storage_error = StorageErrorKind::Internal.with_error(err);
+        stream::once(async move { Err(storage_error) }).boxed()
+    }
 
     /// Returns whether a file exists or not.
     async fn exists(&self, path: &Path) -> StorageResult<bool> {

@@ -25,10 +25,15 @@ use quickwit_metrics::{
 };
 
 const ACTION_DELETE_OBJECT: Labels<1> = labels!("action" => "delete_object");
+const ACTION_DELETE_OBJECTS: Labels<1> = labels!("action" => "delete_objects");
+const ACTION_GET_OBJECT: Labels<1> = labels!("action" => "get_object");
+const ACTION_PUT_OBJECT: Labels<1> = labels!("action" => "put_object");
+const ACTION_UPLOAD_PART: Labels<1> = labels!("action" => "upload_part");
 const OUTCOME_NAME: LabelNames<1> = label_names!("outcome");
 const COMPONENT_NAME: LabelNames<1> = label_names!("component_name");
 const COMPONENT_CAPACITY_POLICY: LabelNames<3> =
     label_names!("component_name", "capacity", "policy");
+pub(crate) const ERROR_CLASS: LabelNames<1> = label_names!("class");
 
 static GET_SLICE_TIMEOUT_OUTCOME_TOTAL: LazyCounter = lazy_counter!(
         name: "get_slice_timeout_outcome",
@@ -73,13 +78,22 @@ pub(crate) static OBJECT_STORAGE_DELETE_REQUESTS_TOTAL: LazyCounter =
     lazy_counter!(parent: OBJECT_STORAGE_REQUESTS_TOTAL, labels: [ACTION_DELETE_OBJECT]);
 
 pub(crate) static OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL: LazyCounter =
-    lazy_counter!(parent: OBJECT_STORAGE_REQUESTS_TOTAL, labels: [ACTION_DELETE_OBJECT]);
+    lazy_counter!(parent: OBJECT_STORAGE_REQUESTS_TOTAL, labels: [ACTION_DELETE_OBJECTS]);
 
 pub(crate) static OBJECT_STORAGE_DELETE_REQUEST_DURATION: LazyHistogram =
     lazy_histogram!(parent: OBJECT_STORAGE_REQUEST_DURATION, labels: [ACTION_DELETE_OBJECT]);
 
 pub(crate) static OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION: LazyHistogram =
-    lazy_histogram!(parent: OBJECT_STORAGE_REQUEST_DURATION, labels: [ACTION_DELETE_OBJECT]);
+    lazy_histogram!(parent: OBJECT_STORAGE_REQUEST_DURATION, labels: [ACTION_DELETE_OBJECTS]);
+
+pub(crate) static OBJECT_STORAGE_GET_OBJECT_DURATION: LazyHistogram =
+    lazy_histogram!(parent: OBJECT_STORAGE_REQUEST_DURATION, labels: [ACTION_GET_OBJECT]);
+
+pub(crate) static OBJECT_STORAGE_PUT_OBJECT_DURATION: LazyHistogram =
+    lazy_histogram!(parent: OBJECT_STORAGE_REQUEST_DURATION, labels: [ACTION_PUT_OBJECT]);
+
+pub(crate) static OBJECT_STORAGE_UPLOAD_PART_DURATION: LazyHistogram =
+    lazy_histogram!(parent: OBJECT_STORAGE_REQUEST_DURATION, labels: [ACTION_UPLOAD_PART]);
 
 pub(crate) static OBJECT_STORAGE_GET_TOTAL: LazyCounter = lazy_counter!(
         name: "object_storage_gets_total",
@@ -90,6 +104,12 @@ pub(crate) static OBJECT_STORAGE_GET_TOTAL: LazyCounter = lazy_counter!(
 pub(crate) static OBJECT_STORAGE_GET_ERRORS_TOTAL: LazyCounter = lazy_counter!(
         name: "object_storage_get_errors_total",
         description: "Number of GetObject errors.",
+        subsystem: "storage",
+);
+
+pub(crate) static OBJECT_STORAGE_GET_ATTEMPT_ERRORS_TOTAL: LazyCounter = lazy_counter!(
+        name: "object_storage_get_attempt_errors_total",
+        description: "Number of failed GetObject attempts, counted per attempt (retried attempts included), labeled by error class (throttled, transient, timeout, other). Use class=\"throttled\" to measure S3 rate limiting.",
         subsystem: "storage",
 );
 
@@ -111,6 +131,18 @@ pub(crate) static OBJECT_STORAGE_PUT_TOTAL: LazyCounter = lazy_counter!(
         subsystem: "storage",
 );
 
+pub(crate) static OBJECT_STORAGE_PUT_ERRORS_TOTAL: LazyCounter = lazy_counter!(
+    name: "object_storage_put_errors_total",
+        description: "Number of S3 object uploads that failed after retries were exhausted.",
+    subsystem: "storage",
+);
+
+pub(crate) static OBJECT_STORAGE_PUT_ATTEMPT_ERRORS_TOTAL: LazyCounter = lazy_counter!(
+    name: "object_storage_put_attempt_errors_total",
+        description: "Number of failed S3 PutObject and UploadPart attempts, counted per attempt (retried attempts included), labeled by error class. Use class=\"throttling\" to measure S3 rate limiting.",
+    subsystem: "storage",
+);
+
 pub(crate) static OBJECT_STORAGE_PUT_PARTS: LazyCounter = lazy_counter!(
         name: "object_storage_puts_parts",
         description: "Number of object parts uploaded.",
@@ -129,7 +161,7 @@ pub(crate) static OBJECT_STORAGE_UPLOAD_NUM_BYTES: LazyCounter = lazy_counter!(
         subsystem: "storage",
 );
 
-/// Metrics for a named cache component (e.g. "shortlived", "splitfooter").
+/// Metrics for a named cache component (e.g. "fastfields", "splitfooter").
 ///
 /// Each `CacheMetrics` instance holds a set of counters and gauges scoped to a
 /// `component_name` label. It also supports virtual sub-caches keyed by
@@ -315,11 +347,6 @@ pub static PREDICATE_CACHE: LazyLock<CacheMetrics> =
 
 pub(crate) static SEARCHER_SPLIT_CACHE: LazyLock<CacheMetrics> =
     LazyLock::new(|| CacheMetrics::for_component("searcher_split"));
-
-/// Cache metrics for short-lived byte range caches (used during leaf search
-/// and caching directory warmup).
-pub static SHORTLIVED_CACHE: LazyLock<CacheMetrics> =
-    LazyLock::new(|| CacheMetrics::for_component("shortlived"));
 
 /// Cache metrics for split footer caches (used to cache split metadata).
 pub static SPLIT_FOOTER_CACHE: LazyLock<CacheMetrics> =

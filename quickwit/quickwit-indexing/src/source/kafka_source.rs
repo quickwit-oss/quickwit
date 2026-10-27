@@ -14,6 +14,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, anyhow, bail};
@@ -21,7 +22,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use itertools::Itertools;
 use oneshot;
-use quickwit_actors::ActorExitStatus;
+use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::KafkaSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
@@ -40,11 +41,12 @@ use tokio::task::{JoinHandle, spawn_blocking};
 use tokio::time;
 use tracing::{debug, info, warn};
 
+use crate::actors::DocProcessor;
 use crate::metrics::KAFKA_REBALANCE_TOTAL;
 use crate::models::{NewPublishLock, PublishLock};
 use crate::source::{
     BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
-    SourceRuntime, SourceSink, TypedSourceFactory,
+    SourceRuntime, TypedSourceFactory,
 };
 
 type GroupId = String;
@@ -394,7 +396,7 @@ impl KafkaSource {
     async fn process_revoke_partitions(
         &mut self,
         ctx: &SourceContext,
-        source_sink: &SourceSink,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         batch: &mut BatchBuilder,
         ack_tx: oneshot::Sender<()>,
     ) -> anyhow::Result<()> {
@@ -406,9 +408,11 @@ impl KafkaSource {
         batch.clear();
         self.publish_lock = PublishLock::default();
         self.state.num_rebalances += 1;
-        source_sink
-            .send_publish_lock(NewPublishLock(self.publish_lock.clone()), ctx)
-            .await?;
+        ctx.send_message(
+            doc_processor_mailbox,
+            NewPublishLock(self.publish_lock.clone()),
+        )
+        .await?;
         Ok(())
     }
 
@@ -442,19 +446,18 @@ impl KafkaSource {
 impl Source for KafkaSource {
     async fn initialize(
         &mut self,
-        source_sink: &SourceSink,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         let publish_lock = self.publish_lock.clone();
-        source_sink
-            .send_publish_lock(NewPublishLock(publish_lock), ctx)
+        ctx.send_message(doc_processor_mailbox, NewPublishLock(publish_lock))
             .await?;
         Ok(())
     }
 
     async fn emit_batches(
         &mut self,
-        source_sink: &SourceSink,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
@@ -469,7 +472,7 @@ impl Source for KafkaSource {
                     match event {
                         KafkaEvent::Message(message) => self.process_message(message, &mut batch_builder).await?,
                         KafkaEvent::AssignPartitions { partitions, assignment_tx} => self.process_assign_partitions(ctx, &partitions, assignment_tx).await?,
-                        KafkaEvent::RevokePartitions { ack_tx } => self.process_revoke_partitions(ctx, source_sink, &mut batch_builder, ack_tx).await?,
+                        KafkaEvent::RevokePartitions { ack_tx } => self.process_revoke_partitions(ctx, doc_processor_mailbox, &mut batch_builder, ack_tx).await?,
                         KafkaEvent::PartitionEOF(partition) => self.process_partition_eof(partition),
                         KafkaEvent::Error(error) => Err(ActorExitStatus::from(error))?,
                     }
@@ -491,11 +494,11 @@ impl Source for KafkaSource {
                 "sending doc batch to indexer"
             );
             let message = batch_builder.build();
-            source_sink.send_raw_doc_batch(message, ctx).await?;
+            ctx.send_message(doc_processor_mailbox, message).await?;
         }
         if self.should_exit() {
             info!(topic = %self.topic, "reached end of topic");
-            source_sink.send_exit_with_success(ctx).await?;
+            ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
         Ok(Duration::default())
@@ -705,14 +708,47 @@ fn parse_client_log_level(client_log_level: Option<String>) -> anyhow::Result<RD
     Ok(log_level)
 }
 
+const QW_KAFKA_KINIT_CMD_ENV_KEY: &str = "QW_KAFKA_KINIT_CMD";
+
+const FORBIDDEN_CLIENT_PARAMS: &[&str] = &[
+    "plugin.library.paths",
+    "sasl.kerberos.kinit.cmd",
+    "sasl.kerberos.min.time.before.relogin",
+    "ssl.engine.location",
+    "ssl.providers",
+];
+
 fn parse_client_params(client_params: JsonValue) -> anyhow::Result<ClientConfig> {
+    static KINIT_CMD: LazyLock<Option<String>> =
+        LazyLock::new(|| quickwit_common::get_from_env_opt(QW_KAFKA_KINIT_CMD_ENV_KEY, true));
+    parse_client_params_inner(client_params, KINIT_CMD.as_deref())
+}
+
+fn parse_client_params_inner(
+    client_params: JsonValue,
+    kinit_cmd_opt: Option<&str>,
+) -> anyhow::Result<ClientConfig> {
     let params = if let JsonValue::Object(params) = client_params {
         params
     } else {
         bail!("failed to parse Kafka client parameters. `client_params` must be a JSON object");
     };
     let mut client_config = ClientConfig::new();
+    if let Some(kinit_cmd) = kinit_cmd_opt.filter(|kinit_cmd| !kinit_cmd.trim().is_empty()) {
+        if kinit_cmd.contains("%{") {
+            bail!(
+                "failed to parse Kafka client parameters. `{QW_KAFKA_KINIT_CMD_ENV_KEY}` must not \
+                 contain `%{{...}}` placeholders"
+            );
+        }
+        client_config.set("sasl.kerberos.kinit.cmd", kinit_cmd);
+    } else {
+        client_config.set("sasl.kerberos.min.time.before.relogin", "0");
+    }
     for (key, value_json) in params {
+        if FORBIDDEN_CLIENT_PARAMS.contains(&key.as_str()) {
+            bail!("failed to parse Kafka client parameters. `client_params.{key}` is not allowed");
+        }
         let value = match value_json {
             JsonValue::Bool(value_bool) => value_bool.to_string(),
             JsonValue::Number(value_number) => value_number.to_string(),
@@ -754,12 +790,64 @@ fn message_payload_to_doc(message: &BorrowedMessage) -> Option<Bytes> {
     None
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_client_params_rejects_forbidden_params() {
+        for key in [
+            "plugin.library.paths",
+            "sasl.kerberos.kinit.cmd",
+            "sasl.kerberos.min.time.before.relogin",
+            "ssl.engine.location",
+            "ssl.providers",
+        ] {
+            parse_client_params_inner(json!({ key: "value" }), Some("kinit")).unwrap_err();
+        }
+    }
+
+    #[test]
+    fn test_parse_client_params_kinit_cmd() {
+        let client_config = parse_client_params_inner(json!({}), None).unwrap();
+        assert_eq!(
+            client_config.get("sasl.kerberos.min.time.before.relogin"),
+            Some("0")
+        );
+        assert_eq!(client_config.get("sasl.kerberos.kinit.cmd"), None);
+
+        for empty_kinit_cmd in ["", "  "] {
+            let client_config =
+                parse_client_params_inner(json!({}), Some(empty_kinit_cmd)).unwrap();
+            assert_eq!(
+                client_config.get("sasl.kerberos.min.time.before.relogin"),
+                Some("0")
+            );
+            assert_eq!(client_config.get("sasl.kerberos.kinit.cmd"), None);
+        }
+
+        let client_config = parse_client_params_inner(json!({}), Some("kinit -k")).unwrap();
+        assert_eq!(
+            client_config.get("sasl.kerberos.kinit.cmd"),
+            Some("kinit -k")
+        );
+        assert_eq!(
+            client_config.get("sasl.kerberos.min.time.before.relogin"),
+            None
+        );
+
+        parse_client_params_inner(json!({}), Some("kinit %{sasl.kerberos.principal}")).unwrap_err();
+    }
+}
+
 #[cfg(all(test, feature = "kafka-broker-tests"))]
 mod kafka_broker_tests {
     use std::num::NonZeroUsize;
+    use std::sync::Arc;
 
     use quickwit_actors::{ActorContext, Universe};
     use quickwit_common::rand::append_random_suffix;
+    use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_metastore::metastore_for_test;
@@ -774,7 +862,7 @@ mod kafka_broker_tests {
     use crate::actors::DocProcessor;
     use crate::source::test_setup_helper::setup_index;
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{RawDocBatch, SourceActor, SourceSink, quickwit_supported_sources};
+    use crate::source::{RawDocBatch, SourceActor, quickwit_supported_sources};
 
     fn create_base_consumer(group_id: &str) -> BaseConsumer {
         ClientConfig::new()
@@ -815,7 +903,45 @@ mod kafka_broker_tests {
                     err_code
                 )
             })?;
-        Ok(())
+        wait_for_topic_ready(topic, num_partitions).await
+    }
+
+    async fn wait_for_topic_ready(topic: &str, num_partitions: i32) -> anyhow::Result<()> {
+        let consumer = Arc::new(create_base_consumer("quickwit-test-wait-for-topic-ready"));
+        let is_topic_ready = || {
+            let consumer = consumer.clone();
+            let topic = topic.to_string();
+            async move {
+                spawn_blocking(move || {
+                    let Ok(cluster_metadata) =
+                        consumer.fetch_metadata(Some(&topic), Duration::from_secs(1))
+                    else {
+                        return false;
+                    };
+                    cluster_metadata.topics().iter().any(|topic_metadata| {
+                        topic_metadata.name() == topic
+                            && topic_metadata.error().is_none()
+                            && topic_metadata.partitions().len() == num_partitions as usize
+                            && topic_metadata
+                                .partitions()
+                                .iter()
+                                .all(|partition_metadata| {
+                                    partition_metadata.error().is_none()
+                                        && partition_metadata.leader() >= 0
+                                })
+                    })
+                })
+                .await
+                .unwrap_or(false)
+            }
+        };
+        wait_until_predicate(
+            is_topic_ready,
+            Duration::from_secs(30),
+            Duration::from_millis(100),
+        )
+        .await
+        .with_context(|| format!("topic `{topic}` is not ready after 30 seconds"))
     }
 
     async fn populate_topic<K, M, J, Q>(
@@ -1123,9 +1249,9 @@ mod kafka_broker_tests {
         assert!(publish_lock.is_alive());
         assert_eq!(kafka_source.state.num_rebalances, 0);
 
-        let source_sink = SourceSink::from(indexer_mailbox);
+        let doc_processor_mailbox = indexer_mailbox;
         kafka_source
-            .process_revoke_partitions(&ctx, &source_sink, &mut batch_builder, ack_tx)
+            .process_revoke_partitions(&ctx, &doc_processor_mailbox, &mut batch_builder, ack_tx)
             .await
             .unwrap();
 
@@ -1278,7 +1404,10 @@ mod kafka_broker_tests {
             let source_actor = SourceActor::new(source, doc_processor_mailbox);
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
-            assert!(exit_status.is_success());
+            assert!(
+                exit_status.is_success(),
+                "unexpected exit status: {exit_status:?}"
+            );
 
             let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
             assert!(messages.is_empty());
@@ -1328,7 +1457,10 @@ mod kafka_broker_tests {
             let source_actor = SourceActor::new(source, doc_processor_mailbox);
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
-            assert!(exit_status.is_success());
+            assert!(
+                exit_status.is_success(),
+                "unexpected exit status: {exit_status:?}"
+            );
 
             let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
             assert!(!messages.is_empty());
@@ -1400,7 +1532,10 @@ mod kafka_broker_tests {
             let source_actor = SourceActor::new(source, doc_processor_mailbox);
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
-            assert!(exit_status.is_success());
+            assert!(
+                exit_status.is_success(),
+                "unexpected exit status: {exit_status:?}"
+            );
 
             let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
             assert!(!messages.is_empty());
@@ -1451,7 +1586,10 @@ mod kafka_broker_tests {
             let source_actor = SourceActor::new(source, doc_processor_mailbox);
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
-            assert!(exit_status.is_success());
+            assert!(
+                exit_status.is_success(),
+                "unexpected exit status: {exit_status:?}"
+            );
 
             let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
             assert!(messages.is_empty());

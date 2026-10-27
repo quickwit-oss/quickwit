@@ -44,7 +44,7 @@ pub use estimate_rate::{EstimateRate, EstimateRateLayer};
 pub use event_listener::{EventListener, EventListenerLayer};
 use futures::Future;
 pub use load_shed::{LoadShed, LoadShedLayer, MakeLoadShedError};
-pub use metrics::{GrpcMetrics, GrpcMetricsLayer, RpcName};
+pub use metrics::{GrpcMetrics, GrpcMetricsLayer, GrpcRetryPolicy, GrpcStatusCode, RpcName};
 pub use one_task_per_call_layer::{OneTaskPerCallLayer, TaskCancelled};
 pub use pool::Pool;
 pub use rate::{ConstantRate, Rate};
@@ -52,9 +52,7 @@ pub use rate_estimator::{RateEstimator, SmaRateEstimator};
 pub use rate_limit::{RateLimit, RateLimitLayer};
 pub use retry::{RetryLayer, RetryPolicy};
 pub use timeout::{Timeout, TimeoutExceeded, TimeoutLayer};
-pub use transport::{
-    BalanceChannel, ClientGrpcConfig, KeepAliveConfig, make_channel, warmup_channel,
-};
+pub use transport::{BalanceChannel, warmup_channel};
 
 pub type BoxError = Box<dyn error::Error + Send + Sync + 'static>;
 

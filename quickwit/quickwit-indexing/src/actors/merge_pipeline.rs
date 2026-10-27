@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, HEARTBEAT, Handler, Health, Inbox, Mailbox,
-    QueueCapacity, SpawnContext, Supervisable,
+    SpawnContext, Supervisable,
 };
 use quickwit_common::KillSwitch;
 use quickwit_common::io::{IoControls, Limiter};
@@ -41,12 +41,12 @@ use tracing::{debug, error, info, instrument};
 
 use super::merge_planner::RunFinalizeMergePolicyAndQuit;
 use super::{MergeExecutor, MergePlanner, MergeSplitDownloader, Packager};
-use crate::actors::pipeline_shared::wait_duration_before_retry;
+use crate::actors::indexing_pipeline::wait_duration_before_retry;
 use crate::actors::publisher::DisconnectMergePlanner;
 use crate::actors::{MergeSchedulerService, Publisher, Uploader, UploaderType};
 use crate::merge_policy::MergePolicy;
 use crate::metrics::{ACTOR_NAME, BACKPRESSURE_MICROS, ONGOING_MERGE_OPERATIONS};
-use crate::models::MergeStatistics;
+use crate::models::{MergeStatistics, SharedPublishToken};
 use crate::split_store::IndexingSplitStore;
 
 /// Spawning a merge pipeline puts a lot of pressure on the metastore so
@@ -205,7 +205,7 @@ impl MergePipeline {
             }
         }
         if !failure_or_unhealthy_actors.is_empty() {
-            error!(
+            debug!(
                 index_uid=%self.params.pipeline_id.index_uid,
                 source_id=%self.params.pipeline_id.source_id,
                 generation=self.generation(),
@@ -265,11 +265,11 @@ impl MergePipeline {
 
         // Merge publisher
         let merge_publisher = Publisher::new(
-            super::MERGE_PUBLISHER_NAME,
-            QueueCapacity::Unbounded,
+            super::PublisherType::MergePublisher,
             self.params.metastore.clone(),
             Some(self.merge_planner_mailbox.clone()),
             None,
+            SharedPublishToken::default(),
         );
         let (merge_publisher_mailbox, merge_publisher_handle) = ctx
             .spawn_actor()
@@ -316,6 +316,7 @@ impl MergePipeline {
             self.params.doc_mapper.clone(),
             merge_executor_io_controls,
             merge_packager_mailbox,
+            None,
         );
         let (merge_executor_mailbox, merge_executor_handle) = ctx
             .spawn_actor()

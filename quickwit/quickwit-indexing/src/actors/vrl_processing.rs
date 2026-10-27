@@ -118,6 +118,7 @@ mod tests {
             Err(DocProcessorError::TransformAbort(_)) => Outcome::TransformAbort,
             Err(DocProcessorError::Transform(VrlTerminate::Abort(_))) => Outcome::TransformError,
             Err(DocProcessorError::Transform(VrlTerminate::Error(_))) => Outcome::TransformError,
+            Err(DocProcessorError::Transform(VrlTerminate::Interrupted)) => Outcome::TransformError,
             Err(DocProcessorError::DocMapperParsing(_)) => Outcome::DocMapperParsing,
             Err(DocProcessorError::JsonParsing(_)) => Outcome::JsonParsing,
             Err(DocProcessorError::OltpLogsParsing(_)) => Outcome::OltpLogsParsing,

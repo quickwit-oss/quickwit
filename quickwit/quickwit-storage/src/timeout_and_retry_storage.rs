@@ -24,7 +24,9 @@ use tantivy::directory::OwnedBytes;
 use tokio::io::AsyncRead;
 
 use crate::storage::SendableAsync;
-use crate::{BulkDeleteError, PutPayload, Storage, StorageErrorKind, StorageResult};
+use crate::{
+    BulkDeleteError, ListObjectsStream, PutPayload, Storage, StorageErrorKind, StorageResult,
+};
 
 /// Storage proxy that implements a retry operation if the underlying storage
 /// takes too long.
@@ -135,6 +137,10 @@ impl Storage for TimeoutAndRetryStorage {
 
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
         self.underlying.bulk_delete(paths).await
+    }
+
+    fn list(&self, prefix: &Path) -> ListObjectsStream {
+        self.underlying.list(prefix)
     }
 
     async fn exists(&self, path: &Path) -> StorageResult<bool> {

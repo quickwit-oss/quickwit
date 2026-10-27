@@ -45,13 +45,11 @@ pub use metastore::postgres::PostgresqlMetastore;
 pub use metastore::{
     AddSourceRequestExt, CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadata,
     IndexMetadataResponseExt, IndexesMetadataResponseExt, ListIndexesMetadataResponseExt,
-    ListParquetSplitsQuery, ListParquetSplitsRequestExt, ListParquetSplitsResponseExt,
     ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, MetastoreServiceExt,
-    MetastoreServiceStreamSplitsExt, ParquetSplitRecord, PublishParquetSplitsRequestExt,
-    PublishSplitsRequestExt, StageParquetSplitsRequestExt, StageSplitsRequestExt,
+    MetastoreServiceStreamSplitsExt, PublishSplitsRequestExt, SortBy, StageSplitsRequestExt,
     UpdateIndexRequestExt, UpdateSourceRequestExt, file_backed,
 };
-pub use metastore_factory::{MetastoreFactory, UnsupportedMetastore};
+pub use metastore_factory::{MetastoreFactory, MetastoreFactoryOptions, UnsupportedMetastore};
 pub use metastore_resolver::MetastoreResolver;
 use quickwit_common::is_disjoint;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;

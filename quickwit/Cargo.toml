@@ -8,14 +8,12 @@ members = [
   "quickwit-codegen",
   "quickwit-codegen/example",
   "quickwit-common",
+  "quickwit-compaction",
   "quickwit-config",
   "quickwit-control-plane",
-  "quickwit-datafusion",
   "quickwit-datetime",
-  "quickwit-df-core",
   "quickwit-directories",
   "quickwit-doc-mapper",
-  "quickwit-dst",
   "quickwit-index-management",
   "quickwit-indexing",
   "quickwit-ingest",
@@ -26,66 +24,25 @@ members = [
   "quickwit-lambda-server",
   "quickwit-macros",
   "quickwit-metastore",
-  "quickwit-metrics",
-  "quickwit-telemetry-exporters",
   "quickwit-metrics-inventory",
+  "quickwit-metrics",
 
   # Disabling metastore-utils from the quickwit projects to ease build/deps.
   # We can reenable it when we need it.
   # "quickwit-metastore-utils",
   "quickwit-opentelemetry",
-  "quickwit-parquet-engine",
   "quickwit-proto",
   "quickwit-query",
   "quickwit-rest-client",
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
-]
-
-# The following list excludes `quickwit-metastore-utils`
-# from the default member to ease build/deps.
-#
-# DataFusion crates are opt-in and covered by their own CI lane. Keep them out
-# of the default members so a plain `cargo build` does not pull DataFusion in.
-default-members = [
-  "quickwit-actors",
-  "quickwit-aws",
-  "quickwit-cli",
-  "quickwit-cluster",
-  "quickwit-codegen",
-  "quickwit-codegen/example",
-  "quickwit-common",
-  "quickwit-config",
-  "quickwit-control-plane",
-  "quickwit-datetime",
-  "quickwit-directories",
-  "quickwit-doc-mapper",
-  "quickwit-index-management",
-  "quickwit-indexing",
-  "quickwit-ingest",
-  "quickwit-integration-tests",
-  "quickwit-jaeger",
-  "quickwit-janitor",
-  "quickwit-lambda-client",
-  "quickwit-lambda-server",
-  "quickwit-macros",
-  "quickwit-metastore",
-  "quickwit-metrics",
   "quickwit-telemetry-exporters",
-  "quickwit-metrics-inventory",
-  "quickwit-opentelemetry",
-  "quickwit-parquet-engine",
-  "quickwit-proto",
-  "quickwit-query",
-  "quickwit-rest-client",
-  "quickwit-search",
-  "quickwit-serve",
-  "quickwit-storage",
+  "quickwit-transport",
 ]
 
 [workspace.package]
-version = "0.8.0"
+version = "0.9.3"
 edition = "2024"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
@@ -94,22 +51,22 @@ authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 license = "Apache-2.0"
 
 [workspace.dependencies]
+ahash = "0.8"
 anyhow = "1"
 arc-swap = "1.9"
-arrow = { version = "58", default-features = false, features = ["ipc"] }
 assert-json-diff = "2"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
 async-trait = "0.1"
 atomic_float = "1.1"
 backtrace = "0.3"
-base64 = "0.22"
+base64 = "0.23"
 binggan = { version = "0.17" }
-bitpacking = "0.9.3"
+bitpacking = "0.9"
 bytes = { version = "1", features = ["serde"] }
-bytesize = { version = "2.3.1", features = ["serde"] }
+bytesize = { version = "2.7", features = ["serde"] }
 bytestring = "1.5"
-chitchat = "0.11.0"
+chitchat = { git = "https://github.com/quickwit-oss/chitchat.git", rev = "eaa921d3d4fc344b811c3a73eebd6371cbaff0b8" }
 chrono = { version = "0.4", default-features = false, features = [
   "clock",
   "std",
@@ -120,8 +77,8 @@ colored = "3.1"
 console-subscriber = "0.5"
 const_format = "0.2"
 criterion = { version = "0.8", features = ["async_tokio"] }
-cron = "0.16"
-dashmap = "6.1"
+cron = "0.17"
+dashmap = "6.2"
 dialoguer = { version = "0.12", default-features = false }
 dotenvy = "0.15"
 dyn-clone = "1.0"
@@ -136,21 +93,21 @@ futures-util = { version = "0.3", default-features = false }
 glob = "0.3"
 # We can't directly update google-cloud-auth to 1.3 and google-cloud-gax to 1.4, because the latest version
 # of google-cloud-pubsub is "0.30" which explicitly depends on: google-cloud-auth ^0.17 and google-cloud-gax ^0.19.
-google-cloud-auth = "0.17.2"
-google-cloud-gax = "0.19.2"
+google-cloud-auth = { version = "0.17", default-features = false, features = ["rustls-tls"] }
+google-cloud-gax = "0.19"
 google-cloud-googleapis = { version = "0.16", features = ["pubsub"] }
-google-cloud-pubsub = "0.30"
-governor = "0.10.4"
+google-cloud-pubsub = { version = "0.30", default-features = false, features = ["auth", "rustls-tls"] }
+governor = "0.10"
 heck = "0.5"
 hex = "0.4"
 home = "0.5"
 hostname = "0.4"
-http = "1.4"
-http-body = "1.0"
+http = "1.5"
+http-body = "1.1"
 http-body-util = "0.1"
 http-serde = "2.1"
-humantime = "2.3"
-hyper = { version = "1.9", features = ["client", "http1", "http2", "server"] }
+humantime = "2.4"
+hyper = { version = "1.12", features = ["client", "http1", "http2", "server"] }
 hyper-rustls = "0.27"
 hyper-util = { version = "0.1", default-features = false, features = [
   "client-legacy",
@@ -162,20 +119,21 @@ hyper-util = { version = "0.1", default-features = false, features = [
 indexmap = { version = "2.14", features = ["serde"] }
 indicatif = "0.18"
 inventory = "0.3"
-itertools = "0.14"
-lambda_runtime = "1.2"
+itertools = "0.15"
+lambda_runtime = "1.4"
 json_comments = "0.2"
 libz-sys = "1.1"
-lru = "0.18"
+lru = "0.19"
 matches = "0.1"
 md5 = "0.8"
+memchr = "2"
 metrics = "0.24"
-metrics-exporter-otel = "0.3"
+metrics-opentelemetry = "=0.24033.1"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
 metrics-util = "0.20"
 mime_guess = "2.0"
-mini-moka = "0.10.3"
-mockall = "0.14"
+mini-moka = "0.10"
+mockall = "0.15"
 mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "3b3562ef" }
 new_string_template = "1.5"
 nom = "8.0"
@@ -183,12 +141,22 @@ numfmt = "1.2"
 oneshot = { version = "0.2", features = ["async", "std"] }
 openssl = { version = "0.10", default-features = false }
 openssl-probe = "0.2"
-opentelemetry = "0.31"
-opentelemetry-appender-tracing = "0.31"
-opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "http-json"] }
+opentelemetry = "0.33"
+opentelemetry-appender-tracing = "0.33"
+opentelemetry_sdk = { version = "0.33", features = ["rt-tokio"] }
+# `default-features = false` drops the default `reqwest-blocking-client`:
+# see https://github.com/quickwit-oss/quickwit/pull/6558 for more details.
+opentelemetry-otlp = { version = "0.33", default-features = false, features = [
+    "grpc-tonic",
+    "http-json",
+    "http-proto",
+    "internal-logs",
+    "logs",
+    "metrics",
+    "reqwest-client",
+    "trace",
+] }
 ouroboros = "0.18"
-parquet = { version = "58", default-features = false, features = ["arrow", "experimental", "snap", "variant_experimental", "zstd"] }
 percent-encoding = "2.3"
 pin-project = "1.1"
 pnet = { version = "0.35", features = ["std"] }
@@ -197,23 +165,23 @@ postcard = { version = "1.1", features = [
 ], default-features = false }
 pprof = { version = "0.15", features = ["flamegraph"] }
 predicates = "3"
-prettyplease = "0.2"
+prettyplease = "0.3"
 proc-macro2 = "1.0"
 prometheus = { version = "0.14", default-features = false, features = ["process"] }
-procfs = { version = "0.17", default-features = false }
+procfs = { version = "0.18", default-features = false }
 proptest = "1"
 prost = { version = "0.14", default-features = false, features = [
   "derive",
 ] }
 prost-build = "0.14"
 prost-types = "0.14"
-pulsar = { version = "6.7", default-features = false, features = [
+pulsar = { version = "6.9", default-features = false, features = [
   "auth-oauth2",
   "compression",
-  "tokio-runtime",
+  "tokio-rustls-runtime",
 ] }
-quanta = "0.12"
-quick_cache = "0.6.21"
+quanta = "0.13"
+quick_cache = "0.7"
 quote = "1.0"
 rand = "0.10"
 rand_distr = "0.6"
@@ -225,37 +193,37 @@ rdkafka = { version = "0.39", default-features = false, features = [
   "tokio",
   "zstd",
 ] }
-regex = "1.12"
+regex = "1.13"
 regex-automata = "0.4"
 regex-syntax = "0.8"
-reqwest = { version = "0.12", default-features = false, features = [
+reqwest = { version = "0.13", default-features = false, features = [
   "json",
-  "rustls-tls",
+  "query",
+  "rustls",
 ] }
-reqwest-middleware = "0.4"
-reqwest-retry = "0.8"
-rust-embed = "8.11"
+reqwest-middleware = { version = "0.5", features = ["query"] }
+reqwest-retry = "0.9"
+rust-embed = "8.13"
 rustc-hash = "2.1"
 rustls = "0.23"
 rustls-pemfile = "2.2"
 sea-query = { version = "0.32" }
 sea-query-binder = { version = "0.7", features = [
+  "postgres-array",
   "runtime-tokio-rustls",
   "sqlx-postgres",
 ] }
 # ^1.0.184 due to serde-rs/serde#2538
-serde = { version = "1.0.228", features = ["derive", "rc"] }
+serde = { version = "1.0.229", features = ["derive", "rc"] }
 serde_json = "1.0"
 serde_json_borrow = "0.9"
-serde_qs = { version = "0.15" }
-serde_with = "3.20"
+serde_qs = { version = "1.1" }
+serde_with = "3.24"
 serde_yaml = "0.9"
-serial_test = { version = "3.4", features = ["file_locks"] }
+serial_test = { version = "4.0", features = ["file_locks"] }
 sha2 = "0.11"
 siphasher = "1.0"
 stable_deref_trait = "1.2"
-stateright = "0.31"
-storekey = { version = "0.11", default-features = false }
 smallvec = "1"
 sqlx = { version = "0.8", features = [
   "migrate",
@@ -263,17 +231,18 @@ sqlx = { version = "0.8", features = [
   "runtime-tokio-rustls",
   "time",
 ] }
-syn = { version = "2.0", features = ["extra-traits", "full", "parsing"] }
+syn = { version = "3.0", features = ["extra-traits", "full", "parsing"] }
 sync_wrapper = "1"
 sysinfo = { version = "0.39", default-features = false, features = ["disk"] }
-tabled = { version = "0.20", features = ["ansi"] }
+tabled = { version = "0.22", features = ["ansi"] }
 tempfile = "3"
 thiserror = "2"
 thousands = "0.2"
-tikv-jemalloc-ctl = { version = "0.6", features = ["stats"] }
-tikv-jemallocator = "0.6"
+tikv-jemalloc-ctl = { version = "0.7", features = ["stats"] }
+tikv-jemallocator = "0.7"
 time = { version = "0.3", features = ["std", "formatting", "macros"] }
-tokio = { version = "1.52", features = ["full"] }
+time-fmt = "0.3.8"
+tokio = { version = "1.54", features = ["full"] }
 tokio-metrics = { version = "0.5", features = ["rt"] }
 tokio-rustls = { version = "0.26", default-features = false }
 tokio-stream = { version = "0.1", features = ["sync"] }
@@ -301,14 +270,14 @@ tower = { version = "0.5", features = [
   "util",
 ] }
 # legacy version because of warp
-tower-http = { version = "0.6", features = [
+tower-http = { version = "0.7", features = [
   "compression-gzip",
   "compression-zstd",
   "cors",
   "trace",
 ] }
 tracing = "0.1"
-tracing-opentelemetry = "0.32"
+tracing-opentelemetry = "0.34"
 tracing-subscriber = { version = "0.3", features = [
   "env-filter",
   "json",
@@ -317,7 +286,7 @@ tracing-subscriber = { version = "0.3", features = [
 ] }
 ttl_cache = "0.5"
 typetag = "0.2"
-ulid = "1.2"
+ulid = "3.0"
 ureq = "3"
 username = "0.2"
 # We cannot upgrade to utoipa 5.0+ due to significant breaking changes:
@@ -325,36 +294,39 @@ username = "0.2"
 # in `quickwit-serve`. This code is fundamentally incompatible with version 5.x.
 utoipa = { version = "4.2", features = ["time", "ulid"] }
 unicode-segmentation = "1.13"
-uuid = { version = "1.23", features = ["v4", "serde"] }
-vrl = { version = "0.32", default-features = false, features = [
+uuid = { version = "1.28", features = ["v4", "serde"] }
+vrl = { version = "0.37", default-features = false, features = [
   "compiler",
-  "diagnostic",
   "stdlib",
   "value",
 ] }
 warp = { version = "0.4", features = ["server", "test"] }
 wiremock = "0.6"
-zstd = { version = "0.13", default-features = false }
+zstd = { version = "0.14", default-features = false }
 
-aws-config = "1.8"
-aws-credential-types = { version = "1.2", features = ["hardcoded-credentials"] }
-aws-runtime = "1.7"
-aws-sdk-kinesis = "1.104"
-aws-sdk-s3 = "1.132"
+aws-config = "1.13"
+aws-credential-types = { version = "1.3", features = ["hardcoded-credentials"] }
+aws-runtime = "1.10"
+aws-sdk-kinesis = "1.126"
 aws-sdk-lambda = "1"
-aws-sdk-sqs = "1.98"
-aws-smithy-async = "1.2"
-aws-smithy-mocks = "0.2"
-aws-smithy-http-client = { version = "1.1", features = ["default-client"] }
-aws-smithy-runtime = "1.11"
-aws-smithy-types = { version = "1.4", features = [
+aws-sdk-s3 = "1.153"
+aws-sdk-sqs = "1.115"
+aws-smithy-async = "1.3"
+aws-smithy-http-client = { version = "1.5", features = [
+  "default-client",
+  "rustls-aws-lc",
+] }
+aws-smithy-mocks = "0.3"
+aws-smithy-runtime = "1.16"
+aws-smithy-runtime-api = "1.19"
+aws-smithy-types = { version = "1.9", features = [
   "byte-stream-poll-next",
   "http-body-1-x",
 ] }
-aws-types = "1.3"
+aws-types = "1.7"
 
 azure_core = { version = "0.21", features = ["hmac_rust", "enable_reqwest_rustls"] }
-azure_identity = { version = "0.21" }
+azure_identity = { version = "0.21", default-features = false, features = ["enable_reqwest_rustls"] }
 azure_storage = { version = "0.21", default-features = false, features = [
   "enable_reqwest_rustls",
 ] }
@@ -362,8 +334,14 @@ azure_storage_blobs = { version = "0.21", default-features = false, features = [
   "enable_reqwest_rustls",
 ] }
 
-opendal = { version = "0.56", default-features = false, features = ["reqwest-rustls-tls"] }
-reqsign = { version = "0.18", default-features = false, features = ["google", "default-context"] }
+opendal = { version = "0.59", default-features = false, features = [
+  "http-transport-reqwest",
+  "layers-retry",
+  "layers-concurrent-limit",
+  "layers-timeout",
+] }
+reqsign-core = { version = "3.3", default-features = false }
+reqsign-google = { version = "3.2", default-features = false }
 
 quickwit-actors = { path = "quickwit-actors" }
 quickwit-aws = { path = "quickwit-aws" }
@@ -372,14 +350,12 @@ quickwit-cluster = { path = "quickwit-cluster" }
 quickwit-codegen = { path = "quickwit-codegen" }
 quickwit-codegen-example = { path = "quickwit-codegen/example" }
 quickwit-common = { path = "quickwit-common" }
+quickwit-compaction = { path = "quickwit-compaction" }
 quickwit-config = { path = "quickwit-config" }
 quickwit-control-plane = { path = "quickwit-control-plane" }
-quickwit-datafusion = { path = "quickwit-datafusion" }
 quickwit-datetime = { path = "quickwit-datetime" }
-quickwit-df-core = { path = "quickwit-df-core" }
 quickwit-directories = { path = "quickwit-directories" }
 quickwit-doc-mapper = { path = "quickwit-doc-mapper" }
-quickwit-dst = { path = "quickwit-dst" }
 quickwit-index-management = { path = "quickwit-index-management" }
 quickwit-indexing = { path = "quickwit-indexing" }
 quickwit-ingest = { path = "quickwit-ingest" }
@@ -391,24 +367,28 @@ quickwit-lambda-server = { path = "quickwit-lambda-server" }
 quickwit-macros = { path = "quickwit-macros" }
 quickwit-metastore = { path = "quickwit-metastore" }
 quickwit-metrics = { path = "quickwit-metrics" }
-quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-metrics-inventory = { path = "quickwit-metrics-inventory" }
 quickwit-opentelemetry = { path = "quickwit-opentelemetry" }
-quickwit-parquet-engine = { path = "quickwit-parquet-engine" }
 quickwit-proto = { path = "quickwit-proto" }
 quickwit-query = { path = "quickwit-query" }
 quickwit-rest-client = { path = "quickwit-rest-client" }
 quickwit-search = { path = "quickwit-search" }
 quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
+quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
+quickwit-transport = { path = "quickwit-transport" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "46b3fb9", default-features = false, features = [
+# This is the tip of tantivy main.
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e1acb3e0112f2b4819946aa4ea5742bf429853d8", default-features = false, features = [
+  "jitexpr",
   "lz4-compression",
   "mmap",
   "quickwit",
   "zstd-compression",
   "columnar-zstd-compression",
 ] }
+# Must stay on the same rev as `tantivy`.
+tantivy-common = { git = "https://github.com/quickwit-oss/tantivy/", rev = "e1acb3e0112f2b4819946aa4ea5742bf429853d8" }
 tantivy-fst = "0.5"
 
 # This is actually not used directly the goal is to fix the version

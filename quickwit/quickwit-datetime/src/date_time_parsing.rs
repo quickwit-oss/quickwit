@@ -27,6 +27,14 @@ const MIN_TIMESTAMP_SECONDS: i64 = 72_057_595;
 // Maximum supported timestamp value in seconds (16 Mar 2242 12:56:31 GMT).
 const MAX_TIMESTAMP_SECONDS: i64 = 8_589_934_591;
 
+/// Builds the error returned when a Unix timestamp falls outside the range Quickwit supports.
+fn unsupported_timestamp_error(timestamp: impl std::fmt::Display) -> String {
+    format!(
+        "failed to parse unix timestamp `{timestamp}`. Quickwit only supports timestamp values \
+         ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`"
+    )
+}
+
 pub fn parse_date_time_str(
     date_time_str: &str,
     date_time_formats: &[DateTimeInputFormat],
@@ -76,6 +84,12 @@ pub fn parse_timestamp_float(
                 .join("`, `")
         ));
     }
+    // We apply the same range check as the integer path (`parse_timestamp`) to reject out-of-range
+    // values instead of silently wrapping them when casting the `u128` nanoseconds to `i64`
+    // below.
+    if !(MIN_TIMESTAMP_SECONDS as f64..=MAX_TIMESTAMP_SECONDS as f64).contains(&timestamp) {
+        return Err(unsupported_timestamp_error(timestamp));
+    }
     let duration_since_epoch = Duration::try_from_secs_f64(timestamp)
         .map_err(|error| format!("failed to parse datetime `{timestamp}`: {error}"))?;
     let timestamp_nanos = duration_since_epoch.as_nanos() as i64;
@@ -105,6 +119,12 @@ pub fn parse_timestamp_str(timestamp_str: &str) -> Option<TantivyDateTime> {
     if let Some((timestamp_secs_str, subsecond_digits_str)) = timestamp_str.split_once('.') {
         if subsecond_digits_str.is_empty() {
             return parse_timestamp_str(timestamp_secs_str);
+        }
+        if subsecond_digits_str
+            .bytes()
+            .any(|byte| !byte.is_ascii_digit())
+        {
+            return None;
         }
         if let Ok(timestamp_secs @ MIN_TIMESTAMP_SECONDS..=MAX_TIMESTAMP_SECONDS) =
             timestamp_secs_str.parse::<i64>()
@@ -167,10 +187,7 @@ pub fn parse_timestamp(timestamp: i64) -> Result<TantivyDateTime, String> {
         MIN_TIMESTAMP_NANOS..=MAX_TIMESTAMP_NANOS => {
             Ok(TantivyDateTime::from_timestamp_nanos(timestamp))
         }
-        _ => Err(format!(
-            "failed to parse unix timestamp `{timestamp}`. Quickwit only support timestamp values \
-             ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`"
-        )),
+        _ => Err(unsupported_timestamp_error(timestamp)),
     }
 }
 
@@ -386,6 +403,15 @@ mod tests {
                  `iso8601`, `rfc2822`"
             );
         }
+        {
+            // Out-of-range float values used to silently wrap when casting `u128` nanoseconds to
+            // `i64`. They must now be rejected, just like the integer path does.
+            let error = parse_timestamp_float(9e18, &[DateTimeInputFormat::Timestamp]).unwrap_err();
+            assert!(error.contains("failed to parse unix timestamp"), "{error}");
+
+            let error = parse_timestamp_float(-1.0, &[DateTimeInputFormat::Timestamp]).unwrap_err();
+            assert!(error.contains("failed to parse unix timestamp"), "{error}");
+        }
     }
 
     #[test]
@@ -432,6 +458,24 @@ mod tests {
 
         let date_time = parse_timestamp_str("123456789.1000000011").unwrap();
         assert_eq!(date_time.into_timestamp_nanos(), 123456789100000001);
+    }
+
+    #[test]
+    fn test_parse_timestamp_str_rejects_signed_subseconds() {
+        // A sign is not a subsecond digit. These used to parse: `.-1` landed ten
+        // milliseconds before the whole second, and `.+5` gave 0.05s rather than 0.5s
+        // because the sign consumed one of the nine digit slots.
+        for timestamp_str in [
+            "123456789.-1",
+            "123456789.+5",
+            "123456789.-999999999",
+            "123456789.+999999999",
+        ] {
+            assert!(
+                parse_timestamp_str(timestamp_str).is_none(),
+                "expected `{timestamp_str}` to be rejected"
+            );
+        }
     }
 
     #[test]

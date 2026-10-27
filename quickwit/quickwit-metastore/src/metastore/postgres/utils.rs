@@ -19,28 +19,45 @@ use std::time::Duration;
 
 use quickwit_common::uri::Uri;
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
-use sea_query::{Expr, Func, Order, SelectStatement, any};
+use quickwit_proto::types::SplitId;
+use sea_query::{ArrayType, Expr, Func, Order, SelectStatement, Value, any};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{ConnectOptions, Postgres};
 use tracing::error;
 use tracing::log::LevelFilter;
 
+use super::metrics::MetastoreKind;
 use super::model::{Splits, ToTimestampFunc};
 use super::pool::TrackedPool;
 use super::tags::generate_sql_condition;
 use crate::metastore::{FilterRange, SortBy};
 use crate::{ListSplitsQuery, SplitMaturity, SplitMetadata};
 
-/// Establishes a connection to the given database URI.
+pub(super) struct PostgresqlConnectionOptions<'a> {
+    pub(super) connection_uri: &'a Uri,
+    pub(super) min_connections: usize,
+    pub(super) max_connections: usize,
+    pub(super) acquire_timeout: Duration,
+    pub(super) idle_timeout_opt: Option<Duration>,
+    pub(super) max_lifetime_opt: Option<Duration>,
+    pub(super) read_only: bool,
+    pub(super) metastore_kind: MetastoreKind,
+}
+
+/// Establishes a tracked connection pool with the given options.
 pub(super) async fn establish_connection(
-    connection_uri: &Uri,
-    min_connections: usize,
-    max_connections: usize,
-    acquire_timeout: Duration,
-    idle_timeout_opt: Option<Duration>,
-    max_lifetime_opt: Option<Duration>,
-    read_only: bool,
+    options: PostgresqlConnectionOptions<'_>,
 ) -> MetastoreResult<TrackedPool<Postgres>> {
+    let PostgresqlConnectionOptions {
+        connection_uri,
+        min_connections,
+        max_connections,
+        acquire_timeout,
+        idle_timeout_opt,
+        max_lifetime_opt,
+        read_only,
+        metastore_kind,
+    } = options;
     let pool_options = PgPoolOptions::new()
         .min_connections(min_connections as u32)
         .max_connections(max_connections as u32)
@@ -66,8 +83,7 @@ pub(super) async fn establish_connection(
                 message: error.to_string(),
             }
         })?;
-    let tracked_pool = TrackedPool::new(sqlx_pool);
-    Ok(tracked_pool)
+    Ok(TrackedPool::new(sqlx_pool, metastore_kind))
 }
 
 /// Extends an existing SQL string with the generated filter range appended to the query.
@@ -96,10 +112,7 @@ pub(super) fn append_range_filters<V: Display>(
     };
 }
 
-pub(super) fn append_query_filters_and_order_by(
-    sql: &mut SelectStatement,
-    query: &ListSplitsQuery,
-) {
+pub(super) fn append_query_filters_and_order_by(sql: &mut SelectStatement, query: ListSplitsQuery) {
     if let Some(index_uids) = &query.index_uids {
         // Note: `ListSplitsQuery` builder enforces a non empty `index_uids` list.
         // TODO we should explore IN VALUES, = ANY and similar constructs in case they perform
@@ -198,8 +211,27 @@ pub(super) fn append_query_filters_and_order_by(
                 Expr::col(Splits::IndexUid).into(),
                 Expr::col(Splits::SplitId).into(),
             ])
-            .gt(Expr::tuple([Expr::value(index_uid), Expr::value(split_id)])),
+            .gt(Expr::tuple([
+                Expr::value(index_uid),
+                Expr::value(split_id.as_str()),
+            ])),
         );
+    }
+
+    if !query.included_split_ids.is_empty() {
+        let included_array = split_ids_to_array(query.included_split_ids);
+        sql.cond_where(Expr::cust_with_values(
+            "split_id = ANY($1::text[])",
+            [included_array],
+        ));
+    }
+
+    if !query.excluded_split_ids.is_empty() {
+        let excluded_array = split_ids_to_array(query.excluded_split_ids);
+        sql.cond_where(Expr::cust_with_values(
+            "split_id <> ALL($1::text[])",
+            [excluded_array],
+        ));
     }
 
     match query.sort_by {
@@ -209,6 +241,10 @@ pub(super) fn append_query_filters_and_order_by(
         }
         SortBy::IndexUid => {
             sql.order_by(Splits::IndexUid, Order::Asc)
+                .order_by(Splits::SplitId, Order::Asc);
+        }
+        SortBy::MaturityTimestamp => {
+            sql.order_by(Splits::MaturityTimestamp, Order::Asc)
                 .order_by(Splits::SplitId, Order::Asc);
         }
         SortBy::None => (),
@@ -222,6 +258,23 @@ pub(super) fn append_query_filters_and_order_by(
         sql.order_by(Splits::SplitId, Order::Asc)
             .offset(offset as u64);
     }
+}
+
+// One bind regardless of set size: avoids PostgreSQL's 65535 parameter ceiling and keeps
+// parse-time O(1) in the number of split IDs. The `$1` placeholder in the callers is replaced
+// with the next bind slot by sea-query.
+fn split_ids_to_array(split_ids: impl IntoIterator<Item = SplitId>) -> Value {
+    let mut split_ids: Vec<String> = split_ids
+        .into_iter()
+        .map(|split_id| split_id.to_string())
+        .collect();
+    // HashSet iteration order is randomized; keep query rendering deterministic.
+    split_ids.sort_unstable();
+    let split_ids: Vec<Value> = split_ids
+        .into_iter()
+        .map(|split_id| Value::String(Some(Box::new(split_id))))
+        .collect();
+    Value::Array(ArrayType::String, Some(Box::new(split_ids)))
 }
 
 /// Returns the unix timestamp at which the split becomes mature.
