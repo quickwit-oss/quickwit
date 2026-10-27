@@ -69,6 +69,7 @@ Hardcoding credentials into configuration files is not secure and strongly disco
 | --- | --- |
 | `QW_S3_ENDPOINT` | Custom S3 endpoint. |
 | `QW_S3_MAX_CONCURRENCY` | Limit the number of concurrent requests to object storages, including S3 and GCS |
+| `QW_S3_ENABLE_HTTP2` | Allow the S3 client to negotiate HTTP/2 (`false` by default). With HTTP/2, all the requests of a node share a single connection per endpoint, which limits download throughput on Google Cloud Storage. |
 
 #### Storage flavors
 
