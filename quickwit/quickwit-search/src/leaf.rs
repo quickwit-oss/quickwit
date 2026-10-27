@@ -1594,16 +1594,17 @@ impl CanSplitDoBetter {
             CanSplitDoBetter::SplitTimestampHigher(timestamp)
             | CanSplitDoBetter::FindTraceIdsAggregation(timestamp) => {
                 if let Some(SortValue::I64(timestamp_ns)) = hit.sort_value() {
-                    // Newly indexed splits round their maximum timestamp up to whole seconds.
-                    // For a worst hit at 1.5s, a split can do better only if its upper bound
-                    // is at least 2s. Legacy truncated bounds can still cause false pruning.
+                    // if we get a timestamp of, says 1.5s, we need to check up to 2s to make
+                    // sure we don't throw away something like 1.2s, so we should round up while
+                    // dividing.
                     *timestamp = Some(quickwit_common::div_ceil(timestamp_ns, 1_000_000_000));
                 }
             }
             CanSplitDoBetter::SplitTimestampLower(timestamp) => {
                 if let Some(SortValue::I64(timestamp_ns)) = hit.sort_value() {
-                    // Newly indexed splits round their minimum timestamp down to whole seconds.
-                    // Truncating the hit timestamp is conservative, including before the epoch.
+                    // if we get a timestamp of, says 1.5s, we need to check down to 1s to make
+                    // sure we don't throw away something like 1.7s, so we should truncate,
+                    // which is the default behavior of division
                     let timestamp_s = timestamp_ns / 1_000_000_000;
                     *timestamp = Some(timestamp_s);
                 }

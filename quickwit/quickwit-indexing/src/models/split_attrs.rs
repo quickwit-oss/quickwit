@@ -95,12 +95,13 @@ pub fn create_split_metadata(
 ) -> SplitMetadata {
     let create_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-    // Round outward so the whole-second bounds contain every document timestamp.
-    // In particular, truncating the upper bound could make timestamp-descending searches
-    // skip this split even when it contains a better hit within the same second.
+    // We floor the min timestamp and ceil the max timestamp, so that the range in seconds
+    // contains every document of the split. If we truncated the max timestamp, a split
+    // with a document at 1.9s would get an end of 1s, and a search sorted by timestamp desc
+    // with a worst hit at 1.5s would wrongly skip it.
     let time_range = split_attrs.time_range.as_ref().map(|range| {
-        // `into_timestamp_secs()` truncates toward zero: -0.6s becomes 0, not -1.
-        // Use nanoseconds to preserve the fractional part, then floor with `div_euclid`.
+        // `into_timestamp_secs()` truncates toward zero (-0.6s becomes 0, not -1), so we
+        // work on nanoseconds and floor with `div_euclid`.
         let start = range
             .start()
             .into_timestamp_nanos()
