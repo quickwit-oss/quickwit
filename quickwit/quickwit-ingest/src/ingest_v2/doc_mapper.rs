@@ -85,7 +85,7 @@ fn is_document_validation_enabled() -> bool {
     !quickwit_common::get_bool_from_env_cached!("QW_DISABLE_DOCUMENT_VALIDATION", false)
 }
 
-#[instrument(name = "ingester.validate_doc_batch", skip_all, fields(num_docs = doc_batch.num_docs(), num_bytes = doc_batch.num_bytes()))]
+#[instrument(name = "ingester.validate_doc_batch", skip_all, fields(num_docs = doc_batch.num_docs(), num_bytes = doc_batch.doc_buffer.len()))]
 async fn validate_doc_batch_cpu_intensive(
     doc_batch: DocBatchV2,
     doc_mapper: Arc<DocMapper>,

@@ -170,7 +170,7 @@ impl FetchStreamTask {
                     mrecord_buffer: mrecord_buffer.freeze(),
                     mrecord_lengths,
                 };
-                let batch_size = mrecord_batch.estimate_size();
+                let batch_size = mrecord_batch.buffer_size();
                 let fetch_payload = FetchPayload {
                     index_uid: Some(self.index_uid.clone()),
                     source_id: self.source_id.clone(),
@@ -490,7 +490,7 @@ async fn fetch_stream_once(
         match fetch_message_result {
             Ok(fetch_message) => match &fetch_message.message {
                 Some(fetch_message::Message::Payload(fetch_payload)) => {
-                    let batch_size = fetch_payload.estimate_size();
+                    let batch_size = fetch_payload.buffer_size();
                     let to_position_inclusive = fetch_payload.to_position_inclusive();
                     let in_flight_value = InFlightValue::new(
                         fetch_message,
