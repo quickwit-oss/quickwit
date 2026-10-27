@@ -220,7 +220,7 @@ jobs:
             type=edge,branch=main
             type=edge,branch=main,suffix=-slim-bookworm
             type=semver,pattern={{version}}
-            type=semver,pattern={{version}},value=latest
+            type=semver,pattern=latest
             type=semver,pattern={{version}},suffix=-slim-bookworm
             type=ref,event=tag
       - name: Login to Docker Hub
