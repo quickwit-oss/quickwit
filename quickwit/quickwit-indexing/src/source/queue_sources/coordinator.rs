@@ -360,7 +360,7 @@ mod tests {
             message_type: MessageType::RawUri,
             source_type: SourceType::Unspecified,
             storage_resolver: StorageResolver::for_test(),
-            publish_token: Ulid::new().to_string(),
+            publish_token: Ulid::generate().to_string(),
             visibility_settings: VisibilitySettings::from_commit_timeout(5),
         }
     }

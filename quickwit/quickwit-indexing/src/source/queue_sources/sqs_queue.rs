@@ -272,7 +272,7 @@ pub mod test_helpers {
     }
 
     pub async fn create_queue(sqs_client: &Client, queue_name_prefix: &str) -> String {
-        let queue_name = format!("{}-{}", queue_name_prefix, Ulid::new());
+        let queue_name = format!("{}-{}", queue_name_prefix, Ulid::generate());
         sqs_client
             .create_queue()
             .queue_name(queue_name)
