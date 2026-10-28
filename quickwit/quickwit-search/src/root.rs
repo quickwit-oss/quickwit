@@ -39,7 +39,7 @@ use quickwit_proto::search::{
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_query::query_ast::{
-    BoolQuery, QueryAst, QueryAstVisitor, RangeQuery, TermQuery, TermSetQuery,
+    BoolQuery, DisjunctionMaxQuery, QueryAst, QueryAstVisitor, RangeQuery, TermQuery, TermSetQuery,
 };
 use serde::{Deserialize, Serialize};
 use tantivy::TantivyError;
@@ -1683,6 +1683,15 @@ impl ExtractTimestampRange<'_> {
 
 impl<'b> QueryAstVisitor<'b> for ExtractTimestampRange<'_> {
     type Err = std::convert::Infallible;
+
+    fn visit_disjunction_max(
+        &mut self,
+        _disjunction_max_query: &'b DisjunctionMaxQuery,
+    ) -> Result<(), Self::Err> {
+        // No individual disjunct is a strict requirement, so a timestamp range from one
+        // alternative cannot safely be used to prune splits for the entire query.
+        Ok(())
+    }
 
     fn visit_bool(&mut self, bool_query: &'b BoolQuery) -> Result<(), Self::Err> {
         // we only want to visit sub-queries which are strict (positive) requirements
@@ -4797,6 +4806,25 @@ mod tests {
             .visit(&bool_query_should.into())
             .unwrap();
         assert_eq!(timestamp_range_extractor.start_timestamp, Some(123));
+        assert_eq!(timestamp_range_extractor.end_timestamp, None);
+
+        // range inside a disjunction max query
+        let disjunction_max_query = DisjunctionMaxQuery {
+            disjuncts: vec![
+                simple_range.clone(),
+                TermQuery {
+                    field: "body".to_string(),
+                    value: "quickwit".to_string(),
+                }
+                .into(),
+            ],
+        };
+        timestamp_range_extractor.start_timestamp = None;
+        timestamp_range_extractor.end_timestamp = None;
+        timestamp_range_extractor
+            .visit(&disjunction_max_query.into())
+            .unwrap();
+        assert_eq!(timestamp_range_extractor.start_timestamp, None);
         assert_eq!(timestamp_range_extractor.end_timestamp, None);
 
         // start bound was already more restrictive
