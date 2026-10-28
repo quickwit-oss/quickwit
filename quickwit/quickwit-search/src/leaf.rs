@@ -1577,9 +1577,9 @@ impl CanSplitDoBetter {
         Ok(split_with_req)
     }
 
-    /// Returns whether the given split can possibly give documents better than the one already
-    /// known to match.
-    fn can_be_better(&self, split: &SplitIdAndFooterOffsets) -> bool {
+    /// Returns whether to collect hits from this split to improve the current results or cache
+    /// them for later queries.
+    fn should_collect_hits(&self, split: &SplitIdAndFooterOffsets) -> bool {
         match self {
             CanSplitDoBetter::SplitIdHigher(Some(split_id)) => split.split_id >= *split_id,
             CanSplitDoBetter::SplitTimestampHigher {
@@ -1747,11 +1747,11 @@ fn simplify_search_request(
     split: &SplitIdAndFooterOffsets,
     split_filter_lock: &Arc<RwLock<CanSplitDoBetter>>,
 ) -> Option<SearchRequest> {
-    let can_be_better: bool;
+    let should_collect_hits: bool;
     let is_trace_req: bool;
     {
         let split_filter_guard = split_filter_lock.read().unwrap();
-        can_be_better = split_filter_guard.can_be_better(split);
+        should_collect_hits = split_filter_guard.should_collect_hits(split);
         // The info is originally from the search_request.aggregation as a string (yes we need to
         // clean this eventually). We don't want to parse it again, so we use the
         // split_filter variant to get that info.
@@ -1760,7 +1760,7 @@ fn simplify_search_request(
             &CanSplitDoBetter::FindTraceIdsAggregation(_)
         );
     }
-    if !can_be_better {
+    if !should_collect_hits {
         disable_search_request_hits(&mut search_request);
     }
     if is_trace_req {
