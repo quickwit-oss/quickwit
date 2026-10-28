@@ -33,65 +33,77 @@ impl FeuerIoQueues {
         cache_name: &'static str,
         fixed_retrieval_equivalent_bytes: Option<u64>,
     ) -> anyhow::Result<feuer::TieredMemoryDiskCache> {
+        let directory = if config.disk_capacity.as_u64() == 0 {
+            std::path::Path::new("")
+        } else {
+            config.directory()?
+        };
+        let cache_config = feuer::CacheConfig::new(
+            directory,
+            config.disk_capacity.as_u64(),
+            config.memory_capacity.as_u64(),
+        )?
+        .with_file_name(file_name)?;
+        let scorer = std::sync::Arc::new(feuer::AvoidedRetrievalCostScorer {
+            cost_per_request: fixed_retrieval_equivalent_bytes.unwrap_or_default() as f64,
+            ..Default::default()
+        });
+        let registry: mixtrics::metrics::BoxedRegistry =
+            Box::new(crate::split_range_cache::metrics::QuickwitMetricsRegistry { cache_name });
         #[cfg(target_os = "linux")]
-        {
-            let cache_config = feuer::CacheConfig::new(
-                config.directory()?,
-                config.disk_capacity.as_u64(),
-                config.memory_capacity.as_u64(),
-            )?
-            .with_file_name(file_name)?;
-            let scorer = std::sync::Arc::new(feuer::AvoidedRetrievalCostScorer {
-                cost_per_request: fixed_retrieval_equivalent_bytes.unwrap_or_default() as f64,
-                ..Default::default()
-            });
-            let registry: mixtrics::metrics::BoxedRegistry =
-                Box::new(crate::split_range_cache::metrics::QuickwitMetricsRegistry { cache_name });
-            let queues = if config.disk_capacity.as_u64() == 0 {
-                None
-            } else {
-                Some(
-                    self.queues
-                        .get_or_try_init(|| async {
-                            // Creating rings waits for their driver threads; keep this off Tokio
-                            // workers.
-                            Ok::<_, anyhow::Error>(
-                                tokio::task::spawn_blocking(feuer::IoQueues::new).await??,
-                            )
-                        })
-                        .await?
-                        .clone(),
-                )
-            };
-            // Share the retrieval-cost model between memory and disk, as before.
-            Ok(feuer::TieredMemoryDiskCache::open_with_retention_scorer(
-                cache_config,
-                Some(&registry),
-                queues,
-                scorer,
+        let queues = if config.disk_capacity.as_u64() == 0 {
+            None
+        } else {
+            Some(
+                self.queues
+                    .get_or_try_init(|| async {
+                        // Creating rings waits for their driver threads. Keep this off Tokio
+                        // workers.
+                        Ok::<_, anyhow::Error>(
+                            tokio::task::spawn_blocking(feuer::IoQueues::new).await??,
+                        )
+                    })
+                    .await?
+                    .clone(),
             )
-            .await?)
-        }
+        };
         #[cfg(not(target_os = "linux"))]
-        {
-            let _ = (
-                config,
-                file_name,
-                cache_name,
-                fixed_retrieval_equivalent_bytes,
-            );
-            anyhow::bail!("Feuer disk caches require Linux")
-        }
+        let queues = None;
+        Ok(feuer::TieredMemoryDiskCache::open_with_retention_scorer(
+            cache_config,
+            Some(&registry),
+            queues,
+            scorer,
+        )
+        .await?)
     }
 }
 
 /// A Feuer instance storing complete, immutable encoded results.
 /// Keys must include a format version; values for a given key must never change.
 pub struct FeuerCache {
-    cache: feuer::TieredMemoryDiskCache,
+    cache: Option<feuer::TieredMemoryDiskCache>,
 }
 
 impl FeuerCache {
+    /// Open a memory-only instance without a Tokio runtime. Zero capacity disables caching.
+    pub fn memory(capacity: u64, cache_name: &'static str) -> anyhow::Result<Self> {
+        if capacity == 0 {
+            return Ok(Self { cache: None });
+        }
+        let config = DiskCacheConfig {
+            path: None,
+            disk_capacity: bytesize::ByteSize::b(0),
+            memory_capacity: bytesize::ByteSize::b(capacity),
+        };
+        futures::executor::block_on(Self::open(
+            &config,
+            &FeuerIoQueues::default(),
+            cache_name,
+            cache_name,
+        ))
+    }
+
     /// Open an independent cache with the supplied shared queues and explicit capacities.
     /// `file_name` must be distinct for caches in the same directory.
     /// `cache_name` identifies the cache in metrics; use a fixed name, not a path or request key.
@@ -102,33 +114,32 @@ impl FeuerCache {
         cache_name: &'static str,
     ) -> anyhow::Result<Self> {
         Ok(Self {
-            cache: queues.open(config, file_name, cache_name, None).await?,
+            cache: Some(queues.open(config, file_name, cache_name, None).await?),
         })
     }
 
     /// Retrieve an entire object from memory or disk, returning `None` on a miss.
     pub async fn get(&self, key: String) -> Option<OwnedBytes> {
-        // Feuer exposes lookup-or-fetch rather than lookup alone. A callback error here means
-        // a cache miss, not an I/O failure. No value is inserted on a miss.
-        match self
-            .cache
-            .get_or_fetch_object(key, || async { Err::<Bytes, _>(()) })
+        self.cache
+            .as_ref()?
+            .get_object(key)
             .await
-        {
-            Ok(bytes) => Some(crate::stable_deref_bytes::into_owned_bytes(bytes)),
-            Err(feuer::GetOrFetchError::Callback(())) => None,
-        }
+            .map(crate::stable_deref_bytes::into_owned_bytes)
     }
 
     /// Admit an immutable object; an existing value for this key is retained.
     /// Disk writes use Feuer's bounded, best-effort background queue.
-    pub async fn put(&self, key: String, bytes: OwnedBytes) {
-        self.cache
+    pub async fn put(&self, key: String, bytes: OwnedBytes) -> bool {
+        let Some(cache) = &self.cache else {
+            return false;
+        };
+        cache
             .get_or_fetch_object(key, || async {
                 Ok::<_, std::convert::Infallible>(Bytes::from_owner(bytes))
             })
             .await
             .expect("whole-object insertion must cover the complete object");
+        true
     }
 }
 
@@ -220,15 +231,13 @@ mod tests {
             (&partial, &partial_config, "partial_response_cache"),
             (&predicate, &predicate_config, "predicate_cache"),
         ] {
+            let cache_config = cache.cache.as_ref().unwrap().config();
+            assert_eq!(cache_config.disk_capacity(), config.disk_capacity.as_u64());
             assert_eq!(
-                cache.cache.config().disk_capacity(),
-                config.disk_capacity.as_u64()
-            );
-            assert_eq!(
-                cache.cache.config().memory_capacity(),
+                cache_config.memory_capacity(),
                 config.memory_capacity.as_u64()
             );
-            assert_eq!(cache.cache.config().file_name(), file_name);
+            assert_eq!(cache_config.file_name(), file_name);
             assert!(cache.get("missing".into()).await.is_none());
         }
         for (config, file_name, cache_name) in [
@@ -279,23 +288,47 @@ mod tests {
 
         tokio::time::timeout(Duration::from_secs(10), async {
             let mut num_published = 0;
+            let mut writes = std::collections::HashMap::<String, u64>::new();
             loop {
-                // Snapshots drain counters. Accumulate publications from the independent writers.
+                // Snapshots drain counters. Accumulate publications and completed file writes.
                 for (key, _, _, value) in snapshotter.snapshot().into_vec() {
-                    if key.key().name() == "feuer_disk_write_entries_total"
+                    let DebugValue::Counter(count) = value else {
+                        continue;
+                    };
+                    let key = key.key();
+                    if key.name() == "feuer_disk_write_entries_total"
                         && key
-                            .key()
                             .labels()
                             .any(|label| label.key() == "outcome" && label.value() == "published")
-                        && let DebugValue::Counter(count) = value
                     {
                         num_published += count;
                     }
+                    if key.name() == "feuer_disk_io_total"
+                        && key
+                            .labels()
+                            .any(|label| label.key() == "operation" && label.value() == "write")
+                        && key
+                            .labels()
+                            .any(|label| label.key() == "outcome" && label.value() == "success")
+                    {
+                        let cache = key
+                            .labels()
+                            .find(|label| label.key() == "cache")
+                            .unwrap()
+                            .value();
+                        *writes.entry(cache.to_owned()).or_default() += count;
+                    }
                 }
-                if num_published == 3 {
+                // Each single-shard cache writes one payload and one metadata chunk. Publication
+                // precedes the periodic metadata write, which must finish before testing recovery.
+                if num_published == 3
+                    && ["split_range", "partial_request", "predicate"]
+                        .iter()
+                        .all(|name| writes.get(*name).copied().unwrap_or_default() >= 2)
+                {
                     break;
                 }
-                assert!(num_published < 3, "unexpected extra disk publications");
+                assert!(num_published <= 3, "unexpected extra disk publications");
                 tokio::time::sleep(Duration::from_millis(1)).await;
             }
         })

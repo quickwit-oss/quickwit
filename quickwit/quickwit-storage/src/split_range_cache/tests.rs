@@ -94,44 +94,21 @@ async fn test_download_and_exact_cache_hit_share_the_destination_buffer() {
 
 #[tokio::test]
 async fn test_identical_concurrent_misses_fetch_once() {
-    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
-
-    let recorder = DebuggingRecorder::new();
-    let snapshotter = recorder.snapshotter();
-    let _guard = ::metrics::set_default_local_recorder(&recorder);
     let fixture = Fixture::new_with_blocked_lower_read().await;
     let path = Path::new(SPLIT_PATH);
-    let first = fixture.storage.get_slice(path, 0..4);
-    let second = fixture.storage.get_slice(path, 0..4);
-    let release = async {
-        // Both requests must miss Feuer's disk tier before releasing the source.
-        // Debouncing the whole cache lookup would leave this counter at one.
-        // metrics-util 0.20 snapshots drain counters. The misses may arrive in
-        // separate snapshots, so accumulate them before checking both callers.
-        let disk_misses = std::cell::Cell::new(0);
-        wait_until(
-            || {
-                for (key, _, _, value) in snapshotter.snapshot().into_vec() {
-                    if key.key().name() == "feuer_disk_lookup_total"
-                        && key
-                            .key()
-                            .labels()
-                            .any(|label| label.key() == "outcome" && label.value() == "absent")
-                        && let DebugValue::Counter(count) = value
-                    {
-                        disk_misses.set(disk_misses.get() + count);
-                    }
-                }
-                assert!(disk_misses.get() <= 2, "unexpected extra disk misses");
-                disk_misses.get() == 2
-            },
-            "both Feuer disk misses",
-        )
-        .await;
-        fixture.release_lower_read();
-    };
-    let (first_result, second_result, _) = tokio::join!(first, second, release);
-    assert_eq!(first_result.unwrap(), second_result.unwrap());
+    let mut first = Box::pin(fixture.storage.get_slice(path, 0..4));
+    tokio::select! {
+        biased;
+        result = &mut first => panic!("fetch completed before release: {result:?}"),
+        () = fixture.wait_until_lower_read_started() => {}
+    }
+    // Feuer joins identical requests before looking up disk or invoking the callback.
+    let mut second = Box::pin(fixture.storage.get_slice(path, 0..4));
+    assert!(futures::poll!(second.as_mut()).is_pending());
+    fixture.release_lower_read();
+    let (first_result, second_result) = tokio::join!(first, second);
+    assert_eq!(first_result.unwrap().as_slice(), b"abcd");
+    assert_eq!(second_result.unwrap().as_slice(), b"abcd");
     assert_eq!(fixture.lower_reads(), 1);
 }
 
@@ -147,6 +124,39 @@ async fn test_remote_error_is_not_cached_or_rewritten() {
         assert_eq!(error.kind(), StorageErrorKind::NotFound);
     }
     assert_eq!(fixture.lower_reads(), 2);
+}
+
+#[tokio::test]
+async fn test_failed_download_with_unpolled_waiter_allows_retry() {
+    let fixture = Fixture::new_with_blocked_lower_read().await;
+    let path = Path::new("missing.split");
+    let mut first = Box::pin(fixture.storage.get_slice(path, 0..4));
+    tokio::select! {
+        biased;
+        result = &mut first => panic!("fetch completed before release: {result:?}"),
+        () = fixture.wait_until_lower_read_started() => {}
+    }
+    let mut waiter = Box::pin(fixture.storage.get_slice(path, 0..4));
+    assert!(futures::poll!(waiter.as_mut()).is_pending());
+    fixture.release_lower_read();
+    assert_eq!(first.await.unwrap_err().kind(), StorageErrorKind::NotFound);
+    assert_eq!(fixture.lower_reads(), 1);
+    assert_eq!(
+        fixture
+            .storage
+            .get_slice(path, 0..4)
+            .await
+            .unwrap_err()
+            .kind(),
+        StorageErrorKind::NotFound
+    );
+    assert_eq!(fixture.lower_reads(), 2, "new requests must retry failures");
+    assert_eq!(waiter.await.unwrap_err().kind(), StorageErrorKind::NotFound);
+    assert_eq!(
+        fixture.lower_reads(),
+        2,
+        "waiter must share the first failure"
+    );
 }
 
 #[tokio::test]
@@ -202,6 +212,7 @@ async fn test_initiating_caller_drop_surviving_waiter_succeeds() {
     let mut waiter = Box::pin(fixture.storage.get_slice(path, 0..4));
     assert!(futures::poll!(waiter.as_mut()).is_pending());
     drop(initiating);
+    assert_eq!(fixture.gate_tx.receiver_count(), 2, "source must survive");
     fixture.release_lower_read();
     assert_eq!(waiter.await.unwrap().as_slice(), b"abcd");
     assert_eq!(fixture.lower_reads(), 1);
@@ -218,13 +229,7 @@ async fn test_waiter_drop_does_not_cancel_fetch() {
         () = fixture.wait_until_lower_read_started() => {}
     }
     let mut waiter = Box::pin(fixture.storage.get_slice(path, 0..4));
-    for _ in 0..16 {
-        tokio::select! {
-            biased;
-            result = &mut waiter => panic!("waiter completed before release: {result:?}"),
-            () = tokio::task::yield_now() => {}
-        }
-    }
+    assert!(futures::poll!(waiter.as_mut()).is_pending());
     drop(waiter);
     fixture.release_lower_read();
     assert_eq!(initiating.await.unwrap().as_slice(), b"abcd");

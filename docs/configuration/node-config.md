@@ -310,12 +310,12 @@ This section contains the configuration options for a Searcher.
 | --- | --- | --- |
 | `aggregation_memory_limit` | Controls the maximum amount of memory that can be used for aggregations before aborting. This limit is per searcher node. A node may run concurrent queries, which share the limit. The first query that will hit the limit will be aborted and frees its memory. It is used to prevent excessive memory usage during the aggregation phase, which can lead to performance degradation or crashes. | `500M`|
 | `aggregation_bucket_limit` | Determines the maximum number of buckets returned to the client. | `65000` |
-| `fast_field_cache_capacity` | Feuer memory cache capacity for fast fields on a Searcher. Accepts a scalar capacity or a `fast_field_cache` mapping with `memory_capacity` (alias `capacity`). Caches exact slices of `.fast` files and whole-file entries separately. Set to `0` to disable. Default is `1G` when `disk_cache` is unset. If `disk_cache` is set and this key is omitted, the fast-field cache is disabled. Set a capacity explicitly to keep both. | `1G` |
+| `fast_field_cache` | Deprecated memory-capacity setting for the split-range cache, also accepted as `fast_field_cache_capacity`. Accepts a scalar capacity or a mapping with `memory_capacity` (alias `capacity`). Uses memory-only Feuer for all split ranges, including fast fields. Set to `0` to disable split-range caching. An explicit `disk_cache` and this setting are mutually exclusive. | `1G` |
 | `partial_request_cache` | Feuer cache for per-split partial responses to speed up subsequent requests. Accepts a memory capacity or a mapping with `memory_capacity` (alias `capacity`) and optional disk settings described below. Without disk settings, uses in-memory Feuer and needs no directory. Disable with `0`. Legacy alias: `partial_request_cache_capacity`. | `64M` |
 | `predicate_cache` | Feuer cache for predicate hit sets and known-absent terms. Accepts a memory capacity or a mapping with `memory_capacity` (alias `capacity`) and optional disk settings described below. Without disk settings, uses in-memory Feuer and needs no directory. Disable with `0`. Legacy alias: `predicate_cache_capacity`. | `256M` |
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `split_cache` | Searcher split cache configuration options defined in the section below. Cache disabled if unspecified. | |
-| `disk_cache` | Process-wide cache for split footer and body byte ranges. Configuration options are defined in the section below. Cache disabled if unspecified. | |
+| `disk_cache` | Process-wide Feuer cache for split footer and body byte ranges. Configuration options are defined below. Omitted or `null` uses the legacy memory capacity, defaulting to `1G` with no disk tier. | |
 | `disk_cache_directory` | Shared directory for Feuer cache files. Per-cache `path` overrides it. Setting this directory alone does not enable disk caching. | |
 | `request_timeout_secs` | The time before a search request is cancelled. This should match the timeout of the stack calling into quickwit if there is one set.  | `30` |
 | `use_metastore_read_replica` | If true, routes read-only metastore requests from searchers to nodes running the `metastore_read_replica` service. Searchers require at least one `metastore_read_replica` node at startup and do not fall back to the primary metastore. | `false` |
@@ -336,13 +336,13 @@ This section contains the configuration options for the on-disk searcher split c
 
 This section configures Feuer's memory and disk cache of exact immutable split slices. Each `(full object URI, start, end)` is a versioned whole-object cache key, using the same Feuer API as the result caches. Only an identical byte range can hit. Covering or overlapping slices cannot serve other ranges, and entries are evicted whole. Cache misses for the same full object URI are batched for 1 ms. Pending reads with gaps of at most 1 MiB can share a download, up to a merged size of 8 MiB. Individual reads larger than 8 MiB remain supported but are not extended. Each caller's requested slice is cached separately. Downloaded gaps are not cached. Already-started downloads can serve covered requests but cannot be extended. Dropping the last waiting caller cancels the shared download.
 
-The cache is disabled when this section is omitted or set to `null`. If it is set and `fast_field_cache_capacity` is omitted, the fast-field RAM cache is disabled. Set a capacity explicitly to keep both.
+An explicit `disk_cache` mapping configures the split-range cache. If omitted or set to `null`, `fast_field_cache` (alias `fast_field_cache_capacity`) supplies its memory capacity, defaulting to `1G`, with no disk tier or directory required. A legacy capacity of `0` disables split-range caching. These deprecated names configure the same split-range cache; there is no separate fast-field cache. Setting both an explicit `disk_cache` mapping and a legacy capacity is an error, including a legacy capacity of `0`. `disk_cache: null` behaves exactly like omission and can be combined with a legacy capacity.
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| `path` | Optional directory override for this cache. Defaults to `searcher.disk_cache_directory`. One of them must be set. Created if missing and must sit on a usable filesystem. | |
+| `path` | Optional directory override for this cache. Defaults to `searcher.disk_cache_directory`. One of them must be set when `disk_capacity` is positive. Created if missing and must sit on a usable filesystem. Memory-only split-range caching requires no directory. Explicitly empty paths are rejected. | |
 | `disk_capacity` | Disk capacity budget, including metadata and alignment. Set to `0` to disable the disk tier and cache only in memory. Feuer handles alignment internally. The configured value need not be rounded. | |
-| `memory_capacity` | Positive, soft memory-tier eviction target. Oversized downloads and bytes retained by callers may exceed it. This is not a process memory limit. | |
+| `memory_capacity` | Positive, soft memory-tier eviction target, required even when `disk_capacity` is `0`. Oversized downloads and bytes retained by callers may exceed it. This is not a process memory limit. | |
 
 `partial_request_cache` and `predicate_cache` always use Feuer. Scalar capacities and mappings without disk settings use in-memory Feuer, with no directory required, even when a shared directory is configured. `memory_capacity` sets the memory budget (default `64M` and `256M`, respectively), with `capacity` and the legacy `*_cache_capacity` names accepted as backward-compatible aliases. A scalar `0` or a zero memory capacity without disk settings disables the cache. To add a disk tier, set `disk_capacity` and either `searcher.disk_cache_directory` or a per-cache `path` override. A per-cache `path` requires `disk_capacity`.
 
@@ -350,7 +350,7 @@ The list-fields metadata cache also uses Feuer's memory tier. It remains an inde
 
 Cache mappings serialize the RAM budget as `memory_capacity`. Both `memory_capacity` and `disk_capacity` serialize as integer byte counts to preserve exact budgets. Human-readable input such as `64MiB` is still accepted. Setting both `capacity` and `memory_capacity` in the same mapping is an error.
 
-For result caches with explicit `disk_capacity`, the resolved directory must be nonempty and `memory_capacity` must be positive. These requirements also apply to `disk_capacity: 0`, which disables the disk tier. Explicitly empty directory settings are rejected. Result caches and `fast_field_cache` reject explicit `policy` and nonempty `virtual_caches` because Feuer owns eviction. The fast-field cache uses Feuer's memory tier and needs no directory. Its `path` and `disk_capacity` settings are unsupported. Use the split `disk_cache` to cache fast-field reads on disk.
+For result caches with explicit `disk_capacity`, `memory_capacity` must be positive. A positive disk capacity also requires a nonempty resolved directory. `disk_capacity: 0` disables the disk tier and requires no directory. Explicitly empty directory settings are rejected. Result caches and `fast_field_cache` reject explicit `policy` and nonempty `virtual_caches` because Feuer owns eviction. The deprecated `fast_field_cache` mapping accepts a memory capacity only. Its `path` and `disk_capacity` settings remain unsupported. Use `disk_cache` to add a disk tier for split ranges, including fast-field reads.
 
 Feuer instances configured with disk settings share one `IoQueues` set, limiting total disk I/O concurrency. They are opened independently. Each instance has its own backing file and lock, disk budget, memory tier, buffer pool, eviction state, and background-write queue. They can share a directory because their fixed filenames are distinct:
 
@@ -360,11 +360,11 @@ Feuer instances configured with disk settings share one `IoQueues` set, limiting
 | `predicate_cache` | `predicate_cache` |
 | `partial_request_cache` | `partial_response_cache` |
 
-Lock files are named `.feuer.<filename>.lock`. Opening the same backing file twice fails. Initialization failures abort startup. Disk-cache configurations require Linux, including when `disk_capacity` is `0`.
+Lock files are named `.feuer.<filename>.lock`. Opening the same backing file twice fails. Initialization failures abort startup. All caches use Feuer's unified API. A disk capacity of `0` enables memory-only operation on every supported platform without disk I/O. Positive disk capacities require Linux.
 
-Disk-backed result-cache keys include a format version and remain stable across process restarts. Split-cache keys use the `split-slice-v1` namespace. Memory-only result caches use process-local randomized hashes and Feuer's memory tier directly, without a Tokio runtime or Linux I/O requirements. Memory-only cache capacities are soft eviction targets. Feuer can admit an entry larger than its shard's capacity after evicting other entries. Partial responses retain the same request normalization and cache-hit resource statistics as the previous RAM cache. Predicate disk reads through Tantivy's synchronous API run on CPU threads rather than Tokio workers.
+Result-cache keys include a format version and use the same stable serialized identity in both memory and disk. Split-cache keys use the `split-slice-v1` namespace. Memory-only result and list-fields caches work without a Tokio runtime. Memory-only cache capacities are soft eviction targets. Feuer can admit an entry larger than its shard's capacity after evicting other entries. Partial responses retain the same request normalization and cache-hit resource statistics as the previous RAM cache. Predicate disk reads through Tantivy's synchronous API run on CPU threads rather than Tokio workers.
 
-Feuer's native [metrics](../reference/metrics.md#feuer-cache-metrics) include a `cache` label (`split_range`, `partial_request`, `predicate`, `fast_field`, or `list_fields`) to distinguish instances. Sum over this label to aggregate them. Memory-only caches expose Feuer's memory occupancy and eviction metrics, and retain Quickwit's cache hit/miss counters. Lookup-only disk-backed result-cache misses currently appear as callback errors because its API is lookup-or-fetch.
+Feuer's native [metrics](../reference/metrics.md#feuer-cache-metrics) include a `cache` label (`split_range`, `partial_request`, `predicate`, or `list_fields`) to distinguish instances. Sum over this label to aggregate them. Memory-only caches expose Feuer's lookup, memory occupancy, and eviction metrics. Memory-only result and list-fields caches also retain Quickwit's cache hit/miss counters. Result-cache lookups use Feuer's lookup-only API, which reports misses separately from callback errors.
 
 Feuer's cost-aware scorer models a fixed source-request cost in equivalent transferred bytes. Quickwit sets this to `256000` for the split cache only. Predicate and partial-response caches retain Feuer's default of `0` (bytes-only scoring). The cost applies to both memory and disk tiers and is set per instance.
 
@@ -379,7 +379,6 @@ Example:
 ```yaml
 searcher:
   use_metastore_read_replica: false
-  fast_field_cache_capacity: 1G
   split_cache:
     max_num_bytes: 1G
     max_num_splits: 10000

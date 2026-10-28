@@ -387,7 +387,7 @@ impl SplitCacheLimits {
     }
 }
 
-/// Disabled-by-default Feuer cache for ranges of immutable split objects.
+/// Feuer memory and optional disk cache for ranges of immutable split objects.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DiskCacheConfig {
@@ -405,10 +405,9 @@ pub struct DiskCacheConfig {
 impl DiskCacheConfig {
     /// Return the directory after resolving the shared searcher setting.
     pub fn directory(&self) -> anyhow::Result<&Path> {
-        let path = self
-            .path
-            .as_deref()
-            .context("path or disk_cache_directory must be set for Feuer")?;
+        let path = self.path.as_deref().context(
+            "path or disk_cache_directory must be set when disk_capacity is greater than zero",
+        )?;
         ensure!(!path.as_os_str().is_empty(), "path must not be empty");
         Ok(path)
     }
@@ -423,7 +422,9 @@ impl DiskCacheConfig {
     }
 
     fn validate(&self) -> anyhow::Result<()> {
-        self.directory()?;
+        if self.disk_capacity.as_u64() > 0 || self.path.is_some() {
+            self.directory()?;
+        }
         ensure!(
             self.memory_capacity.as_u64() > 0,
             "disk_cache.memory_capacity must be positive"
@@ -447,8 +448,8 @@ pub struct SearcherConfig {
     pub aggregation_memory_limit: ByteSize,
     pub aggregation_bucket_limit: u32,
 
-    /// Long-lived `.fast` RAM cache. Omitted settings are resolved by
-    /// [`Self::resolved_fast_field_cache`].
+    /// Deprecated memory-capacity alias for the split range cache.
+    /// Omitted settings are resolved by [`Self::resolved_disk_cache`].
     #[serde(alias = "fast_field_cache_capacity")]
     #[serde(default, deserialize_with = "deserialize_optional_fast_field_cache")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -473,7 +474,7 @@ pub struct SearcherConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub split_cache: Option<SplitCacheLimits>,
     /// Process-wide Feuer cache for split footer and body ranges.
-    /// Omitted or `null` disables the cache.
+    /// Omitted or `null` uses the legacy memory capacity, defaulting to 1 GB.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disk_cache: Option<DiskCacheConfig>,
     /// Shared directory for independent Feuer files; per-cache paths override it.
@@ -622,7 +623,7 @@ impl CacheConfig {
     }
 
     /// Validate result-cache settings and resolve optional disk configuration.
-    /// Without disk settings, returns `None`; memory-only Feuer construction is separate.
+    /// Without disk settings, returns `None` so callers use the memory capacity directly.
     pub fn disk_cache(&self, directory: Option<&Path>) -> anyhow::Result<Option<DiskCacheConfig>> {
         self.validate_feuer()?;
         let Some(disk_capacity) = self.disk_capacity else {
@@ -804,24 +805,37 @@ impl SearcherConfig {
     fn default_request_timeout_secs() -> NonZeroU64 {
         NonZeroU64::new(30).unwrap()
     }
-    /// Resolve the fast-field memory capacity. An explicit setting takes precedence.
-    /// Otherwise, the split range cache disables it, and without that cache it is 1 GB.
-    pub fn resolved_fast_field_cache(&self) -> CacheConfig {
-        match &self.fast_field_cache {
-            Some(config) => config.clone(),
-            None if self.disk_cache.is_some() => CacheConfig::no_cache(),
-            None => CacheConfig::default_with_capacity(ByteSize::gb(1)),
-        }
-    }
-
-    /// Resolve the split range cache directory before opening Feuer.
+    /// Resolve split range caching. Legacy settings select memory-only caching,
+    /// defaulting to 1 GB; an explicit zero legacy capacity disables the cache.
     pub fn resolved_disk_cache(&self) -> anyhow::Result<Option<DiskCacheConfig>> {
-        let Some(config) = &self.disk_cache else {
-            return Ok(None);
+        if let Some(config) = &self.disk_cache {
+            ensure!(
+                self.fast_field_cache.is_none(),
+                "disk_cache and fast_field_cache (alias fast_field_cache_capacity) cannot both be \
+                 set"
+            );
+            return Ok(Some(
+                config
+                    .resolve_directory(self.disk_cache_directory.as_deref())
+                    .context("invalid disk_cache")?,
+            ));
+        }
+        let memory_capacity = if let Some(config) = &self.fast_field_cache {
+            config
+                .validate_feuer_memory()
+                .context("invalid fast_field_cache")?;
+            config.capacity()
+        } else {
+            ByteSize::gb(1)
         };
-        Ok(Some(
-            config.resolve_directory(self.disk_cache_directory.as_deref())?,
-        ))
+        if memory_capacity.as_u64() == 0 {
+            return Ok(None);
+        }
+        Ok(Some(DiskCacheConfig {
+            path: None,
+            disk_capacity: ByteSize::b(0),
+            memory_capacity,
+        }))
     }
 
     fn validate(&self) -> anyhow::Result<()> {
@@ -831,12 +845,7 @@ impl SearcherConfig {
                 "disk_cache_directory must not be empty"
             );
         }
-        if let Some(config) = &self.fast_field_cache {
-            config
-                .validate_feuer_memory()
-                .context("invalid fast_field_cache")?;
-        }
-        self.resolved_disk_cache().context("invalid disk_cache")?;
+        self.resolved_disk_cache()?;
         let directory = self.disk_cache_directory.as_deref();
         self.partial_request_cache
             .disk_cache(directory)
@@ -1206,20 +1215,25 @@ mod tests {
         assert!(defaults.disk_cache.is_none());
         assert!(defaults.fast_field_cache.is_none());
         assert_eq!(
-            defaults.resolved_fast_field_cache().capacity(),
-            ByteSize::gb(1)
+            defaults.resolved_disk_cache().unwrap().unwrap(),
+            DiskCacheConfig {
+                path: None,
+                disk_capacity: ByteSize::b(0),
+                memory_capacity: ByteSize::gb(1),
+            }
         );
         for yaml in [
             "{}",
-            "disk_cache_directory: /tmp/feuer",
             "partial_request_cache_capacity: 64M\npredicate_cache_capacity: 256M",
-            "partial_request_cache: 64M\npredicate_cache: 256M",
             "partial_request_cache: {memory_capacity: 64M}\npredicate_cache: {capacity: 256M, \
              virtual_caches: []}",
         ] {
             let config: SearcherConfig = serde_yaml::from_str(yaml).unwrap();
             config.validate().unwrap();
-            assert!(config.resolved_disk_cache().unwrap().is_none());
+            assert_eq!(
+                config.resolved_disk_cache().unwrap(),
+                defaults.resolved_disk_cache().unwrap()
+            );
             assert_eq!(config.partial_request_cache.capacity(), ByteSize::mb(64));
             assert_eq!(config.predicate_cache.capacity(), ByteSize::mb(256));
             for cache in [&config.partial_request_cache, &config.predicate_cache] {
@@ -1230,22 +1244,21 @@ mod tests {
                         .is_none()
                 );
             }
-            assert_eq!(
-                config.resolved_fast_field_cache().capacity(),
-                ByteSize::gb(1)
-            );
         }
         for yaml in [
             "fast_field_cache_capacity: 32M",
             "fast_field_cache: 32M",
-            "fast_field_cache: {capacity: 32M}",
             "fast_field_cache: {memory_capacity: 32M}",
         ] {
             let config: SearcherConfig = serde_yaml::from_str(yaml).unwrap();
             config.validate().unwrap();
             assert_eq!(
-                config.resolved_fast_field_cache().capacity(),
-                ByteSize::mb(32)
+                config.resolved_disk_cache().unwrap().unwrap(),
+                DiskCacheConfig {
+                    path: None,
+                    disk_capacity: ByteSize::b(0),
+                    memory_capacity: ByteSize::mb(32),
+                }
             );
         }
         for yaml in [
@@ -1259,15 +1272,12 @@ mod tests {
                 assert_eq!(cache.capacity(), ByteSize::b(0));
                 assert!(cache.disk_cache(None).unwrap().is_none());
             }
-            assert_eq!(
-                config.resolved_fast_field_cache().capacity(),
-                ByteSize::b(0)
-            );
+            assert!(config.resolved_disk_cache().unwrap().is_none());
         }
     }
 
     #[test]
-    fn test_disk_cache_directory_and_fast_field_overrides() {
+    fn test_disk_cache_directory_overrides() {
         let mut config: SearcherConfig = serde_yaml::from_str(
             "disk_cache_directory: /tmp/feuer\ndisk_cache: {disk_capacity: 300GiB, \
              memory_capacity: 1GiB}\npartial_request_cache: {disk_capacity: \
@@ -1276,66 +1286,74 @@ mod tests {
         .unwrap();
         config.validate().unwrap();
         let directory = config.disk_cache_directory.as_deref();
-        let partial = config
-            .partial_request_cache
-            .disk_cache(directory)
-            .unwrap()
-            .unwrap();
-        let predicate = config
-            .predicate_cache
-            .disk_cache(directory)
-            .unwrap()
-            .unwrap();
-        assert_eq!(partial.memory_capacity, ByteSize::mb(64));
-        assert_eq!(partial.disk_capacity, ByteSize::gib(20));
-        assert_eq!(predicate.memory_capacity, ByteSize::mb(256));
-        assert_eq!(predicate.disk_capacity, ByteSize::b(0));
         for cache in [
-            config.resolved_disk_cache().unwrap().unwrap(),
-            partial,
-            predicate,
+            config.resolved_disk_cache().unwrap(),
+            config.partial_request_cache.disk_cache(directory).unwrap(),
+            config.predicate_cache.disk_cache(directory).unwrap(),
         ] {
-            assert_eq!(cache.directory().unwrap(), Path::new("/tmp/feuer"));
+            assert_eq!(cache.unwrap().directory().unwrap(), Path::new("/tmp/feuer"));
         }
         // Resolution leaves the user-specified configuration unchanged.
         let serialized = serde_json::to_value(&config).unwrap();
         assert!(serialized["disk_cache"].get("path").is_none());
         assert_eq!(serialized["disk_cache_directory"], "/tmp/feuer");
-        assert_eq!(config.resolved_fast_field_cache(), CacheConfig::no_cache());
+        assert!(serialized.get("fast_field_cache").is_none());
 
         config.disk_cache.as_mut().unwrap().path = Some(PathBuf::from("/tmp/split"));
         config.predicate_cache.path = Some(PathBuf::from("/tmp/predicate"));
-        config.fast_field_cache = Some(ByteSize::gb(1).into());
         config.validate().unwrap();
-        assert_eq!(
-            config
-                .resolved_disk_cache()
-                .unwrap()
-                .unwrap()
-                .directory()
-                .unwrap(),
-            Path::new("/tmp/split")
-        );
-        assert_eq!(
-            config
-                .predicate_cache
-                .disk_cache(directory)
-                .unwrap()
-                .unwrap()
-                .directory()
-                .unwrap(),
-            Path::new("/tmp/predicate")
-        );
-        assert_eq!(
-            config.resolved_fast_field_cache().capacity(),
-            ByteSize::gb(1)
-        );
+        for (cache, path) in [
+            (config.resolved_disk_cache().unwrap(), "/tmp/split"),
+            (
+                config.predicate_cache.disk_cache(directory).unwrap(),
+                "/tmp/predicate",
+            ),
+        ] {
+            assert_eq!(cache.unwrap().directory().unwrap(), Path::new(path));
+        }
+    }
 
-        let config: SearcherConfig = serde_yaml::from_str("disk_cache: null").unwrap();
-        assert!(config.disk_cache.is_none());
-        assert_eq!(
-            config.resolved_fast_field_cache().capacity(),
-            ByteSize::gb(1)
+    #[test]
+    fn test_disk_cache_rejects_legacy_capacity_conflicts() {
+        for name in ["fast_field_cache", "fast_field_cache_capacity"] {
+            for capacity in ["0", "32M"] {
+                let config: SearcherConfig = serde_yaml::from_str(&format!(
+                    "disk_cache: {{disk_capacity: 0, memory_capacity: 1G}}\n{name}: {capacity}"
+                ))
+                .unwrap();
+                assert!(config.validate().is_err());
+                let error = config.resolved_disk_cache().unwrap_err().to_string();
+                assert!(error.contains("cannot both be set"), "{error}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_disk_cache_memory_only() {
+        let config: SearcherConfig = serde_yaml::from_str(
+            "disk_cache: {disk_capacity: 0, memory_capacity: 32M}\npartial_request_cache: \
+             {disk_capacity: 0, memory_capacity: 32M}\npredicate_cache: {disk_capacity: 0, \
+             memory_capacity: 32M}",
+        )
+        .unwrap();
+        config.validate().unwrap();
+        for cache in [
+            config.resolved_disk_cache().unwrap(),
+            config.partial_request_cache.disk_cache(None).unwrap(),
+            config.predicate_cache.disk_cache(None).unwrap(),
+        ] {
+            let cache = cache.unwrap();
+            assert!(cache.path.is_none());
+            assert_eq!(cache.disk_capacity, ByteSize::b(0));
+            assert_eq!(cache.memory_capacity, ByteSize::mb(32));
+        }
+
+        let config: SearcherConfig =
+            serde_yaml::from_str("disk_cache: {disk_capacity: 0, memory_capacity: 0}").unwrap();
+        let error = format!("{:#}", config.validate().unwrap_err());
+        assert!(
+            error.contains("memory_capacity must be positive"),
+            "{error}"
         );
     }
 
@@ -1357,110 +1375,68 @@ mod tests {
             serde_yaml::from_str::<CacheConfig>("{capacity: 64MiB, memory_capacity: 128MiB}")
                 .is_err()
         );
-        let cache: DiskCacheConfig =
-            serde_yaml::from_str("path: /tmp/split\ndisk_capacity: 300GiB\nmemory_capacity: 1GiB")
-                .unwrap();
-        cache.validate().unwrap();
-        assert_eq!(cache.disk_capacity, ByteSize::gib(300));
-        assert_eq!(cache.memory_capacity, ByteSize::gib(1));
-        assert_eq!(
-            serde_yaml::from_str::<DiskCacheConfig>(&serde_yaml::to_string(&cache).unwrap())
-                .unwrap(),
-            cache
-        );
     }
 
     #[test]
-    fn test_feuer_rejects_legacy_eviction_settings() {
-        for name in [
-            "partial_request_cache",
-            "predicate_cache",
-            "fast_field_cache",
-        ] {
-            for (settings, message) in [
-                ("capacity: 0, policy: lru", "policy is not supported"),
-                ("policy: s3-fifo", "policy is not supported"),
-                ("policy: tiny-lfu", "policy is not supported"),
-                (
-                    "capacity: 0, virtual_caches: [{}]",
-                    "virtual_caches are not supported",
-                ),
-            ] {
-                let config: SearcherConfig =
-                    serde_yaml::from_str(&format!("{name}: {{{settings}}}")).unwrap();
-                let error = format!("{:#}", config.validate().unwrap_err());
-                assert!(error.contains(name), "{error}");
-                assert!(error.contains(message), "{error}");
-            }
-        }
-    }
-
-    #[test]
-    fn test_result_cache_rejects_invalid_disk_settings() {
-        for name in ["partial_request_cache", "predicate_cache"] {
-            for (settings, message) in [
-                ("path: /tmp/cache", "disk_capacity must be set"),
-                (
-                    "disk_capacity: 1G",
-                    "path or disk_cache_directory must be set",
-                ),
-                ("path: '', disk_capacity: 1G", "path must not be empty"),
-                (
-                    "path: /tmp/cache, disk_capacity: 0, capacity: 0",
-                    "capacity must be positive",
-                ),
-                (
-                    "path: /tmp/cache, disk_capacity: 1G, policy: lru",
-                    "policy is not supported",
-                ),
-                (
-                    "virtual_caches: [{path: /tmp/cache, disk_capacity: 1G}]",
-                    "virtual_caches are not supported",
-                ),
-            ] {
-                let config: SearcherConfig =
-                    serde_yaml::from_str(&format!("{name}: {{{settings}}}")).unwrap();
-                let error = format!("{:#}", config.validate().unwrap_err());
-                assert!(error.contains(name), "{error}");
-                assert!(error.contains(message), "{error}");
-            }
-        }
-    }
-
-    #[test]
-    fn test_cache_rejects_invalid_directory_and_fast_field_disk_settings() {
+    fn test_cache_rejects_invalid_settings() {
         for (yaml, message) in [
             (
                 "disk_cache_directory: ''",
                 "disk_cache_directory must not be empty",
             ),
             (
-                "disk_cache: {disk_capacity: 1GiB, memory_capacity: 1MiB}",
-                "path or disk_cache_directory must be set",
+                "disk_cache: {disk_capacity: 1G, memory_capacity: 1M}",
+                "path or disk_cache_directory must be set when disk_capacity is greater than zero",
             ),
             (
-                "disk_cache_directory: /tmp/feuer\ndisk_cache: {path: '', disk_capacity: 1GiB, \
-                 memory_capacity: 1MiB}",
+                "disk_cache_directory: /tmp/cache\ndisk_cache: {path: '', disk_capacity: 0, \
+                 memory_capacity: 1M}",
                 "path must not be empty",
             ),
             (
-                "disk_cache_directory: /tmp/feuer\npartial_request_cache: {path: '', \
-                 disk_capacity: 1GiB}",
+                "partial_request_cache: {path: /tmp/cache}",
+                "disk_capacity must be set",
+            ),
+            (
+                "predicate_cache: {disk_capacity: 1G}",
+                "path or disk_cache_directory must be set when disk_capacity is greater than zero",
+            ),
+            (
+                "partial_request_cache: {path: '', disk_capacity: 1G}",
                 "path must not be empty",
+            ),
+            (
+                "predicate_cache: {disk_capacity: 0, capacity: 0}",
+                "capacity must be positive",
+            ),
+            (
+                "partial_request_cache: {capacity: 0, policy: lru}",
+                "policy is not supported",
+            ),
+            (
+                "predicate_cache: {capacity: 0, virtual_caches: [{}]}",
+                "virtual_caches are not supported",
+            ),
+            (
+                "fast_field_cache: {capacity: 0, policy: lru}",
+                "policy is not supported",
+            ),
+            (
+                "fast_field_cache: {virtual_caches: [{}]}",
+                "virtual_caches are not supported",
+            ),
+            (
+                "fast_field_cache: {path: /tmp/cache}",
+                "path and disk_capacity are only supported",
+            ),
+            (
+                "fast_field_cache: {disk_capacity: 0}",
+                "path and disk_capacity are only supported",
             ),
         ] {
             let config: SearcherConfig = serde_yaml::from_str(yaml).unwrap();
             let error = format!("{:#}", config.validate().unwrap_err());
             assert!(error.contains(message), "{yaml}: {error}");
-        }
-        for settings in ["path: /tmp/cache", "disk_capacity: 0"] {
-            let config: SearcherConfig =
-                serde_yaml::from_str(&format!("fast_field_cache: {{{settings}}}")).unwrap();
-            assert_eq!(
-                format!("{:#}", config.validate().unwrap_err()),
-                "invalid fast_field_cache: path and disk_capacity are only supported by \
-                 partial_request_cache and predicate_cache"
-            );
         }
     }
 
@@ -1475,42 +1451,6 @@ mod tests {
                     .contains(&format!("unknown field `{name}`"))
             );
         }
-        for setting in [
-            "compression: lz4",
-            "buffer_pool_size: 512M",
-            "submit_queue_size_threshold: 1G",
-            "memory_eviction_policy: s3-fifo",
-            "write_throughput: 500MiB",
-        ] {
-            let yaml = format!(
-                "path: /tmp/split\ndisk_capacity: 300GiB\nmemory_capacity: 1GiB\n{setting}"
-            );
-            let error = serde_yaml::from_str::<DiskCacheConfig>(&yaml).unwrap_err();
-            assert!(
-                error
-                    .to_string()
-                    .contains(setting.split(':').next().unwrap())
-            );
-        }
-    }
-
-    #[test]
-    fn test_disk_cache_capacity_validation() {
-        let mut config = DiskCacheConfig::for_test();
-        for capacity in [
-            ByteSize::b(0),
-            ByteSize::gb(300),
-            ByteSize::b((1 << 20) + 1),
-        ] {
-            config.disk_capacity = capacity;
-            config.validate().unwrap();
-            assert_eq!(config.disk_capacity, capacity);
-        }
-        config.memory_capacity = ByteSize::b(0);
-        assert_eq!(
-            config.validate().unwrap_err().to_string(),
-            "disk_cache.memory_capacity must be positive"
-        );
     }
 
     #[test]

@@ -15,7 +15,7 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::ops::Range;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::Duration;
 
 use feuer::Download;
@@ -40,7 +40,23 @@ pub(super) struct DownloadCoalescer {
 #[derive(Default)]
 struct Pending {
     objects: HashMap<String, Vec<Batch>>,
+    requests: HashMap<String, Weak<OnceLock<DownloadFuture>>>,
     inserts_since_cleanup: usize,
+}
+
+impl Pending {
+    fn cleanup(&mut self) {
+        if self.inserts_since_cleanup < CLEANUP_INTERVAL {
+            return;
+        }
+        self.objects.retain(|_, batches| {
+            batches.retain(|batch| batch.future.upgrade().is_some());
+            !batches.is_empty()
+        });
+        self.requests
+            .retain(|_, request| request.strong_count() > 0);
+        self.inserts_since_cleanup = 0;
+    }
 }
 
 struct Batch {
@@ -55,6 +71,25 @@ struct BatchState {
 }
 
 impl DownloadCoalescer {
+    /// Exact-range callers retain the source future even while Feuer's OnceCell
+    /// makes them wait outside the callback. Only cache misses initialize it.
+    pub(super) fn share_download(&self, key: &str) -> Arc<OnceLock<DownloadFuture>> {
+        let mut pending = self.pending.lock().unwrap();
+        pending.cleanup();
+        // A completed failure belongs only to callers that already joined it.
+        if let Some(download) = pending.requests.get(key).and_then(Weak::upgrade)
+            && download.get().is_none_or(|future| future.peek().is_none())
+        {
+            return download;
+        }
+        let download = Arc::new(OnceLock::new());
+        pending
+            .requests
+            .insert(key.to_owned(), Arc::downgrade(&download));
+        pending.inserts_since_cleanup += 1;
+        download
+    }
+
     /// The key must identify an immutable object; callbacks for the same key must be
     /// interchangeable and return exactly the supplied range (including any gaps).
     /// Only pending batches can grow. In-flight reads can only serve covered ranges.
@@ -71,15 +106,14 @@ impl DownloadCoalescer {
         let mut pending = self.pending.lock().unwrap();
         // Reclaim weak entries left behind by completed or cancelled requests,
         // including objects that are never requested again.
-        if pending.inserts_since_cleanup >= CLEANUP_INTERVAL {
-            pending.objects.retain(|_, batches| {
-                batches.retain(|batch| batch.future.upgrade().is_some());
-                !batches.is_empty()
-            });
-            pending.inserts_since_cleanup = 0;
-        }
+        pending.cleanup();
         let batches = pending.objects.entry(object_uri).or_default();
-        batches.retain(|batch| batch.future.upgrade().is_some());
+        batches.retain(|batch| {
+            batch
+                .future
+                .upgrade()
+                .is_some_and(|future| future.peek().is_none())
+        });
         for batch in batches.iter() {
             let Some(future) = batch.future.upgrade() else {
                 continue;

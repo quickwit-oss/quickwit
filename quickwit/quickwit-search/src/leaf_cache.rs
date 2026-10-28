@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::hash::Hash;
 use std::ops::{Bound, RangeBounds};
 
 use prost::Message;
@@ -22,45 +21,11 @@ use quickwit_proto::search::{
 };
 use quickwit_storage::{FeuerCache, OwnedBytes};
 use serde::Serialize;
-use siphasher::sip128::{Hasher128, SipHasher13};
 use tantivy::index::SegmentId;
 
 #[path = "result_cache.rs"]
 mod result_cache;
 use result_cache::ResultCache;
-
-/// A keyed 128-bit digest stored in place of a potentially large cache key.
-///
-/// The original key is discarded. The 128-bit output makes accidental collisions negligible.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct CacheKeyHash(u128);
-
-#[derive(Clone, Copy)]
-struct CacheKeyHasher {
-    key0: u64,
-    key1: u64,
-}
-
-impl CacheKeyHasher {
-    fn random() -> Self {
-        // Seed SipHash from a cryptographically secure thread-local RNG initialized from OS
-        // entropy. This makes the process-local hash function unpredictable and prevents
-        // deliberately crafted collisions.
-        let (key0, key1) = rand::random();
-        Self { key0, key1 }
-    }
-
-    #[cfg(test)]
-    fn with_keys(key0: u64, key1: u64) -> Self {
-        Self { key0, key1 }
-    }
-
-    fn hash<K: Hash + ?Sized>(&self, key: &K) -> CacheKeyHash {
-        let mut hasher = SipHasher13::new_with_keys(self.key0, self.key1);
-        key.hash(&mut hasher);
-        CacheKeyHash(hasher.finish128().as_u128())
-    }
-}
 
 /// A cache to memoize `leaf_search_single_split` results.
 pub struct LeafSearchCache {
@@ -150,7 +115,7 @@ impl LeafSearchCache {
 }
 
 /// A key inside a [`LeafSearchCache`].
-#[derive(Debug, Hash, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct CacheKey {
     /// The split this entry refers to
     split_id: String,
@@ -187,7 +152,7 @@ impl CacheKey {
 }
 
 /// A (half-open) range bounded inclusively below and exclusively above [start..end).
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize)]
 struct HalfOpenRange {
     start: i64,
     end: Option<i64>,
@@ -374,7 +339,7 @@ mod tests {
     use quickwit_query::query_ast::{HitSet, PredicateCache};
     use tantivy::index::SegmentId;
 
-    use super::{CacheKey, CacheKeyHasher, LeafSearchCache, PredicateCacheImpl};
+    use super::{CacheKey, LeafSearchCache, PredicateCacheImpl};
 
     #[test]
     fn test_leaf_search_cache_no_timestamp() {
@@ -573,8 +538,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_key_hash_covers_request_fields() {
-        let key_hasher = CacheKeyHasher::with_keys(1, 2);
+    fn test_cache_key_serialization_covers_request_fields() {
         let split = SplitIdAndFooterOffsets {
             split_id: "split_1".to_string(),
             ..Default::default()
@@ -585,16 +549,17 @@ mod tests {
             max_hits: 10,
             ..Default::default()
         };
-        let hash_of = |split: &SplitIdAndFooterOffsets, request: &SearchRequest| {
-            key_hasher.hash(&CacheKey::from_split_meta_and_request(
+        let serialize_key = |split: &SplitIdAndFooterOffsets, request: &SearchRequest| {
+            serde_json::to_string(&CacheKey::from_split_meta_and_request(
                 split.clone(),
                 request.clone(),
             ))
+            .unwrap()
         };
-        let reference_hash = hash_of(&split, &request);
-        assert_eq!(reference_hash, hash_of(&split, &request));
+        let reference_key = serialize_key(&split, &request);
+        assert_eq!(reference_key, serialize_key(&split, &request));
 
-        // A change anywhere in the request, however nested, must change the hash.
+        // A change anywhere in the request, however nested, must change the key.
         for altered_request in [
             SearchRequest {
                 query_ast: "test2".to_string(),
@@ -613,7 +578,7 @@ mod tests {
                 ..request.clone()
             },
         ] {
-            assert_ne!(reference_hash, hash_of(&split, &altered_request));
+            assert_ne!(reference_key, serialize_key(&split, &altered_request));
         }
 
         // And so must a change of split.
@@ -621,7 +586,7 @@ mod tests {
             split_id: "split_2".to_string(),
             ..Default::default()
         };
-        assert_ne!(reference_hash, hash_of(&other_split, &request));
+        assert_ne!(reference_key, serialize_key(&other_split, &request));
     }
 
     #[test]

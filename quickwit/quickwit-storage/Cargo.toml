@@ -19,7 +19,6 @@ bytes = { workspace = true }
 bytesize = { workspace = true }
 fail = { workspace = true }
 feuer = { workspace = true }
-feuer-memory = { workspace = true }
 futures = { workspace = true }
 http-body-util = { workspace = true}
 hyper = { workspace = true }
@@ -36,7 +35,6 @@ regex = { workspace = true }
 rustc-hash = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-siphasher = { workspace = true }
 stable_deref_trait = { workspace = true }
 tantivy = { workspace = true }
 tempfile = { workspace = true }

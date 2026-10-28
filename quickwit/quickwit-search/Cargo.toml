@@ -27,7 +27,6 @@ prost = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-siphasher = { workspace = true }
 tantivy = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

@@ -47,11 +47,15 @@ impl FeuerSplitRangeCache {
         // Each exact split slice is a complete object to Feuer. Version the key so
         // persisted entries from the range API cannot be mistaken for whole objects.
         let cache_key = split_slice_key(&object_uri, &byte_range);
+        let shared_download = self.downloads.share_download(&cache_key);
         self.cache
             .get_or_fetch_object_with_allocation_charge(cache_key, || async {
-                let (downloaded_range, download) = self
-                    .downloads
-                    .get_or_create(object_uri, byte_range.clone(), fetch)
+                let (downloaded_range, download) = shared_download
+                    .get_or_init(|| {
+                        self.downloads
+                            .get_or_create(object_uri, byte_range.clone(), fetch)
+                    })
+                    .clone()
                     .await?;
                 // The coalescer validates the merged download's length. Each entry exposes
                 // only this slice but retains and charges for the full backing allocation.

@@ -12,43 +12,46 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::hash::Hash;
-
 use quickwit_config::CacheConfig;
-use quickwit_storage::{FeuerMemoryCache, OwnedBytes};
-use siphasher::sip128::{Hasher128, SipHasher13};
+use quickwit_storage::metrics::{CacheMetrics, PARTIAL_REQUEST_CACHE};
+use quickwit_storage::{FeuerCache, OwnedBytes};
 
 /// Feuer memory cache for immutable per-split field metadata.
 pub struct ListFieldsCache {
-    cache: FeuerMemoryCache,
+    cache: FeuerCache,
+    metrics: Option<&'static CacheMetrics>,
 }
 
 impl ListFieldsCache {
     pub fn new(config: &CacheConfig) -> ListFieldsCache {
         Self {
-            cache: FeuerMemoryCache::new(
-                config.capacity().as_u64(),
-                "list_fields",
-                &quickwit_storage::metrics::PARTIAL_REQUEST_CACHE,
-            )
-            .expect("invalid Feuer memory cache configuration"),
+            cache: FeuerCache::memory(config.capacity().as_u64(), "list_fields")
+                .expect("invalid Feuer memory cache configuration"),
+            metrics: (config.capacity().as_u64() > 0).then_some(&PARTIAL_REQUEST_CACHE),
         }
     }
 
     pub fn get(&self, split_id: &str) -> Option<OwnedBytes> {
-        self.cache.get(split_key(split_id))
+        let bytes = futures::executor::block_on(self.cache.get(split_key(split_id)));
+        if let Some(metrics) = self.metrics {
+            metrics.record_get(bytes.as_ref().map(|bytes| bytes.len()));
+        }
+        bytes
     }
 
     pub fn put(&self, split_id: String, serialized_split_fields: OwnedBytes) {
-        self.cache
-            .put(split_key(&split_id), serialized_split_fields);
+        futures::executor::block_on(
+            self.cache
+                .put(split_key(&split_id), serialized_split_fields),
+        );
     }
 }
 
-fn split_key(split_id: &str) -> u128 {
-    let mut hasher = SipHasher13::new();
-    split_id.hash(&mut hasher);
-    hasher.finish128().as_u128()
+fn split_key(split_id: &str) -> String {
+    format!(
+        "v1:list-fields:{}",
+        serde_json::to_string(split_id).expect("split IDs are serializable")
+    )
 }
 
 #[cfg(test)]
@@ -56,6 +59,13 @@ mod tests {
     use bytesize::ByteSize;
 
     use super::*;
+
+    #[test]
+    fn list_fields_cache_keys_are_stable_and_separate_entries() {
+        assert_eq!(split_key("split"), "v1:list-fields:\"split\"");
+        assert_ne!(split_key("split"), split_key("other-split"));
+        assert_ne!(split_key("split\""), split_key("split\\\""));
+    }
 
     #[test]
     fn list_fields_cache_get_miss_returns_none() {

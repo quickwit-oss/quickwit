@@ -3316,7 +3316,7 @@ dependencies = [
 [[package]]
 name = "feuer"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=965bfcb000bf4f9ce19f0bd715c8f8b0337e1095#965bfcb000bf4f9ce19f0bd715c8f8b0337e1095"
+source = "git+https://github.com/PSeitz/feuer?rev=86efb7fda6a91bf62003d7e8021c5bba608960bb#86efb7fda6a91bf62003d7e8021c5bba608960bb"
 dependencies = [
  "bytes",
  "feuer-historian",
@@ -3331,7 +3331,7 @@ dependencies = [
 [[package]]
 name = "feuer-historian"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=965bfcb000bf4f9ce19f0bd715c8f8b0337e1095#965bfcb000bf4f9ce19f0bd715c8f8b0337e1095"
+source = "git+https://github.com/PSeitz/feuer?rev=86efb7fda6a91bf62003d7e8021c5bba608960bb#86efb7fda6a91bf62003d7e8021c5bba608960bb"
 dependencies = [
  "feuer-types",
  "rustc-hash",
@@ -3340,7 +3340,7 @@ dependencies = [
 [[package]]
 name = "feuer-memory"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=965bfcb000bf4f9ce19f0bd715c8f8b0337e1095#965bfcb000bf4f9ce19f0bd715c8f8b0337e1095"
+source = "git+https://github.com/PSeitz/feuer?rev=86efb7fda6a91bf62003d7e8021c5bba608960bb#86efb7fda6a91bf62003d7e8021c5bba608960bb"
 dependencies = [
  "bytes",
  "bytesize",
@@ -3355,7 +3355,7 @@ dependencies = [
 [[package]]
 name = "feuer-storage"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=965bfcb000bf4f9ce19f0bd715c8f8b0337e1095#965bfcb000bf4f9ce19f0bd715c8f8b0337e1095"
+source = "git+https://github.com/PSeitz/feuer?rev=86efb7fda6a91bf62003d7e8021c5bba608960bb#86efb7fda6a91bf62003d7e8021c5bba608960bb"
 dependencies = [
  "bytes",
  "feuer-historian",
@@ -3375,7 +3375,7 @@ dependencies = [
 [[package]]
 name = "feuer-types"
 version = "0.23.0-dev"
-source = "git+https://github.com/PSeitz/feuer?rev=965bfcb000bf4f9ce19f0bd715c8f8b0337e1095#965bfcb000bf4f9ce19f0bd715c8f8b0337e1095"
+source = "git+https://github.com/PSeitz/feuer?rev=86efb7fda6a91bf62003d7e8021c5bba608960bb#86efb7fda6a91bf62003d7e8021c5bba608960bb"
 dependencies = [
  "bytes",
  "bytesize",
@@ -8367,7 +8367,6 @@ dependencies = [
  "rand 0.10.3",
  "serde",
  "serde_json",
- "siphasher",
  "tantivy",
  "tempfile",
  "thiserror 2.0.21",
@@ -8480,7 +8479,6 @@ dependencies = [
  "bytesize",
  "fail",
  "feuer",
- "feuer-memory",
  "futures",
  "http 1.5.0",
  "http-body-util",
@@ -8511,7 +8509,6 @@ dependencies = [
  "rustls 0.23.46",
  "serde",
  "serde_json",
- "siphasher",
  "stable_deref_trait",
  "tantivy",
  "tempfile",

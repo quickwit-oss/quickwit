@@ -45,8 +45,7 @@ use quickwit_query::query_ast::{
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
     BundleStorage, ByteRangeCache, CountingStorage, OwnedBytes, SearchSplitCache, Storage,
-    StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
-    wrap_storage_with_split_range_cache,
+    StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_split_range_cache,
 };
 use tantivy::aggregation::AggContextParams;
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
@@ -210,7 +209,6 @@ fn configure_storage_retries(
 
 /// Opens a `tantivy::Index` for the given split with several cache layers:
 /// - A split byte-range cache given by `SearcherContext.disk_cache_opt`, including footer bytes.
-/// - A fast fields cache given by `SearcherContext.fast_fields_cache`.
 /// - An ephemeral unbounded cache directory (whose lifetime is tied to the returned `Index` if no
 ///   `ByteRangeCache` is provided).
 pub(crate) async fn open_index_with_caches(
@@ -230,12 +228,7 @@ pub(crate) async fn open_index_with_caches(
     )
     .await?;
 
-    let bundle_storage_with_cache = wrap_storage_with_cache(
-        searcher_context.fast_fields_cache.clone(),
-        Arc::new(bundle_storage),
-    );
-
-    let directory = StorageDirectory::new(bundle_storage_with_cache);
+    let directory = StorageDirectory::new(Arc::new(bundle_storage));
 
     let hot_directory = if let Some(cache) = ephemeral_unbounded_cache {
         let caching_directory = CachingDirectory::new(Arc::new(directory), cache);
