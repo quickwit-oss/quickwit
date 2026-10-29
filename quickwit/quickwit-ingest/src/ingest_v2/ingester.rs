@@ -349,6 +349,8 @@ impl Ingester {
                 let wal_usage = state_guard.mrecordlog.resource_usage();
                 report_wal_usage(wal_usage, self.disk_capacity, self.memory_capacity);
             }
+            // TODO: on failure or timeout, recovered shards unknown to the control plane stay
+            // advertisable and never reach EOF, so they block decommissioning until it times out.
             Ok(Err(error)) => {
                 warn!("advise reset shards request failed: {error}");
 
@@ -456,11 +458,6 @@ impl Ingester {
                     continue;
                 };
                 let shard_id = shard.shard_id.clone();
-
-                // A router can only know about a newly opened shard if it has been informed by the
-                // control plane, which confirms that the shard was correctly opened in the
-                // metastore.
-                shard.is_advertisable = true;
                 let doc_mapper = shard.doc_mapper_opt.clone().expect("shard should be open");
                 let validate_docs = shard.validate_docs;
                 let from_position_exclusive = shard.replication_position_inclusive.clone();
@@ -678,7 +675,12 @@ impl Ingester {
             as u32;
         drop(state_guard);
 
-        if disk_used >= self.disk_capacity.as_u64() * 90 / 100 {
+        // Weird edge cases of dangling shards can constrain either memory or disk but not
+        // necessarily both. Resetting shards reconciles shard state with the control
+        // plane's view.
+        if disk_used >= self.disk_capacity.as_u64() * 90 / 100
+            || memory_used >= self.memory_capacity.as_u64() * 90 / 100
+        {
             self.background_reset_shards();
         }
         report_wal_usage(wal_usage, self.disk_capacity, self.memory_capacity);
@@ -865,6 +867,27 @@ impl Ingester {
         Ok(response)
     }
 
+    async fn advertise_shards_inner(
+        &self,
+        advertise_shards_request: AdvertiseShardsRequest,
+    ) -> IngestV2Result<AdvertiseShardsResponse> {
+        let mut state_guard = self.state.lock_partially("advertise_shards").await?;
+
+        let mut successes = Vec::with_capacity(advertise_shards_request.shard_pkeys.len());
+
+        for shard_pkey in advertise_shards_request.shard_pkeys {
+            let queue_id = shard_pkey.queue_id();
+
+            if let Some(shard) = state_guard.shards.get_mut(&queue_id) {
+                shard.is_advertisable = true;
+                successes.push(shard_pkey);
+            }
+        }
+        info!("advertised {} shards", successes.len());
+        let response = AdvertiseShardsResponse { successes };
+        Ok(response)
+    }
+
     pub async fn debug_info(&self) -> JsonValue {
         let state_guard = match self.state.lock_fully("debug_info").await {
             Ok(state_guard) => state_guard,
@@ -985,6 +1008,13 @@ impl IngesterService for Ingester {
         close_shards_request: CloseShardsRequest,
     ) -> IngestV2Result<CloseShardsResponse> {
         self.close_shards_inner(close_shards_request).await
+    }
+
+    async fn advertise_shards(
+        &self,
+        advertise_shards_request: AdvertiseShardsRequest,
+    ) -> IngestV2Result<AdvertiseShardsResponse> {
+        self.advertise_shards_inner(advertise_shards_request).await
     }
 
     async fn decommission(
@@ -1164,7 +1194,7 @@ mod tests {
     #![allow(clippy::mutable_key_type)]
 
     use std::collections::HashSet;
-    use std::sync::atomic::{AtomicU16, Ordering};
+    use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
 
     use bytes::Bytes;
     use futures::StreamExt;
@@ -1614,6 +1644,25 @@ mod tests {
         };
         ingester.init_shards(init_shards_request).await.unwrap();
 
+        let advertise_shards_request = AdvertiseShardsRequest {
+            shard_pkeys: vec![
+                ShardPKey {
+                    index_uid: Some(index_uid_0.clone()),
+                    source_id: source_id.clone(),
+                    shard_id: Some(ShardId::from(1)),
+                },
+                ShardPKey {
+                    index_uid: Some(index_uid_1.clone()),
+                    source_id: source_id.clone(),
+                    shard_id: Some(ShardId::from(1)),
+                },
+            ],
+        };
+        ingester
+            .advertise_shards(advertise_shards_request)
+            .await
+            .unwrap();
+
         let persist_request = PersistRequest {
             ingester_id: ingester_ctx.node_id.to_string(),
             commit_type: CommitTypeV2::Force as i32,
@@ -1721,6 +1770,18 @@ mod tests {
         assert_eq!(response.successes.len(), 1);
         assert_eq!(response.failures.len(), 0);
 
+        let advertise_shards_request = AdvertiseShardsRequest {
+            shard_pkeys: vec![ShardPKey {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(0)),
+            }],
+        };
+        ingester
+            .advertise_shards(advertise_shards_request)
+            .await
+            .unwrap();
+
         let persist_request = PersistRequest {
             ingester_id: ingester_ctx.node_id.to_string(),
             commit_type: CommitTypeV2::Force as i32,
@@ -1790,6 +1851,18 @@ mod tests {
         let response = ingester.init_shards(init_shards_request).await.unwrap();
         assert_eq!(response.successes.len(), 1);
         assert_eq!(response.failures.len(), 0);
+
+        let advertise_shards_request = AdvertiseShardsRequest {
+            shard_pkeys: vec![ShardPKey {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(0)),
+            }],
+        };
+        ingester
+            .advertise_shards(advertise_shards_request)
+            .await
+            .unwrap();
 
         let persist_request = PersistRequest {
             ingester_id: ingester_ctx.node_id.to_string(),
@@ -1866,6 +1939,18 @@ mod tests {
         assert_eq!(response.successes.len(), 1);
         assert_eq!(response.failures.len(), 0);
 
+        let advertise_shards_request = AdvertiseShardsRequest {
+            shard_pkeys: vec![ShardPKey {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(0)),
+            }],
+        };
+        ingester
+            .advertise_shards(advertise_shards_request)
+            .await
+            .unwrap();
+
         let persist_request = PersistRequest {
             ingester_id: ingester_ctx.node_id.to_string(),
             commit_type: CommitTypeV2::Force as i32,
@@ -1929,6 +2014,18 @@ mod tests {
         assert_eq!(response.successes.len(), 1);
         assert_eq!(response.failures.len(), 0);
 
+        let advertise_shards_request = AdvertiseShardsRequest {
+            shard_pkeys: vec![ShardPKey {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(0)),
+            }],
+        };
+        ingester
+            .advertise_shards(advertise_shards_request)
+            .await
+            .unwrap();
+
         let persist_request = PersistRequest {
             ingester_id: ingester_ctx.node_id.to_string(),
             commit_type: CommitTypeV2::Force as i32,
@@ -1990,6 +2087,18 @@ mod tests {
         assert_eq!(response.successes.len(), 1);
         assert_eq!(response.failures.len(), 0);
 
+        let advertise_shards_request = AdvertiseShardsRequest {
+            shard_pkeys: vec![ShardPKey {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(0)),
+            }],
+        };
+        ingester
+            .advertise_shards(advertise_shards_request)
+            .await
+            .unwrap();
+
         let persist_request = PersistRequest {
             ingester_id: ingester_ctx.node_id.to_string(),
             commit_type: CommitTypeV2::Force as i32,
@@ -2028,7 +2137,9 @@ mod tests {
         let mut state_guard = ingester.state.lock_fully("test").await.unwrap();
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id = SourceId::from("test-source");
-        let shard = IngesterShard::builder(index_uid.clone(), source_id, ShardId::from(1)).build();
+        let shard = IngesterShard::builder(index_uid.clone(), source_id, ShardId::from(1))
+            .advertisable()
+            .build();
         let queue_id = shard.queue_id();
         state_guard.shards.insert(queue_id.clone(), shard);
 
@@ -2090,6 +2201,7 @@ mod tests {
         // Insert a dangling shard, i.e. a shard without a corresponding queue.
         let shard = IngesterShard::builder(index_uid.clone(), source_id.clone(), ShardId::from(1))
             .with_doc_mapper(doc_mapper)
+            .advertisable()
             .build();
         state_guard.shards.insert(shard.queue_id(), shard);
         drop(state_guard);
@@ -2216,6 +2328,18 @@ mod tests {
 
         drop(state_guard);
 
+        let advertise_shards_request = AdvertiseShardsRequest {
+            shard_pkeys: vec![ShardPKey {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(1)),
+            }],
+        };
+        ingester
+            .advertise_shards(advertise_shards_request)
+            .await
+            .unwrap();
+
         let persist_request = PersistRequest {
             ingester_id: ingester_ctx.node_id.to_string(),
             commit_type: CommitTypeV2::Auto as i32,
@@ -2294,6 +2418,18 @@ mod tests {
             .unwrap();
 
         drop(state_guard);
+
+        let advertise_shards_request = AdvertiseShardsRequest {
+            shard_pkeys: vec![ShardPKey {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(1)),
+            }],
+        };
+        ingester
+            .advertise_shards(advertise_shards_request)
+            .await
+            .unwrap();
 
         let persist_request = PersistRequest {
             ingester_id: ingester_ctx.node_id.to_string(),
@@ -2377,6 +2513,25 @@ mod tests {
         };
         ingester.init_shards(init_shards_request).await.unwrap();
 
+        let advertise_shards_request = AdvertiseShardsRequest {
+            shard_pkeys: vec![
+                ShardPKey {
+                    index_uid: Some(index_uid_0.clone()),
+                    source_id: source_id.clone(),
+                    shard_id: Some(ShardId::from(1)),
+                },
+                ShardPKey {
+                    index_uid: Some(index_uid_1.clone()),
+                    source_id: source_id.clone(),
+                    shard_id: Some(ShardId::from(1)),
+                },
+            ],
+        };
+        ingester
+            .advertise_shards(advertise_shards_request)
+            .await
+            .unwrap();
+
         let persist_request = PersistRequest {
             ingester_id: ingester_ctx.node_id.to_string(),
             commit_type: CommitTypeV2::Force as i32,
@@ -2419,6 +2574,437 @@ mod tests {
         assert_eq!(source_shard_updates[1].open_shard_count, 1);
 
         assert!(routing_update.closed_shards.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_ingester_advertise_shards() {
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+        let queue_id_01 = queue_id(&index_uid, &source_id, &ShardId::from(1));
+
+        let doc_mapping_uid = DocMappingUid::random();
+        let doc_mapping_json = format!(
+            r#"{{
+                "doc_mapping_uid": "{doc_mapping_uid}"
+            }}"#
+        );
+        let init_shards_request = InitShardsRequest {
+            subrequests: vec![InitShardSubrequest {
+                subrequest_id: 0,
+                shard: Some(Shard {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: source_id.clone(),
+                    shard_id: Some(ShardId::from(1)),
+                    shard_state: ShardState::Open as i32,
+                    ingester_id: ingester_ctx.node_id.to_string(),
+                    doc_mapping_uid: Some(doc_mapping_uid),
+                    ..Default::default()
+                }),
+                doc_mapping_json,
+                validate_docs: true,
+            }],
+        };
+        ingester.init_shards(init_shards_request).await.unwrap();
+
+        let persist_request = PersistRequest {
+            ingester_id: ingester_ctx.node_id.to_string(),
+            commit_type: CommitTypeV2::Auto as i32,
+            subrequests: vec![PersistSubrequest {
+                subrequest_id: 0,
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
+            }],
+        };
+        let persist_response = ingester.persist(persist_request.clone()).await.unwrap();
+        assert_eq!(persist_response.successes.len(), 0);
+        assert_eq!(persist_response.failures.len(), 1);
+
+        let persist_failure = &persist_response.failures[0];
+        assert_eq!(persist_failure.subrequest_id, 0);
+        assert_eq!(
+            persist_failure.reason(),
+            PersistFailureReason::NoShardsAvailable
+        );
+
+        let state_guard = ingester.state.lock_fully("test").await.unwrap();
+        let shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
+        shard_01.assert_is_open();
+        shard_01.assert_replication_position(Position::Beginning);
+        assert!(!shard_01.is_advertisable);
+
+        state_guard
+            .mrecordlog
+            .assert_records_eq(&queue_id_01, .., &[]);
+        drop(state_guard);
+
+        let shard_pkey_01 = ShardPKey {
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            shard_id: Some(ShardId::from(1)),
+        };
+        let advertise_shards_request = AdvertiseShardsRequest {
+            shard_pkeys: vec![
+                shard_pkey_01.clone(),
+                ShardPKey {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: source_id.clone(),
+                    shard_id: Some(ShardId::from(99)),
+                },
+            ],
+        };
+        let advertise_shards_response = ingester
+            .advertise_shards(advertise_shards_request)
+            .await
+            .unwrap();
+        assert_eq!(
+            advertise_shards_response.successes,
+            std::slice::from_ref(&shard_pkey_01)
+        );
+
+        let state_guard = ingester.state.lock_partially("test").await.unwrap();
+        assert_eq!(state_guard.shards.len(), 1);
+        assert!(
+            state_guard
+                .shards
+                .get(&queue_id_01)
+                .unwrap()
+                .is_advertisable
+        );
+        drop(state_guard);
+
+        let persist_response = ingester.persist(persist_request).await.unwrap();
+        assert_eq!(persist_response.successes.len(), 1);
+        assert_eq!(persist_response.failures.len(), 0);
+
+        let persist_success = &persist_response.successes[0];
+        assert_eq!(persist_success.subrequest_id, 0);
+        assert_eq!(persist_success.index_uid(), &index_uid);
+        assert_eq!(persist_success.shard_id(), ShardId::from(1));
+        assert_eq!(
+            persist_success.replication_position_inclusive,
+            Some(Position::offset(0u64))
+        );
+
+        let advertise_shards_request = AdvertiseShardsRequest {
+            shard_pkeys: vec![shard_pkey_01.clone()],
+        };
+        let advertise_shards_response = ingester
+            .advertise_shards(advertise_shards_request)
+            .await
+            .unwrap();
+        assert_eq!(advertise_shards_response.successes, [shard_pkey_01]);
+
+        let state_guard = ingester.state.lock_fully("test").await.unwrap();
+        let shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
+        assert!(shard_01.is_advertisable);
+        shard_01.assert_replication_position(Position::offset(0u64));
+
+        state_guard.mrecordlog.assert_records_eq(
+            &queue_id_01,
+            ..,
+            &[(0, [0, 0], r#"{"doc": "test-doc-010"}"#)],
+        );
+    }
+
+    #[tokio::test]
+    async fn test_ingester_persist_prefers_advertised_shards() {
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+        let queue_id_01 = queue_id(&index_uid, &source_id, &ShardId::from(1));
+        let queue_id_02 = queue_id(&index_uid, &source_id, &ShardId::from(2));
+
+        let doc_mapping_uid = DocMappingUid::random();
+        let doc_mapping_json = format!(
+            r#"{{
+                "doc_mapping_uid": "{doc_mapping_uid}"
+            }}"#
+        );
+        let init_shards_request = InitShardsRequest {
+            subrequests: vec![
+                InitShardSubrequest {
+                    subrequest_id: 0,
+                    shard: Some(Shard {
+                        index_uid: Some(index_uid.clone()),
+                        source_id: source_id.clone(),
+                        shard_id: Some(ShardId::from(1)),
+                        shard_state: ShardState::Open as i32,
+                        ingester_id: ingester_ctx.node_id.to_string(),
+                        doc_mapping_uid: Some(doc_mapping_uid),
+                        ..Default::default()
+                    }),
+                    doc_mapping_json: doc_mapping_json.clone(),
+                    validate_docs: true,
+                },
+                InitShardSubrequest {
+                    subrequest_id: 1,
+                    shard: Some(Shard {
+                        index_uid: Some(index_uid.clone()),
+                        source_id: source_id.clone(),
+                        shard_id: Some(ShardId::from(2)),
+                        shard_state: ShardState::Open as i32,
+                        ingester_id: ingester_ctx.node_id.to_string(),
+                        doc_mapping_uid: Some(doc_mapping_uid),
+                        ..Default::default()
+                    }),
+                    doc_mapping_json,
+                    validate_docs: true,
+                },
+            ],
+        };
+        ingester.init_shards(init_shards_request).await.unwrap();
+
+        let advertise_shards_request = AdvertiseShardsRequest {
+            shard_pkeys: vec![ShardPKey {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(1)),
+            }],
+        };
+        ingester
+            .advertise_shards(advertise_shards_request)
+            .await
+            .unwrap();
+
+        let persist_request = PersistRequest {
+            ingester_id: ingester_ctx.node_id.to_string(),
+            commit_type: CommitTypeV2::Auto as i32,
+            subrequests: vec![PersistSubrequest {
+                subrequest_id: 0,
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
+            }],
+        };
+        let persist_response = ingester.persist(persist_request.clone()).await.unwrap();
+        assert_eq!(persist_response.successes.len(), 1);
+        assert_eq!(persist_response.failures.len(), 0);
+
+        let persist_success = &persist_response.successes[0];
+        assert_eq!(persist_success.shard_id(), ShardId::from(1));
+        assert_eq!(
+            persist_success.replication_position_inclusive,
+            Some(Position::offset(0u64))
+        );
+
+        let persist_response = ingester.persist(persist_request).await.unwrap();
+        assert_eq!(persist_response.successes.len(), 1);
+        assert_eq!(persist_response.failures.len(), 0);
+
+        let persist_success = &persist_response.successes[0];
+        assert_eq!(persist_success.shard_id(), ShardId::from(1));
+        assert_eq!(
+            persist_success.replication_position_inclusive,
+            Some(Position::offset(1u64))
+        );
+
+        let state_guard = ingester.state.lock_fully("test").await.unwrap();
+        let shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
+        assert!(shard_01.is_advertisable);
+        shard_01.assert_replication_position(Position::offset(1u64));
+
+        let shard_02 = state_guard.shards.get(&queue_id_02).unwrap();
+        shard_02.assert_is_open();
+        assert!(!shard_02.is_advertisable);
+        shard_02.assert_replication_position(Position::Beginning);
+
+        state_guard
+            .mrecordlog
+            .assert_records_eq(&queue_id_02, .., &[]);
+    }
+
+    #[tokio::test]
+    async fn test_ingester_open_fetch_stream_advertises_shard() {
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+        let queue_id_01 = queue_id(&index_uid, &source_id, &ShardId::from(1));
+
+        let doc_mapping_uid = DocMappingUid::random();
+        let doc_mapping_json = format!(
+            r#"{{
+                "doc_mapping_uid": "{doc_mapping_uid}"
+            }}"#
+        );
+        let init_shards_request = InitShardsRequest {
+            subrequests: vec![InitShardSubrequest {
+                subrequest_id: 0,
+                shard: Some(Shard {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: source_id.clone(),
+                    shard_id: Some(ShardId::from(1)),
+                    shard_state: ShardState::Open as i32,
+                    ingester_id: ingester_ctx.node_id.to_string(),
+                    doc_mapping_uid: Some(doc_mapping_uid),
+                    ..Default::default()
+                }),
+                doc_mapping_json,
+                validate_docs: true,
+            }],
+        };
+        ingester.init_shards(init_shards_request).await.unwrap();
+
+        let state_guard = ingester.state.lock_partially("test").await.unwrap();
+        assert!(
+            !state_guard
+                .shards
+                .get(&queue_id_01)
+                .unwrap()
+                .is_advertisable
+        );
+        drop(state_guard);
+
+        let open_fetch_stream_request = OpenFetchStreamRequest {
+            client_id: "test-client".to_string(),
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            shard_id: Some(ShardId::from(1)),
+            from_position_exclusive: Some(Position::Beginning),
+        };
+        let _fetch_stream = ingester
+            .open_fetch_stream(open_fetch_stream_request)
+            .await
+            .unwrap();
+
+        let state_guard = ingester.state.lock_partially("test").await.unwrap();
+        assert!(
+            state_guard
+                .shards
+                .get(&queue_id_01)
+                .unwrap()
+                .is_advertisable
+        );
+        drop(state_guard);
+
+        let persist_request = PersistRequest {
+            ingester_id: ingester_ctx.node_id.to_string(),
+            commit_type: CommitTypeV2::Auto as i32,
+            subrequests: vec![PersistSubrequest {
+                subrequest_id: 0,
+                index_uid: Some(index_uid.clone()),
+                source_id,
+                doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
+            }],
+        };
+        let persist_response = ingester.persist(persist_request).await.unwrap();
+        assert_eq!(persist_response.successes.len(), 1);
+        assert_eq!(persist_response.failures.len(), 0);
+
+        let persist_success = &persist_response.successes[0];
+        assert_eq!(persist_success.shard_id(), ShardId::from(1));
+        assert_eq!(
+            persist_success.replication_position_inclusive,
+            Some(Position::offset(0u64))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_ingester_persist_resets_shards_on_memory_pressure() {
+        let num_advise_reset_shards_calls = Arc::new(AtomicUsize::new(0));
+        let num_advise_reset_shards_calls_clone = num_advise_reset_shards_calls.clone();
+
+        let mut mock_control_plane = MockControlPlaneService::new();
+        mock_control_plane
+            .expect_advise_reset_shards()
+            .times(2)
+            .returning(move |_| {
+                num_advise_reset_shards_calls_clone.fetch_add(1, Ordering::Relaxed);
+                Ok(AdviseResetShardsResponse::default())
+            });
+        let control_plane = ControlPlaneServiceClient::from_mock(mock_control_plane);
+
+        let memory_capacity = ByteSize::kb(10);
+        let disk_capacity = ByteSize::gb(1);
+        let (ingester_ctx, ingester) = IngesterForTest::default()
+            .with_control_plane(control_plane)
+            .with_memory_capacity(memory_capacity)
+            .with_disk_capacity(disk_capacity)
+            .build()
+            .await;
+
+        wait_until_predicate(
+            || async {
+                num_advise_reset_shards_calls.load(Ordering::Relaxed) == 1
+                    && ingester.reset_shards_permits.available_permits() == 1
+            },
+            Duration::from_secs(5),
+            Duration::from_millis(10),
+        )
+        .await
+        .expect("startup reset shards should complete");
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+
+        let doc_mapping_uid = DocMappingUid::random();
+        let doc_mapping_json = format!(
+            r#"{{
+                "doc_mapping_uid": "{doc_mapping_uid}"
+            }}"#
+        );
+        let init_shards_request = InitShardsRequest {
+            subrequests: vec![InitShardSubrequest {
+                subrequest_id: 0,
+                shard: Some(Shard {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: source_id.clone(),
+                    shard_id: Some(ShardId::from(1)),
+                    shard_state: ShardState::Open as i32,
+                    ingester_id: ingester_ctx.node_id.to_string(),
+                    doc_mapping_uid: Some(doc_mapping_uid),
+                    ..Default::default()
+                }),
+                doc_mapping_json,
+                validate_docs: false,
+            }],
+        };
+        ingester.init_shards(init_shards_request).await.unwrap();
+
+        let advertise_shards_request = AdvertiseShardsRequest {
+            shard_pkeys: vec![ShardPKey {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(1)),
+            }],
+        };
+        ingester
+            .advertise_shards(advertise_shards_request)
+            .await
+            .unwrap();
+
+        let large_doc: &'static str = format!(r#"{{"doc": "{}"}}"#, "x".repeat(9_400)).leak();
+        let persist_request = PersistRequest {
+            ingester_id: ingester_ctx.node_id.to_string(),
+            commit_type: CommitTypeV2::Auto as i32,
+            subrequests: vec![PersistSubrequest {
+                subrequest_id: 0,
+                index_uid: Some(index_uid.clone()),
+                source_id,
+                doc_batch: Some(DocBatchV2::for_test([large_doc])),
+            }],
+        };
+        let persist_response = ingester.persist(persist_request).await.unwrap();
+        assert_eq!(persist_response.successes.len(), 1);
+        assert_eq!(persist_response.failures.len(), 0);
+
+        let state_guard = ingester.state.lock_fully("test").await.unwrap();
+        let wal_usage = state_guard.mrecordlog.resource_usage();
+        assert!(wal_usage.memory_used_bytes as u64 >= memory_capacity.as_u64() * 90 / 100);
+        assert!((wal_usage.disk_used_bytes as u64) < disk_capacity.as_u64() * 90 / 100);
+        drop(state_guard);
+
+        wait_until_predicate(
+            || async { num_advise_reset_shards_calls.load(Ordering::Relaxed) == 2 },
+            Duration::from_secs(5),
+            Duration::from_millis(10),
+        )
+        .await
+        .expect("persist should trigger a reset shards request under memory pressure");
     }
 
     #[tokio::test]
