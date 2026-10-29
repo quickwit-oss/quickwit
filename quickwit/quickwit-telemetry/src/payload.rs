@@ -182,15 +182,15 @@ pub enum QuickwitFeature {
     Tls,
 }
 
-/// Leaves out the user, the password and the query parameters of the metastore URI, which may
-/// differ between the nodes of a cluster.
+/// Leaves out the user, the password, the query parameters and the fragment of the metastore URI,
+/// which may differ between the nodes of a cluster.
 pub fn hash_cluster_identity(cluster_id: &str, metastore_uri: &Uri) -> String {
     let mut location = metastore_uri.as_str();
     if let Some((_, after_scheme)) = location.split_once("://") {
         location = after_scheme;
     }
-    if let Some((before_query, _)) = location.split_once('?') {
-        location = before_query;
+    if let Some(query_or_fragment_start) = location.find(['?', '#']) {
+        location = &location[..query_or_fragment_start];
     }
     let authority_len = location.find('/').unwrap_or(location.len());
     if let Some(at_index) = location[..authority_len].rfind('@') {
@@ -248,6 +248,10 @@ mod tests {
         assert_ne!(
             hashed_cluster_id("other-cluster", "postgresql://db:5432/metastore"),
             expected
+        );
+        assert_eq!(
+            hashed_cluster_id("my-cluster", "s3://bucket/metastore#polling_interval=30s"),
+            hashed_cluster_id("my-cluster", "s3://bucket/metastore")
         );
     }
 

@@ -61,7 +61,7 @@ Each request also includes:
 - A session ID, generated at random each time the node starts.
 - An install ID, generated at random the first time the node uses its data directory and stored there in the `telemetry_install_id` file. It is only created while telemetry is on.
 - An MD5 hash of the host name and the user name, used to count distinct installations from older releases, which have no install ID. The relay replaces it with a keyed hash before storage. See below.
-- An MD5 hash of the cluster ID and the metastore URI, without the user name, password or query parameters, used to count clusters and the nodes in each. The relay replaces it with a keyed hash before storage.
+- An MD5 hash of the cluster ID and the metastore URI, without the user name, password, query parameters or fragment, used to count clusters and the nodes in each. The relay replaces it with a keyed hash before storage.
 - The number of events dropped because too many were queued.
 
 `running` and `end_command` events also include:
