@@ -16,6 +16,8 @@ use bytes::Bytes;
 use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::types::DocUidGenerator;
 
+use crate::DocBatchV2Builder;
+
 /// Iterates over the non-blank lines of an NDJSON body.
 pub fn split_ndjson_lines(ndjson_body: &[u8]) -> impl Iterator<Item = &[u8]> {
     let mut line_start = 0;
@@ -31,7 +33,14 @@ pub fn split_ndjson_lines(ndjson_body: &[u8]) -> impl Iterator<Item = &[u8]> {
 
 /// Builds a [`DocBatchV2`] whose doc buffer is the NDJSON body itself, without copying. The docs
 /// must cover the whole buffer, so newlines and blank lines stay attached to neighboring docs.
+///
+/// Blank lines may contain ASCII whitespace that is not JSON whitespace (form feed). Attaching
+/// them to a neighboring doc would make that doc invalid JSON, so such bodies are copied instead,
+/// keeping only the non-blank lines.
 pub fn doc_batch_v2_from_ndjson(ndjson_body: Bytes) -> Option<DocBatchV2> {
+    if has_blank_line_with_non_json_whitespace(&ndjson_body) {
+        return doc_batch_v2_from_ndjson_copy(&ndjson_body);
+    }
     let mut doc_uids = Vec::new();
     let mut doc_lengths = Vec::new();
     let mut doc_uid_generator = DocUidGenerator::default();
@@ -71,6 +80,23 @@ pub fn doc_batch_v2_from_ndjson(ndjson_body: Bytes) -> Option<DocBatchV2> {
         doc_buffer: ndjson_body,
         doc_lengths,
     })
+}
+
+fn doc_batch_v2_from_ndjson_copy(ndjson_body: &[u8]) -> Option<DocBatchV2> {
+    let mut doc_batch_builder = DocBatchV2Builder::with_capacity(ndjson_body.len());
+    let mut doc_uid_generator = DocUidGenerator::default();
+    for line in split_ndjson_lines(ndjson_body) {
+        doc_batch_builder.add_doc(doc_uid_generator.next_doc_uid(), line);
+    }
+    doc_batch_builder.build()
+}
+
+fn has_blank_line_with_non_json_whitespace(ndjson_body: &[u8]) -> bool {
+    // Form feed is the only ASCII whitespace byte that JSON does not accept as whitespace.
+    memchr::memchr(b'\x0c', ndjson_body).is_some()
+        && ndjson_body
+            .split(|byte| *byte == b'\n')
+            .any(|line| is_empty_or_blank_line(line) && line.contains(&b'\x0c'))
 }
 
 #[inline]
@@ -133,6 +159,20 @@ mod tests {
     fn test_doc_batch_v2_from_blank_ndjson() {
         assert!(doc_batch_v2_from_ndjson(Bytes::new()).is_none());
         assert!(doc_batch_v2_from_ndjson(Bytes::from_static(b"\n \n\t")).is_none());
+        assert!(doc_batch_v2_from_ndjson(Bytes::from_static(b"\x0c\n \x0c \n")).is_none());
+    }
+
+    #[test]
+    fn test_doc_batch_v2_from_ndjson_form_feed_blank_lines() {
+        let body = Bytes::from_static(b"\x0c\n{\"id\":1}\n \x0c\n{\"id\":2}\n\x0c");
+        let doc_batch = doc_batch_v2_from_ndjson(body).unwrap();
+        let docs: Vec<Bytes> = doc_batch.docs().map(|(_doc_uid, doc)| doc).collect();
+        assert_eq!(docs, [&b"{\"id\":1}"[..], b"{\"id\":2}"]);
+        for doc in &docs {
+            serde_json::from_slice::<serde_json::Value>(doc).unwrap();
+        }
+        let doc_uids: Vec<_> = doc_batch.docs().map(|(doc_uid, _doc)| doc_uid).collect();
+        assert!(doc_uids.windows(2).all(|pair| pair[0] < pair[1]));
     }
 
     #[test]
