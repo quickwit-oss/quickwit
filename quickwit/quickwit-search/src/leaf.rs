@@ -3297,6 +3297,63 @@ mod tests {
         assert!(result.offloaded_search_tasks.is_empty());
     }
 
+    #[test]
+    fn test_can_split_do_better_with_outward_rounded_metadata() {
+        use quickwit_indexing::merge_policy::{MergePolicy, NopMergePolicy};
+        use quickwit_indexing::models::{SplitAttrs, create_split_metadata};
+        use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId, SplitId};
+
+        let merge_policy: Arc<dyn MergePolicy> = Arc::new(NopMergePolicy);
+        for (start_ns, end_ns, worst_ns) in [
+            (1_601_100_000_000, 1_601_900_000_000, 1_601_758_000_000),
+            (-1_900_000_000, -1_100_000_000, -1_500_000_000),
+            (-600_000_000, -100_000_000, -500_000_000),
+        ] {
+            let split_attrs = SplitAttrs {
+                node_id: NodeId::from_str("test-node"),
+                index_uid: IndexUid::new_with_random_ulid("test-index"),
+                source_id: "test-source".to_string(),
+                doc_mapping_uid: DocMappingUid::default(),
+                split_id: SplitId::new(),
+                partition_id: 0,
+                num_docs: 2,
+                uncompressed_docs_size_in_bytes: 0,
+                time_range: Some(
+                    DateTime::from_timestamp_nanos(start_ns)
+                        ..=DateTime::from_timestamp_nanos(end_ns),
+                ),
+                replaced_split_ids: Vec::new(),
+                delete_opstamp: 0,
+                num_merge_ops: 0,
+            };
+            let metadata =
+                create_split_metadata(&merge_policy, None, &split_attrs, Default::default(), 0..0);
+            let split = crate::extract_split_and_footer_offsets(&metadata);
+            let hit = |timestamp_ns| PartialHit {
+                sort_value: Some(quickwit_proto::search::SortByValue {
+                    sort_value: Some(SortValue::I64(timestamp_ns)),
+                }),
+                ..Default::default()
+            };
+
+            // A split with a better document in the same second must not be pruned.
+            for mut pruning in [
+                CanSplitDoBetter::SplitTimestampHigher(None),
+                CanSplitDoBetter::FindTraceIdsAggregation(None),
+            ] {
+                pruning.record_new_worst_hit(&hit(worst_ns));
+                assert!(pruning.can_be_better(&split));
+                pruning.record_new_worst_hit(&hit(end_ns + 2_000_000_000));
+                assert!(!pruning.can_be_better(&split));
+            }
+            let mut ascending = CanSplitDoBetter::SplitTimestampLower(None);
+            ascending.record_new_worst_hit(&hit(worst_ns));
+            assert!(ascending.can_be_better(&split));
+            ascending.record_new_worst_hit(&hit(start_ns - 2_000_000_000));
+            assert!(!ascending.can_be_better(&split));
+        }
+    }
+
     mod proptest_greedy_batch {
         use std::num::NonZeroUsize;
 
