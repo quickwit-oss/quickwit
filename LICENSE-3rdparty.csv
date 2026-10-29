@@ -87,6 +87,9 @@ base64,https://github.com/marshallpierce/rust-base64,MIT OR Apache-2.0,"Alice Ma
 base64,https://github.com/marshallpierce/rust-base64,MIT OR Apache-2.0,Marshall Pierce <marshall@mpierce.org>
 base64-simd,https://github.com/Nugine/simd,MIT,The base64-simd Authors
 base64ct,https://github.com/RustCrypto/formats,Apache-2.0 OR MIT,RustCrypto Developers
+biscuit-auth,https://github.com/biscuit-auth/biscuit-rust,Apache-2.0,Geoffroy Couprie <contact@geoffroycouprie.com>
+biscuit-parser,https://github.com/biscuit-auth/biscuit-rust,Apache-2.0,"Clément Delafargue <clement@delafargue.name>, Geoffroy Couprie <contact@geoffroycouprie.com>"
+biscuit-quote,https://github.com/biscuit-auth/biscuit-rust,Apache-2.0,"Clément Delafargue <clement@delafargue.name>, Geoffroy Couprie <contact@geoffroycouprie.com>"
 bit-set,https://github.com/contain-rs/bit-set,Apache-2.0 OR MIT,Alexis Beingessner <a.beingessner@gmail.com>
 bit-set,https://github.com/contain-rs/bit-vec,Apache-2.0 OR MIT,Alexis Beingessner <a.beingessner@gmail.com>
 bit-vec,https://github.com/contain-rs/bit-vec,Apache-2.0 OR MIT,Alexis Beingessner <a.beingessner@gmail.com>
@@ -572,6 +575,8 @@ primeorder,https://github.com/RustCrypto/elliptic-curves/tree/master/primeorder,
 proc-macro-crate,https://github.com/bkchr/proc-macro-crate,MIT OR Apache-2.0,Bastian Köcher <git@kchr.de>
 proc-macro-error,https://gitlab.com/CreepySkeleton/proc-macro-error,MIT OR Apache-2.0,CreepySkeleton <creepy-skeleton@yandex.ru>
 proc-macro-error-attr,https://gitlab.com/CreepySkeleton/proc-macro-error,MIT OR Apache-2.0,CreepySkeleton <creepy-skeleton@yandex.ru>
+proc-macro-error-attr2,https://github.com/GnomedDev/proc-macro-error-2,MIT OR Apache-2.0,"CreepySkeleton <creepy-skeleton@yandex.ru>, GnomedDev <david2005thomas@gmail.com>"
+proc-macro-error2,https://github.com/GnomedDev/proc-macro-error-2,MIT OR Apache-2.0,"CreepySkeleton <creepy-skeleton@yandex.ru>, GnomedDev <david2005thomas@gmail.com>"
 proc-macro2,https://github.com/dtolnay/proc-macro2,MIT OR Apache-2.0,"David Tolnay <dtolnay@gmail.com>, Alex Crichton <alex@alexcrichton.com>"
 proc-macro2-diagnostics,https://github.com/SergioBenitez/proc-macro2-diagnostics,MIT OR Apache-2.0,Sergio Benitez <sb@sergio.bz>
 procfs,https://github.com/eminence/procfs,MIT OR Apache-2.0,Andrew Chin <achin@eminence32.net>
@@ -579,10 +584,13 @@ procfs-core,https://github.com/eminence/procfs,MIT OR Apache-2.0,Andrew Chin <ac
 prometheus,https://github.com/tikv/rust-prometheus,Apache-2.0,"overvenus@gmail.com, siddontang@gmail.com, vistaswx@gmail.com"
 proptest,https://github.com/proptest-rs/proptest,MIT OR Apache-2.0,Jason Lingle
 prost,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danburkert.com>, Lucio Franco <luciofranco14@gmail.com>, Casper Meijn <casper@meijn.net>, Tokio Contributors <team@tokio.rs>"
+prost,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danburkert.com>, Tokio Contributors <team@tokio.rs>"
 prost-build,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danburkert.com>, Lucio Franco <luciofranco14@gmail.com>, Casper Meijn <casper@meijn.net>, Tokio Contributors <team@tokio.rs>"
 prost-derive,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danburkert.com>, Lucio Franco <luciofranco14@gmail.com>, Casper Meijn <casper@meijn.net>, Tokio Contributors <team@tokio.rs>"
+prost-derive,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danburkert.com>, Tokio Contributors <team@tokio.rs>"
 prost-reflect,https://github.com/andrewhickman/prost-reflect,MIT OR Apache-2.0,Andrew Hickman <andrew.hickman1@sky.com>
 prost-types,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danburkert.com>, Lucio Franco <luciofranco14@gmail.com>, Casper Meijn <casper@meijn.net>, Tokio Contributors <team@tokio.rs>"
+prost-types,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danburkert.com>, Tokio Contributors <team@tokio.rs>"
 psl,https://github.com/addr-rs/psl,MIT OR Apache-2.0,rushmorem <rushmore@webenchanter.com>
 psl-types,https://github.com/addr-rs/psl-types,MIT OR Apache-2.0,rushmorem <rushmore@webenchanter.com>
 psm,https://github.com/rust-lang/stacker,MIT OR Apache-2.0,Simonas Kazlauskas <psm@kazlauskas.me>
@@ -700,6 +708,7 @@ serde_with_macros,https://github.com/jonasbb/serde_with,MIT OR Apache-2.0,Jonas 
 serde_yaml,https://github.com/dtolnay/serde-yaml,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 serde_yaml_ng,https://github.com/acatton/serde-yaml-ng,MIT,Antoine Catton <devel@antoine.catton.fr>
 serdect,https://github.com/RustCrypto/formats,Apache-2.0 OR MIT,RustCrypto Developers
+serdect,https://github.com/RustCrypto/formats/tree/master/serdect,Apache-2.0 OR MIT,RustCrypto Developers
 serial_test_derive,https://github.com/palfrey/serial_test,MIT,Tom Parker-Shemilt <palfrey@tevp.net>
 sha1,https://github.com/RustCrypto/hashes,MIT OR Apache-2.0,RustCrypto Developers
 sha2,https://github.com/RustCrypto/hashes,MIT OR Apache-2.0,RustCrypto Developers
@@ -789,6 +798,7 @@ tinystr,https://github.com/unicode-org/icu4x,Unicode-3.0,The ICU4X Project Devel
 tinytemplate,https://github.com/bheisler/TinyTemplate,Apache-2.0 OR MIT,Brook Heisler <brookheisler@gmail.com>
 tinyvec,https://github.com/Lokathor/tinyvec,Zlib OR Apache-2.0 OR MIT,Lokathor <zefria@gmail.com>
 tokio,https://github.com/tokio-rs/tokio,MIT,Tokio Contributors <team@tokio.rs>
+tokio-inherit-task-local,https://github.com/Xaeroxe/tokio-inherit-task-local,MIT OR Apache-2.0,The tokio-inherit-task-local Authors
 tokio-macros,https://github.com/tokio-rs/tokio,MIT,Tokio Contributors <team@tokio.rs>
 tokio-metrics,https://github.com/tokio-rs/tokio-metrics,MIT,Tokio Contributors <team@tokio.rs>
 tokio-retry2,https://github.com/naomijub/tokio-retry,MIT,"Julia Naomi <jnboeira@outlook.com>, Sam Rijs <srijs@airpost.net>"

@@ -22,7 +22,7 @@ use tracing::info;
 
 use crate::AuthorizationToken;
 use crate::authorizer::RequestFamily;
-use crate::token::validate_datalog_string;
+use crate::token::{ROOT_KEY_ALGORITHM, validate_datalog_string};
 
 /// Authorization settings, built from the `authorization` section of the node config.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -80,8 +80,9 @@ pub fn init_authorization(settings_opt: Option<AuthorizationSettings>) -> anyhow
 }
 
 fn build_enabled_state(settings: &AuthorizationSettings) -> anyhow::Result<EnabledState> {
-    let root_public_key = PublicKey::from_bytes_hex(&settings.root_public_key_hex)
-        .context("failed to parse authorization root public key")?;
+    let root_public_key =
+        PublicKey::from_bytes_hex(&settings.root_public_key_hex, ROOT_KEY_ALGORITHM)
+            .context("failed to parse authorization root public key")?;
     let node_token = AuthorizationToken::parse(&settings.node_token_base64, root_public_key)
         .context("failed to parse authorization node token")?;
     let mut role_rights_datalog = String::new();

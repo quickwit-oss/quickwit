@@ -17,13 +17,17 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, bail};
-use biscuit_auth::{Biscuit, KeyPair, PrivateKey, PublicKey};
+use biscuit_auth::{Algorithm, Biscuit, KeyPair, PrivateKey, PublicKey};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use crate::AuthorizationError;
 
 const AUTHORIZATION_VALUE_PREFIX: &str = "Bearer ";
+
+/// Algorithm of the root key pair. Hex-encoded keys do not carry their algorithm, and
+/// `KeyPair::new()` generates Ed25519 keys.
+pub(crate) const ROOT_KEY_ALGORITHM: Algorithm = Algorithm::Ed25519;
 
 /// A biscuit token verified against the root public key.
 ///
@@ -105,8 +109,8 @@ pub fn generate_root_key_pair() -> (String, String) {
 
 /// Generates a token signed by the root private key.
 pub fn generate_token(root_private_key_hex: &str, spec: &UserTokenSpec) -> anyhow::Result<String> {
-    let private_key =
-        PrivateKey::from_bytes_hex(root_private_key_hex).context("invalid root private key")?;
+    let private_key = PrivateKey::from_bytes_hex(root_private_key_hex, ROOT_KEY_ALGORITHM)
+        .context("invalid root private key")?;
     let key_pair = KeyPair::from(&private_key);
 
     let mut datalog = String::new();
@@ -128,11 +132,9 @@ pub fn generate_token(root_private_key_hex: &str, spec: &UserTokenSpec) -> anyho
             .context("failed to format token expiration")?;
         datalog.push_str(&format!("check if time($time), $time <= {expiration};\n"));
     }
-    let mut biscuit_builder = Biscuit::builder();
-    biscuit_builder
-        .add_code(&datalog)
-        .context("failed to build token authority block")?;
-    let biscuit = biscuit_builder
+    let biscuit = Biscuit::builder()
+        .code(&datalog)
+        .context("failed to build token authority block")?
         .build(&key_pair)
         .context("failed to sign token")?;
     let token_base64 = biscuit.to_base64().context("failed to serialize token")?;
@@ -158,7 +160,7 @@ mod tests {
     #[test]
     fn test_generate_and_parse_token() {
         let (private_key_hex, public_key_hex) = generate_root_key_pair();
-        let public_key = PublicKey::from_bytes_hex(&public_key_hex).unwrap();
+        let public_key = PublicKey::from_bytes_hex(&public_key_hex, ROOT_KEY_ALGORITHM).unwrap();
         let spec = UserTokenSpec {
             user_opt: Some("alice".to_string()),
             roles: vec!["reader".to_string()],
@@ -174,7 +176,8 @@ mod tests {
     fn test_parse_token_signed_by_other_key() {
         let (private_key_hex, _) = generate_root_key_pair();
         let (_, other_public_key_hex) = generate_root_key_pair();
-        let other_public_key = PublicKey::from_bytes_hex(&other_public_key_hex).unwrap();
+        let other_public_key =
+            PublicKey::from_bytes_hex(&other_public_key_hex, ROOT_KEY_ALGORITHM).unwrap();
         let token_base64 = generate_token(&private_key_hex, &UserTokenSpec::default()).unwrap();
         let error = AuthorizationToken::parse(&token_base64, other_public_key).unwrap_err();
         assert_eq!(error, AuthorizationError::InvalidToken);
@@ -183,7 +186,7 @@ mod tests {
     #[test]
     fn test_parse_header_value_without_bearer_prefix() {
         let (_, public_key_hex) = generate_root_key_pair();
-        let public_key = PublicKey::from_bytes_hex(&public_key_hex).unwrap();
+        let public_key = PublicKey::from_bytes_hex(&public_key_hex, ROOT_KEY_ALGORITHM).unwrap();
         let error = AuthorizationToken::parse_header_value("some_token", public_key).unwrap_err();
         assert_eq!(error, AuthorizationError::InvalidToken);
     }

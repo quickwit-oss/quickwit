@@ -49,6 +49,8 @@ pub enum SearchError {
     TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    #[error("{0}")]
+    Unauthorized(#[from] quickwit_authorize::AuthorizationError),
 }
 
 impl SearchError {
@@ -89,6 +91,7 @@ impl ServiceError for SearchError {
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
+            Self::Unauthorized(authorization_error) => authorization_error.error_code(),
         }
     }
 }
@@ -125,6 +128,19 @@ impl From<SearchError> for tonic::Status {
 
 /// Parse tonic error and returns `SearchError`.
 pub fn parse_grpc_error(grpc_error: &tonic::Status) -> SearchError {
+    // Authorization errors are returned by the server adapter before reaching the search service,
+    // as plain statuses.
+    match grpc_error.code() {
+        tonic::Code::Unauthenticated => {
+            return SearchError::Unauthorized(quickwit_authorize::AuthorizationError::InvalidToken);
+        }
+        tonic::Code::PermissionDenied => {
+            return SearchError::Unauthorized(
+                quickwit_authorize::AuthorizationError::PermissionDenied,
+            );
+        }
+        _ => {}
+    }
     // TODO: the serialization to JSON part is missing.
     serde_json::from_str(grpc_error.message()).unwrap_or_else(|_| {
         SearchError::Internal(format!(
@@ -182,6 +198,9 @@ impl From<MetastoreError> for SearchError {
             MetastoreError::NotFound(EntityKind::Indexes { index_ids }) => {
                 SearchError::IndexesNotFound { index_ids }
             }
+            MetastoreError::Unauthorized(authorization_error) => {
+                SearchError::Unauthorized(authorization_error)
+            }
             _ => SearchError::Internal(metastore_error.to_string()),
         }
     }
@@ -202,5 +221,37 @@ impl From<JoinError> for SearchError {
 impl From<std::convert::Infallible> for SearchError {
     fn from(infallible: std::convert::Infallible) -> SearchError {
         match infallible {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use quickwit_authorize::AuthorizationError;
+
+    use super::*;
+
+    #[test]
+    fn test_search_error_from_metastore_unauthorized() {
+        let search_error = SearchError::from(MetastoreError::Unauthorized(
+            AuthorizationError::PermissionDenied,
+        ));
+        assert_eq!(
+            search_error.error_code().http_status_code(),
+            http::StatusCode::FORBIDDEN
+        );
+    }
+
+    #[test]
+    fn test_parse_grpc_authorization_errors() {
+        let search_error = parse_grpc_error(&tonic::Status::permission_denied("permission denied"));
+        assert!(matches!(
+            search_error,
+            SearchError::Unauthorized(AuthorizationError::PermissionDenied)
+        ));
+        let search_error = parse_grpc_error(&tonic::Status::unauthenticated("invalid token"));
+        assert_eq!(
+            search_error.error_code().http_status_code(),
+            http::StatusCode::UNAUTHORIZED
+        );
     }
 }

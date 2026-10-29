@@ -20,7 +20,10 @@ use futures::stream::FuturesUnordered;
 use glob::{MatchOptions, Pattern as GlobPattern};
 use quickwit_cluster::Cluster;
 use quickwit_config::service::QuickwitService;
-use quickwit_proto::developer::{DeveloperService, DeveloperServiceClient, GetDebugInfoRequest};
+use quickwit_proto::ServiceError;
+use quickwit_proto::developer::{
+    DeveloperError, DeveloperService, DeveloperServiceClient, GetDebugInfoRequest,
+};
 use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_proto::types::{NodeId, NodeIdRef};
 use serde::Deserialize;
@@ -133,6 +136,13 @@ async fn get_node_debug_infos(
                         error!(%node_id, %error, "failed to parse JSON debug info from node");
                     }
                 };
+            }
+            (_node_id, Ok(Err(DeveloperError::Unauthorized(authorization_error)))) => {
+                // The caller is not allowed to read the debug info: returning the debug info of
+                // the other nodes (or an empty map) would hide it.
+                let status_code = authorization_error.error_code().http_status_code();
+                return warp::reply::with_status(authorization_error.to_string(), status_code)
+                    .into_response();
             }
             (node_id, Ok(Err(error))) => {
                 error!(%node_id, %error, "failed to get debug info from node");

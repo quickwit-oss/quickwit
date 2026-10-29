@@ -15,7 +15,7 @@
 use std::str::FromStr;
 
 use anyhow::bail;
-use biscuit_auth::Authorizer;
+use biscuit_auth::{Authorizer, AuthorizerBuilder};
 use tracing::debug;
 
 use crate::state::{EnabledState, enabled_state};
@@ -86,13 +86,11 @@ fn build_authorizer(
         "#,
         state.role_rights_datalog
     );
-    let mut authorizer = Authorizer::new();
-    authorizer
-        .add_code(datalog)
-        .map_err(|_| AuthorizationError::PermissionDenied)?;
-    authorizer.set_time();
-    authorizer
-        .add_token(token.biscuit())
+    let authorizer = AuthorizerBuilder::new()
+        .code(datalog)
+        .map_err(|_| AuthorizationError::PermissionDenied)?
+        .time()
+        .build(token.biscuit())
         .map_err(|_| AuthorizationError::InvalidToken)?;
     Ok(authorizer)
 }

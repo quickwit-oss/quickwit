@@ -14,5 +14,8 @@
 "cranelift-assembler-x64-meta-0.134.4" = { origin = "https://github.com/bytecodealliance/wasmtime" }
 "wasmtime-internal-core-47.0.4" = { origin = "https://github.com/bytecodealliance/wasmtime" }
 
+# biscuit-quote omits the repository from its published metadata.
+"biscuit-quote-0.3.0" = { origin = "https://github.com/biscuit-auth/biscuit-rust" }
+
 # jitexpr omits license and repository metadata; it is covered by Tantivy's MIT license.
 "jitexpr-0.1.0" = { license = "MIT", origin = "https://github.com/quickwit-oss/tantivy/tree/main/jitexpr" }
