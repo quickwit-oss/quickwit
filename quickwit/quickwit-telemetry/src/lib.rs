@@ -15,6 +15,7 @@
 #![allow(clippy::bool_assert_comparison)]
 #![deny(clippy::disallowed_methods)]
 
+mod clock;
 mod install;
 mod machine;
 pub mod payload;

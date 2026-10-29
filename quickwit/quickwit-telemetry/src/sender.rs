@@ -17,13 +17,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-#[cfg(test)]
-use tokio::sync::Mutex;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{RwLock, oneshot};
 use tokio::task::JoinHandle;
 use tracing::info;
 
+use crate::clock::Clock;
 use crate::is_telemetry_disabled;
 use crate::payload::{
     ClientInfo, EventWithTimestamp, QuickwitTelemetryInfo, TELEMETRY_SCHEMA_VERSION,
@@ -43,62 +42,6 @@ const TELEMETRY_RUNNING_EVENT_INTERVAL: Duration =
 const LAST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
 
 const MAX_NUM_EVENTS_IN_QUEUE: usize = 10;
-
-#[cfg(test)]
-struct ClockButton(Sender<()>);
-
-#[cfg(test)]
-impl ClockButton {
-    async fn tick(&self) {
-        let _ = self.0.send(()).await;
-    }
-}
-
-enum Clock {
-    /// The first tick is immediate. Every later tick waits for the cooldown from the moment it is
-    /// awaited. The telemetry loop awaits a tick right after each request, so requests are at
-    /// least a cooldown apart, however long the loop waited for events in between.
-    Cooldown {
-        cooldown: Duration,
-        is_first_tick: AtomicBool,
-    },
-    #[cfg(test)]
-    Manual(Mutex<Receiver<()>>),
-}
-
-impl Clock {
-    pub fn cooldown(cooldown: Duration) -> Clock {
-        Clock::Cooldown {
-            cooldown,
-            is_first_tick: AtomicBool::new(true),
-        }
-    }
-
-    #[cfg(test)]
-    pub async fn manual() -> (ClockButton, Clock) {
-        let (tx, rx) = tokio::sync::mpsc::channel(1);
-        let _ = tx.send(()).await;
-        let button = ClockButton(tx);
-        (button, Clock::Manual(Mutex::new(rx)))
-    }
-
-    async fn tick(&self) {
-        match self {
-            Clock::Cooldown {
-                cooldown,
-                is_first_tick,
-            } => {
-                if !is_first_tick.swap(false, Ordering::Relaxed) {
-                    tokio::time::sleep(*cooldown).await;
-                }
-            }
-            #[cfg(test)]
-            Clock::Manual(channel) => {
-                channel.lock().await.recv().await;
-            }
-        }
-    }
-}
 
 #[derive(Default)]
 struct EventsState {
@@ -393,19 +336,6 @@ mod tests {
             events_state.events.last().unwrap().event,
             TelemetryEvent::EndCommand { .. }
         ));
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn test_cooldown_clock_waits_for_cooldown_after_idle_time() {
-        let clock = Clock::cooldown(TELEMETRY_PUSH_COOLDOWN);
-        let first_tick_start = tokio::time::Instant::now();
-        clock.tick().await;
-        assert_eq!(first_tick_start.elapsed(), Duration::ZERO);
-
-        tokio::time::sleep(10 * TELEMETRY_PUSH_COOLDOWN).await;
-        let tick_start = tokio::time::Instant::now();
-        clock.tick().await;
-        assert!(tick_start.elapsed() >= TELEMETRY_PUSH_COOLDOWN);
     }
 
     #[tokio::test]

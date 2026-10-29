@@ -86,7 +86,8 @@ pub fn record_api_request(api_kind: ApiKind) {
     API_REQUEST_COUNTS.record(api_kind);
 }
 
-/// Only the node running the control plane calls it, so each cluster reports its summary once.
+/// Only the node running the control plane calls it. A cluster must have a single control plane
+/// (see `docs/deployment/cluster-sizing.md`), so each cluster reports its summary once.
 pub fn set_cluster_summary(num_indexes: usize, source_types: BTreeSet<String>) {
     let cluster_summary = ClusterSummary {
         num_indexes: index_count_bucket(num_indexes).to_string(),

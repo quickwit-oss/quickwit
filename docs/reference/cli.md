@@ -861,7 +861,7 @@ Disables [telemetry](../telemetry.md) when set to any non-empty value other than
 
 *Example*
 
-`QW_DISABLE_TELEMETRY=1 quickwit help`
+`QW_DISABLE_TELEMETRY=1 quickwit --help`
 
 ### QW_POSTGRES_SKIP_MIGRATIONS
 
