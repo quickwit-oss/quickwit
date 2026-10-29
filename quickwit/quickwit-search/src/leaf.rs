@@ -3338,19 +3338,22 @@ mod tests {
 
             // A split with a better document in the same second must not be pruned.
             for mut pruning in [
-                CanSplitDoBetter::SplitTimestampHigher(None),
+                CanSplitDoBetter::SplitTimestampHigher {
+                    timestamp: None,
+                    split_id_excluded_from_pruning: None,
+                },
                 CanSplitDoBetter::FindTraceIdsAggregation(None),
             ] {
                 pruning.record_new_worst_hit(&hit(worst_ns));
-                assert!(pruning.can_be_better(&split));
+                assert!(pruning.should_collect_hits(&split));
                 pruning.record_new_worst_hit(&hit(end_ns + 2_000_000_000));
-                assert!(!pruning.can_be_better(&split));
+                assert!(!pruning.should_collect_hits(&split));
             }
             let mut ascending = CanSplitDoBetter::SplitTimestampLower(None);
             ascending.record_new_worst_hit(&hit(worst_ns));
-            assert!(ascending.can_be_better(&split));
+            assert!(ascending.should_collect_hits(&split));
             ascending.record_new_worst_hit(&hit(start_ns - 2_000_000_000));
-            assert!(!ascending.can_be_better(&split));
+            assert!(!ascending.should_collect_hits(&split));
         }
     }
 
