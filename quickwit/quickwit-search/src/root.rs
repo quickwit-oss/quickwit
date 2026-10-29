@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use futures::future::try_join_all;
+use futures::stream::{FuturesUnordered, Stream, StreamExt};
 use itertools::Itertools;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::shared_consts;
@@ -573,6 +574,7 @@ async fn search_partial_hits_phase_with_scroll(
     mut search_request: SearchRequest,
     split_metadatas: &[SplitMetadata],
     cluster_client: &ClusterClient,
+    progress: &mut RootSearchProgress,
 ) -> crate::Result<(
     LeafSearchResponse,
     Option<ScrollKeyAndStartOffset>,
@@ -595,6 +597,7 @@ async fn search_partial_hits_phase_with_scroll(
             &search_request,
             split_metadatas,
             cluster_client,
+            progress,
         )
         .await?;
         let cached_partial_hits = leaf_search_resp.partial_hits.clone();
@@ -644,6 +647,7 @@ async fn search_partial_hits_phase_with_scroll(
             &search_request,
             split_metadatas,
             cluster_client,
+            progress,
         )
         .await?;
         Ok((leaf_search_resp, None, root_resource_stats))
@@ -739,6 +743,195 @@ fn is_top_5pct_memory_intensive(num_bytes: u64, split_num_docs: u64) -> bool {
     is_memory_intensive
 }
 
+/// Emits a structured `info!` event with observed resource usage on success,
+/// error, or cancellation. Unavailable measurements are omitted. Work on pending
+/// leaf requests, including requests waiting for retries, is not included.
+///
+/// Field name prefixes:
+/// - `wleaf_`       — worst leaf (highest wall time)
+/// - `sleaf_`       — sum across all leaves
+/// - `wleaf_wsplit_` — worst split within the worst leaf
+/// - `wleaf_ssplit_` — sum of splits within the worst leaf
+/// - `sleaf_wsplit_` — worst split within the summed-leaf view
+/// - `sleaf_ssplit_` — sum of splits within the summed-leaf view
+///
+/// `leaf_wall_times_microsecs_second_slowest` is the second entry of the
+/// descending-sorted wall-time vector; the slowest is already captured by
+/// `wleaf_wall_time_microsecs`.
+fn log_root_resource_stats(resource_log: &RootSearchResourceLog) {
+    let search_request = &resource_log.request;
+    let progress = &resource_log.progress;
+    let resource_stats = progress.resource_stats();
+    let resource_stats = resource_stats.as_ref();
+    let leaf_worst = resource_stats.and_then(|stats| stats.leaf_resources_worst.as_ref());
+    let leaf_sum = resource_stats.and_then(|stats| stats.leaf_resources_sum.as_ref());
+    let leaf_times = resource_stats
+        .map(|stats| stats.leaf_wall_times_microsecs.as_slice())
+        .unwrap_or_default();
+    let leaf_wall_times_microsecs_len = leaf_times.len() as u64;
+    let leaf_wall_times_microsecs_avg = if leaf_times.is_empty() {
+        None
+    } else {
+        Some(leaf_times.iter().sum::<u64>() / leaf_wall_times_microsecs_len)
+    };
+    let leaf_wall_times_microsecs_second_slowest = leaf_times.get(1).copied();
+    let leaf_worst_split_worst = leaf_worst.and_then(|lw| lw.split_resources_worst.as_ref());
+    let leaf_worst_split_sum = leaf_worst.and_then(|lw| lw.split_resources_sum.as_ref());
+    let leaf_sum_split_worst = leaf_sum.and_then(|ls| ls.split_resources_worst.as_ref());
+    let leaf_sum_split_sum = leaf_sum.and_then(|ls| ls.split_resources_sum.as_ref());
+    info!(
+        query_ast = search_request.query_ast.as_str(),
+        agg = search_request.aggregation_request(),
+        start_ts = ?(search_request.start_timestamp()..search_request.end_timestamp()),
+        count_required = search_request.count_hits().as_str_name(),
+        max_hits = search_request.max_hits,
+        priority = search_request.priority,
+        num_docs = resource_log.num_docs,
+        elapsed_time_micros = resource_log.start.elapsed().as_micros() as u64,
+        success = resource_log.success,
+        num_targeted_splits = progress.num_targeted_splits,
+        num_successful_splits = progress.num_successful_splits,
+        leaf_num_calls = progress.leaf_num_calls,
+        leaf_num_calls_including_retries = progress
+            .leaf_num_calls_including_retries
+            .load(Ordering::Relaxed),
+        num_failed_splits = progress.num_failed_splits,
+        leaf_wall_times_microsecs_avg,
+        leaf_wall_times_microsecs_second_slowest,
+        wleaf_wall_time_microsecs = leaf_worst.map(|lw| lw.wall_time_microsecs),
+        wleaf_partial_result_cache_num_splits =
+            leaf_worst.map(|lw| lw.partial_result_cache_num_splits),
+        wleaf_partial_result_cache_num_docs = leaf_worst.map(|lw| lw.partial_result_cache_num_docs),
+        wleaf_localexec_num_splits = leaf_worst.map(|lw| lw.localexec_num_splits),
+        wleaf_localexec_num_docs = leaf_worst.map(|lw| lw.localexec_num_docs),
+        wleaf_min_wait_for_search_permit_microsecs =
+            leaf_worst.and_then(|lw| lw.min_wait_for_search_permit_microsecs),
+        wleaf_min_wait_for_cpu_pool_microsecs =
+            leaf_worst.and_then(|lw| lw.min_wait_for_cpu_pool_microsecs),
+        wleaf_lambda_num_splits = leaf_worst.map(|lw| lw.lambda_num_splits),
+        wleaf_lambda_num_docs = leaf_worst.map(|lw| lw.lambda_num_docs),
+        wleaf_lambda_success_num_splits = leaf_worst.map(|lw| lw.lambda_success_num_splits),
+        wleaf_lambda_success_num_docs = leaf_worst.map(|lw| lw.lambda_success_num_docs),
+        wleaf_lambda_bottleneck = leaf_worst.map(|lw| lw.lambda_bottleneck),
+        wleaf_wsplit_split_num_docs = leaf_worst_split_worst.map(|lwsw| lwsw.split_num_docs),
+        wleaf_wsplit_input_memory_bytes =
+            leaf_worst_split_worst.map(|lwsw| lwsw.input_memory_bytes),
+        wleaf_wsplit_download_num_bytes =
+            leaf_worst_split_worst.map(|lwsw| lwsw.download_num_bytes),
+        wleaf_wsplit_download_num_requests =
+            leaf_worst_split_worst.map(|lwsw| lwsw.download_num_requests),
+        wleaf_wsplit_matched_num_docs = leaf_worst_split_worst.map(|lwsw| lwsw.matched_num_docs),
+        wleaf_wsplit_wait_for_search_permit_microsecs =
+            leaf_worst_split_worst.map(|lwsw| lwsw.wait_for_search_permit_microsecs),
+        wleaf_wsplit_warmup_microsecs = leaf_worst_split_worst.map(|lwsw| lwsw.warmup_microsecs),
+        wleaf_wsplit_wait_for_cpu_pool_microsecs =
+            leaf_worst_split_worst.map(|lwsw| lwsw.wait_for_cpu_pool_microsecs),
+        wleaf_wsplit_cpu_search_microsecs =
+            leaf_worst_split_worst.map(|lwsw| lwsw.cpu_search_microsecs),
+        wleaf_ssplit_split_num_docs = leaf_worst_split_sum.map(|lwss| lwss.split_num_docs),
+        wleaf_ssplit_input_memory_bytes = leaf_worst_split_sum.map(|lwss| lwss.input_memory_bytes),
+        wleaf_ssplit_download_num_bytes = leaf_worst_split_sum.map(|lwss| lwss.download_num_bytes),
+        wleaf_ssplit_download_num_requests =
+            leaf_worst_split_sum.map(|lwss| lwss.download_num_requests),
+        wleaf_ssplit_matched_num_docs = leaf_worst_split_sum.map(|lwss| lwss.matched_num_docs),
+        wleaf_ssplit_wait_for_search_permit_microsecs =
+            leaf_worst_split_sum.map(|lwss| lwss.wait_for_search_permit_microsecs),
+        wleaf_ssplit_warmup_microsecs = leaf_worst_split_sum.map(|lwss| lwss.warmup_microsecs),
+        wleaf_ssplit_wait_for_cpu_pool_microsecs =
+            leaf_worst_split_sum.map(|lwss| lwss.wait_for_cpu_pool_microsecs),
+        wleaf_ssplit_cpu_search_microsecs =
+            leaf_worst_split_sum.map(|lwss| lwss.cpu_search_microsecs),
+        sleaf_wall_time_microsecs = leaf_sum.map(|ls| ls.wall_time_microsecs),
+        sleaf_partial_result_cache_num_splits =
+            leaf_sum.map(|ls| ls.partial_result_cache_num_splits),
+        sleaf_partial_result_cache_num_docs = leaf_sum.map(|ls| ls.partial_result_cache_num_docs),
+        sleaf_localexec_num_splits = leaf_sum.map(|ls| ls.localexec_num_splits),
+        sleaf_localexec_num_docs = leaf_sum.map(|ls| ls.localexec_num_docs),
+        sleaf_min_wait_for_search_permit_microsecs =
+            leaf_sum.and_then(|ls| ls.min_wait_for_search_permit_microsecs),
+        sleaf_min_wait_for_cpu_pool_microsecs =
+            leaf_sum.and_then(|ls| ls.min_wait_for_cpu_pool_microsecs),
+        sleaf_lambda_num_splits = leaf_sum.map(|ls| ls.lambda_num_splits),
+        sleaf_lambda_num_docs = leaf_sum.map(|ls| ls.lambda_num_docs),
+        sleaf_lambda_success_num_splits = leaf_sum.map(|ls| ls.lambda_success_num_splits),
+        sleaf_lambda_success_num_docs = leaf_sum.map(|ls| ls.lambda_success_num_docs),
+        sleaf_lambda_bottleneck = leaf_sum.map(|ls| ls.lambda_bottleneck),
+        sleaf_wsplit_split_num_docs = leaf_sum_split_worst.map(|lssw| lssw.split_num_docs),
+        sleaf_wsplit_input_memory_bytes = leaf_sum_split_worst.map(|lssw| lssw.input_memory_bytes),
+        sleaf_wsplit_download_num_bytes = leaf_sum_split_worst.map(|lssw| lssw.download_num_bytes),
+        sleaf_wsplit_download_num_requests =
+            leaf_sum_split_worst.map(|lssw| lssw.download_num_requests),
+        sleaf_wsplit_matched_num_docs = leaf_sum_split_worst.map(|lssw| lssw.matched_num_docs),
+        sleaf_wsplit_wait_for_search_permit_microsecs =
+            leaf_sum_split_worst.map(|lssw| lssw.wait_for_search_permit_microsecs),
+        sleaf_wsplit_warmup_microsecs = leaf_sum_split_worst.map(|lssw| lssw.warmup_microsecs),
+        sleaf_wsplit_wait_for_cpu_pool_microsecs =
+            leaf_sum_split_worst.map(|lssw| lssw.wait_for_cpu_pool_microsecs),
+        sleaf_wsplit_cpu_search_microsecs =
+            leaf_sum_split_worst.map(|lssw| lssw.cpu_search_microsecs),
+        sleaf_ssplit_split_num_docs = leaf_sum_split_sum.map(|lsss| lsss.split_num_docs),
+        sleaf_ssplit_input_memory_bytes = leaf_sum_split_sum.map(|lsss| lsss.input_memory_bytes),
+        sleaf_ssplit_download_num_bytes = leaf_sum_split_sum.map(|lsss| lsss.download_num_bytes),
+        sleaf_ssplit_download_num_requests =
+            leaf_sum_split_sum.map(|lsss| lsss.download_num_requests),
+        sleaf_ssplit_matched_num_docs = leaf_sum_split_sum.map(|lsss| lsss.matched_num_docs),
+        sleaf_ssplit_wait_for_search_permit_microsecs =
+            leaf_sum_split_sum.map(|lsss| lsss.wait_for_search_permit_microsecs),
+        sleaf_ssplit_warmup_microsecs = leaf_sum_split_sum.map(|lsss| lsss.warmup_microsecs),
+        sleaf_ssplit_wait_for_cpu_pool_microsecs =
+            leaf_sum_split_sum.map(|lsss| lsss.wait_for_cpu_pool_microsecs),
+        sleaf_ssplit_cpu_search_microsecs =
+            leaf_sum_split_sum.map(|lsss| lsss.cpu_search_microsecs),
+        "root_resource_stats"
+    );
+}
+
+/// Keeps observed leaf measurements alive through later errors or cancellation.
+#[derive(Default)]
+pub(crate) struct RootSearchProgress {
+    leaf_responses: Vec<LeafSearchResponse>,
+    leaf_num_calls: u64,
+    leaf_num_calls_including_retries: Arc<AtomicU64>,
+    num_targeted_splits: Option<usize>,
+    num_successful_splits: u64,
+    num_failed_splits: u64,
+}
+
+impl RootSearchProgress {
+    fn record_response(&mut self, response: &LeafSearchResponse) {
+        self.num_successful_splits += response.num_successful_splits;
+        self.num_failed_splits += response.failed_splits.len() as u64;
+        // Retain only measurements, without copying hits or aggregations.
+        self.leaf_responses.push(LeafSearchResponse {
+            resource_stats: response.resource_stats,
+            ..Default::default()
+        });
+    }
+
+    async fn collect_responses(
+        &mut self,
+        mut responses: impl Stream<Item = crate::Result<LeafSearchResponse>> + Unpin,
+    ) -> crate::Result<Vec<LeafSearchResponse>> {
+        let mut completed = Vec::new();
+        while let Some(result) = responses.next().await {
+            let response = result?;
+            self.record_response(&response);
+            completed.push(response);
+        }
+        Ok(completed)
+    }
+
+    fn resource_stats(&self) -> Option<RootResourceStats> {
+        compute_root_resource_stats(
+            &self.leaf_responses,
+            self.leaf_num_calls,
+            self.leaf_num_calls_including_retries
+                .load(Ordering::Relaxed),
+            self.num_failed_splits,
+        )
+    }
+}
+
 /// Build a `RootResourceStats` from the per-leaf responses captured before
 /// they are merged.
 ///
@@ -798,14 +991,15 @@ pub(crate) async fn search_partial_hits_phase(
     search_request: &SearchRequest,
     split_metadatas: &[SplitMetadata],
     cluster_client: &ClusterClient,
+    progress: &mut RootSearchProgress,
 ) -> crate::Result<(LeafSearchResponse, Option<RootResourceStats>)> {
-    // Each entry is (leaf response, number of leaf attempts made to obtain it).
-    // Metadata-count responses are synthesised locally and contribute 0 attempts.
-    let mut leaf_num_calls = 0u64;
-    let leaf_num_calls_including_retries_arc: Arc<AtomicU64> = Default::default();
     let leaf_search_responses: Vec<LeafSearchResponse> =
         if is_metadata_count_request(search_request) {
-            get_count_from_metadata(split_metadatas)
+            let responses = get_count_from_metadata(split_metadatas);
+            for response in &responses {
+                progress.record_response(response);
+            }
+            responses
         } else {
             let query_complexity_factor = compute_query_complexity_factor(search_request)?;
             let jobs: Vec<SearchJob> = split_metadatas
@@ -816,7 +1010,7 @@ pub(crate) async fn search_partial_hits_phase(
                 .search_job_placer
                 .assign_jobs(jobs, &HashSet::default())
                 .await?;
-            let mut leaf_request_tasks = Vec::new();
+            let leaf_request_tasks = FuturesUnordered::new();
             for (client, client_jobs) in assigned_leaf_search_jobs {
                 let leaf_request = jobs_to_leaf_request(
                     search_request,
@@ -826,23 +1020,14 @@ pub(crate) async fn search_partial_hits_phase(
                 leaf_request_tasks.push(cluster_client.leaf_search(
                     leaf_request,
                     client.clone(),
-                    leaf_num_calls_including_retries_arc.clone(),
+                    progress.leaf_num_calls_including_retries.clone(),
                 ));
             }
-            leaf_num_calls = leaf_request_tasks.len() as u64;
-            try_join_all(leaf_request_tasks).await?
+            progress.leaf_num_calls = leaf_request_tasks.len() as u64;
+            progress.collect_responses(leaf_request_tasks).await?
         };
 
-    let num_failed_splits: u64 = leaf_search_responses
-        .iter()
-        .map(|resp| resp.failed_splits.len() as u64)
-        .sum();
-    let root_resource_stats = compute_root_resource_stats(
-        &leaf_search_responses,
-        leaf_num_calls,
-        leaf_num_calls_including_retries_arc.load(Ordering::Relaxed),
-        num_failed_splits,
-    );
+    let root_resource_stats = progress.resource_stats();
 
     let merge_collector =
         make_merge_collector(search_request, searcher_context.get_aggregation_limits())?;
@@ -1061,9 +1246,10 @@ fn get_sort_field_datetime_format(
 async fn root_search_aux(
     searcher_context: &SearcherContext,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
-    search_request: SearchRequest,
+    search_request: &SearchRequest,
     split_metadatas: Vec<SplitMetadata>,
     cluster_client: &ClusterClient,
+    progress: &mut RootSearchProgress,
 ) -> crate::Result<SearchResponse> {
     debug!(split_metadatas = ?PrettySample::new(&split_metadatas, 5));
     let start = Instant::now();
@@ -1077,6 +1263,7 @@ async fn root_search_aux(
         search_request.clone(),
         &split_metadatas[..],
         cluster_client,
+        progress,
     )
     .await?;
 
@@ -1089,13 +1276,13 @@ async fn root_search_aux(
         indexes_metas_for_leaf_search,
         &first_phase_result.partial_hits,
         &split_metadatas[..],
-        &search_request,
+        search_request,
         cluster_client,
     )
     .await?;
 
     let mut aggregation_result_postcard_opt = finalize_aggregation_if_any(
-        &search_request,
+        search_request,
         first_phase_result.intermediate_aggregation_result,
         searcher_context,
     )?;
@@ -1293,6 +1480,23 @@ async fn plan_splits_for_root_search(
     ))
 }
 
+/// Emits exactly one event on success, error, or cancellation, using all leaf
+/// responses observed so far. Kept alive through fetch-docs and finalization.
+struct RootSearchResourceLog {
+    request: SearchRequest,
+    start: Instant,
+    // Available only after planning completes.
+    num_docs: Option<usize>,
+    progress: RootSearchProgress,
+    success: bool,
+}
+
+impl Drop for RootSearchResourceLog {
+    fn drop(&mut self) {
+        log_root_resource_stats(self);
+    }
+}
+
 /// Performs a distributed search.
 /// 1. Sends leaf requests over gRPC to multiple leaf nodes.
 /// 2. Merges the search results.
@@ -1301,15 +1505,23 @@ async fn plan_splits_for_root_search(
 #[instrument(skip_all)]
 pub async fn root_search(
     searcher_context: &SearcherContext,
-    mut search_request: SearchRequest,
+    search_request: SearchRequest,
     metastore: &MetastoreServiceClient,
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
     let start_instant = Instant::now();
+    let mut resource_log = RootSearchResourceLog {
+        request: search_request,
+        start: start_instant,
+        num_docs: None,
+        progress: RootSearchProgress::default(),
+        success: false,
+    };
+    let search_request = &mut resource_log.request;
 
     let (split_metadatas, indexes_meta_for_leaf_search) = RootSearchMetricsFuture {
         start: start_instant,
-        tracked: plan_splits_for_root_search(&mut search_request, metastore),
+        tracked: plan_splits_for_root_search(search_request, metastore),
         is_success: None,
         step: RootSearchMetricsStep::Plan,
     }
@@ -1317,6 +1529,8 @@ pub async fn root_search(
 
     let num_docs: usize = split_metadatas.iter().map(|split| split.num_docs).sum();
     let num_splits = split_metadatas.len();
+    resource_log.progress.num_targeted_splits = Some(num_splits);
+    resource_log.num_docs = Some(num_docs);
 
     info!(
         query_ast = search_request.query_ast.as_str(),
@@ -1364,6 +1578,7 @@ pub async fn root_search(
             search_request,
             split_metadatas,
             cluster_client,
+            &mut resource_log.progress,
         ),
         is_success: None,
         step: RootSearchMetricsStep::Exec {
@@ -1374,6 +1589,7 @@ pub async fn root_search(
 
     if let Ok(search_response) = &mut search_response_result {
         search_response.elapsed_time_micros = start_instant.elapsed().as_micros() as u64;
+        resource_log.success = true;
     }
 
     search_response_result
@@ -1922,6 +2138,41 @@ mod tests {
 
     use super::*;
     use crate::{MockSearchService, searcher_pool_for_test};
+
+    #[tokio::test]
+    async fn test_root_progress_retains_completed_responses_on_error_or_cancellation() {
+        for fail in [false, true] {
+            let mut progress = RootSearchProgress::default();
+            let response = LeafSearchResponse {
+                num_successful_splits: 3,
+                resource_stats: Some(LeafResourceStats {
+                    wall_time_microsecs: 41,
+                    localexec_num_docs: 17,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            let remaining = futures::stream::once(async move {
+                if fail {
+                    Err(SearchError::Internal("leaf failed".to_string()))
+                } else {
+                    futures::future::pending().await
+                }
+            });
+            let responses = futures::stream::iter([Ok(response)]).chain(remaining);
+            let mut search = Box::pin(progress.collect_responses(Box::pin(responses)));
+            if fail {
+                assert!(search.await.is_err());
+            } else {
+                assert!(futures::poll!(search.as_mut()).is_pending());
+                drop(search);
+            }
+            assert_eq!(progress.num_successful_splits, 3);
+            let stats = progress.resource_stats().unwrap();
+            assert_eq!(stats.leaf_wall_times_microsecs, vec![41]);
+            assert_eq!(stats.leaf_resources_sum.unwrap().localexec_num_docs, 17);
+        }
+    }
 
     #[track_caller]
     fn check_snippet_fields_validation(snippet_fields: &[String]) -> anyhow::Result<()> {
