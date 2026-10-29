@@ -30,8 +30,10 @@ use crate::metrics::{
     LIVE_TAIL_FILTERED_DOCS_UNMATCHED,
 };
 
-/// Memory budget of the in-RAM index built for each batch. Same as the indexer's split writer.
-const INDEX_WRITER_MEMORY_BUDGET_BYTES: usize = 15_000_000;
+/// Memory budget of the in-RAM index built for each batch. It is not enforced by the
+/// single-segment writer: it only sizes the term hash table, which is preallocated, so it is kept
+/// small. Larger values do not make filtering faster.
+const INDEX_WRITER_MEMORY_BUDGET_BYTES: usize = 3_000_000;
 
 /// Documents matching a query.
 #[derive(Debug)]
@@ -122,8 +124,26 @@ fn matching_doc_positions(
         .timestamp_field_name()
         .map(|timestamp_field_name| doc_mapper.schema().get_field(timestamp_field_name))
         .transpose()?;
-    let mut tantivy_docs: Vec<TantivyDocument> = Vec::with_capacity(docs.len());
-    // Position in `docs` of each document of `tantivy_docs`.
+    // `MatchAll` queries only need to know which documents are indexed by the pipeline.
+    let mut index_writer_opt = if matches!(query_ast, QueryAst::MatchAll) {
+        None
+    } else {
+        let index_writer = IndexBuilder::new()
+            .schema(doc_mapper.schema())
+            .tokenizers(doc_mapper.tokenizer_manager().tantivy_manager().clone())
+            .fast_field_tokenizers(
+                get_quickwit_fastfield_normalizer_manager()
+                    .tantivy_manager()
+                    .clone(),
+            )
+            .single_segment_index_writer::<TantivyDocument>(
+                RamDirectory::default(),
+                INDEX_WRITER_MEMORY_BUDGET_BYTES,
+            )?;
+        Some(index_writer)
+    };
+    // Position in `docs` of each indexed document. With a single segment and no doc ID mapping,
+    // doc IDs are assigned in insertion order: the doc ID of a document is its index here.
     let mut doc_positions: Vec<usize> = Vec::with_capacity(docs.len());
 
     for (doc_position, tail_doc) in docs.iter().enumerate() {
@@ -141,29 +161,16 @@ fn matching_doc_positions(
         {
             continue;
         }
-        tantivy_docs.push(tantivy_doc);
+        // Documents are added one at a time, so that their Tantivy representation is not held
+        // in memory for the whole batch.
+        if let Some(index_writer) = &mut index_writer_opt {
+            index_writer.add_document(tantivy_doc)?;
+        }
         doc_positions.push(doc_position);
     }
-    if matches!(query_ast, QueryAst::MatchAll) {
+    let Some(index_writer) = index_writer_opt else {
         return Ok(doc_positions);
-    }
-    let mut index_writer = IndexBuilder::new()
-        .schema(doc_mapper.schema())
-        .tokenizers(doc_mapper.tokenizer_manager().tantivy_manager().clone())
-        .fast_field_tokenizers(
-            get_quickwit_fastfield_normalizer_manager()
-                .tantivy_manager()
-                .clone(),
-        )
-        .single_segment_index_writer::<TantivyDocument>(
-            RamDirectory::default(),
-            INDEX_WRITER_MEMORY_BUDGET_BYTES,
-        )?;
-    // With a single segment and no doc ID mapping, doc IDs are assigned in insertion order: the
-    // doc ID of a document is its index in `tantivy_docs`.
-    for tantivy_doc in tantivy_docs {
-        index_writer.add_document(tantivy_doc)?;
-    }
+    };
     let mut index = index_writer.finalize()?;
     set_expr_compilation_cache(&mut index);
 
