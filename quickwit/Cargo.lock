@@ -3790,6 +3790,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "google-cloud-gax"
+version = "1.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc64ee071c0d22cb68662b454f1bea5424506cafeaddc51260fbc585bac1d29d"
+dependencies = [
+ "bytes",
+ "futures",
+ "google-cloud-rpc",
+ "google-cloud-wkt",
+ "http 1.5.0",
+ "pin-project",
+ "rand 0.10.3",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
 name = "google-cloud-googleapis"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3820,7 +3840,7 @@ dependencies = [
  "async-channel 1.9.0",
  "async-stream",
  "google-cloud-auth",
- "google-cloud-gax",
+ "google-cloud-gax 0.19.2",
  "google-cloud-googleapis",
  "google-cloud-token",
  "prost-types 0.13.5",
@@ -3831,12 +3851,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "google-cloud-rpc"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2162c08a89118130979ba261080e960e44cdcb2d6e2ab8ca9b1da245285d353"
+dependencies = [
+ "bytes",
+ "google-cloud-wkt",
+ "serde",
+ "serde_json",
+ "serde_with",
+]
+
+[[package]]
 name = "google-cloud-token"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f49c12ba8b21d128a2ce8585955246977fbce4415f680ebf9199b6f9d6d725f"
 dependencies = [
  "async-trait",
+]
+
+[[package]]
+name = "google-cloud-wkt"
+version = "1.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75baa147c141fa2b11047827e7ff4eea3a84ab00c3d2cf44fccd132b2ed326cf"
+dependencies = [
+ "base64 0.23.1",
+ "bytes",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "thiserror 2.0.21",
+ "time",
+ "url",
 ]
 
 [[package]]
@@ -7802,7 +7851,7 @@ dependencies = [
  "fnv",
  "futures",
  "google-cloud-auth",
- "google-cloud-gax",
+ "google-cloud-gax 1.15.0",
  "google-cloud-googleapis",
  "google-cloud-pubsub",
  "itertools 0.15.0",
