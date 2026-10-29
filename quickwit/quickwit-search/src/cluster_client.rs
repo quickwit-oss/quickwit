@@ -363,6 +363,7 @@ mod tests {
                 timestamp_start: None,
                 timestamp_end: None,
                 num_docs: 0,
+                is_mature: false,
             }],
             ..Default::default()
         }
@@ -385,6 +386,7 @@ mod tests {
                 split_offsets: vec![
                     SplitIdAndFooterOffsets {
                         split_id: "split_1".to_string(),
+                        is_mature: false,
                         split_footer_start: 0,
                         split_footer_end: 100,
                         timestamp_start: None,
@@ -393,6 +395,7 @@ mod tests {
                     },
                     SplitIdAndFooterOffsets {
                         split_id: "split_2".to_string(),
+                        is_mature: false,
                         split_footer_start: 0,
                         split_footer_end: 100,
                         timestamp_start: None,

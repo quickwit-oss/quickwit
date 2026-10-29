@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (Jaeger) Query resource attributes when Jaeger request carries tags
 
 ### Changed
+- Ingest V2 flushes every WAL write to the OS before acknowledging it, instead of keeping the tail of the last write buffered in the process, so acknowledged documents survive an indexer process crash
 
 ### Deprecated
 
@@ -22,6 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 --->
+
+# [0.9.3]
+
+### Security
+
+- Reject TLS certificate chains through the compromised emSign intermediates (rustls-webpki RUSTSEC-2026-0382, webpki-roots RUSTSEC-2026-0381, webpki-root-certs RUSTSEC-2026-0383).
+
+# [0.9.2]
+
+### Security
+
+- Restrict Kafka client params that execute commands or load libraries (GHSA-g85h-2988-4cv8).
+- Reject oversized columnar dictionaries during merges (Tantivy GHSA-7pph-m7rw-cqhv).
 
 # [0.9.1]
 
