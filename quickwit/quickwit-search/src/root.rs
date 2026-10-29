@@ -813,6 +813,7 @@ fn log_root_resource_stats(resource_log: &RootSearchResourceLog) {
         wleaf_lambda_success_num_splits = leaf_worst.map(|lw| lw.lambda_success_num_splits),
         wleaf_lambda_success_num_docs = leaf_worst.map(|lw| lw.lambda_success_num_docs),
         wleaf_lambda_bottleneck = leaf_worst.map(|lw| lw.lambda_bottleneck),
+        wleaf_search_pool_cpu_threads = leaf_worst.map(|lw| lw.search_pool_cpu_threads),
         wleaf_wsplit_split_num_docs = leaf_worst_split_worst.map(|lwsw| lwsw.split_num_docs),
         wleaf_wsplit_input_memory_bytes =
             leaf_worst_split_worst.map(|lwsw| lwsw.input_memory_bytes),
@@ -856,6 +857,7 @@ fn log_root_resource_stats(resource_log: &RootSearchResourceLog) {
         sleaf_lambda_success_num_splits = leaf_sum.map(|ls| ls.lambda_success_num_splits),
         sleaf_lambda_success_num_docs = leaf_sum.map(|ls| ls.lambda_success_num_docs),
         sleaf_lambda_bottleneck = leaf_sum.map(|ls| ls.lambda_bottleneck),
+        sleaf_search_pool_cpu_threads = leaf_sum.map(|ls| ls.search_pool_cpu_threads),
         sleaf_wsplit_split_num_docs = leaf_sum_split_worst.map(|lssw| lssw.split_num_docs),
         sleaf_wsplit_input_memory_bytes = leaf_sum_split_worst.map(|lssw| lssw.input_memory_bytes),
         sleaf_wsplit_download_num_bytes = leaf_sum_split_worst.map(|lssw| lssw.download_num_bytes),
