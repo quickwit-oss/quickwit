@@ -353,7 +353,7 @@ impl AzureBlobStorage {
         let mut block_ids = Vec::new();
         // `Put Block` rejects empty blocks: an empty blob commits an empty block list.
         if payload.len() > 0 {
-            let block_id = format_block_id(Ulid::new(), 0);
+            let block_id = format_block_id(Ulid::generate(), 0);
             retry(&self.retry_params, || async {
                 let data = Bytes::from(payload.read_all().await?.to_vec());
                 stage_block(&block_blob_client, &block_id, data).await
@@ -377,7 +377,7 @@ impl AzureBlobStorage {
             chunk_range(0..total_len as usize, part_len as usize).map(into_u64_range);
 
         let block_blob_client = &self.container_client.blob_client(name).block_blob_client();
-        let upload_id = Ulid::new();
+        let upload_id = Ulid::generate();
         let upload_blocks_stream = tokio_stream::iter(multipart_ranges.enumerate())
             .map(|(num, range)| {
                 let moved_payload = payload.clone();
@@ -849,7 +849,7 @@ mod tests {
             .container_client
             .blob_client("blob")
             .block_blob_client();
-        let block_id = format_block_id(Ulid::new(), 0);
+        let block_id = format_block_id(Ulid::generate(), 0);
         stage_block(&block_blob_client, &block_id, Bytes::from_static(b"hello")).await?;
 
         storage

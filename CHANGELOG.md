@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - an unknown `AZURE_CREDENTIAL_KIND` is an error
   - token credentials require an `https` endpoint
   - TLS certificates are checked against the system trust store instead of bundled roots, so a CA bundle such as `ca-certificates` must be installed
+- Ingest V2 flushes every WAL write to the OS before acknowledging it, instead of keeping the tail of the last write buffered in the process, so acknowledged documents survive an indexer process crash
 
 ### Deprecated
 
@@ -31,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 --->
+
+# [0.9.3]
+
+### Security
+
+- Reject TLS certificate chains through the compromised emSign intermediates (rustls-webpki RUSTSEC-2026-0382, webpki-roots RUSTSEC-2026-0381, webpki-root-certs RUSTSEC-2026-0383).
 
 # [0.9.2]
 

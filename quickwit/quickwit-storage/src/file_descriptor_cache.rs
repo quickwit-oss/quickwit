@@ -185,7 +185,7 @@ mod tests {
     use crate::metrics::CacheMetrics;
 
     fn new_test_split_id() -> SplitId {
-        SplitId::from(Ulid::new().to_string())
+        SplitId::from(Ulid::generate().to_string())
     }
 
     #[tokio::test]

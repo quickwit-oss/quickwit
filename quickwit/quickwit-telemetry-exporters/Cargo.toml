@@ -18,7 +18,7 @@ metrics-opentelemetry = { workspace = true }
 metrics-util = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry-appender-tracing = { workspace = true }
-opentelemetry-otlp = { workspace = true, features = ["experimental-grpc-retry", "experimental-http-retry"] }
+opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = [
     "experimental_logs_batch_log_processor_with_async_runtime",
     "experimental_metrics_periodicreader_with_async_runtime",

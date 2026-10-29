@@ -59,7 +59,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::*;
 
 use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
-use crate::cost::{compute_query_complexity_factor, compute_split_query_cost};
+use crate::cost::{compute_query_cost, compute_split_query_cost};
 use crate::leaf_cache::LeafSearchCache;
 use crate::metrics::{
     LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES, LEAF_SEARCH_SPLIT_DURATION_SECS,
@@ -913,7 +913,11 @@ async fn leaf_search_single_split(
             search_request.clone(),
             leaf_search_response.clone(),
         );
-        leaf_search_state_guard.set_state(SplitSearchState::PrunedDuringWarmup);
+        leaf_search_state_guard.set_state(if cached_known_empty {
+            SplitSearchState::PrunedBeforeWarmup
+        } else {
+            SplitSearchState::PrunedDuringWarmup
+        });
         return Ok(Some(leaf_search_response));
     }
 
@@ -1136,14 +1140,15 @@ fn min_bound<T: Ord + Copy>(left: Bound<T>, right: Bound<T>) -> Bound<T> {
     }
 }
 
+/// Returns whether the timestamp range covers the entire split.
 fn normalize_timestamp_range(
     search_request: &mut SearchRequest,
     split: &SplitIdAndFooterOffsets,
     timestamp_field: &str,
-) {
+) -> bool {
     let Ok(query_ast) = serde_json::from_str(search_request.query_ast.as_str()) else {
         // an error will get raised a bit after anyway
-        return;
+        return false;
     };
 
     let start_timestamp = search_request
@@ -1251,6 +1256,7 @@ fn normalize_timestamp_range(
     search_request.query_ast = serde_json::to_string(&new_ast).unwrap();
     search_request.start_timestamp = None;
     search_request.end_timestamp = None;
+    final_start_timestamp == Bound::Unbounded && final_end_timestamp == Bound::Unbounded
 }
 
 /// Remove all `must` and `filter timestamp ranges, and summarize them
@@ -1401,7 +1407,11 @@ fn is_simple_all_query(search_request: &SearchRequest) -> bool {
 enum CanSplitDoBetter {
     Uninformative,
     SplitIdHigher(Option<String>),
-    SplitTimestampHigher(Option<i64>),
+    SplitTimestampHigher {
+        timestamp: Option<i64>,
+        // Keep hits from one mature split even when newer splits fill the top-k.
+        split_id_excluded_from_pruning: Option<String>,
+    },
     SplitTimestampLower(Option<i64>),
     FindTraceIdsAggregation(Option<i64>),
 }
@@ -1426,7 +1436,10 @@ impl CanSplitDoBetter {
         {
             if sort_by.field_name == timestamp_field {
                 if sort_by.sort_order() == SortOrder::Desc {
-                    CanSplitDoBetter::SplitTimestampHigher(None)
+                    CanSplitDoBetter::SplitTimestampHigher {
+                        timestamp: None,
+                        split_id_excluded_from_pruning: None,
+                    }
                 } else {
                     CanSplitDoBetter::SplitTimestampLower(None)
                 }
@@ -1452,7 +1465,7 @@ impl CanSplitDoBetter {
             CanSplitDoBetter::SplitIdHigher(_) => {
                 splits.sort_unstable_by(|a, b| b.split_id.cmp(&a.split_id))
             }
-            CanSplitDoBetter::SplitTimestampHigher(_)
+            CanSplitDoBetter::SplitTimestampHigher { .. }
             | CanSplitDoBetter::FindTraceIdsAggregation(_) => {
                 splits.sort_unstable_by_key(|split| std::cmp::Reverse(split.timestamp_end()))
             }
@@ -1542,7 +1555,7 @@ impl CanSplitDoBetter {
                     }
                 }
             }
-            CanSplitDoBetter::SplitTimestampHigher(_) => {
+            CanSplitDoBetter::SplitTimestampHigher { .. } => {
                 // We order by timestamp desc. split_with_req is sorted by timestamp_end desc.
                 //
                 // We have the number of splits we need to search to get enough docs, now we need to
@@ -1568,13 +1581,19 @@ impl CanSplitDoBetter {
         Ok(split_with_req)
     }
 
-    /// Returns whether the given split can possibly give documents better than the one already
-    /// known to match.
-    fn can_be_better(&self, split: &SplitIdAndFooterOffsets) -> bool {
+    /// Returns whether to collect hits from this split to improve the current results or cache
+    /// them for later queries.
+    fn should_collect_hits(&self, split: &SplitIdAndFooterOffsets) -> bool {
         match self {
             CanSplitDoBetter::SplitIdHigher(Some(split_id)) => split.split_id >= *split_id,
-            CanSplitDoBetter::SplitTimestampHigher(Some(timestamp))
-            | CanSplitDoBetter::FindTraceIdsAggregation(Some(timestamp)) => {
+            CanSplitDoBetter::SplitTimestampHigher {
+                timestamp: Some(timestamp),
+                split_id_excluded_from_pruning,
+            } => {
+                split_id_excluded_from_pruning.as_ref() == Some(&split.split_id)
+                    || split.timestamp_end() >= *timestamp
+            }
+            CanSplitDoBetter::FindTraceIdsAggregation(Some(timestamp)) => {
                 split.timestamp_end() >= *timestamp
             }
             CanSplitDoBetter::SplitTimestampLower(Some(timestamp)) => {
@@ -1591,7 +1610,7 @@ impl CanSplitDoBetter {
         match self {
             CanSplitDoBetter::Uninformative => (),
             CanSplitDoBetter::SplitIdHigher(split_id) => *split_id = Some(hit.split_id.clone()),
-            CanSplitDoBetter::SplitTimestampHigher(timestamp)
+            CanSplitDoBetter::SplitTimestampHigher { timestamp, .. }
             | CanSplitDoBetter::FindTraceIdsAggregation(timestamp) => {
                 if let Some(SortValue::I64(timestamp_ns)) = hit.sort_value() {
                     // if we get a timestamp of, says 1.5s, we need to check up to 2s to make
@@ -1732,11 +1751,11 @@ fn simplify_search_request(
     split: &SplitIdAndFooterOffsets,
     split_filter_lock: &Arc<RwLock<CanSplitDoBetter>>,
 ) -> Option<SearchRequest> {
-    let can_be_better: bool;
+    let should_collect_hits: bool;
     let is_trace_req: bool;
     {
         let split_filter_guard = split_filter_lock.read().unwrap();
-        can_be_better = split_filter_guard.can_be_better(split);
+        should_collect_hits = split_filter_guard.should_collect_hits(split);
         // The info is originally from the search_request.aggregation as a string (yes we need to
         // clean this eventually). We don't want to parse it again, so we use the
         // split_filter variant to get that info.
@@ -1745,7 +1764,7 @@ fn simplify_search_request(
             &CanSplitDoBetter::FindTraceIdsAggregation(_)
         );
     }
-    if !can_be_better {
+    if !should_collect_hits {
         disable_search_request_hits(&mut search_request);
     }
     if is_trace_req {
@@ -1951,11 +1970,12 @@ struct ScheduleSearchTaskResult {
 /// - remotely on lambdas, if lambda are configured, and the number of tasks scheduled exceed the
 ///   offload threshold.
 ///
-/// `query_complexity_factor` is computed once from the original request, before per-split rewrites.
+/// Query factors are computed once from the original request, before per-split rewrites.
 async fn schedule_search_tasks(
     mut splits: Vec<(SplitIdAndFooterOffsets, SearchRequest)>,
     searcher_context: &SearcherContext,
     query_complexity_factor: f32,
+    warmup_memory_factor: u64,
 ) -> ScheduleSearchTaskResult {
     let priority = splits
         .first()
@@ -1970,6 +1990,9 @@ async fn schedule_search_tasks(
                     .searcher_config
                     .warmup_single_split_initial_allocation,
             );
+            // A reservation above the total budget could never acquire a permit.
+            let memory_allocation = ByteSize(memory_allocation.as_u64() * warmup_memory_factor)
+                .min(searcher_context.searcher_config.warmup_memory_budget);
             let job_cost = compute_split_query_cost(split.num_docs, query_complexity_factor);
             crate::search_permit_provider::SplitSearchTaskMetadata {
                 memory_allocation,
@@ -2032,11 +2055,31 @@ pub async fn single_doc_mapping_leaf_search(
     debug!(num_docs, num_splits, split_offsets = ?PrettySample::new(&splits, 5));
 
     // We simplify the request as much as possible.
-    let split_filter: CanSplitDoBetter =
+    let mut split_filter: CanSplitDoBetter =
         CanSplitDoBetter::from_request(&request, doc_mapper.timestamp_field_name());
     let mut split_with_req: Vec<(SplitIdAndFooterOffsets, SearchRequest)> =
         split_filter.optimize(&request, splits)?;
+    let cache_config = &searcher_context.searcher_config.partial_request_cache;
+    let keep_hits_from_one_mature_split =
+        request.max_hits > 0 && cache_config.capacity().as_u64() > 0;
     for (split, single_split_search_request) in &mut split_with_req {
+        if keep_hits_from_one_mature_split
+            && split.is_mature
+            && let CanSplitDoBetter::SplitTimestampHigher {
+                split_id_excluded_from_pruning,
+                ..
+            } = &mut split_filter
+            && split_id_excluded_from_pruning.is_none()
+        {
+            let mut full_request = (*request).clone();
+            let timestamp_field = doc_mapper.timestamp_field_name().expect("timestamp sort");
+            if normalize_timestamp_range(&mut full_request, split, timestamp_field) {
+                // Splits are newest first. Preserve one mature hit list whose cache key
+                // survives a moving time window, including upfront match-all pruning.
+                *split_id_excluded_from_pruning = Some(split.split_id.clone());
+                *single_split_search_request = full_request;
+            }
+        }
         rewrite_request(
             single_split_search_request,
             split,
@@ -2069,14 +2112,20 @@ pub async fn single_doc_mapping_leaf_search(
     let incremental_merge_collector_arc: Arc<Mutex<IncrementalCollector>> =
         Arc::new(Mutex::new(incremental_merge_collector));
 
-    // Use the original request to compute `query_complexity_factor` once.
-    let query_complexity_factor = compute_query_complexity_factor(&request)?;
+    // Use the original request to compute query factors once.
+    let query_cost = compute_query_cost(&request)?;
 
     // Determine which uncached splits to process locally vs offload.
     let ScheduleSearchTaskResult {
         local_search_tasks,
         offloaded_search_tasks,
-    } = schedule_search_tasks(uncached_splits, &searcher_context, query_complexity_factor).await;
+    } = schedule_search_tasks(
+        uncached_splits,
+        &searcher_context,
+        query_cost.complexity_factor,
+        query_cost.warmup_memory_factor,
+    )
+    .await;
 
     let has_offloaded_tasks = !offloaded_search_tasks.is_empty();
 
@@ -3122,11 +3171,62 @@ mod tests {
     async fn test_schedule_search_tasks_no_lambda_all_local() {
         let searcher_context = SearcherContext::for_test();
         let splits = make_splits_with_requests(5);
-        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0).await;
+        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
         assert_eq!(result.local_search_tasks.len(), 5);
         assert!(result.offloaded_search_tasks.is_empty());
         for (idx, task) in result.local_search_tasks.iter().enumerate() {
             assert_eq!(task.split.split_id, format!("split_{idx}"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_schedule_search_tasks_warmup_memory_factor() {
+        let mut config = SearcherConfig::default();
+        config.warmup_memory_budget = ByteSize::mb(500);
+        let searcher_context = SearcherContext::new(config, None, None::<DummyInvoker>);
+        for (value, factor) in [("error*", 1), ("*error", 10)] {
+            for num_docs in [100, 1_000_000, 10_000_000] {
+                let split = SplitIdAndFooterOffsets {
+                    num_docs,
+                    split_footer_start: 1_000_000_000,
+                    ..Default::default()
+                };
+                let request = SearchRequest {
+                    query_ast: serde_json::json!({
+                        "type": "wildcard", "field": "message", "value": value,
+                        "lenient": false, "case_insensitive": false
+                    })
+                    .to_string(),
+                    ..Default::default()
+                };
+                let cost = compute_query_cost(&request).unwrap();
+                let expected = compute_initial_memory_allocation(
+                    &split,
+                    searcher_context
+                        .searcher_config
+                        .warmup_single_split_initial_allocation,
+                )
+                .as_u64()
+                    * factor;
+                let result = super::schedule_search_tasks(
+                    vec![(split, request)],
+                    &searcher_context,
+                    cost.complexity_factor,
+                    cost.warmup_memory_factor,
+                )
+                .await;
+                let task = result.local_search_tasks.into_iter().next().unwrap();
+                let permit = task.search_permit_future.await;
+                assert_eq!(
+                    permit.memory_allocation().as_u64(),
+                    expected.min(
+                        searcher_context
+                            .searcher_config
+                            .warmup_memory_budget
+                            .as_u64()
+                    )
+                );
+            }
         }
     }
 
@@ -3150,7 +3250,7 @@ mod tests {
         });
         let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(7);
-        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0).await;
+        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
         assert_eq!(result.local_search_tasks.len(), 3);
         assert_eq!(result.offloaded_search_tasks.len(), 4);
         for (idx, task) in result.local_search_tasks.iter().enumerate() {
@@ -3170,7 +3270,7 @@ mod tests {
         });
         let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(5);
-        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0).await;
+        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
         assert!(result.local_search_tasks.is_empty());
         assert_eq!(result.offloaded_search_tasks.len(), 5);
     }
@@ -3184,7 +3284,7 @@ mod tests {
         });
         let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(5);
-        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0).await;
+        let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
         assert_eq!(result.local_search_tasks.len(), 5);
         assert!(result.offloaded_search_tasks.is_empty());
     }
@@ -3192,7 +3292,7 @@ mod tests {
     #[tokio::test]
     async fn test_schedule_search_tasks_empty() {
         let searcher_context = SearcherContext::for_test();
-        let result = super::schedule_search_tasks(Vec::new(), &searcher_context, 1.0).await;
+        let result = super::schedule_search_tasks(Vec::new(), &searcher_context, 1.0, 1).await;
         assert!(result.local_search_tasks.is_empty());
         assert!(result.offloaded_search_tasks.is_empty());
     }
