@@ -229,6 +229,13 @@ pub async fn list_indexes_metadata(
 pub struct CreateIndexQueryParams {
     #[serde(default)]
     overwrite: bool,
+    /// When false, the index is created without the default sources (ingest API, CLI).
+    #[serde(default = "default_add_default_sources")]
+    add_default_sources: bool,
+}
+
+fn default_add_default_sources() -> bool {
+    true
 }
 
 pub fn create_index_handler(
@@ -277,9 +284,18 @@ pub async fn create_index(
         &node_config.default_index_root_uri,
     )
     .map_err(IndexServiceError::InvalidConfig)?;
-    info!(index_id = %index_config.index_id, overwrite = create_index_query_params.overwrite, "create-index");
+    info!(
+        index_id = %index_config.index_id,
+        overwrite = create_index_query_params.overwrite,
+        add_default_sources = create_index_query_params.add_default_sources,
+        "create-index"
+    );
     index_service
-        .create_index(index_config, create_index_query_params.overwrite)
+        .create_index(
+            index_config,
+            create_index_query_params.overwrite,
+            create_index_query_params.add_default_sources,
+        )
         .await
 }
 
@@ -365,7 +381,7 @@ pub async fn update_index(
                 )));
             }
             info!(index_id = %index_config.index_id, "create-index-on-update");
-            match index_service.create_index(index_config, false).await {
+            match index_service.create_index(index_config, false, true).await {
                 Err(IndexServiceError::Metastore(MetastoreError::AlreadyExists(_))) => {
                     // If the index was created just after we tried to update it, try to update as
                     // if nothing happened. But if it gets deleted again before we update it, just
