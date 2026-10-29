@@ -93,7 +93,7 @@ fn is_telemetry_disabled_by_env_value(env_value_opt: Option<&OsStr>) -> bool {
     let Some(env_value_str) = env_value.to_str() else {
         return true;
     };
-    if env_value_str.trim().is_empty() {
+    if env_value_str.is_empty() {
         return false;
     }
     quickwit_common::parse_bool_lenient(env_value_str) != Some(false)
@@ -107,13 +107,12 @@ mod tests {
     fn test_is_telemetry_disabled_by_env_value() {
         assert!(!is_telemetry_disabled_by_env_value(None));
         assert!(!is_telemetry_disabled_by_env_value(Some(OsStr::new(""))));
-        assert!(!is_telemetry_disabled_by_env_value(Some(OsStr::new(" "))));
         for enabled_value in ["false", "FALSE", "no", "0"] {
             assert!(!is_telemetry_disabled_by_env_value(Some(OsStr::new(
                 enabled_value
             ))));
         }
-        for disabled_value in ["1", "true", "yes", "on", "disabled", "anything"] {
+        for disabled_value in [" ", "1", "true", "yes", "on", "disabled", "anything"] {
             assert!(is_telemetry_disabled_by_env_value(Some(OsStr::new(
                 disabled_value
             ))));

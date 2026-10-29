@@ -17,10 +17,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+#[cfg(test)]
+use tokio::sync::Mutex;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::{Mutex, RwLock, oneshot};
+use tokio::sync::{RwLock, oneshot};
 use tokio::task::JoinHandle;
-use tokio::time::Interval;
 use tracing::info;
 
 use crate::is_telemetry_disabled;
@@ -54,15 +55,23 @@ impl ClockButton {
 }
 
 enum Clock {
-    Periodical(Mutex<Interval>),
+    /// The first tick is immediate. Every later tick waits for the cooldown from the moment it is
+    /// awaited. The telemetry loop awaits a tick right after each request, so requests are at
+    /// least a cooldown apart, however long the loop waited for events in between.
+    Cooldown {
+        cooldown: Duration,
+        is_first_tick: AtomicBool,
+    },
     #[cfg(test)]
     Manual(Mutex<Receiver<()>>),
 }
 
 impl Clock {
-    pub fn periodical(period: Duration) -> Clock {
-        let interval = tokio::time::interval(period);
-        Clock::Periodical(Mutex::new(interval))
+    pub fn cooldown(cooldown: Duration) -> Clock {
+        Clock::Cooldown {
+            cooldown,
+            is_first_tick: AtomicBool::new(true),
+        }
     }
 
     #[cfg(test)]
@@ -75,8 +84,13 @@ impl Clock {
 
     async fn tick(&self) {
         match self {
-            Clock::Periodical(interval) => {
-                interval.lock().await.tick().await;
+            Clock::Cooldown {
+                cooldown,
+                is_first_tick,
+            } => {
+                if !is_first_tick.swap(false, Ordering::Relaxed) {
+                    tokio::time::sleep(*cooldown).await;
+                }
             }
             #[cfg(test)]
             Clock::Manual(channel) => {
@@ -242,7 +256,7 @@ impl TelemetrySender {
         TelemetrySender::new(
             quickwit_info,
             http_client,
-            Clock::periodical(TELEMETRY_PUSH_COOLDOWN),
+            Clock::cooldown(TELEMETRY_PUSH_COOLDOWN),
         )
     }
 
@@ -379,6 +393,19 @@ mod tests {
             events_state.events.last().unwrap().event,
             TelemetryEvent::EndCommand { .. }
         ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_cooldown_clock_waits_for_cooldown_after_idle_time() {
+        let clock = Clock::cooldown(TELEMETRY_PUSH_COOLDOWN);
+        let first_tick_start = tokio::time::Instant::now();
+        clock.tick().await;
+        assert_eq!(first_tick_start.elapsed(), Duration::ZERO);
+
+        tokio::time::sleep(10 * TELEMETRY_PUSH_COOLDOWN).await;
+        let tick_start = tokio::time::Instant::now();
+        clock.tick().await;
+        assert!(tick_start.elapsed() >= TELEMETRY_PUSH_COOLDOWN);
     }
 
     #[tokio::test]
