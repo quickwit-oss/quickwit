@@ -52,7 +52,8 @@ pub fn start_telemetry_loop(quickwit_info: QuickwitTelemetryInfo) -> Option<Tele
 
 /// Sends a telemetry event to the telemetry relay via HTTP.
 ///
-/// Telemetry guarantees to send at most 1 request per minute.
+/// Telemetry guarantees to send at most 1 request per minute, except for one last request with
+/// the pending events when the node shuts down.
 /// Each requests can ship at most 10 messages.
 ///
 /// If this methods is called too often, some events will be dropped.

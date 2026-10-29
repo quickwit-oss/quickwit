@@ -196,7 +196,8 @@ pub fn hash_cluster_identity(cluster_id: &str, metastore_uri: &Uri) -> String {
     if let Some(at_index) = location[..authority_len].rfind('@') {
         location = &location[at_index + 1..];
     }
-    let digest = md5::compute(format!("{cluster_id}\n{location}"));
+    let protocol = metastore_uri.protocol();
+    let digest = md5::compute(format!("{cluster_id}\n{protocol}://{location}"));
     format!("{digest:x}")
 }
 
@@ -250,7 +251,15 @@ mod tests {
             expected
         );
         assert_eq!(
+            hashed_cluster_id("my-cluster", "postgres://db:5432/metastore"),
+            expected
+        );
+        assert_eq!(
             hashed_cluster_id("my-cluster", "s3://bucket/metastore#polling_interval=30s"),
+            hashed_cluster_id("my-cluster", "s3://bucket/metastore")
+        );
+        assert_ne!(
+            hashed_cluster_id("my-cluster", "gs://bucket/metastore"),
             hashed_cluster_id("my-cluster", "s3://bucket/metastore")
         );
     }

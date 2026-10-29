@@ -31,7 +31,7 @@ Only `quickwit run` sends telemetry. Other CLI commands never do.
 
 ## What is sent
 
-A node sends at most one request per minute, with up to 10 events per request.
+A node sends at most one request per minute, plus one last request with the pending events when it shuts down, with up to 10 events per request.
 
 Events:
 
@@ -47,7 +47,7 @@ Each request also includes:
 - The Quickwit version, and how the binary was built: the commit, the target platform, and whether it was built from a release tag.
 - The services the node runs, such as `indexer`, `searcher` or `metastore`.
 - The features in use:
-  - the metastore type, file-backed or PostgreSQL, if the node runs the metastore;
+  - the metastore type, file-backed or PostgreSQL, if the node runs the metastore or a metastore read replica;
   - where the default index root URI points: S3, Azure Blob Storage, Google Cloud Storage or the local file system;
   - whether the S3 storage config targets an S3-compatible store, through a custom endpoint or a flavor such as MinIO, Garage, DigitalOcean Spaces or Google Cloud Storage;
   - whether the OTLP endpoints are enabled on an indexer, and the Jaeger endpoint on a searcher;

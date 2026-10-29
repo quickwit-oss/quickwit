@@ -73,9 +73,16 @@ fn telemetry_features(config: &NodeConfig) -> HashSet<QuickwitFeature> {
     {
         features.insert(QuickwitFeature::Otlp);
     }
-    // The metastore URI is only relevant if the metastore is enabled.
-    if config.is_service_enabled(QuickwitService::Metastore) {
-        let feature = if config.metastore_uri.protocol() == Protocol::PostgreSQL {
+    // The metastore URI is only relevant on the nodes that serve the metastore.
+    let served_metastore_uri_opt = if config.is_service_enabled(QuickwitService::Metastore) {
+        Some(&config.metastore_uri)
+    } else if config.is_service_enabled(QuickwitService::MetastoreReadReplica) {
+        config.metastore_read_replica_uri.as_ref()
+    } else {
+        None
+    };
+    if let Some(served_metastore_uri) = served_metastore_uri_opt {
+        let feature = if served_metastore_uri.protocol() == Protocol::PostgreSQL {
             QuickwitFeature::PostgresqMetastore
         } else {
             QuickwitFeature::FileBackedMetastore
@@ -151,6 +158,12 @@ mod tests {
         let features = telemetry_features(&node_config);
         assert!(!features.contains(&QuickwitFeature::Otlp));
         assert!(!features.contains(&QuickwitFeature::Jaeger));
+
+        node_config.enabled_services = HashSet::from([QuickwitService::MetastoreReadReplica]);
+        node_config.metastore_read_replica_uri =
+            Some(Uri::for_test("postgresql://replica/metastore"));
+        let features = telemetry_features(&node_config);
+        assert!(features.contains(&QuickwitFeature::PostgresqMetastore));
 
         node_config.enabled_services = HashSet::from([
             QuickwitService::Indexer,

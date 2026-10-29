@@ -30,7 +30,7 @@ use crate::payload::{
 };
 use crate::sink::{HttpClient, Sink};
 
-/// At most 1 Request per minutes.
+/// At most 1 request per minute, except for the last request on termination.
 const TELEMETRY_PUSH_COOLDOWN: Duration = Duration::from_secs(60);
 
 /// Interval at which to send telemetry `Running` event.
@@ -109,7 +109,19 @@ impl EventsState {
     fn push_event(&mut self, mut event: TelemetryEvent) -> bool {
         if self.events.len() >= MAX_NUM_EVENTS_IN_QUEUE {
             self.num_dropped_events += 1;
-            return false;
+            // UI page loads are the only events that can fill the queue. Any other event, such as
+            // a summary carrying the API counts, replaces the latest one instead of being dropped.
+            if matches!(event, TelemetryEvent::UiIndexPageLoad) {
+                return false;
+            }
+            let Some(ui_page_load_idx) = self
+                .events
+                .iter()
+                .rposition(|queued| matches!(queued.event, TelemetryEvent::UiIndexPageLoad))
+            else {
+                return false;
+            };
+            self.events.remove(ui_page_load_idx);
         }
         event.add_usage();
         let events_was_empty = self.events.is_empty();
@@ -351,6 +363,22 @@ mod tests {
                 .is_disabled(),
             false
         );
+    }
+
+    #[test]
+    fn test_push_event_replaces_ui_page_load_when_queue_is_full() {
+        let mut events_state = EventsState::default();
+        for _ in 0..=MAX_NUM_EVENTS_IN_QUEUE {
+            events_state.push_event(TelemetryEvent::UiIndexPageLoad);
+        }
+        events_state.push_event(TelemetryEvent::end_command(0));
+
+        assert_eq!(events_state.events.len(), MAX_NUM_EVENTS_IN_QUEUE);
+        assert_eq!(events_state.num_dropped_events, 2);
+        assert!(matches!(
+            events_state.events.last().unwrap().event,
+            TelemetryEvent::EndCommand { .. }
+        ));
     }
 
     #[tokio::test]
