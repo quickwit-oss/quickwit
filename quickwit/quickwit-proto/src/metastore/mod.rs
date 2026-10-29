@@ -241,6 +241,8 @@ pub enum MetastoreError {
 
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    #[error("{0}")]
+    Unauthorized(#[from] quickwit_authorize::AuthorizationError),
 }
 
 impl MetastoreError {
@@ -256,7 +258,8 @@ impl MetastoreError {
             | MetastoreError::JsonDeserializeError { .. }
             | MetastoreError::JsonSerializeError { .. }
             | MetastoreError::NotFound(_)
-            | MetastoreError::TooManyRequests => true,
+            | MetastoreError::TooManyRequests
+            | MetastoreError::Unauthorized(_) => true,
             MetastoreError::Connection { .. }
             | MetastoreError::Db { .. }
             | MetastoreError::Internal { .. }
@@ -285,6 +288,7 @@ impl From<TimeoutExceeded> for MetastoreError {
 impl ServiceError for MetastoreError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
+            Self::Unauthorized(authorization_error) => authorization_error.error_code(),
             Self::AlreadyExists(_) => ServiceErrorCode::AlreadyExists,
             Self::Connection { message } => {
                 rate_limited_error!(

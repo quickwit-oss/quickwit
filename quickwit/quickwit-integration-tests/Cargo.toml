@@ -36,6 +36,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
+quickwit-authorize = { workspace = true }
 quickwit-cli = { workspace = true }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }

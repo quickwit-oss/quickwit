@@ -52,6 +52,7 @@ pub fn cluster_grpc_server(
 ) -> ClusterServiceGrpcServer<ClusterServiceGrpcServerAdapter> {
     ClusterServiceClient::tower()
         .stack_layer(CLUSTER_GRPC_SERVER_METRICS_LAYER.clone())
+        .stack_layer(quickwit_authorize::AuthorizationLayer)
         .build(cluster)
         .as_grpc_service(MAX_MESSAGE_SIZE)
 }

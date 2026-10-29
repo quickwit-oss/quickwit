@@ -52,6 +52,7 @@ tracing-subscriber = { workspace = true, optional = true }
 
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
+quickwit-authorize = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }

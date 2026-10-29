@@ -20,7 +20,7 @@ use std::time::Duration;
 use bytesize::ByteSize;
 use futures::future::{BoxFuture, FutureExt, Shared};
 use http::Uri;
-use quickwit_common::tracing_utils::SpanContextInterceptor;
+use quickwit_common::tracing_utils::inject_current_context;
 use quickwit_proto::search::{GetKvRequest, PutKvRequest, ReportSplitsRequest};
 use quickwit_proto::tonic;
 use quickwit_proto::tonic::Request;
@@ -112,13 +112,29 @@ impl LoadCache {
     }
 }
 
+/// Adds the W3C trace context and the authorization token of the current task to the metadata of
+/// outgoing search gRPC requests.
+///
+/// Interceptors run when the request is sent, in the task of the caller, so they see its
+/// task-locals.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SearchClientInterceptor;
+
+impl tonic::service::Interceptor for SearchClientInterceptor {
+    fn call(&mut self, mut request: Request<()>) -> Result<Request<()>, tonic::Status> {
+        inject_current_context(request.metadata_mut());
+        quickwit_authorize::inject_auth_token(request.metadata_mut());
+        Ok(request)
+    }
+}
+
 /// Impl is an enumeration that meant to manage Quickwit's search service client types.
 #[derive(Clone)]
 enum SearchServiceClientImpl {
     Local(Arc<dyn SearchService>),
     Grpc(
         quickwit_proto::search::search_service_client::SearchServiceClient<
-            InterceptedService<Timeout<Channel>, SpanContextInterceptor>,
+            InterceptedService<Timeout<Channel>, SearchClientInterceptor>,
         >,
     ),
 }
@@ -154,7 +170,7 @@ impl SearchServiceClient {
     /// Create a search service client instance given a gRPC client and gRPC address.
     pub fn from_grpc_client(
         client: quickwit_proto::search::search_service_client::SearchServiceClient<
-            InterceptedService<Timeout<Channel>, SpanContextInterceptor>,
+            InterceptedService<Timeout<Channel>, SearchClientInterceptor>,
         >,
         grpc_addr: SocketAddr,
     ) -> Self {
@@ -408,7 +424,7 @@ pub fn create_search_client_from_channel(
     let client =
         quickwit_proto::search::search_service_client::SearchServiceClient::with_interceptor(
             channel,
-            SpanContextInterceptor,
+            SearchClientInterceptor,
         )
         .max_decoding_message_size(max_message_size.0 as usize)
         .max_encoding_message_size(max_message_size.0 as usize);

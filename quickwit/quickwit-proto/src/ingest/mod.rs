@@ -65,6 +65,8 @@ pub enum IngestV2Error {
     TooManyRequests(RateLimitingCause),
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    #[error("{0}")]
+    Unauthorized(#[from] quickwit_authorize::AuthorizationError),
 }
 
 impl From<quickwit_common::tower::TimeoutExceeded> for IngestV2Error {
@@ -82,6 +84,7 @@ impl From<quickwit_common::tower::TaskCancelled> for IngestV2Error {
 impl ServiceError for IngestV2Error {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
+            Self::Unauthorized(authorization_error) => authorization_error.error_code(),
             Self::Internal(error_msg) => {
                 rate_limited_error!(limit_per_min = 6, "ingest internal error: {error_msg}");
                 ServiceErrorCode::Internal

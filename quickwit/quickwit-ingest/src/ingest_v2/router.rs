@@ -564,6 +564,9 @@ fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_s
             IngestV2Error::Internal(_) => {
                 INGEST_RESULT_INTERNAL.inc_by(num_subrequests);
             }
+            IngestV2Error::Unauthorized(_) => {
+                INGEST_RESULT_UNSPECIFIED.inc_by(num_subrequests);
+            }
         },
     }
 }

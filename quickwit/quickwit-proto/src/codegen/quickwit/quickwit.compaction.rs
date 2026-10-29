@@ -532,7 +532,9 @@ where
         &self,
         request: ReportStatusRequest,
     ) -> crate::compaction::CompactionResult<ReportStatusResponse> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -568,6 +570,9 @@ for CompactionPlannerServiceGrpcServerAdapter {
         &self,
         tonic_request: tonic::Request<ReportStatusRequest>,
     ) -> Result<tonic::Response<ReportStatusResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -585,6 +590,7 @@ for CompactionPlannerServiceGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
 }

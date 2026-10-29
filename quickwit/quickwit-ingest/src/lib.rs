@@ -14,6 +14,7 @@
 
 #![deny(clippy::disallowed_methods)]
 
+mod authorize;
 mod doc_batch;
 pub mod error;
 mod ingest_api_service;

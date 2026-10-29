@@ -44,6 +44,7 @@ use tracing::info;
 
 use crate::checklist::run_checklist;
 
+pub mod auth_token;
 pub mod checklist;
 pub mod cli;
 pub mod index;

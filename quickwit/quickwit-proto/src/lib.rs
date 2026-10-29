@@ -20,6 +20,7 @@
 
 use std::cmp::Ordering;
 
+mod authorization;
 pub mod cluster;
 pub mod compaction;
 pub mod control_plane;

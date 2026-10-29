@@ -88,6 +88,27 @@ impl std::fmt::Display for TooManyRequests {
     }
 }
 
+/// The request carries no valid authorization token while authorization is enabled.
+#[derive(Debug)]
+pub(crate) struct Unauthenticated(pub quickwit_authorize::AuthorizationError);
+
+impl warp::reject::Reject for Unauthenticated {}
+
+/// Rejects requests without a valid authorization token. Always passes when authorization is
+/// disabled.
+///
+/// The token itself is scoped for the duration of the request by the
+/// `AuthorizationTokenExtractionLayer`: this filter only makes sure that a request cannot run
+/// without a token, in which case its gRPC calls would fall back to the node token.
+fn require_authorization() -> impl Filter<Extract = (), Error = Rejection> + Clone {
+    warp::header::optional::<String>(http::header::AUTHORIZATION.as_str())
+        .and_then(|header_value_opt: Option<String>| async move {
+            quickwit_authorize::check_rest_authorization_header(header_value_opt.as_deref())
+                .map_err(|error| warp::reject::custom(Unauthenticated(error)))
+        })
+        .untuple_one()
+}
+
 /// Env variable key to define the minimum size above which a response should be compressed.
 /// If unset, no compression is applied.
 const QW_MINIMUM_COMPRESSION_SIZE_KEY: &str = "QW_MINIMUM_COMPRESSION_SIZE";
@@ -215,15 +236,19 @@ pub(crate) async fn start_rest_server(
             .clone(),
     );
 
+    // Routes that require a valid authorization token when authorization is enabled. The UI
+    // assets, the API docs, and the health and metrics endpoints remain public.
+    let authorized_routes = require_authorization()
+        .and(api_v1_root_route.or(mcp_route).or(developer_routes))
+        .boxed();
+
     // Combine all the routes together.
-    let rest_routes = api_v1_root_route
-        .or(mcp_route)
+    let rest_routes = authorized_routes
         .or(api_doc)
         .or(redirect_root_to_ui_route)
         .or(ui_handler())
         .or(health_check_routes)
         .or(metrics_routes)
-        .or(developer_routes)
         .with(request_counter)
         .recover(recover_fn_final)
         .with(extra_headers)
@@ -343,6 +368,9 @@ where
 
     let service = ServiceBuilder::new()
         .layer(trace_layer)
+        // Scopes the authorization token (if any) for the whole request, including the gRPC
+        // calls made by the handlers. Never rejects: see `require_authorization`.
+        .layer(quickwit_authorize::AuthorizationTokenExtractionLayer)
         .layer(
             CompressionLayer::new()
                 .zstd(true)
@@ -679,6 +707,11 @@ fn get_status_with_error(rejection: Rejection) -> Result<RestApiError, Rejection
         Ok(RestApiError {
             status_code: StatusCode::PAYLOAD_TOO_LARGE,
             message: error.to_string(),
+        })
+    } else if let Some(error) = rejection.find::<Unauthenticated>() {
+        Ok(RestApiError {
+            status_code: StatusCode::UNAUTHORIZED,
+            message: error.0.to_string(),
         })
     } else if let Some(err) = rejection.find::<TooManyRequests>() {
         Ok(RestApiError {

@@ -201,6 +201,7 @@ impl ClusterSandboxBuilder {
             unique_dir_name,
             node_configs: resolved_node_configs,
             tcp_listener_resolver,
+            rest_auth_token_opt: None,
         }
     }
 
@@ -227,6 +228,8 @@ pub struct ResolvedClusterConfig {
     unique_dir_name: String,
     pub node_configs: Vec<(NodeConfig, HashSet<QuickwitService>)>,
     tcp_listener_resolver: TestTcpListenerResolver,
+    /// Token sent by the REST clients of the sandbox, required when authorization is enabled.
+    pub rest_auth_token_opt: Option<String>,
 }
 
 impl ResolvedClusterConfig {
@@ -243,6 +246,7 @@ impl ResolvedClusterConfig {
             tcp_listener_resolver: self.tcp_listener_resolver,
             storage_resolver: StorageResolver::unconfigured(),
             metastore_resolver: MetastoreResolver::unconfigured(),
+            rest_auth_token_opt: self.rest_auth_token_opt,
         };
         for (config, services) in &self.node_configs {
             sandbox.spawn_node(config.clone(), services.clone());
@@ -296,6 +300,7 @@ pub struct ClusterSandbox {
     tcp_listener_resolver: TestTcpListenerResolver,
     storage_resolver: StorageResolver,
     metastore_resolver: MetastoreResolver,
+    rest_auth_token_opt: Option<String>,
 }
 
 impl ClusterSandbox {
@@ -395,6 +400,25 @@ impl ClusterSandbox {
         (Some(ca_cert), identity)
     }
 
+    /// Returns a client to one of the nodes that runs the specified service, sending
+    /// `auth_token_opt` instead of the token of the sandbox.
+    pub fn rest_client_with_auth_token(
+        &self,
+        service: QuickwitService,
+        auth_token_opt: Option<String>,
+    ) -> QuickwitClient {
+        let node_config = self.find_node_for_service(service);
+        let (ca_cert, identity) = Self::tls_parts(&node_config);
+        QuickwitClientBuilder::new(transport_url(
+            node_config.rest_config.listen_addr,
+            ca_cert.is_some(),
+        ))
+        .set_tls_ca(ca_cert)
+        .set_tls_identity(identity)
+        .set_auth_token(auth_token_opt)
+        .build()
+    }
+
     /// Returns a client to one of the nodes that runs the specified service
     pub fn rest_client(&self, service: QuickwitService) -> QuickwitClient {
         let node_config = self.find_node_for_service(service);
@@ -405,6 +429,7 @@ impl ClusterSandbox {
         ))
         .set_tls_ca(ca_cert)
         .set_tls_identity(identity)
+        .set_auth_token(self.rest_auth_token_opt.clone())
         .build()
     }
 
@@ -426,6 +451,7 @@ impl ClusterSandbox {
         ))
         .set_tls_ca(ca_cert)
         .set_tls_identity(identity)
+        .set_auth_token(self.rest_auth_token_opt.clone())
         .build();
         Some(client)
     }
@@ -440,6 +466,7 @@ impl ClusterSandbox {
         ))
         .set_tls_ca(ca_cert)
         .set_tls_identity(identity)
+        .set_auth_token(self.rest_auth_token_opt.clone())
         .detailed_response(true)
         .build()
     }
@@ -454,6 +481,7 @@ impl ClusterSandbox {
         ))
         .set_tls_ca(ca_cert)
         .set_tls_identity(identity)
+        .set_auth_token(self.rest_auth_token_opt.clone())
         .use_legacy_ingest(true)
         .build()
     }

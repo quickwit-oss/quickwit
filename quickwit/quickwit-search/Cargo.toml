@@ -39,6 +39,7 @@ ttl_cache = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
 
+quickwit-authorize = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }

@@ -16,6 +16,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use anyhow::Context;
+use quickwit_authorize::AuthorizationLayer;
 use quickwit_cluster::cluster_grpc_server;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::GrpcConfig;
@@ -90,6 +91,7 @@ pub(crate) async fn start_grpc_server(
 
             let indexing_service = IndexingServiceClient::tower()
                 .stack_layer(INDEXING_GRPC_SERVER_METRICS_LAYER.clone())
+                .stack_layer(AuthorizationLayer)
                 .build_from_mailbox(indexing_service);
             Some(indexing_service.as_grpc_service(grpc_config.max_message_size))
         } else {
@@ -232,7 +234,9 @@ pub(crate) async fn start_grpc_server(
 
         let developer_service = DeveloperApiServer::from_services(&services);
 
-        DeveloperServiceClient::new(developer_service)
+        DeveloperServiceClient::tower()
+            .stack_layer(AuthorizationLayer)
+            .build(developer_service)
             .as_grpc_service(DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE)
     };
     enabled_grpc_services.insert("health");

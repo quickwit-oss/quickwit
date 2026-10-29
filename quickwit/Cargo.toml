@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
   "quickwit-actors",
+  "quickwit-authorize",
   "quickwit-aws",
   "quickwit-cli",
   "quickwit-cluster",
@@ -62,6 +63,7 @@ atomic_float = "1.1"
 backtrace = "0.3"
 base64 = "0.23"
 binggan = { version = "0.17" }
+biscuit-auth = "5.0"
 bitpacking = "0.9"
 bytes = { version = "1", features = ["serde"] }
 bytesize = { version = "2.7", features = ["serde"] }
@@ -243,6 +245,7 @@ tikv-jemallocator = "0.7"
 time = { version = "0.3", features = ["std", "formatting", "macros"] }
 time-fmt = "0.3.8"
 tokio = { version = "1.54", features = ["full"] }
+tokio-inherit-task-local = "0.2"
 tokio-metrics = { version = "0.5", features = ["rt"] }
 tokio-rustls = { version = "0.26", default-features = false }
 tokio-stream = { version = "0.1", features = ["sync"] }
@@ -344,6 +347,7 @@ reqsign-core = { version = "3.3", default-features = false }
 reqsign-google = { version = "3.2", default-features = false }
 
 quickwit-actors = { path = "quickwit-actors" }
+quickwit-authorize = { path = "quickwit-authorize" }
 quickwit-aws = { path = "quickwit-aws" }
 quickwit-cli = { path = "quickwit-cli" }
 quickwit-cluster = { path = "quickwit-cluster" }

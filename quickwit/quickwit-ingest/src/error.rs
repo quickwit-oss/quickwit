@@ -44,6 +44,8 @@ pub enum IngestServiceError {
     Unavailable(String),
     #[error("bad request ({0})")]
     BadRequest(String),
+    #[error("{0}")]
+    Unauthorized(#[from] quickwit_authorize::AuthorizationError),
 }
 
 impl From<AskError<IngestServiceError>> for IngestServiceError {
@@ -89,6 +91,9 @@ impl From<IngestV2Error> for IngestServiceError {
             }
             IngestV2Error::TooManyRequests(rate_limiting_cause) => {
                 IngestServiceError::RateLimited(rate_limiting_cause)
+            }
+            IngestV2Error::Unauthorized(authorization_error) => {
+                IngestServiceError::Unauthorized(authorization_error)
             }
         }
     }
@@ -138,6 +143,7 @@ impl From<IngestFailure> for IngestServiceError {
 impl ServiceError for IngestServiceError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
+            Self::Unauthorized(authorization_error) => authorization_error.error_code(),
             Self::Corruption(err_msg) => {
                 rate_limited_error!(
                     limit_per_min = 6,
@@ -209,6 +215,9 @@ impl From<IngestServiceError> for tonic::Status {
             IngestServiceError::RateLimited(_) => tonic::Code::ResourceExhausted,
             IngestServiceError::Unavailable(_) => tonic::Code::Unavailable,
             IngestServiceError::BadRequest(_) => tonic::Code::InvalidArgument,
+            IngestServiceError::Unauthorized(authorization_error) => {
+                authorization_error.error_code().grpc_status_code()
+            }
         };
         let message = error.to_string();
         tonic::Status::new(code, message)

@@ -61,6 +61,7 @@ use futures::StreamExt;
 use futures::future::OptionFuture;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, ActorHandle, Mailbox, SpawnContext, Universe};
+use quickwit_authorize::AuthorizationLayer;
 use quickwit_cluster::{
     Cluster, ClusterChange, ClusterChangeStream, ClusterNode, ListenerHandle, start_cluster_service,
 };
@@ -292,6 +293,7 @@ async fn get_compaction_planner_client_if_needed(
         let planner_client = CompactionPlannerServiceClient::tower()
             .stack_layer(COMPACTION_GRPC_SERVER_METRICS_LAYER.clone())
             .stack_layer(TimeoutLayer::new(GRPC_COMPACTION_PLANNER_SERVICE_TIMEOUT))
+            .stack_layer(AuthorizationLayer)
             .build_from_mailbox(mailbox);
         return Ok((Some(planner_client), Some(handle)));
     }
@@ -381,6 +383,7 @@ async fn start_ingest_client_if_needed(
         let min_rate = ConstantRate::new(ByteSize::mib(1).as_u64(), Duration::from_millis(100));
         let rate_modulator = RateModulator::new(rate_estimator.clone(), memory_capacity, min_rate);
         let ingest_service = IngestServiceClient::tower()
+            .stack_layer(AuthorizationLayer)
             .stack_ingest_layer(
                 ServiceBuilder::new()
                     .layer(EstimateRateLayer::<IngestRequest, _>::new(rate_estimator))
@@ -437,6 +440,7 @@ async fn start_control_plane_if_needed(
         let control_plane_client = ControlPlaneServiceClient::tower()
             .stack_layer(CP_GRPC_SERVER_METRICS_LAYER.clone())
             .stack_layer(LoadShedLayer::new(100))
+            .stack_layer(AuthorizationLayer)
             .build_from_mailbox(control_plane_mailbox);
         Ok((control_plane_server_opt, control_plane_client))
     } else {
@@ -576,6 +580,22 @@ pub async fn serve_quickwit(
     shutdown_signal: BoxFutureInfaillible<()>,
     env_filter_reload_fn: EnvFilterReloadFn,
 ) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
+    // Must happen before any service is started: services check and forward authorization tokens
+    // as soon as they handle requests.
+    let authorization_settings_opt =
+        node_config
+            .authorization_config
+            .as_ref()
+            .map(
+                |authorization_config| quickwit_authorize::AuthorizationSettings {
+                    root_public_key_hex: authorization_config.root_public_key.clone(),
+                    node_token_base64: authorization_config.node_token.clone(),
+                    roles: authorization_config.roles.clone(),
+                },
+            );
+    quickwit_authorize::init_authorization(authorization_settings_opt)
+        .context("failed to initialize authorization")?;
+
     let cluster = start_cluster_service(&node_config)
         .await
         .context("failed to start cluster service")?;
@@ -1103,6 +1123,7 @@ fn ingester_service_layer_stack(
 ) -> IngesterServiceTowerLayerStack {
     layer_stack
         .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
+        .stack_layer(AuthorizationLayer)
         .stack_persist_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_persist_layer(
             // "3" may seem a little bit low, but we only consider error caused by a full WAL.
@@ -1146,6 +1167,7 @@ async fn setup_ingest_v2(
 
     let ingest_router_service = IngestRouterServiceClient::tower()
         .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
+        .stack_layer(AuthorizationLayer)
         .build(ingest_router.clone());
 
     let rate_limit =

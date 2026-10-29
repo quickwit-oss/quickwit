@@ -208,6 +208,14 @@ impl IngestWorkbench {
                     self.record_too_many_requests(subrequest_id, rate_limiting_cause);
                 }
             }
+            IngestV2Error::Unauthorized(authorization_error) => {
+                // The router persists on behalf of a user whose rights were already checked when
+                // the ingest request was received.
+                rate_limited_error!(limit_per_min=6, error=%authorization_error, "persist error: unauthorized");
+                for subrequest_id in persist_summary.subrequest_ids {
+                    self.record_internal_error(subrequest_id);
+                }
+            }
         }
     }
 

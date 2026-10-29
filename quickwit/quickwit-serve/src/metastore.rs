@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use anyhow::{Context, bail, ensure};
 use bytesize::ByteSize;
+use quickwit_authorize::AuthorizationLayer;
 use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::retry::RetryParams;
@@ -226,6 +227,7 @@ pub(super) async fn start_metastore_service_if_needed(
         // These layers apply to all the RPCs of the metastore.
         let shared_layer = ServiceBuilder::new()
             .layer(PRIMARY_METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
+            .layer(AuthorizationLayer)
             .layer(LoadShedLayer::new(
                 LocalMetastoreServer::metastore_max_in_flight_requests(
                     node_config,
@@ -265,6 +267,7 @@ pub(super) async fn start_metastore_service_if_needed(
             })?;
         let shared_layer = ServiceBuilder::new()
             .layer(READ_REPLICA_METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
+            .layer(AuthorizationLayer)
             .layer(LoadShedLayer::new(
                 LocalMetastoreServer::metastore_max_in_flight_requests(
                     node_config,

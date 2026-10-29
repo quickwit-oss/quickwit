@@ -1320,12 +1320,13 @@ fn generate_grpc_client_adapter_methods(context: &CodegenContext) -> TokenStream
         } else {
             quote! { |response| response.into_inner() }
         };
-        // Wrap the request and inject the active span's W3C trace context into
+        // Wrap the request, add the authorization token of the current task (no-op when
+        // authorization is disabled), and inject the active span's W3C trace context into
         // the gRPC metadata so the receiving server can stitch its span into
         // the same trace. No-op when no propagator is installed (tests).
         let method = quote! {
             async fn #method_name(&self, request: #request_type) -> #result_type<#response_type> {
-                let mut tonic_request = tonic::Request::new(request);
+                let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(request);
                 quickwit_common::tracing_utils::inject_current_context(tonic_request.metadata_mut());
                 self.inner
                     .clone()
@@ -1426,10 +1427,15 @@ fn generate_grpc_server_adapter_methods(context: &CodegenContext) -> TokenStream
         // the inner handler inside that span. When no propagator is
         // installed, the parent context is empty and the span becomes a
         // local root.
+        //
+        // The authorization token of the caller (if authorization is enabled) is verified and
+        // scoped for the duration of the handler, so that the authorization layer and the
+        // downstream gRPC calls see it.
         let method = quote! {
             #associated_type
 
             async fn #method_name(&self, tonic_request: tonic::Request<#request_type>) -> Result<tonic::Response<#response_type>, tonic::Status> {
+                let auth_token_opt = quickwit_authorize::extract_auth_token(tonic_request.metadata())?;
                 let parent_context = quickwit_common::tracing_utils::extract_context(tonic_request.metadata());
                 #inner_binding
                 let span = #span_macro;
@@ -1442,6 +1448,7 @@ fn generate_grpc_server_adapter_methods(context: &CodegenContext) -> TokenStream
                         .map(#into_response_type)
                         .map_err(crate::error::grpc_error_to_grpc_status)
                 };
+                let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
                 <_ as tracing::Instrument>::instrument(fut, span).await
             }
         };

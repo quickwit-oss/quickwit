@@ -36,11 +36,14 @@ pub enum DeveloperError {
     TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    #[error("{0}")]
+    Unauthorized(#[from] quickwit_authorize::AuthorizationError),
 }
 
 impl ServiceError for DeveloperError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
+            Self::Unauthorized(authorization_error) => authorization_error.error_code(),
             Self::Internal(_) => ServiceErrorCode::Internal,
             Self::InvalidArgument(_) => ServiceErrorCode::BadRequest,
             Self::Timeout(_) => ServiceErrorCode::Timeout,

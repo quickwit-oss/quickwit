@@ -79,6 +79,17 @@ pub trait ServiceError: Error + Debug + 'static {
     fn error_code(&self) -> ServiceErrorCode;
 }
 
+impl ServiceError for quickwit_authorize::AuthorizationError {
+    fn error_code(&self) -> ServiceErrorCode {
+        match self {
+            Self::AuthorizationTokenMissing | Self::InvalidToken => {
+                ServiceErrorCode::Unauthenticated
+            }
+            Self::PermissionDenied => ServiceErrorCode::Forbidden,
+        }
+    }
+}
+
 impl ServiceError for Infallible {
     fn error_code(&self) -> ServiceErrorCode {
         unreachable!()

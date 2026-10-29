@@ -28,7 +28,9 @@ use quickwit_proto::types::{AvailabilityZone, NodeId};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
-use super::{GrpcConfig, HealthConfig, MAX_GOSSIP_PROTOCOL_VERSION, RestConfig};
+use super::{
+    AuthorizationConfig, GrpcConfig, HealthConfig, MAX_GOSSIP_PROTOCOL_VERSION, RestConfig,
+};
 use crate::config_value::ConfigValue;
 use crate::docs_clustering::DocsClusteringConfigBuilder;
 use crate::qw_env_vars::*;
@@ -249,6 +251,9 @@ struct NodeConfigBuilder {
     #[serde(rename = "docs_clustering")]
     #[serde(default)]
     docs_clustering_config: Option<DocsClusteringConfigBuilder>,
+    #[serde(rename = "authorization")]
+    #[serde(default)]
+    authorization_config: Option<AuthorizationConfig>,
 }
 
 impl NodeConfigBuilder {
@@ -378,6 +383,11 @@ impl NodeConfigBuilder {
              `{gossip_protocol_version}`"
         );
 
+        let authorization_config = match self.authorization_config {
+            Some(authorization_config) => Some(authorization_config.resolve(env_vars)?),
+            None => None,
+        };
+
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
             extra_cluster_ids: self.extra_cluster_ids.resolve(env_vars)?.0,
@@ -407,6 +417,7 @@ impl NodeConfigBuilder {
             compactor_config: self.compactor_config,
             enable_standalone_compactors,
             docs_clustering_config,
+            authorization_config,
         };
 
         validate(&node_config)?;
@@ -556,6 +567,7 @@ impl Default for NodeConfigBuilder {
             jaeger_config: JaegerConfig::default(),
             compactor_config: CompactorConfig::default(),
             docs_clustering_config: None,
+            authorization_config: None,
         }
     }
 }
@@ -709,6 +721,7 @@ pub fn node_config_for_tests_from_ports(
         compactor_config: CompactorConfig::default(),
         enable_standalone_compactors: false,
         docs_clustering_config: None,
+        authorization_config: None,
     }
 }
 

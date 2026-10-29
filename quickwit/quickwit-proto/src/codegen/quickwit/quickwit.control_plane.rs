@@ -1790,7 +1790,9 @@ where
     ) -> crate::control_plane::ControlPlaneResult<
         super::metastore::CreateIndexResponse,
     > {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -1810,7 +1812,9 @@ where
     ) -> crate::control_plane::ControlPlaneResult<
         super::metastore::IndexMetadataResponse,
     > {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -1828,7 +1832,9 @@ where
         &self,
         request: super::metastore::DeleteIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -1846,7 +1852,9 @@ where
         &self,
         request: super::metastore::AddSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -1864,7 +1872,9 @@ where
         &self,
         request: super::metastore::UpdateSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -1882,7 +1892,9 @@ where
         &self,
         request: super::metastore::ToggleSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -1900,7 +1912,9 @@ where
         &self,
         request: super::metastore::DeleteSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -1918,7 +1932,9 @@ where
         &self,
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -1936,7 +1952,9 @@ where
         &self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -1954,7 +1972,9 @@ where
         &self,
         request: super::metastore::PruneShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -1990,6 +2010,9 @@ for ControlPlaneServiceGrpcServerAdapter {
         &self,
         tonic_request: tonic::Request<super::metastore::CreateIndexRequest>,
     ) -> Result<tonic::Response<super::metastore::CreateIndexResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -2007,6 +2030,7 @@ for ControlPlaneServiceGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn update_index(
@@ -2016,6 +2040,9 @@ for ControlPlaneServiceGrpcServerAdapter {
         tonic::Response<super::metastore::IndexMetadataResponse>,
         tonic::Status,
     > {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -2033,12 +2060,16 @@ for ControlPlaneServiceGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn delete_index(
         &self,
         tonic_request: tonic::Request<super::metastore::DeleteIndexRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -2056,12 +2087,16 @@ for ControlPlaneServiceGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn add_source(
         &self,
         tonic_request: tonic::Request<super::metastore::AddSourceRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -2079,12 +2114,16 @@ for ControlPlaneServiceGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn update_source(
         &self,
         tonic_request: tonic::Request<super::metastore::UpdateSourceRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -2102,12 +2141,16 @@ for ControlPlaneServiceGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn toggle_source(
         &self,
         tonic_request: tonic::Request<super::metastore::ToggleSourceRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -2125,12 +2168,16 @@ for ControlPlaneServiceGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn delete_source(
         &self,
         tonic_request: tonic::Request<super::metastore::DeleteSourceRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -2148,12 +2195,16 @@ for ControlPlaneServiceGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn get_or_create_open_shards(
         &self,
         tonic_request: tonic::Request<GetOrCreateOpenShardsRequest>,
     ) -> Result<tonic::Response<GetOrCreateOpenShardsResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -2171,12 +2222,16 @@ for ControlPlaneServiceGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn advise_reset_shards(
         &self,
         tonic_request: tonic::Request<AdviseResetShardsRequest>,
     ) -> Result<tonic::Response<AdviseResetShardsResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -2194,12 +2249,16 @@ for ControlPlaneServiceGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn prune_shards(
         &self,
         tonic_request: tonic::Request<super::metastore::PruneShardsRequest>,
     ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -2217,6 +2276,7 @@ for ControlPlaneServiceGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
 }

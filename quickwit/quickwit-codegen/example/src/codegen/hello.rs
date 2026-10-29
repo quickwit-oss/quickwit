@@ -745,7 +745,9 @@ where
     T::Future: Send,
 {
     async fn hello(&self, request: HelloRequest) -> crate::HelloResult<HelloResponse> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -763,7 +765,9 @@ where
         &self,
         request: GoodbyeRequest,
     ) -> crate::HelloResult<GoodbyeResponse> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -781,7 +785,9 @@ where
         &self,
         request: quickwit_common::ServiceStream<PingRequest>,
     ) -> crate::HelloResult<HelloStream<PingResponse>> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -839,6 +845,9 @@ impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
         &self,
         tonic_request: tonic::Request<HelloRequest>,
     ) -> Result<tonic::Response<HelloResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -856,12 +865,16 @@ impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn goodbye(
         &self,
         tonic_request: tonic::Request<GoodbyeRequest>,
     ) -> Result<tonic::Response<GoodbyeResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -879,6 +892,7 @@ impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
     type PingStream = quickwit_common::ServiceStream<tonic::Result<PingResponse>>;
@@ -886,6 +900,9 @@ impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
         &self,
         tonic_request: tonic::Request<tonic::Streaming<PingRequest>>,
     ) -> Result<tonic::Response<Self::PingStream>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -906,6 +923,7 @@ impl hello_grpc_server::HelloGrpc for HelloGrpcServerAdapter {
                 ))
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
 }

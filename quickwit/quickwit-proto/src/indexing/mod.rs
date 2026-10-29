@@ -49,6 +49,8 @@ pub enum IndexingError {
     TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    #[error("{0}")]
+    Unauthorized(#[from] quickwit_authorize::AuthorizationError),
 }
 impl From<TimeoutExceeded> for IndexingError {
     fn from(_timeout_exceeded: TimeoutExceeded) -> Self {
@@ -59,6 +61,7 @@ impl From<TimeoutExceeded> for IndexingError {
 impl ServiceError for IndexingError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
+            Self::Unauthorized(authorization_error) => authorization_error.error_code(),
             Self::Internal(err_msg) => {
                 rate_limited_error!(limit_per_min = 6, "indexing error: {err_msg}");
                 ServiceErrorCode::Internal

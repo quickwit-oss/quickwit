@@ -38,6 +38,8 @@ pub enum CompactionError {
     TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    #[error("{0}")]
+    Unauthorized(#[from] quickwit_authorize::AuthorizationError),
 }
 
 impl From<TimeoutExceeded> for CompactionError {
@@ -49,6 +51,7 @@ impl From<TimeoutExceeded> for CompactionError {
 impl ServiceError for CompactionError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
+            Self::Unauthorized(authorization_error) => authorization_error.error_code(),
             Self::Internal(err_msg) => {
                 rate_limited_error!(limit_per_min = 6, "compaction error: {err_msg}");
                 ServiceErrorCode::Internal

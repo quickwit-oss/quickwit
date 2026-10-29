@@ -1577,7 +1577,9 @@ where
         &self,
         request: PersistRequest,
     ) -> crate::ingest::IngestV2Result<PersistResponse> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -1595,7 +1597,9 @@ where
         &self,
         request: OpenFetchStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchMessage>> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -1621,7 +1625,9 @@ where
         &self,
         request: InitShardsRequest,
     ) -> crate::ingest::IngestV2Result<InitShardsResponse> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -1639,7 +1645,9 @@ where
         &self,
         request: RetainShardsRequest,
     ) -> crate::ingest::IngestV2Result<RetainShardsResponse> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -1657,7 +1665,9 @@ where
         &self,
         request: TruncateShardsRequest,
     ) -> crate::ingest::IngestV2Result<TruncateShardsResponse> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -1675,7 +1685,9 @@ where
         &self,
         request: CloseShardsRequest,
     ) -> crate::ingest::IngestV2Result<CloseShardsResponse> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -1693,7 +1705,9 @@ where
         &self,
         request: DecommissionRequest,
     ) -> crate::ingest::IngestV2Result<DecommissionResponse> {
-        let mut tonic_request = tonic::Request::new(request);
+        let mut tonic_request = quickwit_authorize::build_tonic_request_with_auth_token(
+            request,
+        );
         quickwit_common::tracing_utils::inject_current_context(
             tonic_request.metadata_mut(),
         );
@@ -1729,6 +1743,9 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         tonic_request: tonic::Request<PersistRequest>,
     ) -> Result<tonic::Response<PersistResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -1749,6 +1766,7 @@ for IngesterServiceGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
     type OpenFetchStreamStream = quickwit_common::ServiceStream<
@@ -1758,6 +1776,9 @@ for IngesterServiceGrpcServerAdapter {
         &self,
         tonic_request: tonic::Request<OpenFetchStreamRequest>,
     ) -> Result<tonic::Response<Self::OpenFetchStreamStream>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -1777,12 +1798,16 @@ for IngesterServiceGrpcServerAdapter {
                 ))
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn init_shards(
         &self,
         tonic_request: tonic::Request<InitShardsRequest>,
     ) -> Result<tonic::Response<InitShardsResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -1800,12 +1825,16 @@ for IngesterServiceGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn retain_shards(
         &self,
         tonic_request: tonic::Request<RetainShardsRequest>,
     ) -> Result<tonic::Response<RetainShardsResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -1823,12 +1852,16 @@ for IngesterServiceGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn truncate_shards(
         &self,
         tonic_request: tonic::Request<TruncateShardsRequest>,
     ) -> Result<tonic::Response<TruncateShardsResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -1846,12 +1879,16 @@ for IngesterServiceGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn close_shards(
         &self,
         tonic_request: tonic::Request<CloseShardsRequest>,
     ) -> Result<tonic::Response<CloseShardsResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -1869,12 +1906,16 @@ for IngesterServiceGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
     async fn decommission(
         &self,
         tonic_request: tonic::Request<DecommissionRequest>,
     ) -> Result<tonic::Response<DecommissionResponse>, tonic::Status> {
+        let auth_token_opt = quickwit_authorize::extract_auth_token(
+            tonic_request.metadata(),
+        )?;
         let parent_context = quickwit_common::tracing_utils::extract_context(
             tonic_request.metadata(),
         );
@@ -1892,6 +1933,7 @@ for IngesterServiceGrpcServerAdapter {
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
         };
+        let fut = quickwit_authorize::execute_with_authorization(auth_token_opt, fut);
         <_ as tracing::Instrument>::instrument(fut, span).await
     }
 }

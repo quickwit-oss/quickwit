@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod authorization_tests;
 mod basic_tests;
 mod compactor_tests;
 mod in_memory_indexing_tests;

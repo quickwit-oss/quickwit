@@ -25,7 +25,7 @@ use quickwit_proto::ingest::Shard;
 use quickwit_serve::{
     ListSplitsQueryParams, ListSplitsResponse, RestIngestResponse, SearchRequestQueryString,
 };
-use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use reqwest::tls::{Certificate, Identity};
 use reqwest::{ClientBuilder as ReqwestClientBuilder, Method, StatusCode, Url};
 use reqwest_middleware::{ClientBuilder as ReqwestMiddlewareClientBuilder, ClientWithMiddleware};
@@ -59,6 +59,7 @@ impl Transport {
         connect_timeout: Timeout,
         ca_cert: Option<Certificate>,
         client_identity: Option<Identity>,
+        auth_token_opt: Option<String>,
         num_retries: u32,
     ) -> Self {
         let base_url = endpoint;
@@ -74,6 +75,13 @@ impl Transport {
         }
         if let Some(identity) = client_identity {
             reqwest_client_builder = reqwest_client_builder.identity(identity);
+        }
+        if let Some(auth_token) = auth_token_opt {
+            let mut authorization_value = HeaderValue::from_str(&format!("Bearer {auth_token}"))
+                .expect("authorization token should be a valid header value");
+            authorization_value.set_sensitive(true);
+            let default_headers = HeaderMap::from_iter([(AUTHORIZATION, authorization_value)]);
+            reqwest_client_builder = reqwest_client_builder.default_headers(default_headers);
         }
         let retry_policy = ExponentialBackoff::builder()
             .retry_bounds(Duration::from_secs(1), Duration::from_mins(1))
@@ -151,6 +159,8 @@ pub struct QuickwitClientBuilder {
     ca_cert: Option<Certificate>,
     /// Client certificate + key for mTLS
     client_identity: Option<Identity>,
+    /// Authorization token sent in the `Authorization: Bearer <token>` header.
+    auth_token_opt: Option<String>,
     /// Maximum number of retries for transient errors.
     num_retries: u32,
 }
@@ -168,6 +178,7 @@ impl QuickwitClientBuilder {
             detailed_response: false,
             ca_cert: None,
             client_identity: None,
+            auth_token_opt: None,
             num_retries: 0,
         }
     }
@@ -218,6 +229,11 @@ impl QuickwitClientBuilder {
         self
     }
 
+    pub fn set_auth_token(mut self, auth_token_opt: Option<String>) -> Self {
+        self.auth_token_opt = auth_token_opt;
+        self
+    }
+
     pub fn num_retries(mut self, num_retries: u32) -> Self {
         self.num_retries = num_retries;
         self
@@ -229,6 +245,7 @@ impl QuickwitClientBuilder {
             self.connect_timeout,
             self.ca_cert,
             self.client_identity,
+            self.auth_token_opt,
             self.num_retries,
         );
         QuickwitClient {

@@ -58,6 +58,9 @@ use quickwit_transport::ChannelFactory;
 use thousands::Separable;
 use tracing::debug;
 
+use crate::auth_token::{
+    AuthTokenArgs, auth_token_cli, build_auth_token_command, parse_auth_token_args,
+};
 use crate::checklist::{GREEN_COLOR, RED_COLOR};
 use crate::{
     THROUGHPUT_WINDOW_SIZE, config_cli_arg, get_resolvers, info, load_node_config,
@@ -68,6 +71,7 @@ pub fn build_tool_command() -> Command {
     Command::new("tool")
         .about("Performs utility operations. Requires a node config.")
         .arg(config_cli_arg())
+        .subcommand(build_auth_token_command())
         .subcommand(
             Command::new("local-ingest")
                 .display_order(10)
@@ -219,6 +223,7 @@ pub struct ExtractSplitArgs {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum ToolCliCommand {
+    AuthToken(AuthTokenArgs),
     GarbageCollect(GarbageCollectIndexArgs),
     LocalIngest(LocalIngestDocsArgs),
     LocalSearch(LocalSearchArgs),
@@ -232,6 +237,7 @@ impl ToolCliCommand {
             .remove_subcommand()
             .context("failed to parse tool subcommand")?;
         match subcommand.as_str() {
+            "auth-token" => parse_auth_token_args(submatches).map(Self::AuthToken),
             "gc" => Self::parse_garbage_collect_args(submatches),
             "local-ingest" => Self::parse_local_ingest_args(submatches),
             "local-search" => Self::parse_local_search_args(submatches),
@@ -390,6 +396,7 @@ impl ToolCliCommand {
 
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
+            Self::AuthToken(args) => auth_token_cli(args),
             Self::GarbageCollect(args) => garbage_collect_index_cli(args).await,
             Self::LocalIngest(args) => local_ingest_docs_cli(args).await,
             Self::LocalSearch(args) => local_search_cli(args).await,

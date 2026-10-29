@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod authorization;
 mod serialize;
 
 use std::collections::{HashMap, HashSet};
@@ -35,6 +36,7 @@ use quickwit_proto::types::{AvailabilityZone, NodeId};
 use serde::{Deserialize, Deserializer, Serialize};
 use tracing::{info, warn};
 
+pub use self::authorization::AuthorizationConfig;
 use crate::docs_clustering::DocsClusteringConfig;
 use crate::node_config::serialize::load_node_config_with_env;
 use crate::serde_utils::HumanDuration;
@@ -934,6 +936,9 @@ pub struct NodeConfig {
     pub enable_standalone_compactors: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub docs_clustering_config: Option<DocsClusteringConfig>,
+    /// Authorization is disabled when `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorization_config: Option<AuthorizationConfig>,
 }
 
 impl NodeConfig {
@@ -1001,6 +1006,9 @@ impl NodeConfig {
             metastore_read_replica_uri.redact();
         }
         self.storage_configs.redact();
+        if let Some(authorization_config) = &mut self.authorization_config {
+            authorization_config.redact();
+        }
     }
 
     /// Creates a config with defaults suitable for testing.

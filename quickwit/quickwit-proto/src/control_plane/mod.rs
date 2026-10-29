@@ -41,6 +41,8 @@ pub enum ControlPlaneError {
     TooManyRequests,
     #[error("service unavailable: {0}")]
     Unavailable(String),
+    #[error("{0}")]
+    Unauthorized(#[from] quickwit_authorize::AuthorizationError),
 }
 
 impl From<TimeoutExceeded> for ControlPlaneError {
@@ -58,6 +60,7 @@ impl From<quickwit_common::tower::TaskCancelled> for ControlPlaneError {
 impl ServiceError for ControlPlaneError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
+            Self::Unauthorized(authorization_error) => authorization_error.error_code(),
             Self::Internal(error_msg) => {
                 rate_limited_error!(
                     limit_per_min = 6,
@@ -114,6 +117,7 @@ impl From<ControlPlaneError> for MetastoreError {
             ControlPlaneError::Timeout(message) => MetastoreError::Timeout(message),
             ControlPlaneError::TooManyRequests => MetastoreError::TooManyRequests,
             ControlPlaneError::Unavailable(message) => MetastoreError::Unavailable(message),
+            ControlPlaneError::Unauthorized(error) => MetastoreError::Unauthorized(error),
         }
     }
 }
