@@ -25,8 +25,8 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use itertools::{Itertools as _, MinMaxResult};
 use quickwit_actors::Mailbox;
-use quickwit_common::Progress;
 use quickwit_common::pretty::PrettySample;
+use quickwit_common::{Progress, rate_limited_warn};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, GetOrCreateOpenShardsFailureReason,
@@ -34,9 +34,9 @@ use quickwit_proto::control_plane::{
     GetOrCreateOpenShardsSuccess,
 };
 use quickwit_proto::ingest::ingester::{
-    CloseShardsRequest, CloseShardsResponse, IngesterService, IngesterStatus, InitShardFailure,
-    InitShardSubrequest, InitShardsRequest, InitShardsResponse, RetainShardsForSource,
-    RetainShardsRequest,
+    AdvertiseShardsRequest, CloseShardsRequest, CloseShardsResponse, IngesterService,
+    IngesterStatus, InitShardFailure, InitShardSubrequest, InitShardsRequest, InitShardsResponse,
+    RetainShardsForSource, RetainShardsRequest,
 };
 use quickwit_proto::ingest::{
     Shard, ShardIdPosition, ShardIdPositions, ShardIds, ShardPKey, ShardState,
@@ -68,6 +68,8 @@ const CLOSE_SHARDS_REQUEST_TIMEOUT: Duration = if cfg!(test) {
 };
 
 const INIT_SHARDS_REQUEST_TIMEOUT: Duration = CLOSE_SHARDS_REQUEST_TIMEOUT;
+
+const ADVERTISE_SHARDS_REQUEST_TIMEOUT: Duration = CLOSE_SHARDS_REQUEST_TIMEOUT;
 
 const CLOSE_SHARDS_UPON_REBALANCE_DELAY: Duration = if cfg!(test) {
     Duration::ZERO
@@ -725,6 +727,70 @@ impl IngestController {
         }
     }
 
+    async fn advertise_shards(
+        &self,
+        open_shards_response: &OpenShardsResponse,
+        progress: &Progress,
+    ) {
+        let mut shard_pkeys_by_ingester_id: HashMap<NodeId, Vec<ShardPKey>> = HashMap::new();
+
+        for open_shard_subresponse in &open_shards_response.subresponses {
+            let Some(shard) = &open_shard_subresponse.open_shard else {
+                continue;
+            };
+            let shard_pkey = ShardPKey {
+                index_uid: shard.index_uid.clone(),
+                source_id: shard.source_id.clone(),
+                shard_id: shard.shard_id.clone(),
+            };
+            shard_pkeys_by_ingester_id
+                .entry(NodeId::from_str(&shard.ingester_id))
+                .or_default()
+                .push(shard_pkey);
+        }
+        let mut advertise_shards_futures = FuturesUnordered::new();
+
+        for (ingester_id, shard_pkeys) in shard_pkeys_by_ingester_id {
+            let Some(ingester) = self.ingester_pool.get(&ingester_id) else {
+                rate_limited_warn!(
+                    limit_per_min = 10,
+                    "failed to advertise shards: ingester `{ingester_id}` is unavailable"
+                );
+                continue;
+            };
+            let advertise_shards_request = AdvertiseShardsRequest { shard_pkeys };
+            let advertise_shards_future = async move {
+                let advertise_shards_result = tokio::time::timeout(
+                    ADVERTISE_SHARDS_REQUEST_TIMEOUT,
+                    ingester.client.advertise_shards(advertise_shards_request),
+                )
+                .await;
+                (ingester_id, advertise_shards_result)
+            };
+            advertise_shards_futures.push(advertise_shards_future);
+        }
+        while let Some((ingester_id, advertise_shards_result)) = progress
+            .protect_future(advertise_shards_futures.next())
+            .await
+        {
+            match advertise_shards_result {
+                Ok(Ok(_)) => {}
+                Ok(Err(error)) => {
+                    rate_limited_warn!(
+                        limit_per_min = 10,
+                        "failed to advertise shards on `{ingester_id}`: {error}"
+                    );
+                }
+                Err(_elapsed) => {
+                    rate_limited_warn!(
+                        limit_per_min = 10,
+                        "failed to advertise shards on `{ingester_id}`: request timed out"
+                    );
+                }
+            }
+        }
+    }
+
     /// Attempts to increase the number of shards. This operation is rate limited to avoid creating
     /// to many shards in a short period of time. As a result, this method may not create any
     /// shard.
@@ -936,7 +1002,8 @@ impl IngestController {
             init_shard_subrequests.push(init_shard_subrequest);
         }
 
-        // Let's first attempt to initialize these shards.
+        // Phase 1: Let's first attempt to open these shards on ingesters. Successes here mean the
+        // shards were successfully opened, but are not ready to persist data yet.
         let init_shards_response = self.init_shards(init_shard_subrequests, progress).await;
 
         let open_shard_subrequests = init_shards_response
@@ -958,6 +1025,7 @@ impl IngestController {
             })
             .collect();
 
+        // Phase 2: Record the successfully opened shards in the metastore, and update the model.
         let open_shards_response = progress
             .protect_future(open_shards_on_metastore_and_model(
                 open_shard_subrequests,
@@ -965,6 +1033,10 @@ impl IngestController {
                 model,
             ))
             .await?;
+
+        // Phase 3: Finally, for all shards we successfully opened and recorded in the metastore,
+        // mark them advertisable, meaning they can receive and index data.
+        self.advertise_shards(&open_shards_response, progress).await;
 
         let mut num_opened_shards_by_source: SourceShardCount = HashMap::new();
 
@@ -1420,8 +1492,8 @@ fn find_scale_down_candidate(
 mod tests {
     use std::collections::BTreeSet;
     use std::str::FromStr;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
 
     use itertools::Itertools;
     use quickwit_actors::Universe;
@@ -1433,10 +1505,10 @@ mod tests {
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
     use quickwit_proto::ingest::ingester::{
-        CloseShardsResponse, IngesterServiceClient, IngesterStatus, InitShardSuccess,
-        InitShardsResponse, MockIngesterService, RetainShardsResponse,
+        AdvertiseShardsResponse, CloseShardsResponse, IngesterServiceClient, IngesterStatus,
+        InitShardSuccess, InitShardsResponse, MockIngesterService, RetainShardsResponse,
     };
-    use quickwit_proto::ingest::{IngestV2Error, Shard, ShardState};
+    use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, Shard, ShardState};
     use quickwit_proto::metastore::{
         self, MetastoreError, MockMetastoreService, OpenShardSubresponse,
     };
@@ -1552,6 +1624,23 @@ mod tests {
                 let response = InitShardsResponse {
                     successes,
                     failures: Vec::new(),
+                };
+                Ok(response)
+            });
+        let index_uid_1_clone = index_uid_1.clone();
+        mock_ingester
+            .expect_advertise_shards()
+            .once()
+            .returning(move |request| {
+                assert_eq!(request.shard_pkeys.len(), 1);
+
+                let shard_pkey = &request.shard_pkeys[0];
+                assert_eq!(shard_pkey.index_uid(), &index_uid_1_clone);
+                assert_eq!(shard_pkey.source_id, source_id);
+                assert_eq!(shard_pkey.shard_id(), ShardId::from(1));
+
+                let response = AdvertiseShardsResponse {
+                    successes: request.shard_pkeys,
                 };
                 Ok(response)
             });
@@ -2394,6 +2483,22 @@ mod tests {
                 };
                 Ok(response)
             });
+        mock_ingester
+            .expect_advertise_shards()
+            .once()
+            .returning(|request| {
+                assert_eq!(request.shard_pkeys.len(), 1);
+
+                let shard_pkey = &request.shard_pkeys[0];
+                assert_eq!(shard_pkey.index_uid(), &("test-index", 0));
+                assert_eq!(shard_pkey.source_id, "test-source");
+                assert_eq!(shard_pkey.shard_id(), ShardId::from(0));
+
+                let response = AdvertiseShardsResponse {
+                    successes: request.shard_pkeys,
+                };
+                Ok(response)
+            });
 
         ingester_pool.insert(
             NodeId::from_str("test-ingester-1"),
@@ -2445,6 +2550,21 @@ mod tests {
                         shard: subrequest.shard.clone(),
                     }],
                     failures: Vec::new(),
+                })
+            });
+        let advertised_shard_ids: Arc<Mutex<HashSet<ShardId>>> = Arc::default();
+        let advertised_shard_ids_clone = advertised_shard_ids.clone();
+        mock_ingester
+            .expect_advertise_shards()
+            .times(3)
+            .returning(move |request| {
+                assert_eq!(request.shard_pkeys.len(), 1);
+                advertised_shard_ids_clone
+                    .lock()
+                    .unwrap()
+                    .insert(request.shard_pkeys[0].shard_id().clone());
+                Ok(AdvertiseShardsResponse {
+                    successes: request.shard_pkeys,
                 })
             });
         let ingester_client = IngesterServiceClient::from_mock(mock_ingester);
@@ -2519,6 +2639,214 @@ mod tests {
             ingester_ids,
             HashSet::from(["ingester-a", "ingester-b", "ingester-c"])
         );
+        let opened_shard_ids: HashSet<ShardId> = model
+            .all_shards()
+            .map(|shard| shard.shard_id().clone())
+            .collect();
+        assert_eq!(*advertised_shard_ids.lock().unwrap(), opened_shard_ids);
+    }
+
+    #[tokio::test]
+    async fn test_try_open_shards_advertise_shards() {
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: INGEST_V2_SOURCE_ID.to_string(),
+        };
+        let mut model = ControlPlaneModel::default();
+        model.add_index(IndexMetadata::for_test(
+            "test-index",
+            "ram://indexes/test-index",
+        ));
+        model
+            .add_source(&index_uid, SourceConfig::ingest_v2())
+            .unwrap();
+
+        let case = Arc::new(AtomicUsize::new(0));
+        let advertised_shard_ids: Arc<Mutex<Vec<ShardId>>> = Arc::default();
+
+        let init_all_shards = |request: InitShardsRequest| -> IngestV2Result<InitShardsResponse> {
+            let successes = request
+                .subrequests
+                .into_iter()
+                .map(|subrequest| InitShardSuccess {
+                    subrequest_id: subrequest.subrequest_id,
+                    shard: subrequest.shard,
+                })
+                .collect();
+            Ok(InitShardsResponse {
+                successes,
+                failures: Vec::new(),
+            })
+        };
+
+        let mut mock_ingester = MockIngesterService::new();
+        mock_ingester
+            .expect_init_shards()
+            .times(3)
+            .returning(init_all_shards);
+        mock_ingester.expect_advertise_shards().times(2).returning({
+            let case = case.clone();
+            let advertised_shard_ids = advertised_shard_ids.clone();
+            move |request| {
+                advertised_shard_ids.lock().unwrap().extend(
+                    request
+                        .shard_pkeys
+                        .iter()
+                        .map(|shard_pkey| shard_pkey.shard_id().clone()),
+                );
+                if case.load(Ordering::Relaxed) == 2 {
+                    return Err(IngestV2Error::Internal("unimplemented".to_string()));
+                }
+                Ok(AdvertiseShardsResponse {
+                    successes: request.shard_pkeys,
+                })
+            }
+        });
+
+        let mut mock_slow_ingester = MockIngesterService::new();
+        mock_slow_ingester
+            .expect_init_shards()
+            .once()
+            .returning(init_all_shards);
+        mock_slow_ingester.expect_advertise_shards().never();
+        let slow_ingester_client = IngesterServiceClient::tower()
+            .stack_advertise_shards_layer(DelayLayer::new(ADVERTISE_SHARDS_REQUEST_TIMEOUT * 2))
+            .build_from_mock(mock_slow_ingester);
+
+        let ingester_pool = IngesterPool::default();
+        ingester_pool.insert(
+            NodeId::from_str("test-ingester"),
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester)),
+        );
+        ingester_pool.insert(
+            NodeId::from_str("test-slow-ingester"),
+            IngesterPoolEntry::ready_with_client(slow_ingester_client),
+        );
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_open_shards().times(4).returning({
+            let case = case.clone();
+            move |request| {
+                let case = case.load(Ordering::Relaxed);
+                if case == 4 {
+                    return Err(MetastoreError::Internal {
+                        message: "failed to open shards".to_string(),
+                        cause: String::new(),
+                    });
+                }
+                let num_subresponses = if case == 1 {
+                    1
+                } else {
+                    request.subrequests.len()
+                };
+                let subresponses = request
+                    .subrequests
+                    .iter()
+                    .take(num_subresponses)
+                    .map(|subrequest| OpenShardSubresponse {
+                        subrequest_id: subrequest.subrequest_id,
+                        open_shard: Some(Shard {
+                            index_uid: subrequest.index_uid.clone(),
+                            source_id: subrequest.source_id.clone(),
+                            shard_id: subrequest.shard_id.clone(),
+                            ingester_id: subrequest.ingester_id.clone(),
+                            shard_state: ShardState::Open as i32,
+                            doc_mapping_uid: subrequest.doc_mapping_uid,
+                            ..Default::default()
+                        }),
+                    })
+                    .collect();
+                Ok(OpenShardsResponse { subresponses })
+            }
+        });
+        let mut controller = IngestController::new(
+            MetastoreServiceClient::from_mock(mock_metastore),
+            ingester_pool,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
+        );
+        let skip_slow_ingester = FnvHashSet::from_iter([NodeId::from_str("test-slow-ingester")]);
+        let skip_ingester = FnvHashSet::from_iter([NodeId::from_str("test-ingester")]);
+
+        // Case 1: the metastore opens only one of the two initialized shards, so only that one is
+        // advertised.
+        case.store(1, Ordering::Relaxed);
+        let opened_by_zone = controller
+            .try_open_shards(
+                ShardPlacement::Balanced(HashMap::from([(source_uid.clone(), 2)])),
+                &mut model,
+                &skip_slow_ingester,
+                &Progress::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(opened_by_zone[&None][&source_uid], 1);
+
+        let shard_ids: Vec<ShardId> = model
+            .get_shards_for_source(&source_uid)
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        assert_eq!(*advertised_shard_ids.lock().unwrap(), shard_ids);
+
+        // Case 2: advertising fails, as it does on an ingester that does not implement the RPC,
+        // and the shard is still opened.
+        case.store(2, Ordering::Relaxed);
+        let opened_by_zone = controller
+            .try_open_shards(
+                ShardPlacement::Balanced(HashMap::from([(source_uid.clone(), 1)])),
+                &mut model,
+                &skip_slow_ingester,
+                &Progress::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(opened_by_zone[&None][&source_uid], 1);
+        assert_eq!(advertised_shard_ids.lock().unwrap().len(), 2);
+
+        let shards = model.get_shards_for_source(&source_uid).unwrap();
+        assert_eq!(shards.len(), 2);
+        assert!(shards.values().all(|shard| shard.is_open()));
+
+        // Case 3: advertising times out and the shard is still opened.
+        case.store(3, Ordering::Relaxed);
+        let opened_by_zone = controller
+            .try_open_shards(
+                ShardPlacement::Balanced(HashMap::from([(source_uid.clone(), 1)])),
+                &mut model,
+                &skip_ingester,
+                &Progress::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(opened_by_zone[&None][&source_uid], 1);
+
+        let shards = model.get_shards_for_source(&source_uid).unwrap();
+        assert_eq!(shards.len(), 3);
+        assert_eq!(
+            shards
+                .values()
+                .filter(|shard| shard.ingester_id == "test-slow-ingester")
+                .count(),
+            1
+        );
+
+        // Case 4: the metastore fails, so nothing is advertised.
+        case.store(4, Ordering::Relaxed);
+        let error = controller
+            .try_open_shards(
+                ShardPlacement::Balanced(HashMap::from([(source_uid.clone(), 1)])),
+                &mut model,
+                &skip_slow_ingester,
+                &Progress::default(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, MetastoreError::Internal { .. }));
+        assert_eq!(model.get_shards_for_source(&source_uid).unwrap().len(), 3);
+        assert_eq!(advertised_shard_ids.lock().unwrap().len(), 2);
     }
 
     #[tokio::test]
@@ -2672,6 +3000,18 @@ mod tests {
                 Err(IngestV2Error::Internal(
                     "failed to close shards".to_string(),
                 ))
+            });
+        let index_uid_clone = index_uid.clone();
+        mock_ingester
+            .expect_advertise_shards()
+            .once()
+            .returning(move |request| {
+                assert_eq!(request.shard_pkeys.len(), 1);
+                assert_eq!(request.shard_pkeys[0].index_uid(), &index_uid_clone);
+                assert_eq!(request.shard_pkeys[0].source_id, "test-source");
+                Ok(AdvertiseShardsResponse {
+                    successes: request.shard_pkeys,
+                })
             });
         let ingester =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
@@ -2850,6 +3190,15 @@ mod tests {
                 })
             },
         );
+        mock_ingester
+            .expect_advertise_shards()
+            .once()
+            .returning(|request| {
+                assert_eq!(request.shard_pkeys.len(), 1);
+                Ok(AdvertiseShardsResponse {
+                    successes: request.shard_pkeys,
+                })
+            });
 
         let ingester =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
@@ -2993,6 +3342,23 @@ mod tests {
                 let response = InitShardsResponse {
                     successes,
                     failures: Vec::new(),
+                };
+                Ok(response)
+            });
+        let index_uid_clone = index_uid.clone();
+        mock_ingester
+            .expect_advertise_shards()
+            .once()
+            .returning(move |request| {
+                assert_eq!(request.shard_pkeys.len(), 1);
+
+                let shard_pkey = &request.shard_pkeys[0];
+                assert_eq!(shard_pkey.index_uid(), &index_uid_clone);
+                assert_eq!(shard_pkey.source_id, INGEST_V2_SOURCE_ID);
+                assert_eq!(shard_pkey.shard_id(), ShardId::from(1));
+
+                let response = AdvertiseShardsResponse {
+                    successes: request.shard_pkeys,
                 };
                 Ok(response)
             });
@@ -3734,6 +4100,21 @@ mod tests {
             };
             Ok(response)
         });
+        mock_ingester_1
+            .expect_advertise_shards()
+            .once()
+            .returning(|request| {
+                assert_eq!(request.shard_pkeys.len(), 1);
+
+                let shard_pkey = &request.shard_pkeys[0];
+                assert_eq!(shard_pkey.index_uid(), &("test-index", 0));
+                assert_eq!(shard_pkey.source_id, INGEST_V2_SOURCE_ID);
+
+                let response = AdvertiseShardsResponse {
+                    successes: request.shard_pkeys,
+                };
+                Ok(response)
+            });
         let ingester_1 =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1));
         ingester_pool.insert(ingester_id_1.clone(), ingester_1);

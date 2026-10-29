@@ -104,7 +104,10 @@ impl InnerIngesterState {
         self.shards
             .values_mut()
             .filter(|shard| {
-                shard.is_open() && shard.index_uid == *index_uid && shard.source_id == *source_id
+                shard.is_open()
+                    && shard.is_advertisable
+                    && shard.index_uid == *index_uid
+                    && shard.source_id == *source_id
             })
             .map(|shard| (shard.rate_limiter.available_permits(), shard))
             .max_by_key(|(available_permits, _)| *available_permits)
@@ -869,6 +872,7 @@ mod tests {
     ) {
         let mut shard = IngesterShard::builder(index_uid, source_id, shard_id)
             .with_state(shard_state)
+            .advertisable()
             .build();
         shard.rate_limiter.acquire_bytes(used_capacity);
 

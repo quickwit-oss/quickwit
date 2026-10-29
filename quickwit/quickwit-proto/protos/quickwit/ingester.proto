@@ -40,6 +40,9 @@ service IngesterService {
   // Closes a set of shards. This RPC is called by the control plane.
   rpc CloseShards(CloseShardsRequest) returns (CloseShardsResponse);
 
+  // Marks shards advertisable, so that they can begin receiving persist requests.
+  rpc AdvertiseShards(AdvertiseShardsRequest) returns (AdvertiseShardsResponse);
+
   // Decommissions the ingester.
   rpc Decommission(DecommissionRequest) returns (DecommissionResponse);
 }
@@ -204,6 +207,14 @@ message CloseShardsRequest {
 }
 
 message CloseShardsResponse {
+  repeated quickwit.ingest.ShardPKey successes = 1;
+}
+
+message AdvertiseShardsRequest {
+  repeated quickwit.ingest.ShardPKey shard_pkeys = 1;
+}
+
+message AdvertiseShardsResponse {
   repeated quickwit.ingest.ShardPKey successes = 1;
 }
 

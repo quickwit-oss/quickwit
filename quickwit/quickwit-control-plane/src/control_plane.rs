@@ -1075,8 +1075,8 @@ mod tests {
         MockIndexingService,
     };
     use quickwit_proto::ingest::ingester::{
-        CloseShardsResponse, IngesterServiceClient, IngesterStatus, InitShardSuccess,
-        InitShardsResponse, MockIngesterService, RetainShardsResponse,
+        AdvertiseShardsResponse, CloseShardsResponse, IngesterServiceClient, IngesterStatus,
+        InitShardSuccess, InitShardsResponse, MockIngesterService, RetainShardsResponse,
     };
     use quickwit_proto::ingest::{Shard, ShardPKey, ShardState};
     use quickwit_proto::metastore::{
@@ -1773,6 +1773,15 @@ mod tests {
                         shard: Some(shard),
                     }],
                     failures: Vec::new(),
+                })
+            });
+        mock_ready_ingester
+            .expect_advertise_shards()
+            .once()
+            .returning(|request| {
+                assert_eq!(request.shard_pkeys.len(), 1);
+                Ok(AdvertiseShardsResponse {
+                    successes: request.shard_pkeys,
                 })
             });
 
@@ -2635,6 +2644,21 @@ mod tests {
             };
             Ok(response)
         });
+        mock_ingester
+            .expect_advertise_shards()
+            .once()
+            .returning(|request| {
+                assert_eq!(request.shard_pkeys.len(), 1);
+
+                let shard_pkey = &request.shard_pkeys[0];
+                assert_eq!(shard_pkey.index_uid(), &("test-index", 0));
+                assert_eq!(shard_pkey.source_id, INGEST_V2_SOURCE_ID);
+                assert_eq!(shard_pkey.shard_id(), ShardId::from(0u64));
+
+                Ok(AdvertiseShardsResponse {
+                    successes: request.shard_pkeys,
+                })
+            });
         let ingester =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
         ingester_pool.insert(ingester_id, ingester);
@@ -2789,6 +2813,21 @@ mod tests {
             };
             Ok(response)
         });
+        mock_ingester
+            .expect_advertise_shards()
+            .once()
+            .returning(|request| {
+                assert_eq!(request.shard_pkeys.len(), 1);
+
+                let shard_pkey = &request.shard_pkeys[0];
+                assert_eq!(shard_pkey.index_uid(), &("test-index", 0));
+                assert_eq!(shard_pkey.source_id, INGEST_V2_SOURCE_ID);
+                assert_eq!(shard_pkey.shard_id(), ShardId::from(0u64));
+
+                Ok(AdvertiseShardsResponse {
+                    successes: request.shard_pkeys,
+                })
+            });
         let ingester =
             IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
         ingester_pool.insert(ingester_id, ingester);
