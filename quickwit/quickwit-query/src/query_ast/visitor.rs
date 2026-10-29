@@ -17,8 +17,8 @@ use crate::query_ast::cache_node::CacheState;
 use crate::query_ast::field_presence::FieldPresenceQuery;
 use crate::query_ast::user_input_query::UserInputQuery;
 use crate::query_ast::{
-    BoolQuery, CacheNode, CalcFieldQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, RangeQuery,
-    RegexQuery, TermQuery, TermSetQuery, WildcardQuery,
+    BoolQuery, CacheNode, CalcFieldQuery, DisjunctionMaxQuery, FullTextQuery, PhrasePrefixQuery,
+    QueryAst, RangeQuery, RegexQuery, TermQuery, TermSetQuery, WildcardQuery,
 };
 
 /// Simple trait to implement a Visitor over the QueryAst.
@@ -28,6 +28,9 @@ pub trait QueryAstVisitor<'a> {
     fn visit(&mut self, query_ast: &'a QueryAst) -> Result<(), Self::Err> {
         match query_ast {
             QueryAst::Bool(bool_query) => self.visit_bool(bool_query),
+            QueryAst::DisjunctionMax(disjunction_max_query) => {
+                self.visit_disjunction_max(disjunction_max_query)
+            }
             QueryAst::Term(term_query) => self.visit_term(term_query),
             QueryAst::TermSet(term_set_query) => self.visit_term_set(term_set_query),
             QueryAst::FullText(full_text_query) => self.visit_full_text(full_text_query),
@@ -56,6 +59,16 @@ pub trait QueryAstVisitor<'a> {
             .chain(bool_query.filter.iter())
         {
             self.visit(ast)?;
+        }
+        Ok(())
+    }
+
+    fn visit_disjunction_max(
+        &mut self,
+        disjunction_max_query: &'a DisjunctionMaxQuery,
+    ) -> Result<(), Self::Err> {
+        for disjunct in &disjunction_max_query.disjuncts {
+            self.visit(disjunct)?;
         }
         Ok(())
     }
@@ -140,6 +153,9 @@ pub trait QueryAstTransformer {
     fn transform(&mut self, query_ast: QueryAst) -> Result<Option<QueryAst>, Self::Err> {
         match query_ast {
             QueryAst::Bool(bool_query) => self.transform_bool(bool_query),
+            QueryAst::DisjunctionMax(disjunction_max_query) => {
+                self.transform_disjunction_max(disjunction_max_query)
+            }
             QueryAst::Term(term_query) => self.transform_term(term_query),
             QueryAst::TermSet(term_set_query) => self.transform_term_set(term_set_query),
             QueryAst::FullText(full_text_query) => self.transform_full_text(full_text_query),
@@ -182,6 +198,18 @@ pub trait QueryAstTransformer {
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Some(QueryAst::Bool(bool_query)))
+    }
+
+    fn transform_disjunction_max(
+        &mut self,
+        mut disjunction_max_query: DisjunctionMaxQuery,
+    ) -> Result<Option<QueryAst>, Self::Err> {
+        disjunction_max_query.disjuncts = disjunction_max_query
+            .disjuncts
+            .into_iter()
+            .filter_map(|query_ast| self.transform(query_ast).transpose())
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Some(QueryAst::DisjunctionMax(disjunction_max_query)))
     }
 
     fn transform_term(&mut self, term_query: TermQuery) -> Result<Option<QueryAst>, Self::Err> {

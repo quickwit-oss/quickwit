@@ -39,8 +39,8 @@ use quickwit_proto::search::{
 };
 use quickwit_proto::types::SplitId;
 use quickwit_query::query_ast::{
-    BoolQuery, CacheNode, HitSet, PredicateCache, QueryAst, QueryAstTransformer, RangeQuery,
-    TermQuery, get_or_compile_cached_fst_regex,
+    BoolQuery, CacheNode, DisjunctionMaxQuery, HitSet, PredicateCache, QueryAst,
+    QueryAstTransformer, RangeQuery, TermQuery, get_or_compile_cached_fst_regex,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
@@ -1307,6 +1307,15 @@ impl RemoveTimestampRange<'_> {
 
 impl QueryAstTransformer for RemoveTimestampRange<'_> {
     type Err = std::convert::Infallible;
+
+    fn transform_disjunction_max(
+        &mut self,
+        disjunction_max_query: DisjunctionMaxQuery,
+    ) -> Result<Option<QueryAst>, Self::Err> {
+        // No individual disjunct is a strict requirement, so a timestamp range cannot be
+        // extracted without changing the query's matching semantics.
+        Ok(Some(disjunction_max_query.into()))
+    }
 
     fn transform_bool(&mut self, mut bool_query: BoolQuery) -> Result<Option<QueryAst>, Self::Err> {
         // we only want to visit sub-queries which are strict (positive) requirements
@@ -2746,6 +2755,32 @@ mod tests {
                 ..Default::default()
             })
         );
+    }
+
+    #[test]
+    fn test_remove_timestamp_range_keeps_disjunction_max_semantics() {
+        let original_ast: QueryAst = DisjunctionMaxQuery {
+            disjuncts: vec![
+                timestamp_range(Bound::Included(1_700_002_000), Bound::Unbounded),
+                TermQuery {
+                    field: "body".to_string(),
+                    value: "quickwit".to_string(),
+                }
+                .into(),
+            ],
+        }
+        .into();
+        let mut visitor = RemoveTimestampRange {
+            timestamp_field: "timestamp",
+            start_timestamp: Bound::Unbounded,
+            end_timestamp: Bound::Unbounded,
+        };
+
+        let transformed_ast = visitor.transform(original_ast.clone()).unwrap().unwrap();
+
+        assert_eq!(transformed_ast, original_ast);
+        assert_eq!(visitor.start_timestamp, Bound::Unbounded);
+        assert_eq!(visitor.end_timestamp, Bound::Unbounded);
     }
 
     #[test]
