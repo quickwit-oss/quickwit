@@ -442,7 +442,8 @@ impl IndexingPipeline {
         let source = ctx
             .protect_future(quickwit_supported_sources().load_source(source_runtime))
             .await?;
-        let actor_source = SourceActor::new(source, doc_processor_mailbox);
+        let actor_source = SourceActor::new(source, doc_processor_mailbox)
+            .with_indexing_memory_limit(self.params.indexing_memory_limit);
         let (source_mailbox, source_handle) = ctx
             .spawn_actor()
             .set_mailboxes(source_mailbox, source_inbox)
@@ -590,6 +591,7 @@ pub struct IndexingPipelineParams {
     pub split_store: IndexingSplitStore,
     pub max_concurrent_split_uploads_index: usize,
     pub cooperative_indexing_permits: Option<Arc<Semaphore>>,
+    pub indexing_memory_limit: Option<bytesize::ByteSize>,
     pub indexing_io_throughput_limiter_opt: Option<io::Limiter>,
 
     // Merge-related parameters
@@ -738,6 +740,7 @@ mod tests {
             indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             event_broker: EventBroker::default(),
+            indexing_memory_limit: None,
             params_fingerprint: 42u64,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
@@ -846,6 +849,7 @@ mod tests {
             indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             params_fingerprint: 42u64,
+            indexing_memory_limit: None,
             event_broker: EventBroker::default(),
         };
         let (_pipeline_mailbox, pipeline_handle) = universe
@@ -976,6 +980,7 @@ mod tests {
             cooperative_indexing_permits: None,
             indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
+            indexing_memory_limit: None,
             event_broker: Default::default(),
             params_fingerprint: 42u64,
         };
@@ -1078,6 +1083,7 @@ mod tests {
             cooperative_indexing_permits: None,
             indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox.clone()),
+            indexing_memory_limit: None,
             event_broker: Default::default(),
             params_fingerprint: 42u64,
         };
@@ -1163,6 +1169,7 @@ mod tests {
             cooperative_indexing_permits: None,
             indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: None,
+            indexing_memory_limit: None,
             event_broker: Default::default(),
             params_fingerprint: 42u64,
         };
@@ -1319,6 +1326,7 @@ mod tests {
             indexing_io_throughput_limiter_opt: None,
             merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             params_fingerprint: 42u64,
+            indexing_memory_limit: None,
             event_broker: Default::default(),
         };
         let pipeline = IndexingPipeline::new(pipeline_params);

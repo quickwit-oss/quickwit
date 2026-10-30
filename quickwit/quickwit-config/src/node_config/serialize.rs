@@ -882,6 +882,7 @@ mod tests {
         assert_eq!(
             config.indexer_config,
             IndexerConfig {
+                indexing_memory_limit: None,
                 enable_otlp_endpoint: true,
                 split_store_max_num_bytes: ByteSize::tb(1),
                 split_store_max_num_splits: 10_000,
