@@ -35,7 +35,6 @@ quickwit-config = { workspace = true }
 quickwit-ingest = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
-quickwit-telemetry = { workspace = true }
 
 [dev-dependencies]
 futures = { workspace = true }

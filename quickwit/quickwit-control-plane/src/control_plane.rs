@@ -62,7 +62,6 @@ use crate::ingest::IngestController;
 use crate::ingest::ingest_controller::{IngestControllerStats, RebalanceShardsCallback};
 use crate::metrics::{METASTORE_ERROR_ABORTED, METASTORE_ERROR_MAYBE_EXECUTED, RESTART_TOTAL};
 use crate::model::ControlPlaneModel;
-use crate::telemetry::update_telemetry_cluster_summary;
 
 /// Interval between two controls (or checks) of the desired plan VS running plan.
 pub(crate) const CONTROL_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
@@ -507,7 +506,6 @@ impl Handler<ControlPlaneLoop> for ControlPlane {
             }
         }
         self.indexing_scheduler.control_running_plan(&self.model);
-        update_telemetry_cluster_summary(&self.model);
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlaneLoop);
         Ok(())
     }

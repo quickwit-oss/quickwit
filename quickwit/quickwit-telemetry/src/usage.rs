@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, PoisonError};
 
 use enum_iterator::{Sequence, all, cardinality};
 use serde::{Deserialize, Serialize};
@@ -65,64 +64,29 @@ impl ApiRequestCounts {
 
 static API_REQUEST_COUNTS: ApiRequestCounts = ApiRequestCounts::new();
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ClusterSummary {
-    pub num_indexes: String,
-    pub source_types: BTreeSet<String>,
-}
-
-static CLUSTER_SUMMARY: Mutex<Option<ClusterSummary>> = Mutex::new(None);
-
 pub fn record_api_request(api_kind: ApiKind) {
     API_REQUEST_COUNTS.record(api_kind);
 }
 
-/// Only the node running the control plane calls it. A cluster must have a single control plane
-/// (see `docs/deployment/cluster-sizing.md`), so each cluster reports its summary once.
-pub fn set_cluster_summary(num_indexes: usize, source_types: BTreeSet<String>) {
-    let cluster_summary = ClusterSummary {
-        num_indexes: index_count_bucket(num_indexes).to_string(),
-        source_types,
-    };
-    *CLUSTER_SUMMARY
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner) = Some(cluster_summary);
-}
-
 impl TelemetryEvent {
     pub fn running() -> Self {
-        TelemetryEvent::Running {
-            api_usage: None,
-            cluster_summary: None,
-        }
+        TelemetryEvent::Running { api_usage: None }
     }
 
     pub fn end_command(return_code: i32) -> Self {
         TelemetryEvent::EndCommand {
             return_code,
             api_usage: None,
-            cluster_summary: None,
         }
     }
 
-    /// Adds the API request counts since the previous report and the cluster summary. Only called
-    /// once the event is queued, so that a dropped event never loses the counts.
+    /// Adds the API request counts since the previous report. Only called once the event is
+    /// queued, so that a dropped event never loses the counts.
     pub(crate) fn add_usage(&mut self) {
-        if let TelemetryEvent::Running {
-            api_usage,
-            cluster_summary,
-        }
-        | TelemetryEvent::EndCommand {
-            api_usage,
-            cluster_summary,
-            ..
-        } = self
+        if let TelemetryEvent::Running { api_usage }
+        | TelemetryEvent::EndCommand { api_usage, .. } = self
         {
             *api_usage = API_REQUEST_COUNTS.take();
-            *cluster_summary = CLUSTER_SUMMARY
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone();
         }
     }
 }
@@ -137,17 +101,6 @@ fn request_count_bucket(num_requests: u64) -> &'static str {
         10_000..=99_999 => "10000-99999",
         100_000..=999_999 => "100000-999999",
         _ => "1000000+",
-    }
-}
-
-fn index_count_bucket(num_indexes: usize) -> &'static str {
-    match num_indexes {
-        0 => "0",
-        1 => "1",
-        2..=10 => "2-10",
-        11..=100 => "11-100",
-        101..=1_000 => "101-1000",
-        _ => "1001+",
     }
 }
 
@@ -185,8 +138,5 @@ mod tests {
         assert_eq!(request_count_bucket(9), "1-9");
         assert_eq!(request_count_bucket(10), "10-99");
         assert_eq!(request_count_bucket(1_000_000), "1000000+");
-        assert_eq!(index_count_bucket(1), "1");
-        assert_eq!(index_count_bucket(2), "2-10");
-        assert_eq!(index_count_bucket(1_001), "1001+");
     }
 }

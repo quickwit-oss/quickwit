@@ -61,13 +61,9 @@ Each request also includes:
 - A session ID, generated at random each time the node starts.
 - An install ID, generated at random when the node starts with telemetry on and finds none in its data directory, then stored there in the `telemetry_install_id` file. It is never created while telemetry is off.
 - An MD5 hash of the host name and the user name, used to count distinct installations from older releases, which have no install ID. The relay replaces it with a keyed hash before storage. See below.
-- An MD5 hash of the cluster ID and the metastore URI, without the user name, password, query parameters or fragment, used to count clusters and the nodes in each. The relay replaces it with a keyed hash before storage.
 - The number of events dropped because too many were queued.
 
-`running` and `end_command` events also include:
-
-- How many requests each API received since the previous report, as ranges such as `10-99`: search and bulk ingestion on the Elasticsearch-compatible API, other Elasticsearch-compatible requests, search and ingestion on the native API, OTLP, and Jaeger. Searches from the Quickwit UI count as native searches.
-- On the node that runs the control plane only, so once per cluster: the number of indexes, as a range such as `2-10`, and the types of the sources created by users, such as `kafka` or `kinesis`.
+`running` and `end_command` events also include how many requests each API received since the previous report, as ranges such as `10-99`: search and bulk ingestion on the Elasticsearch-compatible API, other Elasticsearch-compatible requests, search and ingestion on the native API, OTLP, and Jaeger. Searches from the Quickwit UI count as native searches.
 
 Quickwit never sends index or field names, documents, queries, configuration values or credentials.
 
@@ -77,12 +73,12 @@ Quickwit sends the data over HTTPS to `telemetry.quickwit.io`, which Datadog ope
 
 - The request goes through Amazon CloudFront, which looks up the country and city of your IP address and passes them on. The IP address itself goes no further.
 - A small relay checks the request against the format above, rejects anything else, and keeps only the fields listed on this page.
-- The relay replaces the host and cluster hashes with keyed hashes, computed with a secret that only the relay knows, so the stored values can't be matched against guessed host names, user names or cluster IDs.
+- The relay replaces the host hash with a keyed hash, computed with a secret that only the relay knows, so the stored value can't be matched against guessed host names and user names.
 - The relay forwards the events, with the country and city, to Datadog, where they are stored as logs. Your IP address is not stored.
 
 For nodes running in the cloud, the country and city are usually those of the data center.
 
-Releases 0.6.0 to 0.8.x send an older version of this data to the same address: the events other than `install`, each with its time, without the API counts or cluster summary, plus the version, services, OS, architecture, Kubernetes flag, session ID, host hash, number of dropped events, and the metastore, OTLP and Jaeger features. Their AWS Lambda indexer and searcher send `run_command` with only the `aws_lambda` feature.
+Releases 0.6.0 to 0.8.x send an older version of this data to the same address: the events other than `install`, each with its time, without the API counts, plus the version, services, OS, architecture, Kubernetes flag, session ID, host hash, number of dropped events, and the metastore, OTLP and Jaeger features. Their AWS Lambda indexer and searcher send `run_command` with only the `aws_lambda` feature.
 
 Releases before 0.6.0 also send data to the same address, from every CLI command: an event when a command ends, with its exit code, and an event when an index is created, ingested into, deleted or garbage collected, or when services start, with their names (in 0.1.x, with whether peer addresses were given). Each event has its time, and each request includes the number of dropped events, the version, OS, architecture, Kubernetes flag, session ID and host hash.
 

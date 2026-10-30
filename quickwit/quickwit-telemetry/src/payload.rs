@@ -16,12 +16,11 @@ use std::collections::{BTreeMap, HashSet};
 use std::env;
 use std::time::UNIX_EPOCH;
 
-use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::machine::{available_memory_num_bytes, cpu_count_bucket, memory_bucket};
-use crate::usage::{ApiKind, ClusterSummary};
+use crate::usage::ApiKind;
 
 /// Version of the payload format. Payloads without one are version 1.
 pub(crate) const TELEMETRY_SCHEMA_VERSION: u32 = 2;
@@ -79,15 +78,11 @@ pub enum TelemetryEvent {
         return_code: i32,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         api_usage: Option<BTreeMap<ApiKind, String>>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cluster_summary: Option<ClusterSummary>,
     },
     /// Event sent every 12h to signal the server is running.
     Running {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         api_usage: Option<BTreeMap<ApiKind, String>>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cluster_summary: Option<ClusterSummary>,
     },
     /// UI index.html was requested.
     UiIndexPageLoad,
@@ -131,8 +126,6 @@ pub struct QuickwitTelemetryInfo {
     pub build: BuildTelemetryInfo,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub install_uuid: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub hashed_cluster_id: Option<String>,
 }
 
 impl QuickwitTelemetryInfo {
@@ -153,7 +146,6 @@ impl Default for QuickwitTelemetryInfo {
             services: HashSet::new(),
             build: BuildTelemetryInfo::default(),
             install_uuid: None,
-            hashed_cluster_id: None,
         }
     }
 }
@@ -182,25 +174,6 @@ pub enum QuickwitFeature {
     Tls,
 }
 
-/// Leaves out the user, the password, the query parameters and the fragment of the metastore URI,
-/// which may differ between the nodes of a cluster.
-pub fn hash_cluster_identity(cluster_id: &str, metastore_uri: &Uri) -> String {
-    let mut location = metastore_uri.as_str();
-    if let Some((_, after_scheme)) = location.split_once("://") {
-        location = after_scheme;
-    }
-    if let Some(query_or_fragment_start) = location.find(['?', '#']) {
-        location = &location[..query_or_fragment_start];
-    }
-    let authority_len = location.find('/').unwrap_or(location.len());
-    if let Some(at_index) = location[..authority_len].rfind('@') {
-        location = &location[at_index + 1..];
-    }
-    let protocol = metastore_uri.protocol();
-    let digest = md5::compute(format!("{cluster_id}\n{protocol}://{location}"));
-    format!("{digest:x}")
-}
-
 fn hashed_host_username() -> String {
     let hostname = hostname::get()
         .map(|hostname| hostname.to_string_lossy().to_string())
@@ -227,42 +200,9 @@ impl Default for ClientInfo {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use serde_json;
 
     use super::*;
-
-    #[test]
-    fn test_hash_cluster_identity_leaves_out_credentials() {
-        let hashed_cluster_id = |cluster_id, metastore_uri| {
-            hash_cluster_identity(cluster_id, &Uri::from_str(metastore_uri).unwrap())
-        };
-        let expected = hashed_cluster_id("my-cluster", "postgresql://db:5432/metastore");
-        assert_eq!(
-            hashed_cluster_id(
-                "my-cluster",
-                "postgresql://node-1:secret@db:5432/metastore?sslmode=require"
-            ),
-            expected
-        );
-        assert_ne!(
-            hashed_cluster_id("other-cluster", "postgresql://db:5432/metastore"),
-            expected
-        );
-        assert_eq!(
-            hashed_cluster_id("my-cluster", "postgres://db:5432/metastore"),
-            expected
-        );
-        assert_eq!(
-            hashed_cluster_id("my-cluster", "s3://bucket/metastore#polling_interval=30s"),
-            hashed_cluster_id("my-cluster", "s3://bucket/metastore")
-        );
-        assert_ne!(
-            hashed_cluster_id("my-cluster", "gs://bucket/metastore"),
-            hashed_cluster_id("my-cluster", "s3://bucket/metastore")
-        );
-    }
 
     #[test]
     fn test_serialize_features_as_expected() {
@@ -302,7 +242,6 @@ mod tests {
             event: TelemetryEvent::EndCommand {
                 return_code: 0,
                 api_usage: None,
-                cluster_summary: None,
             },
         };
         let json = serde_json::to_string(&event).unwrap();
@@ -318,16 +257,12 @@ mod tests {
             unixtime: 0,
             event: TelemetryEvent::Running {
                 api_usage: Some(BTreeMap::from([(ApiKind::NativeSearch, "1-9".to_string())])),
-                cluster_summary: Some(ClusterSummary {
-                    num_indexes: "2-10".to_string(),
-                    source_types: ["kafka".to_string()].into(),
-                }),
             },
         };
         let json = serde_json::to_string(&event).unwrap();
         assert_eq!(
             json,
-            r#"{"unixtime":0,"type":"running","api_usage":{"native_search":"1-9"},"cluster_summary":{"num_indexes":"2-10","source_types":["kafka"]}}"#
+            r#"{"unixtime":0,"type":"running","api_usage":{"native_search":"1-9"}}"#
         );
     }
 }

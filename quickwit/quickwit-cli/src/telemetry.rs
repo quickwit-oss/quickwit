@@ -19,9 +19,7 @@ use quickwit_common::uri::Protocol;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{NodeConfig, StorageBackendFlavor, disable_ingest_v1, enable_ingest_v2};
 use quickwit_serve::BuildInfo;
-use quickwit_telemetry::payload::{
-    BuildTelemetryInfo, QuickwitFeature, QuickwitTelemetryInfo, hash_cluster_identity,
-};
+use quickwit_telemetry::payload::{BuildTelemetryInfo, QuickwitFeature, QuickwitTelemetryInfo};
 use tracing::warn;
 
 pub(crate) fn quickwit_telemetry_info(config: &NodeConfig) -> QuickwitTelemetryInfo {
@@ -37,10 +35,6 @@ pub(crate) fn quickwit_telemetry_info(config: &NodeConfig) -> QuickwitTelemetryI
             target: build_info.build_target.to_string(),
             release: !build_info.version.ends_with("-nightly"),
         },
-        hashed_cluster_id: Some(hash_cluster_identity(
-            &config.cluster_id,
-            &config.metastore_uri,
-        )),
         ..QuickwitTelemetryInfo::new(services, telemetry_features(config))
     }
 }
