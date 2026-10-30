@@ -586,14 +586,22 @@ impl DeferableReplyHandler<CreateIndexRequest> for ControlPlane {
         self.model.add_index(index_metadata);
 
         if should_rebuild_plan {
-            let rebuild_plan_notifier = self.rebuild_plan_debounced(ctx);
-            tokio::task::spawn(async move {
-                rebuild_plan_notifier.await;
-                reply(Ok(response));
-            });
-        } else {
-            reply(Ok(response));
+            // Trigger the rebuild, but do not hold the reply until it completes.
+            //
+            // The generation counter the waiter watches only advances once every
+            // `ApplyIndexingPlan` RPC of that rebuild has finished, and apply RPCs to `Ready`
+            // indexers carry no deadline by design. A single indexer that leaves its apply
+            // pending therefore withheld this reply forever, even though the index was already
+            // committed to the metastore and a retry would return `AlreadyExists`.
+            //
+            // Replying here is safe because what a caller can observe does not depend on the
+            // rebuild: `self.model.add_index` above has already made the index and its sources
+            // visible to the control plane, so a request that follows this reply -- opening
+            // shards, for instance -- sees them. The rebuild governs when indexers are told to
+            // run pipelines, which was never part of this response.
+            drop(self.rebuild_plan_debounced(ctx));
         }
+        reply(Ok(response));
         info!(%index_uid, "created index");
         Ok(())
     }
