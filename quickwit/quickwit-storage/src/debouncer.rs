@@ -175,6 +175,32 @@ impl<T: Storage> Storage for DebouncedStorage<T> {
         self.underlying.put(path, payload).await
     }
 
+    async fn put_if_absent(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayload>,
+    ) -> crate::StorageResult<Option<crate::ObjectVersion>> {
+        self.underlying.put_if_absent(path, payload).await
+    }
+
+    async fn put_if_version_matches(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayload>,
+        expected_version: &crate::ObjectVersion,
+    ) -> crate::StorageResult<Option<crate::ObjectVersion>> {
+        self.underlying
+            .put_if_version_matches(path, payload, expected_version)
+            .await
+    }
+
+    async fn get_all_with_version(
+        &self,
+        path: &Path,
+    ) -> crate::StorageResult<(OwnedBytes, Option<crate::ObjectVersion>)> {
+        self.underlying.get_all_with_version(path).await
+    }
+
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         self.underlying.copy_to(path, output).await
     }
