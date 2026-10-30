@@ -65,7 +65,9 @@ impl ApiRequestCounts {
 static API_REQUEST_COUNTS: ApiRequestCounts = ApiRequestCounts::new();
 
 pub fn record_api_request(api_kind: ApiKind) {
-    API_REQUEST_COUNTS.record(api_kind);
+    if crate::is_telemetry_enabled() {
+        API_REQUEST_COUNTS.record(api_kind);
+    }
 }
 
 impl TelemetryEvent {

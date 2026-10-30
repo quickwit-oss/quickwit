@@ -149,6 +149,7 @@ pub(crate) async fn start_rest_server(
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<()> {
+    let is_telemetry_enabled = quickwit_telemetry::is_telemetry_enabled();
     let is_otlp_enabled = quickwit_services.otlp_logs_service_opt.is_some();
     let is_jaeger_enabled = quickwit_services.jaeger_service_opt.is_some();
     let request_counter = warp::log::custom(move |info: Info| {
@@ -167,6 +168,9 @@ pub(crate) async fn start_rest_server(
             labels: [labels],
         )
         .inc();
+        if !is_telemetry_enabled {
+            return;
+        }
         match classify_rest_request(info.method(), info.path()) {
             Some(ApiKind::Otlp) if !is_otlp_enabled => {}
             Some(ApiKind::Jaeger) if !is_jaeger_enabled => {}

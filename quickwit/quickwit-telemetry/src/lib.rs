@@ -69,6 +69,14 @@ pub async fn send_telemetry_event(event: TelemetryEvent) {
     }
 }
 
+/// Returns true once this process started a telemetry loop that sends events.
+pub fn is_telemetry_enabled() -> bool {
+    let Some(telemetry_sender) = TELEMETRY_SENDER.get() else {
+        return false;
+    };
+    !telemetry_sender.inner.is_disabled()
+}
+
 /// This environment variable can be set to disable sending telemetry events.
 pub const DISABLE_TELEMETRY_ENV_KEY: &str = "QW_DISABLE_TELEMETRY";
 
