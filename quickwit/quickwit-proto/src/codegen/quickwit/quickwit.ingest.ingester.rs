@@ -249,6 +249,18 @@ pub struct CloseShardsResponse {
     pub successes: ::prost::alloc::vec::Vec<super::ShardPKey>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AdvertiseShardsRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub shard_pkeys: ::prost::alloc::vec::Vec<super::ShardPKey>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AdvertiseShardsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub successes: ::prost::alloc::vec::Vec<super::ShardPKey>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DecommissionRequest {}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -378,6 +390,11 @@ impl RpcName for CloseShardsRequest {
         "close_shards"
     }
 }
+impl RpcName for AdvertiseShardsRequest {
+    fn rpc_name() -> &'static str {
+        "advertise_shards"
+    }
+}
 impl RpcName for DecommissionRequest {
     fn rpc_name() -> &'static str {
         "decommission"
@@ -421,6 +438,11 @@ pub trait IngesterService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: CloseShardsRequest,
     ) -> crate::ingest::IngestV2Result<CloseShardsResponse>;
+    ///Marks shards advertisable, so that they can begin receiving persist requests.
+    async fn advertise_shards(
+        &self,
+        request: AdvertiseShardsRequest,
+    ) -> crate::ingest::IngestV2Result<AdvertiseShardsResponse>;
     ///Decommissions the ingester.
     async fn decommission(
         &self,
@@ -580,6 +602,13 @@ impl IngesterService for IngesterServiceClient {
     ) -> crate::ingest::IngestV2Result<CloseShardsResponse> {
         self.inner.0.close_shards(request).await
     }
+    #[tracing::instrument(skip_all, name = "ingest.ingester.advertise_shards")]
+    async fn advertise_shards(
+        &self,
+        request: AdvertiseShardsRequest,
+    ) -> crate::ingest::IngestV2Result<AdvertiseShardsResponse> {
+        self.inner.0.advertise_shards(request).await
+    }
     #[tracing::instrument(skip_all, name = "ingest.ingester.decommission")]
     async fn decommission(
         &self,
@@ -632,6 +661,12 @@ pub mod mock_ingester_service {
             request: super::CloseShardsRequest,
         ) -> crate::ingest::IngestV2Result<super::CloseShardsResponse> {
             self.inner.lock().await.close_shards(request).await
+        }
+        async fn advertise_shards(
+            &self,
+            request: super::AdvertiseShardsRequest,
+        ) -> crate::ingest::IngestV2Result<super::AdvertiseShardsResponse> {
+            self.inner.lock().await.advertise_shards(request).await
         }
         async fn decommission(
             &self,
@@ -740,6 +775,22 @@ impl tower::Service<CloseShardsRequest> for InnerIngesterServiceClient {
         Box::pin(fut)
     }
 }
+impl tower::Service<AdvertiseShardsRequest> for InnerIngesterServiceClient {
+    type Response = AdvertiseShardsResponse;
+    type Error = crate::ingest::IngestV2Error;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: AdvertiseShardsRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.advertise_shards(request).await };
+        Box::pin(fut)
+    }
+}
 impl tower::Service<DecommissionRequest> for InnerIngesterServiceClient {
     type Response = DecommissionResponse;
     type Error = crate::ingest::IngestV2Error;
@@ -791,6 +842,11 @@ struct IngesterServiceTowerServiceStack {
         CloseShardsResponse,
         crate::ingest::IngestV2Error,
     >,
+    advertise_shards_svc: quickwit_common::tower::BoxService<
+        AdvertiseShardsRequest,
+        AdvertiseShardsResponse,
+        crate::ingest::IngestV2Error,
+    >,
     decommission_svc: quickwit_common::tower::BoxService<
         DecommissionRequest,
         DecommissionResponse,
@@ -834,6 +890,12 @@ impl IngesterService for IngesterServiceTowerServiceStack {
         request: CloseShardsRequest,
     ) -> crate::ingest::IngestV2Result<CloseShardsResponse> {
         self.close_shards_svc.clone().ready().await?.call(request).await
+    }
+    async fn advertise_shards(
+        &self,
+        request: AdvertiseShardsRequest,
+    ) -> crate::ingest::IngestV2Result<AdvertiseShardsResponse> {
+        self.advertise_shards_svc.clone().ready().await?.call(request).await
     }
     async fn decommission(
         &self,
@@ -902,6 +964,16 @@ type CloseShardsLayer = quickwit_common::tower::BoxLayer<
     CloseShardsResponse,
     crate::ingest::IngestV2Error,
 >;
+type AdvertiseShardsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        AdvertiseShardsRequest,
+        AdvertiseShardsResponse,
+        crate::ingest::IngestV2Error,
+    >,
+    AdvertiseShardsRequest,
+    AdvertiseShardsResponse,
+    crate::ingest::IngestV2Error,
+>;
 type DecommissionLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         DecommissionRequest,
@@ -920,6 +992,7 @@ pub struct IngesterServiceTowerLayerStack {
     retain_shards_layers: Vec<RetainShardsLayer>,
     truncate_shards_layers: Vec<TruncateShardsLayer>,
     close_shards_layers: Vec<CloseShardsLayer>,
+    advertise_shards_layers: Vec<AdvertiseShardsLayer>,
     decommission_layers: Vec<DecommissionLayer>,
 }
 impl IngesterServiceTowerLayerStack {
@@ -1077,6 +1150,31 @@ impl IngesterServiceTowerLayerStack {
         >>::Service as tower::Service<CloseShardsRequest>>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
+                    AdvertiseShardsRequest,
+                    AdvertiseShardsResponse,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                AdvertiseShardsRequest,
+                AdvertiseShardsResponse,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service: tower::Service<
+                AdvertiseShardsRequest,
+                Response = AdvertiseShardsResponse,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                AdvertiseShardsRequest,
+                AdvertiseShardsResponse,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service as tower::Service<AdvertiseShardsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
                     DecommissionRequest,
                     DecommissionResponse,
                     crate::ingest::IngestV2Error,
@@ -1111,6 +1209,8 @@ impl IngesterServiceTowerLayerStack {
         self.truncate_shards_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.close_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.advertise_shards_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.decommission_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -1228,6 +1328,25 @@ impl IngesterServiceTowerLayerStack {
         <L::Service as tower::Service<CloseShardsRequest>>::Future: Send + 'static,
     {
         self.close_shards_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_advertise_shards_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    AdvertiseShardsRequest,
+                    AdvertiseShardsResponse,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                AdvertiseShardsRequest,
+                Response = AdvertiseShardsResponse,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<AdvertiseShardsRequest>>::Future: Send + 'static,
+    {
+        self.advertise_shards_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn stack_decommission_layer<L>(mut self, layer: L) -> Self
@@ -1357,6 +1476,14 @@ impl IngesterServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let advertise_shards_svc = self
+            .advertise_shards_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let decommission_svc = self
             .decommission_layers
             .into_iter()
@@ -1373,6 +1500,7 @@ impl IngesterServiceTowerLayerStack {
             retain_shards_svc,
             truncate_shards_svc,
             close_shards_svc,
+            advertise_shards_svc,
             decommission_svc,
         };
         IngesterServiceClient::new(tower_svc_stack)
@@ -1490,6 +1618,12 @@ where
             Future = BoxFuture<CloseShardsResponse, crate::ingest::IngestV2Error>,
         >
         + tower::Service<
+            AdvertiseShardsRequest,
+            Response = AdvertiseShardsResponse,
+            Error = crate::ingest::IngestV2Error,
+            Future = BoxFuture<AdvertiseShardsResponse, crate::ingest::IngestV2Error>,
+        >
+        + tower::Service<
             DecommissionRequest,
             Response = DecommissionResponse,
             Error = crate::ingest::IngestV2Error,
@@ -1530,6 +1664,12 @@ where
         &self,
         request: CloseShardsRequest,
     ) -> crate::ingest::IngestV2Result<CloseShardsResponse> {
+        self.clone().call(request).await
+    }
+    async fn advertise_shards(
+        &self,
+        request: AdvertiseShardsRequest,
+    ) -> crate::ingest::IngestV2Result<AdvertiseShardsResponse> {
         self.clone().call(request).await
     }
     async fn decommission(
@@ -1687,6 +1827,24 @@ where
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
                 CloseShardsRequest::rpc_name(),
+            ))
+    }
+    async fn advertise_shards(
+        &self,
+        request: AdvertiseShardsRequest,
+    ) -> crate::ingest::IngestV2Result<AdvertiseShardsResponse> {
+        let mut tonic_request = tonic::Request::new(request);
+        quickwit_common::tracing_utils::inject_current_context(
+            tonic_request.metadata_mut(),
+        );
+        self.inner
+            .clone()
+            .advertise_shards(tonic_request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                AdvertiseShardsRequest::rpc_name(),
             ))
     }
     async fn decommission(
@@ -1865,6 +2023,29 @@ for IngesterServiceGrpcServerAdapter {
             self.inner
                 .0
                 .close_shards(request)
+                .await
+                .map(tonic::Response::new)
+                .map_err(crate::error::grpc_error_to_grpc_status)
+        };
+        <_ as tracing::Instrument>::instrument(fut, span).await
+    }
+    async fn advertise_shards(
+        &self,
+        tonic_request: tonic::Request<AdvertiseShardsRequest>,
+    ) -> Result<tonic::Response<AdvertiseShardsResponse>, tonic::Status> {
+        let parent_context = quickwit_common::tracing_utils::extract_context(
+            tonic_request.metadata(),
+        );
+        let request = tonic_request.into_inner();
+        let span = tracing::info_span!("ingest.ingester.advertise_shards");
+        let _ = <tracing::Span as tracing_opentelemetry::OpenTelemetrySpanExt>::set_parent(
+            &span,
+            parent_context,
+        );
+        let fut = async move {
+            self.inner
+                .0
+                .advertise_shards(request)
                 .await
                 .map(tonic::Response::new)
                 .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2168,6 +2349,36 @@ pub mod ingester_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Marks shards advertisable, so that they can begin receiving persist requests.
+        pub async fn advertise_shards(
+            &mut self,
+            request: impl tonic::IntoRequest<super::AdvertiseShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::AdvertiseShardsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.ingest.ingester.IngesterService/AdvertiseShards",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.ingest.ingester.IngesterService",
+                        "AdvertiseShards",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Decommissions the ingester.
         pub async fn decommission(
             &mut self,
@@ -2264,6 +2475,14 @@ pub mod ingester_service_grpc_server {
             request: tonic::Request<super::CloseShardsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::CloseShardsResponse>,
+            tonic::Status,
+        >;
+        /// Marks shards advertisable, so that they can begin receiving persist requests.
+        async fn advertise_shards(
+            &self,
+            request: tonic::Request<super::AdvertiseShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::AdvertiseShardsResponse>,
             tonic::Status,
         >;
         /// Decommissions the ingester.
@@ -2616,6 +2835,55 @@ pub mod ingester_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = CloseShardsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.ingest.ingester.IngesterService/AdvertiseShards" => {
+                    #[allow(non_camel_case_types)]
+                    struct AdvertiseShardsSvc<T: IngesterServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: IngesterServiceGrpc,
+                    > tonic::server::UnaryService<super::AdvertiseShardsRequest>
+                    for AdvertiseShardsSvc<T> {
+                        type Response = super::AdvertiseShardsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::AdvertiseShardsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as IngesterServiceGrpc>::advertise_shards(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = AdvertiseShardsSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
