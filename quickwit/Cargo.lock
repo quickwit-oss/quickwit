@@ -8454,6 +8454,7 @@ name = "quickwit-telemetry"
 version = "0.9.3"
 dependencies = [
  "async-trait",
+ "enum-iterator",
  "hostname",
  "md5",
  "quickwit-common",

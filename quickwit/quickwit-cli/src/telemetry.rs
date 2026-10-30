@@ -99,20 +99,24 @@ fn telemetry_features(config: &NodeConfig) -> HashSet<QuickwitFeature> {
     if let Some(storage_feature) = storage_feature_opt {
         features.insert(storage_feature);
     }
-    if let Some(s3_storage_config) = config.storage_configs.find_s3() {
-        if s3_storage_config.endpoint().is_some() {
-            features.insert(QuickwitFeature::S3CustomEndpoint);
-        }
-        let flavor_feature_opt = match s3_storage_config.flavor {
-            Some(StorageBackendFlavor::DigitalOcean) => Some(QuickwitFeature::S3FlavorDigitalOcean),
-            Some(StorageBackendFlavor::Garage) => Some(QuickwitFeature::S3FlavorGarage),
-            Some(StorageBackendFlavor::Gcs) => Some(QuickwitFeature::S3FlavorGcs),
-            Some(StorageBackendFlavor::MinIO) => Some(QuickwitFeature::S3FlavorMinio),
-            None => None,
-        };
-        if let Some(flavor_feature) = flavor_feature_opt {
-            features.insert(flavor_feature);
-        }
+    // Same fallback as the storage resolver, so that `QW_S3_ENDPOINT` alone is reported.
+    let s3_storage_config = config
+        .storage_configs
+        .find_s3()
+        .cloned()
+        .unwrap_or_default();
+    if s3_storage_config.endpoint().is_some() {
+        features.insert(QuickwitFeature::S3CustomEndpoint);
+    }
+    let flavor_feature_opt = match s3_storage_config.flavor {
+        Some(StorageBackendFlavor::DigitalOcean) => Some(QuickwitFeature::S3FlavorDigitalOcean),
+        Some(StorageBackendFlavor::Garage) => Some(QuickwitFeature::S3FlavorGarage),
+        Some(StorageBackendFlavor::Gcs) => Some(QuickwitFeature::S3FlavorGcs),
+        Some(StorageBackendFlavor::MinIO) => Some(QuickwitFeature::S3FlavorMinio),
+        None => None,
+    };
+    if let Some(flavor_feature) = flavor_feature_opt {
+        features.insert(flavor_feature);
     }
     if config.is_service_enabled(QuickwitService::Searcher) {
         if config.jaeger_config.enable_endpoint {

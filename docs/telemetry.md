@@ -31,15 +31,15 @@ Only `quickwit run` sends telemetry. Other CLI commands never do.
 
 ## What is sent
 
-A node sends at most one request per minute, plus one last request with the pending events when it shuts down, with up to 10 events per request.
+Each time a node starts, it sends a request right away. After that, it sends at most one request per minute, plus one last request with the pending events when it shuts down. Each request holds up to 10 events.
 
-Events:
+Events, each with the time it happened, in seconds since the Unix epoch:
 
-- `install`: the node started with a data directory that it had never used, so this counts new installations.
+- `install`: the node found no install ID in its data directory and created one. This happens with a new data directory, but also on the first start after upgrading from a release without install IDs, and on the first start after telemetry is turned on.
 - `run_command`: the node started.
 - `end_command`: the node stopped, with its exit code.
 - `running`: the node is still up. Sent every 12 hours.
-- `ui_index_page_load`: someone opened the Quickwit UI.
+- `ui_index_page_load`: the node served the Quickwit UI page. Browsers request it when someone opens or reloads the UI, and so does any other client that requests a UI URL, such as an uptime check.
 
 Each request also includes:
 
@@ -59,7 +59,7 @@ Each request also includes:
 - The number of CPUs and the amount of memory available to the node, as ranges such as `5-8` CPUs or `8-16GiB`.
 - Whether the node runs on Kubernetes, based on whether `KUBERNETES_SERVICE_HOST` is set.
 - A session ID, generated at random each time the node starts.
-- An install ID, generated at random the first time the node uses its data directory and stored there in the `telemetry_install_id` file. It is only created while telemetry is on.
+- An install ID, generated at random when the node starts with telemetry on and finds none in its data directory, then stored there in the `telemetry_install_id` file. It is never created while telemetry is off.
 - An MD5 hash of the host name and the user name, used to count distinct installations from older releases, which have no install ID. The relay replaces it with a keyed hash before storage. See below.
 - An MD5 hash of the cluster ID and the metastore URI, without the user name, password, query parameters or fragment, used to count clusters and the nodes in each. The relay replaces it with a keyed hash before storage.
 - The number of events dropped because too many were queued.
@@ -82,4 +82,8 @@ Quickwit sends the data over HTTPS to `telemetry.quickwit.io`, which Datadog ope
 
 For nodes running in the cloud, the country and city are usually those of the data center.
 
-Releases 0.6.0 to 0.8.x send an older version of this data to the same address: the events other than `install`, without the API counts or cluster summary, plus the version, services, OS, architecture, Kubernetes flag, session ID, host hash, and the metastore, OTLP and Jaeger features.
+Releases 0.6.0 to 0.8.x send an older version of this data to the same address: the events other than `install`, each with its time, without the API counts or cluster summary, plus the version, services, OS, architecture, Kubernetes flag, session ID, host hash, number of dropped events, and the metastore, OTLP and Jaeger features. Their AWS Lambda indexer and searcher send `run_command` with only the `aws_lambda` feature.
+
+Releases before 0.6.0 also send data to the same address, from every CLI command: an event when a command ends, with its exit code, and an event when an index is created, ingested into, deleted or garbage collected, or when services start, with their names (in 0.1.x, with whether peer addresses were given). Each event has its time, and each request includes the number of dropped events, the version, OS, architecture, Kubernetes flag, session ID and host hash.
+
+To turn telemetry off in releases before 0.9.0, set `QW_DISABLE_TELEMETRY` to any value, or `DISABLE_QUICKWIT_TELEMETRY` in 0.1.x.

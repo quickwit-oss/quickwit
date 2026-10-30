@@ -16,11 +16,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 
+use enum_iterator::{Sequence, all, cardinality};
 use serde::{Deserialize, Serialize};
 
 use crate::payload::TelemetryEvent;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize, Sequence,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ApiKind {
     ElasticsearchSearch,
@@ -32,24 +35,12 @@ pub enum ApiKind {
     Jaeger,
 }
 
-impl ApiKind {
-    /// In declaration order: `ApiRequestCounts` is indexed by `api_kind as usize`.
-    const ALL: [ApiKind; 7] = [
-        ApiKind::ElasticsearchSearch,
-        ApiKind::ElasticsearchIngest,
-        ApiKind::ElasticsearchOther,
-        ApiKind::NativeSearch,
-        ApiKind::NativeIngest,
-        ApiKind::Otlp,
-        ApiKind::Jaeger,
-    ];
-}
-
-struct ApiRequestCounts([AtomicU64; ApiKind::ALL.len()]);
+/// Indexed by `api_kind as usize`.
+struct ApiRequestCounts([AtomicU64; cardinality::<ApiKind>()]);
 
 impl ApiRequestCounts {
     const fn new() -> Self {
-        Self([const { AtomicU64::new(0) }; ApiKind::ALL.len()])
+        Self([const { AtomicU64::new(0) }; cardinality::<ApiKind>()])
     }
 
     fn record(&self, api_kind: ApiKind) {
@@ -59,7 +50,7 @@ impl ApiRequestCounts {
     /// Returns the bucketed counts of the APIs that received requests, and resets the counts.
     fn take(&self) -> Option<BTreeMap<ApiKind, String>> {
         let mut api_usage = BTreeMap::new();
-        for api_kind in ApiKind::ALL {
+        for api_kind in all::<ApiKind>() {
             let num_requests = self.0[api_kind as usize].swap(0, Ordering::Relaxed);
             if num_requests > 0 {
                 api_usage.insert(api_kind, request_count_bucket(num_requests).to_string());
@@ -165,9 +156,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_api_kind_all_matches_discriminants() {
-        for (index, api_kind) in ApiKind::ALL.iter().enumerate() {
-            assert_eq!(*api_kind as usize, index);
+    fn test_api_kind_discriminants_follow_declaration_order() {
+        for (index, api_kind) in all::<ApiKind>().enumerate() {
+            assert_eq!(api_kind as usize, index);
         }
     }
 

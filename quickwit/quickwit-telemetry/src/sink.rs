@@ -42,13 +42,12 @@ pub struct HttpClient {
 }
 
 impl HttpClient {
-    pub fn try_new() -> Option<Self> {
+    pub fn try_new() -> reqwest::Result<Self> {
         let client = Client::builder()
             .redirect(Policy::limited(3))
             .timeout(Duration::from_secs(10))
-            .build()
-            .ok()?;
-        Some(HttpClient {
+            .build()?;
+        Ok(HttpClient {
             client,
             endpoint: telemetry_ingest_api_url(),
         })

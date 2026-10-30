@@ -27,6 +27,7 @@ use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_metrics::{counter, histogram, labels};
 use quickwit_search::SearchService;
+use quickwit_telemetry::ApiKind;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use tokio_rustls::TlsAcceptor;
@@ -148,7 +149,9 @@ pub(crate) async fn start_rest_server(
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<()> {
-    let request_counter = warp::log::custom(|info: Info| {
+    let is_otlp_enabled = quickwit_services.otlp_logs_service_opt.is_some();
+    let is_jaeger_enabled = quickwit_services.jaeger_service_opt.is_some();
+    let request_counter = warp::log::custom(move |info: Info| {
         let elapsed = info.elapsed();
         let labels = labels!(
             "method" => info.method().as_str().to_string(),
@@ -164,8 +167,11 @@ pub(crate) async fn start_rest_server(
             labels: [labels],
         )
         .inc();
-        if let Some(api_kind) = classify_rest_request(info.path()) {
-            quickwit_telemetry::record_api_request(api_kind);
+        match classify_rest_request(info.method(), info.path()) {
+            Some(ApiKind::Otlp) if !is_otlp_enabled => {}
+            Some(ApiKind::Jaeger) if !is_jaeger_enabled => {}
+            Some(api_kind) => quickwit_telemetry::record_api_request(api_kind),
+            None => {}
         }
     });
     // Docs routes

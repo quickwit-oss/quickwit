@@ -12,6 +12,7 @@ license.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
+enum-iterator = { workspace = true }
 hostname = { workspace = true }
 md5 = { workspace = true }
 reqwest = { workspace = true }

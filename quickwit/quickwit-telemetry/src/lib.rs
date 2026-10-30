@@ -42,13 +42,13 @@ static TELEMETRY_SENDER: OnceLock<TelemetrySender> = OnceLock::new();
 pub fn start_telemetry_loop(quickwit_info: QuickwitTelemetryInfo) -> Option<TelemetryLoopHandle> {
     let telemetry_sender =
         TELEMETRY_SENDER.get_or_init(|| TelemetrySender::from_quickwit_info(quickwit_info));
+    let telemetry_loop_handle_opt = telemetry_sender.start_loop();
     // This should not happen... unless telemetry is enabled and you are running tests in parallel
     // in the same process.
-    if telemetry_sender.loop_started() {
+    if telemetry_loop_handle_opt.is_none() {
         info!("telemetry loop already started. please disable telemetry during tests");
-        return None;
     }
-    Some(telemetry_sender.start_loop())
+    telemetry_loop_handle_opt
 }
 
 /// Sends a telemetry event to the telemetry relay via HTTP.
