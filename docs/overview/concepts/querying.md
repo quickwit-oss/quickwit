@@ -91,12 +91,15 @@ Quickwit does caching in many places to deliver a highly performing query engine
 
 In memory:
 
-- Hotcache caching: A static cache that holds information about a split file internal representation. It helps speed up the opening of a split file. Its size can be defined via the `split_footer_cache_capacity` configuration parameter.
-- Fast field caching: Fast fields tend to be accessed very frequently by users especially for stream requests. They are cached in a RAM whose size can be limited by the `fast_field_cache_capacity` configuration value.
-- Partial request caching: In some cases, like when using dashboards, some very similar requests might be issued, with only timestamp bounds changing. Some partial results can be cached to make these requests faster and issue less requests to the storage. They are cached in a RAM whose size can be limited by the `partial_request_cache_capacity` configuration value.
+- Hotcache: A static cache embedded in each split footer that holds information about the split's internal representation and speeds up opening the split. Footer and hotcache bytes are retained by the same `disk_cache` memory and disk tiers as split body ranges, when configured.
+- Fast-field caching: Frequently accessed fast-field slices are cached in Feuer's memory tier. Set `fast_field_cache_capacity` to control its memory target. Omitted settings disable this cache when `disk_cache` is configured.
+- Partial-request caching: Similar requests, such as dashboard queries with changing timestamp bounds, can reuse per-split partial results. `partial_request_cache` controls the memory target and optional disk tier.
+- Predicate caching: `predicate_cache` retains predicate hit sets and known-absent terms, with independent memory and optional disk budgets.
+- List-fields caching: Field metadata uses an independent Feuer memory cache with the same memory capacity as `partial_request_cache`.
 
 On disk:
 
+- The Feuer split-range cache stores exact immutable slices of split objects, including footers. Enable it with `disk_cache`. Predicate and partial-response caches can also use independent Feuer disk tiers.
 - The split cache stores entire splits on disk. It can be enabled by setting the `split_cache` configuration fields. This cache can help reduce object store costs and load. Searchers populate this cache when splits are created or queried and evict them with a simple LRU strategy.
 
 Learn more about cache parameters in the [searcher configuration docs](../../configuration/node-config.md#searcher-configuration).

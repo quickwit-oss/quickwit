@@ -87,6 +87,7 @@ env_logger = { version = "0.11", default-features = false, features = ["auto-col
 fail = "0.5"
 flate2 = "1.1"
 flume = "0.12"
+feuer = { git = "https://github.com/PSeitz/feuer", rev = "86efb7fda6a91bf62003d7e8021c5bba608960bb" }
 fnv = "1"
 futures = "0.3"
 futures-util = { version = "0.3", default-features = false }
@@ -133,6 +134,7 @@ metrics-exporter-prometheus = { version = "0.18", default-features = false }
 metrics-util = "0.20"
 mime_guess = "2.0"
 mini-moka = "0.10"
+mixtrics = "=0.2.5"
 mockall = "0.15"
 mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "3b3562ef" }
 new_string_template = "1.5"
