@@ -111,6 +111,10 @@ pub trait Actor: Send + Sized + 'static {
         type_name::<Self>().to_string()
     }
 
+    /// Enable actor duration metrics, including wake-to-poll intervals, using the mailbox's actor
+    /// name (normally `name()`). The name must be stable and contain no instance identifiers.
+    const RECORD_DURATION_METRICS: bool = false;
+
     /// The runner method makes it possible to decide the environment
     /// of execution of the Actor.
     ///

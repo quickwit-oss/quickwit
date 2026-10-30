@@ -168,11 +168,12 @@ mod tests {
         };
         let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
         let vec_source = VecSourceFactory::typed_create_source(source_runtime, params).await?;
-        let vec_source_actor = SourceActor::new(Box::new(vec_source), doc_processor_mailbox);
         assert_eq!(
-            vec_source_actor.name(),
+            vec_source.name(),
             r#"VecSource { source_id: "test-vec-source" }"#
         );
+        let vec_source_actor = SourceActor::new(Box::new(vec_source), doc_processor_mailbox);
+        assert_eq!(vec_source_actor.name(), "SourceActor");
         let (_vec_source_mailbox, vec_source_handle) =
             universe.spawn_builder().spawn(vec_source_actor);
         let (actor_termination, last_observation) = vec_source_handle.join().await;
