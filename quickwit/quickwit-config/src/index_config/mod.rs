@@ -172,7 +172,7 @@ impl Default for IndexingSettings {
 #[serde(deny_unknown_fields)]
 pub struct IngestSettings {
     /// Configures the minimum number of shards to use for ingestion.
-    #[schema(default = 1, value_type = usize)]
+    #[schema(default = 6, value_type = usize)]
     #[serde(default = "IngestSettings::default_min_shards")]
     pub min_shards: NonZeroUsize,
     /// Whether to validate documents against the current doc mapping during ingestion.
@@ -189,7 +189,7 @@ pub struct IngestSettings {
 
 impl IngestSettings {
     pub fn default_min_shards() -> NonZeroUsize {
-        NonZeroUsize::MIN
+        NonZeroUsize::new(6).unwrap()
     }
 }
 
@@ -1174,6 +1174,10 @@ mod tests {
 
     #[test]
     fn test_ingest_settings_serde() {
+        assert_eq!(IngestSettings::default().min_shards.get(), 6);
+        let settings: IngestSettings = serde_yaml::from_str("{}").unwrap();
+        assert_eq!(settings.min_shards.get(), 6);
+
         let settings = IngestSettings {
             min_shards: NonZeroUsize::MIN,
             validate_docs: false,
