@@ -411,6 +411,32 @@ impl Cluster {
             .map(|value| value.to_string())
     }
 
+    /// Returns the key-value pairs of the live nodes whose key starts with `key_prefix`.
+    pub async fn live_nodes_key_values_with_prefix(
+        &self,
+        key_prefix: &str,
+    ) -> Vec<(NodeId, String, String)> {
+        let chitchat = self.chitchat().await;
+        let chitchat_guard = chitchat.lock().await;
+        let mut key_values = Vec::new();
+
+        for chitchat_id in chitchat_guard.live_nodes() {
+            let Some(node_state) = chitchat_guard.node_state(chitchat_id) else {
+                continue;
+            };
+            let node_id = NodeId::from_str(&chitchat_id.node_id);
+
+            for (key, versioned_value) in node_state.iter_prefix(key_prefix) {
+                key_values.push((
+                    node_id.clone(),
+                    key.to_string(),
+                    versioned_value.value.clone(),
+                ));
+            }
+        }
+        key_values
+    }
+
     pub async fn remove_self_key(&self, key: &str) {
         self.chitchat()
             .await

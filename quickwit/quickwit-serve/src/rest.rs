@@ -54,6 +54,7 @@ use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
 use crate::jaeger_api::jaeger_api_handlers;
+use crate::live_tail_api::{LiveTailContext, live_tail_handler};
 use crate::metrics::{HTTP_REQUESTS_TOTAL, REQUEST_DURATION_SECS};
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
@@ -331,7 +332,10 @@ where
     F::Extract: Reply,
 {
     let warp_service = warp::service(routes);
-    let compression_predicate = CompressionPredicate::from_env().and(NotForContentType::IMAGES);
+    // Server-Sent Events must not be compressed: compression buffers the stream.
+    let compression_predicate = CompressionPredicate::from_env()
+        .and(NotForContentType::IMAGES)
+        .and(NotForContentType::SSE);
     let cors = build_cors(&cors_allow_origins);
 
     let trace_layer = TraceLayer::new_for_http()
@@ -492,6 +496,20 @@ fn search_routes(
         .boxed()
 }
 
+fn live_tail_routes(
+    quickwit_services: Arc<QuickwitServices>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    let live_tail_context = LiveTailContext {
+        cluster: quickwit_services.cluster.clone(),
+        metastore: quickwit_services.metastore_client.clone(),
+        local_live_tail_service_opt: quickwit_services.live_tail_service_opt.clone(),
+        grpc_max_message_size: quickwit_services.node_config.grpc_config.max_message_size,
+    };
+    live_tail_handler(live_tail_context)
+        .recover(recover_fn)
+        .boxed()
+}
+
 /// `/mcp` route. MCP negotiates its protocol version in-band (`initialize` and the
 /// `MCP-Protocol-Version` header), so the endpoint is not nested under the versioned REST API.
 fn mcp_routes(
@@ -538,6 +556,8 @@ fn api_v1_routes(
         ))
         .boxed()
         .or(search_routes(quickwit_services.search_service.clone()))
+        .boxed()
+        .or(live_tail_routes(quickwit_services.clone()))
         .boxed()
         .or(ingest_api_handlers(
             quickwit_services.ingest_router_service.clone(),
@@ -915,6 +935,7 @@ mod tests {
             janitor_service_opt: None,
             otlp_logs_service_opt: None,
             otlp_traces_service_opt: None,
+            live_tail_service_opt: None,
             metastore_client,
             metastore_server_opt: None,
             node_config: Arc::new(node_config.clone()),

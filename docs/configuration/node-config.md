@@ -302,6 +302,23 @@ compactor:
   decommission_timeout: 300s
 ```
 
+## Live tail configuration
+
+This section contains the limits of the [live tail](../reference/rest-api.md) sessions hosted by the ingester of an indexer node.
+
+| Property | Description | Default value |
+| --- | --- | --- |
+| `max_sessions` | Maximum number of concurrent live tail sessions on the ingester. Can be overridden with the `QW_LIVE_TAIL_MAX_SESSIONS` environment variable. | `4` |
+| `max_docs_per_sec` | Maximum number of documents per second sent by the ingester to a live tail session. Higher rates requested by clients are capped. Can be overridden with the `QW_LIVE_TAIL_MAX_DOCS_PER_SEC` environment variable. | `10000` |
+
+Example:
+
+```yaml
+live_tail:
+  max_sessions: 4
+  max_docs_per_sec: 10000
+```
+
 ## Searcher configuration
 
 This section contains the configuration options for a Searcher.

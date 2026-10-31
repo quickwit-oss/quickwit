@@ -7873,6 +7873,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-config",
  "quickwit-doc-mapper",
+ "quickwit-live-tail",
  "quickwit-metrics",
  "quickwit-proto",
  "rand 0.10.3",
@@ -8046,6 +8047,26 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "quickwit-live-tail"
+version = "0.9.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytes",
+ "futures",
+ "quickwit-common",
+ "quickwit-doc-mapper",
+ "quickwit-metrics",
+ "quickwit-proto",
+ "quickwit-query",
+ "serde_json",
+ "serde_yaml",
+ "tantivy",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -8333,6 +8354,7 @@ dependencies = [
  "quickwit-jaeger",
  "quickwit-janitor",
  "quickwit-lambda-client",
+ "quickwit-live-tail",
  "quickwit-metastore",
  "quickwit-metrics",
  "quickwit-opentelemetry",

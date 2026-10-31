@@ -28,6 +28,8 @@ use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::{ServiceStream, rate_limited_error, rate_limited_warn};
+use quickwit_doc_mapper::DocMapper;
+use quickwit_live_tail::LiveTailHub;
 use quickwit_metrics::{GaugeGuard, counter, label_values};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, ControlPlaneService, ControlPlaneServiceClient,
@@ -101,6 +103,8 @@ pub struct Ingester {
     // This semaphore ensures that the ingester that not run two reset shards operations
     // concurrently.
     reset_shards_permits: Arc<Semaphore>,
+    /// Receives the documents persisted while a live tail session watches their index.
+    live_tail_hub: LiveTailHub,
 }
 
 impl fmt::Debug for Ingester {
@@ -196,10 +200,17 @@ impl Ingester {
             memory_capacity,
             rate_limiter_settings,
             reset_shards_permits: Arc::new(Semaphore::new(1)),
+            live_tail_hub: LiveTailHub::default(),
         };
         ingester.background_reset_shards();
 
         Ok(ingester)
+    }
+
+    /// Publishes the persisted documents to the live tail sessions of `live_tail_hub`.
+    pub fn with_live_tail_hub(mut self, live_tail_hub: LiveTailHub) -> Self {
+        self.live_tail_hub = live_tail_hub;
+        self
     }
 
     /// Initializes a shard by creating a queue in the write-ahead log and inserting a new
@@ -516,7 +527,7 @@ impl Ingester {
                 let original_batch_num_bytes = doc_batch.num_bytes() as u64;
 
                 let (valid_doc_batch, parse_failures) = if validate_docs {
-                    validate_doc_batch(doc_batch, doc_mapper).await?
+                    validate_doc_batch(doc_batch, doc_mapper.clone()).await?
                 } else {
                     (doc_batch, Vec::new())
                 };
@@ -579,6 +590,7 @@ impl Ingester {
                     shard_id: Some(shard_id),
                     doc_batch: valid_doc_batch,
                     parse_failures,
+                    doc_mapper,
                 };
                 pending_persist_subrequests.insert(
                     pending_persist_subrequest.subrequest_id,
@@ -597,7 +609,7 @@ impl Ingester {
                 let append_result = append_non_empty_doc_batch(
                     &mut state_guard.mrecordlog,
                     &queue_id,
-                    subrequest.doc_batch,
+                    &subrequest.doc_batch,
                     force_commit,
                 )
                 .await;
@@ -638,6 +650,17 @@ impl Ingester {
                     .get_mut(&queue_id)
                     .expect("shard should exist")
                     .set_replication_position_inclusive(current_position_inclusive.clone(), now);
+
+                // Published once the documents are in the write-ahead log, so that no session
+                // opened before the append misses them, and while holding the state lock, so that
+                // live tail sessions receive the documents of a shard in the order of the
+                // write-ahead log. Publishing is a no-op when nobody watches the index.
+                let index_uid = subrequest
+                    .index_uid
+                    .as_ref()
+                    .expect("index UID should be present");
+                self.live_tail_hub
+                    .publish(index_uid, subrequest.doc_mapper, subrequest.doc_batch);
 
                 let persist_success = PersistSuccess {
                     subrequest_id: subrequest.subrequest_id,
@@ -1157,6 +1180,8 @@ struct PendingPersistSubrequest {
     shard_id: Option<ShardId>,
     doc_batch: DocBatchV2,
     parse_failures: Vec<ParseFailure>,
+    /// Doc mapper of the shard, published along with the documents to live tail sessions.
+    doc_mapper: Arc<DocMapper>,
 }
 
 #[cfg(test)]
@@ -1829,6 +1854,71 @@ mod tests {
         assert_eq!(parse_failure_2.doc_uid(), DocUid::for_test(2));
         assert_eq!(parse_failure_2.reason(), ParseFailureReason::InvalidSchema);
         assert!(parse_failure_2.message.contains("not declared"));
+    }
+
+    #[tokio::test]
+    async fn test_ingester_persist_publishes_valid_docs_to_live_tail() {
+        let live_tail_hub = LiveTailHub::default();
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
+        let ingester = ingester.with_live_tail_hub(live_tail_hub.clone());
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let doc_mapping_uid = DocMappingUid::random();
+        let doc_mapping_json = format!(
+            r#"{{
+                "doc_mapping_uid": "{doc_mapping_uid}",
+                "mode": "strict",
+                "field_mappings": [{{"name": "doc", "type": "text"}}]
+            }}"#
+        );
+        let init_shards_request = InitShardsRequest {
+            subrequests: vec![InitShardSubrequest {
+                subrequest_id: 0,
+                shard: Some(Shard {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: "test-source".to_string(),
+                    shard_id: Some(ShardId::from(0)),
+                    shard_state: ShardState::Open as i32,
+                    ingester_id: ingester_ctx.node_id.to_string(),
+                    doc_mapping_uid: Some(doc_mapping_uid),
+                    ..Default::default()
+                }),
+                doc_mapping_json,
+                validate_docs: true,
+            }],
+        };
+        ingester.init_shards(init_shards_request).await.unwrap();
+
+        let persist_request = |doc: &'static str| PersistRequest {
+            ingester_id: ingester_ctx.node_id.to_string(),
+            commit_type: CommitTypeV2::Force as i32,
+            subrequests: vec![PersistSubrequest {
+                subrequest_id: 0,
+                index_uid: Some(index_uid.clone()),
+                source_id: "test-source".to_string(),
+                doc_batch: Some(DocBatchV2::for_test([
+                    r#"{"foo": "bar"}"#, // invalid
+                    doc,
+                ])),
+            }],
+        };
+        // Nobody watches the index: nothing is published.
+        ingester
+            .persist(persist_request(r#"{"doc": "test-doc-000"}"#))
+            .await
+            .unwrap();
+        let mut batch_rx = live_tail_hub.subscribe(&index_uid);
+
+        ingester
+            .persist(persist_request(r#"{"doc": "test-doc-001"}"#))
+            .await
+            .unwrap();
+        // Only the valid documents are published.
+        let tail_batch = batch_rx.try_recv().unwrap();
+        assert_eq!(tail_batch.num_docs(), 1);
+        assert_eq!(tail_batch.doc_mapper.doc_mapping_uid(), doc_mapping_uid);
+        assert_eq!(tail_batch.docs()[0].json_obj["doc"], "test-doc-001");
+        assert!(batch_rx.try_recv().is_err());
     }
 
     #[tokio::test]
