@@ -197,9 +197,13 @@ impl CooperativeIndexingPeriod {
         }
     }
 
-    /// This drops the indexing permit, allowing another indexer to start indexing.
-    /// This function also returns the amount of time to sleep until the next period.
-    pub fn end_of_work(self, uncompressed_num_bytes: u64) -> (Duration, PipelineMetrics) {
+    /// Computes the sleep duration and metrics at the end of document indexing.
+    /// The period retains its permit through serialization and packaging. Drop it before
+    /// waiting on the uploader so upload congestion does not consume indexing capacity.
+    pub fn sleep_duration_and_metrics(
+        &self,
+        uncompressed_num_bytes: u64,
+    ) -> (Duration, PipelineMetrics) {
         let end = Instant::now();
         let sleep_duration = self.compute_sleep_duration(end);
         let metrics = self.compute_pipeline_metrics(end, uncompressed_num_bytes);
@@ -274,7 +278,10 @@ mod tests {
             CooperativeIndexingCycle::new("id", Duration::from_secs(30), semaphore.clone());
         let guard = cooperative_indexing.cooperative_indexing_period().await;
         tokio::time::advance(Duration::from_secs(10)).await;
-        let (sleep_time, metrics) = guard.end_of_work(100_000_000);
+        let (sleep_time, metrics) = guard.sleep_duration_and_metrics(100_000_000);
+        assert_eq!(semaphore.available_permits(), 0);
+        drop(guard);
+        assert_eq!(semaphore.available_permits(), 1);
         assert_approx_equal_sleep_time(sleep_time, Duration::from_secs(20));
         let expected_metrics = PipelineMetrics {
             cpu_load: CpuCapacity::from_cpu_millis(PIPELINE_FULL_CAPACITY.cpu_millis() * 10 / 30),
@@ -300,7 +307,7 @@ mod tests {
         drop_after(semaphore_guard, Duration::from_secs(30));
         let cycle_guard = cooperative_indexing.cooperative_indexing_period().await;
         tokio::time::advance(Duration::from_secs(15)).await;
-        let (sleep_time, metrics) = cycle_guard.end_of_work(30_000_000);
+        let (sleep_time, metrics) = cycle_guard.sleep_duration_and_metrics(30_000_000);
         let expected_metrics = PipelineMetrics {
             cpu_load: CpuCapacity::from_cpu_millis(PIPELINE_FULL_CAPACITY.cpu_millis() * 15 / 30),
             throughput_mb_per_sec: 1u16,
@@ -319,7 +326,7 @@ mod tests {
         drop_after(semaphore_guard, Duration::from_secs(10));
         let cycle_guard = cooperative_indexing.cooperative_indexing_period().await;
         tokio::time::advance(Duration::from_secs(10)).await;
-        let (sleep_time, metrics) = cycle_guard.end_of_work(100_000_000);
+        let (sleep_time, metrics) = cycle_guard.sleep_duration_and_metrics(100_000_000);
         assert_approx_equal_sleep_time(sleep_time, Duration::from_secs(10));
         let expected_metrics = PipelineMetrics {
             cpu_load: CpuCapacity::from_cpu_millis(PIPELINE_FULL_CAPACITY.cpu_millis() * 10 / 30),
@@ -354,7 +361,8 @@ mod tests {
                     tokio::time::sleep(work_time).await;
                     last_phase =
                         t0.elapsed().as_millis() as u64 % commit_timeout.as_millis() as u64;
-                    let (sleep_time, _) = cycle_guard.end_of_work(1_000_000);
+                    let (sleep_time, _) = cycle_guard.sleep_duration_and_metrics(1_000_000);
+                    drop(cycle_guard);
                     tokio::time::sleep(sleep_time).await;
                 }
                 last_phase

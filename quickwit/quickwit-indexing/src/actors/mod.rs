@@ -14,7 +14,6 @@
 
 mod cooperative_indexing;
 mod doc_processor;
-mod index_serializer;
 mod indexer;
 mod indexing_pipeline;
 mod indexing_service;
@@ -23,15 +22,14 @@ pub(crate) mod merge_pipeline;
 mod merge_planner;
 mod merge_scheduler_service;
 mod merge_split_downloader;
-mod packager;
 mod publisher;
 mod sequencer;
+mod split_packaging;
 mod uploader;
 #[cfg(feature = "vrl")]
 mod vrl_processing;
 
 pub use doc_processor::{DocProcessor, DocProcessorCounters};
-pub use index_serializer::IndexSerializer;
 pub use indexer::{Indexer, IndexerCounters};
 pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineParams};
 pub use indexing_service::{INDEXING_DIR_NAME, IndexingService, IndexingServiceCounters};
@@ -44,7 +42,6 @@ pub(crate) use merge_planner::MergePlanner;
 pub(crate) use merge_planner::RunFinalizeMergePolicyAndQuit;
 pub use merge_scheduler_service::{MergePermit, MergeSchedulerService, schedule_merge};
 pub use merge_split_downloader::MergeSplitDownloader;
-pub use packager::Packager;
 pub use publisher::{Publisher, PublisherCounters, PublisherType};
 pub use quickwit_proto::indexing::IndexingError;
 pub use sequencer::Sequencer;

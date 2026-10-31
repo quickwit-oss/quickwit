@@ -31,10 +31,7 @@ mod split_attrs;
 use std::sync::Arc;
 
 use arc_swap::ArcSwapOption;
-pub use indexed_split::{
-    CommitTrigger, EmptySplit, IndexedSplit, IndexedSplitBatch, IndexedSplitBatchBuilder,
-    IndexedSplitBuilder,
-};
+pub use indexed_split::{CommitTrigger, EmptySplit, IndexedSplit, IndexedSplitBuilder};
 pub use indexing_service_message::{
     DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline,
 };

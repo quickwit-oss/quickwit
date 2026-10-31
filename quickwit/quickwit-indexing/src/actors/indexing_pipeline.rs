@@ -37,7 +37,7 @@ use quickwit_storage::{Storage, StorageResolver};
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument, warn};
 
-use super::{DocProcessor, IndexSerializer, Indexer, MergePlanner, Packager};
+use super::{DocProcessor, Indexer, MergePlanner};
 use crate::SplitsUpdateMailbox;
 use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
@@ -89,8 +89,6 @@ struct IndexingPipelineHandles {
     source_handle: ActorHandle<SourceActor>,
     doc_processor: ActorHandle<DocProcessor>,
     indexer: ActorHandle<Indexer>,
-    index_serializer: ActorHandle<IndexSerializer>,
-    packager: ActorHandle<Packager>,
     uploader: ActorHandle<Uploader>,
     sequencer: ActorHandle<Sequencer<Publisher>>,
     publisher: ActorHandle<Publisher>,
@@ -186,8 +184,6 @@ impl IndexingPipeline {
                     &handles.source_handle,
                     &handles.doc_processor,
                     &handles.indexer,
-                    &handles.index_serializer,
-                    &handles.packager,
                     &handles.uploader,
                     &handles.sequencer,
                     &handles.publisher,
@@ -378,24 +374,6 @@ impl IndexingPipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn(uploader);
 
-        // Packager
-        let tag_fields = self.params.doc_mapper.tag_named_fields()?;
-        let packager = Packager::new("Packager", tag_fields, uploader_mailbox);
-        let (packager_mailbox, packager_handle) = ctx
-            .spawn_actor()
-            .set_kill_switch(self.kill_switch.clone())
-            .spawn(packager);
-
-        // Index Serializer
-        let index_serializer = IndexSerializer::new(
-            packager_mailbox,
-            self.params.indexing_io_throughput_limiter_opt.clone(),
-        );
-        let (index_serializer_mailbox, index_serializer_handle) = ctx
-            .spawn_actor()
-            .set_kill_switch(self.kill_switch.clone())
-            .spawn(index_serializer);
-
         // Indexer
         let indexer = Indexer::new(
             self.params.pipeline_id.clone(),
@@ -404,10 +382,10 @@ impl IndexingPipeline {
             self.params.indexing_directory.clone(),
             self.params.indexing_settings.clone(),
             self.params.cooperative_indexing_permits.clone(),
-            index_serializer_mailbox,
+            uploader_mailbox,
             self.params.fingerprinter_opt.clone(),
             self.params.indexing_io_throughput_limiter_opt.clone(),
-        );
+        )?;
         let (indexer_mailbox, indexer_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "indexer")]))
@@ -462,8 +440,6 @@ impl IndexingPipeline {
             source_handle,
             doc_processor: doc_processor_handle,
             indexer: indexer_handle,
-            index_serializer: index_serializer_handle,
-            packager: packager_handle,
             uploader: uploader_handle,
             sequencer: sequencer_handle,
             publisher: publisher_handle,
@@ -478,7 +454,6 @@ impl IndexingPipeline {
             tokio::join!(
                 handles.source_handle.kill(),
                 handles.indexer.kill(),
-                handles.packager.kill(),
                 handles.uploader.kill(),
                 handles.publisher.kill(),
             );
