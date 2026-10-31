@@ -14,6 +14,7 @@
 
 mod chinese_compatible;
 mod code_tokenizer;
+mod datadog_v2;
 mod tokenizer_manager;
 mod unicode_segmenter_tokenizer;
 
@@ -26,6 +27,7 @@ use tantivy::tokenizer::{
 
 use self::chinese_compatible::ChineseTokenizer;
 pub use self::code_tokenizer::CodeTokenizer;
+use self::datadog_v2::DatadogV2Tokenizer;
 pub use self::tokenizer_manager::{RAW_TOKENIZER_NAME, TokenizerManager};
 pub use self::unicode_segmenter_tokenizer::UnicodeSegmenterTokenizer;
 
@@ -92,6 +94,14 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
         true,
     );
     tokenizer_manager.register("datadog", unicode_segmenter_tokenizer, true);
+    tokenizer_manager.register(
+        "datadog_v2",
+        TextAnalyzer::builder(DatadogV2Tokenizer)
+            .filter(LowerCaser)
+            .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
+            .build(),
+        true,
+    );
     tokenizer_manager
 }
 

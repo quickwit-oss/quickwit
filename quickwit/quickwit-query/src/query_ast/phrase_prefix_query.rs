@@ -68,6 +68,7 @@ impl PhrasePrefixQuery {
                     &self.phrase,
                     text_field_indexing,
                     tokenizer_manager,
+                    true,
                 )?;
                 (text_field_indexing, term_positions)
             }
@@ -85,6 +86,7 @@ impl PhrasePrefixQuery {
                     &self.phrase,
                     json_options,
                     tokenizer_manager,
+                    true,
                 )?;
                 (text_field_indexing, term_positions)
             }
@@ -338,6 +340,31 @@ mod tests {
 
         let query = phrase_prefix_query("custom.url", "/fantasy/", 1);
         assert_eq!(count_matches(&query, &index), 3);
+    }
+
+    #[test]
+    fn test_datadog_v2_dotted_prefix() {
+        let mut schema_builder = TantivySchema::builder();
+        let body = schema_builder.add_text_field(
+            "body",
+            TextOptions::default().set_indexing_options(
+                TextFieldIndexing::default()
+                    .set_tokenizer("datadog_v2")
+                    .set_index_option(tantivy::schema::IndexRecordOption::WithFreqsAndPositions),
+            ),
+        );
+        let mut index = Index::create_in_ram(schema_builder.build());
+        index.set_tokenizers(
+            crate::create_default_quickwit_tokenizer_manager()
+                .tantivy_manager()
+                .clone(),
+        );
+        let mut writer = index.writer_with_num_threads(1, 20_000_000).unwrap();
+        writer.add_document(doc!(body => "foo.bar baz")).unwrap();
+        writer.commit().unwrap();
+
+        let query = phrase_prefix_query("body", "foo.ba", 50);
+        assert_eq!(count_matches(&query, &index), 1);
     }
 
     #[test]
