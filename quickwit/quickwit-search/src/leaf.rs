@@ -1146,6 +1146,21 @@ fn normalize_timestamp_range(
     split: &SplitIdAndFooterOffsets,
     timestamp_field: &str,
 ) -> bool {
+    // Keep the original filters when outward-rounded split bounds exceed the nanosecond range.
+    if let Some(timestamp) = split.timestamp_start
+        && timestamp.checked_mul(1_000_000_000).is_none()
+    {
+        return false;
+    }
+    if let Some(timestamp) = split.timestamp_end
+        && timestamp
+            .checked_add(1)
+            .and_then(|timestamp| timestamp.checked_mul(1_000_000_000))
+            .is_none()
+    {
+        return false;
+    }
+
     let Ok(query_ast) = serde_json::from_str(search_request.query_ast.as_str()) else {
         // an error will get raised a bit after anyway
         return false;
@@ -2535,6 +2550,49 @@ mod tests {
             upper_bound: upper_bound.map(Into::into),
         }
         .into()
+    }
+
+    #[test]
+    fn test_normalize_timestamp_range_preserves_request_on_split_bound_overflow() {
+        for (start, end) in [
+            (-9_223_372_037, 0),
+            (0, 9_223_372_037),
+            (0, 9_223_372_036), // The exclusive end overflows after adding one second.
+            (i64::MIN, 0),
+            (0, i64::MAX),
+        ] {
+            let split = SplitIdAndFooterOffsets {
+                timestamp_start: Some(start),
+                timestamp_end: Some(end),
+                ..Default::default()
+            };
+            for (query_ast, start_timestamp, end_timestamp) in [
+                (QueryAst::MatchAll, None, None),
+                (QueryAst::MatchAll, Some(1_700_000_000), Some(1_700_001_000)),
+                (
+                    timestamp_range(
+                        Bound::Included(1_700_000_000),
+                        Bound::Excluded(1_700_001_000),
+                    ),
+                    None,
+                    None,
+                ),
+            ] {
+                let original = SearchRequest {
+                    query_ast: serde_json::to_string(&query_ast).unwrap(),
+                    start_timestamp,
+                    end_timestamp,
+                    ..Default::default()
+                };
+                let mut request = original.clone();
+                assert!(!normalize_timestamp_range(
+                    &mut request,
+                    &split,
+                    "timestamp"
+                ));
+                assert_eq!(request, original);
+            }
+        }
     }
 
     #[test]
