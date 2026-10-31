@@ -64,8 +64,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn parse_cli_command() -> (CliCommand, bool) {
-    let about_text = "Sub-second search & analytics engine on cloud storage.\n  Find more \
-                      information at https://quickwit.io/docs\n\n";
+    let about_text = about_text();
     let version_text = BuildInfo::get_version_text();
 
     let app = build_cli().about(about_text).version(version_text);
@@ -149,6 +148,17 @@ async fn main_impl() -> anyhow::Result<()> {
     };
     telemetry_handle.shutdown().await?;
     std::process::exit(return_code)
+}
+
+/// Return the about text with telemetry info.
+fn about_text() -> String {
+    let mut about_text = String::from(
+        "Sub-second search & analytics engine on cloud storage.\n  Find more information at https://quickwit.io/docs\n\n",
+    );
+    if !quickwit_telemetry::is_telemetry_disabled() {
+        about_text += "Telemetry: enabled";
+    }
+    about_text
 }
 
 #[cfg(test)]

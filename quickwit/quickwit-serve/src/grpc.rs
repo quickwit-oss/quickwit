@@ -32,12 +32,14 @@ use quickwit_proto::tonic::transport::Server;
 use quickwit_proto::tonic::transport::server::TcpIncoming;
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
+use tonic::service::interceptor::InterceptedService;
 use tonic_health::pb::FILE_DESCRIPTOR_SET as HEALTH_FILE_DESCRIPTOR_SET;
 use tonic_health::pb::health_server::{Health, HealthServer};
 use tonic_reflection::pb::v1::FILE_DESCRIPTOR_SET as REFLECTION_FILE_DESCRIPTOR_SET;
 use tonic_reflection::server::v1::{ServerReflection, ServerReflectionServer};
 use tracing::*;
 
+use crate::api_usage::{count_jaeger_grpc_request, count_otlp_grpc_request};
 use crate::developer_api::DeveloperApiServer;
 use crate::search_api::GrpcSearchAdapter;
 use crate::{INDEXING_GRPC_SERVER_METRICS_LAYER, QuickwitServices};
@@ -175,7 +177,10 @@ pub(crate) async fn start_grpc_server(
                 .accept_compressed(CompressionEncoding::Zstd)
                 .max_decoding_message_size(grpc_config.max_message_size.0 as usize)
                 .max_encoding_message_size(grpc_config.max_message_size.0 as usize);
-            Some(trace_service)
+            Some(InterceptedService::new(
+                trace_service,
+                count_otlp_grpc_request,
+            ))
         } else {
             None
         };
@@ -187,7 +192,10 @@ pub(crate) async fn start_grpc_server(
                 .accept_compressed(CompressionEncoding::Zstd)
                 .max_decoding_message_size(grpc_config.max_message_size.0 as usize)
                 .max_encoding_message_size(grpc_config.max_message_size.0 as usize);
-            Some(logs_service)
+            Some(InterceptedService::new(
+                logs_service,
+                count_otlp_grpc_request,
+            ))
         } else {
             None
         };
@@ -213,7 +221,10 @@ pub(crate) async fn start_grpc_server(
     // Mount gRPC jaeger service if present.
     let jaeger_grpc_service = if let Some(jaeger_service) = services.jaeger_service_opt.clone() {
         enabled_grpc_services.insert("jaeger");
-        Some(SpanReaderPluginServer::new(jaeger_service))
+        Some(InterceptedService::new(
+            SpanReaderPluginServer::new(jaeger_service),
+            count_jaeger_grpc_request,
+        ))
     } else {
         None
     };
@@ -221,7 +232,10 @@ pub(crate) async fn start_grpc_server(
     // Mount gRPC jaeger v2 service (TraceReader) if present.
     let jaeger_v2_grpc_service = if let Some(jaeger_service) = services.jaeger_service_opt.clone() {
         enabled_grpc_services.insert("jaeger-v2");
-        Some(TraceReaderServer::new(jaeger_service))
+        Some(InterceptedService::new(
+            TraceReaderServer::new(jaeger_service),
+            count_jaeger_grpc_request,
+        ))
     } else {
         None
     };

@@ -37,6 +37,7 @@ members = [
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
+  "quickwit-telemetry",
   "quickwit-telemetry-exporters",
   "quickwit-transport",
 ]
@@ -233,7 +234,7 @@ sqlx = { version = "0.8", features = [
 ] }
 syn = { version = "3.0", features = ["extra-traits", "full", "parsing"] }
 sync_wrapper = "1"
-sysinfo = { version = "0.39", default-features = false, features = ["disk"] }
+sysinfo = { version = "0.39", default-features = false, features = ["disk", "system"] }
 tabled = { version = "0.22", features = ["ansi"] }
 tempfile = "3"
 thiserror = "2"
@@ -375,6 +376,7 @@ quickwit-rest-client = { path = "quickwit-rest-client" }
 quickwit-search = { path = "quickwit-search" }
 quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
+quickwit-telemetry = { path = "quickwit-telemetry" }
 quickwit-telemetry-exporters = { path = "quickwit-telemetry-exporters" }
 quickwit-transport = { path = "quickwit-transport" }
 
