@@ -9,16 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Azure Blob Storage: support custom endpoints via `endpoint` and `endpoint_suffix` configuration options for sovereign clouds (#6624)
+- Azure Blob Storage: document `AZURE_CREDENTIAL_KIND`, which pins the token credential, and add the `managedidentity` value (#6672)
 
 ### Fixed
 - (Jaeger) Query resource attributes when Jaeger request carries tags
+- Azure Blob Storage: workload identity no longer fails 24 hours after start, since `azure_identity` 1.0 re-reads the projected service account token (#6672)
 
 ### Changed
+- Azure Blob Storage: migrate to `azure_storage_blob` 1.0, the rewritten Azure SDK (#6672). Behavior changes with it:
+  - the Azure CLI is no longer tried as a fallback, set `AZURE_CREDENTIAL_KIND=azurecli` to use it
+  - `AZURE_CLIENT_ID` on its own selects a user-assigned managed identity, set `AZURE_CREDENTIAL_KIND=virtualmachine` to keep the system-assigned one
+  - an unknown `AZURE_CREDENTIAL_KIND` is an error
+  - token credentials require an `https` endpoint
+  - TLS certificates are checked against the system trust store instead of bundled roots, so a CA bundle such as `ca-certificates` must be installed
 - Ingest V2 flushes every WAL write to the OS before acknowledging it, instead of keeping the tail of the last write buffered in the process, so acknowledged documents survive an indexer process crash
 
 ### Deprecated
 
 ### Removed
+- Azure Blob Storage: `AZURE_FEDERATED_TOKEN`, which the 1.0 SDK no longer reads; use `AZURE_FEDERATED_TOKEN_FILE` (#6672)
 
 ### Security
 
