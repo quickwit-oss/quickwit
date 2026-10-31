@@ -760,7 +760,7 @@ mod tests {
     use tantivy::{DateTime, DocAddress, TantivyDocument, doc};
 
     use super::{IndexerCounters, record_timestamp, *};
-    use crate::actors::pipeline_schedule::NUDGE_TOLERANCE;
+    use crate::actors::pipeline_schedule::MAX_PIPELINE_TIMEOUT_NUDGE;
     use crate::docs_clustering::Fingerprint;
 
     #[allow(clippy::too_many_arguments)]
@@ -1915,12 +1915,14 @@ mod tests {
             IndexingMode::Spread(_)
         ));
 
-        // Make the pipeline more than `NUDGE_TOLERANCE` behind its target phase.
+        // Make the pipeline more than `MAX_PIPELINE_TIMEOUT_NUDGE` behind its target phase.
         let current_phase = PipelineSchedule::new_with_phase(Duration::default(), commit_timeout)
             .current_phase(Instant::now());
-        indexer.indexer_state.indexing_mode = IndexingMode::Spread(
-            PipelineSchedule::new_with_phase(current_phase + NUDGE_TOLERANCE * 2, commit_timeout),
-        );
+        indexer.indexer_state.indexing_mode =
+            IndexingMode::Spread(PipelineSchedule::new_with_phase(
+                current_phase + MAX_PIPELINE_TIMEOUT_NUDGE * 2,
+                commit_timeout,
+            ));
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
         indexer_mailbox
             .send_message(ProcessedDocBatch::new(
@@ -1942,16 +1944,16 @@ mod tests {
         let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
         assert_eq!(indexer_counters.num_docs_in_workbench, 1);
 
-        // The pipeline is more than `NUDGE_TOLERANCE` behind its target phase, so the commit
-        // timeout fires after `commit_timeout`
+        // The pipeline is more than `MAX_PIPELINE_TIMEOUT_NUDGE` behind its target phase, so the
+        // commit timeout fires after `commit_timeout`
         universe.shift_time(commit_timeout).await;
         let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
         // Check that no split is emitted yet
         assert_eq!(indexer_counters.num_splits_emitted, 0);
         assert_eq!(indexer_counters.num_docs_in_workbench, 1);
 
-        // Move to after `commit_timeout + NUDGE_TOLERANCE`
-        universe.shift_time(NUDGE_TOLERANCE * 2).await;
+        // MMAX_NUDGEut + MAX_PIPELINE_TIMEOUT_NUDGE`
+        universe.shift_time(MAX_PIPELINE_TIMEOUT_NUDGE * 2).await;
         let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
         // Now the split has been emitted
         assert_eq!(indexer_counters.num_splits_emitted, 1);

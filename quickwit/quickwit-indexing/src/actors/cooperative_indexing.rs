@@ -20,7 +20,7 @@ use quickwit_proto::indexing::{CpuCapacity, PIPELINE_FULL_CAPACITY, PipelineMetr
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
 
-use super::pipeline_schedule::{NUDGE_TOLERANCE, PipelineSchedule};
+use super::pipeline_schedule::{MAX_PIPELINE_TIMEOUT_NUDGE, PipelineSchedule};
 
 /// Cooperative indexing is a mechanism to deal with a large amount of pipelines.
 ///
@@ -39,17 +39,10 @@ use super::pipeline_schedule::{NUDGE_TOLERANCE, PipelineSchedule};
 ///
 /// The key logic is in the computation of that sleep time.
 ///
-/// We want to set it in order to steer the pipeline toward an ideal cycle with a period
-/// of `commit_timeout`,
+/// We want to set it in order to steer the pipeline toward the ideal cycle of its
+/// `PipelineSchedule`.
 ///
-/// A period in this ideal cycle should, for some k,
-/// - start at `t0 + k * commit_timeout + target_phase`
-/// - end at `t0 + (k+1)*commit_timeout + target_phase`.
-///
-/// `target_phase` is computed using a hash over the pipeline id, and meant to follow
-/// a uniform distribution over the interval [0, commit_timeout).
-///
-/// Each period of this cycle is divided into three phases.
+/// Each period of this cycle is divided into three stages.
 /// - waking [t_wake..t_work_start) acquisition of the period guard (this is instantaneous)
 ///   acquisition of the semaphore
 /// - working [t_work_start..t_work_end)
@@ -64,7 +57,7 @@ use super::pipeline_schedule::{NUDGE_TOLERANCE, PipelineSchedule};
 /// mailbox to be drained.
 ///
 /// We then allow ourselves to tweak the sleep time one way or another by at
-/// most five seconds to eventually nudge the system toward the desired phase.
+/// most `MAX_PIPELINE_TIMEOUT_NUDGE` to eventually nudge the system toward the target phase.
 pub(crate) struct CooperativeIndexingCycle {
     schedule: PipelineSchedule,
     indexing_permits: Arc<Semaphore>,
@@ -72,14 +65,14 @@ pub(crate) struct CooperativeIndexingCycle {
 
 impl CooperativeIndexingCycle {
     /// Creates a new cooperative indexing cycle object.
-    /// `phase_id` is hashed to compute the target phase.
+    /// `phase_seed` is hashed to compute the target phase.
     pub fn new(
-        phase_id: &(impl Hash + ?Sized),
+        phase_seed: &(impl Hash + ?Sized),
         commit_timeout: Duration,
         indexing_permits: Arc<Semaphore>,
     ) -> CooperativeIndexingCycle {
         CooperativeIndexingCycle {
-            schedule: PipelineSchedule::new(phase_id, commit_timeout),
+            schedule: PipelineSchedule::new(phase_seed, commit_timeout),
             indexing_permits,
         }
     }
@@ -93,25 +86,18 @@ impl CooperativeIndexingCycle {
     }
 
     pub fn initial_sleep_duration(&self) -> Duration {
-        let commit_timeout_millis = self.schedule.commit_timeout().as_millis() as u64;
-        let current_phase_millis: u64 =
-            self.schedule.current_phase(Instant::now()).as_millis() as u64;
-        let target_phase_millis: u64 =
-            self.schedule.target_phase().as_millis() as u64 % commit_timeout_millis;
-        let initial_sleep_millis: u64 = (commit_timeout_millis + target_phase_millis
-            - current_phase_millis)
-            % commit_timeout_millis;
-        if initial_sleep_millis + 2 * NUDGE_TOLERANCE.as_millis() as u64 > commit_timeout_millis {
+        let initial_sleep = self.schedule.time_until_target_phase(Instant::now());
+        if initial_sleep + 2 * MAX_PIPELINE_TIMEOUT_NUDGE > self.schedule.period() {
             // We are reasonably close to the target phase. No need to sleep. The nudge
             // will be enough.
             return Duration::default();
         }
-        Duration::from_millis(initial_sleep_millis)
+        initial_sleep
     }
 
     // with cooperative indexing, the nudging is done only when the actor mailbox is empty
     pub fn commit_timeout(&self) -> Duration {
-        self.schedule.commit_timeout()
+        self.schedule.period()
     }
 
     pub async fn cooperative_indexing_period(&self) -> CooperativeIndexingPeriod {
@@ -147,7 +133,7 @@ impl CooperativeIndexingPeriod {
         let elapsed = end - self.t_work_start;
         let throughput_mb_per_sec: u64 =
             uncompressed_num_bytes / (1u64 + elapsed.as_micros() as u64);
-        let commit_timeout = self.schedule.commit_timeout();
+        let commit_timeout = self.schedule.period();
         let pipeline_throughput_fraction =
             (elapsed.as_micros() as f32 / commit_timeout.as_micros() as f32).min(1.0f32);
         let cpu_load: CpuCapacity = PIPELINE_FULL_CAPACITY * pipeline_throughput_fraction;
@@ -177,12 +163,12 @@ impl CooperativeIndexingPeriod {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actors::pipeline_schedule::ORIGIN_OF_TIME;
+    use crate::actors::pipeline_schedule::PHASE_ORIGIN;
 
     #[track_caller]
     fn assert_approx_equal_sleep_time(left: Duration, right: Duration) {
         let delta = (left.as_millis() as i128 - right.as_millis() as i128).unsigned_abs();
-        if delta >= NUDGE_TOLERANCE.mul_f32(1.1).as_millis() {
+        if delta >= MAX_PIPELINE_TIMEOUT_NUDGE.mul_f32(1.1).as_millis() {
             panic!("{left:?} and {right:?} are not approximately equal.");
         }
     }
@@ -210,7 +196,7 @@ mod tests {
     #[tokio::test]
     async fn test_initial_sleep_time() {
         tokio::time::pause();
-        let t0 = *ORIGIN_OF_TIME;
+        let t0 = *PHASE_ORIGIN;
         for target_phase_secs in [0, 1, 2, 5, 10, 15, 20, 25, 29, 30, 1_000] {
             for start_time_secs in [0, 1, 2, 5, 10, 15, 20, 25, 29, 30] {
                 let target_phase = Duration::from_secs(target_phase_secs);
@@ -225,12 +211,11 @@ mod tests {
                 tokio::time::sleep(initial_sleep_duration).await;
                 let target_phase_millis =
                     cooperative_indexing.schedule.target_phase().as_millis() as i64;
-                let commit_timeout_ms =
-                    cooperative_indexing.schedule.commit_timeout().as_millis() as i64;
+                let commit_timeout_ms = cooperative_indexing.schedule.period().as_millis() as i64;
                 let phase_millis =
                     (t0.elapsed().as_millis() as i64 - target_phase_millis) % commit_timeout_ms;
                 assert!(phase_millis >= -100, "{phase_millis}");
-                assert!(phase_millis <= (NUDGE_TOLERANCE.as_millis() as i64) * 2 + 100);
+                assert!(phase_millis <= (MAX_PIPELINE_TIMEOUT_NUDGE.as_millis() as i64) * 2 + 100);
             }
         }
     }
@@ -305,7 +290,7 @@ mod tests {
         let num_steps = 15;
         let semaphore = Arc::new(Semaphore::new(num_threads));
         let commit_timeout = Duration::from_secs(30);
-        let t0 = *ORIGIN_OF_TIME;
+        let t0 = *PHASE_ORIGIN;
         let mut handles = Vec::new();
         for i in 0..num_pipelines {
             let target_phase =
