@@ -792,7 +792,7 @@ pub async fn start_statistics_reporting_loop(
         let observation = pipeline_handle.last_observation();
 
         // Let's not display live statistics to allow screen to scroll.
-        if observation.num_docs > 0 {
+        if observation.num_docs > 0 || observation.num_dropped_docs > 0 {
             display_statistics(&mut stdout_handle, &mut throughput_calculator, &observation)?;
         }
 
@@ -806,7 +806,7 @@ pub async fn start_statistics_reporting_loop(
     }
     // If we have received zero docs at this point,
     // there is no point in displaying report.
-    if pipeline_statistics.num_docs == 0 {
+    if pipeline_statistics.num_docs == 0 && pipeline_statistics.num_dropped_docs == 0 {
         return Ok(pipeline_statistics);
     }
 
@@ -842,6 +842,12 @@ pub async fn start_statistics_reporting_loop(
             format_duration(secs),
             pipeline_statistics.num_invalid_docs.separate_with_commas(),
             colorize_error_rate(error_rate),
+        );
+    }
+    if pipeline_statistics.num_dropped_docs > 0 {
+        println!(
+            "Dropped {} document(s) via the transform's `abort` expression.",
+            pipeline_statistics.num_dropped_docs.separate_with_commas()
         );
     }
 
@@ -897,6 +903,8 @@ fn display_statistics(
     printer.print_value(format_args!("{:>7}", statistics.num_docs))?;
     printer.print_header("Parse errs")?;
     printer.print_value(format_args!("{:>5}", statistics.num_invalid_docs))?;
+    printer.print_header("Dropped")?;
+    printer.print_value(format_args!("{:>5}", statistics.num_dropped_docs))?;
     printer.print_header("PublSplits")?;
     printer.print_value(format_args!("{:>3}", statistics.num_published_splits))?;
     printer.print_header("Input size")?;

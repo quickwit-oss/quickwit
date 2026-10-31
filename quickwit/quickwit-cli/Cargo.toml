@@ -93,6 +93,7 @@ jemalloc-profiled = [
 ci-test = []
 pprof = ["quickwit-serve/pprof"]
 openssl-support = ["openssl-probe"]
+vrl = ["quickwit-indexing/vrl"]
 # Requires to enable tokio unstable via RUSTFLAGS="--cfg tokio_unstable"
 tokio-console = [
   "dep:console-subscriber",
