@@ -41,6 +41,7 @@ use quickwit_indexing::docs_clustering::Fingerprinter;
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
+use quickwit_indexing::source::{SourceLoader, quickwit_supported_sources};
 use quickwit_indexing::{IndexingPipeline, IndexingSplitCache};
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::IndexMetadataResponseExt;
@@ -53,7 +54,7 @@ use quickwit_search::{SearchResponseRest, single_node_search};
 use quickwit_serve::{
     BodyFormat, SearchRequestQueryString, SortBy, search_request_from_api_request,
 };
-use quickwit_storage::{BundleStorage, Storage};
+use quickwit_storage::{BundleStorage, Storage, StorageResolver};
 use quickwit_transport::ChannelFactory;
 use thousands::Separable;
 use tracing::debug;
@@ -64,6 +65,9 @@ use crate::{
     run_index_checklist, start_actor_runtimes,
 };
 
+#[cfg(feature = "parquet")]
+mod parquet_ingest;
+
 pub fn build_tool_command() -> Command {
     Command::new("tool")
         .about("Performs utility operations. Requires a node config.")
@@ -71,8 +75,8 @@ pub fn build_tool_command() -> Command {
         .subcommand(
             Command::new("local-ingest")
                 .display_order(10)
-                .about("Indexes NDJSON documents locally.")
-                .long_about("Local ingest indexes locally NDJSON documents from a file or from stdin and uploads splits on the configured storage.")
+                .about("Indexes NDJSON or Parquet documents locally.")
+                .long_about("Local ingest indexes locally NDJSON documents from a file or from stdin, or rows of a local `.parquet` file (requires the `parquet` feature), and uploads splits on the configured storage.")
                 .args(&[
                     arg!(--index <INDEX> "ID of the target index")
                         .display_order(1)
@@ -81,6 +85,10 @@ pub fn build_tool_command() -> Command {
                         .required(false),
                     arg!(--"input-format" <INPUT_FORMAT> "Format of the input data.")
                         .default_value("json")
+                        .required(false),
+                    arg!(--"num-pipelines" <NUM_PIPELINES> "Number of indexing pipelines running in parallel. Values greater than 1 require a `.parquet` input file. Defaults to half the number of CPUs for a `.parquet` input file, 1 otherwise.")
+                        .required(false),
+                    arg!(--"exclude-columns" <EXCLUDE_COLUMNS> "Comma-separated top-level columns of a `.parquet` input file that are not read nor indexed.")
                         .required(false),
                     arg!(--overwrite "Overwrites pre-existing index.")
                         .required(false),
@@ -177,6 +185,10 @@ pub struct LocalIngestDocsArgs {
     pub overwrite: bool,
     pub vrl_script: Option<String>,
     pub clear_cache: bool,
+    /// Number of indexing pipelines. Values greater than 1 require a `.parquet` input file.
+    pub num_pipelines: NonZeroUsize,
+    /// Top-level columns of a `.parquet` input file that are not read nor indexed.
+    pub excluded_columns: Vec<String>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -263,7 +275,42 @@ impl ToolCliCommand {
         let overwrite = matches.get_flag("overwrite");
         let vrl_script = matches.remove_one::<String>("transform-script");
         let clear_cache = !matches.get_flag("keep-cache");
+        let num_pipelines_opt: Option<NonZeroUsize> = matches
+            .remove_one::<String>("num-pipelines")
+            .map(|num_pipelines| num_pipelines.parse())
+            .transpose()
+            .context("`num-pipelines` must be a strictly positive integer")?;
+        let excluded_columns: Vec<String> = matches
+            .remove_one::<String>("exclude-columns")
+            .map(|columns| {
+                columns
+                    .split(',')
+                    .map(|column| column.trim().to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
 
+        let is_parquet = matches!(&input_path_opt, Some(input_path) if is_parquet_uri(input_path));
+        if is_parquet && input_format != SourceInputFormat::Json {
+            bail!("Parquet rows are indexed as `json` documents: remove `--input-format`");
+        }
+        if !is_parquet
+            && let Some(num_pipelines) = num_pipelines_opt
+            && num_pipelines.get() > 1
+        {
+            bail!("`--num-pipelines` greater than 1 requires a `.parquet` input file");
+        }
+        if !is_parquet && !excluded_columns.is_empty() {
+            bail!("`--exclude-columns` requires a `.parquet` input file");
+        }
+        // Measured optimum: 16 pipelines on m8gd.8xlarge (32 vCPUs), with 5M-doc splits.
+        let num_pipelines = num_pipelines_opt.unwrap_or_else(|| {
+            if is_parquet {
+                NonZeroUsize::new(quickwit_common::num_cpus() / 2).unwrap_or(NonZeroUsize::MIN)
+            } else {
+                NonZeroUsize::MIN
+            }
+        });
         Ok(Self::LocalIngest(LocalIngestDocsArgs {
             config_uri,
             index_id,
@@ -272,6 +319,8 @@ impl ToolCliCommand {
             overwrite,
             vrl_script,
             clear_cache,
+            num_pipelines,
+            excluded_columns,
         }))
     }
 
@@ -399,6 +448,10 @@ impl ToolCliCommand {
     }
 }
 
+fn is_parquet_uri(uri: &Uri) -> bool {
+    uri.extension() == Some("parquet")
+}
+
 pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<()> {
     debug!(args=?args, "local-ingest-docs");
     println!("❯ Ingesting documents locally...");
@@ -415,10 +468,11 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     };
     let transform_config = args
         .vrl_script
+        .clone()
         .map(|vrl_script| TransformConfig::new(vrl_script, None));
     let source_config = SourceConfig {
         source_id: CLI_SOURCE_ID.to_string(),
-        num_pipelines: NonZeroUsize::MIN,
+        num_pipelines: args.num_pipelines,
         enabled: true,
         source_params,
         transform_config,
@@ -432,23 +486,196 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     )
     .await?;
 
+    // A Parquet input is validated before `--overwrite` deletes anything.
+    let parquet_input_uri_opt = args.input_path_opt.clone().filter(is_parquet_uri);
+    let (parquet_num_rows_opt, source_loader): (Option<u64>, Arc<SourceLoader>) =
+        match parquet_input_uri_opt {
+            #[cfg(feature = "parquet")]
+            Some(input_uri) => {
+                let (num_rows, source_loader) =
+                    parquet_ingest::prepare_parquet_source(&metastore, &args, input_uri).await?;
+                (Some(num_rows), source_loader)
+            }
+            #[cfg(not(feature = "parquet"))]
+            Some(_) => bail!("Quickwit was compiled without the `parquet` feature"),
+            None => (None, quickwit_supported_sources().clone()),
+        };
     if args.overwrite {
         let mut index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
         index_service.clear_index(&args.index_id).await?;
     }
+    let statistics = run_local_ingest(
+        &args,
+        &config,
+        metastore,
+        storage_resolver,
+        source_config,
+        source_loader,
+        parquet_num_rows_opt.is_some(),
+    )
+    .await?;
+    if statistics.num_published_splits > 0 {
+        println!(
+            "Now, you can query the index with the following command:\nquickwit index search \
+             --index {} --config ./config/quickwit.yaml --query \"my query\"",
+            args.index_id
+        );
+    }
+
+    if args.clear_cache {
+        println!("Clearing local cache directory...");
+        clear_cache_directory(&config.data_dir_path).await?;
+        println!("{} Local cache directory cleared.", "✔".color(GREEN_COLOR));
+    }
+
+    if statistics.num_invalid_docs > 0 {
+        bail!("failed to ingest all the documents");
+    }
+    if let Some(num_rows) = parquet_num_rows_opt
+        && statistics.num_docs != num_rows
+    {
+        bail!(
+            "indexed {} documents but {} Parquet rows were not loaded yet",
+            statistics.num_docs.separate_with_commas(),
+            num_rows.separate_with_commas()
+        );
+    }
+    println!("{} Documents successfully indexed.", "✔".color(GREEN_COLOR));
+    Ok(())
+}
+
+/// Runs the indexing pipelines of a local ingest until they exit, then shuts down the actors.
+async fn run_local_ingest(
+    args: &LocalIngestDocsArgs,
+    config: &NodeConfig,
+    metastore: MetastoreServiceClient,
+    storage_resolver: StorageResolver,
+    source_config: SourceConfig,
+    source_loader: Arc<SourceLoader>,
+    reject_restarts: bool,
+) -> anyhow::Result<IndexingStatistics> {
+    let universe = Universe::new();
+    let load_result = run_pipelines(
+        &universe,
+        args,
+        config,
+        metastore,
+        storage_resolver,
+        source_config,
+        source_loader,
+        reject_restarts,
+    )
+    .await;
+    if load_result.is_err() {
+        kill_and_quit(&universe).await;
+    } else {
+        universe.quit().await;
+    }
+    load_result
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_pipelines(
+    universe: &Universe,
+    args: &LocalIngestDocsArgs,
+    config: &NodeConfig,
+    metastore: MetastoreServiceClient,
+    storage_resolver: StorageResolver,
+    source_config: SourceConfig,
+    source_loader: Arc<SourceLoader>,
+    reject_restarts: bool,
+) -> anyhow::Result<IndexingStatistics> {
+    let (indexing_server_mailbox, indexing_server_handle) =
+        spawn_indexing_service(universe, config, metastore, storage_resolver, source_loader)
+            .await?;
+    let mut indexing_pipeline_handles = Vec::with_capacity(args.num_pipelines.get());
+    let mut merge_pipeline_id_opt = None;
+    for _ in 0..args.num_pipelines.get() {
+        let pipeline_id = indexing_server_mailbox
+            .ask_for_res(SpawnPipeline {
+                index_id: args.index_id.clone(),
+                source_config: source_config.clone(),
+                pipeline_uid: PipelineUid::random(),
+            })
+            .await?;
+        merge_pipeline_id_opt = Some(pipeline_id.merge_pipeline_id());
+        let indexing_pipeline_handle = indexing_server_mailbox
+            .ask_for_res(DetachIndexingPipeline { pipeline_id })
+            .await?;
+        indexing_pipeline_handles.push(indexing_pipeline_handle);
+    }
+    // The indexing pipelines share one merge pipeline. Detaching it before spawning all of them
+    // would make the next spawn create another one.
+    let merge_pipeline_id = merge_pipeline_id_opt.expect("`num_pipelines` is strictly positive");
+    let merge_pipeline_handle = indexing_server_mailbox
+        .ask_for_res(DetachMergePipeline {
+            pipeline_id: merge_pipeline_id,
+        })
+        .await?;
+
+    if args.input_path_opt.is_none() && io::stdin().is_terminal() {
+        let eof_shortcut = match env::consts::OS {
+            "windows" => "CTRL+Z",
+            _ => "CTRL+D",
+        };
+        println!(
+            "Please, enter JSON documents one line at a time.\nEnd your input using \
+             {eof_shortcut}."
+        );
+    }
+    let statistics = start_statistics_reporting_loop(
+        indexing_pipeline_handles,
+        args.input_path_opt.is_none(),
+        reject_restarts,
+    )
+    .await?;
+
+    merge_pipeline_handle
+        .mailbox()
+        .ask(quickwit_indexing::FinishPendingMergesAndShutdownPipeline)
+        .await?;
+    merge_pipeline_handle.join().await;
+
+    // Shutdown the indexing server.
+    universe
+        .send_exit_with_success(&indexing_server_mailbox)
+        .await?;
+    indexing_server_handle.join().await;
+    Ok(statistics)
+}
+
+/// Kills all actors and waits until they exit.
+async fn kill_and_quit(universe: &Universe) {
+    universe.kill();
+    let mut joined = HashSet::new();
+    loop {
+        // Initializers can register children after a quit snapshot.
+        let snapshot: HashSet<String> = universe.quit().await.into_keys().collect();
+        if snapshot == joined {
+            return;
+        }
+        joined = snapshot;
+    }
+}
+
+/// Starts the actor runtimes and spawns an indexing service in `universe`.
+async fn spawn_indexing_service(
+    universe: &Universe,
+    config: &NodeConfig,
+    metastore: MetastoreServiceClient,
+    storage_resolver: StorageResolver,
+    source_loader: Arc<SourceLoader>,
+) -> anyhow::Result<(Mailbox<IndexingService>, ActorHandle<IndexingService>)> {
     // The indexing service needs to update its cluster chitchat state so that the control plane is
     // aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
     // and avoid impacting potential control plane running on the cluster.
-    let cluster = create_empty_cluster(&config).await?;
-    let indexer_config = IndexerConfig {
-        ..Default::default()
-    };
+    let cluster = create_empty_cluster(config).await?;
+    let indexer_config = IndexerConfig::default();
     let runtimes_config = RuntimesConfig::default();
     start_actor_runtimes(
         runtimes_config,
         &HashSet::from_iter([QuickwitService::Indexer]),
     )?;
-    let universe = Universe::new();
     let merge_scheduler_service_mailbox = universe.get_or_spawn_one();
     let split_cache =
         Arc::new(IndexingSplitCache::from_config(&indexer_config, &config.data_dir_path).await?);
@@ -471,72 +698,9 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         split_cache,
         fingerprinter_opt,
     )
-    .await?;
-    let (indexing_server_mailbox, indexing_server_handle) =
-        universe.spawn_builder().spawn(indexing_server);
-    let pipeline_id = indexing_server_mailbox
-        .ask_for_res(SpawnPipeline {
-            index_id: args.index_id.clone(),
-            source_config,
-            pipeline_uid: PipelineUid::random(),
-        })
-        .await?;
-    let merge_pipeline_handle = indexing_server_mailbox
-        .ask_for_res(DetachMergePipeline {
-            pipeline_id: pipeline_id.merge_pipeline_id(),
-        })
-        .await?;
-    let indexing_pipeline_handle = indexing_server_mailbox
-        .ask_for_res(DetachIndexingPipeline { pipeline_id })
-        .await?;
-
-    if args.input_path_opt.is_none() && io::stdin().is_terminal() {
-        let eof_shortcut = match env::consts::OS {
-            "windows" => "CTRL+Z",
-            _ => "CTRL+D",
-        };
-        println!(
-            "Please, enter JSON documents one line at a time.\nEnd your input using \
-             {eof_shortcut}."
-        );
-    }
-    let statistics =
-        start_statistics_reporting_loop(indexing_pipeline_handle, args.input_path_opt.is_none())
-            .await?;
-
-    merge_pipeline_handle
-        .mailbox()
-        .ask(quickwit_indexing::FinishPendingMergesAndShutdownPipeline)
-        .await?;
-    merge_pipeline_handle.join().await;
-
-    // Shutdown the indexing server.
-    universe
-        .send_exit_with_success(&indexing_server_mailbox)
-        .await?;
-    indexing_server_handle.join().await;
-    universe.quit().await;
-    if statistics.num_published_splits > 0 {
-        println!(
-            "Now, you can query the index with the following command:\nquickwit index search \
-             --index {} --config ./config/quickwit.yaml --query \"my query\"",
-            args.index_id
-        );
-    }
-
-    if args.clear_cache {
-        println!("Clearing local cache directory...");
-        clear_cache_directory(&config.data_dir_path).await?;
-        println!("{} Local cache directory cleared.", "✔".color(GREEN_COLOR));
-    }
-
-    match statistics.num_invalid_docs {
-        0 => {
-            println!("{} Documents successfully indexed.", "✔".color(GREEN_COLOR));
-            Ok(())
-        }
-        _ => bail!("failed to ingest all the documents"),
-    }
+    .await?
+    .with_source_loader(source_loader);
+    Ok(universe.spawn_builder().spawn(indexing_server))
 }
 
 pub async fn local_search_cli(args: LocalSearchArgs) -> anyhow::Result<()> {
@@ -769,11 +933,14 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Starts a tokio task that displays the indexing statistics
-/// every once in awhile.
+/// Displays the aggregated statistics of the indexing pipelines every second until they all exit.
+///
+/// With `reject_restarts`, a pipeline restart aborts the load: sources without checkpoints, like
+/// Parquet sources, cannot replay their input.
 pub async fn start_statistics_reporting_loop(
-    pipeline_handle: ActorHandle<IndexingPipeline>,
+    pipeline_handles: Vec<ActorHandle<IndexingPipeline>>,
     is_stdin: bool,
+    reject_restarts: bool,
 ) -> anyhow::Result<IndexingStatistics> {
     let mut stdout_handle = stdout();
     let start_time = Instant::now();
@@ -787,22 +954,35 @@ pub async fn start_statistics_reporting_loop(
         report_interval.tick().await;
         // Try to receive with a timeout of 1 second.
         // 1 second is also the frequency at which we update statistic in the console
-        pipeline_handle.refresh_observe();
-
-        let observation = pipeline_handle.last_observation();
+        let mut observation = IndexingStatistics::default();
+        let mut all_exited = true;
+        for pipeline_handle in &pipeline_handles {
+            pipeline_handle.refresh_observe();
+            let pipeline_observation = pipeline_handle.last_observation();
+            check_no_restart(&pipeline_observation, reject_restarts)?;
+            add_indexing_statistics(&mut observation, &pipeline_observation);
+            all_exited &= pipeline_handle.state().is_exit();
+        }
 
         // Let's not display live statistics to allow screen to scroll.
         if observation.num_docs > 0 {
             display_statistics(&mut stdout_handle, &mut throughput_calculator, &observation)?;
         }
 
-        if pipeline_handle.state().is_exit() {
+        if all_exited {
             break;
         }
     }
-    let (pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
-    if !pipeline_exit_status.is_success() {
-        bail!(pipeline_exit_status);
+    let mut pipeline_statistics = IndexingStatistics::default();
+    for pipeline_handle in pipeline_handles {
+        let (pipeline_exit_status, statistics) = pipeline_handle.join().await;
+        if !pipeline_exit_status.is_success() {
+            return Err(
+                anyhow::Error::new(pipeline_exit_status).context("indexing pipeline failed")
+            );
+        }
+        check_no_restart(&statistics, reject_restarts)?;
+        add_indexing_statistics(&mut pipeline_statistics, &statistics);
     }
     // If we have received zero docs at this point,
     // there is no point in displaying report.
@@ -846,6 +1026,25 @@ pub async fn start_statistics_reporting_loop(
     }
 
     Ok(pipeline_statistics)
+}
+
+fn check_no_restart(statistics: &IndexingStatistics, reject_restarts: bool) -> anyhow::Result<()> {
+    if reject_restarts && (statistics.generation > 1 || statistics.num_spawn_attempts > 1) {
+        bail!("an indexing pipeline failed and restarted, see the logs for the cause");
+    }
+    Ok(())
+}
+
+fn add_indexing_statistics(total: &mut IndexingStatistics, statistics: &IndexingStatistics) {
+    total.num_docs += statistics.num_docs;
+    total.num_invalid_docs += statistics.num_invalid_docs;
+    total.num_local_splits += statistics.num_local_splits;
+    total.num_staged_splits += statistics.num_staged_splits;
+    total.num_uploaded_splits += statistics.num_uploaded_splits;
+    total.num_published_splits += statistics.num_published_splits;
+    total.num_empty_splits += statistics.num_empty_splits;
+    total.total_bytes_processed += statistics.total_bytes_processed;
+    total.total_size_splits += statistics.total_size_splits;
 }
 
 fn colorize_error_rate(error_rate: f64) -> ColoredString {
