@@ -1174,9 +1174,13 @@ fn normalize_timestamp_range(
     let is_time_bounded =
         visitor.start_timestamp != Bound::Unbounded || visitor.end_timestamp != Bound::Unbounded;
 
+    // Overflowing split bounds cannot prove a timestamp filter redundant.
     let final_start_timestamp = match (
         visitor.start_timestamp,
-        split.timestamp_start.map(DateTime::from_timestamp_secs),
+        split
+            .timestamp_start
+            .and_then(|timestamp| timestamp.checked_mul(1_000_000_000))
+            .map(DateTime::from_timestamp_nanos),
     ) {
         (Bound::Included(query_ts), Some(split_ts)) => {
             if query_ts > split_ts {
@@ -1195,14 +1199,17 @@ fn normalize_timestamp_range(
         (Bound::Unbounded, Some(_)) => Bound::Unbounded,
         (query_bound, None) => query_bound,
     };
-    let final_end_timestamp = match (visitor.end_timestamp, split.timestamp_end) {
+    // Add one second to turn the inclusive metadata end into an exclusive bound.
+    let split_end_exclusive = split
+        .timestamp_end
+        .and_then(|timestamp| timestamp.checked_add(1))
+        .and_then(|timestamp| timestamp.checked_mul(1_000_000_000))
+        .map(DateTime::from_timestamp_nanos);
+    let final_end_timestamp = match (visitor.end_timestamp, split_end_exclusive) {
         (
             query_bound @ (Bound::Included(query_ts) | Bound::Excluded(query_ts)),
-            Some(split_end),
+            Some(split_end_exclusive),
         ) => {
-            // split.timestamp_end is the truncation of the highest timestamp in the split,
-            // so the actual known bound for the split is split.timestamp_end+1 (exclusive)
-            let split_end_exclusive = DateTime::from_timestamp_secs(split_end + 1);
             if query_ts < split_end_exclusive {
                 query_bound
             } else {
@@ -2535,6 +2542,56 @@ mod tests {
             upper_bound: upper_bound.map(Into::into),
         }
         .into()
+    }
+
+    #[test]
+    fn test_normalize_timestamp_range_preserves_filters_on_split_bound_overflow() {
+        for (start, end) in [
+            (-9_223_372_037, 1_800_000_000),
+            (0, 9_223_372_037),
+            (0, 9_223_372_036), // The exclusive end overflows after adding one second.
+            (i64::MIN, 1_800_000_000),
+            (0, i64::MAX),
+        ] {
+            let split = SplitIdAndFooterOffsets {
+                timestamp_start: Some(start),
+                timestamp_end: Some(end),
+                ..Default::default()
+            };
+            for (query_ast, start_timestamp, end_timestamp) in [
+                (QueryAst::MatchAll, None, None),
+                (QueryAst::MatchAll, Some(1_700_000_000), Some(1_700_001_000)),
+                (
+                    timestamp_range(
+                        Bound::Included(1_700_000_000),
+                        Bound::Excluded(1_700_001_000),
+                    ),
+                    None,
+                    None,
+                ),
+            ] {
+                let expected_range = if query_ast == QueryAst::MatchAll && start_timestamp.is_none()
+                {
+                    None
+                } else {
+                    Some(RangeQuery {
+                        field: "timestamp".to_string(),
+                        lower_bound: Bound::Included(1_700_000_000_000_000_000i64.into()),
+                        upper_bound: Bound::Excluded(1_700_001_000_000_000_000i64.into()),
+                    })
+                };
+                assert_normalized_timestamp_range(
+                    SearchRequest {
+                        query_ast: serde_json::to_string(&query_ast).unwrap(),
+                        start_timestamp,
+                        end_timestamp,
+                        ..Default::default()
+                    },
+                    &split,
+                    expected_range,
+                );
+            }
+        }
     }
 
     #[test]
