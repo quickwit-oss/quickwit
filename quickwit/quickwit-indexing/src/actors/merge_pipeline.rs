@@ -398,7 +398,8 @@ impl MergePipeline {
             )
             .set_generation(self.statistics.generation)
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts)
-            .set_ongoing_merges(num_ongoing_merges.max(0.0) as usize);
+            .set_ongoing_merges(num_ongoing_merges.max(0.0) as usize)
+            .set_planned_merges(*handles.merge_planner.last_observation());
     }
 
     async fn perform_health_check(

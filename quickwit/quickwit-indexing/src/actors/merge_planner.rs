@@ -94,9 +94,12 @@ pub struct MergePlanner {
 
 #[async_trait]
 impl Actor for MergePlanner {
-    type ObservableState = ();
+    /// Number of merge operations planned and not published yet.
+    type ObservableState = usize;
 
-    fn observable_state(&self) -> Self::ObservableState {}
+    fn observable_state(&self) -> Self::ObservableState {
+        self.ongoing_merge_operations_inventory.len()
+    }
 
     fn name(&self) -> String {
         "MergePlanner".to_string()
@@ -601,6 +604,20 @@ mod tests {
         let merge_ops = merge_split_downloader_inbox.drain_for_test_typed::<MergeSource>();
 
         assert!(merge_ops.is_empty());
+
+        // The planner counts the merge as planned until the merge task is dropped, i.e. after the
+        // merged split is published.
+        let num_planned_merges = merge_planner_handle
+            .process_pending_and_observe()
+            .await
+            .state;
+        assert_eq!(num_planned_merges, 1);
+        drop(merge_task_res);
+        let num_planned_merges = merge_planner_handle
+            .process_pending_and_observe()
+            .await
+            .state;
+        assert_eq!(num_planned_merges, 0);
 
         merge_planner_mailbox.send_message(Command::Quit).await?;
 

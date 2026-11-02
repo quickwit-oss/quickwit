@@ -630,6 +630,8 @@ async fn run_pipelines(
     )
     .await?;
 
+    wait_for_merges_to_settle(&merge_pipeline_handle).await?;
+
     merge_pipeline_handle
         .mailbox()
         .ask(quickwit_indexing::FinishPendingMergesAndShutdownPipeline)
@@ -642,6 +644,39 @@ async fn run_pipelines(
         .await?;
     indexing_server_handle.join().await;
     Ok(statistics)
+}
+
+/// Number of consecutive checks without any planned merge before a local ingest considers its
+/// merges settled. A single check is not enough: the merge planner's observation can lag behind,
+/// and a published merged split is planned again only after the merge planner receives it.
+const MERGES_SETTLED_NUM_CHECKS: usize = 3;
+
+/// Waits until the merge planner of the pipeline has no merge left to run or publish.
+///
+/// Shutting the merge pipeline down disconnects the merge planner from the publisher: the splits
+/// that pending merges publish are never planned again, and the stable_log policy has no finalize
+/// operations. Without this wait, the last splits of the indexing pipelines and the outputs of
+/// the last merges would stay unmerged.
+async fn wait_for_merges_to_settle(
+    merge_pipeline_handle: &ActorHandle<MergePipeline>,
+) -> anyhow::Result<()> {
+    let start = Instant::now();
+    let mut num_settled_checks = 0;
+    let mut check_interval = tokio::time::interval(Duration::from_millis(500));
+    while num_settled_checks < MERGES_SETTLED_NUM_CHECKS {
+        check_interval.tick().await;
+        if merge_pipeline_handle.state().is_exit() {
+            bail!("the merge pipeline exited before its merges settled");
+        }
+        merge_pipeline_handle.refresh_observe();
+        if merge_pipeline_handle.last_observation().num_planned_merges > 0 {
+            num_settled_checks = 0;
+        } else {
+            num_settled_checks += 1;
+        }
+    }
+    info!(elapsed=?start.elapsed(), "merges settled");
+    Ok(())
 }
 
 /// Kills all actors and waits until they exit.
