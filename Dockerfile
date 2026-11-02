@@ -1,4 +1,4 @@
-FROM node:26@sha256:e3ffe0cbaeebdcddbfe1ee7bca9b564a92863a8386d5b99a3d72677b3667b61d AS ui-builder
+FROM node:26@sha256:6d2c7d5d074bf72f81ddc252b4fbb5d625bc028eeda49cb4b8c2ff8eda1ee617 AS ui-builder
 
 RUN npm install --global yarn@1.22.22
 
