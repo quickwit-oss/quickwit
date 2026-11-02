@@ -378,6 +378,7 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
         ignore_missing_indexes: req.ignore_missing_indexes,
         skip_aggregation_finalization: false,
         priority: req.priority,
+        source: req.source.clone(),
     })
 }
 
@@ -786,6 +787,7 @@ fn log_root_resource_stats(resource_log: &RootSearchResourceLog) {
         count_required = search_request.count_hits().as_str_name(),
         max_hits = search_request.max_hits,
         priority = search_request.priority,
+        source = %search_request.source,
         num_docs = resource_log.num_docs,
         elapsed_time_micros = resource_log.start.elapsed().as_micros() as u64,
         success = resource_log.success,
@@ -1543,6 +1545,7 @@ pub async fn root_search(
         num_docs = num_docs,
         num_splits = num_splits,
         priority = search_request.priority,
+        source = %search_request.source,
         "root_search"
     );
 
@@ -2207,6 +2210,16 @@ mod tests {
             field_is_not_text_err.to_string(),
             "the snippet field `ip` must be of type `Str`, got `IpAddr`"
         );
+    }
+
+    #[test]
+    fn test_scroll_request_preserves_source() {
+        let request = SearchRequest {
+            source: "dashboard".to_string(),
+            ..Default::default()
+        };
+        let scroll_request = simplify_search_request_for_scroll_api(&request).unwrap();
+        assert_eq!(scroll_request.source, request.source);
     }
 
     #[test]

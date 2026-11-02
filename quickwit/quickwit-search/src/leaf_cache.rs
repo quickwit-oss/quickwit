@@ -147,6 +147,8 @@ impl CacheKey {
         search_request.count_hits = CountHits::CountAll.into();
         // Priority only affects scheduling, not search results.
         search_request.priority = 0;
+        // Source only identifies the caller in logs.
+        search_request.source.clear();
 
         CacheKey {
             split_id: split_info.split_id,
@@ -608,6 +610,28 @@ mod tests {
                 .get("split-2".to_string(), "first-query".to_string())
                 .is_none()
         );
+    }
+
+    #[test]
+    fn test_leaf_search_cache_ignores_source() {
+        let cache = LeafSearchCache::new(&ByteSize::mb(64).into());
+        let split = SplitIdAndFooterOffsets {
+            split_id: "split".to_string(),
+            ..Default::default()
+        };
+        let request = SearchRequest {
+            source: "dashboard".to_string(),
+            ..Default::default()
+        };
+        cache.put(split.clone(), request, LeafSearchResponse::default());
+
+        for source in ["", "api", "dashboard"] {
+            let request = SearchRequest {
+                source: source.to_string(),
+                ..Default::default()
+            };
+            assert!(cache.get(split.clone(), request).is_some());
+        }
     }
 
     #[test]

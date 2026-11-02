@@ -282,6 +282,28 @@ impl ListFieldsEntry {
 mod tests {
     use super::*;
 
+    #[test]
+    fn test_search_request_source_json_compatibility() {
+        let request = SearchRequest {
+            source: "dashboard".to_string(),
+            ..Default::default()
+        };
+        let mut json = serde_json::to_value(&request).unwrap();
+        assert_eq!(
+            serde_json::from_value::<SearchRequest>(json.clone()).unwrap(),
+            request
+        );
+
+        // Older serialized requests, including scroll contexts, omit source.
+        json.as_object_mut().unwrap().remove("source");
+        assert!(
+            serde_json::from_value::<SearchRequest>(json)
+                .unwrap()
+                .source
+                .is_empty()
+        );
+    }
+
     fn entry(field_name: &str) -> ListFieldsEntry {
         ListFieldsEntry {
             field_name: field_name.to_string(),
