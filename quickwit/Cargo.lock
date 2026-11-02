@@ -7407,6 +7407,7 @@ name = "quickwit-actors"
 version = "0.9.3"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "async-trait",
  "criterion",
  "flume 0.12.0",
