@@ -224,7 +224,7 @@ pub struct SearchRequest {
     pub priority: i32,
     /// Calculated fields: fields computed from fast fields with a jitexpr expression.
     /// Aggregations can use them as field names.
-    #[prost(message, repeated, tag = "22")]
+    #[prost(message, repeated, tag = "23")]
     pub calculated_fields: ::prost::alloc::vec::Vec<CalculatedField>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
