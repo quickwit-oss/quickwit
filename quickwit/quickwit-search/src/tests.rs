@@ -1666,6 +1666,52 @@ async fn test_single_node_aggregation_on_calculated_fields() {
 }
 
 #[tokio::test]
+async fn test_single_node_aggregation_calculated_field_shadows_fast_field() {
+    let index_id = "single-node-agg-calculated-field-shadows";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: price
+                type: f64
+                fast: true
+        "#;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &[])
+        .await
+        .unwrap();
+    let docs = vec![
+        json!({"price": 10.0}),
+        json!({"price": 15.0}),
+        json!({"price": 100.0}),
+    ];
+    test_sandbox.add_documents(docs).await.unwrap();
+    // The aggregation reads the calculated `price`, whose expression reads the fast field
+    // `price`: inputs are always fast fields, never calculated fields.
+    let search_request = SearchRequest {
+        index_id_patterns: vec![index_id.to_string()],
+        query_ast: qast_json_helper("*", &[]),
+        max_hits: 0,
+        aggregation_request: Some(r#"{"total": {"sum": {"field": "price"}}}"#.to_string()),
+        calculated_fields: vec![CalculatedField {
+            name: "price".to_string(),
+            expression: "(MULTIPLY price 2f64)".to_string(),
+        }],
+        ..Default::default()
+    };
+    let single_node_result = single_node_search(
+        search_request,
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await
+    .unwrap();
+    let agg_res_struct =
+        AggregationResults::from_postcard(&single_node_result.aggregation_postcard.unwrap())
+            .unwrap();
+    let agg_res_json: JsonValue = serde_json::to_value(&agg_res_struct).unwrap();
+    assert_eq!(agg_res_json["total"]["value"].as_f64().unwrap(), 250.0);
+    test_sandbox.assert_quit().await;
+}
+
+#[tokio::test]
 async fn test_single_node_aggregation_calculated_field_requires_fast_inputs() {
     let index_id = "single-node-agg-calculated-fields-not-fast";
     let doc_mapping_yaml = r#"
