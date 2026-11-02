@@ -15,13 +15,13 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use reqwest::redirect::Policy;
+use reqwest::{Client, Response};
 use tokio::sync::mpsc::UnboundedSender;
+use tracing::debug;
 
 use crate::payload::TelemetryPayload;
 
-/// Telemetry ingest API URL
 const DEFAULT_TELEMETRY_INGEST_API_URL: &str = "https://telemetry.quickwit.io/";
 
 fn telemetry_ingest_api_url() -> String {
@@ -68,7 +68,17 @@ impl Sink for UnboundedSender<TelemetryPayload> {
 #[async_trait]
 impl Sink for HttpClient {
     async fn send_payload(&self, payload: TelemetryPayload) {
-        // Note that we swallow the error if any
-        let _ = self.client.post(&self.endpoint).json(&payload).send().await;
+        // Telemetry is best effort, so failures, including payloads that the relay rejects, are
+        // only logged at the debug level.
+        let send_result = self
+            .client
+            .post(&self.endpoint)
+            .json(&payload)
+            .send()
+            .await
+            .and_then(Response::error_for_status);
+        if let Err(error) = send_result {
+            debug!(?error, "failed to send telemetry request");
+        }
     }
 }

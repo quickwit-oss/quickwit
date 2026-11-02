@@ -22,6 +22,7 @@ qwdata
 ├── indexing
 │   ├── wikipedia%01H13SVKDS03P%_ingest-api-source%RbaOAI
 │   └── wikipedia%01H13SVKDS03P%kafka-source%cNqQtI
+├── telemetry_install_id
 ├── wal
 │   ├── wal-00000000000000000056
 │   └── wal-00000000000000000057
@@ -57,6 +58,10 @@ You can [configure](../configuration/node-config#indexer-configuration) the numb
 ### `/searcher-split-cache` directory
 
 This directory is used by searcher nodes to cache entire splits and reduce calls to the object store. It won't be created unless you set the `split_cache` fields in the [searcher configuration](../configuration/node-config.md#searcher-configuration).
+
+### `/telemetry_install_id` file
+
+This file stores the install ID that [telemetry](../telemetry.md) reports, and is only created while telemetry is on. Nodes started from copies of the same data directory report the same install ID, and deleting the file makes the node report a new `install` event.
 
 
 ## Setting the right splits cache limits

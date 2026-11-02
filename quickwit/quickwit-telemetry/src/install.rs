@@ -23,7 +23,7 @@ const INSTALL_ID_TEMP_FILE_NAME: &str = "telemetry_install_id.tmp";
 
 /// Returns the install ID stored in `data_dir`, creating it if needed, and whether it was just
 /// created. Returns an error if the stored install ID is invalid.
-pub fn load_or_create_install_id(data_dir: &Path) -> io::Result<(Uuid, bool)> {
+pub(crate) fn load_or_create_install_id(data_dir: &Path) -> io::Result<(Uuid, bool)> {
     let install_id_path = data_dir.join(INSTALL_ID_FILE_NAME);
     match std::fs::read_to_string(&install_id_path) {
         Ok(install_id_str) => {

@@ -29,13 +29,10 @@ pub(crate) const TELEMETRY_SCHEMA_VERSION: u32 = 2;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TelemetryPayload {
     pub schema_version: u32,
-    /// Client information. See details in `[ClientInformation]`.
     pub client_info: ClientInfo,
-    /// Quickwit information. See details in `[QuickwitInfo]`.
     pub quickwit_info: QuickwitTelemetryInfo,
     pub events: Vec<EventWithTimestamp>,
-    /// Represents the number of events that where drops due to the
-    /// combination of the `TELEMETRY_PUSH_COOLDOWN` and `MAX_EVENT_IN_QUEUE`.
+    /// Number of events dropped since the previous request because the queue was full.
     pub num_dropped_events: usize,
 }
 
@@ -43,7 +40,6 @@ pub struct TelemetryPayload {
 pub struct EventWithTimestamp {
     /// Unix time in seconds.
     pub unixtime: u64,
-    /// Telemetry event.
     #[serde(flatten)]
     pub event: TelemetryEvent,
 }
@@ -73,7 +69,7 @@ impl From<TelemetryEvent> for EventWithTimestamp {
 #[serde(rename_all = "snake_case")]
 pub enum TelemetryEvent {
     RunCommand,
-    /// EndCommand (with the return code).
+    /// Event sent when the node stops, with its exit code.
     EndCommand {
         return_code: i32,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -178,7 +174,9 @@ fn hashed_host_username() -> String {
     let hostname = hostname::get()
         .map(|hostname| hostname.to_string_lossy().to_string())
         .unwrap_or_default();
-    let username = username::get_user_name().unwrap_or_default();
+    // What the `username` crate used by releases 0.2 to 0.8 returns on Linux and macOS, so that the
+    // hash stays the same for nodes that upgrade.
+    let username = env::var("LOGNAME").unwrap_or_default();
     let hashed_value = format!("{hostname}:{username}");
     let digest = md5::compute(hashed_value.as_bytes());
     format!("{digest:x}")

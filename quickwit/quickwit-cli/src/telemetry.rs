@@ -13,14 +13,12 @@
 // limitations under the License.
 
 use std::collections::HashSet;
-use std::path::Path;
 
 use quickwit_common::uri::Protocol;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{NodeConfig, StorageBackendFlavor, disable_ingest_v1, enable_ingest_v2};
 use quickwit_serve::BuildInfo;
 use quickwit_telemetry::payload::{BuildTelemetryInfo, QuickwitFeature, QuickwitTelemetryInfo};
-use tracing::warn;
 
 pub(crate) fn quickwit_telemetry_info(config: &NodeConfig) -> QuickwitTelemetryInfo {
     let services = config
@@ -36,27 +34,6 @@ pub(crate) fn quickwit_telemetry_info(config: &NodeConfig) -> QuickwitTelemetryI
             release: !build_info.version.ends_with("-nightly"),
         },
         ..QuickwitTelemetryInfo::new(services, telemetry_features(config))
-    }
-}
-
-/// Returns `true` when the install ID was just created. Does nothing when telemetry is disabled, so
-/// that a node with telemetry off never writes the ID.
-pub(crate) fn set_install_uuid(
-    telemetry_info: &mut QuickwitTelemetryInfo,
-    data_dir: &Path,
-) -> bool {
-    if quickwit_telemetry::is_telemetry_disabled() {
-        return false;
-    }
-    match quickwit_telemetry::load_or_create_install_id(data_dir) {
-        Ok((install_uuid, created)) => {
-            telemetry_info.install_uuid = Some(install_uuid);
-            created
-        }
-        Err(error) => {
-            warn!(%error, "failed to load or create the telemetry install ID");
-            false
-        }
     }
 }
 

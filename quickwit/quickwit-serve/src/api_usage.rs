@@ -20,7 +20,7 @@ pub(crate) fn classify_rest_request(method: &Method, path: &str) -> Option<ApiKi
     let api_path = api_path.strip_suffix('/').unwrap_or(api_path);
     let (first_segment, rest) = api_path.split_once('/').unwrap_or((api_path, ""));
     if first_segment == "_elastic" {
-        return Some(classify_elasticsearch_request(rest));
+        return Some(classify_elasticsearch_request(method, rest));
     }
     // Management routes such as `indexes/{index_id}/...` and `templates/{template_id}` put a
     // user-chosen ID after the first segment, so only the exact shapes of the counted routes match.
@@ -34,16 +34,22 @@ pub(crate) fn classify_rest_request(method: &Method, path: &str) -> Option<ApiKi
     }
 }
 
-fn classify_elasticsearch_request(elasticsearch_path: &str) -> ApiKind {
-    let mut api_kind = ApiKind::ElasticsearchOther;
-    for segment in elasticsearch_path.split('/') {
-        match segment {
-            "_bulk" => return ApiKind::ElasticsearchIngest,
-            "_search" | "_msearch" | "_count" => api_kind = ApiKind::ElasticsearchSearch,
-            _ => {}
-        }
+/// Matches the shapes and methods of the search and bulk routes in `elasticsearch_api/filter.rs`.
+/// Any other request, including `DELETE _search/scroll` and requests rejected for their method,
+/// counts as other.
+fn classify_elasticsearch_request(method: &Method, elasticsearch_path: &str) -> ApiKind {
+    let (first_segment, rest_opt) = match elasticsearch_path.split_once('/') {
+        Some((first_segment, rest)) => (first_segment, Some(rest)),
+        None => (elasticsearch_path, None),
+    };
+    match (method, first_segment, rest_opt) {
+        (&Method::POST | &Method::PUT, "_bulk", None)
+        | (&Method::POST | &Method::PUT, _, Some("_bulk")) => ApiKind::ElasticsearchIngest,
+        (&Method::GET | &Method::POST, "_search", None | Some("scroll"))
+        | (&Method::GET | &Method::POST, _, Some("_search" | "_count"))
+        | (&Method::POST, "_msearch", None) => ApiKind::ElasticsearchSearch,
+        _ => ApiKind::ElasticsearchOther,
     }
-    api_kind
 }
 
 pub(crate) fn count_otlp_grpc_request(
@@ -80,6 +86,26 @@ mod tests {
             (
                 Method::GET,
                 "/api/v1/_elastic/_field_caps",
+                Some(ApiKind::ElasticsearchOther),
+            ),
+            (
+                Method::GET,
+                "/api/v1/_elastic/_bulk",
+                Some(ApiKind::ElasticsearchOther),
+            ),
+            (
+                Method::GET,
+                "/api/v1/_elastic/_search/scroll",
+                Some(ApiKind::ElasticsearchSearch),
+            ),
+            (
+                Method::DELETE,
+                "/api/v1/_elastic/_search/scroll",
+                Some(ApiKind::ElasticsearchOther),
+            ),
+            (
+                Method::POST,
+                "/api/v1/_elastic/logs/_msearch",
                 Some(ApiKind::ElasticsearchOther),
             ),
             (

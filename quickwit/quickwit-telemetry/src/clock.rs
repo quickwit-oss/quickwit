@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 #[cfg(test)]
@@ -31,67 +30,27 @@ impl ClockButton {
 }
 
 pub(crate) enum Clock {
-    /// The first tick is immediate. Every later tick waits for the cooldown from the moment it is
-    /// awaited. The telemetry loop awaits a tick right after each request, so requests are at
-    /// least a cooldown apart, however long the loop waited for events in between.
-    Cooldown {
-        cooldown: Duration,
-        is_first_tick: AtomicBool,
-    },
+    /// Each tick waits for the cooldown. The telemetry loop ticks right after each request, so
+    /// requests are at least a cooldown apart.
+    Cooldown(Duration),
     #[cfg(test)]
     Manual(Mutex<Receiver<()>>),
 }
 
 impl Clock {
-    pub(crate) fn cooldown(cooldown: Duration) -> Clock {
-        Clock::Cooldown {
-            cooldown,
-            is_first_tick: AtomicBool::new(true),
-        }
-    }
-
     #[cfg(test)]
-    pub(crate) async fn manual() -> (ClockButton, Clock) {
+    pub(crate) fn manual() -> (ClockButton, Clock) {
         let (tx, rx) = tokio::sync::mpsc::channel(1);
-        let _ = tx.send(()).await;
-        let button = ClockButton(tx);
-        (button, Clock::Manual(Mutex::new(rx)))
+        (ClockButton(tx), Clock::Manual(Mutex::new(rx)))
     }
 
     pub(crate) async fn tick(&self) {
         match self {
-            Clock::Cooldown {
-                cooldown,
-                is_first_tick,
-            } => {
-                if !is_first_tick.swap(false, Ordering::Relaxed) {
-                    tokio::time::sleep(*cooldown).await;
-                }
-            }
+            Clock::Cooldown(cooldown) => tokio::time::sleep(*cooldown).await,
             #[cfg(test)]
             Clock::Manual(channel) => {
                 channel.lock().await.recv().await;
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const COOLDOWN: Duration = Duration::from_secs(60);
-
-    #[tokio::test(start_paused = true)]
-    async fn test_cooldown_clock_waits_for_cooldown_after_idle_time() {
-        let clock = Clock::cooldown(COOLDOWN);
-        let first_tick_start = tokio::time::Instant::now();
-        clock.tick().await;
-        assert_eq!(first_tick_start.elapsed(), Duration::ZERO);
-
-        tokio::time::sleep(10 * COOLDOWN).await;
-        let tick_start = tokio::time::Instant::now();
-        clock.tick().await;
-        assert!(tick_start.elapsed() >= COOLDOWN);
     }
 }

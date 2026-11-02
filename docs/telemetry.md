@@ -25,7 +25,7 @@ Sub-second search & analytics engine on cloud storage.
 Telemetry: enabled
 ```
 
-The line disappears when telemetry is off.
+The line disappears when telemetry is off. If the node can't set up HTTPS, for example because no CA certificates are installed, `quickwit run` logs a warning and sends nothing even though the line is shown.
 
 Only `quickwit run` sends telemetry. Other CLI commands never do.
 
@@ -69,14 +69,16 @@ Quickwit never sends index or field names, documents, queries, configuration val
 
 ## Where the data goes
 
-Quickwit sends the data over HTTPS to `telemetry.quickwit.io`, which Datadog operates on AWS.
+By default, Quickwit sends the data over HTTPS to `telemetry.quickwit.io`, which Datadog operates on AWS.
 
-- The request goes through Amazon CloudFront, which looks up the country and city of your IP address and passes them on. The IP address itself goes no further.
+- The request goes through Amazon CloudFront, which looks up the country and city of your IP address and passes them on to the relay. CloudFront also passes on the IP address itself, in the `X-Forwarded-For` header that it adds to every request, but the relay ignores it.
 - A small relay checks the request against the format above, rejects anything else, and keeps only the fields listed on this page.
 - The relay replaces the host hash with a keyed hash, computed with a secret that only the relay knows, so the stored value can't be matched against guessed host names and user names.
 - The relay forwards the events, with the country and city, to Datadog, where they are stored as logs. Your IP address is not stored.
 
 For nodes running in the cloud, the country and city are usually those of the data center.
+
+To send the data somewhere else instead, for example to a local HTTP server to see exactly what is sent, set `TELEMETRY_INGEST_API` to a URL before starting Quickwit. Nothing then goes to `telemetry.quickwit.io`, and the relay is bypassed: the receiver gets the requests as Quickwit sends them, unencrypted with an `http://` URL. This does not turn telemetry off.
 
 Releases 0.6.0 to 0.8.x send an older version of this data to the same address: the events other than `install`, each with its time, without the API counts, plus the version, services, OS, architecture, Kubernetes flag, session ID, host hash, number of dropped events, and the metastore, OTLP and Jaeger features. Their AWS Lambda indexer and searcher send `run_command` with only the `aws_lambda` feature.
 

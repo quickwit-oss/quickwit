@@ -12,83 +12,114 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![allow(clippy::bool_assert_comparison)]
+//! This crate contains the code responsible for sending anonymous usage data to the telemetry
+//! relay. See `docs/telemetry.md` for the data that is sent.
+
 #![deny(clippy::disallowed_methods)]
 
 mod clock;
 mod install;
 mod machine;
 pub mod payload;
-/// This crate contains the code responsible for sending anonymous usage data to the telemetry
-/// relay. See `docs/telemetry.md` for the data that is sent.
 mod sender;
 pub(crate) mod sink;
 mod usage;
 
 use std::ffi::OsStr;
+use std::path::Path;
 use std::sync::OnceLock;
 
 use payload::QuickwitTelemetryInfo;
-use tracing::info;
+use tracing::{info, warn};
 
-pub use crate::install::load_or_create_install_id;
+use crate::install::load_or_create_install_id;
 use crate::payload::TelemetryEvent;
 use crate::sender::{TelemetryLoopHandle, TelemetrySender};
+use crate::sink::HttpClient;
 pub use crate::usage::{ApiKind, record_api_request};
 
 static TELEMETRY_SENDER: OnceLock<TelemetrySender> = OnceLock::new();
 
-/// Returns a `TelemetryLoopHandle` if the telemetry loop is not yet started.
-pub fn start_telemetry_loop(quickwit_info: QuickwitTelemetryInfo) -> Option<TelemetryLoopHandle> {
-    let telemetry_sender =
-        TELEMETRY_SENDER.get_or_init(|| TelemetrySender::from_quickwit_info(quickwit_info));
-    let telemetry_loop_handle_opt = telemetry_sender.start_loop();
-    // This should not happen... unless telemetry is enabled and you are running tests in parallel
-    // in the same process.
-    if telemetry_loop_handle_opt.is_none() {
-        info!("telemetry loop already started. please disable telemetry during tests");
+/// Starts the telemetry loop, and queues the `install` event if the install ID stored in
+/// `data_dir` was just created. Returns `None` if telemetry is disabled, if the HTTP client can't
+/// be created, or if the loop is already started.
+pub async fn start_telemetry_loop(
+    mut quickwit_info: QuickwitTelemetryInfo,
+    data_dir: &Path,
+) -> Option<TelemetryLoopHandle> {
+    if is_telemetry_disabled() {
+        info!("telemetry is disabled");
+        return None;
     }
-    telemetry_loop_handle_opt
+    let http_client = match HttpClient::try_new() {
+        Ok(http_client) => http_client,
+        Err(error) => {
+            warn!(
+                ?error,
+                "failed to create the telemetry HTTP client, telemetry is disabled"
+            );
+            return None;
+        }
+    };
+    let mut is_new_install_opt = None;
+    let telemetry_sender = TELEMETRY_SENDER.get_or_init(|| {
+        // Only created once telemetry can be sent, so that a node with telemetry off never writes
+        // the install ID.
+        let is_new_install = match load_or_create_install_id(data_dir) {
+            Ok((install_uuid, is_new_install)) => {
+                quickwit_info.install_uuid = Some(install_uuid);
+                is_new_install
+            }
+            Err(error) => {
+                warn!(%error, "failed to load or create the telemetry install ID");
+                false
+            }
+        };
+        is_new_install_opt = Some(is_new_install);
+        info!("telemetry to {} is enabled", http_client.endpoint());
+        TelemetrySender::with_http_client(quickwit_info, http_client)
+    });
+    let Some(is_new_install) = is_new_install_opt else {
+        // This should not happen... unless telemetry is enabled and you are running tests in
+        // parallel in the same process.
+        info!("telemetry loop already started. please disable telemetry during tests");
+        return None;
+    };
+    let telemetry_loop_handle = telemetry_sender.start_loop();
+    if is_new_install {
+        telemetry_sender.send(TelemetryEvent::Install).await;
+    }
+    Some(telemetry_loop_handle)
 }
 
-/// Sends a telemetry event to the telemetry relay via HTTP.
+/// Queues a telemetry event for the telemetry loop to send to the telemetry relay. Does nothing
+/// unless `start_telemetry_loop` started the loop.
 ///
-/// Telemetry guarantees to send at most 1 request per minute, except for one last request with
-/// the pending events when the node shuts down.
-/// Each requests can ship at most 10 messages.
+/// Telemetry sends at most 1 request per minute, except for one last request with the pending
+/// events when the node shuts down. Each request holds at most 10 events, so some events are
+/// dropped if this function is called too often.
 ///
-/// If this methods is called too often, some events will be dropped.
+/// If a request fails, the error is only logged at the debug level.
 ///
-/// If the http requests fail, the error will be silent.
-///
-/// We voluntarily use an enum here to make it easier for reader
-/// to audit the type of information that is send home.
+/// The event is an enum so that readers can audit what information is sent.
 pub async fn send_telemetry_event(event: TelemetryEvent) {
     if let Some(telemetry_sender) = TELEMETRY_SENDER.get() {
         telemetry_sender.send(event).await;
     }
 }
 
-/// Returns true once this process started a telemetry loop that sends events.
+/// Returns true once `start_telemetry_loop` has started the telemetry loop. It is false before
+/// that, so check it on each use instead of caching it.
 pub fn is_telemetry_enabled() -> bool {
-    let Some(telemetry_sender) = TELEMETRY_SENDER.get() else {
-        return false;
-    };
-    !telemetry_sender.inner.is_disabled()
+    TELEMETRY_SENDER.get().is_some()
 }
 
 /// This environment variable can be set to disable sending telemetry events.
 pub const DISABLE_TELEMETRY_ENV_KEY: &str = "QW_DISABLE_TELEMETRY";
 
-/// telemetry is disabled in tests.
-#[cfg(test)]
+/// Returns true if `QW_DISABLE_TELEMETRY` disables telemetry.
 pub fn is_telemetry_disabled() -> bool {
-    true
-}
-/// Check to see if telemetry is enabled.
-#[cfg(not(test))]
-pub fn is_telemetry_disabled() -> bool {
-    let env_value_opt = std::env::var_os(crate::DISABLE_TELEMETRY_ENV_KEY);
+    let env_value_opt = std::env::var_os(DISABLE_TELEMETRY_ENV_KEY);
     is_telemetry_disabled_by_env_value(env_value_opt.as_deref())
 }
 

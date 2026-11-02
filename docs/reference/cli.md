@@ -863,6 +863,14 @@ Disables [telemetry](../telemetry.md) when set to any non-empty value other than
 
 `QW_DISABLE_TELEMETRY=1 quickwit --help`
 
+### TELEMETRY_INGEST_API
+
+Sends [telemetry](../telemetry.md) to this URL instead of `https://telemetry.quickwit.io/`. The URL is used as is, so the data is not encrypted with an `http://` URL. It does not turn telemetry off.
+
+*Example*
+
+`TELEMETRY_INGEST_API=http://127.0.0.1:8080/ quickwit run`
+
 ### QW_POSTGRES_SKIP_MIGRATIONS
 
 Don't run database migrations (but verify that migrations were run successfully before, and no that unknown migration was run).

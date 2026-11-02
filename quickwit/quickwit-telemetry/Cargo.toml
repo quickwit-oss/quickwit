@@ -17,10 +17,9 @@ hostname = { workspace = true }
 md5 = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
-sysinfo = { workspace = true }
+sysinfo = { workspace = true, features = ["system"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
-username = { workspace = true }
 uuid = { workspace = true }
 
 quickwit-common = { workspace = true }
