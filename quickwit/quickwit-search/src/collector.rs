@@ -15,6 +15,7 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use itertools::Itertools;
 use quickwit_common::binary_heap::{SortKeyMapper, TopK};
@@ -34,6 +35,7 @@ use tantivy::fastfield::Column;
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, DocId, Score, SegmentOrdinal, SegmentReader, TantivyError};
 
+use crate::calculated_fields::CalculatedFields;
 use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector, Span};
 use crate::top_k_collector::{QuickwitSegmentTopKCollector, specialized_top_k_segment_collector};
 use crate::{GlobalDocAddress, add_leaf_stats, merge_leaf_stats_it};
@@ -716,6 +718,9 @@ pub(crate) struct QuickwitCollector {
     pub sort_by: SortByPair,
     pub aggregation: Option<QuickwitAggregations>,
     pub agg_context_params: AggContextParams,
+    /// Calculated fields the aggregations can refer to. Their value sources are registered in
+    /// `agg_context_params`.
+    calculated_fields: Arc<CalculatedFields>,
     search_after: Option<PartialHit>,
 }
 
@@ -739,7 +744,12 @@ impl QuickwitCollector {
             sort_by_second.add_fast_field(&mut fast_field_names);
         }
         if let Some(aggregations) = &self.aggregation {
-            fast_field_names.extend(aggregations.fast_field_names());
+            // Calculated fields are not columns: we need the fast fields their expressions read.
+            let agg_field_names = aggregations.fast_field_names();
+            fast_field_names.extend(
+                self.calculated_fields
+                    .resolve_fast_field_names(agg_field_names),
+            );
         }
         fast_field_names
     }
@@ -1042,6 +1052,12 @@ pub(crate) fn make_collector_for_split(
         Some(aggregation) => Some(serde_json::from_str(aggregation)?),
         None => None,
     };
+    let calculated_fields = CalculatedFields::from_search_request(search_request)?;
+    let agg_context_params = if calculated_fields.is_empty() {
+        agg_context_params
+    } else {
+        agg_context_params.with_value_sources(calculated_fields.value_source_registry()?)
+    };
     let sort_by = sort_by_from_request(search_request);
     Ok(QuickwitCollector {
         split_id,
@@ -1050,6 +1066,7 @@ pub(crate) fn make_collector_for_split(
         sort_by,
         aggregation,
         agg_context_params,
+        calculated_fields: Arc::new(calculated_fields),
         search_after: search_request.search_after.clone(),
     })
 }
@@ -1075,6 +1092,8 @@ pub(crate) fn make_merge_collector(
         sort_by,
         aggregation,
         agg_context_params,
+        // Merging intermediate results does not read any column.
+        calculated_fields: Arc::default(),
         search_after: search_request.search_after.clone(),
     })
 }
@@ -1317,8 +1336,8 @@ mod tests {
     use std::cmp::Ordering;
 
     use quickwit_proto::search::{
-        LeafResourceStats, LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortField,
-        SortOrder, SortValue, SplitResourceStats, SplitSearchError,
+        CalculatedField, LeafResourceStats, LeafSearchResponse, PartialHit, SearchRequest,
+        SortByValue, SortField, SortOrder, SortValue, SplitResourceStats, SplitSearchError,
     };
     use quickwit_proto::types::SplitId;
     use tantivy::TantivyDocument;
@@ -2143,5 +2162,84 @@ mod tests {
         // Intermediate mode preserves more candidates than the final size (2), while bounding the
         // merged response to segment_size (4).
         assert_eq!(buckets.entries().len(), 4);
+    }
+
+    #[test]
+    fn test_warmup_info_resolves_calculated_fields() {
+        let request = SearchRequest {
+            max_hits: 0,
+            aggregation_request: Some(
+                r##"{
+                    "by_level": {
+                        "terms": { "field": "#upper_level" },
+                        "aggs": { "total": { "sum": { "field": "#ratio" } } }
+                    },
+                    "by_host": { "terms": { "field": "host" } }
+                }"##
+                .to_string(),
+            ),
+            calculated_fields: vec![
+                CalculatedField {
+                    name: "#upper_level".to_string(),
+                    expression: "(UPPER level)".to_string(),
+                },
+                CalculatedField {
+                    name: "#ratio".to_string(),
+                    expression: "(DIVIDE latency duration)".to_string(),
+                },
+                // Not used by the aggregations: its input must not be warmed up.
+                CalculatedField {
+                    name: "#unused".to_string(),
+                    expression: "(UPPER unused_input)".to_string(),
+                },
+            ],
+            ..Default::default()
+        };
+        let collector = super::make_collector_for_split(
+            SplitId::from("fake_split_id"),
+            &request,
+            Default::default(),
+        )
+        .unwrap();
+        let mut warmed_up_fields: Vec<(String, bool)> = collector
+            .warmup_info()
+            .fast_fields
+            .into_iter()
+            .map(|fast_field| (fast_field.name, fast_field.with_subfields))
+            .collect();
+        warmed_up_fields.sort();
+        assert_eq!(
+            warmed_up_fields,
+            vec![
+                ("duration".to_string(), false),
+                ("host".to_string(), false),
+                ("latency".to_string(), false),
+                ("level".to_string(), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_make_collector_rejects_invalid_calculated_field() {
+        let request = SearchRequest {
+            calculated_fields: vec![CalculatedField {
+                name: "#bad".to_string(),
+                expression: "(UPPER level".to_string(),
+            }],
+            ..Default::default()
+        };
+        let Err(error) = super::make_collector_for_split(
+            SplitId::from("fake_split_id"),
+            &request,
+            Default::default(),
+        ) else {
+            panic!("expected an error");
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("invalid expression for calculated field `#bad`"),
+            "{error}"
+        );
     }
 }
