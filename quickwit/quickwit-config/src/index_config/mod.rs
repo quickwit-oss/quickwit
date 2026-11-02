@@ -189,6 +189,7 @@ pub struct IngestSettings {
 
 impl IngestSettings {
     pub fn default_min_shards() -> NonZeroUsize {
+        // Chosen to provide minimum redundancy for small indexes.
         NonZeroUsize::new(6).unwrap()
     }
 }
