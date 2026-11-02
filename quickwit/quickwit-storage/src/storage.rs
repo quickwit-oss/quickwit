@@ -25,7 +25,7 @@ use futures::stream::{self, BoxStream};
 use quickwit_common::uri::Uri;
 use tempfile::TempPath;
 use tokio::fs::File;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tracing::error;
 
 use crate::{BulkDeleteError, OwnedBytes, PutPayload, StorageErrorKind, StorageResult};
@@ -120,6 +120,18 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
     /// Downloads a slice of a file from the storage, and returns an in memory buffer
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes>;
 
+    /// Downloads exactly `range` into caller-owned memory without collecting a separate payload.
+    /// `buffer.len()` must equal `range.len()`. On failure its contents are unspecified.
+    /// Empty ranges succeed without opening a stream.
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> StorageResult<()> {
+        default_get_slice_into(self, path, range, buffer).await
+    }
+
     /// Opens a stream handle on the file from the storage.
     ///
     /// Might panic, return an error or an empty stream if the range is empty.
@@ -171,6 +183,27 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
 
     /// Returns an URI identifying the storage
     fn uri(&self) -> &Uri;
+}
+
+pub(crate) async fn default_get_slice_into<S: Storage + ?Sized>(
+    storage: &S,
+    path: &Path,
+    range: Range<usize>,
+    buffer: &mut [u8],
+) -> StorageResult<()> {
+    assert_eq!(buffer.len(), range.len());
+    if buffer.is_empty() {
+        return Ok(());
+    }
+    let mut stream = storage.get_slice_stream(path, range).await?;
+    stream.read_exact(buffer).await?;
+    if stream.read(&mut [0]).await? != 0 {
+        return Err(StorageErrorKind::Internal.with_error(anyhow::anyhow!(
+            "range download returned more than {} bytes",
+            buffer.len()
+        )));
+    }
+    Ok(())
 }
 
 async fn default_copy_to_file<S: Storage + ?Sized>(
@@ -251,6 +284,34 @@ mod tests {
     use crate::{RamStorage, StorageError};
 
     const CONTENT: &[u8] = b"hello world";
+
+    #[tokio::test]
+    async fn test_get_slice_into_requires_the_exact_stream_length() {
+        for payload in [b"abc".as_slice(), b"abcd", b"abcde"] {
+            let mut storage = MockStorage::new();
+            storage.expect_get_slice().never();
+            storage
+                .expect_get_slice_stream()
+                .times(1)
+                .returning(move |_, range| {
+                    assert_eq!(range, 10..14);
+                    Ok(Box::new(std::io::Cursor::new(payload)))
+                });
+            let mut buffer = [99; 4];
+            let result =
+                default_get_slice_into(&storage, Path::new("object"), 10..14, &mut buffer).await;
+            if payload.len() == 4 {
+                result.unwrap();
+                assert_eq!(&buffer, payload);
+            } else {
+                assert!(result.is_err());
+            }
+        }
+        let storage = MockStorage::new();
+        default_get_slice_into(&storage, Path::new("object"), 4..4, &mut [])
+            .await
+            .unwrap();
+    }
 
     #[tokio::test]
     async fn test_copy_to_file() {

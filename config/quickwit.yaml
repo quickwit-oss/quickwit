@@ -199,9 +199,13 @@ indexer:
 #   # service. Searchers require at least one `metastore_read_replica` node at
 #   # startup and do not fall back to the primary metastore.
 #   use_metastore_read_replica: false
+#   # Feuer fast-field RAM cache. Default 1G. Omitted while disk_cache
+#   # is set disables this cache; set a capacity explicitly to keep both.
 #   fast_field_cache_capacity: 1G
-#   split_footer_cache_capacity: 500M
-#   partial_request_cache_capacity: 64M
+#   # Feuer memory caches (also accept the legacy *_cache_capacity keys).
+#   # Set to zero to disable. Add disk settings as shown below for a disk tier.
+#   partial_request_cache: 64M
+#   predicate_cache: 256M
 #   max_num_concurrent_split_streams: 100
 #   max_num_concurrent_split_searches: 100
 #   aggregation_memory_limit: 500M
@@ -210,6 +214,26 @@ indexer:
 #      max_num_bytes: 1G
 #      max_num_splits: 10000
 #      num_concurrent_downloads: 1
+#   # Feuer cache for split footer and body ranges. Omitted or null disables it.
+#   # Disk-cache configurations require Linux, including disk_capacity: 0.
+#   # Feuer handles disk alignment internally; memory capacity is a soft target.
+#   # Shared directory; each cache has a distinct backing file and lock.
+#   # Per-cache path overrides remain supported.
+#   disk_cache_directory: /quickwit/qwdata/feuer-v1
+#   disk_cache:
+#     disk_capacity: 1500GiB
+#     memory_capacity: 15GiB
+#   # Alternatively, replace the scalar result-cache settings above with:
+#   # Instances share disk I/O queues, but have independent budgets and files.
+#   # Fixed filenames: split_cache, partial_response_cache, predicate_cache.
+#   # memory_capacity (alias capacity) is the RAM budget.
+#   # Explicit policy and nonempty virtual_caches are unsupported with Feuer.
+#   partial_request_cache:
+#     memory_capacity: 64MiB
+#     disk_capacity: 20GiB
+#   predicate_cache:
+#     memory_capacity: 256MiB
+#     disk_capacity: 100GiB
 # -------------------------------- Jaeger settings --------------------------------
 
 jaeger:

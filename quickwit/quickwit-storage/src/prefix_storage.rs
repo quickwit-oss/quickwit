@@ -75,6 +75,17 @@ impl Storage for PrefixStorage {
         self.storage.get_slice(&self.prefix.join(path), range).await
     }
 
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> crate::StorageResult<()> {
+        self.storage
+            .get_slice_into(&self.prefix.join(path), range, buffer)
+            .await
+    }
+
     async fn get_all(&self, path: &Path) -> crate::StorageResult<OwnedBytes> {
         self.storage.get_all(&self.prefix.join(path)).await
     }

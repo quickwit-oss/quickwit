@@ -212,6 +212,17 @@ impl CacheMetrics {
         }
     }
 
+    /// Record a lookup, supplying the payload length for a hit.
+    pub fn record_get(&self, num_bytes: Option<usize>) {
+        match num_bytes {
+            Some(num_bytes) => {
+                self.cache_metrics.hits_num_items.inc();
+                self.cache_metrics.hits_num_bytes.inc_by(num_bytes as u64);
+            }
+            None => self.cache_metrics.misses_num_items.inc(),
+        }
+    }
+
     /// Returns metrics for a virtual sub-cache identified by `config`.
     ///
     /// Virtual caches share the same parent component but add `capacity` and
@@ -330,9 +341,6 @@ static VIRTUAL_CACHE_EVICT_BYTES: LazyCounter = lazy_counter!(
         description: "Number of cache entry evicted in bytes by component",
         subsystem: "cache",
 );
-
-pub(crate) static FAST_FIELD_CACHE: LazyLock<CacheMetrics> =
-    LazyLock::new(|| CacheMetrics::for_component("fastfields"));
 
 pub(crate) static FD_CACHE_METRICS: LazyLock<CacheMetrics> =
     LazyLock::new(|| CacheMetrics::for_component("fd"));

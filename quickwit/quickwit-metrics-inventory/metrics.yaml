@@ -1,3 +1,27 @@
+feuer_disk_io_duration_seconds:
+  module: quickwit_storage::split_range_cache::metrics
+  kind: histogram
+  description: Successful Feuer disk I/O duration
+feuer_disk_lookup_duration_seconds:
+  module: quickwit_storage::split_range_cache::metrics
+  kind: histogram
+  description: Completed Feuer disk hit duration, including integrity checking and copying
+feuer_disk_read_queue_wait_duration_seconds:
+  module: quickwit_storage::split_range_cache::metrics
+  kind: histogram
+  description: Feuer read-piece channel-capacity wait ending in admission, cancellation or closure
+feuer_disk_read_size_bytes:
+  module: quickwit_storage::split_range_cache::metrics
+  kind: histogram
+  description: Requested bytes per successful Feuer data-file read, excluding alignment padding
+feuer_disk_write_queue_duration_seconds:
+  module: quickwit_storage::split_range_cache::metrics
+  kind: histogram
+  description: Feuer disk-write queue admission to dequeue duration, including stale entries
+feuer_lookup_duration_seconds:
+  module: quickwit_storage::split_range_cache::metrics
+  kind: histogram
+  description: Completed successful Feuer lookup duration, including callback work
 quickwit_actor_inboxes_count:
   module: quickwit_actors::mailbox
   kind: gauge

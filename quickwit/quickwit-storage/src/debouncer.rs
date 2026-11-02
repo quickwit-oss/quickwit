@@ -189,6 +189,17 @@ impl<T: Storage> Storage for DebouncedStorage<T> {
             .await
     }
 
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> StorageResult<()> {
+        // The split-range coalescer shares downloads before allocating caller-owned buffers.
+        // Forward directly so backend accounting and streaming overrides are preserved.
+        self.underlying.get_slice_into(path, range, buffer).await
+    }
+
     async fn get_slice_stream(
         &self,
         path: &Path,
@@ -245,6 +256,28 @@ mod tests {
     use tokio::task;
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_get_slice_into_forwards_to_backend() {
+        let mut backend = crate::MockStorage::new();
+        backend.expect_get_slice_stream().never();
+        backend
+            .expect_get_slice_into()
+            .times(1)
+            .returning(|path, range, buffer| {
+                assert_eq!(path, Path::new("object"));
+                assert_eq!(range, 2..5);
+                buffer.copy_from_slice(b"abc");
+                Ok(())
+            });
+        let storage = DebouncedStorage::new(backend);
+        let mut buffer = [0; 3];
+        storage
+            .get_slice_into(Path::new("object"), 2..5, &mut buffer)
+            .await
+            .unwrap();
+        assert_eq!(&buffer, b"abc");
+    }
 
     #[test]
     fn test_sync_and_send() {

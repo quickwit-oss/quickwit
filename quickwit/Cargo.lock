@@ -3314,6 +3314,75 @@ dependencies = [
 ]
 
 [[package]]
+name = "feuer"
+version = "0.23.0-dev"
+source = "git+https://github.com/PSeitz/feuer?rev=86efb7fda6a91bf62003d7e8021c5bba608960bb#86efb7fda6a91bf62003d7e8021c5bba608960bb"
+dependencies = [
+ "bytes",
+ "feuer-historian",
+ "feuer-memory",
+ "feuer-storage",
+ "feuer-types",
+ "mixtrics",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "feuer-historian"
+version = "0.23.0-dev"
+source = "git+https://github.com/PSeitz/feuer?rev=86efb7fda6a91bf62003d7e8021c5bba608960bb#86efb7fda6a91bf62003d7e8021c5bba608960bb"
+dependencies = [
+ "feuer-types",
+ "rustc-hash",
+]
+
+[[package]]
+name = "feuer-memory"
+version = "0.23.0-dev"
+source = "git+https://github.com/PSeitz/feuer?rev=86efb7fda6a91bf62003d7e8021c5bba608960bb#86efb7fda6a91bf62003d7e8021c5bba608960bb"
+dependencies = [
+ "bytes",
+ "bytesize",
+ "feuer-historian",
+ "feuer-types",
+ "libc",
+ "mixtrics",
+ "parking_lot",
+ "rustc-hash",
+]
+
+[[package]]
+name = "feuer-storage"
+version = "0.23.0-dev"
+source = "git+https://github.com/PSeitz/feuer?rev=86efb7fda6a91bf62003d7e8021c5bba608960bb#86efb7fda6a91bf62003d7e8021c5bba608960bb"
+dependencies = [
+ "bytes",
+ "feuer-historian",
+ "feuer-memory",
+ "feuer-types",
+ "fs4",
+ "io-uring",
+ "libc",
+ "mixtrics",
+ "rustc-hash",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "twox-hash",
+]
+
+[[package]]
+name = "feuer-types"
+version = "0.23.0-dev"
+source = "git+https://github.com/PSeitz/feuer?rev=86efb7fda6a91bf62003d7e8021c5bba608960bb#86efb7fda6a91bf62003d7e8021c5bba608960bb"
+dependencies = [
+ "bytes",
+ "bytesize",
+ "xxhash-rust",
+]
+
+[[package]]
 name = "ff"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4610,6 +4679,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "io-uring"
+version = "0.7.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed3bd0ecfbb87805f538bb7b32e5239ca0763890c623e349860ecba69469f2bb"
+dependencies = [
+ "bitflags 2.13.2",
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
 name = "ipcrypt-rs"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5401,6 +5481,16 @@ dependencies = [
  "libc",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "mixtrics"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c46b5adfb7a3ae4996d327a5bdc90e78fec025806dd312bdbe6f07a755e0ec9"
+dependencies = [
+ "itertools 0.15.0",
+ "parking_lot",
 ]
 
 [[package]]
@@ -8277,8 +8367,8 @@ dependencies = [
  "rand 0.10.3",
  "serde",
  "serde_json",
- "siphasher",
  "tantivy",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
@@ -8387,13 +8477,18 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "bytesize",
+ "fail",
+ "feuer",
  "futures",
  "http 1.5.0",
  "http-body-util",
  "hyper 1.12.0",
  "lru 0.19.0",
  "md5",
+ "metrics",
+ "metrics-util",
  "mini-moka",
+ "mixtrics",
  "mockall",
  "opendal",
  "opendal-http-transport-reqwest",

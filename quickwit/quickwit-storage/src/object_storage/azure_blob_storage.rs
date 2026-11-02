@@ -47,7 +47,7 @@ use tracing::{info, instrument, warn};
 use crate::debouncer::DebouncedStorage;
 use crate::metrics::object_storage_get_slice_in_flight_guards;
 use crate::stable_deref_bytes::into_owned_bytes;
-use crate::storage::SendableAsync;
+use crate::storage::{SendableAsync, default_get_slice_into};
 use crate::{
     BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, Storage, StorageError,
     StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
@@ -468,6 +468,24 @@ impl Storage for AzureBlobStorage {
                     path.display(),
                 ))
             })
+    }
+
+    #[instrument(name = "storage.azure.get_slice_into", level = "debug", skip(self, range, buffer), fields(range.start = range.start, range.end = range.end))]
+    async fn get_slice_into(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        buffer: &mut [u8],
+    ) -> StorageResult<()> {
+        assert_eq!(buffer.len(), range.len());
+        if buffer.is_empty() {
+            return Ok(());
+        }
+        let _in_flight_guards = object_storage_get_slice_in_flight_guards(buffer.len());
+        default_get_slice_into(self, path, range, buffer).await?;
+        // The streaming path bypasses download_all, which accounts for collected bodies.
+        crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(buffer.len() as u64);
+        Ok(())
     }
 
     #[instrument(name = "storage.azure.get_slice_stream", level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]

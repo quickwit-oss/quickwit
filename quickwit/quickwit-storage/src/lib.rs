@@ -40,6 +40,7 @@ pub use self::storage::{ListObjectsStream, ObjectMetadata, Storage};
 
 mod bundle_storage;
 mod error;
+mod feuer_cache;
 
 mod local_file_storage;
 mod object_storage;
@@ -50,13 +51,18 @@ mod prefix_storage;
 mod ram_storage;
 mod split;
 mod split_cache;
+mod split_range_cache;
 mod stable_deref_bytes;
 mod storage_factory;
 mod storage_resolver;
 mod versioned_component;
 
+pub use feuer_cache::{FeuerCache, FeuerIoQueues};
 use quickwit_common::uri::Uri;
 pub use split_cache::SearchSplitCache;
+pub use split_range_cache::{
+    FeuerSplitRangeCache, FeuerSplitRangeStorage, wrap_storage_with_split_range_cache,
+};
 pub use tantivy::directory::OwnedBytes;
 pub use versioned_component::VersionedComponent;
 
@@ -66,8 +72,7 @@ pub use self::bundle_storage::{
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::cache::MockStorageCache;
 pub use self::cache::{
-    ByteRangeCache, FileByteRangeCache, MemorySizedCache, QuickwitCache, StorageCache,
-    wrap_storage_with_cache,
+    ByteRangeCache, FileByteRangeCache, MemorySizedCache, StorageCache, wrap_storage_with_cache,
 };
 pub use self::counting_storage::{CountingStorage, DownloadCounters};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
