@@ -51,7 +51,7 @@ pub const DEFAULT_GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "tests
     Duration::from_secs(1)
 };
 
-const DEFAULT_GOSSIP_PROTOCOL_VERSION: u8 = 0;
+const DEFAULT_GOSSIP_PROTOCOL_VERSION: u8 = 1;
 
 // Default config values in the order they appear in [`NodeConfigBuilder`].
 fn default_cluster_id() -> ConfigValue<String, QW_CLUSTER_ID> {
@@ -203,7 +203,7 @@ struct NodeConfigBuilder {
     gossip_listen_port: ConfigValue<u16, QW_GOSSIP_LISTEN_PORT>,
     grpc_listen_port: ConfigValue<u16, QW_GRPC_LISTEN_PORT>,
     gossip_interval_ms: ConfigValue<u32, QW_GOSSIP_INTERVAL_MS>,
-    #[serde(default)]
+    #[serde(default = "ConfigValue::none")]
     gossip_protocol_version: ConfigValue<u8, QW_GOSSIP_PROTOCOL_VERSION>,
     #[serde(default)]
     peer_seeds: ConfigValue<List, QW_PEER_SEEDS>,
