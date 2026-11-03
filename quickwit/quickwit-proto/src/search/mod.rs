@@ -283,9 +283,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_search_request_source_json_compatibility() {
+    fn test_search_request_query_source_json_compatibility() {
         let request = SearchRequest {
-            source: "dashboard".to_string(),
+            query_source: "dashboard".to_string(),
             ..Default::default()
         };
         let mut json = serde_json::to_value(&request).unwrap();
@@ -294,12 +294,12 @@ mod tests {
             request
         );
 
-        // Older serialized requests, including scroll contexts, omit source.
-        json.as_object_mut().unwrap().remove("source");
+        // Older serialized requests, including scroll contexts, omit query_source.
+        json.as_object_mut().unwrap().remove("query_source");
         assert!(
             serde_json::from_value::<SearchRequest>(json)
                 .unwrap()
-                .source
+                .query_source
                 .is_empty()
         );
     }

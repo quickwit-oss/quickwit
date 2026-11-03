@@ -224,9 +224,9 @@ pub struct SearchRequest {
     pub priority: i32,
     /// Caller-provided name of the application or feature that originated the query.
     /// Used for root search and resource usage logging. Empty when unspecified.
-    #[prost(string, tag = "22")]
+    #[prost(string, tag = "23")]
     #[serde(default)]
-    pub source: ::prost::alloc::string::String,
+    pub query_source: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
