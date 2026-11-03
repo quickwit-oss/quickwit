@@ -207,7 +207,7 @@ rust-embed = "8.13"
 rustc-hash = "2.1"
 rustls = "0.23"
 rustls-pemfile = "2.2"
-sea-query = { version = "0.32" }
+sea-query = { version = "1.0" }
 sea-query-binder = { version = "0.7", features = [
   "postgres-array",
   "runtime-tokio-rustls",
