@@ -48,7 +48,7 @@ impl From<Ulid> for DocMappingUid {
 impl DocMappingUid {
     /// Creates a new random doc mapping UID.
     pub fn random() -> Self {
-        Self(Ulid::new())
+        Self(Ulid::generate())
     }
 
     #[cfg(any(test, feature = "testsuite"))]

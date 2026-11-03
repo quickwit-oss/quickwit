@@ -547,6 +547,8 @@ message SplitIdAndFooterOffsets {
   optional int64 timestamp_end = 5;
   // The number of docs in the split
   uint64 num_docs = 6;
+  // Whether the split is mature and no longer eligible for merging.
+  bool is_mature = 7;
 }
 
 // Hits returned by a FetchDocRequest.

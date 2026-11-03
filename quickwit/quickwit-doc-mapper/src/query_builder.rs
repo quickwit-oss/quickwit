@@ -166,7 +166,6 @@ pub(crate) fn build_query(
 
     let (query, required_terms) = query_ast.build_tantivy_query_and_required_terms(context)?;
 
-    let term_set_query_fields = extract_term_set_query_fields(&query_ast, context.schema)?;
     let (term_ranges_grouped_by_field, automatons_grouped_by_field) =
         extract_prefix_term_ranges_and_automaton(
             &query_ast,
@@ -188,7 +187,6 @@ pub(crate) fn build_query(
     });
 
     let warmup_info = WarmupInfo {
-        term_dict_fields: term_set_query_fields,
         terms_grouped_by_field,
         term_ranges_grouped_by_field,
         fast_fields: fast_fields_visitor.fields,
@@ -198,46 +196,6 @@ pub(crate) fn build_query(
     };
 
     Ok((query, warmup_info))
-}
-
-struct ExtractTermSetFields<'a> {
-    term_dict_fields_to_warm_up: HashSet<Field>,
-    schema: &'a Schema,
-}
-
-impl<'a> ExtractTermSetFields<'a> {
-    fn new(schema: &'a Schema) -> Self {
-        ExtractTermSetFields {
-            term_dict_fields_to_warm_up: HashSet::new(),
-            schema,
-        }
-    }
-}
-
-impl<'a> QueryAstVisitor<'a> for ExtractTermSetFields<'_> {
-    type Err = anyhow::Error;
-
-    fn visit_term_set(&mut self, term_set_query: &'a TermSetQuery) -> anyhow::Result<()> {
-        for field in term_set_query.terms_per_field.keys() {
-            if let Some((field, _field_entry, _path)) =
-                find_field_or_hit_dynamic(field, self.schema)
-            {
-                self.term_dict_fields_to_warm_up.insert(field);
-            } else {
-                anyhow::bail!("field does not exist: {}", field);
-            }
-        }
-        Ok(())
-    }
-}
-
-fn extract_term_set_query_fields(
-    query_ast: &QueryAst,
-    schema: &Schema,
-) -> anyhow::Result<HashSet<Field>> {
-    let mut visitor = ExtractTermSetFields::new(schema);
-    visitor.visit(query_ast)?;
-    Ok(visitor.term_dict_fields_to_warm_up)
 }
 
 /// Converts a `prefix` term into the equivalent term range.
@@ -954,7 +912,7 @@ mod test {
         check_build_query_static_mode(
             "title: IN [hello]",
             Vec::new(),
-            TestExpectation::Ok("TermSetQuery"),
+            TestExpectation::Ok("Const(score=1, query=BooleanQuery"),
         );
         check_build_query_static_mode(
             "IN [hello]",
@@ -1177,11 +1135,14 @@ mod test {
         let context = BuildTantivyAstContext::for_test(&schema);
 
         let (_, warmup_info) = build_query(query_with_set, &context, None).unwrap();
-        assert_eq!(warmup_info.term_dict_fields.len(), 1);
-        assert!(
-            warmup_info
-                .term_dict_fields
-                .contains(&tantivy::schema::Field::from_field_id(2))
+        assert!(warmup_info.term_dict_fields.is_empty());
+        let desc = schema.get_field("desc").unwrap();
+        assert_eq!(
+            warmup_info.terms_grouped_by_field,
+            HashMap::from([(
+                desc,
+                HashMap::from([(Term::from_field_text(desc, "hello"), false)])
+            )])
         );
 
         let (_, warmup_info) = build_query(query_without_set, &context, None).unwrap();

@@ -575,7 +575,7 @@ impl IndexingScheduler {
         // The indexing plan ID is a monotonically increasing time based ID that's used as the
         // publish token for indexers, which ensures indexing plans and shard acquisition are always
         // informed by the most recent plan.
-        let indexing_plan_id = Ulid::new().to_string();
+        let indexing_plan_id = Ulid::generate().to_string();
 
         // Retiring and decommissioning indexers still receive the plan so they can gracefully shut
         // down dropped pipelines; other states (initializing, decommissioned, failed) are skipped.
