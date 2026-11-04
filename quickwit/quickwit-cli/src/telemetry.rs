@@ -41,10 +41,13 @@ pub(crate) fn quickwit_telemetry_info(config: &NodeConfig) -> QuickwitTelemetryI
 
 fn telemetry_features(config: &NodeConfig) -> HashSet<QuickwitFeature> {
     let mut features = HashSet::new();
-    if config.is_service_enabled(QuickwitService::Indexer)
-        && config.indexer_config.enable_otlp_endpoint
-    {
+    // Reported from the settings alone, as in releases 0.6 to 0.8, so that these flags mean the
+    // same in every version. The reported services tell whether the node serves the endpoints.
+    if config.indexer_config.enable_otlp_endpoint {
         features.insert(QuickwitFeature::Otlp);
+    }
+    if config.jaeger_config.enable_endpoint {
+        features.insert(QuickwitFeature::Jaeger);
     }
     // The metastore URI is only relevant on the nodes that serve the metastore.
     let served_metastore_uri_opt = if config.is_service_enabled(QuickwitService::Metastore) {
@@ -92,9 +95,6 @@ fn telemetry_features(config: &NodeConfig) -> HashSet<QuickwitFeature> {
         features.insert(flavor_feature);
     }
     if config.is_service_enabled(QuickwitService::Searcher) {
-        if config.jaeger_config.enable_endpoint {
-            features.insert(QuickwitFeature::Jaeger);
-        }
         if config.searcher_config.lambda.is_some() {
             features.insert(QuickwitFeature::LambdaLeafSearch);
         }
@@ -133,8 +133,8 @@ mod tests {
         node_config.indexer_config.enable_otlp_endpoint = true;
         node_config.jaeger_config.enable_endpoint = true;
         let features = telemetry_features(&node_config);
-        assert!(!features.contains(&QuickwitFeature::Otlp));
-        assert!(!features.contains(&QuickwitFeature::Jaeger));
+        assert!(features.contains(&QuickwitFeature::Otlp));
+        assert!(features.contains(&QuickwitFeature::Jaeger));
 
         node_config.enabled_services = HashSet::from([QuickwitService::MetastoreReadReplica]);
         node_config.metastore_read_replica_uri =
@@ -171,9 +171,7 @@ mod tests {
         let features = telemetry_features(&node_config);
         for feature in [
             QuickwitFeature::DocsClustering,
-            QuickwitFeature::Jaeger,
             QuickwitFeature::LambdaLeafSearch,
-            QuickwitFeature::Otlp,
             QuickwitFeature::PostgresqMetastore,
             QuickwitFeature::S3CustomEndpoint,
             QuickwitFeature::S3FlavorMinio,

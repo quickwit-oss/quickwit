@@ -50,7 +50,7 @@ Each request also includes:
   - the metastore type, file-backed or PostgreSQL, if the node runs the metastore or a metastore read replica;
   - where the default index root URI points: S3, Azure Blob Storage, Google Cloud Storage or the local file system;
   - whether the S3 storage config targets an S3-compatible store, through a custom endpoint or a flavor such as MinIO, Garage, DigitalOcean Spaces or Google Cloud Storage;
-  - whether the OTLP endpoints are enabled on an indexer, and the Jaeger endpoint on a searcher;
+  - whether the OTLP and Jaeger endpoints are enabled in the node configuration;
   - whether ingest API v1 and v2 are enabled;
   - whether the searcher uses AWS Lambda for leaf searches or a local split cache;
   - whether document clustering is configured;
