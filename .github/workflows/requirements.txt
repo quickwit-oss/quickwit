@@ -20,6 +20,6 @@ platformdirs==4.5.0 \
 python-discovery==1.6.2 \
     --hash=sha256:cd1738ca1d37c86ef9d0b654dd46fcee1e41c97c6add12575e8501ced39afdb4 \
     --hash=sha256:f0c697f95a3aaec4174a6e5e58f5885e25768684bafc76f1afde384709ebdcf2
-virtualenv==21.14.9 \
-    --hash=sha256:4d1bee354cd81c820da3bee56e38be3426490f8d1fc54e10ea5b2072ebad8ef8 \
-    --hash=sha256:ac51744da66ae56ff814b087d65096c94de698ec520adc624b108b679655809b
+virtualenv==21.14.13 \
+    --hash=sha256:5fbb04138a4861580b78ba9110d529a26bc48fcc93c8ec36bc0202eeed96a788 \
+    --hash=sha256:de5307ba4b9a0001d9c8ea02832d38f63ca432880f416c1bface61c4323fd905
