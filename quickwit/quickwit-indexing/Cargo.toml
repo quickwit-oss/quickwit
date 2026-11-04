@@ -24,7 +24,6 @@ flume = { workspace = true }
 fnv = { workspace = true }
 futures = { workspace = true }
 google-cloud-auth = { workspace = true, optional = true }
-google-cloud-gax = { workspace = true, optional = true }
 google-cloud-googleapis = { workspace = true, optional = true }
 google-cloud-pubsub = { workspace = true, optional = true }
 itertools = { workspace = true }
@@ -68,7 +67,6 @@ quickwit-storage = { workspace = true }
 [features]
 gcp-pubsub = [
   "dep:google-cloud-auth",
-  "dep:google-cloud-gax",
   "dep:google-cloud-googleapis",
   "dep:google-cloud-pubsub",
 ]
