@@ -16,6 +16,7 @@ use std::fmt;
 use std::time::Duration;
 
 use anyhow::Context;
+use quickwit_common::runtimes::metrics::task_monitor;
 use quickwit_metrics::Counter;
 use sync_wrapper::SyncWrapper;
 use tokio::sync::watch;
@@ -168,14 +169,15 @@ impl<A: Actor> SpawnBuilder<A> {
         // We prevent fast forward of the scheduler during  initialization.
         let no_advance_time_guard = self.spawn_ctx.scheduler_client.no_advance_time_guard();
         let runtime_handle = actor.runtime_handle();
+        let monitor = task_monitor(actor.metric_name(), &runtime_handle);
         let (ctx, inbox, state_rx) = self.create_actor_context_and_inbox(&actor);
         debug!(actor_id = %ctx.actor_instance_id(), "spawn-actor");
         let mailbox = ctx.mailbox().clone();
         let ctx_clone = ctx.clone();
-        let loop_async_actor_future =
-            async move { actor_loop(actor, inbox, no_advance_time_guard, ctx).await };
+        let actor_future = monitor
+            .instrument(async move { actor_loop(actor, inbox, no_advance_time_guard, ctx).await });
         let join_handle = ActorJoinHandle::new(quickwit_common::spawn_named_task_on(
-            loop_async_actor_future,
+            actor_future,
             std::any::type_name::<A>(),
             &runtime_handle,
         ));

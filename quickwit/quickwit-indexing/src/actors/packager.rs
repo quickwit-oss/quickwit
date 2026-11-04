@@ -107,6 +107,10 @@ impl Actor for Packager {
         self.actor_name.to_string()
     }
 
+    fn metric_name(&self) -> &'static str {
+        self.actor_name
+    }
+
     fn runtime_handle(&self) -> Handle {
         RuntimeType::Blocking.get_runtime_handle()
     }

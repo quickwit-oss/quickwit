@@ -75,6 +75,45 @@ PostgreSQL-backed metastores also expose connection pool gauges:
 | --------- | ----------- | ----------- | ---- |
 | `quickwit` | `http_requests_total` | Total number of HTTP requests received | `counter` |
 
+## Runtime Metrics
+
+Runtime metrics are labeled by `runtime_type` (`main`, `blocking`, `non_blocking`). One OS thread samples runtime and task metrics every second, so Tokio saturation cannot delay the sampler itself. Tokio publishes worker busy time when workers park or perform scheduler maintenance; use rates over several minutes to smooth these updates. Sampling does not account for unfinished work: poll duration is recorded when a poll returns, and scheduling delay when a task is polled again.
+
+| Namespace | Metric Name | Description | Labels | Type |
+| --------- | ----------- | ----------- | ------ | ---- |
+| `quickwit_runtime` | `tokio_worker_busy_duration_milliseconds_total` | Cumulative busy time summed over all runtime workers, in milliseconds | [`runtime_type`] | `counter` |
+| `quickwit_runtime` | `tokio_worker_threads` | Number of worker threads of the runtime | [`runtime_type`] | `gauge` |
+| `quickwit_runtime` | `tokio_scheduled_tasks` | Number of tasks waiting in the workers' local run queues when last sampled. Excludes the global queue and the LIFO slot | [`runtime_type`] | `gauge` |
+
+The `tokio_worker_busy_ratio` gauge has been removed. To calculate utilization as a fraction, use:
+
+```promql
+rate(quickwit_runtime_tokio_worker_busy_duration_milliseconds_total[5m])
+  / (1000 * quickwit_runtime_tokio_worker_threads)
+```
+
+Task metrics are labeled by `task`, a static actor type or role name, and by `runtime_type`. The default task name is the full Rust type name. Source actors use the source implementation's type name; packagers, publishers, and uploaders distinguish their pipeline roles. Names exclude index IDs, source IDs, and other instance details. Test or externally supplied runtimes that have not been registered use `unregistered` and produce a rate-limited warning.
+
+Each task group shares a monitor across actor instances and restarts. Monitors remain registered for the process lifetime so exported counters retain their cumulative totals. Runtime registration must precede spawning its actors; repeating a registration is harmless, but changing a runtime's label or sharing it with another runtime is rejected.
+
+Task metrics cover the actor loop, excluding separately spawned tasks. Scheduling delay measures wake-to-poll time, not time spent in the actor mailbox. Poll duration is wall-clock time, including synchronous blocking and OS descheduling; it is not CPU time.
+
+| Namespace | Metric Name | Description | Labels | Type |
+| --------- | ----------- | ----------- | ------ | ---- |
+| `quickwit_runtime` | `tokio_task_scheduled_duration_microseconds_total` | Cumulative wake-to-poll delay, excluding the initial wait before the first poll | [`task`, `runtime_type`] | `counter` |
+| `quickwit_runtime` | `tokio_task_schedules_total` | Number of observed wake-to-poll intervals; multiple wakes before a poll count once | [`task`, `runtime_type`] | `counter` |
+| `quickwit_runtime` | `tokio_task_poll_duration_microseconds_total` | Wall-clock time spent polling actor futures | [`task`, `runtime_type`] | `counter` |
+| `quickwit_runtime` | `tokio_task_polls_total` | Number of times tasks were polled | [`task`, `runtime_type`] | `counter` |
+| `quickwit_runtime` | `tokio_task_slow_polls_total` | Number of polls lasting at least 50µs | [`task`, `runtime_type`] | `counter` |
+| `quickwit_runtime` | `tokio_task_idle_duration_microseconds_total` | Time tasks spent idle, waiting to be woken up by an external event | [`task`, `runtime_type`] | `counter` |
+
+For mean scheduling delay in microseconds over a recent window, divide rates over that same window:
+
+```promql
+rate(quickwit_runtime_tokio_task_scheduled_duration_microseconds_total[5m])
+  / rate(quickwit_runtime_tokio_task_schedules_total[5m])
+```
+
 ## Search Metrics
 
 | Namespace | Metric Name | Description | Type |

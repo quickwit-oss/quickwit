@@ -307,6 +307,10 @@ pub trait Source: Send + 'static {
     /// A name identifying the type of source.
     fn name(&self) -> String;
 
+    fn metric_name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
     /// Returns an observable_state for the actor.
     ///
     /// This object is simply a json object, and its content may vary depending on the
@@ -350,6 +354,10 @@ impl Actor for SourceActor {
 
     fn name(&self) -> String {
         self.source.name()
+    }
+
+    fn metric_name(&self) -> &'static str {
+        self.source.metric_name()
     }
 
     fn observable_state(&self) -> Self::ObservableState {

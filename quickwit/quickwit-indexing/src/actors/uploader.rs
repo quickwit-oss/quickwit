@@ -257,6 +257,14 @@ impl Actor for Uploader {
     fn name(&self) -> String {
         format!("{:?}", self.uploader_type)
     }
+
+    fn metric_name(&self) -> &'static str {
+        match self.uploader_type {
+            UploaderType::IndexUploader => "IndexUploader",
+            UploaderType::MergeUploader => "MergeUploader",
+            UploaderType::DeleteUploader => "DeleteUploader",
+        }
+    }
 }
 
 #[async_trait]

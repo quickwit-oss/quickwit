@@ -111,6 +111,10 @@ pub trait Actor: Send + Sized + 'static {
         type_name::<Self>().to_string()
     }
 
+    fn metric_name(&self) -> &'static str {
+        type_name::<Self>()
+    }
+
     /// The runner method makes it possible to decide the environment
     /// of execution of the Actor.
     ///
