@@ -14,6 +14,8 @@
 
 #![recursion_limit = "256"]
 
+use std::num::NonZeroUsize;
+
 use anyhow::Context;
 use colored::Colorize;
 use quickwit_cli::checklist::RED_COLOR;
@@ -32,14 +34,12 @@ use tracing::error;
 const QW_ENABLE_TOKIO_CONSOLE_ENV_KEY: &str = "QW_ENABLE_TOKIO_CONSOLE";
 
 /// The main tokio runtime takes num_cores / 3 threads by default, and can be overridden by the
-/// QW_RUNTIME_NUM_THREADS environment variable.
+/// `QW_TOKIO_RUNTIME_NUM_THREADS` environment variable. The value must be strictly positive.
 fn get_main_runtime_num_threads() -> usize {
     let default_num_runtime_threads: usize = quickwit_common::num_cpus().div_ceil(3);
-    quickwit_common::get_from_env(
-        "QW_TOKIO_RUNTIME_NUM_THREADS",
-        default_num_runtime_threads,
-        false,
-    )
+    quickwit_common::get_from_env_opt::<NonZeroUsize>("QW_TOKIO_RUNTIME_NUM_THREADS", false)
+        .map(NonZeroUsize::get)
+        .unwrap_or(default_num_runtime_threads)
 }
 
 fn main() -> anyhow::Result<()> {
