@@ -53,7 +53,7 @@
   "scripts": {
     "start": "vite",
     "build": "vite build --outDir build",
-    "test": "jest",
+    "test": "NODE_OPTIONS=\"$NODE_OPTIONS --experimental-vm-modules\" jest",
     "postbuild": "cp .gitignore_for_build_directory build/.gitignore",
     "lint": "biome check",
     "format": "biome check --write",
