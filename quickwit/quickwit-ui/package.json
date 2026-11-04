@@ -48,7 +48,8 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@babel/plugin-transform-modules-systemjs": "7.29.4",
-    "dompurify": "3.4.17"
+    "dompurify": "3.4.17",
+    "glob": "14.0.3"
   },
   "scripts": {
     "start": "vite",
