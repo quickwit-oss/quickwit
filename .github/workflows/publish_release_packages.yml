@@ -55,7 +55,7 @@ jobs:
         run: echo "name=lambda-zip-${{ env.ASSET_VERSION }}" >> $GITHUB_OUTPUT
 
       - name: Upload Lambda zip as workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.set-artifact-name.outputs.name }}
           path: quickwit-aws-lambda-${{ env.ASSET_VERSION }}-aarch64.zip
@@ -77,7 +77,7 @@ jobs:
       - name: Extract asset version
         run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
       - name: Download Lambda artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ needs.build-lambda.outputs.artifact-name }}
           path: /tmp/lambda-artifact
@@ -104,7 +104,7 @@ jobs:
       - name: Extract asset version
         run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
       - name: Download Lambda artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ needs.build-lambda.outputs.artifact-name }}
           # `cross` mounts the Rust workspace (`quickwit/`) at `/project` in the container.

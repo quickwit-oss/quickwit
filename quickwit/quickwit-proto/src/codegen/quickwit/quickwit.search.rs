@@ -222,6 +222,11 @@ pub struct SearchRequest {
     #[prost(int32, tag = "21")]
     #[serde(default)]
     pub priority: i32,
+    /// Caller-provided name of the application or feature that originated the query.
+    /// Used for root search and resource usage logging. Empty when unspecified.
+    #[prost(string, tag = "23")]
+    #[serde(default)]
+    pub query_source: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -510,6 +515,10 @@ pub struct SplitIdAndFooterOffsets {
     /// The number of docs in the split
     #[prost(uint64, tag = "6")]
     pub num_docs: u64,
+    /// Whether the split is mature and no longer eligible for merging.
+    #[prost(bool, tag = "7")]
+    #[serde(default)]
+    pub is_mature: bool,
 }
 /// Hits returned by a FetchDocRequest.
 ///

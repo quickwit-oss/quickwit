@@ -173,7 +173,7 @@ mod tests {
 
     #[test]
     fn test_shard_id_prost_serde_roundtrip() {
-        let ulid = Ulid::new();
+        let ulid = Ulid::generate();
         let encoded = ShardId::from(ulid).encode_to_vec();
         assert_eq!(
             ShardId::decode(Bytes::from(encoded)).unwrap(),

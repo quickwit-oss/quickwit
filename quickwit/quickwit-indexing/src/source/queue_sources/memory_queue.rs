@@ -86,7 +86,7 @@ impl MemoryQueueForTests {
                 ack_id: ack_id.to_string(),
                 delivery_attempts: 0,
                 initial_deadline: Instant::now(),
-                message_id: Ulid::new().to_string(),
+                message_id: Ulid::generate().to_string(),
             },
         };
         self.inner_state.lock().unwrap().in_queue.push_back(message);

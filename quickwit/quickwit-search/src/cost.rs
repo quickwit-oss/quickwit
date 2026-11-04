@@ -43,16 +43,30 @@ const AGG_DEFAULT: f32 = 3.0;
 /// shape_cost is based on what is in the query ast. agg_cost is based on the aggregation, if
 /// present
 pub fn compute_query_complexity_factor(search_request: &SearchRequest) -> crate::Result<f32> {
+    Ok(compute_query_cost(search_request)?.complexity_factor)
+}
+
+/// Query-dependent estimates used for job placement and warmup memory reservations.
+pub(crate) struct QueryCost {
+    pub complexity_factor: f32,
+    pub warmup_memory_factor: u64,
+}
+
+pub(crate) fn compute_query_cost(search_request: &SearchRequest) -> crate::Result<QueryCost> {
     let query_ast: QueryAst = serde_json::from_str(&search_request.query_ast)
         .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
     let mut visitor = ShapeCostVisitor {
         total: 0.0,
         bool_depth: 0,
+        warmup_memory_factor: 1,
     };
     let Ok(_) = visitor.visit(&query_ast);
     let shape_cost = visitor.total.max(1.0);
     let aggregation_cost = agg_cost(search_request.aggregation_request.as_deref())?;
-    Ok(shape_cost + aggregation_cost)
+    Ok(QueryCost {
+        complexity_factor: shape_cost + aggregation_cost,
+        warmup_memory_factor: visitor.warmup_memory_factor,
+    })
 }
 
 // The cost of searching a split with `num_docs` docs and the specified `query_complexity_factor`
@@ -100,6 +114,7 @@ fn agg_type_multiplier(aggregation: &AggregationVariants) -> f32 {
 struct ShapeCostVisitor {
     total: f32,
     bool_depth: i32,
+    warmup_memory_factor: u64,
 }
 
 impl ShapeCostVisitor {
@@ -161,6 +176,11 @@ impl<'a> QueryAstVisitor<'a> for ShapeCostVisitor {
     }
 
     fn visit_wildcard(&mut self, wildcard_query: &'a WildcardQuery) -> Result<(), Self::Err> {
+        if wildcard_query.value.starts_with('*') {
+            // Coalescing reads for a leading wildcard can download the entire postings file.
+            // Reserve more memory to limit concurrent warmups, once per query.
+            self.warmup_memory_factor = 10;
+        }
         // Ignore up to two initial ?, more ? or * are treated as leading wildcard.
         let mut prefix = wildcard_query.value.as_str();
         for _ in 0..2 {
@@ -260,12 +280,15 @@ mod tests {
 
     #[test]
     fn test_wildcard_factors() {
-        for (value, expected) in [
-            ("error*", 2.0),
-            ("*error", 125.0),
-            ("?error*", 2.0),
-            ("??error*", 2.0),
-            ("???error*", 125.0),
+        for (value, expected, memory_factor) in [
+            ("error*", 2.0, 1),
+            ("*error", 125.0, 10),
+            ("*error*", 125.0, 10),
+            ("*", 125.0, 10),
+            (r"\*error", 2.0, 1),
+            ("?error*", 2.0, 1),
+            ("??error*", 2.0, 1),
+            ("???error*", 125.0, 1),
         ] {
             let query = WildcardQuery {
                 field: "message".to_string(),
@@ -277,7 +300,66 @@ mod tests {
                 query_ast: serde_json::to_string(&QueryAst::Wildcard(query)).unwrap(),
                 ..Default::default()
             };
-            assert_eq!(compute_query_complexity_factor(&request).unwrap(), expected);
+            let cost = compute_query_cost(&request).unwrap();
+            assert_eq!(cost.complexity_factor, expected);
+            assert_eq!(cost.warmup_memory_factor, memory_factor, "{value}");
+        }
+    }
+
+    #[test]
+    fn test_warmup_memory_factor_nested_queries() {
+        let wildcard: QueryAst = WildcardQuery {
+            field: "message".to_string(),
+            value: "*error".to_string(),
+            lenient: false,
+            case_insensitive: false,
+        }
+        .into();
+        let boosted = QueryAst::Boost {
+            underlying: Box::new(wildcard.clone()),
+            boost: 2.0.try_into().unwrap(),
+        };
+        let cached = QueryAst::Cache(quickwit_query::query_ast::CacheNode::new(boosted));
+        for query in [
+            BoolQuery {
+                must: vec![cached],
+                ..Default::default()
+            },
+            BoolQuery {
+                should: vec![wildcard.clone()],
+                ..Default::default()
+            },
+            BoolQuery {
+                filter: vec![wildcard.clone()],
+                ..Default::default()
+            },
+            BoolQuery {
+                must_not: vec![wildcard.clone()],
+                ..Default::default()
+            },
+            BoolQuery {
+                must: vec![wildcard.clone(), wildcard],
+                ..Default::default()
+            },
+        ] {
+            let request = SearchRequest {
+                query_ast: serde_json::to_string(&QueryAst::Bool(query)).unwrap(),
+                ..Default::default()
+            };
+            assert_eq!(
+                compute_query_cost(&request).unwrap().warmup_memory_factor,
+                10
+            );
+        }
+        for query in [QueryAst::MatchAll, QueryAst::MatchNone, term()] {
+            let request = SearchRequest {
+                query_ast: serde_json::to_string(&query).unwrap(),
+                ..Default::default()
+            };
+            assert_eq!(
+                compute_query_cost(&request).unwrap().warmup_memory_factor,
+                1
+            );
         }
     }
 

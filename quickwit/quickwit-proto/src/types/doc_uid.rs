@@ -46,7 +46,7 @@ impl From<Ulid> for DocUid {
 impl DocUid {
     /// Creates a new random doc UID.
     pub fn random() -> Self {
-        Self(Ulid::new())
+        Self(Ulid::generate())
     }
 
     #[cfg(any(test, feature = "testsuite"))]
@@ -132,7 +132,7 @@ pub struct DocUidGenerator {
 impl Default for DocUidGenerator {
     fn default() -> Self {
         Self {
-            next_ulid: Ulid::new(),
+            next_ulid: Ulid::generate(),
         }
     }
 }
@@ -144,7 +144,12 @@ impl DocUidGenerator {
         let doc_uid = DocUid(self.next_ulid);
         // Clippy insists on using `unwrap_or_default`, but that's really not what we want here:
         // https://github.com/rust-lang/rust-clippy/issues/11631
-        self.next_ulid = self.next_ulid.increment().unwrap_or_else(Ulid::new);
+        // On overflow, `increment` returns the carried-over ULID in `Err`; we discard it and start
+        // over from a fresh ULID.
+        self.next_ulid = self
+            .next_ulid
+            .increment()
+            .unwrap_or_else(|_overflowed_ulid: Ulid| Ulid::generate());
         doc_uid
     }
 }

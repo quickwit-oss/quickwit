@@ -285,6 +285,13 @@ message SearchRequest {
   // Scheduling priority for leaf search execution. Negative values are allowed,
   // and lower values have higher priority. Callers that omit it get priority 0.
   int32 priority = 21;
+
+  // Field 22 is reserved for a downstream fork's source field.
+  reserved 22;
+
+  // Caller-provided name of the application or feature that originated the query.
+  // Used for root search and resource usage logging. Empty when unspecified.
+  string query_source = 23;
 }
 
 enum CountHits {
@@ -547,6 +554,8 @@ message SplitIdAndFooterOffsets {
   optional int64 timestamp_end = 5;
   // The number of docs in the split
   uint64 num_docs = 6;
+  // Whether the split is mature and no longer eligible for merging.
+  bool is_mature = 7;
 }
 
 // Hits returned by a FetchDocRequest.
