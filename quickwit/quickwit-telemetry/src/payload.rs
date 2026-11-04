@@ -80,8 +80,6 @@ pub enum TelemetryEvent {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         api_usage: BTreeMap<ApiKind, String>,
     },
-    /// UI index.html was requested.
-    UiIndexPageLoad,
     /// The install ID was just created.
     Install,
 }

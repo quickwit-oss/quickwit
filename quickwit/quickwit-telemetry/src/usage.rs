@@ -32,6 +32,7 @@ pub enum ApiKind {
     NativeIngest,
     Otlp,
     Jaeger,
+    UiIndexPageLoad,
 }
 
 /// Indexed by `api_kind as usize`.

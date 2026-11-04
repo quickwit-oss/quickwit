@@ -14,7 +14,7 @@
 
 use std::sync::LazyLock;
 
-use quickwit_telemetry::payload::TelemetryEvent;
+use quickwit_telemetry::ApiKind;
 use regex::Regex;
 use rust_embed::RustEmbed;
 use warp::hyper::header::HeaderValue;
@@ -60,7 +60,7 @@ async fn serve_impl(path: &str) -> Result<impl warp::Reply + use<>, Rejection> {
     if is_index_page {
         // The client (browser) usually request `index.html` once unless the user refreshes the
         // page.
-        quickwit_telemetry::send_telemetry_event(TelemetryEvent::UiIndexPageLoad);
+        quickwit_telemetry::record_api_request(ApiKind::UiIndexPageLoad);
     }
     let mime = mime_guess::from_path(path_to_file).first_or_octet_stream();
 

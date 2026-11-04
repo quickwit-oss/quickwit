@@ -39,7 +39,6 @@ Events, each with the time it happened, in seconds since the Unix epoch:
 - `run_command`: the node started.
 - `end_command`: the node stopped, with its exit code.
 - `running`: the node is still up. Sent every 12 hours.
-- `ui_index_page_load`: the node served the Quickwit UI page. Browsers request it when someone opens or reloads the UI, and so does any other client that requests a UI URL, such as an uptime check.
 
 Each request also includes:
 
@@ -63,7 +62,7 @@ Each request also includes:
 - An MD5 hash of the host name and the user name, used to count distinct installations from older releases, which have no install ID. The relay replaces it with a keyed hash before storage. See below.
 - The number of events dropped because too many were queued.
 
-`running` and `end_command` events also include how many requests each API received since the previous report, as ranges such as `10-99`: search and bulk ingestion on the Elasticsearch-compatible API, other Elasticsearch-compatible requests, search and ingestion on the native API, OTLP, and Jaeger. Searches from the Quickwit UI count as native searches.
+`running` and `end_command` events also include how many requests each API received since the previous report, as ranges such as `10-99`: search and bulk ingestion on the Elasticsearch-compatible API, other Elasticsearch-compatible requests, search and ingestion on the native API, OTLP, and Jaeger. Searches from the Quickwit UI count as native searches. They also include how many times the node served the Quickwit UI page, in the same ranges. Browsers request it when someone opens or reloads the UI, and so does any other client that requests a UI URL, such as an uptime check.
 
 Quickwit never sends index or field names, documents, queries, configuration values or credentials.
 

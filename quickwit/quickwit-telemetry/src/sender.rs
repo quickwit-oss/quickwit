@@ -36,6 +36,7 @@ const TELEMETRY_RUNNING_EVENT_INTERVAL: Duration = Duration::from_secs(60 * 60 *
 /// This duration is the amount of time we wait for at most to send that last telemetry request.
 const LAST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
 
+/// The relay rejects requests with more events.
 const MAX_NUM_EVENTS_IN_QUEUE: usize = 10;
 
 #[derive(Default)]
@@ -49,19 +50,7 @@ impl EventsState {
     fn push_event(&mut self, mut event: TelemetryEvent) -> bool {
         if self.events.len() >= MAX_NUM_EVENTS_IN_QUEUE {
             self.num_dropped_events += 1;
-            // UI page loads are the only events that can fill the queue. Any other event, such as
-            // a summary carrying the API counts, replaces the latest one instead of being dropped.
-            if matches!(event, TelemetryEvent::UiIndexPageLoad) {
-                return false;
-            }
-            let Some(ui_page_load_idx) = self
-                .events
-                .iter()
-                .rposition(|queued| matches!(queued.event, TelemetryEvent::UiIndexPageLoad))
-            else {
-                return false;
-            };
-            self.events.remove(ui_page_load_idx);
+            return false;
         }
         event.add_usage();
         let events_was_empty = self.events.is_empty();
@@ -183,19 +172,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_push_event_replaces_ui_page_load_when_queue_is_full() {
+    fn test_push_event_drops_events_when_queue_is_full() {
         let mut events_state = EventsState::default();
         for _ in 0..=MAX_NUM_EVENTS_IN_QUEUE {
-            events_state.push_event(TelemetryEvent::UiIndexPageLoad);
+            events_state.push_event(TelemetryEvent::RunCommand);
         }
-        events_state.push_event(TelemetryEvent::end_command(0));
-
         assert_eq!(events_state.events.len(), MAX_NUM_EVENTS_IN_QUEUE);
-        assert_eq!(events_state.num_dropped_events, 2);
-        assert!(matches!(
-            events_state.events.last().unwrap().event,
-            TelemetryEvent::EndCommand { .. }
-        ));
+        assert_eq!(events_state.num_dropped_events, 1);
     }
 
     #[tokio::test(start_paused = true)]
@@ -219,13 +202,13 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let telemetry_sender = TelemetrySender::new(QuickwitTelemetryInfo::default(), tx);
         let loop_handle = telemetry_sender.start_loop();
-        telemetry_sender.send(TelemetryEvent::UiIndexPageLoad);
+        telemetry_sender.send(TelemetryEvent::RunCommand);
         let payload = rx.recv().await.unwrap();
         assert_eq!(payload.events.len(), 1);
 
         let first_request_instant = Instant::now();
-        telemetry_sender.send(TelemetryEvent::UiIndexPageLoad);
-        telemetry_sender.send(TelemetryEvent::UiIndexPageLoad);
+        telemetry_sender.send(TelemetryEvent::RunCommand);
+        telemetry_sender.send(TelemetryEvent::RunCommand);
         let payload = rx.recv().await.unwrap();
         assert!(first_request_instant.elapsed() >= TELEMETRY_PUSH_COOLDOWN);
         assert_eq!(payload.events.len(), 2);
@@ -237,7 +220,7 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let telemetry_sender = TelemetrySender::new(QuickwitTelemetryInfo::default(), tx);
         let loop_handle = telemetry_sender.start_loop();
-        telemetry_sender.send(TelemetryEvent::UiIndexPageLoad);
+        telemetry_sender.send(TelemetryEvent::RunCommand);
         let payload = rx.recv().await.unwrap();
         assert_eq!(payload.events.len(), 1);
         telemetry_sender.send(TelemetryEvent::end_command(2i32));
