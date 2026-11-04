@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
-use sea_query::{Cond, Expr, all};
+use sea_query::{Cond, Expr, ExprTrait, all};
 
 // We use dollar-quoted strings in PostgreSQL.
 //
@@ -74,12 +74,20 @@ pub(super) fn generate_sql_condition(tag_ast: &TagFilterAst) -> Cond {
 #[cfg(test)]
 mod tests {
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag};
-    use sea_query::any;
+    use sea_query::{PostgresQueryBuilder, Query, any};
 
     use super::*;
 
     fn test_tags_filter_expression_helper(tags_ast: TagFilterAst, expected: Cond) {
-        assert_eq!(generate_sql_condition(&tags_ast), expected);
+        // Since sea-query 1.0, `Cond::add` no longer collapses single-element conditions (the
+        // query builder does it when rendering), so we compare the rendered SQL rather than the
+        // condition trees.
+        let render = |cond: Cond| {
+            Query::select()
+                .cond_where(cond)
+                .to_string(PostgresQueryBuilder)
+        };
+        assert_eq!(render(generate_sql_condition(&tags_ast)), render(expected));
     }
 
     #[test]

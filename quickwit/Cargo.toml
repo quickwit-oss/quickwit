@@ -208,7 +208,8 @@ rustc-hash = "2.1"
 rustls = "0.23"
 rustls-pemfile = "2.2"
 sea-query = { version = "1.0" }
-sea-query-binder = { version = "0.7", features = [
+# sea-query-sqlx 0.8.0 requires sqlx 0.9; 0.8.1 is the sqlx 0.8 release.
+sea-query-sqlx = { version = "0.8.1", features = [
   "postgres-array",
   "runtime-tokio-rustls",
   "sqlx-postgres",
