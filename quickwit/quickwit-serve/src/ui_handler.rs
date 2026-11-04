@@ -60,7 +60,7 @@ async fn serve_impl(path: &str) -> Result<impl warp::Reply + use<>, Rejection> {
     if is_index_page {
         // The client (browser) usually request `index.html` once unless the user refreshes the
         // page.
-        quickwit_telemetry::send_telemetry_event(TelemetryEvent::UiIndexPageLoad).await;
+        quickwit_telemetry::send_telemetry_event(TelemetryEvent::UiIndexPageLoad);
     }
     let mime = mime_guess::from_path(path_to_file).first_or_octet_stream();
 

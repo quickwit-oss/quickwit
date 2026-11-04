@@ -128,9 +128,8 @@ impl RunCliCommand {
         crate::busy_detector::set_enabled(true);
         let telemetry_info = quickwit_telemetry_info(&node_config);
         let telemetry_handle_opt =
-            quickwit_telemetry::start_telemetry_loop(telemetry_info, &node_config.data_dir_path)
-                .await;
-        quickwit_telemetry::send_telemetry_event(TelemetryEvent::RunCommand).await;
+            quickwit_telemetry::start_telemetry_loop(telemetry_info, &node_config.data_dir_path);
+        quickwit_telemetry::send_telemetry_event(TelemetryEvent::RunCommand);
         // TODO move in serve quickwit?
         let runtimes_config = RuntimesConfig::default();
         start_actor_runtimes(runtimes_config, &node_config.enabled_services)?;
@@ -153,7 +152,7 @@ impl RunCliCommand {
             Ok(_) => 0,
             Err(_) => 1,
         };
-        quickwit_telemetry::send_telemetry_event(TelemetryEvent::end_command(return_code)).await;
+        quickwit_telemetry::send_telemetry_event(TelemetryEvent::end_command(return_code));
         if let Some(telemetry_handle) = telemetry_handle_opt {
             telemetry_handle.terminate_telemetry().await;
         }

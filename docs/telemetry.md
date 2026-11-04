@@ -13,7 +13,7 @@ Telemetry is on by default. To turn it off, set `QW_DISABLE_TELEMETRY` before st
 export QW_DISABLE_TELEMETRY=1
 ```
 
-Any non-empty value other than `false`, `no` or `0` disables telemetry.
+Any value disables telemetry, even an empty value or `false`.
 
 To check whether telemetry is on, run `quickwit --help`. While it is on, the output includes a `Telemetry: enabled` line:
 

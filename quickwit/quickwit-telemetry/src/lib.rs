@@ -17,7 +17,6 @@
 
 #![deny(clippy::disallowed_methods)]
 
-mod clock;
 mod install;
 mod machine;
 pub mod payload;
@@ -25,7 +24,6 @@ mod sender;
 pub(crate) mod sink;
 mod usage;
 
-use std::ffi::OsStr;
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -42,8 +40,8 @@ static TELEMETRY_SENDER: OnceLock<TelemetrySender> = OnceLock::new();
 
 /// Starts the telemetry loop, and queues the `install` event if the install ID stored in
 /// `data_dir` was just created. Returns `None` if telemetry is disabled, if the HTTP client can't
-/// be created, or if the loop is already started.
-pub async fn start_telemetry_loop(
+/// be created, or if the loop is already started. Must be called from a Tokio runtime.
+pub fn start_telemetry_loop(
     mut quickwit_info: QuickwitTelemetryInfo,
     data_dir: &Path,
 ) -> Option<TelemetryLoopHandle> {
@@ -77,7 +75,7 @@ pub async fn start_telemetry_loop(
         };
         is_new_install_opt = Some(is_new_install);
         info!("telemetry to {} is enabled", http_client.endpoint());
-        TelemetrySender::with_http_client(quickwit_info, http_client)
+        TelemetrySender::new(quickwit_info, http_client)
     });
     let Some(is_new_install) = is_new_install_opt else {
         // This should not happen... unless telemetry is enabled and you are running tests in
@@ -87,7 +85,7 @@ pub async fn start_telemetry_loop(
     };
     let telemetry_loop_handle = telemetry_sender.start_loop();
     if is_new_install {
-        telemetry_sender.send(TelemetryEvent::Install).await;
+        telemetry_sender.send(TelemetryEvent::Install);
     }
     Some(telemetry_loop_handle)
 }
@@ -102,9 +100,9 @@ pub async fn start_telemetry_loop(
 /// If a request fails, the error is only logged at the debug level.
 ///
 /// The event is an enum so that readers can audit what information is sent.
-pub async fn send_telemetry_event(event: TelemetryEvent) {
+pub fn send_telemetry_event(event: TelemetryEvent) {
     if let Some(telemetry_sender) = TELEMETRY_SENDER.get() {
-        telemetry_sender.send(event).await;
+        telemetry_sender.send(event);
     }
 }
 
@@ -114,48 +112,11 @@ pub fn is_telemetry_enabled() -> bool {
     TELEMETRY_SENDER.get().is_some()
 }
 
-/// This environment variable can be set to disable sending telemetry events.
+/// Setting this environment variable to any value, even empty or `false`, disables telemetry, as
+/// in releases 0.6.0 to 0.8.x.
 pub const DISABLE_TELEMETRY_ENV_KEY: &str = "QW_DISABLE_TELEMETRY";
 
-/// Returns true if `QW_DISABLE_TELEMETRY` disables telemetry.
+/// Returns true if `QW_DISABLE_TELEMETRY` is set.
 pub fn is_telemetry_disabled() -> bool {
-    let env_value_opt = std::env::var_os(DISABLE_TELEMETRY_ENV_KEY);
-    is_telemetry_disabled_by_env_value(env_value_opt.as_deref())
-}
-
-/// Telemetry is disabled when `QW_DISABLE_TELEMETRY` is set to any non-empty value other than
-/// `false`, `no` or `0`. Unrecognized values disable telemetry so that a mistyped opt-out never
-/// leaves telemetry on.
-fn is_telemetry_disabled_by_env_value(env_value_opt: Option<&OsStr>) -> bool {
-    let Some(env_value) = env_value_opt else {
-        return false;
-    };
-    let Some(env_value_str) = env_value.to_str() else {
-        return true;
-    };
-    if env_value_str.is_empty() {
-        return false;
-    }
-    quickwit_common::parse_bool_lenient(env_value_str) != Some(false)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_is_telemetry_disabled_by_env_value() {
-        assert!(!is_telemetry_disabled_by_env_value(None));
-        assert!(!is_telemetry_disabled_by_env_value(Some(OsStr::new(""))));
-        for enabled_value in ["false", "FALSE", "no", "0"] {
-            assert!(!is_telemetry_disabled_by_env_value(Some(OsStr::new(
-                enabled_value
-            ))));
-        }
-        for disabled_value in [" ", "1", "true", "yes", "on", "disabled", "anything"] {
-            assert!(is_telemetry_disabled_by_env_value(Some(OsStr::new(
-                disabled_value
-            ))));
-        }
-    }
+    std::env::var_os(DISABLE_TELEMETRY_ENV_KEY).is_some()
 }

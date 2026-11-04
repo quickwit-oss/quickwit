@@ -72,13 +72,13 @@ pub enum TelemetryEvent {
     /// Event sent when the node stops, with its exit code.
     EndCommand {
         return_code: i32,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        api_usage: Option<BTreeMap<ApiKind, String>>,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        api_usage: BTreeMap<ApiKind, String>,
     },
     /// Event sent every 12h to signal the server is running.
     Running {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        api_usage: Option<BTreeMap<ApiKind, String>>,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        api_usage: BTreeMap<ApiKind, String>,
     },
     /// UI index.html was requested.
     UiIndexPageLoad,
@@ -122,16 +122,6 @@ pub struct QuickwitTelemetryInfo {
     pub build: BuildTelemetryInfo,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub install_uuid: Option<Uuid>,
-}
-
-impl QuickwitTelemetryInfo {
-    pub fn new(services: HashSet<String>, features: HashSet<QuickwitFeature>) -> Self {
-        Self {
-            features,
-            services,
-            ..Default::default()
-        }
-    }
 }
 
 impl Default for QuickwitTelemetryInfo {
@@ -239,7 +229,7 @@ mod tests {
             unixtime: 0,
             event: TelemetryEvent::EndCommand {
                 return_code: 0,
-                api_usage: None,
+                api_usage: BTreeMap::new(),
             },
         };
         let json = serde_json::to_string(&event).unwrap();
@@ -254,7 +244,7 @@ mod tests {
         let event = EventWithTimestamp {
             unixtime: 0,
             event: TelemetryEvent::Running {
-                api_usage: Some(BTreeMap::from([(ApiKind::NativeSearch, "1-9".to_string())])),
+                api_usage: BTreeMap::from([(ApiKind::NativeSearch, "1-9".to_string())]),
             },
         };
         let json = serde_json::to_string(&event).unwrap();

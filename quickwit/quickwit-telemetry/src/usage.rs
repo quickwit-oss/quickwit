@@ -47,7 +47,7 @@ impl ApiRequestCounts {
     }
 
     /// Returns the bucketed counts of the APIs that received requests, and resets the counts.
-    fn take(&self) -> Option<BTreeMap<ApiKind, String>> {
+    fn take(&self) -> BTreeMap<ApiKind, String> {
         let mut api_usage = BTreeMap::new();
         for api_kind in all::<ApiKind>() {
             let num_requests = self.0[api_kind as usize].swap(0, Ordering::Relaxed);
@@ -55,10 +55,7 @@ impl ApiRequestCounts {
                 api_usage.insert(api_kind, request_count_bucket(num_requests).to_string());
             }
         }
-        if api_usage.is_empty() {
-            return None;
-        }
-        Some(api_usage)
+        api_usage
     }
 }
 
@@ -72,13 +69,15 @@ pub fn record_api_request(api_kind: ApiKind) {
 
 impl TelemetryEvent {
     pub fn running() -> Self {
-        TelemetryEvent::Running { api_usage: None }
+        TelemetryEvent::Running {
+            api_usage: BTreeMap::new(),
+        }
     }
 
     pub fn end_command(return_code: i32) -> Self {
         TelemetryEvent::EndCommand {
             return_code,
-            api_usage: None,
+            api_usage: BTreeMap::new(),
         }
     }
 
@@ -124,7 +123,7 @@ mod tests {
         for _ in 0..12 {
             api_request_counts.record(ApiKind::ElasticsearchIngest);
         }
-        let api_usage = api_request_counts.take().unwrap();
+        let api_usage = api_request_counts.take();
         assert_eq!(
             api_usage,
             BTreeMap::from([
@@ -132,7 +131,7 @@ mod tests {
                 (ApiKind::NativeSearch, "1-9".to_string()),
             ])
         );
-        assert_eq!(api_request_counts.take(), None);
+        assert!(api_request_counts.take().is_empty());
     }
 
     #[test]

@@ -28,12 +28,14 @@ pub(crate) fn quickwit_telemetry_info(config: &NodeConfig) -> QuickwitTelemetryI
         .collect();
     let build_info = BuildInfo::get();
     QuickwitTelemetryInfo {
+        services,
+        features: telemetry_features(config),
         build: BuildTelemetryInfo {
             commit: build_info.commit_short_hash.to_string(),
             target: build_info.build_target.to_string(),
             release: !build_info.version.ends_with("-nightly"),
         },
-        ..QuickwitTelemetryInfo::new(services, telemetry_features(config))
+        ..Default::default()
     }
 }
 
