@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::machine::{available_memory_num_bytes, cpu_count_bucket, memory_bucket};
-use crate::usage::ApiKind;
+use crate::usage::{ApiKind, IndexingSourceKind, IndexingUsage};
 
 /// Version of the payload format. Payloads without one are version 1.
 pub(crate) const TELEMETRY_SCHEMA_VERSION: u32 = 2;
@@ -74,11 +74,15 @@ pub enum TelemetryEvent {
         return_code: i32,
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         api_usage: BTreeMap<ApiKind, String>,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        indexing_usage: BTreeMap<IndexingSourceKind, IndexingUsage>,
     },
     /// Event sent every 12h to signal the server is running.
     Running {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         api_usage: BTreeMap<ApiKind, String>,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        indexing_usage: BTreeMap<IndexingSourceKind, IndexingUsage>,
     },
     /// The install ID was just created.
     Install,
@@ -229,6 +233,7 @@ mod tests {
             event: TelemetryEvent::EndCommand {
                 return_code: 0,
                 api_usage: BTreeMap::new(),
+                indexing_usage: BTreeMap::new(),
             },
         };
         let json = serde_json::to_string(&event).unwrap();
@@ -244,12 +249,20 @@ mod tests {
             unixtime: 0,
             event: TelemetryEvent::Running {
                 api_usage: BTreeMap::from([(ApiKind::NativeSearch, "1-9".to_string())]),
+                indexing_usage: BTreeMap::from([(
+                    IndexingSourceKind::PubSub,
+                    IndexingUsage {
+                        indexed_docs: "1000-9999".to_string(),
+                        indexed_bytes: "1000000-9999999".to_string(),
+                        rejected_docs: "0".to_string(),
+                    },
+                )]),
             },
         };
         let json = serde_json::to_string(&event).unwrap();
         assert_eq!(
             json,
-            r#"{"unixtime":0,"type":"running","api_usage":{"native_search":"1-9"}}"#
+            r#"{"unixtime":0,"type":"running","api_usage":{"native_search":"1-9"},"indexing_usage":{"pubsub":{"indexed_docs":"1000-9999","indexed_bytes":"1000000-9999999","rejected_docs":"0"}}}"#
         );
     }
 }

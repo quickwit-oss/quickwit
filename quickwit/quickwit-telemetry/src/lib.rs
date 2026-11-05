@@ -34,7 +34,7 @@ use crate::install::load_or_create_install_id;
 use crate::payload::TelemetryEvent;
 use crate::sender::{TelemetryLoopHandle, TelemetrySender};
 use crate::sink::HttpClient;
-pub use crate::usage::{ApiKind, record_api_request};
+pub use crate::usage::{ApiKind, IndexingSourceKind, record_api_request, record_indexed_batch};
 
 static TELEMETRY_SENDER: OnceLock<TelemetrySender> = OnceLock::new();
 

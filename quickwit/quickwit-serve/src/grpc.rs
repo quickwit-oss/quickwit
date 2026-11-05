@@ -39,7 +39,9 @@ use tonic_reflection::pb::v1::FILE_DESCRIPTOR_SET as REFLECTION_FILE_DESCRIPTOR_
 use tonic_reflection::server::v1::{ServerReflection, ServerReflectionServer};
 use tracing::*;
 
-use crate::api_usage::{count_jaeger_grpc_request, count_otlp_grpc_request};
+use crate::api_usage::{
+    count_jaeger_grpc_request, count_otlp_logs_grpc_request, count_otlp_traces_grpc_request,
+};
 use crate::developer_api::DeveloperApiServer;
 use crate::search_api::GrpcSearchAdapter;
 use crate::{INDEXING_GRPC_SERVER_METRICS_LAYER, QuickwitServices};
@@ -179,7 +181,7 @@ pub(crate) async fn start_grpc_server(
                 .max_encoding_message_size(grpc_config.max_message_size.0 as usize);
             Some(InterceptedService::new(
                 trace_service,
-                count_otlp_grpc_request,
+                count_otlp_traces_grpc_request,
             ))
         } else {
             None
@@ -194,7 +196,7 @@ pub(crate) async fn start_grpc_server(
                 .max_encoding_message_size(grpc_config.max_message_size.0 as usize);
             Some(InterceptedService::new(
                 logs_service,
-                count_otlp_grpc_request,
+                count_otlp_logs_grpc_request,
             ))
         } else {
             None

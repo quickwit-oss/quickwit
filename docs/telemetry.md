@@ -62,9 +62,11 @@ Each request also includes:
 - An MD5 hash of the host name and the user name, used to count distinct installations from older releases, which have no install ID. The relay replaces it with a keyed hash before storage. See below.
 - The number of events dropped because too many were queued.
 
-`running` and `end_command` events also include how many requests each API received since the previous report, as ranges such as `10-99`: search and bulk ingestion on the Elasticsearch-compatible API, other Elasticsearch-compatible requests, search and ingestion on the native API, OTLP, and Jaeger. Searches from the Quickwit UI count as native searches. They also include how many times the node served the Quickwit UI page, in the same ranges. Browsers request it when someone opens or reloads the UI, and so does any other client that requests a UI URL, such as an uptime check.
+`running` and `end_command` events also include how many requests each API received since the previous report, as ranges such as `10-99`: search and bulk ingestion on the Elasticsearch-compatible API, other Elasticsearch-compatible requests, search and ingestion on the native API, OTLP logs, OTLP traces, and Jaeger. Searches from the Quickwit UI count as native searches. They also include how many times the node served the Quickwit UI page, in the same ranges. Browsers request it when someone opens or reloads the UI, and so does any other client that requests a UI URL, such as an uptime check.
 
-Quickwit never sends index or field names, documents, queries, configuration values or credentials.
+They also include, for each type of source that sent documents to the node's indexing pipelines since the previous report, how many documents were indexed, their size in bytes, and how many the pipelines rejected, in the same ranges. The source types are file, ingest API v1, ingest API v2, Kafka, Kinesis, NATS, Google Cloud Pub/Sub, Pulsar, and other for the sources used in tests and by the CLI.
+
+Quickwit never sends index, source or field names, documents, queries, configuration values or credentials.
 
 ## Where the data goes
 

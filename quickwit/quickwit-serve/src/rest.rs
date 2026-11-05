@@ -171,7 +171,7 @@ pub(crate) async fn start_rest_server(
             return;
         }
         match classify_rest_request(info.method(), info.path()) {
-            Some(ApiKind::Otlp) if !is_otlp_enabled => {}
+            Some(ApiKind::OtlpLogs | ApiKind::OtlpTraces) if !is_otlp_enabled => {}
             Some(ApiKind::Jaeger) if !is_jaeger_enabled => {}
             Some(api_kind) => quickwit_telemetry::record_api_request(api_kind),
             None => {}

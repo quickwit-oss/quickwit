@@ -29,7 +29,9 @@ use quickwit_opentelemetry::otlp::{
     JsonLogIterator, JsonSpanIterator, OtlpLogsError, OtlpTracesError, parse_otlp_logs_json,
     parse_otlp_logs_protobuf, parse_otlp_spans_json, parse_otlp_spans_protobuf,
 };
+use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::{IndexId, SourceId};
+use quickwit_telemetry::IndexingSourceKind;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tantivy::schema::{Field, Value};
@@ -409,6 +411,7 @@ pub struct DocProcessor {
     timestamp_field_opt: Option<Field>,
     fingerprinter_opt: Option<Fingerprinter>,
     counters: Arc<DocProcessorCounters>,
+    telemetry_source_kind: IndexingSourceKind,
     publish_lock: PublishLock,
     #[cfg(feature = "vrl")]
     transform_opt: Option<VrlProgram>,
@@ -416,9 +419,11 @@ pub struct DocProcessor {
 }
 
 impl DocProcessor {
+    #[allow(clippy::too_many_arguments)]
     pub fn try_new(
         index_id: IndexId,
         source_id: SourceId,
+        source_type: SourceType,
         doc_mapper: Arc<DocMapper>,
         indexer_mailbox: Mailbox<Indexer>,
         transform_config_opt: Option<TransformConfig>,
@@ -435,6 +440,7 @@ impl DocProcessor {
             timestamp_field_opt,
             fingerprinter_opt,
             counters: Arc::new(DocProcessorCounters::new(index_id, source_id)),
+            telemetry_source_kind: telemetry_source_kind(source_type),
             publish_lock: PublishLock::default(),
             #[cfg(feature = "vrl")]
             transform_opt: transform_config_opt
@@ -584,11 +590,25 @@ impl Handler<RawDocBatch> for DocProcessor {
             return Ok(());
         }
         let mut processed_docs: Vec<ProcessedDoc> = Vec::with_capacity(raw_doc_batch.docs.len());
+        let num_invalid_docs_before = self.counters.num_invalid_docs();
 
         for raw_doc in raw_doc_batch.docs {
             let _protected_zone_guard = ctx.protect_zone();
             self.process_raw_doc(raw_doc, &mut processed_docs);
             ctx.record_progress();
+        }
+        if quickwit_telemetry::is_telemetry_enabled() {
+            let num_indexed_bytes = processed_docs
+                .iter()
+                .map(|processed_doc| processed_doc.num_bytes as u64)
+                .sum();
+            let num_rejected_docs = self.counters.num_invalid_docs() - num_invalid_docs_before;
+            quickwit_telemetry::record_indexed_batch(
+                self.telemetry_source_kind,
+                processed_docs.len() as u64,
+                num_indexed_bytes,
+                num_rejected_docs,
+            );
         }
         let processed_doc_batch = ProcessedDocBatch::new(
             processed_docs,
@@ -598,6 +618,24 @@ impl Handler<RawDocBatch> for DocProcessor {
         ctx.send_message(&self.indexer_mailbox, processed_doc_batch)
             .await?;
         Ok(())
+    }
+}
+
+fn telemetry_source_kind(source_type: SourceType) -> IndexingSourceKind {
+    match source_type {
+        SourceType::File => IndexingSourceKind::File,
+        SourceType::IngestV1 => IndexingSourceKind::IngestV1,
+        SourceType::IngestV2 => IndexingSourceKind::IngestV2,
+        SourceType::Kafka => IndexingSourceKind::Kafka,
+        SourceType::Kinesis => IndexingSourceKind::Kinesis,
+        SourceType::Nats => IndexingSourceKind::Nats,
+        SourceType::PubSub => IndexingSourceKind::PubSub,
+        SourceType::Pulsar => IndexingSourceKind::Pulsar,
+        SourceType::Cli
+        | SourceType::Stdin
+        | SourceType::Unspecified
+        | SourceType::Vec
+        | SourceType::Void => IndexingSourceKind::Other,
     }
 }
 
@@ -676,6 +714,7 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             index_id.to_string(),
             source_id.to_string(),
+            SourceType::Vec,
             doc_mapper.clone(),
             indexer_mailbox,
             None,
@@ -753,6 +792,7 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "test-index".to_string(),
             "test-source".to_string(),
+            SourceType::Vec,
             doc_mapper,
             indexer_mailbox,
             None,
@@ -797,6 +837,7 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
+            SourceType::Vec,
             doc_mapper,
             indexer_mailbox,
             None,
@@ -846,6 +887,7 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
+            SourceType::Vec,
             doc_mapper,
             indexer_mailbox,
             None,
@@ -879,6 +921,7 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
+            SourceType::Vec,
             doc_mapper,
             indexer_mailbox,
             None,
@@ -926,6 +969,7 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
+            SourceType::Vec,
             doc_mapper,
             indexer_mailbox,
             None,
@@ -1004,6 +1048,7 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
+            SourceType::Vec,
             doc_mapper,
             indexer_mailbox,
             None,
@@ -1084,6 +1129,7 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
+            SourceType::Vec,
             doc_mapper,
             indexer_mailbox,
             None,
@@ -1158,6 +1204,7 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
+            SourceType::Vec,
             doc_mapper,
             indexer_mailbox,
             None,
@@ -1245,6 +1292,7 @@ mod tests_vrl {
         let doc_processor = DocProcessor::try_new(
             index_id.to_string(),
             source_id.to_string(),
+            SourceType::Vec,
             doc_mapper.clone(),
             indexer_mailbox,
             Some(transform_config),
@@ -1337,6 +1385,7 @@ mod tests_vrl {
         let doc_processor = DocProcessor::try_new(
             index_id.to_string(),
             source_id.to_string(),
+            SourceType::Vec,
             doc_mapper.clone(),
             indexer_mailbox,
             Some(transform_config),

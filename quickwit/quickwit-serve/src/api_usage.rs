@@ -30,8 +30,10 @@ pub(crate) fn classify_rest_request(method: &Method, path: &str) -> Option<ApiKi
     match (method, rest) {
         (&Method::GET | &Method::POST, "search") => Some(ApiKind::NativeSearch),
         (&Method::POST, "ingest") => Some(ApiKind::NativeIngest),
-        (&Method::POST, "v1/logs" | "v1/traces") if first_segment == "otlp" => Some(ApiKind::Otlp),
-        (&Method::POST, "otlp/v1/logs" | "otlp/v1/traces") => Some(ApiKind::Otlp),
+        (&Method::POST, "v1/logs") if first_segment == "otlp" => Some(ApiKind::OtlpLogs),
+        (&Method::POST, "v1/traces") if first_segment == "otlp" => Some(ApiKind::OtlpTraces),
+        (&Method::POST, "otlp/v1/logs") => Some(ApiKind::OtlpLogs),
+        (&Method::POST, "otlp/v1/traces") => Some(ApiKind::OtlpTraces),
         (&Method::GET, _) if rest.starts_with("jaeger/api/") => Some(ApiKind::Jaeger),
         _ => None,
     }
@@ -55,10 +57,17 @@ fn classify_elasticsearch_request(method: &Method, elasticsearch_path: &str) -> 
     }
 }
 
-pub(crate) fn count_otlp_grpc_request(
+pub(crate) fn count_otlp_logs_grpc_request(
     request: tonic::Request<()>,
 ) -> Result<tonic::Request<()>, tonic::Status> {
-    quickwit_telemetry::record_api_request(ApiKind::Otlp);
+    quickwit_telemetry::record_api_request(ApiKind::OtlpLogs);
+    Ok(request)
+}
+
+pub(crate) fn count_otlp_traces_grpc_request(
+    request: tonic::Request<()>,
+) -> Result<tonic::Request<()>, tonic::Status> {
+    quickwit_telemetry::record_api_request(ApiKind::OtlpTraces);
     Ok(request)
 }
 
@@ -121,11 +130,15 @@ mod tests {
                 "/api/v1/logs/ingest",
                 Some(ApiKind::NativeIngest),
             ),
-            (Method::POST, "/api/v1/otlp/v1/logs", Some(ApiKind::Otlp)),
+            (
+                Method::POST,
+                "/api/v1/otlp/v1/logs",
+                Some(ApiKind::OtlpLogs),
+            ),
             (
                 Method::POST,
                 "/api/v1/logs/otlp/v1/traces",
-                Some(ApiKind::Otlp),
+                Some(ApiKind::OtlpTraces),
             ),
             (
                 Method::GET,

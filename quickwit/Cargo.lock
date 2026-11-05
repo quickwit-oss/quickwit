@@ -7839,6 +7839,7 @@ dependencies = [
  "quickwit-proto",
  "quickwit-query",
  "quickwit-storage",
+ "quickwit-telemetry",
  "rand 0.10.3",
  "rdkafka",
  "regex",
