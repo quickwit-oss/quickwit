@@ -150,20 +150,8 @@ struct MetricVec {
     cache_name: &'static str,
 }
 
-impl MetricVec {
-    fn validate_label_count(&self, label_values: &[Cow<'static, str>]) {
-        assert_eq!(
-            self.declaration.label_names.len(),
-            label_values.len(),
-            "incorrect Feuer label value count: {}",
-            self.declaration.name
-        );
-    }
-}
-
 impl CounterVecOps for MetricVec {
     fn counter(&self, label_values: &[Cow<'static, str>]) -> BoxedCounter {
-        self.validate_label_count(label_values);
         let CreateMetric::Counter(create) = self.declaration.create_metric else {
             panic!("expected counter: {}", self.declaration.name);
         };
@@ -173,7 +161,6 @@ impl CounterVecOps for MetricVec {
 
 impl GaugeVecOps for MetricVec {
     fn gauge(&self, label_values: &[Cow<'static, str>]) -> BoxedGauge {
-        self.validate_label_count(label_values);
         let CreateMetric::Gauge(create) = self.declaration.create_metric else {
             panic!("expected gauge: {}", self.declaration.name);
         };
@@ -183,7 +170,6 @@ impl GaugeVecOps for MetricVec {
 
 impl HistogramVecOps for MetricVec {
     fn histogram(&self, label_values: &[Cow<'static, str>]) -> BoxedHistogram {
-        self.validate_label_count(label_values);
         let CreateMetric::Histogram(create) = self.declaration.create_metric else {
             panic!("expected histogram: {}", self.declaration.name);
         };

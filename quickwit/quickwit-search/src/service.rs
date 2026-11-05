@@ -439,19 +439,17 @@ impl SearcherContext {
     #[cfg(test)]
     pub fn for_test() -> SearcherContext {
         let searcher_config = SearcherConfig::default();
-        SearcherContext::new_without_invoker(searcher_config, None, None)
+        SearcherContext::new_without_invoker(searcher_config, None)
     }
 
     /// Creates a new searcher context without a lambda invoker.
     pub fn new_without_invoker(
         searcher_config: SearcherConfig,
         split_cache_opt: Option<Arc<SearchSplitCache>>,
-        storage_cache_opt: Option<Arc<feuer::Cache>>,
     ) -> Self {
         Self::new(
             searcher_config,
             split_cache_opt,
-            storage_cache_opt,
             None::<Box<dyn LambdaLeafSearchInvoker>>,
         )
     }
@@ -460,29 +458,26 @@ impl SearcherContext {
     pub fn new(
         searcher_config: SearcherConfig,
         split_cache_opt: Option<Arc<SearchSplitCache>>,
-        storage_cache_opt: Option<Arc<feuer::Cache>>,
         lambda_invoker: Option<impl LambdaLeafSearchInvoker + 'static>,
     ) -> Self {
         let leaf_search_split_semaphore = SearchPermitProvider::new(
             searcher_config.max_num_concurrent_split_searches,
             searcher_config.warmup_memory_budget,
         );
-        let storage_cache_opt = storage_cache_opt.or_else(|| {
-            searcher_config
-                .resolved_storage_cache()
-                .expect("invalid split range cache config")
-                .filter(|config| config.disk_capacity.as_u64() == 0)
-                .map(|config| {
-                    // Standalone and Lambda searchers do not run storage-cache initialization.
-                    Arc::new(
-                        futures::executor::block_on(open_split_range_cache(
-                            &config,
-                            &quickwit_storage::FeuerIoQueues::default(),
-                        ))
-                        .expect("failed to initialize split range memory cache"),
-                    )
-                })
-        });
+        let storage_cache_opt = searcher_config
+            .resolved_storage_cache()
+            .expect("invalid split range cache config")
+            .filter(|config| config.disk_capacity.as_u64() == 0)
+            .map(|config| {
+                // Standalone and Lambda searchers do not run storage-cache initialization.
+                Arc::new(
+                    futures::executor::block_on(open_split_range_cache(
+                        &config,
+                        &quickwit_storage::FeuerIoQueues::default(),
+                    ))
+                    .expect("failed to initialize split range memory cache"),
+                )
+            });
         let leaf_search_cache = LeafSearchCache::new(&searcher_config.partial_request_cache);
         let predicate_cache = PredicateCacheImpl::new(&searcher_config.predicate_cache);
         let list_fields_cache = ListFieldsCache::new(&searcher_config.partial_request_cache);
@@ -581,7 +576,7 @@ mod tests {
         }))
         .unwrap();
         for config in [SearcherConfig::default(), explicit] {
-            let mut context = SearcherContext::new_without_invoker(config, None, None);
+            let mut context = SearcherContext::new_without_invoker(config, None);
             assert!(context.storage_cache_opt.is_some());
             context
                 .initialize_storage_caches(&StorageResolver::unconfigured())
@@ -600,7 +595,7 @@ mod tests {
             "disk_capacity": "8MiB",
         }))
         .unwrap();
-        let mut context = SearcherContext::new_without_invoker(config, None, None);
+        let mut context = SearcherContext::new_without_invoker(config, None);
         let error = context
             .initialize_storage_caches(&StorageResolver::unconfigured())
             .await
@@ -635,7 +630,7 @@ mod tests {
             }))
             .unwrap();
             for initialize in [false, true] {
-                let mut context = SearcherContext::new_without_invoker(config.clone(), None, None);
+                let mut context = SearcherContext::new_without_invoker(config.clone(), None);
                 if initialize {
                     context
                         .initialize_storage_caches(&StorageResolver::unconfigured())

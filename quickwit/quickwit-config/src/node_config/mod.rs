@@ -431,15 +431,6 @@ impl StorageCacheConfig {
         );
         Ok(())
     }
-
-    #[cfg(any(test, feature = "testsuite"))]
-    pub fn for_test() -> Self {
-        Self {
-            path: Some(PathBuf::from("/tmp/quickwit-storage-cache")),
-            disk_capacity: ByteSize::gib(300),
-            memory_capacity: ByteSize::gib(1),
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

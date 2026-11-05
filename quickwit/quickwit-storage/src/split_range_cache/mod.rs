@@ -49,7 +49,7 @@ pub async fn open_split_range_cache(
     queues: &FeuerIoQueues,
 ) -> anyhow::Result<feuer::Cache> {
     queues
-        .open(config, "split_cache", "split_range", Some(256_000))
+        .open(config, "split_cache", "split_range", 256_000)
         .await
 }
 

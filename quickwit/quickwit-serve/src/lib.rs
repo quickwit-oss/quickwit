@@ -752,7 +752,6 @@ pub async fn serve_quickwit(
                 SearcherContext::new(
                     node_config.searcher_config.clone(),
                     search_split_cache_opt,
-                    None,
                     Some(invoker),
                 )
             }
@@ -765,14 +764,12 @@ pub async fn serve_quickwit(
             SearcherContext::new_without_invoker(
                 node_config.searcher_config.clone(),
                 search_split_cache_opt,
-                None,
             )
         }
     } else {
         SearcherContext::new_without_invoker(
             node_config.searcher_config.clone(),
             search_split_cache_opt,
-            None,
         )
     };
 
@@ -1918,7 +1915,6 @@ mod tests {
         let node_config = NodeConfig::for_test();
         let searcher_context = Arc::new(SearcherContext::new_without_invoker(
             SearcherConfig::default(),
-            None,
             None,
         ));
         let metastore = metastore_for_test();

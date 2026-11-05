@@ -413,15 +413,7 @@ mod tests {
         };
         cache.put(split_1.clone(), query_1.clone(), result);
         assert_eq!(
-            cache
-                .get(
-                    split_1.clone(),
-                    SearchRequest {
-                        priority: 10,
-                        ..query_1.clone()
-                    }
-                )
-                .unwrap(),
+            cache.get(split_1.clone(), query_1.clone()).unwrap(),
             expected
         );
         assert!(cache.get(split_2, query_1).is_none());
@@ -618,6 +610,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_leaf_search_cache_ignores_priority() {
+        let cache = LeafSearchCache::new(&ByteSize::mb(64).into());
+        let split = SplitIdAndFooterOffsets {
+            split_id: "split".to_string(),
+            ..Default::default()
+        };
+        let high_priority_request = SearchRequest {
+            priority: -10,
+            ..Default::default()
+        };
+        let low_priority_request = SearchRequest {
+            priority: 10,
+            ..Default::default()
+        };
+
+        cache.put(
+            split.clone(),
+            high_priority_request,
+            LeafSearchResponse::default(),
+        );
+
+        // the two requests differ only in priority, so it should be a cache-hit
+        assert!(cache.get(split, low_priority_request).is_some());
+    }
+
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_result_caches_use_shared_disk_directory() {
@@ -630,7 +648,7 @@ mod tests {
             }))
             .unwrap();
         config.storage_cache_directory = Some(directory.path().to_path_buf());
-        let mut context = crate::SearcherContext::new_without_invoker(config, None, None);
+        let mut context = crate::SearcherContext::new_without_invoker(config, None);
         context
             .initialize_storage_caches(&quickwit_storage::StorageResolver::unconfigured())
             .await

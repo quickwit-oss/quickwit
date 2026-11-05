@@ -2458,7 +2458,7 @@ mod tests {
         let mut config = SearcherConfig::default();
         config.fast_field_cache = Some(quickwit_config::CacheConfig::no_cache());
         config.split_footer_cache = Some(quickwit_config::CacheConfig::no_cache());
-        let context = SearcherContext::new_without_invoker(config, None, None);
+        let context = SearcherContext::new_without_invoker(config, None);
         let offsets = SplitIdAndFooterOffsets {
             split_id: "uncached".to_string(),
             split_footer_start: footer_range.start,
@@ -3220,7 +3220,7 @@ mod tests {
     async fn test_schedule_search_tasks_warmup_memory_factor() {
         let mut config = SearcherConfig::default();
         config.warmup_memory_budget = ByteSize::mb(500);
-        let searcher_context = SearcherContext::new(config, None, None, None::<DummyInvoker>);
+        let searcher_context = SearcherContext::new(config, None, None::<DummyInvoker>);
         for (value, factor) in [("error*", 1), ("*error", 10)] {
             for num_docs in [100, 1_000_000, 10_000_000] {
                 let split = SplitIdAndFooterOffsets {
@@ -3285,8 +3285,7 @@ mod tests {
             offload_threshold: 3,
             ..LambdaConfig::for_test()
         });
-        let searcher_context =
-            SearcherContext::new(config, None, None, Some(Arc::new(DummyInvoker)));
+        let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(7);
         let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
         assert_eq!(result.local_search_tasks.len(), 3);
@@ -3306,8 +3305,7 @@ mod tests {
             offload_threshold: 0,
             ..LambdaConfig::for_test()
         });
-        let searcher_context =
-            SearcherContext::new(config, None, None, Some(Arc::new(DummyInvoker)));
+        let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(5);
         let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
         assert!(result.local_search_tasks.is_empty());
@@ -3321,8 +3319,7 @@ mod tests {
             offload_threshold: 100,
             ..LambdaConfig::for_test()
         });
-        let searcher_context =
-            SearcherContext::new(config, None, None, Some(Arc::new(DummyInvoker)));
+        let searcher_context = SearcherContext::new(config, None, Some(Arc::new(DummyInvoker)));
         let splits = make_splits_with_requests(5);
         let result = super::schedule_search_tasks(splits, &searcher_context, 1.0, 1).await;
         assert_eq!(result.local_search_tasks.len(), 5);

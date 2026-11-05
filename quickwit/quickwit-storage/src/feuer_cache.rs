@@ -31,7 +31,7 @@ impl FeuerIoQueues {
         config: &StorageCacheConfig,
         file_name: &'static str,
         cache_name: &'static str,
-        fixed_retrieval_equivalent_bytes: Option<u64>,
+        fixed_retrieval_equivalent_bytes: u64,
     ) -> anyhow::Result<feuer::Cache> {
         let directory = if config.disk_capacity.as_u64() == 0 {
             std::path::Path::new("")
@@ -45,7 +45,7 @@ impl FeuerIoQueues {
         )?
         .with_file_name(file_name)?;
         let scorer = std::sync::Arc::new(feuer::AvoidedRetrievalCostScorer {
-            cost_per_request: fixed_retrieval_equivalent_bytes.unwrap_or_default() as f64,
+            cost_per_request: fixed_retrieval_equivalent_bytes as f64,
             ..Default::default()
         });
         let registry: mixtrics::metrics::BoxedRegistry =
@@ -110,7 +110,7 @@ impl FeuerCache {
         cache_name: &'static str,
     ) -> anyhow::Result<Self> {
         Ok(Self {
-            cache: Some(queues.open(config, file_name, cache_name, None).await?),
+            cache: Some(queues.open(config, file_name, cache_name, 0).await?),
         })
     }
 

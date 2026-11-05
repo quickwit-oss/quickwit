@@ -82,7 +82,9 @@ fn counted_split_storage(split_bytes: &OwnedBytes) -> (Arc<dyn Storage>, Arc<Dow
 }
 
 fn context_with_range_cache(cache: Arc<feuer::Cache>) -> SearcherContext {
-    SearcherContext::new_without_invoker(SearcherConfig::default(), None, Some(cache))
+    let mut context = SearcherContext::new_without_invoker(SearcherConfig::default(), None);
+    context.storage_cache_opt = Some(cache);
+    context
 }
 
 #[tokio::test]
@@ -151,11 +153,9 @@ async fn test_open_split_bundle_footer_skips_whole_split_cache() {
 
     let range_cache_dir = tempfile::tempdir().unwrap();
     let range_cache = open_range_cache(range_cache_dir.path()).await;
-    let context = SearcherContext::new_without_invoker(
-        SearcherConfig::default(),
-        Some(split_cache),
-        Some(range_cache),
-    );
+    let mut context =
+        SearcherContext::new_without_invoker(SearcherConfig::default(), Some(split_cache));
+    context.storage_cache_opt = Some(range_cache);
     let (counted, counters) = counted_split_storage(&split.split_bytes);
     let (_hotcache, bundle) = open_split_bundle(&context, counted, &split.footer_offsets)
         .await

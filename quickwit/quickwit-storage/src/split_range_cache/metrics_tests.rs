@@ -408,7 +408,7 @@ async fn test_native_disk_registration_matches_complete_inventory() {
             &super::super::config_for_test(directory.path()),
             "metrics_cache",
             cache_name,
-            None,
+            0,
         )
         .await
         .unwrap();
