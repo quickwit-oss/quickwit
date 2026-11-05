@@ -169,16 +169,17 @@ impl<A: Actor> SpawnBuilder<A> {
         // We prevent fast forward of the scheduler during  initialization.
         let no_advance_time_guard = self.spawn_ctx.scheduler_client.no_advance_time_guard();
         let runtime_handle = actor.runtime_handle();
-        let monitor = task_monitor(actor.metric_name(), &runtime_handle);
+        let task_label = actor.task_metrics_label();
+        let monitor = task_monitor(task_label, &runtime_handle);
         let (ctx, inbox, state_rx) = self.create_actor_context_and_inbox(&actor);
         debug!(actor_id = %ctx.actor_instance_id(), "spawn-actor");
         let mailbox = ctx.mailbox().clone();
         let ctx_clone = ctx.clone();
-        let actor_future = monitor
+        let actor_loop_future = monitor
             .instrument(async move { actor_loop(actor, inbox, no_advance_time_guard, ctx).await });
         let join_handle = ActorJoinHandle::new(quickwit_common::spawn_named_task_on(
-            actor_future,
-            std::any::type_name::<A>(),
+            actor_loop_future,
+            task_label,
             &runtime_handle,
         ));
         ctx_clone.registry().register(&mailbox, join_handle.clone());

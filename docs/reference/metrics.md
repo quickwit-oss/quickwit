@@ -92,7 +92,7 @@ rate(quickwit_runtime_tokio_worker_busy_duration_milliseconds_total[5m])
   / (1000 * quickwit_runtime_tokio_worker_threads)
 ```
 
-Task metrics are labeled by `task`, a static actor type or role name, and by `runtime_type`. The default task name is the full Rust type name. Source actors use the source implementation's type name; packagers, publishers, and uploaders distinguish their pipeline roles. Names exclude index IDs, source IDs, and other instance details. Test or externally supplied runtimes that have not been registered use `unregistered` and produce a rate-limited warning.
+Task metrics are labeled by `task`, a static snake_case actor type or role name, and by `runtime_type`. The default task name is the actor's Rust type name without its module path, in snake_case (for example, `doc_processor`). Source actors use the source implementation's type name (for example, `kafka_source`); packagers, publishers, and uploaders distinguish their pipeline roles (for example, `merge_packager`, `merge_publisher`, `merge_uploader`). Names exclude index IDs, source IDs, and other instance details. Test or externally supplied runtimes that have not been registered use `unregistered` and produce a rate-limited warning.
 
 Each task group shares a monitor across actor instances and restarts. Monitors remain registered for the process lifetime so exported counters retain their cumulative totals. Runtime registration must precede spawning its actors; repeating a registration is harmless, but changing a runtime's label or sharing it with another runtime is rejected.
 

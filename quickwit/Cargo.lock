@@ -7411,6 +7411,7 @@ dependencies = [
  "criterion",
  "flume 0.12.0",
  "futures",
+ "heck 0.5.0",
  "quickwit-common",
  "quickwit-metrics",
  "rand 0.10.3",

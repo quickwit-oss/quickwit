@@ -19,24 +19,29 @@ use std::time::Duration;
 use quickwit_metrics::{
     Counter, Gauge, LazyCounter, LazyGauge, counter, gauge, labels, lazy_counter, lazy_gauge,
 };
-use tokio::runtime::{Handle, Id, RuntimeMetrics};
+use tokio::runtime::{Handle, Id as RuntimeId, RuntimeMetrics};
 use tokio_metrics::TaskMonitor;
 
-static METRICS: LazyLock<Arc<Mutex<MetricsRegistry>>> = LazyLock::new(|| {
+const SAMPLING_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Global registry. Its initialization spawns the sampler thread, so the sampler starts exactly
+/// once, on first access.
+static METRICS_REGISTRY: LazyLock<Arc<Mutex<MetricsRegistry>>> = LazyLock::new(|| {
     let registry = Arc::new(Mutex::new(MetricsRegistry::default()));
     let sampler_registry = registry.clone();
+    // The sampler is an OS thread so that Tokio saturation cannot delay sampling.
     std::thread::Builder::new()
         .name("runtime-metrics".to_string())
         .spawn(move || {
             loop {
                 sampler_registry
                     .lock()
-                    .expect("runtime metrics lock poisoned")
+                    .expect("runtime metrics lock should not be poisoned")
                     .record();
-                std::thread::sleep(Duration::from_secs(1));
+                std::thread::sleep(SAMPLING_INTERVAL);
             }
         })
-        .expect("failed to spawn runtime metrics sampler");
+        .expect("runtime metrics sampler thread should spawn");
     registry
 });
 
@@ -95,22 +100,22 @@ static TOKIO_TASK_IDLE_DURATION_MICROSECONDS_TOTAL: LazyCounter = lazy_counter!(
 );
 
 pub fn register_runtime(handle: &Handle, label: &'static str) {
-    METRICS
+    METRICS_REGISTRY
         .lock()
-        .expect("runtime metrics lock poisoned")
+        .expect("runtime metrics lock should not be poisoned")
         .register_runtime(handle, label);
 }
 
 pub fn task_monitor(task_name: &'static str, handle: &Handle) -> TaskMonitor {
-    METRICS
+    METRICS_REGISTRY
         .lock()
-        .expect("runtime metrics lock poisoned")
+        .expect("runtime metrics lock should not be poisoned")
         .task_monitor(task_name, handle)
 }
 
 #[derive(Default)]
 struct MetricsRegistry {
-    runtimes: HashMap<Id, RuntimeMetricsRecorder>,
+    runtimes: HashMap<RuntimeId, RuntimeMetricsRecorder>,
     tasks: HashMap<(&'static str, &'static str), TaskMetricsRecorder>,
 }
 
@@ -119,7 +124,7 @@ impl MetricsRegistry {
         if let Some(recorder) = self.runtimes.get(&handle.id()) {
             assert_eq!(
                 recorder.label, label,
-                "runtime already registered with another label"
+                "runtime should not be registered with another label"
             );
             return;
         }
@@ -127,7 +132,7 @@ impl MetricsRegistry {
             self.runtimes
                 .values()
                 .all(|recorder| recorder.label != label),
-            "runtime label already registered"
+            "runtime label should not be registered by another runtime"
         );
         self.runtimes
             .insert(handle.id(), RuntimeMetricsRecorder::new(handle, label));
@@ -329,7 +334,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "runtime already registered with another label")]
+    #[should_panic(expected = "runtime should not be registered with another label")]
     fn test_runtime_cannot_be_relabeled() {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
@@ -340,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "runtime label already registered")]
+    #[should_panic(expected = "runtime label should not be registered by another runtime")]
     fn test_runtime_labels_are_unique() {
         let first_runtime = tokio::runtime::Builder::new_current_thread()
             .build()

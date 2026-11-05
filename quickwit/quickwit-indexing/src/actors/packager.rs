@@ -107,8 +107,8 @@ impl Actor for Packager {
         self.actor_name.to_string()
     }
 
-    fn metric_name(&self) -> &'static str {
-        self.actor_name
+    fn task_metrics_label(&self) -> &'static str {
+        quickwit_actors::to_task_metrics_label(self.actor_name)
     }
 
     fn runtime_handle(&self) -> Handle {

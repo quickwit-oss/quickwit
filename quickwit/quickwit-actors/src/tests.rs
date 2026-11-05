@@ -143,9 +143,11 @@ async fn test_actor_metrics_ignore_instance_names() {
     let first = NamedActor("first-instance");
     let second = NamedActor("second-instance");
     assert_ne!(first.name(), second.name());
-    assert_eq!(first.metric_name(), second.metric_name());
+    assert_eq!(first.task_metrics_label(), "named_actor");
+    assert_eq!(first.task_metrics_label(), second.task_metrics_label());
     let runtime = tokio::runtime::Handle::current();
-    let monitor = quickwit_common::runtimes::metrics::task_monitor(first.metric_name(), &runtime);
+    let monitor =
+        quickwit_common::runtimes::metrics::task_monitor(first.task_metrics_label(), &runtime);
     let universe = Universe::with_accelerated_time();
     for actor in [first, second] {
         let (mailbox, handle) = universe.spawn_builder().spawn(actor);

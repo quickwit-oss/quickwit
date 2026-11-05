@@ -258,11 +258,11 @@ impl Actor for Uploader {
         format!("{:?}", self.uploader_type)
     }
 
-    fn metric_name(&self) -> &'static str {
+    fn task_metrics_label(&self) -> &'static str {
         match self.uploader_type {
-            UploaderType::IndexUploader => "IndexUploader",
-            UploaderType::MergeUploader => "MergeUploader",
-            UploaderType::DeleteUploader => "DeleteUploader",
+            UploaderType::IndexUploader => "index_uploader",
+            UploaderType::MergeUploader => "merge_uploader",
+            UploaderType::DeleteUploader => "delete_uploader",
         }
     }
 }
