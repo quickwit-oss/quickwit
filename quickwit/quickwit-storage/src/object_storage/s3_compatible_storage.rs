@@ -47,6 +47,7 @@ use futures::{StreamExt, stream};
 use percent_encoding::percent_decode_str;
 use quickwit_aws::retry::{AwsRetryable, aws_retry};
 use quickwit_aws::{aws_behavior_version, get_aws_config};
+use quickwit_common::io::{IoControls, IoControlsAccess};
 use quickwit_common::retry::{Retry, RetryParams};
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
@@ -104,6 +105,7 @@ pub struct S3CompatibleObjectStorage {
     disable_multi_object_delete: bool,
     disable_multipart_upload: bool,
     checksum_algorithm: quickwit_config::ChecksumAlgorithm,
+    download_io_controls_opt: Option<IoControls>,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
@@ -179,6 +181,12 @@ pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     S3Client::from_conf(s3_config.build())
 }
 
+pub(crate) fn download_io_controls(s3_storage_config: &S3StorageConfig) -> Option<IoControls> {
+    s3_storage_config
+        .max_download_bytes_per_sec
+        .map(|throughput| IoControls::default().set_throughput_limit(throughput))
+}
+
 impl S3CompatibleObjectStorage {
     /// Creates an object storage given a region and an uri.
     pub async fn from_uri(
@@ -194,6 +202,22 @@ impl S3CompatibleObjectStorage {
         s3_storage_config: &S3StorageConfig,
         uri: &Uri,
         s3_client: S3Client,
+    ) -> Result<Self, StorageResolverError> {
+        let download_io_controls_opt = download_io_controls(s3_storage_config);
+        Self::from_uri_client_and_download_controls(
+            s3_storage_config,
+            uri,
+            s3_client,
+            download_io_controls_opt,
+        )
+        .await
+    }
+
+    pub(crate) async fn from_uri_client_and_download_controls(
+        s3_storage_config: &S3StorageConfig,
+        uri: &Uri,
+        s3_client: S3Client,
+        download_io_controls_opt: Option<IoControls>,
     ) -> Result<Self, StorageResolverError> {
         let (bucket, prefix) = parse_s3_uri(uri).ok_or_else(|| {
             let message = format!("failed to extract bucket name from S3 URI: {uri}");
@@ -212,6 +236,7 @@ impl S3CompatibleObjectStorage {
             disable_multi_object_delete,
             disable_multipart_upload,
             checksum_algorithm: s3_storage_config.checksum_algorithm,
+            download_io_controls_opt,
         })
     }
 
@@ -230,6 +255,7 @@ impl S3CompatibleObjectStorage {
             disable_multi_object_delete: self.disable_multi_object_delete,
             disable_multipart_upload: self.disable_multipart_upload,
             checksum_algorithm: self.checksum_algorithm,
+            download_io_controls_opt: self.download_io_controls_opt,
         }
     }
 
@@ -735,7 +761,11 @@ impl S3CompatibleObjectStorage {
         // only record ranged get request as being in flight
         let _in_flight_guards =
             range_opt.map(|range| object_storage_get_slice_in_flight_guards(range.len()));
-        download_all(get_object_output.body).await
+        download_all(
+            get_object_output.body,
+            self.download_io_controls_opt.as_ref(),
+        )
+        .await
     }
 
     /// Bulk delete implementation based on the DeleteObject API:
@@ -874,14 +904,26 @@ impl S3CompatibleObjectStorage {
     }
 }
 
-async fn download_all(byte_stream: ByteStream) -> StorageResult<Bytes> {
-    let aggregated: AggregatedBytes = byte_stream
-        .collect()
-        .await
-        .map_err(byte_stream_to_storage_error)?;
-    // `AggregatedBytes::into_bytes` returns the underlying `Bytes` without copying when the body
-    // was received as a single segment, and concatenates into a fresh `Bytes` otherwise.
-    let bytes = aggregated.into_bytes();
+async fn download_all(
+    byte_stream: ByteStream,
+    download_io_controls_opt: Option<&IoControls>,
+) -> StorageResult<Bytes> {
+    let bytes = if let Some(download_io_controls) = download_io_controls_opt {
+        let mut controlled_read = download_io_controls
+            .clone()
+            .wrap_read(byte_stream.into_async_read());
+        let mut bytes = Vec::new();
+        controlled_read.read_to_end(&mut bytes).await?;
+        Bytes::from(bytes)
+    } else {
+        let aggregated: AggregatedBytes = byte_stream
+            .collect()
+            .await
+            .map_err(byte_stream_to_storage_error)?;
+        // `AggregatedBytes::into_bytes` returns the underlying `Bytes` without copying when the
+        // body was received as a single segment, and concatenates otherwise.
+        aggregated.into_bytes()
+    };
     crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(bytes.len() as u64);
     Ok(bytes)
 }
@@ -946,7 +988,15 @@ impl Storage for S3CompatibleObjectStorage {
         let get_object_output =
             aws_retry(&self.retry_params, || self.get_object(path, None)).await?;
         let mut body_read = BufReader::new(get_object_output.body.into_async_read());
-        let num_bytes_copied = tokio::io::copy_buf(&mut body_read, output).await?;
+        let num_bytes_copied = if let Some(download_io_controls) = &self.download_io_controls_opt {
+            tokio::io::copy(
+                &mut download_io_controls.clone().wrap_read(body_read),
+                output,
+            )
+            .await?
+        } else {
+            tokio::io::copy_buf(&mut body_read, output).await?
+        };
         crate::metrics::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.inc_by(num_bytes_copied);
         output.flush().await?;
         Ok(())
@@ -1110,10 +1160,15 @@ impl Storage for S3CompatibleObjectStorage {
             self.get_object(path, Some(range.clone()))
         })
         .await?;
-        Ok(Box::new(S3AsyncRead {
+        let read = S3AsyncRead {
             read: get_object_output.body.into_async_read(),
             _permit: permit,
-        }))
+        };
+        if let Some(download_io_controls) = &self.download_io_controls_opt {
+            Ok(Box::new(download_io_controls.clone().wrap_read(read)))
+        } else {
+            Ok(Box::new(read))
+        }
     }
 
     #[instrument(
@@ -1332,6 +1387,7 @@ mod tests {
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
             checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
+            download_io_controls_opt: None,
         };
         assert_eq!(
             s3_storage.relative_path("indexes/foo"),
@@ -1449,6 +1505,7 @@ mod tests {
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
             checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
+            download_io_controls_opt: None,
         });
 
         let pages: Vec<Vec<ObjectMetadata>> =
@@ -1506,6 +1563,7 @@ mod tests {
             disable_multi_object_delete: true,
             disable_multipart_upload: false,
             checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
+            download_io_controls_opt: None,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1544,6 +1602,7 @@ mod tests {
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
             checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
+            download_io_controls_opt: None,
         };
         let _ = s3_storage
             .bulk_delete(&[Path::new("foo"), Path::new("bar")])
@@ -1627,6 +1686,7 @@ mod tests {
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
             checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
+            download_io_controls_opt: None,
         };
         let bulk_delete_error = s3_storage
             .bulk_delete(&[
@@ -1719,6 +1779,7 @@ mod tests {
             disable_multi_object_delete: false,
             disable_multipart_upload: false,
             checksum_algorithm: quickwit_config::ChecksumAlgorithm::Crc32c,
+            download_io_controls_opt: None,
         };
         s3_storage
             .put(Path::new("my-path"), Box::new(vec![1, 2, 3]))
@@ -1748,6 +1809,7 @@ mod tests {
             disable_multi_object_delete: false,
             disable_multipart_upload: true,
             checksum_algorithm,
+            download_io_controls_opt: None,
         }
     }
 
