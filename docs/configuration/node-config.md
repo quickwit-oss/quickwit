@@ -335,9 +335,9 @@ This section contains the configuration options for the on-disk searcher split c
 
 ### Searcher storage cache configuration
 
-This section configures the memory and disk cache of exact immutable split slices. Each `(full object URI, start, end)` is a versioned whole-object cache key. Only an identical byte range can hit. Covering or overlapping slices cannot serve other ranges, and entries are evicted whole. Each cache miss fetches exactly the requested byte range. Concurrent misses for an identical key share one fetch operation. Different ranges are fetched independently, including overlapping or adjacent ranges. Canceling the executing caller cancels its download. A waiting caller can take over with its own fetch.
+This section configures the memory and disk cache of split byte ranges. Cache hits require the same object and exact byte range.
 
-When `storage_cache` is omitted or set to `null`, Quickwit sums the `fast_field_cache` and `split_footer_cache` memory budgets. Omitted settings independently default to `1G` and `500M`, respectively. A zero sum disables the cache, so set both legacy capacities to `0` to disable it. A sum exceeding the maximum unsigned 64-bit byte count is rejected. An explicit `storage_cache` mapping replaces these budgets, while invalid legacy options still fail validation. For memory-only operation, set `disk_capacity: 0` and a positive `memory_capacity`. No directory is required.
+When `storage_cache` is omitted or set to `null`, Quickwit sums the `fast_field_cache` and `split_footer_cache` memory budgets. Omitted settings independently default to `1G` and `500M`, respectively. A zero sum disables the cache, so set both legacy capacities to `0` to disable it. An explicit `storage_cache` mapping replaces these budgets, while invalid legacy options still fail validation. For memory-only operation, set `disk_capacity: 0` and a positive `memory_capacity`. No directory is required.
 
 | Property | Description | Default value |
 | --- | --- | --- |
@@ -349,11 +349,11 @@ For `partial_request_cache` and `predicate_cache`, scalar capacities and mapping
 
 The list-fields metadata cache uses memory only. It remains an independent cache with the same memory capacity as `partial_request_cache`, including zero-capacity disabling. Result-cache disk settings do not enable a disk tier for list-fields metadata.
 
-Cache mappings serialize the RAM budget as `memory_capacity`. Both `memory_capacity` and `disk_capacity` serialize as integer byte counts to preserve exact budgets. Human-readable input such as `64MiB` is still accepted. Setting both `capacity` and `memory_capacity` in the same mapping is an error.
+Capacities accept integer byte counts or human-readable values such as `64MiB`. Setting both `capacity` and `memory_capacity` in the same mapping is an error.
 
 For result caches with explicit `disk_capacity`, `memory_capacity` must be positive. A positive disk capacity also requires a nonempty resolved directory. `disk_capacity: 0` disables the disk tier and requires no directory. Explicitly empty directory settings are rejected. Result caches and the legacy `fast_field_cache` and `split_footer_cache` settings reject explicit `policy` and nonempty `virtual_caches` because eviction is managed internally. Both legacy mappings accept a memory capacity only. Their `path` and `disk_capacity` settings are unsupported, even when an explicit `storage_cache` overrides their budgets. Use `storage_cache` to add a disk tier for split ranges, including fast-field reads.
 
-Cache instances configured with disk settings share one `IoQueues` set, limiting total disk I/O concurrency. They are opened independently. Each instance has its own backing file and lock, disk budget, memory tier, buffer pool, eviction state, and background-write queue. They can share a directory because their fixed filenames are distinct:
+Each cache has independent memory and disk budgets. Caches can share a directory because their backing filenames are distinct:
 
 | Cache setting | Backing filename |
 | --- | --- |
@@ -361,17 +361,9 @@ Cache instances configured with disk settings share one `IoQueues` set, limiting
 | `predicate_cache` | `predicate_cache` |
 | `partial_request_cache` | `partial_response_cache` |
 
-Lock files are named `.feuer.<filename>.lock`. Opening the same backing file twice fails. Initialization failures abort startup. A disk capacity of `0` enables memory-only operation on every supported platform without disk I/O or a directory. An enabled memory-only range cache is initialized when constructing a searcher context, including standalone and Lambda contexts. Positive disk capacities require Linux and a directory. Explicitly empty paths are rejected even in memory-only mode.
+Lock files are named `.feuer.<filename>.lock`. Opening the same backing file twice fails. Initialization failures abort startup. A disk capacity of `0` enables memory-only operation on every supported platform without disk I/O or a directory. Positive disk capacities require Linux and a directory. Explicitly empty paths are rejected even in memory-only mode.
 
-Result-cache keys include a format version and use the same stable serialized identity in both memory and disk. Split-cache keys use the `split-slice-v1` namespace. Memory-only result and list-fields caches work without a Tokio runtime. Memory-only cache capacities are soft eviction targets. The cache can admit an entry larger than its shard's capacity after evicting other entries. Partial responses retain the same request normalization and cache-hit resource statistics as the previous RAM cache. Predicate disk reads through Tantivy's synchronous API run on CPU threads rather than Tokio workers.
-
-Feuer's native [metrics](../reference/metrics.md#feuer-cache-metrics) include a `cache` label (`split_range`, `partial_request`, `predicate`, or `list_fields`) to distinguish instances. Sum over this label to aggregate them. Memory-only caches expose Feuer's lookup, memory occupancy, and eviction metrics. Memory-only result and list-fields caches also retain Quickwit's cache hit/miss counters. Result-cache lookups use Feuer's lookup-only API, which reports misses separately from callback errors.
-
-The cache's cost-aware scorer models a fixed source-request cost in equivalent transferred bytes. Quickwit sets this to `256000` for the split cache only. Predicate and partial-response caches use a default of `0` (bytes-only scoring). The cost applies to both memory and disk tiers and is set per instance.
-
-The cache manages cost-aware eviction and best-effort disk population. `FEUER_RECLAIM_SAMPLE_SIZE` is a positive integer (default `64`) limiting eviction candidates. `FEUER_ACCESS_COUNT_HALF_LIFE` controls demand decay, and `FEUER_IDLE_BUFFER_POOL_PERCENT` controls the idle buffer ceiling. These settings apply to memory-only caches as well as tiered caches. Invalid values cause cache initialization to fail.
-
-On a cache miss, Quickwit acquires one aligned buffer from the cache's pool for the requested range and streams the response directly into it. Callers, the memory cache, and the disk-write queue share that allocation without a payload copy at handoff. Each cached slice charges the full backing allocation capacity, including spare bucket capacity. The allocation becomes reusable after its last owner releases it, subject to the idle-pool capacity. The configured storage timeout/retry policy applies to the entire response body and retries reuse the destination buffer.
+Memory capacities are soft eviction targets, rather than process memory limits. See [cache metrics](../reference/metrics.md#feuer-cache-metrics) to monitor cache usage.
 
 Set `QW_FEUER_ACCESS_TRACE_URI` to an output prefix to export Feuer's native access traces using the node's storage configuration and credentials. Unset means disabled. An invalid or unwritable destination fails startup. Tracing can backpressure lookups, and packages are delivered at 8 MiB with no timed flush. See [Feuer access traces](../internals/feuer-access-trace.md) for the format and shutdown/completeness limitations.
 
